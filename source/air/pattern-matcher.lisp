@@ -101,6 +101,8 @@ TODO: Docs"
 			    (let ((writes (node-writes (id->node ,graph r))))
 			      (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
 				(remnode ,graph r)))))
+		      ;; [TODO] node[-1] dake swap sinaiyouni suru hituyou ga aru
+		      ;; janaito top no graph ga baguru
 		      (setf (graph-nodes ,graph)
 			    (append replace-rule (graph-nodes ,graph)))
 		      t)
