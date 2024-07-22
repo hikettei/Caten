@@ -21,8 +21,7 @@
 	 :int64 :int32 :int16 :int8)))
 
 (defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")))
-  "TODO: Docs
-TODO: Add device"
+  "Equivalent to `dtype i[shape];`"
   (declare (type fixnum nrank)
 	   (type list shape stride)
 	   (type dtype-t dtype)
@@ -35,8 +34,8 @@ shape=~a
 stride=~a" nrank shape stride)
   (emit (make-node :Buffer :Allocate (list id) (append shape stride) :nrank nrank :dtype dtype)))
 
-(defun %scalar (&key (dtype *default-float*) (id (gensym "SID")))
-  "Equivalent to: `dtype i;`"
+(defun %salloc (&key (dtype *default-float*) (id (gensym "SID")))
+  "Equivalent to: `dtype i;` but nrank=0"
   (declare (type dtype-t dtype)
 	   (type symbol id))
   (emit (make-node :Buffer :Allocate (list id) nil :nrank 0 :dtype dtype)))
@@ -46,5 +45,6 @@ stride=~a" nrank shape stride)
   (declare (type Node node))
   (assert (eql (node-class node) :Buffer)   ())
   (assert (eql (node-type  node) :Allocate) ())
+  (assert (eql (getattr node :nrank) 0) () "%load is only applied to scalar buffers.")
   (emit (make-node :Buffer :Load (list id) (list (node-id node)) :value value)))
 

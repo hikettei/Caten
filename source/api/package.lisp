@@ -16,4 +16,14 @@
   (:export
    #:with-context
    #:*ctx*
-   #:emit))
+   #:emit)
+  ;; from ops.lisp
+  (:export
+   #:%add
+   #:%sub
+   #:%mul
+   #:%div
+   #:%neg
+   #:%recip
+   #:%sqrt
+   ))

@@ -5,7 +5,7 @@ Programmable Deep Learning Framework
 ## Project
 
 ```
-./source/api     | principle apis for caten (syntax sugar for air)
+./source/api     | principle apis for caten (syntax sugar for air) no shape/dtype check is running at this level !!
 ./source/air     | An optimized pattern matcher for DAG
 ./source/codegen | codegen
 ```
@@ -29,3 +29,5 @@ $ COVERAGE=1 make test
 - beautiful docgen system
 
 - Numpy Style + Trace from lisp mode
+
+- Implement approxs for sin/log2/exp2

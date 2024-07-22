@@ -7,7 +7,8 @@
   :components
   ((:file "package")
    (:file "ctx")
-   (:file "tensor-ir"))
+   (:file "tensor-ir")
+   (:file "ops"))
   :in-order-to ((test-op (asdf:test-op "caten.api/test"))))
 
 (asdf:defsystem "caten.api/test"

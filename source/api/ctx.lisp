@@ -5,9 +5,11 @@
 ;;    - e.g.: Aten -> tpsort -> obtain iseq
 ;; ==================
 (defparameter *ctx* nil)
-(defmacro with-context (&body body)
+(defmacro with-context (&rest ssa-forms)
+  "ssa-forms: (bind-to form)"
   `(let ((*ctx* (make-graph)))
-     (progn ,@body)
+     (let* (,@ssa-forms)
+       (declare (ignorable ,@(map 'list #'car ssa-forms))))
      (setf (graph-nodes *ctx*) (reverse (graph-nodes *ctx*)))
      (verify-graph *ctx*)
      *ctx*))
