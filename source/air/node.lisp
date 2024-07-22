@@ -12,16 +12,26 @@
 	    "verify-attrs: key must be a keyword but got ~a.~%In ~a"
 	    (nth i attrs) attrs))
   attrs)
+(defun verify-buffers (buffers)
+  (declare (type list buffers))
+  (assert (every #'(lambda (x) (or (numberp x) (symbolp x))) buffers)
+	  ()
+	  "verify-buffers: Buffers are number of symbol. ~a" buffers)
+  buffers)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Node
-	    (:constructor make-node (class type writes reads &rest attrs)))
+	    (:constructor make-node (class type writes reads &rest attrs
+				     &aux
+				       (writes (verify-buffers writes))
+				       (reads  (verify-buffers reads))
+				       (attrs (verify-attrs attrs)))))
   "y1 y2 y3 ... <- f(x1 ... xn)"
   (class class :type keyword)
   (id (gensym "NID") :type symbol)
   (type type :type keyword)
-  (writes reads :type list)
-  (reads reads :type list)
-  (attrs (verify-attrs attrs) :type list))
+  (writes writes :type list)
+  (reads  reads :type list)
+  (attrs  attrs :type list))
 (defmethod print-object ((node Node) stream)
   (flet ((render-list (list)
 	   (apply #'concatenate 'string
