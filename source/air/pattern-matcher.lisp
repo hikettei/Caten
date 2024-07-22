@@ -2,6 +2,8 @@
 (in-package :caten/air)
 
 ;; ~~ utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defpattern symbol-eq (to-what)
+    `(satisfies (lambda (x) (equalp (symbol-name x) ,to-what))))
 (defpattern <>Node
     (type args attrs)
     `(list*
@@ -45,7 +47,7 @@
 (defun parse-rule (rule bind graph-bind)
   (declare (type list rule))
   (match rule
-    ((list from (eql '->) to)
+    ((list from (symbol-eq "->") to)
      `((and
 	(satisfies (lambda (x) (declare (ignore x)) (setf *matched-bind* nil) t))
 	,(find/replace-rules from graph-bind))
@@ -53,7 +55,15 @@
 	,@(match to
 	    ((<>Node type reads attrs)
 	     `((list (make-node (node-class ,bind) ,type (node-writes ,bind) (list ,@reads) ,@attrs))))
-	    (_ to))
+	    ((list* (list node graph) body)
+	     `((let ((,node ,bind)
+		     (,graph ,graph-bind))
+		 (declare (ignorable ,node ,graph))
+		 ,@body)))
+	    (_
+	     (error "Replace case must be one of:
+    - (:Type (Args) attrs)
+    - ((node graph) body)")))
 	*matched-bind*)))
     (_ (error "Follow this notation: (From_Pattern) -> (To_Pattern).~%~a" rule))))
 
@@ -62,6 +72,7 @@
   "
 ## [Macro] defsimplifier
 Defines graph simplification rule
+Tips: return nil to skip the simplification process
 TODO: Docs"
   (with-gensyms (graph simplifier-bind apply-bind node-top)
     `(defun ,name (,graph)
@@ -75,6 +86,8 @@ TODO: Docs"
 		      (match ,node-top
 			,@(map 'list #'(lambda (x) (parse-rule x node-top graph)) rules)
 			(_ nil))
+		    (when (node-p replace-rule)
+		      (setf replace-rule (list replace-rule)))
 		    (when (and replace-rule matched)
 		      (dolist (r matched) (remnode ,graph r))
 		      (setf (graph-nodes ,graph)
