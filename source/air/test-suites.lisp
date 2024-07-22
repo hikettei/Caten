@@ -94,7 +94,7 @@
 (deftest simplify-test-2
   (ok
    (check-simplify
-    match-empty-readsm
+    match-empty-reads
     (list
      (<node> :F (list 'a) nil))
     (list

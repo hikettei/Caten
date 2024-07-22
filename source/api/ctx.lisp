@@ -11,6 +11,8 @@
      (setf (graph-nodes *ctx*) (reverse (graph-nodes *ctx*)))
      (verify-graph *ctx*)
      *ctx*))
+(defmacro with-context-nodes (&rest ssa-forms)
+  `(graph-nodes (with-context ,@ssa-forms)))
 (defmacro with-ssa (&rest ssa-forms)
   "ssa-forms: (bind-to form)"
   `(let* (,@ssa-forms) (declare (ignorable ,@(map 'list #'car ssa-forms)))))
