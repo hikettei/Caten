@@ -10,7 +10,15 @@
 (defun compare (graph expected &key (slots `(caten/air::writes caten/air::reads caten/air::attrs caten/air::type caten/air::class)))
   (flet ((eq-node (n1 n2)
 	   (every #'(lambda (slot) (equal (slot-value n1 slot) (slot-value n2 slot))) slots)))
-    (every #'eq-node (graph-nodes graph) expected)))
+    (loop for node in (graph-nodes graph)
+	  for x = (find node expected :test #'eq-node)
+	  if (null x)
+	    do (error "The node ~a is not appeared in the expected list." node)
+	  else
+	    do (setf expected (remove x expected :test #'eq-node)))
+    (if (null expected)
+	t
+	(error "Nodes ~a is not appeared in the simplified list." expected))))
 (defmacro check-simplify (simplifier-name before after)
   `(compare
     (,simplifier-name
@@ -69,9 +77,9 @@
      (<node> :Add (list 'output) (list 'a 'b)))
     (list
      (<node> :add (list 'b) (list 'm 'n 'b))
+     (<node> :add (list 'output) (list 'm 'n 'b))
      (<node> :const (list 'n) (list 2))
-     (<node> :const (list 'm) (list 2))
-     (<node> :add (list 'output) (list 'a 'b)))))
+     (<node> :const (list 'm) (list 2)))))
   (ok
    (check-simplify
     dummy-simplifier-1
@@ -99,3 +107,4 @@
      (<node> :F (list 'a) nil))
     (list
      (<node> :L (list 'a) nil)))))
+
