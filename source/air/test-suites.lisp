@@ -86,3 +86,16 @@
      (<node> :Sub1 (list 'x 'y) (list 3 5)))
     (list
      (<node> :const (list 'x 'y) (list -2))))))
+
+(defsimplifier
+    (match-empty-reads :speed 0)
+    ((:F ()) -> (:L ())))
+
+(deftest simplify-test-2
+  (ok
+   (check-simplify
+    match-empty-readsm
+    (list
+     (<node> :F (list 'a) nil))
+    (list
+     (<node> :L (list 'a) nil)))))

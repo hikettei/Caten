@@ -60,6 +60,7 @@
 (defun getattr (node id)
   (declare (type node node) (type keyword id))
   (ematch (node-attrs node) ((property id value) value)))
+(defun node->id (node) (car (node-writes node)))
 ;; ~~ syntax sugar for make-node ~~~~~~~
 ;;(declaim (inline <>))
 ;;(defun <> (type writes reads &rest attrs) (apply #'make-node :node type writes reads attrs))

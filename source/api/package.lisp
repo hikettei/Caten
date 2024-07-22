@@ -1,6 +1,6 @@
 (in-package :cl-user)
 (defpackage :caten/api
-  (:use :cl :caten/air :alexandria)
+  (:use :cl :trivia :caten/air :alexandria)
   ;; (:nicknames :caten
 
   ;; from tensor-ir.lisp

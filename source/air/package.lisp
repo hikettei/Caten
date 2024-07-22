@@ -2,7 +2,7 @@
 
 (defpackage :caten/air
   (:use :cl :alexandria :trivia)
-  (:export #:Node #:node-class #:node-p
+  (:export #:Node #:node-class #:node-p #:node->id
    #:node-id #:node-type #:node-writes
    #:node-reads #:node-attrs)
   (:export #:make-node)

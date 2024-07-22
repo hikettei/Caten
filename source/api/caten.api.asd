@@ -9,7 +9,8 @@
    (:file "helpers")
    (:file "ctx")
    (:file "tensor-ir")
-   (:file "ops"))
+   (:file "ops")
+   (:file "constant-folding"))
   :in-order-to ((test-op (asdf:test-op "caten.api/test"))))
 
 (asdf:defsystem "caten.api/test"

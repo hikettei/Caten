@@ -38,8 +38,8 @@ shape=~a
 stride=~a" nrank shape stride)
   (multiple-value-bind (shape stride)
       (values
-       (map 'list #'node-id shape)
-       (map 'list #'node-id stride))
+       (map 'list #'node->id shape)
+       (map 'list #'node->id stride))
     (emit (make-node :Buffer :Allocate (list id) (append shape stride) :nrank nrank :dtype dtype))))
 
 (defun %salloc (&key (dtype *default-float*) (id (gensym "SID")))
@@ -54,7 +54,7 @@ stride=~a" nrank shape stride)
   (assert (eql (node-class node) :Buffer)   ())
   (assert (eql (node-type  node) :Allocate) ())
   (assert (eql (getattr node :nrank) 0) () "%load is only applied to scalar buffers.")
-  (emit (make-node :Buffer :Load (list id) (list (node-id node)) :value value)))
+  (emit (make-node :Buffer :Load (list id) (list (node->id node)) :value value)))
 
 (defun %stride (shape permute &key (dtype *default-uint*))
   "Compute the stride based on permute and shape."
@@ -92,3 +92,6 @@ stride=~a" nrank shape stride)
       (setf permute (reverse permute)))
     (%alloc (length shape) (%shape shape) (%stride shape permute) :dtype dtype)))
 
+;; TODO: View, Permute, Reshape
+;; TODO: View Fusion
+;; TODO: Constant Folding
