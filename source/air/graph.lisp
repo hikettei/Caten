@@ -2,6 +2,7 @@
 
 (defstruct (Graph
 	    (:constructor make-graph (&rest nodes)))
+  "nodes: t=0 ... t=n-1"
   (nodes nodes :type list))
 (defun graph-collect-if (graph f)
   (declare (type graph graph)

@@ -13,7 +13,16 @@
      (:_TmpScalarConst ((+ x y)) :dtype dtype))
     ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y))))
      ->
-     (:_TmpScalarConst ((* x y)) :dtype dtype)))
+     (:_TmpScalarConst ((* x y)) :dtype dtype))
+    ((:Allocate (~ shape-and-stride) :nrank (guard nrank (> 0)) :dtype dtype)
+     ->
+     ((node graph)
+      (let ((shape-and-stride (map 'list #'(lambda (x) (id->value graph x)) shape-and-stride)))
+	(when (every #'(lambda (x) (eql (node-type x) :_TmpScalarConst)) shape-and-stride)
+	  (make-node
+	   :Buffer :Allocate
+	   (node-writes node) (map 'list (compose #'car #'node-reads) shape-and-stride)
+	   :nrank nrank :dtype dtype))))))
 
 (defsimplifier
     (%2_unfold_load_alloc)
