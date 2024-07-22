@@ -1,5 +1,5 @@
 ROSWELL       := ros
-QUICKLOAD     := --eval '(progn (cl:push (cl:pathname "./") ql:*local-project-directories*) (asdf:load-asd "caten.asd") (asdf:load-system "caten"))'
+QUICKLOAD     := --eval '(progn (cl:push (cl:pathname "./") ql:*local-project-directories*) (asdf:load-asd "caten.asd") (ql:quickload "caten"))'
 
 .PHONY: help
 help:
