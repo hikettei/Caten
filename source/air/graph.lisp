@@ -26,6 +26,7 @@
   (setf (graph-nodes graph)
 	(loop for node in (graph-nodes graph)
 	      unless (eql id (node-id node)) collect node)))
+(defparameter *no-purge-graph* nil "set t when testing simplifier in test-suites.lisp")
 (defun verify-graph (graph)
   (declare (type graph graph)
 	   (optimize (speed 3)))
@@ -42,7 +43,7 @@
     (assert (null undefined)
 	    ()
 	    "verify-graph: these symbols are undefined. ~a~%~a" undefined graph))
-  (purge-isolated-graph graph)
+  (unless *no-purge-graph* (purge-isolated-graph graph))
   t)
 
 (defun purge-isolated-graph (graph)

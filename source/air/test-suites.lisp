@@ -20,10 +20,11 @@
 	t
 	(error "Nodes ~a is not appeared in the simplified list." expected))))
 (defmacro check-simplify (simplifier-name before after)
-  `(compare
-    (,simplifier-name
-     (apply #'make-graph ,before))
-    ,after))
+  `(let ((caten/air::*no-purge-graph* t))
+     (compare
+      (,simplifier-name
+       (apply #'make-graph ,before))
+      ,after)))
 ;; ~~ tests ~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defsimplifier
