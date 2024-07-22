@@ -1,16 +1,20 @@
 (in-package :cl-user)
 (defpackage :caten/api
-  (:use :cl :caten/air)
+  (:use :cl :caten/air :alexandria)
   ;; (:nicknames :caten
 
   ;; from tensor-ir.lisp
   (:export
    #:*default-float*
+   #:*default-uint*
    #:dtype-t
    
    #:%alloc
-   #:%scalar
+   #:%salloc
    #:%load
+   #:%stride
+   #:%shape
+   #:%make-tensor
    )
   ;; from ctx.lisp
   (:export
@@ -23,6 +27,7 @@
    #:%sub
    #:%mul
    #:%div
+   
    #:%neg
    #:%recip
    #:%sqrt

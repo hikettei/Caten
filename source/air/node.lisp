@@ -16,7 +16,7 @@
   (declare (type list buffers))
   (assert (every #'(lambda (x) (or (numberp x) (symbolp x))) buffers)
 	  ()
-	  "verify-buffers: Buffers are number of symbol. ~a" buffers)
+	  "verify-buffers: Buffers are number or symbol. ~a" buffers)
   buffers)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Node

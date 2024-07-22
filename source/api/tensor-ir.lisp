@@ -10,8 +10,12 @@
 ;;
 ;; Set nrank=0 to create a scalar
 ;; Set nrank>=1 to create a tensor
+;; make-node must be wrapped with emit when producing outputs
+;; and with-context can recognise it
 ;; ================================================================================================
 (defparameter *default-float* :float32)
+(defparameter *default-uint* :uint32)
+
 (deftype dtype-t ()
   "A list of available keywords as a dtype"
   `(and keyword
@@ -32,7 +36,11 @@
 nrank=~a
 shape=~a
 stride=~a" nrank shape stride)
-  (emit (make-node :Buffer :Allocate (list id) (append shape stride) :nrank nrank :dtype dtype)))
+  (multiple-value-bind (shape stride)
+      (values
+       (map 'list #'node-id shape)
+       (map 'list #'node-id stride))
+    (emit (make-node :Buffer :Allocate (list id) (append shape stride) :nrank nrank :dtype dtype))))
 
 (defun %salloc (&key (dtype *default-float*) (id (gensym "SID")))
   "Equivalent to: `dtype i;` but nrank=0"
@@ -47,4 +55,40 @@ stride=~a" nrank shape stride)
   (assert (eql (node-type  node) :Allocate) ())
   (assert (eql (getattr node :nrank) 0) () "%load is only applied to scalar buffers.")
   (emit (make-node :Buffer :Load (list id) (list (node-id node)) :value value)))
+
+(defun %stride (shape permute &key (dtype *default-uint*))
+  "Compute the stride based on permute and shape."
+  (declare (type list shape permute)
+	   (type dtype-t dtype))
+  (let* ((n (length shape))
+	 (strides (make-list n)))
+    (flet ((const (n) (%load (%salloc :dtype dtype) n)))
+      (setf (nth (first (reverse permute)) strides) (progn (const 1)))
+      ;; Calculate strides for other dimensions in reverse permuted order
+      (do ((i (- n 2) (- i 1))) ((< i 0) nil)
+	(setf (nth (nth i permute) strides)
+              (%mul (const (nth (nth (1+ i) permute) strides)) (const (nth (nth (1+ i) permute) shape)))))
+      (mapcar (lambda (i) (nth i strides)) (loop for i from 0 below n collect i)))))
+
+(defun %shape (shape &key (dtype *default-uint*))
+  "Initialize the shape."
+  (declare (type list shape) (type dtype-t dtype))
+  (flet ((const (n) (%load (%salloc :dtype dtype) n)))
+    (map 'list #'const shape)))
+
+(defun %make-tensor (shape &key (dtype *default-float*) (order :row))
+  "A useful wrapper for %alloc. it computes stride based on order.
+%make-tensor is used to allocate the initial tensor, later weights are loaded."
+  (declare (type list shape)
+	   (type dtype-t dtype)
+	   (type (member :row :column) order))
+  (assert (every #'(lambda (x) (or (symbolp x) (integerp x))) shape)
+	  ()
+	  "%make-tensor: Shape is designed as symbol (existing in the graph) or integer.")
+  (assert (>= (length shape) 1) () "%make-tensor is only used to initialize a tensor, not a scalar.")
+  (let ((permute (range 0 (length shape))))
+    ;; [TODO] order = :row is correct? (on the around way isn't it?)
+    (when (eql order :row)
+      (setf permute (reverse permute)))
+    (%alloc (length shape) (%shape shape) (%stride shape permute) :dtype dtype)))
 

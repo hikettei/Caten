@@ -6,6 +6,7 @@
   :serial t
   :components
   ((:file "package")
+   (:file "helpers")
    (:file "ctx")
    (:file "tensor-ir")
    (:file "ops"))
