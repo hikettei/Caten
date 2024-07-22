@@ -3,7 +3,7 @@
 
 ;; ~~ utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern symbol-eq (to-what)
-    `(satisfies (lambda (x) (equalp (symbol-name x) ,to-what))))
+    `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
 (defpattern <>Node
     (type args attrs)
     `(list*
@@ -38,9 +38,12 @@
   (flet ((replace-form (r) (find/replace-rules r graph-bind t)))
     (match rules
       ((<>Node type args attrs)
-       (if recursive
-	   `(access #'(lambda (x) (id->value ,graph-bind x)) (%Node ,type (list ,@(map 'list #'replace-form args)) ,attrs))
-	   `(%Node ,type (list ,@(map 'list #'replace-form args)) ,attrs)))
+       (let ((args (match args
+		     ((list (symbol-eq "~") x) `(list* ,x))
+		     (_ `(list ,@(map 'list #'replace-form args))))))
+	 (if recursive
+	     `(access #'(lambda (x) (id->value ,graph-bind x)) (%Node ,type ,args ,attrs))
+	     `(%Node ,type ,args ,attrs))))
       ((type list) (map 'list #'replace-form rules))
       (_ rules))))
 
@@ -72,7 +75,8 @@
   "
 ## [Macro] defsimplifier
 Defines graph simplification rule
-Tips: return nil to skip the simplification process
+Tips: return nil to skip the simplification process.
+Tips: (~ x) to accept n-args.
 TODO: Docs"
   (with-gensyms (graph simplifier-bind apply-bind node-top)
     `(defun ,name (,graph)
@@ -107,4 +111,5 @@ TODO: Docs"
 		      (setf changed-p t)))
 		  changed-p))
 	 (dotimes (i 2) (loop while (,apply-bind ,graph)))
+	 (verify-graph ,graph)
 	 ,graph))))
