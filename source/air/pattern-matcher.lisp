@@ -90,10 +90,13 @@ TODO: Docs"
 		      (setf replace-rule (list replace-rule)))
 		    (when (and replace-rule matched)
 		      (dolist (r matched)
-			;; Purge the matched node if not anymore used.
-			(let ((writes (node-writes (id->node ,graph r))))
-			  (when (every #'(lambda (w) (= (length (id->users ,graph w))) 0) writes)
-			    (remnode ,graph r))))
+			;; keep the top of pattern, writes are not lost.
+			(if (eql r (node-id ,node-top))
+			    (remnode ,graph r)
+			    ;; Purge the matched node if not anymore used.
+			    (let ((writes (node-writes (id->node ,graph r))))
+			      (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
+				(remnode ,graph r)))))
 		      (setf (graph-nodes ,graph)
 			    (append replace-rule (graph-nodes ,graph)))
 		      t)

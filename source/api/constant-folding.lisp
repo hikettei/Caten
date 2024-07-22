@@ -33,5 +33,4 @@
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
 	  ()
 	  "_TmpScalarConst shouldn't exist! (but it is a simplifier's bug)")
-  ;; TODO: Read undefined check
   graph)
