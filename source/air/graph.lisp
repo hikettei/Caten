@@ -42,4 +42,20 @@
     (assert (null undefined)
 	    ()
 	    "verify-graph: these symbols are undefined. ~a~%~a" undefined graph))
+  (purge-isolated-graph graph)
   t)
+
+(defun purge-isolated-graph (graph)
+  "assuming the last graph is the final output, prunes the isolated graph"
+  (declare (type graph graph))
+  (when (graph-nodes graph)
+    (let ((output (node-writes (car (last (graph-nodes graph))))))
+      (setf (graph-nodes graph)
+	    (loop for n in (graph-nodes graph)
+		  collect
+		  (if (every #'(lambda (w) (and (symbolp w) (= 0 (length (id->users graph w))) (not (find w output)))) (node-writes n))
+		      nil
+		      n))
+	    (graph-nodes graph)
+	    (loop for n in (graph-nodes graph) if n collect n)))))
+
