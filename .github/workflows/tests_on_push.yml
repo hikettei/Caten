@@ -13,7 +13,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        lisp: [sbcl-bin/2.3.9, sbcl-bin] # todo ccl, ecl et al
+        lisp: [sbcl-bin/2.3.9, sbcl-bin, ccl-bin, ecl-bin]
         os: [ubuntu-latest]
         target:
         - normal
@@ -32,5 +32,4 @@ jobs:
         run: echo $PATH
       - name: make test
         run: |
-          ros config set dynamic-space-size 4gb
           make test
