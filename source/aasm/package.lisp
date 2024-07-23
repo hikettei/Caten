@@ -42,6 +42,7 @@
    #:fold-constant)
   ;; from view.lisp
   (:export
+   #:infer-tensor-info
    #:%view
    #:%reshape
    ))

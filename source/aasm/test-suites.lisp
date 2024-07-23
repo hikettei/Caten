@@ -60,3 +60,16 @@
       (check (1 2 3) (6) 2)
       (check (1 2 3) (d) 4)
       (check (a b c) (d) 18))))
+
+(deftest infer-tensor-info
+  (ok
+   (let ((g (with-context
+	      (a (%make-tensor `(3 3)))
+	      (b (%reshape a `(9) :id 'X)))))
+     (multiple-value-bind (nrank shape stride dtype view)
+	 (infer-tensor-info g 'X)
+       (assert (= nrank 2))
+       (assert (equal shape `(9)))
+       (assert (equal stride `(1)))
+       (assert (eql dtype :float32))
+       (assert (equal view `((0) (9) (1) (nil))))))))

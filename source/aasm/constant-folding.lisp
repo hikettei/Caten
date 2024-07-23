@@ -30,7 +30,7 @@
 	     :Buffer :Allocate
 	     (node-writes node) new-shape
 	     :nrank nrank :dtype dtype))))))
-    ((:View (~ ss) :broadcast broadcast :nrank nrank)
+    ((:View (~ ss) :broadcast broadcast :nrank nrank :restride restride)
      ->
      ((node graph)
       (when ss
@@ -45,7 +45,7 @@
 	    (make-node
 	     :Buffer :View
 	     (node-writes node) new-views
-	     :nrank nrank :broadcast broadcast)))))))
+	     :nrank nrank :broadcast broadcast :restride restride)))))))
 
 (defsimplifier
     (%2_unfold_load_alloc)

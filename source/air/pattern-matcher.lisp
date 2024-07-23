@@ -14,10 +14,11 @@
 (defun ->property (attrs)
   (verify-attrs attrs)
   `(and
-    ,@(loop for nth upfrom 0 to (/ (length attrs) 2) by 2
+    ,@(loop for nth upfrom 0 to (1+ (/ (length attrs) 2)) by 2
 	    for x = (nth nth attrs)
 	    for y = (nth (1+ nth) attrs)
-	    collect `(property ,x ,y))))
+	    if (and x y)
+	      collect `(property ,x ,y))))
 
 (defpattern %Node
     (type args attrs)

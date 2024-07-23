@@ -47,7 +47,8 @@
 		(with-output-to-string (out)
 		  (format out " where")
 		  (dolist (k (getattrs node))
-		    (format out " :~(~a~)=~a" k (getattr node k))))
+		    (when k
+		      (format out " :~(~a~)=~a" k (getattr node k)))))
 		""))))
 ;;(defgeneric lower ())
 ;;(defgeneric mutate ())
@@ -55,7 +56,7 @@
 (defun getattrs (node)
   (declare (type node node))
   (verify-attrs (node-attrs node))
-  (loop for i upfrom 0 to (/ (length (node-attrs node)) 2) by 2
+  (loop for i upfrom 0 to (1+ (/ (length (node-attrs node)) 2)) by 2
 	collect (nth i (node-attrs node))))
 (defun getattr (node id)
   (declare (type node node) (type keyword id))
