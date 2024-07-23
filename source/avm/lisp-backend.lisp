@@ -25,7 +25,7 @@
 	 (offsets (make-list (1+ (length buffers)) :initial-element 0)))
     (labels ((explore (dim offsets)
 	       (let ((size (if (some (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)
-			       (let ((view (find-if (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)))
+			       (let ((view (nth dim (buffer-views (find-if (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)))))
 				 (abs (- (car view) (second view))))
 			       (nth dim (buffer-shape result)))))
 		 ;; initial offset
@@ -68,4 +68,21 @@
       (parse-allocate-node node args)
     (realize-buffer graph (node->id node) :shape1 shape :stride1 stride)))
 
-(defmethod %impl ((device-id (eql :lisp)) (op (eql :Sqrt)) graph node args) (apply #'map-view #'sqrt args))
+(macrolet ((impl (kw op)
+	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args) (apply #'map-view ,op args))))
+  (impl :add #'+)
+  (impl :mul #'*)
+  (impl :sqrt  #'sqrt)
+  (impl :neg   #'-)
+  (impl :recip #'/))
+
+(defmethod %impl ((device-id (eql :lisp)) (op (eql :view)) graph node args)
+  (multiple-value-bind (shape v1 v2 v3 stride bc)
+      (parse-view-node node args)
+    (let ((buffer (copy-buffer (car args))))
+      (setf (buffer-shape buffer) shape
+	    (buffer-stride buffer) stride
+	    (buffer-views buffer)
+	    (loop for i upfrom 0 below (length v1)
+		  collect (list (nth i v1) (nth i v2) (nth i v3) (nth i bc))))
+      buffer)))
