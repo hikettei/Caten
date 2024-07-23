@@ -10,11 +10,10 @@
 	   (type fixnum count))
   (let ((sched (fold-constant graph)))
     (assert
-     (<= (length (graph-nodes sched)) count)
+     (= (length (graph-nodes sched)) count)
      ()
-     "check-schedule: should satisfy (kernel_count) <= ~a.~%~a" count sched))
+     "check-schedule: should satisfy (kernel_count=~a) <= ~a.~%~a" (length (graph-nodes sched)) count sched))
   t)
-
 
 (deftest constant-folding
   (testing "Tensor Creation (Fixed Shape/Dynamic Shape)"
@@ -39,5 +38,14 @@
       ;; Needs to be updated if we fold symbols
       (ok (= (length (graph-nodes (fold-constant (make (a b) (a b)))))
 	     (length (graph-nodes (make (a b) (a b))))
-	     (length (graph-nodes (make (3 3) (3 3)))))))))
-
+	     (length (graph-nodes (make (3 3) (3 3))))))))
+  (testing "View Creation"
+    (macrolet ((check (s1 frm to by bc count)
+		 `(ok
+		   (check-schedule
+		    (with-context
+			(a (%make-tensor ',s1))
+		      (b (%view a ',frm ',to ',by ',bc)))
+		    ,count))))
+      (check (5 5 5) (0 0 0) (5 5 5) (1 1 1) (nil nil nil) 2)
+      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 34))))

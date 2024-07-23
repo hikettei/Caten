@@ -10,7 +10,8 @@
    (:file "ctx")
    (:file "tensor-ir")
    (:file "ops")
-   (:file "constant-folding"))
+   (:file "constant-folding")
+   (:file "view"))
   :in-order-to ((test-op (asdf:test-op "caten.aasm/test"))))
 
 (asdf:defsystem "caten.aasm/test"

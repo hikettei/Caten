@@ -8,10 +8,15 @@
    #:*default-float*
    #:*default-uint*
    #:dtype-t
+
+   #:%uconst
+   #:%iconst
+   #:%fconst
    
    #:%alloc
    #:%salloc
    #:%load
+   #:%store
    #:%stride
    #:%shape
    #:%make-tensor
@@ -34,4 +39,8 @@
    )
   ;; from constant-folding.lisp
   (:export
-   #:fold-constant))
+   #:fold-constant)
+  ;; from view.lisp
+  (:export
+   #:%view
+   ))

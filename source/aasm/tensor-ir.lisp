@@ -14,6 +14,7 @@
 ;; and with-context can recognise it
 ;; ================================================================================================
 (defparameter *default-float* :float32)
+(defparameter *default-int* :int32)
 (defparameter *default-uint* :uint32)
 
 (deftype dtype-t ()
@@ -56,6 +57,21 @@ stride=~a" nrank shape stride)
   (assert (eql (getattr node :nrank) 0) () "%load is only applied to scalar buffers.")
   (emit (make-node :Buffer :Load (list id) (list (node->id node)) :value value)))
 
+(defun %store (x y &key (id (gensym "LID")))
+  "Equivalent to x = y;"
+  (declare (type node x y))
+  (emit (make-node :Buffer :Store (list id) (list (node->id x) (node->id y)))))
+
+(defun %uconst (value &key (dtype *default-uint*))
+  "Creates a unsigned integer"
+  (%load (%salloc :dtype dtype) value))
+(defun %iconst (value &key (dtype *default-int*))
+  "Creates a signed integer"
+  (%load (%salloc :dtype dtype) value))
+(defun %fconst (value &key (dtype *default-float*))
+  "Creates a float const"
+  (%load (%salloc :dtype dtype) value))
+
 (defun %stride (shape permute &key (dtype *default-uint*))
   "Compute the stride based on permute and shape."
   (declare (type list shape permute)
@@ -91,6 +107,3 @@ stride=~a" nrank shape stride)
       (setf permute (reverse permute)))
     (%alloc (length shape) (%shape shape) (%stride shape permute) :dtype dtype)))
 
-;; TODO: View, Permute, Reshape
-;; TODO: View Fusion
-;; TODO: Constant Folding

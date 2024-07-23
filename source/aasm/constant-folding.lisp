@@ -29,7 +29,23 @@
 	    (make-node
 	     :Buffer :Allocate
 	     (node-writes node) new-shape
-	     :nrank nrank :dtype dtype)))))))
+	     :nrank nrank :dtype dtype))))))
+    ((:View (~ ss) :broadcast broadcast :nrank nrank)
+     ->
+     ((node graph)
+      (when ss
+	(let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
+	       (new-views (loop for ss-node in ss-nodes
+				for ss-val  in ss
+				if (and ss-node (eql (node-type ss-node) :_TmpScalarConst))
+				  collect (car (node-reads ss-node))
+				else
+				  collect ss-val)))
+	  (unless (equal new-views ss)
+	    (make-node
+	     :Buffer :View
+	     (node-writes node) new-views
+	     :nrank nrank :broadcast broadcast)))))))
 
 (defsimplifier
     (%2_unfold_load_alloc)
