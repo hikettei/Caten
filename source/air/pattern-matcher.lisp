@@ -78,12 +78,16 @@ Defines graph simplification rule
 Tips: return nil to skip the simplification process.
 Tips: (~ x) to accept n-args.
 TODO: Docs"
-  (with-gensyms (graph simplifier-bind apply-bind node-top)
+  (with-gensyms (graph simplifier-bind apply-bind node-top count-bind last-p)
     `(defun ,name (,graph)
        (declare (type graph ,graph)
 		(optimize (speed ,speed)))
+       (when (null (graph-nodes ,graph)) (return-from ,name))
        (verify-graph ,graph)
-       (labels ((,simplifier-bind (,node-top &aux (*matched-bind* nil))
+       (labels ((,simplifier-bind (,node-top ,count-bind
+				   &aux
+				     (*matched-bind* nil)
+				     (,last-p (= (length (the list (graph-nodes ,graph))) (1+ ,count-bind))))
 		  (declare (type list *matched-bind*))
 		  (when (null ,node-top) (return-from ,simplifier-bind))
 		  (multiple-value-bind (replace-rule matched)
@@ -101,15 +105,15 @@ TODO: Docs"
 			    (let ((writes (node-writes (id->node ,graph r))))
 			      (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
 				(remnode ,graph r)))))
-		      ;; [TODO] node[-1] dake swap sinaiyouni suru hituyou ga aru
-		      ;; janaito top no graph ga baguru
 		      (setf (graph-nodes ,graph)
-			    (append replace-rule (graph-nodes ,graph)))
+			    (if ,last-p
+				(concatenate 'list (graph-nodes ,graph) replace-rule)
+				(append replace-rule (graph-nodes ,graph))))
 		      t)
 		    nil))
 		(,apply-bind (graph &aux (changed-p nil))
 		  (dotimes (nth (length (graph-nodes graph)))
-		    (when (,simplifier-bind (nth nth (graph-nodes graph)))
+		    (when (,simplifier-bind (nth nth (graph-nodes graph)) nth)
 		      (setf changed-p t)))
 		  changed-p))
 	 (dotimes (i 2) (loop while (,apply-bind ,graph)))

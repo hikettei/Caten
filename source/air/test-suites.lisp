@@ -7,24 +7,30 @@
 
 ;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun <node> (type writes reads &rest attrs) (apply #'make-node :node type writes reads attrs))
-(defun compare (graph expected &key (slots `(caten/air::writes caten/air::reads caten/air::attrs caten/air::type caten/air::class)))
+(defun compare (graph expected
+		&key
+		  (slots `(caten/air::writes caten/air::reads caten/air::attrs caten/air::type caten/air::class))
+		  (shuffle-order t))
   (flet ((eq-node (n1 n2)
 	   (every #'(lambda (slot) (equal (slot-value n1 slot) (slot-value n2 slot))) slots)))
-    (loop for node in (graph-nodes graph)
-	  for x = (find node expected :test #'eq-node)
-	  if (null x)
-	    do (error "The node ~a is not appeared in the expected list." node)
-	  else
-	    do (setf expected (remove x expected :test #'eq-node)))
+    (if shuffle-order
+	(loop for node in (graph-nodes graph)
+	      for x = (find node expected :test #'eq-node)
+	      if (null x)
+		do (error "The node ~a is not appeared in the expected list." node)
+	      else
+		do (setf expected (remove x expected :test #'eq-node)))
+	(return-from compare (every #'eq-node (graph-nodes graph) expected)))
     (if (null expected)
 	t
 	(error "Nodes ~a is not appeared in the simplified list." expected))))
-(defmacro check-simplify (simplifier-name before after)
-  `(let ((caten/air::*no-purge-graph* t))
+(defmacro check-simplify (simplifier-name before after &key (shuffle-order t) (purge-isolated-graph nil))
+  `(let ((caten/air::*no-purge-graph* ,(not purge-isolated-graph)))
      (compare
       (,simplifier-name
        (apply #'make-graph ,before))
-      ,after)))
+      ,after
+      :shuffle-order ,shuffle-order)))
 ;; ~~ tests ~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defsimplifier
@@ -109,3 +115,20 @@
     (list
      (<node> :L (list 'a) nil)))))
 
+(defsimplifier
+    (last-never-broken :speed 0)
+    ((:F (x)) -> (:L (x))))
+
+(deftest last-never-broken-test
+  (testing "the position of nodes[-1] is fixed whenever simplified."
+    (ok
+     (check-simplify
+      last-never-broken
+      (list
+       (<node> :A (list 'a) nil)
+       (<node> :F (list 'c) (list 'a)))
+      (list
+       (<node> :A (list 'a) nil)
+       (<node> :L (list 'c) (list 'a)))
+      :shuffle-order nil
+      :purge-isolated-graph t))))
