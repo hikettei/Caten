@@ -45,10 +45,10 @@
 		   (check-schedule
 		    (with-context
 		      (a (%make-tensor ',s1))
-		      (b (%view a ',frm ',to ',by ',bc)))
+		      (b (%view a ',frm ',frm ',to ',by ',bc (%stride ',frm (list 2 1 0)))))
 		    ,count))))
       (check (5 5 5) (0 0 0) (5 5 5) (1 1 1) (nil nil nil) 2)
-      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 34)))
+      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 48)))
   (testing "Reshape Creation"
     (macrolet ((check (s1 s2 count)
 		 `(ok
@@ -78,7 +78,7 @@
     (ok
      (let ((g (ssa-form
 	       (a (%make-tensor `(3 3)))
-	       (b (%view a `(0 0) `(3 3) `(1 1) `(nil nil)))
+	       (b (%view a `(3 3) `(0 0) `(3 3) `(1 1) `(nil nil) `(3 1)))
 	       (c (%sqrt b :id 'X)))))
        (multiple-value-bind (nrank shape stride dtype view)
 	   (infer-tensor-info g 'X)

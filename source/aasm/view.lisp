@@ -62,22 +62,24 @@ Results:
 nrank=~a, shape=~a, dtype=~a, view-from=~a, view-to=~a, view-by=~a, broadcast=~a, stride=~a"
 	       id nrank shape dtype view-from view-to view-by broadcast stride)))))
 
-(defun %view (base from to by broadcast &key (id (gensym "VID")))
+(defun %view (base shape from to by broadcast stride &key (id (gensym "VID")))
   "Creates a view against base. (views are only created against the original buffer)"
   ;; Allocation w/o allocation
   (declare (type node base)
-	   (type list from to by broadcast))
+	   (type list from to by broadcast shape stride))
   (flet ((->const (x)
 	   (if (node-p x)
 	       x
 	       (%iconst x))))
-    (setf from (map 'list #'->const from)
-	  to   (map 'list #'->const to)
-	  by   (map 'list #'->const by)))
+    (setf from   (map 'list #'->const from)
+	  to     (map 'list #'->const to)
+	  by     (map 'list #'->const by)
+	  shape  (map 'list #'->const shape)
+	  stride (map 'list #'->const stride)))
   (assert (and (every #'node-p to) (every #'node-p by) (every #'node-p from))
 	  ()
 	  "Assertion Failed: from/to/by must be a list of Node.")
-  (assert (= (length from) (length to) (length by) (length broadcast))
+  (assert (= (length from) (length to) (length by) (length broadcast) (length shape) (length stride))
 	  ()
 	  "Assertion Failed: the rank must be determined before the compilation.
 nrank=~a
@@ -89,11 +91,11 @@ broadcast=~a"
     (emit (make-node :Buffer :View
 		     (list id)
 		     (append (list (node->id base))
-			     (loop for i in from collect -1) ;; -1 = needs additional information
+			     (map 'list #'node->id shape)
 			     (map 'list #'node->id from)
 			     (map 'list #'node->id to)
 			     (map 'list #'node->id by)
-			     (loop for i in from collect -1)) ;; -1 = needs additional information
+			     (map 'list #'node->id stride))
 		     :nrank nrank :broadcast broadcast))))
 
 (defun %reshape (x shape &key (id (gensym "RID")) (order :row))
@@ -126,7 +128,4 @@ broadcast=~a"
 		   :nrank (length shape)
 		   :broadcast (loop for i in shape collect nil))))
 
-;; infer view infer stride infer shapeを実装+test
-;; できたらfrontendでlower_gemm, gemm-ctxを実装する
-(defun %permute (x order))
 (defun %bitcast ())
