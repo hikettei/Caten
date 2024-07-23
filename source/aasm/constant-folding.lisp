@@ -1,4 +1,4 @@
-(in-package :caten/api)
+(in-package :caten/aasm)
 
 (defpattern number (x) `(guard ,x (numberp ,x)))
 ;; Folds against scalar values
@@ -35,7 +35,7 @@
   (declare (type Graph graph))
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
 	  ()
-	  "_TmpScalarConst shouldn't exist!")
+ 	  "_TmpScalarConst shouldn't exist!")
   (%0_fuse_load_alloc graph)
   (%1_fold_constant graph)
   (%2_unfold_load_alloc graph)

@@ -1,4 +1,4 @@
-(in-package :caten/api)
+(in-package :caten/aasm)
 ;; A subset of ops
 ;; +-/=
 ;; SIN, SQRT, LOG2, EXP2, RECIP

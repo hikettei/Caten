@@ -1,7 +1,7 @@
 (in-package :cl-user)
 
-(defpackage :caten/api.test
-  (:use :cl :rove :caten/api))
+(defpackage :caten/aasm.test
+  (:use :cl :rove :caten/aasm))
 
-(in-package :caten/api.test)
+(in-package :caten/aasm.test)
 

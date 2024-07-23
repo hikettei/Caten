@@ -1,5 +1,5 @@
 (in-package :cl-user)
-(defpackage :caten/api
+(defpackage :caten/aasm
   (:use :cl :trivia :caten/air :alexandria)
   ;; (:nicknames :caten
 

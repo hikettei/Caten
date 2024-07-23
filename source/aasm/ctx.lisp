@@ -1,4 +1,4 @@
-(in-package :caten/api)
+(in-package :caten/aasm)
 ;; == Context =======
 ;; - only used in api
 ;; - wrapped by more higher level apis in the future
