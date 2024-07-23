@@ -1,6 +1,6 @@
 (cl:in-package :cl-user)
 (defpackage :caten/avm
-  (:use :cl :caten/aasm :caten/air)
+  (:use :cl :caten/aasm :caten/air :alexandria)
   ;; from buffer.lisp
   (:export
    #:*device*
