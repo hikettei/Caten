@@ -27,7 +27,6 @@
 	(loop for node in (graph-nodes graph)
 	      unless (eql id (node-id node)) collect node)))
 
-(defparameter *no-purge-graph* nil "set t when testing simplifier in test-suites.lisp")
 (defun verify-graph (graph)
   "Verify the consistency of the graphs and simplify them by operating following:
 - Checks if all variables are immutable
@@ -52,7 +51,7 @@
 	    ()
 	    "verify-graph: these symbols are undefined. ~a~%~a" undefined graph))
   ;; Purge all isolated graph
-  (unless *no-purge-graph* (purge-isolated-graph graph))
+  (purge-isolated-graph graph)
   ;; Sort the graph by time-series.
   (graph-reorder-by-time graph)
   t)
@@ -70,12 +69,6 @@
 	    (graph-nodes graph)
 	    (loop for n in (graph-nodes graph) if n collect n)))))
 
-;; 時系列順にSortとして，Readが現れたタイミングでWriteを設置する最適化(語彙力)
-;; [TODO] どうやってFor Loopを表現する？
-;; ArefはAccess DAGで表現 (as well as float4 packing)
-;; これにIndexing依存を持たせて，
-;; Simplifierの書き方をAtenと同じアルゴリズムにする
-;; するとReorderする必要がない，EndLoopも表現できる
 (defun graph-reorder-by-time (graph)
   (declare (type graph graph)
 	   (optimize (speed 3)))

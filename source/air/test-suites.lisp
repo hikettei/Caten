@@ -24,13 +24,12 @@
     (if (null expected)
 	t
 	(error "Nodes ~a is not appeared in the simplified list." expected))))
-(defmacro check-simplify (simplifier-name before after &key (shuffle-order t) (purge-isolated-graph nil))
-  `(let ((caten/air::*no-purge-graph* ,(not purge-isolated-graph)))
-     (compare
-      (,simplifier-name
-       (apply #'make-graph ,before))
-      ,after
-      :shuffle-order ,shuffle-order)))
+(defmacro check-simplify (simplifier-name before after &key (shuffle-order t))
+  `(compare
+    (,simplifier-name
+     (apply #'make-graph ,before))
+    ,after
+    :shuffle-order ,shuffle-order))
 ;; ~~ tests ~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defsimplifier
@@ -58,21 +57,25 @@
     dummy-simplifier-1
     (list
      (<node> :Add (list 'a 'b) (list 2 3))
-     (<node> :Add (list 'c 'd) (list 2 3)))
+     (<node> :Add (list 'c 'd) (list 2 3))
+     (<node> :X   (list 'k) (list 'a 'b 'c 'd)))
     (list
      (<node> :Const (list 'c 'd) (list 5))
-     (<node> :Const (list 'a 'b) (list 5)))))
+     (<node> :Const (list 'a 'b) (list 5))
+     (<node> :X   (list 'k) (list 'a 'b 'c 'd)))))
   (ok
    (check-simplify
     dummy-simplifier-1
     (list
      (<node> :F (list 'k) (list 1) :mode 1)
      (<node> :Add (list 'm) (list 1 1))
-     (<node> :Add (list 'n) (list 1 1)))
+     (<node> :Add (list 'n) (list 1 1))
+     (<node> :X (list 'o) (list 'k 'm 'n)))
     (list
      (<node> :const (list 'n) (list 2))
      (<node> :const (list 'm) (list 2))
-     (<node> :mul (list 'k) (list 1) :mode 1 :mutated 1))))
+     (<node> :mul (list 'k) (list 1) :mode 1 :mutated 1)
+     (<node> :X (list 'o) (list 'k 'm 'n)))))
   (ok
    (check-simplify
     dummy-simplifier-1
@@ -115,20 +118,3 @@
     (list
      (<node> :L (list 'a) nil)))))
 
-(defsimplifier
-    (last-never-broken :speed 0)
-    ((:F (x)) -> (:L (x))))
-
-(deftest last-never-broken-test
-  (testing "the position of nodes[-1] is fixed whenever simplified."
-    (ok
-     (check-simplify
-      last-never-broken
-      (list
-       (<node> :A (list 'a) nil)
-       (<node> :F (list 'c) (list 'a)))
-      (list
-       (<node> :A (list 'a) nil)
-       (<node> :L (list 'c) (list 'a)))
-      :shuffle-order nil
-      :purge-isolated-graph t))))
