@@ -30,7 +30,7 @@ jobs:
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Check $PATH
         run: echo $PATH
-      - name: make test
+      - name: Running unittest
         run: |
           ros config set dynamic-space-size 4gb
-          make test
+          ros --eval '(progn (cl:push (cl:pathname "./") ql:*local-project-directories*) (asdf:load-asd "caten.asd") (ql:quickload "caten"))' --eval '(asdf:test-system "caten")'
