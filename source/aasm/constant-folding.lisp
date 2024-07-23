@@ -18,7 +18,7 @@
      ->
      ((node graph)
       (let ((shape-and-stride (map 'list #'(lambda (x) (id->value graph x)) shape-and-stride)))
-	(when (every #'(lambda (x) (eql (node-type x) :_TmpScalarConst)) shape-and-stride)
+	(when (every #'(lambda (x) (and x (eql (node-type x) :_TmpScalarConst))) shape-and-stride)
 	  (make-node
 	   :Buffer :Allocate
 	   (node-writes node) (map 'list (compose #'car #'node-reads) shape-and-stride)
@@ -29,7 +29,7 @@
     ((:_TmpScalarConst (x) :dtype dtype)
      ->
      ((node graph)
-       (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node)))))))
+      (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node)))))))
 
 (defun fold-constant (graph)
   (declare (type Graph graph))

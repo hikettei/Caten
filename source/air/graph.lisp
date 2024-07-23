@@ -33,10 +33,12 @@
 - Checks if all variables are immutable
 - All read dependencies are appearedin writes.
 - Purge all isolated graph
-- Sort by the time"
+- Sort by the time
+- TODO: verify-graph is called multiple times during compilation, needs optimized more."
   (declare (type graph graph)
-	   (optimize (speed 3)))
+	   (optimize (speed 3) (safety 0)))
   ;; Variables are immutable
+  ;; Slow O(n^2) in the worst case.
   (loop for node in (graph-nodes graph)
 	do (id->value graph (node-id node)))
   ;; All variables in reads must be appeared in writes
@@ -67,6 +69,7 @@
 		      nil n))
 	    (graph-nodes graph)
 	    (loop for n in (graph-nodes graph) if n collect n)))))
+
 ;; 時系列順にSortとして，Readが現れたタイミングでWriteを設置する最適化(語彙力)
 ;; [TODO] どうやってFor Loopを表現する？
 ;; ArefはAccess DAGで表現 (as well as float4 packing)

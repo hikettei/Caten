@@ -78,7 +78,7 @@ Defines graph simplification rule
 Tips: return nil to skip the simplification process.
 Tips: (~ x) to accept n-args.
 TODO: Docs"
-  (with-gensyms (graph simplifier-bind apply-bind node-top count-bind last-p)
+  (with-gensyms (graph simplifier-bind apply-bind node-top count-bind)
     `(defun ,name (,graph)
        (declare (type graph ,graph)
 		(optimize (speed ,speed)))
@@ -86,36 +86,34 @@ TODO: Docs"
        (verify-graph ,graph)
        (labels ((,simplifier-bind (,node-top ,count-bind
 				   &aux
-				     (*matched-bind* nil)
-				     (,last-p (= (length (the list (graph-nodes ,graph))) (1+ ,count-bind))))
+				     (*matched-bind* nil))
 		  (declare (type list *matched-bind*))
 		  (when (null ,node-top) (return-from ,simplifier-bind))
 		  (multiple-value-bind (replace-rule matched)
 		      (match ,node-top
 			,@(map 'list #'(lambda (x) (parse-rule x node-top graph)) rules)
 			(_ nil))
-		    (when (node-p replace-rule)
-		      (setf replace-rule (list replace-rule)))
 		    (when (and replace-rule matched)
-		      (dolist (r matched)
-			;; keep the top of pattern, writes are not lost.
-			(if (eql r (node-id ,node-top))
-			    (remnode ,graph r)
-			    ;; Purge the matched node if not anymore used.
-			    (let ((writes (node-writes (id->node ,graph r))))
-			      (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
-				(remnode ,graph r)))))
+		      (when (node-p replace-rule) (setf replace-rule (list replace-rule)))
 		      (setf (graph-nodes ,graph)
-			    (if ,last-p
-				(concatenate 'list (graph-nodes ,graph) replace-rule)
-				(append replace-rule (graph-nodes ,graph))))
-		      t)
-		    nil))
+			    (append
+			     (subseq (graph-nodes ,graph) 0 ,count-bind)
+			     replace-rule
+			     (subseq (graph-nodes ,graph) (1+ ,count-bind))))
+		      ;; this may not be required but reduce the number of nodes as many as possible
+		      (dolist (r matched)
+			;; the top node of matched patten is always replaced.
+			(when (not (eql r (node-id ,node-top)))
+			  ;; Subsequent nodes are removed if they are not used.
+			  (let ((writes (node-writes (id->node ,graph r))))
+			    (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
+			      (remnode ,graph r)))))
+		      t)))
 		(,apply-bind (graph &aux (changed-p nil))
 		  (dotimes (nth (length (graph-nodes graph)))
 		    (when (,simplifier-bind (nth nth (graph-nodes graph)) nth)
 		      (setf changed-p t)))
 		  changed-p))
-	 (dotimes (i 2) (loop while (,apply-bind ,graph)))
+	 (loop while (,apply-bind ,graph))
 	 (verify-graph ,graph)
 	 ,graph))))
