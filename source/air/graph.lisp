@@ -35,7 +35,7 @@
 - Sort by the time
 - TODO: verify-graph is called multiple times during compilation, needs optimized more."
   (declare (type graph graph)
-	   (optimize (speed 3) (safety 0)))
+	   (optimize (speed 3)))
   ;; Variables are immutable
   ;; Slow O(n^2) in the worst case.
   (loop for node in (graph-nodes graph)
@@ -53,7 +53,7 @@
   ;; Purge all isolated graph
   (purge-isolated-graph graph)
   ;; Sort the graph by time-series.
-  (graph-reorder-by-time graph)
+  ;;(graph-reorder-by-time graph)
   t)
 
 (defun purge-isolated-graph (graph)
@@ -69,12 +69,12 @@
 	    (graph-nodes graph)
 	    (loop for n in (graph-nodes graph) if n collect n)))))
 
-(defun graph-reorder-by-time (graph)
-  (declare (type graph graph)
-	   (optimize (speed 3)))
-  (when (null (graph-nodes graph)) (return-from graph-reorder-by-time))
+;;(defun graph-reorder-by-time (graph)
+;;  (declare (type graph graph)
+;;	   (optimize (speed 3)))
+;;  (when (null (graph-nodes graph)) (return-from graph-reorder-by-time))
   ;; Starting from the last indexed node. Assume this is the main graph
   ;; and all the other graph are subgraph (to be purged)
-  (let ((toplevel (node-writes (car (last (graph-nodes graph))))))
+;;  (let ((toplevel (node-writes (car (last (graph-nodes graph))))))
     
-    ))
+;;    ))

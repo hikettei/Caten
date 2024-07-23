@@ -31,4 +31,7 @@
    #:%neg
    #:%recip
    #:%sqrt
-   ))
+   )
+  ;; from constant-folding.lisp
+  (:export
+   #:fold-constant))

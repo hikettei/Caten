@@ -14,15 +14,22 @@
     ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y))))
      ->
      (:_TmpScalarConst ((* x y)) :dtype dtype))
-    ((:Allocate (~ shape-and-stride) :nrank (guard nrank (> 0)) :dtype dtype)
+    ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype)
      ->
      ((node graph)
-      (let ((shape-and-stride (map 'list #'(lambda (x) (id->value graph x)) shape-and-stride)))
-	(when (every #'(lambda (x) (and x (eql (node-type x) :_TmpScalarConst))) shape-and-stride)
-	  (make-node
-	   :Buffer :Allocate
-	   (node-writes node) (map 'list (compose #'car #'node-reads) shape-and-stride)
-	   :nrank nrank :dtype dtype))))))
+      (when ss
+	(let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
+	       (new-shape (loop for ss-node in ss-nodes
+				for ss-val  in ss
+				if (and ss-node (eql (node-type ss-node) :_TmpScalarConst))
+				  collect (car (node-reads ss-node))
+				else
+				  collect ss-val)))
+	  (unless (equal new-shape ss)
+	    (make-node
+	     :Buffer :Allocate
+	     (node-writes node) new-shape
+	     :nrank nrank :dtype dtype)))))))
 
 (defsimplifier
     (%2_unfold_load_alloc)
