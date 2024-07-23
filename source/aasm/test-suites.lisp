@@ -21,7 +21,7 @@
 		 `(ok
 		   (check-schedule
 		    (with-context
-			(a (%make-tensor ',s1))
+		      (a (%make-tensor ',s1))
 		      (b (%make-tensor ',s2))
 		      (c (%add a b)))
 		    ,count))))
@@ -32,7 +32,7 @@
   (testing "Tensor Creation (w/o constant folding vs worst case)"
     (macrolet ((make (s1 s2)
 		 `(with-context
-		      (a (%make-tensor ',s1))
+		    (a (%make-tensor ',s1))
 		    (b (%make-tensor ',s2))
 		    (c (%add a b)))))
       ;; Needs to be updated if we fold symbols
@@ -44,8 +44,19 @@
 		 `(ok
 		   (check-schedule
 		    (with-context
-			(a (%make-tensor ',s1))
+		      (a (%make-tensor ',s1))
 		      (b (%view a ',frm ',to ',by ',bc)))
 		    ,count))))
       (check (5 5 5) (0 0 0) (5 5 5) (1 1 1) (nil nil nil) 2)
-      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 34))))
+      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 34)))
+  (testing "Reshape Creation"
+    (macrolet ((check (s1 s2 count)
+		 `(ok
+		   (check-schedule
+		    (with-context
+		      (a (%make-tensor ',s1))
+		      (b (%reshape a ',s2)))
+		    ,count))))
+      (check (1 2 3) (6) 2)
+      (check (1 2 3) (d) 4)
+      (check (a b c) (d) 18))))

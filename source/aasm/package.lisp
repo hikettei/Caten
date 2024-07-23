@@ -43,4 +43,5 @@
   ;; from view.lisp
   (:export
    #:%view
+   #:%reshape
    ))

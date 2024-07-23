@@ -33,4 +33,27 @@ broadcast=~a"
 			     (map 'list #'node->id by))
 		     :nrank nrank :broadcast broadcast))))
 
+(defun %reshape (x shape &key (id (gensym "RID")))
+  "In-placed reshape"
+  (declare (type node x)
+	   (type list shape))
+  (flet ((->const (x) (if (node-p x) x (%iconst x))))
+    (setf shape (map 'list #'->const shape)))
+  
+  (assert (every #'node-p shape)
+	  ()
+	  "Assertion Failed: shape must be a list of Node.")
+  (emit (make-node :Buffer :View (list id)
+		   (append
+		    (list (node->id x))
+		    ;; from
+		    (loop for i in shape collect (node->id (%iconst 0)))
+		    ;; to
+		    (map 'list #'node->id shape)
+		    ;; by
+		    (loop for i in shape collect (node->id (%iconst 1))))
+		   :nrank (length shape)
+		   :broadcast (loop for i in shape collect nil))))
+
+(defun %permute ())
 (defun %bitcast ())
