@@ -9,15 +9,15 @@ a place to test my idea.
 Everything is a syntax sugar for ./source/air.
 
 ```
-------------------------------------------------------------------------------------
-./source/air     | An optimized pattern matcher for DAG, the core of IR system.
-./source/aasm    | Abstract Internal IR for aVM 
-./source/avm     | Abstract+VM, an extensible simulator for aasm (but enough fast)
-./source/ajit    | it lowers aasm into more lower irs, generating the kernel codes.
 --- core ---------------------------------------------------------------------------
-./source/lang    | a compiler from lisp to aIR (helping the complicated subscript notation like Conv/einsum) 
-./source/api     | Syntax sugar for core notations, including AbstractTensor, autodiff engine.
-./source/nn      | a syntax sugar which implements nn ops and optimizers
+0 | ./source/air     | An optimized pattern matcher for DAG, the core of IR system.
+1 | ./source/aasm    | Abstract Internal IR for aVM 
+2 | ./source/avm     | Abstract+VM, an extensible simulator for aasm (but enough fast)
+3 | ./source/ajit    | it lowers aasm into more lower irs, generating the kernel codes.
+--- frontend -----------------------------------------------------------------------
+4 | ./source/lang    | a compiler from lisp to aIR (helping the complicated subscript notation like Conv/einsum) 
+5 | ./source/api     | Syntax sugar for core notations, including AbstractTensor, autodiff engine.
+6 | ./source/nn      | a syntax sugar which implements nn ops and optimizers
 --- external -----------------------------------------------------------------------
 ./external/avm/clang  | avm implementation using clang
 ./external/ajit/clang | ajit implementation using clang
