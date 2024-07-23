@@ -92,7 +92,7 @@ stride=~a" nrank shape stride)
   (flet ((const (n) (if (node-p n) n (%load (%salloc :dtype dtype) n))))
     (map 'list #'const shape)))
 
-(defun %make-tensor (shape &key (dtype *default-float*) (order :row))
+(defun %make-tensor (shape &key (dtype *default-float*) (order :row) (id (gensym "TID")))
   "A useful wrapper for %alloc. it computes stride based on order.
 %make-tensor is used to allocate the initial tensor, later weights are loaded."
   (declare (type list shape)
@@ -105,5 +105,5 @@ stride=~a" nrank shape stride)
   (let ((permute (range 0 (length shape))))
     (when (eql order :column)
       (setf permute (reverse permute)))
-    (%alloc (length shape) (%shape shape) (%stride shape permute) :dtype dtype)))
+    (%alloc (length shape) (%shape shape) (%stride shape permute) :dtype dtype :id id)))
 
