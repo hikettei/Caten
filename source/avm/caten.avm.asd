@@ -6,8 +6,9 @@
   :serial t
   :components
   ((:file "package")
-
-   )
+   (:file "buffer")
+   (:file "runtime")
+   (:file "lisp-backend"))
   :in-order-to ((test-op (asdf:test-op "caten.avm/test"))))
 
 (asdf:defsystem "caten.avm/test"

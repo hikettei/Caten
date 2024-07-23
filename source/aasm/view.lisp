@@ -136,7 +136,7 @@ broadcast=~a"
      (a  (%make-tensor `(,n ,n) :id 'X))
      (b  (%make-tensor `(,n ,n) :id 'Y))
      (a1 (%view a `(,n 1 ,n) `(0 0 0) `(,n 1 ,n) `(1 1 1) `(nil t nil) (%stride `(,n 1 ,n) (range 0 3))))
-     (b1 (%view a `(1 ,n ,n) `(0 0 0) `(1 ,n ,n) `(1 1 1) `(t nil nil) (%stride `(1 ,n ,n) (range 0 3))))
+     (b1 (%view b `(1 ,n ,n) `(0 0 0) `(1 ,n ,n) `(1 1 1) `(t nil nil) (%stride `(1 ,n ,n) (range 0 3))))
      (o  (%mul a1 b1))
      (c  (%make-tensor `(,n ,n)))
      (c  (%view c `(,n ,n 1) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil nil t) (%stride `(,n ,n 1) (range 0 3))))
