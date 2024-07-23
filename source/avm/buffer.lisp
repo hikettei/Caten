@@ -17,10 +17,15 @@
 (defgeneric %vm/allocate-buffer (device-id buffer)
   (:documentation "This method allocates new array/scalar based on buffer, modifying buffer-value, returning buffer."))
 
-(defun realize-buffer (graph id)
+(defun realize-buffer (graph id &key shape1 stride1 views1)
   "allocates the id"
   (declare (type graph graph)
 	   (type symbol id))
-  (%vm/allocate-buffer
-   *device*
-   (apply #'make-buffer (multiple-value-list (infer-tensor-info graph id)))))
+  (multiple-value-bind (nrank shape stride dtype views)
+      (infer-tensor-info graph id)
+    (when shape1  (setf shape shape1))
+    (when stride1 (setf stride stride1))
+    (when views1  (setf views views1))
+    (%vm/allocate-buffer
+     *device*
+     (make-buffer nrank shape stride dtype views))))

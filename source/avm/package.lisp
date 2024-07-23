@@ -8,6 +8,10 @@
    #:Buffer #:buffer-nrank #:buffer-value #:buffer-dtype #:buffer-shape #:buffer-stride #:buffer-views
    #:%vm/allocate-buffer
    #:realize-buffer)
+  ;; from helpers.lisp
+  (:export
+   #:parse-allocate-node
+   #:parse-view-node)
   ;; from opset.lisp
   (:export
    #:%impl

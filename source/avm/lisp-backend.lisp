@@ -2,10 +2,10 @@
 
 (defun dtype->lisp (dtype)
   (case dtype
-    (:double 'double-float)
-    (:float  'single-float)
-    (:uint32 '(unsigned-byte 32))
-    (:int32  '(signed-byte 32))
+    (:float64 'double-float)
+    (:float32 'single-float)
+    (:uint32  '(unsigned-byte 32))
+    (:int32   '(signed-byte 32))
     (otherwise (error "dtype->lisp: ~a is not supported" dtype))))
 
 (defmethod %vm/allocate-buffer ((device-id (eql :lisp)) buffer)
@@ -17,6 +17,7 @@
 			:initial-element (coerce 0 (dtype->lisp (buffer-dtype buffer))))))      
   buffer)
 
-(defmethod %impl ((device-id (eql :lisp)) (op (eql :Add)) graph node args)
-  
-  )
+(defmethod %impl ((device-id (eql :lisp)) (op (eql :Allocate)) graph node args)
+  (multiple-value-bind (shape stride)
+      (parse-allocate-node node args)
+    (realize-buffer graph (node->id node) :shape1 shape :stride1 stride)))
