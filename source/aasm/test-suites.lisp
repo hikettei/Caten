@@ -62,14 +62,29 @@
       (check (a b c) (d) 18))))
 
 (deftest infer-tensor-info
-  (ok
-   (let ((g (with-context
-	      (a (%make-tensor `(3 3)))
-	      (b (%reshape a `(9) :id 'X)))))
-     (multiple-value-bind (nrank shape stride dtype view)
-	 (infer-tensor-info g 'X)
-       (assert (= nrank 2))
-       (assert (equal shape `(9)))
-       (assert (equal stride `(1)))
-       (assert (eql dtype :float32))
-       (assert (equal view `((0) (9) (1) (nil))))))))
+  (macrolet ((ssa-form (&rest form) `(fold-constant (with-context ,@form))))
+    (ok
+     (let ((g (ssa-form
+	       (a (%make-tensor `(3 3)))
+	       (b (%reshape a `(9) :id 'X)))))
+       (multiple-value-bind (nrank shape stride dtype view)
+	   (infer-tensor-info g 'X)
+	 (assert (= nrank 1))
+	 (assert (equal shape `(9)))
+	 (assert (equal stride `(1)))
+	 (assert (eql dtype :float32))
+	 (assert (equal view `((0) (9) (1) (nil))))
+	 t)))
+    (ok
+     (let ((g (ssa-form
+	       (a (%make-tensor `(3 3)))
+	       (b (%view a `(0 0) `(3 3) `(1 1) `(nil nil)))
+	       (c (%sqrt b :id 'X)))))
+       (multiple-value-bind (nrank shape stride dtype view)
+	   (infer-tensor-info g 'X)
+	 (assert (= nrank 2))
+	 (assert (equal shape `(3 3)))
+	 (assert (equal stride `(3 1)))
+	 (assert (eql dtype :float32))
+	 (assert (equal view `((0 0) (3 3) (1 1) (nil nil))))
+	 t)))))

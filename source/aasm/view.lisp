@@ -9,6 +9,7 @@
     (flet ((complete? ()
 	     (or (and nrank (= nrank 0) dtype)
 		 (and nrank shape dtype view-from view-to view-by broadcast stride)))
+	   (identity1 (x) (and (integerp x) (= x -1)))
 	   (base? ()
 	     (or (and nrank (= nrank 0) dtype)
 		 (and nrank shape dtype stride)))
@@ -26,17 +27,20 @@
 		       (:View
 			(let* ((nrank1     (getattr node :nrank))
 			       (broadcast1 (getattr node :broadcast))
-			       (restride   (the fixnum (getattr node :restride)))
-			       (view-from1 (subseq1p (node-reads node) 0 nrank1))
-			       (view-to1   (subseq1p (node-reads node) nrank1 (+ nrank1 nrank1)))
-			       (view-by1   (subseq1p (node-reads node) (+ nrank1 nrank1) (* 3 nrank1)))
-			       (stride1    (when (= restride 1) (subseq1p (node-reads node) (* 3 nrank1) (* 4 nrank1)))))
+			       (shape1     (subseq1p (node-reads node) 0 nrank1))
+			       (view-from1 (subseq1p (node-reads node) nrank1 (+ nrank1 nrank1)))
+			       (view-to1   (subseq1p (node-reads node) (+ nrank1 nrank1) (* 3 nrank1)))
+			       (view-by1   (subseq1p (node-reads node) (* 3 nrank1) (* 4 nrank1)))
+			       (stride1    (subseq1p (node-reads node) (* 4 nrank1) (* 5 nrank1))))			       
 			  (update nrank nrank1)
 			  (update broadcast broadcast1)
 			  (update view-from view-from1)
 			  (update view-to view-to1)
 			  (update view-by view-by1)
-			  (when restride (update stride stride1))
+			  (when (not (some #'identity1 shape1))
+			    (update shape shape1))
+			  (when (not (some #'identity1 stride1))
+			    (update stride stride1))
 			  (when (complete?) (finish))
 			  (helper (car (node-reads node)))))
 		       (:Allocate
@@ -85,15 +89,18 @@ broadcast=~a"
     (emit (make-node :Buffer :View
 		     (list id)
 		     (append (list (node->id base))
+			     (loop for i in from collect -1) ;; -1 = needs additional information
 			     (map 'list #'node->id from)
 			     (map 'list #'node->id to)
-			     (map 'list #'node->id by))
-		     :nrank nrank :broadcast broadcast :restride 0))))
+			     (map 'list #'node->id by)
+			     (loop for i in from collect -1)) ;; -1 = needs additional information
+		     :nrank nrank :broadcast broadcast))))
 
-(defun %reshape (x shape &key (id (gensym "RID")))
+(defun %reshape (x shape &key (id (gensym "RID")) (order :row))
   "In-placed reshape"
   (declare (type node x)
-	   (type list shape))
+	   (type list shape)
+	   (type (member :row :column) order))
   (flet ((->const (x) (if (node-p x) x (%iconst x))))
     (setf shape (map 'list #'->const shape)))
   
@@ -103,26 +110,23 @@ broadcast=~a"
   (emit (make-node :Buffer :View (list id)
 		   (append
 		    (list (node->id x))
+		    ;;shape
+		    (map 'list #'node->id shape)
 		    ;; from
 		    (loop for i in shape collect (node->id (%iconst 0)))
 		    ;; to
 		    (map 'list #'node->id shape)
 		    ;; by
-		    (loop for i in shape collect (node->id (%iconst 1))))
+		    (loop for i in shape collect (node->id (%iconst 1)))
+		    ;; stride
+		    (let ((permute (range 0 (length shape))))
+		      (when (eql order :column)
+			(setf permute (reverse permute)))
+		      (map 'list #'node->id (%stride shape permute))))
 		   :nrank (length shape)
-		   :broadcast (loop for i in shape collect nil) :restride 0)))
-
-(defun %restride (x stride &key (id (gensym "RID")))
-  (declare (type node x) (type list stride))
-  (flet ((->const (x) (if (node-p x) x (%iconst x))))
-    (setf stride (map 'list #'->const stride)))
-
-  (assert (every #'node-p stride)
-	  ()
-	  "Assertion Failed: stride must be a list of Node.")
-  )
+		   :broadcast (loop for i in shape collect nil))))
 
 ;; infer view infer stride infer shapeを実装+test
 ;; できたらfrontendでlower_gemm, gemm-ctxを実装する
-(defun %permute ())
+(defun %permute (x order))
 (defun %bitcast ())
