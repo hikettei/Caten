@@ -9,11 +9,11 @@ on:
 
 jobs:
   UnitTest:
-    name: (${{ matrix.os }} on ${{ matrix.lisp }}) | UnitTest
+    name: Unittests on (${{ matrix.lisp }}))
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        lisp: [sbcl-bin/2.4.0, ccl-bin]
+        lisp: [sbcl-bin, ccl-bin]
         os: [ubuntu-latest]
         target:
         - normal
