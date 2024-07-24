@@ -30,11 +30,12 @@
     ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y))))
      ->
      (:_TmpScalarConst ((* x y)) :dtype dtype))
-    ;; x * 0 -> 0
     ((:Mul (x (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph x node)))
     ((:Mul ((:_TmpScalarConst ((= 0))) x)) -> ((node graph) (reinitialize-tensor graph x node)))
+    ((:Add (x (:_TmpScalarConst ((= 0))))) -> (:_TmpPurged (x)))
+    ((:Add ((:_TmpScalarConst ((= 0))) x)) -> (:_TmpPurged (x)))
     ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype)
-     ->
+     -> ;; inlining the shape/stride computation
      ((node graph)
       (when ss
 	(let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
@@ -84,4 +85,20 @@
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
 	  ()
 	  "_TmpScalarConst shouldn't exist! (but it is a simplifier's bug)")
+  (let ((purges (loop for node in (graph-nodes graph)
+		      if (eql (node-type node) :_TmpPurged)
+			collect node)))
+    (dolist (pnode purges)
+      (assert (symbolp (car (node-reads pnode))))
+      (flet ((->new (x)
+	       (if (eql (car (node-writes pnode)) x)
+		   (car (node-reads pnode))
+		   x)))
+	(loop for node in (graph-nodes graph)
+	      if (not (eql (node-type node) :_TmpPurged))
+		do (setf (node-reads node) (map 'list #'->new (node-reads node)))))))
+  (verify-graph graph)
+  (assert (null (find :_TmpPurged (graph-nodes graph) :key #'node-type))
+	  ()
+	  "_TmpPurged shouldn't exist! (it is a simplifier's bug)")
   graph)

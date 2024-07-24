@@ -88,3 +88,21 @@
 	 (assert (eql dtype :float32))
 	 (assert (equal view `((0 0) (3 3) (1 1) (nil nil))))
 	 t)))))
+
+(defun %arange (shape a b &key (dtype :float32) (order :row))
+  (with-context
+    (m (%make-tensor shape :dtype dtype :order order))
+    (i (%index-components m))
+    (alpha (%load (%salloc :dtype dtype) a))
+    (beta  (%load (%salloc :dtype dtype) b))
+    ;; a = alpha * i + b
+    (t1 (%mul i alpha))
+    (t2 (%add t1 beta))
+    (c  (%store m t2))))
+
+(deftest test-arange-kernel-count
+  (ok (check-schedule (%arange `(3 3) 3 3) 9))
+  (ok (check-schedule (%arange `(3 3) 0 3) 6))
+  (ok (check-schedule (%arange `(3 3) 3 0) 6))
+  ;; can be folded into one.
+  (ok (check-schedule (%arange `(3 3) 0 0) 3)))

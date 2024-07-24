@@ -119,6 +119,10 @@
 	       `(%eval
 		 ,ans
 		 (with-context (_ (%arange ',shape ,a ,b :order ,order))))))
+    ;; constant folding
+    (testwhen :column (2 2) 0 0 #(0 0 0 0))
+    (testwhen :column (2 2) 0 1 #(1 1 1 1))
+    (testwhen :column (2 2) 1 0 #(0 1 2 3))
     (testwhen :row (3 5) 2 1 #(1.0 7.0 13.0 19.0 25.0 3.0 9.0 15.0 21.0 27.0 5.0 11.0 17.0 23.0 29.0))
     (testwhen :column (3 5) 2 1 #(1.0 3.0 5.0 7.0 9.0 11.0 13.0 15.0 17.0 19.0 21.0 23.0 25.0 27.0 29.0))
     (testwhen :row (3 5 5) 3 1 #(1.0 46.0 91.0 136.0 181.0 10.0 55.0 100.0 145.0 190.0 19.0 64.0
