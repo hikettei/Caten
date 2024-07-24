@@ -15,4 +15,9 @@
   ;; from opset.lisp
   (:export
    #:%impl
-   ))
+   )
+  ;; from runtime.lisp
+  (:export
+   #:%realize
+   #:realize)
+  )

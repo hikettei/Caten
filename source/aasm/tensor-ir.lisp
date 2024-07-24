@@ -63,7 +63,7 @@ stride=~a" nrank shape stride)
   (emit (make-node :Buffer :Store (list id) (list (node->id x) (node->id y)))))
 
 (defun %uconst (value &key (dtype *default-uint*))
-  "Creates a unsigned integer"
+  "Creates an unsigned integer"
   (%load (%salloc :dtype dtype) value))
 (defun %iconst (value &key (dtype *default-int*))
   "Creates a signed integer"

@@ -50,7 +50,8 @@
   (let ((final-result))
     (loop while (< (avm-pc avm) (avm-tape-length avm)) do (setf final-result (vm/step avm)))
     (apply #'values final-result)))
-(defun realize (graph &key (params))
+(defun %realize (graph &key (params))
   "params: ((key . value) ...) "
   (declare (type graph graph))
   (vm/run (make-avm graph params)))
+(defun realize (graph &key (params)) (%realize graph :params params))
