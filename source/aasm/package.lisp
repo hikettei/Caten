@@ -26,7 +26,7 @@
   (:export
    #:with-context
    #:with-context-nodes
-   #:with-ssa
+   #:with-asm
    #:*ctx*
    #:emit)
   ;; from ops.lisp

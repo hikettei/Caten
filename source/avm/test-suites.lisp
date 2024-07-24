@@ -12,7 +12,7 @@
 
 ;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %arange (shape a b &key (dtype :float32) (order :row))
-  (with-ssa
+  (with-asm
     (m (%make-tensor shape :dtype dtype :order order))
     (i (%index-components m))
     (alpha (%load (%salloc :dtype dtype) a))
