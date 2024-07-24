@@ -25,6 +25,13 @@ Everything is a syntax sugar for ./source/air.
 ------------------------------------------------------------------------------------
 ```
 
+```
+Composite (e.g.: Linera, Conv2d) -> [Lower] -> Function (e.g.: Add) -> [Lower] -> ASM (e.g.: %add)
+-> [Lower] -> AJit
+or
+-> AVM
+```
+
 ## TODO
 
 - pre-commit

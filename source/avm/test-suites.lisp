@@ -151,12 +151,33 @@
      (m2 (%arange `(3 3) 0 0 :order :column))
      (d (%where c m1 m2)))))
 
-(defun %triu (input &key (diagonal 0))
-  (with-asm
-    
-    ))
+(deftest test-view
+  (testing "Slicing the tensor"
+    (%eval
+     #(5 6)
+     (with-context
+       (a (%arange `(4 4) 1 0 :order :column))
+       (b (%arange `(2 2) 0 0 :order :column))
+       (v (%view a `(2 2) `(1 1) `(3 3) `(1 1) `(nil nil) (%stride `(4 4) `(1 0))))
+       (out (%add b v))))))
+       
+
+;; Testing:
+;;   -1. Slice
+;;   -2. Broadcast
+;;   -3 -1 Indexing
+;;   -4. Composed View and infer-tensor-info
+;;   -5. testing viewed constant folding
+;;   - TODO: (arange x 0 0) into a single kernel. (Store 0=0 Fusion)
+;; 
+;;
+;; AASM
+;;(defun %triu (input &key (diagonal 0))
+;;  (with-asm
+;;    
+;;    ))
 ;; [memo]
-;;  Goal1 Tensor初期化の実装 (arange (OK)，randn, beta distribution)
+;;  Goal1 (OK) Tensor初期化の実装 (arange (OK)，randn, beta distribution)
 ;;    -> implement torch.triu
 ;;    -> implement logical.lisp, %where
 ;;  lazy-index-componentとmaskingを組み合わせて，VMの段階でeinsum的なアクセスができるようにする

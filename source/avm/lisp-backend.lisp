@@ -47,8 +47,8 @@
 		 (loop for n upfrom 0
 		       for buff in `(,result ,@buffers)
 		       for view = (nth dim (buffer-views buff))
-		       if (and view (car view))
-			 do (setf (nth n offsets) (* (nth n (buffer-stride buff)) (car view))))
+		       if view
+			 do (incf (nth n offsets) (* (nth dim (buffer-stride buff)) (car view))))
 		 (loop for n upfrom 0 below size
 		       do (if (= dim 0)
 			      (if index-components-p
@@ -56,9 +56,9 @@
 				    (setf (aref (buffer-value result) (car offsets)) index-components)
 				    (incf index-components))
 				  (if (= (buffer-nrank result) 0)
-				      (setf (buffer-value result) (apply op (map 'list #'bref buffers offsets)))
+				      (setf (buffer-value result) (apply op (map 'list #'bref buffers (cdr offsets))))
 				      (setf (aref (buffer-value result) (car offsets))
-					    (apply op (map 'list #'bref buffers offsets)))))
+					    (apply op (map 'list #'bref buffers (cdr offsets))))))
 			      (explore (1- dim) (copy-list offsets)))
 			  (loop for n upfrom 0
 				for buff in `(,result ,@buffers)
@@ -68,8 +68,7 @@
 				  do (if (fourth view)
 					 nil ;; broadcast
 					 (incf (nth n offsets) (* (third view) stride)))
-				else if stride
-				       do (incf (nth n offsets) stride))))))
+				else if stride do (incf (nth n offsets) stride))))))
       (explore (1- nrank) offsets))))
 
 (defun map-view (op &rest buffers)
