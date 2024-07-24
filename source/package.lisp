@@ -6,9 +6,11 @@
 - Merge View Solver
 - ASM Bindings
 - Graph Caller")
-  (:use :cl :caten/aasm :caten/air :caten/avm)
+  (:use :cl :trivia :cl-ppcre :caten/aasm :caten/air :caten/avm)
   ;; from tensor.lisp
   (:export
    #:make-tensor
    )
+  ;; from shape-tracker.lisp
+  (:export #:st)
   )

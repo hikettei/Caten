@@ -3,9 +3,10 @@
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
   :depends-on
-  ("rove" "caten.air" "caten.aasm" "caten.avm")
+  ("rove" "trivia" "cl-ppcre" "caten.air" "caten.aasm" "caten.avm")
   :pathname "source"
   :components ((:file "package")
+	       (:file "helpers")
 	       (:file "tensor")
 	       (:file "shape-tracker")
 	       (:file "merge-views")

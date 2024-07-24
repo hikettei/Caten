@@ -58,6 +58,10 @@ $ COVERAGE=1 make test
 
 - (In the future) reimplement the frontend in Coalton
 
+- MoEのGatingとかKV CacheをうまくCにExportできるIRを考える
+
+    - `:Graph`の名前空間にLoweringしないやつを作る (If/For/DefModule)
+
 ## Installing (WIP)
 
 ```sh
@@ -65,3 +69,12 @@ $ ros install hikettei/caten
 $ caten --help
 ```
 
+## Dependencies
+
+- trivia
+
+- alexandria
+
+- rove
+
+- cl-ppcre
