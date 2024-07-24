@@ -20,4 +20,4 @@
   :components
   ((:file "test-suites"))
   :perform
-  (test-op (o s) (uiop:symbol-call (find-package :rove) :run-suite :caten/aasm.test)))
+  (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style :dot)))
