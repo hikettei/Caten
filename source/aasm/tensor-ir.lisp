@@ -50,11 +50,11 @@ stride=~a" nrank shape stride)
   (emit (make-node :Buffer :Allocate (list id) nil :nrank 0 :dtype dtype)))
 
 (defun %load (node value &key (id (gensym "LID")))
-  "Equivalent to: `i = initial_value;`"
+  "Equivalent to: `i = initial_value;` where i is a scalar of tensor.
+If i is a tensor, %load fills the visible area of i with value."
   (declare (type Node node))
   (assert (eql (node-class node) :Buffer)   ())
   (assert (eql (node-type  node) :Allocate) ())
-  (assert (eql (getattr node :nrank) 0) () "%load is only applied to scalar buffers.")
   (emit (make-node :Buffer :Load (list id) (list (node->id node)) :value value)))
 
 (defun %store (x y &key (id (gensym "LID")))

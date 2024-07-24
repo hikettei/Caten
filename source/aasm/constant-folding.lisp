@@ -14,6 +14,9 @@
     ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y))))
      ->
      (:_TmpScalarConst ((* x y)) :dtype dtype))
+    ;((:Mul ((:_TmpScalarConst ((= 0)) :dtype dtype) x))
+    ; ->
+    ; ((node graph) ))	   
     ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype)
      ->
      ((node graph)

@@ -92,10 +92,12 @@
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Load)) graph node args)
   (let* ((tgt (car args))
-	 (val (getattr node :value))
-	 (out (copy-buffer tgt)))
-    (setf (buffer-value out) val)
-    out))
+	 (val (getattr node :value)))
+    (if (= (buffer-nrank (car args)) 0)
+	(let ((out (copy-buffer tgt)))
+	  (setf (buffer-value out) val)
+	  out)
+	(map-view #'(lambda (x) x val) (car args)))))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :store)) graph node args)
   (let* ((to (copy-buffer (car args))))
