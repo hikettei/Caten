@@ -57,4 +57,8 @@
    #:infer-tensor-info
    #:%view
    #:%reshape
-   ))
+   )
+  ;; from logical.lisp
+  (:export
+   #:%where)
+  )

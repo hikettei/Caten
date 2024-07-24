@@ -15,7 +15,7 @@
   `(graph-nodes (with-context ,@ssa-forms)))
 (defmacro with-asm (&rest ssa-forms)
   "ssa-forms: (bind-to form)"
-  `(let* (,@ssa-forms) (declare (ignorable ,@(map 'list #'car ssa-forms)))))
+  `(let* (,@ssa-forms) (declare (ignorable ,@(map 'list #'car ssa-forms))) ,(caar (last ssa-forms))))
 (defmacro emit (form)
   `(if *ctx*
        (let ((out ,form))

@@ -92,7 +92,7 @@
     (testwhen %> 2 1 #(t t t t t t t t t))
     (testwhen %>= 2 2 #(t t t t t t t t t ))
     (testwhen %< 2 1 #(nil nil nil nil nil nil nil nil nil))
-    (testwhen %<= 2 2 #(t t t t t t t t t ))))
+    (testwhen %<= 2 2 #(t t t t t t t t t))))
 
 (deftest test-index-components
   (macrolet ((testwhen (order shape ans)
@@ -135,6 +135,17 @@
 				    151.0 154.0 157.0 160.0 163.0 166.0 169.0 172.0 175.0 178.0 181.0
 				    184.0 187.0 190.0 193.0 196.0 199.0 202.0 205.0 208.0 211.0 214.0
 				    217.0 220.0 223.0))))
+
+(deftest test-where
+  (%eval
+   #(0 0 1 0 0 0 0 0 0)
+   (with-context
+     (a (%arange `(3 3) 1 0 :order :column))
+     (b (%arange `(3 3) 0 2 :order :column))
+     (c (%= `(3 3) :column a b))
+     (m1 (%arange `(3 3) 0 1 :order :column))
+     (m2 (%arange `(3 3) 0 0 :order :column))
+     (d (%where c m1 m2)))))
 
 (defun %triu (input &key (diagonal 0))
   (with-asm

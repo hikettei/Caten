@@ -35,7 +35,6 @@
 		  (emit (make-node :TernaryOps ,opname (list id) (list (node->id out) (node->id x) (node->id y))))))))
   (def %!= :NEQ)
   (def %< :LT))
-;; TODO: simplify logical ops
 (defun %= (shape order x y)  (%not (%!= shape order x y)))
 (defun %<= (shape order x y) (%or (%< shape order x y) (%= shape order x y)))
 (defun %>  (shape order x y) (%not (%<= shape order x y)))

@@ -16,7 +16,7 @@ Everything is a syntax sugar for ./source/air.
 3 | ./source/ajit    | it lowers aasm into more lower irs, generating the kernel codes.
 --- frontend -----------------------------------------------------------------------
 4 | ./source/lang    | a compiler from lisp to aIR (helping the complicated subscript notation like Conv/einsum) 
-5 | ./source/api     | Syntax sugar for core notations, including AbstractTensor, autodiff engine.
+5 | ./source/api     | Syntax sugar for core notations, including AbstractTensor, autodiff engine. (-> ./source/package.lisp?)
 6 | ./source/nn      | a syntax sugar which implements nn ops and optimizers
 --- external -----------------------------------------------------------------------
 ./external/avm/clang  | avm implementation using clang
