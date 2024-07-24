@@ -23,7 +23,7 @@
 	(member
 	 :float64 :float32 :float64
 	 :uint64 :uint32 :uint16 :uint8
-	 :int64 :int32 :int16 :int8)))
+	 :int64 :int32 :int16 :int8 :bool)))
 
 (defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")))
   "Equivalent to `dtype i[shape];`"

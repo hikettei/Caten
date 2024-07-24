@@ -4,3 +4,4 @@
 ;; simplifierでloweringする段階でfusionを実行する
 ;; logical ops (e.g.: and/or, eq)
 ;; where
+

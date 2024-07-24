@@ -4,11 +4,11 @@
   (:use :cl :rove :caten/air :caten/aasm :caten/avm))
 (in-package :caten/avm.test)
 
-(defun %seval (evaluated-to graph)
-  (ok (= evaluated-to (buffer-value (%realize (fold-constant graph))))))
+(defun %seval (evaluated-to graph &key (test #'=))
+  (ok (funcall test evaluated-to (buffer-value (%realize (fold-constant graph))))))
 
-(defun %eval (evaluated-to graph)
-  (ok (every #'= evaluated-to (buffer-value (%realize (fold-constant graph))))))
+(defun %eval (evaluated-to graph &key (test #'=))
+  (ok (every test evaluated-to (buffer-value (%realize (fold-constant graph))))))
 
 ;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %arange (shape a b &key (dtype :float32) (order :row))
@@ -36,7 +36,24 @@
     (testwhen %add 1 1 2) (testwhen %add 10 10 20)
     (testwhen %sub 2 1 1) (testwhen %sub 1 2 -1)
     (testwhen %mul 2 3 6) (testwhen %mul 10 10 100)
-    (testwhen %div 6 2 3) (testwhen %div 10 3 (/ 10 3))))
+    (testwhen %div 6 2 3) (testwhen %div 10 3 (/ 10 3))
+    (let ((*dtypes* `(:uint32)))
+      (testwhen %and 10 5 0) (testwhen %and 10 3 2)
+      (testwhen %or 10 5 15) (testwhen %or 10 3 11))))
+
+(deftest simple-scalar-logical
+  (macrolet ((testwhen (op x y ans)
+	       `(dolist (dtype *dtypes*)
+		  (%seval ,ans
+			  (with-context
+			    (a (%load (%salloc :dtype dtype) ,x))
+			    (b (%load (%salloc :dtype dtype) ,y))
+			    (c (,op nil nil a b)))
+			  :test #'eql))))
+    (testwhen %> 10 1 t) (testwhen %> 0 0 nil) (testwhen %> 0 1 nil)
+    (testwhen %< 10 1 nil) (testwhen %< 0 0 nil) (testwhen %< 0 1 t)
+    (testwhen %>= 10 1 t) (testwhen %>= 0 0 t) (testwhen %>= 0 1 nil)
+    (testwhen %<= 10 1 nil) (testwhen %<= 0 0 t) (testwhen %<= 0 1 t)))
 
 (deftest simple-tensor-arithmetic
   (macrolet ((testwhen (op x y ans)
@@ -56,6 +73,26 @@
     (testwhen %sub 3 1 #(2 2 2 2 2 2 2 2 2))
     (testwhen %mul 5 2 #(10 10 10 10 10 10 10 10 10))
     (testwhen %div 10 2 #(5 5 5 5 5 5 5 5 5))))
+
+(deftest simple-tensor-logical
+  (macrolet ((testwhen (op x y ans)
+	       `(dolist (dtype *dtypes*)
+		  (dolist (order `(:row :column))
+		    (%eval
+		     ,ans
+		     (with-context
+		       (a (%load (%salloc :dtype dtype) ,x))
+		       (b (%load (%salloc :dtype dtype) ,y))
+		       (c (%make-tensor `(3 3) :dtype dtype :order order))
+		       (d (%make-tensor `(3 3) :dtype dtype :order order))
+		       (e (%add c a))
+		       (f (%add d b))
+		       (e (,op '(3 3) order e f)))
+		     :test #'eql)))))
+    (testwhen %> 2 1 #(t t t t t t t t t))
+    (testwhen %>= 2 2 #(t t t t t t t t t ))
+    (testwhen %< 2 1 #(nil nil nil nil nil nil nil nil nil))
+    (testwhen %<= 2 2 #(t t t t t t t t t ))))
 
 (deftest test-index-components
   (macrolet ((testwhen (order shape ans)
@@ -99,7 +136,16 @@
 				    184.0 187.0 190.0 193.0 196.0 199.0 202.0 205.0 208.0 211.0 214.0
 				    217.0 220.0 223.0))))
 
+(defun %triu (input &key (diagonal 0))
+  (with-asm
+    
+    ))
 ;; [memo]
-;;  Goal1 Tensor初期化の実装 (等差数列，randn, beta distribution)
-;;  lazy-index-componentとmaskingを組み合わせて，VMの段階で変なアクセスできるようにする
+;;  Goal1 Tensor初期化の実装 (arange (OK)，randn, beta distribution)
+;;    -> implement torch.triu
+;;    -> implement logical.lisp, %where
+;;  lazy-index-componentとmaskingを組み合わせて，VMの段階でeinsum的なアクセスができるようにする
+;; e.g.: A[a * i + b]は (index_components == a*i+b)でmaskを生成 + whereで実装できる
 ;;  Goal2 Gemm
+;;    -> Sum/Reduction, Broadcast/View/Reshapeが動く必要がある
+;;  そしたらFrontendをちょっとだけ実装する (Print, Function, Tensor, etc)

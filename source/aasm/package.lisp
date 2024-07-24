@@ -31,14 +31,23 @@
    #:emit)
   ;; from ops.lisp
   (:export
+   ;; Binary
    #:%add
    #:%sub
    #:%mul
    #:%div
-   
+   #:%and
+   #:%or
+
+   ;; Unary
    #:%neg
    #:%recip
    #:%sqrt
+   #:%not
+
+   ;; CMP
+   #:%!= #:%=
+   #:%< #:%> #:%<= #:%>=
    )
   ;; from constant-folding.lisp
   (:export
