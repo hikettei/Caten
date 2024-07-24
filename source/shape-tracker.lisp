@@ -153,8 +153,4 @@
   (let ((st (%st->list (%parse-st st-notation))))
     `(%solve-st ,st ',where ,@input-tensors)))
 
-(defun fw (a b)
-  (declare (type tensor a b))
-  (st "A[] B[] -> A[m]" (a b) (:M . 1)))
-
-;; TODO: with-broadcasts
+;; TODO: with-broadcasts after implementing frontends

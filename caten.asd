@@ -11,7 +11,7 @@
 	       (:file "shape-tracker")
 	       (:file "merge-views")
 	       (:file "function")
-	       (:file "graph")
+	       (:file "module")
 	       (:file "syntax-sugar"))
   :in-order-to
   ((test-op
