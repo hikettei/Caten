@@ -4,6 +4,8 @@
   :licence     "MIT"
   :depends-on
   ("rove" "caten.air" "caten.aasm" "caten.avm")
+  :pathname "source"
+  :components ((:file "package"))
   :in-order-to
   ((test-op
     (asdf:test-op "caten.air")
