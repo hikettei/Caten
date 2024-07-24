@@ -96,7 +96,7 @@ broadcast=~a"
 			     (map 'list #'node->id by)
 			     (map 'list #'node->id stride))
 		     :nrank nrank :broadcast broadcast))))
-
+;; Not recommended; use %view instead
 (defun %reshape (x shape &key (id (gensym "RID")) (order :row))
   "In-placed reshape"
   (declare (type node x)
@@ -129,16 +129,3 @@ broadcast=~a"
 
 ;; WIP: will be moved to frontend
 (defun %bitcast ())
-(defun %squared-gemm (n)
-  (fold-constant
-   (with-context
-     (a  (%make-tensor `(,n ,n) :id 'X))
-     (b  (%make-tensor `(,n ,n) :id 'Y))
-     (a1 (%view a `(,n 1 ,n) `(0 0 0) `(,n 1 ,n) `(1 1 1) `(nil t nil) (%stride `(,n 1 ,n) (range 0 3))))
-     (b1 (%view b `(1 ,n ,n) `(0 0 0) `(1 ,n ,n) `(1 1 1) `(t nil nil) (%stride `(1 ,n ,n) (range 0 3))))
-     (o  (%mul a1 b1))
-     (c  (%make-tensor `(,n ,n)))
-     (c  (%view c `(,n ,n 1) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil nil t) (%stride `(,n ,n 1) (range 0 3))))
-     (c  (%add c o))
-     (c  (%reshape c `(,n ,n))))))
-

@@ -30,6 +30,9 @@
     (assert (not (eql (buffer-dtype (car buffers)) :bool))
 	    ()
 	    "Assertion Failed: IndexComponents(x: Bool) is not supported now."))
+  (assert (every #'(lambda (x) (or (= (buffer-nrank x) 0)  (= (buffer-nrank x) (buffer-nrank result)))) buffers)
+	  ()
+	  "Assertion Failed: All buffers should have the same rank.")
   (let* ((nrank (buffer-nrank (car buffers)))
 	 (index-components-p (eql op #'index-components))
 	 (index-components (when index-components-p (coerce 0 (dtype->lisp (buffer-dtype (car buffers))))))
@@ -41,7 +44,7 @@
 	     (explore (dim offsets)
 	       (let ((size (if (some (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)
 			       (let ((view (nth dim (buffer-views (find-if (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)))))
-				 (abs (- (car view) (second view))))
+				 (abs (/ (- (car view) (second view)) (third view))))
 			       (nth dim (buffer-shape result)))))
 		 ;; initial offset
 		 (loop for n upfrom 0
@@ -71,14 +74,16 @@
 				else if stride do (incf (nth n offsets) stride))))))
       (explore (1- nrank) offsets))))
 
-(defun map-view (op &rest buffers)
+(defun map-view (reduction-p op &rest buffers)
   "Note: In a special case where op is #'index-components, map-view writes (car buffer) <- index-component."
   (let ((out (copy-buffer (car buffers))))
     (if (= 0 (buffer-nrank (car buffers)))
 	(setf (buffer-value out) (apply op (map 'list #'buffer-value buffers)))
 	(progn
 	  (setf (buffer-value out) (copy-seq (buffer-value out)))
-	  (apply #'map-into/buffer out op buffers)))
+	  (if reduction-p
+	      (apply #'map-into/buffer out op `(,out ,@(cdr buffers)))
+	      (apply #'map-into/buffer out op buffers))))
     out))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Allocate)) graph node args)
@@ -96,7 +101,7 @@
 	(let ((out (copy-buffer tgt)))
 	  (setf (buffer-value out) val)
 	  out)
-	(map-view #'(lambda (x) x val) (car args)))))
+	(map-view nil #'(lambda (x) x val) (car args)))))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :store)) graph node args)
   (let* ((to (copy-buffer (car args))))
@@ -104,10 +109,10 @@
     to))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Index-Components)) graph node args)
-  (map-view #'index-components (car args)))
+  (map-view nil #'index-components (car args)))
 
 (macrolet ((impl (kw op)
-	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args) (apply #'map-view ,op args))))
+	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args) (apply #'map-view (getattr node :reduction) ,op args))))
   (impl :add #'+)
   (impl :mul #'*)
   (impl :and #'(lambda (x y) (if (and (numberp x) (numberp y)) (logand x y) (and x y))))
@@ -130,5 +135,6 @@
 	    (buffer-stride buffer) stride
 	    (buffer-views buffer)
 	    (loop for i upfrom 0 below (length v1)
-		  collect (list (nth i v1) (nth i v2) (nth i v3) (nth i bc))))
+		  collect (list (nth i v1) (nth i v2) (nth i v3) (nth i bc)))
+	    (buffer-nrank buffer) (length shape))
       buffer)))

@@ -152,22 +152,113 @@
      (d (%where c m1 m2)))))
 
 (deftest test-view
-  (testing "Slicing the tensor"
+  (testing "Slicing tensors"
     (%eval
-     #(5 6)
+     #(5 6 9 10)
      (with-context
        (a (%arange `(4 4) 1 0 :order :column))
        (b (%arange `(2 2) 0 0 :order :column))
        (v (%view a `(2 2) `(1 1) `(3 3) `(1 1) `(nil nil) (%stride `(4 4) `(1 0))))
-       (out (%add b v))))))
-       
+       (out (%add b v)))))
+  (testing "Slicing tensors, -1 indexing"
+    (%eval
+     #(10 9 6 5)
+     (with-context
+       (a (%arange `(4 4) 1 0 :order :column))
+       (b (%arange `(2 2) 0 0 :order :column))
+       (v (%view a `(2 2) `(2 2) `(0 0) `(-1 -1) `(nil nil) (%stride `(4 4) `(1 0))))
+       (out (%add b v)))))
+  (testing "Slicing tensors, read by 3"
+    (%eval
+     #(0 3 18 21)
+     (with-context
+       (a (%arange `(6 6) 1 0 :order :column))
+       (b (%arange `(2 2) 0 0 :order :column))
+       (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) `(1 0))))
+       (out (%add b v)))))
+  (testing "Slicing tensors, read by -3"
+    (%eval
+     #(0 3 18 21)
+     (with-context
+       (a (%arange `(6 6) 1 0 :order :column))
+       (b (%arange `(2 2) 0 0 :order :column))
+       (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) `(1 0))))
+       (out (%add b v)))))
+  (testing "Transpose"
+    (%eval
+     #(0.0 4.0 8.0 4.0 8.0 12.0 8.0 12.0 16.0)
+     (with-context
+       (a (%arange `(3 3) 1 0 :order :column))
+       (b1 (%view a `(3 3) `(0 0) `(3 3) `(1 1) `(nil nil) (%stride `(3 3) `(0 1))))
+       (b2 (%arange `(3 3) 1 0 :order :row))
+       (c (%add b1 b2)))))
+  (testing "Broadcasting (all-reduce along all axes)"
+    (%eval
+     #(630.0)
+     (with-context
+       (a (%arange `(6 6) 1 0 :order :column))
+       (b (%arange `(1 1) 0 0 :order :column))
+       (b (%view b `(6 6) `(0 0) `(6 6) `(1 1) `(t t) (%stride `(6 6) `(1 0))))
+       (b (%add b a :reduction t)))))
+  (testing "Broadcasting (all-reduce where axis=1)"
+    (%eval
+     #(3 3 3)
+     (with-context
+       (a (%arange `(3 3) 0 1 :order :column))
+       (b (%arange `(3 1) 0 0 :order :column))
+       (b (%view b `(3 3) `(0 0) `(3 3) `(1 1) `(nil t) (%stride `(3 3) `(1 0))))
+       (b (%add b a :reduction t)))))
+  (testing "Broadcasting (all-reduce where axis=0 ndim=3)"
+    (%eval
+     #(3 3 3 3 3 3 3 3 3)
+     (with-context
+       (a (%arange `(3 3 3) 0 1 :order :column))
+       (b (%arange `(3 3 1) 0 0 :order :column))
+       (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(nil nil t) (%stride `(3 3 3) `(2 1 0))))
+       (b (%add b a :reduction t)))))
+  (testing "Broadcasting (all-scatter)"
+    (%eval
+     #(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
+     (with-context
+       (a (%arange `(3 3 3) 0 0 :order :column))
+       (b (%arange `(1 1 1) 0 1 :order :column))
+       (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(t t t) (%stride `(3 3 3) `(2 1 0))))
+       (c (%add a b :reduction t))))))
+
+(defun make-squared-gemm (x y n)
+  "a @ b.T"
+  (fold-constant
+   (with-context
+     (a  (%make-tensor `(,n ,n) :id 'X))
+     (b  (%make-tensor `(,n ,n) :id 'Y))
+     (a  (%load a x))
+     (b  (%load b y))
+     (a1 (%view a `(,n ,n ,n) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil t nil) (%stride `(,n 1 ,n) `(0 1 2))))
+     (b1 (%view b `(,n ,n ,n) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(t nil nil) (%stride `(1 ,n ,n) `(0 1 2))))
+     (o  (%mul a1 b1))
+     (c  (%make-tensor `(,n ,n 1)))
+     (c  (%view c `(,n ,n 1) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil nil t) (%stride `(,n ,n 1) `(0 1 2))))
+     (c  (%add c o :reduction t))
+     (c  (%reshape c `(,n ,n))))))
+
+(deftest test-squared-gemm
+  (macrolet ((testcase (ans x y n)
+	       `(ok (every #'(lambda (x) (= x ,ans)) (buffer-value (%realize (make-squared-gemm ,x ,y ,n)))))))
+    (testcase 3 1.0 1.0 3)
+    (testcase 6 1.0 1.0 6)
+    (testcase 9 1.0 1.0 9)
+
+    (testcase 18 3.0 1.0 6)
+    (testcase 18 1.0 3.0 6)
+    (testcase 120 10.0 2.0 6)
+    (testcase 120 2.0 10.0 6)
+    (testcase 600 10.0 10.0 6)))
+
 
 ;; Testing:
-;;   -1. Slice
-;;   -2. Broadcast
-;;   -3 -1 Indexing
 ;;   -4. Composed View and infer-tensor-info
-;;   -5. testing viewed constant folding
+	  ;;   -5. testing viewed constant folding
+	  ;; -reshape testing
 ;;   - TODO: (arange x 0 0) into a single kernel. (Store 0=0 Fusion)
 ;; 
 ;;

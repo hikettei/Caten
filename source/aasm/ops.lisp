@@ -14,16 +14,18 @@
   (def %sqrt  :SQRT)
   (def %not   :NOT))
 ;; BinaryOps := [Add, Mul, NEQ, LT, AND, OR]
+;; reduction = nil -> | c = a + b
+;; reduction = t   -> | a += b
 (macrolet ((def (fname opname)
-	     `(defun ,fname (x y &key (id (gensym "BID")))
+	     `(defun ,fname (x y &key (id (gensym "BID")) (reduction nil))
 		(declare (type node x y))
-		(emit (make-node :BinaryOps ,opname (list id) (list (node->id x) (node->id y)))))))
+		(emit (make-node :BinaryOps ,opname (list id) (list (node->id x) (node->id y)) :reduction reduction)))))
   (def %add :ADD)
   (def %mul :MUL)
   (def %and :AND)
   (def %or :OR))
-(defun %sub (x y) (%add x (%neg y)))
-(defun %div (x y) (%mul x (%recip y)))
+(defun %sub (x y &key (reduction nil)) (%add x (%neg y) :reduction reduction))
+(defun %div (x y &key (reduction nil)) (%mul x (%recip y) :reduction reduction))
 
 ;; CompareOps: map <- [map{bool}, x, y]
 (macrolet ((def (fname opname)
