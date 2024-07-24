@@ -105,4 +105,4 @@
   (ok (check-schedule (%arange `(3 3) 0 3) 6))
   (ok (check-schedule (%arange `(3 3) 3 0) 6))
   ;; can be folded into one.
-  (ok (check-schedule (%arange `(3 3) 0 0) 3)))
+  (ok (check-schedule (%arange `(3 3) 0 0) 1)))

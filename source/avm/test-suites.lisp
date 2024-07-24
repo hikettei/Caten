@@ -254,25 +254,9 @@
     (testcase 120 2.0 10.0 6)
     (testcase 600 10.0 10.0 6)))
 
-
-;; Testing:
-;;   -4. Composed View and infer-tensor-info
-	  ;;   -5. testing viewed constant folding
-	  ;; -reshape testing
-;;   - TODO: (arange x 0 0) into a single kernel. (Store 0=0 Fusion)
-;; 
-;;
-;; AASM
-;;(defun %triu (input &key (diagonal 0))
-;;  (with-asm
-;;    
-;;    ))
-;; [memo]
-;;  Goal1 (OK) Tensor初期化の実装 (arange (OK)，randn, beta distribution)
-;;    -> implement torch.triu
-;;    -> implement logical.lisp, %where
-;;  lazy-index-componentとmaskingを組み合わせて，VMの段階でeinsum的なアクセスができるようにする
-;; e.g.: A[a * i + b]は (index_components == a*i+b)でmaskを生成 + whereで実装できる
-;;  Goal2 Gemm
-;;    -> Sum/Reduction, Broadcast/View/Reshapeが動く必要がある
-;;  そしたらFrontendをちょっとだけ実装する (Print, Function, Tensor, etc)
+;; [TODO]
+;; - Composed View and infer-tensor-info testing
+;;   (im not sure if it works and the direction is right)
+;; - reshape testing
+;; - (arange x 0 0) into a single kernel (Store 0=0 fusion)
+;; - implement a frontend (Tensor, Function, Print etc)

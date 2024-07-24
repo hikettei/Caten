@@ -74,6 +74,14 @@
      ((node graph)
       (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node)))))))
 
+(defsimplifier
+    (%3_simplify_graph :speed 0)
+    ((:Store ((:Allocate (~ s1) :nrank nrank :dtype dtype1) (:Allocate (~ s2) :dtype dtype2)))
+     ->
+     ((node graph)
+      (when (and (eql dtype1 dtype2) (equal s1 s2))
+	(make-node :Buffer :Allocate (node-writes node) s1 :nrank nrank :dtype dtype1)))))
+
 (defun fold-constant (graph)
   (declare (type Graph graph))
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
@@ -101,4 +109,5 @@
   (assert (null (find :_TmpPurged (graph-nodes graph) :key #'node-type))
 	  ()
 	  "_TmpPurged shouldn't exist! (it is a simplifier's bug)")
+  (%3_simplify_graph graph)
   graph)
