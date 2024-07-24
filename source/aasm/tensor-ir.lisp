@@ -107,3 +107,7 @@ stride=~a" nrank shape stride)
       (setf permute (reverse permute)))
     (%alloc (length shape) (%shape shape) (%stride shape permute) :dtype dtype :id id)))
 
+(defun %index-components (x &key (id (gensym "IID")))
+  "the equivalent to doing: `for (int i=x.view.from;i<x.view.to;i+=x.view.by) { id[i] = i; }`"
+  (declare (type node x))
+  (emit (make-node :Indexing :Index-Components (list id) (list (node->id x)))))

@@ -17,11 +17,14 @@
 			:initial-element (coerce 0 (dtype->lisp (buffer-dtype buffer))))))      
   buffer)
 
+(defun index-components ())
 (defun map-into/buffer (result op &rest buffers)
   (declare (type buffer result)
 	   (type function op)
 	   (type list buffers))
   (let* ((nrank (buffer-nrank (car buffers)))
+	 (index-components-p (eql op #'index-components))
+	 (index-components (coerce 0 (dtype->lisp (buffer-dtype (car buffers)))))
 	 (offsets (make-list (1+ (length buffers)) :initial-element 0)))
     (labels ((bref (buffer idx)
 	       (if (= (buffer-nrank buffer) 0)
@@ -40,10 +43,14 @@
 			 do (setf (nth n offsets) (* (nth n (buffer-stride buff)) (car view))))
 		 (loop for n upfrom 0 below size
 		       do (if (= dim 0)
-			      (if (= (buffer-nrank result) 0)
-				  (setf (buffer-value result) (apply op (map 'list #'bref buffers offsets)))
-				  (setf (aref (buffer-value result) (car offsets))
-					(apply op (map 'list #'bref buffers offsets))))
+			      (if index-components-p
+				  (progn
+				    (setf (aref (buffer-value result) (car offsets)) index-components)
+				    (incf index-components))
+				  (if (= (buffer-nrank result) 0)
+				      (setf (buffer-value result) (apply op (map 'list #'bref buffers offsets)))
+				      (setf (aref (buffer-value result) (car offsets))
+					    (apply op (map 'list #'bref buffers offsets)))))
 			      (explore (1- dim) (copy-list offsets)))
 			  (loop for n upfrom 0
 				for buff in `(,result ,@buffers)
@@ -58,6 +65,7 @@
       (explore (1- nrank) offsets))))
 
 (defun map-view (op &rest buffers)
+  "Note: In a special case where op is #'index-components, map-view writes (car buffer) <- index-component."
   (let ((out (copy-buffer (car buffers))))
     (if (= 0 (buffer-nrank (car buffers)))
 	(setf (buffer-value out) (apply op (map 'list #'buffer-value buffers)))
@@ -76,7 +84,10 @@
 	 (val (getattr node :value))
 	 (out (copy-buffer tgt)))
     (setf (buffer-value out) val)
-    out))    
+    out))
+
+(defmethod %impl ((device-id (eql :lisp)) (op (eql :Index-Components)) graph node args)
+  (map-view #'index-components (car args)))
 
 (macrolet ((impl (kw op)
 	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args) (apply #'map-view ,op args))))

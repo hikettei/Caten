@@ -20,6 +20,7 @@
    #:%stride
    #:%shape
    #:%make-tensor
+   #:%index-components
    )
   ;; from ctx.lisp
   (:export
