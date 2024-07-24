@@ -18,6 +18,5 @@
    )
   ;; from runtime.lisp
   (:export
-   #:%realize
-   #:realize)
+   #:%realize)
   )

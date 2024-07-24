@@ -6,7 +6,12 @@
   ("rove" "caten.air" "caten.aasm" "caten.avm")
   :pathname "source"
   :components ((:file "package")
-	       (:file "tensor"))
+	       (:file "tensor")
+	       (:file "shape-tracker")
+	       (:file "merge-views")
+	       (:file "function")
+	       (:file "graph")
+	       (:file "syntax-sugar"))
   :in-order-to
   ((test-op
     (asdf:test-op "caten.air")

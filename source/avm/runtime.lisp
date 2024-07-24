@@ -55,4 +55,3 @@
   "params: ((key . value) ...) "
   (declare (type graph graph))
   (vm/run (make-avm graph params)))
-(defun realize (graph &key (params)) (%realize graph :params params))

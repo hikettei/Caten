@@ -13,6 +13,7 @@
 ;; make-node must be wrapped with emit when producing outputs
 ;; and with-context can recognise it
 ;; ================================================================================================
+(defparameter *default-order* :row)
 (defparameter *default-float* :float32)
 (defparameter *default-int* :int32)
 (defparameter *default-uint* :uint32)
@@ -92,7 +93,7 @@ If i is a tensor, %load fills the visible area of i with value."
   (flet ((const (n) (if (node-p n) n (%load (%salloc :dtype dtype) n))))
     (map 'list #'const shape)))
 
-(defun %make-tensor (shape &key (dtype *default-float*) (order :row) (id (gensym "TID")))
+(defun %make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")))
   "A useful wrapper for %alloc. it computes stride based on order.
 %make-tensor is used to allocate the initial tensor, later weights are loaded."
   (declare (type list shape)

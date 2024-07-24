@@ -5,8 +5,10 @@
 
   ;; from tensor-ir.lisp
   (:export
+   #:*default-order*
    #:*default-float*
    #:*default-uint*
+   #:*default-int*
    #:dtype-t
 
    #:%uconst
