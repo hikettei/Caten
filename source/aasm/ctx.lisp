@@ -9,7 +9,6 @@
   `(let ((*ctx* (make-graph)))
      (with-asm ,@ssa-forms)
      (setf (graph-nodes *ctx*) (reverse (graph-nodes *ctx*)))
-     (verify-graph *ctx*)
      *ctx*))
 (defmacro with-context-nodes (&rest ssa-forms)
   `(graph-nodes (with-context ,@ssa-forms)))

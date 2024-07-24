@@ -6,6 +6,22 @@
     (%0_fuse_load_alloc)
     ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (number x)) -> (:_TmpScalarConst (x) :dtype dtype)))
 
+
+(defun reinitialize-tensor (graph id node)
+  (declare (type graph graph))
+  (multiple-value-bind (nrank shape stride dtype views)
+      (infer-tensor-info graph id)
+    (flet ((->find (x) (id->value graph x)))
+      (setf shape (map 'list #'->find shape)
+	    stride (map 'list #'->find stride)))
+    (let ((viewed (every #'identity views)))
+      (if (= nrank 0)
+	  (with-context-nodes (m1 (%salloc :dtype dtype :id id)))
+	  (with-context-nodes
+	      (m1 (%alloc nrank shape stride :dtype dtype :id (if viewed (gensym "TID") (node->id node))))
+	    ;; [TODO] Test against viewed outputs
+	    (m2 (if viewed (%view m1 shape (nth 0 views) (nth 1 views) (nth 2 views) (nth 3 views) stride :id (node->id node)) m1)))))))
+
 (defsimplifier
     (%1_fold_constant :speed 0)
     ((:Add ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y))))
@@ -14,9 +30,9 @@
     ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y))))
      ->
      (:_TmpScalarConst ((* x y)) :dtype dtype))
-    ;((:Mul ((:_TmpScalarConst ((= 0)) :dtype dtype) x))
-    ; ->
-    ; ((node graph) ))	   
+    ;; x * 0 -> 0
+    ((:Mul (x (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph x node)))
+    ((:Mul ((:_TmpScalarConst ((= 0))) x)) -> ((node graph) (reinitialize-tensor graph x node)))
     ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype)
      ->
      ((node graph)
