@@ -8,6 +8,7 @@
   ((:file "package")
    (:file "buffer")
    (:file "runtime")
+   (:file "conditions")
    (:file "helpers")
    (:file "lisp-backend"))
   :in-order-to ((test-op (asdf:test-op "caten.avm/test"))))

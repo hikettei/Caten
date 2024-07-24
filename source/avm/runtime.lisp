@@ -36,8 +36,9 @@
       (let ((type   (node-type node))
 	    (writes (node-writes node))
 	    (reads  (node-reads node)))
-	;; TODO: Error handling
-        (let ((out (multiple-value-list (%impl *device* type (avm-graph avm) node (map 'list #'->real reads)))))
+        (let ((out (multiple-value-list
+		    (handler-bind ((error #'(lambda (cond) (error 'avm-runtime-error :avm avm :cond cond))))
+		      (%impl *device* type (avm-graph avm) node (map 'list #'->real reads))))))
 	  (assert (= (length out) (length writes)))
 	  (loop for real in out
 		for place in writes

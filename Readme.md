@@ -54,6 +54,10 @@ $ COVERAGE=1 make test
 
 - Implement approxs for sin/log2/exp2
 
+- Symbolic Compilation
+
+- (In the future) reimplement the frontend in Coalton
+
 ## Installing (WIP)
 
 ```sh
