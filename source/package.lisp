@@ -10,6 +10,10 @@
   ;; from tensor.lisp
   (:export
    #:make-tensor
+   #:Tensor
+   #:tensor-p
+   #:tensor-shape
+   #:tensor-dtype
    )
   ;; from shape-tracker.lisp
   (:export #:st)
