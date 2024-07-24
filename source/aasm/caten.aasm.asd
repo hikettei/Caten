@@ -11,7 +11,8 @@
    (:file "tensor-ir")
    (:file "ops")
    (:file "constant-folding")
-   (:file "view"))
+   (:file "view")
+   (:file "logical"))
   :in-order-to ((test-op (asdf:test-op "caten.aasm/test"))))
 
 (asdf:defsystem "caten.aasm/test"

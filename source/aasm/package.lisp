@@ -25,6 +25,8 @@
   ;; from ctx.lisp
   (:export
    #:with-context
+   #:with-context-nodes
+   #:with-ssa
    #:*ctx*
    #:emit)
   ;; from ops.lisp

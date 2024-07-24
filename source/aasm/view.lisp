@@ -4,7 +4,7 @@
 (defun infer-tensor-info (graph id)
   "Return: [nrank, shape, stride, dtype, (view_from, view_to, view_by, broadcast)]"
   (declare (type graph graph) (type symbol id) (optimize (speed 3)))
-  ;; needs fold-constant
+  ;; needs fold-constant?
   (let ((nrank) (shape) (dtype) (view-from) (view-to) (view-by) (broadcast) (stride))
     (flet ((complete? ()
 	     (or (and nrank (= nrank 0) dtype)
@@ -20,7 +20,6 @@
 			(setf ,place ,value)
 			,(when test `(assert (= ,place ,value) () "infer-shape: ~a is inconsistent (~a vs ~a)" ,test ,place ,value))))
 		 (subseq1p (list from to) `(subseq ,list (1+ (the fixnum ,from)) (1+ (the fixnum ,to)))))
-
 	(labels ((helper (x &aux (node (id->value graph x)))
 		   (when node
 		     (case (node-type node)
@@ -128,8 +127,8 @@ broadcast=~a"
 		   :nrank (length shape)
 		   :broadcast (loop for i in shape collect nil))))
 
+;; WIP: will be moved to frontend
 (defun %bitcast ())
-
 (defun %squared-gemm (n)
   (fold-constant
    (with-context

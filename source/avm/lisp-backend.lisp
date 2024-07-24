@@ -77,7 +77,10 @@
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Allocate)) graph node args)
   (multiple-value-bind (shape stride)
       (parse-allocate-node node args)
-    (realize-buffer graph (node->id node) :shape1 shape :stride1 stride)))
+    (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))
+      (realize-buffer graph (node->id node)
+		      :shape1 (map 'list #'->number shape)
+		      :stride1 (map 'list #'->number stride)))))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Load)) graph node args)
   (let* ((tgt (car args))
@@ -85,6 +88,11 @@
 	 (out (copy-buffer tgt)))
     (setf (buffer-value out) val)
     out))
+
+(defmethod %impl ((device-id (eql :lisp)) (op (eql :store)) graph node args)
+  (let* ((to (copy-buffer (car args))))
+    (setf (buffer-value to) (buffer-value (second args)))
+    to))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Index-Components)) graph node args)
   (map-view #'index-components (car args)))
