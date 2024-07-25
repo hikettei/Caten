@@ -32,5 +32,7 @@
 	    (st "A[a b] -> A[a b]" (a)))))
   (ok (let ((a (make-tensor `(a b)))
 	    (b (make-tensor `(c d))))
-	(equal `(a d) (tensor-shape (st "A[m n] B[n k] -> A[m k]" (a b)))))))
+	(equal `(a d) (tensor-shape (st "A[m n] B[n k] -> A[m k]" (a b))))))
+  (ok (let ((a (list (make-tensor `(a b)))))
+	(equal `(a b) (tensor-shape (st "A[~] -> A[~]" (a)))))))
 

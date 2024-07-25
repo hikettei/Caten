@@ -45,18 +45,14 @@
 	(apply #'make-graph (apply #'append (map 'list #'graph-nodes (reverse nodes))))))))
 
 (defclass Add (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
-(defmethod forward ((op Add) &rest tensors)
-  (multiple-value-bind (a b) (apply #'values tensors)
-    (st "A[~] B[~] -> A[~]" (a b))))
+(defmethod forward ((op Add) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op Add) dout) (values dout dout))
 (defmethod lower ((op Add) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%add a b :reduction (func-reduce op))))))
 
 (defclass Mul (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
-(defmethod forward ((op Mul) &rest tensors)
-  (multiple-value-bind (a b) (apply #'values tensors)
-    (st "A[~] B[~] -> A[~]" (a b))))
+(defmethod forward ((op Mul) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op Mul) dout)
   (multiple-value-bind (x y) (apply #'values (func-variables op))
     (values (!mul y dout) (!mul x dout))))
@@ -65,12 +61,12 @@
     (with-context (out (%mul a b :reduction (func-reduce op))))))
 ;; Unary
 (defclass Neg (Func) nil)
-(defmethod forward ((op Neg) &rest tensors) (st "A[~] -> A[~]" ((car tensors))))
+(defmethod forward ((op Neg) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op Neg) dout) (values (!neg dout)))
 (defmethod lower ((op Neg) &rest inputs) (with-context (a (%neg (car inputs)))))
 
 (defclass Recip (Func) nil)
-(defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" ((car tensors))))
+(defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op Recip) dout)
   (let ((ret (!recip (car (func-variables op)))))
     (values (!mul (!mul (!neg dout) ret) ret)))) ;; -dout / x^2
