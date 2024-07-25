@@ -1,5 +1,5 @@
 (in-package :caten/avm)
-
+;; TODO: magicl backend
 (defun dtype->lisp (dtype)
   (case dtype
     (:float64 'double-float)

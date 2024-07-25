@@ -110,11 +110,11 @@
 		    (when (null inf-size)
 		      (setf inf-size n-inf
 			    infinite-part (make-list n-inf :initial-element nil)))
-		    (assert (= inf-size n-inf) () "ShapeTracker: ~a~%The length of ~ is inconsistent." (st-base st))
+		    (assert (= inf-size n-inf) () "ShapeTracker: ~a~%The length of ~~ is inconsistent." (st-base st))
 		    (dotimes (i n-inf)
 		      (if (null (nth i infinite-part))
 			  (setf (nth i infinite-part) (nth i (tensor-shape tensor)))
-			  (when (numberp (nth i infinite-part))
+			  (when (and (numberp (nth i (tensor-shape tensor))) (numberp (nth i infinite-part)))
 			    (assert (= (nth i infinite-part) (nth i (tensor-shape tensor)))
 				    ()
 				    "ShapeTracker: ~a~%The shape is inconsistent: ~~ = ~a."
@@ -124,7 +124,7 @@
 		(loop for place in (nthcdr (if inf-size 1 0) (at-shape decl))
 		      for shape in (nthcdr offset (tensor-shape tensor))
 		      if (gethash place solved)
-			do (when (numberp (gethash place solved))
+			do (when (and (numberp shape) (numberp (gethash place solved)))
 			     (assert (= shape (gethash place solved)) () "ShapeTracker: ~a. Invaild Shape Error.~% ~a should be ~a butgot ~a" (st-base st) place (gethash place solved) shape))
 		      else do
 			(setf (gethash place solved) shape))))
@@ -154,4 +154,4 @@
   (let ((st (%st->list (%parse-st st-notation))))
     `(%solve-st ,st ',where ,@input-tensors)))
 
-;; TODO: with-broadcasts after implementing frontends
+;; TODO: with-broadcasts after implementing view and reshape

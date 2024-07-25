@@ -29,5 +29,8 @@
      (equal nil (tensor-shape (st "A[] B[a b] -> A[]" (a b))))))
   (ok (signals
 	  (let ((a (make-tensor `(3))))
-	    (st "A[a b] -> A[a b]" (a))))))
+	    (st "A[a b] -> A[a b]" (a)))))
+  (ok (let ((a (make-tensor `(a b)))
+	    (b (make-tensor `(c d))))
+	(equal `(a d) (tensor-shape (st "A[m n] B[n k] -> A[m k]" (a b)))))))
 
