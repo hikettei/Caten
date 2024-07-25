@@ -57,7 +57,6 @@
 		   ()
 		   "ShapeTracker: Infinite rank must be placed at 0th axis.~%e.g.: A[~~ m n k]~%butgot: ~a" subscript)
 	 (values (make-at (intern (symbol-name name) "KEYWORD") (- (length subscripts) count) subscripts) rest))))))
-  
   (defun %parse-st (st)
     (declare (type string st))
     (let ((terms (split "->" (format nil "~a " st))))
@@ -77,7 +76,7 @@
 	(multiple-value-bind (before after)
 	    (values (parse-at (read-subscript (first terms))) (parse-at (read-subscript (second terms))))
 	  (make-st st before after)))))
-  (defun %solve-st (st lazy-solve &rest tensors)
+  (defun %solve-st (st lazy-solve &rest tensors &aux (tensors (alexandria:flatten tensors)))
     "lazy-solve = (symbol . value)"
     (declare (type ShapeTracker st)
 	     (type list tensors))
