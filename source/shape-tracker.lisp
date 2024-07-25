@@ -119,13 +119,13 @@
 				    ()
 				    "ShapeTracker: ~a~%The shape is inconsistent: ~~ = ~a."
 				    (st-base st)
-				    infinite-part))))))
+				    infinite-part))))))		
 		;; Tensor w/o infinite rank
-		(loop for place in (nthcdr offset (at-shape decl))
+		(loop for place in (nthcdr (if inf-size 1 0) (at-shape decl))
 		      for shape in (nthcdr offset (tensor-shape tensor))
 		      if (gethash place solved)
 			do (when (numberp (gethash place solved))
-			     (assert (= shape (gethash place solved)) () "ShapeTracker: ~a. Invaild Shape Error." (st-base st)))
+			     (assert (= shape (gethash place solved)) () "ShapeTracker: ~a. Invaild Shape Error.~% ~a should be ~a butgot ~a" (st-base st) place (gethash place solved) shape))
 		      else do
 			(setf (gethash place solved) shape))))
       (assert (every #'identity infinite-part)
@@ -141,7 +141,8 @@
 		       (shp  (loop for s in (at-shape at)
 				   append
 				   (let ((o (gethash s solved)))
-				     (assert o () "ShapeTracker: ~a~%~a is not determined." (st-base st) s)
+				     (unless (eql s :~)
+				       (assert o () "ShapeTracker: ~a~%~a is not determined." (st-base st) s))
 				     (if (listp o) o (list o))))))
 		   ;; TODO: Extend views
 		   (make-tensor shp :dtype (tensor-dtype base) :dtype (tensor-order base) :id (gensym "STC")))))
