@@ -10,8 +10,11 @@
 (defgeneric backward (op dout))
 
 (defmethod forward :around ((op Func) &rest tensors)
-  ;; TODO Error handling
-  (let ((outs (multiple-value-list (call-next-method))))
+  (let ((outs (handler-bind
+		  ((error
+		     #'(lambda (c) (error 'caten-forward-error :op op :inputs tensors :c c))))
+		(multiple-value-list (call-next-method)))))
+    (setf (func-variables op) tensors)
     (dolist (o outs)
       (assert (tensor-p o) ())
       (setf (tensor-variables o) tensors

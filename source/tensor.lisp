@@ -35,13 +35,35 @@ Shape := (Integer > 1) | Symbol | Tensor"
     (setf (tensor-op buff) (make-instance 'Allocate :buffer buff))
     buff))
 
-(defun %tensor-lower (tensor)
-  (declare (type Tensor tensor))
-  ;; at this level, only graph/function can be coexist.
+(defun %lower-iseq (iseq)
+  (declare (type list iseq))
+  ;; at this level, only graph/function can be coexist <- x
   ;; but (lower) lowers graph into function,
   ;; all functions are lowered into aasm.
   ;; e.g.: Sigmoid should be defined as a graph, neg should be defined as a function
-  )
+  ;; TODO: Assert that Module is eliminated at this level
+  (let ((tensor->id-table (make-hash-table :test #'eql))
+	(nodes))
+    (flet ((t->id (x) (gethash (tensor-id x) tensor->id-table))
+	   (setid (place node) (setf (gethash place tensor->id-table) node)))
+      (dolist (tensor iseq)
+	;; Assertion: The top of graph starts with no inputs (i.e.: they are always allocation)
+	(assert (every #'identity (map 'list #'t->id (func-variables (tensor-op tensor))))
+		()
+		"Every tensor ~a should be appeared in the graph first. (the top of nodes is not allocation?)"
+		(func-variables (tensor-op tensor)))
+	(let ((low-graph (apply #'lower (tensor-op tensor) (map 'list #'t->id (func-variables (tensor-op tensor))))))
+	  (assert (graph-p low-graph) () "%tensor->asm: lower(~a, ...) should return a graph, butgot ~a" (tensor-op tensor) low-graph)
+	  (assert (>= (length (graph-nodes low-graph)) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
+	  (let ((final (car (last (graph-nodes low-graph)))))
+	    (setid (tensor-id tensor) final))
+	  (setf nodes (append nodes (graph-nodes low-graph))))))
+    (let ((graph (apply #'make-graph nodes)))
+      (verify-graph graph)
+      graph)))
+
+(defun %tensor->aasm (&rest tensors)
+  (%lower-iseq (apply #'%tpsort-tensors tensors)))
 
 (defun %tensor-backward (tensor)
   (declare (type Tensor tensor))

@@ -7,6 +7,7 @@
   :pathname "source"
   :components ((:file "package")
 	       (:file "helpers")
+	       (:file "conditions")
 	       (:file "tensor")
 	       (:file "shape-tracker")
 	       (:file "merge-views")
