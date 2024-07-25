@@ -62,8 +62,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
       (verify-graph graph)
       graph)))
 
-(defun %tensor->aasm (&rest tensors)
-  (%lower-iseq (apply #'%tpsort-tensors tensors)))
+(defun %tensor->aasm (&rest tensors) (%lower-iseq (apply #'%tpsort-tensors tensors)))
 
 (defun %tensor-backward (tensor)
   (declare (type Tensor tensor))

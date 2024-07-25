@@ -31,10 +31,18 @@
       (values (!add (tensor-grad buff) dout :reduce t)))))
 (defmethod lower ((op Allocate) &rest inputs)
   (declare (ignore inputs))
-  (let ((buff (alloc-buffer op)))
-    (with-context
-      (s nil) ;; (map 'list #'lower (tensor-shape buff))
-      (a (%make-tensor (tensor-shape buff) :dtype (tensor-dtype buff) :order (tensor-order buff) :id (tensor-id buff))))))
+  (let ((buff (alloc-buffer op))
+	(nodes))
+    (flet ((->lower (obj) ;; If the shape includes a tensor, it also needs to be lowered
+	     (if (or (numberp obj) (symbolp obj)) obj
+		 (let ((g (%tensor->aasm obj)))
+		   (and (push g nodes) (car (last (graph-nodes g))))))))
+      (let ((g
+	      (with-context
+		(s (map 'list #'->lower (tensor-shape buff)))
+		(a (%make-tensor s :dtype (tensor-dtype buff) :order (tensor-order buff) :id (tensor-id buff))))))
+	(push g nodes)
+	(apply #'make-graph (apply #'append (map 'list #'graph-nodes (reverse nodes))))))))
 
 (defclass Add (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op Add) &rest tensors)
