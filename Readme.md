@@ -62,6 +62,8 @@ $ COVERAGE=1 make test
 
     - `:Graph`の名前空間にLoweringしないやつを作る (If/For/DefModule)
 
+- Dot or ONNX render at ./caten/air
+
 ## Installing (WIP)
 
 ```sh

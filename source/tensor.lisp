@@ -144,6 +144,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 
 	 ;; 4. Construct backwards (WIP)
 	 )
+    ;; MEMO: (:Compiler :Threshold的なノードを作る + forward/backwardのiseqをappendする + split
   ;; 1. Lower the modules -> function
 
   ;; ModuleのBackward: TmpModuleBWみたいなClassを作る，ClassのSlotにLoweredされたTensorを格納

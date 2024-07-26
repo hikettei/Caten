@@ -40,3 +40,6 @@
 	(let ((val (car (node-reads (car (graph-nodes graph))))))
 	  (and (numberp val) val))))))
 
+(defun zeros-like (tensor)
+  (declare (type tensor tensor))
+  (make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :initial-element 0.0))

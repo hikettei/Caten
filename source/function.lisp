@@ -1,17 +1,16 @@
 (in-package :caten)
+;; Function creating a lazy computation node, should start with the prefix !.
 
-(defstruct (IntermidateTape))
-;; A List of Func/Module
-(defclass Func ()
-  ((variables :initarg :variables :initform nil :accessor func-variables)))
+(defclass Func () ((variables :initarg :variables :initform nil :accessor func-variables)))
 
-(defgeneric lower (op &rest inputs)
+(defgeneric lower (op &rest nodes)
   (:documentation "Lowers the Func into a list of `caten/air:node`. This should return caten/air:graph."))
 (defgeneric forward (op &rest tensors)
   (:documentation "Create the type for the Tensor after computation. Be mindful of its lazy evaluation nature; do not perform the actual computation."))
 (defgeneric backward (op prev-grad)
   (:documentation "Create the graph for backward of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`.
 save-for-backward is determined automatically, so you do not have to consider about in-place operation."))
+
 (defmethod forward :around ((op Func) &rest tensors)
   (let ((outs (handler-bind
 		  ((error
@@ -23,7 +22,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (setf (tensor-variables o) tensors
 	    (tensor-op o) op))
     (apply #'values outs)))
-;; ~~ implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Allocate (Func)
   ((buffer :initarg :buffer :type Tensor :accessor alloc-buffer)
    (initial-element :initarg :initial-element :initform nil :accessor alloc-initial-element)))
@@ -54,7 +53,9 @@ save-for-backward is determined automatically, so you do not have to consider ab
    (nrnak :initarg :nrank :accessor view-nrank)))
 (defmethod backward ((op View) dout)
   (error "not implemented")
-  ;; ???
+  ;; They are independent:
+  ;; 1. reduction 2. slice/take 3. reshape 4. permute 5. broadcast
+  ;; 5.と2.を同時に行わない仮定が必要
   )
 (defmethod lower ((op View) &rest inputs)
   (let ((nrank (view-nrank op))
@@ -71,7 +72,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defun !view (base &rest subscripts) (make-view-internal base subscripts))
 ;; !reshape
 ;; !permute
-;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Add (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op Add) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op Add) dout) (values dout dout))
@@ -99,9 +100,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (let ((ret (!recip (car (func-variables op)))))
     (values (!mul (!mul (!neg dout) ret) ret)))) ;; -dout / x^2
 (defmethod lower ((op Recip) &rest inputs) (with-context (a (%recip (car inputs)))))
-;; ~~ wrappers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; Functions should start with the prefix !
-;; BinaryOps
+;; ~~ wrappers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (declaim (ftype (function (Tensor Tensor &key (:reduce boolean)) (values Tensor &optional)) !add !sub !mul !div))
 (defun !add (a b &key (reduce nil)) (forward (make-instance 'Add :reduce reduce) a b))
 (defun !mul (a b &key (reduce nil)) (forward (make-instance 'Mul :reduce reduce) a b))
@@ -119,12 +118,11 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (def !neg Neg)
   (def !recip Recip))
 
-;; Compare Ops
+;; ~~ Compare Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((def (name cls aop)
 	     `(progn
 		(defclass ,cls (Func) nil)
 		(defmethod forward ((op ,cls) &rest tensors) (st "OUT[~] A[~] B[~] -> OUT[~]" (tensors)))
-		(defmethod backward ((op ,cls) dout) nil) ;; <- possible to define it!
 		(defmethod lower ((op ,cls) &rest inputs)
 		  (with-context (out (,aop nil nil (nth 1 inputs) (nth 2 inputs) :out (nth 0 inputs)))))
 		(defun ,name (x y &key (out (make-tensor (tensor-shape x) :dtype :bool :order (tensor-order x))))
@@ -136,6 +134,21 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (def !>= GreaterEqual %>=)
   (def !eq TensorEqual %=)
   (def !neq NotEqual %!=))
-
-;; UnaryOps
+;; ~~ TernaryOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Where (Func) nil)
+(defmethod forward ((op Where) &rest tensors)
+  (assert (eql (tensor-dtype (nth 1 tensors)) (tensor-dtype (nth 2 tensors)))
+	  ()
+	  "Assertion Failed: A.dtype != B.dtype")
+  (st "MAP[~] A[~] B[~] -> A[~]" (tensors)))
+(defmethod backward ((op Where) prev-grad)
+  (multiple-value-bind (c) (apply #'values (func-variables op))
+    (values
+     nil
+     (!where c prev-grad (zeros-like prev-grad))
+     (!where c (zeros-like prev-grad) prev-grad))))
+(defmethod lower ((op Where) &rest inputs) (with-context (out (%where (nth 0 inputs) (nth 1 inputs) (nth 2 inputs)))))
+(defun !where (condition x y)
+  (declare (type Tensor condition x y))
+  (forward (make-instance 'Where) condition x y))
 

@@ -52,4 +52,6 @@
    #:!neg #:!recip
    ;; Logical
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
+   ;; TernaryOps
+   #:!where
    ))
