@@ -27,7 +27,7 @@
    #:tensor-variables
    )
   ;; from shape-tracker.lisp
-  (:export #:st)
+  (:export #:st #:bc)
 
   ;; from module.lisp
   (:export
@@ -44,6 +44,7 @@
   (:export
    ;; shaping
    #:!view #:!reshape #:!contiguous
+   #:!uprank
    ;; Binary
    #:!add #:!+
    #:!sub #:!-

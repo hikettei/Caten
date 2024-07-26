@@ -22,7 +22,7 @@
   ;; T = shape of corresponding axis
   (flet ((1p (x) (if (tensor-p x) (!add x (iconst 1)) (!add (iconst 1) (iconst x)))))
     (ematch subscript
-      ((eql :~) (make-vrange 0 size 1 t))   ;; broadcasting
+      ((list :~ n) (make-vrange 0 n 1 t))   ;; broadcasting (:~ N)
       ((eql t)  (make-vrange 0 size 1 nil)) ;; nothing
       ((guard x (typep x 'axis-t)) (make-vrange x (1p x) 1 nil)) ;; A[i]
       ((list (guard from (typep from 'axis-t)) (guard to (typep to 'axis-t)))

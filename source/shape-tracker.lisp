@@ -72,11 +72,74 @@
 	(multiple-value-bind (before after)
 	    (values (parse-at (read-subscript (first terms))) (parse-at (read-subscript (second terms))))
 	  (make-st st before after)))))
-  (defun %solve-st (st lazy-solve &rest tensors &aux (tensors (flatten tensors)))
+  ;; need tests, need tests against scalars
+  (defun %broadcast-auto (tensors st)
+    (declare (type list tensors) (type ShapeTracker st))
+    (symbol-macrolet ((->failed (return-from %broadcast-auto tensors)))
+      (let* ((kranks (loop for s in (st-bf st)
+			   for tns in tensors
+			   if (eql :~ (car (at-shape s)))
+			     collect (cons (1- (length (at-shape s))) (length (tensor-shape tns)))
+			   else
+			     collect nil)))
+	(when (every #'null kranks)->failed)
+	(when (some #'(lambda (x) (< (cdr x) (car x))) kranks)->failed)
+	(let* ((aligned-tensors
+		 (loop with tallest = (apply #'max (map 'list #'cdr kranks))
+		       for tns in tensors
+		       for krank in kranks
+		       if (or (null krank) (= (length (tensor-shape tns)) tallest))
+			 collect tns
+		       else collect (!uprank tns (- tallest (length (tensor-shape tns))))))
+	       (shape-goal
+		 (loop with tallest = (apply #'max (map 'list #'cdr kranks))
+		       for n upfrom 0 below tallest
+		       collect
+		       (let* ((shapes
+				(map 'list
+				     #'(lambda (r tns)
+					 (and (>= (- n (- tallest (cdr r))) 0)
+					      (nth (- n (- tallest (cdr r)))
+						   (tensor-shape tns))))
+				     kranks tensors))
+			      (shapes (loop for s in shapes if s collect s)))
+			 (cond
+			   ((= (length shapes) 1) (car shapes))
+			   ((every #'(lambda (x) (eql x 1)) shapes) t)
+			   ((some #'(lambda (x) (eql x 1)) shapes)
+			    (or
+			     (find 1 shapes :test #'(lambda (x y) (and (numberp y) (not (= x y)))))
+			     (find 1 shapes :test (compose #'not #'eql))))
+			   (T t))))))
+	  (flet ((->subscript (tns ignore-last-k)
+		   (loop with rank = (length (tensor-shape tns))
+			 for s in (tensor-shape tns)
+			 for g in shape-goal
+			 for i upfrom 0
+			 if (and (>= (- rank i) ignore-last-k) (= s 1))
+			   collect `(:~ ,g)
+			 else collect t)))
+	    (loop for tns in aligned-tensors
+		  for k in kranks
+		  if k
+		    collect
+		    (let ((ss (->subscript tns (car k))))
+		      (if (every #'(lambda (x) (eql t x)) ss)
+			  tns
+			  (apply #'!view tns ss)))
+		  else
+		    collect tns))))))
+			 
+  (defun %solve-st (st lazy-solve allow-broadcast &rest tensors &aux (tensors (flatten tensors)))
     "lazy-solve = (symbol . value)"
     (declare (type ShapeTracker st)
-	     (type list tensors))
-    (let ((infinite-part)
+	     (type list tensors)
+	     (type boolean allow-broadcast))
+    (let ((tensors
+	    (if allow-broadcast
+		(%broadcast-auto tensors st)
+		tensors))
+	  (infinite-part)
 	  (inf-size)
 	  (solved (make-hash-table)))
       (loop for (k . f) in lazy-solve do
@@ -140,7 +203,9 @@
 				       (assert o () "ShapeTracker: ~a~%~a is not determined." (st-base st) s))
 				     (if (listp o) o (list o))))))
 		   ;; TODO: Extend views
-		   (make-tensor shp :dtype (tensor-dtype base) :dtype (tensor-order base) :id (gensym "STC")))))
+		   (if allow-broadcast
+		       base
+		       (make-tensor shp :dtype (tensor-dtype base) :dtype (tensor-order base) :id (gensym "STC"))))))
 	(apply #'values (map 'list #'make-new-tensor (st-aft st)))))))
 
 (defmacro st (st-notation (&rest input-tensors) &rest where)
@@ -164,5 +229,15 @@ TODO: Add LazyAssertion which applies shape check even for symbols
 "
   (declare (type string st-notation))
   (let ((st (%st->list (%parse-st st-notation))))
-    `(%solve-st ,st ',where ,@input-tensors)))
-;; TODO: with-broadcasts after implementing view and reshape
+    `(%solve-st ,st ',where nil ,@input-tensors)))
+
+(defmacro bc (st-notation (&rest input-tensors) &rest where)
+  "## [macro] bc
+Perform the same operation as `st`, but also doing broadcasting.
+It calls !reshape and !view inside, therefore, it must not be used inside the forward method."
+  (declare (type string st-notation))
+  (let ((st (%st->list (%parse-st st-notation))))
+    `(%solve-st ,st ',where t ,@input-tensors)))
+
+(defun broadcast-elwise (a b) (multiple-value-list (bc "A[~] B[~] -> A[~] B[~]" (a b))))
+(defun broadcast-gemm (a b) (multiple-value-list (bc "A[~ m n] B[~ n k] -> A[~ m n] B[~ n k]" (a b))))

@@ -93,6 +93,9 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defun !reshape (x shape)
   (declare (type tensor x) (type list shape))
   (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape) x))
+(defun !uprank (x n)
+  (declare (type tensor x) (type (integer 0) n))
+  (!reshape x (append (loop for i upfrom 0 below n collect 1) (tensor-shape x))))
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Move (Func) nil)
 (defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
