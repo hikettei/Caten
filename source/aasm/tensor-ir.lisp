@@ -56,7 +56,9 @@ If i is a tensor, %load fills the visible area of i with value."
   (declare (type Node node))
   (assert (eql (node-class node) :Buffer)   ())
   (assert (eql (node-type  node) :Allocate) ())
-  (emit (make-node :Buffer :Load (list id) (list (node->id node)) :value value)))
+  (let* ((dtype (dtype->lisp (getattr node :dtype)))
+	 (value (if (numberp value) (coerce value dtype) value)))
+    (emit (make-node :Buffer :Load (list id) (list (node->id node)) :value value))))
 
 (defun %store (x y &key (id (gensym "LID")))
   "Equivalent to x = y;"

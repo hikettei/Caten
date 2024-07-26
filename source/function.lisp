@@ -22,7 +22,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (setf (tensor-variables o) tensors
 	    (tensor-op o) op))
     (apply #'values outs)))
-;; ~~ implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ differentiable ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Allocate (Func)
   ((buffer :initarg :buffer :type Tensor :accessor alloc-buffer)
    (initial-element :initarg :initial-element :initform nil :accessor alloc-initial-element)))
@@ -117,6 +117,10 @@ save-for-backward is determined automatically, so you do not have to consider ab
 		(defun ,name (x) (declare (type Tensor x)) (forward (make-instance ',cls) x)))))
   (def !neg Neg)
   (def !recip Recip))
+;;(declaim (ftype (function (Tensor) (values Tensor &optional)) !sign))
+;;(defun !sign (x)
+;;  (let ((zeros (!where (!eq x (make-scalar 0
+;;  )
 
 ;; ~~ Compare Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((def (name cls aop)
@@ -151,4 +155,3 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defun !where (condition x y)
   (declare (type Tensor condition x y))
   (forward (make-instance 'Where) condition x y))
-

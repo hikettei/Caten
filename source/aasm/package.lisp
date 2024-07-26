@@ -64,4 +64,7 @@
   ;; from logical.lisp
   (:export
    #:%where)
+
+  ;; from helpers.lisp
+  (:export #:dtype->lisp)
   )

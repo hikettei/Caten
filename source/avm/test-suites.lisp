@@ -3,7 +3,8 @@
 (defpackage :caten/avm.test
   (:use :cl :rove :caten/air :caten/aasm :caten/avm))
 (in-package :caten/avm.test)
-
+;; TODO: ULP
+(defun =~ (x y) (< (abs (- x y)) 1e-6))
 (defun %seval (evaluated-to graph &key (test #'=))
   (ok (funcall test evaluated-to (buffer-value (%realize (fold-constant graph))))))
 
@@ -26,17 +27,18 @@
 ;; dtype tests should be moved to outside of source
 (defparameter *dtypes* `(:float64 :float32));; :uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8))
 (deftest simple-scalar-arithmetic
-  (macrolet ((testwhen (op x y ans)
+  (macrolet ((testwhen (op x y ans &optional (test '=))
 	       `(dolist (dtype *dtypes*)
-		  (%seval ,ans
+		  (%seval (coerce ,ans (dtype->lisp dtype))
 			  (with-context
 			    (a (%load (%salloc :dtype dtype) ,x))
 			    (b (%load (%salloc :dtype dtype) ,y))
-			    (c (,op a b)))))))
+			    (c (,op a b)))
+			  :test #',test))))
     (testwhen %add 1 1 2) (testwhen %add 10 10 20)
     (testwhen %sub 2 1 1) (testwhen %sub 1 2 -1)
     (testwhen %mul 2 3 6) (testwhen %mul 10 10 100)
-    (testwhen %div 6 2 3) (testwhen %div 10 3 (/ 10 3))
+    (testwhen %div 6 2 3) (testwhen %div 10 3 (/ 10 3) =~)
     (let ((*dtypes* `(:uint32)))
       (testwhen %and 10 5 0) (testwhen %and 10 3 2)
       (testwhen %or 10 5 15) (testwhen %or 10 3 11))))

@@ -1,14 +1,5 @@
 (in-package :caten/avm)
 ;; TODO: magicl backend
-(defun dtype->lisp (dtype)
-  (case dtype
-    (:float64 'double-float)
-    (:float32 'single-float)
-    (:uint32  '(unsigned-byte 32))
-    (:int32   '(signed-byte 32))
-    (:bool    'boolean)
-    (otherwise (error "dtype->lisp: ~a is not supported" dtype))))
-
 (defmethod %vm/allocate-buffer ((device-id (eql :lisp)) buffer)
   (let ((initial-value (if (eql (buffer-dtype buffer) :bool)
 			   nil

@@ -121,6 +121,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 ;; 2. %loadを実装 + ok
 ;; !where, logicals, castを実装
 ;; absを実装
+;; -> 1. broadcast, (fconst 1)を許容する
 ;; absのconstant foldingを実装
 ;; !reshape/!viewを実装
 ;; Scalar Constant Folding ok
