@@ -6,7 +6,7 @@
 - Merge View Solver
 - ASM Bindings
 - Graph Caller")
-  (:use :cl :trivia :cl-ppcre :caten/aasm :caten/air :caten/avm)
+  (:use :cl :alexandria :trivia :cl-ppcre :caten/aasm :caten/air :caten/avm)
   ;; from tensor.lisp
   (:export
    #:make-tensor

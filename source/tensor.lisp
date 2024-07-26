@@ -54,6 +54,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 		(func-variables (tensor-op tensor)))
 	(let ((low-graph (apply #'lower (tensor-op tensor) (map 'list #'t->id (func-variables (tensor-op tensor))))))
 	  (assert (graph-p low-graph) () "%tensor->asm: lower(~a, ...) should return a graph, butgot ~a" (tensor-op tensor) low-graph)
+	  (assert (every #'node-p (graph-nodes low-graph)) () "%tensor->asm: received invaild nodes. all elements should be a node. ~a" low-graph)
 	  (assert (>= (length (graph-nodes low-graph)) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
 	  (let ((final (car (last (graph-nodes low-graph)))))
 	    (setid (tensor-id tensor) final))
@@ -63,8 +64,31 @@ Shape := (Integer > 1) | Symbol | Tensor"
       graph)))
 
 (defun %tensor->aasm (&rest tensors) (%lower-iseq (apply #'%tpsort-tensors tensors)))
-
 (defun %tensor-backward (tensor)
   (declare (type Tensor tensor))
+
+  )
+
+
+;; 1. 一旦Module, Backwardだけ実装する
+;; 2. %loadを実装 +
+;; !reshape/!viewを実装
+;; 3. st-levelでBroadcastingを実装
+;; 4. BufferってAVMのStructじゃない？AASMへ移動すべき? しなくてもいいか...
+;; 5. log1p fusionとか実装する
+
+(defun proceed (&rest tensors)
+  "Realizes the tensor"
+  (declare (type list tensors))
+
+  ;; 1. Lower the modules -> function
+
+  ;; ModuleのBackward: TmpModuleBWみたいなClassを作る，ClassのSlotにLoweredされたTensorを格納
+
+  ;; 2. Sort functions
+
+  ;; 3. Get pullback
+
+  ;; 4. Get forward lowered asm
 
   )

@@ -76,7 +76,7 @@
 	(multiple-value-bind (before after)
 	    (values (parse-at (read-subscript (first terms))) (parse-at (read-subscript (second terms))))
 	  (make-st st before after)))))
-  (defun %solve-st (st lazy-solve &rest tensors &aux (tensors (alexandria:flatten tensors)))
+  (defun %solve-st (st lazy-solve &rest tensors &aux (tensors (flatten tensors)))
     "lazy-solve = (symbol . value)"
     (declare (type ShapeTracker st)
 	     (type list tensors))
@@ -153,4 +153,5 @@
   (let ((st (%st->list (%parse-st st-notation))))
     `(%solve-st ,st ',where ,@input-tensors)))
 
+;; ~ <- broadcast autoとして実装する
 ;; TODO: with-broadcasts after implementing view and reshape
