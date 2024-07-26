@@ -50,6 +50,7 @@
 
    ;; Unary
    #:!neg #:!recip
+   #:!cast
    ;; Logical
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
    ;; TernaryOps

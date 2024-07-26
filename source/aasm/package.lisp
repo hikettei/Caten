@@ -47,6 +47,7 @@
    #:%recip
    #:%sqrt
    #:%not
+   #:%cast
 
    ;; CMP
    #:%!= #:%=

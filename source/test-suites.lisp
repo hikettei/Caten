@@ -55,7 +55,7 @@
   (flet ((test (dtype il)
 	   (caten/avm:%realize (caten::%tensor->aasm (!add (make-tensor `(3 3) :dtype dtype) (make-tensor `(3 3) :dtype dtype :initial-element il))))))
     (testing "fconst(1) should be valid, iconst(1.0) should be invaild"
-      ;;(test :float16 1)
+      (test :float16 1)
       (ok (test :float32 1))
       (ok (test :float64 1))
       (dolist (dtype `(:uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8))

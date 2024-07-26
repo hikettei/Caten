@@ -23,6 +23,9 @@
 	(labels ((helper (x &aux (node (id->value graph x)))
 		   (when node
 		     (case (node-type node)
+		       (:Cast
+			(let* ((dtype1 (getattr node :dtype)))
+			  (update dtype dtype1)))
 		       (:View
 			(let* ((nrank1     (getattr node :nrank))
 			       (broadcast1 (getattr node :broadcast))

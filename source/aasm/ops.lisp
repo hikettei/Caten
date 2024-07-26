@@ -6,7 +6,7 @@
 ;; Notation: y <- f(x y)
 ;; x is always the destination of output buffers.
 
-;; UnaryOps := [NEG, RECIP, SQRT, NOT]
+;; UnaryOps := [NEG, RECIP, SQRT, NOT, CAST]
 (macrolet ((def (fname opname)
 	     `(defun ,fname (x &key (id (gensym "UID")))
 		(declare (type node x))
@@ -15,6 +15,10 @@
   (def %recip :RECIP)
   (def %sqrt  :SQRT)
   (def %not   :NOT))
+;; x <- cast(y)
+(defun %cast (x y dtype &key (id (gensym "CID")))
+  (declare (type node x y) (type dtype-t dtype))
+  (emit (make-node :UnaryOps :CAST (list id) (list (node->id x) (node->id y)) :dtype dtype)))
 ;; BinaryOps := [Add, Mul, NEQ, LT, AND, OR]
 ;; reduction = nil -> | c = a + b
 ;; reduction = t   -> | a += b

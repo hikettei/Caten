@@ -113,7 +113,13 @@
   (impl :neg   #'-)
   (impl :recip #'/)
   (impl :not #'(lambda (x) (if (numberp x) (lognot x) (not x))))
-  
+  (impl :cast #'(lambda (m x &aux (cast-to (dtype->lisp (getattr node :dtype))))
+		  (declare (ignore m))
+		  (if (floatp x)
+		      (if (or (eql cast-to :float64) (eql cast-to :float32) (eql cast-to :float16))
+			  (coerce x cast-to)
+			  (coerce (round x) cast-to))
+		      (coerce x cast-to))))  
   (impl :NEQ #'(lambda (_ x y) _ (not (= x y)))) ;; input is a boolean
   (impl :LT #'(lambda (_ x y) _ (< x y)))
   (impl :WHERE #'(lambda (c x y) (if c x y))))

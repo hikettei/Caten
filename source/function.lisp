@@ -100,6 +100,16 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (let ((ret (!recip (car (func-variables op)))))
     (values (!mul (!mul (!neg dout) ret) ret)))) ;; -dout / x^2
 (defmethod lower ((op Recip) &rest inputs) (with-context (a (%recip (car inputs)))))
+
+(defclass Cast (Func)
+  ((dtype-frm :initarg :dtype-frm :accessor cast-dtype-frm)
+   (dtype-to :initarg :dtype-to   :accessor cast-dtype-to)))
+(defmethod forward ((op Cast) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
+(defmethod backward ((op Cast) prev-grad) (values prev-grad (!cast prev-grad (cast-dtype-frm op))))
+(defmethod lower ((op Cast) &rest inputs) (with-context (a (%cast (first inputs) (second inputs) (cast-dtype-to op)))))
+(defun !cast (x dtype &key (out (make-tensor (tensor-shape x) :dtype dtype :order (tensor-order x))))
+  (declare (type tensor x out) (type dtype-t dtype))
+  (forward (make-instance 'Cast :dtype-frm (tensor-dtype x) :dtype-to dtype) out x))
 ;; ~~ wrappers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (declaim (ftype (function (Tensor Tensor &key (:reduce boolean)) (values Tensor &optional)) !add !sub !mul !div))
 (defun !add (a b &key (reduce nil)) (forward (make-instance 'Add :reduce reduce) a b))

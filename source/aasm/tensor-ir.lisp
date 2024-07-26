@@ -22,7 +22,7 @@
   "A list of available keywords as a dtype"
   `(and keyword
 	(member
-	 :float64 :float32 :float64
+	 :float64 :float32 :float16
 	 :uint64 :uint32 :uint16 :uint8
 	 :int64 :int32 :int16 :int8 :bool)))
 
