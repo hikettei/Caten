@@ -72,7 +72,7 @@
 	(multiple-value-bind (before after)
 	    (values (parse-at (read-subscript (first terms))) (parse-at (read-subscript (second terms))))
 	  (make-st st before after)))))
-  ;; need tests, need tests against scalars
+  
   (defun %broadcast-auto (tensors st)
     (declare (type list tensors) (type ShapeTracker st))
     (symbol-macrolet ((->failed (return-from %broadcast-auto tensors)))
