@@ -133,6 +133,8 @@ Shape := (Integer > 1) | Symbol | Tensor"
 ;; testing:
 ;;   - make-tensor w/ initial-element
 ;;   - backward test
+;;   - broadcast testing
+;;   - scalar / matrix testing
 
 (defun proceed (&rest tensors)
   "Realizes the tensor"
