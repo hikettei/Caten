@@ -13,12 +13,12 @@
 
 (defun vrange-size (vrange)
   (declare (type ViewRange vrange))
-  ;; todo: !abs
+  ;; [TODO]: !abs
   (!div (!sub (viewrange-to vrange) (viewrange-from vrange)) (viewrange-by vrange)))
 
 (defun parse-view-subscript (size subscript)
   (declare (type axis-t size))
-  ;; -1とかの処理はここじゃないとできない？
+  ;; [TODO] -1とかの処理はここじゃないとできない？
   ;; T = shape of corresponding axis
   (flet ((1p (x) (if (tensor-p x) (!add x (iconst 1)) (!add (iconst 1) (iconst x)))))
     (ematch subscript
@@ -42,9 +42,9 @@ Applying a further slicing:
   (with-slots ((frm1 from) (to1 to) (by1 by)) old
     (with-slots ((frm2 from) (to2 to) (by2 by) (bc2 broadcast)) new
       (make-vrange
-       ;; あってる？
+       ;; [TODO] あってる？
        (!add frm1 frm2)
-       (!add to1 to2)
+       (!sub to2 to1)
        (!mul by1 by2)
        bc2))))
 

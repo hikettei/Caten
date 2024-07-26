@@ -53,6 +53,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
   ((views :initarg :views :type list :accessor view-views)
    (nrnak :initarg :nrank :accessor view-nrank)))
 (defmethod backward ((op View) dout)
+  (error "not implemented")
   ;; ???
   )
 (defmethod lower ((op View) &rest inputs)
@@ -68,6 +69,8 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			       (stride     (subseq1p inputs (* 5 nrank))))
 			   (or stride (%stride base-shape (default-permute nrank (tensor-order bs)))))))))))
 (defun !view (base &rest subscripts) (make-view-internal base subscripts))
+;; !reshape
+;; !permute
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Add (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op Add) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))

@@ -1,7 +1,5 @@
 (in-package :caten)
-;; Deviceをどの時点で決定する？Tensorに持たせたくはない
-;; compile時に渡す方針で不便しないはず？
-;; Lazyの途中でPrint Debugできるようにしたい!!!
+
 (defstruct (Tensor
 	    (:constructor %internal-make-tensor (op shape
 						 &key
@@ -17,7 +15,21 @@
   (requires-grad requires-grad :type boolean)
   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil)) :type (or null Tensor))
   (variables variables :type list))
-;;(defmethod print-object ((tensor Tensor) stream))
+
+(defmethod print-object ((tensor Tensor) stream)
+  (format stream "{Tensor[~(~a~)] :shape ~a :id ~a
+  :buffer ~a
+  :op ~a
+  :requires-grad ~a
+  :variables ~a}"
+	  (tensor-dtype tensor)
+	  (loop for s in (tensor-shape tensor) collect (if (tensor-p s) (tensor-id s) s))
+	  (tensor-id tensor)
+	  (tensor-buffer tensor)
+	  (tensor-op tensor)
+	  (tensor-requires-grad tensor)
+	  (map 'list #'tensor-id (tensor-variables tensor))))
+
 (defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil))
   "## [function] make-tensor
 Create a new lazy tensor.
@@ -54,6 +66,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	 #'(lambda (c) (error 'caten-forward-error :op 'make-view-internal :inputs (list base) :c c))))
     (let* ((views (merge-views base subscripts))
 	   (buff (%internal-make-tensor nil (map 'list #'vrange-size views) :dtype dtype :order order :id id :views views)))
+      ;; [TODO] FoldConstant
       (setf (tensor-variables buff)
 	    (append
 	     (list base)
@@ -106,6 +119,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 ;; 1. 一旦Module, Backwardだけ実装する
 ;; 2. %loadを実装 + ok
 ;; !reshape/!viewを実装
+;; Scalar Constant Folding
 ;; ある程度できたらModule/Backward/Functionのテストを実装
 ;; 3. st-levelでBroadcastingを実装
 ;; 4. BufferってAVMのStructじゃない？AASMへ移動すべき? しなくてもいいか...
