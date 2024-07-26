@@ -18,20 +18,21 @@
   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil)) :type (or null Tensor))
   (variables variables :type list))
 ;;(defmethod print-object ((tensor Tensor) stream))
-(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil))
+(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil))
   "## [function] make-tensor
 Create a new lazy tensor.
 Shape := (Integer > 1) | Symbol | Tensor"
   (declare (type list shape)
 	   (type dtype-t dtype)
 	   (type (member :column :row) order)
-	   (type symbol id))
+	   (type symbol id)
+	   (type (or null number) initial-element))
   (dolist (s shape)
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()
 	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  Butgot: ~a~%  Shape=~a" s shape))
   (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad)))
-    (setf (tensor-op buff) (make-instance 'Allocate :buffer buff))
+    (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element))
     buff))
 
 (defun %lower-iseq (iseq)
@@ -70,11 +71,15 @@ Shape := (Integer > 1) | Symbol | Tensor"
 
 
 ;; 1. 一旦Module, Backwardだけ実装する
-;; 2. %loadを実装 +
+;; 2. %loadを実装 + ok
 ;; !reshape/!viewを実装
+;; ある程度できたらModule/Backward/Functionのテストを実装
 ;; 3. st-levelでBroadcastingを実装
 ;; 4. BufferってAVMのStructじゃない？AASMへ移動すべき? しなくてもいいか...
 ;; 5. log1p fusionとか実装する
+;; weightの初期状態をどうやって表現する？
+;; testing:
+;;   - make-tensor w/ initial-element
 
 (defun proceed (&rest tensors)
   "Realizes the tensor"
