@@ -119,5 +119,23 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (def !neg Neg)
   (def !recip Recip))
 
+;; Compare Ops
+(macrolet ((def (name cls aop)
+	     `(progn
+		(defclass ,cls (Func) nil)
+		(defmethod forward ((op ,cls) &rest tensors) (st "OUT[~] A[~] B[~] -> OUT[~]" (tensors)))
+		(defmethod backward ((op ,cls) dout) nil) ;; <- possible to define it!
+		(defmethod lower ((op ,cls) &rest inputs)
+		  (with-context (out (,aop nil nil (nth 1 inputs) (nth 2 inputs) :out (nth 0 inputs)))))
+		(defun ,name (x y &key (out (make-tensor (tensor-shape x) :dtype :bool :order (tensor-order x))))
+		  (declare (type Tensor out))
+		  (forward (make-instance ',cls) out x y)))))
+  (def !<  LessThan     %<)
+  (def !<= LessEqual    %<=)
+  (def !>  GreaterThan  %>)
+  (def !>= GreaterEqual %>=)
+  (def !eq TensorEqual %=)
+  (def !neq NotEqual %!=))
+
 ;; UnaryOps
 

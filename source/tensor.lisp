@@ -78,7 +78,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	    (tensor-op buff) (make-instance 'View :views views :nrank (length views)))
       (setf (func-variables (tensor-op buff)) (tensor-variables buff))
       (assert (every #'tensor-p (tensor-variables buff)) ())
-      ;; Fold Constant
+      ;; Fold Constants in Shape (detached from the graph, no side effects)
       (setf (tensor-shape buff) (map 'list #'(lambda (x) (or (and (not (tensor-p x)) x) (try-fold-constant x) x)) (tensor-shape buff)))
       buff)))
 
@@ -119,8 +119,11 @@ Shape := (Integer > 1) | Symbol | Tensor"
 
 ;; 1. 一旦Module, Backwardだけ実装する
 ;; 2. %loadを実装 + ok
+;; !where, logicals, castを実装
+;; absを実装
+;; absのconstant foldingを実装
 ;; !reshape/!viewを実装
-;; Scalar Constant Folding
+;; Scalar Constant Folding ok
 ;; ある程度できたらModule/Backward/Functionのテストを実装
 ;; 3. st-levelでBroadcastingを実装
 ;; 4. BufferってAVMのStructじゃない？AASMへ移動すべき? しなくてもいいか...
@@ -128,6 +131,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 ;; weightの初期状態をどうやって表現する？
 ;; testing:
 ;;   - make-tensor w/ initial-element
+;;   - backward test
 
 (defun proceed (&rest tensors)
   "Realizes the tensor"

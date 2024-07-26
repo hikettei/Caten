@@ -144,7 +144,7 @@ The provided form does not match any of them:~%~a" method method method method f
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
 
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmodule (Sum ((&key (axis 0)) :axis axis) :where "A[~] -> A[~]")
+(defmodule (Sum ((&key (axis 0) (keepdims nil)) :axis axis :keepdims keepdims) :where "A[~] -> A[~]")
     ()
     :documentation "Sum tensors along axis"
     :impl ((sum x)
