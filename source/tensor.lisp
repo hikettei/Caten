@@ -13,7 +13,7 @@
   (op op :type (or null Func)) ;; Type Func or Module
   (views nil :type list)
   (requires-grad requires-grad :type boolean)
-  (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil)) :type (or null Tensor))
+  (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD"))) :type (or null Tensor))
   (variables variables :type list))
 
 (defmethod print-object ((tensor Tensor) stream)
@@ -82,14 +82,14 @@ Shape := (Integer > 1) | Symbol | Tensor"
       (setf (tensor-shape buff) (map 'list #'(lambda (x) (or (and (not (tensor-p x)) x) (try-fold-constant x) x)) (tensor-shape buff)))
       buff)))
 
-(defun %lower-iseq (iseq)
+(defun %lower-iseq (iseq &key prev-table (no-verify nil))
   (declare (type list iseq))
   ;; at this level, only graph/function can be coexist <- x
   ;; but (lower) lowers graph into function,
   ;; all functions are lowered into aasm.
   ;; e.g.: Sigmoid should be defined as a graph, neg should be defined as a function
   ;; TODO: Assert that Module is eliminated at this level
-  (let ((tensor->id-table (make-hash-table :test #'eql))
+  (let ((tensor->id-table (or prev-table (make-hash-table :test #'eql)))
 	(nodes))
     (flet ((t->id (x) (gethash (tensor-id x) tensor->id-table))
 	   (setid (place node) (setf (gethash place tensor->id-table) node)))
@@ -97,7 +97,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	;; Assertion: The top of graph starts with no inputs (i.e.: they are always allocation)
 	(assert (every #'identity (map 'list #'t->id (func-variables (tensor-op tensor))))
 		()
-		"Every tensor ~a should be appeared in the graph first. (the top of nodes is not allocation?)"
+		"Every tensor ~a should be appeared in the graph first. (make sure that the top of nodes is allocation)"
 		(func-variables (tensor-op tensor)))
 	(let ((low-graph (apply #'lower (tensor-op tensor) (map 'list #'t->id (func-variables (tensor-op tensor))))))
 	  (assert (graph-p low-graph) () "%tensor->asm: lower(~a, ...) should return a graph, butgot ~a" (tensor-op tensor) low-graph)
@@ -107,27 +107,66 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	    (setid (tensor-id tensor) final))
 	  (setf nodes (append nodes (graph-nodes low-graph))))))
     (let ((graph (apply #'make-graph nodes)))
-      (verify-graph graph)
-      graph)))
+      (unless no-verify (verify-graph graph))
+      (values graph tensor->id-table))))
 
-(defun %tensor->aasm (&rest tensors) (%lower-iseq (apply #'%tpsort-tensors tensors)))
-(defun %tensor-backward (tensor)
-  (declare (type Tensor tensor))
+(defun %tensor->aasm (&rest tensors) (%lower-iseq (apply #'%tpsort-tensors nil tensors)))
+(defun %graph->pullback (prev-table seen prev-grad iseq fw-graph)
+  (declare (type list iseq seen)
+	   (type hash-table prev-table)
+	   (type tensor prev-grad))
+  (let ((iseq-bw)
+	(grads (make-hash-table :test #'eql)))
+    (setf (gethash (tensor-id (car (last iseq))) grads) prev-grad)
+    (multiple-value-bind (iseq-bw-tmp seen-new) (%tpsort-tensors seen prev-grad)
+      (setf iseq-bw iseq-bw-tmp
+	    seen seen-new))
+    (labels ((helper (tensor)
+	       ;; TODO: Error handling at here
+	       (let* ((prev-grad (gethash (tensor-id tensor) grads))
+		      (vgrads (when prev-grad (multiple-value-list (backward (tensor-op tensor) prev-grad)))))
+		 ;; TODO: Module Backward
+		 (when prev-grad
+		   (if (null (func-variables (tensor-op tensor)))
+		       (when (car vgrads)
+			 (assert (= (length vgrads) 1) () "Assertion Failed: The top of node backward should return a single tensor")
+			 (multiple-value-bind (iseq-bw-tmp seen-new) (%tpsort-tensors seen (car vgrads))
+			   (setf seen seen-new
+				 iseq-bw (append iseq-bw iseq-bw-tmp))))
+		       (loop for v in (func-variables (tensor-op tensor))
+			     for g in vgrads
+			     if g do
+			       (multiple-value-bind (iseq-bw-tmp seen-new) (%tpsort-tensors seen g)			    
+				 (setf seen seen-new
+				       (gethash (tensor-id v) grads) g
+				       iseq-bw (append iseq-bw iseq-bw-tmp)))))))))
+      (loop for tensor in (reverse iseq) do (helper tensor)))
+    (let* ((bw-graph (%lower-iseq iseq-bw :prev-table prev-table :no-verify t))
+	   (merged-graph
+	     (apply
+	      #'make-graph
+	      (append
+	       (graph-nodes fw-graph)
+	       (list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes fw-graph)))))))
+	       (graph-nodes bw-graph)))))
+      (verify-graph merged-graph)
+      merged-graph)))
 
-  )
 
 
 ;; 1. 一旦Module, Backwardだけ実装する
 ;; 2. %loadを実装 + ok          (OK)
 ;; !where, logicals, castを実装 (OK)
-;; absを実装                    
-;; -> 1. broadcast, (fconst 1)を許容する
-;; absのconstant foldingを実装
-;; !reshape/!viewを実装
-;; Scalar Constant Folding ok
+;; absを実装                     (OK)
+;; -> 1. broadcast, (fconst 1)を許容する (OK
+;; absのconstant foldingを実装 (OK)
+;; !reshape/!viewを実装 (OK)
+;; Scalar Constant Folding ok (OK)
+;; - implement backward
+;; - implement frontend proceed
+;; - tests
 ;; ある程度できたらModule/Backward/Functionのテストを実装
-;; 3. st-levelでBroadcastingを実装
-;; 4. BufferってAVMのStructじゃない？AASMへ移動すべき? しなくてもいいか...
+;; 3. st-levelでBroadcastingを実装 (OK)
 ;; 5. log1p fusionとか実装する
 ;; weightの初期状態をどうやって表現する？
 ;; testing:
@@ -136,26 +175,33 @@ Shape := (Integer > 1) | Symbol | Tensor"
 ;;   - broadcast testing
 ;;   - scalar / matrix testing
 
+(defparameter *external-simplifiers* `(fold-constant))
+(defparameter *no-grad* nil)
 (defun proceed (&rest tensors)
   "Realizes the tensor"
   (declare (type list tensors))
   ;; 1. Lower
-  (let* ((lowered-graph (apply #'%tensor->aasm tensors))
-	 ;; 2. Simplify Modules
+  ;; lowered-graph = :func :graph is mixed
+  (multiple-value-bind (iseq seen) (apply #'%tpsort-tensors nil tensors)
+    (multiple-value-bind (lowered-graph involved-tensors) (%lower-iseq iseq)
+      ;; Construct backwards      
+      (let* ((prev-grad (make-tensor (tensor-shape (car tensors))
+				     :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))
+				     :id 'prev-grad :initial-element 1))
+	     (fw/bw-graph (if *no-grad* lowered-graph (%graph->pullback involved-tensors seen prev-grad iseq lowered-graph))))
+	(dolist (f *external-simplifiers*)
+	  (funcall f fw/bw-graph))
+	;; 2. Simplify Modules
 
-	 ;; 3. Lower Modules
+	;; 3. Lower Modules
 
-	 ;; 4. Construct backwards (WIP)
-	 )
-    ;; MEMO: (:Compiler :Threshold的なノードを作る + forward/backwardのiseqをappendする + split
-  ;; 1. Lower the modules -> function
+	;; 4. Construct backwards (WIP)
+	
+	;; 1. Lower the modules -> function
 
-  ;; ModuleのBackward: TmpModuleBWみたいなClassを作る，ClassのSlotにLoweredされたTensorを格納
+	;; 2. Sort functions
 
-  ;; 2. Sort functions
+	;; 3. Get pullback
 
-  ;; 3. Get pullback
-
-  ;; 4. Get forward lowered asm
-
-  ))
+	;; 4. Get forward lowered asm
+	fw/bw-graph))))

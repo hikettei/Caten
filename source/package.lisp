@@ -25,6 +25,9 @@
    #:tensor-requires-grad
    #:tensor-grad
    #:tensor-variables
+
+   #:*external-simplifiers*
+   #:proceed
    )
   ;; from shape-tracker.lisp
   (:export #:st #:bc)

@@ -240,4 +240,3 @@ It calls !reshape and !view inside, therefore, it must not be used inside the fo
     `(%solve-st ,st ',where t ,@input-tensors)))
 
 (defun broadcast-elwise (a b) (multiple-value-list (bc "A[~] B[~] -> A[~] B[~]" (a b))))
-(defun broadcast-gemm (a b) (multiple-value-list (bc "A[~ m n] B[~ n k] -> A[~ m n] B[~ n k]" (a b))))

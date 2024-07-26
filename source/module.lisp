@@ -62,7 +62,7 @@ The lower method is automatically written by the `defmodule`, so there is no nee
 However, it is necessary to understand how it is lowered for when defining simplifiers for the `Module`.
 
 `lower` produces the following node:
-`(make-node :Graph (intern (symbols name) \"KEYWORD\") outputs inputs &rest attrs)`
+`(make-node :Graph (intern (symbol-name (symb 'graph/ name)) \"KEYWORD\") outputs inputs &rest attrs)`
 
 Nodes whose class is `:Graph` are completely eliminated during lower by `impl`.
 
@@ -134,11 +134,12 @@ The provided form does not match any of them:~%~a" method method method method f
 	    (impl-form 'forward forward nil)
 	    `(defmethod forward ((op ,name) &rest inputs) (st ,where (inputs))))
        ,(if backward
-	    (impl-form 'backward backward t))
+	    (impl-form 'backward backward t)
+	    `(defmethod backward ((op ,name) prev-grad) nil))
        ,(impl-form 'impl impl nil)
        (defmethod lower ((op ,name) &rest inputs)
 	 (make-graph
-	  (apply #'make-node :Module (intern (symbol-name ',name) "KEYWORD")
+	  (apply #'make-node :Module (intern (symbol-name (symb 'graph/ ',name)) "KEYWORD")
 		 (map 'list #'tensor-id (module-outputs op))
 		 (map 'list #'node->id inputs) (module-attrs op))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))

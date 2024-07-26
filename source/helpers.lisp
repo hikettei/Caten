@@ -2,11 +2,11 @@
 (defpattern sym (to-what) `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
 
 ;; In SBCL, compilation takes longer than 2s.
-(defun %tpsort-tensors (&rest tensors)
+(defun %tpsort-tensors (seen &rest tensors)
   (declare (type list tensors)
 	   (optimize (speed 3)))
   #+sbcl(setf sb-ext:*inline-expansion-limit* 30)
-  (let ((seen nil) (top-sort nil))
+  (let ((top-sort nil))
     (declare (type list seen top-sort))
     (labels ((top-sort-helper (v)
 	       (unless (find (tensor-id v) seen :key #'tensor-id :test #'eql)
@@ -17,7 +17,7 @@
 		   (push v top-sort)))))
       #+sbcl(declare (inline top-sort-helper))
       (dolist (tensor tensors) (top-sort-helper tensor))
-      (reverse top-sort))))
+      (values (reverse top-sort) seen))))
 
 (defun ->iconst (x)
   (if (tensor-p x)
@@ -43,3 +43,5 @@
 (defun zeros-like (tensor)
   (declare (type tensor tensor))
   (make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :initial-element 0.0))
+
+(defun symb (&rest symbols) (intern (with-output-to-string (o) (dolist (s symbols) (princ s o)))))
