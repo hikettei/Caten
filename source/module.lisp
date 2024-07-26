@@ -135,7 +135,7 @@ The provided form does not match any of them:~%~a" method method method method f
 	    `(defmethod forward ((op ,name) &rest inputs) (st ,where (inputs))))
        ,(if backward
 	    (impl-form 'backward backward t)
-	    `(defmethod backward ((op ,name) prev-grad) nil))
+	    `(defmethod backward ((op ,name) prev-grad) :module/skip-bw))
        ,(impl-form 'impl impl nil)
        (defmethod lower ((op ,name) &rest inputs)
 	 (make-graph

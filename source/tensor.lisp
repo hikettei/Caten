@@ -133,13 +133,15 @@ Shape := (Integer > 1) | Symbol | Tensor"
 			 (multiple-value-bind (iseq-bw-tmp seen-new) (%tpsort-tensors seen (car vgrads))
 			   (setf seen seen-new
 				 iseq-bw (append iseq-bw iseq-bw-tmp))))
-		       (loop for v in (func-variables (tensor-op tensor))
-			     for g in vgrads
-			     if g do
-			       (multiple-value-bind (iseq-bw-tmp seen-new) (%tpsort-tensors seen g)			    
-				 (setf seen seen-new
-				       (gethash (tensor-id v) grads) g
-				       iseq-bw (append iseq-bw iseq-bw-tmp)))))))))
+		       (if (and (= (length vgrads) 1) (eql (car vgrads) :module/skip-bw))
+			   (error "TODO: Module Backward")
+			   (loop for v in (func-variables (tensor-op tensor))
+				 for g in vgrads
+				 if g do
+				   (multiple-value-bind (iseq-bw-tmp seen-new) (%tpsort-tensors seen g)			    
+				     (setf seen seen-new
+					   (gethash (tensor-id v) grads) g
+					   iseq-bw (append iseq-bw iseq-bw-tmp))))))))))
       (loop for tensor in (reverse iseq) do (helper tensor)))
     (let* ((bw-graph (%lower-iseq iseq-bw :prev-table prev-table :no-verify t))
 	   (merged-graph
@@ -175,6 +177,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 ;;   - broadcast testing
 ;;   - scalar / matrix testing
 
+;; QDQ->QOP Path kakeru?
 (defparameter *external-simplifiers* `(fold-constant))
 (defparameter *no-grad* nil)
 (defun proceed (&rest tensors)
@@ -194,8 +197,6 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	;; 2. Simplify Modules
 
 	;; 3. Lower Modules
-
-	;; 4. Construct backwards (WIP)
 	
 	;; 1. Lower the modules -> function
 
