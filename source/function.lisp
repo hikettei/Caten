@@ -49,6 +49,26 @@ save-for-backward is determined automatically, so you do not have to consider ab
 	(push g nodes)
 	(apply #'make-graph (apply #'append (map 'list #'graph-nodes (reverse nodes))))))))
 
+(defclass View (Func)
+  ((views :initarg :views :type list :accessor view-views)
+   (nrnak :initarg :nrank :accessor view-nrank)))
+(defmethod backward ((op View) dout)
+  ;; ???
+  )
+(defmethod lower ((op View) &rest inputs)
+  (let ((nrank (view-nrank op))
+	(bs (car (func-variables op))))
+    (flet ((subseq1p (x frm &optional to) (subseq x (1+ frm) (if to (1+ to)))))
+      (with-context
+	  (viewed (%view (car inputs)
+			 (subseq1p inputs 0 nrank) (subseq1p inputs nrank (* 2 nrank))
+			 (subseq1p inputs (* 2 nrank) (* 3 nrank)) (subseq1p inputs (* 3 nrank) (* 4 nrank))
+			 (map 'list #'viewrange-broadcast (view-views op))
+			 (let ((base-shape (subseq1p inputs (* 4 nrank) (* 5 nrank)))
+			       (stride     (subseq1p inputs (* 5 nrank))))
+			   (or stride (%stride base-shape (default-permute nrank (tensor-order bs)))))))))))
+(defun !view (base &rest subscripts) (make-view-internal base subscripts))
+;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Add (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op Add) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op Add) dout) (values dout dout))

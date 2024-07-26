@@ -21,6 +21,7 @@
    #:%store
    #:%stride
    #:%shape
+   #:default-permute
    #:%make-tensor
    #:%index-components
    )

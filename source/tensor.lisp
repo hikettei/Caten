@@ -26,7 +26,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	   (type dtype-t dtype)
 	   (type (member :column :row) order)
 	   (type symbol id)
-	   (type (or null number) initial-element))
+	   (type (or null number symbol) initial-element))
   (dolist (s shape)
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()
@@ -34,6 +34,39 @@ Shape := (Integer > 1) | Symbol | Tensor"
   (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad)))
     (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element))
     buff))
+
+(macrolet ((def (name dtype)
+	     `(defun ,name (value &key (dtype ,dtype) (order *default-order*) (id (gensym "SID")) (requires-grad nil))
+		(if (tensor-p value)
+		    value
+		    (make-tensor nil :dtype dtype :order order :id id :requires-grad requires-grad :initial-element value)))))
+  (def fconst *default-float*)
+  (def uconst *default-uint*)
+  (def iconst *default-int*))
+
+(defun make-view-internal (base subscripts &key (dtype (tensor-dtype base)) (order (tensor-order base)) (id (gensym "VID")) (stride nil))
+  (declare (type Tensor base)
+	   (type list subscripts)
+	   (type dtype-t dtype)
+	   (type (member :row :column) order))
+  (handler-bind
+      ((error
+	 #'(lambda (c) (error 'caten-forward-error :op 'make-view-internal :inputs (list base) :c c))))
+    (let* ((views (merge-views base subscripts))
+	   (buff (%internal-make-tensor nil (map 'list #'vrange-size views) :dtype dtype :order order :id id :views views)))
+      (setf (tensor-variables buff)
+	    (append
+	     (list base)
+	     (map 'list #'vrange-size views)
+	     (loop for v in views collect (viewrange-from v))
+	     (loop for v in views collect (viewrange-to v))
+	     (loop for v in views collect (viewrange-by v))
+	     (loop for s in (tensor-shape base) collect (if (node-p s) s (iconst s)))
+	     (loop for s in stride collect (if (node-p s) s (iconst s))))
+	    (tensor-op buff) (make-instance 'View :views views :nrank (length views)))
+      (setf (func-variables (tensor-op buff)) (tensor-variables buff))
+      (assert (every #'tensor-p (tensor-variables buff)) ())
+      buff)))
 
 (defun %lower-iseq (iseq)
   (declare (type list iseq))

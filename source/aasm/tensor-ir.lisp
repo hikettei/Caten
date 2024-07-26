@@ -93,6 +93,13 @@ If i is a tensor, %load fills the visible area of i with value."
   (flet ((const (n) (if (node-p n) n (%load (%salloc :dtype dtype) n))))
     (map 'list #'const shape)))
 
+(defun default-permute (rank order)
+  (declare (type (member :row :column) order))
+  (let ((permute (range 0 rank)))
+    (when (eql order :column)
+      (setf permute (reverse permute)))
+    permute))
+
 (defun %make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")))
   "A useful wrapper for %alloc. it computes stride based on order.
 %make-tensor is used to allocate the initial tensor, later weights are loaded."
@@ -103,10 +110,7 @@ If i is a tensor, %load fills the visible area of i with value."
 	  ()
 	  "%make-tensor: Shape is designed as symbol (existing in the graph), integer or node.~%butgot ~a" shape)
   (when (= 0 (length shape)) (return-from %make-tensor (%salloc :dtype dtype)))
-  (let ((permute (range 0 (length shape))))
-    (when (eql order :column)
-      (setf permute (reverse permute)))
-    (%alloc (length shape) (%shape shape) (%stride shape permute) :dtype dtype :id id)))
+  (%alloc (length shape) (%shape shape) (%stride shape (default-permute (length shape) order)) :dtype dtype :id id))
 
 (defun %index-components (x &key (id (gensym "IID")))
   "the equivalent to doing: `for (int i=x.view.from;i<x.view.to;i+=x.view.by) { id[i] = i; }`"

@@ -10,6 +10,7 @@
   ;; from tensor.lisp
   (:export
    #:make-tensor
+   #:fconst #:uconst #:iconst
    #:Tensor
    #:tensor-p
    #:tensor-shape

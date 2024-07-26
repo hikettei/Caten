@@ -18,3 +18,9 @@
       #+sbcl(declare (inline top-sort-helper))
       (dolist (tensor tensors) (top-sort-helper tensor))
       (reverse top-sort))))
+
+(defun ->iconst (x)
+  (if (tensor-p x)
+      x
+      (iconst x)))
+      
