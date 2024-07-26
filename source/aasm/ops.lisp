@@ -2,7 +2,9 @@
 ;; A subset of ops
 ;; +-/=
 ;; SIN, SQRT, LOG2, EXP2, RECIP
-;;
+
+;; Notation: y <- f(x y)
+;; x is always the destination of output buffers.
 
 ;; UnaryOps := [NEG, RECIP, SQRT, NOT]
 (macrolet ((def (fname opname)

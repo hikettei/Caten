@@ -5,10 +5,13 @@
 (defclass Func ()
   ((variables :initarg :variables :initform nil :accessor func-variables)))
 
-(defgeneric lower (op &rest inputs))
-(defgeneric forward (op &rest tensors))
-(defgeneric backward (op prev-grad))
-
+(defgeneric lower (op &rest inputs)
+  (:documentation "Lowers the Func into a list of `caten/air:node`. This should return caten/air:graph."))
+(defgeneric forward (op &rest tensors)
+  (:documentation "Create the type for the Tensor after computation. Be mindful of its lazy evaluation nature; do not perform the actual computation."))
+(defgeneric backward (op prev-grad)
+  (:documentation "Create the graph for backward of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`.
+save-for-backward is determined automatically, so you do not have to consider about in-place operation."))
 (defmethod forward :around ((op Func) &rest tensors)
   (let ((outs (handler-bind
 		  ((error
@@ -20,7 +23,6 @@
       (setf (tensor-variables o) tensors
 	    (tensor-op o) op))
     (apply #'values outs)))
-;; TODO: (defmacro defop
 ;; ~~ implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Allocate (Func) ((buffer :initarg :buffer :type Tensor :accessor alloc-buffer)))
 (defmethod forward ((op Allocate) &rest tensors) (declare (ignore tensors)) (alloc-buffer op))

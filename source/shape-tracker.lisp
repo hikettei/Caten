@@ -1,9 +1,5 @@
 (in-package :caten)
-;; ShapeTrackerはOptionalだから可変引数は実装しなくても回避できるはず？
-;; ConvNDとかのShape遷移を綺麗に書く
-;; LazyAssertsを追加する？
-;; WhereはLispで書く (stringではやらない)
-;; Scalarは[]で表現 (0rank)
+
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defstruct (AxisTracker
 	      (:conc-name at-)
@@ -148,10 +144,25 @@
 	(apply #'values (map 'list #'make-new-tensor (st-aft st)))))))
 
 (defmacro st (st-notation (&rest input-tensors) &rest where)
-  "ShapeTracker (TODO: Docs)"
+  "## [macro] st
+Based on the notation of ShapeTracker, automatically generate the Tensor after forward.
+
+### Examples
+
+- ElementWise      : A[~] -> A[~]
+- Gemm             : A[~ m n] B[~ n k] -> A[~ m k]
+- Scalar           : A[] B[~] -> B[~]
+- Multiple outputs : A[] B[] -> A[] B[]
+
+### Notation
+
+`~` represents an inifinite-rank.
+Positioned only in the first rank, and the rank height becomes infinite.
+Within this range, if there is a mismatch in shape, broadcasting is automatically applied.
+
+TODO: Add LazyAssertion which applies shape check even for symbols
+"
   (declare (type string st-notation))
   (let ((st (%st->list (%parse-st st-notation))))
     `(%solve-st ,st ',where ,@input-tensors)))
-
-;; ~ <- broadcast autoとして実装する
 ;; TODO: with-broadcasts after implementing view and reshape

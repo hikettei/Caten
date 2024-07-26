@@ -12,16 +12,15 @@
   (dtype dtype :type dtype-t)
   (order order :type (member :row :column))
   (id id :type symbol)
-  (op op) ;; Type Func or Module
+  (op op :type (or null Func)) ;; Type Func or Module
   (views nil :type list)
   (requires-grad requires-grad :type boolean)
   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil)) :type (or null Tensor))
   (variables variables :type list))
-
-;; (defafunc Allocation :fw :Allocate :bw accumlate-gradients
 ;;(defmethod print-object ((tensor Tensor) stream))
 (defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil))
-  "Create a new lazy tensor.
+  "## [function] make-tensor
+Create a new lazy tensor.
 Shape := (Integer > 1) | Symbol | Tensor"
   (declare (type list shape)
 	   (type dtype-t dtype)
