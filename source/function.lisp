@@ -72,7 +72,36 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defun !view (base &rest subscripts) (make-view-internal base subscripts))
 ;; !reshape
 ;; !permute
+(defun !contiguous (x)
+  (declare (type tensor x))
+  (if (tensor-views x)
+      (let ((out (make-tensor (tensor-shape x) :dtype (tensor-dtype x) :order (tensor-order x))))
+	(!move out x))
+      x))
+
+(defclass Reshape (Func)
+  ((shape-bf :initarg :shape-bf :accessor reshape-shape-bf)
+   (shape-af :initarg :shape-af :accessor reshape-shape-af)))
+(defmethod forward ((op Reshape) &rest tensors)
+  (when (and (every #'numberp (reshape-shape-bf op)) (every #'numberp (reshape-shape-af op)))
+    (assert (= (apply #'* (reshape-shape-bf op)) (apply #'* (reshape-shape-af op)))
+	    ()
+	    "Assertion Failed: Cannot reshape from ~a to ~a. The number of total elements should correspond."
+	    (reshape-shape-bf op) (reshape-shape-af op)))
+  (make-tensor (reshape-shape-af op) :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))))
+(defmethod backward ((op Reshape) prev-grad) (apply #'!reshape op (reshape-shape-bf op)))
+(defun !reshape (x shape)
+  (declare (type tensor x) (type list shape))
+  (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape) x))
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Move (Func) nil)
+(defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
+(defmethod backward ((op Move) dout) (values dout dout))
+(defmethod lower ((op Move) &rest inputs)
+  (multiple-value-bind (a b) (apply #'values inputs)
+    (with-context (out (%move a b)))))
+(defun !move (a b) (declare (type tensor a b)) (forward (make-instance 'Move) a b))
+
 (defclass Add (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op Add) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op Add) dout) (values dout dout))
@@ -127,10 +156,12 @@ save-for-backward is determined automatically, so you do not have to consider ab
 		(defun ,name (x) (declare (type Tensor x)) (forward (make-instance ',cls) x)))))
   (def !neg Neg)
   (def !recip Recip))
-;;(declaim (ftype (function (Tensor) (values Tensor &optional)) !sign))
-;;(defun !sign (x)
-;;  (let ((zeros (!where (!eq x (make-scalar 0
-;;  )
+(declaim (ftype (function (Tensor) (values Tensor &optional)) !signum !abs))
+(defun !signum (x)
+  (flet ((->const (val) (make-scalar val :dtype (tensor-dtype x))))
+    (let ((zeros (!where (!eq x (->const 0)) (->const 0) (->const 1))))
+      (!mul zeros (!where (!>= x (->const 0)) (->const 1) (->const -1))))))
+(defun !abs (x) (!mul (!signum x) x))
 
 ;; ~~ Compare Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((def (name cls aop)

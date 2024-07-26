@@ -39,6 +39,7 @@
    #:%sub
    #:%mul
    #:%div
+   #:%move
    #:%and
    #:%or
 

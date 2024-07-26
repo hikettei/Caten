@@ -106,6 +106,7 @@
 	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args) (apply #'map-view (getattr node :reduction) ,op args))))
   (impl :add #'+)
   (impl :mul #'*)
+  (impl :move #'(lambda (x y) x y))
   (impl :and #'(lambda (x y) (if (and (numberp x) (numberp y)) (logand x y) (and x y))))
   (impl :or #'(lambda (x y) (if (and (numberp x) (numberp y)) (logior x y) (or x y))))
   
@@ -119,7 +120,7 @@
 		      (if (or (eql cast-to :float64) (eql cast-to :float32) (eql cast-to :float16))
 			  (coerce x cast-to)
 			  (coerce (round x) cast-to))
-		      (coerce x cast-to))))  
+		      (coerce x cast-to))))
   (impl :NEQ #'(lambda (_ x y) _ (not (= x y)))) ;; input is a boolean
   (impl :LT #'(lambda (_ x y) _ (< x y)))
   (impl :WHERE #'(lambda (c x y) (if c x y))))

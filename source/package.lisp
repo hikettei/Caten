@@ -42,15 +42,18 @@
 
   ;; from function.lisp
   (:export
+   ;; shaping
+   #:!view #:!reshape #:!contiguous
    ;; Binary
    #:!add #:!+
    #:!sub #:!-
    #:!mul #:!*
    #:!div #:!/
+   #:!move
 
    ;; Unary
    #:!neg #:!recip
-   #:!cast
+   #:!cast #:!signum #:!abs
    ;; Logical
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
    ;; TernaryOps

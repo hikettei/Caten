@@ -19,7 +19,7 @@
 (defun %cast (x y dtype &key (id (gensym "CID")))
   (declare (type node x y) (type dtype-t dtype))
   (emit (make-node :UnaryOps :CAST (list id) (list (node->id x) (node->id y)) :dtype dtype)))
-;; BinaryOps := [Add, Mul, NEQ, LT, AND, OR]
+;; BinaryOps := [MOVE, Add, Mul, NEQ, LT, AND, OR]
 ;; reduction = nil -> | c = a + b
 ;; reduction = t   -> | a += b
 (macrolet ((def (fname opname)
@@ -29,7 +29,8 @@
   (def %add :ADD)
   (def %mul :MUL)
   (def %and :AND)
-  (def %or :OR))
+  (def %or :OR)
+  (def %move :MOVE))
 (defun %sub (x y &key (reduction nil)) (%add x (%neg y) :reduction reduction))
 (defun %div (x y &key (reduction nil)) (%mul x (%recip y) :reduction reduction))
 

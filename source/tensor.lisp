@@ -118,9 +118,9 @@ Shape := (Integer > 1) | Symbol | Tensor"
 
 
 ;; 1. 一旦Module, Backwardだけ実装する
-;; 2. %loadを実装 + ok
-;; !where, logicals, castを実装
-;; absを実装
+;; 2. %loadを実装 + ok          (OK)
+;; !where, logicals, castを実装 (OK)
+;; absを実装                    
 ;; -> 1. broadcast, (fconst 1)を許容する
 ;; absのconstant foldingを実装
 ;; !reshape/!viewを実装
