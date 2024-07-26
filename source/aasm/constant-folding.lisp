@@ -30,6 +30,9 @@
     ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y))))
      ->
      (:_TmpScalarConst ((* x y)) :dtype dtype))
+    ((:Neg ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((- x)) :dtype dtype))
+    ((:Recip ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((/ x)) :dtype dtype))
+    
     ((:Mul (x (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph x node)))
     ((:Mul ((:_TmpScalarConst ((= 0))) x)) -> ((node graph) (reinitialize-tensor graph x node)))
     ((:Add (x (:_TmpScalarConst ((= 0))))) -> (:_TmpPurged (x)))

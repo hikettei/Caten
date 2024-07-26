@@ -66,7 +66,6 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	 #'(lambda (c) (error 'caten-forward-error :op 'make-view-internal :inputs (list base) :c c))))
     (let* ((views (merge-views base subscripts))
 	   (buff (%internal-make-tensor nil (map 'list #'vrange-size views) :dtype dtype :order order :id id :views views)))
-      ;; [TODO] FoldConstant
       (setf (tensor-variables buff)
 	    (append
 	     (list base)
@@ -79,6 +78,8 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	    (tensor-op buff) (make-instance 'View :views views :nrank (length views)))
       (setf (func-variables (tensor-op buff)) (tensor-variables buff))
       (assert (every #'tensor-p (tensor-variables buff)) ())
+      ;; Fold Constant
+      (setf (tensor-shape buff) (map 'list #'(lambda (x) (or (and (not (tensor-p x)) x) (try-fold-constant x) x)) (tensor-shape buff)))
       buff)))
 
 (defun %lower-iseq (iseq)
