@@ -7,7 +7,7 @@
 
 (defgeneric lower (op &rest inputs))
 (defgeneric forward (op &rest tensors))
-(defgeneric backward (op dout))
+(defgeneric backward (op prev-grad))
 
 (defmethod forward :around ((op Func) &rest tensors)
   (let ((outs (handler-bind

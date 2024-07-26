@@ -80,7 +80,14 @@ Shape := (Integer > 1) | Symbol | Tensor"
 (defun proceed (&rest tensors)
   "Realizes the tensor"
   (declare (type list tensors))
+  ;; 1. Lower
+  (let* ((lowered-graph (apply #'%tensor->aasm tensors))
+	 ;; 2. Simplify Modules
 
+	 ;; 3. Lower Modules
+
+	 ;; 4. Construct backwards (WIP)
+	 )
   ;; 1. Lower the modules -> function
 
   ;; ModuleのBackward: TmpModuleBWみたいなClassを作る，ClassのSlotにLoweredされたTensorを格納
@@ -91,4 +98,4 @@ Shape := (Integer > 1) | Symbol | Tensor"
 
   ;; 4. Get forward lowered asm
 
-  )
+  ))

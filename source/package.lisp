@@ -17,4 +17,15 @@
    )
   ;; from shape-tracker.lisp
   (:export #:st)
+
+  ;; from module.lisp
+  (:export
+   #:Module
+   #:impl
+   #:defmodule
+   #:module-outputs
+   #:module-attrs
+   #:module-sv4bws
+
+   )
   )
