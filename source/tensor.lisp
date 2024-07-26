@@ -82,6 +82,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
       (setf (tensor-shape buff) (map 'list #'(lambda (x) (or (and (not (tensor-p x)) x) (try-fold-constant x) x)) (tensor-shape buff)))
       buff)))
 
+;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %lower-iseq (iseq &key prev-table (no-verify nil))
   (declare (type list iseq))
   ;; at this level, only graph/function can be coexist <- x
@@ -134,7 +135,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 			   (setf seen seen-new
 				 iseq-bw (append iseq-bw iseq-bw-tmp))))
 		       (if (and (= (length vgrads) 1) (eql (car vgrads) :module/skip-bw))
-			   (error "TODO: Module Backward")
+			   nil;;(error "TODO: Module Backward")
 			   (loop for v in (func-variables (tensor-op tensor))
 				 for g in vgrads
 				 if g do
@@ -143,18 +144,76 @@ Shape := (Integer > 1) | Symbol | Tensor"
 					   (gethash (tensor-id v) grads) g
 					   iseq-bw (append iseq-bw iseq-bw-tmp))))))))))
       (loop for tensor in (reverse iseq) do (helper tensor)))
-    (let* ((bw-graph (%lower-iseq iseq-bw :prev-table prev-table :no-verify t))
-	   (merged-graph
-	     (apply
-	      #'make-graph
-	      (append
-	       (graph-nodes fw-graph)
-	       (list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes fw-graph)))))))
-	       (graph-nodes bw-graph)))))
-      (verify-graph merged-graph)
-      merged-graph)))
+    (multiple-value-bind (bw-graph bw-table) (%lower-iseq iseq-bw :prev-table prev-table :no-verify t)
+      (maphash #'(lambda (k v) (setf (gethash k prev-table) v)) bw-table)
+      ;; Simplifier
+      (dolist (f *external-simplifiers*) (funcall f fw-graph))
+      (let ((merged-graph
+	      (apply
+	       #'make-graph
+	       (append
+		(graph-nodes (%lower-modules fw-graph seen prev-table))
+		(list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes fw-graph)))))))
+		(graph-nodes bw-graph)))))
+	(dolist (f *external-simplifiers*) (funcall f merged-graph))
+	(let ((merged-graph (%lower-modules merged-graph seen prev-table)))
+	  (verify-graph merged-graph)
+	  (values merged-graph seen prev-table))))))
 
+(defun %module->iseqfw (module seen table)
+  (declare (type node module) (type list seen) (type hash-table table))
+  (assert (eql :Module (node-class module)) ())
+  (assert (getattr module :metadata) () "~a has lost its metadata." module)
+  (let* ((op (getattr module :metadata))
+	 (lowered
+	   (multiple-value-list
+	    (apply #'impl op (func-variables op)))))
+    (multiple-value-bind (iseq new-table)
+	(%lower-iseq (apply #'%tpsort-tensors seen lowered) :prev-table table :no-verify t)
+      (maphash #'(lambda (k v) (setf (gethash k table) v)) new-table)
+      (graph-nodes iseq))))
 
+(defun %module->iseqbw (module seen prev-table grad-table)
+  (declare (type node module)
+	   (type list seen)
+	   (type hash-table prev-table grad-table))
+  
+  )
+
+(defun %lower-modules (base-graph seen involved-tensors)
+  (declare (type graph base-graph)
+	   (type list seen)
+	   (type hash-table involved-tensors))
+  (let ((new-graph
+	  (map 'list
+	       #'(lambda (x)
+		   (if (eql :module (node-class x))
+		       (%module->iseqfw x seen involved-tensors)
+		       x))
+	       (graph-nodes base-graph))))
+    (setf (graph-nodes base-graph) (flatten new-graph))
+    (verify-graph base-graph)
+    base-graph))
+
+(defparameter *external-simplifiers* `(fold-constant))
+(defparameter *no-grad* nil)
+(defun proceed (&rest tensors)
+  "Realizes the tensor"
+  (declare (type list tensors))
+  ;; lowered-graph = :func :graph is mixed
+  (multiple-value-bind (iseq seen) (apply #'%tpsort-tensors nil tensors)
+    (multiple-value-bind (lowered-graph involved-tensors) (%lower-iseq iseq)
+      ;; Construct backwards      
+      (let* ((prev-grad (make-tensor (tensor-shape (car tensors))
+				     :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))
+				     :id 'prev-grad :initial-element 1)))
+	(let ((fw/bw-graph
+		(if *no-grad*
+		    (values lowered-graph seen involved-tensors)
+		    (%graph->pullback involved-tensors seen prev-grad iseq lowered-graph))))
+	  (dolist (f *external-simplifiers*)
+	    (funcall f fw/bw-graph))
+	  fw/bw-graph)))))
 
 ;; 1. 一旦Module, Backwardだけ実装する
 ;; 2. %loadを実装 + ok          (OK)
@@ -176,33 +235,3 @@ Shape := (Integer > 1) | Symbol | Tensor"
 ;;   - backward test
 ;;   - broadcast testing
 ;;   - scalar / matrix testing
-
-;; QDQ->QOP Path kakeru?
-(defparameter *external-simplifiers* `(fold-constant))
-(defparameter *no-grad* nil)
-(defun proceed (&rest tensors)
-  "Realizes the tensor"
-  (declare (type list tensors))
-  ;; 1. Lower
-  ;; lowered-graph = :func :graph is mixed
-  (multiple-value-bind (iseq seen) (apply #'%tpsort-tensors nil tensors)
-    (multiple-value-bind (lowered-graph involved-tensors) (%lower-iseq iseq)
-      ;; Construct backwards      
-      (let* ((prev-grad (make-tensor (tensor-shape (car tensors))
-				     :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))
-				     :id 'prev-grad :initial-element 1))
-	     (fw/bw-graph (if *no-grad* lowered-graph (%graph->pullback involved-tensors seen prev-grad iseq lowered-graph))))
-	(dolist (f *external-simplifiers*)
-	  (funcall f fw/bw-graph))
-	;; 2. Simplify Modules
-
-	;; 3. Lower Modules
-	
-	;; 1. Lower the modules -> function
-
-	;; 2. Sort functions
-
-	;; 3. Get pullback
-
-	;; 4. Get forward lowered asm
-	fw/bw-graph))))

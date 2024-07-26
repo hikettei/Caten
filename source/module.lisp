@@ -141,7 +141,7 @@ The provided form does not match any of them:~%~a" method method method method f
 	 (make-graph
 	  (apply #'make-node :Module (intern (symbol-name (symb 'graph/ ',name)) "KEYWORD")
 		 (map 'list #'tensor-id (module-outputs op))
-		 (map 'list #'node->id inputs) (module-attrs op))))
+		 (map 'list #'node->id inputs) (append (module-attrs op) (list :metadata op)))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
 
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
