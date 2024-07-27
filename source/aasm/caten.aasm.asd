@@ -11,6 +11,7 @@
    (:file "tensor-ir")
    (:file "ops")
    (:file "constant-folding")
+   (:file "optimizers")
    (:file "view")
    (:file "logical"))
   :in-order-to ((test-op (asdf:test-op "caten.aasm/test"))))

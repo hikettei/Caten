@@ -6,7 +6,6 @@
     (%0_fuse_load_alloc)
     ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (number x)) -> (:_TmpScalarConst (x) :dtype dtype)))
 
-
 (defun reinitialize-tensor (graph id node)
   (declare (type graph graph))
   (multiple-value-bind (nrank shape stride dtype views)
@@ -32,9 +31,10 @@
      (:_TmpScalarConst ((* x y)) :dtype dtype))
     ((:Neg ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((- x)) :dtype dtype))
     ((:Recip ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((/ x)) :dtype dtype))
-    
-    ((:Mul (x (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph x node)))
-    ((:Mul ((:_TmpScalarConst ((= 0))) x)) -> ((node graph) (reinitialize-tensor graph x node)))
+    ((:Mul (_ (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))
+    ((:Mul ((:_TmpScalarConst ((= 0))) _)) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))
+    ((:Mul (x (:_TmpScalarConst ((= 1))))) -> (:_TmpPurged (x)))
+    ((:Mul ((:_TmpScalarConst ((= 1))) x)) -> (:_TmpPurged (x)))
     ((:Add (x (:_TmpScalarConst ((= 0))))) -> (:_TmpPurged (x)))
     ((:Add ((:_TmpScalarConst ((= 0))) x)) -> (:_TmpPurged (x)))
     ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype)
@@ -75,15 +75,11 @@
     ((:_TmpScalarConst (x) :dtype dtype)
      ->
      ((node graph)
-      (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node)))))))
-
-(defsimplifier
-    (%3_simplify_graph :speed 0)
-    ((:Store ((:Allocate (~ s1) :nrank nrank :dtype dtype1) (:Allocate (~ s2) :dtype dtype2)))
+      (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node))))))
+    ((:_TmpPurged (x))
      ->
      ((node graph)
-      (when (and (eql dtype1 dtype2) (equal s1 s2))
-	(make-node :Buffer :Allocate (node-writes node) s1 :nrank nrank :dtype dtype1)))))
+      (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))))
 
 (defun fold-constant (graph)
   (declare (type Graph graph))
@@ -92,13 +88,10 @@
  	  "_TmpScalarConst shouldn't exist!")
   (%0_fuse_load_alloc graph)
   (%1_fold_constant graph)
-  (%2_unfold_load_alloc graph)
-  (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
-	  ()
-	  "_TmpScalarConst shouldn't exist! (but it is a simplifier's bug)")
   (let ((purges (loop for node in (graph-nodes graph)
 		      if (eql (node-type node) :_TmpPurged)
 			collect node)))
+    ;; If y <- _TmpPurge(x), rewrite all y with x
     (dolist (pnode purges)
       (assert (symbolp (car (node-reads pnode))))
       (flet ((->new (x)
@@ -106,11 +99,16 @@
 		   (car (node-reads pnode))
 		   x)))
 	(loop for node in (graph-nodes graph)
-	      if (not (eql (node-type node) :_TmpPurged))
-		do (setf (node-reads node) (map 'list #'->new (node-reads node)))))))
-  (verify-graph graph)
+	      for n upfrom 0
+	      do (setf (node-reads node) (map 'list #'->new (node-reads node))))
+	(assert (equal (graph-outputs graph) (map 'list #'->new (graph-outputs graph))) ()))))
+  (%2_unfold_load_alloc graph)
+  ;;(setf (graph-nodes graph) (loop for n in (graph-nodes graph) if (not (eql (node-type n) :_TmpPurged)) collect n))
+  (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
+	  ()
+	  "_TmpScalarConst shouldn't exist! (but it is a simplifier's bug)")
   (assert (null (find :_TmpPurged (graph-nodes graph) :key #'node-type))
 	  ()
 	  "_TmpPurged shouldn't exist! (it is a simplifier's bug)")
-  (%3_simplify_graph graph)
+  (verify-graph graph)
   graph)

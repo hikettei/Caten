@@ -3,13 +3,13 @@
 (defpackage :caten/avm.test
   (:use :cl :rove :caten/air :caten/aasm :caten/avm))
 (in-package :caten/avm.test)
-;; TODO: ULP
+
 (defun =~ (x y) (< (abs (- x y)) 1e-6))
 (defun %seval (evaluated-to graph &key (test #'=))
-  (ok (funcall test evaluated-to (buffer-value (%realize (fold-constant graph))))))
+  (ok (funcall test evaluated-to (buffer-value (%realize (optimize-aasm graph))))))
 
 (defun %eval (evaluated-to graph &key (test #'=))
-  (ok (every test evaluated-to (buffer-value (%realize (fold-constant graph))))))
+  (ok (every test evaluated-to (buffer-value (%realize (optimize-aasm graph))))))
 
 ;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %arange (shape a b &key (dtype :float32) (order :row))
@@ -229,7 +229,7 @@
 
 (defun make-squared-gemm (x y n)
   "a @ b.T"
-  (fold-constant
+  (optimize-aasm
    (with-context
      (a  (%make-tensor `(,n ,n) :id 'X))
      (b  (%make-tensor `(,n ,n) :id 'Y))

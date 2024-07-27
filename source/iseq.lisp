@@ -150,13 +150,15 @@
       (setf iseq-bw (%make-graph-backward session iseq :iseq-bw iseq-bw)))
     (let ((backward-graph (when (null no-grad) (%lower-iseq session iseq-bw :no-verify t))))
       ;; backward-graph depends on forward-graph, they should not simplified/verified until merged
-      (assert (graph-nodes forward-graph) ())
       (let ((merged-graph
 	      (apply
 	       #'make-graph
 	       (append
 		(graph-nodes forward-graph)
-		(list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes forward-graph)))))))
+		(and
+		 (graph-nodes forward-graph)
+		 (null no-grad)
+		 (list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes forward-graph))))))))
 		(and backward-graph (graph-nodes backward-graph))))))
 	(session/update-outputs session merged-graph)
 	;; Graph Level whole optimization
@@ -214,7 +216,7 @@
     (verify-graph graph)
     graph))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter *external-simplifiers* `(fold-constant))
+(defparameter *external-simplifiers* `(optimize-aasm))
 (defparameter *no-grad* nil)
 (defun %compile-toplevel (tensors &key (no-grad *no-grad*) (external-simplifiers *external-simplifiers*))
   (declare (type list tensors))
@@ -248,6 +250,14 @@
 	    for sid = (std->lid tid)
 	    for tensor = (tid->tensor-grad tid)
 	    if tensor do (session/set-tid session sid (tensor-grad tensor)))
+      ;; nothing to compute? -> alloc
+      (when (null (graph-nodes graph))
+	(setf (graph-nodes graph)
+	      (with-context-nodes
+		  (_ (loop for tid in (session-fw-out-ids session)
+			   for sid = (std->lid tid)
+			   for tensor = (tid->tensor tid)
+			   do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
       (make-avm graph (session-name session)
 		(session-tid->tensor session)
 		(map 'list #'std->lid (session-fw-out-ids session))

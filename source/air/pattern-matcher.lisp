@@ -82,7 +82,7 @@
 		   (push w seen))))))
 
 (defparameter *matched-bind* nil "a temporary place to store matched nodes during simplifying")
-(defmacro defsimplifier ((name &key (speed 3)) &rest rules)
+(defmacro defsimplifier ((name &key (speed 0)) &rest rules)
   "
 ## [Macro] defsimplifier
 Defines graph simplification rule
@@ -90,16 +90,18 @@ Tips: return nil to skip the simplification process.
 Tips: (~ x) to accept n-args.
 TODO: Docs"
   (with-gensyms (graph simplifier-bind apply-bind node-top count-bind)
-    `(defun ,name (,graph)
+    `(defun ,name (,graph &key (no-verify nil))
        (declare (type graph ,graph)
+		(type boolean no-verify)
 		(optimize (speed ,speed)))
        (when (null (graph-nodes ,graph)) (return-from ,name))
-       (verify-graph ,graph)
+       (unless no-verify (verify-graph ,graph))
        (labels ((,simplifier-bind (,node-top ,count-bind
 				   &aux
 				     (*matched-bind* nil))
 		  (declare (type list *matched-bind*))
 		  (when (null ,node-top) (return-from ,simplifier-bind))
+		  (when (some #'(lambda (x) (find x (node-writes ,node-top) :test #'eql)) (graph-outputs ,graph)) (return-from ,simplifier-bind))
 		  (multiple-value-bind (replace-rule matched)
 		      (match ,node-top
 			,@(map 'list #'(lambda (x) (parse-rule x node-top graph)) rules)
@@ -127,5 +129,5 @@ TODO: Docs"
 		      (setf changed-p t)))
 		  changed-p))
 	 (loop while (,apply-bind ,graph))
-	 (verify-graph ,graph)
+	 (unless no-verify (verify-graph ,graph))
 	 ,graph))))

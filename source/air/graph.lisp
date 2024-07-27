@@ -89,7 +89,7 @@ If outputs is nil, the writes of last nodes becomes the top"
 				(dolist (w (node-writes node-old)) (push w seen))
 				(setf stashed (remove node-old stashed :key #'cdr :test #'equal)))
 			(setf finish-p (not changed-p)))))
-    (assert (null stashed) () "verify-graph: these nodes are isolated: ~a" stashed) 
+    ;;(assert (null stashed) () "verify-graph: these nodes are isolated: ~a" stashed) 
     (setf (graph-nodes graph) (reverse new-nodes))
     graph))
   

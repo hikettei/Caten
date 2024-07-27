@@ -69,4 +69,6 @@
 
   ;; from helpers.lisp
   (:export #:dtype->lisp)
+  ;; from optimizers.lisp
+  (:export #:optimize-aasm)
   )

@@ -111,7 +111,7 @@ If i is a tensor, %load fills the visible area of i with value."
   (assert (every #'(lambda (x) (or (symbolp x) (integerp x) (node-p x))) shape)
 	  ()
 	  "%make-tensor: Shape is designed as symbol (existing in the graph), integer or node.~%butgot ~a" shape)
-  (when (= 0 (length shape)) (return-from %make-tensor (%salloc :dtype dtype)))
+  (when (= 0 (length shape)) (return-from %make-tensor (%salloc :dtype dtype :id id)))
   (%alloc (length shape) (%shape shape) (%stride shape (default-permute (length shape) order)) :dtype dtype :id id))
 
 (defun %index-components (x &key (id (gensym "IID")))

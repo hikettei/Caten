@@ -38,7 +38,7 @@
   (declare (type Tensor tensor))
   (let ((graph (fold-constant (%tensor->aasm tensor))))
     (when (= (length (graph-nodes graph)) 2)
-      (%obtain-fold-constant-result graph)
+      (%obtain-fold-constant-result graph :no-verify t)
       (when (and (= (length (graph-nodes graph)) 1)
 		 (eql :_TmpScalarConst (node-type (car (graph-nodes graph)))))
 	(let ((val (car (node-reads (car (graph-nodes graph))))))

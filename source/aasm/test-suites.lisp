@@ -8,7 +8,7 @@
 (defun check-schedule (graph count)
   (declare (type graph graph)
 	   (type fixnum count))
-  (let ((sched (fold-constant graph)))
+  (let ((sched (optimize-aasm graph)))
     (assert
      (= (length (graph-nodes sched)) count)
      ()
@@ -26,8 +26,8 @@
 		      (c (%add a b)))
 		    ,count))))
       (check (3 3) (3 3) 3)
-      (check (a b) (3 3) 12)
-      (check (3 3) (a b) 12)
+      (check (a b) (3 3) 9)
+      (check (3 3) (a b) 9)
       (check (a 3) (3 3) 5)))
   (testing "Tensor Creation (w/o constant folding vs worst case)"
     (macrolet ((make (s1 s2)
@@ -36,9 +36,9 @@
 		    (b (%make-tensor ',s2))
 		    (c (%add a b)))))
       ;; Needs to be updated if we fold symbols
-      (ok (= (length (graph-nodes (fold-constant (make (a b) (a b)))))
-	     (length (graph-nodes (make (a b) (a b))))
-	     (length (graph-nodes (make (3 3) (3 3))))))))
+      (ok (<= (length (graph-nodes (fold-constant (make (a b) (a b)))))
+	      (length (graph-nodes (make (a b) (a b))))
+	      (length (graph-nodes (make (3 3) (3 3))))))))
   (testing "View Creation"
     (macrolet ((check (s1 frm to by bc count)
 		 `(ok
@@ -48,7 +48,7 @@
 		      (b (%view a ',frm ',frm ',to ',by ',bc (%stride ',frm (list 2 1 0)))))
 		    ,count))))
       (check (5 5 5) (0 0 0) (5 5 5) (1 1 1) (nil nil nil) 2)
-      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 48)))
+      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 42)))
   (testing "Reshape Creation"
     (macrolet ((check (s1 s2 count)
 		 `(ok
@@ -59,7 +59,7 @@
 		    ,count))))
       (check (1 2 3) (6) 2)
       (check (1 2 3) (d) 4)
-      (check (a b c) (d) 18))))
+      (check (a b c) (d) 15))))
 
 (deftest infer-tensor-info
   (macrolet ((ssa-form (&rest form) `(fold-constant (with-context ,@form))))

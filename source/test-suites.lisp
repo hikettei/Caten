@@ -1,5 +1,5 @@
 (in-package :cl-user)
-(defpackage :caten.test (:use :cl :rove :caten :caten/avm))
+(defpackage :caten.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air))
 (in-package :caten.test)
 
 (deftest test-shape-tracker
@@ -94,6 +94,40 @@
 	(let ((a (pproceed `((a . 4) (b . 2)) (!add (make-tensor `(a b) :initial-element 'a :dtype :uint32) (iconst 'b)))))
 	  (ok (and (every (equal-to 6) (elements a)) (= (length (elements a)) 8))))))))
 
+(defun check-schedule (avm count &aux (graph (avm-graph avm)))
+  (declare (type avm avm)
+	   (type fixnum count))
+  (let ((sched (optimize-aasm graph)))
+    (assert
+     (= (length (graph-nodes sched)) count)
+     ()
+     "check-schedule: should satisfy (kernel_count=~a) <= ~a.~%~a" (length (graph-nodes sched)) count sched))
+  t)
+
+(deftest test-simplifier
+  (with-no-grad
+    (ok (check-schedule (caten (!neg (!add (iconst 0) (iconst 'a)))) 3))
+    (ok (check-schedule (caten (!neg (!add (iconst 'a) (iconst 0)))) 3))
+    (ok (check-schedule (caten (!neg (!mul (iconst 0) (iconst 'a)))) 2))
+    (ok (check-schedule (caten (!neg (!mul (iconst 'a) (iconst 0)))) 2))
+    (ok (check-schedule (caten (!neg (!mul (iconst 1) (iconst 'a)))) 3))
+    (ok (check-schedule (caten (!neg (!mul (iconst 'a) (iconst 1)))) 3))
+
+    ;; the top should not folded
+    (ok (check-schedule (caten (!add (iconst 0) (iconst 'a))) 5))
+    (ok (check-schedule (caten (!mul (iconst 0) (iconst 'a))) 5))
+    
+    (ok (= 1 (elements (pproceed `((a . 1)) (!add (iconst 0) (iconst 'a))))))
+    (ok (= -1 (elements (pproceed `((a . 1)) (!neg (!add (iconst 0) (iconst 'a)))))))
+    (ok (= 0 (elements (pproceed `((a . 1)) (!mul (iconst 0) (iconst 'a))))))
+    (ok (= 0 (elements (pproceed `((a . 1)) (!neg (!mul (iconst 0) (iconst 'a)))))))
+    ;; still depends on 'a
+    ;;(ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a))))))
+    ;; a dependency is purged
+    (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a)))))))
+    ))
+
+;; 'A 'B Shape Test
 ;; TODO: Testing
 ;; - make-tensor, initial-element
 ;; - print, viewed-print, broadcasted-print
