@@ -149,7 +149,7 @@
 	       (append
 		(graph-nodes forward-graph)
 		(list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes forward-graph)))))))
-		(graph-nodes backward-graph)))))
+		(and backward-graph (graph-nodes backward-graph))))))
 	(session/update-outputs session merged-graph)
 	;; Graph Level whole optimization
 	(dolist (f external-simplifiers) (funcall f merged-graph))

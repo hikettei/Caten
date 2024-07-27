@@ -60,3 +60,5 @@
     out))
 
 (defun symb (&rest symbols) (intern (with-output-to-string (o) (dolist (s symbols) (princ s o)))))
+
+(defmacro with-no-grad (&body body) `(let ((*no-grad* t)) ,@body))

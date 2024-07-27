@@ -42,7 +42,9 @@
    #:module-sv4bws
 
    )
-
+  ;; from helpers.lisp
+  (:export
+   #:with-no-grad)
   ;; from iseq.lisp
   (:export
    #:%compile-toplevel
