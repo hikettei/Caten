@@ -235,12 +235,19 @@
 		       ()
 		       "%compile-toplevel: The tensor ~a where :requires-grad=t could not be differentiated because backward was broken." id)))
     (flet ((std->lid (x) (car (node-writes (session/read session x))))
-	   (tid->tensor (x) (find x iseq :key #'tensor-id :test #'eql)))
-      (loop for tid in `(,@(session-fw-out-ids session) ,@(session-bw-out-ids session))
+	   (tid->tensor (x) (find x iseq :key #'tensor-id :test #'eql))
+	   (tid->tensor-grad (x) (find x iseq :key #'tensor-grad-id :test #'eql)))
+      ;; creating a pair of vm_var -> tensor
+      (loop for tid in (session-fw-out-ids session)
 	    for sid = (std->lid tid)
 	    for tensor = (tid->tensor tid)
 	    ;; A pair of {ID in AVM} {Actual Tensor}
 	    if tensor do (session/set-tid session sid tensor))
+      ;; as well as backward
+      (loop for tid in (session-bw-out-ids session)
+	    for sid = (std->lid tid)
+	    for tensor = (tid->tensor-grad tid)
+	    if tensor do (session/set-tid session sid (tensor-grad tensor)))
       (make-avm graph (session-name session)
 		(session-tid->tensor session)
 		(map 'list #'std->lid (session-fw-out-ids session))
