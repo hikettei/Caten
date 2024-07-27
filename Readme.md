@@ -64,6 +64,8 @@ $ COVERAGE=1 make test
 
 - Dot or ONNX render at ./caten/air
 
+- Source code transformation (needs a refactor; caten/air must corresponds Func one-by-one.)
+
 ## Installing (WIP)
 
 ```sh

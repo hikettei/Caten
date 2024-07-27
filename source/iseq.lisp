@@ -40,8 +40,7 @@
 (defun session/readgrad (session tid)
   (declare (type Compiler-Session session)
 	   (type symbol tid))
-  (let ((table (session-grad->tensor session)))
-    (gethash tid table)))
+  (gethash tid (session-grad->tensor session)))
 ;; ~~ AD Helper ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Fake-Module-backward (Func)
   ((module :initarg :module :type Module :accessor fmb-module)
@@ -85,7 +84,8 @@
 	       (%lower-iseq session iseq)
 	     (session/setgrad session (tensor-id (car (last iseq))) prev-grad)))
 	 (iseq-bw (when (null no-grad) (%tpsort-tensors session prev-grad))))
-    
+    ;; First, simplify forward graph module level
+    (dolist (f external-simplifiers) (funcall f forward-graph))
     (labels ((%bwgraph (nodes)
 	       (declare (type list nodes))
 	       (assert (every #'tensor-p nodes) ())
@@ -110,26 +110,24 @@
 ~a is not a module." (tensor-op tensor))
 		    ;; Module.backward(prev-grad) -> Module.args_0.grad, Module.args_1.grad, ...
 		    ;; この時点でBackwardしてもよくね？理由を説明して書いておく
-		    (let ((dummy-grads (%module->dummy-backwards session (tensor-op tensor) prev-grad)))
+		    (let ((dummy-grads (%module->dummy-iseqbw session (tensor-op tensor) prev-grad)))
 		      ;; TODO
 		      ))
 		   (T
 		    (loop for next-var in (func-variables (tensor-op tensor))
 			  for next-grad in next-grads
-			  if next-grad do (%bwgraph (%tpsort-tensors session next-grad))))))))
+			  if next-grad do
+			    (session/setgrad session (tensor-id next-var) next-grad)
+			    (%bwgraph (%tpsort-tensors session next-grad))))))))
       (when (null no-grad) (mapc #'backward-helper (reverse iseq))))
 
-    ;; 先にforward-graphをsimplifyしてもいいのでは？
-    (let ((backward-graph (when (null no-grad) (%lower-iseq session iseq-bw))))
-      ;; Simplifier
-      (dolist (f external-simplifiers) (funcall f forward-graph))
-      (when backward-graph
-	(dolist (f external-simplifiers) (funcall f backward-graph)))
-
-      (%lower-modules session forward-graph)
-      (when backward-graph
-	(%lower-modules session backward-graph))
-      
+    ;; Second, (after constructing backward) lower them into func level.
+    ;; And simplify lowered graph
+    (%lower-modules session forward-graph)
+    (dolist (f external-simplifiers) (funcall f forward-graph))
+    
+    (let ((backward-graph (when (null no-grad) (%lower-iseq session iseq-bw :no-verify t))))
+      ;; backward-graph depends on forward-graph, they should not simplified/verified until merged
       (let ((merged-graph
 	      (apply
 	       #'make-graph
@@ -137,11 +135,16 @@
 		(graph-nodes forward-graph)
 		(list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes forward-graph)))))))
 		(graph-nodes backward-graph)))))
+	;; Graph Level whole optimization
 	(dolist (f external-simplifiers) (funcall f merged-graph))
+	;; Lower
 	(%lower-modules session merged-graph)
+	;; Func level whole optimization
+	(dolist (f external-simplifiers) (funcall f merged-graph))
+	;; verify and complete
 	(verify-graph merged-graph)
 	merged-graph))))
-
+;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %module->iseqfw (session module)
   (declare (type compiler-session session) (type node module))
   (assert (eql :Module (node-class module)) ())
@@ -149,6 +152,11 @@
   (let* ((op (getattr module :metadata))
 	 (lowered (multiple-value-list (apply #'impl op (func-variables op)))))
     (graph-nodes (%lower-iseq session (apply #'%tpsort-tensors session lowered) :no-verify t))))
+
+(defun %module->dummy-iseqbw (session module prev-grad)
+  (declare (type compiler-session session) (type Module module) (type tensor prev-grad))
+
+  )
 
 (defun %module->iseqbw (module seen prev-table grad-table prev-grad)
   "Module.backward(dout) -> Module.args[0].grad, Module.args[1].grad, ..."
@@ -169,6 +177,7 @@
 	  g)))
 
 (defun %lower-modules (session graph)
+  "Lowers all modules existing in the graph until they are disappeared."
   (declare (type graph graph)
 	   (type compiler-session session))
   (let ((new-graph
@@ -181,7 +190,7 @@
     (setf (graph-nodes graph) (flatten new-graph))
     (verify-graph graph)
     graph))
-
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *external-simplifiers* `(fold-constant))
 (defparameter *no-grad* nil)
 (defun %compile-toplevel (tensors &key (no-grad nil) (external-simplifiers nil))
