@@ -43,6 +43,14 @@
 
    )
 
+  ;; from iseq.lisp
+  (:export
+   #:%compile-toplevel
+   #:caten
+   #:forward
+   #:backward
+   #:proceed)
+
   ;; from function.lisp
   (:export
    ;; shaping

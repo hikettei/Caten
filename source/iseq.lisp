@@ -208,7 +208,7 @@
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *external-simplifiers* `(fold-constant))
 (defparameter *no-grad* nil)
-(defun %compile-toplevel (tensors &key (no-grad nil) (external-simplifiers nil))
+(defun %compile-toplevel (tensors &key (no-grad *no-grad*) (external-simplifiers *external-simplifiers*))
   (declare (type list tensors))
   (let* ((session (make-compiler-session :name :main))
 	 (iseq (apply #'%tpsort-tensors session tensors))
@@ -226,18 +226,35 @@
 	    do (assert (some #'(lambda (x) (find id (node-writes x))) (graph-nodes graph))
 		       ()
 		       "%compile-toplevel: The tensor ~a where :requires-grad=t could not be differentiated because backward was broken." id)))
-    (values graph session)))
+    (flet ((std->lid (x) (car (node-writes (session/read session x)))))
+      (make-avm graph (session-name session)
+		(map 'list #'std->lid (session-fw-out-ids session))
+		(map 'list #'std->lid (session-bw-out-ids session))))))
+
+(defun caten (tensors) ;; TODO: :disasseble option etc
+  "Compiles the tensor"
+  (when (tensor-p tensors)
+    (setf tensors (list tensors)))
+  (%compile-toplevel tensors))
+
+(defun forward (avm &rest params)
+  (vm/set-params avm params)
+  (vm/forward avm))
+
+(defun backward (avm &rest params)
+  (vm/set-params avm params)
+  (vm/backward avm))
 
 (defun proceed (&rest tensors)
   "Realizes the tensor"
   (declare (type list tensors))
-  (%compile-toplevel tensors :no-grad *no-grad* :external-simplifiers *external-simplifiers*))
+  (vm/forward (%compile-toplevel tensors :no-grad *no-grad* :external-simplifiers *external-simplifiers*)))
 
 ;; 1. 一旦Module, Backwardだけ実装する
 ;; 2. %loadを実装 + ok          (OK)
 ;; !where, logicals, castを実装 (OK)
 ;; absを実装                     (OK)
-;; -> 1. broadcast, (fconst 1)を許容する (OK
+;; -> 1. broadcast, (fconst 1)を許容する (OK)
 ;; absのconstant foldingを実装 (OK)
 ;; !reshape/!viewを実装 (OK)
 ;; Scalar Constant Folding ok (OK)

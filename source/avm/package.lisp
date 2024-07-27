@@ -18,5 +18,9 @@
    )
   ;; from runtime.lisp
   (:export
-   #:%realize)
+   #:make-avm
+   #:%realize
+   #:vm/forward
+   #:vm/backward
+   #:vm/set-params)
   )

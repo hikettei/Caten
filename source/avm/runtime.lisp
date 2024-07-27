@@ -8,13 +8,15 @@
 	  do (setf (gethash k out) v))
     out))
 (defstruct (AVM
-	    (:constructor make-avm (graph &optional params)))
+	    (:constructor make-avm (graph name fw-outputs bw-outputs &optional params)))
   "Tape based iseq executor"
   (graph graph :type graph)
+  (name name :type keyword)
+  (fw-outputs fw-outputs :type list)
+  (bw-outputs bw-outputs :type list)
   (tape-length (length (graph-nodes graph)) :type fixnum)
   (pc 0 :type fixnum)
   (variables (make-hash-table-from-params params) :type hash-table))
-
 (defun vm/readvar (avm id)
   (declare (type avm avm)
 	   (type symbol id))
@@ -36,6 +38,7 @@
       (let ((type   (node-type node))
 	    (writes (node-writes node))
 	    (reads  (node-reads node)))
+	(when (eql type :Pause/backward) (return-from vm/step))	  
         (let ((out (multiple-value-list
 		    (handler-bind ((error #'(lambda (cond) (error 'avm-runtime-error :avm avm :cond cond))))
 		      (%impl *device* type (avm-graph avm) node (map 'list #'->real reads))))))
@@ -45,13 +48,23 @@
 		do (vm/setvar avm place real))
 	  ;; Move to the next tape
 	  (incf (avm-pc avm))
-	  (map 'list #'->real writes))))))
-(defun vm/run (avm)
+	  (map 'list #'->real writes)))))
+  t)
+(defun vm/forward (avm)
   (declare (type avm avm))
-  (let ((final-result))
-    (loop while (< (avm-pc avm) (avm-tape-length avm)) do (setf final-result (vm/step avm)))
-    (apply #'values final-result)))
-(defun %realize (graph &key (params))
-  "params: ((key . value) ...) "
+  (setf (avm-pc avm) 0)
+  (flet ((finish () (return-from vm/forward (apply #'values (map 'list #'(lambda (x) (vm/readvar avm x)) (avm-fw-outputs avm))))))
+    (loop while (< (avm-pc avm) (avm-tape-length avm)) do
+      (unless (vm/step avm) (finish)))
+    (finish)))
+(defun vm/backward (avm)
+  (declare (type avm avm))
+  (loop while (< (avm-pc avm) (avm-tape-length avm)) do (vm/step avm))
+  t)
+(defun vm/set-params (avm params)
+  (loop for (k . v) in params
+	do (setf (gethash k (avm-variables avm)) v)))
+(defun %realize (graph)
   (declare (type graph graph))
-  (vm/run (make-avm graph params)))
+  (let ((out (node-writes (car (last (graph-nodes graph))))))
+    (vm/forward (make-avm graph :test out nil))))
