@@ -41,7 +41,18 @@
 	  (and (numberp val) val))))))
 
 (defun zeros-like (tensor)
+  "Creates a tensor whose shape is the equivalent to the tensor, but view is reset."
   (declare (type tensor tensor))
   (make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :initial-element 0.0))
+
+(defun clone-like (tensor)
+  "Creates a new tensor whose shape/view/stride is completely equivalent to the original one"
+  (declare (type tensor tensor))
+  (let ((out (copy-tensor tensor)))
+    (setf (tensor-id out) (gensym "TID")
+	  (tensor-op out) nil
+	  (tensor-variables out) nil
+	  (tensor-grad out) nil)
+    out))
 
 (defun symb (&rest symbols) (intern (with-output-to-string (o) (dolist (s symbols) (princ s o)))))
