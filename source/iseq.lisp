@@ -34,22 +34,12 @@
 	   (type symbol tid)
 	   (type tensor grad))
   (let ((table (session-grad->tensor session)))
-    (when (gethash tid table) (warn "Session/setgrad: overwriting ~a with ~a" tid grad))
     (setf (gethash tid table) grad)))
 
 (defun session/readgrad (session tid)
   (declare (type Compiler-Session session)
 	   (type symbol tid))
   (gethash tid (session-grad->tensor session)))
-;; ~~ AD Helper ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Fake-Module-backward (Func)
-  ((module :initarg :module :type Module :accessor fmb-module)
-   (sess :initarg :session :type Compiler-Session :accessor fmb-session)))
-
-(defmethod lower ((op Fake-Module-Backward) &rest inputs)
-  ;; Lower(Fake-Module-Backward) := moduleのBackwardのiseqを入手する
-  (print inputs)
-  (make-graph))
 ;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %lower-iseq (session iseq &key (no-verify nil))
   "Lowers iseq (a list of topologically sorted tensors) into caten/air graph."
@@ -74,6 +64,42 @@
       (unless no-verify (verify-graph graph))
       graph)))
 
+(defun %make-graph-backward (session iseq &key (iseq-bw))
+  (declare (type compiler-session session)
+	   (type list iseq))
+  (labels ((%bwgraph (nodes)
+	     (declare (type list nodes))
+	     (assert (every #'tensor-p nodes) ())
+	     (setf iseq-bw (append iseq-bw nodes)))
+	   (backward-helper (tensor &aux (prev-grad (session/readgrad session (tensor-id tensor))))
+	     (declare (type Tensor tensor))
+	     (when (null prev-grad) (return-from backward-helper))
+	     ;; TODO: Error handling at here
+	     (let ((next-grads (multiple-value-list (backward (tensor-op tensor) prev-grad))))
+	       (cond
+		 ((null (func-variables (tensor-op tensor)))
+		  ;; The op is an allocation, the top of node.		   
+		  (assert (= (length next-grads) 1)
+			  ()
+			  "%make-graph-from-iseq: If Node ~a has no variables, then backward should return only one Tensor."
+			  (tensor-op tensor))
+		  (assert (typep (tensor-op tensor) 'Allocate) () "Expected to be an allocation? (it is safe to remove this assertion ig)")
+		  (when (car next-grads) (%bwgraph (%tpsort-tensors session (car next-grads)))))
+		 ((and (= (length next-grads) 1) (eql (car next-grads) :module/skip-bw))
+		  ;; Module whose backward = nil (i.e.: autodiff from impl)
+		  (assert (subtypep (type-of (tensor-op tensor)) 'Module) () "Only modules are allowed to return :module/skip-bw option in backward.
+~a is not a module." (tensor-op tensor))
+		  ;; Module.backward(prev-grad) -> Module.args_0.grad, Module.args_1.grad, ...
+		  (%bwgraph (%module->iseqbw session (tensor-op tensor) prev-grad)))
+		 (T
+		  (loop for next-var in (func-variables (tensor-op tensor))
+			for next-grad in next-grads
+			if next-grad do
+			  (session/setgrad session (tensor-id next-var) next-grad)
+			  (%bwgraph (%tpsort-tensors session next-grad))))))))
+    (mapc #'backward-helper (reverse iseq))
+    iseq-bw))
+
 (defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil))
   "Constructs a forward/backward graph based on iseq"
   (declare (type Compiler-Session session)
@@ -86,46 +112,12 @@
 	 (iseq-bw (when (null no-grad) (%tpsort-tensors session prev-grad))))
     ;; First, simplify forward graph module level
     (dolist (f external-simplifiers) (funcall f forward-graph))
-    (labels ((%bwgraph (nodes)
-	       (declare (type list nodes))
-	       (assert (every #'tensor-p nodes) ())
-	       (setf iseq-bw (append iseq-bw nodes)))
-	     (backward-helper (tensor &aux (prev-grad (session/readgrad session (tensor-id tensor))))
-	       (declare (type Tensor tensor))
-	       (when (null prev-grad) (return-from backward-helper))
-	       ;; TODO: Error handling at here
-	       (let ((next-grads (multiple-value-list (backward (tensor-op tensor) prev-grad))))
-		 (cond
-		   ((null (func-variables (tensor-op tensor)))
-		    ;; The op is an allocation, the top of node.		   
-		    (assert (= (length next-grads) 1)
-			    ()
-			    "%make-graph-from-iseq: If Node ~a has no variables, then backward should return only one Tensor."
-			    (tensor-op tensor))
-		    (assert (typep (tensor-op tensor) 'Allocate) () "Expected to be an allocation? (it is safe to remove this assertion ig)")
-		    (when (car next-grads) (%bwgraph (%tpsort-tensors session (car next-grads)))))
-		   ((and (= (length next-grads) 1) (eql (car next-grads) :module/skip-bw))
-		    ;; Module whose backward = nil (i.e.: autodiff from impl)
-		    (assert (subtypep (type-of (tensor-op tensor)) 'Module) () "Only modules are allowed to return :module/skip-bw option in backward.
-~a is not a module." (tensor-op tensor))
-		    ;; Module.backward(prev-grad) -> Module.args_0.grad, Module.args_1.grad, ...
-		    ;; この時点でBackwardしてもよくね？理由を説明して書いておく
-		    (let ((dummy-grads (%module->dummy-iseqbw session (tensor-op tensor) prev-grad)))
-		      ;; TODO
-		      ))
-		   (T
-		    (loop for next-var in (func-variables (tensor-op tensor))
-			  for next-grad in next-grads
-			  if next-grad do
-			    (session/setgrad session (tensor-id next-var) next-grad)
-			    (%bwgraph (%tpsort-tensors session next-grad))))))))
-      (when (null no-grad) (mapc #'backward-helper (reverse iseq))))
-
-    ;; Second, (after constructing backward) lower them into func level.
+    ;; lower them into func level.
     ;; And simplify lowered graph
     (%lower-modules session forward-graph)
     (dolist (f external-simplifiers) (funcall f forward-graph))
-    
+    ;; Construct backward
+    (setf iseq-bw (%make-graph-backward session iseq :iseq-bw iseq-bw))
     (let ((backward-graph (when (null no-grad) (%lower-iseq session iseq-bw :no-verify t))))
       ;; backward-graph depends on forward-graph, they should not simplified/verified until merged
       (let ((merged-graph
@@ -151,30 +143,18 @@
   (assert (getattr module :metadata) () "~a has lost its metadata. (-> check simplifier)" module)
   (let* ((op (getattr module :metadata))
 	 (lowered (multiple-value-list (apply #'impl op (func-variables op)))))
-    (graph-nodes (%lower-iseq session (apply #'%tpsort-tensors session lowered) :no-verify t))))
+    (setf (module-impl-iseq op) (apply #'%tpsort-tensors session lowered))
+    (graph-nodes (%lower-iseq session (module-impl-iseq op) :no-verify t))))
 
-(defun %module->dummy-iseqbw (session module prev-grad)
-  (declare (type compiler-session session) (type Module module) (type tensor prev-grad))
-
-  )
-
-(defun %module->iseqbw (module seen prev-table grad-table prev-grad)
+(defun %module->iseqbw (session module prev-grad)
   "Module.backward(dout) -> Module.args[0].grad, Module.args[1].grad, ..."
-  (declare (type Module module)
-	   (type tensor prev-grad)
-	   (type list seen)
-	   (type hash-table prev-table grad-table))
-  ;; 一旦仮のBW Graph Tensorを作成する (variableの数だけ)
-  ;; Shape Inferenceは走らせられる
-  ;; Viewの情報がわからないが，Variableと同じ状態と仮定して良さそう？
-  (loop for v in (func-variables module)
-	collect
-	(let* ((g (clone-like v))
-	       (fake-bw (make-instance 'Fake-Module-Backward :module module)))
-	  (setf (tensor-op g) fake-bw
-		(tensor-variables g) (list prev-grad)
-		(func-variables fake-bw) (list prev-grad))
-	  g)))
+  (declare (type compiler-session session) (type Module module) (type tensor prev-grad))
+  (assert (module-impl-iseq module) () "First lower ~a" module)
+  ;; [TODO] Support multiple outputs of module
+  ;; determine whichth output is it
+  (dolist (out (module-lower-outputs module))
+    (session/setgrad session (tensor-id out) prev-grad))
+  (%make-graph-backward session (module-impl-iseq module)))
 
 (defun %lower-modules (session graph)
   "Lowers all modules existing in the graph until they are disappeared."
@@ -207,6 +187,7 @@
 (defun proceed (&rest tensors)
   "Realizes the tensor"
   (declare (type list tensors))
+  ;; TODO: require-gradのTensorでgradがaccumされてなかったらError
   ;; lowered-graph = :func :graph is mixed
   ;; tableから全てのTensorsのNode引っ張って来れるはず？
   ;; SessionはAVM/AJITにも保持させておく

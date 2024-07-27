@@ -2,6 +2,8 @@
 
 (defclass Module (Func)
   ((outputs :initform nil :accessor module-outputs)
+   (lower-outputs :initform nil :accessor module-lower-outputs)
+   (impl-iseq :initform nil :accessor module-impl-iseq)
    (attrs :initform nil :initarg :attrs :accessor module-attrs)
    (sv4bw :initform nil :accessor module-sv4bws))
   (:documentation "See: defmodule"))
@@ -10,6 +12,11 @@
   (declare (ignore inputs))
   (let ((outputs (multiple-value-list (call-next-method))))
     (setf (module-outputs module) outputs)
+    (apply #'values outputs)))
+(defmethod impl :around ((module Module) &rest inputs)
+  (declare (ignore inputs))
+  (let ((outputs (multiple-value-list (call-next-method))))
+    (setf (module-lower-outputs module) outputs)
     (apply #'values outputs)))
 (defmacro defmodule ((name ((&rest constructor-args) &rest attrs) &key (where nil))
 		     (&rest slots)
@@ -150,7 +157,7 @@ The provided form does not match any of them:~%~a" method method method method f
     :documentation "Sum tensors along axis"
     :impl ((sum x)
 	   ;; tmp
-	   (!add x x)))
+	   (!mul x x)))
 
 (defmodule (Sigmoid (()) :where "A[~] -> A[~]")
     ()
