@@ -51,18 +51,57 @@
     (%vm/read-index *device* buffer (apply #'+ (map 'list #'->idx (range 0 (buffer-nrank buffer)))))))
 
 (defun indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o))))
-(defun pprint-buffer (buffer &key (indent 0) (max *max-display-len*))
+(defun pprint-buffer (buffer &key (indent 0) (max *max-display-len*) (comma " ") (bracket-start "(") (bracket-end ")") (omit1 "~") (omit2 "..."))
   (handler-bind ((error
 		   #'(lambda (c)
 		       (warn "pprint-buffer: Failed to render the content due to~%~a" c)
 		       (format nil "~a<<Error During Rendering>>" (indent indent)))))
-    (%pprint-buffer buffer :indent indent :max max)))
+    (%pprint-buffer buffer :indent-with indent :max max
+			   :bracket-start bracket-start :bracket-end bracket-end
+			   :comma comma :omit1 omit1 :omit2 omit2)))
 
-(defun %pprint-buffer (buffer &key (indent 0) (max *max-display-len*))
-  (declare (type buffer buffer) (type fixnum indent max))
+(defun %pprint-buffer (buffer &key (indent-with 0) (max *max-display-len*) (comma " ") (bracket-start "(") (bracket-end ")") (omit1 "~") (omit2 "..."))
+  (declare (type buffer buffer) (type fixnum indent-with max))
   ;; Scalars
   (when (= (buffer-nrank buffer) 0)
-    (return-from %pprint-buffer (format nil "~a~a" (indent indent) (buffer-value buffer))))
-  buffer
-  )
+    (return-from %pprint-buffer (format nil "~a~a" (indent indent-with) (buffer-value buffer))))
+
+  (let ((sample-size
+	  (loop for i upfrom 0 below (min 10 (apply #'* (buffer-shape buffer)))
+		maximize (length (format nil "~a" (%vm/read-index *device* buffer i))))))
+    (with-output-to-string (stream)
+      (format stream " ~a" (indent indent-with))
+      (labels ((pprint-helper (dim subscripts lastp indent)
+		 (let ((size (nth dim (buffer-shape buffer))))
+		   (if (null size)
+		       (format stream "~a" (apply #'buffer-ref buffer subscripts))
+		       (if (<= size max)
+			   (progn
+			     (format stream bracket-start)
+			     (dotimes (i size)
+			       (setf (nth dim subscripts) i)
+			       (pprint-helper (1+ dim) subscripts (= i (1- size)) (1+ indent))
+			       (unless (= i (1- size)) (format stream comma)))
+			     (format stream bracket-end)
+			     (unless lastp (format stream "~%~a" (indent indent))))
+			   (let ((mid (round (/ max 2))))
+			     (format stream bracket-start)
+			     (dotimes (i mid)
+			       (setf (nth dim subscripts) i)
+			       (pprint-helper (1+ dim) subscripts (= i (1- size)) (1+ indent))
+			       (format stream comma))
+			     (if (= dim (1- (buffer-nrank buffer)))
+				 (format stream "~a " omit1)
+				 (format stream "~a~a~%~a"
+					 (indent (+ indent-with (* mid sample-size)))
+					 omit2
+					 (indent (+ 2 indent))))
+			     (dotimes (i mid)
+			       (let ((idx (+ (- size mid) i)))
+				 (setf (nth dim subscripts) idx)
+				 (pprint-helper (1+ dim) subscripts (= i (1- mid)) (1+ indent))
+				 (unless (= i (1- mid)) (format stream comma))))
+			     (format stream bracket-end)
+			     (unless lastp (format stream "~%~a" (indent indent)))))))))
+	(pprint-helper 0 (make-list (buffer-nrank buffer) :initial-element nil) t indent-with)))))
 

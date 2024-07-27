@@ -19,7 +19,7 @@
 
 (defmethod print-object ((tensor Tensor) stream)
   (format stream "{Tensor[~(~a~)] :shape ~a :id ~a
-  :buffer ~a
+~a
   :op ~a
   :requires-grad ~a
   :variables ~a}"
@@ -28,7 +28,7 @@
 	  (tensor-id tensor)
 	  (if (tensor-buffer tensor)
 	      (pprint-buffer (tensor-buffer tensor) :indent 2)
-	      nil)
+	      ":buffer nil")
 	  (tensor-op tensor)
 	  (tensor-requires-grad tensor)
 	  (map 'list #'tensor-id (tensor-variables tensor))))
