@@ -31,7 +31,9 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (let ((buff (alloc-buffer op)))
     (when (tensor-requires-grad buff)
       ;; op.grad += buff
-      (values (!add (tensor-grad buff) dout :reduce t)))))
+      (let ((accumlated (!add (tensor-grad buff) dout :reduce t)))
+	(setf (tensor-id accumlated) (tensor-grad-id buff))
+	(values accumlated)))))
 (defmethod lower ((op Allocate) &rest inputs)
   (declare (ignore inputs))
   (let ((buff (alloc-buffer op))

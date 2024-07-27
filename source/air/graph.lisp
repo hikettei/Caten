@@ -2,8 +2,11 @@
 
 (defstruct (Graph
 	    (:constructor make-graph (&rest nodes)))
-  "nodes: t=0 ... t=n-1"
-  (nodes nodes :type list))
+  "nodes: t=0 ... t=n-1
+outputs: a list of ids where sorting is starting from.
+If outputs is nil, the writes of last nodes becomes the top"
+  (nodes nodes :type list)
+  (outputs nil :type list))
 (defun graph-collect-if (graph f)
   (declare (type graph graph)
 	   (type function f))
@@ -52,16 +55,50 @@
 	    ()
 	    "verify-graph: these symbols are undefined. ~a~%~a" undefined graph))
   ;; Purge all isolated graph
+  (resolve-isolated-nodes graph)
   (purge-isolated-graph graph)
   t)
 
 (defun special-p (kw) (search "SPECIAL/" (format nil "~a" kw)))
 
+(defun resolve-isolated-nodes (graph)
+  (declare (type graph graph))
+  (let ((new-nodes)
+	(seen)
+	(stashed))
+    (declare (type list new-nodes seen stashed))
+    (flet ((seen-p (reads) (every #'(lambda (x) (or (numberp x) (find x seen :test #'eql))) reads)))
+      (loop for node in (graph-nodes graph)
+	    for position fixnum upfrom 0
+	    for reads = (node-reads node)
+	    for writes = (node-writes node)
+	    if (seen-p reads) do
+	      (dolist (w writes) (push w seen))
+	      (push node new-nodes)
+	    else do
+	      (push (cons reads node) stashed)
+	    end
+	    do (loop with finish-p = nil
+		     with changed-p = nil
+		     while (not finish-p)
+		     do (setf changed-p nil)
+			(loop for (reads-old . node-old) in stashed
+			      if (seen-p reads-old) do
+				(push node-old new-nodes)
+				(setf changed-p t)
+				(dolist (w (node-writes node-old)) (push w seen))
+				(setf stashed (remove node-old stashed :key #'cdr :test #'equal)))
+			(setf finish-p (not changed-p)))))
+   ;; (assert (null stashed) () "verify-graph: these nodes are isolated: ~a" stashed) 
+    (setf (graph-nodes graph) (reverse new-nodes))
+    graph))
+  
 (defun purge-isolated-graph (graph)
   "assuming the last graph is the final output, prunes the isolated graph"
   (declare (type graph graph) (optimize (speed 3)))
   (when (graph-nodes graph)
-    (let ((output (node-writes (car (last (graph-nodes graph))))))
+    (let ((output
+	    (or (graph-outputs graph) (node-writes (car (last (graph-nodes graph)))))))
       (setf (graph-nodes graph)
 	    (loop for n in (graph-nodes graph)
 		  collect
@@ -70,4 +107,3 @@
 		      n))
 	    (graph-nodes graph)
 	    (loop for n in (graph-nodes graph) if n collect n)))))
-

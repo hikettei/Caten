@@ -14,6 +14,7 @@
   (views nil :type list)
   (requires-grad requires-grad :type boolean)
   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD"))) :type (or null Tensor))
+  (grad-id (when requires-grad (gensym "TGRAD")) :type symbol)
   (variables variables :type list))
 
 (defmethod print-object ((tensor Tensor) stream)
