@@ -147,6 +147,8 @@
   ;; a dependency is purged
   (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a))))))))
 
+(deftest test-symbolic-shape-inference
+  (ok (equal `(A B) (tensor-shape (!add (iconst 'a) (make-tensor `(a b)))))))
 ;; 'A 'B Shape Test
 ;; TODO: Testing
 ;; - make-tensor, initial-element

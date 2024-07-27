@@ -33,7 +33,7 @@
     ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value value)
      ->
      (:_TmpScalarConst (value) :dtype dtype)))
-    
+
 (defun try-fold-constant (tensor)
   (declare (type Tensor tensor))
   (let ((graph (fold-constant (%tensor->aasm tensor))))
@@ -42,7 +42,7 @@
       (when (and (= (length (graph-nodes graph)) 1)
 		 (eql :_TmpScalarConst (node-type (car (graph-nodes graph)))))
 	(let ((val (car (node-reads (car (graph-nodes graph))))))
-	  (and (numberp val) val))))))
+	  val)))))
 
 (defun zeros-like (tensor)
   "Creates a tensor whose shape is the equivalent to the tensor, but view is reset."
