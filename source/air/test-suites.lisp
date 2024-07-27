@@ -83,11 +83,11 @@
      (<node> :Add (list 'm) (list 1 1))
      (<node> :Add (list 'n) (list 1 1))
      (<node> :Add (list 'a) (list 'm 'n))
-     (<node> :Add (list 'b) (list 'a 'b))
-     (<node> :Add (list 'output) (list 'a 'b)))
+     (<node> :Add (list 'c) (list 'a 'm))
+     (<node> :Add (list 'output) (list 'a 'c)))
     (list
-     (<node> :add (list 'b) (list 'm 'n 'b))
-     (<node> :add (list 'output) (list 'm 'n 'b))
+     (<node> :add (list 'c) (list 'm 'n 'm))
+     (<node> :add (list 'output) (list 'm 'n 'c))
      (<node> :const (list 'n) (list 2))
      (<node> :const (list 'm) (list 2)))))
   (ok
@@ -117,4 +117,3 @@
      (<node> :F (list 'a) nil))
     (list
      (<node> :L (list 'a) nil)))))
-
