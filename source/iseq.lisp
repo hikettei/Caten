@@ -139,12 +139,15 @@
 	       (%lower-iseq session iseq)
 	     (session/setgrad session (tensor-id (car (last iseq))) prev-grad)))
 	 (iseq-bw (when (null no-grad) (%tpsort-tensors session prev-grad))))
-    ;; First, simplify forward graph module level
-    (dolist (f external-simplifiers) (funcall f forward-graph))
+    ;; [FIXME] Simplifiers breaks save-for-backward
+    (when no-grad
+      ;; First, simplify forward graph module level
+      (dolist (f external-simplifiers) (funcall f forward-graph)))
     ;; lower them into func level.
     ;; And simplify lowered graph
     (%lower-modules session forward-graph)
-    (dolist (f external-simplifiers) (funcall f forward-graph))
+    (when no-grad
+      (dolist (f external-simplifiers) (funcall f forward-graph)))
     ;; Construct backward
     (when (null no-grad)
       (setf iseq-bw (%make-graph-backward session iseq :iseq-bw iseq-bw)))
@@ -246,10 +249,11 @@
 	    ;; A pair of {ID in AVM} {Actual Tensor}
 	    if tensor do (session/set-tid session sid tensor))
       ;; as well as backward
-      (loop for tid in (session-bw-out-ids session)
-	    for sid = (std->lid tid)
-	    for tensor = (tid->tensor-grad tid)
-	    if tensor do (session/set-tid session sid (tensor-grad tensor)))
+      (when (null no-grad)
+	(loop for tid in (session-bw-out-ids session)
+	      for sid = (std->lid tid)
+	      for tensor = (tid->tensor-grad tid)
+	      if tensor do (session/set-tid session sid (tensor-grad tensor))))
       ;; nothing to compute? -> alloc
       (when (null (graph-nodes graph))
 	(setf (graph-nodes graph)
@@ -261,7 +265,7 @@
       (make-avm graph (session-name session)
 		(session-tid->tensor session)
 		(map 'list #'std->lid (session-fw-out-ids session))
-		(map 'list #'std->lid (session-bw-out-ids session))))))
+		(when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session)))))))
 
 (defun caten (tensors &key (simplifiers *external-simplifiers*)) ;; TODO disassemble options etc
   "Compiles the (Abstract) tensor"

@@ -104,7 +104,7 @@
      "check-schedule: should satisfy (kernel_count=~a) <= ~a.~%~a" (length (graph-nodes sched)) count sched))
   t)
 
-(deftest test-simplifier
+(deftest test-simplifier-no-grad
   (with-no-grad
     (ok (check-schedule (caten (!neg (!add (iconst 0) (iconst 'a)))) 3))
     (ok (check-schedule (caten (!neg (!add (iconst 'a) (iconst 0)))) 3))
@@ -122,10 +122,30 @@
     (ok (= 0 (elements (pproceed `((a . 1)) (!mul (iconst 0) (iconst 'a))))))
     (ok (= 0 (elements (pproceed `((a . 1)) (!neg (!mul (iconst 0) (iconst 'a)))))))
     ;; still depends on 'a
-    ;;(ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a))))))
+    (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'avm-runtime-error))
     ;; a dependency is purged
-    (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a)))))))
-    ))
+    (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a)))))))))
+
+(deftest test-simplifier
+  (ok (check-schedule (caten (!neg (!add (iconst 0) (iconst 'a)))) 4))
+  (ok (check-schedule (caten (!neg (!add (iconst 'a) (iconst 0)))) 4))
+  (ok (check-schedule (caten (!neg (!mul (iconst 0) (iconst 'a)))) 3))
+  (ok (check-schedule (caten (!neg (!mul (iconst 'a) (iconst 0)))) 3))
+  (ok (check-schedule (caten (!neg (!mul (iconst 1) (iconst 'a)))) 4))
+  (ok (check-schedule (caten (!neg (!mul (iconst 'a) (iconst 1)))) 4))
+
+  ;; the top should not folded
+  (ok (check-schedule (caten (!add (iconst 0) (iconst 'a))) 6))
+  (ok (check-schedule (caten (!mul (iconst 0) (iconst 'a))) 6))
+  
+  (ok (= 1 (elements (pproceed `((a . 1)) (!add (iconst 0) (iconst 'a))))))
+  (ok (= -1 (elements (pproceed `((a . 1)) (!neg (!add (iconst 0) (iconst 'a)))))))
+  (ok (= 0 (elements (pproceed `((a . 1)) (!mul (iconst 0) (iconst 'a))))))
+  (ok (= 0 (elements (pproceed `((a . 1)) (!neg (!mul (iconst 0) (iconst 'a)))))))
+  ;; still depends on 'a
+  (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'avm-runtime-error))
+  ;; a dependency is purged
+  (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a))))))))
 
 ;; 'A 'B Shape Test
 ;; TODO: Testing
