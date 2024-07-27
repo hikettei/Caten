@@ -54,8 +54,10 @@
 (defun pprint-buffer (buffer &key (indent 0) (max *max-display-len*) (comma " ") (bracket-start "(") (bracket-end ")") (omit1 "~") (omit2 "..."))
   (handler-bind ((error
 		   #'(lambda (c)
-		       (warn "pprint-buffer: Failed to render the content due to~%~a" c)
-		       (format nil "~a<<Error During Rendering>>" (indent indent)))))
+		       (warn "Failed to render the buffer due to~%~a" c)
+		       (let* ((condition (format nil "~a" c))
+			      (trim (subseq condition 0 (min (length condition) 70))))
+			 (return-from pprint-buffer (format nil "~a<<Error during rendering: ~a...>>" (indent indent) trim))))))
     (%pprint-buffer buffer :indent-with indent :max max
 			   :bracket-start bracket-start :bracket-end bracket-end
 			   :comma comma :omit1 omit1 :omit2 omit2)))

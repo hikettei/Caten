@@ -28,7 +28,7 @@
 	  (tensor-id tensor)
 	  (if (tensor-buffer tensor)
 	      (pprint-buffer (tensor-buffer tensor) :indent 2)
-	      ":buffer nil")
+	      "  :buffer nil")
 	  (tensor-op tensor)
 	  (tensor-requires-grad tensor)
 	  (map 'list #'tensor-id (tensor-variables tensor))))
