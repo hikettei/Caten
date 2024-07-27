@@ -44,6 +44,9 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	    ()
 	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  Butgot: ~a~%  Shape=~a" s shape))
   (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad)))
+    ;; Weird thing: The Top of the graph should not have variables.
+    ;; AD recognises (null (func-variables op)) as an Allocation.
+    ;; So do not modify the (tensor-variables tensor), as well as (func-variables Allocation)
     (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element))
     buff))
 

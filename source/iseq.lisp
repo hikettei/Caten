@@ -5,34 +5,59 @@
 ;; 2. AD Engine
 ;;
 
+;; ~~ Compiler Session ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct (Compiler-Session
+	    (:conc-name session-)
+	    (:constructor make-compiler-session (&key (name :main))))
+  (name name :type keyword)
+  (seen nil :type list)
+  (write->node (make-hash-table :test #'eql) :type hash-table)
+  (grad->tensor (make-hash-table :test #'eql) :type hash-table))
+
+(defun session/assign (session tid node)
+  (declare (type Compiler-Session session)
+	   (type symbol tid)
+	   (type node node))
+  (let ((table (session-write->node session)))
+    (when (gethash tid table) (warn "Session/assign: overwriting ~a with ~a" tid node))
+    (setf (gethash tid table) node)))
+
+(defun session/read (session tid)
+  (declare (type Compiler-Session session)
+	   (type symbol tid))
+  (let ((table (session-write->node session)))
+    (or (gethash tid table)
+	(error "Session/read: The tensor ~a should be appeared in the graph first. (make sure that the top of node is an allocation.)" tid))))
+
+(defun session/setgrad (session tid grad)
+  (declare (type Compiler-Session session)
+	   (type symbol tid)
+	   (type tensor grad))
+  (let ((table (session-grad->tensor session)))
+    (when (gethash tid table) (warn "Session/setgrad: overwriting ~a with ~a" tid grad))
+    (setf (gethash tid table) grad)))
+
+(defun session/readgrad (session tid)
+  (declare (type Compiler-Session session)
+	   (type symbol tid))
+  (let ((table (session-grad->tensor session)))
+    (gethash tid table)))
 ;; ~~ AD Helper ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Fake-Module-backward (Func)
-  ((module :initarg :module :type Module)))
+  ((module :initarg :module :type Module :accessor fmb-module)
+   (sess :initarg :session :type Compiler-Session :accessor fmb-session)))
 
 (defmethod lower ((op Fake-Module-Backward) &rest inputs)
   ;; Lower(Fake-Module-Backward) := moduleのBackwardのiseqを入手する
   (print inputs)
   (make-graph))
-
 ;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; TODO: !! Refactor (defstruct compiler-session
-(defstruct (Compiler-Session
-	    (:constructor make-compile-session ()))
-  (id->tensor (make-hash-table))
-  (id->grad   (make-hash-table))
-  (seen nil :type list))
-
-(defun %lower-iseq (iseq &key prev-table (no-verify nil))
-  (declare (type list iseq))
-  ;; at this level, only graph/function can be coexist <- x
-  ;; but (lower) lowers graph into function,
-  ;; all functions are lowered into aasm.
-  ;; e.g.: Sigmoid should be defined as a graph, neg should be defined as a function
-  ;; TODO: Assert that Module is eliminated at this level
-  (let ((tensor->id-table (or prev-table (make-hash-table :test #'eql)))
-	(nodes))
-    (flet ((t->id (x) (gethash (tensor-id x) tensor->id-table))
-	   (setid (place node) (setf (gethash place tensor->id-table) node)))
+(defun %lower-iseq (session iseq &key (no-verify nil))
+  "Lowers iseq (a list of topologically sorted tensors) into caten/air graph."
+  (declare (type compiler-session session)
+	   (type list iseq))
+  (let ((nodes))
+    (flet ((t->id (x) (session/read session (tensor-id x))))
       (dolist (tensor iseq)
 	;; Assertion: The top of graph starts with no inputs (i.e.: they are always allocation)
 	(assert (every #'identity (map 'list #'t->id (func-variables (tensor-op tensor))))
@@ -44,77 +69,86 @@
 	  (assert (every #'node-p (graph-nodes low-graph)) () "%tensor->asm: received invaild nodes. all elements should be a node. ~a" low-graph)
 	  (assert (>= (length (graph-nodes low-graph)) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
 	  (let ((final (car (last (graph-nodes low-graph)))))
-	    (setid (tensor-id tensor) final))
+	    (session/assign session (tensor-id tensor) final))
 	  (setf nodes (append nodes (graph-nodes low-graph))))))
     (let ((graph (apply #'make-graph nodes)))
       (unless no-verify (verify-graph graph))
-      (values graph tensor->id-table))))
+      graph)))
 
-(defun %tensor->aasm (&rest tensors) (%lower-iseq (apply #'%tpsort-tensors nil tensors)))
-(defun %graph->pullback (prev-table seen prev-grad iseq fw-graph)
-  (declare (type list iseq seen)
-	   (type hash-table prev-table)
+(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil))
+  "Constructs a forward/backward graph based on iseq"
+  (declare (type Compiler-Session session)
+	   (type list iseq)
 	   (type tensor prev-grad))
-  (let ((iseq-bw)
-	(grads (make-hash-table :test #'eql)))
-    (setf (gethash (tensor-id (car (last iseq))) grads) prev-grad)
-    (multiple-value-bind (iseq-bw-tmp seen-new) (%tpsort-tensors seen prev-grad)
-      (setf iseq-bw iseq-bw-tmp
-	    seen seen-new))
-    (labels ((helper (tensor)
+  (let* ((forward-graph
+	   (prog1
+	       (%lower-iseq session iseq)
+	     (session/setgrad session (tensor-id (car (last iseq))) prev-grad)))
+	 (iseq-bw (when (null no-grad) (%tpsort-tensors session prev-grad))))
+    
+    (labels ((%bwgraph (nodes)
+	       (declare (type list nodes))
+	       (assert (every #'tensor-p nodes) ())
+	       (setf iseq-bw (append iseq-bw nodes)))
+	     (backward-helper (tensor &aux (prev-grad (session/readgrad session (tensor-id tensor))))
+	       (declare (type Tensor tensor))
+	       (when (null prev-grad) (return-from backward-helper))
 	       ;; TODO: Error handling at here
-	       (let* ((prev-grad (gethash (tensor-id tensor) grads))
-		      (vgrads (when prev-grad (multiple-value-list (backward (tensor-op tensor) prev-grad)))))
-		 ;; TODO: Module Backward
-		 (when prev-grad
-		   (if (null (func-variables (tensor-op tensor)))
-		       (when (car vgrads)
-			 (assert (= (length vgrads) 1) () "Assertion Failed: The top of node backward should return a single tensor")
-			 (multiple-value-bind (iseq-bw-tmp seen-new) (%tpsort-tensors seen (car vgrads))
-			   (setf seen seen-new
-				 iseq-bw (append iseq-bw iseq-bw-tmp))))
-		       (if (and (= (length vgrads) 1) (eql (car vgrads) :module/skip-bw))
-			   (let ((dummy-grads (%module->iseqbw (tensor-op tensor) seen prev-table grads prev-grad)))
-			     (loop for v in (func-variables (tensor-op tensor))
-				   for g in dummy-grads do
-				     (setf (gethash (tensor-id v) grads) g
-					   iseq-bw (append iseq-bw (list g)))))					 
-			   (loop for v in (func-variables (tensor-op tensor))
-				 for g in vgrads
-				 if g do
-				   (multiple-value-bind (iseq-bw-tmp seen-new) (%tpsort-tensors seen g)
-				     (setf seen seen-new
-					   (gethash (tensor-id v) grads) g
-					   iseq-bw (append iseq-bw iseq-bw-tmp))))))))))
-      (loop for tensor in (reverse iseq) do (helper tensor)))
-    (multiple-value-bind (bw-graph bw-table) (%lower-iseq iseq-bw :prev-table prev-table :no-verify t)
-      (maphash #'(lambda (k v) (setf (gethash k prev-table) v)) bw-table)
+	       (let ((next-grads (multiple-value-list (backward (tensor-op tensor) prev-grad))))
+		 (cond
+		   ((null (func-variables (tensor-op tensor)))
+		    ;; The op is an allocation, the top of node.		   
+		    (assert (= (length next-grads) 1)
+			    ()
+			    "%make-graph-from-iseq: If Node ~a has no variables, then backward should return only one Tensor."
+			    (tensor-op tensor))
+		    (assert (typep (tensor-op tensor) 'Allocate) () "Expected to be an allocation? (it is safe to remove this assertion ig)")
+		    (when (car next-grads) (%bwgraph (%tpsort-tensors session (car next-grads)))))
+		   ((and (= (length next-grads) 1) (eql (car next-grads) :module/skip-bw))
+		    ;; Module whose backward = nil (i.e.: autodiff from impl)
+		    (assert (subtypep (type-of (tensor-op tensor)) 'Module) () "Only modules are allowed to return :module/skip-bw option in backward.
+~a is not a module." (tensor-op tensor))
+		    ;; Module.backward(prev-grad) -> Module.args_0.grad, Module.args_1.grad, ...
+		    ;; この時点でBackwardしてもよくね？理由を説明して書いておく
+		    (let ((dummy-grads (%module->dummy-backwards session (tensor-op tensor) prev-grad)))
+		      ;; TODO
+		      ))
+		   (T
+		    (loop for next-var in (func-variables (tensor-op tensor))
+			  for next-grad in next-grads
+			  if next-grad do (%bwgraph (%tpsort-tensors session next-grad))))))))
+      (when (null no-grad) (mapc #'backward-helper (reverse iseq))))
+
+    ;; 先にforward-graphをsimplifyしてもいいのでは？
+    (let ((backward-graph (when (null no-grad) (%lower-iseq session iseq-bw))))
       ;; Simplifier
-      (dolist (f *external-simplifiers*) (funcall f fw-graph))
+      (dolist (f external-simplifiers) (funcall f forward-graph))
+      (when backward-graph
+	(dolist (f external-simplifiers) (funcall f backward-graph)))
+
+      (%lower-modules session forward-graph)
+      (when backward-graph
+	(%lower-modules session backward-graph))
+      
       (let ((merged-graph
 	      (apply
 	       #'make-graph
 	       (append
-		(graph-nodes (%lower-modules fw-graph seen prev-table))
-		(list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes fw-graph)))))))
-		(graph-nodes bw-graph)))))
-	(dolist (f *external-simplifiers*) (funcall f merged-graph))
-	(let ((merged-graph (%lower-modules merged-graph seen prev-table)))
-	  (verify-graph merged-graph)
-	  (values merged-graph seen prev-table))))))
+		(graph-nodes forward-graph)
+		(list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes forward-graph)))))))
+		(graph-nodes backward-graph)))))
+	(dolist (f external-simplifiers) (funcall f merged-graph))
+	(%lower-modules session merged-graph)
+	(verify-graph merged-graph)
+	merged-graph))))
 
-(defun %module->iseqfw (module seen table)
-  (declare (type node module) (type list seen) (type hash-table table))
+(defun %module->iseqfw (session module)
+  (declare (type compiler-session session) (type node module))
   (assert (eql :Module (node-class module)) ())
-  (assert (getattr module :metadata) () "~a has lost its metadata." module)
+  (assert (getattr module :metadata) () "~a has lost its metadata. (-> check simplifier)" module)
   (let* ((op (getattr module :metadata))
-	 (lowered
-	   (multiple-value-list
-	    (apply #'impl op (func-variables op)))))
-    (multiple-value-bind (iseq new-table)
-	(%lower-iseq (apply #'%tpsort-tensors seen lowered) :prev-table table :no-verify t)
-      (maphash #'(lambda (k v) (setf (gethash k table) v)) new-table)
-      (graph-nodes iseq))))
+	 (lowered (multiple-value-list (apply #'impl op (func-variables op)))))
+    (graph-nodes (%lower-iseq session (apply #'%tpsort-tensors session lowered) :no-verify t))))
 
 (defun %module->iseqbw (module seen prev-table grad-table prev-grad)
   "Module.backward(dout) -> Module.args[0].grad, Module.args[1].grad, ..."
@@ -134,41 +168,40 @@
 		(func-variables fake-bw) (list prev-grad))
 	  g)))
 
-(defun %lower-modules (base-graph seen involved-tensors)
-  (declare (type graph base-graph)
-	   (type list seen)
-	   (type hash-table involved-tensors))
+(defun %lower-modules (session graph)
+  (declare (type graph graph)
+	   (type compiler-session session))
   (let ((new-graph
 	  (map 'list
 	       #'(lambda (x)
 		   (if (eql :module (node-class x))
-		       (%module->iseqfw x seen involved-tensors)
+		       (%module->iseqfw session x)
 		       x))
-	       (graph-nodes base-graph))))
-    (setf (graph-nodes base-graph) (flatten new-graph))
-    (verify-graph base-graph)
-    base-graph))
+	       (graph-nodes graph))))
+    (setf (graph-nodes graph) (flatten new-graph))
+    (verify-graph graph)
+    graph))
 
 (defparameter *external-simplifiers* `(fold-constant))
 (defparameter *no-grad* nil)
+(defun %compile-toplevel (tensors &key (no-grad nil) (external-simplifiers nil))
+  (declare (type list tensors))
+  (let* ((session (make-compiler-session :name :main))
+	 (iseq (apply #'%tpsort-tensors session tensors))
+	 (prev-grad
+	   (make-tensor (tensor-shape (car tensors))
+			:dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))
+			:id 'prev-grad :initial-element 1))
+	 (graph (%make-graph-from-iseq session iseq prev-grad :no-grad no-grad :external-simplifiers external-simplifiers)))
+    graph))
+
 (defun proceed (&rest tensors)
   "Realizes the tensor"
   (declare (type list tensors))
   ;; lowered-graph = :func :graph is mixed
-  (multiple-value-bind (iseq seen) (apply #'%tpsort-tensors nil tensors)
-    (multiple-value-bind (lowered-graph involved-tensors) (%lower-iseq iseq)
-      ;; Construct backwards      
-      (let* ((prev-grad (make-tensor (tensor-shape (car tensors))
-				     :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))
-				     :id 'prev-grad :initial-element 1)))
-	(let ((fw/bw-graph
-		(if *no-grad*
-		    (values lowered-graph seen involved-tensors)
-		    (%graph->pullback involved-tensors seen prev-grad iseq lowered-graph))))
-	  (dolist (f *external-simplifiers*)
-	    (funcall f fw/bw-graph))
-	  ;; さっきのhash-tableはVM実行時/AJIT生成時に使うから取っておく
-	  fw/bw-graph)))))
+  ;; tableから全てのTensorsのNode引っ張って来れるはず？
+  ;; SessionはAVM/AJITにも保持させておく
+  (%compile-toplevel tensors :no-grad *no-grad* :external-simplifiers *external-simplifiers*))
 
 ;; 1. 一旦Module, Backwardだけ実装する
 ;; 2. %loadを実装 + ok          (OK)
@@ -190,5 +223,7 @@
 ;;   - backward test
 ;;   - broadcast testing
 ;;   - scalar / matrix testing
-
+(defun %tensor->aasm (&rest tensors)
+  (let ((sess (make-compiler-session :name :tensor->aasm)))
+    (%lower-iseq sess (apply #'%tpsort-tensors sess tensors))))
 

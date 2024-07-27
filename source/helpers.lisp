@@ -2,11 +2,14 @@
 (defpattern sym (to-what) `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
 
 ;; In SBCL, compilation takes longer than 2s.
-(defun %tpsort-tensors (seen &rest tensors)
-  (declare (type list tensors)
+(defun %tpsort-tensors (session &rest tensors)
+  "Destructive to session-seen"
+  (declare (type Compiler-Session session)
+	   (type list tensors)
 	   (optimize (speed 3)))
   #+sbcl(setf sb-ext:*inline-expansion-limit* 30)
-  (let ((top-sort nil))
+  (let ((seen (session-seen session))
+	(top-sort nil))
     (declare (type list seen top-sort))
     (labels ((top-sort-helper (v)
 	       (unless (find (tensor-id v) seen :key #'tensor-id :test #'eql)
@@ -17,7 +20,8 @@
 		   (push v top-sort)))))
       #+sbcl(declare (inline top-sort-helper))
       (dolist (tensor tensors) (top-sort-helper tensor))
-      (values (reverse top-sort) seen))))
+      (setf (session-seen session) seen)
+      (reverse top-sort))))
 
 (defun ->iconst (x)
   (if (tensor-p x)
