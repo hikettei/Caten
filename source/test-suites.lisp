@@ -1,5 +1,5 @@
 (in-package :cl-user)
-(defpackage :caten.test (:use :cl :rove :caten))
+(defpackage :caten.test (:use :cl :rove :caten :caten/avm))
 (in-package :caten.test)
 
 (deftest test-shape-tracker
@@ -60,3 +60,49 @@
       (ok (test :float64 1))
       (dolist (dtype `(:uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8))
 	(signals (test dtype 1.0))))))
+
+(defun equal-to (a) #'(lambda (x) (= x a)))
+(defun pproceed (params tensor)
+  (let ((mdl (caten tensor)))
+    (apply #'forward mdl params)))
+(defun elements (tensor) (buffer-value (tensor-buffer tensor)))
+(deftest test-make-tensor
+  (testing "Fixed MakeTensor"
+    (ok (every (equal-to 0) (elements (proceed (make-tensor `(10 10))))))
+    (ok (every (equal-to 2) (elements (proceed (make-tensor `(10 10) :initial-element 2)))))
+    (ok (every (equal-to 2) (elements (pproceed `((a . 2.0)) (make-tensor `(10 10) :initial-element 'a)))))
+    ;; w/o inlining
+    (let ((*external-simplifiers* nil))
+      (ok (every (equal-to 0) (elements (proceed (make-tensor `(10 10))))))
+      (ok (every (equal-to 2) (elements (proceed (make-tensor `(10 10) :initial-element 2)))))
+      (ok (every (equal-to 2) (elements (pproceed `((a . 2.0)) (make-tensor `(10 10) :initial-element 'a)))))))
+  (testing "Symbolic MakeTensor"
+    (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32))))
+      (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20))))
+    (let ((a (pproceed `((a . 4)) (make-tensor `(a a) :initial-element 'a :dtype :uint32))))
+      (ok (and (every (equal-to 4) (elements a)) (= (length (elements a)) 16))))
+    (with-no-grad
+      (let ((a (pproceed `((a . 4) (b . 2)) (!add (make-tensor `(a b) :initial-element 'a :dtype :uint32) (iconst 'b)))))
+	(ok (and (every (equal-to 6) (elements a)) (= (length (elements a)) 8)))))
+    ;; w/o inlining
+    (let ((*external-simplifiers* nil))
+      (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32))))
+	(ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20))))
+      (let ((a (pproceed `((a . 4)) (make-tensor `(a a) :initial-element 'a :dtype :uint32))))
+	(ok (and (every (equal-to 4) (elements a)) (= (length (elements a)) 16))))
+      (with-no-grad
+	(let ((a (pproceed `((a . 4) (b . 2)) (!add (make-tensor `(a b) :initial-element 'a :dtype :uint32) (iconst 'b)))))
+	  (ok (and (every (equal-to 6) (elements a)) (= (length (elements a)) 8))))))))
+
+;; TODO: Testing
+;; - make-tensor, initial-element
+;; - print, viewed-print, broadcasted-print
+;; - simple chain rule tests
+;; - broadcast testing (esp: (make-tensor `(1)) and (make-tensor `(1)))
+;; - scalar and matrix ops
+;; - nested module testing
+;; - view tesitng
+;; - composed two view testing
+;; - dynamic shape testing
+;; - dynamic shape viewing testing
+;; - ULP絡めたテストは外でやる？

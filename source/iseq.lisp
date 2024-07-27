@@ -286,12 +286,17 @@
   (declare (type list tensors))
   (forward (%compile-toplevel tensors :no-grad *no-grad* :external-simplifiers *external-simplifiers*)))
 
-;; 1. 一旦Module, Backwardだけ実装する
+(defun %tensor->aasm (&rest tensors)
+  (let ((sess (make-compiler-session :name :tensor->aasm)))
+    (%lower-iseq sess (apply #'%tpsort-tensors sess tensors))))
+
+
+;; 1. 一旦Module, Backwardだけ実装する (OK)
 ;; 2. %loadを実装 + ok          (OK)
 ;; !where, logicals, castを実装 (OK)
 ;; absを実装                     (OK)
 ;; -> 1. broadcast, (fconst 1)を許容する (OK)
-;; absのconstant foldingを実装 
+;; absのconstant foldingを実装 !!
 ;; !reshape/!viewを実装 (OK)
 ;; Scalar Constant Folding ok (OK)
 ;; backwardのrequire-gradのprune (OK)
@@ -310,11 +315,8 @@
 ;; - しっかりテストを書いておく
 ;; 残りテスト書く前にやること
 ;;  - 1. Buffer周りの記述
-;;    - TensorにBufferをoverwriteするようにしたい
-;;    - 
+;;    - TensorにBufferをoverwriteするようにしたい ok
+;;    - Module in Module
 ;;    - Gradを直接読めるように
 ;;    - Renderer
-(defun %tensor->aasm (&rest tensors)
-  (let ((sess (make-compiler-session :name :tensor->aasm)))
-    (%lower-iseq sess (apply #'%tpsort-tensors sess tensors))))
-
+;; view backward

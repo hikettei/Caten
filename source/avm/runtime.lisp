@@ -1,4 +1,5 @@
 (in-package :caten/avm)
+(defparameter *vm* nil)
 (defgeneric %impl (device op graph node args) (:documentation "Peforms the corresponding nodes"))
 
 (defun make-hash-table-from-params (params)
@@ -28,7 +29,7 @@
 	   (type symbol id)
 	   (type Buffer value))
   (setf (gethash id (avm-variables avm)) value))
-(defun vm/step (avm)
+(defun vm/step (avm &aux (*vm* avm))
   (declare (type avm avm))
   (let ((node (nth (avm-pc avm) (graph-nodes (avm-graph avm)))))
     (declare (type node node))
@@ -48,8 +49,7 @@
 		for place in writes
 		do (vm/setvar avm place real))
 	  ;; Move to the next tape
-	  (incf (avm-pc avm))
-	  (map 'list #'->real writes)))))
+	  (incf (avm-pc avm))))))
   t)
 (defun vm/forward (avm)
   (declare (type avm avm))

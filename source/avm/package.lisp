@@ -24,6 +24,7 @@
    #:AVM
    #:make-avm #:avm-graph #:avm-name #:avm-fw-outputs #:avm-bw-outputs
    #:avm-id2tensor #:avm-tape-length #:avm-pc #:avm-variables
+   #:*vm*
    #:%realize
    #:vm/readvar
    #:vm/setvar

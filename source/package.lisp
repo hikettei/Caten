@@ -25,6 +25,7 @@
    #:tensor-requires-grad
    #:tensor-grad
    #:tensor-variables
+   #:grad
 
    #:*external-simplifiers*
    #:proceed

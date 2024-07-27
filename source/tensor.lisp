@@ -16,7 +16,7 @@
   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD"))) :type (or null Tensor))
   (grad-id (when requires-grad (gensym "TGRAD")) :type symbol)
   (variables variables :type list))
-
+(defun grad (tensor) (tensor-grad tensor))
 (defmethod print-object ((tensor Tensor) stream)
   (format stream "{Tensor[~(~a~)] :shape ~a :id ~a
 ~a

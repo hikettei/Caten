@@ -85,7 +85,7 @@
 	(when (every #'null kranks)->failed)
 	(when (some #'(lambda (x) (< (cdr x) (car x))) kranks)->failed)
 	(let* ((aligned-tensors
-		 (loop with tallest = (apply #'max (map 'list #'cdr kranks))
+		 (loop with tallest fixnum = (apply #'max (map 'list #'cdr kranks))
 		       for tns in tensors
 		       for krank in kranks
 		       if (or (null krank) (= (length (tensor-shape tns)) tallest))
@@ -116,7 +116,7 @@
 			 for s in (tensor-shape tns)
 			 for g in shape-goal
 			 for i upfrom 0
-			 if (and (>= (- rank i) ignore-last-k) (= s 1))
+			 if (and (>= (- rank i) ignore-last-k) (eql s 1))
 			   collect `(:~ ,g)
 			 else collect t)))
 	    (loop for tns in aligned-tensors
