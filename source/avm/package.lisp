@@ -18,6 +18,7 @@
    )
   ;; from runtime.lisp
   (:export
+   #:AVM
    #:make-avm
    #:%realize
    #:vm/forward

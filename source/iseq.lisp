@@ -237,12 +237,12 @@
     (setf tensors (list tensors)))
   (%compile-toplevel tensors))
 
-(defun forward (avm &rest params)
+(defmethod forward ((avm caten/avm:AVM) &rest params)
   (vm/set-params avm params)
   (vm/forward avm))
 
-(defun backward (avm &rest params)
-  (vm/set-params avm params)
+(defmethod backward ((avm caten/avm:AVM) prev-dout)
+  (declare (ignore prev-dout))
   (vm/backward avm))
 
 (defun proceed (&rest tensors)
