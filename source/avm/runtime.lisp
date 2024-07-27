@@ -8,12 +8,13 @@
 	  do (setf (gethash k out) v))
     out))
 (defstruct (AVM
-	    (:constructor make-avm (graph name fw-outputs bw-outputs &optional params)))
+	    (:constructor make-avm (graph name id2tensor fw-outputs bw-outputs &optional params &aux (id2tensor (or id2tensor (make-hash-table))))))
   "Tape based iseq executor"
   (graph graph :type graph)
   (name name :type keyword)
   (fw-outputs fw-outputs :type list)
   (bw-outputs bw-outputs :type list)
+  (id2tensor id2tensor :type hash-table)
   (tape-length (length (graph-nodes graph)) :type fixnum)
   (pc 0 :type fixnum)
   (variables (make-hash-table-from-params params) :type hash-table))
@@ -53,7 +54,8 @@
 (defun vm/forward (avm)
   (declare (type avm avm))
   (setf (avm-pc avm) 0)
-  (flet ((finish () (return-from vm/forward (apply #'values (map 'list #'(lambda (x) (vm/readvar avm x)) (avm-fw-outputs avm))))))
+  (flet ((finish ()
+	   (return-from vm/forward (apply #'values (map 'list #'(lambda (x) (vm/readvar avm x)) (avm-fw-outputs avm))))))
     (loop while (< (avm-pc avm) (avm-tape-length avm)) do
       (unless (vm/step avm) (finish)))
     (finish)))
@@ -67,4 +69,4 @@
 (defun %realize (graph)
   (declare (type graph graph))
   (let ((out (node-writes (car (last (graph-nodes graph))))))
-    (vm/forward (make-avm graph :test out nil))))
+    (vm/forward (make-avm graph :test nil out nil))))

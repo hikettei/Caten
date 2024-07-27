@@ -13,8 +13,15 @@
   (seen nil :type list)
   (write->node (make-hash-table :test #'eql) :type hash-table)
   (grad->tensor (make-hash-table :test #'eql) :type hash-table)
+  (tid->tensor (make-hash-table :test #'eql) :type hash-table)
   (fw-out-ids nil :type list)
   (bw-out-ids nil :type list))
+
+(defun session/set-tid (session tid tensor)
+  (declare (type Compiler-Session session)
+	   (type symbol tid)
+	   (type tensor tensor))
+  (setf (gethash tid (session-tid->tensor session)) tensor))
 
 (defun session/update-outputs (session graph)
   "This should occur just after make-graph was happened."
@@ -88,8 +95,9 @@
 	   (backward-helper (tensor &aux (prev-grad (session/readgrad session (tensor-id tensor))))
 	     (declare (type Tensor tensor))
 	     (when (null prev-grad) (return-from backward-helper))
-	     ;; TODO: Error handling at here
-	     (let ((next-grads (multiple-value-list (backward (tensor-op tensor) prev-grad))))
+	     (let ((next-grads
+		     (handler-bind ((error #'(lambda (cond) (error 'caten-backward-error :c cond :inputs prev-grad :op (tensor-op tensor)))))
+		       (multiple-value-list (backward (tensor-op tensor) prev-grad)))))
 	       (cond
 		 ((null (func-variables (tensor-op tensor)))
 		  ;; The op is an allocation, the top of node.		   
@@ -226,41 +234,62 @@
 	    do (assert (some #'(lambda (x) (find id (node-writes x))) (graph-nodes graph))
 		       ()
 		       "%compile-toplevel: The tensor ~a where :requires-grad=t could not be differentiated because backward was broken." id)))
-    (flet ((std->lid (x) (car (node-writes (session/read session x)))))
+    (flet ((std->lid (x) (car (node-writes (session/read session x))))
+	   (tid->tensor (x) (find x iseq :key #'tensor-id :test #'eql)))
+      (loop for tid in `(,@(session-fw-out-ids session) ,@(session-bw-out-ids session))
+	    for sid = (std->lid tid)
+	    for tensor = (tid->tensor tid)
+	    ;; A pair of {ID in AVM} {Actual Tensor}
+	    if tensor do (session/set-tid session sid tensor))
       (make-avm graph (session-name session)
+		(session-tid->tensor session)
 		(map 'list #'std->lid (session-fw-out-ids session))
 		(map 'list #'std->lid (session-bw-out-ids session))))))
 
-(defun caten (tensors) ;; TODO: :disasseble option etc
-  "Compiles the tensor"
+(defun caten (tensors &key (simplifiers *external-simplifiers*)) ;; TODO disassemble options etc
+  "Compiles the (Abstract) tensor"
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
-  (%compile-toplevel tensors))
+  (%compile-toplevel tensors :external-simplifiers simplifiers))
+
+(defun avm/sync-tensors (avm)
+  "Synchronize buffer and tensor (but limited to the end of nodes, and grads)"
+  (declare (type caten/avm:avm avm))
+  (maphash
+   #'(lambda (k v)
+       (let ((var (gethash k (avm-variables avm))))
+	 (when var
+	   (setf (tensor-buffer v) var))))
+   (avm-id2tensor avm)))
 
 (defmethod forward ((avm caten/avm:AVM) &rest params)
   (vm/set-params avm params)
-  (vm/forward avm))
+  (vm/forward avm)
+  (avm/sync-tensors avm)
+  (apply #'values (map 'list #'(lambda (x) (gethash x (avm-id2tensor avm))) (avm-fw-outputs avm))))
 
 (defmethod backward ((avm caten/avm:AVM) prev-dout)
   (declare (ignore prev-dout))
-  (vm/backward avm))
+  (vm/backward avm)
+  (avm/sync-tensors avm)
+  t)
 
 (defun proceed (&rest tensors)
   "Realizes the tensor"
   (declare (type list tensors))
-  (vm/forward (%compile-toplevel tensors :no-grad *no-grad* :external-simplifiers *external-simplifiers*)))
+  (forward (%compile-toplevel tensors :no-grad *no-grad* :external-simplifiers *external-simplifiers*)))
 
 ;; 1. 一旦Module, Backwardだけ実装する
 ;; 2. %loadを実装 + ok          (OK)
 ;; !where, logicals, castを実装 (OK)
 ;; absを実装                     (OK)
 ;; -> 1. broadcast, (fconst 1)を許容する (OK)
-;; absのconstant foldingを実装 (OK)
+;; absのconstant foldingを実装 
 ;; !reshape/!viewを実装 (OK)
 ;; Scalar Constant Folding ok (OK)
-;; backwardのrequire-gradのprune
-;; - implement backward
-;; - implement frontend proceed
+;; backwardのrequire-gradのprune (OK)
+;; - implement backward (OK)
+;; - implement frontend proceed (OK)
 ;; - tests
 ;; ある程度できたらModule/Backward/Functionのテストを実装
 ;; 3. st-levelでBroadcastingを実装 (OK)
@@ -271,6 +300,13 @@
 ;;   - backward test
 ;;   - broadcast testing
 ;;   - scalar / matrix testing
+;; - しっかりテストを書いておく
+;; 残りテスト書く前にやること
+;;  - 1. Buffer周りの記述
+;;    - TensorにBufferをoverwriteするようにしたい
+;;    - 
+;;    - Gradを直接読めるように
+;;    - Renderer
 (defun %tensor->aasm (&rest tensors)
   (let ((sess (make-compiler-session :name :tensor->aasm)))
     (%lower-iseq sess (apply #'%tpsort-tensors sess tensors))))

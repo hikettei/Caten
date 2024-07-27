@@ -12,6 +12,7 @@
 			  :initial-element initial-value)))
     buffer))
 
+(defmethod %vm/read-index ((device-id (eql :lisp)) buffer nth) (aref (buffer-value buffer) nth))
 (defun index-components ())
 (defun map-into/buffer (result op &rest buffers)
   (declare (type buffer result)

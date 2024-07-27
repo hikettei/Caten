@@ -19,3 +19,5 @@
 	      (subseq1p args (* 4 nrank) (* 5 nrank)) ;; stride
 	      (getattr view-node :broadcast))))) ;; broadcast
 
+(defmacro range (from below &optional (by 1))
+  `(loop for i from ,from below ,below by ,by collect i))
