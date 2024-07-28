@@ -164,6 +164,50 @@
     (sp (a b) nil (a b))))
 ;; Sum Testing
 
+;; 1. Sum no-grad keepdims=t
+(deftest test-accumlation
+  (testing "Reduction w/ no-grad=t, keepdims=t"
+    (macrolet ((testcase (op shape initial-element element-length evaluated-to axis)
+		 `(with-no-grad
+		    (let ((val1 (proceed (,op (make-tensor ',shape :initial-element ,initial-element) :axis ,axis :keepdims t))))
+		      (ok (equal (shape val1) ',shape))
+		      (ok (= (length (elements val1)) ,element-length))
+		      (ok (every (equal-to ,evaluated-to) (elements val1)))))))
+      (testcase !sum  (3 3) 1.0 1 9.0 t)
+      (testcase !mean (3 3) 1.0 1 1.0 t)
+      
+      (testcase !sum  (3 3 3) 1.0 1 27.0 t)
+      (testcase !mean (3 3 3) 1.0 1 1.0 t)
+
+      (testcase !sum  (3 3) 1.0 3 3.0 1)
+      (testcase !mean (3 3) 1.0 3 1.0 1)
+
+      (testcase !sum (3 3) 2.0 1 18 t)
+      (testcase !mean (3 3) 2.0 1 2.0 t))
+
+    (macrolet ((testcase (op shape initial-element element-length evaluated-to axis params)
+		 `(with-no-grad
+		    (let ((val1 (pproceed ',params (,op (make-tensor ',shape :initial-element ,initial-element) :axis ,axis :keepdims t))))
+		      (ok (equal (shape val1) ',shape))
+		      (ok (= (length (elements val1)) ,element-length))
+		      (ok (every (equal-to ,evaluated-to) (elements val1)))))))
+      (testcase !sum  (a b) 1.0 1 9.0 t ((a . 3) (b . 3)))
+      (testcase !mean (a b) 1.0 1 1.0 t ((a . 3) (b . 3)))
+      
+      (testcase !sum  (a b c) 1.0 1 27.0 t ((a . 3) (b . 3) (c . 3)))
+      (testcase !mean (a b c) 1.0 1 1.0 t ((a . 3) (b . 3) (c . 3)))
+
+      (testcase !sum  (a b) 1.0 3 3.0 1 ((a . 3) (b . 3)))
+      (testcase !mean (a b) 1.0 3 1.0 1 ((a . 3) (b . 3)))
+
+      (testcase !sum (a b) 2.0 1 18 t ((a . 3) (b . 3)))
+      (testcase !mean (a b) 2.0 1 2.0 t ((a . 3) (b . 3))))))
+      
+
+;; symbolic acucmlation
+;; 2. Sum no-grad keepdims=nil
+;; 3. Sum backwward testing
+;; 4. Mean Testing (Module in Module)
 ;; View Testing
 
 ;; Composed View Testing

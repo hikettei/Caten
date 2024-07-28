@@ -46,6 +46,12 @@
    #:module-attrs
    #:module-sv4bws
 
+   ;; reductions
+   #:SumNode
+   #:!sum
+   #:MeanNode
+   #:!mean
+   
    )
   ;; from helpers.lisp
   (:export

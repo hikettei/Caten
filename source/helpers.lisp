@@ -23,10 +23,13 @@
       (setf (session-seen session) seen)
       (reverse top-sort))))
 
-(defun ->iconst (x)
+(defun ->const (x f)
   (if (tensor-p x)
       x
-      (iconst x)))
+      (funcall f x)))
+(defun ->iconst (x) (->const x #'iconst))
+(defun ->uconst (x) (->const x #'uconst))
+(defun ->fconst (x) (->const x #'fconst))
 
 (defsimplifier
     (%obtain-fold-constant-result)

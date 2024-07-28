@@ -80,7 +80,7 @@ Nodes whose class is `:Graph` are completely eliminated during lower by `impl`.
 ```
 forward := ((op &rest args) &body body)
 forward := (lambda (&rest args) &body body)
-forward := #'fname
+forward := fname
 ```
 
 ### Effects
@@ -127,13 +127,13 @@ forward := #'fname
 		  (when bw-p (assert-bw-args rest rest))
 		  `(defmethod ,method ((,op-bind ,name) &rest ,inputs-bind)
 		     (apply #'(lambda (,@rest) ,@body) ,op-bind ,inputs-bind)))
-		 ((guard x (functionp x))
+		 ((guard x (symbolp x))
 		  `(defmethod ,method ((,op-bind ,name) &rest ,inputs-bind)
-		     (apply ,x ,op-bind ,inputs-bind)))
+		     (apply #',x ,op-bind ,inputs-bind)))
 		 (_ (error "defmodule: The ~(~a~) method should be implemented in one of the following patterns:
   - :~(~a~) := ((op &rest args) &body body)
   - :~(~a~) := (lambda (&rest args) &body body)
-  - :~(~a~) := #'function-name
+  - :~(~a~) := function-name
 The provided form does not match any of them:~%~a" method method method method form))))))
     `(progn
        (defclass ,name (Module) ,slots (:documentation ,documentation))
@@ -151,17 +151,18 @@ The provided form does not match any of them:~%~a" method method method method f
 		 (map 'list #'node->id inputs) (append (module-attrs op) (list :metadata op)))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
 
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmodule (Sum ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
+;; ~~~ reductions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun st/reduction (op x)
+  (with-attrs ((axis :axis) (keepdims :keepdims)) op
+    (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
+      (let* ((out (apply #'!view (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element 0.0) new-view))
+	     (out (if keepdims out (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) new-view)))))
+	out))))
+
+(defmodule (SumNode ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
     ()
     :documentation "Sum tensors along axis."
-    :forward
-    ((sum x)
-     (with-attrs ((axis :axis) (keepdims :keepdims)) sum
-       (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
-	 (let* ((out (apply #'!view (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element 0.0) new-view))
-		(out (if keepdims out (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) new-view)))))
-	   out))))		      
+    :forward st/reduction
     :impl
     ((sum x)
      (with-attrs ((axis :axis) (keepdims :keepdims)) sum
@@ -172,8 +173,22 @@ The provided form does not match any of them:~%~a" method method method method f
 		(out (if keepdims
 			 out
 			 (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) new-view)))))
-	   out))))))
-
+	   out)))))
+(defmodule (MeanNode ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
+    ()
+    :documentation "Means the tensor."
+    :forward st/reduction
+    :impl ((mean x)
+	   (with-attrs ((axis :axis) (keepdims :keepdims)) mean
+	     (let ((total (fconst 1)))
+	       (loop for new-axis in (parse-reduce-axes x axis)
+		     for base in (shape x)
+		     if (eql new-axis 1) do (setf total (!* total (->fconst base))))
+	       (!div (!sum x :axis axis :keepdims keepdims) total)))))
+(declaim (ftype (Function (Tensor &key (:axis t) (:keepdims boolean)) (values Tensor &optional)) !sum !mean))
+(defun !sum (x &key (axis t) (keepdims nil)) (forward (SumNode :axis axis :keepdims keepdims) x))
+(defun !mean (x &key (axis t) (keepdims nil)) (forward (MeanNode :axis axis :keepdims keepdims) x))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (Sigmoid (()) :where "A[~] -> A[~]")
     ()
     :documentation "Implements a sigmoid function"

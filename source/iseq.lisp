@@ -122,7 +122,7 @@
     (mapc #'backward-helper (reverse iseq))
     iseq-bw))
 
-(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels))
+(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels) (maximum-recursion 100))
   "Constructs a forward/backward graph based on iseq"
   (declare (type Compiler-Session session)
 	   (type list iseq)
@@ -167,9 +167,13 @@
 	;; Graph Level whole optimization
 	(dolist (f external-simplifiers) (funcall f merged-graph))
 	;; Lower
-	(%lower-modules session merged-graph)
-	;; Func level whole optimization
-	(dolist (f external-simplifiers) (funcall f merged-graph))
+	(flet ((ok () (null (find :Module (graph-nodes merged-graph) :key #'node-class))))
+	  (loop until (ok) for n upfrom 0 do
+	    (when (>= n maximum-recursion)
+	      (error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
+	    (%lower-modules session merged-graph)
+	    ;; Func level whole optimization
+	    (dolist (f external-simplifiers) (funcall f merged-graph))))
 	;; verify and complete
 	(verify-graph merged-graph)
 	merged-graph))))

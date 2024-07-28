@@ -68,7 +68,7 @@
    #:%where)
 
   ;; from helpers.lisp
-  (:export #:dtype->lisp)
+  (:export #:dtype->lisp #:dtype/cast)
   ;; from optimizers.lisp
   (:export #:optimize-aasm)
   )

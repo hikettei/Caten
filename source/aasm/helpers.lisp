@@ -19,3 +19,11 @@
     (:int8   '(signed-byte 8))
     (:bool    'boolean)
     (otherwise (error "dtype->lisp: ~a is not supported" dtype))))
+
+(defun dtype/cast (x cast-to)
+  (declare (type dtype-t cast-to))
+  (if (floatp x)
+      (if (or (eql cast-to :float64) (eql cast-to :float32) (eql cast-to :float16))
+	  (coerce x (dtype->lisp cast-to))
+	  (coerce (round x) (dtype->lisp cast-to)))
+      (coerce x (dtype->lisp cast-to))))
