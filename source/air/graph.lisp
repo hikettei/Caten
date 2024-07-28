@@ -40,6 +40,13 @@ If outputs is nil, the writes of last nodes becomes the top"
 - Nodes whose class are start with special/ cannot be purged even if they are isolated."
   (declare (type graph graph)
 	   (optimize (speed 3)))
+
+  (setf (graph-nodes graph)
+	(reverse
+	 (loop with seen = nil
+	       for node in (reverse (graph-nodes graph))
+	       if (null (find (the symbol (car (node-writes node))) seen))
+		 collect (progn (push (car (node-writes node)) seen) node))))
   ;; Variables are immutable
   ;; Slow O(n^2) in the worst case.
   (loop for node in (graph-nodes graph)

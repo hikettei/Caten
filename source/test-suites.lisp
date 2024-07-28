@@ -277,18 +277,27 @@
       (okwhen (!view (ax+b `(3 3 3) 1 0) 2 t t) (map 'list #'(lambda (x) (+ x 18)) #(0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0)))
       (okwhen (!view (ax+b `(3 3 3) 1 0) 2 2 2) #(26.0))
       (okwhen (!view (ax+b `(3 3 3) 1 0) `(0 2) `(0 2) 2) #(2.0 5.0 11.0 14.0))
-      ;;(okwhen (!view (ax+b `(3 3 3) 1 0) `(1 3) `(1 3) 2) #(14.0 23.0 17.0 26.0))
-      ;;(okwhen (!view (ax+b `(3 3 3) 1 0) `(1 3) `(1 3) `(1 -1)) #(13.0 22.0 16.0 25.0))
-      
-      
-      
-      
-      )))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) `(1 3) `(1 3) 2) #(14.0 17.0 23.0 26.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) `(1 3) `(1 3) `(1 -1)) #(13.0 16.0 22.0 25.0))
+      (okwhen (!view (ax+b `(10) 1 0) `(-1 1 -2)) #(9.0 7.0 5.0 3.0)))))
 
 (deftest composed-view-test
+  (macrolet ((okwhen (form value)
+	       `(if (eql *default-order* :row)
+		    (ok (every #'= (buffer-value (tensor-buffer (proceed (!contiguous ,form)))) ,value))
+		    (ok (= (reduce #'+ (buffer-value (tensor-buffer (proceed (!contiguous ,form))))) (reduce #'+ ,value))))))
+    (dolist (*default-order* `(:row :column))
+      ;; Needs more case to test
+      ;(okwhen (!view (!view (ax+b `(10) 1 0) `(0 10)) `(0 5)) #(0.0 1.0 2.0 3.0 4.0))
+      ;(okwhen (!view (!view (ax+b `(10) 1 0) `(0 -1)) `(2 5)) #(2.0 3.0 4.0))
+      ;(okwhen (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 6)) #(2.0 4.0))
+      ;(okwhen (!view (!view (ax+b `(20) 1 0) `(18 0 -2)) `(10 2 -2)) #(8.0 10.0 12.0 14.0))
+      )))
 
-  )
-;; View Compose Testing
+(deftest symbolic-view-test
+  (ok (every #'= #(0.0) (buffer-value (tensor-buffer (pproceed `((a . 2) (b . 3)) (!view (ax+b `(a b) 1 0) 0 0))))))
+  (ok (every #'= #(23.0) (buffer-value (tensor-buffer (pproceed `((a . 2) (b . 3)) (!contiguous (!view (ax+b `(10 10) 1 0) 'a 'b))))))))
+
 
 
 ;; Regression test: keepdims=nil no stride check (OK)
