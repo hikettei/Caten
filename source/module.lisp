@@ -184,7 +184,7 @@ The provided form does not match any of them:~%~a" method method method method f
 	       (loop for new-axis in (parse-reduce-axes x axis)
 		     for base in (shape x)
 		     if (eql new-axis 1) do (setf total (!* total (->fconst base))))
-	       (!div (!sum x :axis axis :keepdims keepdims) total)))))
+	       (!div (!sum x :axis axis :keepdims keepdims) (!cast total (dtype-of x)))))))
 (declaim (ftype (Function (Tensor &key (:axis t) (:keepdims boolean)) (values Tensor &optional)) !sum !mean))
 (defun !sum (x &key (axis t) (keepdims nil)) (forward (SumNode :axis axis :keepdims keepdims) x))
 (defun !mean (x &key (axis t) (keepdims nil)) (forward (MeanNode :axis axis :keepdims keepdims) x))

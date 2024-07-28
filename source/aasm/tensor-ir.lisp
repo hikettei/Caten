@@ -26,6 +26,12 @@
 	 :uint64 :uint32 :uint16 :uint8
 	 :int64 :int32 :int16 :int8 :bool)))
 
+(defun dtype/integerp (dtype)
+  (and (find dtype `(:uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8)) t))
+
+(defun dtype/floatp (dtype)
+  (and (find dtype `(:float64 :float32 :float16)) t))  
+
 (defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")))
   "Equivalent to `dtype i[shape];`"
   (declare (type fixnum nrank)

@@ -10,6 +10,8 @@
    #:*default-uint*
    #:*default-int*
    #:dtype-t
+   #:dtype/integerp
+   #:dtype/floatp
 
    #:%uconst
    #:%iconst

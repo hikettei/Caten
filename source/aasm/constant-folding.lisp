@@ -11,7 +11,7 @@
   (multiple-value-bind (nrank shape stride dtype views)
       (infer-tensor-info graph id)
     ;; [TODO] Fix why shape infer fails
-    (when (some #'null (list nrank shape stride dtype views))
+    (when (or (null nrank) (null dtype))
       (return-from reinitialize-tensor))
     (flet ((->find (x) (id->value graph x)))
       (setf shape (map 'list #'->find shape)
