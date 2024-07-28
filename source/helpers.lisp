@@ -68,7 +68,7 @@ Reads and binds attributes from module.
 (defun normalize-axis (x n)
   (declare (type tensor x))
   (assert (integerp n) () "axes should be designed as a number. butgot ~A" n)
-  (if (< n 0) (+ (dims x) n) n))
+  (if (< n 0) (+ (ndim x) n) n))
 
 (defun parse-reduce-axes (x lst)
   (declare (type tensor x))

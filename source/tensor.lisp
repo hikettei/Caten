@@ -100,6 +100,6 @@ Shape := (Integer > 1) | Symbol | Tensor"
       (setf (func-variables (tensor-op buff)) (tensor-variables buff))
       (assert (every #'tensor-p (tensor-variables buff)) ())
       ;; Fold Constants in Shape (detached from the graph, no side effects)
-      (setf (tensor-shape buff) (map 'list #'(lambda (x) (or (and (not (tensor-p x)) x) (try-fold-constant x) x)) (tensor-shape buff)))
+      (setf (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
       buff)))
 

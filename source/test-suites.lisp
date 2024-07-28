@@ -166,10 +166,13 @@
     (sp (a b) (1) (a b))
     (sp (3 3) (3 3) (3 3))
     (sp (a b) nil (a b))))
-;; Sum Testing
 
-;; 1. Sum no-grad keepdims=t
-(deftest test-accumlation
+;; View Testing
+(deftest test-composed-view-constant-folding
+  (ok (equal `(2 2 2) (shape (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) )))
+  (ok (equal `(1 1 1) (shape (!view (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) `(0 1) `(0 1) `(0 1))))))  
+
+(deftest test-accumlation-keepdims
   (testing "Reduction w/ no-grad=t, keepdims=t"
     (macrolet ((testcase (op shape initial-element element-length evaluated-to axis)
 		 `(with-no-grad
@@ -206,8 +209,21 @@
 
       (testcase !sum (a b) 2.0 1 18 t ((a . 3) (b . 3)))
       (testcase !mean (a b) 2.0 1 2.0 t ((a . 3) (b . 3))))))
-      
 
+(deftest test-accumlation-no-keepdims
+  (testing "Reduction w/o keepdims=t"
+    (macrolet ((testcase (op shape shape1 params initial-element element-length evaluated-to axis)
+		 `(with-no-grad
+		    (let ((val1 (pproceed ',params (,op (make-tensor ',shape :initial-element ,initial-element) :axis ,axis :keepdims nil))))
+		      (ok (equal (shape val1) ',shape1))
+		      (ok (= (length (elements val1)) ,element-length))
+		      (ok (every (equal-to ,evaluated-to) (elements val1)))))))
+      (testcase !sum  (3 3) (3 1) nil 1.0 3 3.0 1)
+      (testcase !mean (3 3) (3 1) nil 1.0 3 1.0 1)
+      )))
+
+
+;; Regression test: keepdims=nil no stride check
 ;; symbolic acucmlation
 ;; 2. Sum no-grad keepdims=nil
 ;; 3. view shape inference/constant folding composed viewのresultで整数値を得るまで

@@ -13,7 +13,6 @@
 
 (defun vrange-size (vrange)
   (declare (type ViewRange vrange))
-  ;; [TODO]: !abs
   (!div (!sub (viewrange-to vrange) (viewrange-from vrange)) (viewrange-by vrange)))
 
 (defun parse-view-subscript (size subscript)

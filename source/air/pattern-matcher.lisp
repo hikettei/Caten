@@ -98,16 +98,28 @@ TODO: Docs"
        (unless no-verify (verify-graph ,graph))
        (labels ((,simplifier-bind (,node-top ,count-bind
 				   &aux
-				     (*matched-bind* nil))
+				     (*matched-bind* nil)
+				     (fixed-writes-to
+				      (when ,node-top
+					(loop for o in (graph-outputs ,graph)
+					      if (find o (node-writes ,node-top) :test #'eql)
+						collect o))))
 		  (declare (type list *matched-bind*))
-		  (when (null ,node-top) (return-from ,simplifier-bind))
-		  (when (some #'(lambda (x) (find x (node-writes ,node-top) :test #'eql)) (graph-outputs ,graph)) (return-from ,simplifier-bind))
+		  (when fixed-writes-to (return-from ,simplifier-bind))
+		  (when (null ,node-top) (return-from ,simplifier-bind))		  
 		  (multiple-value-bind (replace-rule matched)
 		      (match ,node-top
 			,@(map 'list #'(lambda (x) (parse-rule x node-top graph)) rules)
 			(_ nil))
 		    (when (and replace-rule matched)
 		      (when (node-p replace-rule) (setf replace-rule (list replace-rule)))
+		      ;; reject the replace-rule only when:
+		      ;; - the original node writes the output to (graph-outputs graph)
+		      ;; - the replaced node breaks this rule
+		      ;;(when fixed-writes-to
+		      ;;  (let ((out (apply #'append (map 'list #'node-writes replace-rule))))
+		      ;;    (when (some #'(lambda (x) (null (find x out))) fixed-writes-to)
+		      ;;      (return-from ,simplifier-bind))))		      
 		      (setf (graph-nodes ,graph)
 			    (append
 			     (subseq (graph-nodes ,graph) 0 ,count-bind)

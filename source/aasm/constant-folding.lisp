@@ -1,10 +1,7 @@
 (in-package :caten/aasm)
 
 (defpattern number (x) `(guard ,x (numberp ,x)))
-;; Folds against scalar values
-(defsimplifier
-    (%0_fuse_load_alloc)
-    ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (number x)) -> (:_TmpScalarConst (x) :dtype dtype)))
+(defpattern boolean (x) `(guard ,x (typep ,x 'boolean)))
 
 (defun reinitialize-tensor (graph id node)
   (declare (type graph graph))
@@ -24,16 +21,28 @@
 	    ;; [TODO] Test against viewed outputs
 	    (m2 (if viewed (%view m1 shape (nth 0 views) (nth 1 views) (nth 2 views) (nth 3 views) stride :id (node->id node)) m1)))))))
 
+;; Folds against scalar values
+(defsimplifier
+    (%0_fuse_load_alloc)
+    ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (number x)) -> (:_TmpScalarConst (x) :dtype dtype))
+    ((:Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean x)) -> (:_TmpScalarBool () :value x)))
+
 (defsimplifier
     (%1_fold_constant :speed 0)
-    ((:Add ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y))))
-     ->
-     (:_TmpScalarConst ((+ x y)) :dtype dtype))
-    ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y))))
-     ->
-     (:_TmpScalarConst ((* x y)) :dtype dtype))
+    ((:Add ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((+ x y)) :dtype dtype))
+    ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((* x y)) :dtype dtype))
     ((:Neg ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((- x)) :dtype dtype))
     ((:Recip ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((/ x)) :dtype dtype))
+    ((:GCD ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((gcd x y)) :dtype dtype))
+    ((:LT (_ (:_TmpScalarConst (x)) (:_TmpScalarConst (y)))) -> (:_TmpScalarBool () :value (< x y)))
+    ((:NEQ (_ (:_TmpScalarConst (x)) (:_TmpScalarConst (y)))) -> (:_TmpScalarBool () :value (not (= x y))))
+    ((:MAX ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((max x y)) :dtype dtype))
+    ((:NOT ((:_TmpScalarBool () :value value))) -> (:_TmpScalarBool () :value (not value)))
+    ((:AND ((:_TmpScalarBool () :value x) (:_TmpScalarBool () :value y))) -> (:_TmpScalarBool () :value (and x y)))
+    ((:OR ((:_TmpScalarBool () :value x) (:_TmpScalarBool () :value y))) -> (:_TmpScalarBool () :value (or x y)))
+    ((:WHERE ((:_TmpScalarBool () :value x) (:_TmpScalarConst (y) :dtype dtype) (:_TmpScalarConst (z))))
+     ->
+     (:_TmpScalarConst ((if x y z)) :dtype dtype))     
     ((:Mul (_ (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))
     ((:Mul ((:_TmpScalarConst ((= 0))) _)) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))
     ((:Mul (x (:_TmpScalarConst ((= 1))))) -> (:_TmpPurged (x)))
@@ -79,16 +88,23 @@
      ->
      ((node graph)
       (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node))))))
+    ((:_TmpScalarBool () :value value)
+     ->
+     ((node graph)
+      (with-context-nodes (_ (%load (%salloc :dtype :bool) value :id (node->id node))))))
     ((:_TmpPurged (x))
      ->
      ((node graph)
       (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))))
 
-(defun fold-constant (graph)
+(defun fold-constant (graph &aux (n (length (graph-nodes graph))))
   (declare (type Graph graph))
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
 	  ()
  	  "_TmpScalarConst shouldn't exist!")
+  (assert (null (find :_TmpScalarBool (graph-nodes graph) :key #'node-type))
+	  ()
+ 	  "_TmpScalarBool shouldn't exist!")
   (%0_fuse_load_alloc graph)
   (%1_fold_constant graph)
   (let ((purges (loop for node in (graph-nodes graph)
@@ -110,8 +126,13 @@
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
 	  ()
 	  "_TmpScalarConst shouldn't exist! (but it is a simplifier's bug)")
+  (assert (null (find :_TmpScalarBool (graph-nodes graph) :key #'node-type))
+	  ()
+	  "_TmpScalarBool shouldn't exist! (but it is a simplifier's bug)")
   (assert (null (find :_TmpPurged (graph-nodes graph) :key #'node-type))
 	  ()
 	  "_TmpPurged shouldn't exist! (it is a simplifier's bug)")
   (verify-graph graph)
+  (when (not (= (length (graph-nodes graph)) n))
+    (fold-constant graph))
   graph)

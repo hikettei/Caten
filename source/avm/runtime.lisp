@@ -7,6 +7,9 @@
   (let ((out (make-hash-table :test #'eql)))
     (loop for (k . v) in params
 	  do (setf (gethash k out) v))
+    ;; Constants
+    (setf (gethash t out) t
+	  (gethash nil out) :nil)
     out))
 (defstruct (AVM
 	    (:constructor make-avm (graph name id2tensor fw-outputs bw-outputs &optional params &aux (id2tensor (or id2tensor (make-hash-table))))))
@@ -22,8 +25,10 @@
 (defun vm/readvar (avm id)
   (declare (type avm avm)
 	   (type symbol id))
-  (or (gethash id (avm-variables avm))
-      (error "AVM Runtime Error: ~a is not defined in ~a" id avm)))
+  (let ((out (gethash id (avm-variables avm))))
+    (if (eql out :nil)
+	nil
+	(or out (error "AVM Runtime Error: ~a is not defined in ~a" id avm)))))
 (defun vm/setvar (avm id value)
   (declare (type avm avm)
 	   (type symbol id)
