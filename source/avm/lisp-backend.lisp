@@ -45,7 +45,7 @@
 		       if view
 			 do (incf (nth n offsets) (* (nth dim (buffer-stride buff)) (car view))))
 		 (loop for n upfrom 0 below size
-		       do (if (= dim 0)
+		       do (if (= (1+ dim) nrank)
 			      (if index-components-p
 				  (progn
 				    (setf (aref (buffer-value result) (car offsets)) index-components)
@@ -54,7 +54,7 @@
 				      (setf (buffer-value result) (apply op (map 'list #'bref buffers (cdr offsets))))
 				      (setf (aref (buffer-value result) (car offsets))
 					    (apply op (map 'list #'bref buffers (cdr offsets))))))
-			      (explore (1- dim) (copy-list offsets)))
+			      (explore (1+ dim) (copy-list offsets)))
 			  (loop for n upfrom 0
 				for buff in `(,result ,@buffers)
 				for view = (nth dim (buffer-views buff))
@@ -64,7 +64,7 @@
 					 nil ;; broadcast
 					 (incf (nth n offsets) (* (third view) stride)))
 				else if stride do (incf (nth n offsets) stride))))))
-      (explore (1- nrank) offsets))))
+      (explore 0 offsets))))
 
 (defun map-view (reduction-p op &rest buffers)
   "Note: In a special case where op is #'index-components, map-view writes (car buffer) <- index-component."
