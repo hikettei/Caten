@@ -20,7 +20,7 @@
   (declare (type axis-t size))
   ;; [TODO] -1とかの処理はここじゃないとできない？
   ;; T = shape of corresponding axis
-  (flet ((1p (x) (if (tensor-p x) (!add x (iconst 1)) (!add (iconst 1) (iconst x)))))
+  (flet ((1p (x) (if (tensor-p x) (!add x (iconst 1)) (!add (iconst x) (iconst 1)))))
     (ematch subscript
       ((list :~ n) (make-vrange 0 n 1 t))   ;; broadcasting (:~ N)
       ((eql t)  (make-vrange 0 size 1 nil)) ;; nothing
@@ -41,12 +41,11 @@ Applying a further slicing:
   (declare (type ViewRange old new))
   (with-slots ((frm1 from) (to1 to) (by1 by)) old
     (with-slots ((frm2 from) (to2 to) (by2 by) (bc2 broadcast)) new
-      (make-vrange
-       ;; [TODO] あってる？
-       (!add frm1 frm2)
-       (!sub to1 to2)
-       (!mul by1 by2)
-       bc2))))
+      (let* ((offset (!where (!> by1 (iconst 0)) (!min frm1 to1) (!max frm1 to1)))
+	     (from (!+ offset (!* (!signum by1) frm2)))
+	     (to   (!+ offset (!* (!signum by1) to2)))
+	     (step (!* (!signum (!* by1 by2)) (!lcm by1 by2))))
+	(make-vrange from to step bc2)))))
 
 (defun merge-views (base subscripts)
   "Composes the two mergeable views"
@@ -55,4 +54,3 @@ Applying a further slicing:
   (let* ((parsed-subscripts (map 'list #'parse-view-subscript (tensor-shape base) subscripts)))
     (when (null (tensor-views base)) (return-from merge-views parsed-subscripts))
     (map 'list #'.compose-views (tensor-views base) parsed-subscripts)))
-

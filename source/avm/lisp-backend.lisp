@@ -111,10 +111,11 @@
   (impl :move #'(lambda (x y) x y))
   (impl :and #'(lambda (x y) (if (and (numberp x) (numberp y)) (logand x y) (and x y))))
   (impl :or #'(lambda (x y) (if (and (numberp x) (numberp y)) (logior x y) (or x y))))
-  
+  (impl :gcd #'gcd)
+  (impl :max #'max)  
   (impl :sqrt  #'sqrt)
   (impl :neg   #'-)
-  (impl :recip #'(lambda (x) (float (/ x))))
+  (impl :recip #'/)
   (impl :not #'(lambda (x) (if (numberp x) (lognot x) (not x))))
   (impl :cast #'(lambda (m x)
 		  (declare (ignore m))

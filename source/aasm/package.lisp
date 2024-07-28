@@ -42,6 +42,8 @@
    #:%move
    #:%and
    #:%or
+   #:%max
+   #:%gcd
 
    ;; Unary
    #:%neg

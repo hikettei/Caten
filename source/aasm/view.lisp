@@ -54,15 +54,20 @@
 			  (update dtype dtype1)
 			  (update shape shape1)
 			  (update stride stride1)))
+		       (:Where
+			(when (complete?) (finish))
+			(dolist (r (cdr (node-reads node))) (helper r)))
 		       (otherwise
 			(when (complete?) (finish))
 			(dolist (r (node-reads node)) (helper r)))))))
 	  (helper id))
 	(when (base?) (finish))
-	(error "infer-shape: Failed to infer the shape of ~a.
-Results:
-nrank=~a, shape=~a, dtype=~a, view-from=~a, view-to=~a, view-by=~a, broadcast=~a, stride=~a"
-	       id nrank shape dtype view-from view-to view-by broadcast stride)))))
+	(finish)
+;;	(error "infer-shape: Failed to infer the shape of ~a.
+;;Results:
+;;nrank=~a, shape=~a, dtype=~a, view-from=~a, view-to=~a, view-by=~a, broadcast=~a, stride=~a"
+;;	       id nrank shape dtype view-from view-to view-by broadcast stride)
+	))))
 
 (defun %view (base shape from to by broadcast stride &key (id (gensym "VID")))
   "Creates a view against base. (views are only created against the original buffer)"

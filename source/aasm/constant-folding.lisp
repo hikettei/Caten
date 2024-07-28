@@ -10,6 +10,9 @@
   (declare (type graph graph))
   (multiple-value-bind (nrank shape stride dtype views)
       (infer-tensor-info graph id)
+    ;; [TODO] Fix why shape infer fails
+    (when (some #'null (list nrank shape stride dtype views))
+      (return-from reinitialize-tensor))
     (flet ((->find (x) (id->value graph x)))
       (setf shape (map 'list #'->find shape)
 	    stride (map 'list #'->find stride)))
@@ -17,7 +20,7 @@
       (if (= nrank 0)
 	  (with-context-nodes (m1 (%salloc :dtype dtype :id id)))
 	  (with-context-nodes
-	      (m1 (%alloc nrank shape stride :dtype dtype :id (if viewed (gensym "TID") (node->id node))))
+	    (m1 (%alloc nrank shape stride :dtype dtype :id (if viewed (gensym "TID") (node->id node))))
 	    ;; [TODO] Test against viewed outputs
 	    (m2 (if viewed (%view m1 shape (nth 0 views) (nth 1 views) (nth 2 views) (nth 3 views) stride :id (node->id node)) m1)))))))
 

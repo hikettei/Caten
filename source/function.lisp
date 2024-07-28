@@ -54,7 +54,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
   ((views :initarg :views :type list :accessor view-views)
    (nrnak :initarg :nrank :accessor view-nrank)))
 (defmethod backward ((op View) dout)
-  (error "not implemented")
+  (warn "WIP: View Backward")
   ;; They are independent:
   ;; 1. reduction 2. slice/take 3. reshape 4. permute 5. broadcast
   ;; 5.と2.を同時に行わない仮定が必要
@@ -140,6 +140,21 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod lower ((op Mul) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%mul a b :reduction (func-reduce op))))))
+
+(defclass MaxOp (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
+(defmethod forward ((op MaxOp) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
+(defmethod backward ((op MaxOp) dout)
+  (warn "WIP: MaxOp"))
+(defmethod lower ((op MaxOp) &rest inputs)
+  (multiple-value-bind (a b) (apply #'values inputs)
+    (with-context (out (%max a b :reduction (func-reduce op))))))
+
+(defclass GCDOp (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
+(defmethod forward ((op GCDOp) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
+(defmethod backward ((op GCDOp) dout) (values nil nil))
+(defmethod lower ((op GCDOp) &rest inputs)
+  (multiple-value-bind (a b) (apply #'values inputs)
+    (with-context (out (%gcd a b :reduction (func-reduce op))))))
 ;; Unary
 (defclass Neg (Func) nil)
 (defmethod forward ((op Neg) &rest tensors) (st "A[~] -> A[~]" (tensors)))
@@ -163,11 +178,15 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (declare (type tensor x out) (type dtype-t dtype))
   (forward (make-instance 'Cast :dtype-frm (tensor-dtype x) :dtype-to dtype) out x))
 ;; ~~ wrappers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(declaim (ftype (function (Tensor Tensor &key (:reduce boolean)) (values Tensor &optional)) !add !sub !mul !div))
+(declaim (ftype (function (Tensor Tensor &key (:reduce boolean)) (values Tensor &optional)) !add !sub !mul !div !max !min))
 (defun !add (a b &key (reduce nil)) (apply #'forward (make-instance 'Add :reduce reduce) (broadcast-elwise a b)))
 (defun !mul (a b &key (reduce nil)) (apply #'forward (make-instance 'Mul :reduce reduce) (broadcast-elwise a b)))
 (defun !sub (a b &key (reduce nil)) (!add a (!neg b) :reduce reduce))
 (defun !div (a b &key (reduce nil)) (!mul a (!recip b) :reduce reduce))
+(defun !max (a b &key (reduce nil)) (apply #'forward (make-instance 'MaxOp :reduce reduce) (broadcast-elwise a b)))
+(defun !min (a b &key (reduce nil)) (!neg (!max (!neg a) (!neg b) :reduce reduce)))
+(defun !gcd (a b &key (reduce nil)) (apply #'forward (make-instance 'GCDOp :reduce reduce) (broadcast-elwise a b)))
+(defun !lcm (a b) (!div (!mul a b) (!gcd a b)))
 (macrolet ((def (name b) `(defun ,name (&rest args) (reduce ,b args))))
   (def !+ #'!add)
   (def !- #'!sub)

@@ -59,6 +59,9 @@ Shape := (Integer > 1) | Symbol | Tensor"
     (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element))
     buff))
 
+(defun make-scalar (value &key (dtype *default-float*) (order *default-order*) (id (gensym "SID")) (requires-grad nil))
+  (make-tensor nil :dtype dtype :order order :id id :requires-grad requires-grad :initial-element value))
+
 (macrolet ((def (name dtype)
 	     `(defun ,name (value &key (dtype ,dtype) (order *default-order*) (id (gensym "SID")) (requires-grad nil))
 		(if (tensor-p value)

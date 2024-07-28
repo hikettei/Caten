@@ -76,6 +76,8 @@
    #:!mul #:!*
    #:!div #:!/
    #:!move
+   #:!max #:!min
+   #:!gcd #:!lcm
 
    ;; Unary
    #:!neg #:!recip

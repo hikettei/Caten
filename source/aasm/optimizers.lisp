@@ -11,5 +11,4 @@
 (defun optimize-aasm (graph)
   (declare (type graph graph))
   (fold-constant graph)
-  (fuse-duplicated-store graph)  
-  )
+  (fuse-duplicated-store graph))

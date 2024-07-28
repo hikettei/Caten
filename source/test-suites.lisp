@@ -46,8 +46,8 @@
     (test 0 0 1 1 nil) (test 3 3 4 1 nil)
     ;; A[0:3]
     (test `(0 3) 0 3 1 nil) (test `(2 3) 2 3 1 nil)
-    ;; A[4:0:-1]
-    (test `(4 0 -1) 4 0 -1 nil) (test `(0 5 2) 0 5 2 nil)
+    ;; A[4:0:1]
+    (test `(4 0 -1) 4 0 1 nil) (test `(0 5 2) 0 5 2 nil)
     ;; A[:broadcast]
     (test `(:~ 100) 0 100 1 t)))
 
@@ -206,8 +206,10 @@
 
 ;; symbolic acucmlation
 ;; 2. Sum no-grad keepdims=nil
-;; 3. Sum backwward testing
-;; 4. Mean Testing (Module in Module)
+;; 3. 
+;; 4. fix view
+;; 5. Sum backwward testing
+;; 6. Mean Testing (Module in Module)
 ;; View Testing
 
 ;; Composed View Testing
@@ -225,6 +227,9 @@
 ;; - dynamic shape testing
 ;; - dynamic shape viewing testing
 ;; - ULP絡めたテストは外でやる？
+;; Implement Matmul
+;; -> 全部(ちゃんとしたテストを記述したら) AJitを作る
+;; 1. Lower from aasm into ajit IR
 
 ;; 1. 一旦Module, Backwardだけ実装する (OK)
 ;; 2. %loadを実装 + ok          (OK)

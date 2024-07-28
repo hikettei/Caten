@@ -188,6 +188,7 @@ The provided form does not match any of them:~%~a" method method method method f
 (declaim (ftype (Function (Tensor &key (:axis t) (:keepdims boolean)) (values Tensor &optional)) !sum !mean))
 (defun !sum (x &key (axis t) (keepdims nil)) (forward (SumNode :axis axis :keepdims keepdims) x))
 (defun !mean (x &key (axis t) (keepdims nil)) (forward (MeanNode :axis axis :keepdims keepdims) x))
+;; TODO: !max !min !topk
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (Sigmoid (()) :where "A[~] -> A[~]")
     ()
