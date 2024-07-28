@@ -18,17 +18,16 @@
 
 (defun parse-view-subscript (size subscript)
   (declare (type axis-t size))
-  ;; [TODO] -1とかの処理はここじゃないとできない？
-  ;; T = shape of corresponding axis
-  (flet ((1p (x) (if (tensor-p x) (!add x (iconst 1)) (!add (iconst x) (iconst 1)))))
+  (flet ((normalize (x) (if (and (numberp x) (< x 0)) (!add (->iconst size) (iconst x)) x))
+	 (1p (x) (if (tensor-p x) (!add x (iconst 1)) (!add (iconst x) (iconst 1)))))
     (ematch subscript
-      ((list :~ n) (make-vrange 0 n 1 t))   ;; broadcasting (:~ N)
+      ((list :~ n) (make-vrange 0 (normalize n) 1 t))   ;; broadcasting (:~ N)
       ((eql t)  (make-vrange 0 size 1 nil)) ;; nothing
-      ((guard x (typep x 'axis-t)) (make-vrange x (1p x) 1 nil)) ;; A[i]
+      ((guard x (typep x 'axis-t)) (make-vrange (normalize x) (1p (normalize x)) 1 nil)) ;; A[i]
       ((list (guard from (typep from 'axis-t)) (guard to (typep to 'axis-t)))
-       (make-vrange from to 1 nil)) ;; A[from:to]
+       (make-vrange (normalize from) (normalize to) 1 nil)) ;; A[from:to]
       ((list (guard from (typep from 'axis-t)) (guard to (typep to 'axis-t)) (guard by (typep to 'axis-t)))
-       (make-vrange from to by nil))))) ;; A[from:to:by]
+       (make-vrange (normalize from) (normalize to) by nil))))) ;; A[from:to:by]
 
 (defun .compose-views (old new)
   "

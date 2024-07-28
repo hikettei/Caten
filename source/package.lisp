@@ -86,4 +86,8 @@
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
    ;; TernaryOps
    #:!where
-   ))
+   )
+  ;; from initializers.lisp
+  (:export
+   #:ax+b)
+  )
