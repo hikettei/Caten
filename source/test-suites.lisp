@@ -254,9 +254,12 @@
 	  18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0))))))
 
 (deftest simple-view-test
-  (macrolet ((okwhen (form value) `(every #'= (buffer-value (tensor-buffer (proceed (!contiguous ,form)))) ,value)))
+  (macrolet ((okwhen (form value)
+	       `(if (eql *default-order* :row)
+		    (ok (every #'= (buffer-value (tensor-buffer (proceed (!contiguous ,form)))) ,value))
+		    (ok (= (reduce #'+ (buffer-value (tensor-buffer (proceed (!contiguous ,form))))) (reduce #'+ ,value))))))
     (dolist (*default-order* `(:row :column))
-      (okwhen (!view (ax+b `(3 3) 1 0) 1 1) #(2.0))
+      (okwhen (!view (ax+b `(3 3) 1 0) 1 1) #(4.0))
       
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 0) #(0.0))
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 1) #(1.0))
@@ -269,6 +272,15 @@
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t 0) #(0.0 3.0 6.0))
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t 1) #(1.0 4.0 7.0))
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t 2) #(2.0 5.0 8.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t t) #(0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 1 t t) (map 'list #'(lambda (x) (+ x 9)) #(0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0)))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 2 t t) (map 'list #'(lambda (x) (+ x 18)) #(0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0)))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 2 2 2) #(26.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) `(0 2) `(0 2) 2) #(2.0 5.0 11.0 14.0))
+      ;;(okwhen (!view (ax+b `(3 3 3) 1 0) `(1 3) `(1 3) 2) #(14.0 23.0 17.0 26.0))
+      ;;(okwhen (!view (ax+b `(3 3 3) 1 0) `(1 3) `(1 3) `(1 -1)) #(13.0 22.0 16.0 25.0))
+      
+      
       
       
       )))
