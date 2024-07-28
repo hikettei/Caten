@@ -87,7 +87,7 @@ If i is a tensor, %load fills the visible area of i with value."
   (let* ((n (length shape))
 	 (strides (make-list n)))
     (flet ((const (n) (if (node-p n) n (%load (%salloc :dtype dtype) n))))
-      (setf (nth (first (reverse permute)) strides) (progn (const 1)))
+      (setf (nth (first (reverse permute)) strides) (const 1))
       ;; Calculate strides for other dimensions in reverse permuted order
       (do ((i (- n 2) (- i 1))) ((< i 0) nil)
 	(setf (nth (nth i permute) strides)

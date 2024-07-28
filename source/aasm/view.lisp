@@ -128,10 +128,7 @@ broadcast=~a"
 		    ;; by
 		    (loop for i in shape collect (node->id (%iconst 1)))
 		    ;; stride
-		    (let ((permute (range 0 (length shape))))
-		      (when (eql order :column)
-			(setf permute (reverse permute)))
-		      (map 'list #'node->id (%stride shape permute))))
+		    (map 'list #'node->id (%stride shape (default-permute (length shape) order))))
 		   :nrank (length shape)
 		   :broadcast (loop for i in shape collect nil))))
 

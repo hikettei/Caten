@@ -9,6 +9,7 @@
 	       (:file "helpers")
 	       (:file "conditions")
 	       (:file "tensor")
+	       (:file "initializers")
 	       (:file "iseq")
 	       (:file "shape-tracker")
 	       (:file "merge-views")

@@ -66,6 +66,8 @@ $ COVERAGE=1 make test
 
 - Source code transformation (needs a refactor; caten/air must corresponds Func one-by-one.)
 
+    - Func/Moduleのもう一段階上のGraphを作ってSimplifyするようにする
+
 ## Installing (WIP)
 
 ```sh
