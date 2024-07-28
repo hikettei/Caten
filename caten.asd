@@ -5,6 +5,7 @@
   :depends-on
   ("rove" "trivia" "cl-ppcre" "caten.air" "caten.aasm" "caten.avm")
   :pathname "source"
+  :serial t
   :components ((:file "package")
 	       (:file "helpers")
 	       (:file "conditions")
