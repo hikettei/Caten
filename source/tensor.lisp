@@ -88,7 +88,13 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	     (loop for v in views collect (viewrange-from v))
 	     (loop for v in views collect (viewrange-to v))
 	     (loop for v in views collect (viewrange-by v))
-	     (loop for s in (tensor-shape base) collect (if (node-p s) s (iconst s)))
+	     ;; Shape to compute strides
+	     (loop for s in (tensor-shape buff)
+		   for v in views
+		   for b = (viewrange-broadcast v)
+		   if b collect (iconst 1)
+		     else
+		       collect (if (node-p s) s (iconst s)))
 	     (loop for s in stride collect (if (node-p s) s (iconst s))))
 	    (tensor-op buff) (make-instance 'View :views views :nrank (length views)))
       (setf (func-variables (tensor-op buff)) (tensor-variables buff))
