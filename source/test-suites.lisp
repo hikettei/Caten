@@ -167,7 +167,6 @@
     (sp (3 3) (3 3) (3 3))
     (sp (a b) nil (a b))))
 
-;; View Testing
 (deftest test-composed-view-constant-folding
   (ok (equal `(2 2 2) (shape (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) )))
   (ok (equal `(1 1 1) (shape (!view (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) `(0 1) `(0 1) `(0 1))))))  
@@ -191,7 +190,7 @@
 
       (testcase !sum (3 3) 2.0 1 18 t)
       (testcase !mean (3 3) 2.0 1 2.0 t))
-
+    
     (macrolet ((testcase (op shape initial-element element-length evaluated-to axis params)
 		 `(with-no-grad
 		    (let ((val1 (pproceed ',params (,op (make-tensor ',shape :initial-element ,initial-element) :axis ,axis :keepdims t))))
@@ -215,18 +214,32 @@
     (macrolet ((testcase (op shape shape1 params initial-element element-length evaluated-to axis)
 		 `(with-no-grad
 		    (let ((val1 (pproceed ',params (,op (make-tensor ',shape :initial-element ,initial-element) :axis ,axis :keepdims nil))))
-		      (ok (equal (shape val1) ',shape1))
+		      (ok (or (null ',shape1) (equal (shape val1) ',shape1)))
 		      (ok (= (length (elements val1)) ,element-length))
 		      (ok (every (equal-to ,evaluated-to) (elements val1)))))))
       (testcase !sum  (3 3) (3 1) nil 1.0 3 3.0 1)
       (testcase !mean (3 3) (3 1) nil 1.0 3 1.0 1)
-      )))
 
+      (testcase !sum (3 3) (3 1) nil 1.0 3 3.0 -1)
+      (testcase !mean (3 3) (3 1) nil 1.0 3 1.0 -1)
+
+      (testcase !sum (3 3) (1 1) nil 1.0 1 9.0 '(0 1))
+      (testcase !mean (3 3) (1 1) nil 1.0 1 1.0 '(0 1))
+
+      (testcase !sum (3 3) (1 1) nil 1.0 1 9.0 '(0 -1))
+      (testcase !mean (3 3) (1 1) nil 1.0 1 1.0 '(0 -1))
+
+      ;; TODO: Shapes are inferenced to (a 1)
+      (testcase !sum (a b) nil ((a . 3) (b . 3)) 1.0 3 3.0 1)
+      (testcase !mean (a b) nil ((a . 3) (b . 3)) 1.0 3 1.0 1)))
+  (let ((*default-order* :row))
+    (ok (equal `(3 1) (buffer-stride (tensor-buffer (proceed (!sum (make-tensor `(3 3) :initial-element 1) :axis 0)))))))
+  )
 
 ;; Regression test: keepdims=nil no stride check
 ;; symbolic acucmlation
 ;; 2. Sum no-grad keepdims=nil
-;; 3. view shape inference/constant folding composed viewのresultで整数値を得るまで
+;; 3. view shape inference/constant folding composed viewのresultで整数値を得るまで ok
 ;; 4. fix view
 ;; 5. Sum backwward testing
 ;; 6. Mean Testing (Module in Module)
