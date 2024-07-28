@@ -125,8 +125,7 @@
     (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'avm-runtime-error))
     ;; a dependency is purged
     ;; failing
-    ;;(ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a)))))))
-    ))
+    (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a)))))))))
 
 (deftest test-simplifier
   (ok (check-schedule (caten (!neg (!add (iconst 0) (iconst 'a)))) 4))
@@ -148,8 +147,7 @@
   (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'avm-runtime-error))
   ;; a dependency is purged
   ;; failing
-  ;; (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a)))))))
-  )
+  (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a))))))))
 
 (deftest test-symbolic-shape-inference
   (ok (equal `(A B) (tensor-shape (!add (iconst 'a) (make-tensor `(a b))))))
@@ -169,7 +167,8 @@
 
 (deftest test-composed-view-constant-folding
   (ok (equal `(2 2 2) (shape (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) )))
-  (ok (equal `(1 1 1) (shape (!view (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) `(0 1) `(0 1) `(0 1))))))  
+  (ok (equal `(1 1 1) (shape (!view (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) `(0 1) `(0 1) `(0 1)))))
+  (ok (equal `(1 1 1) (shape (!view (!view (make-tensor `(4 4 4)) `(2 4) `(2 4) `(2 4)) `(1 2) `(1 2) `(1 2))))))
 
 (deftest test-accumlation-keepdims
   (testing "Reduction w/ no-grad=t, keepdims=t"
@@ -233,14 +232,58 @@
       (testcase !sum (a b) nil ((a . 3) (b . 3)) 1.0 3 3.0 1)
       (testcase !mean (a b) nil ((a . 3) (b . 3)) 1.0 3 1.0 1)))
   (let ((*default-order* :row))
-    (ok (equal `(3 1) (buffer-stride (tensor-buffer (proceed (!sum (make-tensor `(3 3) :initial-element 1) :axis 0)))))))
-  )
+    (ok (equal `(3 1) (buffer-stride (tensor-buffer (proceed (!sum (make-tensor `(3 3) :initial-element 1) :axis 0))))))
+    (ok (equal `(1 1) (buffer-stride (tensor-buffer (proceed (!sum (ax+b `(3 3) 0 1) :keepdims nil :axis 1))))))))
 
-;; Regression test: keepdims=nil no stride check
-;; symbolic acucmlation
-;; 2. Sum no-grad keepdims=nil
-;; 3. view shape inference/constant folding composed viewのresultで整数値を得るまで ok
-;; 4. fix view
+(deftest memory-order-test
+  (testing "Column Major"
+    (let ((*default-order* :column))
+      (ok
+       (every
+	#'=
+	(buffer-value (tensor-buffer (proceed (ax+b `(3 5 2) 1.0 1.0))))
+	#(1.0 11.0 21.0 3.0 13.0 23.0 5.0 15.0 25.0 7.0 17.0 27.0 9.0 19.0 29.0 2.0
+	  12.0 22.0 4.0 14.0 24.0 6.0 16.0 26.0 8.0 18.0 28.0 10.0 20.0 30.0)))))
+  (testing "Row Major"
+    (let ((*default-order* :row))
+      (ok
+       (every
+	#'=
+	(buffer-value (tensor-buffer (proceed (ax+b `(3 5 2) 1.0 1.0))))
+	#(1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0
+	  18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0))))))
+
+(deftest simple-view-test
+  (macrolet ((okwhen (form value) `(every #'= (buffer-value (tensor-buffer (proceed (!contiguous ,form)))) ,value)))
+    (dolist (*default-order* `(:row :column))
+      (okwhen (!view (ax+b `(3 3) 1 0) 1 1) #(2.0))
+      
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 0) #(0.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 1) #(1.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 2) #(2.0))
+      
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 -1) #(2.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 -2) #(1.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 -3) #(0.0))
+
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t 0) #(0.0 3.0 6.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t 1) #(1.0 4.0 7.0))
+      (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t 2) #(2.0 5.0 8.0))
+      
+      
+      )))
+
+(deftest composed-view-test
+
+  )
+;; View Compose Testing
+
+
+;; Regression test: keepdims=nil no stride check (OK)
+;; symbolic acucmlation (OK)
+;; 2. Sum no-grad keepdims=nil (OK)
+;; 3. view shape inference/constant folding composed viewのresultで整数値を得るまで (OK)
+;; 4. fix view (OK)
 ;; 5. Sum backwward testing
 ;; 6. Mean Testing (Module in Module)
 ;; View Testing

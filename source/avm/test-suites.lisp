@@ -160,7 +160,7 @@
      (with-context
        (a (%arange `(4 4) 1 0 :order :row))
        (b (%arange `(2 2) 0 0 :order :row))
-       (v (%view a `(2 2) `(1 1) `(3 3) `(1 1) `(nil nil) (%stride `(4 4) `(0 1))))
+       (v (%view a `(2 2) `(1 1) `(3 3) `(1 1) `(nil nil) (%stride `(4 4) :row)))
        (out (%add b v)))))
   (testing "Slicing tensors, -1 indexing"
     (%eval
@@ -168,7 +168,7 @@
      (with-context
        (a (%arange `(4 4) 1 0 :order :row))
        (b (%arange `(2 2) 0 0 :order :row))
-       (v (%view a `(2 2) `(2 2) `(0 0) `(-1 -1) `(nil nil) (%stride `(4 4) `(0 1))))
+       (v (%view a `(2 2) `(2 2) `(0 0) `(-1 -1) `(nil nil) (%stride `(4 4) :row)))
        (out (%add b v)))))
   (testing "Slicing tensors, read by 3"
     (%eval
@@ -176,7 +176,7 @@
      (with-context
        (a (%arange `(6 6) 1 0 :order :row))
        (b (%arange `(2 2) 0 0 :order :row))
-       (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) `(0 1))))
+       (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) :row)))
        (out (%add b v)))))
   (testing "Slicing tensors, read by -3"
     (%eval
@@ -184,14 +184,14 @@
      (with-context
        (a (%arange `(6 6) 1 0 :order :row))
        (b (%arange `(2 2) 0 0 :order :row))
-       (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) `(0 1))))
+       (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) :row)))
        (out (%add b v)))))
   (testing "Transpose"
     (%eval
      #(0.0 4.0 8.0 4.0 8.0 12.0 8.0 12.0 16.0)
      (with-context
        (a (%arange `(3 3) 1 0 :order :row))
-       (b1 (%view a `(3 3) `(0 0) `(3 3) `(1 1) `(nil nil) (%stride `(3 3) `(1 0))))
+       (b1 (%view a `(3 3) `(0 0) `(3 3) `(1 1) `(nil nil) (%stride `(3 3) :column)))
        (b2 (%arange `(3 3) 1 0 :order :column))
        (c (%add b1 b2)))))
   (testing "Broadcasting (all-reduce along all axes)"
@@ -200,7 +200,7 @@
      (with-context
        (a (%arange `(6 6) 1 0 :order :row))
        (b (%arange `(1 1) 0 0 :order :row))
-       (b (%view b `(6 6) `(0 0) `(6 6) `(1 1) `(t t) (%stride `(6 6) `(0 1))))
+       (b (%view b `(6 6) `(0 0) `(6 6) `(1 1) `(t t) (%stride `(6 6) :row)))
        (b (%add b a :reduction t)))))
   (testing "Broadcasting (all-reduce where axis=1)"
     (%eval
@@ -208,7 +208,7 @@
      (with-context
        (a (%arange `(3 3) 0 1 :order :column))
        (b (%arange `(3 1) 0 0 :order :column))
-       (b (%view b `(3 3) `(0 0) `(3 3) `(1 1) `(nil t) (%stride `(3 3) (default-permute 2 :column))))
+       (b (%view b `(3 3) `(0 0) `(3 3) `(1 1) `(nil t) (%stride `(3 3) :column)))
        (b (%add b a :reduction t)))))
   (testing "Broadcasting (all-reduce where axis=0 ndim=3)"
     (%eval
@@ -216,7 +216,7 @@
      (with-context
        (a (%arange `(3 3 3) 0 1 :order :column))
        (b (%arange `(3 3 1) 0 0 :order :column))
-       (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(nil nil t) (%stride `(3 3 3) (default-permute 3 :column))))
+       (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(nil nil t) (%stride `(3 3 3) :column)))
        (b (%add b a :reduction t)))))
   (testing "Broadcasting (all-scatter)"
     (%eval
@@ -224,7 +224,7 @@
      (with-context
        (a (%arange `(3 3 3) 0 0 :order :column))
        (b (%arange `(1 1 1) 0 1 :order :column))
-       (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(t t t) (%stride `(3 3 3) (default-permute 3 :column))))
+       (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(t t t) (%stride `(3 3 3) :column)))
        (c (%add a b :reduction t))))))
 
 (defun make-squared-gemm (x y n)
@@ -235,11 +235,11 @@
      (b  (%make-tensor `(,n ,n) :id 'Y))
      (a  (%load a x))
      (b  (%load b y))
-     (a1 (%view a `(,n ,n ,n) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil t nil) (%stride `(,n 1 ,n) `(0 1 2))))
-     (b1 (%view b `(,n ,n ,n) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(t nil nil) (%stride `(1 ,n ,n) `(0 1 2))))
+     (a1 (%view a `(,n ,n ,n) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil t nil) (%stride `(,n 1 ,n) :row)))
+     (b1 (%view b `(,n ,n ,n) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(t nil nil) (%stride `(1 ,n ,n) :row)))
      (o  (%mul a1 b1))
      (c  (%make-tensor `(,n ,n 1)))
-     (c  (%view c `(,n ,n 1) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil nil t) (%stride `(,n ,n 1) `(0 1 2))))
+     (c  (%view c `(,n ,n 1) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil nil t) (%stride `(,n ,n 1) :row)))
      (c  (%add c o :reduction t))
      (c  (%reshape c `(,n ,n))))))
 

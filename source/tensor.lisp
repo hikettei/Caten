@@ -39,7 +39,7 @@
 	  (tensor-requires-grad tensor)
 	  (map 'list #'tensor-id (tensor-variables tensor))))
 
-(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil))
+(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil))
   "## [function] make-tensor
 Create a new lazy tensor.
 Shape := (Integer > 1) | Symbol | Tensor"
@@ -52,7 +52,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()
 	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  Butgot: ~a~%  Shape=~a" s shape))
-  (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad)))
+  (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views)))
     ;; Weird thing: The Top of the graph should not have variables.
     ;; AD recognises (null (func-variables op)) as an Allocation.
     ;; So do not modify the (tensor-variables tensor), as well as (func-variables Allocation)
@@ -88,13 +88,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	     (loop for v in views collect (viewrange-from v))
 	     (loop for v in views collect (viewrange-to v))
 	     (loop for v in views collect (viewrange-by v))
-	     ;; Shape to compute strides
-	     (loop for s in (tensor-shape buff)
-		   for v in views
-		   for b = (viewrange-broadcast v)
-		   if b collect (iconst 1)
-		     else
-		       collect (if (node-p s) s (iconst s)))
+	     (map 'list #'viewrange-size views)
 	     (loop for s in stride collect (if (node-p s) s (iconst s))))
 	    (tensor-op buff) (make-instance 'View :views views :nrank (length views)))
       (setf (func-variables (tensor-op buff)) (tensor-variables buff))

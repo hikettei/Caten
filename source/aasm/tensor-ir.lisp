@@ -80,32 +80,19 @@ If i is a tensor, %load fills the visible area of i with value."
   "Creates a float const"
   (%load (%salloc :dtype dtype) value))
 
-(defun %stride (shape permute &key (dtype *default-uint*))
+(defun %stride (shape order)
   "Compute the stride based on permute and shape."
-  (declare (type list shape permute)
-	   (type dtype-t dtype))
-  (let* ((n (length shape))
-	 (strides (make-list n)))
-    (flet ((const (n) (if (node-p n) n (%load (%salloc :dtype dtype) n))))
-      (setf (nth (first (reverse permute)) strides) (const 1))
-      ;; Calculate strides for other dimensions in reverse permuted order
-      (do ((i (- n 2) (- i 1))) ((< i 0) nil)
-	(setf (nth (nth i permute) strides)
-              (%mul (const (nth (nth (1+ i) permute) strides)) (const (nth (nth (1+ i) permute) shape)))))
-      (mapcar (lambda (i) (nth i strides)) (loop for i from 0 below n collect i)))))
+  (declare (type list shape)
+	   (type (member :row :column) order))
+  (if (eql order :row)
+      (%row-major-calc-strides shape)
+      (%column-major-calc-strides shape)))
 
 (defun %shape (shape &key (dtype *default-uint*))
   "Initialize the shape."
   (declare (type list shape) (type dtype-t dtype))
   (flet ((const (n) (if (node-p n) n (%load (%salloc :dtype dtype) n))))
     (map 'list #'const shape)))
-
-(defun default-permute (rank order)
-  (declare (type (member :row :column) order))
-  (let ((permute (range 0 rank)))
-    (when (eql order :column)
-      (setf permute (reverse permute)))
-    permute))
 
 (defun %make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")))
   "A useful wrapper for %alloc. it computes stride based on order.
@@ -117,7 +104,7 @@ If i is a tensor, %load fills the visible area of i with value."
 	  ()
 	  "%make-tensor: Shape is designed as symbol (existing in the graph), integer or node.~%butgot ~a" shape)
   (when (= 0 (length shape)) (return-from %make-tensor (%salloc :dtype dtype :id id)))
-  (%alloc (length shape) (%shape shape) (%stride shape (default-permute (length shape) order)) :dtype dtype :id id))
+  (%alloc (length shape) (%shape shape) (%stride shape order) :dtype dtype :id id))
 
 (defun %index-components (x &key (id (gensym "IID")))
   "the equivalent to doing: `for (int i=x.view.from;i<x.view.to;i+=x.view.by) { id[i] = i; }`"

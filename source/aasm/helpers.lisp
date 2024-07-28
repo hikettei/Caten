@@ -27,3 +27,21 @@
 	  (coerce x (dtype->lisp cast-to))
 	  (coerce (round x) (dtype->lisp cast-to)))
       (coerce x (dtype->lisp cast-to))))
+
+(defun %column-major-calc-strides (shape)
+  (declare (type list shape))
+  (flet ((const (n) (if (node-p n) n (%iconst n))))
+    (let* ((num-dims (length shape))
+           (strides (make-list num-dims :initial-element (%iconst 1))))
+      (loop for i from 1 to (- num-dims 1) do
+	(setf (nth i strides) (%mul (const (nth (- i 1) strides)) (const (nth (- i 1) shape)))))
+      strides)))
+
+(defun %row-major-calc-strides (shape)
+  (declare (type list shape))
+  (flet ((const (n) (if (node-p n) n (%iconst n))))
+    (let* ((num-dims (length shape))
+           (strides (make-list num-dims :initial-element (%iconst 1))))
+      (loop for i downfrom (- num-dims 2) to 0 do
+	(setf (nth i strides) (%mul (const (nth (+ i 1) strides)) (const (nth (+ i 1) shape)))))
+      strides)))

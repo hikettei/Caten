@@ -10,12 +10,12 @@
 	       (:file "helpers")
 	       (:file "conditions")
 	       (:file "tensor")
-	       (:file "initializers")
 	       (:file "iseq")
 	       (:file "shape-tracker")
 	       (:file "merge-views")
 	       (:file "function")
 	       (:file "module")
+	       (:file "initializers")
 	       (:file "syntax-sugar"))
   :in-order-to
   ((test-op

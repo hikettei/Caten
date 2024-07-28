@@ -205,7 +205,7 @@
 		   ;; TODO: Extend views
 		   (if allow-broadcast
 		       base
-		       (make-tensor shp :dtype (tensor-dtype base) :dtype (tensor-order base) :id (gensym "STC"))))))
+		       (make-tensor shp :dtype (tensor-dtype base) :dtype (tensor-order base) :id (gensym "STC") :views (tensor-views base))))))
 	(apply #'values (map 'list #'make-new-tensor (st-aft st)))))))
 
 (defmacro st (st-notation (&rest input-tensors) &rest where)

@@ -156,9 +156,11 @@ The provided form does not match any of them:~%~a" method method method method f
   (with-attrs ((axis :axis) (keepdims :keepdims)) op
     (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
       (let* ((out (apply #'!view (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element 0.0) new-view))
+	     (out (st "A[~] B[~] -> A[~]" (out x)))
 	     (out (if keepdims
 		      out
 		      (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) new-view)))))
+	(setf (tensor-op out) nil (tensor-variables out) nil)
 	out))))
 
 (defmodule (SumNode ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))

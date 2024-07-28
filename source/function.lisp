@@ -70,7 +70,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			 (map 'list #'viewrange-broadcast (view-views op))
 			 (let ((base-shape (subseq1p inputs (* 4 nrank) (* 5 nrank)))
 			       (stride     (subseq1p inputs (* 5 nrank))))
-			   (or stride (%stride base-shape (default-permute nrank (tensor-order bs)))))))))))
+			   (or stride (%stride base-shape (tensor-order bs))))))))))
 (defun !view (base &rest subscripts) (make-view-internal base subscripts))
 ;; !reshape
 ;; !permute
