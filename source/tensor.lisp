@@ -85,9 +85,9 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	    (append
 	     (list base)
 	     (map 'list #'vrange-size views)
-	     (loop for v in views collect (viewrange-from v))
-	     (loop for v in views collect (viewrange-to v))
-	     (loop for v in views collect (viewrange-by v))
+	     (map 'list #'viewrange-from views)
+	     (map 'list #'viewrange-to views)
+	     (map 'list #'viewrange-by views)
 	     (map 'list #'viewrange-size views)
 	     (loop for s in stride collect (if (node-p s) s (iconst s))))
 	    (tensor-op buff) (make-instance 'View :views views :nrank (length views)))

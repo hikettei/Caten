@@ -298,62 +298,16 @@
   (ok (every #'= #(23.0) (buffer-value (tensor-buffer (pproceed `((a . 2) (b . 3)) (!contiguous (!view (ax+b `(10 10) 1 0) 'a 'b))))))))
 
 
+;; TODO
+;; - Implement Autograd
+;;   - 1. View Backward
+;;       - BroadcastingとSliceは同時に適用できないとする
+;;   - 2. Sum/Mean Backward
+;;   - 3. Test ChainRule
 
-;; Regression test: keepdims=nil no stride check (OK)
-;; symbolic acucmlation (OK)
-;; 2. Sum no-grad keepdims=nil (OK)
-;; 3. view shape inference/constant folding composed viewのresultで整数値を得るまで (OK)
-;; 4. fix view (OK)
-;; 5. Sum backwward testing
-;; 6. Mean Testing (Module in Module)
-;; View Testing
-;; Symbolic View Creation Testing
+;; - Implement Matmul
+;;   - Float前範囲に対するULP検証は外でやる
 
-;; Composed View Testing
-
-;; 'A 'B Shape Test ok
-;; TODO: Testing
-;; - make-tensor, initial-element ok
-;; - print, viewed-print, broadcasted-print
-;; - simple chain rule tests
-;; - broadcast testing (esp: (make-tensor `(1)) and (make-tensor `(1)))
-;; - scalar and matrix ops
-;; - nested module testing
-;; - view tesitng
-;; - composed two view testing
-;; - dynamic shape testing
-;; - dynamic shape viewing testing
-;; - ULP絡めたテストは外でやる？
-;; Implement Matmul
-;; -> 全部(ちゃんとしたテストを記述したら) AJitを作る
-;; 1. Lower from aasm into ajit IR
-
-;; 1. 一旦Module, Backwardだけ実装する (OK)
-;; 2. %loadを実装 + ok          (OK)
-;; !where, logicals, castを実装 (OK)
-;; absを実装                     (OK)
-;; -> 1. broadcast, (fconst 1)を許容する (OK)
-;; absのconstant foldingを実装 !!
-;; !reshape/!viewを実装 (OK)
-;; Scalar Constant Folding ok (OK)
-;; backwardのrequire-gradのprune (OK)
-;; - implement backward (OK)
-;; - implement frontend proceed (OK)
-;; - tests
-;; ある程度できたらModule/Backward/Functionのテストを実装
-;; 3. st-levelでBroadcastingを実装 (OK)
-;; 5. log1p fusionとか実装する
-;; weightの初期状態をどうやって表現する？
-;; testing:
-;;   - make-tensor w/ initial-element
-;;   - backward test
-;;   - broadcast testing
-;;   - scalar / matrix testing
-;; - しっかりテストを書いておく
-;; 残りテスト書く前にやること
-;;  - 1. Buffer周りの記述
-;;    - TensorにBufferをoverwriteするようにしたい ok
-;;    - Module in Module
-;;    - Gradを直接読めるように
-;;    - Renderer
-;; view backward
+;; - AJiTでaasmをloweringする
+;;   - CLANG/METAL/CUDA JIT
+;; log1p fusionとか実装する

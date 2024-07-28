@@ -14,10 +14,11 @@ Everything is a syntax sugar for ./source/air.
 1 | ./source/aasm    | Abstract Internal IR for aVM 
 2 | ./source/avm     | Abstract+VM, an extensible simulator for aasm (but enough fast)
 3 | ./source/ajit    | it lowers aasm into more lower irs, generating the kernel codes.
+4 | ./source/meta    | Meta Programming Library (incl. Source Code Transformation)
 --- frontend -----------------------------------------------------------------------
-4 | ./source/lang    | a compiler from lisp to aIR (helping the complicated subscript notation like Conv/einsum) 
-5 | ./source/api     | Syntax sugar for core notations, including AbstractTensor, autodiff engine. (-> ./source/package.lisp?)
-6 | ./source/nn      | a syntax sugar which implements nn ops and optimizers
+5 | ./source/lang    | a compiler from lisp to aIR (helping the complicated subscript notation like Conv/einsum) 
+6 | ./source/api     | Syntax sugar for core notations, including AbstractTensor, autodiff engine. (-> ./source/package.lisp?)
+7 | ./source/nn      | a syntax sugar which implements nn ops and optimizers
 --- external -----------------------------------------------------------------------
 ./external/avm/clang  | avm implementation using clang
 ./external/ajit/clang | ajit implementation using clang
