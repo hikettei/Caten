@@ -288,11 +288,10 @@
 		    (ok (= (reduce #'+ (buffer-value (tensor-buffer (proceed (!contiguous ,form))))) (reduce #'+ ,value))))))
     (dolist (*default-order* `(:row :column))
       ;; Needs more case to test
-      ;(okwhen (!view (!view (ax+b `(10) 1 0) `(0 10)) `(0 5)) #(0.0 1.0 2.0 3.0 4.0))
-      ;(okwhen (!view (!view (ax+b `(10) 1 0) `(0 -1)) `(2 5)) #(2.0 3.0 4.0))
-      ;(okwhen (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 6)) #(2.0 4.0))
-      ;(okwhen (!view (!view (ax+b `(20) 1 0) `(18 0 -2)) `(10 2 -2)) #(8.0 10.0 12.0 14.0))
-      )))
+      (okwhen (!view (!view (ax+b `(10) 1 0) `(0 10)) `(0 5)) #(0.0 1.0 2.0 3.0 4.0))
+      (okwhen (!view (!view (ax+b `(10) 1 0) `(0 -1)) `(2 5)) #(2.0 3.0 4.0))
+      (okwhen (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 6)) #(2.0 4.0))
+      (okwhen (!view (!view (ax+b `(20) 1 0) `(18 0 -2)) `(10 2 -2)) #(8.0 10.0 12.0 14.0)))))
 
 (deftest symbolic-view-test
   (ok (every #'= #(0.0) (buffer-value (tensor-buffer (pproceed `((a . 2) (b . 3)) (!view (ax+b `(a b) 1 0) 0 0))))))
