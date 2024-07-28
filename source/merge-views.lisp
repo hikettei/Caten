@@ -44,7 +44,7 @@ Applying a further slicing:
       (make-vrange
        ;; [TODO] あってる？
        (!add frm1 frm2)
-       (!sub to2 to1)
+       (!sub to1 to2)
        (!mul by1 by2)
        bc2))))
 
@@ -54,5 +54,5 @@ Applying a further slicing:
 	   (type list subscripts))
   (let* ((parsed-subscripts (map 'list #'parse-view-subscript (tensor-shape base) subscripts)))
     (when (null (tensor-views base)) (return-from merge-views parsed-subscripts))
-    (map #'.compose-views (tensor-views base) parsed-subscripts)))
+    (map 'list #'.compose-views (tensor-views base) parsed-subscripts)))
 

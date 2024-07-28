@@ -152,12 +152,27 @@ The provided form does not match any of them:~%~a" method method method method f
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
 
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmodule (Sum ((&key (axis 0) (keepdims nil)) :axis axis :keepdims keepdims) :where "A[~] -> A[~]")
+(defmodule (Sum ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
     ()
-    :documentation "Sum tensors along axis"
-    :impl ((sum x)
-	   ;; tmp
-	   (!mul x x)))
+    :documentation "Sum tensors along axis."
+    :forward
+    ((sum x)
+     (with-attrs ((axis :axis) (keepdims :keepdims)) sum
+       (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
+	 (let* ((out (apply #'!view (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element 0.0) new-view))
+		(out (if keepdims out (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) new-view)))))
+	   out))))		      
+    :impl
+    ((sum x)
+     (with-attrs ((axis :axis) (keepdims :keepdims)) sum
+       (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
+	 (let* ((out (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element 0.0))
+		(out (apply #'!view out new-view))
+		(out (!add out x :reduce t))
+		(out (if keepdims
+			 out
+			 (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) new-view)))))
+	   out))))))
 
 (defmodule (Sigmoid (()) :where "A[~] -> A[~]")
     ()
@@ -166,5 +181,3 @@ The provided form does not match any of them:~%~a" method method method method f
 	   ;; temporary
 	   (!neg (!neg x))))
 
-
-;; Keep In Mind: Module Graph Levelでの最適化, aIRでimpl

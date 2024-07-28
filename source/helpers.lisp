@@ -61,4 +61,51 @@
 
 (defun symb (&rest symbols) (intern (with-output-to-string (o) (dolist (s symbols) (princ s o)))))
 
-(defmacro with-no-grad (&body body) `(let ((*no-grad* t)) ,@body))
+(defmacro with-no-grad (&body body)
+  "## [macro] with-no-grad
+Set *no-grad*=t."
+  `(let ((*no-grad* t)) ,@body))
+
+(defun getattr-from-list (attrs id)
+  (declare (type list attrs) (type keyword id))
+  (ematch attrs ((property id value) value)))
+
+(defmacro with-attrs (slots module &body body)
+  "## [macro] with-attrs
+Reads and binds attributes from module.
+```
+(with-attrs ((axis :axis) (keepdims :keepdims)) module
+   ...)
+```"
+  `(let* (,@(loop for slot in slots
+		  for bind = (first slot)
+		  for name = (second slot)
+ 		  collect
+		  `(,bind (getattr-from-list (module-attrs ,module) ,name))))
+     ,@body))
+
+(defun normalize-axis (x n)
+  (declare (type tensor x))
+  (assert (integerp n) () "axes should be designed as a number. butgot ~A" n)
+  (if (< n 0) (+ (dims x) n) n))
+
+(defun parse-reduce-axes (x lst)
+  (declare (type tensor x))
+  (ematch lst
+    ((eql t)
+     (values (loop for i in (shape x) collect 1) (loop for i in (shape x) collect `(:~ ,i))))
+    ((guard axis (numberp axis))
+     (let ((axis (normalize-axis x axis))
+	   (shape-after (shape x))
+	   (view-after  (loop for i in (shape x) collect t)))
+       (setf (nth axis shape-after) 1
+	     (nth axis view-after) `(:~ ,(nth axis (shape x))))
+       (values shape-after view-after)))
+    ((list* axes)
+     (let ((axes (map 'list #'(lambda (a) (normalize-axis x a)) axes))
+	   (shape-after (shape x))
+	   (view-after  (loop for i in (shape x) collect t)))
+       (dolist (axis axes)
+	 (setf (nth axis shape-after) 1
+	       (nth axis view-after) `(:~ ,(nth axis (shape x)))))
+       (values shape-after view-after)))))

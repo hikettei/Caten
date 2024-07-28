@@ -105,7 +105,7 @@
 			      (shapes (loop for s in shapes if s collect s)))
 			 (cond
 			   ((= (length shapes) 1) (car shapes))
-			   ((every #'(lambda (x) (eql x 1)) shapes) t)
+			   ((every #'(lambda (x) (eql x 1)) shapes) 1)
 			   ((some #'(lambda (x) (eql x 1)) shapes)
 			    (or
 			     (find 1 shapes :test #'(lambda (x y) (and (numberp y) (not (= x y)))))

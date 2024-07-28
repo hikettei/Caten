@@ -148,10 +148,29 @@
   (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a))))))))
 
 (deftest test-symbolic-shape-inference
-  (ok (equal `(A B) (tensor-shape (!add (iconst 'a) (make-tensor `(a b)))))))
-;; 'A 'B Shape Test
+  (ok (equal `(A B) (tensor-shape (!add (iconst 'a) (make-tensor `(a b))))))
+  (with-no-grad
+    (ok (equal `(A B) (tensor-shape (!add (iconst 'a) (make-tensor `(a b))))))))
+
+(deftest test-broadcast
+  (ok (equal `(1) (tensor-shape (!add (make-tensor `(1)) (make-tensor `(1))))))
+  (ok (equal `(1 1) (tensor-shape (!add (make-tensor `(1)) (make-tensor `(1 1))))))
+  (ok (equal `(1 1) (tensor-shape (!add (make-tensor `(1 1)) (make-tensor `(1))))))
+  (ok (equal `(1 2) (tensor-shape (!add (make-tensor `(1 1)) (make-tensor `(2))))))
+  (macrolet ((sp (answer shape1 shape2)
+	       `(ok (equal ',answer (tensor-shape (!add (make-tensor ',shape1) (make-tensor ',shape2)))))))
+    (sp (a b) (1) (a b))
+    (sp (3 3) (3 3) (3 3))
+    (sp (a b) nil (a b))))
+;; Sum Testing
+
+;; View Testing
+
+;; Composed View Testing
+
+;; 'A 'B Shape Test ok
 ;; TODO: Testing
-;; - make-tensor, initial-element
+;; - make-tensor, initial-element ok
 ;; - print, viewed-print, broadcasted-print
 ;; - simple chain rule tests
 ;; - broadcast testing (esp: (make-tensor `(1)) and (make-tensor `(1)))
@@ -162,3 +181,33 @@
 ;; - dynamic shape testing
 ;; - dynamic shape viewing testing
 ;; - ULP絡めたテストは外でやる？
+
+;; 1. 一旦Module, Backwardだけ実装する (OK)
+;; 2. %loadを実装 + ok          (OK)
+;; !where, logicals, castを実装 (OK)
+;; absを実装                     (OK)
+;; -> 1. broadcast, (fconst 1)を許容する (OK)
+;; absのconstant foldingを実装 !!
+;; !reshape/!viewを実装 (OK)
+;; Scalar Constant Folding ok (OK)
+;; backwardのrequire-gradのprune (OK)
+;; - implement backward (OK)
+;; - implement frontend proceed (OK)
+;; - tests
+;; ある程度できたらModule/Backward/Functionのテストを実装
+;; 3. st-levelでBroadcastingを実装 (OK)
+;; 5. log1p fusionとか実装する
+;; weightの初期状態をどうやって表現する？
+;; testing:
+;;   - make-tensor w/ initial-element
+;;   - backward test
+;;   - broadcast testing
+;;   - scalar / matrix testing
+;; - しっかりテストを書いておく
+;; 残りテスト書く前にやること
+;;  - 1. Buffer周りの記述
+;;    - TensorにBufferをoverwriteするようにしたい ok
+;;    - Module in Module
+;;    - Gradを直接読めるように
+;;    - Renderer
+;; view backward

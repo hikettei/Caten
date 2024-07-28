@@ -69,7 +69,11 @@
     (return-from %pprint-buffer (format nil "~a~a" (indent indent-with) (buffer-value buffer))))
 
   (let ((sample-size
-	  (loop for i upfrom 0 below (min 10 (apply #'* (buffer-shape buffer)))
+	  (loop for i upfrom 0
+		  below
+		  (min
+		   10
+		   (apply #'* (map 'list #'(lambda (x v) (if (fourth v) 1 x)) (buffer-shape buffer) (buffer-views buffer))))
 		maximize (length (format nil "~a" (%vm/read-index *device* buffer i))))))
     (with-output-to-string (stream)
       (format stream " ~a" (indent indent-with))

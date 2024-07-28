@@ -26,6 +26,10 @@
    #:tensor-grad
    #:tensor-variables
    #:grad
+   #:shape
+   #:ndim
+   #:dtype-of
+   #:order
 
    #:*external-simplifiers*
    #:proceed
@@ -45,7 +49,8 @@
    )
   ;; from helpers.lisp
   (:export
-   #:with-no-grad)
+   #:with-no-grad
+   #:with-attrs)
   ;; from iseq.lisp
   (:export
    #:%compile-toplevel

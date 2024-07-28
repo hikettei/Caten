@@ -304,33 +304,3 @@
   (let ((sess (make-compiler-session :name :tensor->aasm)))
     (%lower-iseq sess (apply #'%tpsort-tensors sess tensors))))
 
-
-;; 1. 一旦Module, Backwardだけ実装する (OK)
-;; 2. %loadを実装 + ok          (OK)
-;; !where, logicals, castを実装 (OK)
-;; absを実装                     (OK)
-;; -> 1. broadcast, (fconst 1)を許容する (OK)
-;; absのconstant foldingを実装 !!
-;; !reshape/!viewを実装 (OK)
-;; Scalar Constant Folding ok (OK)
-;; backwardのrequire-gradのprune (OK)
-;; - implement backward (OK)
-;; - implement frontend proceed (OK)
-;; - tests
-;; ある程度できたらModule/Backward/Functionのテストを実装
-;; 3. st-levelでBroadcastingを実装 (OK)
-;; 5. log1p fusionとか実装する
-;; weightの初期状態をどうやって表現する？
-;; testing:
-;;   - make-tensor w/ initial-element
-;;   - backward test
-;;   - broadcast testing
-;;   - scalar / matrix testing
-;; - しっかりテストを書いておく
-;; 残りテスト書く前にやること
-;;  - 1. Buffer周りの記述
-;;    - TensorにBufferをoverwriteするようにしたい ok
-;;    - Module in Module
-;;    - Gradを直接読めるように
-;;    - Renderer
-;; view backward
