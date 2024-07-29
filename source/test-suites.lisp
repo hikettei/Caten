@@ -343,25 +343,44 @@
 	(okwhen (!view (!view tensor `(0 5)) 1) tensor #(0 1 0)))
       (let ((tensor (make-tensor `(10) :requires-grad t)))
 	(okwhen (!view (!view tensor `(1 5)) 0) tensor #(0 0 1)))
+      ;; [TODO] Need more cases!
       )))
-	
-		  
+
+(deftest reduction-backward
+  (macrolet ((okwhen (form tensor grad)
+	       `(let ((m (caten ,form)))
+		  (forward m)
+		  (backward m nil)
+		  (ok (every #'= (elements (grad ,tensor)) ,grad)))))
+    (let ((*default-order* :row))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!sum a) a #(1 1 1 1 1 1 1 1 1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!sum a :axis 1) a #(1 1 1 1 1 1 1 1 1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!sum a :axis 0) a #(1 1 1 1 1 1 1 1 1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!sum a :axis 1 :keepdims t) a #(1 1 1 1 1 1 1 1 1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!sum a :axis 0 :keepdims t) a #(1 1 1 1 1 1 1 1 1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!sum a :keepdims t) a #(1 1 1 1 1 1 1 1 1)))
+
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a :axis 1)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a :axis 0)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a :axis 1 :keepdims t)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a :axis 0 :keepdims t)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a :keepdims t)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
+      (let ((a (make-tensor `(3 3) :requires-grad t)))
+	(okwhen (!sum (ax+b `(3 3) 1 0 :out a)) a #(1 1 1 1 1 1 1 1 1))))))
+
 ;; TODO
 ;; - Implement Autograd
 ;;   - 1. View Backward
 ;;       - BroadcastingとSliceは同時に適用できないとする (OK)
-;;       - Composed Slice Backward Test.
-;;   - 2. Sum/Mean Backward
+;;       - Composed Slice Backward Test. (OK)
+;;   - 2. Sum/Mean Backward 
 ;;   - 3. Test ChainRule
-;;   ax+bからのSumができない？？
-;;(let ((a (ax+b `(3 3) 0 1 :requires-grad t)))
-;;	(let ((m (caten (!neg (!sum a)))))
-;;	  (forward m)
-;;	  ))
-
+;;   ax+bからのSumができない？？ (OK)
+;;  (!neg (!sum )) (OK)
+;; (caten (!sum (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 5))))
 ;; - Implement Matmul
 ;;   - Float前範囲に対するULP検証は外でやる
-
 ;; - AJiTでaasmをloweringする
 ;;   - CLANG/METAL/CUDA JIT
 ;; log1p fusionとか実装する
