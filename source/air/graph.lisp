@@ -43,20 +43,9 @@ If outputs is nil, the writes of last nodes becomes the top"
 - Sort by the time
 - TODO: verify-graph is called multiple times during compilation, needs optimized more.
 - Nodes whose class are start with special/ cannot be purged even if they are isolated."
-  (declare (type graph graph)
-	   (optimize (speed 3)))
-  ;; [TODO] Remove duplicated writes
-  ;; Remove duplicated writes
-  
-;;  (setf (graph-nodes graph)
-;;	(reverse
-;;	 (loop with seen = nil
-;;	       for node in (reverse (graph-nodes graph))
-;;	       if (null (find (the symbol (car (node-writes node))) seen))
-;;		 collect (progn (push (car (node-writes node)) seen) node)))) 
-  ;; Purge all isolated graph
+  (declare (type graph graph))
   (resolve-isolated-nodes graph)
-  (purge-isolated-graph graph)  
+  (purge-isolated-graph graph)
   t)
 
 (defun special-p (kw) (declare (optimize (speed 3))) (search "SPECIAL/" (format nil "~a" kw)))
@@ -95,18 +84,20 @@ If outputs is nil, the writes of last nodes becomes the top"
     ;;(assert (null stashed) () "verify-graph: these nodes are isolated: ~a" stashed) 
     (setf (graph-nodes graph) (reverse new-nodes))
     graph))
-  
+
 (defun purge-isolated-graph (graph)
-  "assuming the last graph is the final output, prunes the isolated graph"
   (declare (type graph graph) (optimize (speed 3)))
   (when (graph-nodes graph)
-    (let ((output
-	    (or (graph-outputs graph) (node-writes (car (last (graph-nodes graph)))))))
+    (let* ((output (or (graph-outputs graph) (node-writes (car (last (graph-nodes graph))))))
+	   (valid-write-ids))
+      (labels ((helper (x &key (value (id->value graph x)))
+		 (when value
+		   (push (node-id value) valid-write-ids)
+		   (mapc #'helper (node-reads value)))))
+	(mapc #'helper output))
       (setf (graph-nodes graph)
-	    (loop for n in (graph-nodes graph)
-		  collect
-		  (if (every #'(lambda (w) (and (symbolp w) (= 0 (length (the list (id->users graph w)))) (not (find w output)))) (node-writes n))
-		      (if (special-p (node-class n)) n nil)
-		      n))
-	    (graph-nodes graph)
-	    (loop for n in (graph-nodes graph) if n collect n)))))
+	    (loop for node in (graph-nodes graph) 
+		  if (or (find (node-id node) valid-write-ids) ;; node exists in a valid path
+			 (special-p (node-class node)))
+		    collect node)))))
+
