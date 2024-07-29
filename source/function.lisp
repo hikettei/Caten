@@ -62,9 +62,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 	  (let* ((base (apply #'!view base subscripts))
 		 (dout (!add base dout :reduce t)))
 	    (apply #'!view dout (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) subscripts)))
-	  ;; [TODO] Fix: (2 5) -> (0 5) merging, we need a way to reset views to optimize this behaviour
-	  (apply #'!view (!contiguous (!move (apply #'!view base subscripts) dout))
-		 (loop for s in (shape base) collect `(t ,s)))))))
+	  (apply #'!view-from-base (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect `(0 ,s)))))))
 (defmethod lower ((op View) &rest inputs)
   (let ((nrank (view-nrank op))
 	(bs (car (func-variables op))))
@@ -78,6 +76,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			       (stride     (subseq1p inputs (* 5 nrank))))
 			   (or stride (%stride base-shape (tensor-order bs))))))))))
 (defun !view (base &rest subscripts) (make-view-internal base subscripts))
+(defun !view-from-base (base &rest subscripts) (make-view-internal base subscripts :allow-merge nil))
 ;; !reshape
 ;; !permute
 (defun !contiguous (x)

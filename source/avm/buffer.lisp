@@ -1,7 +1,7 @@
 (in-package :caten/avm)
 
 (defparameter *device* :lisp "a keyword to indicate the device (being dispatched)")
-(defparameter *max-display-len* 4)
+(defparameter *max-display-len* 20)
 (defmacro with-device (device &body body)
   "declares the device to use"
   `(let ((*device* ,device)) ,@body))

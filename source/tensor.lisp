@@ -71,7 +71,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
   (def uconst *default-uint*)
   (def iconst *default-int*))
 
-(defun make-view-internal (base subscripts &key (dtype (tensor-dtype base)) (order (tensor-order base)) (id (gensym "VID")) (stride nil))
+(defun make-view-internal (base subscripts &key (allow-merge t) (dtype (tensor-dtype base)) (order (tensor-order base)) (id (gensym "VID")) (stride nil))
   (declare (type Tensor base)
 	   (type list subscripts)
 	   (type dtype-t dtype)
@@ -80,7 +80,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
       ((error
 	 #'(lambda (c) (error 'caten-forward-error :op 'make-view-internal :inputs (list base) :c c))))
     (flet ((is-broadcast (x) (and (listp x) (eql (car x) :~))))
-      (let* ((views (merge-views base subscripts))
+      (let* ((views (merge-views base subscripts allow-merge))
 	     (buff (%internal-make-tensor nil (map 'list #'vrange-size views) :dtype dtype :order order :id id :views views))
 	     (broadcast-mode-p (some #'is-broadcast subscripts)))
 	(when broadcast-mode-p

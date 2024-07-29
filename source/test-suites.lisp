@@ -303,6 +303,17 @@
 (deftest slice-broadcast-not-coexisting
   (ok (signals (!view (ax+b `(1 3) 0 1) `(:~ 2) 1) 'caten-forward-error))
   (ok (!view (ax+b `(1 3) 0 1) `(:~ 2) t)))
+
+(deftest view-backward
+  (macrolet ((okwhen (form tensor grad)
+	       `(let ((m (caten ,form)))
+		  (forward m)
+		  (backward m nil)
+		  (ok (every #'= (elements (grad ,tensor)) 'grad)))))
+    (let ((tensor (make-tensor `(10) :requires-grad t)))
+      (okwhen (!view tensor `(0 3)) tensor #(1 1 1 0 0 0 0 0 0 0)))
+    ))
+		  
 ;; TODO
 ;; - Implement Autograd
 ;;   - 1. View Backward
@@ -311,6 +322,10 @@
 ;;   - 2. Sum/Mean Backward
 ;;   - 3. Test ChainRule
 ;;   ax+bからのSumができない？？
+;;(let ((a (ax+b `(3 3) 0 1 :requires-grad t)))
+;;	(let ((m (caten (!neg (!sum a)))))
+;;	  (forward m)
+;;	  ))
 
 ;; - Implement Matmul
 ;;   - Float前範囲に対するULP検証は外でやる

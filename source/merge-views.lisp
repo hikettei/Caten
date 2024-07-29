@@ -47,9 +47,10 @@ Applying a further slicing:
 	     (step (!* (!signum (!* by1 by2)) (!lcm by1 by2))))
 	(make-vrange from to step bc2 (if bc1 (iconst 1) size))))))
 
-(defun merge-views (base subscripts)
+(defun merge-views (base subscripts allow-merge)
   "Composes the two mergeable views"
   (declare (type Tensor base)
+	   (type boolean allow-merge)
 	   (type list subscripts))
   (let* ((parsed-subscripts (map 'list #'parse-view-subscript (tensor-shape base) subscripts)))
     (when (tensor-views base)
@@ -60,4 +61,9 @@ Applying a further slicing:
 	    ()
 	    "Nrank and subscript length should be the same. ~a vs ~a" (shape base) subscripts)
     (when (null (tensor-views base)) (return-from merge-views parsed-subscripts))
+    (when (null allow-merge)
+      (loop for v in (tensor-views base)
+	    for s in parsed-subscripts
+	    do (setf (viewrange-size s) (viewrange-size v)))
+      (return-from merge-views parsed-subscripts))
     (map 'list #'.compose-views (tensor-views base) parsed-subscripts)))
