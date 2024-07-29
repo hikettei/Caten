@@ -100,22 +100,22 @@ save-for-backward is determined automatically, so you do not have to consider ab
 	   (tensor-variables x)
 	   (if views
 	       (append
-		(map 'list #'vrange-size views)
-		(map 'list #'viewrange-from views)
-		(map 'list #'viewrange-to views)
-		(map 'list #'viewrange-by views)
-		(map 'list #'viewrange-size (tensor-views (car inputs))))
+		(map 'list (compose #'sfold #'vrange-size) views)
+		(map 'list (compose #'sfold #'viewrange-from) views)
+		(map 'list (compose #'sfold #'viewrange-to) views)
+		(map 'list (compose #'sfold #'viewrange-by) views)
+		(map 'list (compose #'sfold #'viewrange-size) (tensor-views (car inputs))))
 	       (append
 		;; visible shape
-		(map 'list #'->iconst (shape x))
+		(map 'list (compose #'sfold #'->iconst) (shape x))
 		;; upfrom
 		(map 'list #'(lambda (_) _ (iconst 0)) (shape x))
 		;; below
-		(map 'list #'->iconst (shape x))
+		(map 'list (compose #'sfold #'->iconst) (shape x))
 		;; by
 		(map 'list #'(lambda (_) _ (iconst 1)) (shape x))
 		;; original shape
-		(map 'list #'->iconst (shape (car inputs))))))
+		(map 'list (compose #'sfold #'->iconst) (shape (car inputs))))))
 	  (func-variables op) (tensor-variables x))
     x))
 (defmethod backward ((op Permute) dout) (!permute dout (permute-order op)))
