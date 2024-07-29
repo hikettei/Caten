@@ -34,6 +34,10 @@
    #:*external-simplifiers*
    #:proceed
    )
+  ;; from conditions.lisp
+  (:export
+   #:caten-forward-error
+   #:caten-backward-error)
   ;; from shape-tracker.lisp
   (:export #:st #:bc)
 

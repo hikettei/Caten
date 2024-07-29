@@ -52,13 +52,17 @@ save-for-backward is determined automatically, so you do not have to consider ab
 
 (defclass View (Func)
   ((views :initarg :views :type list :accessor view-views)
-   (nrnak :initarg :nrank :accessor view-nrank)))
+   (subscripts :initarg :subscripts :accessor view-subscripts)
+   (broadcast-mode :initarg :broadcast-mode :accessor view-broadcast-mode)
+   (nrank :initarg :nrank :accessor view-nrank)))
 (defmethod backward ((op View) dout)
-  (warn "WIP: View Backward")
-  ;; They are independent:
-  ;; 1. reduction 2. slice/take 3. reshape 4. permute 5. broadcast
-  ;; 5.と2.を同時に行わない仮定が必要
-  )
+  (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views)) op
+    (let* ((base (clone-like (car (func-variables op)))))
+      (if broadcast-mode
+
+	  ;; TODO: Multiple View Composed?
+	  ;;(apply #'!view (!move (apply #'!view base views) dout))
+	  nil))))
 (defmethod lower ((op View) &rest inputs)
   (let ((nrank (view-nrank op))
 	(bs (car (func-variables op))))

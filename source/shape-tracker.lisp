@@ -1,6 +1,7 @@
 (in-package :caten)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
+  (defpattern sym (to-what) `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
   (defstruct (AxisTracker
 	      (:conc-name at-)
 	      (:constructor make-at (name nrank shape)))
@@ -205,7 +206,8 @@
 		   ;; TODO: Extend views
 		   (if allow-broadcast
 		       base
-		       (make-tensor shp :dtype (tensor-dtype base) :dtype (tensor-order base) :id (gensym "STC") :views (tensor-views base))))))
+		       (make-tensor shp :dtype (tensor-dtype base) :order (tensor-order base) :id (gensym "STC") :views (tensor-views base)
+				    :initial-element (gethash :initial-element solved))))))
 	(apply #'values (map 'list #'make-new-tensor (st-aft st)))))))
 
 (defmacro st (st-notation (&rest input-tensors) &rest where)
@@ -226,6 +228,8 @@ Positioned only in the first rank, and the rank height becomes infinite.
 Within this range, if there is a mismatch in shape, broadcasting is automatically applied.
 
 TODO: Add LazyAssertion which applies shape check even for symbols
+
+- where (:initial-element . any-number) load constant when creating a tensor.
 "
   (declare (type string st-notation))
   (let ((st (%st->list (%parse-st st-notation))))

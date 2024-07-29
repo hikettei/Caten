@@ -1,5 +1,26 @@
 (in-package :caten)
-(defpattern sym (to-what) `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
+
+;; In SBCL, compilation takes longer than 2s.
+(defun %tpsort-tensors (session &rest tensors)
+  "Destructive to session-seen"
+  (declare (type Compiler-Session session)
+	   (type list tensors)
+	   (optimize (speed 3)))
+  #+sbcl(setf sb-ext:*inline-expansion-limit* 30)
+  (let ((seen (session-seen session))
+	(top-sort nil))
+    (declare (type list seen top-sort))
+    (labels ((top-sort-helper (v)
+	       (unless (find (tensor-id v) seen :key #'tensor-id :test #'eql)
+		 (progn
+		   (push v seen)
+		   (dolist (prev (tensor-variables v))
+		     (top-sort-helper prev))
+		   (push v top-sort)))))
+      #+sbcl(declare (inline top-sort-helper))
+      (dolist (tensor tensors) (top-sort-helper tensor))
+      (setf (session-seen session) seen)
+      (reverse top-sort))))
 
 (defun ->const (x f)
   (if (tensor-p x)
@@ -33,12 +54,7 @@
 (defun clone-like (tensor)
   "Creates a new tensor whose shape/view/stride is completely equivalent to the original one"
   (declare (type tensor tensor))
-  (let ((out (copy-tensor tensor)))
-    (setf (tensor-id out) (gensym "TID")
-	  (tensor-op out) nil
-	  (tensor-variables out) nil
-	  (tensor-grad out) nil)
-    out))
+  (st "A[~] -> A[~]" (tensor) (:initial-element . 0)))
 
 (defun symb (&rest symbols) (intern (with-output-to-string (o) (dolist (s symbols) (princ s o)))))
 

@@ -7,11 +7,11 @@
   :pathname "source"
   :serial t
   :components ((:file "package")
-	       (:file "helpers")
 	       (:file "conditions")
 	       (:file "tensor")
 	       (:file "iseq")
 	       (:file "shape-tracker")
+	       (:file "helpers")
 	       (:file "merge-views")
 	       (:file "function")
 	       (:file "module")

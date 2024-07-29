@@ -297,7 +297,9 @@
   (ok (every #'= #(0.0) (buffer-value (tensor-buffer (pproceed `((a . 2) (b . 3)) (!view (ax+b `(a b) 1 0) 0 0))))))
   (ok (every #'= #(23.0) (buffer-value (tensor-buffer (pproceed `((a . 2) (b . 3)) (!contiguous (!view (ax+b `(10 10) 1 0) 'a 'b))))))))
 
-
+(deftest slice-broadcast-not-coexisting
+  (ok (signals (!view (ax+b `(1 3) 0 1) `(:~ 2) 1) 'caten-forward-error))
+  (ok (!view (ax+b `(1 3) 0 1) `(:~ 2) t)))
 ;; TODO
 ;; - Implement Autograd
 ;;   - 1. View Backward
