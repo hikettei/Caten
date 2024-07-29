@@ -367,8 +367,7 @@
       (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a :axis 1 :keepdims t)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
       (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a :axis 0 :keepdims t)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
       (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a :keepdims t)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
-      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!sum (ax+b `(3 3) 1 0 :out a)) a #(1 1 1 1 1 1 1 1 1)))
-      )))
+      (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!sum (ax+b `(3 3) 1 0 :out a)) a #(1 1 1 1 1 1 1 1 1))))))
 ;; Accumlating gradients multiple times
 (deftest test-chain-rule
   (testing "A x B"
@@ -435,10 +434,9 @@
 ;;   - 2. Sum/Mean Backward  (OK)
 ;;   - 3. Test ChainRule (OK)
 ;;   - 2回目のbw 呼び出し，zero_grads ok
-;; - Fix: Compilation process is very slow
+;; - Fix: Compilation process is very slow (finishes < 4s, needs more refactor)
 ;;   ax+bからのSumができない？？ (OK)
-;;  (!neg (!sum )) (OK)
-;; (caten (!sum (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 5))))
+;; (Shape Inference) (caten (!sum (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 5)))) Fails.
 ;; - Implement Matmul
 ;;   - Float前範囲に対するULP検証は外でやる
 ;; - AJiTでaasmをloweringする

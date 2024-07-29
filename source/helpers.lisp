@@ -105,3 +105,6 @@ Reads and binds attributes from module.
 	 (setf (nth axis shape-after) 1
 	       (nth axis view-after) `(:~ ,(nth axis (shape x)))))
        (values shape-after view-after)))))
+
+(defmacro range (from below &optional (by 1))
+  `(loop for i from ,from below ,below by ,by collect i))

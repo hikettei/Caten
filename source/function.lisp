@@ -78,7 +78,63 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			   (or stride (%stride base-shape (tensor-order bs))))))))))
 (defun !view (base &rest subscripts) (make-view-internal base subscripts))
 (defun !view-from-base (base &rest subscripts) (make-view-internal base subscripts :allow-merge nil))
-;; !permute
+
+(defclass Permute (Func)
+  ((nrank :initarg :nrank :accessor permute-nrank)
+   (order :initarg :order :accessor permute-order)))
+(defmethod permute-list ((op Permute) list)
+  (loop for nth in (permute-order op)
+	collect (nth nth list)))
+(defmethod forward ((op Permute) &rest inputs)
+  (let ((x (car inputs)))
+    (make-tensor (permute-list op (shape x)) :dtype (dtype-of x) :order (order x) :views (and (tensor-views x) (permute-list op (tensor-views x))))))
+(defmethod forward :around ((op Permute) &rest inputs)
+  (let* ((x (call-next-method))
+	 (views (tensor-views x)))
+    (setf (tensor-variables x)
+	  (append
+	   (tensor-variables x)
+	   (if views
+	       (append
+		(map 'list #'vrange-size views)
+		(map 'list #'viewrange-from views)
+		(map 'list #'viewrange-to views)
+		(map 'list #'viewrange-by views)
+		(map 'list #'viewrange-size (tensor-views (car inputs))))
+	       (append
+		;; visible shape
+		(map 'list #'->iconst (shape x))
+		;; upfrom
+		(map 'list #'(lambda (_) _ (iconst 0)) (shape x))
+		;; below
+		(map 'list #'->iconst (shape x))
+		;; by
+		(map 'list #'(lambda (_) _ (iconst 1)) (shape x))
+		;; original shape
+		(map 'list #'->iconst (shape (car inputs))))))
+	  (func-variables op) (tensor-variables x))
+    x))
+(defmethod backward ((op Permute) dout) (!permute dout (permute-order op)))
+(defmethod lower ((op Permute) &rest inputs)
+  (let* ((bs (car (func-variables op)))
+	 (nrank (ndim bs)))
+    (flet ((subseq1p (x frm &optional to) (subseq x (1+ frm) (if to (1+ to)))))
+      (with-context
+	  (viewed (%view (car inputs)
+			 (subseq1p inputs 0 nrank)
+			 (subseq1p inputs nrank (* 2 nrank))
+			 (subseq1p inputs (* 2 nrank) (* 3 nrank))
+			 (subseq1p inputs (* 3 nrank) (* 4 nrank))
+			 (permute-list op (map 'list #'viewrange-broadcast (tensor-views bs)))
+			 (permute-list op (%stride (subseq1p inputs (* 4 nrank) (* 5 nrank)) (tensor-order bs)))))))))
+
+(defun !permute (tensor order) (forward (make-instance 'Permute :order order) tensor))
+(defun !t (tensor)
+  (let ((range (range 0 (ndim tensor)))
+	(n (ndim tensor)))
+    (setf (nth (- n 2) range) (nth (- n 1) range)
+	  (nth (- n 1) range) (1- (nth (- n 2) range)))
+    (!permute tensor range)))
 (defun !contiguous (x)
   (declare (type tensor x))
   (if (tensor-views x)
