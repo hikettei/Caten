@@ -43,8 +43,7 @@
       (%obtain-fold-constant-result graph :no-verify t)
       (when (and (= (length (graph-nodes graph)) 1)
 		 (eql :_TmpScalarConst (node-type (car (graph-nodes graph)))))
-	(let ((val (car (node-reads (car (graph-nodes graph))))))
-	  val)))))
+	(car (node-reads (car (graph-nodes graph))))))))
 
 (defun zeros-like (tensor)
   "Creates a tensor whose shape is the equivalent to the tensor, but view is reset."

@@ -60,10 +60,11 @@ save-for-backward is determined automatically, so you do not have to consider ab
     (let* ((base (clone-like (car (func-variables op)))))
       (if broadcast-mode
 	  (let* ((base (apply #'!view base subscripts))
-		 (dout (!add base dout :reduce t))
-		 (base (apply #'!view dout (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) subscripts))))
-	    base)
-	  (apply #'!view (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect t))))))
+		 (dout (!add base dout :reduce t)))
+	    (apply #'!view dout (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) subscripts)))
+	  ;; [TODO] Fix: (2 5) -> (0 5) merging, we need a way to reset views to optimize this behaviour
+	  (apply #'!view (!contiguous (!move (apply #'!view base subscripts) dout))
+		 (loop for s in (shape base) collect `(t ,s)))))))
 (defmethod lower ((op View) &rest inputs)
   (let ((nrank (view-nrank op))
 	(bs (car (func-variables op))))

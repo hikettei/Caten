@@ -269,6 +269,9 @@
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 -2) #(1.0))
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 0 -3) #(0.0))
 
+      ;; (/ 10 3) = 3 ... 1
+      (ok (!view (ax+b `(10) 1 0) `(0 9 3)) #(0.0 3.0 6.0))
+
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t 0) #(0.0 3.0 6.0))
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t 1) #(1.0 4.0 7.0))
       (okwhen (!view (ax+b `(3 3 3) 1 0) 0 t 2) #(2.0 5.0 8.0))
@@ -307,6 +310,7 @@
 ;;       - Composed Slice Backward Test.
 ;;   - 2. Sum/Mean Backward
 ;;   - 3. Test ChainRule
+;;   ax+bからのSumができない？？
 
 ;; - Implement Matmul
 ;;   - Float前範囲に対するULP検証は外でやる
