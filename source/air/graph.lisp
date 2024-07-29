@@ -43,7 +43,14 @@ If outputs is nil, the writes of last nodes becomes the top"
 - Sort by the time
 - TODO: verify-graph is called multiple times during compilation, needs optimized more.
 - Nodes whose class are start with special/ cannot be purged even if they are isolated."
-  (declare (type graph graph))
+  (declare (type graph graph)
+	   (optimize (speed 3)))
+  (setf (graph-nodes graph)
+	(reverse
+	 (loop with seen = nil
+	       for node in (reverse (graph-nodes graph))
+	       if (null (find (the symbol (car (node-writes node))) seen))
+		 collect (progn (push (car (node-writes node)) seen) node))))
   (resolve-isolated-nodes graph)
   (purge-isolated-graph graph)
   t)
@@ -60,27 +67,23 @@ If outputs is nil, the writes of last nodes becomes the top"
 	    for position fixnum upfrom 0
 	    for reads = (node-reads node)
 	    for writes = (node-writes node)
-	    for w-seen-p = (or (some #'(lambda (x) (not (find (the symbol x) seen :test #'eql))) writes) (special-p (node-class node)))
 	    if (seen-p reads) do
-	      (when w-seen-p
-		(dolist (w writes) (push w seen))
-		(push node new-nodes))
+	      (dolist (w writes) (push w seen))
+	      (push node new-nodes)
 	    else do
-	      (when w-seen-p
-		(push (cons reads node) stashed))
+	      (push (cons reads node) stashed)
 	    end
-	    do (when w-seen-p
-		 (loop with finish-p = nil
-		       with changed-p = nil
-		       while (not finish-p)
-		       do (setf changed-p nil)
-			  (loop for (reads-old . node-old) in stashed
-				if (seen-p reads-old) do
-				  (push node-old new-nodes)
-				  (setf changed-p t)
-				  (dolist (w (node-writes node-old)) (push w seen))
-				  (setf stashed (remove node-old stashed :key #'cdr :test #'equal)))
-			  (setf finish-p (not changed-p))))))
+	    do (loop with finish-p = nil
+		     with changed-p = nil
+		     while (not finish-p)
+		     do (setf changed-p nil)
+			(loop for (reads-old . node-old) in stashed
+			      if (seen-p reads-old) do
+				(push node-old new-nodes)
+				(setf changed-p t)
+				(dolist (w (node-writes node-old)) (push w seen))
+				(setf stashed (remove node-old stashed :key #'cdr :test #'equal)))
+			(setf finish-p (not changed-p)))))
     ;;(assert (null stashed) () "verify-graph: these nodes are isolated: ~a" stashed) 
     (setf (graph-nodes graph) (reverse new-nodes))
     graph))

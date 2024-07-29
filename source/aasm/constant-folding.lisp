@@ -134,6 +134,8 @@
 	  "_TmpPurged shouldn't exist! (it is a simplifier's bug)")
   ;;(print n)
   (if (not (= (length (graph-nodes graph)) n))
-      (fold-constant graph)
+      (progn
+	(verify-graph graph)
+	(fold-constant graph))
       (verify-graph graph))
   graph)
