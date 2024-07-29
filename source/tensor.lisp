@@ -80,6 +80,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
       ((error
 	 #'(lambda (c) (error 'caten-forward-error :op 'make-view-internal :inputs (list base) :c c))))
     (flet ((is-broadcast (x) (and (listp x) (eql (car x) :~))))
+      
       (let* ((views (merge-views base subscripts allow-merge))
 	     (buff (%internal-make-tensor nil (map 'list #'vrange-size views) :dtype dtype :order order :id id :views views))
 	     (broadcast-mode-p (some #'is-broadcast subscripts)))
@@ -90,11 +91,11 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	(setf (tensor-variables buff)
 	      (append
 	       (list base)
-	       (map 'list #'vrange-size views)
-	       (map 'list #'viewrange-from views)
-	       (map 'list #'viewrange-to views)
-	       (map 'list #'viewrange-by views)
-	       (map 'list #'viewrange-size views)
+	       (map 'list (compose #'sfold #'vrange-size) views)
+	       (map 'list (compose #'sfold #'viewrange-from) views)
+	       (map 'list (compose #'sfold #'viewrange-to) views)
+	       (map 'list (compose #'sfold #'viewrange-by) views)
+	       (map 'list (compose #'sfold #'viewrange-size) views)
 	       (loop for s in stride collect (if (node-p s) s (iconst s))))
 	      (tensor-op buff) (make-instance 'View :views views :broadcast-mode broadcast-mode-p :subscripts subscripts :nrank (length views)))
 	(setf (func-variables (tensor-op buff)) (tensor-variables buff))

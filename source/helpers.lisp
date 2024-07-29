@@ -45,6 +45,11 @@
 		 (eql :_TmpScalarConst (node-type (car (graph-nodes graph)))))
 	(car (node-reads (car (graph-nodes graph))))))))
 
+(defun sfold (x)
+  (if (tensor-p x)
+      (let ((val (try-fold-constant x))) (or (and val (iconst val)) x))
+      x))
+
 (defun zeros-like (tensor)
   "Creates a tensor whose shape is the equivalent to the tensor, but view is reset."
   (declare (type tensor tensor))
