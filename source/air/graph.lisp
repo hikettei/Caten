@@ -35,7 +35,7 @@ If outputs is nil, the writes of last nodes becomes the top"
 	(loop for node in (graph-nodes graph)
 	      unless (eql id (node-id node)) collect node)))
 
-(defun verify-graph (graph)
+(defun verify-graph (graph &key (no-purge nil))
   "Verify the consistency of the graphs and simplify them by operating following:
 - Checks if all variables are immutable
 - All read dependencies are appearedin writes.
@@ -52,7 +52,8 @@ If outputs is nil, the writes of last nodes becomes the top"
 	       if (null (find (the symbol (car (node-writes node))) seen))
 		 collect (progn (push (car (node-writes node)) seen) node))))
   (resolve-isolated-nodes graph)
-  (purge-isolated-graph graph)
+  ;; very heavy computation cost, should be called once if the caller is recursive.
+  (unless no-purge (purge-isolated-graph graph))
   t)
 
 (defun special-p (kw) (declare (optimize (speed 3))) (search "SPECIAL/" (format nil "~a" kw)))
