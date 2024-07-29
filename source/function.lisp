@@ -60,7 +60,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
     (let* ((base (clone-like (car (func-variables op)))))
       (if broadcast-mode
 	  (let* ((base (apply #'!view base subscripts))
-		 (dout (!add base dout :reduce t)))
+		 (dout (!add base (!contiguous dout) :reduce t)))
 	    (apply #'!view dout (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) subscripts)))
 	  (apply #'!view-from-base (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect `(0 ,s)))))))
 (defmethod lower ((op View) &rest inputs)
@@ -77,7 +77,6 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			   (or stride (%stride base-shape (tensor-order bs))))))))))
 (defun !view (base &rest subscripts) (make-view-internal base subscripts))
 (defun !view-from-base (base &rest subscripts) (make-view-internal base subscripts :allow-merge nil))
-;; !reshape
 ;; !permute
 (defun !contiguous (x)
   (declare (type tensor x))

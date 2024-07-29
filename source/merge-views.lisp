@@ -3,7 +3,7 @@
 (deftype axis-t () `(or number symbol Tensor))
 
 (defstruct (ViewRange
-	    (:constructor make-vrange (from to by broadcast size
+	    (:constructor make-vrange (from to by broadcast size subscript
 				       &aux
 					 (from (->iconst from))
 					 (to (->iconst to))
@@ -11,7 +11,7 @@
 					 (size (->iconst size)))))
   (from from :type Tensor) (to to :type Tensor)
   (by by :type Tensor) (broadcast broadcast :type boolean)
-  (size size :type Tensor))
+  (size size :type Tensor) (subscript subscript))
 
 (defun vrange-size (vrange)
   (declare (type ViewRange vrange))
@@ -22,13 +22,13 @@
   (flet ((normalize (x) (if (and (numberp x) (< x 0)) (!add (->iconst size) (iconst x)) x))
 	 (1p (x) (if (tensor-p x) (!add x (iconst 1)) (!add (iconst x) (iconst 1)))))
     (ematch subscript
-      ((list :~ n) (make-vrange 0 (normalize n) 1 t size))   ;; broadcasting (:~ N)
-      ((eql t)  (make-vrange 0 size 1 nil size)) ;; nothing
-      ((guard x (typep x 'axis-t)) (make-vrange (normalize x) (1p (normalize x)) 1 nil size)) ;; A[i]
+      ((list :~ n) (make-vrange 0 (normalize n) 1 t size subscript));; broadcasting (:~ N)
+      ((eql t)  (make-vrange 0 size 1 nil size subscript)) ;; nothing
+      ((guard x (typep x 'axis-t)) (make-vrange (normalize x) (1p (normalize x)) 1 nil size subscript)) ;; A[i]
       ((list (guard from (typep from 'axis-t)) (guard to (typep to 'axis-t)))
-       (make-vrange (normalize from) (normalize to) 1 nil size)) ;; A[from:to]
+       (make-vrange (normalize from) (normalize to) 1 nil size subscript)) ;; A[from:to]
       ((list (guard from (typep from 'axis-t)) (guard to (typep to 'axis-t)) (guard by (typep to 'axis-t)))
-       (make-vrange (normalize from) (normalize to) by nil size))))) ;; A[from:to:by]
+       (make-vrange (normalize from) (normalize to) by nil size subscript))))) ;; A[from:to:by]
 
 (defun .compose-views (old new)
   "
@@ -39,13 +39,14 @@ Applying a further slicing:
     (Range 2 6 2)
 "
   (declare (type ViewRange old new))
-  (with-slots ((frm1 from) (to1 to) (by1 by) (bc1 broadcast) (size size)) old
-    (with-slots ((frm2 from) (to2 to) (by2 by) (bc2 broadcast)) new
+  (with-slots ((frm1 from) (to1 to) (by1 by) (bc1 broadcast) (size size) (s1 subscript)) old
+    (with-slots ((frm2 from) (to2 to) (by2 by) (bc2 broadcast) (s2 subscript)) new
       (let* ((offset (!where (!> by1 (iconst 0)) (!min frm1 to1) (!max frm1 to1)))
 	     (from (!+ offset (!* (!signum by1) frm2)))
+	     (from (if (listp s1) from (iconst 0))) ;; A[2][3] is equivalent to A[3], do not compose them.
 	     (to   (!+ offset (!* (!signum by1) to2)))
 	     (step (!* (!signum (!* by1 by2)) (!lcm by1 by2))))
-	(make-vrange from to step bc2 (if bc1 (iconst 1) size))))))
+	(make-vrange from to step bc2 (if bc1 (iconst 1) size) s2)))))
 
 (defun merge-views (base subscripts allow-merge)
   "Composes the two mergeable views"

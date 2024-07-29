@@ -159,7 +159,7 @@ The provided form does not match any of them:~%~a" method method method method f
 	     (out (st "A[~] B[~] -> A[~]" (out x)))
 	     (out (if keepdims
 		      out
-		      (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) new-view)))))
+		      (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view)))))
 	(setf (tensor-op out) nil (tensor-variables out) nil)
 	out))))
 
@@ -176,7 +176,7 @@ The provided form does not match any of them:~%~a" method method method method f
 		(out (!add out x :reduce t))
 		(out (if keepdims
 			 out
-			 (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) new-view)))))
+			 (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view)))))
 	   out)))))
 (defmodule (MeanNode ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
     ()
