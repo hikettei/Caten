@@ -211,8 +211,8 @@ The provided form does not match any of them:~%~a" method method method method f
     (let* ((mid (loop for i upfrom 0 below (min (- n1 1) (- n2 1) 1) collect 1))
 	   (x (!reshape x `(,@(butlast (shape x) 1) ,@mid ,(car (last (shape x))))))
 	   (y (!reshape y `(,@(butlast (shape y) 2) ,@mid ,@(last (shape y) (+ n2 1 (- (min n2 1))))))))
-      (let ((z (!sum (!mul x (!t y)) :axis -1)))
-	(!reshape z (butlast (shape z)))))))
+      (let ((z (!mul x (!contiguous (!t y) :force t))))
+	(!reshape (!sum z :axis -1) (butlast (shape z)))))))
 
 (defmodule (Sigmoid (()) :where "A[~] -> A[~]")
     ()

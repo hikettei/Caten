@@ -127,7 +127,7 @@
 		    (let ((ss (->subscript tns (car k))))
 		      (if (every #'(lambda (x) (eql t x)) ss)
 			  tns
-			  (apply #'!view tns ss)))
+			  (!contiguous (apply #'!view tns ss))))
 		  else
 		    collect tns))))))
 			 

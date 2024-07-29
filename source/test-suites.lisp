@@ -423,8 +423,12 @@
       (forward m) (backward m nil) (forward m) (backward m nil)
       (every (equal-to -1) (elements (grad a))))))
 
-
-;; ikkai compile sitara zikan kakaran kara zenhani ni taisite test suru
+(deftest test-gemm
+  (let ((a (ax+b `(3 4) 0 1))
+	(b (ax+b `(4 3) 0 1)))
+    (ok (equal-to 4) (elements (proceed (!matmul a b)))))
+  (let ((m (proceed (!matmul (ax+b `(3 4) 1 1) (ax+b `(4 3) 1 1)))))
+    (ok (every #'= (elements m) #(70 80 90 158 184 210 246 288 330)))))
 
 ;; TODO
 ;; - Implement Autograd

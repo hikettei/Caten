@@ -55,6 +55,7 @@
    #:!sum
    #:MeanNode
    #:!mean
+   #:!matmul
    
    )
   ;; from helpers.lisp
