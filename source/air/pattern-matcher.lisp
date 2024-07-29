@@ -71,18 +71,8 @@
 	*matched-bind*)))
     (_ (error "Follow this notation: (From_Pattern) -> (To_Pattern).~%~a" rule))))
 
-(defun graph-remove-duplicated-writes (graph)
-  (declare (type graph graph) (optimize (speed 3)))
-  (let ((seen))
-    (declare (type list seen))
-    (loop for node in (reverse (graph-nodes graph))
-	  do (dolist (w (node-writes node))
-	       (if (find (the symbol w) seen :test #'eql)
-		   (remnode graph (node-id node))
-		   (push w seen))))))
-
 (defparameter *matched-bind* nil "a temporary place to store matched nodes during simplifying")
-(defmacro defsimplifier ((name &key (speed 0)) &rest rules)
+(defmacro defsimplifier ((name &key (speed 3)) &rest rules)
   "
 ## [Macro] defsimplifier
 Defines graph simplification rule
@@ -133,7 +123,6 @@ TODO: Docs"
 			  (let ((writes (node-writes (id->node ,graph r))))
 			    (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
 			      (remnode ,graph r)))))
-		      (graph-remove-duplicated-writes ,graph)
 		      t)))
 		(,apply-bind (graph &aux (changed-p nil))
 		  (dotimes (nth (length (graph-nodes graph)))
