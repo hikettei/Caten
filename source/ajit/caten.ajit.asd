@@ -6,7 +6,8 @@
   :serial t
   :components
   ((:file "package")
-
+   (:file "type-relay")
+   (:file "scheduler")
    )
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))
 
