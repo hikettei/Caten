@@ -378,13 +378,26 @@
 	(backward m nil))
       (ok (every (equal-to 3) (elements (grad a))))
       (ok (every (equal-to 2) (elements (grad b))))))
+  (testing "A x B (Zero-Grad)"
+    (let ((a (make-tensor `(3 3) :requires-grad t :initial-element 2.0))
+	  (b (make-tensor `(3 3) :requires-grad t :initial-element 3.0)))
+      (let ((m (caten (!mul a b))))
+	(forward m)
+	(backward m nil)
+	(forward m)
+	(backward m nil))
+      (ok (every (equal-to 3) (elements (grad a))))
+      (ok (every (equal-to 2) (elements (grad b))))))
   (testing "f(A) + f(A) + f(A)"
     (macrolet ((f (form v)
-		 `(let ((a (make-tensor `(3 3) :requires-grad t :initial-element 1.0)))
-		    (let ((m (caten ,form)))
-		      (forward m)
-		      (backward m nil))
-		    (ok (every (equal-to ,v) (elements (grad a)))))))
+		 `(dolist (zero-grad `(nil t))
+		    (let ((a (make-tensor `(3 3) :requires-grad t :initial-element 1.0)))
+		      (let ((m (caten ,form)))
+			(forward m)
+			(backward m nil)
+			(when zero-grad
+			  (forward m) (backward m nil)))
+		      (ok (every (equal-to ,v) (elements (grad a))))))))
       (f (!+ (!neg a) (!neg a) (!neg a)) -3)
       (f (!+ (!neg a) (!neg a) a) -1)
       (f (!+ a (!neg a) (!neg a)) -1)
@@ -396,6 +409,20 @@
       (f (!neg (!+ a a a)) -3)
       (f (!neg (!+ (!neg a) a (!neg a))) 1))))
 
+(deftest test-zero-grad-reduction
+  (let ((a (make-tensor `(3 3) :requires-grad t)))
+    (let ((m (caten (!sum a :axis t))))
+      (forward m) (backward m nil) (forward m) (backward m nil)
+      (every (equal-to 1) (elements (grad a)))))
+  (let ((a (make-tensor `(3 3) :requires-grad t)))
+    (let ((m (caten (!sum a :axis t :keepdims t))))
+      (forward m) (backward m nil) (forward m) (backward m nil)
+      (every (equal-to 1) (elements (grad a)))))
+  (let ((a (make-tensor `(3 3) :requires-grad t)))
+    (let ((m (caten (!neg (!sum a :axis t)))))
+      (forward m) (backward m nil) (forward m) (backward m nil)
+      (every (equal-to -1) (elements (grad a))))))
+
 
 ;; ikkai compile sitara zikan kakaran kara zenhani ni taisite test suru
 
@@ -405,8 +432,8 @@
 ;;       - BroadcastingとSliceは同時に適用できないとする (OK)
 ;;       - Composed Slice Backward Test. (OK)
 ;;   - 2. Sum/Mean Backward 
-;;   - 3. Test ChainRule
-;;   - 2回目のbw 呼び出し，zero_grads
+;;   - 3. Test ChainRule ok
+;;   - 2回目のbw 呼び出し，zero_grads ok
 ;;   ax+bからのSumができない？？ (OK)
 ;;  (!neg (!sum )) (OK)
 ;; (caten (!sum (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 5))))
