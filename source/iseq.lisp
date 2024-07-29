@@ -14,6 +14,7 @@
   (write->node (make-hash-table :test #'eql) :type hash-table)
   (grad->tensor (make-hash-table :test #'eql) :type hash-table)
   (tid->tensor (make-hash-table :test #'eql) :type hash-table)
+  (grad->grads (make-hash-table :test #'eql) :type hash-table)
   (fw-out-ids nil :type list)
   (bw-out-ids nil :type list))
 
@@ -28,10 +29,11 @@
   (declare (type compiler-session session)
 	   (type graph graph))
   (setf (graph-outputs graph)
-	(loop for id in `(,@(session-fw-out-ids session) ,@(session-bw-out-ids session))
+	(loop for id in `(,@(session-fw-out-ids session))
 	      append
 	      (let ((res (session/read session id t)))
-		(and (not (eql res t)) (node-writes res))))))
+		(and (not (eql res t)) (node-writes res))))
+	(graph-outputs graph) (append (graph-outputs graph) (session-bw-out-ids session))))
 
 (defun session/assign (session tid node)
   (declare (type Compiler-Session session)
@@ -60,6 +62,48 @@
   (declare (type Compiler-Session session)
 	   (type symbol tid))
   (gethash tid (session-grad->tensor session)))
+
+(defun session/set-multi-grad (session grad-id tid alloc)
+  (declare (type Compiler-Session session)
+	   (type symbol grad-id tid))
+  ;; cons (top-id, rest-grads)
+  (if (gethash grad-id (session-grad->grads session))
+      (let ((form (gethash grad-id (session-grad->grads session))))
+	(setf (gethash grad-id (session-grad->grads session))
+	      (if alloc
+		  (list tid (second form))
+		  (list (first form) (append (list tid) (second form))))))
+      (setf (gethash grad-id (session-grad->grads session)) (if alloc (list tid nil) (list nil (list tid))))))
+
+(defun session/sync-multi-grads (session graph)
+  (declare (type Compiler-session session)
+	   (type graph graph))
+  (maphash
+   #'(lambda (grad-id leaves)
+       (multiple-value-bind (final-grad-id rest-grads) (apply #'values leaves)
+	 ;; [TODO] Since we intentionally detached the gradient accumlation
+	 ;; we got a lot of additional change here to optimize/inline zero_grad/accum_grad
+	 ;; e.g.: rewriting ADD -> MOVE
+	 (let* ((subgrads (map 'list #'(lambda (x) (session/read session x)) rest-grads))
+		(subgrad-id (gensym "SUBGRAD"))
+		(total (if (>= (length subgrads) 2)
+			   (let ((node
+				   (make-node :BinaryOps :ADD (list subgrad-id) (map 'list #'node->id subgrads) :reduction nil)))
+			     (push node (graph-nodes graph))
+			     node)
+			   (car subgrads))))
+	   (if total
+	       (let ((final-node
+		       ;; TODO: Fuse them
+		       (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id (node->id total)) :reduction nil)))
+		 (push final-node (graph-nodes graph))
+		 (session/assign session grad-id final-node))
+	       (loop for node in (graph-nodes graph)
+		     if (and (= (length (node-writes node)) 1)
+			     (eql final-grad-id (car (node-writes node))))
+		       do (setf (node-writes node) (list grad-id))
+			  (session/assign session grad-id node))))))
+   (session-grad->grads session)))
 ;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %lower-iseq (session iseq &key (no-verify nil))
   "Lowers iseq (a list of topologically sorted tensors) into caten/air graph."
@@ -106,6 +150,7 @@
 			  "%make-graph-backward: If Node ~a has no variables, then backward should return only one Tensor."
 			  (tensor-op tensor))
 		  (assert (typep (tensor-op tensor) 'Allocate) () "Expected to be an allocation? (it is safe to remove this assertion ig)")
+		  (session/set-multi-grad session (tensor-grad-id (alloc-buffer (tensor-op tensor))) (alloc-id (tensor-op tensor)) t)
 		  (when (car next-grads) (%bwgraph (%tpsort-tensors session (car next-grads)))))
 		 ((and (= (length next-grads) 1) (eql (car next-grads) :module/skip-bw))
 		  ;; Module whose backward = nil (i.e.: autodiff from impl)
@@ -118,6 +163,8 @@
 			for next-grad in next-grads
 			if next-grad do
 			  (session/setgrad session (tensor-id next-var) next-grad)
+			  (when (tensor-grad-id next-var)
+			    (session/set-multi-grad session (tensor-grad-id next-var) (tensor-id next-grad) nil))
 			  (%bwgraph (%tpsort-tensors session next-grad))))))))
     (mapc #'backward-helper (reverse iseq))
     iseq-bw))
@@ -163,6 +210,8 @@
 		 (null no-grad)
 		 (list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes forward-graph))))))))
 		(and backward-graph (graph-nodes backward-graph))))))
+	(when (null no-grad)
+	  (session/sync-multi-grads session merged-graph))
 	(session/update-outputs session merged-graph)
 	;; Graph Level whole optimization
 	(dolist (f external-simplifiers) (funcall f merged-graph))
@@ -238,8 +287,7 @@
 		 :no-grad no-grad :external-simplifiers external-simplifiers
 		 :toplevels tensors)))
     (when (null no-grad)
-      (loop for bwid in (session-bw-out-ids session)
-	    for id = (car (node-writes (session/read session bwid)))
+      (loop for id in (session-bw-out-ids session)
 	    do (assert (some #'(lambda (x) (find id (node-writes x))) (graph-nodes graph))
 		       ()
 		       "%compile-toplevel: The tensor ~a where :requires-grad=t could not be differentiated because backward was broken." id)))

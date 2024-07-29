@@ -368,6 +368,36 @@
       (let ((a (make-tensor `(3 3) :requires-grad t))) (okwhen (!neg (!sum a :keepdims t)) a #(-1 -1 -1 -1 -1 -1 -1 -1 -1)))
       (let ((a (make-tensor `(3 3) :requires-grad t)))
 	(okwhen (!sum (ax+b `(3 3) 1 0 :out a)) a #(1 1 1 1 1 1 1 1 1))))))
+;; Accumlating gradients multiple times
+(deftest test-chain-rule
+  (testing "A x B"
+    (let ((a (make-tensor `(3 3) :requires-grad t :initial-element 2.0))
+	  (b (make-tensor `(3 3) :requires-grad t :initial-element 3.0)))
+      (let ((m (caten (!mul a b))))
+	(forward m)
+	(backward m nil))
+      (ok (every (equal-to 3) (elements (grad a))))
+      (ok (every (equal-to 2) (elements (grad b))))))
+  (testing "f(A) + f(A) + f(A)"
+    (macrolet ((f (form v)
+		 `(let ((a (make-tensor `(3 3) :requires-grad t :initial-element 1.0)))
+		    (let ((m (caten ,form)))
+		      (forward m)
+		      (backward m nil))
+		    (ok (every (equal-to ,v) (elements (grad a)))))))
+      (f (!+ (!neg a) (!neg a) (!neg a)) -3)
+      (f (!+ (!neg a) (!neg a) a) -1)
+      (f (!+ a (!neg a) (!neg a)) -1)
+      (f (!+ (!neg a) a (!neg a)) -1)
+      (f (!+ (!neg a) a a) 1)
+      (f (!+ a (!neg a) a) 1)
+      (f (!+ a a (!neg a)) 1)
+
+      (f (!neg (!+ a a a)) -3)
+      (f (!neg (!+ (!neg a) a (!neg a))) 1))))
+
+
+;; ikkai compile sitara zikan kakaran kara zenhani ni taisite test suru
 
 ;; TODO
 ;; - Implement Autograd
@@ -376,6 +406,7 @@
 ;;       - Composed Slice Backward Test. (OK)
 ;;   - 2. Sum/Mean Backward 
 ;;   - 3. Test ChainRule
+;;   - 2回目のbw 呼び出し，zero_grads
 ;;   ax+bからのSumができない？？ (OK)
 ;;  (!neg (!sum )) (OK)
 ;; (caten (!sum (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 5))))
