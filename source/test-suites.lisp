@@ -303,7 +303,8 @@
 ;; TODO
 ;; - Implement Autograd
 ;;   - 1. View Backward
-;;       - BroadcastingとSliceは同時に適用できないとする
+;;       - BroadcastingとSliceは同時に適用できないとする (OK)
+;;       - Composed Slice Backward Test.
 ;;   - 2. Sum/Mean Backward
 ;;   - 3. Test ChainRule
 

@@ -56,13 +56,14 @@ save-for-backward is determined automatically, so you do not have to consider ab
    (broadcast-mode :initarg :broadcast-mode :accessor view-broadcast-mode)
    (nrank :initarg :nrank :accessor view-nrank)))
 (defmethod backward ((op View) dout)
-  (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views)) op
+  (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
     (let* ((base (clone-like (car (func-variables op)))))
       (if broadcast-mode
-
-	  ;; TODO: Multiple View Composed?
-	  ;;(apply #'!view (!move (apply #'!view base views) dout))
-	  nil))))
+	  (let* ((base (apply #'!view base subscripts))
+		 (dout (!add base dout :reduce t))
+		 (base (apply #'!view dout (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) subscripts))))
+	    base)
+	  (apply #'!view (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect t))))))
 (defmethod lower ((op View) &rest inputs)
   (let ((nrank (view-nrank op))
 	(bs (car (func-variables op))))
