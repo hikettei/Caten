@@ -251,7 +251,7 @@
 (defun %module->iseqbw (session module prev-grad)
   "Module.backward(dout) -> Module.args[0].grad, Module.args[1].grad, ..."
   (declare (type compiler-session session) (type Module module) (type tensor prev-grad))
-  (assert (module-impl-iseq module) () "First, lower this: ~a" module)
+  (assert (module-impl-iseq module) () "First, lower this: ~a. Do not use module in module backward (TODO: Support this)." module)
   ;; [TODO] Support multiple outputs of module
   ;; determine whichth output is it
   (dolist (out (module-lower-outputs module)) (session/setgrad session (tensor-id out) prev-grad))
