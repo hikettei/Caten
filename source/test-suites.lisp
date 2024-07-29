@@ -437,6 +437,7 @@
 ;; - Fix: Compilation process is very slow (finishes < 4s, needs more refactor)
 ;;   ax+bからのSumができない？？ (OK)
 ;; (Shape Inference) (caten (!sum (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 5)))) Fails.
+;; - 1. Node Creation. - 2. (!add (iconst 1) (iconst 1))のレベルでConstant Foldingする
 ;; - Implement Matmul
 ;;   - Float前範囲に対するULP検証は外でやる
 ;; - AJiTでaasmをloweringする
