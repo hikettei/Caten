@@ -12,6 +12,7 @@
 	    "verify-attrs: key must be a keyword but got ~a.~%In ~a"
 	    (nth i attrs) attrs))
   attrs)
+
 (defun verify-buffers (buffers)
   (declare (type list buffers))
   (assert (every #'(lambda (x) (or (numberp x) (symbolp x))) buffers)

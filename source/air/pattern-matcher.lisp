@@ -43,6 +43,7 @@
 		     ((list (symbol-eq "~") x) `(list* ,x))
 		     (_ `(list ,@(map 'list #'replace-form args))))))
 	 (if recursive
+	     ;; [opt memo] fewer calls of id->value, no worth to consider optimizing it.
 	     `(access #'(lambda (x) (id->value ,graph-bind x)) (%Node ,type ,args ,attrs))
 	     `(%Node ,type ,args ,attrs))))
       ((type list) (map 'list #'replace-form rules))
