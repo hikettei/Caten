@@ -122,12 +122,15 @@
 			 else collect t)))
 	    (loop for tns in aligned-tensors
 		  for k in kranks
+		  for nth upfrom 0
 		  if k
 		    collect
 		    (let ((ss (->subscript tns (car k))))
 		      (if (every #'(lambda (x) (eql t x)) ss)
 			  tns
-			  (!contiguous (apply #'!view tns ss))))
+			  (if (= nth 0)
+			      (!contiguous (apply #'!view tns ss))
+			      (apply #'!view tns ss))))
 		  else
 		    collect tns))))))
 			 
