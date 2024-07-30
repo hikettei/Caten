@@ -178,7 +178,7 @@ The provided form does not match any of them:~%~a" method method method method f
 			 out
 			 (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view)))))
 	   out)))))
-#|
+
 (defmodule (MeanNode ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
     ()
     :documentation "Means the tensor."
@@ -190,29 +190,23 @@ The provided form does not match any of them:~%~a" method method method method f
 		     for base in (shape x)
 		     if (eql new-axis 1) do (setf total (!* total (->fconst base))))
            (!div (!sum x :axis axis :keepdims keepdims) (!cast total (dtype-of x)))))))
-|#
+
 (declaim (ftype (Function (Tensor &key (:axis t) (:keepdims boolean)) (values Tensor &optional)) !sum !mean))
 (defun !sum (x &key (axis t) (keepdims nil)) (forward (SumNode :axis axis :keepdims keepdims) x))
-;;(defun !mean (x &key (axis t) (keepdims nil)) (forward (MeanNode :axis axis :keepdims keepdims) x))
-(defun !mean (x &key (axis t) (keepdims nil))
-  (let ((total (fconst 1)))
-    (loop for new-axis in (parse-reduce-axes x axis)
-	  for base in (shape x)
-	  if (eql new-axis 1) do (setf total (!* total (->fconst base))))
-    (!div (!sum x :axis axis :keepdims keepdims) (!cast total (dtype-of x)))))
+(defun !mean (x &key (axis t) (keepdims nil)) (forward (MeanNode :axis axis :keepdims keepdims) x))
 ;; TODO: !max !min !topk
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (Matmul (()) :where "A[~ i j] B[~ j k] -> A[~ i k]")
     ()
     :documentation "Gemm (TODO)"
-    :impl ((mm x y)))
-(defun !matmul (x y)
-  (multiple-value-bind (n1 n2) (values (ndim x) (ndim y))
-    (let* ((mid (loop for i upfrom 0 below (min (- n1 1) (- n2 1) 1) collect 1))
-	   (x (!reshape x `(,@(butlast (shape x) 1) ,@mid ,(car (last (shape x))))))
-	   (y (!reshape y `(,@(butlast (shape y) 2) ,@mid ,@(last (shape y) (+ n2 1 (- (min n2 1))))))))
-      (let ((z (!mul x (!contiguous (!t y) :force t))))
-	(!reshape (!sum z :axis -1) (butlast (shape z)))))))
+    :impl ((mm x y)
+	   (multiple-value-bind (n1 n2) (values (ndim x) (ndim y))
+	     (let* ((mid (loop for i upfrom 0 below (min (- n1 1) (- n2 1) 1) collect 1))
+		    (x (!reshape x `(,@(butlast (shape x) 1) ,@mid ,(car (last (shape x))))))
+		    (y (!reshape y `(,@(butlast (shape y) 2) ,@mid ,@(last (shape y) (+ n2 1 (- (min n2 1))))))))
+	       (let ((z (!mul x (!contiguous (!t y) :force t))))
+		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
+(defun !matmul (a b) (forward (make-instance 'Matmul) a b))
 
 (defmodule (Sigmoid (()) :where "A[~] -> A[~]")
     ()
