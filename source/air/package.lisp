@@ -4,7 +4,7 @@
   (:use :cl :alexandria :trivia)
   (:export #:Node #:node-class #:node-p #:node->id #:id->node
    #:node-id #:node-type #:node-writes
-   #:node-reads #:node-attrs)
+   #:node-reads #:node-attrs #:print-node)
   (:export #:make-node)
   (:export #:lower #:mutate)
   (:export #:Graph #:make-graph #:graph-p #:graph-outputs #:Graph-nodes #:id->value #:id->users #:remnode #:verify-graph)

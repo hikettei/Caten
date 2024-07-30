@@ -45,3 +45,17 @@
       (loop for i downfrom (- num-dims 2) to 0 do
 	(setf (nth i strides) (%mul (const (nth (+ i 1) strides)) (const (nth (+ i 1) shape)))))
       strides)))
+
+(defun render-list (list)
+  (apply #'concatenate 'string
+	 (butlast (loop for n in list
+			append (list (format nil "~a" n) ", ")))))
+
+(defun render-attrs (node)
+  (if (node-attrs node)	      
+      (with-output-to-string (out)
+	(format out " where")
+	(dolist (k (getattrs node))
+	  (when k
+	    (format out " :~(~a~)=~a" k (getattr node k)))))
+      ""))

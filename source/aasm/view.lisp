@@ -132,5 +132,21 @@ broadcast=~a"
 		   :nrank (length shape)
 		   :broadcast (loop for i in shape collect nil))))
 
+(defmethod print-node ((node Node) (id (eql :View)))
+  (let ((nrank (getattr node :nrank)))
+    (when (and nrank (not (= nrank 0)) (eql (node-class node) :Buffer))
+      (flet ((subseq1p (x y z) (subseq x (1+ y) (1+ z))))
+	(format nil "<~a : ~a <- (~a, shape=(~a), views=(~a), stride=(~a))>"
+		(node-type node)
+		(render-list (node-writes node))
+		(car (node-reads node))
+		(render-list (subseq1p (node-reads node) 0 nrank))
+		(let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
+		      (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
+		      (by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
+		      (bc (getattr node :broadcast)))
+		  (render-list
+		   (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
+		(render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank))))))))
 ;; WIP: will be moved to frontend
 (defun %bitcast ())

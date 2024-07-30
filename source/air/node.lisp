@@ -33,24 +33,32 @@
   (writes writes :type list)
   (reads  reads :type list)
   (attrs  attrs :type list))
+(defgeneric print-node (node id))
+(defmethod print-node ((node Node) id)
+  (if (next-method-p)
+      (call-next-method)
+      nil))
 (defmethod print-object ((node Node) stream)
-  (flet ((render-list (list)
-	   (apply #'concatenate 'string
-		  (butlast (loop for n in list
-				 append (list (format nil "~a" n) ", "))))))
-    (format stream "<Node[~a] ~a(~a) : ~a <- (~a)~a>"
-	    (node-class node)
-	    (node-type node)
-	    (node-id node)
-	    (render-list (node-writes node))
-	    (render-list (node-reads node))
-	    (if (node-attrs node)	      
-		(with-output-to-string (out)
-		  (format out " where")
-		  (dolist (k (getattrs node))
-		    (when k
-		      (format out " :~(~a~)=~a" k (getattr node k)))))
-		""))))
+  (let ((ext (print-node node (node-type node))))
+    (if ext
+	(format stream ext)
+	(flet ((render-list (list)
+		 (apply #'concatenate 'string
+			(butlast (loop for n in list
+				       append (list (format nil "~a" n) ", "))))))
+	  (format stream "<Node[~a] ~a(~a) : ~a <- (~a)~a>"
+		  (node-class node)
+		  (node-type node)
+		  (node-id node)
+		  (render-list (node-writes node))
+		  (render-list (node-reads node))
+		  (if (node-attrs node)	      
+		      (with-output-to-string (out)
+			(format out " where")
+			(dolist (k (getattrs node))
+			  (when k
+			    (format out " :~(~a~)=~a" k (getattr node k)))))
+		      ""))))))
 ;;(defgeneric lower ())
 ;;(defgeneric mutate ())
 ;; NOTE: attrs must be updated via simplifier, not (setf getattr)

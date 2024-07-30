@@ -65,6 +65,16 @@ If i is a tensor, %load fills the visible area of i with value."
   (let* ((value (if (numberp value) (dtype/cast value (getattr node :dtype)) value)))
     (emit (make-node :Buffer :Load (list id) (list (node->id node)) :value value))))
 
+(defmethod print-node ((node Node) (id (eql :Allocate)))
+  (let ((nrank (getattr node :nrank)))
+    (when (and nrank (not (= nrank 0)))
+      (format nil "<~a : ~a <- (shape=(~a), stride=(~a))~a>"
+	      (node-type node)
+	      (render-list (node-writes node))
+	      (render-list (subseq (node-reads node) 0 nrank))
+	      (render-list (subseq (node-reads node) nrank))		  
+	      (render-attrs node)))))
+
 (defun %store (x y &key (id (gensym "LID")))
   "Equivalent to x = y;"
   (declare (type node x y))

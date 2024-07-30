@@ -43,9 +43,8 @@
 
   )
 
-(macrolet ((impl (kw op)
-	     `(defmethod %impl ((device-id (eql :relay-checker)) (op (eql ,kw)) graph node args) (apply #'map-view (getattr node :reduction) ,op args))))
-
+(macrolet ((impl (kw)  `(defmethod %impl ((device-id (eql :relay-checker)) (op (eql ,kw)) graph node args) (car args))))
+  (impl :add)  
   )
 
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :view)) graph node args)
