@@ -1,8 +1,13 @@
 (in-package :caten)
 
-;;
-;; 1. Lowerer from Tensor to AASM
-;; 2. AD Engine
+;; TODO: Refactorの方針
+;; - 1. node->func   | 
+;; - 2. node->module |
+;; - Simplify時にModuke/Funcが両方あってもいいように
+;; - Simplified GraphからFunc/ModuleのIseqを再度作成+Backward構築
+;; - ModuleをSymbolicにCompileして再利用できるように
+;; - Backwardの構築をも
+;; Tensor -> Lower -> Iseq -> Grpah/Func -> Making AVM Object
 ;;
 
 ;; ~~ Compiler Session ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -341,7 +346,7 @@
   (avm/sync-tensors avm)
   (apply #'values (map 'list #'(lambda (x) (gethash x (avm-id2tensor avm))) (avm-fw-outputs avm))))
 
-(defmethod backward ((avm caten/avm:AVM) prev-dout)
+(defmethod backward ((avm caten/avm:AVM) &optional prev-dout)
   (declare (ignore prev-dout))
   (vm/backward avm)
   (avm/sync-tensors avm)

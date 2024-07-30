@@ -2,7 +2,7 @@
 
 (defclass Linspace (Func) nil)
 (defmethod forward ((op Linspace) &rest inputs) (st "A[] B[] X[~] -> X[~]" (inputs)))
-(defmethod backward ((op Linspace) dout) (values nil nil dout))
+(defmethod backward ((op Linspace) &optional dout) (values nil nil dout))
 (defmethod lower ((op Linspace) &rest inputs)
   (multiple-value-bind (a b x) (apply #'values inputs)
     (with-context

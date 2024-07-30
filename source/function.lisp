@@ -7,7 +7,7 @@
   (:documentation "Lowers the Func into a list of `caten/air:node`. This should return caten/air:graph."))
 (defgeneric forward (op &rest tensors)
   (:documentation "Create the type for the Tensor after computation. Be mindful of its lazy evaluation nature; do not perform the actual computation."))
-(defgeneric backward (op prev-grad)
+(defgeneric backward (op &optional prev-grad)
   (:documentation "Create the graph for backward of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`.
 save-for-backward is determined automatically, so you do not have to consider about in-place operation."))
 
@@ -28,7 +28,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
    (initial-element :initarg :initial-element :initform nil :accessor alloc-initial-element)
    (id :initform nil :accessor alloc-id)))
 (defmethod forward ((op Allocate) &rest tensors) (declare (ignore tensors)) (alloc-buffer op))
-(defmethod backward ((op Allocate) dout)
+(defmethod backward ((op Allocate) &optional dout)
   (let ((buff (alloc-buffer op)))
     (when (tensor-requires-grad buff)
       ;; op.grad += buff
@@ -56,7 +56,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
    (subscripts :initarg :subscripts :accessor view-subscripts)
    (broadcast-mode :initarg :broadcast-mode :accessor view-broadcast-mode)
    (nrank :initarg :nrank :accessor view-nrank)))
-(defmethod backward ((op View) dout)
+(defmethod backward ((op View) &optional dout)
   (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
     (let* ((base (clone-like (car (func-variables op)))))
       (if broadcast-mode
@@ -118,7 +118,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 		(map 'list (compose #'sfold #'->iconst) (shape (car inputs))))))
 	  (func-variables op) (tensor-variables x))
     x))
-(defmethod backward ((op Permute) dout) (!permute dout (permute-order op)))
+(defmethod backward ((op Permute) &optional dout) (!permute dout (permute-order op)))
 (defmethod lower ((op Permute) &rest inputs)
   (let* ((bs (car (func-variables op)))
 	 (nrank (ndim bs)))
@@ -165,7 +165,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			collect (if (tensor-p s) s (iconst s))))
 	  (func-variables (tensor-op out-tensor)) (tensor-variables out-tensor))
     out-tensor))
-(defmethod backward ((op Reshape) prev-grad) (!reshape prev-grad (reshape-shape-bf op)))
+(defmethod backward ((op Reshape) &optional prev-grad) (!reshape prev-grad (reshape-shape-bf op)))
 (defmethod lower ((op Reshape) &rest nodes)
   (let ((tensor (car (func-variables op))))
     (with-context
@@ -184,7 +184,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Move (Func) nil)
 (defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op Move) dout) (values dout dout))
+(defmethod backward ((op Move) &optional dout) (values dout dout))
 (defmethod lower ((op Move) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%move a b)))))
@@ -194,14 +194,14 @@ save-for-backward is determined automatically, so you do not have to consider ab
   ((reduce :initarg :reduce :initform nil :accessor func-reduce)
    (id :initarg :id :initform nil :accessor func-id)))
 (defmethod forward ((op Add) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op Add) dout) (values dout dout))
+(defmethod backward ((op Add) &optional dout) (values dout dout))
 (defmethod lower ((op Add) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%add a b :reduction (func-reduce op) :id (or (func-id op) (gensym "BID")))))))
 
 (defclass Mul (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op Mul) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op Mul) dout)
+(defmethod backward ((op Mul) &optional dout)
   (multiple-value-bind (x y) (apply #'values (func-variables op))
     (values (!mul y dout) (!mul x dout))))
 (defmethod lower ((op Mul) &rest inputs)
@@ -210,7 +210,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 
 (defclass MaxOp (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op MaxOp) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op MaxOp) dout)
+(defmethod backward ((op MaxOp) &optional dout)
   (warn "WIP: MaxOp"))
 (defmethod lower ((op MaxOp) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
@@ -218,19 +218,19 @@ save-for-backward is determined automatically, so you do not have to consider ab
 
 (defclass GCDOp (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op GCDOp) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op GCDOp) dout) (values nil nil))
+(defmethod backward ((op GCDOp) &optional dout) (values nil nil))
 (defmethod lower ((op GCDOp) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%gcd a b :reduction (func-reduce op))))))
 ;; Unary
 (defclass Neg (Func) nil)
 (defmethod forward ((op Neg) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op Neg) dout) (values (!neg dout)))
+(defmethod backward ((op Neg) &optional dout) (values (!neg dout)))
 (defmethod lower ((op Neg) &rest inputs) (with-context (a (%neg (car inputs)))))
 
 (defclass Recip (Func) nil)
 (defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op Recip) dout)
+(defmethod backward ((op Recip) &optional dout)
   (let ((ret (!recip (car (func-variables op)))))
     (values (!mul (!mul (!neg dout) ret) ret)))) ;; -dout / x^2
 (defmethod lower ((op Recip) &rest inputs) (with-context (a (%recip (car inputs)))))
@@ -239,7 +239,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
   ((dtype-frm :initarg :dtype-frm :accessor cast-dtype-frm)
    (dtype-to :initarg :dtype-to   :accessor cast-dtype-to)))
 (defmethod forward ((op Cast) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op Cast) prev-grad) (values prev-grad (!cast prev-grad (cast-dtype-frm op))))
+(defmethod backward ((op Cast) &optional prev-grad) (values prev-grad (!cast prev-grad (cast-dtype-frm op))))
 (defmethod lower ((op Cast) &rest inputs) (with-context (a (%cast (first inputs) (second inputs) (cast-dtype-to op)))))
 (defun !cast (x dtype &key (out (make-tensor (tensor-shape x) :dtype dtype :order (tensor-order x))))
   (declare (type tensor x out) (type dtype-t dtype))
@@ -298,7 +298,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 	  ()
 	  "Assertion Failed: A.dtype != B.dtype")
   (st "MAP[~] A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op Where) prev-grad)
+(defmethod backward ((op Where) &optional prev-grad)
   (multiple-value-bind (c) (apply #'values (func-variables op))
     (values
      nil
