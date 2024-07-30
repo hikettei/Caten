@@ -2,7 +2,7 @@
 
 ~~Programmable Deep Learning Framework~~
 
-a place to test my idea.
+something between tvm and tinygrad.
 
 ## Project Structure (WIP)
 
