@@ -23,6 +23,12 @@ save-for-backward is determined automatically, so you do not have to consider ab
 	    (tensor-op o) op))
     (apply #'values outs)))
 ;; ~~ differentiable ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass IdentityNode (Func) nil)
+(defmethod forward ((op IdentityNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
+(defmethod backward ((op IdentityNode) &optional prev-grad) (values prev-grad))
+(defmethod lower ((op IdentityNode) &rest inputs) (with-context (_ (%store (car inputs) (car inputs)))))
+(defun !identity (tensor) (forward (make-instance 'IdentityNode) tensor))
+
 (defclass Allocate (Func)
   ((buffer :initarg :buffer :type Tensor :accessor alloc-buffer)
    (initial-element :initarg :initial-element :initform nil :accessor alloc-initial-element)
