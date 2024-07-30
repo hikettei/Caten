@@ -113,3 +113,58 @@ Reads and binds attributes from module.
 
 (defmacro range (from below &optional (by 1))
   `(loop for i from ,from below ,below by ,by collect i))
+
+(defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
+(defun render-attrs (node)
+  (if (node-attrs node)	      
+      (with-output-to-string (out)
+	(dolist (k (getattrs node))
+	  (when k
+	    (format out ", ~(~a~)=~a" k (getattr node k)))))
+      ""))
+
+(defun avm-gather-args (avm)
+  (declare (type avm avm))
+  (remove-duplicates
+   (loop for node in (graph-nodes (avm-graph avm))
+	 if (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)))
+	   collect (getattr node :value))))
+
+(defun print-avm (avm &optional (stream t) (n-indent 4) &aux (graph (avm-graph avm)))
+  "Utils for debugging the graph on the repl."
+  (declare (type avm avm))
+  (macrolet ((indent (n) `(with-output-to-string (out) (dotimes (i ,n) (princ " " out)))))
+    (format
+     stream
+     "~a"
+     (with-output-to-string (out)
+       (format out "~%~adefun ~(~a~)(~(~a~))~%" (indent (- n-indent 4)) (avm-name avm) (render-list (avm-gather-args avm)))
+       (loop for node in (graph-nodes graph)
+	     if (eql (node-type node) :Allocate) do
+	       (let ((nrank (getattr node :nrank)))
+		 (format out "~a~(~a~) = ~(~a~)(shape=(~a), stride=(~a)~a);~%"
+			 (indent n-indent)
+			 (render-list (node-writes node))
+			 (node-type node)
+			 (render-list (subseq (node-reads node) 0 nrank))
+			 (render-list (subseq (node-reads node) nrank))
+			 (render-attrs node)))
+	     else if (eql (Node-type node) :View) do
+	       (let ((nrank (getattr node :nrank)))
+		 (flet ((subseq1p (x y z) (subseq x (1+ y) (1+ z))))
+		   (format out "~a~(~a~) = ~(~a~)(~(~a~), shape=(~a), views=(~a), stride=(~a));~%"
+			   (indent n-indent)
+			   (render-list (node-writes node))
+			   (node-type node)
+			   (car (node-reads node))
+			   (render-list (subseq1p (node-reads node) 0 nrank))
+			   (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
+				 (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
+				 (by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
+				 (bc (getattr node :broadcast)))
+			     (render-list
+			      (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
+			   (render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank))))))
+	     else
+	       do (format out "~a~(~a~)~a~(~a~)(~(~a~)~a);~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "") (node-type node) (render-list (node-reads node)) (render-attrs node)))))))
+

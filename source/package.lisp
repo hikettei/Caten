@@ -61,7 +61,8 @@
   ;; from helpers.lisp
   (:export
    #:with-no-grad
-   #:with-attrs)
+   #:with-attrs
+   #:print-avm)
   ;; from iseq.lisp
   (:export
    #:%compile-toplevel
