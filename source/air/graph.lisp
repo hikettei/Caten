@@ -6,6 +6,7 @@
 outputs: a list of ids where sorting is starting from.
 If outputs is nil, the writes of last nodes becomes the top"
   (nodes nodes :type list)
+  (seen nil :type list)
   (outputs nil :type list))
 ;; TODO: inline id->users/id->values after improving the root alogirhtm
 (declaim (ftype (function (graph (or symbol number)) (or null node list)) id->users id->value))
@@ -61,7 +62,7 @@ If outputs is nil, the writes of last nodes becomes the top"
 (defun resolve-isolated-nodes (graph)
   (declare (type graph graph)
 	   (optimize (speed 3)))
-  (let ((new-nodes) (seen) (stashed))
+  (let ((new-nodes) (seen (graph-seen graph)) (stashed))
     (declare (type list new-nodes seen stashed))
     (flet ((seen-p (reads) (every #'(lambda (x) (or (numberp x) (find x seen :test #'eql))) reads)))
       (loop for node in (graph-nodes graph)

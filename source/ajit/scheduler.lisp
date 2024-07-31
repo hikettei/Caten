@@ -68,14 +68,6 @@
 	       (list scheduled-items)
 	       (loop for n in (map 'list #'explore new-groups) if n collect n))))))))
 
-;; どっか移動する
-(defun render-schedule (sched)
-  (let* ((graph (apply #'make-graph (si-nodes sched)))
-	 (avm (make-avm graph (si-name sched) (make-hash-table) nil nil)))
-    (uiop:symbol-call (find-package :caten) :print-avm avm)))
-
-(defun print-schedules (list) (map 'list #'render-schedule list))
-
 (defun %purge-views-from-schedule (avm)
   (declare (type avm avm))
   (let ((rewrite-map
@@ -96,7 +88,7 @@
 		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n)))
 		      n))))))
 
-;; WMMA (a b c) <=> c = c + a * b (:reduction)
+;; WMMA (c a b) <=> c = c + a * b (:reduction)
 (defsimplifier
     (wmma-rewriter :speed 0)
     ((:Add ((:Mul (a b)) c) :reduction t) -> (:WMMA (c a b) :reduction t))
@@ -106,23 +98,61 @@
     (contiguous-after-wmma :speed 0)
     ((:WMMA (c (:Move (_ a)) (:Move (_ b))) :reduction reduction) -> (:WMMA (c a b) :reduction reduction)))
 
-(defun schedule->uop (sched type-map)
-  (declare (type scheduled-items sched))
-  
-  )
+(defun %for (gid size)
+  (declare (type (or number symbol) size))
+  (emit (make-node :IR :for (list gid) (list 0 size 1))))
+(defun %endfor (gid) (emit (make-node :IR :endfor nil (list gid))))
 
+(defun buffer->loop-size (dim &rest buffers)
+  (let* ((shapes (map 'list #'(lambda (x) (nth dim (buffer-shape x))) buffers))
+	 (views  (map 'list #'(lambda (x) (nth dim (buffer-views x)))  buffers)))
+    (declare (ignore views))
+    (or
+     (when (every #'numberp shapes) (apply #'max shapes))
+     (when (every #'(lambda (x) (= x 1)) shapes) 1)
+     (car shapes))))
+
+(defun schedule->submodule (sched type-map)
+  (declare (type scheduled-items sched))
+  (flet ((id->buffer (x) (map/type-of type-map x)))
+    (let* ((args (map 'list #'id->buffer (schedule-depends-on sched)))
+	   (nrank (or (and args (buffer-nrank (car args))) 0))
+	   (index-components (map 'list #'gid (range 0 nrank)))
+	   (loopsizes (map 'list #'(lambda (x) (apply #'buffer->loop-size x args)) (range 0 nrank))))
+      (let ((g
+	      (with-context
+		(start-loop (loop for i in index-components for s in loopsizes do (%for i s)))
+		(_ (dolist (node (si-nodes sched)) (emit node)))
+		(end-loop (dolist (i index-components) (%endfor i))))))
+	(setf (graph-seen g) (schedule-depends-on sched))
+;;	(verify-graph g)
+	g))))
+
+(defun schedule-depends-on (sched)
+  (declare (type scheduled-items sched))
+  (let ((seen) (depends-on))
+    (loop for node in (si-nodes sched) do
+      (dolist (r (node-reads node))
+	(when (null (find r seen))
+	  (when (symbolp r)
+	    (push r depends-on))
+	  (push r seen)))
+      (dolist (w (node-writes node))
+	(push w seen)))
+    (reverse depends-on)))
+	    
 (defun create-schedule (avm)
   (declare (type avm avm))
   (let* ((type-map (run-type-infer avm))
 	 (recursive-top-ids (append (avm-fw-outputs avm) (avm-bw-outputs avm))))
-    (uiop:symbol-call (find-package :caten) :print-avm avm)
-    (print "++++++")
+    ;;(uiop:symbol-call (find-package :caten) :print-avm avm)
+    ;;(print "++++++")
     (%purge-views-from-schedule avm)
-    (print "++++++")
-    (wmma-rewriter (avm-graph avm))
-    (contiguous-after-wmma (avm-graph avm))
-    (uiop:symbol-call (find-package :caten) :print-avm avm)
-    (print "++++++")
+    ;;(print "++++++")
+    (wmma-rewriter (avm-graph avm) :no-verify t)
+    (contiguous-after-wmma (avm-graph avm) :no-verify t)
+    ;;(uiop:symbol-call (find-package :caten) :print-avm avm)
+    ;;(print "++++++")
     (flet ((id->buffer (id)
 	     (assert (symbolp id) () "Graph should not return a number!")
 	     (list (id->value (avm-graph avm) id) (map/type-of type-map id) id)))
@@ -132,7 +162,8 @@
 	(print "++ Scheduled ++")
 	(print-schedules scheduled)
 	scheduled
-	;; 
+	(print (map 'list #'(lambda (x) (schedule->submodule x type-map)) scheduled))
+	;; TODO: Pipelining
 	nil))))
 
 #+(or)(let ((c (caten (!identity (!matmul (make-tensor `(a b) :id 'x) (make-tensor `(b c) :id 'y))))))

@@ -23,7 +23,6 @@
   (dtype dtype :type dtype-t)
   (initial-element initial-element))
 
-(defun gid (n) (intern (format nil "_gid~a" n)))
 (defmethod %vm/allocate-buffer ((device-id (eql :relay-checker)) buffer)
   (let ((initial-value (if (eql (buffer-dtype buffer) :bool)
 			   nil

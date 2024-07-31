@@ -130,7 +130,7 @@ Reads and binds attributes from module.
 	 if (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)))
 	   collect (getattr node :value))))
 
-(defun print-avm (avm &optional (stream t) (n-indent 4) &aux (graph (avm-graph avm)))
+(defun print-avm (avm &key (stream t) (n-indent 4) (args nil) &aux (graph (avm-graph avm)))
   "Utils for debugging the graph on the repl."
   (declare (type avm avm))
   (macrolet ((indent (n) `(with-output-to-string (out) (dotimes (i ,n) (princ " " out)))))
@@ -138,7 +138,7 @@ Reads and binds attributes from module.
      stream
      "~a"
      (with-output-to-string (out)
-       (format out "~%~adefun ~(~a~)(~(~a~))~%" (indent (- n-indent 4)) (avm-name avm) (render-list (avm-gather-args avm)))
+       (format out "~%~adefun ~(~a~)(~(~a~))~%" (indent (- n-indent 4)) (avm-name avm) (render-list (append args (reverse (avm-gather-args avm)))))
        (loop for node in (graph-nodes graph)
 	     if (eql (node-type node) :Allocate) do
 	       (let ((nrank (getattr node :nrank)))

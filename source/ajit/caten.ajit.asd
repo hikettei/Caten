@@ -6,6 +6,7 @@
   :serial t
   :components
   ((:file "package")
+   (:file "helpers")
    (:file "type-relay")
    (:file "scheduler")
    )
