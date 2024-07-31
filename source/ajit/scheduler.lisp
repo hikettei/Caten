@@ -12,10 +12,9 @@
 (defun si/append-item (scheduled-items node)
   (declare (type scheduled-items scheduled-items)
 	   (type node node))
-  ;; todo: optimize
-  (push node (si-nodes scheduled-items)))
+  (when (null (find (node-id node) (si-nodes scheduled-items) :test #'eql :key #'node-id))
+    (push node (si-nodes scheduled-items))))
 
-;; TODO Inline
 (defun buffer-intersect-p (a b)
   "Returns T if two buffers a and b are mergeable."
   (declare (type Buffer a b))
@@ -73,23 +72,49 @@
 (defun render-schedule (sched)
   (let* ((graph (apply #'make-graph (si-nodes sched)))
 	 (avm (make-avm graph (si-name sched) (make-hash-table) nil nil)))
-    ;;(caten::print-avm avm)
-    ))
+    (uiop:symbol-call (find-package :caten) :print-avm avm)))
+
 (defun print-schedules (list) (map 'list #'render-schedule list))
+
+(defun %purge-views-from-schedule (schedules)
+  (declare (type list schedules))
+  (let ((rewrite-map
+	  (loop for node in (apply #'append (map 'list #'si-nodes schedules))
+		if (eql (node-type node) :View)
+		  collect (cons (car (node-writes node)) (car (node-reads node))))))
+    (labels ((->find (id) (find id rewrite-map :key #'car :test #'eql))
+	     ;; todo: optimize
+	     (->aft (id &aux (last id))
+	       (labels ((f (x &aux (next (->find x))) (if next (progn (setf last (cdr next)) (f (cdr next))) nil)))
+		 (f last))
+	       last)		   
+	     (helper (sched)
+	       (declare (type scheduled-items sched))
+	       (setf (si-nodes sched)
+		     (loop for n in (si-nodes sched)
+			   unless (eql (node-type n) :View)
+			     collect
+			     (progn
+			       (setf (node-reads n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-reads n)))
+			       n)))))
+      (mapc #'helper schedules))))
 
 (defun create-schedule (avm)
   (declare (type avm avm))
   (let* ((type-map (run-type-infer avm))
 	 (recursive-top-ids (append (avm-fw-outputs avm) (avm-bw-outputs avm))))
-    ;;(caten::print-avm avm t)
+    (uiop:symbol-call (find-package :caten) :print-avm avm)
     (flet ((id->buffer (id)
 	     (assert (symbolp id) () "Graph should not return a number!")
 	     (list (id->value (avm-graph avm) id) (map/type-of type-map id) id)))
       (let* ((schedules (map 'list (compose #'make-scheduled-items #'id->buffer) recursive-top-ids))
-	     (scheduled (flatten (map 'list #'(lambda (x) (recursive-find-group avm type-map x)) schedules))))
+	     (scheduled (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group avm type-map x)) schedules)))))
 	;; verify-graph assets no duplication in branches from recursive-top-ids
-	;; ^ OK?
-	(print-schedules (reverse scheduled))
+	;; purge views
+	;;(print-schedules scheduled)
+	(%purge-views-from-schedule scheduled)
+	;;(print "++++")
+	(print-schedules scheduled)
 	scheduled
 	nil))))
 
