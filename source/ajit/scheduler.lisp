@@ -27,7 +27,7 @@
     ;; この下は一旦適当
     (when (every #'equal (buffer-shape a) (buffer-shape b))->ok)
     (when (every #'equal (buffer-views a) (buffer-views b))->ok)
-    ;;->ok
+    ->ng
     ))
 
 (defun recursive-find-group (avm type-map scheduled-items)
@@ -81,7 +81,7 @@
   (let ((rewrite-map
 	  (loop for node in (graph-nodes (avm-graph avm))
 		if (eql (node-type node) :View)
-		  collect (cons (car (node-writes node)) (car (node-reads node))))))
+		  collect (cons (car (node-reads node)) (car (node-writes node))))))
     (labels ((->find (id) (find id rewrite-map :key #'car :test #'eql))
 	     ;; todo: optimize
 	     (->aft (id &aux (last id))
@@ -93,7 +93,7 @@
 		  unless (eql (node-type n) :View)
 		    collect
 		    (progn
-		      (setf (node-reads n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-reads n)))
+		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n)))
 		      n))))))
 
 ;; WMMA (a b c) <=> c = c + a * b (:reduction)
@@ -105,6 +105,11 @@
 (defsimplifier
     (contiguous-after-wmma :speed 0)
     ((:WMMA (c (:Move (_ a)) (:Move (_ b))) :reduction reduction) -> (:WMMA (c a b) :reduction reduction)))
+
+(defun schedule->uop (sched type-map)
+  (declare (type scheduled-items sched))
+  
+  )
 
 (defun create-schedule (avm)
   (declare (type avm avm))
@@ -130,3 +135,5 @@
 	;; 
 	nil))))
 
+#+(or)(let ((c (caten (!identity (!matmul (make-tensor `(a b) :id 'x) (make-tensor `(b c) :id 'y))))))
+	(time (caten/ajit::create-schedule c)))
