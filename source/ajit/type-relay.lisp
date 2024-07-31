@@ -1,10 +1,21 @@
 (in-package :caten/ajit)
-
+;;
+;;
+;;
 (defparameter *type-reporter* nil)
 (defstruct (Type-Reporter
 	    (:conc-name rp-)
 	    (:constructor make-type-reporter ()))
-  (id2buffer (make-hash-table :test #'eql)))
+  (id2buffer (make-hash-table :test #'eql))
+  (seen nil :type list))
+
+(defun map/type-of (type-reporter id)
+  ;; Return: Buffer or number
+  (declare (type type-reporter type-reporter)
+	   (type (or number symbol) id))
+  (if (numberp id)
+      id
+      (or (gethash id (rp-id2buffer type-reporter)) (error "map/type-of: ~a cannot be inferred from the graph" id))))
 
 (defstruct (FakeArray
 	    (:constructor make-fakearray (shape dtype initial-element)))
@@ -27,7 +38,10 @@
     (when *type-reporter*
       (loop for n in (node-writes node)
 	    for o in out-buffer
-	    do (setf (gethash n (rp-id2buffer *type-reporter*)) o)))
+	    do (assert (and (buffer-p o) (fakearray-p (buffer-value o)))
+		       ()
+		       "relay-checker: ~a should return a buffer whose value is fake-array, but got ~a" op o)
+	       (setf (gethash n (rp-id2buffer *type-reporter*)) o)))
     (apply #'values out-buffer)))
 (defmethod %impl ((device-id (eql :relay-checker)) op graph node args) (if (next-method-p) (call-next-method) (car args)))
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :Allocate)) graph node args)
@@ -49,13 +63,13 @@
   (let* ((tgt (car args))
 	 (val (getattr node :value)))
     (let ((out (copy-buffer tgt)))
-      (setf (buffer-value out) val)
+      (setf (buffer-value out) (make-fakearray nil (buffer-dtype out) val))
       out)))
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :WHERE)) graph node args) (second args))
 
-(defun type-infer (avm)
+(declaim (ftype (function (AVM) Type-Reporter) run-type-infer))
+(defun run-type-infer (avm)
   (declare (type avm avm))
   (let ((*device* :relay-checker) (*type-reporter* (make-type-reporter)))
     (vm/forward avm) (vm/backward avm)
     *type-reporter*))
-

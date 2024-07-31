@@ -457,3 +457,4 @@
 ;; - AJiTでaasmをloweringする
 ;;   - CLANG/METAL/CUDA JIT
 ;; log1p fusionとか実装する
+;; TODO, Fix (!matmul (3 3 4) (3 4 3))
