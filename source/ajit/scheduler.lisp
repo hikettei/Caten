@@ -96,6 +96,16 @@
 		      (setf (node-reads n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-reads n)))
 		      n))))))
 
+;; WMMA (a b c) <=> c = c + a * b (:reduction)
+(defsimplifier
+    (wmma-rewriter :speed 0)
+    ((:Add ((:Mul (a b)) c) :reduction t) -> (:WMMA (c a b) :reduction t))
+    ((:Add (c (:Mul (a b))) :reduction t) -> (:WMMA (c a b) :reduction t)))
+
+(defsimplifier
+    (contiguous-after-wmma :speed 0)
+    ((:WMMA (c (:Move (_ a)) (:Move (_ b))) :reduction reduction) -> (:WMMA (c a b) :reduction reduction)))
+
 (defun create-schedule (avm)
   (declare (type avm avm))
   (let* ((type-map (run-type-infer avm))
@@ -104,6 +114,8 @@
     (print "++++++")
     (%purge-views-from-schedule avm)
     (print "++++++")
+    (wmma-rewriter (avm-graph avm))
+    (contiguous-after-wmma (avm-graph avm))
     (uiop:symbol-call (find-package :caten) :print-avm avm)
     (print "++++++")
     (flet ((id->buffer (id)
@@ -112,9 +124,7 @@
       (let* ((schedules (map 'list (compose #'make-scheduled-items #'id->buffer) recursive-top-ids))
 	     (scheduled (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group avm type-map x)) schedules)))))
 	;; verify-graph assets no duplication in branches from recursive-top-ids
-	;; purge views
-	;;(print-schedules scheduled)
-	;;(print "++++")
+	(print "++ Scheduled ++")
 	(print-schedules scheduled)
 	scheduled
 	;; 
