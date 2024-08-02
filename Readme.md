@@ -74,6 +74,7 @@ $ COVERAGE=1 qlot exec rove caten.asd
 ```sh
 $ ros install hikettei/caten
 $ caten --help
+$ brew install isl
 ```
 
 ## Dependencies
