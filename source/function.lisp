@@ -234,6 +234,36 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod backward ((op Neg) &optional dout) (values (!neg dout)))
 (defmethod lower ((op Neg) &rest inputs) (with-context (a (%neg (car inputs)))))
 
+(defclass SinNode (Func) nil)
+(defmethod forward ((op SinNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
+(defmethod backward ((op SinNode) &optional dout) (values (!cos dout)))
+(defmethod lower ((op SinNode) &rest inputs) (with-context (a (%sin (car inputs)))))
+
+(defun !sin (x) (forward (make-instance 'SinNode) x))
+(defun !cos (x) (!sin (!add x (fconst (/ pi 2) :dtype (dtype-of x)))))
+(defun !tan (x) (!div (!sin x) (!cos x)))
+
+(defclass ExpNode (Func) nil)
+(defmethod forward ((op ExpNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
+(defmethod backward ((op ExpNode) &optional dout) (values (!mul (car (func-variables op)) dout)))
+(defmethod lower ((op ExpNode) &rest inputs)
+  (with-context
+    (m (%mul (car inputs) (%fconst (/ (log 2)) :dtype (dtype-of (car (func-variables op))))))
+    (a (%exp2 m))))
+
+(defclass LogNode (Func) nil)
+(defmethod forward ((op LogNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
+(defmethod backward ((op LogNode) &optional dout) (values (!mul dout (!recip (car (func-variables op))))))
+(defmethod lower ((op LogNode) &rest inputs)
+  (with-context
+    (a (%log2 (car inputs)))
+    (b (%mul a (%fconst (log 2) :dtype (dtype-of (car (func-variables op))))))))
+
+(defun !exp (x) (forward (make-instance 'ExpNode) x))
+(defun !log (x) (forward (make-instance 'LogNode) x))
+(defun !exp2 (x) (!exp (!mul x (fconst (log 2) :dtype (dtype-of x)))))
+(defun !log2 (x) (!div (!log x) (fconst (log 2) :dtype (dtype-of x))))
+
 (defclass Recip (Func) nil)
 (defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op Recip) &optional dout)

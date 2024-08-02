@@ -47,6 +47,9 @@
    #:%gcd
 
    ;; Unary
+   #:%sin
+   #:%log2
+   #:%exp2
    #:%neg
    #:%recip
    #:%sqrt

@@ -88,6 +88,9 @@
    ;; Unary
    #:!neg #:!recip
    #:!cast #:!signum #:!abs
+   #:!sin #:!cos #:!tan
+   #:!exp #:!exp2
+   #:!log #:!log2
    ;; Logical
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
    ;; TernaryOps

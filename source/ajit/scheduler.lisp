@@ -15,9 +15,10 @@
   (when (null (find (node-id node) (si-nodes scheduled-items) :test #'eql :key #'node-id))
     (push node (si-nodes scheduled-items))))
 
-(defun buffer-intersect-p (a b)
+(defun buffer-intersect-p (a b c)
   "Returns T if two buffers a and b are mergeable."
   (declare (type Buffer a b))
+  (print c)
   ;; either of buffers are scalar -> merge them
   (symbol-macrolet ((->ok (return-from buffer-intersect-p t))
 		    (->ng (return-from buffer-intersect-p nil)))
@@ -42,7 +43,9 @@
 	(return-from recursive-find-group))
       (let* ((node (id->value (avm-graph avm) latest-id))
 	     (children (node-reads node))
-	     (mergeable-list (map 'list #'(lambda (x) (or (numberp x) (buffer-intersect-p latest (id->type x)))) children)))
+	     (mergeable-list
+	       (map 'list
+		    #'(lambda (x) (or (numberp x) (buffer-intersect-p latest (id->type x) (id->value (avm-graph avm) x)))) children)))
 	(setf (rp-seen type-map) (append (rp-seen type-map) (node-writes node)))
 	;; Top_ID <- F(Children[0], Children[1], ...)
 	;;             mergeable[0] mergeable[1], ...
@@ -109,7 +112,7 @@
     (declare (ignore views))
     (or
      (when (every #'numberp shapes) (apply #'max shapes))
-     (when (every #'(lambda (x) (= x 1)) shapes) 1)
+     (when (every #'(lambda (x) (eql x 1)) shapes) 1)
      (car shapes))))
 
 (defun schedule->submodule (sched type-map)
@@ -121,11 +124,11 @@
 	   (loopsizes (map 'list #'(lambda (x) (apply #'buffer->loop-size x args)) (range 0 nrank))))
       (let ((g
 	      (with-context
-		(start-loop (loop for i in index-components for s in loopsizes do (%for i s)))
+		  (start-loop (loop for i in index-components for s in loopsizes do (%for i s)))
 		(_ (dolist (node (si-nodes sched)) (emit node)))
 		(end-loop (dolist (i index-components) (%endfor i))))))
 	(setf (graph-seen g) (schedule-depends-on sched))
-;;	(verify-graph g)
+	;;	(verify-graph g)
 	g))))
 
 (defun schedule-depends-on (sched)
@@ -140,13 +143,16 @@
       (dolist (w (node-writes node))
 	(push w seen)))
     (reverse depends-on)))
-	    
+
+;; polyhedral compilation to determine the parallelization strategy
+;; If we do; compile from avm into ISL, optimizng
 (defun create-schedule (avm)
   (declare (type avm avm))
   (let* ((type-map (run-type-infer avm))
 	 (recursive-top-ids (append (avm-fw-outputs avm) (avm-bw-outputs avm))))
     ;;(uiop:symbol-call (find-package :caten) :print-avm avm)
     ;;(print "++++++")
+    ;; ~ Optimizations ~~
     (%purge-views-from-schedule avm)
     ;;(print "++++++")
     (wmma-rewriter (avm-graph avm) :no-verify t)
@@ -163,6 +169,7 @@
 	(print-schedules scheduled)
 	scheduled
 	(print (map 'list #'(lambda (x) (schedule->submodule x type-map)) scheduled))
+	(map 'list #'(lambda (x) (print (render-c-style (schedule->submodule x type-map)))) scheduled)
 	;; TODO: Pipelining
 	nil))))
 

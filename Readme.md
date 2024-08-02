@@ -40,7 +40,7 @@ or
 ## Testing
 
 ```sh
-$ COVERAGE=1 make test
+$ COVERAGE=1 qlot exec rove caten.asd
 ```
 
 ## The Goal

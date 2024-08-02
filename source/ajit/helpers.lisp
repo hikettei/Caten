@@ -1,8 +1,9 @@
 (in-package :caten/ajit)
 
+(defun gid (n) (intern (format nil "_GID~a" n)))
+
 (defmacro range (from below &optional (by 1))
   `(loop for i from ,from below ,below by ,by collect i))
-(defun gid (n) (intern (format nil "_GID~a" n)))
 
 (defun render-schedule (sched)
   (let* ((graph (apply #'make-graph (si-nodes sched)))
