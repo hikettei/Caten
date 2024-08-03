@@ -11,25 +11,18 @@
 (defcfun ("isl_ctx_alloc" %isl-ctx-alloc) :pointer)
 (defcfun ("isl_ctx_free" %isl-ctx-free) :void (ctx :pointer))
 
-(defstruct isl-ctx ptr objects)
-(defun register-alloc-obj (base-obj object)
-  (when *isl-context*
-    (push (cons base-obj object) (isl-ctx-objects *isl-context*))))
-
+(defstruct isl-ctx ptr)
 (declaim (ftype (function () isl-ctx) isl-ctx-alloc))
 (defun isl-ctx-alloc () (make-isl-ctx :ptr (%isl-ctx-alloc)))
-(defun isl-ctx-free (ctx)
-  (loop for (specializer . ptr) in (isl-ctx-objects ctx)
-	do (free specializer (isl-obj-ptr ptr)))
-  (%isl-ctx-free (isl-ctx-ptr ctx)))
+(defun isl-ctx-free (ctx) (%isl-ctx-free (isl-ctx-ptr ctx)))
 
-(defparameter *isl-context* nil "A place to bind isl-ctx")
-(defmacro with-isl-ctx (&body body)
-  "Binds context"
-  `(let ((*isl-context* (isl-ctx-alloc)))
-     (unwind-protect
-	  (progn ,@body)
-       (isl-ctx-free *isl-context*))))
+(defparameter *isl-context* (isl-ctx-alloc) "A place to bind isl-ctx")
+(defun isl-error ()
+  (error "isl yields an error: ~a"
+	 (cffi:foreign-string-to-lisp
+	  (foreign-funcall "isl_ctx_last_error_msg" :pointer (isl-ctx-ptr *isl-context*) :string)
+	  :encoding :ascii)))
+
 ;; ~~ Defcfun helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmacro define-isl-function (name-cffi return &rest args)
   (let* ((name (intern (replace-string (string-upcase name-cffi) #\_ #\-)))
@@ -43,7 +36,12 @@
 		   collect `(,bind :pointer)
 		 else
 		   collect arg))
-       (defun ,name (,@(map 'list #'car args))
+       (defun ,name (,@(loop for arg in args
+			     for bind = (first arg)
+			     for type = (second arg)
+			     unless (eql type :context)
+			       collect bind))
+	 (assert *isl-context* () "*isl-context* is not initialized.")
 	 (,(if (eql return :pointer)
 	       'wrap-with-pointer
 	       'progn)	 
@@ -54,36 +52,28 @@
 		   if (eql type :pointer)
 		     collect `(isl-obj-ptr ,bind)
 		   else if (eql type :context)
-		      collect `(isl-ctx-ptr ,bind)
+		      collect `(isl-ctx-ptr *isl-context*)
 		   else
 		     collect bind)))))))
-;; ~ CFFI Functions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~ Set ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-isl-function "isl_set_read_from_str" :pointer
   (ctx :context)
   (str :string))
 
+;; ~~ Union Set ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-isl-function "isl_union_set_read_from_str" :pointer
   (ctx :context)
   (str :string))
 
-(define-isl-function "isl_union_map_dump" :void
-  (union-map :pointer))
-
 (define-isl-function "isl_union_set_copy" :pointer
   (set :pointer))
 
-(define-isl-function "isl_union_map_union" :pointer
-  (map1 :pointer)
-  (map2 :pointer))
-  
-(define-isl-function "isl_union_map_read_from_str" :pointer
-  (ctx :context)
-  (x :string))
-
 (define-isl-function "isl_union_set_intersect" :pointer
-  (ctx :context)
   (a :pointer)
   (b :pointer))
+
+(define-isl-function "isl_union_set_to_str" :string
+  (union-set :pointer))
 
 (defcenum :isl-schedule-node-type
   (:isl_schedule_node_error 1)
@@ -108,4 +98,14 @@
   :isl_dim_div
   :isl_dim_all)
 
- 
+(define-isl-function "isl_union_map_dump" :void
+  (union-map :pointer))
+
+
+(define-isl-function "isl_union_map_union" :pointer
+  (map1 :pointer)
+  (map2 :pointer))
+  
+(define-isl-function "isl_union_map_read_from_str" :pointer
+  (ctx :context)
+  (x :string))

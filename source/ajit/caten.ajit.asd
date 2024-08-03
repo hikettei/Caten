@@ -2,7 +2,7 @@
   :description "Abstract JIT System"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("trivia" "alexandria" "cffi")
+  :depends-on ("trivia" "alexandria" "cffi" "trivial-garbage")
   :serial t
   :components
   ((:file "package")

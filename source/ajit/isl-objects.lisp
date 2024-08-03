@@ -1,15 +1,10 @@
 (in-package :caten/ajit)
 ;; Wrappers for ISL Objects
 (deftype integer-t () `(or number symbol))
+(defvar *isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value))
 
 (defgeneric form (object) (:documentation "ISLify the given object"))
-(defgeneric free (specializer object))
 (defgeneric alloc (object))
-
-(defmethod alloc :around ((object t))
-  (let ((allocated-object (call-next-method)))
-    (register-alloc-obj object allocated-object)
-    allocated-object))
 
 (defmacro define-isl-object (print-name isl-read-op isl-free-op docstring ((&rest args) &rest slots) &body body)
   (declare (type string print-name))
@@ -22,11 +17,21 @@
 		   (:constructor ,constructor (,@args)))
 	 ,docstring
 	 ,@slots)
-       ,(when isl-free-op
-	  `(defmethod free ((c ,name) ptr) (foreign-funcall ,isl-free-op :pointer ptr :void)))
        (defmethod form ((c ,name)) ,@body)
-       ,(when isl-read-op
-	  `(defmethod alloc ((c ,name)) (funcall #',isl-read-op *isl-context* (form c))))
+       ,(when (and isl-free-op isl-read-op)
+	  `(defmethod alloc ((c ,name))
+	     (let ((ptr (funcall #',isl-read-op (form c))))
+	       (declare (type isl-obj ptr))
+	       (values
+		ptr
+		(alexandria:ensure-gethash
+                 (cffi:pointer-address (isl-obj-ptr ptr))
+                 *isl-object-table*
+                 (trivial-garbage:finalize
+		  ptr
+                  (lambda ()
+		    (remhash (cffi:pointer-address (isl-obj-ptr ptr)) *isl-object-table*)
+		    (foreign-funcall ,isl-free-op :pointer (isl-obj-ptr ptr) :void))))))))
        (defmethod print-object ((c ,name) stream) (format stream "~a: ~a" ,print-name (form c))))))
 
 (define-isl-object "IConstraint" () ()
@@ -41,10 +46,10 @@
 	  (iconstraint-below c)))
 
 (define-isl-object "IUnion"
-    (lambda (ctx c) (isl-union-set-read-from-str ctx (format nil "{ ~a }" c)))
+    (lambda (c) (isl-union-set-read-from-str (format nil "{ ~a }" c)))
     "isl_union_set_free"
     "Union: [m] where m = alpha * index + beta"
-    ((index &optional (alpha 0) (beta 0))
+    ((index &optional (alpha 1) (beta 0))
      (index index :type integer-t)
      (alpha alpha :type integer-t)
      (beta beta :type integer-t))
@@ -80,9 +85,8 @@
     (format nil "{ ~a : ~a }" (form u) (form cnst))))
 
 (defun intersect (a b)
-  (with-isl-ctx
-    (multiple-value-bind (a b)
-	(values (alloc a) (alloc b))
-      ;;(isl-union-set-intersect ctx a b)
-      
-      )))
+  (print a)
+  (print b)
+  (multiple-value-bind (a b)
+      (values (alloc a) (alloc b))
+    (isl-union-set-to-str (isl-union-set-intersect a b))))
