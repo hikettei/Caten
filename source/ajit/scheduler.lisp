@@ -251,18 +251,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-(defun render-isl-schedule (pipeline &key (depends-on nil))
-  (declare (type hash-table pipeline))
-  (with-output-to-string (out)
-    (format out "[~(~a~)] -> {~%" (render-list depends-on))
-    (maphash
-     #'(lambda (timestamp subgraph)
-	 ;; [TODO] Improve this to gain more chance of operator fusion
-	 ;; This indicates in which order rotate/fuse/unroll/uprank the iteration
-	 (let ((loop-factors (graph->loop-factors subgraph)))
-	   (format out "  T~a[~(~a~)] -> [~(~a~)];~%" timestamp (render-list loop-factors) (render-list loop-factors))))
-     pipeline)
-    (format out "}")))
+;; TODO: gidにTimestampくっつけないといけない気がする
 
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
@@ -303,21 +292,18 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	  ;; Creates the initial problem:
 	  (let* ((domain (render-domain pipeline :depends-on dynamic-shapes))
 		 (read-access (render-access :read pipeline type-map :depends-on dynamic-shapes))
-		 (write-access (render-access :write pipeline type-map :depends-on dynamic-shapes))
-		 (initial-sched (render-isl-schedule pipeline :depends-on dynamic-shapes)))
+		 (write-access (render-access :write pipeline type-map :depends-on dynamic-shapes)))
 	    
 	    (when verbose
 	      (format t "== [Domain] ===========")
-	      (print domain)
+	      (format t "~%~a~%" domain)
 	      (format t "== [Read Accesses] =======")
-	      (print read-access)
+	      (format t "~%~a~%" read-access)
 	      (format t "== [Write Accesses] ======")
-	      (print write-access)
-	      (format t "== [Initial Schedule] ======")
-	      (print initial-sched))
-
-	    (let ((model (optimize-polyhedral domain read-access write-access initial-sched :verbose verbose)))
-	      (print model)
+	      (format t "~%~a~%" write-access))
+	    
+	    (let ((model (optimize-polyhedral domain read-access write-access :verbose verbose)))
+	     ;;(print model)
 	      )))))))
 
 #+(or)(let ((c (caten (!identity (!matmul (make-tensor `(a b) :id 'x) (make-tensor `(b c) :id 'y))))))

@@ -112,7 +112,6 @@
 
 ;; ~~ SCHEDULERS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-isl-function "isl_schedule_from_domain" :pointer
-  (ctx :context)
   (domain :pointer))
 
 (define-isl-function "isl_schedule_sequence" :pointer
