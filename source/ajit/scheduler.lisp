@@ -96,6 +96,15 @@
 	      (fakearray-initial-element out)
 	      out)))))
 
+(defun reveal-buffer (object)
+  (if (buffer-p object)
+      (if (fakearray-p (buffer-value object))
+	  (fakearray-initial-element (buffer-value object))
+	  (buffer-value object))
+      (if (fakearray-p object)
+	  (fakearray-initial-element object)
+	  object)))
+
 (defun schedule->submodule (sched type-map)
   (declare (type scheduled-items sched))
   (flet ((id->buffer (x) (map/type-of type-map x)))
@@ -172,29 +181,39 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      'string
      (butlast
       (loop for nth upfrom 0
-	    for stride in (buffer-stride buffer)
+	    for stride-nth in (buffer-stride buffer)
 	    for view in (buffer-views buffer)
-	    for upfrom = (or (nth 0 view) 0)
-	    for by     = (or (nth 2 view) 1)
+	    for stride = (reveal-buffer stride-nth)
+	    for upfrom = (reveal-buffer (or (nth 0 view) 0))
+	    for by     = (reveal-buffer (or (nth 2 view) 1))
 	    for broadcast-p = (nth 3 view)
 	    for gid = (gid nth)
 	    append
 	    (list
-	     (if broadcast-p
-		 (format nil "~a" upfrom)
-		 (format nil "~a~a~a"
-			 (if (= by 1)
-			     (if (and (numberp stride) (= stride 1))
-				 ""
-				 (format nil "~a*" stride))
-			     (if (and (numberp stride) (= stride 1))
-				 (format nil "~a*" by)
-				 (if (and (numberp stride) (numberp by))
-				     (format nil "~a*" (* stride by))
-				     (format nil "~a*~a*" by stride))))
-			 gid
-			 (if (= upfrom 0) "" (format nil "+~a" upfrom))))
+	     (progn
+	       (assert (typep stride 'integer-t))
+	       (assert (typep upfrom 'integer-t))
+	       (assert (typep by 'integer-t))
+	       (if broadcast-p
+		   (format nil "~a" upfrom)
+		   (format nil "~a~a~a"
+			   (if (= by 1)
+			       (if (and (numberp stride) (= stride 1))
+				   ""
+				   (format nil "~a*" stride))
+			       (if (and (numberp stride) (= stride 1))
+				   (format nil "~a*" by)
+				   (if (and (numberp stride) (numberp by))
+				       (format nil "~a*" (* stride by))
+				       (format nil "~a*~a*" by stride))))
+			   gid
+			   (if (= upfrom 0) "" (format nil "+~a" upfrom)))))
 	     "+"))))))
+
+(defun vm-instruction-p (node)
+  "Add more classes here if you have a certain node that do not desired to be involved."
+  ;; :IR = :FOR :ENDFOR
+  (null (find (node-class node) `(:IR :Buffer))))
 
 (defun render-access (mode pipeline type-map &key (depends-on nil))
   "Render the read/write accessing relation ship in the following notation:
@@ -216,9 +235,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		  (format nil "T~a[~(~a~)]"
 			  timestamp (render-list (graph->loop-factors subgraph)))))
 	   (dolist (node (graph-nodes subgraph))
-	     ;; :IR = :FOR :ENDFOR
-	     ;; Add more classes here if you have a certain node that do not desired to be involved.
-	     (when (null (find (node-class node) `(:IR :Buffer)))
+	     (when (vm-instruction-p node)
 	       ;; When reduction is T, the first argument becomes the dependency
 	       ;; e.g.: Tn[...]: A <- ADD(X, Y, reduction=t) is the equivalent to
 	       ;; Tn[...]: A = (X += Y),  i.e.: Tn[...]: A = (X = X + Y)
@@ -231,6 +248,19 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		 ;; When node has a :reduction
 		 (when (symbolp r)
 		   (format out "  ~a -> ~a[~(~a~)];~%" occur-from r (render-isl-aref r type-map))))))))
+     pipeline)
+    (format out "}")))
+
+(defun render-isl-schedule (pipeline &key (depends-on nil))
+  (declare (type hash-table pipeline))
+  (with-output-to-string (out)
+    (format out "[~(~a~)] -> {~%" (render-list depends-on))
+    (maphash
+     #'(lambda (timestamp subgraph)
+	 ;; [TODO] Improve this to gain more chance of operator fusion
+	 ;; This indicates in which order rotate/fuse/unroll/uprank the iteration
+	 (let ((loop-factors (graph->loop-factors subgraph)))
+	   (format out "  T~a[~(~a~)] -> [~(~a~)];~%" timestamp (render-list loop-factors) (render-list loop-factors))))
      pipeline)
     (format out "}")))
 
@@ -273,7 +303,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	  ;; Creates the initial problem:
 	  (let* ((domain (render-domain pipeline :depends-on dynamic-shapes))
 		 (read-access (render-access :read pipeline type-map :depends-on dynamic-shapes))
-		 (write-access (render-access :write pipeline type-map :depends-on dynamic-shapes)))
+		 (write-access (render-access :write pipeline type-map :depends-on dynamic-shapes))
+		 (initial-sched (render-isl-schedule pipeline :depends-on dynamic-shapes)))
 	    
 	    (when verbose
 	      (format t "== [Domain] ===========")
@@ -282,11 +313,12 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (print read-access)
 	      (format t "== [Write Accesses] ======")
 	      (print write-access)
-	      )
-	    (print (isl-union-set-read-from-str domain))
-	    (print (isl-union-map-read-from-str read-access))
-	    (print (isl-union-map-read-from-str write-access))
-	    ))))))
+	      (format t "== [Initial Schedule] ======")
+	      (print initial-sched))
+
+	    (let ((model (optimize-polyhedral domain read-access write-access initial-sched :verbose verbose)))
+	      (print model)
+	      )))))))
 
 #+(or)(let ((c (caten (!identity (!matmul (make-tensor `(a b) :id 'x) (make-tensor `(b c) :id 'y))))))
 	(time (caten/ajit::create-schedule-grouping c)))

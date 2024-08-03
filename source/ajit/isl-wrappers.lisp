@@ -109,3 +109,41 @@
 (define-isl-function "isl_union_map_read_from_str" :pointer
   (ctx :context)
   (x :string))
+
+;; ~~ SCHEDULERS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(define-isl-function "isl_schedule_from_domain" :pointer
+  (ctx :context)
+  (domain :pointer))
+
+(define-isl-function "isl_schedule_sequence" :pointer
+  (s1 :pointer)
+  (s2 :pointer))
+
+(define-isl-function "isl_schedule_dump" :void (s1 :pointer))
+;; ~~ AST ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(define-isl-function "isl_ast_build_from_context" :pointer (set :pointer))
+(define-isl-function "isl_ast_build_node_from_schedule" :pointer
+  (x :pointer)
+  (y :pointer))
+
+(define-isl-function "isl_ast_node_get_ctx" :pointer
+  (ast :pointer))
+
+(define-isl-function "isl_printer_to_str" :pointer
+  (printer :pointer))
+
+(define-isl-function "isl_printer_set_output_format" :pointer
+  (printer :pointer)
+  (format :int))
+
+(define-isl-function "isl_printer_print_ast_node" :pointer
+  (p :pointer)
+  (ast :pointer))
+
+(define-isl-function "isl_printer_get_str" :string
+  (ast :pointer))
+
+(define-isl-function "isl_schedule_node_n_children"
+  :int
+  (ptr :pointer))
+

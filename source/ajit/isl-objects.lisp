@@ -17,6 +17,7 @@
 		   (:constructor ,constructor (,@args)))
 	 ,docstring
 	 ,@slots)
+       ;; [TODO] Confirm no memory-leak here...
        (defmethod form ((c ,name)) ,@body)
        ,(when (and isl-free-op isl-read-op)
 	  `(defmethod alloc ((c ,name))
