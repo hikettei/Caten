@@ -7,10 +7,10 @@
   :components
   ((:file "package")
    (:file "helpers")
+   (:file "type-relay")
+   (:file "scheduler")
    (:file "isl-wrappers")
    (:file "isl-objects")
-   ;;(:file "type-relay")
-   ;;(:file "scheduler")
    )
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))
 

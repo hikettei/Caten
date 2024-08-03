@@ -1,5 +1,6 @@
 (in-package :caten/ajit)
-
+;; First, Nodes determined to be necessarily Fused (e.g.: non-viewed and same shaped tensors)
+;; are combined into a single SubGraph and converted into an ISL AST.
 (defstruct (Scheduled-Items
 	    (:conc-name si-)
 	    (:constructor make-scheduled-items (top)))
@@ -15,20 +16,23 @@
   (when (null (find (node-id node) (si-nodes scheduled-items) :test #'eql :key #'node-id))
     (push node (si-nodes scheduled-items))))
 
-(defun buffer-intersect-p (a b c)
+(defun buffer-intersect-p (a b)
   "Returns T if two buffers a and b are mergeable."
   (declare (type Buffer a b))
   ;; either of buffers are scalar -> merge them
   (symbol-macrolet ((->ok (return-from buffer-intersect-p t))
 		    (->ng (return-from buffer-intersect-p nil)))
+    ;; Either of args is a scalar -> merge them
     (when (or (= (buffer-nrank a) 0) (= 0 (buffer-nrank b)))->ok)
-    ;; Contiguous buffer -> merge them
-    (when (and (every #'null (buffer-views a)) (every #'null (buffer-views b)))->ok)
-    ;; この下は一旦適当
-    (when (every #'equal (buffer-shape a) (buffer-shape b))->ok)
-    (when (every #'equal (buffer-views a) (buffer-views b))->ok)
-    ->ng
-    ))
+
+    ;; Contiguous and same-shaped buffer -> merge them
+    (when (and
+	   (every #'null (buffer-views a))
+	   (every #'null (buffer-views b))
+	   (equal (buffer-shape a) (buffer-shape b)))
+      ->ok)
+    ;; Otherwise, leave it to out polyhedral compiler.
+    ->ng))
 
 (defun recursive-find-group (avm type-map scheduled-items)
   "Return -> (list scheduled-items ...)"
@@ -44,7 +48,7 @@
 	     (children (node-reads node))
 	     (mergeable-list
 	       (map 'list
-		    #'(lambda (x) (or (numberp x) (buffer-intersect-p latest (id->type x) (id->value (avm-graph avm) x)))) children)))
+		    #'(lambda (x) (or (numberp x) (buffer-intersect-p latest (id->type x)))) children)))
 	(setf (rp-seen type-map) (append (rp-seen type-map) (node-writes node)))
 	;; Top_ID <- F(Children[0], Children[1], ...)
 	;;             mergeable[0] mergeable[1], ...
@@ -135,7 +139,6 @@
 		(_ (dolist (node (si-nodes sched)) (emit node)))
 		(end-loop (dolist (i index-components) (%endfor i))))))
 	(setf (graph-seen g) (schedule-depends-on sched))
-	;;	(verify-graph g)
 	g))))
 
 (defun schedule-depends-on (sched)
@@ -177,9 +180,7 @@
 	scheduled
 	(print "++ Polyhedral ++")
 	(let ((graphs (map 'list #'(lambda (x) (schedule->submodule x type-map)) scheduled)))
-	  (dolist (g graphs)
-	    (run-poly g type-map)))
-	;;(map 'list #'(lambda (x) (print (render-c-style (schedule->submodule x type-map)))) scheduled)
+	  (print graphs))
 	;; TODO: Pipelining
 	nil))))
 
