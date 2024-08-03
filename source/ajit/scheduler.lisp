@@ -18,7 +18,6 @@
 (defun buffer-intersect-p (a b c)
   "Returns T if two buffers a and b are mergeable."
   (declare (type Buffer a b))
-  (print c)
   ;; either of buffers are scalar -> merge them
   (symbol-macrolet ((->ok (return-from buffer-intersect-p t))
 		    (->ng (return-from buffer-intersect-p nil)))
@@ -110,10 +109,18 @@
   (let* ((shapes (map 'list #'(lambda (x) (nth dim (buffer-shape x))) buffers))
 	 (views  (map 'list #'(lambda (x) (nth dim (buffer-views x)))  buffers)))
     (declare (ignore views))
-    (or
-     (when (every #'numberp shapes) (apply #'max shapes))
-     (when (every #'(lambda (x) (eql x 1)) shapes) 1)
-     (car shapes))))
+    (let ((out
+	    (or
+	     (when (every #'numberp shapes) (apply #'max shapes))
+	     (when (every #'(lambda (x) (eql x 1)) shapes) 1)
+	     (car shapes))))
+      (if (buffer-p out)
+	  (if (fakearray-p (buffer-value out))
+	      (fakearray-initial-element (buffer-value out))
+	      (buffer-value out))
+	  (if (fakearray-p out)
+	      (fakearray-initial-element out)
+	      out)))))
 
 (defun schedule->submodule (sched type-map)
   (declare (type scheduled-items sched))
@@ -124,7 +131,7 @@
 	   (loopsizes (map 'list #'(lambda (x) (apply #'buffer->loop-size x args)) (range 0 nrank))))
       (let ((g
 	      (with-context
-		  (start-loop (loop for i in index-components for s in loopsizes do (%for i s)))
+		(start-loop (loop for i in index-components for s in loopsizes do (%for i s)))
 		(_ (dolist (node (si-nodes sched)) (emit node)))
 		(end-loop (dolist (i index-components) (%endfor i))))))
 	(setf (graph-seen g) (schedule-depends-on sched))
@@ -168,8 +175,11 @@
 	(print "++ Scheduled ++")
 	(print-schedules scheduled)
 	scheduled
-	(print (map 'list #'(lambda (x) (schedule->submodule x type-map)) scheduled))
-	(map 'list #'(lambda (x) (print (render-c-style (schedule->submodule x type-map)))) scheduled)
+	(print "++ Polyhedral ++")
+	(let ((graphs (map 'list #'(lambda (x) (schedule->submodule x type-map)) scheduled)))
+	  (dolist (g graphs)
+	    (run-poly g type-map)))
+	;;(map 'list #'(lambda (x) (print (render-c-style (schedule->submodule x type-map)))) scheduled)
 	;; TODO: Pipelining
 	nil))))
 

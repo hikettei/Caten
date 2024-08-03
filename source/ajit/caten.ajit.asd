@@ -2,13 +2,15 @@
   :description "Abstract JIT System"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("trivia" "alexandria" "cl-isl")
+  :depends-on ("trivia" "alexandria" "cffi")
   :serial t
   :components
   ((:file "package")
    (:file "helpers")
-   (:file "type-relay")
-   (:file "scheduler")
+   (:file "isl-wrappers")
+   (:file "isl-objects")
+   ;;(:file "type-relay")
+   ;;(:file "scheduler")
    )
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))
 

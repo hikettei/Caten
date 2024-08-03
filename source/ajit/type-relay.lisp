@@ -1,7 +1,5 @@
 (in-package :caten/ajit)
-;;
-;;
-;;
+
 (defparameter *type-reporter* nil)
 (defstruct (Type-Reporter
 	    (:conc-name rp-)
