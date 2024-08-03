@@ -91,5 +91,24 @@
 
     (multiple-value-bind (raw-deps waw-deps war-deps)
 	(create-dependency-graph schedule read-deps write-deps)
+      (flet ((dump (x)
+	       (foreign-funcall "isl_union_map_dump" :pointer (isl-obj-ptr x) :void)))
+	(when verbose
+	  (dump raw-deps) (dump waw-deps) (dump war-deps)))
+      
+      (macrolet ((set-option (name level)
+		   `(foreign-funcall ,name
+				     :pointer (isl-ctx-ptr *isl-context*)
+				     :int ,level
+				     :void)))
+	(set-option "isl_options_set_schedule_maximize_band_depth" 1)
+	(set-option "isl_options_set_schedule_whole_component" 1)
+	(set-option "isl_options_set_schedule_treat_coalescing" 1)
+	(set-option "isl_options_set_tile_scale_tile_loops" 1)
+	;; (set-option "isl_options_set_schedule_split_scaled" 1)
+	(set-option "isl_options_set_schedule_serialize_sccs" 1)
+	;; More ...
+	)
+      
       )))
 
