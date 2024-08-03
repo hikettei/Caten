@@ -110,6 +110,9 @@
   (ctx :context)
   (x :string))
 
+(define-isl-function "isl_union_map_copy" :pointer
+  (map :pointer))
+
 (define-isl-function "isl_union_access_info_from_sink" :pointer
   (map :pointer))
 
@@ -146,6 +149,17 @@
 (define-isl-function "isl_multi_union_pw_aff_read_from_str" :pointer
   (ctx :pointer)
   (x   :string))
+
+(define-isl-function "isl_schedule_constraints_set_validity" :pointer
+  (schedule :pointer)
+  (map :pointer))
+
+(define-isl-function "isl_schedule_constraints_set_proximity" :pointer
+  (schedule :pointer)
+  (map :pointer))
+
+(define-isl-function "isl_schedule_constraints_on_domain" :pointer
+  (schedule :pointer))
 ;; ~~ AST ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-isl-function "isl_ast_build_from_context" :pointer (set :pointer))
 (define-isl-function "isl_ast_build_node_from_schedule" :pointer

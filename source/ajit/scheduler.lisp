@@ -164,11 +164,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			  (progn
 			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
 			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node)))))))
-	   (format out "  T~a[~(~a~)]" timestamp (render-list loop-factors))
-	   (when constraints
+	   (when loop-factors
+	     (format out "  T~a[~(~a~)]" timestamp (render-list loop-factors))	     
 	     (format out " : ")
-	     (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and "))))))
-	   (format out ";~%")))
+	     (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
+	     (format out ";~%"))))
      pipeline)
     (format out "}")))
 
@@ -213,7 +213,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 (defun vm-instruction-p (node)
   "Add more classes here if you have a certain node that do not desired to be involved."
   ;; :IR = :FOR :ENDFOR
-  (null (find (node-class node) `(:IR :Buffer))))
+  (or
+   (null (find (node-class node) `(:IR :Buffer)))
+   (eql (node-type node) :Load)))
 
 (defun render-access (mode pipeline type-map &key (depends-on nil))
   "Render the read/write accessing relation ship in the following notation:
@@ -243,20 +245,41 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (when (getattr node :reduction)
 		 (let ((reduce-to (car (node-reads node))))
 		   (when (symbolp reduce-to)
-		     (let ((aref (if (vm-instruction-p node)
-				     (render-isl-aref reduce-to type-map)
-				     "")))
-		       (format out "  ~a -> ~a[~(~a~)];~%" occur-from reduce-to aref)))))
+		     (when (vm-instruction-p node)
+		       (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref reduce-to type-map))))))
 	       (dolist (r (remove-duplicates (funcall (if (eql mode :read) #'node-reads #'node-writes) node)))
 		 ;; When node has a :reduction
 		 (when (symbolp r)
-		   (let ((aref (if (vm-instruction-p node)
-				   (render-isl-aref r type-map)
-				   "")))
-		     (format out "  ~a -> ~a[~(~a~)];~%" occur-from r aref))))))))
+		   (when (vm-instruction-p node)
+		     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r (render-isl-aref r type-map)))))))))
      pipeline)
     (format out "}")))
 
+(defun isl-initial-schedule (pipeline &key depends-on)
+  (let ((schedule :nothing))
+    (maphash
+     #'(lambda (ts graph)
+	 (let* ((loop-factors (graph->loop-factors graph))
+		(constraints
+		  (loop for node in (graph-nodes graph)
+			if (eql (node-type node) :FOR)
+			  collect
+			  (progn
+			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
+			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
+		(dom (isl-union-set-read-from-str
+		      (format nil
+			      "[~(~a~)] -> { T~a[~(~a~)] : ~a }"
+			      (render-list depends-on)
+			      ts
+			      (render-list loop-factors)
+			      (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))))
+		(sched (isl-schedule-from-domain dom)))
+	   (if (eql schedule :nothing)
+	       (setf schedule sched)
+	       (setf schedule (isl-schedule-sequence schedule sched)))))
+     pipeline)
+    schedule))
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
@@ -299,7 +322,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	  ;; Creates the initial problem:
 	  (let* ((domain (render-domain pipeline :depends-on dynamic-shapes))
 		 (read-access (render-access :read pipeline type-map :depends-on dynamic-shapes))
-		 (write-access (render-access :write pipeline type-map :depends-on dynamic-shapes)))
+		 (write-access (render-access :write pipeline type-map :depends-on dynamic-shapes))
+		 (schedule (isl-initial-schedule pipeline :depends-on dynamic-shapes)));;(render-domain pipeline :depends-on dynamic-shapes)))
 	    
 	    (when verbose
 	      (format t "== [Domain] ===========")
@@ -307,10 +331,12 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (format t "== [Read Accesses] =======")
 	      (format t "~%~a~%" read-access)
 	      (format t "== [Write Accesses] ======")
-	      (format t "~%~a~%" write-access))
+	      (format t "~%~a~%" write-access)
+	      (format t "== [Initial Scheduling domain] ======")
+	      (format t "~%~a~%" schedule))
 	    
-	    (let ((model (optimize-polyhedral domain read-access write-access :verbose verbose)))
-	     ;;(print model)
+	    (let ((model (optimize-polyhedral domain read-access write-access schedule :verbose verbose)))
+	      (print model)
 	      )))))))
 
 #+(or)(let ((c (caten (!identity (!matmul (make-tensor `(a b) :id 'x) (make-tensor `(b c) :id 'y))))))
