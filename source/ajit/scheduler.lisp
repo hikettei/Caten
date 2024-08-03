@@ -1,6 +1,7 @@
 (in-package :caten/ajit)
 ;; First, Nodes determined to be necessarily Fused (e.g.: non-viewed and same shaped tensors)
 ;; are combined into a single SubGraph and converted into an ISL AST.
+;; Refenreces: https://pliss2019.github.io/albert_cohen_slides.pdf
 (defstruct (Scheduled-Items
 	    (:conc-name si-)
 	    (:constructor make-scheduled-items (top)))
@@ -123,7 +124,13 @@
 	(push w seen)))
     (reverse depends-on)))
 
-(defun render-domain (pipeline &key (depends-on nil) &aux (n-pipeline (length (hash-table-keys pipeline))))
+(defun graph->loop-factors (graph)
+  (remove-duplicates
+   (loop for node in (graph-nodes graph)
+	 if (eql (node-type node) :FOR)
+	   collect (car (node-writes node)))))
+
+(defun render-domain (pipeline &key (depends-on nil))
   "Render the domain notation from the scheduled subgraphs
 ```
 Domain [depends-on] -> {
@@ -140,11 +147,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
     (maphash
      #'(lambda (timestamp subgraph)
-	 (let* ((loop-factors
-		  (remove-duplicates
-		   (loop for node in (graph-nodes subgraph)
-			 if (eql (node-type node) :FOR)
-			   collect (car (node-writes node)))))
+	 (let* ((loop-factors (graph->loop-factors subgraph))
 		(constraints
 		  (loop for node in (graph-nodes subgraph)
 			if (eql (node-type node) :FOR)
@@ -156,9 +159,77 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (when constraints
 	     (format out " : ")
 	     (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and "))))))
-	   (if (= timestamp (1- n-pipeline))
-	       (format out "~%")
-	       (format out ";~%"))))
+	   (format out ";~%")))
+     pipeline)
+    (format out "}")))
+
+(defun render-isl-aref (id type-map)
+  "A[2x, y] -> A[2x*stride1 + y*stride2]"
+  (declare (type symbol id))
+  (let ((buffer (map/type-of type-map id)))
+    (apply
+     #'concatenate
+     'string
+     (butlast
+      (loop for nth upfrom 0
+	    for stride in (buffer-stride buffer)
+	    for view in (buffer-views buffer)
+	    for upfrom = (or (nth 0 view) 0)
+	    for by     = (or (nth 2 view) 1)
+	    for broadcast-p = (nth 3 view)
+	    for gid = (gid nth)
+	    append
+	    (list
+	     (if broadcast-p
+		 (format nil "~a" upfrom)
+		 (format nil "~a~a~a"
+			 (if (= by 1)
+			     (if (and (numberp stride) (= stride 1))
+				 ""
+				 (format nil "~a*" stride))
+			     (if (and (numberp stride) (= stride 1))
+				 (format nil "~a*" by)
+				 (if (and (numberp stride) (numberp by))
+				     (format nil "~a*" (* stride by))
+				     (format nil "~a*~a*" by stride))))
+			 gid
+			 (if (= upfrom 0) "" (format nil "+~a" upfrom))))
+	     "+"))))))
+
+(defun render-access (mode pipeline type-map &key (depends-on nil))
+  "Render the read/write accessing relation ship in the following notation:
+```
+[depends-on] -> {
+    Sched_0_ID[read_index] -> Tensor_ID_N[strided_access_idx];
+        ...
+}
+```
+"
+  (declare (type list depends-on)
+	   (type (member :read :write) mode)
+	   (type hash-table pipeline))
+  (with-output-to-string (out)
+    (format out "[~(~a~)] -> {~%" (render-list depends-on))
+    (maphash
+     #'(lambda (timestamp subgraph)
+	 (let* ((occur-from
+		  (format nil "T~a[~(~a~)]"
+			  timestamp (render-list (graph->loop-factors subgraph)))))
+	   (dolist (node (graph-nodes subgraph))
+	     ;; :IR = :FOR :ENDFOR
+	     ;; Add more classes here if you have a certain node that do not desired to be involved.
+	     (when (null (find (node-class node) `(:IR :Buffer)))
+	       ;; When reduction is T, the first argument becomes the dependency
+	       ;; e.g.: A <- ADD(X, Y, reduction=t) is the equivalent to
+	       ;; A = (X += Y),  i.e.: A = (X = X + Y)
+	       ;; Here, X depends on X.
+	       (when (getattr node :reduction)
+		 
+		 )
+	       (dolist (r (remove-duplicates (funcall (if (eql mode :read) #'node-reads #'node-writes) node)))
+		 ;; When node has a :reduction
+		 (when (symbolp r)
+		   (format out "  ~a -> ~a[~(~a~)];~%" occur-from r (render-isl-aref r type-map))))))))
      pipeline)
     (format out "}")))
 
@@ -198,9 +269,22 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		do (setf (gethash nth pipeline) g))
 	  ;; [TODO]: When graph is fused to single?
 	  ;; -> SKip the polyhedral compilation
-	  (let ((domain (render-domain pipeline :depends-on dynamic-shapes)))
-	    (print domain)
+	  ;; Creates the initial problem:
+	  (let* ((domain (render-domain pipeline :depends-on dynamic-shapes))
+		 (read-access (render-access :read pipeline type-map :depends-on dynamic-shapes))
+		 (write-access (render-access :write pipeline type-map :depends-on dynamic-shapes)))
+	    
+	    (when verbose
+	      (format t "== [Domain] ===========")
+	      (print domain)
+	      (format t "== [Read Accesses] =======")
+	      (print read-access)
+	      (format t "== [Write Accesses] ======")
+	      (print write-access)
+	      )
 	    (print (isl-union-set-read-from-str domain))
+	    (print (isl-union-map-read-from-str read-access))
+	    (print (isl-union-map-read-from-str write-access))
 	    ))))))
 
 #+(or)(let ((c (caten (!identity (!matmul (make-tensor `(a b) :id 'x) (make-tensor `(b c) :id 'y))))))

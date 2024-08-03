@@ -26,7 +26,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defclass IdentityNode (Func) nil)
 (defmethod forward ((op IdentityNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op IdentityNode) &optional prev-grad) (values prev-grad))
-(defmethod lower ((op IdentityNode) &rest inputs) (with-context (_ (%store (car inputs) (car inputs)))))
+(defmethod lower ((op IdentityNode) &rest inputs) (with-context (_ (%store (car inputs) (car inputs) :reduction t))))
 (defun !identity (tensor) (forward (make-instance 'IdentityNode) tensor))
 
 (defclass Allocate (Func)

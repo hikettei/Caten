@@ -75,10 +75,10 @@ If i is a tensor, %load fills the visible area of i with value."
 	      (render-list (subseq (node-reads node) nrank))		  
 	      (render-attrs node)))))
 
-(defun %store (x y &key (id (gensym "LID")))
+(defun %store (x y &key (id (gensym "LID")) (reduction nil))
   "Equivalent to x = y;"
   (declare (type node x y))
-  (emit (make-node :Buffer :Store (list id) (list (node->id x) (node->id y)))))
+  (emit (make-node :Buffer :Store (list id) (list (node->id x) (node->id y)) :reduction reduction)))
 
 (defun %uconst (value &key (dtype *default-uint*))
   "Creates an unsigned integer"
