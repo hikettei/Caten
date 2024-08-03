@@ -220,12 +220,13 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	     ;; Add more classes here if you have a certain node that do not desired to be involved.
 	     (when (null (find (node-class node) `(:IR :Buffer)))
 	       ;; When reduction is T, the first argument becomes the dependency
-	       ;; e.g.: A <- ADD(X, Y, reduction=t) is the equivalent to
-	       ;; A = (X += Y),  i.e.: A = (X = X + Y)
+	       ;; e.g.: Tn[...]: A <- ADD(X, Y, reduction=t) is the equivalent to
+	       ;; Tn[...]: A = (X += Y),  i.e.: Tn[...]: A = (X = X + Y)
 	       ;; Here, X depends on X.
 	       (when (getattr node :reduction)
-		 
-		 )
+		 (let ((reduce-to (car (node-reads node))))
+		   (when (symbolp reduce-to)
+		     (format out "  ~a -> ~a[~(~a~)];~%" occur-from reduce-to (render-isl-aref reduce-to type-map)))))
 	       (dolist (r (remove-duplicates (funcall (if (eql mode :read) #'node-reads #'node-writes) node)))
 		 ;; When node has a :reduction
 		 (when (symbolp r)
