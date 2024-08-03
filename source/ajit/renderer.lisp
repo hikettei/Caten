@@ -43,8 +43,6 @@
 
 ;; WIP
 
-(defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
-
 (defun graph->domain (graph)
   (declare (type graph graph))
   (with-output-to-string (out)

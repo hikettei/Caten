@@ -42,8 +42,7 @@
   (flet ((id->type (x) (map/type-of type-map x))
 	 (explore (x) (when x (recursive-find-group avm type-map x))))
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
-      (when (find latest-id (rp-seen type-map))
-	(return-from recursive-find-group))
+      (when (find latest-id (rp-seen type-map)) (return-from recursive-find-group))
       (let* ((node (id->value (avm-graph avm) latest-id))
 	     (children (node-reads node))
 	     (mergeable-list
@@ -73,36 +72,6 @@
 	      (append
 	       (list scheduled-items)
 	       (loop for n in (map 'list #'explore new-groups) if n collect n))))))))
-
-(defun %purge-views-from-schedule (avm)
-  (declare (type avm avm))
-  (let ((rewrite-map
-	  (loop for node in (graph-nodes (avm-graph avm))
-		if (eql (node-type node) :View)
-		  collect (cons (car (node-reads node)) (car (node-writes node))))))
-    (labels ((->find (id) (find id rewrite-map :key #'car :test #'eql))
-	     ;; todo: optimize
-	     (->aft (id &aux (last id))
-	       (labels ((f (x &aux (next (->find x))) (if next (progn (setf last (cdr next)) (f (cdr next))) nil)))
-		 (f last))
-	       last))
-      (setf (graph-nodes (avm-graph avm))
-	    (loop for n in (graph-nodes (avm-graph avm))
-		  unless (eql (node-type n) :View)
-		    collect
-		    (progn
-		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n)))
-		      n))))))
-
-;; WMMA (c a b) <=> c = c + a * b (:reduction)
-(defsimplifier
-    (wmma-rewriter :speed 0)
-    ((:Add ((:Mul (a b)) c) :reduction t) -> (:WMMA (c a b) :reduction t))
-    ((:Add (c (:Mul (a b))) :reduction t) -> (:WMMA (c a b) :reduction t)))
-
-(defsimplifier
-    (contiguous-after-wmma :speed 0)
-    ((:WMMA (c (:Move (_ a)) (:Move (_ b))) :reduction reduction) -> (:WMMA (c a b) :reduction reduction)))
 
 (defun %for (gid size)
   (declare (type (or number symbol) size))
@@ -154,35 +123,85 @@
 	(push w seen)))
     (reverse depends-on)))
 
+(defun render-domain (pipeline &key (depends-on nil) &aux (n-pipeline (length (hash-table-keys pipeline))))
+  "Render the domain notation from the scheduled subgraphs
+```
+Domain [depends-on] -> {
+  Sched_0_ID(loop_factors_0) : IConstraint_0;
+  Sched_1_ID(loop_factors_1) : IConstraint_1;
+                 ...
+}
+```
+Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Subgrpah[Graph]}"
+  (declare (type list depends-on)
+	   (type hash-table pipeline))
+  (with-output-to-string (out)
+    ;; renders depends-on
+    (format out "[~(~a~)] -> {~%" (render-list depends-on))
+    (maphash
+     #'(lambda (timestamp subgraph)
+	 (let* ((loop-factors
+		  (remove-duplicates
+		   (loop for node in (graph-nodes subgraph)
+			 if (eql (node-type node) :FOR)
+			   collect (car (node-writes node)))))
+		(constraints
+		  (loop for node in (graph-nodes subgraph)
+			if (eql (node-type node) :FOR)
+			  collect
+			  (progn
+			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
+			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node)))))))
+	   (format out "  T~a[~(~a~)]" timestamp (render-list loop-factors))
+	   (when constraints
+	     (format out " : ")
+	     (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and "))))))
+	   (if (= timestamp (1- n-pipeline))
+	       (format out "~%")
+	       (format out ";~%"))))
+     pipeline)
+    (format out "}")))
+
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
-(defun create-schedule (avm)
-  (declare (type avm avm))
+;; This is the toplevel of all optimization stuff
+(defun create-schedule-grouping (avm &key (verbose nil))
+  ""
+  (declare (type avm avm)
+	   (type boolean verbose))
   (let* ((type-map (run-type-infer avm))
-	 (recursive-top-ids (append (avm-fw-outputs avm) (avm-bw-outputs avm))))
-    ;;(uiop:symbol-call (find-package :caten) :print-avm avm)
-    ;;(print "++++++")
+	 (recursive-top-ids (append (avm-fw-outputs avm) (avm-bw-outputs avm)))
+	 (dynamic-shapes (avm-gather-args avm)))
+    (when verbose
+      (format t "== [Initial Graph] ==~%")
+      (uiop:symbol-call (find-package :caten) :print-avm avm))
     ;; ~ Optimizations ~~
-    (%purge-views-from-schedule avm)
-    ;;(print "++++++")
-    (wmma-rewriter (avm-graph avm) :no-verify t)
-    (contiguous-after-wmma (avm-graph avm) :no-verify t)
-    ;;(uiop:symbol-call (find-package :caten) :print-avm avm)
-    ;;(print "++++++")
+    (apply-jit-specific-simplifiers avm)
+    (when verbose
+      (format t "== [Graph after applying jit-specific simplifiers] ==~%")
+      (uiop:symbol-call (find-package :caten) :print-avm avm))
     (flet ((id->buffer (id)
 	     (assert (symbolp id) () "Graph should not return a number!")
 	     (list (id->value (avm-graph avm) id) (map/type-of type-map id) id)))
       (let* ((schedules (map 'list (compose #'make-scheduled-items #'id->buffer) recursive-top-ids))
 	     (scheduled (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group avm type-map x)) schedules)))))
 	;; verify-graph assets no duplication in branches from recursive-top-ids
-	(print "++ Scheduled ++")
-	(print-schedules scheduled)
-	scheduled
-	(print "++ Polyhedral ++")
-	(let ((graphs (map 'list #'(lambda (x) (schedule->submodule x type-map)) scheduled)))
-	  (print graphs))
-	;; TODO: Pipelining
-	nil))))
+	(when verbose
+	  (format t "== [Graph after applying an initial scheduler process] ==~%")
+	  (print-schedules scheduled))
+	
+	(let* ((graphs (map 'list #'(lambda (x) (schedule->submodule x type-map)) scheduled))
+	       (pipeline (make-hash-table)))
+	  ;; Pipeline: T_ID -> Submodule_Graph
+	  (loop for nth upfrom 0
+		for g in graphs
+		do (setf (gethash nth pipeline) g))
+	  ;; [TODO]: When graph is fused to single?
+	  ;; -> SKip the polyhedral compilation
+	  (let ((domain (render-domain pipeline :depends-on dynamic-shapes)))
+	    (print domain)
+	    (print (isl-union-set-read-from-str domain))
+	    ))))))
 
 #+(or)(let ((c (caten (!identity (!matmul (make-tensor `(a b) :id 'x) (make-tensor `(b c) :id 'y))))))
-	(time (caten/ajit::create-schedule c)))
+	(time (caten/ajit::create-schedule-grouping c)))

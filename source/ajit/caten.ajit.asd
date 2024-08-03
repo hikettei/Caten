@@ -7,6 +7,7 @@
   :components
   ((:file "package")
    (:file "helpers")
+   (:file "simplifiers")
    (:file "type-relay")
    (:file "scheduler")
    (:file "isl-wrappers")
