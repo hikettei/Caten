@@ -10,8 +10,64 @@
 	 (p     (isl-printer-set-output-format p 4)) ;; 4 indicates C
 	 (q     (isl-printer-print-ast-node p ast))
 	 (str   (isl-printer-get-str q)))
-    (foreign-funcall "isl_schedule_free" :pointer cp :void)
+    ;; (foreign-funcall "isl_schedule_free" :pointer cp :void)
     str))
+
+(defun create-dependency-graph (schedule may-read must-write &aux (copied1) (copied2))
+  (flet ((isl-schedule-copy (x)
+	   (let ((val (foreign-funcall "isl_schedule_copy" :pointer (isl-obj-ptr x) :pointer)))
+	     (push val copied1)
+	     (make-isl-obj :ptr val)))
+	 (isl-union-map-copy (x)
+	   (let ((val (foreign-funcall "isl_union_map_copy" :pointer (isl-obj-ptr x) :pointer)))
+	     (push val copied2)
+	     (make-isl-obj :ptr val))))
+    (let* (;; 1. RAW (Read After Write), a=1 then b=a
+	   (access
+	     (isl-union-access-info-from-sink
+	      (isl-union-map-copy may-read)))
+	   (access
+	     (isl-union-access-info-set-must-source
+	      access
+	      (isl-union-map-copy must-write)))
+	   (access
+	     (isl-union-access-info-set-schedule
+	      access
+	      (isl-schedule-copy schedule)))
+	   (flow
+	     (isl-union-access-info-compute-flow
+	      access))
+	   (raw-deps
+	     (isl-union-flow-get-must-dependence
+	      flow))
+	   ;; 2. WAR (Write After Read) deps
+	   (access
+	     (isl-union-access-info-from-sink
+	      (isl-union-map-copy must-write)))
+	   (access
+	     (isl-union-access-info-set-must-source
+	      access
+	      must-write))
+	   (access
+	     (isl-union-access-info-set-may-source
+	      access
+	      may-read))
+	   (access
+	     (isl-union-access-info-set-schedule
+	      access
+	      schedule))
+	   (flow
+	     (isl-union-access-info-compute-flow
+	      access))
+	   (waw-deps
+	     (isl-union-flow-get-must-dependence
+	      flow))
+	   (war-deps
+	     (isl-union-flow-get-may-dependence
+	      flow)))
+      ;;(dolist (c copied1) (foreign-funcall "isl_schedule_free" :pointer c :void))
+      ;;(dolist (c copied2) (foreign-funcall "isl_union_map_free" :pointer c :void))
+      (values raw-deps waw-deps war-deps))))
 
 (defun optimize-polyhedral (domain read-deps write-deps &key (verbose nil))
   "Run the polyhedral model to minimize the following goal:
@@ -32,6 +88,8 @@
       (isl-schedule-dump schedule)
       (format t "== [Initial Schedule in Clang] =====~%")
       (format t "~%~a~%" (debug/render-c schedule)))
-    
-    ))
+
+    (multiple-value-bind (raw-deps waw-deps war-deps)
+	(create-dependency-graph schedule read-deps write-deps)
+      )))
 

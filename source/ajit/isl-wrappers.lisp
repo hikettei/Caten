@@ -110,6 +110,22 @@
   (ctx :context)
   (x :string))
 
+(define-isl-function "isl_union_access_info_from_sink" :pointer
+  (map :pointer))
+
+(define-isl-function "isl_union_access_info_set_must_source" :pointer
+  (access :pointer)
+  (map :pointer))
+
+(define-isl-function "isl_union_access_info_set_schedule" :pointer
+  (access :pointer)
+  (map :pointer))
+
+(define-isl-function "isl_union_access_info_compute_flow" :pointer
+  (access :pointer))
+
+(define-isl-function "isl_union_flow_get_must_dependence" :pointer
+  (access :pointer))
 ;; ~~ SCHEDULERS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-isl-function "isl_schedule_from_domain" :pointer
   (domain :pointer))
@@ -119,6 +135,17 @@
   (s2 :pointer))
 
 (define-isl-function "isl_schedule_dump" :void (s1 :pointer))
+
+(define-isl-function "isl_union_access_info_set_may_source" :pointer
+  (access   :pointer)
+  (may-read :pointer))
+
+(define-isl-function "isl_union_flow_get_may_dependence" :pointer
+  (flow :pointer))
+
+(define-isl-function "isl_multi_union_pw_aff_read_from_str" :pointer
+  (ctx :pointer)
+  (x   :string))
 ;; ~~ AST ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-isl-function "isl_ast_build_from_context" :pointer (set :pointer))
 (define-isl-function "isl_ast_build_node_from_schedule" :pointer
@@ -145,4 +172,3 @@
 (define-isl-function "isl_schedule_node_n_children"
   :int
   (ptr :pointer))
-

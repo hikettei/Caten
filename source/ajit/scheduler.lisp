@@ -235,7 +235,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		  (format nil "T~a[~(~a~)]"
 			  timestamp (render-list (graph->loop-factors subgraph)))))
 	   (dolist (node (graph-nodes subgraph))
-	     (when (vm-instruction-p node)
+	     (when (not (eql (node-class node) :IR))
 	       ;; When reduction is T, the first argument becomes the dependency
 	       ;; e.g.: Tn[...]: A <- ADD(X, Y, reduction=t) is the equivalent to
 	       ;; Tn[...]: A = (X += Y),  i.e.: Tn[...]: A = (X = X + Y)
@@ -243,15 +243,19 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (when (getattr node :reduction)
 		 (let ((reduce-to (car (node-reads node))))
 		   (when (symbolp reduce-to)
-		     (format out "  ~a -> ~a[~(~a~)];~%" occur-from reduce-to (render-isl-aref reduce-to type-map)))))
+		     (let ((aref (if (vm-instruction-p node)
+				     (render-isl-aref reduce-to type-map)
+				     "")))
+		       (format out "  ~a -> ~a[~(~a~)];~%" occur-from reduce-to aref)))))
 	       (dolist (r (remove-duplicates (funcall (if (eql mode :read) #'node-reads #'node-writes) node)))
 		 ;; When node has a :reduction
 		 (when (symbolp r)
-		   (format out "  ~a -> ~a[~(~a~)];~%" occur-from r (render-isl-aref r type-map))))))))
+		   (let ((aref (if (vm-instruction-p node)
+				   (render-isl-aref r type-map)
+				   "")))
+		     (format out "  ~a -> ~a[~(~a~)];~%" occur-from r aref))))))))
      pipeline)
     (format out "}")))
-
-;; TODO: gidにTimestampくっつけないといけない気がする
 
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
@@ -277,6 +281,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (let* ((schedules (map 'list (compose #'make-scheduled-items #'id->buffer) recursive-top-ids))
 	     (scheduled (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group avm type-map x)) schedules)))))
 	;; verify-graph assets no duplication in branches from recursive-top-ids
+	(loop for nth upfrom 0
+	      for s in scheduled
+	      do (setf (si-name s) (intern (format nil "T~a" nth) "KEYWORD")))
 	(when verbose
 	  (format t "== [Graph after applying an initial scheduler process] ==~%")
 	  (print-schedules scheduled))
