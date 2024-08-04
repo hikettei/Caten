@@ -29,3 +29,14 @@
     (loop for a in args
 	  unless (find a `(t nil))
 	    collect a)))
+
+(defun reveal-buffer (object)
+  "Extracts the initial-value from the nested buffer/fake-array"
+  (declare (type (or buffer fakearray integer-t) object))
+  (if (buffer-p object)
+      (if (fakearray-p (buffer-value object))
+	  (fakearray-initial-element (buffer-value object))
+	  (buffer-value object))
+      (if (fakearray-p object)
+	  (fakearray-initial-element object)
+	  object)))

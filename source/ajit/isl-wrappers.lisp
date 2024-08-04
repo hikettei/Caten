@@ -1,10 +1,4 @@
 (in-package :caten/ajit)
-
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;;  A Set of CFFI Bindings for ISL and utils for it.
-;; (Which complements the lack of functions in the cl-isl binding)
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 ;; ~ CFFI Pointer Wrappers  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct isl-obj ptr)
 (defun wrap-with-pointer (ptr) (make-isl-obj :ptr ptr))

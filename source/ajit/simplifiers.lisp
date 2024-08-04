@@ -1,5 +1,8 @@
 (in-package :caten/ajit)
-;; JIT-specific simplifiers
+;; Here, applying a jit-specific optimization to the avm.graph.
+;; E.g.: we can purge the view nodes since we already have a
+;; type information at `type-relay.lisp`.
+;;
 (defun %purge-views-from-schedule (avm)
   "Remove :VIEW from avm.graph"
   (declare (type avm avm))

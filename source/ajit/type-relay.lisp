@@ -1,5 +1,7 @@
 (in-package :caten/ajit)
-
+;; Perform the following inference given the graph by direcly running it in :relay-checker VM.
+;; - Shape/View/Stride Information
+;; - A list of tensors used in the graph
 (defparameter *type-reporter* nil)
 (defstruct (Type-Reporter
 	    (:conc-name rp-)
@@ -66,6 +68,7 @@
 
 (declaim (ftype (function (AVM) Type-Reporter) run-type-infer))
 (defun run-type-infer (avm)
+  "Run the shape-inference given AVM, returning Type-Reporter"
   (declare (type avm avm))
   (let ((*device* :relay-checker) (*type-reporter* (make-type-reporter)))
     (vm/forward avm) (vm/backward avm)
