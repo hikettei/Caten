@@ -163,7 +163,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	       (if broadcast-p
 		   (format nil "~a" upfrom)
 		   (format nil "~a~a~a"
-			   (if (= by 1)
+			   (if (eql by 1)
 			       (if (and (numberp stride) (= stride 1))
 				   ""
 				   (format nil "~a*" stride))
@@ -173,7 +173,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 				       (format nil "~a*" (* stride by))
 				       (format nil "~a*~a*" by stride))))
 			   gid
-			   (if (= upfrom 0) "" (format nil "+~a" upfrom)))))
+			   (if (eql upfrom 0) "" (format nil "+~a" upfrom)))))
 	     "+"))))))
 
 (defun render-domain (pipeline &key (depends-on nil))
@@ -272,6 +272,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (setf schedule (isl-schedule-sequence schedule sched)))))
      pipeline)
     schedule))
+
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
@@ -286,6 +287,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (format t "== [Initial Graph] ==~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))
     ;; ~ Optimizations ~~
+    ;; Do not verify the graph; nodes used to compute views may lost.
     (apply-jit-specific-simplifiers avm)
     (when verbose
       (format t "== [Graph after applying jit-specific simplifiers] ==~%")
@@ -326,6 +328,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (format t "== [Initial Scheduling domain (=domain)] ======")
 	      (format t "~%~a~%" schedule))
 	    (make-polyhedral avm pipeline domain read-access write-access schedule)))))))
+
+(defun polyhedral-autoschedule (polyhedral)
+  (declare (type Polyhedral polyhedral))
+
+  )
 	    
 
 #+(or)(let ((c (caten (!identity (!matmul (make-tensor `(a b) :id 'x) (make-tensor `(b c) :id 'y))))))

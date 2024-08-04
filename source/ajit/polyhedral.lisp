@@ -17,6 +17,8 @@
 (defmethod print-object ((poly Polyhedral) stream)
   (format stream "
 = [Polyhedral] ========================================================
+Domain:
+~a
 Read:
 ~a
 Write:
@@ -24,6 +26,7 @@ Write:
 Scheduled-to:
 ~a
 ======================================================================"
+	  (poly-domain poly)
 	  (poly-read poly)
 	  (poly-write poly)
 	  (debug/render-c poly)))
@@ -98,6 +101,60 @@ Scheduled-to:
 	;;(dolist (c copied1) (foreign-funcall "isl_schedule_free" :pointer c :void))
 	;;(dolist (c copied2) (foreign-funcall "isl_union_map_free" :pointer c :void))
 	(values raw-deps waw-deps war-deps)))))
+
+(defun poly/fuse-schedules (polyhedral)
+  "
+[Scheduler]
+This function analyzes the read/write dependencies on the polyhedron space,
+trying to apply the operator fusion as many as possible
+```
+for (int c0 = 0; c0 < a; c0 += 1)
+  for (int c1 = 0; c1 < c; c1 += 1)
+    T3(c0, c1, 0);
+for (int c0 = 0; c0 < a; c0 += 1)
+  for (int c1 = 0; c1 < c; c1 += 1)
+    for (int c2 = 0; c2 < b; c2 += 1)
+      T4(c0, c1, c2);
+for (int c0 = 0; c0 < a; c0 += 1)
+  for (int c1 = 0; c1 < c; c1 += 1)
+    T5(c0, c1);
+=>    
+for (int c0 = 0; c0 < a; c0 += 1)
+  for (int c1 = 0; c1 < c; c1 += 1)
+    T3(c0, c1, 0);
+    for (int c2 = 0; c2 < b; c2 += 1)
+      T4(c0, c1, c2);
+    T5(c0, c1);
+```"
+  (declare (type polyhedral polyhedral))  
+
+  )
+
+(defun poly/affine (polyhedral)
+  "
+[Scheduler]
+Try to apply the affine transformation is the iteration is contiguous in the polyhedral space
+"
+  
+  )
+(defun poly/parallel (polyhedral)
+  "[Scheduler]
+Reading the RAW/WAW/WAR dependencies, determines the parallelizable axis.
+If possible, attempts to reorder the iteration to enable outer-loop parallelism
+"
+
+  )
+
+(defun poly/locality (polyhedral)
+  "")
+
+(defun poly/tile (polyhedral)
+  ""
+  )
+
+(defun poly/vectorize (polyhedral)
+  ""
+  )
 
 (defun optimize-polyhedral (domain read-deps write-deps schedule &key (verbose nil))
   "Run the polyhedral model to minimize the following goal:
