@@ -134,9 +134,9 @@ Further op-fusion optimization are done by the polyhedral-compiler"
 (defun vm-instruction-p (node)
   "Add more classes here if you have a certain node that do not desired to be involved."
   ;; :IR = :FOR :ENDFOR
-  (or
-   (null (find (node-class node) `(:IR :Buffer)))
-   (eql (node-type node) :Load)))
+  (and
+   (not (eql (node-class node) :IR))
+   (not (eql (node-type node) :Allocate))))
 
 (defun render-isl-aref (id type-map)
   "Renders the stride computation for ISL:
@@ -233,9 +233,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
     (maphash
      #'(lambda (timestamp subgraph)
-	 (let* ((occur-from
+	 (let* ((lf (graph->loop-factors subgraph))
+		(occur-from
 		  (format nil "T~a[~(~a~)]"
-			  timestamp (render-list (graph->loop-factors subgraph)))))
+			  timestamp (render-list lf))))
 	   (dolist (node (graph-nodes subgraph))
 	     (when (not (eql (node-class node) :IR))
 	       ;; When reduction is T, the first argument becomes the dependency
@@ -251,11 +252,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (dolist (r (remove-duplicates (funcall (if (eql mode :read) #'node-reads #'node-writes) node)))
 		 ;; When node has a :reduction
 		 (when (symbolp r)
-		   (if (vm-instruction-p node)
-		       (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r (render-isl-aref r type-map))
-		       (progn
-			 (assert (eql (node-type node) :Allocate) () "Expecting :allocate but got ~a" node)
-			 (format out "  ~a -> ~(~a~)[_total] : _total >= 0;~%" occur-from r)))))))))
+		   (if (null lf)
+		       (format out "  ~a -> ~(~a~)[_total] : _total >= 0;~%" occur-from r)
+		       (when (vm-instruction-p node)
+			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r (render-isl-aref r type-map))))))))))
      pipeline)
     (format out "}")))
 
@@ -358,6 +358,14 @@ Options:
     (debug-print "Reschedule")
     polyhedral))
 
+(defun remove-iteration-ir (pipeline)
+  (loop for nth being each hash-keys of pipeline
+	  using (hash-value graph)
+	do (setf (graph-nodes graph)
+		 (loop for node in (graph-nodes graph)
+		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
+			 collect node))))
+
 ;; TODO: Create common/contextvar.lisp
 (defun jit (avm &key (debug (ctx:getenv :JIT_DEBUG)) (serialize (= 0 (ctx:getenv :SERIALIZE))))
   "Applies the jit"
@@ -372,7 +380,8 @@ Options:
       (when (>= debug 1)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       polyhedron
+      (remove-iteration-ir (poly-pipeline polyhedron))
       (let* ((extracted-schedule (finalize-schedule polyhedron))
-	     (r-graph (create-rendering-graph polyhedron extracted-schedule)))
-	r-graph))))
-  
+	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
+	     (render (%render-subroutine :clang :clang r-graph polyhedron 0)))
+	render))))

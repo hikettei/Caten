@@ -57,7 +57,7 @@ Usage:
 				  (slot-value *ctx* ',(intern (symbol-name (car slot)))))))))
 		,@(loop for slot in slots
 			collect
-			`(defmethod (setf getenv) ((id (eql ,(car slot))) value)
+			`(defmethod (setf getenv) (value (id (eql ,(car slot))))
 			   (setf (uiop:getenv ,(symbol-name (car slot))) (format nil "~a" value))))
 		(defun help (&optional (stream t))
 		  (format stream "ContextVar:~%~a"

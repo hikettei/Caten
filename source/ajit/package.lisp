@@ -13,7 +13,19 @@
   ;; from type-relay.lisp
   (:export
    #:run-type-infer)
-  )
+  ;; from polyhedral.lisp
+  (:export
+   #:Polyhedral
+   ;; keep other slots of Polyhedral private
+   #:poly-avm
+   #:poly-pipeline
+   )
+  ;; from renderer.lisp
+  (:export
+   #:%render-subroutine
+   #:%render-expr
+   #:render-expr
+  ))
 
 (in-package :caten/ajit)
 
