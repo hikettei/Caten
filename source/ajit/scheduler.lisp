@@ -370,7 +370,8 @@ Options:
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))
 	      (serialize (= 1 (ctx:getenv :SERIALIZE)))
-	      (static-gensym (= 1 (ctx:getenv :STATIC_GENSYM))))
+	      (static-gensym (= 1 (ctx:getenv :STATIC_GENSYM)))
+	      (backend (or (ctx:getenv :JIT_BACKEND) :clang)))
   "Applies the jit"
   (declare (type avm avm)
 	   (type (integer 0 3) debug)
@@ -381,7 +382,6 @@ Options:
     (multiple-value-bind (polyhedron type-map)
 	(create-polyhedral-model avm :verbose verbose-schedule)
       (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
-
       (when (>= debug 1)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       polyhedron
@@ -389,5 +389,5 @@ Options:
       (apply-alias-for-rendering-graph (poly-pipeline polyhedron))
       (let* ((extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
-	     (render (%render-subroutine :clang :clang r-graph polyhedron 0 type-map)))
+	     (render (%render-subroutine backend backend r-graph polyhedron 0 type-map)))
 	render))))
