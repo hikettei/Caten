@@ -77,7 +77,11 @@ Usage:
        (lambda (x)
 	 (when (not (typep x '(integer 0 3))) (warn "JIT_DEBUG should be an integer from 0 to 3, got ~a, setting 0" x) (setf x 0))
 	 x)
-       "DEBUG-Level during jit-compilation")))
+       "DEBUG-Level during jit-compilation")
+    (:BACKEND
+     "LISP" :string
+     (lambda (x) (intern x "KEYWORD"))
+     "Default backend")))
 
 (defparameter *ctx* (make-contextvar))
 (defmacro with-contextvar ((&rest configurations) &body body)

@@ -116,6 +116,7 @@ OP :=
     (:float64 "double")
     (:float32 "float")))
 
+;; Alias-mapを全てのSimplifierがSchedulerの段階でやるべき
 (defmethod %render-nodes ((lang (eql :clang)) graph args indent type-map alias-map)
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
@@ -126,7 +127,7 @@ OP :=
       (labels ((render-aref (id)
 		 (let ((ref (render-isl-aref id type-map :genid #'(lambda (x) (intern (format nil "c~a" x))))))
 		   (if (string= ref "")
-		       (format nil "~(~a~)" ref)
+		       (format nil "~(~a~)" (load-from-map id))
 		       (format nil "~(~a~)[~(~a~)]" (load-from-map id) ref))))
 	       (alias (key value)
 		 (setf (gethash key alias-map) value))
@@ -158,8 +159,29 @@ OP :=
 	     (multiple-value-bind (c a b) (apply #'values (node-reads node))
 	       (line "~(~a~) += ~(~a~) * ~(~a~);" (render-aref c) (render-aref a) (render-aref b))
 	       (alias-node node)))
+	    (:STORE
+	     (multiple-value-bind (a b) (apply #'values (node-reads node))
+	       (when (not (equal a b))
+		 (line "~(~a~) = ~(~a~);" (render-aref a) (render-aref b)))
+	       (alias-node node)))
 	    (:SIN
-	     (line "~(~a~) = sin(~(~a~))" (render-aref (car (node-reads node))) (render-aref (car (node-reads node))))
+	     (line "~(~a~) = sin(~(~a~));" (render-aref (car (node-reads node))) (render-aref (car (node-reads node))))
 	     (alias-node node))
 	    (otherwise
-	     (error "Renderer for ~a is not implemented yet." node))))))))
+	     (case (node-class node)
+	       (:BinaryOps
+		(let* ((r (getattr node :reduction))
+		       (op (ecase (node-type node)
+			     (:ADD (if r "+=" "+")) (:MUL (if r "*=" "=")))))
+		  (if r
+		      (line "~(~a~) ~a ~(~a~);" (render-aref (car (node-reads node))) op (render-aref (second (node-reads node))))
+		      (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)))
+			    (apply
+			     #'concatenate
+			     'string
+			     (butlast
+			      (loop for r in (node-reads node)
+				    append (list (render-aref r) op))))))
+		  (alias-node node)))
+	       (otherwise
+		(error "Renderer for ~a is not implemented yet." node))))))))))
