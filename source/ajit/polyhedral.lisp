@@ -1,6 +1,7 @@
 (in-package :caten/ajit)
 ;; This paper is good to read first:
 ;; - https://arxiv.org/pdf/2401.06665
+;; - https://www.researchgate.net/publication/320992060_Consecutivity_in_the_isl_Polyhedral_Scheduler
 ;; TODO: Making all isl pointers gc-reachable
 ;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
@@ -158,7 +159,6 @@ for (int c0 = 0; c0 < a; c0 += 1)
       T4(c0, c1, c2);
     T5(c0, c1);
 ```
-Reference: https://dl.acm.org/doi/fullHtml/10.1145/3416510
 "
   (declare (type polyhedral polyhedral))
   (macrolet ((set-option (name level)
@@ -173,13 +173,20 @@ Reference: https://dl.acm.org/doi/fullHtml/10.1145/3416510
       (setf (poly-schedule polyhedral) (make-isl-obj :ptr schedule))
       polyhedral)))
 
-(defun poly/affine (polyhedral)
+(defun poly/loop-collapse (polyhedral)
   "
 [Scheduler]
 Try to apply the affine transformation is the iteration is contiguous in the polyhedral space.
+- Refernece: https://www.researchgate.net/publication/320992060_Consecutivity_in_the_isl_Polyhedral_Scheduler
 "
   (declare (type polyhedral polyhedral))
   
+  )
+
+(defun poly/vectorize (polyhedral)
+  ""
+  (declare (type polyhedral polyhedral))
+  (poly/loop-collapse polyhedral)
   )
 
 (defun poly/parallel (polyhedral)
@@ -202,79 +209,3 @@ If possible, attempts to reorder the iteration to enable outer-loop parallelism
   (declare (type polyhedral polyhedral))
 
   )
-
-(defun poly/vectorize (polyhedral)
-  ""
-  (declare (type polyhedral polyhedral))
-
-  )
-
-(defun optimize-polyhedral (domain read-deps write-deps schedule &key (verbose nil))
-  "Run the polyhedral model to minimize the following goal:
-- 1. Fuse more ops as many as possible
-- 2. Loop Transformation
-- 3. Analyze which axes are parallelizable
-- 4. Optimize the memory-locality
-"
-  (declare (type string domain read-deps write-deps))
-  (multiple-value-bind (domain read-deps write-deps)
-      (values
-       (isl-union-set-read-from-str domain)
-       (isl-union-map-read-from-str read-deps)
-       (isl-union-map-read-from-str write-deps))
-    (when verbose
-      (isl-schedule-dump schedule)
-      (format t "== [Initial Schedule in Clang] =====~%")
-      (format t "~%~a~%" (debug/render-c schedule)))
-
-    (multiple-value-bind (raw-deps waw-deps war-deps)
-	(create-dependency-graph schedule read-deps write-deps)
-      (flet ((dump (x)
-	       (foreign-funcall "isl_union_map_dump" :pointer (isl-obj-ptr x) :void)))
-	(when verbose
-	  (dump raw-deps) (dump waw-deps) (dump war-deps)))
-      
-      (macrolet ((set-option (name level)
-		   `(foreign-funcall ,name
-				     :pointer (isl-ctx-ptr *isl-context*)
-				     :int ,level
-				     :void)))
-	(set-option "isl_options_set_schedule_maximize_band_depth" 1)
-	(set-option "isl_options_set_schedule_whole_component" 1)
-	(set-option "isl_options_set_schedule_treat_coalescing" 1)
-	(set-option "isl_options_set_tile_scale_tile_loops" 1)
-	;; (set-option "isl_options_set_schedule_split_scaled" 1)
-	(set-option "isl_options_set_schedule_serialize_sccs" 1)
-	;; More ...
-	)
-      (let* ((all-deps
-	       (isl-union-map-union waw-deps war-deps))
-	     (all-deps
-	       (isl-union-map-union all-deps raw-deps))
-	     (schedule-constraints
-	       (isl-schedule-constraints-on-domain
-		(isl-union-set-copy domain)))
-	     (schedule-constraints
-	       (isl-schedule-constraints-set-validity
-		schedule-constraints
-		(isl-union-map-copy all-deps)))
-	     (schedule-constraints
-	       (isl-schedule-constraints-set-proximity
-		schedule-constraints
-		(isl-union-map-copy all-deps)))
-	     (schedule
-	       (make-isl-obj
-		:ptr
-		(foreign-funcall
-		 "isl_schedule_constraints_compute_schedule"
-		 :pointer (isl-obj-ptr schedule-constraints)
-		 :pointer)))
-	     ;;(loop-orders
-	     ;;  `((0 1) (0 1) (1 0)))
-	     )
-	;;(apply-reorder-schedule-loops! (isl-obj-ptr schedule) loop-orders)
-	(print (debug/render-c schedule))
-	))))
-
-	
-
