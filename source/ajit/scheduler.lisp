@@ -326,7 +326,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (format t "== [Write Accesses] ======")
 	      (format t "~%~a~%" write-access)
 	      (format t "== [Initial Scheduling domain (=domain)] ======")
-	      (format t "~%~a~%" schedule))
+	      (format t "~%~a~%" schedule)
+	      (isl-schedule-dump schedule))
 	    (make-polyhedral avm pipeline domain read-access write-access schedule)))))))
 
 (defun polyhedral-autoschedule (polyhedral)

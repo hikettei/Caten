@@ -1,5 +1,8 @@
 (in-package :caten/ajit)
-
+;; This paper is good to read first:
+;; - https://arxiv.org/pdf/2401.06665
+;; TODO: Making all isl pointers gc-reachable
+;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
 	    (:conc-name poly-)
 	    (:constructor make-polyhedral (avm pipeline domain read write schedule)))
@@ -23,13 +26,19 @@ Read:
 ~a
 Write:
 ~a
-Scheduled-to:
+Schedule:
+~a
+Expected Output:
 ~a
 ======================================================================"
 	  (poly-domain poly)
 	  (poly-read poly)
 	  (poly-write poly)
+	  (debug/render-schedule (poly-schedule poly))
 	  (debug/render-c poly)))
+
+(defun debug/render-schedule (schedule &aux (schedule (isl-obj-ptr schedule)))
+  (foreign-funcall "isl_schedule_to_str" :pointer schedule :string))
 
 (defun debug/render-c (polyhedral &aux (schedule (isl-obj-ptr (poly-schedule polyhedral))))
   (let* ((space (isl-set-read-from-str "{:}"))
@@ -102,6 +111,29 @@ Scheduled-to:
 	;;(dolist (c copied2) (foreign-funcall "isl_union_map_free" :pointer c :void))
 	(values raw-deps waw-deps war-deps)))))
 
+(defun poly/make-constraints (polyhedral)
+  "(2) Validty/Legality Constraints"
+  (declare (type polyhedral polyhedral))
+  (with-slots ((domain domain-ptr)) polyhedral
+    (multiple-value-bind (raw-deps waw-deps war-deps)
+	(create-dependency-graph polyhedral)
+      (let* ((all-deps
+	       (isl-union-map-union waw-deps war-deps))
+	     (all-deps
+	       (isl-union-map-union all-deps raw-deps))
+	     (schedule-constraints
+	       (isl-schedule-constraints-on-domain
+		(isl-union-set-copy domain)))
+	     (schedule-constraints
+	       (isl-schedule-constraints-set-validity
+		schedule-constraints
+		(isl-union-map-copy all-deps)))
+	     (schedule-constraints
+	       (isl-schedule-constraints-set-proximity
+		schedule-constraints
+		(isl-union-map-copy all-deps))))
+	schedule-constraints))))
+
 (defun poly/fuse-schedules (polyhedral)
   "
 [Scheduler]
@@ -125,16 +157,28 @@ for (int c0 = 0; c0 < a; c0 += 1)
     for (int c2 = 0; c2 < b; c2 += 1)
       T4(c0, c1, c2);
     T5(c0, c1);
-```"
-  (declare (type polyhedral polyhedral))  
-
-  )
+```
+Reference: https://dl.acm.org/doi/fullHtml/10.1145/3416510
+"
+  (declare (type polyhedral polyhedral))
+  (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr) (schedule schedule)) polyhedral
+    (let* ((constraints (poly/make-constraints polyhedral))
+	   (schedule (foreign-funcall "isl_schedule_constraints_compute_schedule" :pointer (isl-obj-ptr constraints) :pointer)))
+      (setf (poly-schedule polyhedral) (make-isl-obj :ptr schedule))
+      ;; Symbolに対してread-ptr/write-ptrがError
+      ;;(print domain-ptr)
+      ;;(print read-ptr)
+      ;;(print write-ptr)
+      (print polyhedral)
+      nil
+      )))
 
 (defun poly/affine (polyhedral)
   "
 [Scheduler]
 Try to apply the affine transformation is the iteration is contiguous in the polyhedral space
 "
+  (declare (type polyhedral polyhedral))
   
   )
 (defun poly/parallel (polyhedral)
@@ -142,18 +186,23 @@ Try to apply the affine transformation is the iteration is contiguous in the pol
 Reading the RAW/WAW/WAR dependencies, determines the parallelizable axis.
 If possible, attempts to reorder the iteration to enable outer-loop parallelism
 "
+  (declare (type polyhedral polyhedral))
 
   )
 
 (defun poly/locality (polyhedral)
-  "")
+  ""
+  (declare (type polyhedral polyhedral))
+  )
 
 (defun poly/tile (polyhedral)
   ""
+  (declare (type polyhedral polyhedral))
   )
 
 (defun poly/vectorize (polyhedral)
   ""
+  (declare (type polyhedral polyhedral))
   )
 
 (defun optimize-polyhedral (domain read-deps write-deps schedule &key (verbose nil))
