@@ -38,7 +38,7 @@
 	 (assert *isl-context* () "*isl-context* is not initialized.")
 	 (,(if (eql return :pointer)
 	       'wrap-with-pointer
-	       'progn)	 
+	       'progn)
 	  (,cffi
 	   ,@(loop for arg in args
 		   for bind = (first arg)

@@ -257,7 +257,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		       (when (vm-instruction-p node)
 			 (let ((access (render-isl-aref r type-map)))
 			   (if (string= access "")
-			       (format out "  ~a -> ~(~a~)[_scalar_size] : _scalar_size = 0;~%" occur-from r)
+			       (format out "  ~a -> ~(~a~)[0];~%" occur-from r)
 			       (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))))))
      pipeline)
     (format out "}")))

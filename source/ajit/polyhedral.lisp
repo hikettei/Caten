@@ -169,11 +169,11 @@ for (int c0 = 0; c0 < a; c0 += 1)
 "
   (declare (type polyhedral polyhedral))
   (macrolet ((set-option (name level)
-	       `(foreign-funcall ,name
+	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
 				 :pointer (isl-ctx-ptr *isl-context*)
 				 :int ,level
 				 :void)))
-    (when serialize (set-option "isl_options_set_schedule_serialize_sccs" 1)))
+    (when serialize (set-option "schedule_serialize_sccs" 1)))
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr) (schedule schedule)) polyhedral
     (let* ((constraints (poly/make-constraints polyhedral))
 	   (schedule (foreign-funcall "isl_schedule_constraints_compute_schedule" :pointer (isl-obj-ptr constraints) :pointer)))
