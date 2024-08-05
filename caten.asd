@@ -3,7 +3,8 @@
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
   :depends-on
-  ("rove" "trivia" "cl-ppcre" "caten.air" "caten.aasm" "caten.avm" "caten.ajit")
+  ("rove" "trivia" "cl-ppcre"
+   "caten.common" "caten.air" "caten.aasm" "caten.avm" "caten.ajit")
   :pathname "source"
   :serial t
   :components ((:file "package")

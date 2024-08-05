@@ -18,6 +18,13 @@
   (write-ptr (isl-union-map-read-from-str write) :type isl-obj)
   (schedule schedule :type isl-obj))
 
+(defun finalize-polyhedral (polyhedral &aux (schedule (poly-schedule polyhedral)))
+  (declare (type polyhedral polyhedral))  
+  (let* ((space (isl-set-read-from-str "{:}"))
+	 (build (isl-ast-build-from-context space))
+	 (ast   (isl-ast-build-node-from-schedule build	schedule)))
+    ast))
+
 (defmethod print-object ((poly Polyhedral) stream)
   (format stream "
 = [Polyhedral] ========================================================

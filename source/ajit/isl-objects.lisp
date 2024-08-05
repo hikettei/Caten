@@ -85,4 +85,3 @@
   (with-slots ((u union) (cnst constraint)) c
     (format nil "{ ~a : ~a }" (form u) (form cnst))))
 
-(defun intersect (a b) (isl-union-set-intersect (alloc a) (alloc b)))

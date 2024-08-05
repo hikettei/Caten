@@ -341,7 +341,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (isl-schedule-dump schedule))
 	    (make-polyhedral avm pipeline domain read-access write-access schedule)))))))
 
-(defun auto-schedule (polyhedral &key (debug nil) (serialize nil))
+(defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
   "
 Options:
 - debug[boolean]:  If this option is set, this function prints the Polyhedron Model for each step of the optimization.
@@ -350,11 +350,25 @@ Options:
   instances of statements will only appear in the same band node if these statements belong to
   the same strongly connected component at the point where the band node is constructed."
   (declare (type Polyhedral polyhedral)
-	   (type boolean debug serialize))
-  (macrolet ((debug-print (step-name) `(when debug (format t "~%[~a]~%~a~%" ,step-name polyhedral))))
+	   (type boolean verbose serialize))
+  (macrolet ((debug-print (step-name) `(when verbose (format t "~%[~a]~%~a~%" ,step-name polyhedral))))
     (debug-print "Initial")
     ;; Loop Fusion
     (poly/reschedule polyhedral :serialize serialize)
     (debug-print "Reschedule")
-
+    
     polyhedral))
+
+;; TODO: Create common/contextvar.lisp
+(defun jit (avm &key (debug 0) (serialize nil))
+  "Applies the jit"
+  (declare (type avm avm)
+	   (type (integer 0 3) debug)
+	   (type boolean serialize))
+  (multiple-value-bind (verbose-schedule verbose-auto)
+      (values (or (= debug 3) (= debug 1)) (or (= debug 3) (= debug 2)))
+    (let ((polyhedron (create-polyhedral-model avm :verbose verbose-schedule)))
+      (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
+
+      )))
+  
