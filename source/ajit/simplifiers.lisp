@@ -60,3 +60,30 @@
 		 (alias-node node)
 		 (setf (node-writes node) writes
 		       (node-reads node) reads))))))))))
+
+(defun apply-static-gensym (avm)
+  (declare (type avm avm))
+  (let ((alias-table (make-hash-table))
+	(val-count 0))
+    (labels ((val-gensym (id)
+	       (if (symbolp id)
+		   (or
+		    (gethash id alias-table)
+		    (prog1
+			(setf (gethash id alias-table) (intern (format nil "val_~a" val-count)))
+		      (incf val-count)))
+		   id)))
+      (dolist (node (graph-nodes (avm-graph avm)))
+	(setf (node-writes node) (map 'list #'val-gensym (node-writes node))
+	      (node-reads node) (map 'list #'val-gensym (node-reads node))))
+      (setf (avm-fw-outputs avm) (map 'list #'val-gensym (avm-fw-outputs avm))
+	    (avm-bw-outputs avm) (map 'list #'val-gensym (avm-bw-outputs avm)))
+      (maphash
+       #'(lambda (k v)
+	   (setf (gethash (val-gensym k) (avm-id2tensor avm)) v))
+       (avm-id2tensor avm))
+      (maphash
+       #'(lambda (k v)
+	   (setf (gethash (val-gensym k) (avm-variables avm)) v))
+       (avm-variables avm)))))
+

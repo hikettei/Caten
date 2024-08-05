@@ -366,12 +366,16 @@ Options:
 		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
 			 collect node))))
 
-;; TODO: Create common/contextvar.lisp
-(defun jit (avm &key (debug (ctx:getenv :JIT_DEBUG)) (serialize (= 0 (ctx:getenv :SERIALIZE))))
+(defun jit (avm
+	    &key
+	      (debug (ctx:getenv :JIT_DEBUG))
+	      (serialize (= 1 (ctx:getenv :SERIALIZE)))
+	      (static-gensym (= 1 (ctx:getenv :STATIC_GENSYM))))
   "Applies the jit"
   (declare (type avm avm)
 	   (type (integer 0 3) debug)
 	   (type boolean serialize))
+  (when static-gensym (apply-static-gensym avm))
   (multiple-value-bind (verbose-schedule verbose-auto)
       (values (or (= debug 3) (= debug 1)) (or (= debug 3) (= debug 2)))
     (multiple-value-bind (polyhedron type-map)
