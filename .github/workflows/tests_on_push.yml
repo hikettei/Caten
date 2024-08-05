@@ -19,11 +19,12 @@ jobs:
         - normal
     steps:
       - uses: actions/checkout@v1
-      - name: Installing ${{ matrix.lisp }}
+      - name: Installing ${{ matrix.lisp }}, and libisl.
         env:
           LISP: ${{ matrix.lisp }}
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+	  sudo apt-get install -y libisl-dev
       - name: Update $PATH
         run: |
           echo $PATH
