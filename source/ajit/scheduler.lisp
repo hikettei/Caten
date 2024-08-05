@@ -201,11 +201,18 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			  (progn
 			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
 			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node)))))))
-	   (when loop-factors
-	     (format out "  T~a[~(~a~)]" timestamp (render-list loop-factors))	     
-	     (format out " : ")
-	     (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
-	     (format out ";~%"))))
+	   (if loop-factors
+	       (progn
+		 (format out "  T~a[~(~a~)]" timestamp (render-list loop-factors))
+		 (format out " : ")
+		 (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
+		 (format out ";~%"))
+	       (progn
+		 ;; We should not include scalar operations into the polyhedrol;
+		 ;; this makes the loop-fusion process complicated
+		 ;; after the polyhedral compilation processes finished, lets insert them
+		 ;;(format out "  T~a[];~%" timestamp)
+		 ))))
      pipeline)
     (format out "}")))
 
@@ -276,7 +283,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
-(declaim (ftype (function (create-polyhedral-model (AVM &key (:verbose boolean))) Polyhedral)))
+(declaim (ftype (function (AVM &key (:verbose boolean)) Polyhedral) create-polyhedral-model))
 (defun create-polyhedral-model (avm &key (verbose nil))
   "Creates the polyhedral model given the avm."
   (declare (type avm avm) (type boolean verbose))

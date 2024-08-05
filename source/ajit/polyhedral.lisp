@@ -28,7 +28,7 @@ Write:
 ~a
 Schedule:
 ~a
-Expected Output:
+Expected Output (Scalar ops are temporarily excluded):
 ~a
 ======================================================================"
 	  (poly-domain poly)
@@ -134,7 +134,7 @@ Expected Output:
 		(isl-union-map-copy all-deps))))
 	schedule-constraints))))
 
-(defun poly/fuse-schedules (polyhedral)
+(defun poly/reschedule (polyhedral)
   "
 [Scheduler]
 This function analyzes the read/write dependencies on the polyhedron space,
@@ -161,6 +161,22 @@ for (int c0 = 0; c0 < a; c0 += 1)
 Reference: https://dl.acm.org/doi/fullHtml/10.1145/3416510
 "
   (declare (type polyhedral polyhedral))
+  (macrolet ((set-option (name level)
+	       `(foreign-funcall ,name
+				 :pointer (isl-ctx-ptr *isl-context*)
+				 :int ,level
+				 :void)))
+;;    (set-option "isl_options_set_schedule_max_coefficient" 1)
+;;    (set-option "isl_options_set_schedule_max_constant_term" 1)
+;;    (set-option "isl_options_set_schedule_serialize_sccs" 1)
+;;    (set-option "isl_options_set_schedule_whole_component" -1)
+;;    (set-option "isl_options_set_schedule_treat_coalescing" 1)
+;;    (set-option "isl_options_set_schedule_carry_self_first" 1)
+;;    (set-option "isl_options_set_schedule_maximize_band_depth" 10)
+    ;;    (set-option "isl_options_set_schedule_split_scaled" -1)
+    ;;(set-option "isl_options_set_schedule_maximize_coincidence" 1)
+    
+    )
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr) (schedule schedule)) polyhedral
     (let* ((constraints (poly/make-constraints polyhedral))
 	   (schedule (foreign-funcall "isl_schedule_constraints_compute_schedule" :pointer (isl-obj-ptr constraints) :pointer)))
