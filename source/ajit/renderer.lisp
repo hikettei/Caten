@@ -32,7 +32,8 @@ OP :=
 :>
 "))
 
-(defgeneric %render-nodes (lang graph args indent type-map))
+(defgeneric %render-nodes (lang graph args indent type-map)
+  (:documentation "Corresponds w/ caten/aasm/ops.lisp"))
 
 (defun render-expr (lang expr)
   "Render-expr"
@@ -69,7 +70,6 @@ OP :=
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
-;; memo: こいつがHeaderのRenderingに対応。SCHEDULE=任意のグラフでIfやForを表現できる
 (defmethod %render-subroutine ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent type-map)
   (declare (type graph jit-graph)
 	   (type polyhedral polyhedral)
@@ -157,6 +157,8 @@ OP :=
 		 (line "~(~a~) = ~(~a~);" (render-aref a) (render-aref b)))))
 	    (:SIN
 	     (line "~(~a~) = sin(~(~a~));" (render-aref (car (node-reads node))) (render-aref (car (node-reads node)))))
+	    (:INDEX-COMPONENTS
+	     (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node))) (render-isl-aref (car (node-reads node)) type-map :genid #'(lambda (x) (intern (format nil "c~a" x))))))
 	    (otherwise
 	     (case (node-class node)
 	       (:BinaryOps
