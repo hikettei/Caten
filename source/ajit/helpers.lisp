@@ -40,3 +40,9 @@
       (if (fakearray-p object)
 	  (fakearray-initial-element object)
 	  object)))
+
+(defmacro with-inlined-foreign-funcall-mode (&body body)
+  "Enables %\"foreign-name\":return-dtype &rest args syntax under the body execution"
+  `(macrolet ((% (fname return-type &rest args)
+		`(foreign-funcall ,fname ,@args ,return-type)))
+     ,@body))

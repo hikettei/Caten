@@ -71,7 +71,13 @@ Usage:
        (lambda (x)
 	 (when (not (or (= x 0) (= x 1))) (warn "SERIALIZE is specified as 0 or 1, setting 0. got ~a" x) (setf x 0))
 	 x)
-       "See: caten/ajit:auto-schedule. Value is specified as 0(true) or 1(false).")))
+       "See: caten/ajit:auto-schedule. Value is specified as 0(true) or 1(false).")
+      (:JIT_DEBUG
+       0 :int
+       (lambda (x)
+	 (when (not (typep x '(integer 0 3))) (warn "JIT_DEBUG should be an integer from 0 to 3, got ~a, setting 0" x) (setf x 0))
+	 x)
+       "DEBUG-Level during jit-compilation")))
 
 (defparameter *ctx* (make-contextvar))
 (defmacro with-contextvar ((&rest configurations) &body body)

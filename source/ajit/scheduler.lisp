@@ -356,11 +356,10 @@ Options:
     ;; Loop Fusion
     (poly/reschedule polyhedral :serialize serialize)
     (debug-print "Reschedule")
-    
     polyhedral))
 
 ;; TODO: Create common/contextvar.lisp
-(defun jit (avm &key (debug 0) (serialize nil))
+(defun jit (avm &key (debug (ctx:getenv :JIT_DEBUG)) (serialize (= 0 (ctx:getenv :SERIALIZE))))
   "Applies the jit"
   (declare (type avm avm)
 	   (type (integer 0 3) debug)
@@ -370,5 +369,10 @@ Options:
     (let ((polyhedron (create-polyhedral-model avm :verbose verbose-schedule)))
       (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
 
-      )))
+      (when (>= debug 1)
+	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
+      polyhedron
+      (let ((extracted-schedule (finalize-schedule polyhedron)))
+	extracted-schedule
+	))))
   
