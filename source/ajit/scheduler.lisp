@@ -138,7 +138,7 @@ Further op-fusion optimization are done by the polyhedral-compiler"
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
 
-(defun render-isl-aref (id type-map)
+(defun render-isl-aref (id type-map &key (genid #'gid))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -158,7 +158,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	    for upfrom = (reveal-buffer (or (nth 0 view) 0))
 	    for by     = (reveal-buffer (or (nth 2 view) 1))
 	    for broadcast-p = (nth 3 view)
-	    for gid = (gid nth)
+	    for gid = (funcall genid nth)
 	    append
 	    (list
 	     (progn
@@ -287,7 +287,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
-(declaim (ftype (function (AVM &key (:verbose boolean)) Polyhedral) create-polyhedral-model))
+(declaim (ftype (function (AVM &key (:verbose boolean)) (values Polyhedral Type-Reporter)) create-polyhedral-model))
 (defun create-polyhedral-model (avm &key (verbose nil))
   "Creates the polyhedral model given the avm."
   (declare (type avm avm) (type boolean verbose))
@@ -339,7 +339,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (format t "== [Initial Scheduling domain (=domain)] ======")
 	      (format t "~%~a~%" schedule)
 	      (isl-schedule-dump schedule))
-	    (make-polyhedral avm pipeline domain read-access write-access schedule)))))))
+	    (values (make-polyhedral avm pipeline domain read-access write-access schedule) type-map)))))))
 
 (defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
   "
@@ -374,7 +374,8 @@ Options:
 	   (type boolean serialize))
   (multiple-value-bind (verbose-schedule verbose-auto)
       (values (or (= debug 3) (= debug 1)) (or (= debug 3) (= debug 2)))
-    (let ((polyhedron (create-polyhedral-model avm :verbose verbose-schedule)))
+    (multiple-value-bind (polyhedron type-map)
+	(create-polyhedral-model avm :verbose verbose-schedule)
       (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
 
       (when (>= debug 1)
@@ -383,5 +384,5 @@ Options:
       (remove-iteration-ir (poly-pipeline polyhedron))
       (let* ((extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
-	     (render (%render-subroutine :clang :clang r-graph polyhedron 0)))
+	     (render (%render-subroutine :clang :clang r-graph polyhedron 0 type-map)))
 	render))))

@@ -1,7 +1,7 @@
 (in-package :caten/ajit)
 
 ;; ~~ Abstraction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defgeneric %render-subroutine (lang kernel-lang jit-graph polyhedral indent)
+(defgeneric %render-subroutine (lang kernel-lang jit-graph polyhedral indent type-map)
   (:documentation
    "IRs used in the jit-graph:
 (TODO: Docs)
@@ -32,7 +32,7 @@ OP :=
 :>
 "))
 
-(defgeneric %render-nodes (lang graph args indent))
+(defgeneric %render-nodes (lang graph args indent type-map alias-map))
 
 (defun render-expr (lang expr)
   "Render-expr"
@@ -70,7 +70,7 @@ OP :=
 	  (render-expr lang rhs)))
 
 ;; memo: こいつがHeaderのRenderingに対応。SCHEDULE=任意のグラフでIfやForを表現できる
-(defmethod %render-subroutine ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent)
+(defmethod %render-subroutine ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent type-map &aux (alias-map (make-hash-table :test #'eql)))
   (declare (type graph jit-graph)
 	   (type polyhedral polyhedral)
 	   (type fixnum indent))
@@ -109,15 +109,57 @@ OP :=
 		(:FUNCALL
 		 (let ((idx (getattr node :idx))
 		       (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
-		   (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent))))))))
+		   (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent type-map alias-map) out))))))))
 
-(defmethod %render-nodes ((lang (eql :clang)) graph args indent)
+(defun ->cdtype (dtype)
+  (ecase dtype
+    (:float64 "double")
+    (:float32 "float")))
+
+(defmethod %render-nodes ((lang (eql :clang)) graph args indent type-map alias-map)
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
 		 `(progn
 		    (dotimes (i (* 4 indent)) (princ " " out))
 		    (format out ,designator ,@args)
 		    (format out "~%"))))
-      (dolist (node (graph-nodes graph))
-
-	))))
+      (labels ((render-aref (id)
+		 (let ((ref (render-isl-aref id type-map :genid #'(lambda (x) (intern (format nil "c~a" x))))))
+		   (if (string= ref "")
+		       (format nil "~(~a~)" ref)
+		       (format nil "~(~a~)[~(~a~)]" (load-from-map id) ref))))
+	       (alias (key value)
+		 (setf (gethash key alias-map) value))
+	       (load-from-map (key) (or (gethash key alias-map) key))		 
+	       (alias-node (node)
+		 (alias (car (node-writes node)) (load-from-map (car (node-reads node))))))
+	(dolist (node (graph-nodes graph))
+	  (case (node-type node)
+	    (:ALLOCATE
+	     (line "~(~a~) ~(~a~)~a;"
+		   (->cdtype (getattr node :dtype)) (load-from-map (car (node-writes node)))
+		   (let ((nrank (getattr node :nrank)))
+		     (if (= nrank 0)
+			 ""
+			 (format
+			  nil
+			  "[~(~a~)]"
+			  (apply
+			   #'concatenate
+			   'string
+			   (butlast
+			    (loop for x in (subseq (node-reads node) 0 nrank)
+				  append (list (format nil "~a" x) "*")))))))))
+	    (:LOAD
+	     (let ((value (getattr node :value)))
+	       (line "~(~a~) = ~a;" (render-aref (car (node-reads node))) value)
+	       (alias-node node)))
+	    (:WMMA
+	     (multiple-value-bind (c a b) (apply #'values (node-reads node))
+	       (line "~(~a~) += ~(~a~) * ~(~a~);" (render-aref c) (render-aref a) (render-aref b))
+	       (alias-node node)))
+	    (:SIN
+	     (line "~(~a~) = sin(~(~a~))" (render-aref (car (node-reads node))) (render-aref (car (node-reads node))))
+	     (alias-node node))
+	    (otherwise
+	     (error "Renderer for ~a is not implemented yet." node))))))))
