@@ -14,6 +14,7 @@
    (:file "isl-objects")
    (:file "isl-ast-helpers")
    (:file "graph")
+   (:file "renderer")
    (:file "polyhedral")
    )
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))
