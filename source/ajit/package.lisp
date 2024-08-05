@@ -7,7 +7,8 @@
    )
   ;; from scheduler.lisp
   (:export
-   #:create-polyhedral-model)
+   #:create-polyhedral-model
+   #:auto-schedule)
   ;; from type-relay.lisp
   (:export
    #:run-type-infer)

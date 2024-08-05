@@ -49,7 +49,12 @@ Further op-fusion optimization are done by the polyhedral-compiler"
 	     (children (node-reads node))
 	     (mergeable-list
 	       (map 'list
-		    #'(lambda (x) (or (numberp x) (buffer-intersect-p latest (id->type x)))) children)))
+		    #'(lambda (x)
+			(or (numberp x)
+			    (and
+			     (not (eql (node-type (id->value (avm-graph avm) x)) :Allocate))
+			     (buffer-intersect-p latest (id->type x)))))
+		    children)))
 	(setf (rp-seen type-map) (append (rp-seen type-map) (node-writes node)))
 	;; Top_ID <- F(Children[0], Children[1], ...)
 	;;             mergeable[0] mergeable[1], ...
@@ -279,7 +284,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (setf schedule (isl-schedule-sequence schedule sched)))))
      pipeline)
     schedule))
-
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
@@ -337,11 +341,20 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (isl-schedule-dump schedule))
 	    (make-polyhedral avm pipeline domain read-access write-access schedule)))))))
 
-(defun polyhedral-autoschedule (polyhedral)
-  (declare (type Polyhedral polyhedral))
+(defun auto-schedule (polyhedral &key (debug nil) (serialize nil))
+  "
+Options:
+- debug[boolean]:  If this option is set, this function prints the Polyhedron Model for each step of the optimization.
+- serialize[boolean]: If this option is set, then all strongly connected components in the dependence
+  graph are serialized as soon as they are detected. This means in particular that
+  instances of statements will only appear in the same band node if these statements belong to
+  the same strongly connected component at the point where the band node is constructed."
+  (declare (type Polyhedral polyhedral)
+	   (type boolean debug serialize))
+  (macrolet ((debug-print (step-name) `(when debug (format t "~%[~a]~%~a~%" ,step-name polyhedral))))
+    (debug-print "Initial")
+    ;; Loop Fusion
+    (poly/reschedule polyhedral :serialize serialize)
+    (debug-print "Reschedule")
 
-  )
-	    
-
-#+(or)(let ((c (caten (!identity (!matmul (make-tensor `(a b) :id 'x) (make-tensor `(b c) :id 'y))))))
-	(time (caten/ajit::create-schedule-grouping c)))
+    polyhedral))

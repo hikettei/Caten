@@ -134,7 +134,7 @@ Expected Output (Scalar ops are temporarily excluded):
 		(isl-union-map-copy all-deps))))
 	schedule-constraints))))
 
-(defun poly/reschedule (polyhedral)
+(defun poly/reschedule (polyhedral &key (serialize nil))
   "
 [Scheduler]
 This function analyzes the read/write dependencies on the polyhedron space,
@@ -166,37 +166,22 @@ Reference: https://dl.acm.org/doi/fullHtml/10.1145/3416510
 				 :pointer (isl-ctx-ptr *isl-context*)
 				 :int ,level
 				 :void)))
-;;    (set-option "isl_options_set_schedule_max_coefficient" 1)
-;;    (set-option "isl_options_set_schedule_max_constant_term" 1)
-;;    (set-option "isl_options_set_schedule_serialize_sccs" 1)
-;;    (set-option "isl_options_set_schedule_whole_component" -1)
-;;    (set-option "isl_options_set_schedule_treat_coalescing" 1)
-;;    (set-option "isl_options_set_schedule_carry_self_first" 1)
-;;    (set-option "isl_options_set_schedule_maximize_band_depth" 10)
-    ;;    (set-option "isl_options_set_schedule_split_scaled" -1)
-    ;;(set-option "isl_options_set_schedule_maximize_coincidence" 1)
-    
-    )
+    (when serialize (set-option "isl_options_set_schedule_serialize_sccs" 1)))
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr) (schedule schedule)) polyhedral
     (let* ((constraints (poly/make-constraints polyhedral))
 	   (schedule (foreign-funcall "isl_schedule_constraints_compute_schedule" :pointer (isl-obj-ptr constraints) :pointer)))
       (setf (poly-schedule polyhedral) (make-isl-obj :ptr schedule))
-      ;; Symbolに対してread-ptr/write-ptrがError
-      ;;(print domain-ptr)
-      ;;(print read-ptr)
-      ;;(print write-ptr)
-      (print polyhedral)
-      nil
-      )))
+      polyhedral)))
 
 (defun poly/affine (polyhedral)
   "
 [Scheduler]
-Try to apply the affine transformation is the iteration is contiguous in the polyhedral space
+Try to apply the affine transformation is the iteration is contiguous in the polyhedral space.
 "
   (declare (type polyhedral polyhedral))
   
   )
+
 (defun poly/parallel (polyhedral)
   "[Scheduler]
 Reading the RAW/WAW/WAR dependencies, determines the parallelizable axis.
@@ -209,16 +194,19 @@ If possible, attempts to reorder the iteration to enable outer-loop parallelism
 (defun poly/locality (polyhedral)
   ""
   (declare (type polyhedral polyhedral))
+
   )
 
 (defun poly/tile (polyhedral)
   ""
   (declare (type polyhedral polyhedral))
+
   )
 
 (defun poly/vectorize (polyhedral)
   ""
   (declare (type polyhedral polyhedral))
+
   )
 
 (defun optimize-polyhedral (domain read-deps write-deps schedule &key (verbose nil))
