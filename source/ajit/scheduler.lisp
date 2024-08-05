@@ -255,7 +255,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		   (if (null lf)
 		       (format out "  ~a -> ~(~a~)[_total] : _total >= 0;~%" occur-from r)
 		       (when (vm-instruction-p node)
-			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r (render-isl-aref r type-map))))))))))
+			 (let ((access (render-isl-aref r type-map)))
+			   (if (string= access "")
+			       (format out "  ~a -> ~(~a~)[_scalar_size] : _scalar_size = 0;~%" occur-from r)
+			       (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))))))
      pipeline)
     (format out "}")))
 
@@ -365,7 +368,8 @@ Options:
 		 (loop for node in (graph-nodes graph)
 		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
 			 collect node))))
-
+;; TODO: making isl objects gc-reachable
+;; TODO: dynamic shapes
 (defun jit (avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))

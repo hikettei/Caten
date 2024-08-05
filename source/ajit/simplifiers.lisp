@@ -44,17 +44,22 @@
   (let ((alias-map (make-hash-table :test #'eql)))
     (labels ((alias (key value)
 	       (setf (gethash key alias-map) value))
-	     (load-from-map (key) (or (gethash key alias-map) key))		 
+	     (load-from-map (key) (or (gethash key alias-map) key))
 	     (alias-node (node)
 	       (alias (car (node-writes node)) (load-from-map (car (node-reads node))))))
       (loop for graph being the hash-values of pipeline do
 	(dolist (node (graph-nodes graph))
 	  (case (node-type node)
 	    (:Allocate nil)
+	    (:WHERE
+	     (let ((writes (list (load-from-map (second (node-reads node)))))
+		   (reads  (map 'list #'load-from-map (node-reads node))))
+	       (alias (car (node-writes node)) (second (node-reads node)))
+	       (setf (node-writes node) writes
+		     (node-reads node) reads)))
 	    (otherwise
 	     (when (>= (length (node-writes node)) 1)
 	       (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
-
 	       (let ((writes (list (load-from-map (car (node-reads node)))))
 		     (reads (map 'list #'load-from-map (node-reads node))))
 		 (alias-node node)
