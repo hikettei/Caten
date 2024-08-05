@@ -216,7 +216,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		 ;; We should not include scalar operations into the polyhedrol;
 		 ;; this makes the loop-fusion process complicated
 		 ;; after the polyhedral compilation processes finished, lets insert them
-		 ;;(format out "  T~a[];~%" timestamp)
+		 (format out "  T~a[];~%" timestamp)
 		 ))))
      pipeline)
     (format out "}")))
@@ -249,13 +249,15 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (when (getattr node :reduction)
 		 (let ((reduce-to (car (node-reads node))))
 		   (when (symbolp reduce-to)
-		     (when (vm-instruction-p node)
-		       (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref reduce-to type-map))))))
+		     (if (vm-instruction-p node)
+			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref reduce-to type-map))
+			 (error ":reduction for the op ~a is invaild." node)))))
 	       (dolist (r (remove-duplicates (funcall (if (eql mode :read) #'node-reads #'node-writes) node)))
 		 ;; When node has a :reduction
 		 (when (symbolp r)
-		   (when (vm-instruction-p node)
-		     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r (render-isl-aref r type-map)))))))))
+		   (if (vm-instruction-p node)
+		       (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r (render-isl-aref r type-map))
+		       (format out "  ~a -> ~(~a~)[_total] : _total >= 0;~%" occur-from r))))))))
      pipeline)
     (format out "}")))
 
@@ -372,7 +374,7 @@ Options:
       (when (>= debug 1)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       polyhedron
-      (let ((extracted-schedule (finalize-schedule polyhedron)))
-	extracted-schedule
-	))))
+      (let* ((extracted-schedule (finalize-schedule polyhedron))
+	     (r-graph (create-rendering-graph polyhedron extracted-schedule)))
+	r-graph))))
   

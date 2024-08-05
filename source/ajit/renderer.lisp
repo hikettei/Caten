@@ -40,3 +40,32 @@
 	  (otherwise
 	   (indent)
 	   (format out "~a;~%" node)))))))
+
+(defgeneric render-jit-graph (lang jit-graph polyhedral indent)
+  (:documentation
+   "IRs used in the jit-graph:
+(TODO: Docs)
+- FOR
+- ENDFOR
+- SCHEDULE
+- IF
+- ELSE
+- ENDIF
+"))
+;;(defpattern NodeAttrs(type &rest attrs
+(defmethod render-jit-graph ((lang (eql :clang)) jit-graph polyhedral indent)
+  (with-output-to-string (out)
+    (macrolet ((line (designator &rest args)
+		 `(progn
+		    (dotimes (i indent) (princ " " out))
+		    (format out ,designator ,@args)
+		    (format out "~%"))))
+      (loop for node in (graph-nodes jit-graph)
+	    for type = (node-type node) do
+	      (assert (eql :Render (node-class node)))
+	      (ecase type
+		(:FOR
+		 )
+		(:ENDFOR
+
+		 ))))))

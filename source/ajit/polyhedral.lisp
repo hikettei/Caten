@@ -179,7 +179,7 @@ for (int c0 = 0; c0 < a; c0 += 1)
 	   (schedule (foreign-funcall "isl_schedule_constraints_compute_schedule" :pointer (isl-obj-ptr constraints) :pointer)))
       (setf (poly-schedule polyhedral) (make-isl-obj :ptr schedule))
       polyhedral)))
-
+;; Work in progress ...
 (defun poly/loop-collapse (polyhedral)
   "
 [Scheduler]
