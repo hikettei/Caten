@@ -1,90 +1,55 @@
 (in-package :caten/ajit)
-
-(defcenum :isl-ast-node-type
-  (:isl_ast_node_error -1)
-  (:isl_ast_node_for 1)
-  :isl_ast_node_if
-  :isl_ast_node_block
-  :isl_ast_node_mark
-  :isl_ast_node_user)
-
-(defcenum :isl-ast-expr-type
-  (:isl_ast_expr_error -1)
-  :isl_ast_expr_op
-  :isl_ast_expr_id
-  :isl_ast_expr_int)
-
-(defcenum :isl-ast-expr-op-type
-  (:isl_ast_expr_op_error -1)
-  :isl_ast_expr_op_and
-  :isl_ast_expr_op_and_then
-  :isl_ast_expr_op_or
-  :isl_ast_expr_op_or_else
-
-  ;; maxmin
-  :isl_ast_expr_op_max
-  :isl_ast_expr_op_min
-
-  ;; (- a)
-  :isl_ast_expr_op_minus
-
-  ;; Binary_Ops
-  :isl_ast_expr_op_add
-  :isl_ast_expr_op_sub
-  :isl_ast_expr_op_mul
-  :isl_ast_expr_op_div
-  
-  :isl_ast_expr_op_fdiv_q
-  :isl_ast_expr_op_pdiv_q
-  :isl_ast_expr_op_pdiv_r
-  :isl_ast_expr_op_zdiv_r
-  :isl_ast_expr_op_cond
-  :isl_ast_expr_op_select
-  :isl_ast_expr_op_eq
-  :isl_ast_expr_op_le
-  :isl_ast_expr_op_lt
-  :isl_ast_expr_op_ge
-  :isl_ast_expr_op_gt
-  :isl_ast_expr_op_call
-  :isl_ast_expr_op_access
-  :isl_ast_expr_op_member
-  :isl_ast_expr_op_address_of)
-
-(defun finalize-schedule (polyhedral)
-  "Lowers the ISL-ast into polyhedron"
-  (declare (type Polyhedral polyhedral))
-  (with-slots ((avm avm)) polyhedral
-    (let ((ast (isl-obj-ptr (finalize-polyhedral polyhedral))))
-      (parse-isl-ast avm ast))))
-
-(defun parse-isl-ast (avm ast)
-  (declare (type avm avm)
-	   (type cffi:foreign-pointer ast))
-  (with-inlined-foreign-funcall-mode
-    (let ((type (%"isl_ast_node_get_type":isl-ast-node-type :pointer ast)))
-      (ecase type
-	(:isl_ast_node_error (error ":isl-ast-node-error"))
-	(:isl_ast_node_for
-	 ;; isl-ast-for
-	 (parse-isl-ast-for avm ast))
-	(:isl_ast_node_if
-	 (error "Not implemented: parse-isl-ast-if")
-	 )
-	(:isl_ast_node_block
-	 (parse-isl-ast-block avm ast))
-	(:isl_ast_node_mark
-	 "")
-	(:isl_ast_node_user
-	 (parse-isl-ast-user avm ast))))))
-
+;; Translates From ISL_AST -> Lisp_AST
+;; ~~ Lisp AST ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (ASTBlock
 	    (:constructor make-block (body)))
   (body body :type list))
 
-(declaim (ftype (function (AVM cffi:foreign-pointer) ASTBlock) parse-isl-ast-block))
-(defun parse-isl-ast-block (avm ast)
-  (declare (type avm avm)
-	   (type cffi:foreign-pointer ast))
+(defstruct (User
+	    (:constructor make-user (name args)))
+  "T_name(index)"
+  (name name :type string) (args args :type list))
+
+(defstruct (Expr (:constructor make-expr (op x &optional (y nil))))
+  (op op) (x x) (y y))
+
+(defstruct (ASTFor
+	    (:constructor make-for (idx from to by body execute-once)))
+  (idx idx :type string)
+  (from from :type Expr)
+  (to to :type Expr)
+  (by by :type Expr)
+  (body body)
+  (execute-once execute-once :type boolean))
+
+(defstruct (AstIf
+	    (:constructor make-if (condition then-node else-node)))
+  (condition condition :type Expr)
+  (then-node then-node)
+  (else-node else-node))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun finalize-schedule (polyhedral)
+  "Finalizes the polyhedral model (frees the memory), returning Lisp_AST (see above)"
+  (declare (type Polyhedral polyhedral))
+  (with-slots ((avm avm)) polyhedral
+    (parse-isl-ast (isl-obj-ptr (finalize-polyhedral polyhedral)))))
+
+(declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast))
+(defun parse-isl-ast (ast)
+  (declare (type cffi:foreign-pointer ast))
+  (with-inlined-foreign-funcall-mode
+    (let ((type (%"isl_ast_node_get_type":isl-ast-node-type :pointer ast)))
+      (ecase type
+	(:isl_ast_node_error (error ":isl-ast-node-error"))
+	(:isl_ast_node_for   (parse-isl-ast-for ast))
+	(:isl_ast_node_if    (parse-isl-ast-if ast))
+	(:isl_ast_node_block (parse-isl-ast-block ast))
+	(:isl_ast_node_mark  (error ":isl_ast_node_mark is not supported"))
+	(:isl_ast_node_user  (parse-isl-ast-user ast))))))
+
+(declaim (ftype (function (cffi:foreign-pointer) ASTBlock) parse-isl-ast-block))
+(defun parse-isl-ast-block (ast)
+  (declare (type cffi:foreign-pointer ast))
   (with-inlined-foreign-funcall-mode
     (let* ((children (%"isl_ast_node_block_get_children":pointer :pointer ast))
 	   (n        (%"isl_ast_node_list_n_ast_node":int :pointer children)))
@@ -92,16 +57,11 @@
       (loop for i upfrom 0 below n
 	    for child = (%"isl_ast_node_list_get_at":pointer :pointer children :int i)
 	    collect
-	    (parse-isl-ast avm child))))))
+	    (parse-isl-ast child))))))
 
-(defstruct (User
-	    (:constructor make-user (name args)))
-  (name name :type string) (args args :type list))
-
-(declaim (ftype (function (AVM cffi:foreign-pointer) User) parse-isl-ast-user))
-(defun parse-isl-ast-user (avm ast)
-  (declare (type avm avm)
-	   (type cffi:foreign-pointer ast))
+(declaim (ftype (function (cffi:foreign-pointer) User) parse-isl-ast-user))
+(defun parse-isl-ast-user (ast)
+  (declare (type cffi:foreign-pointer ast))
   (with-inlined-foreign-funcall-mode
     (let ((expr (%"isl_ast_node_user_get_expr":pointer :pointer ast)))
       (%"isl_ast_expr_free":void :pointer expr)
@@ -115,17 +75,12 @@
 			   (%"isl_id_free":void :pointer id)))
 	     (args       (loop for i upfrom 1 below n
 			       collect
-			       (parse-isl-expr avm (%"isl_ast_expr_op_get_arg":pointer :pointer expr :int i)))))
+			       (parse-isl-expr (%"isl_ast_expr_op_get_arg":pointer :pointer expr :int i)))))
 	(make-user name args)))))
 
-(defstruct (Expr (:constructor make-expr (op x &optional (y nil))))
-  (op op) (x x) (y y))
-
-;; TODO: need-upper-bound is not anymore used
-(declaim (ftype (function (AVM cffi:foreign-pointer &key (:need-upper-bound boolean)) Expr) parse-isl-expr))
-(defun parse-isl-expr (avm ast &key (need-upper-bound nil))
-  (declare (type avm avm)
-	   (type cffi:foreign-pointer ast))
+(declaim (ftype (function (cffi:foreign-pointer) Expr) parse-isl-expr))
+(defun parse-isl-expr (ast)
+  (declare (type cffi:foreign-pointer ast))
   (with-inlined-foreign-funcall-mode
     (let ((type (%"isl_ast_expr_get_type":isl-ast-expr-type :pointer ast)))
       (ecase type
@@ -148,22 +103,11 @@
 	   (assert (or (= n-arg 1) (= n-arg 2)) () "Assertion Failed with nargs == 1 or 2")
 	   (multiple-value-bind (lhs rhs)
 	       (values
-		(parse-isl-expr avm (%"isl_ast_expr_op_get_arg":pointer :pointer ast :int 0))
+		(parse-isl-expr (%"isl_ast_expr_op_get_arg":pointer :pointer ast :int 0))
 		(when (= n-arg 2)
-		  (parse-isl-expr avm (%"isl_ast_expr_op_get_arg":pointer :pointer ast :int 1))))
+		  (parse-isl-expr (%"isl_ast_expr_op_get_arg":pointer :pointer ast :int 1))))
 	     (let ((op-type (%"isl_ast_expr_op_get_type":isl-ast-expr-op-type :pointer ast)))
 	       (assert (not (eql op-type :isl_ast_expr_op_error)) () ":isl_ast_expr_op_error")
-	       ;; i < 10, here 10 is needed if need-upper-bound is set to t
-	       (when need-upper-bound
-		 ;; i < 10, here 10 is needed if need-upper-bound is set to t
-		 (ecase op-type
-		   ;; a < b
-		   ;; ->
-		   ;; a <= b-1
-		   (:isl_ast_expr_op_lt ;; a < b
-		    (return-from parse-isl-expr (make-expr :- rhs 1)))
-		   (:isl_ast_expr_op_le ;; a <= b
-		    (return-from parse-isl-expr (make-expr :Const rhs)))))
 	       (ecase op-type
 		 (:isl_ast_expr_op_and (make-expr :and lhs rhs))
 		 (:isl_ast_expr_op_and_then (make-expr :and lhs rhs))
@@ -191,21 +135,13 @@
 		 ;;(:isl_ast_expr_op_access)
 		 ;;(:isl_ast_expr_op_member)
 		 ;;(:isl_ast_expr_op_address_of)
+		 (otherwise
+		  (error "~a is not supported." op-type))
 		 )))))))))
 
-(defstruct (ASTFor
-	    (:constructor make-for (idx from to by body execute-once)))
-  (idx idx :type string)
-  (from from :type Expr)
-  (to to :type Expr)
-  (by by :type Expr)
-  (body body)
-  (execute-once execute-once :type boolean))
-
-(declaim (ftype (function (AVM cffi:foreign-pointer) ASTFor) parse-isl-ast-for))
-(defun parse-isl-ast-for (avm ast)
-  (declare (type avm avm)
-	   (type cffi:foreign-pointer ast))
+(declaim (ftype (function (cffi:foreign-pointer) ASTFor) parse-isl-ast-for))
+(defun parse-isl-ast-for (ast)
+  (declare (type cffi:foreign-pointer ast))
   (with-inlined-foreign-funcall-mode
     (let* ((execute-once (%"isl_ast_node_for_is_degenerate":boolean :pointer ast))
 	   (iter (%"isl_ast_node_for_get_iterator":pointer  :pointer ast))
@@ -213,10 +149,23 @@
 	   (name (prog1
 		     (%"isl_id_get_name":string :pointer id)
 		   (%"isl_id_free":void :pointer id)))
-	   (from (parse-isl-expr avm (%"isl_ast_node_for_get_init":pointer :pointer ast)))			   
-	   (by (parse-isl-expr avm (%"isl_ast_node_for_get_inc":pointer :pointer ast)))
-	   (to (parse-isl-expr avm (%"isl_ast_node_for_get_cond":pointer :pointer ast)))
-	   (body (parse-isl-ast
-		  avm
-		  (%"isl_ast_node_for_get_body":pointer :pointer ast))))
+	   (from (parse-isl-expr (%"isl_ast_node_for_get_init":pointer :pointer ast)))			   
+	   (by (parse-isl-expr (%"isl_ast_node_for_get_inc":pointer :pointer ast)))
+	   (to (parse-isl-expr (%"isl_ast_node_for_get_cond":pointer :pointer ast)))
+	   (body (parse-isl-ast (%"isl_ast_node_for_get_body":pointer :pointer ast))))
       (make-for name from to by body execute-once))))
+
+(declaim (ftype (function (cffi:foreign-pointer) AstIf) parse-isl-ast-if))
+(defun parse-isl-ast-if (ast)
+  (declare (type cffi:foreign-pointer ast))
+  (with-inlined-foreign-funcall-mode
+    (let* ((condition
+	     (parse-isl-expr (%"isl_ast_node_if_get_cond":pointer :pointer ast)))
+	   (then-node
+	     (parse-isl-ast (%"isl_ast_node_if_get_then_node":pointer :pointer ast)))
+	   (else-p
+	     (%"isl_ast_node_if_has_else_node":boolean :pointer ast))
+	   (else-node
+	     (when else-p
+	       (parse-isl-ast (%"isl_ast_node_if_get_else_node":pointer :pointer ast)))))
+      (make-if condition then-node else-node))))

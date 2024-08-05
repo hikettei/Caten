@@ -180,3 +180,54 @@
 (define-isl-function "isl_schedule_node_n_children"
   :int
   (ptr :pointer))
+
+;; ~~ ISL AST ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defcenum :isl-ast-node-type
+  (:isl_ast_node_error -1)
+  (:isl_ast_node_for 1)
+  :isl_ast_node_if
+  :isl_ast_node_block
+  :isl_ast_node_mark
+  :isl_ast_node_user)
+
+(defcenum :isl-ast-expr-type
+  (:isl_ast_expr_error -1)
+  :isl_ast_expr_op
+  :isl_ast_expr_id
+  :isl_ast_expr_int)
+
+(defcenum :isl-ast-expr-op-type
+  (:isl_ast_expr_op_error -1)
+  :isl_ast_expr_op_and
+  :isl_ast_expr_op_and_then
+  :isl_ast_expr_op_or
+  :isl_ast_expr_op_or_else
+
+  ;; maxmin
+  :isl_ast_expr_op_max
+  :isl_ast_expr_op_min
+
+  ;; (- a)
+  :isl_ast_expr_op_minus
+
+  ;; Binary_Ops
+  :isl_ast_expr_op_add
+  :isl_ast_expr_op_sub
+  :isl_ast_expr_op_mul
+  :isl_ast_expr_op_div
+  
+  :isl_ast_expr_op_fdiv_q
+  :isl_ast_expr_op_pdiv_q
+  :isl_ast_expr_op_pdiv_r
+  :isl_ast_expr_op_zdiv_r
+  :isl_ast_expr_op_cond
+  :isl_ast_expr_op_select
+  :isl_ast_expr_op_eq
+  :isl_ast_expr_op_le
+  :isl_ast_expr_op_lt
+  :isl_ast_expr_op_ge
+  :isl_ast_expr_op_gt
+  :isl_ast_expr_op_call
+  :isl_ast_expr_op_access
+  :isl_ast_expr_op_member
+  :isl_ast_expr_op_address_of)
