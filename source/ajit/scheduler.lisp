@@ -382,6 +382,7 @@ Options:
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       polyhedron
       (remove-iteration-ir (poly-pipeline polyhedron))
+      (apply-alias-for-rendering-graph (poly-pipeline polyhedron))
       (let* ((extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
 	     (render (%render-subroutine :clang :clang r-graph polyhedron 0 type-map)))

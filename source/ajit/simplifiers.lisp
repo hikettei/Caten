@@ -38,3 +38,25 @@
   (%purge-views-from-schedule avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t))
+
+(defun apply-alias-for-rendering-graph (pipeline)
+  (declare (type hash-table pipeline))
+  (let ((alias-map (make-hash-table :test #'eql)))
+    (labels ((alias (key value)
+	       (setf (gethash key alias-map) value))
+	     (load-from-map (key) (or (gethash key alias-map) key))		 
+	     (alias-node (node)
+	       (alias (car (node-writes node)) (load-from-map (car (node-reads node))))))
+      (loop for graph being the hash-values of pipeline do
+	(dolist (node (graph-nodes graph))
+	  (case (node-type node)
+	    (:Allocate nil)
+	    (otherwise
+	     (when (>= (length (node-writes node)) 1)
+	       (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
+
+	       (let ((writes (list (load-from-map (car (node-reads node)))))
+		     (reads (map 'list #'load-from-map (node-reads node))))
+		 (alias-node node)
+		 (setf (node-writes node) writes
+		       (node-reads node) reads))))))))))
