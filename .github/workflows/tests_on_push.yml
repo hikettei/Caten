@@ -19,19 +19,24 @@ jobs:
         - normal
     steps:
       - uses: actions/checkout@v1
-      - name: Installing ${{ matrix.lisp }}, and libisl.
+      - name: Set up Roswell and ${{ matrix.lisp }}, libisl-dev, qlot, and rove.
         env:
           LISP: ${{ matrix.lisp }}
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+      - name: Installing dependencies (libisl-dev, qlot, and rove)
+        run: |
           sudo apt-get install -y libisl-dev
+          ros install qlot rove
       - name: Update $PATH
         run: |
           echo $PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Check $PATH
         run: echo $PATH
-      - name: Running unittest
+      - name: Run unittest with VM+Lisp
         run: |
           ros config set dynamic-space-size 4gb
-          ros --eval '(progn (cl:push (cl:pathname "./") ql:*local-project-directories*) (asdf:load-asd "caten.asd") (ql:quickload "caten"))' --eval '(asdf:test-system "caten")'
+          qlot init
+          qlot install
+          qlot exec rove caten.asd
