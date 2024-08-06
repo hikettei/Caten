@@ -13,5 +13,8 @@ Policy:
    ))
 
 (defpackage :caten/nn.test
-  (:use :cl :caten :caten/nn :rove))
+  (:use :cl :caten :caten/nn :caten/avm :rove))
 
+(in-package :caten/nn.test)
+;; Common Utils for caten/nn.test
+(defun elements (tensor) (buffer-value (tensor-buffer tensor)))

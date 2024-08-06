@@ -26,8 +26,18 @@
     (asdf:test-op "caten.aasm")
     (asdf:test-op "caten.avm")
     ;; as well as other systems
-    (asdf:test-op "caten/test")    
-    )))
+    (asdf:test-op "caten/test")
+    (asdf:test-op "caten/nn.test"))))
+
+
+(asdf:defsystem "caten/nn.test"
+  :depends-on
+  ("rove")
+  :pathname "source/nn"
+  :components ((:file "package")
+	       (:file "activations"))
+  :perform
+  (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style :dot)))
 
 (asdf:defsystem "caten/test"
   :depends-on
