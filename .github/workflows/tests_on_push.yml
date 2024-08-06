@@ -27,8 +27,6 @@ jobs:
       - name: Installing dependencies (libisl-dev, and rove)
         run: |
           sudo apt-get install -y libisl-dev
-          ros -e '(ql-dist:install-dist "http://dist.shirakumo.org/shirakumo.txt")' -q # https://github.com/Shinmera/dissect/issues/18
-          ros install rove
       - name: Update $PATH
         run: |
           echo $PATH
@@ -40,4 +38,4 @@ jobs:
         run: |
           ros config set dynamic-space-size 4gb
           ros -e '(ql:register-local-projects)' -q
-          rove caten.asd
+          make test #rove caten.asd
