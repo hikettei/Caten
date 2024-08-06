@@ -21,13 +21,15 @@ jobs:
       - uses: actions/checkout@v1
       - name: Set up ${{ matrix.lisp }} via Roswell.
         env:
-          LISP: ${{ matrix.lisp }}
+          LISP: sbcl-bin/2.4.0 # Install the older version of SBCL to pass (ql:quickload :dissect)
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install ${{ matrix.lisp }}
+          ros use ${{ matrix.lisp }}
       - name: Installing dependencies (libisl-dev, and rove)
         run: |
           sudo apt-get install -y libisl-dev
-          ros -e "(ql-dist:install-dist \"https://dist.shirakumo.org/shirakumo.txt\")" -q
+          #ros -e "(ql-dist:install-dist \"https://dist.shirakumo.org/shirakumo.txt\")" -q
           ros install rove
       - name: Update $PATH
         run: |
