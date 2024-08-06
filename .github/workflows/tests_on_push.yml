@@ -13,7 +13,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        lisp: [sbcl-bin/2.4.0, ccl-bin, ecl]
+        lisp: [sbcl-bin, ccl-bin, ecl]
         os: [ubuntu-latest]
         target:
         - normal
@@ -24,12 +24,10 @@ jobs:
           LISP: ${{ matrix.lisp }}
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
-      - if: ${{ matrix.lisp == 'ccl-bin' }}
-        name: ros use ${{ matrix.lisp }}
-        run: ros use ${{ matrix.lisp }}
       - name: Installing dependencies (libisl-dev, and rove)
         run: |
           sudo apt-get install -y libisl-dev
+          ros -e '(ql-dist:install-dist "http://dist.shirakumo.org/shirakumo.txt")' -q # https://github.com/Shinmera/dissect/issues/18
           ros install rove
       - name: Update $PATH
         run: |
