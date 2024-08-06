@@ -1,14 +1,11 @@
-(cl:in-package :cl-user)
-(defpackage :caten/nn.activations
-  (:use :cl :caten :rove)
-  (:export
-   #:!relu
-   ))
-(in-package :caten/nn.activations)
+(cl:in-package :caten/nn)
+
 (defun !relu (x) (!max x (fconst 0)))
 
-(defpackage :caten/nn.activations.test
-  (:use :cl :caten/nn.activations :rove :caten))
-(in-package :caten/nn.activations.test)
-(deftest test-relu (ok (= 1 1)))
+;; TODO1. ReLU/BatchNorm/Linear/Convなど一通り実装
+;; TODO2 1.0 ULP Testingを追加
 
+(in-package :caten/nn.test)
+
+(deftest test-relu
+  (ok (= 1 1)))

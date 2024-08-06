@@ -7,7 +7,11 @@ Policy:
   - Each module should be tested well (we expected to have a ton of regression tests here); 1 file 1 test-suite.
   - TODO: Add test-helpers.lisp")
   (:use :cl :caten)
+  ;; from activations.lisp
   (:export
-   
+   #:!relu
    ))
-(in-package :caten/nn)
+
+(defpackage :caten/nn.test
+  (:use :cl :caten :caten/nn :rove))
+
