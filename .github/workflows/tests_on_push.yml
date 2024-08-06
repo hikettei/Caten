@@ -13,25 +13,32 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        lisp: [sbcl-bin/2.4.0, ccl-bin, ecl]
+        lisp: [sbcl-bin/2.4.0, ccl-bin, ecl] # Caten should work on the latest sbcl; but (ql:quickload :dissect) which rove depends on, fails with > sbcl-bin/2.4.2
         os: [ubuntu-latest]
         target:
         - normal
     steps:
       - uses: actions/checkout@v1
-      - name: Installing ${{ matrix.lisp }}, and libisl.
+      - name: Set up ${{ matrix.lisp }} via Roswell.
         env:
-          LISP: ${{ matrix.lisp }}
+          LISP: sbcl-bin/2.4.0 # Install rove with the older version of SBCL to pass (ql:quickload :dissect)
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install ${{ matrix.lisp }}
+          ros use ${{ matrix.lisp }}
+          ros install rove
+      - name: Installing dependencies (libisl-dev, and rove)
+        run: |
           sudo apt-get install -y libisl-dev
       - name: Update $PATH
         run: |
           echo $PATH
+          export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Check $PATH
         run: echo $PATH
-      - name: Running unittest
+      - name: Run unittest with VM+Lisp
         run: |
           ros config set dynamic-space-size 4gb
-          ros --eval '(progn (cl:push (cl:pathname "./") ql:*local-project-directories*) (asdf:load-asd "caten.asd") (ql:quickload "caten"))' --eval '(asdf:test-system "caten")'
+          ros -e '(ql:register-local-projects)' -q
+          rove caten.asd
