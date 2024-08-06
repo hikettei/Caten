@@ -31,6 +31,7 @@ jobs:
       - name: Update $PATH
         run: |
           echo $PATH
+          echo "PATH=/home/runner/.roswell/bin:$PATH" >> $GITHUB_ENV
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Check $PATH
         run: echo $PATH
