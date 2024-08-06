@@ -24,10 +24,10 @@ jobs:
           LISP: ${{ matrix.lisp }}
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
-      - name: Installing dependencies (libisl-dev, qlot, and rove)
+      - name: Installing dependencies (libisl-dev, and rove)
         run: |
           sudo apt-get install -y libisl-dev
-          ros install qlot rove
+          ros install rove
       - name: Update $PATH
         run: |
           echo $PATH
@@ -38,6 +38,5 @@ jobs:
       - name: Run unittest with VM+Lisp
         run: |
           ros config set dynamic-space-size 4gb
-          qlot init
-          qlot install
-          qlot exec rove caten.asd
+          ros -e '(ql:register-local-projects)' -q
+          rove caten.asd
