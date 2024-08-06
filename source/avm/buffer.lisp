@@ -80,7 +80,10 @@
       (labels ((pprint-helper (dim subscripts lastp indent)
 		 (let ((size (nth dim (buffer-shape buffer))))
 		   (if (null size)
-		       (format stream "~a" (apply #'buffer-ref buffer subscripts))
+		       (let* ((content (format nil "~a" (apply #'buffer-ref buffer subscripts)))
+			      (diff    (max 0 (- sample-size (length content))))
+			      (offset  (with-output-to-string (out) (dotimes (i diff) (princ " " out)))))
+			 (format stream "~a~a" content offset))
 		       (if (<= size max)
 			   (progn
 			     (format stream bracket-start)
