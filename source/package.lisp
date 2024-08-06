@@ -7,6 +7,10 @@
 - ASM Bindings
 - Graph Caller")
   (:use :cl :alexandria :trivia :cl-ppcre :caten/aasm :caten/air :caten/avm)
+  (:import-from
+   :caten/common.dtype
+   #:dtype-t
+   #:dtype->lisp)
   ;; from tensor.lisp
   (:export
    #:make-tensor

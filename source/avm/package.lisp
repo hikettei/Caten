@@ -1,6 +1,11 @@
 (cl:in-package :cl-user)
 (defpackage :caten/avm
   (:use :cl :caten/aasm :caten/air :alexandria)
+  (:import-from
+   :caten/common.dtype
+   #:dtype-t
+   #:dtype->lisp
+   #:dtype/cast)
   ;; from buffer.lisp
   (:export
    #:*device*

@@ -1,15 +1,17 @@
 (in-package :cl-user)
 (defpackage :caten/aasm
   (:use :cl :trivia :caten/air :alexandria)
-  ;; (:nicknames :caten
-
+  (:import-from
+   :caten/common.dtype
+   #:dtype-t
+   #:dtype->lisp
+   #:dtype/cast)
   ;; from tensor-ir.lisp
   (:export
    #:*default-order*
    #:*default-float*
    #:*default-uint*
    #:*default-int*
-   #:dtype-t
    #:dtype/integerp
    #:dtype/floatp
 
@@ -72,9 +74,6 @@
   ;; from logical.lisp
   (:export
    #:%where)
-
-  ;; from helpers.lisp
-  (:export #:dtype->lisp #:dtype/cast)
   ;; from optimizers.lisp
   (:export #:optimize-aasm)
   )

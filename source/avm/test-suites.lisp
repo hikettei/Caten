@@ -1,7 +1,7 @@
 (in-package :cl-user)
 
 (defpackage :caten/avm.test
-  (:use :cl :rove :caten/air :caten/aasm :caten/avm))
+  (:use :cl :rove :caten/air :caten/aasm :caten/avm :caten/common.dtype))
 (in-package :caten/avm.test)
 
 (defun =~ (x y) (< (abs (- x y)) 1e-6))

@@ -17,7 +17,8 @@
 	       (:file "function")
 	       (:file "module")
 	       (:file "initializers")
-	       (:file "syntax-sugar"))
+	       (:file "syntax-sugar")
+	       (:file "nn/package"))
   :in-order-to
   ((test-op
     (asdf:test-op "caten.air")

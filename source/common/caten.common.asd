@@ -5,4 +5,6 @@
   :depends-on ("uiop")
   :serial t
   :components
-  ((:file "contextvar")))
+  ((:file "contextvar")
+   (:file "tqdm")
+   (:file "dtype")))

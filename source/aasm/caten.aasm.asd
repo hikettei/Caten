@@ -2,7 +2,7 @@
   :description "aasm = Abstract + (internal) assembly"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("alexandria" "caten.air")
+  :depends-on ("alexandria" "caten.common" "caten.air")
   :serial t
   :components
   ((:file "package")

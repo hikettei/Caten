@@ -17,8 +17,8 @@
   (grad->tensor (make-hash-table :test #'eql) :type hash-table) ;; grad_id vs grad_tensor table. 
   (tid->tensor (make-hash-table :test #'eql) :type hash-table)  ;; a pair of toplevel_node and lowered_node
   (grad->grads (make-hash-table :test #'eql) :type hash-table)  ;; multi-grad accumlation table.
-  (fw-out-ids nil :type list) ;; list of tensor ids at the end of the graph.
-  (bw-out-ids nil :type list));; a list of grads (as well as fw-out-ids)
+  (fw-out-ids nil :type list)  ;; list of tensor ids at the end of the graph.
+  (bw-out-ids nil :type list)) ;; a list of grads (as well as fw-out-ids)
 
 (defun session/set-tid (session tid tensor)
   (declare (type Compiler-Session session) (type symbol tid) (type tensor tensor))

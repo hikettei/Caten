@@ -18,14 +18,6 @@
 (defparameter *default-int* :int32)
 (defparameter *default-uint* :uint32)
 
-(deftype dtype-t ()
-  "A list of available keywords as a dtype"
-  `(and keyword
-	(member
-	 :float64 :float32 :float16
-	 :uint64 :uint32 :uint16 :uint8
-	 :int64 :int32 :int16 :int8 :bool)))
-
 (defun dtype/integerp (dtype)
   (and (find dtype `(:uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8)) t))
 

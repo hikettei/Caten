@@ -114,7 +114,8 @@ OP :=
 (defun ->cdtype (dtype)
   (ecase dtype
     (:float64 "double")
-    (:float32 "float")))
+    (:float32 "float")
+    (:uint32 "uint32_t")))
 
 (defmethod %render-nodes ((lang (eql :clang)) graph args indent type-map)
   (with-output-to-string (out)

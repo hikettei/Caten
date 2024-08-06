@@ -1,6 +1,11 @@
 (in-package :cl-user)
 (defpackage :caten/ajit
   (:use :cl :alexandria :caten/aasm :caten/air :caten/avm :cffi)
+  (:import-from
+   :caten/common.dtype
+   #:dtype-t
+   #:dtype->lisp
+   #:dtype/cast)
   ;; from isl-objects.lisp
   (:export
    #:form
