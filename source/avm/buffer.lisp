@@ -72,7 +72,7 @@
 	  (loop for i upfrom 0
 		  below
 		  (min
-		   10
+		   100
 		   (apply #'* (map 'list #'(lambda (x v) (if (fourth v) 1 x)) (buffer-shape buffer) (buffer-views buffer))))
 		maximize (length (format nil "~a" (%vm/read-index *device* buffer i))))))
     (with-output-to-string (stream)

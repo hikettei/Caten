@@ -78,7 +78,7 @@
   ;; from function.lisp
   (:export
    ;; shaping
-   #:!view #:!reshape #:!contiguous #:!permute #:!t
+   #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!permute #:!t
    #:!uprank
    ;; Binary
    #:!add #:!+

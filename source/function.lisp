@@ -187,6 +187,8 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defun !uprank (x n)
   (declare (type tensor x) (type (integer 0) n))
   (!reshape x (append (loop for i upfrom 0 below n collect 1) (tensor-shape x))))
+(defun !repeat (x &rest repeats)
+  (!reshape x (loop for s in (shape x) for r in repeats collect (!mul (->iconst s) (->iconst r)))))
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Move (Func) nil)
 (defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))

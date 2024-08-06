@@ -35,5 +35,8 @@
 	    (append
 	     (loop for i in (butlast (shape x) 2) collect t)
 	     slc)))
-	 (out (!move (print out) x)))
+	 (out (!move out x)))
     (apply #'!view-from-base out (loop for s in (shape base) collect `(0 ,s)))))
+
+(in-package :caten/nn.test)
+;; TODO: Test
