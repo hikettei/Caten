@@ -117,10 +117,32 @@
 (ieee-floats:make-float-converters encode-bfloat16 decode-bfloat16 8 7 t)
 
 ;; TODO: ANSI-Portable NAN/INF/-INF ?
-(defmacro forall ((bind dtype &key (duration 1000.0) (fuzzing t)) &body body)
+(defmacro forall ((bind dtype &key (duration 1.001) (fuzzing t)) &body body)
   "Iterates body over {NaN, Inf, -Inf, Min(dtype) ~ Max(dtype)}"
   (with-gensyms (body-f)
     `(flet ((,body-f (,bind) ,@body))
+       (multiple-value-bind (max min)
+	   (values (dtype/max ,dtype) (dtype/min ,dtype))
+	 (loop with count = 0
+	       with stop = nil
+	       for nth upfrom 0
+	       for fuzz = (if ,fuzzing (random (dtype/cast 2 ,dtype)) 0)
+	       while (and (not stop) (<= count max)) do
+		 (,body-f (dtype/cast (+ fuzz count) ,dtype))
+		 (if (>= count 3.223714e37)
+		     (setf stop t)
+		     (incf count (expt ,duration nth))))
+	 (when (not (= min 0))
+	   ;; Assuming symmetric
+	   (loop with count = 0
+		 with stop = nil
+		 for nth upfrom 0
+		 for fuzz = (if ,fuzzing (random (dtype/cast 2 ,dtype)) 0)
+		 while (and (not stop) (<= count max)) do
+		   (,body-f (dtype/cast (- (+ fuzz count)) ,dtype))
+		   (if (>= count 3.223714e37)
+		       (setf stop t)
+		       (incf count (expt ,duration nth))))))
        (,body-f (dtype/max ,dtype))
        (,body-f (dtype/min ,dtype))
        ;; TODO ...
@@ -128,11 +150,4 @@
        ;;  (,body-f (dtype/-inf ,dtype))
        ;;  (,body-f (dtype/nan ,dtype))
        (,body-f (dtype/cast 0 ,dtype))
-       (when (dtype/floatp ,dtype)
-	 (,body-f (dtype/smallest ,dtype)))
-       (loop for x from (dtype/min ,dtype)
-	       to (dtype/max ,dtype)
-	     by (dtype/cast ,duration ,dtype)
-	     for fuzzed-x = (if ,fuzzing (+ x (random (dtype/cast 100 ,dtype))) x)
-	     do (,body-f fuzzed-x)))))
-
+       (when (dtype/floatp ,dtype) (,body-f (dtype/smallest ,dtype))))))

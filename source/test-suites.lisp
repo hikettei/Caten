@@ -1,5 +1,5 @@
 (in-package :cl-user)
-(defpackage :caten.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air))
+(defpackage :caten.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
 (in-package :caten.test)
 
 (deftest test-shape-tracker
@@ -439,6 +439,38 @@
 	       0.0 6.0 12.0 18.0 24.0 30.0 36.0 42.0 48.0 54.0 0.0 7.0 14.0 21.0
 	       28.0 35.0 42.0 49.0 56.0 63.0 0.0 8.0 16.0 24.0 32.0 40.0 48.0 56.0
 	       64.0 72.0 0.0 9.0 18.0 27.0 36.0 45.0 54.0 63.0 72.0 81.0))))
+
+(defun exp2 (x) (expt 2 x))
+(defun log2 (x) (log x 2))
+(macrolet ((unary-dtype-test (name op lisp-op &key (non-zero nil))
+	     `(deftest ,name
+		(dolist (dtype `(:float32))
+		  (let ((model (caten (,op (make-tensor `(1) :initial-element 'a :dtype dtype))))
+			(ulp (1.0ulp dtype)))
+		    (forall (x dtype :fuzzing nil)
+		      (when (or (null ,non-zero) (not (= x 0)))
+			(assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
+				()
+				"~(~a~)(x=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
+				',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
+				(,lisp-op x) ulp dtype)))
+		    (forall (x dtype :fuzzing t)
+		      (when (or (null ,non-zero) (not (= x 0)))
+			(assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
+				()
+				"~(~a~)({x+(random 2.0)}=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
+				',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
+				(,lisp-op x) ulp dtype)))
+		    (ok t))))))
+  (unary-dtype-test sin--test !sin sin)
+  (unary-dtype-test cos-test !cos cos)
+  (unary-dtype-test tan-test !tan tan)
+  (unary-dtype-test exp-test !exp exp)
+  (unary-dtype-test log-test !log log :non-zero t)
+  (unary-dtype-test exp2-test !exp2 exp2)
+  (unary-dtype-test log2-test !log2 log2 :non-zero t)
+  (unary-dtype-test abs-test !abs abs)
+  (unary-dtype-test signum-test !signum signum))
 
 ;; TODO
 ;; - Implement Autograd
