@@ -444,7 +444,7 @@
 (defun log2 (x) (log x 2))
 (macrolet ((unary-dtype-test (name op lisp-op &key (non-zero nil))
 	     `(deftest ,name
-		(dolist (dtype `(:float32))
+		(dolist (dtype `(:float32 :float64))
 		  (let ((model (caten (,op (make-tensor `(1) :initial-element 'a :dtype dtype))))
 			(ulp (1.0ulp dtype)))
 		    (forall (x dtype :fuzzing nil)
@@ -462,7 +462,7 @@
 				',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
 				(,lisp-op x) ulp dtype)))
 		    (ok t))))))
-  (unary-dtype-test sin--test !sin sin)
+  (unary-dtype-test sin-test !sin sin)
   (unary-dtype-test cos-test !cos cos)
   (unary-dtype-test tan-test !tan tan)
   (unary-dtype-test exp-test !exp exp)

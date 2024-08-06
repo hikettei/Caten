@@ -62,13 +62,17 @@
 
 (defun dtype/cast (x cast-to)
   "Casts the given number x into cast-to"
-  (declare (type number x)
+  (declare (type (or boolean number) x)
 	   (type dtype-t cast-to))
-  (if (or (typep x 'ratio) (floatp x))
-      (if (or (eql cast-to :float64) (eql cast-to :float32) (eql cast-to :float16) (eql cast-to :bfloat16))
-	  (coerce x (dtype->lisp cast-to))
-	  (coerce (round x) (dtype->lisp cast-to)))
-      (coerce x (dtype->lisp cast-to))))
+  (when (and (typep x 'boolean) (eql cast-to :bool)) (return-from dtype/cast x))
+  (let ((x (if (typep x 'boolean)
+	       (if x 1 0)
+	       x)))
+    (if (or (typep x 'ratio) (floatp x))
+	(if (or (eql cast-to :float64) (eql cast-to :float32) (eql cast-to :float16) (eql cast-to :bfloat16))
+	    (coerce x (dtype->lisp cast-to))
+	    (coerce (round x) (dtype->lisp cast-to)))
+	(coerce x (dtype->lisp cast-to)))))
 
 (defun 1.0ulp (dtype)
   (declare (type dtype-t dtype))
@@ -120,7 +124,7 @@
 (defmacro forall ((bind dtype &key (duration 1.001) (fuzzing t)) &body body)
   "Iterates body over {NaN, Inf, -Inf, Min(dtype) ~ Max(dtype)}"
   (with-gensyms (body-f)
-    `(flet ((,body-f (,bind) ,@body))
+    `(flet ((,body-f (,bind &aux (,bind (dtype/cast ,bind ,dtype))) ,@body))
        (multiple-value-bind (max min)
 	   (values (dtype/max ,dtype) (dtype/min ,dtype))
 	 (loop with count = 0
@@ -128,7 +132,7 @@
 	       for nth upfrom 0
 	       for fuzz = (if ,fuzzing (random (dtype/cast 2 ,dtype)) 0)
 	       while (and (not stop) (<= count max)) do
-		 (,body-f (dtype/cast (+ fuzz count) ,dtype))
+		 (,body-f (+ fuzz count))
 		 (if (>= count 3.223714e37)
 		     (setf stop t)
 		     (incf count (expt ,duration nth))))
@@ -149,5 +153,5 @@
        ;;  (,body-f (dtype/inf ,dtype))
        ;;  (,body-f (dtype/-inf ,dtype))
        ;;  (,body-f (dtype/nan ,dtype))
-       (,body-f (dtype/cast 0 ,dtype))
+       (,body-f 0)
        (when (dtype/floatp ,dtype) (,body-f (dtype/smallest ,dtype))))))
