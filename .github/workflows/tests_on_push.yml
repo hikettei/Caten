@@ -19,7 +19,7 @@ jobs:
         - normal
     steps:
       - uses: actions/checkout@v1
-      - name: Set up Roswell and ${{ matrix.lisp }}, libisl-dev, qlot, and rove.
+      - name: Set up ${{ matrix.lisp }} via Roswell.
         env:
           LISP: ${{ matrix.lisp }}
         run: |
