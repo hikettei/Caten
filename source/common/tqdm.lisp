@@ -8,4 +8,3 @@
 ;; 1. BatchNorm/LayerNorm/ReLU/Conv2D/Embeddingらへんをまず実装する，その上でJITのテストを作成
 ;; 2. cl-tqdm
 ;; 3.
-

@@ -2,7 +2,7 @@
   :description "Helpers for Caten"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("uiop")
+  :depends-on ("uiop" "ieee-floats")
   :serial t
   :components
   ((:file "contextvar")
