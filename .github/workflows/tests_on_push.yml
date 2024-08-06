@@ -24,6 +24,9 @@ jobs:
           LISP: ${{ matrix.lisp }}
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+      - if: ${{ matrix.lisp == 'ccl-bin' }}
+        name: ros use ${{ matrix.lisp }}
+        run: ros use ${{ matrix.lisp }}
       - name: Installing dependencies (libisl-dev, and rove)
         run: |
           sudo apt-get install -y libisl-dev
