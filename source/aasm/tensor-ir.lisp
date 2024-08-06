@@ -13,16 +13,10 @@
 ;; make-node must be wrapped with emit when producing outputs
 ;; and with-context can recognise it
 ;; ================================================================================================
-(defparameter *default-order* :row)
-(defparameter *default-float* :float32)
-(defparameter *default-int* :int32)
-(defparameter *default-uint* :uint32)
-
-(defun dtype/integerp (dtype)
-  (and (find dtype `(:uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8)) t))
-
-(defun dtype/floatp (dtype)
-  (and (find dtype `(:float64 :float32 :float16)) t))  
+(defparameter *default-order* (ctx:getenv :DEFAULT_ORDER))
+(defparameter *default-float* (ctx:getenv :DEFAULT_FLOAT))
+(defparameter *default-int*   (ctx:getenv :DEFAULT_INT))
+(defparameter *default-uint*  (ctx:getenv :DEFAULT_UINT))
 
 (defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")))
   "Equivalent to `dtype i[shape];`"

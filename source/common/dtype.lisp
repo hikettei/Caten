@@ -81,7 +81,7 @@
 (defun 3.5ulp (dtype) (* 3.5 (1.0ulp dtype)))
 (defun dtype/max (dtype)
   (ecase dtype
-    (:float64 3.40282e+38);;1.79769313486232d+308)
+    (:float64 3.40282e+38) ;;1.79769313486232d+308
     (:float32 3.40282e+38)
     (:float16 6.55040e+04)
     (:uint64 (expt 2 64))

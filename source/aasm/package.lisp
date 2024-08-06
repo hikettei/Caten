@@ -12,8 +12,6 @@
    #:*default-float*
    #:*default-uint*
    #:*default-int*
-   #:dtype/integerp
-   #:dtype/floatp
 
    #:%uconst
    #:%iconst
