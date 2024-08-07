@@ -15,12 +15,12 @@
     ;;noop_, i_ = [None] * len(self.shape[:-len(k_)]), self.shape[-len(k_):]
     (multiple-value-bind (noop_ noop1_ i_)
 	(values
-	 (loop repeat (length (slice (shape x) 0 (- (length k_)))) collect t)
-	 (loop for i upfrom 0 below (- (ndim x) (length k_)) collect (nth i (shape x)))
+	 (loop repeat (length (butlast (shape x) (length k_))) collect t)
+	 (loop for i upfrom 0 below (length (butlast (shape x) (length k_))) collect (nth i (shape x)))
 	 (last (shape x) (length k_)))
       ;;o_ = [math.ceil((i - d * (k-1))/s) for i,d,k,s in zip(i_, d_, k_, s_)]
       (let ((o_ (loop for i in i_ for d in d_ for k in k_ for s in s_
-		      collect (ceiling (/ (- i (* d (- k 1)) s))))));; TODO: Support symbolic (need !ceiling)
+		      collect (ceiling (/ (- i (* d (- k 1))) s)))));; TODO: Support symbolic (need !ceiling)
 	;; TODO: IfNode and support symbolic.
 	;; any(k > s for k,s in zip(k_, s_)) or any(d != 1 for d in d_):
 	;; (!if (!or (!some lambda list ...)))
@@ -42,6 +42,7 @@
 		   ;; xup = xup.reshape(noop_ + flatten((k,o) for k,o in zip(k_, o_)))
 		   (xup (!reshape xup (append noop1_ (loop for k in k_ for o in o_ append (list k o))))))
 	      ;; xup.permute(*range(len(noop_)), *[len(noop_)+i*2+1 for i in range(len(i_))], *[len(noop_)+i*2 for i in range(len(i_))])
+	      ;; Return: [N in_channels, o_, kernel_size]
 	      (!permute xup (append (range 0 (length noop_)) (loop for _ in i_ for i upfrom 0 collect (+ 1 (length noop_) (* i 2))) (loop for _ in i_ for i upfrom 0 collect (+ (length noop_) (* i 2))))))
 	    (progn
 	      ;; xup = self.pad(tuple(noop_ + [(0, max(0,o*s-i)) for i,o,s in zip(i_, o_, s_)]))

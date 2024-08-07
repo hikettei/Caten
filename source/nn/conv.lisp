@@ -78,7 +78,7 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 		     ;; x = x.sum([-1-i for i in range(1+len(oyx))], keepdim=True, acc_dtype=acc_dtype)
 		     (x (!sum x :axis (loop for i in (range 0 (+ 1 (length oyx))) collect (+ -1 (- i)))))
 		     ;; x = x.reshape(bs, cout, *oyx)
-		     (x (!reshape x (append (list bs cout) oyx))))		
+		     (x (!reshape x (append (list bs cout) oyx))))
 		(if bias
 		    (progn
 		      (assert (tensor-p (convnd-bias conv)) () "Bias for ~a should be a Tensor, getting ~a" conv (convnd-bias conv))
