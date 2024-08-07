@@ -10,6 +10,29 @@
 	  (reverse
 	   (loop for p in padding append (loop repeat 2 collect p))))))
 
+(defun !pad (x padding &key (value 0.0))
+  (declare (type list padding)
+	   (type Tensor x))
+  (assert (= (ndim x) (length padding)))
+  (let* ((slc
+	   (loop for pads in padding
+		 for s in (shape x)
+		 if (listp pads)
+		   collect (list (car pads) (!+ (iconst s) (iconst (car pads))))
+		 else
+		   collect t))
+	 (padded-tensor
+	   (make-tensor
+	    (loop for s in (shape x)
+		  for pads in padding
+		  if (listp pads)
+		    collect (!+ (iconst s) (iconst (car pads)) (iconst (second pads)))
+		  else
+		    collect s)
+	    :initial-element value :dtype (dtype-of x)))
+	 (out (!move (apply #'!view padded-tensor slc) x)))
+    (apply #'!view-from-base out (loop for s in (shape padded-tensor) collect `(0 ,s)))))
+
 ;; TODO: redefine this as a module
 (defun pad2d (x padding &key (value 0.0))
   "padding = (padding_left, padding_right, padding_top, padding_bottom)

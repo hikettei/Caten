@@ -38,6 +38,9 @@ Policy:
 	   out
 	   (reverse out)))))
 
+(defmacro range (from below &optional (by 1))
+  `(loop for i from ,from below ,below by ,by collect i))
+
 (defpackage :caten/nn.test
   (:use :cl :caten :caten/nn :caten/avm :rove))
 

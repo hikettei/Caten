@@ -4,7 +4,8 @@
 ;; TODO: Support symbolic by implementing
 ;; !if !some
 ;; TODO: test !repeat
-(defun pool (x k_ stride dilation)
+;; TODO: (!reshape x `(t t 10))
+(defun _pool (x k_ stride dilation)
   (declare (type Tensor x))
   (assert (>= (ndim x) (length k_)))
   ;; s_, d_ = make_pair(stride, len(k_)), make_pair(dilation, len(k_))
@@ -14,12 +15,11 @@
     ;;noop_, i_ = [None] * len(self.shape[:-len(k_)]), self.shape[-len(k_):]
     (multiple-value-bind (noop_ i_)
 	(values
-	 (loop repeat (length (slice (shape x) 0 (- (length k_)))) collect nil)
+	 (loop repeat (length (slice (shape x) 0 (- (length k_)))) collect t)
 	 (slice (shape x) (- (length k_))))
       ;;o_ = [math.ceil((i - d * (k-1))/s) for i,d,k,s in zip(i_, d_, k_, s_)]
       (let ((o_ (loop for i in i_ for d in d_ for k in k_ for s in s_
 		      collect (ceiling (/ (- i (* d (- k 1)) s))))));; TODO: Support symbolic (need !ceiling)
-
 	;; TODO: IfNode and support symbolic.
 	;; any(k > s for k,s in zip(k_, s_)) or any(d != 1 for d in d_):
 	;; (!if (!or (!some lambda list ...)))
@@ -28,10 +28,31 @@
 	    (let* ((xup (apply #'!repeat (loop repeat (length noop_) collect 1)
 			       (loop for k in k_ for i in i_ for d in d_
 				     collect (ceiling (/ (* k (+ i d)) i)))))
-		   ;; xup = xup.shrink(tuple(noop_ + [(0,k*(i+d)) for k,i,d in zip(k_, i_, d_)])).reshape(noop_ + flatten((k,i+d) for k,i,d in zip(k_, i_, d_)))
-		   (xup))
-
-	      )
+		   ;; xup = xup.shrink(tuple(noop_ + [(0,k*(i+d)) for k,i,d in zip(k_, i_, d_)]))
+		   (xup (apply #'!view xup (append noop_ (loop for k in k_ for i in i_ for d in d_ collect `(0 ,(* k (+ i d)))))))
+		   ;; xup = xup.reshape(noop_ + flatten((k,i+d) for k,i,d in zip(k_, i_, d_)))
+		   (xup (!reshape xup (append noop_ (loop for k in k_ for i in i_ for d in d_ append `(,k ,(+ i d))))))
+		   ;; xup = xup.shrink(noop_ + flatten(((0,k), (0,o*s)) for k,o,s in zip(k_, o_, s_)))
+		   (xup (apply #'!view xup (append noop_ (loop for k in k_ for o in o_ for s in s_ append (list (list 0 k) (list 0 (* o s)))))))
+		   ;; xup = xup.reshape(noop_ + flatten((k,o,s) for k,o,s in zip(k_, o_, s_)))
+		   (xup (!reshape xup (append noop_ (loop for k in k_ for o in o_ for s in s_ append (list k o s)))))
+		   ;; xup = xup.shrink(noop_ + flatten(((0,k), (0,o), (0,1)) for k,o in zip(k_, o_)))
+		   (xup (apply #'!view xup (append noop_ (loop for k in k_ for o in o_ append (list (list 0 k) (list 0 o) (list 0 1))))))
+		   ;; xup = xup.reshape(noop_ + flatten((k,o) for k,o in zip(k_, o_)))
+		   (xup (!reshape xup (append noop_ (loop for k in k_ for o in o_ append (list k o))))))
+	      ;; xup.permute(*range(len(noop_)), *[len(noop_)+i*2+1 for i in range(len(i_))], *[len(noop_)+i*2 for i in range(len(i_))])
+	      (values
+	       (!permute xup (range 0 (length noop_)))
+	       ))
 	    (progn
-	      
-	      ))))))
+	      ;; xup = self.pad(tuple(noop_ + [(0, max(0,o*s-i)) for i,o,s in zip(i_, o_, s_)]))
+	      (let* ((xup (!pad x (append noop_ (loop for i in i_ for o in o_ for s in s_ collect (list 0 (* o (- s i)))))))
+		     ;; xup = xup.shrink(tuple(noop_ + [(0,o*s) for o,s in zip(o_, s_)]))
+		     (xup (apply #'!view xup (append (loop for o in o_ for s in s_ collect (list 0 (* s o))))))
+		     ;; xup = xup.reshape(noop_ + flatten(((o,s) for o,s in zip(o_, s_))))
+		     (xup (!reshape xup (append noop_ (loop for o in o_ for s in s_ collect (list o s)))))
+		     ;; xup = xup.shrink(noop_ + flatten(((0,o), (0,k)) for o,k in zip(o_, k_)))
+		     (xup (apply #'!view xup (append noop_ (loop for o in o_ for k in k_ append (list (list 0 o) (list 0 k)))))))
+		(values
+		 (!permute xup (range 0 (length noop_)))
+		 ))))))))

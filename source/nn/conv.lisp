@@ -1,43 +1,81 @@
 (in-package :caten/nn)
 
-(defmethod st/unfold ((conv ConvND) x)
-  )
+(defun conv-out-size (in padding dilation kernel-size stride)
+  ;; TODO: Support Symbolic (needs !floor function)
+  (floor (+ 1 (/ (+ in (* 2 padding) (* (- dilation) (- kernel-size 1)) -1) stride))))
+
+(defun maybe-list (value kernel-size)
+  (if (numberp value)
+      (if (numberp kernel-size)
+	  value
+	  (loop repeat (length kernel-size) collect value))
+      (progn
+	(assert (and (listp value) (listp kernel-size) (= (length value) (length kernel-size))))
+	value)))
 
 ;; TODO: Conv, Embedding, Batch/Layer Normalization
-(defmodule (ConvND ((&key (groups 1) (stride 1) (dilation 1) (padding 0) (bias t))
-		    :groups groups :stride stride :dilation dilation :padding padding :bias bias))
+(defmodule (ConvND ((in-channels out-channels kernel-size &key (groups 1) (stride 1) (dilation 1) (padding 0) (bias t))
+		    :in-channels in-channels
+		    :out-channels out-channels
+		    :kernel-size kernel-size
+		    :groups (maybe-list groups kernel-size)
+		    :stride (maybe-list stride kernel-size)
+		    :dilation (maybe-list dilation kernel-size)
+		    :padding (maybe-list padding kernel-size)
+		    :bias bias))
     ((weight :initform nil :accessor convnd-weight)
      (bias :initform nil :accessor convnd-bias))
     :documentation "Applies a convolution over a tensor with a given `weight` and optional `bias`.
 NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions and instead works for any number of dimensions.
 "
-    :impl impl-winograd
-    :forward st/unfold)
+    :impl impl/conv
+    :forward
+    ((conv x)
+     (with-attrs ((in-channels :in-channels) (out-channels :out-channels) (kernel-size :kernel-size) (stride :stride) (dilation :dilation) (padding :padding)) conv
+       (st "X[N C_in ~ND_Weights] -> X[N C_out ~ND_Weights]" (x)
+	   (:C_in  . in-channels)
+	   (:C_out . out-channels)
+	   (:~ND_Weights . (loop with weight-sizes = (cddr (shape x))
+				 for pad in padding for dil in dilation for k in kernel-size for str in stride
+				 for s in weight-sizes
+				 collect (conv-out-size s pad dil k str)))))))
 
-(defmethod impl-winograd ((conv ConvND) x)
+(defmethod impl/conv :before ((conv ConvND) x)
   (with-slots ((weight weight) (bias bias)) conv
     (when (null weight)
       
+      ;; TODO: Initialize the distribution
       )))
 
-(defmethod impl-winograd ((conv ConvND) x)
+(defmethod impl/conv ((conv ConvND) x)
   (let* ((weight (convnd-weight conv))
-	 (hw (subseq (shape weight) 2))
-	 (attrs (module-attrs conv)))
-    (multiple-value-bind (groups stride dilation padding bias)
-	(values (getattr attrs :groups) (getattr attrs :stride) (getattr attrs :dilation) (getattr attrs :padding) (getattr attrs :bias))
-      (multiple-value-bind (cs cin_ cout cin)
+	 (hw (subseq (shape weight) 2)))
+    (with-attrs ((groups :groups) (stride :stride) (dilation :dilation) (padding :padding) (bias :bias)) conv
+      (multiple-value-bind (bs cin_ cout cin)
 	  (apply #'values `(,@(subseq (shape x) 0 2) ,@(subseq (shape weight) 0 2)))
 	;; assert groups*cin == cin_ and len(self.shape) == len(weight.shape)
 	(when (and (numberp groups) (numberp cin) (numberp cin_)))
-	  (assert (= cin (* groups cin_))
-		  ()
-		  "Input Tensor shape ~a do not match the shape of the weights ~a. ~a vs ~a (= cin (* groups cin_))"
-		  (shape x) (shape weight) cin (* groups cin_)))
-      (assert (= (ndim weight) (ndim x)) () "Input Tensor Shape ~a do not match the shape of the weights ~a" (shape x) (shape weight))
-      (let ((x (pool2d (pad2d x (padding2d-shape x padding (length hw))) hw stride dilation)))
-	
-	))))
+	(assert (= cin (* groups cin_))
+		()
+		"Input Tensor shape ~a do not match the shape of the weights ~a. ~a vs ~a (= cin (* groups cin_))"
+		(shape x) (shape weight) cin (* groups cin_))
+	(assert (= (ndim weight) (ndim x)) () "Input Tensor Shape ~a do not match the shape of the weights ~a" (shape x) (shape weight))
+	;; x = [bs, groups*cin, oy, ox, H, W]
+	(let* ((x (_pool (pad2d x (padding2d-shape padding (length hw))) hw stride dilation))
+	       (rcout (floor (/ cout groups)))
+	       (oyx   (slice  (shape x) 2 (- (length hw)))))
+	  (if (or (not (some #'(lambda (x) (= x 3)) hw)) (not (eql stride 1)) (not (eql dilation 1)))
+	      ;; x = x.reshape(bs, groups, cin, 1, *oyx, *HW).expand(bs, groups, cin, rcout, *oyx, *HW)
+	      ;; x = x.permute(0,1,3,*[4+i for i in range(len(oyx))],2,*[4+len(oyx)+i for i in range(len(HW))])
+	      (let* ((x (!reshape x (flatten (list bs groups cin 1 oyx hw))))
+		     (x (apply #'!view x (append `(t t t (:~ ,rcout)) (loop for o in oyx collect t) (loop for h in hw collect t))))
+		     (x (!permute x (append (list 0 1 3) (loop for i in (range 0 (length oyx)) collect (+ i 4)) (list 2) (loop for i in (range 0 (length hw)) collect (+ 4 i (length oyx)))))))
+		(if bias
+		    (error "not ready")
+		    x))
+	      (progn
+		(error "not ready: winograd")
+		)))))))
 
 ;; TODO: (defmethod export-to-onnx ((conv ConvND) x) ...)
 
