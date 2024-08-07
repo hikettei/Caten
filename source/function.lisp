@@ -188,7 +188,11 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (declare (type tensor x) (type (integer 0) n))
   (!reshape x (append (loop for i upfrom 0 below n collect 1) (tensor-shape x))))
 (defun !repeat (x &rest repeats)
-  (!reshape x (loop for s in (shape x) for r in repeats collect (!mul (->iconst s) (->iconst r)))))
+  (let* ((base-shape (append (loop repeat (- (length repeats) (ndim x)) collect 1) (shape x)))
+	 (new-shape (loop for s in (shape x) append (list 1 s)))
+	 (expand-shape (loop for r in repeats for b in base-shape append (list `(:~ ,r) t)))
+	 (final-shape (loop for s in (shape x) for r in repeats collect (!mul (->iconst s) (->iconst r)))))
+    (apply #'!view (!reshape (!contiguous (apply #'!view (!reshape x new-shape) expand-shape)) final-shape) (loop for f in final-shape collect t))))
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Move (Func) nil)
 (defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))

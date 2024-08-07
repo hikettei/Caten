@@ -39,6 +39,8 @@
 (~ top/bottom left/right)"
   (declare (type Tensor x) (type list padding) (type number value))
   (assert (= 4 (length padding)))
+  (when (every #'(lambda (x) (and (numberp x) (= 0 x))) padding)
+    (return-from pad2d x))
   (let* ((s2 (last (shape x) 2))
 	 (slc
 	   (list
