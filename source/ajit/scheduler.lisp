@@ -85,9 +85,12 @@ Further op-fusion optimization are done by the polyhedral-compiler"
   (emit (make-node :IR :for (list gid) (list 0 size 1))))
 (defun %endfor (gid) (emit (make-node :IR :endfor nil (list gid))))
 ;; ~~~~~ subgraph helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun buffer->loop-size (dim &rest buffers)
+(defun buffer->loop-size (dim nrank &rest buffers)
   (declare (type fixnum dim))
-  (let* ((shapes (map 'list #'(lambda (x) (nth dim (buffer-shape x))) buffers)))
+  (let* ((buffers (loop for b in buffers
+			if (= (buffer-nrank b) nrank)
+			  collect b))
+	 (shapes (map 'list #'(lambda (x) (nth dim (buffer-shape x))) buffers)))
     (reveal-buffer
      (or
       (when (every #'numberp shapes) (apply #'max shapes))
@@ -98,10 +101,14 @@ Further op-fusion optimization are done by the polyhedral-compiler"
   "Lowers the grouped scheduled-items into the graph."
   (declare (type scheduled-items sched))
   (flet ((id->buffer (x) (map/type-of type-map x)))
-    (let* ((args (map 'list #'id->buffer (schedule-depends-on sched)))
-	   (nrank (or (and args (buffer-nrank (car args))) 0))
+    (let* ((args (append
+		  (map 'list #'id->buffer (schedule-depends-on sched))
+		  (loop for node in (si-nodes sched)
+			if (vm-instruction-p node)
+			  append (map 'list #'id->buffer (node-writes node)))))
+	   (nrank (if args (apply #'max (map 'list #'buffer-nrank args)) 0))
 	   (index-components (map 'list #'gid (range 0 nrank)))
-	   (loopsizes (map 'list #'(lambda (x) (apply #'buffer->loop-size x args)) (range 0 nrank))))
+	   (loopsizes (map 'list #'(lambda (x) (apply #'buffer->loop-size x nrank args)) (range 0 nrank))))
       (let ((g
 	      (with-context
 		(start-loop (loop for i in index-components for s in loopsizes do (%for i s)))
@@ -370,6 +377,7 @@ Options:
 			 collect node))))
 ;; TODO: making isl objects gc-reachable
 ;; TODO: dynamic shapes
+;; T0 T1 T2 ... の順番で実行するようにしたい
 (defun jit (avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))
