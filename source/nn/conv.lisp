@@ -1,5 +1,5 @@
 (in-package :caten/nn)
-
+;; TODO: Implement !idiv 
 (defun conv-out-size (in padding dilation kernel-size stride)
   ;; TODO: Support Symbolic (needs !floor function)
   (floor (+ 1 (/ (+ in (* 2 padding) (* (- dilation) (- kernel-size 1)) -1) stride))))
@@ -18,7 +18,7 @@
 		    :in-channels in-channels
 		    :out-channels out-channels
 		    :kernel-size kernel-size
-		    :groups (maybe-list groups kernel-size)
+		    :groups groups
 		    :stride (maybe-list stride kernel-size)
 		    :dilation (maybe-list dilation kernel-size)
 		    :padding (maybe-list padding kernel-size)
@@ -42,10 +42,11 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 
 (defmethod impl/conv :before ((conv ConvND) x)
   (with-slots ((weight weight) (bias bias)) conv
-    (when (null weight)
-      
-      ;; TODO: Initialize the distribution
-      )))
+    (with-attrs ((groups :groups) (kernel-size :kernel-size) (in-channels :in-channels) (out-channels :out-channels)) conv
+      (when (null weight)
+	;; TODO: Initialize the xaviar distribution
+	;; -> How can we deal w/ dense random module in the portable way?
+	(setf (convnd-weight conv) (make-tensor `(,out-channels ,(/ in-channels groups) ,@kernel-size) :requires-grad t))))))
 
 (defmethod impl/conv ((conv ConvND) x)
   (let* ((weight (convnd-weight conv))
@@ -71,7 +72,7 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 		     (x (apply #'!view x (append `(t t t (:~ ,rcout)) (loop for o in oyx collect t) (loop for h in hw collect t))))
 		     (x (!permute x (append (list 0 1 3) (loop for i in (range 0 (length oyx)) collect (+ i 4)) (list 2) (loop for i in (range 0 (length hw)) collect (+ 4 i (length oyx)))))))
 		(if bias
-		    (error "not ready")
+		    (error "not ready: bias")
 		    x))
 	      (progn
 		(error "not ready: winograd")
