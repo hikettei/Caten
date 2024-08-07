@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 
 (defclass Module (Func)
   ((outputs :initform nil :accessor module-outputs)

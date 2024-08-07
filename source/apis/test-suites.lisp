@@ -1,6 +1,6 @@
 (in-package :cl-user)
-(defpackage :caten.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
-(in-package :caten.test)
+(defpackage :caten/apis.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
+(in-package :caten/apis.test)
 
 (deftest test-shape-tracker
   (ok

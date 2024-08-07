@@ -1,5 +1,6 @@
 (in-package :cl-user)
-(defpackage :caten
+(defpackage :caten/apis
+  (:nicknames :caten)
   (:documentation "Frontends for ASM/VM/JIT etc, including:
 - AbstractTensor Frontend
 - Shape Tracker

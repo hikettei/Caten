@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; iseq.lisp transforms the graph of Tensor into caten/aasm graph by the following steps:
 ;; 1. (Sort)     Topologically sorting the tensor graph, getting iseq (a list of tensors)

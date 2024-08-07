@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 
 ;; In SBCL, compilation takes longer than 2s.
 (defun %tpsort-tensors (session &rest tensors)

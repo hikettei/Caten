@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defpattern sym (to-what) `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))

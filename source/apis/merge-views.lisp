@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 
 (deftype axis-t () `(or number symbol Tensor))
 

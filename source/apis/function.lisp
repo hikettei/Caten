@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 ;; Function creating a lazy computation node, should start with the prefix !.
 ;; TODO: Func is a syntax sugar for caten/air, we can reconstruct Func from Graph
 (defclass Func () ((variables :initarg :variables :initform nil :accessor func-variables)))
