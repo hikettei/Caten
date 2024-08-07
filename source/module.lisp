@@ -17,11 +17,13 @@
   (declare (ignore inputs))
   (let ((outputs (multiple-value-list (call-next-method))))
     (setf (module-lower-outputs module) outputs)
-    (when (not (every #'(lambda (x y) (every #'(lambda (x y) (or (symbolp x) (symbolp y) (eql x y))) (shape x) (shape y))) (module-outputs module) (module-lower-outputs module)))
-      (warn "Detected the inconsistent shape-inference during lowering ~a.~%Please resolve this first before investigating runtime-error.~%Expected(Forward):~%~a~%Lowered:~%~a"
-	    module
-	    (module-outputs module)
-	    (module-lower-outputs module)))
+    (when (and (every #'(lambda (x) (every #'numberp (shape x))) (module-outputs module))
+	       (every #'(lambda (x) (every #'numberp (shape x))) (module-lower-outputs module)))
+      (when (not (every #'(lambda (x y) (equal (shape x) (shape y))) (module-outputs module) (module-lower-outputs module)))
+	(warn "Detected the inconsistent shape-inference during lowering ~a.~%Please resolve this first before investigating runtime-error.~%Expected(Forward):~%~a~%Lowered:~%~a"
+	      module
+	      (module-outputs module)
+	      (module-lower-outputs module))))
     (apply #'values outputs)))
 (defmacro defmodule ((name ((&rest constructor-args) &rest attrs) &key (where nil))
 		     (&rest slots)

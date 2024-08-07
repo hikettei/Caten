@@ -117,7 +117,7 @@
 			 for s in (tensor-shape tns)
 			 for g in shape-goal
 			 for i upfrom 0
-			 if (and (>= (- rank i) ignore-last-k) (eql s 1))
+			 if (and (>= (- rank i) ignore-last-k) (eql s 1) (not (eql g 1)))
 			   collect `(:~ ,g)
 			 else collect t)))
 	    (loop for tns in aligned-tensors
