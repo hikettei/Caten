@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defpattern sym (to-what) `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
@@ -117,7 +117,7 @@
 			 for s in (tensor-shape tns)
 			 for g in shape-goal
 			 for i upfrom 0
-			 if (and (>= (- rank i) ignore-last-k) (eql s 1))
+			 if (and (>= (- rank i) ignore-last-k) (eql s 1) (not (eql g 1)))
 			   collect `(:~ ,g)
 			 else collect t)))
 	    (loop for tns in aligned-tensors
@@ -211,7 +211,12 @@
 		       base
 		       (make-tensor shp :dtype (tensor-dtype base) :order (tensor-order base) :id (gensym "STC") :views (tensor-views base)
 				    :initial-element (gethash :initial-element solved))))))
-	(apply #'values (map 'list #'make-new-tensor (st-aft st)))))))
+	(apply #'values (map 'list #'make-new-tensor (st-aft st))))))
+  (defun parse-where (where)
+    "Verifies the where form"
+    (assert (every #'consp where) () "~a: Each element of where must be cons." where)
+    (assert (every (compose #'keywordp #'car) where) () "Invaild Syntax: WHERE = (KEYWORD . VALUE)~%in the ~a" where)
+    `(list ,@(loop for (key . value) in where  collect `(cons ,key ,value)))))
 
 (defmacro st (st-notation (&rest input-tensors) &rest where)
   "## [macro] st
@@ -224,19 +229,25 @@ Based on the notation of ShapeTracker, automatically generate the Tensor after f
 - Scalar           : A[] B[~] -> B[~]
 - Multiple outputs : A[] B[] -> A[] B[]
 
-### Notation
+### Infinite-Rank Notation
 
 `~` represents an inifinite-rank.
 Positioned only in the first rank, and the rank height becomes infinite.
 Within this range, if there is a mismatch in shape, broadcasting is automatically applied.
-
 TODO: Add LazyAssertion which applies shape check even for symbols
 
-- where (:initial-element . any-number) load constant when creating a tensor.
+### Where
+
+- (KEYWORD . VALUE) will specify a special argument to st. It can specify that `keyword` is solved to `value`.
+- `VALUE` can be one of number or list (concatenated).
+
+### Special Keywods
+
+- where (:initial-element . any-number) loads the constant `any-number` when creating a tensor.
 "
   (declare (type string st-notation))
   (let ((st (%st->list (%parse-st st-notation))))
-    `(%solve-st ,st ',where nil ,@input-tensors)))
+    `(%solve-st ,st ,(parse-where where) nil ,@input-tensors)))
 
 (defmacro bc (st-notation (&rest input-tensors) &rest where)
   "## [macro] bc
@@ -244,6 +255,6 @@ Perform the same operation as `st`, but also doing broadcasting.
 It calls !reshape and !view inside, therefore, it must not be used inside the forward method."
   (declare (type string st-notation))
   (let ((st (%st->list (%parse-st st-notation))))
-    `(%solve-st ,st ',where t ,@input-tensors)))
+    `(%solve-st ,st ,(parse-where where) t ,@input-tensors)))
 
 (defun broadcast-elwise (a b) (multiple-value-list (bc "A[~] B[~] -> A[~] B[~]" (a b))))

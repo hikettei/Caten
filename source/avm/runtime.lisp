@@ -67,6 +67,7 @@
 (defun vm/backward (avm)
   (declare (type avm avm))
   (let ((current-tape (nth (avm-pc avm) (graph-nodes (avm-graph avm)))))
+    (when (null current-tape) (return-from vm/backward))
     (assert (eql (node-type current-tape) :Pause/backward) ()
 	    "vm/backward: invaild pc counter; run forward first.")
     (incf (avm-pc avm)))

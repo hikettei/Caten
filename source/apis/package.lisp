@@ -1,5 +1,6 @@
 (in-package :cl-user)
-(defpackage :caten
+(defpackage :caten/apis
+  (:nicknames :caten)
   (:documentation "Frontends for ASM/VM/JIT etc, including:
 - AbstractTensor Frontend
 - Shape Tracker
@@ -78,7 +79,7 @@
   ;; from function.lisp
   (:export
    ;; shaping
-   #:!view #:!reshape #:!contiguous #:!permute #:!t
+   #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!permute #:!t
    #:!uprank
    ;; Binary
    #:!add #:!+

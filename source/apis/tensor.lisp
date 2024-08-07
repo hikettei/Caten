@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 
 (defstruct (Tensor
 	    (:constructor %internal-make-tensor (op shape

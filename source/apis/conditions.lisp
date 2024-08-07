@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 
 (define-condition caten-forward-error ()
   ((c :initarg :c) (inputs :initarg :inputs) (op :initarg :op))

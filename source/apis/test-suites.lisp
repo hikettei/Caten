@@ -1,6 +1,6 @@
 (in-package :cl-user)
-(defpackage :caten.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
-(in-package :caten.test)
+(defpackage :caten/apis.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
+(in-package :caten/apis.test)
 
 (deftest test-shape-tracker
   (ok
@@ -216,6 +216,8 @@
 		      (ok (or (null ',shape1) (equal (shape val1) ',shape1)))
 		      (ok (= (length (elements val1)) ,element-length))
 		      (ok (every (equal-to ,evaluated-to) (elements val1)))))))
+      ;; Failing case (the input shape includes 1)
+      (testcase !sum (1 1 3 3 3 3 3 3) (1 1 3 3 3 1 1 1) nil 1.0 27 27 '(-1 -2 -3))
       (testcase !sum  (3 3) (3 1) nil 1.0 3 3.0 1)
       (testcase !mean (3 3) (3 1) nil 1.0 3 1.0 1)
 

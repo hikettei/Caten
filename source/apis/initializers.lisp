@@ -1,4 +1,4 @@
-(in-package :caten)
+(in-package :caten/apis)
 
 (defclass Linspace (Func) nil)
 (defmethod forward ((op Linspace) &rest inputs) (st "A[] B[] X[~] -> X[~]" (inputs)))
