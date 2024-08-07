@@ -42,16 +42,18 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 
 (defmethod impl/conv :before ((conv ConvND) x)
   (with-slots ((weight weight) (bias bias)) conv
-    (with-attrs ((groups :groups) (kernel-size :kernel-size) (in-channels :in-channels) (out-channels :out-channels)) conv
+    (with-attrs ((groups :groups) (kernel-size :kernel-size) (in-channels :in-channels) (out-channels :out-channels) (requires-bias :bias)) conv
       (when (null weight)
 	;; TODO: Initialize the xaviar distribution
 	;; -> How can we deal w/ dense random module in the portable way?
-	(setf (convnd-weight conv) (make-tensor `(,out-channels ,(/ in-channels groups) ,@kernel-size) :requires-grad t))))))
+	(setf (convnd-weight conv) (make-tensor `(,out-channels ,(/ in-channels groups) ,@kernel-size) :requires-grad t))
+	(when (and requires-bias (null bias))
+	    (setf (convnd-bias conv) (make-tensor `(,out-channels) :requires-grad t)))))))
 
 (defmethod impl/conv ((conv ConvND) x)
   (let* ((weight (convnd-weight conv))
 	 (hw (subseq (shape weight) 2)))
-    (with-attrs ((groups :groups) (stride :stride) (dilation :dilation) (padding :padding) (bias :bias)) conv
+    (with-attrs ((out-channels :out-channels) (groups :groups) (stride :stride) (dilation :dilation) (padding :padding) (bias :bias)) conv
       (multiple-value-bind (bs cin_ cout cin)
 	  (apply #'values `(,@(subseq (shape x) 0 2) ,@(subseq (shape weight) 0 2)))
 	;; assert groups*cin == cin_ and len(self.shape) == len(weight.shape)
@@ -64,19 +66,28 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 	;; x = [bs, groups*cin, oy, ox, H, W]
 	(let* ((x (_pool (pad2d x (padding2d-shape padding (length hw))) hw stride dilation))
 	       (rcout (floor (/ cout groups)))
-	       (oyx   (slice  (shape x) 2 (- (length hw)))))
-	  (if (or (not (some #'(lambda (x) (= x 3)) hw)) (not (eql stride 1)) (not (eql dilation 1)))
+	       (oyx   (slice (shape x) 2 (- (length hw)))))
+	  (if t;;(or (not (some #'(lambda (x) (= x 3)) hw)) (not (eql stride 1)) (not (eql dilation 1)))
 	      ;; x = x.reshape(bs, groups, cin, 1, *oyx, *HW).expand(bs, groups, cin, rcout, *oyx, *HW)
 	      ;; x = x.permute(0,1,3,*[4+i for i in range(len(oyx))],2,*[4+len(oyx)+i for i in range(len(HW))])
 	      (let* ((x (!reshape x (flatten (list bs groups cin 1 oyx hw))))
 		     (x (apply #'!view x (append `(t t t (:~ ,rcout)) (loop for o in oyx collect t) (loop for h in hw collect t))))
-		     (x (!permute x (append (list 0 1 3) (loop for i in (range 0 (length oyx)) collect (+ i 4)) (list 2) (loop for i in (range 0 (length hw)) collect (+ 4 i (length oyx)))))))
+		     (x (!permute x (append (list 0 1 3) (loop for i in (range 0 (length oyx)) collect (+ i 4)) (list 2) (loop for i in (range 0 (length hw)) collect (+ 4 i (length oyx))))))
+		     ;; x = (x * weight.reshape(1, groups, rcout, *[1] * len(oyx), cin, *HW))
+		     (x (!mul x (!reshape (convnd-weight conv) (append (list 1 groups rcout) (loop repeat (length oyx) collect 1) (list cin) hw))))
+		     ;; x = x.sum([-1-i for i in range(1+len(oyx))], keepdim=True, acc_dtype=acc_dtype)
+		     (x (!sum x :axis (loop for i in (range 0 (+ 1 (length oyx))) collect (+ -1 (- i)))))
+		     ;; x = x.reshape(bs, cout, *oyx)
+		     (x (!reshape x (append (list bs cout) oyx))))		
 		(if bias
-		    (error "not ready: bias")
+		    (progn
+		      (assert (tensor-p (convnd-bias conv)) () "Bias for ~a should be a Tensor, getting ~a" conv (convnd-bias conv))
+		      (!add x (!reshape (convnd-bias conv) (append (list 1) (list out-channels) (loop repeat (length hw) collect 1)))))
 		    x))
-	      (progn
-		(error "not ready: winograd")
-		)))))))
+	      ;;(progn
+		;;(error "not ready: winograd")
+	  ;;    )
+	  ))))))
 
 ;; TODO: (defmethod export-to-onnx ((conv ConvND) x) ...)
 
