@@ -1,5 +1,5 @@
 (in-package :caten/nn)
-;; TODO: Implement !idiv 
+
 (defun conv-out-size (in padding dilation kernel-size stride)
   ;; TODO: Support Symbolic (needs !floor function)
   (floor (+ 1 (/ (+ in (* 2 padding) (* (- dilation) (- kernel-size 1)) -1) stride))))
@@ -12,7 +12,6 @@
       (progn
 	(assert (and (listp value) (listp kernel-size) (= (length value) (length kernel-size))))
 	value)))
-
 ;; TODO: Conv, Embedding, Batch/Layer Normalization
 (defmodule (ConvND ((in-channels out-channels kernel-size &key (groups 1) (stride 1) (dilation 1) (padding 0) (bias t))
 		    :in-channels in-channels
@@ -46,7 +45,7 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
       (when (null weight)
 	;; TODO: Initialize the xaviar distribution
 	;; -> How can we deal w/ dense random module in the portable way?
-	(setf (convnd-weight conv) (make-tensor `(,out-channels ,(/ in-channels groups) ,@kernel-size) :requires-grad t))
+	(setf (convnd-weight conv) (make-tensor `(,out-channels ,(/ in-channels groups) ,@kernel-size) :requires-grad t :initial-element 1.0))
 	(when (and requires-bias (null bias))
 	    (setf (convnd-bias conv) (make-tensor `(,out-channels) :requires-grad t)))))))
 
@@ -64,10 +63,10 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 		(shape x) (shape weight) cin (* groups cin_))
 	(assert (= (ndim weight) (ndim x)) () "Input Tensor Shape ~a do not match the shape of the weights ~a" (shape x) (shape weight))
 	;; x = [bs, groups*cin, oy, ox, H, W]
-	(let* ((x (_pool (pad2d x (padding2d-shape padding (length hw))) hw stride dilation))
+	(let* ((x (_pool (!padding2d x (padding2d-shape padding (length hw))) hw stride dilation))
 	       (rcout (floor (/ cout groups)))
 	       (oyx   (slice (shape x) 2 (- (length hw)))))
-	  ;; TODO: use winograd when (or (not (some #'(lambda (x) (= x 3)) hw)) (not (eql stride 1)) (not (eql dilation 1)))
+	  ;; TODO: use winograd when fails to satisfy (or (not (some #'(lambda (x) (= x 3)) hw)) (not (eql stride 1)) (not (eql dilation 1)))
 	  ;; x = x.reshape(bs, groups, cin, 1, *oyx, *HW).expand(bs, groups, cin, rcout, *oyx, *HW)
 	  ;; x = x.permute(0,1,3,*[4+i for i in range(len(oyx))],2,*[4+len(oyx)+i for i in range(len(HW))])
 	  (let* ((x (!reshape x (flatten (list bs groups cin 1 oyx hw))))
@@ -84,7 +83,5 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 		  (assert (tensor-p (convnd-bias conv)) () "Bias for ~a should be a Tensor, getting ~a" conv (convnd-bias conv))
 		  (!add x (!reshape (convnd-bias conv) (append (list 1) (list out-channels) (loop repeat (length hw) collect 1)))))
 		x)))))))
-
 ;; TODO: (defmethod export-to-onnx ((conv ConvND) x) ...)
-
 (in-package :caten/nn.test)

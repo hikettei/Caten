@@ -9,5 +9,7 @@
    (:file "activations")
    (:file "conv")
    (:file "padding")
-   (:file "pool"))
+   (:file "pool")
+   (:file "normalization")
+   (:file "embedding"))
   :perform (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style :dot)))

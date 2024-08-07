@@ -45,7 +45,13 @@ $ COVERAGE=1 qlot exec rove caten.asd
 
 ## The Goal
 
-- Export To C Mode
+- (!!!) From ONNX to Pure C Compiler for the inference mode.
+
+- Export To ONNX/From ONNX to Caten
+
+- Do not provide an implementation which specializes on a certain device in `./source`.
+
+- Hackable Polyhedral Compiler
 
 - "compilation time" graph simplification and type inference
 

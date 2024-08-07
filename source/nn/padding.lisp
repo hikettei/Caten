@@ -10,7 +10,7 @@
 	  (reverse
 	   (loop for p in padding append (loop repeat 2 collect p))))))
 
-(defun !pad (x padding &key (value 0.0))
+(defun !padding (x padding &key (value 0.0))
   (declare (type list padding)
 	   (type Tensor x))
   (assert (= (ndim x) (length padding)))
@@ -33,14 +33,13 @@
 	 (out (!move (apply #'!view padded-tensor slc) x)))
     (apply #'!view-from-base out (loop for s in (shape padded-tensor) collect `(0 ,s)))))
 
-;; TODO: redefine this as a module
-(defun pad2d (x padding &key (value 0.0))
+(defun !padding2d (x padding &key (value 0.0))
   "padding = (padding_left, padding_right, padding_top, padding_bottom)
 (~ top/bottom left/right)"
   (declare (type Tensor x) (type list padding) (type number value))
   (assert (= 4 (length padding)))
   (when (every #'(lambda (x) (and (numberp x) (= 0 x))) padding)
-    (return-from pad2d x))
+    (return-from !padding2d x))
   (let* ((s2 (last (shape x) 2))
 	 (slc
 	   (list

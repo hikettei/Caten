@@ -4,7 +4,6 @@
 ;; TODO: Support symbolic by implementing
 ;; !if !some
 ;; TODO: test !repeat
-;; TODO: (!reshape x `(t t 10))
 (defun _pool (x k_ stride dilation)
   (declare (type Tensor x))
   (assert (>= (ndim x) (length k_)))
@@ -46,7 +45,7 @@
 	      (!permute xup (append (range 0 (length noop_)) (loop for _ in i_ for i upfrom 0 collect (+ 1 (length noop_) (* i 2))) (loop for _ in i_ for i upfrom 0 collect (+ (length noop_) (* i 2))))))
 	    (progn
 	      ;; xup = self.pad(tuple(noop_ + [(0, max(0,o*s-i)) for i,o,s in zip(i_, o_, s_)]))
-	      (let* ((xup (!pad x (append noop_ (loop for i in i_ for o in o_ for s in s_ collect (list 0 (* o (- s i)))))))
+	      (let* ((xup (!padding x (append noop_ (loop for i in i_ for o in o_ for s in s_ collect (list 0 (* o (- s i)))))))
 		     ;; xup = xup.shrink(tuple(noop_ + [(0,o*s) for o,s in zip(o_, s_)]))
 		     (xup (apply #'!view xup (append (loop for o in o_ for s in s_ collect (list 0 (* s o))))))
 		     ;; xup = xup.reshape(noop_ + flatten(((o,s) for o,s in zip(o_, s_))))
@@ -55,3 +54,4 @@
 		     (xup (apply #'!view xup (append noop_ (loop for o in o_ for k in k_ append (list (list 0 o) (list 0 k)))))))
 		(!permute xup (append (range 0 (length noop_)) (loop for _ in i_ for i upfrom 0 collect (+ (length noop_) (* i 2))) (loop for _ in i_ for i upfrom 0 collect (+ 1 (length noop_) (* i 2))))))))))))
 
+;; TODO: AvgPool2D, MaxPool2D, etc
