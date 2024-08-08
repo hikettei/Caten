@@ -89,7 +89,7 @@ Usage:
       (:JIT_DEBUG
        0 :int
        (lambda (x)
-	 (when (not (typep x '(integer 0 3))) (warn "JIT_DEBUG should be an integer from 0 to 3, got ~a, setting 0" x) (setf x 0))
+	 (when (not (typep x '(integer 0 4))) (warn "JIT_DEBUG should be an integer from 0 to 3, got ~a, setting 0" x) (setf x 0))
 	 x)
        "DEBUG-Level during jit-compilation")
     (:JIT
@@ -125,7 +125,10 @@ Usage:
     (:ANIMATE
      1 :int
      #.(oneof "ANIMATE" 1 `(0 1))
-     "Set 0 to disable the animated progress bar of common/tqdm.lisp")))
+     "Set 0 to disable the animated progress bar of common/tqdm.lisp")
+    (:CC
+     "gcc" :string identity
+     "Default C Compiler")))
 
 (defparameter *ctx* (make-contextvar))
 (defmacro with-contextvar ((&rest configurations) &body body)

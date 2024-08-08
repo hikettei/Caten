@@ -15,7 +15,13 @@
    #:create-polyhedral-model
    #:auto-schedule
    #:jit
-   #:render-isl-aref)
+   #:render-isl-aref
+   #:JIT-Info
+   #:jit-info-p
+   #:copy-jit-info
+   #:jit-info-code
+   #:jit-info-lang
+   #:jit-info-caller)
   ;; from type-relay.lisp
   (:export
    #:run-type-infer
@@ -33,6 +39,8 @@
    )
   ;; from renderer.lisp
   (:export
+   #:%render-function-caller
+   #:%render-compile
    #:%render-program-toplevel
    #:%render-function
    #:%render-body

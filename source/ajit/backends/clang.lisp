@@ -2,6 +2,64 @@
   (:use :cl :caten/ajit :caten/air :caten/avm :cffi))
 (in-package :caten/ajit.backends.clang)
 ;; ~~~ CLANG ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags))
+  (declare (type string source compiler))
+  (uiop:with-temporary-file (:pathname sharedlib :type "so" :keep t)
+    nil
+    :close-stream
+    (let* ((cmd
+	     ;; gcc -shared -o sharedlib
+	     (append
+	      (list
+	       compiler "-shared"
+	       "-x" lang)
+	      compiler-flags
+	      (list "-o" (uiop:native-namestring sharedlib) "-")))
+	   (process-info (uiop:launch-program
+			  cmd
+			  :input :stream
+			  :error-output :stream))
+	   (input (uiop:process-info-input process-info))
+	   (error-output (uiop:process-info-error-output process-info)))
+      (unwind-protect (princ source input)
+	(close input))
+      (unless (zerop (uiop:wait-process process-info))
+	(error "Caten[Clang]: Failed to compile a shared library:~%~a~%
+
+Compiled with: ~a"
+	       (alexandria:read-stream-content-into-string error-output)
+	       (with-output-to-string (out)
+		 (dolist (c cmd) (princ c out) (princ " " out))))))
+    (cffi:load-foreign-library sharedlib)))
+
+(defmethod %render-compile ((lang (eql :clang)) avm allocs function)
+  (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c"))
+
+(defmethod %render-function-caller ((lang (eql :clang)) avm allocs function)
+  (labels ((expand (rest-forms body)
+	     (if rest-forms
+		 (if (= 0 (getattr (car rest-forms) :nrank))
+		     (expand (cdr rest-forms) body)
+		     `(with-pointer-to-vector-data
+			  (,@(node-writes (car rest-forms)) (buffer-value (caten::tensor-buffer ,@(node-writes (car rest-forms)))))
+			,(expand (cdr rest-forms) body)))
+		 `(progn ,@body))))
+    (compile
+     nil
+     `(lambda (,@(apply #'append (map 'list #'node-writes allocs)))
+	,(expand
+	  allocs
+	  `((cffi:foreign-funcall
+	     ,(format nil "~(~a~)" (avm-name avm))
+	     ,@(loop for node in allocs
+		     for type = (intern (->cdtype (getattr node :dtype)) "KEYWORD")
+		     if (= (getattr node :nrank) 0)
+		       append `(,type ,(car (node-writes node)))
+		     else
+		       append `(:pointer ,(car (node-writes node))))
+	     :void)))))))
+
 (defmethod %render-program-toplevel ((lang (eql :clang)) body)
   (format nil "~%#include <math.h>~%~a" body))
 

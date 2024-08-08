@@ -66,4 +66,4 @@
 		   else
 		     collect node)))
    pipeline)
-  allocs)
+  (remove-duplicates allocs :key (compose #'car #'node-writes)))

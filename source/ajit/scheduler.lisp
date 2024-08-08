@@ -369,6 +369,18 @@ Options:
     (poly/reschedule polyhedral :serialize serialize)
     (debug-print "Reschedule")
     polyhedral))
+
+;; ~~ Fused Kernel Objects ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct (JIT-Info)
+  (caller #'(lambda ()) :type function)
+  (lang :nil :type keyword)
+  (code "" :type string))
+(defmethod print-object ((s jit-info) stream) (format stream "<~a Code>" (jit-info-lang s)))
+(defun make-fused-kernel-caller (allocs lambda code lang)
+  (make-node :IR :JIT_KERNEL nil
+	     (apply #'append (map 'list #'node-writes allocs))
+	     :jit-info (make-jit-info :caller lambda :lang lang :code code)))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; TODO: making isl objects gc-reachable
 ;; TODO: dynamic shapes
 (defun jit (avm
@@ -376,18 +388,20 @@ Options:
 	      (debug (ctx:getenv :JIT_DEBUG))
 	      (serialize (= 1 (ctx:getenv :SERIALIZE)))
 	      (static-gensym (= 1 (ctx:getenv :STATIC_GENSYM)))
-	      (backend (or (ctx:getenv :JIT_BACKEND) :clang)))
+	      (backend (or (ctx:getenv :JIT_BACKEND) :clang))
+	    &aux
+	      (*isl-context* (isl-ctx-alloc)))
   "Applies the jit"
   (declare (type avm avm)
-	   (type (integer 0 3) debug)
+	   (type (integer 0 4) debug)
 	   (type boolean serialize))
   (when static-gensym (apply-static-gensym avm))
   (multiple-value-bind (verbose-schedule verbose-auto)
-      (values (or (= debug 3) (= debug 1)) (or (= debug 3) (= debug 2)))
+      (values (or (= debug 4) (= debug 3)) (or (= debug 4) (= debug 2)))
     (multiple-value-bind (polyhedron)
 	(create-polyhedral-model avm :verbose verbose-schedule)
       (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
-      (when (>= debug 1)
+      (when (>= debug 2)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       ;; Minimizing the number of allocation by creating an alias
       (apply-alias-for-rendering-graph (poly-pipeline polyhedron))
@@ -398,6 +412,16 @@ Options:
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
 	     (body (%render-body backend backend r-graph polyhedron 1))
 	     (function (%render-function backend avm allocs body))
-	     (function (%render-program-toplevel backend function)))
-	;; Return AVM whose nodes are fused_kernel
-	function))))
+	     (function (%render-program-toplevel backend function))
+	     (f (%render-function-caller backend avm allocs function)))
+	(assert (functionp f) () "%render-function-caller should return a function!")
+	(%render-compile backend avm allocs function)
+	(when (>= debug 1)
+	  (format t "Compiled:~%~a" function))
+	;; (isl-free-ctx )
+	(make-avm
+	 (make-graph (make-fused-kernel-caller allocs f function backend))
+	 (avm-name avm)
+	 (avm-id2tensor avm)
+	 (avm-fw-outputs avm)
+	 (avm-bw-outputs avm))))))

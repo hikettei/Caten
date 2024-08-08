@@ -280,9 +280,9 @@
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *external-simplifiers* `(optimize-aasm))
 (defparameter *no-grad* nil)
-(defun %compile-toplevel (tensors &key (no-grad *no-grad*) (external-simplifiers *external-simplifiers*))
+(defun %compile-toplevel (tensors &key (no-grad *no-grad*) (external-simplifiers *external-simplifiers*) (name :main))
   (declare (type list tensors))
-  (let* ((session (make-compiler-session :name :main))
+  (let* ((session (make-compiler-session :name name))
 	 (iseq (apply #'%tpsort-tensors session tensors))
 	 (prev-grad
 	   (make-tensor (tensor-shape (car tensors))
@@ -325,11 +325,14 @@
 		(map 'list #'std->lid (session-fw-out-ids session))
 		(when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session)))))))
 
-(defun caten (tensors &key (simplifiers *external-simplifiers*)) ;; TODO disassemble options etc
+(defun caten (tensors
+	      &key
+		(name (intern (symbol-name (gensym "MAIN")) "KEYWORD"))
+		(simplifiers *external-simplifiers*)) ;; TODO disassemble options etc
   "Compiles the (Abstract) tensor"
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
-  (%compile-toplevel tensors :external-simplifiers simplifiers))
+  (%compile-toplevel tensors :name name :external-simplifiers simplifiers))
 
 (defun avm/sync-tensors (avm)
   "Synchronize buffer and tensor (but limited to the end of nodes, and grads)"
