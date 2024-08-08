@@ -377,7 +377,7 @@ Options:
 			 collect node))))
 ;; TODO: making isl objects gc-reachable
 ;; TODO: dynamic shapes
-;; T0 T1 T2 ... の順番で実行するようにしたい
+;; TODO: Gemmがab bc -> acするようにしたい
 (defun jit (avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))
