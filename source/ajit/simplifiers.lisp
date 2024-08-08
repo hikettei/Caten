@@ -2,9 +2,8 @@
 ;; Here, applying a jit-specific optimization to the avm.graph.
 ;; E.g.: we can purge the view nodes since we already have a
 ;; type information at `type-relay.lisp`.
-;;
-(defun %purge-views-from-schedule (avm)
-  "Remove :VIEW from avm.graph"
+(defun %safely-purge-views-from-graph (avm)
+  "(1.) Removes :VIEW from avm graph, (2.) Updates the read/write graph relations"
   (declare (type avm avm))
   (let ((rewrite-map
 	  (loop for node in (graph-nodes (avm-graph avm))
@@ -13,14 +12,16 @@
     (labels ((->find (id) (find id rewrite-map :key #'car :test #'eql))
 	     ;; todo: optimize
 	     (->aft (id &aux (last id))
-	       (labels ((f (x &aux (next (->find x))) (if next (progn (setf last (cdr next)) (f (cdr next))) nil)))
-		 (f last))
-	       last))
+	       (if (symbolp id)
+		   (labels ((f (x &aux (next (->find x))) (if next (progn (setf last (cdr next)) (f (cdr next))) nil)))
+		     (f last)
+		     last)
+		   id)))
       (setf (graph-nodes (avm-graph avm))
 	    (loop for n in (graph-nodes (avm-graph avm))
 		  unless (eql (node-type n) :View)
 		    collect
-		    (progn
+		    (progn		      
 		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n)))
 		      n))))))
 ;; WMMA (c a b) <=> c = c + a * b (:reduction)
@@ -33,11 +34,12 @@
     (contiguous-after-wmma :speed 0)
     ((:WMMA (c (:Move (_ a)) (:Move (_ b))) :reduction reduction) -> (:WMMA (c a b) :reduction reduction)))
 
-(defun apply-jit-specific-simplifiers (avm)
+(defun apply-jit-specific-simplifiers (avm type-map)
   (declare (type avm avm))
-  (%purge-views-from-schedule avm)
+  (%safely-purge-views-from-graph avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
-  (contiguous-after-wmma (avm-graph avm) :no-verify t))
+  (contiguous-after-wmma (avm-graph avm) :no-verify t)
+  (deploy-type-infer-results avm type-map :allow-overwrite t))
 
 (defun apply-alias-for-rendering-graph (pipeline)
   (declare (type hash-table pipeline))

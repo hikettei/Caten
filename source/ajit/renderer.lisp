@@ -124,56 +124,61 @@ OP :=
 		    (dotimes (i (* 4 indent)) (princ " " out))
 		    (format out ,designator ,@args)
 		    (format out "~%"))))
-      (labels ((render-aref (id)
-		 (let ((ref (render-isl-aref id type-map :genid #'(lambda (x) (intern (format nil "c~a" x))))))
+      (labels ((render-aref (id type)
+		 (let ((ref (render-isl-aref type :genid #'(lambda (x) (intern (format nil "c~a" x))))))
 		   (if (string= ref "")
 		       (format nil "~(~a~)" id)
 		       (format nil "~(~a~)[~(~a~)]" id ref)))))
-	(dolist (node (graph-nodes graph))
-	  (case (node-type node)
-	    (:ALLOCATE
-	     (line "~(~a~) ~(~a~)~a;"
-		   (->cdtype (getattr node :dtype)) (car (node-writes node))
-		   (let ((nrank (getattr node :nrank)))
-		     (if (= nrank 0)
-			 ""
-			 (format
-			  nil
-			  "[~(~a~)]"
-			  (apply
-			   #'concatenate
-			   'string
-			   (butlast
-			    (loop for x in (subseq (node-reads node) 0 nrank)
-				  append (list (format nil "~a" x) "*")))))))))
-	    (:LOAD
-	     (let ((value (getattr node :value)))
-	       (line "~(~a~) = ~a;" (render-aref (car (node-reads node))) value)))
-	    (:WMMA
-	     (multiple-value-bind (c a b) (apply #'values (node-reads node))
-	       (line "~(~a~) += ~(~a~) * ~(~a~);" (render-aref c) (render-aref a) (render-aref b))))
-	    (:STORE
-	     (multiple-value-bind (a b) (apply #'values (node-reads node))
-	       (when (not (equal a b))
-		 (line "~(~a~) = ~(~a~);" (render-aref a) (render-aref b)))))
-	    (:SIN
-	     (line "~(~a~) = sin(~(~a~));" (render-aref (car (node-reads node))) (render-aref (car (node-reads node)))))
-	    (:INDEX-COMPONENTS
-	     (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node))) (render-isl-aref (car (node-reads node)) type-map :genid #'(lambda (x) (intern (format nil "c~a" x))))))
-	    (otherwise
-	     (case (node-class node)
-	       (:BinaryOps
-		(let* ((r (getattr node :reduction))
-		       (op (ecase (node-type node)
-			     (:ADD (if r "+=" "+")) (:MUL (if r "*=" "=")))))
-		  (if r
-		      (line "~(~a~) ~a ~(~a~);" (render-aref (car (node-reads node))) op (render-aref (second (node-reads node))))
-		      (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)))
-			    (apply
-			     #'concatenate
-			     'string
-			     (butlast
-			      (loop for r in (node-reads node)
-				    append (list (render-aref r) op))))))))
-	       (otherwise
-		(error "Renderer for ~a is not implemented yet." node))))))))))
+	(loop for node in (graph-nodes graph)
+	      for type = (read-type-relay node) do		
+		(case (node-type node)
+		  (:ALLOCATE
+		   (line "~(~a~) ~(~a~)~a;"
+			 (->cdtype (getattr node :dtype)) (car (node-writes node))
+			 (let ((nrank (getattr node :nrank)))
+			   (if (= nrank 0)
+			       ""
+			       (format
+				nil
+				"[~(~a~)]"
+				(apply
+				 #'concatenate
+				 'string
+				 (butlast
+				  (loop for x in (subseq (node-reads node) 0 nrank)
+					append (list (format nil "~a" x) "*")))))))))
+		  (:LOAD
+		   (let ((value (getattr node :value)))
+		     (line "~(~a~) = ~a;" (render-aref (car (node-reads node)) (car (relay-reads type))) value)))
+		  (:WMMA
+		   (multiple-value-bind (c a b) (apply #'values (node-reads node))
+		     (multiple-value-bind (ct at bt) (apply #'values (relay-reads type))
+		       (line "~(~a~) += ~(~a~) * ~(~a~);" (render-aref c ct) (render-aref a at) (render-aref b bt)))))
+		  (:STORE
+		   (multiple-value-bind (a b) (apply #'values (node-reads node))
+		     (multiple-value-bind (at bt) (apply #'values (relay-reads type))
+		       (when (not (equal a b))
+			 (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref b bt))))))
+		  (:SIN
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (line "~(~a~) = sin(~(~a~));" (render-aref a at) (render-aref a at))))
+		  (:INDEX-COMPONENTS
+		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) (render-isl-aref (car (node-reads node)) (car (relay-reads type)) type-map :genid #'(lambda (x) (intern (format nil "c~a" x))))))
+		  (otherwise
+		   (case (node-class node)
+		     (:BinaryOps
+		      (let* ((r (getattr node :reduction))
+			     (op (ecase (node-type node)
+				   (:ADD (if r "+=" "+")) (:MUL (if r "*=" "=")))))
+			(if r
+			    (line "~(~a~) ~a ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) op (render-aref (second (node-reads node)) (second (relay-reads type))))
+			    (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type)))
+				  (apply
+				   #'concatenate
+				   'string
+				   (butlast
+				    (loop for r in (node-reads node)
+					  for rt in (relay-reads type)
+					  append (list (render-aref r rt) op))))))))
+		     (otherwise
+		      (error "Renderer for ~a is not implemented yet." node))))))))))
