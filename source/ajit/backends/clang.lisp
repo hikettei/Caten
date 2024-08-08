@@ -42,7 +42,7 @@ Compiled with: ~a"
 		 (if (= 0 (getattr (car rest-forms) :nrank))
 		     (expand (cdr rest-forms) body)
 		     `(with-pointer-to-vector-data
-			  (,@(node-writes (car rest-forms)) (buffer-value (caten::tensor-buffer ,@(node-writes (car rest-forms)))))
+			  (,@(node-writes (car rest-forms)) (buffer-value ,@(node-writes (car rest-forms))))
 			,(expand (cdr rest-forms) body)))
 		 `(progn ,@body))))
     (compile
@@ -54,9 +54,9 @@ Compiled with: ~a"
 	  `((cffi:foreign-funcall
 	     ,(format nil "~(~a~)" (avm-name avm))
 	     ,@(loop for node in allocs
-		     for type = (intern (->cdtype (getattr node :dtype)) "KEYWORD")
+		     for type = (intern (string-upcase (->cdtype (getattr node :dtype))) "KEYWORD")
 		     if (= (getattr node :nrank) 0)
-		       append `(,type ,(car (node-writes node)))
+		       append `(,type (buffer-value ,(car (node-writes node))))
 		     else
 		       append `(:pointer ,(car (node-writes node))))
 	     :void)))))))

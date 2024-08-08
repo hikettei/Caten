@@ -380,6 +380,11 @@ Options:
   (make-node :IR :JIT_KERNEL nil
 	     (apply #'append (map 'list #'node-writes allocs))
 	     :jit-info (make-jit-info :caller lambda :lang lang :code code)))
+(defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
+  (let ((jit (getattr node :jit-info)))
+    (assert (jit-info-p jit) () "~a is not a jit kernel. :jit-info=~a" node jit)
+    (apply (jit-info-caller jit) args))
+  nil)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; TODO: making isl objects gc-reachable
 ;; TODO: dynamic shapes
@@ -420,7 +425,7 @@ Options:
 	  (format t "Compiled:~%~a" function))
 	;; (isl-free-ctx )
 	(make-avm
-	 (make-graph (make-fused-kernel-caller allocs f function backend))
+	 (apply #'make-graph (append allocs (list (make-fused-kernel-caller allocs f function backend))))
 	 (avm-name avm)
 	 (avm-id2tensor avm)
 	 (avm-fw-outputs avm)
