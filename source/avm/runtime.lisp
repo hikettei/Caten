@@ -49,7 +49,7 @@
         (let ((out (multiple-value-list
 		    (handler-bind ((error #'(lambda (cond) (error 'avm-runtime-error :avm avm :cond cond))))
 		      (%impl *device* type (avm-graph avm) node (map 'list #'->real reads))))))
-	  (assert (= (length out) (length writes)))
+	  (assert (or (null writes) (= (length out) (length writes))) () "The length of output ~a does not match ~a" out node)
 	  (loop for real in out
 		for place in writes
 		do (vm/setvar avm place real))

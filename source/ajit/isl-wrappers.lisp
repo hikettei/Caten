@@ -95,7 +95,6 @@
 (define-isl-function "isl_union_map_dump" :void
   (union-map :pointer))
 
-
 (define-isl-function "isl_union_map_union" :pointer
   (map1 :pointer)
   (map2 :pointer))

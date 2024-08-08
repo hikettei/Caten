@@ -46,3 +46,24 @@
   `(macrolet ((% (fname return-type &rest args)
 		`(foreign-funcall ,fname ,@args ,return-type)))
      ,@body))
+
+(defun remove-iteration-ir (pipeline)
+  (loop for nth being each hash-keys of pipeline
+	  using (hash-value graph)
+	do (setf (graph-nodes graph)
+		 (loop for node in (graph-nodes graph)
+		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
+			 collect node))))
+
+(defun purge-allocations (pipeline &aux (allocs nil))
+  (maphash
+   #'(lambda (k graph)
+       (declare (ignore k))
+       (setf (graph-nodes graph)
+	     (loop for node in (graph-nodes graph)
+		   if (eql (node-type node) :Allocate)
+		     do (push node allocs)
+		   else
+		     collect node)))
+   pipeline)
+  (remove-duplicates allocs :key (compose #'car #'node-writes)))

@@ -14,10 +14,22 @@
   (:export
    #:create-polyhedral-model
    #:auto-schedule
-   #:jit)
+   #:jit
+   #:render-isl-aref
+   #:JIT-Info
+   #:jit-info-p
+   #:copy-jit-info
+   #:jit-info-code
+   #:jit-info-lang
+   #:jit-info-caller)
   ;; from type-relay.lisp
   (:export
-   #:run-type-infer)
+   #:run-type-infer
+   #:deploy-type-infer-results
+   #:Inferred-Types
+   #:read-type-relay
+   #:relay-reads
+   #:relay-writes)
   ;; from polyhedral.lisp
   (:export
    #:Polyhedral
@@ -27,8 +39,13 @@
    )
   ;; from renderer.lisp
   (:export
-   #:%render-subroutine
+   #:%render-function-caller
+   #:%render-compile
+   #:%render-program-toplevel
+   #:%render-function
+   #:%render-body
    #:%render-expr
+   #:%render-nodes
    #:render-expr
   ))
 

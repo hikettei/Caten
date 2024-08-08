@@ -19,7 +19,15 @@
   (schedule schedule :type isl-obj))
 
 (defun finalize-polyhedral (polyhedral &aux (schedule (poly-schedule polyhedral)))
-  (declare (type polyhedral polyhedral))  
+  (declare (type polyhedral polyhedral))
+  (macrolet ((set-option (name level)
+	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
+				 :pointer (isl-ctx-ptr *isl-context*)
+				 :int ,level
+				 :void)))
+    (set-option "ast_build_exploit_nested_bounds" 1)
+    (set-option "ast_build_separation_bounds" 1)
+    (set-option "ast_build_scale_strides" 1))
   (let* ((space (isl-set-read-from-str "{:}"))
 	 (build (isl-ast-build-from-context space))
 	 (ast   (isl-ast-build-node-from-schedule build	schedule)))
@@ -58,7 +66,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	 (p     (isl-printer-set-output-format p 4)) ;; 4 indicates C
 	 (q     (isl-printer-print-ast-node p ast))
 	 (str   (isl-printer-get-str q)))
-    ;; (foreign-funcall "isl_schedule_free" :pointer cp :void)
+    ;;(foreign-funcall "isl_schedule_free" :pointer cp :void)
     str))
 
 (defun create-dependency-graph (polyhedral &aux (copied1) (copied2))

@@ -49,15 +49,14 @@
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :view)) graph node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)
       (parse-view-node node args)
-    (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))
       (let ((buffer (copy-buffer (car args))))
-	(setf (buffer-shape buffer) (map 'list #'->number shape)
-	      (buffer-stride buffer) (map 'list #'->number stride)
+	(setf (buffer-shape buffer) (map 'list #'reveal-buffer shape)
+	      (buffer-stride buffer) (map 'list #'reveal-buffer stride)
 	      (buffer-views buffer)
 	      (loop for i upfrom 0 below (length v1)
-		    collect (list (->number (nth i v1)) (->number (nth i v2)) (->number (nth i v3)) (nth i bc)))
+		    collect (list (reveal-buffer (nth i v1)) (reveal-buffer (nth i v2)) (reveal-buffer (nth i v3)) (nth i bc)))
 	      (buffer-nrank buffer) (length shape))
-	buffer))))
+	buffer)))
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :Load)) graph node args)
   (let* ((tgt (car args))
 	 (val (getattr node :value)))
@@ -73,3 +72,28 @@
   (let ((*device* :relay-checker) (*type-reporter* (make-type-reporter)))
     (vm/forward avm) (vm/backward avm)
     *type-reporter*))
+
+(defstruct (Inferred-Type
+	    (:conc-name relay-)
+	    (:constructor make-inferred-type (reads writes)))
+  (reads reads :type list)
+  (writes writes :type list))
+
+(defmethod print-object ((type Inferred-type) stream)
+  (format stream "<OK>"))
+
+(defun read-type-relay (node)
+  (declare (type node node))
+  (or (getattr node :_type_relay) (error "Failed to infer the type of ~a" node)))
+
+(defun deploy-type-infer-results (avm type-map &key (allow-overwrite nil))
+  "Writes the result of type-infer to :_type_relay"
+  (flet ((->type (id) (when (symbolp id) (map/type-of type-map id))))
+    (loop for n in (graph-nodes (avm-graph avm)) do
+      (let ((type (make-inferred-type
+		   (map 'list #'->type (node-reads n))
+		   (map 'list #'->type (node-writes n)))))
+	(when (null allow-overwrite)
+	  (assert (null (getattr n :_type_relay)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
+	(when (null (getattr n :_type_relay))
+	  (setf (node-attrs n) (append (node-attrs n) `(:_type_relay ,type))))))))
