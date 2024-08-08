@@ -1,7 +1,15 @@
 (in-package :caten/ajit)
 
 ;; ~~ Abstraction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defgeneric %render-subroutine (lang kernel-lang jit-graph polyhedral indent)
+(defgeneric %render-program-toplevel (lang body) (:documentation "Renders headers, pragma, etc..."))
+
+(defgeneric %render-function (lang avm allocs body)
+  (:documentation "Renders
+```
+function void (args) { body };
+```"))
+
+(defgeneric %render-body (lang kernel-lang jit-graph polyhedral indent)
   (:documentation
    "IRs used in the jit-graph:
 (TODO: Docs)
@@ -32,10 +40,13 @@ OP :=
 :>
 "))
 
-(defgeneric %render-nodes (lang graph args indent) (:documentation "Corresponds w/ caten/aasm/ops.lisp"))
+(defgeneric %render-nodes (lang graph args indent)
+  (:documentation "
+Render the ops in ./source/aasm/ops.lisp
+"))
 
 (defun render-expr (lang expr)
-  "Render-expr"
+  "Recursively render the expr"
   (declare (type keyword lang))
   (if (expr-p expr)
       (%render-expr lang (expr-op expr) (expr-x expr) (expr-y expr))

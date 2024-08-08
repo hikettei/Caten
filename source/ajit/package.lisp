@@ -33,7 +33,9 @@
    )
   ;; from renderer.lisp
   (:export
-   #:%render-subroutine
+   #:%render-program-toplevel
+   #:%render-function
+   #:%render-body
    #:%render-expr
    #:%render-nodes
    #:render-expr

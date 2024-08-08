@@ -369,17 +369,8 @@ Options:
     (poly/reschedule polyhedral :serialize serialize)
     (debug-print "Reschedule")
     polyhedral))
-
-(defun remove-iteration-ir (pipeline)
-  (loop for nth being each hash-keys of pipeline
-	  using (hash-value graph)
-	do (setf (graph-nodes graph)
-		 (loop for node in (graph-nodes graph)
-		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
-			 collect node))))
 ;; TODO: making isl objects gc-reachable
 ;; TODO: dynamic shapes
-;; TODO: Gemmがab bc -> acするようにしたい
 (defun jit (avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))
@@ -398,10 +389,15 @@ Options:
       (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
       (when (>= debug 1)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
-      polyhedron
-      (remove-iteration-ir (poly-pipeline polyhedron))
+      ;; Minimizing the number of allocation by creating an alias
       (apply-alias-for-rendering-graph (poly-pipeline polyhedron))
-      (let* ((extracted-schedule (finalize-schedule polyhedron))
+      ;; Finalizes the graph:
+      (remove-iteration-ir (poly-pipeline polyhedron))
+      (let* ((allocs (purge-allocations (poly-pipeline polyhedron)))
+	     (extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
-	     (render (%render-subroutine backend backend r-graph polyhedron 0)))
-	render))))
+	     (body (%render-body backend backend r-graph polyhedron 1))
+	     (function (%render-function backend avm allocs body))
+	     (function (%render-program-toplevel backend function)))
+	;; Return AVM whose nodes are fused_kernel
+	function))))

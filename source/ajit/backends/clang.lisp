@@ -1,7 +1,30 @@
 (defpackage :caten/ajit.backends.clang
-  (:use :cl :caten/ajit :caten/air))
+  (:use :cl :caten/ajit :caten/air :caten/avm :cffi))
 (in-package :caten/ajit.backends.clang)
 ;; ~~~ CLANG ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmethod %render-program-toplevel ((lang (eql :clang)) body)
+  (format nil "~%#include <math.h>~%~a" body))
+
+(defmethod %render-function ((lang (eql :clang)) avm allocs body)
+  (let ((header
+	  (format nil "void ~(~a~)(~a)"
+		  (avm-name avm)
+		  (apply
+		   #'concatenate
+		   'string
+		   (butlast
+		    (loop for node in allocs
+			  append
+			  (list
+			   (format nil "~a~a ~(~a~)"
+				   (->cdtype (getattr node :dtype))
+				   (if (= 0 (getattr node :nrank))
+				       ""
+				       "*")
+				   (car (node-writes node)))
+			   ", ")))))))
+    (format nil "~a;~%~a {~%~a}" header header body)))	  
+
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :NEG)) lhs rhs)
   (assert (null rhs))
   (format nil "-~(~a~)" (render-expr lang lhs)))
@@ -29,14 +52,14 @@
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
-(defmethod %render-subroutine ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent)
+(defmethod %render-body ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent)
   (declare (type graph jit-graph)
 	   (type polyhedral polyhedral)
 	   (type fixnum indent))
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
 		 `(progn
-		    (dotimes (i (* 4 indent)) (princ " " out))
+		    (dotimes (i (* 2 indent)) (princ " " out))
 		    (format out ,designator ,@args)
 		    (format out "~%")))
 	       (r (obj) `(render-expr lang ,obj)))
@@ -80,7 +103,7 @@
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
 		 `(progn
-		    (dotimes (i (* 4 indent)) (princ " " out))
+		    (dotimes (i (* 2 indent)) (princ " " out))
 		    (format out ,designator ,@args)
 		    (format out "~%"))))
       (labels ((render-aref (id type)
