@@ -420,9 +420,9 @@ Options:
 	     (function (%render-program-toplevel backend function))
 	     (f (%render-function-caller backend avm allocs function)))
 	(assert (functionp f) () "%render-function-caller should return a function!")
-	(%render-compile backend avm allocs function)
 	(when (>= debug 1)
 	  (format t "Compiled:~%~a" function))
+	(%render-compile backend avm allocs function)
 	;; (isl-free-ctx )
 	(make-avm
 	 (apply #'make-graph (append allocs (list (make-fused-kernel-caller allocs f function backend))))
