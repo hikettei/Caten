@@ -10,10 +10,18 @@
 		if (eql (node-type node) :View)
 		  collect (cons (car (node-reads node)) (car (node-writes node))))))
     (labels ((->find (id) (find id rewrite-map :key #'car :test #'eql))
-	     ;; todo: optimize
+	     (view-composed? (id &aux (node (id->value (avm-graph avm) id)))
+	       (and node (eql (node-type node) :View)))
 	     (->aft (id &aux (last id))
 	       (if (symbolp id)
-		   (labels ((f (x &aux (next (->find x))) (if next (progn (setf last (cdr next)) (f (cdr next))) nil)))
+		   (labels ((f (x &aux (next (->find x)))
+			      (if next
+				  (progn
+				    (setf last (cdr next))
+				    (if (view-composed? (cdr next))
+					(f (cdr next))
+					last))
+				  nil)))
 		     (f last)
 		     last)
 		   id)))
@@ -24,22 +32,27 @@
 		    (progn		      
 		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n)))
 		      n))))))
+
+(defun wmma-relay-from (t1 tc nth)
+  (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))
+(defun wmma-relay-from1 (t1 t2 t3)
+  (make-inferred-type `(,@(relay-writes t3) ,(second (relay-reads t1)) ,(second (relay-reads t2))) (relay-writes t3))
+  (setf (nth 1 (relay-reads t3)) (second (relay-reads t1)))
+  t3)
 ;; WMMA (c a b) <=> c = c + a * b (:reduction)
 (defsimplifier
     (wmma-rewriter :speed 0)
-    ((:Add ((:Mul (a b)) c) :reduction t) -> (:WMMA (c a b) :reduction t))
-    ((:Add (c (:Mul (a b))) :reduction t) -> (:WMMA (c a b) :reduction t)))
-
+    ((:Add ((:Mul (a b) :_type_relay t1) c) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 1)))
+    ((:Add (c (:Mul (a b) :_type_relay t1)) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 0))))
 (defsimplifier
     (contiguous-after-wmma :speed 0)
-    ((:WMMA (c (:Move (_ a)) (:Move (_ b))) :reduction reduction) -> (:WMMA (c a b) :reduction reduction)))
+    ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3) -> (:WMMA (c a b) :reduction reduction :_type_relay (wmma-relay-from1 t1 t2 t3))))
 
-(defun apply-jit-specific-simplifiers (avm type-map)
+(defun apply-jit-specific-simplifiers (avm)
   (declare (type avm avm))
   (%safely-purge-views-from-graph avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
-  (contiguous-after-wmma (avm-graph avm) :no-verify t)
-  (deploy-type-infer-results avm type-map :allow-overwrite t))
+  (contiguous-after-wmma (avm-graph avm) :no-verify t))
 
 (defun apply-alias-for-rendering-graph (pipeline)
   (declare (type hash-table pipeline))

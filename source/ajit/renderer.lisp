@@ -1,7 +1,7 @@
 (in-package :caten/ajit)
 
 ;; ~~ Abstraction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defgeneric %render-subroutine (lang kernel-lang jit-graph polyhedral indent type-map)
+(defgeneric %render-subroutine (lang kernel-lang jit-graph polyhedral indent)
   (:documentation
    "IRs used in the jit-graph:
 (TODO: Docs)
@@ -32,7 +32,7 @@ OP :=
 :>
 "))
 
-(defgeneric %render-nodes (lang graph args indent type-map)
+(defgeneric %render-nodes (lang graph args indent)
   (:documentation "Corresponds w/ caten/aasm/ops.lisp"))
 
 (defun render-expr (lang expr)
@@ -70,7 +70,7 @@ OP :=
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
-(defmethod %render-subroutine ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent type-map)
+(defmethod %render-subroutine ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent)
   (declare (type graph jit-graph)
 	   (type polyhedral polyhedral)
 	   (type fixnum indent))
@@ -109,7 +109,7 @@ OP :=
 		(:FUNCALL
 		 (let ((idx (getattr node :idx))
 		       (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
-		   (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent type-map) out))))))))
+		   (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out))))))))
 
 (defun ->cdtype (dtype)
   (ecase dtype
@@ -117,7 +117,7 @@ OP :=
     (:float32 "float")
     (:uint32 "uint32_t")))
 
-(defmethod %render-nodes ((lang (eql :clang)) graph args indent type-map)
+(defmethod %render-nodes ((lang (eql :clang)) graph args indent)
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
 		 `(progn
@@ -163,7 +163,7 @@ OP :=
 		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
 		     (line "~(~a~) = sin(~(~a~));" (render-aref a at) (render-aref a at))))
 		  (:INDEX-COMPONENTS
-		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) (render-isl-aref (car (node-reads node)) (car (relay-reads type)) type-map :genid #'(lambda (x) (intern (format nil "c~a" x))))))
+		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (format nil "c~a" x))))))
 		  (otherwise
 		   (case (node-class node)
 		     (:BinaryOps

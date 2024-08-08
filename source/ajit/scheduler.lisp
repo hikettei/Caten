@@ -117,13 +117,7 @@ Further op-fusion optimization are done by the polyhedral-compiler"
 	      (end-loop (dolist (i index-components) (%endfor i))))))
       (setf (graph-seen g) (schedule-depends-on sched))
       g)))
-;; 1. ViewのShapeInferがうまくいかないのが原因
-;; 2. Outputの時にPipelineのWriteTo書き換えるけどこれがTypeInferをBreakする
-;; 3. Deprecate type-map
-;; Hash-tableをRendering時に渡す
-;; A <- (10 1 20)
-;; B <- (1 30 20)
-;; C(10 30 1) += A(10 1 20) * B(1 30 20)
+
 (defun schedule-depends-on (sched)
   "Enumerates the unsolved buffer ids from the sched graph."
   (declare (type scheduled-items sched))
@@ -304,7 +298,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
-(declaim (ftype (function (AVM &key (:verbose boolean)) (values Polyhedral Type-Reporter)) create-polyhedral-model))
+(declaim (ftype (function (AVM &key (:verbose boolean)) (values Polyhedral)) create-polyhedral-model))
 (defun create-polyhedral-model (avm &key (verbose nil))
   "Creates the polyhedral model given the avm."
   (declare (type avm avm) (type boolean verbose))
@@ -317,7 +311,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     ;; ~ Optimizations ~~
     ;; Do not verify the graph; nodes used to compute views may lost.
     (deploy-type-infer-results avm type-map)
-    (apply-jit-specific-simplifiers avm type-map)
+    (apply-jit-specific-simplifiers avm)
     (when verbose
       (format t "== [Graph after applying jit-specific simplifiers] ==~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))
@@ -357,7 +351,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (format t "== [Initial Scheduling domain (=domain)] ======")
 	      (format t "~%~a~%" schedule)
 	      (isl-schedule-dump schedule))
-	    (values (make-polyhedral avm pipeline domain read-access write-access schedule) type-map)))))))
+	    (make-polyhedral avm pipeline domain read-access write-access schedule)))))))
 
 (defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
   "
@@ -399,16 +393,15 @@ Options:
   (when static-gensym (apply-static-gensym avm))
   (multiple-value-bind (verbose-schedule verbose-auto)
       (values (or (= debug 3) (= debug 1)) (or (= debug 3) (= debug 2)))
-    (multiple-value-bind (polyhedron type-map)
+    (multiple-value-bind (polyhedron)
 	(create-polyhedral-model avm :verbose verbose-schedule)
       (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
       (when (>= debug 1)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       polyhedron
       (remove-iteration-ir (poly-pipeline polyhedron))
-      ;; TODO: Breaks the type-map, hash-table watasu
-      ;;(apply-alias-for-rendering-graph (poly-pipeline polyhedron))
+      (apply-alias-for-rendering-graph (poly-pipeline polyhedron))
       (let* ((extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
-	     (render (%render-subroutine backend backend r-graph polyhedron 0 type-map)))
+	     (render (%render-subroutine backend backend r-graph polyhedron 0)))
 	render))))
