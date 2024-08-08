@@ -54,8 +54,8 @@
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t))
 
-(defun apply-alias-for-rendering-graph (pipeline)
-  (declare (type hash-table pipeline))
+(defun apply-alias-for-rendering-graph (pipeline avm)
+  (declare (type hash-table pipeline) (avm avm))
   (let ((alias-map (make-hash-table :test #'eql)))
     (labels ((alias (key value)
 	       (setf (gethash key alias-map) value))
@@ -79,7 +79,21 @@
 		     (reads (map 'list #'load-from-map (node-reads node))))
 		 (alias-node node)
 		 (setf (node-writes node) writes
-		       (node-reads node) reads))))))))))
+		       (node-reads node) reads)))))))
+      (setf (avm-fw-outputs avm) (map 'list #'load-from-map (avm-fw-outputs avm))
+	    (avm-bw-outputs avm) (map 'list #'load-from-map (avm-bw-outputs avm)))
+      (let ((new-id2tensor (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (load-from-map k) new-id2tensor) v))
+	 (avm-id2tensor avm))
+	(setf (avm-id2tensor avm) new-id2tensor))
+      (let ((new-variables (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (load-from-map k) new-variables) v))
+	 (avm-variables avm))
+	(setf (avm-variables avm) new-variables)))))
 
 (defun apply-static-gensym (avm)
   (declare (type avm avm))
@@ -98,12 +112,15 @@
 	      (node-reads node) (map 'list #'val-gensym (node-reads node))))
       (setf (avm-fw-outputs avm) (map 'list #'val-gensym (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'val-gensym (avm-bw-outputs avm)))
-      (maphash
-       #'(lambda (k v)
-	   (setf (gethash (val-gensym k) (avm-id2tensor avm)) v))
-       (avm-id2tensor avm))
-      (maphash
-       #'(lambda (k v)
-	   (setf (gethash (val-gensym k) (avm-variables avm)) v))
-       (avm-variables avm)))))
-
+      (let ((new-id2tensor (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (val-gensym k) new-id2tensor) v))
+	 (avm-id2tensor avm))
+	(setf (avm-id2tensor avm) new-id2tensor))
+      (let ((new-variables (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (val-gensym k) new-variables) v))
+	 (avm-variables avm))
+	(setf (avm-variables avm) new-variables)))))

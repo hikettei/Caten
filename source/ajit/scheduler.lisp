@@ -404,7 +404,7 @@ Options:
       (when (>= debug 2)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       ;; Minimizing the number of allocation by creating an alias
-      (apply-alias-for-rendering-graph (poly-pipeline polyhedron))
+      (apply-alias-for-rendering-graph (poly-pipeline polyhedron) avm)
       ;; Finalizes the graph:
       (remove-iteration-ir (poly-pipeline polyhedron))
       (let* ((allocs (purge-allocations (poly-pipeline polyhedron)))

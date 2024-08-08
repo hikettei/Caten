@@ -48,6 +48,7 @@ Compiled with: ~a"
     (compile
      nil
      `(lambda (,@(apply #'append (map 'list #'node-writes allocs)))
+	(declare (optimize (compilation-speed 3)))
 	,(expand
 	  allocs
 	  `((cffi:foreign-funcall
