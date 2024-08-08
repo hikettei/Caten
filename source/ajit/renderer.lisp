@@ -164,21 +164,35 @@ OP :=
 		     (line "~(~a~) = sin(~(~a~));" (render-aref a at) (render-aref a at))))
 		  (:INDEX-COMPONENTS
 		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (format nil "c~a" x))))))
+		  (:MOVE
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref a at))))
 		  (otherwise
 		   (case (node-class node)
 		     (:BinaryOps
 		      (let* ((r (getattr node :reduction))
-			     (op (ecase (node-type node)
+			     (op (case (node-type node)
 				   (:ADD (if r "+=" "+")) (:MUL (if r "*=" "=")))))
-			(if r
-			    (line "~(~a~) ~a ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) op (render-aref (second (node-reads node)) (second (relay-reads type))))
-			    (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type)))
-				  (apply
-				   #'concatenate
-				   'string
-				   (butlast
-				    (loop for r in (node-reads node)
-					  for rt in (relay-reads type)
-					  append (list (render-aref r rt) op))))))))
+			(if op
+			    (if r
+				(line "~(~a~) ~a ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) op (render-aref (second (node-reads node)) (second (relay-reads type))))
+				(line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type)))
+				      (apply
+				       #'concatenate
+				       'string
+				       (butlast
+					(loop for r in (node-reads node)
+					      for rt in (relay-reads type)
+					      append (list (render-aref r rt) op))))))
+			    (let ((op (ecase (node-type node)
+					(:MAX "max"))))
+			      (line "~(~a~) = ~a(~a);" (render-aref (car (node-reads node)) (car (relay-reads type))) op
+				    (apply
+				     #'concatenate
+				     'string
+				     (butlast
+				      (loop for r in (node-reads node)
+					    for rt in (relay-reads type)
+					    append (list (render-aref r rt) ", ")))))))))				    
 		     (otherwise
 		      (error "Renderer for ~a is not implemented yet." node))))))))))

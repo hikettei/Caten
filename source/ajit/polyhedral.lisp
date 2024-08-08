@@ -66,7 +66,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	 (p     (isl-printer-set-output-format p 4)) ;; 4 indicates C
 	 (q     (isl-printer-print-ast-node p ast))
 	 (str   (isl-printer-get-str q)))
-    ;; (foreign-funcall "isl_schedule_free" :pointer cp :void)
+    ;;(foreign-funcall "isl_schedule_free" :pointer cp :void)
     str))
 
 (defun create-dependency-graph (polyhedral &aux (copied1) (copied2))
