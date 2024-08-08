@@ -14,10 +14,16 @@
   (:export
    #:create-polyhedral-model
    #:auto-schedule
-   #:jit)
+   #:jit
+   #:render-isl-aref)
   ;; from type-relay.lisp
   (:export
-   #:run-type-infer)
+   #:run-type-infer
+   #:deploy-type-infer-results
+   #:Inferred-Types
+   #:read-type-relay
+   #:relay-reads
+   #:relay-writes)
   ;; from polyhedral.lisp
   (:export
    #:Polyhedral
@@ -29,6 +35,7 @@
   (:export
    #:%render-subroutine
    #:%render-expr
+   #:%render-nodes
    #:render-expr
   ))
 

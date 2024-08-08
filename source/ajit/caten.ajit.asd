@@ -15,7 +15,8 @@
    (:file "isl-ast-helpers")
    (:file "graph")
    (:file "renderer")
-   (:file "polyhedral"))
+   (:file "polyhedral")
+   (:file "backends/clang"))
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))
 
 (asdf:defsystem "caten.ajit/test"
