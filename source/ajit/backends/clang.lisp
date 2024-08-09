@@ -57,7 +57,7 @@ Compiled with: ~a"
 	  `((cffi:foreign-funcall
 	     ,(format nil "~(~a~)" (avm-name avm))
 	     ,@(loop for node in allocs
-		     for type = (intern (string-upcase (->cdtype (getattr node :dtype))) "KEYWORD")
+		     for type = (->cffi-dtype(getattr node :dtype))
 		     if (= (getattr node :nrank) 0)
 		       append `(,type (dtype/cast (buffer-value ,(car (node-writes node))) ,(getattr node :dtype)))
 		     else
@@ -68,14 +68,6 @@ Compiled with: ~a"
   (format nil "~%#include <math.h>
 #include <stdint.h>
 #define boolean _Bool
-#define uint64_t uint64
-#define int64_t int64
-#define uint32_t uint32
-#define int32_t int32
-#define uint16_t uint16
-#define int16_t int16
-#define uint8_t uint8
-#define int8_t int8
 #define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
 ~a" body))
 
@@ -172,14 +164,28 @@ Compiled with: ~a"
     (:bool "boolean")
     (:float64 "double")
     (:float32 "float")
-    (:uint64 "uint64")
-    (:int64 "int64")
-    (:int32 "int32")
-    (:uint32 "uint32")
-    (:int16 "int16")
-    (:uint16 "uint16")
-    (:uint8 "uint8")
-    (:int8 "int8")))
+    (:uint64 "uint64_t")
+    (:int64 "int64_t")
+    (:int32 "int32_t")
+    (:uint32 "uint32_t")
+    (:int16 "int16_t")
+    (:uint16 "uint16_t")
+    (:uint8 "uint8_t")
+    (:int8 "int8_t")))
+
+(defun ->cffi-dtype (dtype)
+  (ecase dtype
+    (:bool :bool)
+    (:float64 :double)
+    (:float32 :float)
+    (:uint64 :uint64)
+    (:int64 :int64)
+    (:int32 :int32)
+    (:uint32 :uint32)
+    (:int16 :int16)
+    (:uint16 :uint16)
+    (:uint8 :uint8)
+    (:int8 :int8)))
 
 (defmethod %render-nodes ((lang (eql :clang)) graph access indent)
   (with-output-to-string (out)
