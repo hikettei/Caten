@@ -1,5 +1,8 @@
 (defpackage :caten/ajit.backends.clang
-  (:use :cl :caten/ajit :caten/air :caten/avm :cffi))
+  (:use :cl :caten/ajit :caten/air :caten/avm :cffi)
+    (:import-from
+     :caten/common.dtype
+     #:dtype/cast))
 (in-package :caten/ajit.backends.clang)
 ;; ~~~ CLANG ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -56,7 +59,7 @@ Compiled with: ~a"
 	     ,@(loop for node in allocs
 		     for type = (intern (string-upcase (->cdtype (getattr node :dtype))) "KEYWORD")
 		     if (= (getattr node :nrank) 0)
-		       append `(,type (buffer-value ,(car (node-writes node))))
+		       append `(,type (dtype/cast (buffer-value ,(car (node-writes node))) ,(getattr node :dtype)))
 		     else
 		       append `(:pointer ,(car (node-writes node))))
 	     :void)))))))
@@ -193,7 +196,7 @@ Compiled with: ~a"
 					append (list (format nil "~a" x) "*")))))))))
 		  (:LOAD
 		   (let ((value (getattr node :value)))
-		     (line "~(~a~) = ~a;" (render-aref (car (node-reads node)) (car (relay-reads type))) value)))
+		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) value)))
 		  (:WMMA
 		   (multiple-value-bind (c a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (ct at bt) (apply #'values (relay-reads type))

@@ -75,8 +75,15 @@
 	       (setf (node-writes node) writes
 		     (node-reads node) reads)))
 	    (otherwise
-	     (if (and (eql (node-type node) :Load) (symbolp (getattr node :value)))
+	     (if (and
+		  (eql (node-type node) :Load)
+		  (symbolp (getattr node :value))
+		  (let ((alloc (id->value (avm-graph avm) (car (node-reads node)))))
+		    (and
+		     (eql (node-type alloc) :Allocate)
+		     (= (getattr alloc :nrank) 0))))
 		 (progn
+		   ;; [TODO] BugFix is required to (make-tensor `(10) :initial-element 'a)
 		   ;; X <- Alloc(...)
 		   ;; Y <- LOAD(X, value=a)
 		   (setf (gethash (car (node-reads node)) scalars) (getattr node :value))
