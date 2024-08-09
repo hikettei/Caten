@@ -66,6 +66,7 @@ Compiled with: ~a"
 
 (defmethod %render-program-toplevel ((lang (eql :clang)) body)
   (format nil "~%#include <math.h>
+#define boolean _Bool
 #define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
 ~a" body))
 
@@ -159,6 +160,7 @@ Compiled with: ~a"
 
 (defun ->cdtype (dtype)
   (ecase dtype
+    (:bool "boolean")
     (:float64 "double")
     (:float32 "float")
     (:int32 "int")
@@ -218,18 +220,40 @@ Compiled with: ~a"
 		  (:NEG
 		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
 		     (line "~(~a~) = -~(~a~);" (render-aref a at) (render-aref a at))))
+		  (:RECIP
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (line "~(~a~) = 1.0 / ~(~a~);" (render-aref a at) (render-aref a at))))
+		  (:SQRT
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (line "~(~a~) = sqrt~(~a~);" (render-aref a at) (render-aref a at))))
+		  (:NOT
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (line "~(~a~) = !~(~a~);" (render-aref a at) (render-aref a at))))
 		  (:INDEX-COMPONENTS
 		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (format nil "c~a" x))))))
 		  (:MOVE
 		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
 		     (multiple-value-bind (b bt) (values (second (node-reads node)) (second (relay-reads type)))
 		       (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref b bt)))))
+		  (:OR
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (multiple-value-bind (b bt) (values (second (node-reads node)) (second (relay-reads type)))
+		       (line "~(~a~) = ~(~a~) | ~(~a~);" (render-aref a at) (render-aref a at) (render-aref b bt)))))
+		  (:AND
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (multiple-value-bind (b bt) (values (second (node-reads node)) (second (relay-reads type)))
+		       (line "~(~a~) = ~(~a~) & ~(~a~);" (render-aref a at) (render-aref a at) (render-aref b bt)))))
+		  (:WHERE		   
+		   (multiple-value-bind (a at) (values (nth 0 (node-reads node)) (nth 0 (relay-reads type)))
+		     (multiple-value-bind (b bt) (values (nth 1 (node-reads node)) (nth 1 (relay-reads type)))
+		       (multiple-value-bind (c ct) (values (nth 2 (node-reads node)) (nth 2 (relay-reads type)))
+			 (line "~(~a~) = ~(~a~) ? ~(~a~) : ~(~a~);" (render-aref b bt) (render-aref a at) (render-aref b bt) (render-aref c ct))))))
 		  (otherwise
 		   (case (node-class node)
 		     (:BinaryOps
 		      (let* ((r (getattr node :reduction))
 			     (op (case (node-type node)
-				   (:ADD (if r "+=" "+")) (:MUL (if r "*=" "=")))))
+				   (:ADD (if r "+=" "+")) (:MUL (if r "*=" "*")))))
 			(if op
 			    (if r
 				(line "~(~a~) ~a ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) op (render-aref (second (node-reads node)) (second (relay-reads type))))
@@ -251,5 +275,11 @@ Compiled with: ~a"
 				      (loop for r in (node-reads node)
 					    for rt in (relay-reads type)
 					    append (list (render-aref r rt) ", ")))))))))
+		     (:TernaryOps
+		      (let ((op (ecase (node-type node) (:NEQ "!=") (:LT "<"))))
+			(multiple-value-bind (a at) (values (nth 0 (node-reads node)) (nth 0 (relay-reads type)))
+			  (multiple-value-bind (b bt) (values (nth 1 (node-reads node)) (nth 1 (relay-reads type)))
+			    (multiple-value-bind (c ct) (values (nth 2 (node-reads node)) (nth 2 (relay-reads type)))
+			      (line "~(~a~) = ~(~a~) ~a ~(~a~);" (render-aref a at) (render-aref b bt) op (render-aref c ct)))))))
 		     (otherwise
 		      (error "Renderer for ~a is not implemented yet." node))))))))))

@@ -1,7 +1,7 @@
 (in-package :cl-user)
 (defpackage :caten/apis.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
 (in-package :caten/apis.test)
-
+(defmacro skip-if-jit () `(when (= 1 (ctx:getenv :JIT)) (skip "Requires VM Mode!")))
 (deftest test-shape-tracker
   (ok
    (let ((a (make-tensor `(5 3 5)))
@@ -98,10 +98,12 @@
   (declare (type avm avm)
 	   (type fixnum count))
   (let ((sched (optimize-aasm graph)))
-    (assert
-     (= (length (graph-nodes sched)) count)
-     ()
-     "check-schedule: should satisfy (kernel_count=~a) <= ~a.~%~a" (length (graph-nodes sched)) count sched))
+    ;; Only checked on VM Mode
+    (when (= 0 (ctx:getenv :JIT))
+      (assert
+       (= (length (graph-nodes sched)) count)
+       ()
+       "check-schedule: should satisfy (kernel_count=~a) <= ~a.~%~a" (length (graph-nodes sched)) count sched)))
   t)
 
 (deftest test-simplifier-no-grad
