@@ -1,7 +1,7 @@
 (in-package :caten/avm)
 
 (defparameter *device* :lisp "a keyword to indicate the device (being dispatched)")
-(defparameter *max-display-len* 20)
+(defparameter *max-display-len* 10)
 (defmacro with-device (device &body body)
   "declares the device to use"
   `(let ((*device* ,device)) ,@body))
@@ -72,7 +72,7 @@
 	  (loop for i upfrom 0
 		  below
 		  (min
-		   100
+		   1000 ;; if elements are sparse ...
 		   (apply #'* (map 'list #'(lambda (x v) (if (fourth v) 1 x)) (buffer-shape buffer) (buffer-views buffer))))
 		maximize (length (format nil "~a" (%vm/read-index *device* buffer i))))))
     (with-output-to-string (stream)
@@ -83,7 +83,7 @@
 		       (let* ((content (format nil "~a" (apply #'buffer-ref buffer subscripts)))
 			      (diff    (max 0 (- sample-size (length content))))
 			      (offset  (with-output-to-string (out) (dotimes (i diff) (princ " " out)))))
-			 (format stream "~a~a" content offset))
+			 (format stream "~a~a" content (if lastp "" offset)))
 		       (if (<= size max)
 			   (progn
 			     (format stream bracket-start)
