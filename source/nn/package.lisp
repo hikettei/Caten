@@ -19,6 +19,8 @@ Policy:
 
   ;; from padding.lisp
   (:export
+   #:!padding
+   #:!padding2d
    )
   ;; from pool.lisp
   (:export
