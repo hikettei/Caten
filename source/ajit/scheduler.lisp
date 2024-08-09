@@ -149,7 +149,7 @@ Further op-fusion optimization are done by the polyhedral-compiler"
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
 
-(defun render-isl-aref (buffer &key (genid #'gid))
+(defun render-isl-aref (buffer &key (genid #'gid) (access-rep nil))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -174,6 +174,9 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	     (assert (typep stride 'integer-t) () "(A bug of caten/ajit) Resolve this ~a" stride)
 	     (assert (typep upfrom 'integer-t) () "(A bug of caten/ajit) Resolve this ~a" upfrom)
 	     (assert (typep by 'integer-t)     () "(A bug of caten/ajit) Resolve this ~a" by)
+	     ;; Ugly solution... should be temporary...
+	     (when (and (not (numberp stride)) access-rep) (setf stride 1))
+	     (when (and (not (numberp by)) access-rep) (setf by 2))
 	     (if broadcast-p
 		 (format nil "~a" upfrom)
 		 (format nil "~a(~a~a)"
@@ -259,7 +262,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		       (rt        (car (relay-reads (read-type-relay node)))))
 		   (when (symbolp reduce-to)
 		     (if (vm-instruction-p node)
-			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref rt))
+			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref rt :access-rep t))
 			 (error ":reduction for the op ~a is invaild." node)))))
 	       (loop for r in (funcall (if (eql mode :read) #'node-reads #'node-writes) node)
 		     for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
@@ -268,7 +271,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			 (if (null lf)
 			     (format out "  ~a -> ~(~a~)[_total] : _total >= 0;~%" occur-from r)
 			     (when (vm-instruction-p node)
-			       (let ((access (render-isl-aref rt)))
+			       (let ((access (render-isl-aref rt :access-rep t)))
 				 (if (string= access "")
 				     (format out "  ~a -> ~(~a~)[0];~%" occur-from r)
 				     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))))))
