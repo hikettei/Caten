@@ -44,8 +44,10 @@ Further op-fusion optimization are done by the polyhedral-compiler"
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
       (when (find latest-id seen) (return-from recursive-find-group))
       (let* ((node (id->value (avm-graph avm) latest-id))
-	     (children (node-reads node))
-	     (children-type (relay-reads (read-type-relay node)))
+	     ;; Allocation is done outside of the function(VM or Exported VM), i.e., the computation node for the shape must not be included in the JIT
+	     (alloc-p (eql (node-type node) :Allocate))
+	     (children (if alloc-p nil (node-reads node)))
+	     (children-type (if alloc-p nil (relay-reads (read-type-relay node))))
 	     (mergeable-list
 	       (map 'list
 		    #'(lambda (x x-type)
@@ -57,7 +59,8 @@ Further op-fusion optimization are done by the polyhedral-compiler"
 	(setf seen (append seen (node-writes node)))
 	;; Top_ID <- F(Children[0], Children[1], ...)
 	;;             mergeable[0] mergeable[1], ...
-	(if (every #'identity mergeable-list)
+	;; :Allocate cannot be merged with any nodes!
+	(if (and (not alloc-p) (every #'identity mergeable-list))
 	    (let ((parent-groups))
 	      (dolist (c children)
 		(when (not (numberp c))
@@ -218,7 +221,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		 (format out " : ")
 		 (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
 		 (format out ";~%"))
-	       (progn
+	       ;; fails to render :Allocate to purge the allocation in the schedule.
+	       ;; It is asserted that :Allocation is always alone in the schedule.
+	       (when (not (and (= 1 (length (graph-nodes subgraph))) (eql :Allocate (node-type (car (graph-nodes subgraph))))))			  
 		 (format out "  T~a[];~%" timestamp)))))
      pipeline)
     (format out "}")))
@@ -388,8 +393,11 @@ Options:
   (apply #'values args))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; TODO LIST:
-;;  TODO: making isl objects gc-reachable
+;;  TODO: making isl objects gc-reachable (-> ctxに紐付けておく)
 ;;  TODO: Symbolic Graph Compilation
+;;      - Step1 Numberと同じようにCompileできるようにする (if not appeared in strides)
+;;              - Testing: Stride計算がTensorでもOK?
+;;      - Step2 (Strideの計算は適当な整数値(素数)で置き換える)
 ;;  FIX:  Bugs (more symbolic deps needed)
 ;;  ADD: METAL/OMP, parallelize dependencies analysis
 ;;  ADD: If/For Node in the early stage!!!!
@@ -429,6 +437,9 @@ Options:
 	  (format t "Compiled:~%~a" function))
 	(%render-compile backend avm allocs function)
 	;; (isl-free-ctx )
+	;; Memo: From AVM -> ClangでExportする
+	;; source/exporter
+	;; TODO: Tensor-Shaped TensorをAllocする時，その計算式(派生するNode)もJIT Kernelに含める
 	(make-avm
 	 (apply #'make-graph (append allocs (list (make-fused-kernel-caller allocs f function backend))))
 	 (avm-name avm)
