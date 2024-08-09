@@ -356,7 +356,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (format t "== [Initial Scheduling domain (=domain)] ======")
 	      (format t "~%~a~%" schedule)
 	      (isl-schedule-dump schedule))
-	    (make-polyhedral avm pipeline domain read-access write-access schedule)))))))
+	    (values (make-polyhedral avm pipeline domain read-access write-access schedule) dynamic-shapes)))))))
 
 (defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
   "
@@ -416,22 +416,23 @@ Options:
   (when static-gensym (apply-static-gensym avm))
   (multiple-value-bind (verbose-schedule verbose-auto)
       (values (or (= debug 4) (= debug 3)) (or (= debug 4) (= debug 2)))
-    (multiple-value-bind (polyhedron)
+    (multiple-value-bind (polyhedron dynamic-shapes)
 	(create-polyhedral-model avm :verbose verbose-schedule)
       (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
       (when (>= debug 2)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       ;; Minimizing the number of allocation by creating an alias
-      (apply-alias-for-rendering-graph (poly-pipeline polyhedron) avm)
       ;; Finalizes the graph:
-      (remove-iteration-ir (poly-pipeline polyhedron))
-      (let* ((allocs (purge-allocations (poly-pipeline polyhedron)))
+      (let* ((alias-map (apply-alias-for-rendering-graph (poly-pipeline polyhedron) avm))
+	     (_ (remove-iteration-ir (poly-pipeline polyhedron)))
+	     (allocs (purge-allocations (poly-pipeline polyhedron) alias-map dynamic-shapes))
 	     (extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
 	     (body (%render-body backend backend r-graph polyhedron 1))
 	     (function (%render-function backend avm allocs body))
 	     (function (%render-program-toplevel backend function))
 	     (f (%render-function-caller backend avm allocs function)))
+	(declare (ignore _))
 	(assert (functionp f) () "%render-function-caller should return a function!")
 	(when (>= debug 1)
 	  (format t "Compiled:~%~a" function))
@@ -440,6 +441,8 @@ Options:
 	;; Memo: From AVM -> ClangでExportする
 	;; source/exporter
 	;; TODO: Tensor-Shaped TensorをAllocする時，その計算式(派生するNode)もJIT Kernelに含める
+	;; TODO: AllocsのSubgraphを抽出
+	(print allocs)
 	(make-avm
 	 (apply #'make-graph (append allocs (list (make-fused-kernel-caller allocs f function backend))))
 	 (avm-name avm)

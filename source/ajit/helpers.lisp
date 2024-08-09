@@ -55,7 +55,8 @@
 		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
 			 collect node))))
 
-(defun purge-allocations (pipeline &aux (allocs nil))
+(defun purge-allocations (pipeline alias-map dynamic-shapes &aux (allocs nil))
+  (declare (type hash-table pipeline alias-map))
   (maphash
    #'(lambda (k graph)
        (declare (ignore k))
@@ -66,4 +67,8 @@
 		   else
 		     collect node)))
    pipeline)
-  (remove-duplicates allocs :key (compose #'car #'node-writes)))
+  (flet ((refalias (x) (or (gethash x alias-map) x)))
+    (mapc #'(lambda (n) (setf (node-writes n) (map 'list #'refalias (node-writes n)))) allocs)
+    (let ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
+	  (shapes (map 'list #'(lambda (x) (%alloc 0 nil nil :dtype caten/aasm:*default-uint* :id x)) dynamic-shapes)))
+      (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes)))))

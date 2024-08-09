@@ -56,7 +56,9 @@
 
 (defun apply-alias-for-rendering-graph (pipeline avm)
   (declare (type hash-table pipeline) (avm avm))
-  (let ((alias-map (make-hash-table :test #'eql)))
+  (let ((alias-map (make-hash-table :test #'eql))
+	(scalars (make-hash-table :test #'eql))
+	(remove-id-list))
     (labels ((alias (key value)
 	       (setf (gethash key alias-map) value))
 	     (load-from-map (key) (or (gethash key alias-map) key))
@@ -73,13 +75,25 @@
 	       (setf (node-writes node) writes
 		     (node-reads node) reads)))
 	    (otherwise
-	     (when (>= (length (node-writes node)) 1)
-	       (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
-	       (let ((writes (list (load-from-map (car (node-reads node)))))
-		     (reads (map 'list #'load-from-map (node-reads node))))
-		 (alias-node node)
-		 (setf (node-writes node) writes
-		       (node-reads node) reads)))))))
+	     (if (and (eql (node-type node) :Load) (symbolp (getattr node :value)))
+		 (progn
+		   ;; X <- Alloc(...)
+		   ;; Y <- LOAD(X, value=a)
+		   (setf (gethash (car (node-reads node)) scalars) (getattr node :value))
+		   (alias (car (node-writes node)) (getattr node :value))
+		   (push (node-id node) remove-id-list))
+		 (when (>= (length (node-writes node)) 1)
+		   (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
+		   (let ((writes (list (load-from-map (car (node-reads node)))))
+			 (reads (map 'list #'load-from-map (node-reads node))))
+		     (alias-node node)
+		     (setf (node-writes node) writes
+			   (node-reads node) reads))))))))
+      (maphash
+       #'(lambda (_ g)
+	   (declare (ignore _))
+	   (setf (graph-nodes g) (loop for n in (graph-nodes g) unless (find (node-id n) remove-id-list) collect n)))
+       pipeline)
       (setf (avm-fw-outputs avm) (map 'list #'load-from-map (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'load-from-map (avm-bw-outputs avm)))
       (let ((new-id2tensor (make-hash-table)))
@@ -93,7 +107,8 @@
 	 #'(lambda (k v)
 	     (setf (gethash (load-from-map k) new-variables) v))
 	 (avm-variables avm))
-	(setf (avm-variables avm) new-variables)))))
+	(setf (avm-variables avm) new-variables)))
+    scalars))
 
 (defun apply-static-gensym (avm)
   (declare (type avm avm))

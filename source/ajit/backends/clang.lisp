@@ -157,7 +157,7 @@ Compiled with: ~a"
     (:float64 "double")
     (:float32 "float")
     (:int32 "int")
-    (:uint32 "uint32_t")))
+    (:uint32 "int")))
 
 (defmethod %render-nodes ((lang (eql :clang)) graph access indent)
   (with-output-to-string (out)
