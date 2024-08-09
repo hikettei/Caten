@@ -144,6 +144,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	       (isl-schedule-constraints-set-validity
 		schedule-constraints
 		(isl-union-map-copy all-deps)))
+	     ;; proximity constraints (keeps loops nested based on dependencies)
 	     (schedule-constraints
 	       (isl-schedule-constraints-set-proximity
 		schedule-constraints

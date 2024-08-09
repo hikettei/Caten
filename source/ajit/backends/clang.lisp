@@ -159,7 +159,7 @@ Compiled with: ~a"
     (:int32 "int")
     (:uint32 "uint32_t")))
 
-(defmethod %render-nodes ((lang (eql :clang)) graph args indent)
+(defmethod %render-nodes ((lang (eql :clang)) graph access indent)
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
 		 `(progn
@@ -167,7 +167,7 @@ Compiled with: ~a"
 		    (format out ,designator ,@args)
 		    (format out "~%"))))
       (labels ((render-aref (id type)
-		 (let ((ref (render-isl-aref type :genid #'(lambda (x) (intern (format nil "c~a" x))))))
+		 (let ((ref (render-isl-aref type :genid #'(lambda (x) (nth x access)))))
 		   (if (string= ref "")
 		       (format nil "~(~a~)" id)
 		       (format nil "~(~a~)[~(~a~)]" id ref)))))
