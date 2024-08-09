@@ -66,7 +66,16 @@ Compiled with: ~a"
 
 (defmethod %render-program-toplevel ((lang (eql :clang)) body)
   (format nil "~%#include <math.h>
+#include <stdint.h>
 #define boolean _Bool
+#define uint64_t uint64
+#define int64_t int64
+#define uint32_t uint32
+#define int32_t int32
+#define uint16_t uint16
+#define int16_t int16
+#define uint8_t uint8
+#define int8_t int8
 #define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
 ~a" body))
 
@@ -163,8 +172,14 @@ Compiled with: ~a"
     (:bool "boolean")
     (:float64 "double")
     (:float32 "float")
-    (:int32 "int")
-    (:uint32 "int")))
+    (:uint64 "uint64")
+    (:int64 "int64")
+    (:int32 "int32")
+    (:uint32 "uint32")
+    (:int16 "int16")
+    (:uint16 "uint16")
+    (:uint8 "uint8")
+    (:int8 "int8")))
 
 (defmethod %render-nodes ((lang (eql :clang)) graph access indent)
   (with-output-to-string (out)
