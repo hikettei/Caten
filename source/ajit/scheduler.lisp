@@ -385,7 +385,7 @@ Options:
   (let ((jit (getattr node :jit-info)))
     (assert (jit-info-p jit) () "~a is not a jit kernel. :jit-info=~a" node jit)
     (apply (jit-info-caller jit) args))
-  (apply #'values (reverse args)))
+  (apply #'values args))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; TODO LIST:
 ;;  TODO: making isl objects gc-reachable
