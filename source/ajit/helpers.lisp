@@ -72,3 +72,12 @@
     (let ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
 	  (shapes (map 'list #'(lambda (x) (%alloc 0 nil nil :dtype caten/aasm:*default-uint* :id x)) dynamic-shapes)))
       (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes)))))
+
+(defun get-subgraph-recursively (node graph dynamic-shapes)
+  (declare (type node node) (type graph graph))
+  (append
+   (loop for r in (node-reads node)
+	 if (symbolp r)
+	   append (get-subgraph-recursively (id->value graph r) graph dynamic-shapes))
+   (when (not (find (car (node-writes node)) dynamic-shapes))
+     (list node))))	 
