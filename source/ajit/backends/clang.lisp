@@ -156,6 +156,7 @@ Compiled with: ~a"
   (ecase dtype
     (:float64 "double")
     (:float32 "float")
+    (:int32 "int")
     (:uint32 "uint32_t")))
 
 (defmethod %render-nodes ((lang (eql :clang)) graph args indent)
@@ -207,7 +208,8 @@ Compiled with: ~a"
 		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (format nil "c~a" x))))))
 		  (:MOVE
 		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
-		     (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref a at))))
+		     (multiple-value-bind (b bt) (values (second (node-reads node)) (second (relay-reads type)))
+		       (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref b bt)))))
 		  (otherwise
 		   (case (node-class node)
 		     (:BinaryOps
