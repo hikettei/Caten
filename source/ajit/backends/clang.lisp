@@ -62,7 +62,9 @@ Compiled with: ~a"
 	     :void)))))))
 
 (defmethod %render-program-toplevel ((lang (eql :clang)) body)
-  (format nil "~%#include <math.h>~%~a" body))
+  (format nil "~%#include <math.h>
+#define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
+~a" body))
 
 (defmethod %render-function ((lang (eql :clang)) avm allocs body)
   (let ((header
@@ -95,11 +97,11 @@ Compiled with: ~a"
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :MAX)) lhs rhs)
   (assert (and lhs rhs))
-  (format nil "MAX(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
+  (format nil "max(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :MIN)) lhs rhs)
   (assert (and lhs rhs))
-  (format nil "MIN(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
+  (format nil "min(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
 
 (defmethod %render-expr ((lang (eql :clang)) op lhs rhs)
   (assert (and lhs rhs))
