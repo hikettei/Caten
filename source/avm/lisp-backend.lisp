@@ -89,7 +89,7 @@
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Load)) graph node args)
   (let* ((tgt (car args))
 	 (val (getattr node :value))
-	 (val (if (numberp val) val (vm/readvar *vm* val)))
+	 (val (reveal-buffer (if (numberp val) val (vm/readvar *vm* val))))
 	 (val (dtype/cast val (buffer-dtype tgt))))
     (if (= (buffer-nrank (car args)) 0)
 	(let ((out (copy-buffer tgt)))

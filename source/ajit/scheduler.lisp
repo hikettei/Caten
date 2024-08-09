@@ -44,8 +44,10 @@ Further op-fusion optimization are done by the polyhedral-compiler"
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
       (when (find latest-id seen) (return-from recursive-find-group))
       (let* ((node (id->value (avm-graph avm) latest-id))
-	     (children (node-reads node))
-	     (children-type (relay-reads (read-type-relay node)))
+	     ;; Allocation is done outside of the function(VM or Exported VM), i.e., the computation node for the shape must not be included in the JIT
+	     (alloc-p (eql (node-type node) :Allocate))
+	     (children (if alloc-p nil (node-reads node)))
+	     (children-type (if alloc-p nil (relay-reads (read-type-relay node))))
 	     (mergeable-list
 	       (map 'list
 		    #'(lambda (x x-type)
@@ -57,7 +59,8 @@ Further op-fusion optimization are done by the polyhedral-compiler"
 	(setf seen (append seen (node-writes node)))
 	;; Top_ID <- F(Children[0], Children[1], ...)
 	;;             mergeable[0] mergeable[1], ...
-	(if (every #'identity mergeable-list)
+	;; :Allocate cannot be merged with any nodes!
+	(if (and (not alloc-p) (every #'identity mergeable-list))
 	    (let ((parent-groups))
 	      (dolist (c children)
 		(when (not (numberp c))
@@ -146,7 +149,7 @@ Further op-fusion optimization are done by the polyhedral-compiler"
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
 
-(defun render-isl-aref (buffer &key (genid #'gid))
+(defun render-isl-aref (buffer &key (genid #'gid) (access-rep nil))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -171,6 +174,9 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	     (assert (typep stride 'integer-t) () "(A bug of caten/ajit) Resolve this ~a" stride)
 	     (assert (typep upfrom 'integer-t) () "(A bug of caten/ajit) Resolve this ~a" upfrom)
 	     (assert (typep by 'integer-t)     () "(A bug of caten/ajit) Resolve this ~a" by)
+	     ;; Ugly solution... should be temporary...
+	     (when (and (not (numberp stride)) access-rep) (setf stride 1))
+	     (when (and (not (numberp by)) access-rep) (setf by 2))
 	     (if broadcast-p
 		 (format nil "~a" upfrom)
 		 (format nil "~a(~a~a)"
@@ -218,7 +224,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		 (format out " : ")
 		 (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
 		 (format out ";~%"))
-	       (progn
+	       ;; fails to render :Allocate to purge the allocation in the schedule.
+	       ;; It is asserted that :Allocation is always alone in the schedule.
+	       (when (not (and (= 1 (length (graph-nodes subgraph))) (eql :Allocate (node-type (car (graph-nodes subgraph))))))			  
 		 (format out "  T~a[];~%" timestamp)))))
      pipeline)
     (format out "}")))
@@ -254,7 +262,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		       (rt        (car (relay-reads (read-type-relay node)))))
 		   (when (symbolp reduce-to)
 		     (if (vm-instruction-p node)
-			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref rt))
+			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref rt :access-rep t))
 			 (error ":reduction for the op ~a is invaild." node)))))
 	       (loop for r in (funcall (if (eql mode :read) #'node-reads #'node-writes) node)
 		     for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
@@ -263,7 +271,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			 (if (null lf)
 			     (format out "  ~a -> ~(~a~)[_total] : _total >= 0;~%" occur-from r)
 			     (when (vm-instruction-p node)
-			       (let ((access (render-isl-aref rt)))
+			       (let ((access (render-isl-aref rt :access-rep t)))
 				 (if (string= access "")
 				     (format out "  ~a -> ~(~a~)[0];~%" occur-from r)
 				     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))))))
@@ -351,7 +359,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (format t "== [Initial Scheduling domain (=domain)] ======")
 	      (format t "~%~a~%" schedule)
 	      (isl-schedule-dump schedule))
-	    (make-polyhedral avm pipeline domain read-access write-access schedule)))))))
+	    (values (make-polyhedral avm pipeline domain read-access write-access schedule) dynamic-shapes)))))))
 
 (defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
   "
@@ -388,8 +396,11 @@ Options:
   (apply #'values args))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; TODO LIST:
-;;  TODO: making isl objects gc-reachable
+;;  TODO: making isl objects gc-reachable (-> ctxに紐付けておく)
 ;;  TODO: Symbolic Graph Compilation
+;;      - Step1 Numberと同じようにCompileできるようにする (if not appeared in strides)
+;;              - Testing: Stride計算がTensorでもOK?
+;;      - Step2 (Strideの計算は適当な整数値(素数)で置き換える)
 ;;  FIX:  Bugs (more symbolic deps needed)
 ;;  ADD: METAL/OMP, parallelize dependencies analysis
 ;;  ADD: If/For Node in the early stage!!!!
@@ -408,30 +419,38 @@ Options:
   (when static-gensym (apply-static-gensym avm))
   (multiple-value-bind (verbose-schedule verbose-auto)
       (values (or (= debug 4) (= debug 3)) (or (= debug 4) (= debug 2)))
-    (multiple-value-bind (polyhedron)
+    (multiple-value-bind (polyhedron dynamic-shapes)
 	(create-polyhedral-model avm :verbose verbose-schedule)
       (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
       (when (>= debug 2)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       ;; Minimizing the number of allocation by creating an alias
-      (apply-alias-for-rendering-graph (poly-pipeline polyhedron) avm)
       ;; Finalizes the graph:
-      (remove-iteration-ir (poly-pipeline polyhedron))
-      (let* ((allocs (purge-allocations (poly-pipeline polyhedron)))
+      (let* ((alias-map (apply-alias-for-rendering-graph (poly-pipeline polyhedron) avm))
+	     (_ (remove-iteration-ir (poly-pipeline polyhedron)))
+	     (allocs (purge-allocations (poly-pipeline polyhedron) alias-map dynamic-shapes))
 	     (extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
 	     (body (%render-body backend backend r-graph polyhedron 1))
 	     (function (%render-function backend avm allocs body))
 	     (function (%render-program-toplevel backend function))
 	     (f (%render-function-caller backend avm allocs function)))
+	(declare (ignore _))
 	(assert (functionp f) () "%render-function-caller should return a function!")
 	(when (>= debug 1)
 	  (format t "Compiled:~%~a" function))
 	(%render-compile backend avm allocs function)
 	;; (isl-free-ctx )
-	(make-avm
-	 (apply #'make-graph (append allocs (list (make-fused-kernel-caller allocs f function backend))))
-	 (avm-name avm)
-	 (avm-id2tensor avm)
-	 (avm-fw-outputs avm)
-	 (avm-bw-outputs avm))))))
+	;; TODO: Further Simplificatin, tracing the avm, generate the C-exported VM
+	;; Keep the consistency: JIT(JIT(model))
+	(let* ((subgraph (apply #'append (map 'list #'(lambda (x) (get-subgraph-recursively x (avm-graph avm) dynamic-shapes (getattr x :dtype))) allocs)))
+	       (new-graph (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f function backend))))))
+	  ;;(fold-constant new-graph)
+	  ;; TODO: Tracing the jit-compiled AVM (including IfNode/MapNode etc)
+	  ;; we can export the entire vm to clang.
+	  (make-avm
+	   new-graph
+	   (avm-name avm)
+	   (avm-id2tensor avm)
+	   (avm-fw-outputs avm)
+	   (avm-bw-outputs avm)))))))

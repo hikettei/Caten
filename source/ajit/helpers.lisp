@@ -55,7 +55,8 @@
 		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
 			 collect node))))
 
-(defun purge-allocations (pipeline &aux (allocs nil))
+(defun purge-allocations (pipeline alias-map dynamic-shapes &aux (allocs nil))
+  (declare (type hash-table pipeline alias-map))
   (maphash
    #'(lambda (k graph)
        (declare (ignore k))
@@ -66,4 +67,19 @@
 		   else
 		     collect node)))
    pipeline)
-  (remove-duplicates allocs :key (compose #'car #'node-writes)))
+  (flet ((refalias (x) (or (gethash x alias-map) x)))
+    (mapc #'(lambda (n) (setf (node-writes n) (map 'list #'refalias (node-writes n)))) allocs)
+    (let ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
+	  (shapes (map 'list #'(lambda (x) (%alloc 0 nil nil :dtype caten/aasm:*default-uint* :id x)) dynamic-shapes)))
+      (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes)))))
+
+(defun get-subgraph-recursively (node graph dynamic-shapes dtype)
+  (declare (type node node) (type graph graph))
+  (append
+   (loop for r in (node-reads node)
+	 if (symbolp r)
+	   append (get-subgraph-recursively (id->value graph r) graph dynamic-shapes dtype))
+   (if (find (car (node-writes node)) dynamic-shapes)
+       (with-context-nodes
+	   (_ (%load (%salloc :dtype dtype) (car (node-writes node)) :id (car (node-writes node)))))
+       (list node))))

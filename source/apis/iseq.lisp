@@ -327,12 +327,14 @@
 
 (defun caten (tensors
 	      &key
+		(jit (= 1 (ctx:getenv :JIT)))
 		(name (intern (symbol-name (gensym "MAIN")) "KEYWORD"))
 		(simplifiers *external-simplifiers*)) ;; TODO disassemble options etc
   "Compiles the (Abstract) tensor"
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
-  (%compile-toplevel tensors :name name :external-simplifiers simplifiers))
+  (let ((avm (%compile-toplevel tensors :name name :external-simplifiers simplifiers)))
+    (if jit (caten/ajit:jit avm) avm)))
 
 (defun avm/sync-tensors (avm)
   "Synchronize buffer and tensor (but limited to the end of nodes, and grads)"
