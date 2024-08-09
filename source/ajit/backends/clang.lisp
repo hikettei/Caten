@@ -209,6 +209,15 @@ Compiled with: ~a"
 		  (:SIN
 		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
 		     (line "~(~a~) = sin(~(~a~));" (render-aref a at) (render-aref a at))))
+		  (:LOG2
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (line "~(~a~) = log2(~(~a~));" (render-aref a at) (render-aref a at))))
+		  (:EXP2
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (line "~(~a~) = exp2(~(~a~));" (render-aref a at) (render-aref a at))))
+		  (:NEG
+		   (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
+		     (line "~(~a~) = -~(~a~);" (render-aref a at) (render-aref a at))))
 		  (:INDEX-COMPONENTS
 		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (format nil "c~a" x))))))
 		  (:MOVE
@@ -241,6 +250,6 @@ Compiled with: ~a"
 				     (butlast
 				      (loop for r in (node-reads node)
 					    for rt in (relay-reads type)
-					    append (list (render-aref r rt) ", ")))))))))				    
+					    append (list (render-aref r rt) ", ")))))))))
 		     (otherwise
 		      (error "Renderer for ~a is not implemented yet." node))))))))))

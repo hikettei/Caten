@@ -21,3 +21,9 @@
 
 (defmacro range (from below &optional (by 1))
   `(loop for i from ,from below ,below by ,by collect i))
+
+(defun reveal-buffer (object)
+  (if (buffer-p object)
+      (buffer-value object)
+      object))
+
