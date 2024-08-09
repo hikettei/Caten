@@ -438,14 +438,16 @@ Options:
 	  (format t "Compiled:~%~a" function))
 	(%render-compile backend avm allocs function)
 	;; (isl-free-ctx )
-	;; Memo: From AVM -> ClangでExportする
-	;; source/exporter
-	;; TODO: Tensor-Shaped TensorをAllocする時，その計算式(派生するNode)もJIT Kernelに含める
-	;; TODO: AllocsのSubgraphを抽出
-	(print allocs)
-	(make-avm
-	 (apply #'make-graph (append allocs (list (make-fused-kernel-caller allocs f function backend))))
-	 (avm-name avm)
-	 (avm-id2tensor avm)
-	 (avm-fw-outputs avm)
-	 (avm-bw-outputs avm))))))
+	;; TODO: Further Simplificatin, tracing the avm, generate the C-exported VM
+	;; Keep the consistency: JIT(JIT(model))
+	(let* ((subgraph (apply #'append (map 'list #'(lambda (x) (get-subgraph-recursively x (avm-graph avm) dynamic-shapes (getattr x :dtype))) allocs)))
+	       (new-graph (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f function backend))))))
+	  ;;(fold-constant new-graph)
+	  ;; TODO: Tracing the jit-compiled AVM (including IfNode/MapNode etc)
+	  ;; we can export the entire vm to clang.
+	  (make-avm
+	   new-graph
+	   (avm-name avm)
+	   (avm-id2tensor avm)
+	   (avm-fw-outputs avm)
+	   (avm-bw-outputs avm)))))))
