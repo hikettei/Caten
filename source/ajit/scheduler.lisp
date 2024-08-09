@@ -173,7 +173,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	     (assert (typep by 'integer-t)     () "(A bug of caten/ajit) Resolve this ~a" by)
 	     (if broadcast-p
 		 (format nil "~a" upfrom)
-		 (format nil "~a~a~a"
+		 (format nil "~a(~a~a)"
 			 (if (eql by 1)
 			     (if (and (numberp stride) (= stride 1))
 				 ""
@@ -377,17 +377,22 @@ Options:
   (code "" :type string))
 (defmethod print-object ((s jit-info) stream) (format stream "<~a Code>" (jit-info-lang s)))
 (defun make-fused-kernel-caller (allocs lambda code lang)
-  (make-node :IR :JIT_KERNEL nil
+  (make-node :IR :JIT_KERNEL
+	     (apply #'append (map 'list #'node-writes allocs))
 	     (apply #'append (map 'list #'node-writes allocs))
 	     :jit-info (make-jit-info :caller lambda :lang lang :code code)))
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((jit (getattr node :jit-info)))
     (assert (jit-info-p jit) () "~a is not a jit kernel. :jit-info=~a" node jit)
     (apply (jit-info-caller jit) args))
-  nil)
+  (apply #'values (reverse args)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; TODO: making isl objects gc-reachable
-;; TODO: dynamic shapes
+;; TODO LIST:
+;;  TODO: making isl objects gc-reachable
+;;  TODO: Symbolic Graph Compilation
+;;  FIX:  Bugs (more symbolic deps needed)
+;;  ADD: METAL/OMP, parallelize dependencies analysis
+;;  ADD: If/For Node in the early stage!!!!
 (defun jit (avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))

@@ -129,7 +129,7 @@
 		 (:isl_ast_expr_op_eq (make-expr :equal lhs rhs))
 		 (:isl_ast_expr_op_le (make-expr :<= lhs rhs))
 		 (:isl_ast_expr_op_lt (make-expr :< lhs rhs))
-		 (:isl_ast_expr_op_ge (make-expr :<= lhs rhs))
+		 (:isl_ast_expr_op_ge (make-expr :>= lhs rhs))
 		 (:isl_ast_expr_op_gt (make-expr :> lhs rhs))
 		 ;;(:isl_ast_expr_op_call)
 		 ;;(:isl_ast_expr_op_access)
