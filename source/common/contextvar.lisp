@@ -93,13 +93,13 @@ Usage:
 	 x)
        "DEBUG-Level during jit-compilation")
     (:JIT
-     1 :int identity
+     0 :int identity
      "Set 1 to use JIT_BACKEND, 0 to use VM_BACKEND")
     (:JIT_BACKEND
      "CLANG" :string
      (lambda (x) (intern x "KEYWORD"))
      "Default backend (JIT)")
-    (:VM_BACKEND
+    (:AVM
      "LISP" :string
      (lambda (x) (intern x "KEYWORD"))
      "Default backend (VM)")
