@@ -49,12 +49,32 @@
     ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3) -> (:WMMA (c a b) :reduction reduction :_type_relay (wmma-relay-from1 t1 t2 t3))))
 
 (defun apply-jit-specific-simplifiers (avm)
+  "A toplevel for jit-specific optimizers. (WMMA Simplification, Removing Views, Contiguous Node Removals)"
   (declare (type avm avm))
   (%safely-purge-views-from-graph avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t))
 
-(defun apply-alias-for-rendering-graph (pipeline avm)
+(defun apply-multiexpr-fusion (pipeline)
+  "Group several computation into a single :EXPR Node to simplify.
+E.g.:
+  T0 : X <- sin(m)
+  T1 : Y <- cos(X)
+is updated to:
+  T0+T1 : Y <- cos(sin(m))
+It uses aIR graph features; accordingly must be applied before doing memory-planner optimization!"
+  (declare (type hash-table pipeline))
+  (maphash
+   #'(lambda (ts graph)
+       (declare (type graph graph))
+       ;; Fuse by domain
+       (print graph)
+       )
+   pipeline))
+
+(defun apply-memory-planner (pipeline avm)
+  "Applies the in-place mutation to the given graph.
+First, groups several operation into a single :EXPR Node to maximize the use of l1 cache."
   (declare (type hash-table pipeline) (avm avm))
   (let ((alias-map (make-hash-table :test #'eql))
 	(scalars (make-hash-table :test #'eql))

@@ -311,7 +311,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   "Creates the polyhedral model given the avm."
   (declare (type avm avm) (type boolean verbose))
   (let* ((type-map (run-type-infer avm))
-	 (recursive-top-ids (append (avm-fw-outputs avm) (avm-bw-outputs avm)))
+	 (recursive-top-ids (append (avm-fw-outputs avm)));; (avm-bw-outputs avm)))
 	 (dynamic-shapes (avm-gather-args avm)))
     (when verbose
       (format t "== [Initial Graph] ==~%")
@@ -342,8 +342,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	  (loop for nth upfrom 0
 		for g in graphs
 		do (setf (gethash nth pipeline) g))
-	  ;; [TODO]: When graph is fused to single?
-	  ;; -> SKip the polyhedral compilation
 	  ;; Creates the initial problem:
 	  (let* ((domain       (render-domain pipeline :depends-on dynamic-shapes))
 		 (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
@@ -425,9 +423,11 @@ Options:
       (when (>= debug 2)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
       ;; Minimizing the number of allocation by creating an alias
-      ;; Finalizes the graph:
-      (let* ((alias-map (apply-alias-for-rendering-graph (poly-pipeline polyhedron) avm))
-	     (_ (remove-iteration-ir (poly-pipeline polyhedron)))
+
+      ;; After applying memory-planner, it breaks write-must-be-exist-once rule of aIR graph
+      ;; so you cannot verify the graph!
+      (remove-iteration-ir (poly-pipeline polyhedron))
+      (let* ((alias-map (apply-memory-planner (poly-pipeline polyhedron) avm))
 	     (allocs (purge-allocations (poly-pipeline polyhedron) alias-map dynamic-shapes))
 	     (extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
@@ -435,7 +435,6 @@ Options:
 	     (function (%render-function backend avm allocs body))
 	     (function (%render-program-toplevel backend function))
 	     (f (%render-function-caller backend avm allocs function)))
-	(declare (ignore _))
 	(assert (functionp f) () "%render-function-caller should return a function!")
 	(when (>= debug 1)
 	  (format t "Compiled:~%~a" function))
