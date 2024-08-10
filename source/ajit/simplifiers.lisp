@@ -215,8 +215,8 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 			  #'(lambda (aref)
 			      (setf (expr-x aref) (load-from-map (expr-x aref))))
 			  buffers))))))))
-      (let* ((allocs (remove-duplicates allocs))
-	     (allocs (map 'list #'(lambda (x) (make-node :Buffer :Allocate (list (car x)) nil :nrank 0 :dtype (cdr x) :_tmp t :_type_relay (make-buffer 0 nil nil (cdr x) nil))) allocs)))
+      (let* ((allocs (map 'list #'(lambda (x) (make-node :Buffer :Allocate (list (car x)) nil :nrank 0 :dtype (cdr x) :_tmp t :_type_relay (make-buffer 0 nil nil (cdr x) nil))) allocs))
+	     (allocs (remove-duplicates allocs :key #'node-writes :test #'equal)))
 	(assert (null (gethash -1 pipeline)))
 	(setf (gethash -1 pipeline) (apply #'make-graph allocs)))
       (maphash
