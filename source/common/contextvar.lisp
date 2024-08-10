@@ -136,6 +136,5 @@ Usage:
 
 (defparameter *ctx* (make-contextvar))
 (defmacro with-contextvar ((&rest configurations) &body body)
-  `(let ((*ctx* (make-contextvar ,@configurations))
-	 (*use-default* t))
+  `(let ((*ctx* (make-contextvar ,@configurations)))
      ,@body))

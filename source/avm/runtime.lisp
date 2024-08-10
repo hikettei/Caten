@@ -22,6 +22,12 @@
   (tape-length (length (graph-nodes graph)) :type fixnum)
   (pc 0 :type fixnum)
   (variables (make-hash-table-from-params params) :type hash-table))
+(defun deepcopy-avm (avm &aux (avm (copy-avm avm)))
+  (declare (type avm avm))
+  (setf (avm-graph avm) (copy-graph (avm-graph avm)))
+  (setf (graph-nodes (avm-graph avm)) (map 'list #'copy-node (graph-nodes (avm-graph avm))))
+  avm)
+
 (defun vm/readvar (avm id)
   (declare (type avm avm)
 	   (type symbol id))

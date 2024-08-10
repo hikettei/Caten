@@ -46,8 +46,8 @@ Further op-fusion optimization are done by the polyhedral-compiler"
       (let* ((node (id->value (avm-graph avm) latest-id))
 	     ;; Allocation is done outside of the function(VM or Exported VM), i.e., the computation node for the shape must not be included in the JIT
 	     (alloc-p (eql (node-type node) :Allocate))
-	     (children (if alloc-p nil (node-reads node)))
-	     (children-type (if alloc-p nil (relay-reads (read-type-relay node))))
+	     (children (node-reads node))
+	     (children-type (relay-reads (read-type-relay node)))
 	     (mergeable-list
 	       (map 'list
 		    #'(lambda (x x-type)
@@ -171,9 +171,6 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	  append
 	  (list
 	   (progn
-	     (assert (typep stride 'integer-t) () "(A bug of caten/ajit) Resolve this ~a" stride)
-	     (assert (typep upfrom 'integer-t) () "(A bug of caten/ajit) Resolve this ~a" upfrom)
-	     (assert (typep by 'integer-t)     () "(A bug of caten/ajit) Resolve this ~a" by)
 	     ;; Ugly solution... should be temporary...
 	     (when (and (not (numberp stride)) access-rep) (setf stride 1))
 	     (when (and (not (numberp by)) access-rep) (setf by 2))
@@ -274,7 +271,19 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			       (let ((access (render-isl-aref rt :access-rep t)))
 				 (if (string= access "")
 				     (format out "  ~a -> ~(~a~)[0];~%" occur-from r)
-				     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))))))
+				     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))
+	       ;; Symbols for computing the stride
+	       (when (and node (eql mode :read))
+		 (let* ((symbols
+			  (loop for buff in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
+				if buff
+				  append (append (buffer-shape buff) (buffer-stride buff) (apply #'append (buffer-views buff)))))
+			(symbols
+			  (loop for s1 in symbols
+				for s = (reveal-buffer s1)
+				if (and (symbolp s) (not (eql s t)) (not (eql s nil)))
+				  collect s)))
+		   (dolist (s symbols) (format out "  ~a -> ~(~a~)[0];~%" occur-from s))))))))
      pipeline)
     (format out "}")))
 
@@ -410,12 +419,15 @@ Options:
 	      (backend (or (ctx:getenv :JIT_BACKEND) :clang))
 	      (multiexpr (= 1 (ctx:getenv :MULTIEXPR)))
 	    &aux
+	      (_ (when static-gensym (apply-static-gensym avm)))
+	      (base-avm avm)
+	      (avm (deepcopy-avm avm))
 	      (*isl-context* (isl-ctx-alloc)))
   "Applies the jit"
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
-	   (type boolean serialize))
-  (when static-gensym (apply-static-gensym avm))
+	   (type boolean serialize)
+	   (ignore _))
   (multiple-value-bind (verbose-schedule verbose-auto)
       (values (or (= debug 4) (= debug 3)) (or (= debug 4) (= debug 2)))
     (multiple-value-bind (polyhedron dynamic-shapes)
@@ -443,7 +455,7 @@ Options:
 	;; (isl-free-ctx )
 	;; TODO: Further Simplificatin, tracing the avm, generate the C-exported VM
 	;; Keep the consistency: JIT(JIT(model))
-	(let* ((subgraph (apply #'append (map 'list #'(lambda (x) (get-subgraph-recursively x (avm-graph avm) dynamic-shapes (getattr x :dtype))) allocs)))
+	(let* ((subgraph (apply #'append (map 'list #'(lambda (x) (get-subgraph-recursively x (avm-graph base-avm) dynamic-shapes (getattr x :dtype))) allocs)))
 	       (new-graph (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f function backend))))))
 	  ;;(fold-constant new-graph)
 	  ;; TODO: Tracing the jit-compiled AVM (including IfNode/MapNode etc)

@@ -137,7 +137,9 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		collect
 		(remove-duplicates (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) (graph-seen graph)))))))
     (labels ((alias (key value) (setf (gethash key alias-map) value))
-	     (read-tmp (val) (or (gethash val stash-map) (load-from-map val)))
+	     (read-tmp (val)
+	       (declare (type (or number symbol) val))
+	       (if (numberp val) val (or (gethash val stash-map) (load-from-map val))))
 	     (load-from-map (key) (or (gethash key alias-map) key))
 	     (alias-node (node)
 	       (alias (car (node-writes node)) (load-from-map (car (node-reads node)))))
@@ -161,6 +163,18 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	    for count upfrom 0
 	    for copied-graph = (apply #'make-graph (copy-list (graph-nodes graph))) do
 	      (dolist (node `(,@(gethash count stashed-graph) ,@(graph-nodes graph)))
+		(loop for buffer in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
+		      if buffer do
+			;; required info to render the buffer is: stride, from, by. updating them:
+			(setf (buffer-stride buffer) (map 'list (compose #'load-from-map #'reveal-buffer) (buffer-stride buffer))
+			      (buffer-views buffer)
+			      (loop for v in (buffer-views buffer)
+				    if v
+				      collect
+				      (flet ((f (x) (load-from-map (reveal-buffer x))))
+					`(,(f (nth 0 v)) ,(f (nth 1 v)) ,(f (nth 2 v)) ,(nth 3 v)))
+				    else
+				      collect v)))
 		(case (node-type node)
 		  (:Allocate nil)
 		  (:WHERE

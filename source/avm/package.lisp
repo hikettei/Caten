@@ -27,7 +27,7 @@
   ;; from runtime.lisp
   (:export
    #:AVM
-   #:make-avm #:avm-graph #:avm-name #:avm-fw-outputs #:avm-bw-outputs
+   #:make-avm #:avm-graph #:avm-name #:avm-fw-outputs #:avm-bw-outputs #:copy-avm #:deepcopy-avm
    #:avm-id2tensor #:avm-tape-length #:avm-pc #:avm-variables
    #:*vm*
    #:%realize
