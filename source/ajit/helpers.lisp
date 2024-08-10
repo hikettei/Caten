@@ -83,3 +83,12 @@
        (with-context-nodes
 	   (_ (%load (%salloc :dtype dtype) (car (node-writes node)) :id (car (node-writes node)))))
        (list node))))
+
+(defun recursively-find-output-id (id graph)
+  "Exploring the graph from id, returns a list of buffer ids which is not used in the graph (i.e.: outputs).
+Graph must be verified in advance."
+  (declare (type symbol id) (type graph graph))
+  (let ((outputs (id->users graph id)))
+    (if (null outputs)
+	(list id)
+	(apply #'append (map 'list #'(lambda (x) (recursively-find-output-id (car (node-writes x)) graph)) outputs)))))

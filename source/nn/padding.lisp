@@ -64,3 +64,4 @@
 
 (in-package :caten/nn.test)
 ;; TODO: Test
+;; (jit (caten (!matmul (make-tensor `(128 32)) (!matmul (make-tensor `(32 64)) (make-tensor `(64 128))))) :debug 1)

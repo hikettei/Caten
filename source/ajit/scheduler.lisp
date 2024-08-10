@@ -408,6 +408,7 @@ Options:
 	      (serialize (= 1 (ctx:getenv :SERIALIZE)))
 	      (static-gensym (= 1 (ctx:getenv :STATIC_GENSYM)))
 	      (backend (or (ctx:getenv :JIT_BACKEND) :clang))
+	      (multiexpr (= 1 (ctx:getenv :MULTIEXPR)))
 	    &aux
 	      (*isl-context* (isl-ctx-alloc)))
   "Applies the jit"
@@ -427,6 +428,7 @@ Options:
       ;; After applying memory-planner, it breaks write-must-be-exist-once rule of aIR graph
       ;; so you cannot verify the graph!
       (remove-iteration-ir (poly-pipeline polyhedron))
+      (when multiexpr (apply-multiexpr-grouping (poly-pipeline polyhedron)))
       (let* ((alias-map (apply-memory-planner (poly-pipeline polyhedron) avm))
 	     (allocs (purge-allocations (poly-pipeline polyhedron) alias-map dynamic-shapes))
 	     (extracted-schedule (finalize-schedule polyhedron))

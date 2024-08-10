@@ -2,6 +2,7 @@
 ;; Here, applying a jit-specific optimization to the avm.graph.
 ;; E.g.: we can purge the view nodes since we already have a
 ;; type information at `type-relay.lisp`.
+;; TODO: Refactor around typing relay (esp: memory-write dependencies are messing)
 (defun %safely-purge-views-from-graph (avm)
   "(1.) Removes :VIEW from avm graph, (2.) Updates the read/write graph relations"
   (declare (type avm avm))
@@ -55,7 +56,7 @@
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t))
 
-(defun apply-multiexpr-fusion (pipeline)
+(defun apply-multiexpr-grouping (pipeline)
   "Group several computation into a single :EXPR Node to simplify.
 E.g.:
   T0 : X <- sin(m)
@@ -66,10 +67,42 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
   (declare (type hash-table pipeline))
   (maphash
    #'(lambda (ts graph)
-       (declare (type graph graph))
-       ;; Fuse by domain
-       (print graph)
-       )
+       (declare (type graph graph) (ignore ts))
+       (let* ((toplevels (graph-seen graph))
+	      (outputs
+		  (remove-duplicates
+		   (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) toplevels))))
+	      (out-memory-ids
+		(map
+		 'list
+		 #'(lambda (x &aux (node (id->value graph x)))
+		     (case (node-type node)
+		       (:WHERE (list (second (node-reads node)) (second (relay-reads (read-type-relay node)))))
+		       (otherwise (list (first (node-reads node)) (first (relay-reads (read-type-relay node)))))))
+		 outputs))
+	      (out-types
+		(map
+		 'list
+		 #'(lambda (x &aux (node (id->value graph x)))
+		     (car (relay-writes (read-type-relay node))))
+		 outputs)))
+	 (when (and
+		outputs
+		(every
+		 #'(lambda (x &aux (type (node-type x)))
+		     (and (vm-instruction-p x)
+			  (not (find type `(:Allocate :MOVE :Load :WHERE)))))
+		 (graph-nodes graph)))
+	   ;; 今やってないこと:
+	   ;; apply-multiexpr-grouping無しでも動作するべき (:MULTIEXPR=1, CI Testに含める)
+	   ;; Backward?
+	   ;; Rendererを更新する。aRI GraphのRenderingを廃止する？
+	   ;; TODO: Ternary Ops %where
+	   ;; 一時領域の判定ができると思う = (Allocationに宣言されてないUndefined Variable)
+	   ;; Pipelineを跨いでWriteに依存はない？
+	   ;; Esp: when creating backwards
+	   (let ((fused-nodes (map 'list #'(lambda (x xt r) (create-multiexpr-node graph x xt (first r) (second r))) outputs out-types out-memory-ids)))
+	     (setf (graph-nodes graph) fused-nodes)))))
    pipeline))
 
 (defun apply-memory-planner (pipeline avm)
@@ -115,7 +148,15 @@ First, groups several operation into a single :EXPR Node to maximize the use of 
 			 (reads (map 'list #'load-from-map (node-reads node))))
 		     (alias-node node)
 		     (setf (node-writes node) writes
-			   (node-reads node) reads))))))))
+			   (node-reads node) reads))
+		   (when (eql (node-type node) :EXPR)
+		     ;; update inner exprs
+		     (let ((buffers (getattr node :buffers)))
+		       (assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
+		       (mapc
+			#'(lambda (aref)
+			    (setf (expr-x aref) (load-from-map (expr-x aref))))
+			buffers)))))))))
       (maphash
        #'(lambda (_ g)
 	   (declare (ignore _))

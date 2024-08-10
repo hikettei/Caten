@@ -5,6 +5,7 @@
      #:dtype/cast))
 (in-package :caten/ajit.backends.clang)
 ;; ~~~ CLANG ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *access* nil)
 
 (defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags))
   (declare (type string source compiler))
@@ -91,9 +92,16 @@ Compiled with: ~a"
 			   ", ")))))))
     (format nil "~a;~%~a {~%~a}" header header body)))	  
 
-(defmethod %render-expr ((lang (eql :clang)) (op (eql :NEG)) lhs rhs)
-  (assert (null rhs))
-  (format nil "-~(~a~)" (render-expr lang lhs)))
+(macrolet ((unary (name render)
+	     `(defmethod %render-expr ((lang (eql :clang)) (op (eql ,name)) lhs rhs)
+		(assert (null rhs))
+		(format nil "~a(~(~a~))" ,render (render-expr lang lhs)))))
+  (unary :NEG "-")
+  (unary :SIN "sin")
+  (unary :RECIP "1/")
+  (unary :SQRT "sqrt")
+  (unary :LOG2 "log2")
+  (unary :EXP2 "exp2"))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :Const)) lhs rhs)
   (assert (or (stringp lhs) (numberp lhs)))
@@ -108,13 +116,21 @@ Compiled with: ~a"
   (assert (and lhs rhs))
   (format nil "min(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
 
+(defmethod %render-expr ((lang (eql :clang)) (op (eql :Aref)) lhs rhs)
+  (assert (and lhs rhs))
+  (let ((ref (render-isl-aref rhs :genid #'(lambda (x) (nth x *access*)))))
+    (if (string= ref "")
+	(format nil "~(~a~)" lhs)
+	(format nil "~(~a~)[~(~a~)]" lhs ref)))))
+
 (defmethod %render-expr ((lang (eql :clang)) op lhs rhs)
   (assert (and lhs rhs))
   (format nil "(~a~(~a~)~a)"
 	  (render-expr lang lhs)
 	  (ecase op
 	    (:+ :+) (:- :-) (:* :*) (:/ :/)
-	    (:AND :&&) (:OR "||")
+	    (:ADD :+) (:MUL :*)
+	    (:AND :&&) (:OR "||") (:MOVE "=")
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
@@ -199,7 +215,8 @@ Compiled with: ~a"
 		   (if (string= ref "")
 		       (format nil "~(~a~)" id)
 		       (format nil "~(~a~)[~(~a~)]" id ref)))))
-	(loop for node in (graph-nodes graph)
+	(loop with *access* = access
+	      for node in (graph-nodes graph)
 	      for type = (read-type-relay node) do		
 		(case (node-type node)
 		  (:ALLOCATE
@@ -224,6 +241,9 @@ Compiled with: ~a"
 		   (multiple-value-bind (c a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (ct at bt) (apply #'values (relay-reads type))
 		       (line "~(~a~) += ~(~a~) * ~(~a~);" (render-aref c ct) (render-aref a at) (render-aref b bt)))))
+		  (:EXPR
+		   (multiple-value-bind (ot) (apply #'values (relay-reads type))		     
+		       (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) ot) (render-expr lang (getattr node :EXPR)))))
 		  (:STORE
 		   (multiple-value-bind (a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (at bt) (apply #'values (relay-reads type))

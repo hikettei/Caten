@@ -32,10 +32,36 @@
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (let ((new-graph (reverse new-graph)))
-      ;; Allocations are removed from the scheduler
-      ;;(flet ((ts (n) (find (format nil "T~a" n) new-graph :test #'equal :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :name))))))
-      ;;	(let* ((ts-positions (map 'list #'ts (range 0 (length (hash-table-keys (poly-pipeline polyhedron)))))))
-      ;;	  (assert (every #'identity ts-positions) () "Assertion Failed: (every #'identity ~a)" ts-positions)
-      ;;	  ))
-      (apply #'make-graph new-graph))))
+    (apply #'make-graph (reverse new-graph))))
+
+;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *allocated-aref* nil)
+(defun expr-aref (id buffer &aux (aref (make-expr :Aref id buffer)))
+  (push aref *allocated-aref*)
+  aref)
+(defun expr-const (object) (make-expr :Const object))
+(declaim (ftype (function (Symbol Graph) Expr) create-expr-from-air))
+(defun create-expr-from-air (output graph)
+  (declare (type symbol output) (type graph graph))
+  (let* ((node (id->value graph output))
+	 (parents (loop for arg in (node-reads node)
+			for typ in (relay-reads (read-type-relay node))
+			if (symbolp arg)
+			  collect
+			  (let ((val (id->value graph arg)))
+			    (if val
+				(create-expr-from-air arg graph)
+				(expr-aref arg typ)))		    
+			else
+			  collect (expr-const arg))))
+    (assert (<= (length parents) 2) () "~a cannot be grouped to multi expr! (too many arguments)" node)
+    (make-expr (node-type node) (first parents) (second parents))))
+
+(defun create-multiexpr-node (graph output output-type read-from read-type)
+  (declare (type symbol output read-from) (type graph graph)
+	   (type Buffer read-type output-type))
+  (let* ((*allocated-aref*)
+	 (expr (create-expr-from-air output graph)))
+    (make-node :EXPR :EXPR (list output) (list read-from) :expr expr
+	       :_type_relay (make-inferred-type (list read-type) (list output-type))
+	       :buffers *allocated-aref*)))
