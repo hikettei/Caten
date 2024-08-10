@@ -40,6 +40,7 @@
   (push aref *allocated-aref*)
   aref)
 (defun expr-const (object) (make-expr :Const object))
+(defun expr-cast (obj dtype) (make-expr :Cast obj dtype))
 (declaim (ftype (function (Symbol Graph) Expr) create-expr-from-air))
 (defun create-expr-from-air (output graph)
   (declare (type symbol output) (type graph graph))
@@ -55,9 +56,10 @@
 			else
 			  collect (expr-const arg))))
     (assert (<= (length parents) 2) () "~a cannot be grouped to multi expr! (too many arguments)" node)
-    (if (eql (node-type node) :Load)
-        (expr-const (getattr node :value))
-	(make-expr (node-type node) (first parents) (second parents)))))
+    (case (node-type node)
+      (:Load (expr-const (getattr node :value)))
+      (:Cast (expr-cast (second parents) (getattr node :dtype)))
+      (otherwise (make-expr (node-type node) (first parents) (second parents))))))
 
 (defun create-multiexpr-node (graph output output-type read-from read-type)
   (declare (type symbol output read-from) (type graph graph)

@@ -112,6 +112,9 @@ Compiled with: ~a"
   (assert (and lhs rhs))
   (format nil "max(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
 
+(defmethod %render-expr ((lang (eql :clang)) (op (eql :CAST)) lhs rhs)
+  (format nil "(~a)~a" (->cdtype rhs) (render-expr lang lhs)))
+
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :MIN)) lhs rhs)
   (assert (and lhs rhs))
   (format nil "min(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
