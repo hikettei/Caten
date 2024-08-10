@@ -156,7 +156,7 @@
   (with-no-grad
     (ok (equal `(A B) (tensor-shape (!add (iconst 'a) (make-tensor `(a b))))))))
 
-(deftest test-broadcast
+(deftest test-broadcast-shape-inference
   (ok (equal `(1) (tensor-shape (!add (make-tensor `(1)) (make-tensor `(1))))))
   (ok (equal `(1 1) (tensor-shape (!add (make-tensor `(1)) (make-tensor `(1 1))))))
   (ok (equal `(1 1) (tensor-shape (!add (make-tensor `(1 1)) (make-tensor `(1))))))
@@ -167,7 +167,7 @@
     (sp (3 3) (3 3) (3 3))
     (sp (a b) nil (a b))))
 
-(deftest test-composed-view-constant-folding
+(deftest test-composed-view-constant-folding-shape-inference
   (ok (equal `(2 2 2) (shape (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) )))
   (ok (equal `(1 1 1) (shape (!view (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) `(0 1) `(0 1) `(0 1)))))
   (ok (equal `(1 1 1) (shape (!view (!view (make-tensor `(4 4 4)) `(2 4) `(2 4) `(2 4)) `(1 2) `(1 2) `(1 2))))))
