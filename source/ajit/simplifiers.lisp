@@ -192,42 +192,29 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		     (setf (node-writes node) writes
 			   (node-reads node) reads)))
 		  (otherwise
-		   (if (and
-			(eql (node-type node) :Load)
-			(symbolp (getattr node :value))
-			(let ((alloc (id->value (avm-graph avm) (car (node-reads node)))))
-			  (and
-			   (eql (node-type alloc) :Allocate)
-			   (= (getattr alloc :nrank) 0))))
-		       (progn
-			 ;; X <- Alloc(...)
-			 ;; Y <- LOAD(X, value=a)
-			 (setf (gethash (car (node-writes node)) scalars) (getattr node :value))
-			 (alias (car (node-writes node)) (getattr node :value))
-			 (push (node-id node) remove-id-list))
-		       (when (>= (length (node-writes node)) 1)
-			 (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
-			 (let* ((base-write (car (node-writes node)))
-			        (create-tmpvar-p (null (find base-write outputs)))
-			        (writes (if create-tmpvar-p
-					    (list (intern (format nil "_val_~a_~a" count (length (hash-table-keys stash-map)))))
-					    (list (load-from-map (car (node-reads node))))))
-			        (reads (map 'list #'read-tmp (node-reads node))))
-			   (when create-tmpvar-p
-			     (push (cons (car writes) (buffer-dtype (car (relay-writes (read-type-relay node))))) allocs)
-			     (setf (gethash base-write stash-map) (car writes)))
-			   (alias-node node)
-			   (update-tmp-type node)
-			   (setf (node-writes node) writes
-				 (node-reads node) reads))
-			 (when (eql (node-type node) :EXPR)
-			   ;; update inner exprs
-			   (let ((buffers (getattr node :buffers)))
-			     (assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
-			     (mapc
-			      #'(lambda (aref)
-				  (setf (expr-x aref) (load-from-map (expr-x aref))))
-			      buffers)))))))))
+		   (when (>= (length (node-writes node)) 1)
+		     (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
+		     (let* ((base-write (car (node-writes node)))
+			    (create-tmpvar-p (null (find base-write outputs)))
+			    (writes (if create-tmpvar-p
+					(list (intern (format nil "_val_~a_~a" count (length (hash-table-keys stash-map)))))
+					(list (load-from-map (car (node-reads node))))))
+			    (reads (map 'list #'read-tmp (node-reads node))))
+		       (when create-tmpvar-p
+			 (push (cons (car writes) (buffer-dtype (car (relay-writes (read-type-relay node))))) allocs)
+			 (setf (gethash base-write stash-map) (car writes)))
+		       (alias-node node)
+		       (update-tmp-type node)
+		       (setf (node-writes node) writes
+			     (node-reads node) reads))
+		     (when (eql (node-type node) :EXPR)
+		       ;; update inner exprs
+		       (let ((buffers (getattr node :buffers)))
+			 (assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
+			 (mapc
+			  #'(lambda (aref)
+			      (setf (expr-x aref) (load-from-map (expr-x aref))))
+			  buffers))))))))
       (let* ((allocs (remove-duplicates allocs))
 	     (allocs (map 'list #'(lambda (x) (make-node :Buffer :Allocate (list (car x)) nil :nrank 0 :dtype (cdr x) :_tmp t :_type_relay (make-buffer 0 nil nil (cdr x) nil))) allocs)))
 	(assert (null (gethash -1 pipeline)))
