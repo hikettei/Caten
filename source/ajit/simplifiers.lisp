@@ -202,8 +202,8 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		       (progn
 			 ;; X <- Alloc(...)
 			 ;; Y <- LOAD(X, value=a)
-			 (setf (gethash (car (node-reads node)) scalars) (getattr node :value))
-			 (alias (car (node-reads node)) (getattr node :value))
+			 (setf (gethash (car (node-writes node)) scalars) (getattr node :value))
+			 (alias (car (node-writes node)) (getattr node :value))
 			 (push (node-id node) remove-id-list))
 		       (when (>= (length (node-writes node)) 1)
 			 (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")

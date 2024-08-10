@@ -20,6 +20,20 @@
 	 if (equal s from) collect to
 	   else collect s)))
 
+(defun nodes-depends-on (nodes)
+  "Enumerates the unsolved buffer ids from the sched graph."
+  (declare (type list nodes))
+  (let ((seen) (depends-on))
+    (loop for node in nodes do
+      (dolist (r (node-reads node))
+	(when (null (find r seen))
+	  (when (symbolp r)
+	    (push r depends-on))
+	  (push r seen)))
+      (dolist (w (node-writes node))
+	(push w seen)))
+    (reverse depends-on)))
+
 (defun avm-gather-args (avm)
   (declare (type avm avm))
   (let ((args (remove-duplicates

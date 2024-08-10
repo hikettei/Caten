@@ -124,16 +124,7 @@ Further op-fusion optimization are done by the polyhedral-compiler"
 (defun schedule-depends-on (sched)
   "Enumerates the unsolved buffer ids from the sched graph."
   (declare (type scheduled-items sched))
-  (let ((seen) (depends-on))
-    (loop for node in (si-nodes sched) do
-      (dolist (r (node-reads node))
-	(when (null (find r seen))
-	  (when (symbolp r)
-	    (push r depends-on))
-	  (push r seen)))
-      (dolist (w (node-writes node))
-	(push w seen)))
-    (reverse depends-on)))
+  (nodes-depends-on (si-nodes sched)))
 
 (defun graph->loop-factors (graph)
   (declare (type graph graph))
@@ -141,6 +132,13 @@ Further op-fusion optimization are done by the polyhedral-compiler"
    (loop for node in (graph-nodes graph)
 	 if (eql (node-type node) :FOR)
 	   collect (car (node-writes node)))))
+
+(defun graph->loop-size (graph)
+  (remove-duplicates
+   (loop for node in (graph-nodes graph)
+	 if (and (eql (node-type node) :FOR)
+		 (symbolp (second (node-reads node))))
+	   collect (second (node-reads node)))))
 ;; ~~ ISL Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun vm-instruction-p (node)
   "Add more classes here if you have a certain node that do not desired to be involved."
@@ -174,6 +172,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	     ;; Ugly solution... should be temporary...
 	     (when (and (not (numberp stride)) access-rep) (setf stride 1))
 	     (when (and (not (numberp by)) access-rep) (setf by 2))
+	     (when (and (not (numberp upfrom)) access-rep) (setf upfrom 1))
 	     (if broadcast-p
 		 (format nil "~a" upfrom)
 		 (format nil "~a(~a~a)"
@@ -320,8 +319,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   "Creates the polyhedral model given the avm."
   (declare (type avm avm) (type boolean verbose))
   (let* ((type-map (run-type-infer avm))
-	 (recursive-top-ids (append (avm-fw-outputs avm)));; (avm-bw-outputs avm)))
-	 (dynamic-shapes (avm-gather-args avm)))
+	 (recursive-top-ids (append (avm-fw-outputs avm))));; (avm-bw-outputs avm)))
     (when verbose
       (format t "== [Initial Graph] ==~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))
@@ -352,7 +350,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		for g in graphs
 		do (setf (gethash nth pipeline) g))
 	  ;; Creates the initial problem:
-	  (let* ((domain       (render-domain pipeline :depends-on dynamic-shapes))
+	  (let* ((dynamic-shapes (avm-gather-args avm))
+		 (loop-size (loop for value being the hash-values of pipeline
+				  append (graph->loop-size value)))
+		 (dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@loop-size)))
+		 (domain       (render-domain pipeline :depends-on dynamic-shapes))
 		 (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
 		 (write-access (render-access :write pipeline :depends-on dynamic-shapes))
 		 (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))
