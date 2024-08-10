@@ -65,90 +65,97 @@ is updated to:
   T0+T1 : Y <- cos(sin(m))
 It uses aIR graph features; accordingly must be applied before doing memory-planner optimization!"
   (declare (type hash-table pipeline))
-  (maphash
-   #'(lambda (ts graph)
-       (declare (type graph graph) (ignore ts))
-       (let* ((toplevels (graph-seen graph))
-	      (outputs
-		  (remove-duplicates
-		   (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) toplevels))))
-	      (out-memory-ids
-		(map
-		 'list
-		 #'(lambda (x &aux (node (id->value graph x)))
-		     (case (node-type node)
-		       (:WHERE (list (second (node-reads node)) (second (relay-reads (read-type-relay node)))))
-		       (otherwise (list (first (node-reads node)) (first (relay-reads (read-type-relay node)))))))
-		 outputs))
-	      (out-types
-		(map
-		 'list
-		 #'(lambda (x &aux (node (id->value graph x)))
-		     (car (relay-writes (read-type-relay node))))
-		 outputs)))
-	 (when (and
-		outputs
-		(every
-		 #'(lambda (x &aux (type (node-type x)))
-		     (and (vm-instruction-p x)
-			  (not (find type `(:Allocate :MOVE :Load :WHERE)))))
-		 (graph-nodes graph)))
-	   ;; 今やってないこと:
-	   ;; apply-multiexpr-grouping無しでも動作するべき (:MULTIEXPR=1, CI Testに含める)
-	   ;; Backward?
-	   ;; RendererをRefactorする。aRI GraphのRenderingを廃止する？
-	   ;; TODO: Ternary Ops %where
-	   ;; 一時領域の判定ができると思う = (Allocationに宣言されてないUndefined Variable)
-	   ;; Pipelineを跨いでWriteに依存はない？
-	   ;; Esp: when creating backwards
-	   ;; Write-toのUpdateがおかしい
-	   ;; やること
-	   ;; 1. Tanを動かす
-	   ;; 2. In-place-mutationをapply-memory-plannerにする
-	   ;; 3. MULTIEXPR=1 or 0をCIに含める
-	   ;; 4. JIT-Compilation Backwardを実装
-	   ;; 5. ^ 途中でMoveが含まれる時，うまく分割する
-	   (let ((fused-nodes (map 'list #'(lambda (x xt r) (create-multiexpr-node graph x xt (first r) (second r))) outputs out-types out-memory-ids)))
-	     (setf (graph-nodes graph) fused-nodes)))))
-   pipeline))
+  (let ((copied-graph (make-hash-table)))
+    (maphash
+     #'(lambda (ts graph)
+	 (declare (type graph graph))
+	 (let* ((toplevels (graph-seen graph))
+		(outputs
+		    (remove-duplicates
+		     (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) toplevels))))
+		(out-memory-ids
+		  (map
+		   'list
+		   #'(lambda (x &aux (node (id->value graph x)))
+		       (case (node-type node)
+			 (:WHERE (list (second (node-reads node)) (second (relay-reads (read-type-relay node)))))
+			 (otherwise (list (first (node-reads node)) (first (relay-reads (read-type-relay node)))))))
+		   outputs))
+		(out-types
+		  (map
+		   'list
+		   #'(lambda (x &aux (node (id->value graph x)))
+		       (car (relay-writes (read-type-relay node))))
+		   outputs)))
+	   (when (and
+		  outputs
+		  (every
+		   #'(lambda (x &aux (type (node-type x)))
+		       (and (vm-instruction-p x)
+			    ;; Only element wise ops are fused!
+			    (not (find type `(:Allocate :MOVE :Load :WHERE :WMMA)))
+			    (if (eql (node-class x) :BinaryOps)
+				(= (length (node-reads x)) 2)
+				t)))
+		   (graph-nodes graph)))
+	     ;; 今やってないこと:
+	     ;; apply-multiexpr-grouping無しでも動作するべき (:MULTIEXPR=1, CI Testに含める)
+	     ;; Backward?
+	     ;; RendererをRefactorする。aRI GraphのRenderingを廃止する？
+	     ;; TODO: Ternary Ops %where
+	     ;; 一時領域の判定ができると思う = (Allocationに宣言されてないUndefined Variable)
+	     ;; Pipelineを跨いでWriteに依存はない？
+	     ;; Esp: when creating backwards
+	     ;; Write-toのUpdateがおかしい
+	     ;; やること
+	     ;; 1. Tanを動かす -> Undefined-Varの処理を追加
+	     ;; 2. In-place-mutationをapply-memory-plannerにする
+	     ;; 3. MULTIEXPR=1 or 0をCIに含める
+	     ;; 4. JIT-Compilation Backwardを実装
+	     ;; 5. ^ 途中でMoveが含まれる時，うまく分割する
+	     ;; Backward実装したら，int xxx = x[...];を実装
+	     (let ((fused-nodes (map 'list #'(lambda (x xt r) (create-multiexpr-node graph x xt (first r) (second r))) outputs out-types out-memory-ids)))
+	       (setf (gethash ts copied-graph) (copy-list (graph-nodes graph)))
+	       (setf (graph-nodes graph) fused-nodes)))))
+     pipeline)
+    copied-graph))
 
-(defun apply-memory-planner (pipeline avm)
-  "Applies the in-place mutation to the given graph.
-First, groups several operation into a single :EXPR Node to maximize the use of l1 cache."
+(defun apply-memory-planner (pipeline avm &key (multiexpr t))
+  "Applies the in-place mutation to the given graph."
   (declare (type hash-table pipeline) (avm avm))
   (let ((alias-map (make-hash-table :test #'eql))
 	(scalars (make-hash-table :test #'eql))
+	(stashed-graph (if multiexpr (apply-multiexpr-grouping pipeline) (make-hash-table)))
 	(remove-id-list))
-    (labels ((alias (key value)
-	       (setf (gethash key alias-map) value))
+    (labels ((alias (key value) (setf (gethash key alias-map) value))
 	     (load-from-map (key) (or (gethash key alias-map) key))
 	     (alias-node (node)
 	       (alias (car (node-writes node)) (load-from-map (car (node-reads node))))))
-      (loop for graph being the hash-values of pipeline do
-	(dolist (node (graph-nodes graph))
-	  (case (node-type node)
-	    (:Allocate nil)
-	    (:WHERE
-	     (let ((writes (list (load-from-map (second (node-reads node)))))
-		   (reads  (map 'list #'load-from-map (node-reads node))))
-	       (alias (car (node-writes node)) (second (node-reads node)))
-	       (setf (node-writes node) writes
-		     (node-reads node) reads)))
-	    (otherwise
-	     (if (and
-		  (eql (node-type node) :Load)
-		  (symbolp (getattr node :value))
-		  (let ((alloc (id->value (avm-graph avm) (car (node-reads node)))))
-		    (and
-		     (eql (node-type alloc) :Allocate)
-		     (= (getattr alloc :nrank) 0))))
-		 (progn
-		   ;; [TODO] BugFix is required to (make-tensor `(10) :initial-element 'a)
-		   ;; X <- Alloc(...)
-		   ;; Y <- LOAD(X, value=a)
-		   (setf (gethash (car (node-reads node)) scalars) (getattr node :value))
-		   (alias (car (node-writes node)) (getattr node :value))
-		   (push (node-id node) remove-id-list))
+      (loop for graph being the hash-values of pipeline
+	    for count upfrom 0 do
+	      (dolist (node `(,@(gethash count stashed-graph) ,@(graph-nodes graph)))
+		(case (node-type node)
+		  (:Allocate nil)
+		  (:WHERE
+		   (let ((writes (list (load-from-map (second (node-reads node)))))
+			 (reads  (map 'list #'load-from-map (node-reads node))))
+		     (alias (car (node-writes node)) (second (node-reads node)))
+		     (setf (node-writes node) writes
+			   (node-reads node) reads)))
+		  (otherwise
+		   (if (and
+			(eql (node-type node) :Load)
+			(symbolp (getattr node :value))
+			(let ((alloc (id->value (avm-graph avm) (car (node-reads node)))))
+			  (and
+			   (eql (node-type alloc) :Allocate)
+			   (= (getattr alloc :nrank) 0))))
+		       (progn
+			 ;; X <- Alloc(...)
+			 ;; Y <- LOAD(X, value=a)
+			 (setf (gethash (car (node-reads node)) scalars) (getattr node :value))
+			 (alias (car (node-writes node)) (getattr node :value))
+			 (push (node-id node) remove-id-list))
 		 (when (>= (length (node-writes node)) 1)
 		   (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
 		   (let ((writes (list (load-from-map (car (node-reads node)))))
@@ -183,7 +190,30 @@ First, groups several operation into a single :EXPR Node to maximize the use of 
 	     (setf (gethash (load-from-map k) new-variables) v))
 	 (avm-variables avm))
 	(setf (avm-variables avm) new-variables)))
+    (apply-in-place-mutation pipeline)
     scalars))
+
+(defun make-reference-count-table (pipeline)
+  (let ((count (make-hash-table))
+	(further-reading))
+    (maphash
+     #'(lambda (ts graph)
+	 (declare (ignore ts))
+	 (dolist (node (graph-nodes graph))
+	   (dolist (read (node-reads node))
+	     (when (symbolp read)
+	       (if (null (gethash read count))
+		   (push read further-reading)
+		   (incf (gethash read count)))))
+	   (dolist (w (node-writes node))
+	     (setf (gethash w count) 0))))
+     pipeline)
+    (values count further-reading)))
+
+(defun apply-in-place-mutation (pipeline)
+  (declare (type hash-table pipeline))
+  
+  )
 
 (defun apply-static-gensym (avm)
   (declare (type avm avm))

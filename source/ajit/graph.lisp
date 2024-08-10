@@ -62,6 +62,6 @@
 	   (type Buffer read-type output-type))
   (let* ((*allocated-aref*)
 	 (expr (create-expr-from-air output graph)))
-    (make-node :EXPR :EXPR (list output) (list read-from) :expr expr
-	       :_type_relay (make-inferred-type (list read-type) (list output-type))
+    (make-node :EXPR :EXPR (list output) `(,read-from ,@(map 'list #'expr-x *allocated-aref*)) :expr expr
+	       :_type_relay (make-inferred-type `(,read-type ,@(map 'list #'expr-y *allocated-aref*)) (list output-type))
 	       :buffers *allocated-aref*)))

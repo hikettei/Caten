@@ -428,8 +428,7 @@ Options:
       ;; After applying memory-planner, it breaks write-must-be-exist-once rule of aIR graph
       ;; so you cannot verify the graph!
       (remove-iteration-ir (poly-pipeline polyhedron))
-      (when multiexpr (apply-multiexpr-grouping (poly-pipeline polyhedron)))
-      (let* ((alias-map (apply-memory-planner (poly-pipeline polyhedron) avm))
+      (let* ((alias-map (apply-memory-planner (poly-pipeline polyhedron) avm :multiexpr multiexpr))
 	     (allocs (purge-allocations (poly-pipeline polyhedron) alias-map dynamic-shapes))
 	     (extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
