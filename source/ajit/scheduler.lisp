@@ -99,7 +99,7 @@ Further op-fusion optimization are done by the polyhedral-compiler"
       (when (every #'numberp shapes) (apply #'max shapes))
       (when (every #'(lambda (x) (eql x 1)) shapes) 1)
       (car shapes)))))
-
+;; TODO: Flatten the loop if the access pattern is contiguous
 (defun schedule->submodule (sched &aux (nrank 0) (args nil) (deps (schedule-depends-on sched)))
   "Lowers the grouped scheduled-items into the graph."
   (declare (type scheduled-items sched))

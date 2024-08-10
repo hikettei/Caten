@@ -104,7 +104,7 @@ Compiled with: ~a"
   (unary :EXP2 "exp2"))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :Const)) lhs rhs)
-  (assert (or (stringp lhs) (numberp lhs)))
+  (assert (or (stringp lhs) (symbolp lhs) (numberp lhs)))
   (assert (null rhs))
   (format nil "~(~a~)" lhs))
 
