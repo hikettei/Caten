@@ -128,7 +128,7 @@ Compiled with: ~a"
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :INDEX-COMPONENTS)) lhs rhs)
   (assert (buffer-p (expr-y lhs)))
-  (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (format nil "c~a" x)))))
+  (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (format nil "c~a" x))))))
 
 (defmethod %render-expr ((lang (eql :clang)) op lhs rhs)
   (assert (and lhs rhs))
