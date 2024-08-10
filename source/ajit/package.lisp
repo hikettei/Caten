@@ -10,6 +10,13 @@
   (:export
    #:form
    )
+  ;; from isl-ast-helpers.lisp
+  (:export
+   #:Expr
+   #:Expr-x
+   #:Expr-y
+   )
+   
   ;; from scheduler.lisp
   (:export
    #:create-polyhedral-model

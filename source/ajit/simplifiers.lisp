@@ -93,7 +93,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		   #'(lambda (x &aux (type (node-type x)))
 		       (and (vm-instruction-p x)
 			    ;; Only element wise ops are fused!
-			    (not (find type `(:Allocate :MOVE :WHERE :WMMA)))
+			    (not (find type `(:Allocate :MOVE :WHERE :WMMA :STORE)))
 			    (if (eql (node-class x) :BinaryOps)
 				(= (length (node-reads x)) 2)
 				t)))
@@ -102,15 +102,16 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	     ;; apply-multiexpr-grouping無しでも動作するべき (:MULTIEXPR=1, CI Testに含める)
 	     ;; Backward?
 	     ;; RendererをRefactorする。aRI GraphのRenderingを廃止する？
+	     ;; MULTIEXPR=0でテストを通すべきだと思う
 	     ;; TODO: Ternary Ops %where
 	     ;; 一時領域の判定ができると思う = (Allocationに宣言されてないUndefined Variable)
 	     ;; Pipelineを跨いでWriteに依存はない？
 	     ;; Esp: when creating backwards
 	     ;; Write-toのUpdateがおかしい
 	     ;; やること
-	     ;; 1. Tanを動かす -> Undefined-Varの処理を追加
-	     ;; 2. In-place-mutationをapply-memory-plannerにする
-	     ;; 3. MULTIEXPR=1 or 0をCIに含める
+	     ;; 1. Tanを動かす (ok ) -> Undefined-Varの処理を追加 (ok)
+	     ;; 2. In-place-mutationをapply-memory-plannerにする (ok)
+	     ;; 3. MULTIEXPR=1 or 0をCIに含める (no)
 	     ;; 4. JIT-Compilation Backwardを実装
 	     ;; 5. ^ 途中でMoveが含まれる時，うまく分割する
 	     ;; Backward実装したら，int xxx = x[...];を実装

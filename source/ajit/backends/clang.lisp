@@ -123,6 +123,10 @@ Compiled with: ~a"
 	(format nil "~(~a~)" lhs)
 	(format nil "~(~a~)[~(~a~)]" lhs ref))))
 
+(defmethod %render-expr ((lang (eql :clang)) (op (eql :INDEX-COMPONENTS)) lhs rhs)
+  (assert (buffer-p (expr-y lhs)))
+  (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (format nil "c~a" x)))))
+
 (defmethod %render-expr ((lang (eql :clang)) op lhs rhs)
   (assert (and lhs rhs))
   (format nil "(~a~(~a~)~a)"
@@ -274,7 +278,7 @@ Compiled with: ~a"
 		  #.(impl-unary :SQRT "sqrt")
 		  #.(impl-unary :NOT "!")
 		  (:INDEX-COMPONENTS
-		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (format nil "c~a" x))))))
+		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (format nil "c~a" x))))))
 		  #.(impl-binary :OR "|")
 		  #.(impl-binary :AND "&")
 		  (:WHERE
