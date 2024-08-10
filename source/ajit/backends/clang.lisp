@@ -121,7 +121,7 @@ Compiled with: ~a"
   (let ((ref (render-isl-aref rhs :genid #'(lambda (x) (nth x *access*)))))
     (if (string= ref "")
 	(format nil "~(~a~)" lhs)
-	(format nil "~(~a~)[~(~a~)]" lhs ref)))))
+	(format nil "~(~a~)[~(~a~)]" lhs ref))))
 
 (defmethod %render-expr ((lang (eql :clang)) op lhs rhs)
   (assert (and lhs rhs))
