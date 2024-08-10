@@ -361,7 +361,7 @@
 (defun proceed (&rest tensors)
   "Realizes the tensor"
   (declare (type list tensors))
-  (forward (%compile-toplevel tensors :no-grad *no-grad* :external-simplifiers *external-simplifiers*)))
+  (forward (caten tensors)))
 
 (defun %tensor->aasm (&rest tensors)
   (let ((sess (make-compiler-session :name :tensor->aasm)))
