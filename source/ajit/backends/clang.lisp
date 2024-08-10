@@ -249,7 +249,7 @@ Compiled with: ~a"
 					append (list (format nil "~a" x) "*")))))))))
 		  (:LOAD
 		   (let ((value (getattr node :value)))
-		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) value)))
+		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) value)))
 		  (:WMMA
 		   (multiple-value-bind (c a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (ct at bt) (apply #'values (relay-reads type))
@@ -292,7 +292,7 @@ Compiled with: ~a"
 			(if op
 			    (if r
 				(line "~(~a~) ~a ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) op (render-aref (second (node-reads node)) (second (relay-reads type))))
-				(line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-reads type)))
+				(line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type)))
 				      (apply
 				       #'concatenate
 				       'string

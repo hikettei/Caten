@@ -62,7 +62,9 @@
        (declare (ignore k))
        (setf (graph-nodes graph)
 	     (loop for node in (graph-nodes graph)
-		   if (eql (node-type node) :Allocate)
+		   if (and
+		       (eql (node-type node) :Allocate)
+		       (null (getattr node :_tmp)))
 		     do (push node allocs)
 		   else
 		     collect node)))

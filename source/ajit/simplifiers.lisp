@@ -93,7 +93,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		   #'(lambda (x &aux (type (node-type x)))
 		       (and (vm-instruction-p x)
 			    ;; Only element wise ops are fused!
-			    (not (find type `(:Allocate :MOVE :Load :WHERE :WMMA)))
+			    (not (find type `(:Allocate :MOVE :WHERE :WMMA)))
 			    (if (eql (node-class x) :BinaryOps)
 				(= (length (node-reads x)) 2)
 				t)))
@@ -114,6 +114,8 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	     ;; 4. JIT-Compilation Backwardを実装
 	     ;; 5. ^ 途中でMoveが含まれる時，うまく分割する
 	     ;; Backward実装したら，int xxx = x[...];を実装
+	     ;; JIT=0 JIT=1 でBackwardが同じかTestする
+	     ;; (!tan (!matmul ...))のScheduler修正
 	     (let ((fused-nodes (map 'list #'(lambda (x xt r) (create-multiexpr-node graph x xt (first r) (second r))) outputs out-types out-memory-ids)))
 	       (setf (gethash ts copied-graph) (copy-list (graph-nodes graph)))
 	       (setf (graph-nodes graph) fused-nodes)))))
@@ -124,22 +126,54 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
   "Applies the in-place mutation to the given graph."
   (declare (type hash-table pipeline) (avm avm))
   (let ((alias-map (make-hash-table :test #'eql))
+	(allocs)
+	(stash-map (make-hash-table :test #'eql))
 	(scalars (make-hash-table :test #'eql))
 	(stashed-graph (if multiexpr (apply-multiexpr-grouping pipeline) (make-hash-table)))
-	(remove-id-list))
+	(remove-id-list)
+	(outputs-by-pipeline
+	  (loop for graph being the hash-values of pipeline
+		collect
+		(remove-duplicates (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) (graph-seen graph)))))))
     (labels ((alias (key value) (setf (gethash key alias-map) value))
+	     (read-tmp (val) (or (gethash val stash-map) (load-from-map val)))
 	     (load-from-map (key) (or (gethash key alias-map) key))
 	     (alias-node (node)
-	       (alias (car (node-writes node)) (load-from-map (car (node-reads node))))))
+	       (alias (car (node-writes node)) (load-from-map (car (node-reads node)))))
+	     (update-tmp-type (node)
+	       (setf (relay-writes (read-type-relay node))
+		     (loop for wt in (relay-writes (read-type-relay node))
+			   for w in (node-writes node)
+			   if (gethash w stash-map)
+			     collect (make-buffer 0 nil nil (buffer-dtype wt) nil)
+			   else
+			     collect wt))
+	       (setf (relay-reads (read-type-relay node))
+		     (loop for rt in (relay-reads (read-type-relay node))
+			   for r in (node-reads node)
+			   if (gethash r stash-map)
+			     collect (make-buffer 0 nil nil (buffer-dtype rt) nil)
+			   else
+			     collect rt))))
       (loop for graph being the hash-values of pipeline
-	    for count upfrom 0 do
+	    for outputs in outputs-by-pipeline
+	    for count upfrom 0
+	    for copied-graph = (apply #'make-graph (copy-list (graph-nodes graph))) do
 	      (dolist (node `(,@(gethash count stashed-graph) ,@(graph-nodes graph)))
 		(case (node-type node)
 		  (:Allocate nil)
 		  (:WHERE
-		   (let ((writes (list (load-from-map (second (node-reads node)))))
-			 (reads  (map 'list #'load-from-map (node-reads node))))
+		   (let* ((base-write (car (node-writes node)))
+			  (create-tmpvar-p (null (find base-write outputs)))
+			  (writes (if create-tmpvar-p
+				      (list (intern (format nil "_val_~a_~a" count (length (hash-table-keys stash-map)))))
+				      (list (load-from-map (second (node-reads node))))))
+			  (reads  (map 'list #'read-tmp (node-reads node))))
+		     (when create-tmpvar-p
+		       (push (cons (car writes) (buffer-dtype (car (relay-writes (read-type-relay node))))) allocs)
+		       (setf (gethash base-write stash-map) (car writes)))
 		     (alias (car (node-writes node)) (second (node-reads node)))
+		     (update-tmp-type node)
 		     (setf (node-writes node) writes
 			   (node-reads node) reads)))
 		  (otherwise
@@ -156,21 +190,33 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 			 (setf (gethash (car (node-reads node)) scalars) (getattr node :value))
 			 (alias (car (node-writes node)) (getattr node :value))
 			 (push (node-id node) remove-id-list))
-		 (when (>= (length (node-writes node)) 1)
-		   (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
-		   (let ((writes (list (load-from-map (car (node-reads node)))))
-			 (reads (map 'list #'load-from-map (node-reads node))))
-		     (alias-node node)
-		     (setf (node-writes node) writes
-			   (node-reads node) reads))
-		   (when (eql (node-type node) :EXPR)
-		     ;; update inner exprs
-		     (let ((buffers (getattr node :buffers)))
-		       (assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
-		       (mapc
-			#'(lambda (aref)
-			    (setf (expr-x aref) (load-from-map (expr-x aref))))
-			buffers)))))))))
+		       (when (>= (length (node-writes node)) 1)
+			 (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
+			 (let* ((base-write (car (node-writes node)))
+			        (create-tmpvar-p (null (find base-write outputs)))
+			        (writes (if create-tmpvar-p
+					    (list (intern (format nil "_val_~a_~a" count (length (hash-table-keys stash-map)))))
+					    (list (load-from-map (car (node-reads node))))))
+			        (reads (map 'list #'read-tmp (node-reads node))))
+			   (when create-tmpvar-p
+			     (push (cons (car writes) (buffer-dtype (car (relay-writes (read-type-relay node))))) allocs)
+			     (setf (gethash base-write stash-map) (car writes)))
+			   (alias-node node)
+			   (update-tmp-type node)
+			   (setf (node-writes node) writes
+				 (node-reads node) reads))
+			 (when (eql (node-type node) :EXPR)
+			   ;; update inner exprs
+			   (let ((buffers (getattr node :buffers)))
+			     (assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
+			     (mapc
+			      #'(lambda (aref)
+				  (setf (expr-x aref) (load-from-map (expr-x aref))))
+			      buffers)))))))))
+      (let* ((allocs (remove-duplicates allocs))
+	     (allocs (map 'list #'(lambda (x) (make-node :Buffer :Allocate (list (car x)) nil :nrank 0 :dtype (cdr x) :_tmp t :_type_relay (make-buffer 0 nil nil (cdr x) nil))) allocs)))
+	(assert (null (gethash -1 pipeline)))
+	(setf (gethash -1 pipeline) (apply #'make-graph allocs)))
       (maphash
        #'(lambda (_ g)
 	   (declare (ignore _))
@@ -190,30 +236,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	     (setf (gethash (load-from-map k) new-variables) v))
 	 (avm-variables avm))
 	(setf (avm-variables avm) new-variables)))
-    (apply-in-place-mutation pipeline)
     scalars))
-
-(defun make-reference-count-table (pipeline)
-  (let ((count (make-hash-table))
-	(further-reading))
-    (maphash
-     #'(lambda (ts graph)
-	 (declare (ignore ts))
-	 (dolist (node (graph-nodes graph))
-	   (dolist (read (node-reads node))
-	     (when (symbolp read)
-	       (if (null (gethash read count))
-		   (push read further-reading)
-		   (incf (gethash read count)))))
-	   (dolist (w (node-writes node))
-	     (setf (gethash w count) 0))))
-     pipeline)
-    (values count further-reading)))
-
-(defun apply-in-place-mutation (pipeline)
-  (declare (type hash-table pipeline))
-  
-  )
 
 (defun apply-static-gensym (avm)
   (declare (type avm avm))

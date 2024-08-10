@@ -77,7 +77,7 @@ Further op-fusion optimization are done by the polyhedral-compiler"
 		     'list
 		     #'(lambda (x x-type)
 			 (when (not (numberp x))
-			   (make-scheduled-items (list (id->value (avm-graph avm) x) x-type x))))
+			   (make-scheduled-items (list  (id->value (avm-graph avm) x) x-type x))))
 		     children children-type)))
 	      (append
 	       (list scheduled-items)

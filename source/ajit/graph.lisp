@@ -32,7 +32,7 @@
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (apply #'make-graph (reverse new-graph))))
+    (apply #'make-graph (append (list (r/funcall "T-1" nil)) (reverse new-graph)))))
 
 ;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *allocated-aref* nil)
@@ -55,7 +55,9 @@
 			else
 			  collect (expr-const arg))))
     (assert (<= (length parents) 2) () "~a cannot be grouped to multi expr! (too many arguments)" node)
-    (make-expr (node-type node) (first parents) (second parents))))
+    (if (eql (node-type node) :Load)
+        (expr-const (getattr node :value))
+	(make-expr (node-type node) (first parents) (second parents)))))
 
 (defun create-multiexpr-node (graph output output-type read-from read-type)
   (declare (type symbol output read-from) (type graph graph)
