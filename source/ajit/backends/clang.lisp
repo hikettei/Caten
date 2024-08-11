@@ -280,11 +280,8 @@ Compiled with: ~a"
 		   (multiple-value-bind (at) (apply #'values (relay-writes type))		     
 		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))
 		  (:STORE
-		   (multiple-value-bind (a b) (apply #'values (node-reads node))
-		     (multiple-value-bind (at bt) (apply #'values (relay-reads type))
-		       (when (not (equal a b))
-			 ;; TODO: Fix the defintion: a = b
-			 (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref b bt))))))
+		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type)))
+			 (render-aref (car (node-reads node)) (car (relay-reads type)))))
 		  (:MOVE
 		   (multiple-value-bind (a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (at bt) (apply #'values (relay-reads type))

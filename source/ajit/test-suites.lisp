@@ -56,11 +56,14 @@
 (caten (!sin (!matmul (make-tensor `(10 20)) (make-tensor `(20 30)))))
 (caten (!matmul (make-tensor `(10 20)) (make-tensor `(20 30))))
 (caten (!softmax (make-tensor `(10 10) :initial-element 1.0)))
+(caten (!softmax (ax+b `(10 10) 1 1)))
 (caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0))))
 (caten (!matmul (make-tensor `(128 32)) (!matmul (make-tensor `(32 64)) (make-tensor `(64 128)))))
 (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb))))
 (caten (!mean (make-tensor `(a b c))))
 (caten (!tan (make-tensor `(10 10))))
+;;(with-no-grad (caten (forward (ConvND 3 6 `(3 3)) (make-tensor `(10 3 25 25)))))
+(forward (caten (!sin (!sin (!sin (ax+b `(10 10) 1 0))))))
 (let ((*external-simplifiers* nil)) (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32)))) (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20))))))
 
 (deftest in-place-test

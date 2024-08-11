@@ -341,6 +341,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   (declare (type avm avm) (type boolean verbose))
   (let* ((type-map (run-type-infer avm))
 	 (recursive-top-ids (append (avm-fw-outputs avm))));; (avm-bw-outputs avm)))
+    (assert (null (avm-bw-outputs avm)) () "Backward is not supported yet.")
     (when verbose
       (format t "== [Initial Graph] ==~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))

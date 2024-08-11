@@ -179,8 +179,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	    for node in (graph-nodes graph) do
 	      (case (node-type node)
 		(:ALLOCATE nil)
-		(otherwise
-		 (map 'list #'c (node-reads node))))))
+		(otherwise (map 'list #'c (node-reads node))))))
     refcount))
 
 (defun alias/update-node (node alias)
@@ -285,12 +284,12 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 			  (let ((tmpvar-name (intern (format nil "_~(~a~)_~a" (car old-writes) key))))
 			    (push (->alloc tmpvar-name type) allocs)
 			    (setf (gethash (car (node-writes node)) stores)
-				  (->store (car (node-writes node)) tmpvar-name type))				  
+				  (->store (car (node-writes node)) tmpvar-name type))
 			    (setf (gethash (car old-writes) tmpvar-table) tmpvar-name
 				  (car (node-writes node)) tmpvar-name
 				  (car (relay-writes type)) (->scalar (car (relay-writes type))))))
-			(update-relay-reference type)
-			(updt-tmp node type old-reads))
+			(updt-tmp node type old-reads)
+			(update-relay-reference type))
 		(when (find key alloc-ids)
 		  (dolist (node (graph-nodes graph))
 		    (when (eql (node-type node) :Allocate)
