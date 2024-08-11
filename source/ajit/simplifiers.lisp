@@ -3,6 +3,7 @@
 ;; E.g.: we can purge the view nodes since we already have a
 ;; type information at `type-relay.lisp`.
 ;; TODO: Refactor around typing relay (esp: memory-write dependencies are messing)
+;; ~~ Step1, Before Grouping Process ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %safely-purge-views-from-graph (avm)
   "(1.) Removes :VIEW from avm graph, (2.) Updates the read/write graph relations"
   (declare (type avm avm))
@@ -55,7 +56,53 @@
   (%safely-purge-views-from-graph avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t))
+;; ~~ Step2, Before Applying Polyhedral Compiler (pipeline w/ DOMAIN)  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Under the step2, some nodes have the following attributes:
+;; - :_loop_bound_nodes      : a list of nodes used to compute the bound
+;; - :_loop_bound_nodes_type : types for _loop_bound_types
+;; WIP: AJIT全てのnode-readsを書き換える必要は？
+(defun get-parent-nodes (node graph)
+  (declare (type node node) (type graph graph))
+  (append
+   ;; :Allocate is placed in the VM-level
+   ;; nodes used to compute the shape is never used!
+   (when (not (eql (node-type node) :Allocate))
+     (loop for r in `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))
+	   if (symbolp r) append (get-parent-nodes (id->value graph r) graph)))
+   (list node)))
 
+(defun %simplify-pipeline (pipeline top-ids)
+  "Removes all unused nodes from the pipeline (incl, :FOR, :ENDFOR)"
+  (declare (type hash-table pipeline))
+  (let* ((tmpgraph
+	   (apply
+	    #'make-graph
+	    (loop for graph being the hash-values of pipeline
+		  append (graph-nodes graph))))
+	 (top-ids (append
+		   top-ids
+		   (loop for value being the hash-values of pipeline
+			 append (graph->loop-size value))))
+	 ;; Q, What nodes should be included in the body?
+	 ;; - all subgraph from top-ids
+	 ;; - all nodes used to determine the bound of :FOR
+	 (used-nodes (map 'list #'(lambda (x &aux (val (id->value tmpgraph x))) (and val (get-parent-nodes val tmpgraph))) top-ids))
+	 (used-node-ids (map 'list #'node-id (apply #'append used-nodes))))
+    (maphash
+     #'(lambda (k graph)
+	 (declare (ignore k))
+	 (setf (graph-nodes graph)
+	       (loop for node in (graph-nodes graph)
+		     if (or (find (node-type node) `(:FOR :ENDFOR)) (find (node-id node) used-node-ids))
+		       collect node)))
+     pipeline)
+    (maphash
+     #'(lambda (k graph)
+	 (when (null (graph-nodes graph))
+	   (remhash k pipeline)))
+     pipeline)))
+
+;; ~~ Step3, Before Rendering Process (pipeline w/o DOMAIN)  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-multiexpr-grouping (pipeline)
   "Group several computation into a single :EXPR Node to simplify.
 E.g.:
@@ -98,6 +145,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 				(= (length (node-reads x)) 2)
 				t)))
 		   (graph-nodes graph)))
+	     ;; TODO: View計算もExprに含めたい
 	     ;; 今やってないこと:
 	     ;; apply-multiexpr-grouping無しでも動作するべき (:MULTIEXPR=1, CI Testに含める)
 	     ;; Backward?
@@ -255,33 +303,3 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	 (avm-variables avm))
 	(setf (avm-variables avm) new-variables)))
     scalars))
-
-(defun apply-static-gensym (avm)
-  (declare (type avm avm))
-  (let ((alias-table (make-hash-table))
-	(val-count 0))
-    (labels ((val-gensym (id)
-	       (if (symbolp id)
-		   (or
-		    (gethash id alias-table)
-		    (prog1
-			(setf (gethash id alias-table) (intern (format nil "val_~a" val-count)))
-		      (incf val-count)))
-		   id)))
-      (dolist (node (graph-nodes (avm-graph avm)))
-	(setf (node-writes node) (map 'list #'val-gensym (node-writes node))
-	      (node-reads node) (map 'list #'val-gensym (node-reads node))))
-      (setf (avm-fw-outputs avm) (map 'list #'val-gensym (avm-fw-outputs avm))
-	    (avm-bw-outputs avm) (map 'list #'val-gensym (avm-bw-outputs avm)))
-      (let ((new-id2tensor (make-hash-table)))
-	(maphash
-	 #'(lambda (k v)
-	     (setf (gethash (val-gensym k) new-id2tensor) v))
-	 (avm-id2tensor avm))
-	(setf (avm-id2tensor avm) new-id2tensor))
-      (let ((new-variables (make-hash-table)))
-	(maphash
-	 #'(lambda (k v)
-	     (setf (gethash (val-gensym k) new-variables) v))
-	 (avm-variables avm))
-	(setf (avm-variables avm) new-variables)))))

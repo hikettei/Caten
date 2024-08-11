@@ -11,8 +11,16 @@
   (let* ((graph (apply #'make-graph (si-nodes sched)))
 	 (avm (make-avm graph (si-name sched) (make-hash-table) nil nil)))
     (uiop:symbol-call (find-package :caten) :print-avm avm :args (schedule-depends-on sched))))
+(defun render-graph (name graph)
+  (let* ((avm (make-avm graph name (make-hash-table) nil nil)))
+    (uiop:symbol-call (find-package :caten) :print-avm avm :args (nodes-depends-on (graph-nodes graph)))))
 
 (defun print-schedules (list) (map 'list #'render-schedule list))
+(defun print-pipeline (pipeline)
+  (maphash
+   #'(lambda (ts graph)
+       (render-graph (intern (format nil "T~a" ts) "KEYWORD") graph))
+   pipeline))
 (defun replace-string (string from to)
   (concatenate
    'string
@@ -120,3 +128,33 @@ Graph must be verified in advance."
       (loop for s1 in `(,@shape ,@stride ,@views)
 	    for s = (reveal-buffer s1)
 	    if (and (symbolp s) s) collect s))))
+
+(defun apply-static-gensym (avm)
+  (declare (type avm avm))
+  (let ((alias-table (make-hash-table))
+	(val-count 0))
+    (labels ((val-gensym (id)
+	       (if (symbolp id)
+		   (or
+		    (gethash id alias-table)
+		    (prog1
+			(setf (gethash id alias-table) (intern (format nil "val_~a" val-count)))
+		      (incf val-count)))
+		   id)))
+      (dolist (node (graph-nodes (avm-graph avm)))
+	(setf (node-writes node) (map 'list #'val-gensym (node-writes node))
+	      (node-reads node) (map 'list #'val-gensym (node-reads node))))
+      (setf (avm-fw-outputs avm) (map 'list #'val-gensym (avm-fw-outputs avm))
+	    (avm-bw-outputs avm) (map 'list #'val-gensym (avm-bw-outputs avm)))
+      (let ((new-id2tensor (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (val-gensym k) new-id2tensor) v))
+	 (avm-id2tensor avm))
+	(setf (avm-id2tensor avm) new-id2tensor))
+      (let ((new-variables (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (val-gensym k) new-variables) v))
+	 (avm-variables avm))
+	(setf (avm-variables avm) new-variables)))))

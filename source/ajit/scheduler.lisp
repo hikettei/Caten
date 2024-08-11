@@ -35,7 +35,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
       ->ok)
     ;; They still have a chance to be merged by the polyhedral compiler.
     ->ng))
-;; TODO: View関連のUglyなGrouping振る舞い削除
+
 (defun recursive-find-group (avm scheduled-items &key (seen nil))
   "Return -> (list scheduled-items ...)"
   (declare (type avm avm)
@@ -61,10 +61,16 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 						`(,@(map 'list #'buffer-reconstruct-view-args (relay-writes type))
 						  ,@(map 'list #'buffer-reconstruct-view-args (relay-reads type)))))
 				     if (and (null (find s seen)) (id->value (avm-graph avm) s)) collect s))
-	     (loop-bound-types (map 'list #'(lambda (x) (car (relay-writes (read-type-relay (id->value (avm-graph avm) x))))) (print loop-bound-reads)))
+	     (loop-bound-types (map 'list #'(lambda (x) (car (relay-writes (read-type-relay (id->value (avm-graph avm) x))))) loop-bound-reads))
 	     (children `(,@children ,@loop-bound-reads))
 	     (children-type `(,@children-type ,@loop-bound-types))
 	     (mergeable-list (map 'list #'(lambda (x x-type) (mergeable-p x latest x-type)) children children-type)))
+	(when loop-bound-reads
+	  (assert (null (getattr node :_loop_bound_nodes)))
+	  (assert (null (getattr node :_loop_bound_nodes_type)))
+	  (setf (node-attrs node)
+		(append (node-attrs node)
+			`(:_loop_bound_nodes ,loop-bound-reads :_loop_bound_nodes_type ,loop-bound-types))))
 	(setf seen (append seen (node-writes node)))
 	;; node_id <- F(Children[0], Children[1], ...)
 	;;              mergeable[0] mergeable[1], ...
@@ -360,6 +366,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	  (loop for nth upfrom 0
 		for g in graphs
 		do (setf (gethash nth pipeline) g))
+	  (%simplify-pipeline pipeline recursive-top-ids)
+	  (when verbose
+	    (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
+	    (print-pipeline pipeline))
+	  ;; pipeline has all infos including
 	  ;; Creates the initial problem:
 	  (let* ((vm-inputs (avm-gather-args avm))
 		 (loop-size (loop for value being the hash-values of pipeline
@@ -452,11 +463,12 @@ Options:
       (auto-schedule! polyhedron :verbose verbose-auto :serialize serialize)
       (when (>= debug 2)
 	(format t "~% == [Final Polyhedron] ====~%~a~%" polyhedron))
+      ;; Polyhedral -> Renderer
+      ;; Polyhedron supercedes :FOR/:ENDFOR, remove them.
+      (remove-iteration-ir (poly-pipeline polyhedron))
       ;; Minimizing the number of allocation by creating an alias
-
       ;; After applying memory-planner, it breaks write-must-be-exist-once rule of aIR graph
       ;; so you cannot verify the graph!
-      (remove-iteration-ir (poly-pipeline polyhedron))
       (let* ((alias-map (apply-memory-planner (poly-pipeline polyhedron) avm :multiexpr multiexpr))
 	     (allocs (purge-allocations (poly-pipeline polyhedron) alias-map dynamic-shapes))
 	     (extracted-schedule (finalize-schedule polyhedron))
