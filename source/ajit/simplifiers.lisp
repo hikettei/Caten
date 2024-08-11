@@ -246,8 +246,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	 (alias-map (create-multiexpr-grouped-pipeline pipeline pipeline-ids alloc-ids :multiexpr multiexpr))
 	 (refcount (create-ref-count pipeline pipeline-ids alloc-ids))
 	 (tmpvar-table (make-hash-table))
-	 (t-1 (make-graph))
-	 (seen))
+	 (t-1 (make-graph)))
     ;; Minimizing the number of allocations by following the rule:
     ;; 1. (car reads) becomes write, (except for %WHERE)
     ;;  | -   A <- f(B, C, D)
@@ -269,6 +268,9 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
     (labels ((refcount (x) (or (gethash x refcount) 0))
 	     (no-alias-p (x) (<= (refcount x) 2))
 	     (maybe-tmp (x default) (or (gethash x tmpvar-table) default))
+	     (maybe-tmp1 (x &aux (x (reveal-buffer x)))
+	       (let ((aliased (gethash x alias-map x)))
+		 (maybe-tmp aliased aliased)))
 	     (->scalar (x) (make-buffer 0 nil nil (buffer-dtype x) nil))
 	     (->alloc (name type)
 	       (make-node :Buffer :Allocate (list name) nil :nrank 0
@@ -277,6 +279,18 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	     (->store (tgt load-what type)
 	       (make-node :Buffer :Load (list tgt) (list tgt) :value load-what
 			  :_type_relay (make-inferred-type (list (car (relay-writes type))) (list (car (relay-writes type))))))
+	     (update-buffer (buffer)
+	       (setf (buffer-shape buffer) (map 'list #'maybe-tmp1 (buffer-shape buffer))
+		     (buffer-stride buffer) (map 'list #'maybe-tmp1 (buffer-stride buffer))
+		     (buffer-views buffer)
+		     (loop for v in (buffer-views buffer)
+			   if v
+			     collect (list (maybe-tmp1 (nth 0 v)) (maybe-tmp1 (nth 1 v)) (maybe-tmp1 (nth 2 v)) (nth 3 v))
+			   else
+			     collect v)))
+	     (update-relay-reference(type)
+	       (mapc #'update-buffer (relay-writes type))
+	       (mapc #'update-buffer (relay-reads type)))	       
 	     (updt-tmp (node type r-old)
 	       (setf
 		(relay-reads type) (map 'list #'(lambda (x y) (if (gethash x tmpvar-table) (->scalar y) y)) r-old (relay-reads type))
@@ -288,7 +302,6 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		      for type = (read-type-relay node)
 		      for old-reads  = (getattr node :_reads)
 		      for old-writes = (getattr node :_writes)
-		      if (find key pipeline-ids) do (push (node-writes node) seen)
 		      unless (eql (node-type node) :Allocate) do
 			(when (not (no-alias-p (car (node-writes node))))
 			  ;; Create a new tmpvar:
@@ -299,6 +312,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 			    (setf (gethash (car old-writes) tmpvar-table) tmpvar-name
 				  (car (node-writes node)) tmpvar-name
 				  (car (relay-writes type)) (->scalar (car (relay-writes type))))))
+			(update-relay-reference type)
 			(updt-tmp node type old-reads))
 		(when (find key alloc-ids)
 		  (dolist (node (graph-nodes graph))
@@ -308,7 +322,6 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		(setf (graph-nodes graph) (append (reverse allocs) (graph-nodes graph) (hash-table-values stores)))
 		;; Tmpvar cannot be used across the different timestamp
 		(setf tmpvar-table (make-hash-table)))))
-    ;; TODO BufferのOverwrite
     (flet ((load-from-map (x) (or (gethash x alias-map) x)))
       (loop for g in (graph-nodes schedule-graph)
 	    if (eql (node-type g) :FOR) do
@@ -316,7 +329,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		(expr-recursive-replace below alias-map)))
       (setf (graph-nodes t-1) (remove-duplicates (graph-nodes t-1) :key (compose #'car #'node-writes)))
       (setf (graph-nodes t-1)
-	    (loop with seen = (flatten seen)
+	    (loop with seen = (%seen-ids-for-unused-scalar-nodes pipeline pipeline-ids)
 		  for n in (graph-nodes t-1)
 		  if (find (car (node-writes n)) seen)
 		    collect n))
@@ -337,3 +350,19 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	     (setf (gethash (load-from-map k) new-variables) v))
 	 (avm-variables avm))
 	(setf (avm-variables avm) new-variables)))))
+
+(defun %seen-ids-for-unused-scalar-nodes (pipeline keys)
+  (declare (type hash-table pipeline))
+  (remove-duplicates
+   (loop for key in keys
+	 for graph = (gethash key pipeline)
+	 append
+	 (loop for node in (graph-nodes graph)
+	       for type = (read-type-relay node)
+	       append (remove-duplicates
+		       (append (unless (eql (node-type node) :EXPR) (loop for r in (node-reads node) if (symbolp r) collect r))
+			       (flatten
+				`(,@(map 'list #'buffer-reconstruct-view-args (relay-writes type))
+				  ,@(map 'list #'buffer-reconstruct-view-args (relay-reads type))))))))))
+
+
