@@ -69,7 +69,7 @@
      (loop for r in `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))
 	   if (symbolp r) append (get-parent-nodes (id->value graph r) graph)))
    (list node)))
-
+;; no duplicates are allowed
 (defun %simplify-pipeline (pipeline top-ids)
   "Removes all unused nodes from the pipeline (incl, :FOR, :ENDFOR)"
   (declare (type hash-table pipeline))
@@ -86,18 +86,19 @@
 	 ;; - all subgraph from top-ids
 	 ;; - all nodes used to determine the bound of :FOR
 	 (used-nodes (map 'list #'(lambda (x &aux (val (id->value tmpgraph x))) (and val (get-parent-nodes val tmpgraph))) top-ids))
-	 (used-node-ids (map 'list #'node-id (apply #'append used-nodes))))
+	 (used-node-ids (map 'list #'node-id (apply #'append used-nodes)))
+	 (seen))
     (maphash
      #'(lambda (k graph)
 	 (declare (ignore k))
 	 (setf (graph-nodes graph)
 	       (loop for node in (graph-nodes graph)
-		     if (or (find (node-type node) `(:FOR :ENDFOR)) (find (node-id node) used-node-ids))
-		       collect node)))
+		     if (and (null (find (node-id node) seen)) (or (find (node-type node) `(:FOR :ENDFOR)) (find (node-id node) used-node-ids)))
+		       collect (progn (push (node-id node) seen)  node))))
      pipeline)
     (maphash
      #'(lambda (k graph)
-	 (when (null (graph-nodes graph))
+	 (when (every #'(lambda (x) (or (eql (node-type x) :FOR) (eql (node-type x) :ENDFOR))) (graph-nodes graph))
 	   (remhash k pipeline)))
      pipeline)))
 
@@ -123,18 +124,21 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		  (map
 		   'list
 		   #'(lambda (x &aux (node (id->value graph x)))
-		       (case (node-type node)
-			 (:WHERE (list (second (node-reads node)) (second (relay-reads (read-type-relay node)))))
-			 (otherwise (list (first (node-reads node)) (first (relay-reads (read-type-relay node)))))))
+		       (when node
+			 (case (node-type node)
+			   (:WHERE (list (second (node-reads node)) (second (relay-reads (read-type-relay node)))))
+			   (otherwise (list (first (node-reads node)) (first (relay-reads (read-type-relay node))))))))
 		   outputs))
 		(out-types
 		  (map
 		   'list
 		   #'(lambda (x &aux (node (id->value graph x)))
-		       (car (relay-writes (read-type-relay node))))
+		       (when node
+			 (car (relay-writes (read-type-relay node)))))
 		   outputs)))
 	   (when (and
 		  outputs
+		  (every #'identity out-memory-ids)
 		  (every
 		   #'(lambda (x &aux (type (node-type x)))
 		       (and (vm-instruction-p x)
@@ -296,6 +300,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		    (when (eql (node-type node) :Allocate)
 		      (when (not (alloc-args-p node))
 			(setf (graph-nodes t-1) (append (graph-nodes t-1) (list node)))))))
+		(assert (every #'(lambda (x) (eql (node-type x) :Allocate)) allocs))
 		(setf (graph-nodes graph) (append (reverse allocs) (graph-nodes graph) (hash-table-values stores)))
 		;; Tmpvar cannot be used across the different timestamp
 		(setf tmpvar-table (make-hash-table)))))
