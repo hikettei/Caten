@@ -171,8 +171,12 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
       ;;  | -   O1 <-  f(At1, At2)
       ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
       
-      
-      
+      ;; TestCase1. (caten (!mean (make-tensor `(a b c)) :axis t))
+      ;; TestCase2. (caten (!tan (make-tensor `(10 10))))
+      ;; TestCase3. (let ((*external-simplifiers* nil)) (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32)))) (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20)))))
+      ;; TestCase4. (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb))))
+      ;; ここで・・・Viewの計算に使われている計算グラフがScheduleに割り込まれない
+      (when nil
       (loop for graph being the hash-values of pipeline
 	    for outputs in outputs-by-pipeline
 	    for count upfrom 0
@@ -229,7 +233,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 			 (mapc
 			  #'(lambda (aref)
 			      (setf (expr-x aref) (load-from-map (expr-x aref))))
-			  buffers))))))))
+			  buffers)))))))))
       ;; Add declarations for tmpvar
       (let* ((allocs (map 'list #'(lambda (x) (make-node :Buffer :Allocate (list (car x)) nil :nrank 0 :dtype (cdr x) :_tmp t :_type_relay (make-buffer 0 nil nil (cdr x) nil))) allocs))
 	     (allocs (remove-duplicates allocs :key #'node-writes :test #'equal)))

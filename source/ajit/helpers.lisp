@@ -109,3 +109,14 @@ Graph must be verified in advance."
     (if (null outputs)
 	(list id)
 	(apply #'append (map 'list #'(lambda (x) (recursively-find-output-id (car (node-writes x)) graph)) outputs)))))
+
+(defun buffer-reconstruct-view-args (buffer)
+  "Reconstruct a list of symbols used to compute the buffer bound."
+  (when (buffer-p buffer)
+    ;; Shape, Stride, and Views
+    (let* ((shape (buffer-shape buffer))
+	   (stride (buffer-stride buffer))
+	   (views (apply #'append (map 'list #'(lambda (x) (and x (subseq x 0 3))) (buffer-views buffer)))))
+      (loop for s1 in `(,@shape ,@stride ,@views)
+	    for s = (reveal-buffer s1)
+	    if (and (symbolp s) s) collect s))))

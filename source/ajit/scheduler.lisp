@@ -20,47 +20,57 @@
 
 (defun buffer-intersect-p (a b)
   "Returns T if two buffers a and b are mergeable.
-Further op-fusion optimization are done by the polyhedral-compiler"
+Further op-fusion optimization are done by the polyhedral-compiler."
   (declare (type Buffer a b))
   ;; either of buffers are scalar -> merge them
   (symbol-macrolet ((->ok (return-from buffer-intersect-p t))
 		    (->ng (return-from buffer-intersect-p nil)))
     ;; Either of args is a scalar -> merge them
     (when (or (= (buffer-nrank a) 0) (= 0 (buffer-nrank b)))->ok)
-    ;; Contiguous and same-shaped buffer -> merge them
+    ;; Contiguous and the same-shaped buffer -> merge them
     (when (and
 	   (every #'null (buffer-views a))
 	   (every #'null (buffer-views b))
 	   (equal (buffer-shape a) (buffer-shape b)))
       ->ok)
-    ;; Otherwise, leave it to out polyhedral compiler.
+    ;; They still have a chance to be merged by the polyhedral compiler.
     ->ng))
-
+;; TODO: View関連のUglyなGrouping振る舞い削除
 (defun recursive-find-group (avm scheduled-items &key (seen nil))
   "Return -> (list scheduled-items ...)"
   (declare (type avm avm)
 	   (type scheduled-items scheduled-items))
-  (flet ((explore (x) (when x (recursive-find-group avm x :seen seen))))
+  (flet ((explore (x) (when x (recursive-find-group avm x :seen seen)))
+	 (mergeable-p (x latest x-type) (or (numberp x) (and (not (eql (node-type (id->value (avm-graph avm) x)) :Allocate)) (buffer-intersect-p latest x-type)))))
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
       (when (find latest-id seen) (return-from recursive-find-group))
       (let* ((node (id->value (avm-graph avm) latest-id))
-	     ;; Allocation is done outside of the function(VM or Exported VM), i.e., the computation node for the shape must not be included in the JIT
-	     (alloc-p (eql (node-type node) :Allocate))
-	     (children (node-reads node))
-	     (children-type (relay-reads (read-type-relay node)))
-	     (mergeable-list
-	       (map 'list
-		    #'(lambda (x x-type)
-			(or (numberp x)
-			    (and
-			     (not (eql (node-type (id->value (avm-graph avm) x)) :Allocate))
-			     (buffer-intersect-p latest x-type))))
-		    children children-type)))
+	     ;; Allocation is done at the (Exported) VM Level
+	     ;; - (1.) dynamic shapes are computed under VM Level
+	     ;; - (2.) dynamic strides are computed under JIT Level
+	     ;; It is unknown whether :Allocate is moved to args or body; so it should be scheduled standalone.
+	     ;; i.e.: Allocate cannot be merged with any other nodes!
+	     (schedule-standalone-p (eql (node-type node) :Allocate))
+	     (children (node-reads node)) (children-type (relay-reads (read-type-relay node)))
+	     ;; Views are purged from the graph!
+	     ;; That is, the node will never connected to the nodes which compute stride/shape/view(upfrom, below, by)
+	     ;; (buffer-reconstruct-view-args buffer) will reconstruct the view args, lets id->writing it to connect w/ them.
+	     (loop-bound-reads (loop with type = (read-type-relay node)
+				     for s in (remove-duplicates
+					       (flatten
+						`(,@(map 'list #'buffer-reconstruct-view-args (relay-writes type))
+						  ,@(map 'list #'buffer-reconstruct-view-args (relay-reads type)))))
+				     if (and (null (find s seen)) (id->value (avm-graph avm) s)) collect s))
+	     (loop-bound-types (map 'list #'(lambda (x) (car (relay-writes (read-type-relay (id->value (avm-graph avm) x))))) (print loop-bound-reads)))
+	     (children `(,@children ,@loop-bound-reads))
+	     (children-type `(,@children-type ,@loop-bound-types))
+	     (mergeable-list (map 'list #'(lambda (x x-type) (mergeable-p x latest x-type)) children children-type)))
 	(setf seen (append seen (node-writes node)))
-	;; Top_ID <- F(Children[0], Children[1], ...)
-	;;             mergeable[0] mergeable[1], ...
-	;; :Allocate cannot be merged with any nodes!
-	(if (and (not alloc-p) (every #'identity mergeable-list))
+	;; node_id <- F(Children[0], Children[1], ...)
+	;;              mergeable[0] mergeable[1], ...
+	;; All mergeable -> merge them!
+	;; if the index relationships are too complicated to judge mergeablity, leave it to the polyhedron.
+	(if (and (not schedule-standalone-p) (every #'identity mergeable-list))
 	    (let ((parent-groups))
 	      (dolist (c children)
 		(when (not (numberp c))
@@ -72,12 +82,13 @@ Further op-fusion optimization are done by the polyhedral-compiler"
 			      (si-latest-id scheduled-items) c)
 			(setf parent-groups (append parent-groups (cdr (explore scheduled-items))))))
 	      (append (list scheduled-items) parent-groups))
+	    ;; Create new and independent schedule item for each args.
 	    (let ((new-groups
 		    (map
 		     'list
 		     #'(lambda (x x-type)
 			 (when (not (numberp x))
-			   (make-scheduled-items (list  (id->value (avm-graph avm) x) x-type x))))
+			   (make-scheduled-items (list (id->value (avm-graph avm) x) x-type x))))
 		     children children-type)))
 	      (append
 	       (list scheduled-items)
@@ -325,8 +336,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (uiop:symbol-call (find-package :caten) :print-avm avm))
     ;; ~ Optimizations ~~
     ;; Do not verify the graph; nodes used to compute views may lost.
-    (deploy-type-infer-results avm type-map)
-    (apply-jit-specific-simplifiers avm)
+    (deploy-type-infer-results avm type-map) ;; Let them include :VIEW node inside :_type_relay attrs
+    (apply-jit-specific-simplifiers avm)     ;; WMMA Accumlation etc
     (when verbose
       (format t "== [Graph after applying jit-specific simplifiers] ==~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))
