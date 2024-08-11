@@ -241,15 +241,13 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 
 (defun apply-memory-planner (pipeline avm schedule-graph &key (multiexpr t))
   (declare (type hash-table pipeline) (avm avm))
-  ;; Rewriting like:
-  ;; LOAD
-  ;; ... OP
-  ;; STORE
   (let* ((pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
 	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
 	 (alias-map (create-multiexpr-grouped-pipeline pipeline pipeline-ids alloc-ids :multiexpr multiexpr))
 	 (refcount (create-ref-count pipeline pipeline-ids alloc-ids))
-	 (tmpvar-table (make-hash-table)))
+	 (tmpvar-table (make-hash-table))
+	 (t-1 (make-graph))
+	 (seen))
     ;; Minimizing the number of allocations by following the rule:
     ;; 1. (car reads) becomes write, (except for %WHERE)
     ;;  | -   A <- f(B, C, D)
@@ -290,10 +288,11 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		      for type = (read-type-relay node)
 		      for old-reads  = (getattr node :_reads)
 		      for old-writes = (getattr node :_writes)
+		      if (find key pipeline-ids) do (push (node-writes node) seen)
 		      unless (eql (node-type node) :Allocate) do
 			(when (not (no-alias-p (car (node-writes node))))
 			  ;; Create a new tmpvar:
-			  (let ((tmpvar-name (intern (format nil "_~(~a~)" (car old-writes)))))
+			  (let ((tmpvar-name (intern (format nil "_~(~a~)_~a" (car old-writes) key))))
 			    (push (->alloc tmpvar-name type) allocs)
 			    (setf (gethash (car (node-writes node)) stores)
 				  (->store (car (node-writes node)) tmpvar-name type))				  
@@ -301,14 +300,29 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 				  (car (node-writes node)) tmpvar-name
 				  (car (relay-writes type)) (->scalar (car (relay-writes type))))))
 			(updt-tmp node type old-reads))
+		(when (find key alloc-ids)
+		  (dolist (node (graph-nodes graph))
+		    (when (eql (node-type node) :Allocate)
+		      (when (not (alloc-args-p node))
+			(setf (graph-nodes t-1) (append (graph-nodes t-1) (list node)))))))
 		(setf (graph-nodes graph) (append (reverse allocs) (graph-nodes graph) (hash-table-values stores)))
 		;; Tmpvar cannot be used across the different timestamp
 		(setf tmpvar-table (make-hash-table)))))
+    ;; TODO BufferのOverwrite
     (flet ((load-from-map (x) (or (gethash x alias-map) x)))
       (loop for g in (graph-nodes schedule-graph)
 	    if (eql (node-type g) :FOR) do
 	      (let ((below (getattr g :below)))
 		(expr-recursive-replace below alias-map)))
+      (setf (graph-nodes t-1) (remove-duplicates (graph-nodes t-1) :key (compose #'car #'node-writes)))
+      (setf (graph-nodes t-1)
+	    (loop with seen = (flatten seen)
+		  for n in (graph-nodes t-1)
+		  if (find (car (node-writes n)) seen)
+		    collect n))
+      (when (graph-nodes t-1)
+	(setf (gethash -1 pipeline) t-1)
+	(setf (graph-nodes schedule-graph) (append (list (r/funcall "T-1" nil)) (graph-nodes schedule-graph))))
       (setf (avm-fw-outputs avm) (map 'list #'load-from-map (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'load-from-map (avm-bw-outputs avm)))
       (let ((new-id2tensor (make-hash-table)))
@@ -322,5 +336,4 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	 #'(lambda (k v)
 	     (setf (gethash (load-from-map k) new-variables) v))
 	 (avm-variables avm))
-	(setf (avm-variables avm) new-variables)))
-    (make-hash-table)))
+	(setf (avm-variables avm) new-variables)))))

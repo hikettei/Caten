@@ -439,6 +439,7 @@ Options:
 ;;   Step1, Dynamic Shapeと入力変数のみを受け入れる
 ;;   Step2, tmpvarの振る舞い...
 ;;   Step3, JIT-CompiledのArgsのテスト (axpy, symbolic meanで検証)
+;;   Aref ga buffer no toki overwrite???
 (defun jit (avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))
@@ -470,15 +471,14 @@ Options:
       ;; After applying memory-planner, it breaks write-must-be-exist-once rule of aIR graph
       ;; so you cannot verify the graph!
       (let* ((extracted-schedule (finalize-schedule polyhedron))
-	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
-	     (alias-map (apply-memory-planner (poly-pipeline polyhedron) avm r-graph :multiexpr multiexpr))
-	     (allocs (purge-allocations (poly-pipeline polyhedron) alias-map dynamic-shapes))
-	     ;; (extracted-schedule (finalize-schedule polyhedron))
-	     
+	     (r-graph (create-rendering-graph polyhedron extracted-schedule))	     
+	     (_ (apply-memory-planner (poly-pipeline polyhedron) avm r-graph :multiexpr multiexpr))
+	     (allocs (purge-allocations (poly-pipeline polyhedron) dynamic-shapes))
 	     (body (%render-body backend backend r-graph polyhedron 1))
 	     (function (%render-function backend avm allocs body))
 	     (function (%render-program-toplevel backend function))
 	     (f (%render-function-caller backend avm allocs function)))
+	(declare (ignore _))
 	(assert (functionp f) () "%render-function-caller should return a function!")
 	(when (>= debug 1)
 	  (format t "Compiled:~%~a" function))

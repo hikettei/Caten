@@ -77,26 +77,27 @@
 		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
 			 collect node))))
 
-(defun purge-allocations (pipeline alias-map dynamic-shapes &aux (allocs nil))
-  (declare (type hash-table pipeline alias-map))
+(defun alloc-args-p (node)
+  (and
+   (eql (node-type node) :Allocate)
+   (null (getattr node :_tmp))
+   (not (= (getattr node :nrank) 0))))
+
+(defun purge-allocations (pipeline dynamic-shapes &aux (allocs nil))
+  (declare (type hash-table pipeline))
   (maphash
    #'(lambda (k graph)
        (declare (ignore k))
        (setf (graph-nodes graph)
 	     (loop for node in (graph-nodes graph)
-		   if (and
-		       (eql (node-type node) :Allocate)
-		       (null (getattr node :_tmp))
-		       (not (= (getattr node :nrank) 0)))
+		   if (alloc-args-p node)
 		     do (push node allocs)
 		   else
 		     collect node)))
    pipeline)
-  (flet ((refalias (x) (or (gethash x alias-map) x)))
-    (mapc #'(lambda (n) (setf (node-writes n) (map 'list #'refalias (node-writes n)))) allocs)
-    (let ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
-	  (shapes (map 'list #'(lambda (x) (%alloc 0 nil nil :dtype caten/aasm:*default-uint* :id x)) dynamic-shapes)))
-      (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes)))))
+  (let ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
+	(shapes (map 'list #'(lambda (x) (%alloc 0 nil nil :dtype caten/aasm:*default-uint* :id x)) dynamic-shapes)))
+    (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes))))
 
 (defun get-subgraph-recursively (node graph dynamic-shapes dtype)
   (declare (type node node) (type graph graph))
