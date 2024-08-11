@@ -131,7 +131,6 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	(stash-map (make-hash-table :test #'eql))
 	(scalars (make-hash-table :test #'eql))
 	(stashed-graph (if multiexpr (apply-multiexpr-grouping pipeline) (make-hash-table)))
-	(remove-id-list)
 	(outputs-by-pipeline
 	  (loop for graph being the hash-values of pipeline
 		collect
@@ -158,6 +157,22 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 			     collect (make-buffer 0 nil nil (buffer-dtype rt) nil)
 			   else
 			     collect rt))))
+      ;; Minimizing the number of allocations by following the rule:
+      ;; 1. (car reads) becomes write, (except for %WHERE)
+      ;;  | -   A <- f(B, C, D)
+      ;;  | ->  B <- f(B, C, D)
+      ;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
+      ;;  | -   A1 <- f(A, B)
+      ;;  | -   A2 <- f(A, C)
+      ;;  | -   O1 <- f(A1, A2)
+      ;;   ->
+      ;;  | -   At1 <- f(A, B)
+      ;;  | -   At2 <- f(A, C)
+      ;;  | -   O1 <-  f(At1, At2)
+      ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
+      
+      
+      
       (loop for graph being the hash-values of pipeline
 	    for outputs in outputs-by-pipeline
 	    for count upfrom 0
@@ -215,15 +230,12 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 			  #'(lambda (aref)
 			      (setf (expr-x aref) (load-from-map (expr-x aref))))
 			  buffers))))))))
+      ;; Add declarations for tmpvar
       (let* ((allocs (map 'list #'(lambda (x) (make-node :Buffer :Allocate (list (car x)) nil :nrank 0 :dtype (cdr x) :_tmp t :_type_relay (make-buffer 0 nil nil (cdr x) nil))) allocs))
 	     (allocs (remove-duplicates allocs :key #'node-writes :test #'equal)))
 	(assert (null (gethash -1 pipeline)))
 	(setf (gethash -1 pipeline) (apply #'make-graph allocs)))
-      (maphash
-       #'(lambda (_ g)
-	   (declare (ignore _))
-	   (setf (graph-nodes g) (loop for n in (graph-nodes g) unless (find (node-id n) remove-id-list) collect n)))
-       pipeline)
+      ;; updating the variable ids
       (setf (avm-fw-outputs avm) (map 'list #'load-from-map (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'load-from-map (avm-bw-outputs avm)))
       (let ((new-id2tensor (make-hash-table)))

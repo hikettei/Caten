@@ -350,10 +350,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		for g in graphs
 		do (setf (gethash nth pipeline) g))
 	  ;; Creates the initial problem:
-	  (let* ((dynamic-shapes (avm-gather-args avm))
+	  (let* ((vm-inputs (avm-gather-args avm))
 		 (loop-size (loop for value being the hash-values of pipeline
 				  append (graph->loop-size value)))
-		 (dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@loop-size)))
+		 (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
 		 (domain       (render-domain pipeline :depends-on dynamic-shapes))
 		 (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
 		 (write-access (render-access :write pipeline :depends-on dynamic-shapes))
@@ -368,7 +368,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      (format t "== [Initial Scheduling domain (=domain)] ======")
 	      (format t "~%~a~%" schedule)
 	      (isl-schedule-dump schedule))
-	    (values (make-polyhedral avm pipeline domain read-access write-access schedule) dynamic-shapes)))))))
+	    (values (make-polyhedral avm pipeline domain read-access write-access schedule) vm-inputs)))))))
 
 (defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
   "
@@ -413,6 +413,10 @@ Options:
 ;;  FIX:  Bugs (more symbolic deps needed)
 ;;  ADD: METAL/OMP, parallelize dependencies analysis
 ;;  ADD: If/For Node in the early stage!!!!
+;; 正しいコンパイル:
+;;   Step1, Dynamic Shapeと入力変数のみを受け入れる
+;;   Step2, tmpvarの振る舞い...
+;;   Step3, JIT-CompiledのArgsのテスト (axpy, symbolic meanで検証)
 (defun jit (avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))

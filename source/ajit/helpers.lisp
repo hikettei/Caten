@@ -78,7 +78,8 @@
 	     (loop for node in (graph-nodes graph)
 		   if (and
 		       (eql (node-type node) :Allocate)
-		       (null (getattr node :_tmp)))
+		       (null (getattr node :_tmp))
+		       (not (= (getattr node :nrank) 0)))
 		     do (push node allocs)
 		   else
 		     collect node)))
