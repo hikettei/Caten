@@ -32,7 +32,18 @@
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (apply #'make-graph (append (list (r/funcall "T-1" nil)) (reverse new-graph)))))
+    ;;(apply #'make-graph (append (list (r/funcall "T-1" nil)) (reverse new-graph)))
+    (apply #'make-graph (reverse new-graph))))
+
+(defun expr-recursive-replace (expr map)
+  (declare (type expr) (type hash-table map))
+  (flet ((->new (x) (if (stringp x) (format nil "~a" (or (gethash (intern x) map) x)) x)))
+    (when (expr-p (expr-x expr))
+      (expr-recursive-replace (expr-x expr) map))
+    (when (expr-p (expr-y expr))
+      (expr-recursive-replace (expr-y expr) map))
+    (when (eql (expr-op expr) :Const)
+      (setf (expr-x expr) (->new (expr-x expr))))))
 
 ;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *allocated-aref* nil)

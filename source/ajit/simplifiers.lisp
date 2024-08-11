@@ -166,128 +166,149 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	     ;; JIT=0 JIT=1 でBackwardが同じかTestする
 	     ;; (!tan (!matmul ...))のScheduler修正
 	     (let ((fused-nodes (map 'list #'(lambda (x xt r) (create-multiexpr-node graph x xt (first r) (second r))) outputs out-types out-memory-ids)))
-	       (setf (gethash ts copied-graph) (copy-list (graph-nodes graph)))
-	       (setf (graph-nodes graph) fused-nodes)))))
+	       (setf (gethash ts copied-graph) (apply #'make-graph (copy-list fused-nodes)))))))
      pipeline)
     copied-graph))
 
-(defun apply-memory-planner (pipeline avm &key (multiexpr t))
-  "Applies the in-place mutation to the given graph."
-  (declare (type hash-table pipeline) (avm avm))
-  (let ((alias-map (make-hash-table :test #'eql))
-	(allocs)
-	(stash-map (make-hash-table :test #'eql))
-	(scalars (make-hash-table :test #'eql))
-	(stashed-graph (if multiexpr (apply-multiexpr-grouping pipeline) (make-hash-table)))
-	(outputs-by-pipeline
-	  (loop for graph being the hash-values of pipeline
-		collect
-		(remove-duplicates (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) (graph-seen graph)))))))
-    (labels ((alias (key value) (setf (gethash key alias-map) value))
-	     (read-tmp (val)
-	       (declare (type (or number symbol) val))
-	       (if (numberp val) val (or (gethash val stash-map) (load-from-map val))))
-	     (load-from-map (key) (or (gethash key alias-map) key))
-	     (alias-node (node)
-	       (alias (car (node-writes node)) (load-from-map (car (node-reads node)))))
-	     (update-tmp-type (node)
-	       (setf (relay-writes (read-type-relay node))
-		     (loop for wt in (relay-writes (read-type-relay node))
-			   for w in (node-writes node)
-			   if (gethash w stash-map)
-			     collect (make-buffer 0 nil nil (buffer-dtype wt) nil)
-			   else
-			     collect wt))
-	       (setf (relay-reads (read-type-relay node))
-		     (loop for rt in (relay-reads (read-type-relay node))
-			   for r in (node-reads node)
-			   if (gethash r stash-map)
-			     collect (make-buffer 0 nil nil (buffer-dtype rt) nil)
-			   else
-			     collect rt))))
-      ;; Minimizing the number of allocations by following the rule:
-      ;; 1. (car reads) becomes write, (except for %WHERE)
-      ;;  | -   A <- f(B, C, D)
-      ;;  | ->  B <- f(B, C, D)
-      ;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
-      ;;  | -   A1 <- f(A, B)
-      ;;  | -   A2 <- f(A, C)
-      ;;  | -   O1 <- f(A1, A2)
-      ;;   ->
-      ;;  | -   At1 <- f(A, B)
-      ;;  | -   At2 <- f(A, C)
-      ;;  | -   O1 <-  f(At1, At2)
-      ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
-      
-      ;; TestCase1. (caten (!mean (make-tensor `(a b c)) :axis t))
-      ;; TestCase2. (caten (!tan (make-tensor `(10 10))))
-      ;; TestCase3. (let ((*external-simplifiers* nil)) (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32)))) (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20)))))
-      ;; TestCase4. (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb))))
-      ;; ここで・・・Viewの計算に使われている計算グラフがScheduleに割り込まれない
-      (when nil
-      (loop for graph being the hash-values of pipeline
-	    for outputs in outputs-by-pipeline
-	    for count upfrom 0
-	    for copied-graph = (apply #'make-graph (copy-list (graph-nodes graph))) do
-	      (dolist (node `(,@(gethash count stashed-graph) ,@(graph-nodes graph)))
-		(loop for buffer in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
-		      if buffer do
-			;; required info to render the buffer is: stride, from, by. updating them:
-			(setf (buffer-stride buffer) (map 'list (compose #'load-from-map #'reveal-buffer) (buffer-stride buffer))
-			      (buffer-views buffer)
-			      (loop for v in (buffer-views buffer)
-				    if v
-				      collect
-				      (flet ((f (x) (load-from-map (reveal-buffer x))))
-					`(,(f (nth 0 v)) ,(f (nth 1 v)) ,(f (nth 2 v)) ,(nth 3 v)))
-				    else
-				      collect v)))
+(defun create-alias-map (pipeline pipeline-ids alloc-ids)
+  "Creates a hash-table if (car reads) becomes write rule is applied."
+  (declare (type hash-table pipeline))
+  (let ((table (make-hash-table)))
+    (labels ((load-from-map (x) (or (gethash x table) x))
+	     (alias (k v) (setf (gethash k table) (load-from-map v))))
+      (loop for key in `(,@alloc-ids ,@pipeline-ids)
+	    for graph = (gethash key pipeline) do
+	      (loop for node in (graph-nodes graph) do
 		(case (node-type node)
-		  (:Allocate nil)
-		  (:WHERE
-		   (let* ((base-write (car (node-writes node)))
-			  (create-tmpvar-p (null (find base-write outputs)))
-			  (writes (if create-tmpvar-p
-				      (list (intern (format nil "_val_~a_~a" count (length (hash-table-keys stash-map)))))
-				      (list (load-from-map (second (node-reads node))))))
-			  (reads  (map 'list #'read-tmp (node-reads node))))
-		     (when create-tmpvar-p
-		       (push (cons (car writes) (buffer-dtype (car (relay-writes (read-type-relay node))))) allocs)
-		       (setf (gethash base-write stash-map) (car writes)))
-		     (alias (car (node-writes node)) (second (node-reads node)))
-		     (update-tmp-type node)
-		     (setf (node-writes node) writes
-			   (node-reads node) reads)))
+		  ;; whichth args to write the result?
+		  (:ALLOCATE (alias (car (node-writes node)) (car (node-writes node))))
+		  (:WHERE    (alias (car (node-writes node)) (second (node-reads node))))
+		  (otherwise (alias (car (node-writes node)) (car (node-reads node))))))))
+    table))
+
+(defun create-ref-count (pipeline pipeline-ids alloc-ids)
+  (let ((refcount (make-hash-table)))
+    (labels ((c (x)
+	       (if (null (gethash x refcount))
+		   (setf (gethash x refcount) 0)
+		   (incf (gethash x refcount)))))
+      (loop for key in `(,@alloc-ids ,@pipeline-ids)
+	    for graph = (gethash key pipeline) do
+	      (loop for node in (graph-nodes graph) do
+		(case (node-type node)
+		  (:ALLOCATE nil)
 		  (otherwise
-		   (when (>= (length (node-writes node)) 1)
-		     (assert (= (length (node-writes node)) 1) () "Currently, caten/ajit only supports (length node-writes) == 1.")
-		     (let* ((base-write (car (node-writes node)))
-			    (create-tmpvar-p (null (find base-write outputs)))
-			    (writes (if create-tmpvar-p
-					(list (intern (format nil "_val_~a_~a" count (length (hash-table-keys stash-map)))))
-					(list (load-from-map (car (node-reads node))))))
-			    (reads (map 'list #'read-tmp (node-reads node))))
-		       (when create-tmpvar-p
-			 (push (cons (car writes) (buffer-dtype (car (relay-writes (read-type-relay node))))) allocs)
-			 (setf (gethash base-write stash-map) (car writes)))
-		       (alias-node node)
-		       (update-tmp-type node)
-		       (setf (node-writes node) writes
-			     (node-reads node) reads))
-		     (when (eql (node-type node) :EXPR)
-		       ;; update inner exprs
-		       (let ((buffers (getattr node :buffers)))
-			 (assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
-			 (mapc
-			  #'(lambda (aref)
-			      (setf (expr-x aref) (load-from-map (expr-x aref))))
-			  buffers)))))))))
-      ;; Add declarations for tmpvar
-      (let* ((allocs (map 'list #'(lambda (x) (make-node :Buffer :Allocate (list (car x)) nil :nrank 0 :dtype (cdr x) :_tmp t :_type_relay (make-buffer 0 nil nil (cdr x) nil))) allocs))
-	     (allocs (remove-duplicates allocs :key #'node-writes :test #'equal)))
-	(assert (null (gethash -1 pipeline)))
-	(setf (gethash -1 pipeline) (apply #'make-graph allocs)))
-      ;; updating the variable ids
+		   (map 'list #'c (node-reads node)))))))
+    refcount))
+
+(defun alias/update-node (node alias)
+  (declare (type node node))
+  (flet ((ref (x) (if (symbolp x) (or (gethash x alias) x) x)))
+    (when (eql (node-type node) :EXPR)
+      (let ((buffers (getattr node :buffers)))
+	(assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
+	(mapc
+	 #'(lambda (aref)
+	     (setf (expr-x aref) (ref (expr-x aref))))
+	 buffers)))
+;;    (assert (null (getattr node :_reads)))
+;;    (assert (null (getattr node :_writes)))
+    (setf (getattr node :_loop_bound_nodes) (map 'list #'ref (getattr node :_loop_bound_nodes))
+	  (getattr node :_reads)  (node-reads node)
+	  (getattr node :_writes) (node-writes node)
+	  (node-reads node) (map 'list #'ref (node-reads node))
+	  (node-writes node) (map 'list #'ref (node-writes node)))))
+
+(defun create-multiexpr-grouped-pipeline (pipeline pipeline-ids alloc-ids &key (multiexpr t))
+  (let ((alias-map (create-alias-map pipeline pipeline-ids alloc-ids))
+	(out-pipeline (make-hash-table))
+	(new-pipeline (if multiexpr (apply-multiexpr-grouping pipeline) pipeline)))
+    (loop for key being the hash-keys of pipeline
+	  for graph = (gethash key pipeline)
+	  for multi = (gethash key new-pipeline)
+	  if multi do
+	    (map 'list #'(lambda (x) (alias/update-node x alias-map)) (graph-nodes multi))
+	    (setf (gethash key out-pipeline) multi)
+	  else do
+	    (map 'list #'(lambda (x) (alias/update-node x alias-map)) (graph-nodes graph))
+	    (setf (gethash key out-pipeline) graph))
+    (maphash
+     #'(lambda (k _)
+	 (declare (ignore _))
+	 (setf (gethash k pipeline) (gethash k out-pipeline)))
+     pipeline)
+    alias-map))
+
+(defun apply-memory-planner (pipeline avm schedule-graph &key (multiexpr t))
+  (declare (type hash-table pipeline) (avm avm))
+  ;; Rewriting like:
+  ;; LOAD
+  ;; ... OP
+  ;; STORE
+  (let* ((pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
+	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
+	 (alias-map (create-multiexpr-grouped-pipeline pipeline pipeline-ids alloc-ids :multiexpr multiexpr))
+	 (refcount (create-ref-count pipeline pipeline-ids alloc-ids))
+	 (tmpvar-table (make-hash-table)))
+    ;; Minimizing the number of allocations by following the rule:
+    ;; 1. (car reads) becomes write, (except for %WHERE)
+    ;;  | -   A <- f(B, C, D)
+    ;;  | ->  B <- f(B, C, D)
+    ;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
+    ;;  | -   A1 <- f(A, B)
+    ;;  | -   A2 <- f(A, C)
+    ;;  | -   O1 <- f(A1, A2)
+    ;;   ->
+    ;;  | -   At1 <- f(A, B)
+    ;;  | -   At2 <- f(A, C)
+    ;;  | -   O1 <-  f(At1, At2)
+    ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
+    ;; TestCase1. (caten (!mean (make-tensor `(a b c)) :axis t))
+    ;; TestCase2. (caten (!tan (make-tensor `(10 10))))
+    ;; TestCase3. (let ((*external-simplifiers* nil)) (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32)))) (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20)))))
+    ;; TestCase4. (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb))))
+    ;; aref no accessing ga update sarete nai!!
+    (labels ((refcount (x) (or (gethash x refcount) 0))
+	     (no-alias-p (x) (<= (refcount x) 2))
+	     (maybe-tmp (x default) (or (gethash x tmpvar-table) default))
+	     (->scalar (x) (make-buffer 0 nil nil (buffer-dtype x) nil))
+	     (->alloc (name type)
+	       (make-node :Buffer :Allocate (list name) nil :nrank 0
+			  :dtype (buffer-dtype (car (relay-writes type))) :_tmp t
+			  :_type_relay (make-inferred-type (list (->scalar (car (relay-writes type)))) nil)))
+	     (->store (tgt load-what type)
+	       (make-node :Buffer :Load (list tgt) (list tgt) :value load-what
+			  :_type_relay (make-inferred-type (list (car (relay-writes type))) (list (car (relay-writes type))))))
+	     (updt-tmp (node type r-old)
+	       (setf
+		(relay-reads type) (map 'list #'(lambda (x y) (if (gethash x tmpvar-table) (->scalar y) y)) r-old (relay-reads type))
+		(node-reads node) (map 'list #'maybe-tmp r-old (node-reads node)))))
+      (loop for key in `(,@alloc-ids ,@pipeline-ids)
+	    for graph = (gethash key pipeline) do
+	      (let ((allocs) (stores (make-hash-table)))
+		(loop for node in (graph-nodes graph)
+		      for type = (read-type-relay node)
+		      for old-reads  = (getattr node :_reads)
+		      for old-writes = (getattr node :_writes)
+		      unless (eql (node-type node) :Allocate) do
+			(when (not (no-alias-p (car (node-writes node))))
+			  ;; Create a new tmpvar:
+			  (let ((tmpvar-name (intern (format nil "_~(~a~)" (car old-writes)))))
+			    (push (->alloc tmpvar-name type) allocs)
+			    (setf (gethash (car (node-writes node)) stores)
+				  (->store (car (node-writes node)) tmpvar-name type))				  
+			    (setf (gethash (car old-writes) tmpvar-table) tmpvar-name
+				  (car (node-writes node)) tmpvar-name
+				  (car (relay-writes type)) (->scalar (car (relay-writes type))))))
+			(updt-tmp node type old-reads))
+		(setf (graph-nodes graph) (append (reverse allocs) (graph-nodes graph) (hash-table-values stores)))
+		;; Tmpvar cannot be used across the different timestamp
+		(setf tmpvar-table (make-hash-table)))))
+    (flet ((load-from-map (x) (or (gethash x alias-map) x)))
+      (loop for g in (graph-nodes schedule-graph)
+	    if (eql (node-type g) :FOR) do
+	      (let ((below (getattr g :below)))
+		(expr-recursive-replace below alias-map)))
       (setf (avm-fw-outputs avm) (map 'list #'load-from-map (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'load-from-map (avm-bw-outputs avm)))
       (let ((new-id2tensor (make-hash-table)))
@@ -302,4 +323,4 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	     (setf (gethash (load-from-map k) new-variables) v))
 	 (avm-variables avm))
 	(setf (avm-variables avm) new-variables)))
-    scalars))
+    (make-hash-table)))

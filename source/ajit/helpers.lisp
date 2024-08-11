@@ -124,7 +124,7 @@ Graph must be verified in advance."
     ;; Shape, Stride, and Views
     (let* ((shape (buffer-shape buffer))
 	   (stride (buffer-stride buffer))
-	   (views (apply #'append (map 'list #'(lambda (x) (and x (subseq x 0 3))) (buffer-views buffer)))))
+	   (views (apply #'append (map 'list #'(lambda (x) (and x (not (fourth x)) (subseq x 0 3))) (buffer-views buffer)))))
       (loop for s1 in `(,@shape ,@stride ,@views)
 	    for s = (reveal-buffer s1)
 	    if (and (symbolp s) s) collect s))))

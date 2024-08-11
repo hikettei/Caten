@@ -469,10 +469,12 @@ Options:
       ;; Minimizing the number of allocation by creating an alias
       ;; After applying memory-planner, it breaks write-must-be-exist-once rule of aIR graph
       ;; so you cannot verify the graph!
-      (let* ((alias-map (apply-memory-planner (poly-pipeline polyhedron) avm :multiexpr multiexpr))
-	     (allocs (purge-allocations (poly-pipeline polyhedron) alias-map dynamic-shapes))
-	     (extracted-schedule (finalize-schedule polyhedron))
+      (let* ((extracted-schedule (finalize-schedule polyhedron))
 	     (r-graph (create-rendering-graph polyhedron extracted-schedule))
+	     (alias-map (apply-memory-planner (poly-pipeline polyhedron) avm r-graph :multiexpr multiexpr))
+	     (allocs (purge-allocations (poly-pipeline polyhedron) alias-map dynamic-shapes))
+	     ;; (extracted-schedule (finalize-schedule polyhedron))
+	     
 	     (body (%render-body backend backend r-graph polyhedron 1))
 	     (function (%render-function backend avm allocs body))
 	     (function (%render-program-toplevel backend function))
