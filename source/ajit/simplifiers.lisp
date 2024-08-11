@@ -60,7 +60,6 @@
 ;; Under the step2, some nodes have the following attributes:
 ;; - :_loop_bound_nodes      : a list of nodes used to compute the bound
 ;; - :_loop_bound_nodes_type : types for _loop_bound_types
-;; WIP: AJIT全てのnode-readsを書き換える必要は？
 (defun get-parent-nodes (node graph)
   (declare (type node node) (type graph graph))
   (append
@@ -145,26 +144,6 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 				(= (length (node-reads x)) 2)
 				t)))
 		   (graph-nodes graph)))
-	     ;; TODO: View計算もExprに含めたい
-	     ;; 今やってないこと:
-	     ;; apply-multiexpr-grouping無しでも動作するべき (:MULTIEXPR=1, CI Testに含める)
-	     ;; Backward?
-	     ;; RendererをRefactorする。aRI GraphのRenderingを廃止する？
-	     ;; MULTIEXPR=0でテストを通すべきだと思う
-	     ;; TODO: Ternary Ops %where
-	     ;; 一時領域の判定ができると思う = (Allocationに宣言されてないUndefined Variable)
-	     ;; Pipelineを跨いでWriteに依存はない？
-	     ;; Esp: when creating backwards
-	     ;; Write-toのUpdateがおかしい
-	     ;; やること
-	     ;; 1. Tanを動かす (ok ) -> Undefined-Varの処理を追加 (ok)
-	     ;; 2. In-place-mutationをapply-memory-plannerにする (ok)
-	     ;; 3. MULTIEXPR=1 or 0をCIに含める (no)
-	     ;; 4. JIT-Compilation Backwardを実装
-	     ;; 5. ^ 途中でMoveが含まれる時，うまく分割する
-	     ;; Backward実装したら，int xxx = x[...];を実装
-	     ;; JIT=0 JIT=1 でBackwardが同じかTestする
-	     ;; (!tan (!matmul ...))のScheduler修正
 	     (let ((fused-nodes (map 'list #'(lambda (x xt r) (create-multiexpr-node graph x xt (first r) (second r))) outputs out-types out-memory-ids)))
 	       (setf (gethash ts copied-graph) (apply #'make-graph (copy-list fused-nodes)))))))
      pipeline)
@@ -186,19 +165,18 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		  (otherwise (alias (car (node-writes node)) (car (node-reads node))))))))
     table))
 
-(defun create-ref-count (pipeline pipeline-ids alloc-ids)
+(defun create-ref-count (pipeline nth)
   (let ((refcount (make-hash-table)))
     (labels ((c (x)
 	       (if (null (gethash x refcount))
 		   (setf (gethash x refcount) 0)
 		   (incf (gethash x refcount)))))
-      (loop for key in `(,@alloc-ids ,@pipeline-ids)
-	    for graph = (gethash key pipeline) do
-	      (loop for node in (graph-nodes graph) do
-		(case (node-type node)
-		  (:ALLOCATE nil)
-		  (otherwise
-		   (map 'list #'c (node-reads node)))))))
+      (loop with graph = (gethash nth pipeline)
+	    for node in (graph-nodes graph) do
+	      (case (node-type node)
+		(:ALLOCATE nil)
+		(otherwise
+		 (map 'list #'c (node-reads node))))))
     refcount))
 
 (defun alias/update-node (node alias)
@@ -211,8 +189,8 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	 #'(lambda (aref)
 	     (setf (expr-x aref) (ref (expr-x aref))))
 	 buffers)))
-;;    (assert (null (getattr node :_reads)))
-;;    (assert (null (getattr node :_writes)))
+    ;;(assert (null (getattr node :_reads)))
+    ;;(assert (null (getattr node :_writes)))
     (setf (getattr node :_loop_bound_nodes) (map 'list #'ref (getattr node :_loop_bound_nodes))
 	  (getattr node :_reads)  (node-reads node)
 	  (getattr node :_writes) (node-writes node)
@@ -244,7 +222,6 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
   (let* ((pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
 	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
 	 (alias-map (create-multiexpr-grouped-pipeline pipeline pipeline-ids alloc-ids :multiexpr multiexpr))
-	 (refcount (create-ref-count pipeline pipeline-ids alloc-ids))
 	 (tmpvar-table (make-hash-table))
 	 (t-1 (make-graph)))
     ;; Minimizing the number of allocations by following the rule:
@@ -264,39 +241,39 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
     ;; TestCase2. (caten (!tan (make-tensor `(10 10))))
     ;; TestCase3. (let ((*external-simplifiers* nil)) (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32)))) (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20)))))
     ;; TestCase4. (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb))))
-    ;; aref no accessing ga update sarete nai!!
-    (labels ((refcount (x) (or (gethash x refcount) 0))
-	     (no-alias-p (x) (<= (refcount x) 2))
-	     (maybe-tmp (x default) (or (gethash x tmpvar-table) default))
-	     (maybe-tmp1 (x &aux (x (reveal-buffer x)))
-	       (let ((aliased (gethash x alias-map x)))
-		 (maybe-tmp aliased aliased)))
-	     (->scalar (x) (make-buffer 0 nil nil (buffer-dtype x) nil))
-	     (->alloc (name type)
-	       (make-node :Buffer :Allocate (list name) nil :nrank 0
-			  :dtype (buffer-dtype (car (relay-writes type))) :_tmp t
-			  :_type_relay (make-inferred-type (list (->scalar (car (relay-writes type)))) nil)))
-	     (->store (tgt load-what type)
-	       (make-node :Buffer :Load (list tgt) (list tgt) :value load-what
-			  :_type_relay (make-inferred-type (list (car (relay-writes type))) (list (car (relay-writes type))))))
-	     (update-buffer (buffer)
-	       (setf (buffer-shape buffer) (map 'list #'maybe-tmp1 (buffer-shape buffer))
-		     (buffer-stride buffer) (map 'list #'maybe-tmp1 (buffer-stride buffer))
-		     (buffer-views buffer)
-		     (loop for v in (buffer-views buffer)
-			   if v
-			     collect (list (maybe-tmp1 (nth 0 v)) (maybe-tmp1 (nth 1 v)) (maybe-tmp1 (nth 2 v)) (nth 3 v))
-			   else
-			     collect v)))
-	     (update-relay-reference(type)
-	       (mapc #'update-buffer (relay-writes type))
-	       (mapc #'update-buffer (relay-reads type)))	       
-	     (updt-tmp (node type r-old)
-	       (setf
-		(relay-reads type) (map 'list #'(lambda (x y) (if (gethash x tmpvar-table) (->scalar y) y)) r-old (relay-reads type))
-		(node-reads node) (map 'list #'maybe-tmp r-old (node-reads node)))))
-      (loop for key in `(,@alloc-ids ,@pipeline-ids)
-	    for graph = (gethash key pipeline) do
+    (loop for key in `(,@alloc-ids ,@pipeline-ids)
+	  for refcount = (create-ref-count pipeline key)
+	  for graph = (gethash key pipeline) do
+	    (labels ((refcount (x) (or (gethash x refcount) 0))
+		     (no-alias-p (x) (<= (refcount x) 2))
+		     (maybe-tmp (x default) (or (gethash x tmpvar-table) default))
+		     (maybe-tmp1 (x &aux (x (reveal-buffer x)))
+		       (let ((aliased (gethash x alias-map x)))
+			 (maybe-tmp aliased aliased)))
+		     (->scalar (x) (make-buffer 0 nil nil (buffer-dtype x) nil))
+		     (->alloc (name type)
+		       (make-node :Buffer :Allocate (list name) nil :nrank 0
+				  :dtype (buffer-dtype (car (relay-writes type))) :_tmp t
+				  :_type_relay (make-inferred-type (list (->scalar (car (relay-writes type)))) nil)))
+		     (->store (tgt load-what type)
+		       (make-node :Buffer :Load (list tgt) (list tgt) :value load-what
+				  :_type_relay (make-inferred-type (list (car (relay-writes type))) (list (car (relay-writes type))))))
+		     (update-buffer (buffer)
+		       (setf (buffer-shape buffer) (map 'list #'maybe-tmp1 (buffer-shape buffer))
+			     (buffer-stride buffer) (map 'list #'maybe-tmp1 (buffer-stride buffer))
+			     (buffer-views buffer)
+			     (loop for v in (buffer-views buffer)
+				   if v
+				     collect (list (maybe-tmp1 (nth 0 v)) (maybe-tmp1 (nth 1 v)) (maybe-tmp1 (nth 2 v)) (nth 3 v))
+				   else
+				     collect v)))
+		     (update-relay-reference(type)
+		       (mapc #'update-buffer (relay-writes type))
+		       (mapc #'update-buffer (relay-reads type)))	       
+		     (updt-tmp (node type r-old)
+		       (setf
+			(relay-reads type) (map 'list #'(lambda (x y) (if (gethash x tmpvar-table) (->scalar y) y)) r-old (relay-reads type))
+			(node-reads node) (map 'list #'maybe-tmp r-old (node-reads node)))))
 	      (let ((allocs) (stores (make-hash-table)))
 		(loop for node in (graph-nodes graph)
 		      for type = (read-type-relay node)
