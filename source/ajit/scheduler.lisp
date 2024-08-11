@@ -440,26 +440,27 @@ Options:
 ;;   Step2, tmpvarの振る舞い...
 ;;   Step3, JIT-CompiledのArgsのテスト (axpy, symbolic meanで検証)
 ;;   Aref ga buffer no toki overwrite???
-	     ;; TODO: View計算もExprに含めたい (OK)
-	     ;; 今やってないこと:
-	     ;; apply-multiexpr-grouping無しでも動作するべき (:MULTIEXPR=1, CI Testに含める)
-	     ;; Backward?
-	     ;; RendererをRefactorする。aRI GraphのRenderingを廃止する？
-	     ;; MULTIEXPR=0でテストを通すべきだと思う
-	     ;; TODO: Ternary Ops %where
-	     ;; 一時領域の判定ができると思う = (Allocationに宣言されてないUndefined Variable)
-	     ;; Pipelineを跨いでWriteに依存はない？
-	     ;; Esp: when creating backwards
-	     ;; Write-toのUpdateがおかしい
-	     ;; やること
-	     ;; 1. Tanを動かす (ok ) -> Undefined-Varの処理を追加 (ok)
-	     ;; 2. In-place-mutationをapply-memory-plannerにする (ok)
-	     ;; 3. MULTIEXPR=1 or 0をCIに含める (no)
-	     ;; 4. JIT-Compilation Backwardを実装
-	     ;; 5. ^ 途中でMoveが含まれる時，うまく分割する
-	     ;; Backward実装したら，int xxx = x[...];を実装
-	     ;; JIT=0 JIT=1 でBackwardが同じかTestする
-	     ;; (!tan (!matmul ...))のScheduler修正
+;; TODO: View計算もExprに含めたい (OK)
+;; 今やってないこと:
+;; apply-multiexpr-grouping無しでも動作するべき (:MULTIEXPR=1, CI Testに含める)
+;; Backward?
+;; RendererをRefactorする。aRI GraphのRenderingを廃止する？
+;; MULTIEXPR=0でテストを通すべきだと思う
+;; TODO: Ternary Ops %where
+;; 一時領域の判定ができると思う = (Allocationに宣言されてないUndefined Variable)
+;; Pipelineを跨いでWriteに依存はない？
+;; Esp: when creating backwards
+;; Write-toのUpdateがおかしい
+;; やること
+;; 1. Tanを動かす (ok ) -> Undefined-Varの処理を追加 (ok)
+;; 2. In-place-mutationをapply-memory-plannerにする (ok)
+;; 3. MULTIEXPR=1 or 0をCIに含める (no)
+;; 4. JIT-Compilation Backwardを実装
+;; 5. ^ 途中でMoveが含まれる時，うまく分割する
+;; Backward実装したら，int xxx = x[...];を実装
+;; JIT=0 JIT=1 でBackwardが同じかTestする
+;; (!tan (!matmul ...))のScheduler修正
+;; Step1 ~ 4をテストに含める
 (defun jit (avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))
@@ -506,7 +507,12 @@ Options:
 	;; (isl-free-ctx )
 	;; TODO: Further Simplificatin, tracing the avm, generate the C-exported VM
 	;; Keep the consistency: JIT(JIT(model))
-	(let* ((subgraph (apply #'append (map 'list #'(lambda (x) (get-subgraph-recursively x (avm-graph base-avm) dynamic-shapes (getattr x :dtype))) allocs)))
+	(let* ((subgraph
+		 (apply #'append
+			(map 'list
+			     #'(lambda (x &aux (x-in-base (or (id->value (avm-graph base-avm) (car (node-writes x))) x)))
+				 (get-subgraph-recursively x-in-base (avm-graph base-avm) dynamic-shapes (getattr x :dtype)))
+			     allocs)))
 	       (new-graph (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f function backend))))))
 	  ;;(fold-constant new-graph)
 	  ;; TODO: Tracing the jit-compiled AVM (including IfNode/MapNode etc)

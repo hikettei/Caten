@@ -241,10 +241,6 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
     ;;  | -   At2 <- f(A, C)
     ;;  | -   O1 <-  f(At1, At2)
     ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
-    ;; TestCase1. (caten (!mean (make-tensor `(a b c)) :axis t))
-    ;; TestCase2. (caten (!tan (make-tensor `(10 10))))
-    ;; TestCase3. (let ((*external-simplifiers* nil)) (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32)))) (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20)))))
-    ;; TestCase4. (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb))))
     (loop for key in `(,@alloc-ids ,@pipeline-ids)
 	  for refcount = (create-ref-count pipeline key)
 	  for graph = (gethash key pipeline) do
