@@ -53,6 +53,8 @@
 ;; - 3.
 
 #+(or)(progn
+(caten (!sin (!matmul (make-tensor `(10 20)) (make-tensor `(20 30)))))
+(caten (!matmul (make-tensor `(10 20)) (make-tensor `(20 30))))
 (caten (!softmax (make-tensor `(10 10) :initial-element 1.0)))
 (caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0))))
 (caten (!matmul (make-tensor `(128 32)) (!matmul (make-tensor `(32 64)) (make-tensor `(64 128)))))

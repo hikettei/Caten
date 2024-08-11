@@ -178,10 +178,13 @@ for (int c0 = 0; c0 < a; c0 += 1)
 "
   (declare (type polyhedral polyhedral))
   (macrolet ((set-option (name level)
-	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
+	       `(progn
+		  ;;(format t "~a = ~a~%" ,name (foreign-funcall ,(format nil "isl_options_get_~(~a~)" name) :pointer (isl-ctx-ptr *isl-context*) :int))
+		  (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
 				 :pointer (isl-ctx-ptr *isl-context*)
 				 :int ,level
-				 :void)))
+				 :void))))
+    ;;(set-option "schedule_treat_coalescing" 1)
     (when serialize (set-option "schedule_serialize_sccs" 1)))
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr) (schedule schedule)) polyhedral
     (let* ((constraints (poly/make-constraints polyhedral))

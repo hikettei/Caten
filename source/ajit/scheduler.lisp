@@ -25,21 +25,19 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   ;; either of buffers are scalar -> merge them
   (symbol-macrolet ((->ok (return-from buffer-intersect-p t))
 		    (->ng (return-from buffer-intersect-p nil)))
-    ;; Either of args is a scalar -> merge them
     (when (or (= (buffer-nrank a) 0) (= 0 (buffer-nrank b)))->ok)
     ;; Contiguous and the same-shaped buffer -> merge them
     (when (and
-	   (every #'null (buffer-views a))
-	   (every #'null (buffer-views b))
-	   (equal (buffer-shape a) (buffer-shape b)))
+           (every #'null (buffer-views a))
+           (every #'null (buffer-views b))
+           (equal (buffer-shape a) (buffer-shape b)))
       ->ok)
     ;; They still have a chance to be merged by the polyhedral compiler.
     ->ng))
 
 (defun recursive-find-group (avm scheduled-items &key (seen nil))
   "Return -> (list scheduled-items ...)"
-  (declare (type avm avm)
-	   (type scheduled-items scheduled-items))
+  (declare (type avm avm) (type scheduled-items scheduled-items))
   (flet ((explore (x) (when x (recursive-find-group avm x :seen seen)))
 	 (mergeable-p (x latest x-type) (or (numberp x) (and (not (eql (node-type (id->value (avm-graph avm) x)) :Allocate)) (buffer-intersect-p latest x-type)))))
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
@@ -110,11 +108,17 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (let* ((buffers (loop for b in buffers
 			if (= (buffer-nrank b) nrank)
 			  collect b))
-	 (shapes (map 'list #'(lambda (x) (nth dim (buffer-shape x))) buffers)))
+	 (shapes
+	   (map 'list #'(lambda (x &aux (v (nth dim (buffer-views x))))
+			  (if (and v (fourth v))
+			      1
+			      (nth dim (buffer-shape x))))
+		buffers)))
     (reveal-buffer
      (or
       (when (every #'numberp shapes) (apply #'max shapes))
       (when (every #'(lambda (x) (eql x 1)) shapes) 1)
+      (when (some #'(lambda (x) (eql x 1)) shapes) (find 1 shapes :test-not #'eql))
       (car shapes)))))
 ;; TODO: Flatten the loop if the access pattern is contiguous
 (defun schedule->submodule (sched &aux (nrank 0) (args nil) (deps (schedule-depends-on sched)))
