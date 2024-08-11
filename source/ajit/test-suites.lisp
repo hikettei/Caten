@@ -51,6 +51,16 @@
 ;; - 1. 最初のSchedulingアルゴリズムを見直す: (recip(x)はmulと同じようにScheduleされるべき)
 ;; - 2. ノードを跨いで依存がある時は"Compilerが"一次領域を作成する
 ;; - 3.
+
+#+(or)(progn
+(caten (!softmax (make-tensor `(10 10) :initial-element 1.0)))
+(caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0))))
+(caten (!matmul (make-tensor `(128 32)) (!matmul (make-tensor `(32 64)) (make-tensor `(64 128)))))
+(caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb))))
+(caten (!mean (make-tensor `(a b c))))
+(caten (!tan (make-tensor `(10 10))))
+(let ((*external-simplifiers* nil)) (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32)))) (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20))))))
+
 (deftest in-place-test
   (let* ((a (make-tensor `(10 10) :initial-element 1.0))
 	 (b (!exp a))
