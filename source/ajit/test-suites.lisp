@@ -43,6 +43,26 @@
 ;; TODO: Compilerのレベルで作業したくない， CopyNodeとIn-Place Mutationを実装する
 ;; Symbolic動かすには？？？
 ;; DIVが一つのKernelにFuseされないと困るのでは・・・
+;; Softmax: needs to be fused into a single kernel.
+;; Softmax/Upfromが動かない理由は同じ(In-placeの区別がない)
+;; In-place-test
+
+;; Here's TODO List
+;; - 1. 最初のSchedulingアルゴリズムを見直す: (recip(x)はmulと同じようにScheduleされるべき)
+;; - 2. ノードを跨いで依存がある時は"Compilerが"一次領域を作成する
+;; - 3.
+(deftest in-place-test
+  (let* ((a (make-tensor `(10 10) :initial-element 1.0))
+	 (b (!exp a))
+	 (c (!div a b)))
+    ;; 同一のKernelにScheduleされる Or Copyを作成する必要がある
+    (caten c))
+
+  ;; Softmaxは同一のKernelにScheduleされるべき
+  (!softmax (make-tensor `(3 3)))
+  
+  )
+;; tensor-viewded-tensor-testはどうしようか
 (deftest tensor-viewed-tensor-test
   (testing "Upfrom"
     (let* ((v1 (!add (iconst 'a) (iconst 'a)))
