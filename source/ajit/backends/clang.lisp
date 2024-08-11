@@ -65,6 +65,14 @@ Compiled with: ~a"
 		       append `(:pointer ,(car (node-writes node))))
 	     :void)))))))
 
+(defun render-to-c (obj)
+  (let ((obj (format nil "~(~a~)" obj)))
+    (if (string= obj "t")
+	"1"
+	(if (string= obj "nil")
+	    "0"
+	    obj))))
+
 (defmethod %render-program-toplevel ((lang (eql :clang)) body)
   (format nil "~%#include <math.h>
 #include <stdint.h>
@@ -89,8 +97,15 @@ Compiled with: ~a"
 				       ""
 				       "*")
 				   (car (node-writes node)))
-			   ", ")))))))
-    (format nil "~a;~%~a {~%~a}" header header body)))	  
+			   ", "))))))
+	(shapes
+	  (format nil "/*~%Arrays:~%~a*/~%"
+		  (with-output-to-string (out)
+		    (loop for node in allocs
+			  for nrank = (getattr node :nrank)
+			  do (format out "  - ~a[~(~a~)]: ~a~%" (car (node-writes node)) (getattr node :dtype) (subseq (node-reads node) 0 nrank)))))))
+		  
+    (format nil "~a~a;~%~a {~%~a}" shapes header header body)))	  
 
 (macrolet ((unary (name render)
 	     `(defmethod %render-expr ((lang (eql :clang)) (op (eql ,name)) lhs rhs)
@@ -106,7 +121,7 @@ Compiled with: ~a"
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :Const)) lhs rhs)
   (assert (or (stringp lhs) (symbolp lhs) (numberp lhs)))
   (assert (null rhs))
-  (format nil "~(~a~)" lhs))
+  (format nil "~(~a~)" (render-to-c lhs)))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :MAX)) lhs rhs)
   (assert (and lhs rhs))
@@ -137,7 +152,7 @@ Compiled with: ~a"
 	  (ecase op
 	    (:+ :+) (:- :-) (:* :*) (:/ :/)
 	    (:ADD :+) (:MUL :*)
-	    (:AND :&&) (:OR "||") (:MOVE "=")
+	    (:AND :&&) (:OR "||")
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
@@ -256,7 +271,7 @@ Compiled with: ~a"
 					append (list (format nil "~a" x) "*")))))))))
 		  (:LOAD
 		   (let ((value (getattr node :value)))
-		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) value)))
+		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) (render-to-c value))))
 		  (:WMMA
 		   (multiple-value-bind (c a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (ct at bt) (apply #'values (relay-reads type))
@@ -268,6 +283,7 @@ Compiled with: ~a"
 		   (multiple-value-bind (a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (at bt) (apply #'values (relay-reads type))
 		       (when (not (equal a b))
+			 ;; TODO: Fix the defintion: a = b
 			 (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref b bt))))))
 		  (:MOVE
 		   (multiple-value-bind (a b) (apply #'values (node-reads node))

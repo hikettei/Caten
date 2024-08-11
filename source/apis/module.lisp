@@ -222,3 +222,7 @@ The provided form does not match any of them:~%~a" method method method method f
 	   ;; temporary
 	   (!neg (!neg x))))
 
+(defun !softmax (x &aux (axis -1))
+  (let ((x1 (!exp x)))
+    (!div x1 (!sum x1 :axis axis :keepdims t))))
+

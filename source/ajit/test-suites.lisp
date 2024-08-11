@@ -31,5 +31,35 @@
 	 (tensor (caten (make-tensor `(,size1 ,size2) :initial-element 'a)))
 	 (out (elements (forward tensor `(a . 4) `(b . 8)))))
     (ok (= (length out) 128))
-    (ok (every (equal-to 4) out))))
+    (ok (every (equal-to 4) out)))
+  (let* ((size1 (!add (iconst 'a) (iconst 'a)))
+	 (size2 (!add (iconst 'b) (iconst 'b)))
+	 (tensor (caten (!sin (make-tensor `(,size1 ,size2) :initial-element 'a))))
+	 (out (elements (forward tensor `(a . 4) `(b . 8)))))
+    (ok (= (length out) 128))
+    (ok (every (equal-to (sin 4)) out))))
 
+;; Softmax ... reductionの依存関係の記述の問題 or Bufferの一次領域の問題
+;; TODO: Compilerのレベルで作業したくない， CopyNodeとIn-Place Mutationを実装する
+;; Symbolic動かすには？？？
+;; DIVが一つのKernelにFuseされないと困るのでは・・・
+(deftest tensor-viewed-tensor-test
+  (testing "Upfrom"
+    (let* ((v1 (!add (iconst 'a) (iconst 'a)))
+	   (v2 (!add (iconst 'b) (iconst 'b)))
+	   (c (make-tensor `(10 10) :initial-element 1.0))
+	   (out (!contiguous (!view c `(,v1 10) `(,v2 10))))
+	   (model (caten out))
+	   (result (forward model `(a . 1) `(b . 2))))
+      (ok (equal `(8 6) (buffer-shape (tensor-buffer result))))
+      (ok (= 48 (length (elements result))))
+      (ok (every (equal-to 1.0) (elements result)))))
+  (testing "Below"
+
+    )
+  (testing "By"
+
+    )
+  (testing "Broadcast"
+
+    ))
