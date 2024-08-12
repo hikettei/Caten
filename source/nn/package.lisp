@@ -11,7 +11,12 @@ Policy:
   (:export
    #:Sigmoid
    #:!sigmoid
+   
+   #:ReLU
    #:!relu
+
+   #:LeakyReLU
+   #:!leaky-relu
    )
   ;; from conv.lisp
   (:export
