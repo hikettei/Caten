@@ -9,6 +9,8 @@ Policy:
   (:use :cl :caten :caten/air :alexandria)
   ;; from activations.lisp
   (:export
+   #:Sigmoid
+   #:!sigmoid
    #:!relu
    )
   ;; from conv.lisp

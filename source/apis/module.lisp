@@ -215,13 +215,6 @@ The provided form does not match any of them:~%~a" method method method method f
 		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
 (defun !matmul (a b) (forward (make-instance 'Matmul) a b))
 
-(defmodule (Sigmoid (()) :where "A[~] -> A[~]")
-    ()
-    :documentation "Implements a sigmoid function"
-    :impl ((sigmoid x)
-	   ;; temporary
-	   (!neg (!neg x))))
-
 (defun !softmax (x &aux (axis -1))
   (let ((x1 (!exp x)))
     (!div x1 (!sum x1 :axis axis :keepdims t))))

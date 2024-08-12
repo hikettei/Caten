@@ -1,5 +1,4 @@
-(cl:in-package :caten/nn)
-
+(in-package :caten/nn)
 ;; Goal: compatible with MLX
 ;; from: https://github.com/ml-explore/mlx/blob/main/python/mlx/nn/layers/activations.py
 ;; [a list of activations to implement]
@@ -26,6 +25,16 @@
 ;; hard_tanh
 ;; softmin
 ;; Tanh
+
+(defmodel (Sigmoid () :where "A[~] -> A[~]") ((ret)))
+(defmethod call ((op Sigmoid) &rest inputs)
+  (let ((x (car inputs)))
+    (setf (slot-value op 'ret) (!recip (!add (fconst 1 :dtype (dtype-of x)) (!exp2 (!mul x (fconst (/ -1 (log 2)) :dtype (dtype-of x)))))))
+    (slot-value op 'ret)))
+(defmethod backward ((op Sigmoid) &optional prev-dout)
+  (let ((ret (slot-value op 'ret)))
+    (!mul (!mul ret (!add (fconst 1 :dtype (dtype-of ret)) (!neg ret))) prev-dout)))
+(defun !sigmoid (x) (call (Sigmoid) x))
 
 (defun !relu (x)
   "ReLU"
