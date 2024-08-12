@@ -85,7 +85,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 			(setf (si-latest scheduled-items) ct
 			      (si-latest-id scheduled-items) c)
 			(setf parent-groups (append parent-groups (cdr (explore scheduled-items))))))
-	      (append (list scheduled-items) parent-groups))
+	      (values (append (list scheduled-items) parent-groups) seen))
 	    ;; Create new and independent schedule item for each args.
 	    (let ((new-groups
 		    (map
@@ -94,9 +94,11 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 			 (when (not (numberp x))
 			   (make-scheduled-items (list (id->value (avm-graph avm) x) x-type x))))
 		     children children-type)))
-	      (append
-	       (list scheduled-items)
-	       (loop for n in (map 'list #'explore new-groups) if n collect n))))))))
+	      (values
+	       (append
+		(list scheduled-items)
+		(loop for n in (map 'list #'explore new-groups) if n collect n))
+	       seen)))))))
 ;; ~~ JIT-Specific IRs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %for (gid size)
   (declare (type (or number symbol) size))
@@ -333,8 +335,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     schedule))
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(declaim (ftype (function (AVM list &key (:verbose boolean)) (values Polyhedral)) create-polyhedral-model-from-top-ids))
-(defun create-polyhedral-model-from-top-ids (avm recursive-top-ids &key (verbose nil))
+(declaim (ftype (function (AVM list &key (:verbose boolean) (:seen list)) (values Polyhedral list)) create-polyhedral-model-from-top-ids))
+(defun create-polyhedral-model-from-top-ids (avm recursive-top-ids &key (verbose nil) (seen nil))
   "Input: AVM: JIT-Specific Optimization Applied AVM"
   (declare (type avm avm) (type list recursive-top-ids) (type boolean))
   (when verbose (format t "[Creating a polyhedron for group: ~a]~%" recursive-top-ids))
@@ -344,7 +346,15 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	     (list node (car (relay-writes (read-type-relay node))) id))))
     ;; Creating a JIT groups for this recursive-top-ids
     (let* ((schedules (map 'list (compose #'make-scheduled-items #'id->buffer) recursive-top-ids))
-	   (scheduled (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group avm x)) schedules)))))
+	   (scheduled (reverse
+		       (flatten
+			(map
+			 'list
+			 #'(lambda (x)
+			     (multiple-value-bind (out seen-new) (recursive-find-group avm x :seen seen)
+			       (setf seen seen-new)
+			       out))
+			 schedules)))))
       ;; verify-graph assets no duplication in branches from recursive-top-ids
       (loop for nth upfrom 0
 	    for s in scheduled
@@ -381,29 +391,33 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	    (format t "== [Initial Scheduling domain (=domain)] ======")
 	    (format t "~%~a~%" schedule)
 	    (isl-schedule-dump schedule))
-	  (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs))))))
+	  (values (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs) seen))))))
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
 (declaim (ftype (function (AVM &key (:verbose boolean) (:more-groups list)) list) create-polyhedral-model))
-(defun create-polyhedral-model (avm &key (verbose nil) (more-groups nil))
+(defun create-polyhedral-model (avm &key (verbose nil) (more-groups nil) &aux (seen nil))
   "Creates the polyhedral model given the avm."
   (declare (type avm avm) (type boolean verbose))
   (let* ((type-map (run-type-infer avm)))
-    (when verbose
-      (format t "== [Initial Graph] ==~%")
-      (uiop:symbol-call (find-package :caten) :print-avm avm))
-    ;; ~ JIT-Specific Optimizations ~~
-    ;; Do not verify the graph; nodes used to compute views may lost.
-    (deploy-type-infer-results avm type-map) ;; Let them include :VIEW node inside :_type_relay attrs
-    (apply-jit-specific-simplifiers avm)     ;; WMMA Accumlation etc
-    (append
-     ;; Forward Group
-     (list (create-polyhedral-model-from-top-ids avm (avm-fw-outputs avm) :verbose verbose))
-     ;; Backward Group
-     (when (avm-bw-outputs avm)
-       (list (create-polyhedral-model-from-top-ids avm (avm-bw-outputs avm) :verbose verbose)))
-     (map 'list #'(lambda (x) (create-polyhedral-model-from-top-ids avm x :verbose verbose)) more-groups))))
+    (flet ((%create-polyhedral-model-from-top-ids (&rest args)
+	     (multiple-value-bind (out seen-new) (apply #'create-polyhedral-model-from-top-ids args)
+	       (setf seen seen-new)
+	       out)))
+      (when verbose
+	(format t "== [Initial Graph] ==~%")
+	(uiop:symbol-call (find-package :caten) :print-avm avm))
+      ;; ~ JIT-Specific Optimizations ~~
+      ;; Do not verify the graph; nodes used to compute views may lost.
+      (deploy-type-infer-results avm type-map) ;; Let them include :VIEW node inside :_type_relay attrs
+      (apply-jit-specific-simplifiers avm)     ;; WMMA Accumlation etc
+      (append
+       ;; Forward Group
+       (list (%create-polyhedral-model-from-top-ids avm (avm-fw-outputs avm) :verbose verbose :seen seen))
+       ;; Backward Group
+       (when (avm-bw-outputs avm)
+	 (list (%create-polyhedral-model-from-top-ids avm (avm-bw-outputs avm) :verbose verbose :seen seen)))
+       (map 'list #'(lambda (x) (%create-polyhedral-model-from-top-ids avm x :verbose verbose :seen seen)) more-groups)))))
 
 (declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
 (defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
@@ -521,11 +535,6 @@ Options:
 	      (avm (deepcopy-avm avm))
 	      (*isl-context* (isl-ctx-alloc)))
   "Applies the jit"
-  ;; TODO0 gc-reachable
-  ;; TODO 1 Pause/Backward  (OK)
-  ;; TODO 2 Seenを共有する ?
-  ;; TODO 3 Duplicated Initializer (OK)
-  ;; TODO 4 Save For backward ?
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
 	   (type boolean serialize)
