@@ -284,7 +284,7 @@ Compiled with: ~a"
 		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))
 		  (:STORE
 		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type)))
-			 (render-aref (car (node-reads node)) (car (relay-reads type)))))
+			 (render-aref (second (node-reads node)) (second (relay-reads type)))))
 		  (:MOVE
 		   (multiple-value-bind (a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (at bt) (apply #'values (relay-reads type))
