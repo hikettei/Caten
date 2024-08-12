@@ -40,8 +40,7 @@
    #:proceed
    )
   ;; from model.lisp
-  (:export
-   #:defmodel)
+  (:export #:defmodel #:call)
   ;; from conditions.lisp
   (:export
    #:caten-forward-error

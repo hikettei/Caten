@@ -1,10 +1,10 @@
 (in-package :caten/apis)
 
 (defclass Model () nil)
+(defgeneric call (model &rest inputs))
 (defmethod st/impl ((module Model) &rest inputs)
   (flet ((detach (x) (st "A[~] -> A[~]" (x))))
-    (apply #'values (map 'list #'detach (multiple-value-list (apply #'impl module inputs))))))
-
+    (apply #'values (map 'list #'detach (multiple-value-list (apply #'call module inputs))))))
 (defmacro defmodel ((name (&rest initargs) &key (where nil) (documentation "")) (&rest slots) &body body)
   "Define a model. (A simplified version of defmodule)"
   (let* ((initarg-names (collect-initargs-names initargs))
@@ -25,7 +25,7 @@
 	     (,@defclass-slots)
 	     :documentation ,documentation
 	     ,@(when (null where) `(:forward st/impl))
-	     :impl impl)
+	     :impl call)
 	 (defmethod initialize-instance :after ((,name ,name) &rest ,_initargs &key &allow-other-keys)
 	   (declare (ignore ,_initargs))
 	   (with-attrs (,@(map 'list #'(lambda (x) `(,x ,(intern (symbol-name x) "KEYWORD"))) initarg-names)) ,name
