@@ -36,8 +36,8 @@
     (apply #'make-graph (reverse new-graph))))
 
 (defun expr-recursive-replace (expr map)
-  (declare (type expr) (type hash-table map))
-  (flet ((->new (x) (if (stringp x) (format nil "~a" (or (gethash (intern x) map) x)) x)))
+  (declare (type expr) (type function map))
+  (flet ((->new (x) (if (stringp x) (format nil "~a" (or (funcall map (intern x)) x)) x)))
     (when (expr-p (expr-x expr))
       (expr-recursive-replace (expr-x expr) map))
     (when (expr-p (expr-y expr))

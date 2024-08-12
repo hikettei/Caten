@@ -138,7 +138,18 @@
 	  (setf (gethash (car (node-writes node)) (refcount-alias count)) (node-output-position node))
 	  (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node))))))
 
-(defun refcount/update-node (node refcount inplace-p)
+(defun refcount/update-buffer (count buffer)
+  (flet ((new (x) (refcount/refalias count (reveal-buffer x))))
+    (setf (buffer-shape buffer) (map 'list #'new (buffer-shape buffer))
+	  (buffer-stride buffer) (map 'list #'new (buffer-stride buffer))
+	  (buffer-views buffer)
+	  (loop for v in (buffer-views buffer)
+		if v
+		  collect (list (new (nth 0 v)) (new (nth 1 v)) (new (nth 2 v)) (nth 3 v))
+		else
+		  collect v))))
+
+(defun refcount/update-node (node refcount)
   (declare (type node node))
   (flet ((ref (x) (refcount/refalias refcount x)))
     (when (eql (node-type node) :EXPR)
@@ -150,12 +161,12 @@
 	 buffers)))
     ;;(assert (null (getattr node :_reads)))
     ;;(assert (null (getattr node :_writes)))
+    (map 'list #'(lambda (x) (when x (refcount/update-buffer refcount x))) `(,@(relay-writes (read-type-relay node)) ,@(relay-reads (read-type-relay node))))
     (setf (getattr node :_loop_bound_nodes) (map 'list #'ref (getattr node :_loop_bound_nodes))
 	  (getattr node :_reads)  (node-reads node)
 	  (getattr node :_writes) (node-writes node)
-	  (node-reads node) (map 'list #'ref (node-reads node)))
-    (when inplace-p
-      (setf (node-writes node) (map 'list #'ref (node-writes node))))))
+	  (node-reads node) (map 'list #'ref (node-reads node))
+	  (node-writes node) (map 'list #'ref (node-writes node)))))
 
 (defun id->memwrites (graph id)
   (loop for node in (graph-nodes graph)
@@ -212,8 +223,7 @@
 		;;  | -   O1 <-  f(At1, At2)
 		;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
 		)
-	      (refcount/update-node node refcount inplace-p)))
-      ;; scalar alloc disappeares (Schedulegawarui)
+	      (refcount/update-node node refcount)))
       (loop for time in `(,@alloc-ids ,@pipeline-ids)
 	    for graph = (gethash time pipeline) do
 	      (loop for node in (graph-nodes graph)
@@ -228,14 +238,24 @@
 						 :_type_relay (make-inferred-type nil (relay-writes type))
 						 :_not_a_input t))
 				(graph-nodes (gethash time pipeline))))))
+      
+      (flet ((replacer (x) (refcount/refalias refcount x)))
+	(loop for g in (graph-nodes schedule-graph)
+	      if (eql (node-type g) :FOR) do
+		(expr-recursive-replace (getattr g :below) #'replacer)
+		(expr-recursive-replace (getattr g :upfrom) #'replacer)
+		(expr-recursive-replace (getattr g :by) #'replacer)))
+      
       (setf (avm-fw-outputs avm) (map 'list #'newid (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm)))
+      
       (let ((new-id2tensor (make-hash-table)))
 	(maphash
 	 #'(lambda (k v)
 	     (setf (gethash (newid k) new-id2tensor) v))
 	 (avm-id2tensor avm))
 	(setf (avm-id2tensor avm) new-id2tensor))
+      
       (let ((new-variables (make-hash-table)))
 	(maphash
 	 #'(lambda (k v)
