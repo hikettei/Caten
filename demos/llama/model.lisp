@@ -21,7 +21,3 @@
     (multiple-value-bind (x) (apply #'values inputs)
       ;; ReLU -> SiLU
       (call w2 (!mul (!relu (call w1 x)) (call w3 x))))))
-
-;; JIT Backward実装しよう
-;; Undeclared Varを修正しよう
-;; In-Place Mutationを実装しよう

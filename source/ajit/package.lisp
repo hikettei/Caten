@@ -25,6 +25,7 @@
    #:render-isl-aref
    #:JIT-Info
    #:jit-info-p
+   #:jit-info-n-kernels
    #:copy-jit-info
    #:jit-info-code
    #:jit-info-lang

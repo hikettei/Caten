@@ -34,6 +34,16 @@
       (lower lisp-ast))
     (apply #'make-graph (reverse new-graph))))
 
+(defun count-n-kernels (rendering-graph &aux (count 0) (level 0))
+  "Counts the number of the outermost loops (= n-kernels)"
+  (loop for node in (graph-nodes rendering-graph)
+	if (eql (node-type node) :FOR)
+	  do (when (= 0 level) (incf count))
+	     (incf level)
+	else if (eql (node-type node) :ENDFOR) do
+	  (decf level))
+  count)
+
 (defun expr-recursive-replace (expr map)
   (declare (type expr) (type function map))
   (flet ((->new (x) (if (stringp x) (format nil "~a" (or (funcall map (intern x)) x)) x)))

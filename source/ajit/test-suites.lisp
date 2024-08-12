@@ -10,10 +10,19 @@
   (let ((mdl (caten tensor)))
     (apply #'forward mdl params)))
 (defun elements (tensor) (buffer-value (tensor-buffer tensor)))
-
-;; TODO: Render To List?
-;; Backward作るのとどっちが先か？
-
+(defun get-jit-info (avm)
+  (declare (type avm avm))
+  (let ((jit-info (car (last (graph-nodes (avm-graph avm))))))
+    (assert (eql (node-type jit-info) :JIT_KERNEL) () "the kernel didn't returned a jit_kernel")
+    jit-info))
+(defun n-kernels (avm)
+  (declare (type avm avm))
+  (jit-info-n-kernels (getattr (get-jit-info avm) :jit-info)))
+(defun check-kernels (n avm)
+  (if (= 1 (ctx:getenv :JIT))
+      (ok (= n (n-kernels avm)))
+      (skip "Needs JIT")))
+;; [TODO] MULTIEXPRを実装
 ;; TODO: Pooling2D, Conv2D, Gemm, Composed Gemm (count the number of kernels)
 ;; TODO: Tensor-Shaped-Tesnor Operation
 ;; TODO: Tensor-Shaped-Tensor Iteration Rendering (The scalar result should be passed via arguments)
@@ -25,6 +34,17 @@
 ;; TestCase3. (let ((*external-simplifiers* nil)) (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32)))) (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20)))))
 ;; TestCase4. (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb))))
 
+(deftest check-kernel-counts
+  (with-no-grad
+    (check-kernels 1 (caten (!matmul (make-tensor `(10 20)) (make-tensor `(20 10)))))
+    (check-kernels 1 (caten (!softmax (ax+b `(10 10) 1 1))))
+    (check-kernels 1 (caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0)))))
+    (check-kernels 1 (caten (!sin (!matmul (make-tensor `(10 20)) (make-tensor `(20 30))))))
+    (check-kernels 2 (caten (!matmul (make-tensor `(128 32)) (!matmul (make-tensor `(32 64)) (make-tensor `(64 128))))))
+    (check-kernels 1 (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))
+    (check-kernels 1 (caten (!tan (make-tensor `(10 10)))))
+    (check-kernels 2 (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
+    
 (deftest tensor-shaped-tensor-test
   (let* ((size1 (!add (iconst 'a) (iconst 'a)))
 	 (size2 (!add (iconst 'b) (iconst 'b)))
@@ -111,8 +131,7 @@
     ;; 同一のKernelにScheduleされる Or Copyを作成する必要がある
     (caten c))
 
-  ;; Softmaxは同一のKernelにScheduleされるべき
-  (!softmax (make-tensor `(3 3)))
+  ;; todo: softmax in a single kernel
   
   )
 ;; tensor-viewded-tensor-testはどうしようか

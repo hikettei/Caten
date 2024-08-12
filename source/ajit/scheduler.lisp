@@ -446,13 +446,14 @@ Options:
 (defstruct (JIT-Info)
   (caller #'(lambda ()) :type function)
   (lang :nil :type keyword)
-  (code "" :type string))
-(defmethod print-object ((s jit-info) stream) (format stream "<~a Code>" (jit-info-lang s)))
-(defun make-fused-kernel-caller (allocs lambda code lang)
+  (code "" :type string)
+  (n-kernels 0 :type fixnum)) ;; the count of outermost loops
+(defmethod print-object ((s jit-info) stream) (format stream "<~a Code [~a kernels]>" (jit-info-lang s) (jit-info-n-kernels s)))
+(defun make-fused-kernel-caller (allocs lambda code lang n-kernels)
   (make-node :IR :JIT_KERNEL
 	     (apply #'append (map 'list #'node-writes allocs))
 	     (apply #'append (map 'list #'node-writes allocs))
-	     :jit-info (make-jit-info :caller lambda :lang lang :code code)))
+	     :jit-info (make-jit-info :caller lambda :lang lang :code code :n-kernels n-kernels)))
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((jit (getattr node :jit-info)))
     (assert (jit-info-p jit) () "~a is not a jit kernel. :jit-info=~a" node jit)
@@ -491,7 +492,7 @@ Options:
 			 (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))
 		   allocs))))
       (setf (avm-name avm) base-name)
-      (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f function backend)))) seen))))
+      (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f function backend (count-n-kernels rendering-graph))))) seen))))
 
 (defun jit (avm
 	    &key
