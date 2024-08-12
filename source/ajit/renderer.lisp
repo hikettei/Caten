@@ -4,7 +4,7 @@
 (defgeneric %render-compile (lang avm allocs function)
   (:documentation "Compiles the function"))
 
-(defgeneric %render-function-caller (lang avm allocs function)
+(defgeneric %render-function-caller (lang avm allocs)
   (:documentation "Return a lambda function which calles the jit-compiled function."))
 
 (defgeneric %render-program-toplevel (lang body) (:documentation "Renders headers, pragma, etc..."))

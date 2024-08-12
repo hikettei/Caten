@@ -6,8 +6,9 @@
 ;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write schedule)))
+	    (:constructor make-polyhedral (avm pipeline domain read write schedule vm-inputs)))
   (avm avm :type avm)
+  (vm-inputs vm-inputs :type list)
   (pipeline pipeline :type hash-table)
   ;; constraints
   (domain domain :type string)

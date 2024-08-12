@@ -40,7 +40,7 @@ Compiled with: ~a"
 (defmethod %render-compile ((lang (eql :clang)) avm allocs function)
   (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3")))
 
-(defmethod %render-function-caller ((lang (eql :clang)) avm allocs function)
+(defmethod %render-function-caller ((lang (eql :clang)) avm allocs)
   (labels ((expand (rest-forms body)
 	     (if rest-forms
 		 (if (= 0 (getattr (car rest-forms) :nrank))
