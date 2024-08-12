@@ -6,8 +6,9 @@
 ;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write schedule)))
+	    (:constructor make-polyhedral (avm pipeline domain read write schedule vm-inputs)))
   (avm avm :type avm)
+  (vm-inputs vm-inputs :type list)
   (pipeline pipeline :type hash-table)
   ;; constraints
   (domain domain :type string)
@@ -178,10 +179,13 @@ for (int c0 = 0; c0 < a; c0 += 1)
 "
   (declare (type polyhedral polyhedral))
   (macrolet ((set-option (name level)
-	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
+	       `(progn
+		  ;;(format t "~a = ~a~%" ,name (foreign-funcall ,(format nil "isl_options_get_~(~a~)" name) :pointer (isl-ctx-ptr *isl-context*) :int))
+		  (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
 				 :pointer (isl-ctx-ptr *isl-context*)
 				 :int ,level
-				 :void)))
+				 :void))))
+    ;;(set-option "schedule_treat_coalescing" 1)
     (when serialize (set-option "schedule_serialize_sccs" 1)))
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr) (schedule schedule)) polyhedral
     (let* ((constraints (poly/make-constraints polyhedral))

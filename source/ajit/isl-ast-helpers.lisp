@@ -120,7 +120,7 @@
 		 (:isl_ast_expr_op_sub (make-expr :- lhs rhs))
 		 (:isl_ast_expr_op_mul (make-expr :* lhs rhs))
 		 (:isl_ast_expr_op_div (make-expr :/ lhs rhs))		 
-		 ;;(:isl_ast_expr_op_fdiv_q (make-expr :floor-div-cast-to-int lhs rhs))
+		 (:isl_ast_expr_op_fdiv_q (make-expr :/ lhs rhs))
 		 (:isl_ast_expr_op_pdiv_q (make-expr :/ lhs rhs))
 		 (:isl_ast_expr_op_pdiv_r (make-expr :% lhs rhs))
 		 (:isl_ast_expr_op_zdiv_r (make-expr :% lhs rhs))

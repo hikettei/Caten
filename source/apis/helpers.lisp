@@ -168,3 +168,10 @@ Reads and binds attributes from module.
 	     else
 	       do (format out "~a~(~a~)~a~(~a~)(~(~a~)~a);~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "") (node-type node) (render-list (node-reads node)) (render-attrs node)))))))
 
+(defun collect-initargs-names (args)
+  (loop for a in args
+	;; (f a &aux ...)
+	if (and (symbolp a) (not (eql (aref (symbol-name a) 0) #\&)))
+	  collect a
+	else if (listp a) collect (car a)))
+

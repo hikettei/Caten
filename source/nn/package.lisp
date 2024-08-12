@@ -25,6 +25,9 @@ Policy:
   ;; from pool.lisp
   (:export
    )
+  ;; from linear.lisp
+  (:export
+   #:Linear)
   )
 
 (in-package :caten/nn)

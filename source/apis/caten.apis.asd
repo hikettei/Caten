@@ -14,6 +14,7 @@
 	       (:file "merge-views")
 	       (:file "function")
 	       (:file "module")
+	       (:file "model")
 	       (:file "initializers")
 	       (:file "syntax-sugar"))
   :in-order-to
@@ -21,7 +22,8 @@
     (asdf:test-op "caten.air")
     (asdf:test-op "caten.aasm")
     (asdf:test-op "caten.avm")
-    (asdf:test-op "caten.apis/test"))))
+    (asdf:test-op "caten.apis/test")
+    (asdf:test-op "caten.ajit/test"))))
 
 (asdf:defsystem "caten.apis/test"
   :depends-on

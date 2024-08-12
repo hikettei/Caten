@@ -70,6 +70,13 @@
 (defun getattr (node id)
   (declare (type node node) (type keyword id))
   (ematch (node-attrs node) ((property id value) value)))
+(defun (setf getattr) (new-value node id) (setattr node id new-value))
+(defun setattr (node id value)
+  (declare (type node node) (type keyword id))
+  (let ((pos (position id (node-attrs node))))
+    (if pos
+	(setf (nth (1+ pos) (node-attrs node)) value)
+	(setf (node-attrs node) (append (node-attrs node) `(,id ,value))))))
 (defun node->id (node) (car (node-writes node)))
 ;; ~~ syntax sugar for make-node ~~~~~~~
 ;;(declaim (inline <>))

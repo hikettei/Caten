@@ -39,6 +39,8 @@
    #:*external-simplifiers*
    #:proceed
    )
+  ;; from model.lisp
+  (:export #:defmodel #:call)
   ;; from conditions.lisp
   (:export
    #:caten-forward-error
@@ -61,6 +63,7 @@
    #:MeanNode
    #:!mean
    #:!matmul
+   #:!softmax
    
    )
   ;; from helpers.lisp

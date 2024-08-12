@@ -25,7 +25,7 @@
 	      (module-outputs module)
 	      (module-lower-outputs module))))
     (apply #'values outputs)))
-(defmacro defmodule ((name ((&rest constructor-args) &rest attrs) &key (where nil))
+(defmacro defmodule ((name ((&rest constructor-args) &rest attrs) &key (where nil) (direct-superclasses nil))
 		     (&rest slots)
 		     &key (documentation "") (impl nil) (forward nil) (backward nil))
   "## [macro] defmodule
@@ -143,7 +143,7 @@ forward := fname
   - :~(~a~) := function-name
 The provided form does not match any of them:~%~a" method method method method form))))))
     `(progn
-       (defclass ,name (Module) ,slots (:documentation ,documentation))
+       (defclass ,name (Module ,@direct-superclasses) ,slots (:documentation ,documentation))
        ,(if forward
 	    (impl-form 'forward forward nil)
 	    `(defmethod forward ((op ,name) &rest inputs) (st ,where (inputs))))
@@ -222,3 +222,6 @@ The provided form does not match any of them:~%~a" method method method method f
 	   ;; temporary
 	   (!neg (!neg x))))
 
+(defun !softmax (x &aux (axis -1))
+  (let ((x1 (!exp x)))
+    (!div x1 (!sum x1 :axis axis :keepdims t))))

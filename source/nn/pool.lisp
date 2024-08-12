@@ -54,3 +54,5 @@
 		     (xup (apply #'!view xup (append noop_ (loop for o in o_ for k in k_ append (list (list 0 o) (list 0 k)))))))
 		(!permute xup (append (range 0 (length noop_)) (loop for _ in i_ for i upfrom 0 collect (+ (length noop_) (* i 2))) (loop for _ in i_ for i upfrom 0 collect (+ 1 (length noop_) (* i 2))))))))))))
 
+(in-package :caten/nn.test)
+

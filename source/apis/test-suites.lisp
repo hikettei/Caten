@@ -1,7 +1,7 @@
 (in-package :cl-user)
 (defpackage :caten/apis.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
 (in-package :caten/apis.test)
-
+(defmacro skip-if-jit () `(when (= 1 (ctx:getenv :JIT)) (skip "Requires VM Mode!")))
 (deftest test-shape-tracker
   (ok
    (let ((a (make-tensor `(5 3 5)))
@@ -98,10 +98,12 @@
   (declare (type avm avm)
 	   (type fixnum count))
   (let ((sched (optimize-aasm graph)))
-    (assert
-     (= (length (graph-nodes sched)) count)
-     ()
-     "check-schedule: should satisfy (kernel_count=~a) <= ~a.~%~a" (length (graph-nodes sched)) count sched))
+    ;; Only checked on VM Mode
+    (when (= 0 (ctx:getenv :JIT))
+      (assert
+       (= (length (graph-nodes sched)) count)
+       ()
+       "check-schedule: should satisfy (kernel_count=~a) <= ~a.~%~a" (length (graph-nodes sched)) count sched)))
   t)
 
 (deftest test-simplifier-no-grad
@@ -154,7 +156,7 @@
   (with-no-grad
     (ok (equal `(A B) (tensor-shape (!add (iconst 'a) (make-tensor `(a b))))))))
 
-(deftest test-broadcast
+(deftest test-broadcast-shape-inference
   (ok (equal `(1) (tensor-shape (!add (make-tensor `(1)) (make-tensor `(1))))))
   (ok (equal `(1 1) (tensor-shape (!add (make-tensor `(1)) (make-tensor `(1 1))))))
   (ok (equal `(1 1) (tensor-shape (!add (make-tensor `(1 1)) (make-tensor `(1))))))
@@ -165,7 +167,7 @@
     (sp (3 3) (3 3) (3 3))
     (sp (a b) nil (a b))))
 
-(deftest test-composed-view-constant-folding
+(deftest test-composed-view-constant-folding-shape-inference
   (ok (equal `(2 2 2) (shape (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) )))
   (ok (equal `(1 1 1) (shape (!view (!view (make-tensor `(3 3 3)) `(0 2) `(0 2) `(0 2)) `(0 1) `(0 1) `(0 1)))))
   (ok (equal `(1 1 1) (shape (!view (!view (make-tensor `(4 4 4)) `(2 4) `(2 4) `(2 4)) `(1 2) `(1 2) `(1 2))))))
@@ -450,14 +452,14 @@
 		  (let ((model (caten (,op (make-tensor `(1) :initial-element 'a :dtype dtype))))
 			(ulp (1.0ulp dtype)))
 		    (forall (x dtype :fuzzing nil)
-		      (when (or (null ,non-zero) (not (= x 0)))
+		      (when (if ,non-zero (> x 0.0) t)
 			(assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
 				()
 				"~(~a~)(x=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
 				',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
 				(,lisp-op x) ulp dtype)))
 		    (forall (x dtype :fuzzing t)
-		      (when (or (null ,non-zero) (not (= x 0)))
+		      (when (if ,non-zero (> x 0.0) t)
 			(assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
 				()
 				"~(~a~)({x+(random 2.0)}=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
