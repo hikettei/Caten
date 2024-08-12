@@ -11,5 +11,6 @@
    (:file "padding")
    (:file "pool")
    (:file "normalization")
-   (:file "embedding"))
+   (:file "embedding")
+   (:file "linear"))
   :perform (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style :dot)))

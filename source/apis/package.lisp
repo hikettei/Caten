@@ -39,6 +39,9 @@
    #:*external-simplifiers*
    #:proceed
    )
+  ;; from model.lisp
+  (:export
+   #:defmodel)
   ;; from conditions.lisp
   (:export
    #:caten-forward-error
