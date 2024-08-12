@@ -67,7 +67,7 @@
    ;; nodes used to compute the shape is never used!
    (when (not (eql (node-type node) :Allocate))
      (loop for r in `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))
-	   if (symbolp r) append (get-parent-nodes (id->value graph r) graph)))
+	   if (and (symbolp r) (id->value graph r)) append (get-parent-nodes (id->value graph r) graph)))
    (list node)))
 ;; no duplicates are allowed
 (defun %simplify-pipeline (pipeline top-ids)
@@ -103,6 +103,142 @@
      pipeline)))
 
 ;; ~~ Step3, Before Rendering Process (pipeline w/o DOMAIN)  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; RefCount=0になったらIn-place
+;; RefCount>1の時はIDの関係をそのまま
+;; allocsにundeclaredはPush
+(defstruct (Reference-Counter
+	    (:conc-name refcount-))
+  (alias (make-hash-table) :type hash-table)
+  (refcount (make-hash-table) :type hash-table)
+  (refcount-by (make-hash-table) :type hash-table)
+  (aliased-map (make-hash-table) :type hash-table))
+(defun node-output-position (node)
+  (case (node-type node) (:WHERE (second (node-reads node))) (otherwise (car (node-reads node)))))
+(defun create-reference-count (graph)
+  (declare (type graph graph))
+  (let ((alias (make-hash-table))
+	(refcount (make-hash-table))
+	(refby (make-hash-table)))
+    (labels ((relevant-graph (pos) (apply #'make-graph (subseq (graph-nodes graph) pos)))
+	     (inplace (node pos)
+	       ;; (in-place-p . users)
+	       (let* ((usrs (id->memwrites (relevant-graph pos) (car (node-writes node)))))
+		 (cons (length usrs) usrs))))
+      (loop for node in (graph-nodes graph)
+	    for pos upfrom 0
+	    for (refc . refb) = (inplace node pos)
+	    do (setf (gethash (car (node-writes node)) refcount) refc
+		     (gethash (car (node-writes node)) refby) refb)))
+    (labels ((load-from-map (x) (or (gethash x alias) x))
+	     (alias (k v) (setf (gethash k alias) (load-from-map v))))
+      (dolist (node (graph-nodes graph))
+	(case (node-type node)
+	  (:ALLOCATE (alias (car (node-writes node)) (car (node-writes node))))
+	  (:WHERE    (alias (car (node-writes node)) (second (node-reads node))))
+	  (otherwise (alias (car (node-writes node)) (car (node-reads node)))))))
+    (make-reference-counter :alias alias :refcount refcount :refcount-by refby)))
+(defun refcount/refalias (count id) (or (gethash id (refcount-alias count)) id))
+(defun refcount/id-ref-to (refcount x &aux (alias (refcount-aliased-map refcount)) (original-alias (refcount-alias refcount)))
+  (if (symbolp x) (or (when (gethash x alias) (or (gethash x original-alias) x)) x) x))
+(defun refcount/update-node (node refcount &aux (alias (refcount-aliased-map refcount)))
+  (declare (type node node))
+  (flet ((ref (x) (refcount/id-ref-to refcount x)))
+    (when (eql (node-type node) :EXPR)
+      (let ((buffers (getattr node :buffers)))
+	(assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
+	(setf (gethash (car (node-writes node)) alias) (ref (car (node-reads node))))
+	(mapc
+	 #'(lambda (aref)
+	     (setf (expr-x aref) (ref (expr-x aref))))
+	 buffers)))
+    ;;(assert (null (getattr node :_reads)))
+    ;;(assert (null (getattr node :_writes)))
+    (setf (getattr node :_loop_bound_nodes) (map 'list #'ref (getattr node :_loop_bound_nodes))
+	  (getattr node :_reads)  (node-reads node)
+	  (getattr node :_writes) (node-writes node)
+	  (node-reads node) (map 'list #'ref (node-reads node))
+	  (node-writes node) (map 'list #'ref (node-writes node)))))
+
+(defun id->memwrites (graph id)
+  (loop for node in (graph-nodes graph)
+	for write-to = (case (node-type node) (:ALLOCATE nil) (:WHERE (second (node-reads node))) (otherwise (car (node-reads node))))
+	if (eql write-to id)
+	  collect node))
+;; MULTIEXPR ... JIT関数作成時点で適用，Groupingの流れにする
+(defun apply-memory-planner (refcount pipeline avm schedule-graph &key (multiexpr t))
+  (let* ((pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
+	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
+	 (allocated-items
+	   (loop for time in `(,@alloc-ids ,@pipeline-ids)
+		 append
+		 (loop for node in (graph-nodes (gethash time pipeline))
+		       if (eql (node-type node) :Allocate)
+			 collect (car (node-writes node))))))
+    (labels ((inplace-p (node time)
+	       ;; (in-place-p . intersects-with-current-pipeline?)
+	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
+	       (decf (gethash (node-output-position node) (refcount-refcount refcount)))
+	       (let ((refcount (gethash (node-output-position node) (refcount-refcount refcount)))
+		     (refdom   (gethash (node-output-position node) (refcount-refcount-by refcount))))
+		 (cons (<= refcount 0) (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))))
+	     (alias (from to) (setf (gethash from (refcount-aliased-map refcount)) to))
+	     (newid (x) (refcount/id-ref-to refcount x)))
+      ;; O(nlogn) * the cost of id->users ...
+      (loop
+	for time in `(,@alloc-ids ,@pipeline-ids)
+	for graph = (gethash time pipeline) do
+	  (loop
+	    for node in (graph-nodes graph)
+	    for (inplace-p . all-exists-in-the-same-pipeline) = (inplace-p node time) do
+	      (assert (= 1 (length (node-writes node))) ())
+	      ;;(print node)
+	      ;;(print inplace-p)
+	      ;; If write-to area is not going to be used by any other ops, let's make it in-place
+	      ;; otherwise:
+	      ;;  - If write-to-user exists in the same schedule -> create a tmpvar.
+	      ;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
+	      (if inplace-p
+		  (case (node-type node)
+		    (:ALLOCATE nil)
+		    (:WHERE    (alias (car (node-writes node)) (second (node-reads node))))
+		    (otherwise (alias (car (node-writes node)) (car (node-reads node)))))
+		  (when all-exists-in-the-same-pipeline
+		    (print node)
+		    ))
+	      ;; Update the aliases
+	      (refcount/update-node node refcount)))
+      ;; scalar alloc disappeares (Schedulegawarui)
+      (loop for time in `(,@alloc-ids ,@pipeline-ids)
+	    for graph = (gethash time pipeline) do
+	      (loop for node in (graph-nodes graph)
+		    for type = (read-type-relay node)
+		    if (null (find (car (node-writes node)) allocated-items))
+		      do (setf (graph-nodes (gethash time pipeline))
+			       (append
+				(list (make-node :Buffer :Allocate
+						 (node-writes node) (map 'list #'reveal-buffer `(,@(buffer-shape (car (relay-writes type))) ,@(buffer-stride (car (relay-writes type)))))
+						 :nrank (buffer-nrank (car (relay-writes type)))
+						 :dtype (buffer-dtype (car (relay-writes type)))
+						 :_type_relay (make-inferred-type nil (relay-writes type))
+						 :_not_a_input t))
+				(graph-nodes (gethash time pipeline))))))
+      
+      (setf (avm-fw-outputs avm) (map 'list #'newid (avm-fw-outputs avm))
+	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm)))
+      (let ((new-id2tensor (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (newid k) new-id2tensor) v))
+	 (avm-id2tensor avm))
+	(setf (avm-id2tensor avm) new-id2tensor))
+      (let ((new-variables (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (newid k) new-variables) v))
+	 (avm-variables avm))
+	(setf (avm-variables avm) new-variables)))))
+
+
 (defun apply-multiexpr-grouping (pipeline)
   "Group several computation into a single :EXPR Node to simplify.
 E.g.:
@@ -221,8 +357,8 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
      pipeline)
     alias-map))
 
-(defun apply-memory-planner (pipeline avm schedule-graph &key (multiexpr t))
-  (declare (type hash-table pipeline) (avm avm))
+(defun apply-memory-planner (refcount pipeline avm schedule-graph &key (multiexpr t))
+  (declare (type hash-table pipeline refcount) (avm avm))
   (let* ((pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
 	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
 	 (alias-map (create-multiexpr-grouped-pipeline pipeline pipeline-ids alloc-ids :multiexpr multiexpr))
@@ -328,7 +464,21 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	     (setf (gethash (load-from-map k) new-variables) v))
 	 (avm-variables avm))
 	(setf (avm-variables avm) new-variables)))))
-
+(defun create-alias-map (pipeline pipeline-ids alloc-ids)
+  "Creates a hash-table if (car reads) becomes write rule is applied."
+  (declare (type hash-table pipeline))
+  (let ((table (make-hash-table)))
+    (labels ((load-from-map (x) (or (gethash x table) x))
+	     (alias (k v) (setf (gethash k table) (load-from-map v))))
+      (loop for key in `(,@alloc-ids ,@pipeline-ids)
+	    for graph = (gethash key pipeline) do
+	      (loop for node in (graph-nodes graph) do
+		(case (node-type node)
+		  ;; whichth args to write the result?
+		  (:ALLOCATE (alias (car (node-writes node)) (car (node-writes node))))
+		  (:WHERE    (alias (car (node-writes node)) (second (node-reads node))))
+		  (otherwise (alias (car (node-writes node)) (car (node-reads node))))))))
+    table))
 (defun %seen-ids-for-unused-scalar-nodes (pipeline keys)
   (declare (type hash-table pipeline))
   (remove-duplicates

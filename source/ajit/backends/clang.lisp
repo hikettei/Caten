@@ -103,8 +103,11 @@ Compiled with: ~a"
 		  (with-output-to-string (out)
 		    (loop for node in allocs
 			  for nrank = (getattr node :nrank)
-			  do (format out "  - ~a[~(~a~)]: ~a~%" (car (node-writes node)) (getattr node :dtype) (subseq (node-reads node) 0 nrank)))))))
-		  
+			  do (format out "  - ~a[~(~a~)]: ~a~a~%" (car (node-writes node)) (getattr node :dtype) (subseq (node-reads node) 0 nrank)
+				     (if (getattr node :_not_a_input)
+					 " // Tmp"
+					 "")))))))
+    
     (format nil "~a~a;~%~a {~%~a}" shapes header header body)))	  
 
 (macrolet ((unary (name render)

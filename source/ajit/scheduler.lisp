@@ -39,10 +39,10 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   "Return -> (list scheduled-items ...)"
   (declare (type avm avm) (type scheduled-items scheduled-items))
   (flet ((explore (x) (when x (recursive-find-group avm x :seen seen)))
-	 (mergeable-p (x latest x-type) (or (numberp x) (and (not (eql (node-type (id->value (avm-graph avm) x)) :Allocate)) (buffer-intersect-p latest x-type)))))
+	 (mergeable-p (x latest x-type) (or (numberp x) (and (id->value (avm-graph avm) x) (not (eql (node-type (id->value (avm-graph avm) x)) :Allocate)) (buffer-intersect-p latest x-type)))))
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
       (when (find latest-id seen) (return-from recursive-find-group))
-      (let* ((node (id->value (avm-graph avm) latest-id))
+      (let* ((node (or (id->value (avm-graph avm) latest-id) (return-from recursive-find-group)))
 	     ;; Allocation is done at the (Exported) VM Level
 	     ;; - (1.) dynamic shapes are computed under VM Level
 	     ;; - (2.) dynamic strides are computed under JIT Level
@@ -404,6 +404,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	     (multiple-value-bind (out seen-new) (apply #'create-polyhedral-model-from-top-ids args)
 	       (setf seen seen-new)
 	       out)))
+      (when (and (null (avm-bw-outputs avm))
+		 (graph-nodes (avm-graph avm))
+		 (eql :PAUSE/BACKWARD (node-type (car (last (graph-nodes (avm-graph avm)))))))
+	(setf (graph-nodes (avm-graph avm)) (butlast (graph-nodes (avm-graph avm)))))
       (when verbose
 	(format t "== [Initial Graph] ==~%")
 	(uiop:symbol-call (find-package :caten) :print-avm avm))
@@ -488,7 +492,7 @@ Options:
 ;; JIT=0 JIT=1 でBackwardが同じかTestする
 ;; (!tan (!matmul ...))のScheduler修正
 ;; Step1 ~ 4をテストに含める
-(defun compile/polyhedron (base-avm avm polyhedron &key (debug 0) (name nil) (backend nil) (multiexpr t) (seen nil))
+(defun compile/polyhedron (refcount base-avm avm polyhedron &key (debug 0) (name nil) (backend nil) (multiexpr t) (seen nil))
   (declare (type polyhedral polyhedron))
   (setf (avm-name avm) (intern (string-upcase (format nil "~a_~a" (avm-name avm) name)) "KEYWORD"))
   ;; Polyhedron supercedes :FOR/:ENDFOR, and we dont need it anymroe, remove them.
@@ -499,7 +503,7 @@ Options:
   ;; Preprocessing
   (let* ((extracted-schedule (finalize-schedule polyhedron))
 	 (rendering-graph (create-rendering-graph polyhedron extracted-schedule))
-	 (_ (apply-memory-planner (poly-pipeline polyhedron) avm rendering-graph :multiexpr multiexpr))
+	 (_ (apply-memory-planner refcount (poly-pipeline polyhedron) avm rendering-graph :multiexpr multiexpr))
 	 (allocs (purge-allocations (poly-pipeline polyhedron) (poly-vm-inputs polyhedron)))
 	 ;; Start Rendering
 	 (body (%render-body backend backend rendering-graph polyhedron 1))
@@ -541,7 +545,8 @@ Options:
 	   (ignore _))
   (multiple-value-bind (verbose-schedule verbose-auto)
       (values (or (= debug 4) (= debug 3)) (or (= debug 4) (= debug 2)))
-    (let ((polyhedrons (create-polyhedral-model avm :verbose verbose-schedule :more-groups more-groups)))
+    (let* ((refcount (create-reference-count (avm-graph avm)))
+	   (polyhedrons (create-polyhedral-model avm :verbose verbose-schedule :more-groups more-groups)))
       (mapc
        #'(lambda (x)
 	   (auto-schedule! x :verbose verbose-auto :serialize serialize)
@@ -552,7 +557,7 @@ Options:
 	       (map 'list
 		    #'(lambda (x name)
 			(multiple-value-bind (out seen-new)
-			    (compile/polyhedron base-avm avm x :backend backend :multiexpr multiexpr :debug debug :name name :seen seen)
+			    (compile/polyhedron refcount base-avm avm x :backend backend :multiexpr multiexpr :debug debug :name name :seen seen)
 			  (setf seen seen-new)
 			  out))
 		    polyhedrons

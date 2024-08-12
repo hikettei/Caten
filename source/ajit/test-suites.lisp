@@ -50,7 +50,7 @@
 ;; Here's TODO List
 ;; - 1. 最初のSchedulingアルゴリズムを見直す: (recip(x)はmulと同じようにScheduleされるべき)
 ;; - 2. ノードを跨いで依存がある時は"Compilerが"一次領域を作成する
-;; - 3.
+;; - 3. SaveForbackward/Copyを実装する
 
 #+(or)(progn
 (caten (!sin (!matmul (make-tensor `(10 20)) (make-tensor `(20 30)))))
@@ -66,6 +66,8 @@
 (forward (caten (!sin (!sin (!sin (ax+b `(10 10) 1 0))))))
 (let ((*external-simplifiers* nil)) (let ((a (pproceed `((a . 2)) (make-tensor `(a 10) :initial-element 'a :dtype :uint32)))) (ok (and (every (equal-to 2) (elements a)) (= (length (elements a)) 20))))))
 
+;; (let ((a (make-tensor `(3))))
+;;	 (caten (!div a a)))
 (deftest in-place-test
   (let* ((a (make-tensor `(10 10) :initial-element 1.0))
 	 (b (!exp a))
