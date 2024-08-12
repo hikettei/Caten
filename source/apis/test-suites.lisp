@@ -452,14 +452,14 @@
 		  (let ((model (caten (,op (make-tensor `(1) :initial-element 'a :dtype dtype))))
 			(ulp (1.0ulp dtype)))
 		    (forall (x dtype :fuzzing nil)
-		      (when (or (null ,non-zero) (not (= x 0)))
+		      (when (if ,non-zero (> x 0.0) t)
 			(assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
 				()
 				"~(~a~)(x=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
 				',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
 				(,lisp-op x) ulp dtype)))
 		    (forall (x dtype :fuzzing t)
-		      (when (or (null ,non-zero) (not (= x 0)))
+		      (when (if ,non-zero (> x 0.0) t)
 			(assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
 				()
 				"~(~a~)({x+(random 2.0)}=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
