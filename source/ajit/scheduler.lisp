@@ -460,11 +460,9 @@ Options:
     (apply (jit-info-caller jit) args))
   (apply #'values args))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun compile/polyhedron (refcount base-avm avm polyhedron &key (debug 0) (name nil) (backend nil) (multiexpr t) (seen nil) &aux (base-name (avm-name avm)))
+(defun compile/polyhedron (refcount base-avm avm polyhedron &key (debug 0) (name nil) (backend nil) (seen nil) &aux (base-name (avm-name avm)))
   (declare (type polyhedral polyhedron))
   (setf (avm-name avm) (intern (string-upcase (format nil "~a_~a" (avm-name avm) name)) "KEYWORD"))
-  ;; Polyhedron supercedes :FOR/:ENDFOR, and we dont need it anymroe, remove them.
-  (remove-iteration-ir (poly-pipeline polyhedron))
   ;; Minimizing the number of allocation by creating an alias
   ;; After applying memory-planner, it breaks write-must-be-exist-once rule of aIR graph
   ;; so you cannot verify the graph!
@@ -521,12 +519,17 @@ Options:
 	   (auto-schedule! x :verbose verbose-auto :serialize serialize)
 	   (when (>= debug 2) (format t "~% == [Final Polyhedron] ====~%~a~%" x)))
        polyhedrons)
+      ;; Polyhedron supercedes :FOR/:ENDFOR, and we dont need it anymroe, remove them.
+      (mapc (compose #'remove-iteration-ir #'poly-pipeline) polyhedrons)
+      ;; [TODO] When polyhedron >= 1 (conflicts with backward)
+      (when (and (= (length polyhedrons) 1) multiexpr)
+	(mapc #'(lambda (x) (apply-multiexpr-grouping (poly-pipeline x))) polyhedrons))
       (let* ((seen)
 	     (jit-graphs
 	       (map 'list
 		    #'(lambda (x name)
 			(multiple-value-bind (out seen-new)
-			    (compile/polyhedron refcount base-avm avm x :backend backend :multiexpr multiexpr :debug debug :name name :seen seen)
+			    (compile/polyhedron refcount base-avm avm x :backend backend :debug debug :name name :seen seen)
 			  (setf seen seen-new)
 			  out))
 		    polyhedrons

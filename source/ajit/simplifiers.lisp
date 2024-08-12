@@ -275,43 +275,41 @@ is updated to:
   T0+T1 : Y <- cos(sin(m))
 It uses aIR graph features; accordingly must be applied before doing memory-planner optimization!"
   (declare (type hash-table pipeline))
-  (let ((copied-graph (make-hash-table)))
-    (maphash
-     #'(lambda (ts graph)
-	 (declare (type graph graph))
-	 (let* ((toplevels (graph-seen graph))
-		(outputs
-		    (remove-duplicates
-		     (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) toplevels))))
-		(out-memory-ids
-		  (map
-		   'list
-		   #'(lambda (x &aux (node (id->value graph x)))
-		       (when node
-			 (case (node-type node)
-			   (:WHERE (list (second (node-reads node)) (second (relay-reads (read-type-relay node)))))
-			   (otherwise (list (first (node-reads node)) (first (relay-reads (read-type-relay node))))))))
-		   outputs))
-		(out-types
-		  (map
-		   'list
-		   #'(lambda (x &aux (node (id->value graph x)))
-		       (when node
-			 (car (relay-writes (read-type-relay node)))))
-		   outputs)))
-	   (when (and
-		  outputs
-		  (every #'identity out-memory-ids)
-		  (every
-		   #'(lambda (x &aux (type (node-type x)))
-		       (and (vm-instruction-p x)
-			    ;; Only element wise ops are fused!
-			    (not (find type `(:Allocate :MOVE :WHERE :WMMA :STORE)))
-			    (if (eql (node-class x) :BinaryOps)
-				(= (length (node-reads x)) 2)
-				t)))
-		   (graph-nodes graph)))
-	     (let ((fused-nodes (map 'list #'(lambda (x xt r) (create-multiexpr-node graph x xt (first r) (second r))) outputs out-types out-memory-ids)))
-	       (setf (gethash ts copied-graph) (apply #'make-graph (copy-list fused-nodes)))))))
-     pipeline)
-    copied-graph))
+  (maphash
+   #'(lambda (ts graph)
+       (declare (type graph graph))
+       (let* ((toplevels (graph-seen graph))
+	      (outputs
+		  (remove-duplicates
+		   (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) toplevels))))
+	      (out-memory-ids
+		(map
+		 'list
+		 #'(lambda (x &aux (node (id->value graph x)))
+		     (when node
+		       (case (node-type node)
+			 (:WHERE (list (second (node-reads node)) (second (relay-reads (read-type-relay node)))))
+			 (otherwise (list (first (node-reads node)) (first (relay-reads (read-type-relay node))))))))
+		 outputs))
+	      (out-types
+		(map
+		 'list
+		 #'(lambda (x &aux (node (id->value graph x)))
+		     (when node
+		       (car (relay-writes (read-type-relay node)))))
+		 outputs)))
+	 (when (and
+		outputs
+		(every #'identity out-memory-ids)
+		(every
+		 #'(lambda (x &aux (type (node-type x)))
+		     (and (vm-instruction-p x)
+			  ;; Only element wise ops are fused!
+			  (not (find type `(:Allocate :MOVE :WHERE :WMMA :STORE)))
+			  (if (eql (node-class x) :BinaryOps)
+			      (= (length (node-reads x)) 2)
+			      t)))
+		 (graph-nodes graph)))
+	   (let ((fused-nodes (map 'list #'(lambda (x xt r) (create-multiexpr-node graph x xt (first r) (second r))) outputs out-types out-memory-ids)))
+	     (setf (gethash ts pipeline) (apply #'make-graph (copy-list fused-nodes)))))))
+   pipeline))
