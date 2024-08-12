@@ -32,7 +32,6 @@
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    ;;(apply #'make-graph (append (list (r/funcall "T-1" nil)) (reverse new-graph)))
     (apply #'make-graph (reverse new-graph))))
 
 (defun expr-recursive-replace (expr map)

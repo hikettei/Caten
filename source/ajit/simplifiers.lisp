@@ -124,6 +124,7 @@
 	    do (setf (gethash (car (node-writes node)) refcount) refc
 		     (gethash (car (node-writes node)) refby) refb)))
     (make-reference-counter :refcount refcount :refcount-by refby)))
+
 (defun refcount/refalias (count id)
   (let ((val (gethash id (refcount-alias count))))
     (if val
@@ -131,6 +132,7 @@
 	    val
 	    (refcount/refalias count val))
 	id)))
+
 (defun refcount/make-alias (count node in-place)
   (if (eql (node-type node) :Allocate)
       (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node)))
@@ -174,7 +176,7 @@
 	if (eql write-to id)
 	  collect node))
 ;; MULTIEXPR ... JIT関数作成時点で適用，Groupingの流れにする
-(defun apply-memory-planner (refcount pipeline avm schedule-graph &key (multiexpr t))
+(defun apply-memory-planner (refcount pipeline avm schedule-graph)
   (let* ((pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
 	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
 	 (allocated-items
@@ -208,7 +210,7 @@
 	      ;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
 	      
 	      (when (and (null inplace-p) all-exists-in-the-same-pipeline)
-		;; TODO: 隣接するPipelineもOK
+		;; [TODO]
 		;; Minimizing the number of allocations by following the rule:
 		;; 1. (car reads) becomes write, (except for %WHERE)
 		;;  | -   A <- f(B, C, D)
@@ -229,7 +231,8 @@
 	      (loop for node in (graph-nodes graph)
 		    for type = (read-type-relay node)
 		    if (null (find (car (node-writes node)) allocated-items))
-		      do (setf (graph-nodes (gethash time pipeline))
+		      do (push (car (node-writes node)) allocated-items)
+			 (setf (graph-nodes (gethash time pipeline))
 			       (append
 				(list (make-node :Buffer :Allocate
 						 (node-writes node) (map 'list #'reveal-buffer `(,@(buffer-shape (car (relay-writes type))) ,@(buffer-stride (car (relay-writes type)))))

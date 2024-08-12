@@ -459,42 +459,7 @@ Options:
     (apply (jit-info-caller jit) args))
   (apply #'values args))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; TODO LIST:
-;;  TODO: making isl objects gc-reachable (-> ctxに紐付けておく)
-;;  TODO: Symbolic Graph Compilation
-;;      - Step1 Numberと同じようにCompileできるようにする (if not appeared in strides)
-;;              - Testing: Stride計算がTensorでもOK?
-;;      - Step2 (Strideの計算は適当な整数値(素数)で置き換える)
-;;  FIX:  Bugs (more symbolic deps needed)
-;;  ADD: METAL/OMP, parallelize dependencies analysis
-;;  ADD: If/For Node in the early stage!!!!
-;; 正しいコンパイル:
-;;   Step1, Dynamic Shapeと入力変数のみを受け入れる
-;;   Step2, tmpvarの振る舞い...
-;;   Step3, JIT-CompiledのArgsのテスト (axpy, symbolic meanで検証)
-;;   Aref ga buffer no toki overwrite???
-;; TODO: View計算もExprに含めたい (OK)
-;; 今やってないこと:
-;; apply-multiexpr-grouping無しでも動作するべき (:MULTIEXPR=1, CI Testに含める)
-;; Backward?
-;; RendererをRefactorする。aRI GraphのRenderingを廃止する？
-;; MULTIEXPR=0でテストを通すべきだと思う
-;; TODO: Ternary Ops %where
-;; 一時領域の判定ができると思う = (Allocationに宣言されてないUndefined Variable)
-;; Pipelineを跨いでWriteに依存はない？
-;; Esp: when creating backwards
-;; Write-toのUpdateがおかしい
-;; やること
-;; 1. Tanを動かす (ok ) -> Undefined-Varの処理を追加 (ok)
-;; 2. In-place-mutationをapply-memory-plannerにする (ok)
-;; 3. MULTIEXPR=1 or 0をCIに含める (no)
-;; 4. JIT-Compilation Backwardを実装
-;; 5. ^ 途中でMoveが含まれる時，うまく分割する
-;; Backward実装したら，int xxx = x[...];を実装
-;; JIT=0 JIT=1 でBackwardが同じかTestする
-;; (!tan (!matmul ...))のScheduler修正
-;; Step1 ~ 4をテストに含める
-(defun compile/polyhedron (refcount base-avm avm polyhedron &key (debug 0) (name nil) (backend nil) (multiexpr t) (seen nil))
+(defun compile/polyhedron (refcount base-avm avm polyhedron &key (debug 0) (name nil) (backend nil) (multiexpr t) (seen nil) &aux (base-name (avm-name avm)))
   (declare (type polyhedral polyhedron))
   (setf (avm-name avm) (intern (string-upcase (format nil "~a_~a" (avm-name avm) name)) "KEYWORD"))
   ;; Polyhedron supercedes :FOR/:ENDFOR, and we dont need it anymroe, remove them.
@@ -505,7 +470,7 @@ Options:
   ;; Preprocessing
   (let* ((extracted-schedule (finalize-schedule polyhedron))
 	 (rendering-graph (create-rendering-graph polyhedron extracted-schedule))
-	 (_ (apply-memory-planner refcount (poly-pipeline polyhedron) avm rendering-graph :multiexpr multiexpr))
+	 (_ (apply-memory-planner refcount (poly-pipeline polyhedron) avm rendering-graph))
 	 (allocs (purge-allocations (poly-pipeline polyhedron) (poly-vm-inputs polyhedron)))
 	 ;; Start Rendering
 	 (body (%render-body backend backend rendering-graph polyhedron 1))
@@ -525,6 +490,7 @@ Options:
 			 (push x seen)
 			 (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))
 		   allocs))))
+      (setf (avm-name avm) base-name)
       (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f function backend)))) seen))))
 
 (defun jit (avm
