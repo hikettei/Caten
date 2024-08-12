@@ -188,6 +188,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
     (when (eql (node-type node) :EXPR)
       (let ((buffers (getattr node :buffers)))
 	(assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
+	(setf (gethash (car (node-writes node)) alias) (ref (car (node-reads node))))
 	(mapc
 	 #'(lambda (aref)
 	     (setf (expr-x aref) (ref (expr-x aref))))

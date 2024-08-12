@@ -286,6 +286,11 @@ Compiled with: ~a"
 		   (multiple-value-bind (a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (at bt) (apply #'values (relay-reads type))
 		       (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref b bt)))))
+		  (:CAST
+		   (line "~(~a~) = (~a)~(~a~);"
+			 (render-aref (car (node-writes node)) (car (relay-writes (read-type-relay node))))
+			 (->cdtype (getattr node :dtype))
+			 (render-aref (car (node-reads node)) (car (relay-reads (read-type-relay node))))))
 		  #.(impl-unary :SIN "sin")
 		  #.(impl-unary :LOG2 "log2")
 		  #.(impl-unary :EXP2 "exp2")
