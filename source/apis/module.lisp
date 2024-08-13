@@ -222,7 +222,3 @@ The provided form does not match any of them:~%~a" method method method method f
 	       (let ((z (!mul x (!contiguous (!t y) :force t))))
 		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
 (defun !matmul (a b) (forward (make-instance 'Matmul) a b))
-
-(defun !softmax (x &aux (axis -1))
-  (let ((x1 (!exp x)))
-    (!div x1 (!sum x1 :axis axis :keepdims t))))

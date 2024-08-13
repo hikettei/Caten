@@ -353,6 +353,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (bc "C[~] X[~] Y[~] -> C[~] X[~] Y[~]" (condition x y))
     (forward (make-instance 'Where) condition x y)))
 
+(declaim (ftype (function (Tensor (or number symbol)) (values Tensor &optional)) !const))
 (defun !const (tensor value)
   "Creates a scalar tensor"
   (declare (type tensor tensor) (type (or number symbol) value))

@@ -17,6 +17,33 @@ Policy:
 
    #:LeakyReLU
    #:!leaky-relu
+
+   #:LogSoftmax
+   #:!log-softmax
+
+   #:ELU
+   #:!elu
+
+   #:ReLU6
+   #:!relu6
+
+   #:Softmax
+   #:!softmax
+
+   #:Softplus
+   #:!softplus
+
+   #:Softsign
+   #:!softsign
+
+   #:CeLU
+   #:!celu
+
+   #:SiLU
+   #:!silu
+
+   #:HardSwish
+   #:!hardswish
    )
   ;; from conv.lisp
   (:export
