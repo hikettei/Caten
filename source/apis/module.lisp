@@ -158,7 +158,7 @@ The provided form does not match any of them:~%~a" method method method method f
 		 (map 'list #'node->id inputs) (append (module-attrs op) (list :metadata op)))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
 
-;; ~~~ reductions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~ reduce ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun st/reduction (op x)
   (with-attrs ((axis :axis) (keepdims :keepdims)) op
     (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
@@ -210,7 +210,7 @@ The provided form does not match any of them:~%~a" method method method method f
   (defreduce !mean MeanNode)
   (defreduce !max MaxReduce)
   (defreduce !min MinReduce))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~ gemm ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (Matmul (()) :where "A[~ i j] B[~ j k] -> A[~ i k]")
     ()
     :documentation "Gemm (TODO)"
@@ -222,3 +222,31 @@ The provided form does not match any of them:~%~a" method method method method f
 	       (let ((z (!mul x (!contiguous (!t y) :force t))))
 		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
 (defun !matmul (a b) (forward (make-instance 'Matmul) a b))
+;; ~~ math ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmodule (SinHNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "SinH"
+    :impl ((sinh x) (!div (!sub (!exp x) (!exp (!neg x))) (!const x 2.0))))
+
+(defmodule (CoshNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "CosH"
+    :impl ((cosh x) (!div (!add (!exp x) (!exp (!neg x))) (!const x 2.0))))
+
+(defmodule (TanhNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "TanH"
+    :impl ((tanh x)
+	   (let ((two (!const x 2.0)))
+	     (!sub (!mul two (uiop:symbol-call :caten/nn :!sigmoid (!mul two x))) (!const x 1.0)))))
+
+(declaim (ftype (function (Tensor) (values Tensor &optional)) !sinh !cosh !tanh))
+(defun !sinh (x) (forward (SinhNode) x))
+(defun !cosh (x) (forward (CoshNode) x))
+(defun !tanh (x) (forward (TanhNode) x))
+;; TODO: 1. Export
+;;       2. Dtype Test (single-floatでちゃんと計算してる？)
+;;       3. !cos !tanとかはこっちに持ってくるRefactor
+;;       4. その他のNN Opsを実装
+;; TODO: in function.py only the principle ops are located.
+;; TODO: Move !cos !tan here

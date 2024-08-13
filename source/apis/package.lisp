@@ -64,7 +64,9 @@
    #:!mean
    #:!matmul
    #:!softmax
-   
+
+   ;; composed mathematical functions
+   #:!sinh #:!cosh #:!tanh
    )
   ;; from helpers.lisp
   (:export
