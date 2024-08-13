@@ -48,6 +48,10 @@ Policy:
    #:HardSwish
    #:!hardswish
    )
+  ;; from normalization.lisp
+  (:export
+   #:LayerNorm
+   )
   ;; from conv.lisp
   (:export
    #:ConvND

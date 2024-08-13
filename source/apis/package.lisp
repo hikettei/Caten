@@ -102,6 +102,7 @@
    #:!sin #:!cos #:!tan
    #:!exp #:!exp2
    #:!log #:!log2
+   #:!sqrt
    ;; Logical
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
    ;; TernaryOps

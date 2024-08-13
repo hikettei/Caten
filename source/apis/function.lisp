@@ -262,8 +262,14 @@ save-for-backward is determined automatically, so you do not have to consider ab
     (a (%log2 (car inputs)))
     (b (%mul a (%fconst (log 2) :dtype (dtype-of (car (func-variables op))))))))
 
+(defclass SqrtNode (Func) nil)
+(defmethod forward ((op SqrtNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
+(defmethod backward ((op SqrtNode) &optional prev-grad) (!mul prev-grad (!recip (!mul (!sqrt (car (func-variables op))) (!const prev-grad 2)))))
+(defmethod lower ((op SqrtNode) &rest inputs) (with-context (a (%sqrt (car inputs)))))
+
 (defun !exp (x) (forward (make-instance 'ExpNode) x))
 (defun !log (x) (forward (make-instance 'LogNode) x))
+(defun !sqrt (x) (forward (make-instance 'SqrtNode) x))
 
 (defclass Recip (Func) nil)
 (defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" (tensors)))
