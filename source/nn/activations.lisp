@@ -39,7 +39,7 @@
 
 (defmodel (ReLU () :where "A[~] -> A[~]") ())
 (defmethod call ((op ReLU) &rest inputs)
-  (!max (car inputs) (fconst (dtype-of (car inputs)))))
+  (!maximum (car inputs) (!const (car inputs) 0)))
 (defun !relu (x) (call (ReLU) x))
 
 (defmodel (LeakyReLU (&key (neg-slope 1e-3)) :where "A[~] -> A[~]") ((neg-slope neg-slope)))
@@ -48,6 +48,12 @@
     (with-slots ((neg-slope neg-slope)) op
       (!sub (!relu x) (!relu (!mul x (!neg (fconst neg-slope :dtype (dtype-of x)))))))))
 (defun !leaky-relu (x &key (neg-slope 1e-3)) (call (LeakyReLU :neg-slope neg-slope) x))
+
+(defun _softmax (x &key (axis -1))
+  (let* ((m (!sub x (!max x :axis axis :keepdims t)))
+	 (e (!exp m)))
+    (values m e (!sum e :axis axis :keepdims t))))
+
 (in-package :caten/nn.test)
 
 ;; test-sigmoid

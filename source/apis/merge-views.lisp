@@ -41,7 +41,7 @@ Applying a further slicing:
   (declare (type ViewRange old new))
   (with-slots ((frm1 from) (to1 to) (by1 by) (bc1 broadcast) (size size) (s1 subscript)) old
     (with-slots ((frm2 from) (to2 to) (by2 by) (bc2 broadcast) (s2 subscript)) new
-      (let* ((offset (!where (!> by1 (iconst 0)) (!min frm1 to1) (!max frm1 to1)))
+      (let* ((offset (!where (!> by1 (iconst 0)) (!minimum frm1 to1) (!maximum frm1 to1)))
 	     (from (!+ offset (!* (!signum by1) frm2)))
 	     (from (if (listp s1) from (iconst 0))) ;; A[2][3] is equivalent to A[3], do not compose them.
 	     (to   (!+ offset (!* (!signum by1) to2)))
