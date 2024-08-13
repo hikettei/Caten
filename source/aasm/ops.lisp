@@ -33,6 +33,7 @@
   (def %mul :MUL)
   (def %and :AND)
   (def %or :OR)
+  (def %xor :XOR)
   (def %move :MOVE)
   (def %max :MAX)
   (def %gcd :GCD))

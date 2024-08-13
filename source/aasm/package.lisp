@@ -43,6 +43,7 @@
    #:%move
    #:%and
    #:%or
+   #:%xor
    #:%max
    #:%gcd
 

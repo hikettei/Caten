@@ -112,6 +112,7 @@
   (impl :move #'(lambda (x y) x y))
   (impl :and #'(lambda (x y) (if (and (numberp x) (numberp y)) (logand x y) (and x y))))
   (impl :or #'(lambda (x y) (if (and (numberp x) (numberp y)) (logior x y) (or x y))))
+  (impl :xor #'(lambda (x y) (if (and (numberp x) (numberp y)) (logxor x y) (xor x y))))
   (impl :gcd #'gcd)
   (impl :max #'max)  
   (impl :sqrt  #'sqrt)
