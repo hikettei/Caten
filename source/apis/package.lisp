@@ -85,6 +85,7 @@
   (:export
    ;; shaping
    #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!permute #:!t
+   #:!expand
    #:!uprank
    ;; Binary
    #:!add #:!+

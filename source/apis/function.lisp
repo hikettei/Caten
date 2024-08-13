@@ -193,6 +193,10 @@ save-for-backward is determined automatically, so you do not have to consider ab
 	 (expand-shape (loop for r in repeats for b in base-shape append (list `(:~ ,r) t)))
 	 (final-shape (loop for s in (shape x) for r in repeats collect (!mul (->iconst s) (->iconst r)))))
     (apply #'!view (!reshape (!contiguous (apply #'!view (!reshape x new-shape) expand-shape)) final-shape) (loop for f in final-shape collect t))))
+(defun !expand (x shape)
+  (multiple-value-bind (view-index reshape-to) (apply #'values (pad-left (shape x) shape))
+    (let ((x (if (= (ndim x) (length shape)) x (!reshape x reshape-to))))	  
+      (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t `(:~ ,x))) view-index reshape-to)))))
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Move (Func) nil)
 (defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
