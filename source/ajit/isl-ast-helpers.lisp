@@ -10,8 +10,8 @@
   "T_name(index)"
   (name name :type string) (args args :type list))
 
-(defstruct (Expr (:constructor make-expr (op x &optional (y nil))))
-  (op op) (x x) (y y))
+(defstruct (Expr (:constructor make-expr (op x &optional (y nil) (z nil))))
+  (op op) (x x) (y y) (z z))
 
 (defstruct (ASTFor
 	    (:constructor make-for (idx from to by body execute-once)))

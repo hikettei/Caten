@@ -27,10 +27,13 @@ function void (args) { body };
 - ENDIF
 "))
 
-(defgeneric %render-expr (lang op lhs rhs)
+(defgeneric %render-expr (lang op lhs rhs z)
   (:documentation "
 TODO: Deftype
 OP :=
+:WHERE
+:LT
+:EQ
 :CONST(value, nil)
 :AND
 :OR
@@ -55,6 +58,6 @@ Render the ops in ./source/aasm/ops.lisp
   "Recursively render the expr"
   (declare (type keyword lang))
   (if (expr-p expr)
-      (%render-expr lang (expr-op expr) (expr-x expr) (expr-y expr))
-      (%render-expr lang :Const expr nil)))
+      (%render-expr lang (expr-op expr) (expr-x expr) (expr-y expr) (expr-z expr))
+      (%render-expr lang :Const expr nil nil)))
 
