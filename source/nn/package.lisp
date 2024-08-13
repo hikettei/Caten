@@ -54,6 +54,9 @@ Policy:
    #:BatchNorm
    #:RMSNorm
    )
+  ;; from embedding.lisp
+  (:export
+   #:Embedding)
   ;; from conv.lisp
   (:export
    #:ConvND

@@ -1,5 +1,4 @@
 (in-package :caten/nn)
-;; TODO: Embedding, PositionalEmbedding, RoPE
 ;; TODO: FlashAttention2
 (defmodel (Embedding (vocab-size embedding-dim))
     ((vocab-size vocab-size)
