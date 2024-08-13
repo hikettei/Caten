@@ -36,6 +36,9 @@ Policy:
    #:Softsign
    #:!softsign
 
+   #:GeLU
+   #:!gelu
+
    #:CeLU
    #:!celu
 
