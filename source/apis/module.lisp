@@ -158,7 +158,7 @@ The provided form does not match any of them:~%~a" method method method method f
 		 (map 'list #'node->id inputs) (append (module-attrs op) (list :metadata op)))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
 
-;; ~~~ reductions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~ reduce ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun st/reduction (op x)
   (with-attrs ((axis :axis) (keepdims :keepdims)) op
     (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
@@ -210,7 +210,7 @@ The provided form does not match any of them:~%~a" method method method method f
   (defreduce !mean MeanNode)
   (defreduce !max MaxReduce)
   (defreduce !min MinReduce))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~ gemm ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (Matmul (()) :where "A[~ i j] B[~ j k] -> A[~ i k]")
     ()
     :documentation "Gemm (TODO)"
@@ -222,3 +222,50 @@ The provided form does not match any of them:~%~a" method method method method f
 	       (let ((z (!mul x (!contiguous (!t y) :force t))))
 		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
 (defun !matmul (a b) (forward (make-instance 'Matmul) a b))
+;; ~~ math ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmodule (SinHNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "SinH"
+    :impl ((sinh x) (!div (!sub (!exp x) (!exp (!neg x))) (!const x 2.0))))
+
+(defmodule (CoshNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "CosH"
+    :impl ((cosh x) (!div (!add (!exp x) (!exp (!neg x))) (!const x 2.0))))
+
+(defmodule (TanhNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "TanH"
+    :impl ((tanh x)
+	   (let ((two (!const x 2.0)))
+	     (!sub (!mul two (uiop:symbol-call :caten/nn :!sigmoid (!mul two x))) (!const x 1.0)))))
+
+(defmodule (CosNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Cos"
+    :impl ((cos x) (!sin (!add x (fconst (/ pi 2) :dtype (dtype-of x))))))
+
+(defmodule (TanNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Tan"
+    :impl ((cos x) (!div (!sin x) (!cos x))))
+
+(declaim (ftype (function (Tensor) (values Tensor &optional)) !sinh !cosh !tanh !cos !tan !log2 !exp2))
+(defun !sinh (x) (forward (SinhNode) x))
+(defun !cosh (x) (forward (CoshNode) x))
+(defun !tanh (x) (forward (TanhNode) x))
+(defun !cos (x) (forward (CosNode) x))
+(defun !tan (x) (forward (TanNode) x))
+
+(defmodule (Exp2Node (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Exp2"
+    :impl ((exp2 x) (!exp (!mul x (fconst (log 2) :dtype (dtype-of x))))))
+
+(defmodule (Log2Node (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Log2"
+    :impl ((log2 x) (!div (!log x) (fconst (log 2) :dtype (dtype-of x)))))
+
+(defun !log2 (x) (forward (Log2Node) x))
+(defun !exp2 (x) (forward (Exp2Node) x))

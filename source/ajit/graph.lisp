@@ -75,8 +75,11 @@
 				(expr-aref arg typ)))		    
 			else
 			  collect (expr-const arg))))
-    (assert (<= (length parents) 2) () "~a cannot be grouped to multi expr! (too many arguments)" node)
+    (assert (<= (length parents) 3) () "~a cannot be grouped to multi expr! (too many arguments)" node)
     (case (node-type node)
+      (:WHERE (make-expr (node-type node) (first parents) (second parents) (third parents)))
+      (:LT    (make-expr (node-type node) (second parents) (third parents)))
+      (:NEQ   (make-expr (node-type node) (second parents) (third parents)))
       (:Load (expr-const (getattr node :value)))
       (:Cast (expr-cast (second parents) (getattr node :dtype)))
       (otherwise (make-expr (node-type node) (first parents) (second parents))))))

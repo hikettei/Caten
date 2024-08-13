@@ -36,6 +36,9 @@ Policy:
    #:Softsign
    #:!softsign
 
+   #:GeLU
+   #:!gelu
+
    #:CeLU
    #:!celu
 
@@ -45,6 +48,15 @@ Policy:
    #:HardSwish
    #:!hardswish
    )
+  ;; from normalization.lisp
+  (:export
+   #:LayerNorm
+   #:BatchNorm
+   #:RMSNorm
+   )
+  ;; from embedding.lisp
+  (:export
+   #:Embedding)
   ;; from conv.lisp
   (:export
    #:ConvND

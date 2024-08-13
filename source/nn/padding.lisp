@@ -64,7 +64,7 @@
 
 (in-package :caten/nn.test)
 
-(deftest pooling-test
+(deftest padding-test
   (let ((caten/aasm:*default-order* :row))
     ;; TODO: Counting the number of kernels
     (ok (every #'= (elements (proceed (!sin (caten/nn:!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 1.0)))))

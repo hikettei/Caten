@@ -4,6 +4,8 @@ Caten = Compile+AbstracTENsor
 
 something between tvm and tinygrad.
 
+- [ ] Finish this for ELS 2025
+
 ## Project Structure (WIP)
 
 Everything is a syntax sugar for ./source/air.

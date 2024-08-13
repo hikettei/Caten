@@ -79,21 +79,22 @@
 (defmodel (SiLU () :where "A[~] -> A[~]") ())
 (defmethod call ((op SiLU) &rest inputs &aux (x (car inputs))) (!mul x (!sigmoid x)))
 (defun !silu (x) (call (SiLU) x))
-
 ;; TODO: LogSigmoid
-;; TODO: GeLU (needs tanh/sigmoid/error function)
+(defmodel (GeLU (&key (approx :tanh)) :where "A[~] -> A[~]") ((approx approx)))
+(defmethod gelu/call ((op GeLU) (approx (eql :tanh)) x)
+  (!* (!const x 0.5) x (!+ (!const x 1) (!tanh (!* (!const x (sqrt (/ 2.0 pi))) (!+ x (!* (!const x 0.044715) (!* x x x))))))))
+(defmethod gelu/call ((op GeLU) (approx (eql :sigmoid)) x)
+  (!mul x (!sigmoid (!* (!const x 1.702) x))))
+(defmethod call ((op GeLU) &rest inputs) (gelu/call op (slot-value op 'approx) (car inputs)))
+(defun !gelu (x &key (approx :tanh)) (call (GeLU :approx approx) x))
 ;; TODO: SeLU
 ;; TODO: Mish (needs tanh)
-
 (defmodel (HardSwish () :where "A[~] -> A[~]") ())
 (defmethod call ((op HardSwish) &rest inputs &aux (x (car inputs)))
   (!* x (!relu6 (!add x (!const x 3))) (!const x (/ 1 6))))
 (defun !hardswish (x) (call (HardSwish) x))
-
 ;; TODO: Hard_Tanh
 ;; TODO: Softmin
-;; TODO: Tanh
-
 (in-package :caten/nn.test)
 
 ;; TODO: TestOps

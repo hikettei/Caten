@@ -193,6 +193,10 @@ save-for-backward is determined automatically, so you do not have to consider ab
 	 (expand-shape (loop for r in repeats for b in base-shape append (list `(:~ ,r) t)))
 	 (final-shape (loop for s in (shape x) for r in repeats collect (!mul (->iconst s) (->iconst r)))))
     (apply #'!view (!reshape (!contiguous (apply #'!view (!reshape x new-shape) expand-shape)) final-shape) (loop for f in final-shape collect t))))
+(defun !expand (x shape)
+  (multiple-value-bind (view-index reshape-to) (apply #'values (pad-left (shape x) shape))
+    (let ((x (if (= (ndim x) (length shape)) x (!reshape x reshape-to))))	  
+      (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t `(:~ ,x))) view-index reshape-to)))))
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Move (Func) nil)
 (defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
@@ -244,10 +248,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod forward ((op SinNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op SinNode) &optional dout) (values (!cos dout)))
 (defmethod lower ((op SinNode) &rest inputs) (with-context (a (%sin (car inputs)))))
-
 (defun !sin (x) (forward (make-instance 'SinNode) x))
-(defun !cos (x) (!sin (!add x (fconst (/ pi 2) :dtype (dtype-of x)))))
-(defun !tan (x) (!div (!sin x) (!cos x)))
 
 (defclass ExpNode (Func) nil)
 (defmethod forward ((op ExpNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
@@ -265,10 +266,14 @@ save-for-backward is determined automatically, so you do not have to consider ab
     (a (%log2 (car inputs)))
     (b (%mul a (%fconst (log 2) :dtype (dtype-of (car (func-variables op))))))))
 
+(defclass SqrtNode (Func) nil)
+(defmethod forward ((op SqrtNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
+(defmethod backward ((op SqrtNode) &optional prev-grad) (!mul prev-grad (!recip (!mul (!sqrt (car (func-variables op))) (!const prev-grad 2)))))
+(defmethod lower ((op SqrtNode) &rest inputs) (with-context (a (%sqrt (car inputs)))))
+
 (defun !exp (x) (forward (make-instance 'ExpNode) x))
 (defun !log (x) (forward (make-instance 'LogNode) x))
-(defun !exp2 (x) (!exp (!mul x (fconst (log 2) :dtype (dtype-of x)))))
-(defun !log2 (x) (!div (!log x) (fconst (log 2) :dtype (dtype-of x))))
+(defun !sqrt (x) (forward (make-instance 'SqrtNode) x))
 
 (defclass Recip (Func) nil)
 (defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" (tensors)))

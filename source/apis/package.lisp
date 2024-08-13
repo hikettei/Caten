@@ -64,7 +64,9 @@
    #:!mean
    #:!matmul
    #:!softmax
-   
+
+   ;; composed mathematical functions
+   #:!sinh #:!cosh #:!tanh
    )
   ;; from helpers.lisp
   (:export
@@ -83,6 +85,7 @@
   (:export
    ;; shaping
    #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!permute #:!t
+   #:!expand
    #:!uprank
    ;; Binary
    #:!add #:!+
@@ -100,6 +103,7 @@
    #:!sin #:!cos #:!tan
    #:!exp #:!exp2
    #:!log #:!log2
+   #:!sqrt
    ;; Logical
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
    ;; TernaryOps

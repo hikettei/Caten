@@ -175,3 +175,6 @@ Reads and binds attributes from module.
 	  collect a
 	else if (listp a) collect (car a)))
 
+(defun pad-left (&rest shape)
+  (let ((max-dim (apply #'max (map 'list #'length shape))))
+    (mapcar #'(lambda (s) (append (make-list (- max-dim (length s)) :initial-element 1) s)) shape)))
