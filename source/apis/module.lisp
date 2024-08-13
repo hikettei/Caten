@@ -240,13 +240,32 @@ The provided form does not match any of them:~%~a" method method method method f
 	   (let ((two (!const x 2.0)))
 	     (!sub (!mul two (uiop:symbol-call :caten/nn :!sigmoid (!mul two x))) (!const x 1.0)))))
 
-(declaim (ftype (function (Tensor) (values Tensor &optional)) !sinh !cosh !tanh))
+(defmodule (CosNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Cos"
+    :impl ((cos x) (!sin (!add x (fconst (/ pi 2) :dtype (dtype-of x))))))
+
+(defmodule (TanNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Tan"
+    :impl ((cos x) (!div (!sin x) (!cos x))))
+
+(declaim (ftype (function (Tensor) (values Tensor &optional)) !sinh !cosh !tanh !cos !tan !log2 !exp2))
 (defun !sinh (x) (forward (SinhNode) x))
 (defun !cosh (x) (forward (CoshNode) x))
 (defun !tanh (x) (forward (TanhNode) x))
-;; TODO: 1. Export
-;;       2. Dtype Test (single-floatでちゃんと計算してる？)
-;;       3. !cos !tanとかはこっちに持ってくるRefactor
-;;       4. その他のNN Opsを実装
-;; TODO: in function.py only the principle ops are located.
-;; TODO: Move !cos !tan here
+(defun !cos (x) (forward (CosNode) x))
+(defun !tan (x) (forward (TanNode) x))
+
+(defmodule (Exp2Node (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Exp2"
+    :impl ((exp2 x) (!exp (!mul x (fconst (log 2) :dtype (dtype-of x))))))
+
+(defmodule (Log2Node (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Log2"
+    :impl ((log2 x) (!div (!log x) (fconst (log 2) :dtype (dtype-of x)))))
+
+(defun !log2 (x) (forward (Log2Node) x))
+(defun !exp2 (x) (forward (Exp2Node) x))

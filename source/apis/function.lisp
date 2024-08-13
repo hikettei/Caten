@@ -244,10 +244,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod forward ((op SinNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op SinNode) &optional dout) (values (!cos dout)))
 (defmethod lower ((op SinNode) &rest inputs) (with-context (a (%sin (car inputs)))))
-
 (defun !sin (x) (forward (make-instance 'SinNode) x))
-(defun !cos (x) (!sin (!add x (fconst (/ pi 2) :dtype (dtype-of x)))))
-(defun !tan (x) (!div (!sin x) (!cos x)))
 
 (defclass ExpNode (Func) nil)
 (defmethod forward ((op ExpNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
@@ -267,8 +264,6 @@ save-for-backward is determined automatically, so you do not have to consider ab
 
 (defun !exp (x) (forward (make-instance 'ExpNode) x))
 (defun !log (x) (forward (make-instance 'LogNode) x))
-(defun !exp2 (x) (!exp (!mul x (fconst (log 2) :dtype (dtype-of x)))))
-(defun !log2 (x) (!div (!log x) (fconst (log 2) :dtype (dtype-of x))))
 
 (defclass Recip (Func) nil)
 (defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" (tensors)))
