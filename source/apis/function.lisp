@@ -288,13 +288,13 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (forward (make-instance 'Cast :dtype-frm (tensor-dtype x) :dtype-to dtype) out x))
 ;; ~~ wrappers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (declaim (ftype (function (Tensor Tensor &key (:reduce boolean) (:id t)) (values Tensor &optional)) !add))
-(declaim (ftype (function (Tensor Tensor &key (:reduce boolean)) (values Tensor &optional)) !sub !mul !div !max !min))
+(declaim (ftype (function (Tensor Tensor &key (:reduce boolean)) (values Tensor &optional)) !sub !mul !div !maximum !minimum))
 (defun !add (a b &key (reduce nil) (id nil)) (apply #'forward (make-instance 'Add :reduce reduce :id id) (broadcast-elwise a b)))
 (defun !mul (a b &key (reduce nil)) (apply #'forward (make-instance 'Mul :reduce reduce) (broadcast-elwise a b)))
 (defun !sub (a b &key (reduce nil)) (!add a (!neg b) :reduce reduce))
 (defun !div (a b &key (reduce nil)) (!mul a (!recip b) :reduce reduce))
-(defun !max (a b &key (reduce nil)) (apply #'forward (make-instance 'MaxOp :reduce reduce) (broadcast-elwise a b)))
-(defun !min (a b &key (reduce nil)) (!neg (!max (!neg a) (!neg b) :reduce reduce)))
+(defun !maximum (a b &key (reduce nil)) (apply #'forward (make-instance 'MaxOp :reduce reduce) (broadcast-elwise a b)))
+(defun !minimum (a b &key (reduce nil)) (!neg (!maximum (!neg a) (!neg b) :reduce reduce)))
 (defun !gcd (a b &key (reduce nil)) (apply #'forward (make-instance 'GCDOp :reduce reduce) (broadcast-elwise a b)))
 (defun !lcm (a b) (!div (!mul a b) (!gcd a b)))
 (macrolet ((def (name b) `(defun ,name (&rest args) (reduce ,b args))))
@@ -352,3 +352,9 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (multiple-value-bind (condition x y)
       (bc "C[~] X[~] Y[~] -> C[~] X[~] Y[~]" (condition x y))
     (forward (make-instance 'Where) condition x y)))
+
+(declaim (ftype (function (Tensor (or number symbol)) (values Tensor &optional)) !const))
+(defun !const (tensor value)
+  "Creates a scalar tensor"
+  (declare (type tensor tensor) (type (or number symbol) value))
+  (make-scalar value :dtype (dtype-of tensor)))

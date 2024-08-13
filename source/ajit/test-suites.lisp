@@ -26,7 +26,7 @@
 (deftest check-kernel-counts
   (with-no-grad
     (check-kernels 1 (caten (!matmul (make-tensor `(10 20)) (make-tensor `(20 10)))))
-    (check-kernels 1 (caten (!softmax (ax+b `(10 10) 1 1))))
+    (check-kernels 1 (caten (caten/nn:!softmax (ax+b `(10 10) 1 1))))
     (check-kernels 1 (caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0)))))
     (check-kernels 1 (caten (!sin (!matmul (make-tensor `(10 20)) (make-tensor `(20 30))))))
     (check-kernels 2 (caten (!matmul (make-tensor `(128 32)) (!matmul (make-tensor `(32 64)) (make-tensor `(64 128))))))

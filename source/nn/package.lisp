@@ -9,7 +9,41 @@ Policy:
   (:use :cl :caten :caten/air :alexandria)
   ;; from activations.lisp
   (:export
+   #:Sigmoid
+   #:!sigmoid
+   
+   #:ReLU
    #:!relu
+
+   #:LeakyReLU
+   #:!leaky-relu
+
+   #:LogSoftmax
+   #:!log-softmax
+
+   #:ELU
+   #:!elu
+
+   #:ReLU6
+   #:!relu6
+
+   #:Softmax
+   #:!softmax
+
+   #:Softplus
+   #:!softplus
+
+   #:Softsign
+   #:!softsign
+
+   #:CeLU
+   #:!celu
+
+   #:SiLU
+   #:!silu
+
+   #:HardSwish
+   #:!hardswish
    )
   ;; from conv.lisp
   (:export

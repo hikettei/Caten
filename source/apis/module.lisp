@@ -170,21 +170,25 @@ The provided form does not match any of them:~%~a" method method method method f
 	(setf (tensor-op out) nil (tensor-variables out) nil)
 	out))))
 
-(defmodule (SumNode ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
-    ()
-    :documentation "Sum tensors along axis."
-    :forward st/reduction
-    :impl
-    ((sum x)
-     (with-attrs ((axis :axis) (keepdims :keepdims)) sum
-       (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
-	 (let* ((out (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element 0.0))
-		(out (apply #'!view out new-view))
-		(out (!add out x :reduce t))
-		(out (if keepdims
-			 out
-			 (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view)))))
-	   out)))))
+(macrolet ((defreduce (model description op)
+	     `(defmodule (, model((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
+		  ()
+		  :documentation ,description
+		  :forward st/reduction
+		  :impl
+		  ((op x)
+		   (with-attrs ((axis :axis) (keepdims :keepdims)) op
+		     (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
+		       (let* ((out (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element 0.0))
+			      (out (apply #'!view out new-view))
+			      (out (,op out x :reduce t))
+			      (out (if keepdims
+				       out
+				       (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view)))))
+			 out)))))))
+  (defreduce SumNode "Sum tensors along axis" !add)
+  (defreduce MaxReduce "Max" !maximum)
+  (defreduce MinReduce "Min" !minimum))
 
 (defmodule (MeanNode ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
     ()
@@ -198,10 +202,14 @@ The provided form does not match any of them:~%~a" method method method method f
 		     if (eql new-axis 1) do (setf total (!* total (->fconst base))))
            (!div (!sum x :axis axis :keepdims keepdims) (!cast total (dtype-of x)))))))
 
-(declaim (ftype (Function (Tensor &key (:axis t) (:keepdims boolean)) (values Tensor &optional)) !sum !mean))
-(defun !sum (x &key (axis t) (keepdims nil)) (forward (SumNode :axis axis :keepdims keepdims) x))
-(defun !mean (x &key (axis t) (keepdims nil)) (forward (MeanNode :axis axis :keepdims keepdims) x))
-;; TODO: !max !min !topk
+(macrolet ((defreduce (f model)
+	     `(progn
+		(declaim (ftype (Function (Tensor &key (:axis t) (:keepdims boolean)) (values Tensor &optional)) ,f))
+		(defun ,f (x &key (axis t) (keepdims nil)) (forward (,model :axis axis :keepdims keepdims) x)))))
+  (defreduce !sum SumNode)
+  (defreduce !mean MeanNode)
+  (defreduce !max MaxReduce)
+  (defreduce !min MinReduce))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (Matmul (()) :where "A[~ i j] B[~ j k] -> A[~ i k]")
     ()
@@ -214,14 +222,3 @@ The provided form does not match any of them:~%~a" method method method method f
 	       (let ((z (!mul x (!contiguous (!t y) :force t))))
 		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
 (defun !matmul (a b) (forward (make-instance 'Matmul) a b))
-
-(defmodule (Sigmoid (()) :where "A[~] -> A[~]")
-    ()
-    :documentation "Implements a sigmoid function"
-    :impl ((sigmoid x)
-	   ;; temporary
-	   (!neg (!neg x))))
-
-(defun !softmax (x &aux (axis -1))
-  (let ((x1 (!exp x)))
-    (!div x1 (!sum x1 :axis axis :keepdims t))))

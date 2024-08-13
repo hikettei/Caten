@@ -1,9 +1,6 @@
 (in-package :caten/nn)
 
 ;; Ref: https://github.com/tinygrad/tinygrad/blob/master/tinygrad/tensor.py#L1672
-;; TODO: Support symbolic by implementing
-;; !if !some
-;; TODO: test !repeat
 (defun _pool (x k_ stride dilation)
   (declare (type Tensor x))
   (assert (>= (ndim x) (length k_)))

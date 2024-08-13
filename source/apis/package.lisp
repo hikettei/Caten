@@ -90,6 +90,7 @@
    #:!mul #:!*
    #:!div #:!/
    #:!move
+   #:!maximum #:!minimum
    #:!max #:!min
    #:!gcd #:!lcm
 
@@ -103,6 +104,8 @@
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
    ;; TernaryOps
    #:!where
+   ;; more
+   #:!const
    )
   ;; from initializers.lisp
   (:export
