@@ -10,5 +10,4 @@
       (if bias
 	  (!add (!matmul x (!t weight)) bias)
 	  (!matmul x (!t weight))))))
-
 ;; TODO: BiLinear

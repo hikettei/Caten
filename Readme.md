@@ -1,6 +1,6 @@
 # Caten
 
-~~Programmable Deep Learning Framework~~
+Caten = Compile+AbstracTENsor
 
 something between tvm and tinygrad.
 

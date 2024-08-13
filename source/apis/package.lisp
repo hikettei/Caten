@@ -63,6 +63,7 @@
    #:MeanNode
    #:!mean
    #:!matmul
+   #:!softmax
    
    )
   ;; from helpers.lisp
