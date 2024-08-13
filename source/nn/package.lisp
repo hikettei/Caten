@@ -51,6 +51,8 @@ Policy:
   ;; from normalization.lisp
   (:export
    #:LayerNorm
+   #:BatchNorm
+   #:RMSNorm
    )
   ;; from conv.lisp
   (:export

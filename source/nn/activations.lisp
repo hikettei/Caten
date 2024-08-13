@@ -95,7 +95,6 @@
 (defun !hardswish (x) (call (HardSwish) x))
 ;; TODO: Hard_Tanh
 ;; TODO: Softmin
-
 (in-package :caten/nn.test)
 
 ;; TODO: TestOps
