@@ -19,7 +19,7 @@ If outputs is nil, the writes of last nodes becomes the top"
 	    if (find id (node-reads node) :test #'eql)
 	      collect node)))
 (defun id->value (graph id)
-  (declare (type graph graph))
+  (declare (type graph graph) (optimize (speed 3)))
   (if (not (symbolp id))
       nil
       (loop for node in (graph-nodes graph)
@@ -95,8 +95,8 @@ If outputs is nil, the writes of last nodes becomes the top"
   (when (graph-nodes graph)
     (let* ((output (or (graph-outputs graph) (node-writes (car (last (graph-nodes graph))))))
 	   (valid-write-ids))
-      (labels ((helper (x &key (value (id->value graph x)))
-		 (when value
+      (labels ((helper (x &aux (value (id->value graph x)))
+		 (when (and value (null (find (node-id value) valid-write-ids)))
 		   (push (node-id value) valid-write-ids)
 		   (mapc #'helper (node-reads value)))))
 	(mapc #'helper output))
@@ -105,4 +105,3 @@ If outputs is nil, the writes of last nodes becomes the top"
 		  if (or (find (node-id node) valid-write-ids) ;; node exists in a valid path
 			 (special-p (node-class node)))
 		    collect node)))))
-
