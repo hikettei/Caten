@@ -13,7 +13,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        lisp: [sbcl-bin/2.4.0, ccl-bin/1.2.0, ecl] # Caten should work on the latest sbcl; but (ql:quickload :dissect) which rove depends on, fails with > sbcl-bin/2.4.2
+        lisp: [sbcl-bin/2.4.0, ccl-bin/1.12.2, ecl] # Caten should work on the latest sbcl; but (ql:quickload :dissect) which rove depends on, fails with > sbcl-bin/2.4.2
         os: [ubuntu-latest]
         target:
         - normal
