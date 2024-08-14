@@ -50,7 +50,6 @@
 	 (b (%move (%view a (list size) (list size) (list 2xsize) (list (%iconst 1)) (list nil) (list (%iconst 1))) b)))
     (%view b (list 2xsize) (list (%iconst 0)) (list 2xsize) (list (%iconst 1)) (list nil) (list (%iconst 1)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Wrap-aroundのテスト (デバイス間で抽象化できない)
 (defun %threefry2x32 (size x seed &aux (rotations `((13 15 26 6) (17 29 16 24))) (*wrap-around-mode* t))
   "Implements threefry2x32
 - Paper: https://www.thesalmons.org/john/random123/papers/random123sc11.pdf"
@@ -100,6 +99,7 @@
 	(cc (if (eql (dtype-of xt) :float32) cc (%autocast base-shape cc (dtype-of xt))))))))
 
 (defun !rand (shape &key (dtype *default-float*) (order *default-order*))
+  "Initializes a tensor with randomly sampled from [0, 1)"
   (forward (make-instance 'RandNode) (make-tensor shape :dtype dtype :order order) *rng-counter*))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
