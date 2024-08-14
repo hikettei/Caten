@@ -113,5 +113,8 @@
    )
   ;; from initializers.lisp
   (:export
-   #:ax+b)
+   #:ax+b
+   #:set-manual-seed
+   #:with-manual-seed
+   )
   )

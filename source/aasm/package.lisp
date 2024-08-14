@@ -36,6 +36,7 @@
   ;; from ops.lisp
   (:export
    ;; Binary
+   #:*wrap-around-mode*
    #:%add
    #:%sub
    #:%mul

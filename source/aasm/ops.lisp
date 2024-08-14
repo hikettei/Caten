@@ -25,8 +25,9 @@
 ;; BinaryOps := [MOVE, Add, Mul, NEQ, LT, AND, OR, MAX, GCD]
 ;; reduction = nil -> | c = a + b
 ;; reduction = t   -> | a += b
+(defparameter *wrap-around-mode* nil)
 (macrolet ((def (fname opname &optional possibly-overflow)
-	     `(defun ,fname (x y &key (id (gensym "BID")) (reduction nil) (wrap-around nil))
+	     `(defun ,fname (x y &key (id (gensym "BID")) (reduction nil) (wrap-around ,(if possibly-overflow '*wrap-around-mode* nil)))
 		"If wrap-around=t -> (mod (op x y) (max_value_of (dtype x)))"
 		(declare (type node x y))
 		(when (and (null ,possibly-overflow) wrap-around)

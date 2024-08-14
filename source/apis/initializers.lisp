@@ -24,8 +24,8 @@
   (setf *manual-seed* seed *rng-counter* (make-tensor `(1) :dtype :uint32 :initial-element 0)))
 (defmacro with-manual-seed ((&key (seed 0)) &body body)
   `(let ((*manual-seed* ,seed) (*rng-counter* (make-tensor `(1) :dtype :uint32 :initial-element 0))) ,@body))
-;; Prepreq: ceiling
-;; TODO: Move this to aasm
+
+;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %autocast (shape x dtype) (%cast (%make-tensor (%shape shape) :dtype dtype) x dtype))
 (defun %idiv (shape x divisor) (%mul (%autocast shape x *default-float*) (%recip (%autocast shape divisor *default-float*))))
 (defun %idiv1 (shape x divisor)
@@ -42,8 +42,10 @@
 	   (loop for s in shape collect nil)
 	   (loop for s in shape collect (%iconst 0)))))
 (defun %ceiling (shape x &aux (trunc (%trunc shape x))) (%autocast shape (%where (%> shape *default-order* x trunc) (%add trunc (%broadcast-to shape 1)) trunc) :uint32))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO] Wrap-aroundのテスト (デバイス間で抽象化できない)
 ;; [TODO] VM/JITはScalar/MatrixのBroadcastはSupportするべき (左辺の時だけ)
-(defun %threefry2x32 (size x seed &aux (rotations `((13 15 26 6) (17 29 16 24))) (*default-uint* :int64))
+(defun %threefry2x32 (size x seed &aux (rotations `((13 15 26 6) (17 29 16 24))) (*wrap-around-mode* t))
   "Paper: https://www.thesalmons.org/john/random123/papers/random123sc11.pdf"
   (declare (type list size) (type fixnum seed))
   (multiple-value-bind (seed x0 x1)
