@@ -17,14 +17,13 @@
     (forward (make-instance 'Linspace) (->val a) (->val b) (or out (make-tensor shape :dtype dtype :order order)))))
 
 ;; ~~ random ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun make-rng-counter () (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter)))
 (defparameter *manual-seed* 0)
-(defparameter *rng-counter* (make-tensor `(1) :dtype :uint32 :initial-element 0))
+(defparameter *rng-counter* (make-rng-counter))
 (defun set-manual-seed (&key (seed 0))
   "Sets the seed for random operations."
-  (setf *manual-seed* seed *rng-counter* (make-tensor `(1) :dtype :uint32 :initial-element 0)))
-(defmacro with-manual-seed ((&key (seed 0)) &body body)
-  `(let ((*manual-seed* ,seed) (*rng-counter* (make-tensor `(1) :dtype :uint32 :initial-element 0))) ,@body))
-
+  (setf *manual-seed* seed *rng-counter* (make-rng-counter)))
+(defmacro with-manual-seed ((seed) &body body) `(let ((*manual-seed* ,seed) (*rng-counter* (make-rng-counter))) ,@body))
 ;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %autocast (shape x dtype) (%cast (%make-tensor (%shape shape) :dtype dtype) x dtype))
 (defun %idiv (shape x divisor) (%mul (%autocast shape x *default-float*) (%recip (%autocast shape divisor *default-float*))))
@@ -77,6 +76,7 @@
 (defmethod backward ((op RandNode) &optional dout) (declare (ignore op dout)))
 (defmethod lower ((op RandNode) &rest inputs)
   (multiple-value-bind (x rng-counter) (apply #'values inputs)
+    (declare (ignore x))
     (multiple-value-bind (xt) (apply #'values (func-variables op))
       (with-context
 	(base-shape (%shape (shape xt)))
