@@ -116,5 +116,6 @@
    #:ax+b
    #:set-manual-seed
    #:with-manual-seed
+   #:!rand
    )
   )

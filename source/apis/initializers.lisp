@@ -31,6 +31,7 @@
 (defun %idiv1 (shape x divisor)
   (declare (type number divisor))
   (%mul (%autocast shape x *default-float*) (%fconst (/ divisor))))
+(defun %shr (shape x shift dtype) (%autocast shape (%idiv1 shape x (expt 2 shift)) dtype))
 (defun %trunc (shape x) (%autocast shape (%autocast shape x :uint32) :float32))
 (defun %broadcast-to (shape value &key (dtype :uint64) (skip-load nil))
   (when (null shape) (return-from %broadcast-to (if skip-load value (%iconst value :dtype dtype))))
@@ -42,11 +43,18 @@
 	   (loop for s in shape collect nil)
 	   (loop for s in shape collect (%iconst 0)))))
 (defun %ceiling (shape x &aux (trunc (%trunc shape x))) (%autocast shape (%where (%> shape *default-order* x trunc) (%add trunc (%broadcast-to shape 1)) trunc) :uint32))
+(defun %cat (size dtype a b)
+  "Conatenates two 1d tensors a and b"
+  (let* ((2xsize (%add size size))
+	 (after (%make-tensor (list 2xsize) :dtype dtype))
+	 (a (%move (%view after (list size) (list (%iconst 0)) (list size) (list (%iconst 1)) (list nil) (list (%iconst 1))) a))
+	 (b (%move (%view a (list size) (list size) (list 2xsize) (list (%iconst 1)) (list nil) (list (%iconst 1))) b)))
+    (%view b (list 2xsize) (list (%iconst 0)) (list 2xsize) (list (%iconst 1)) (list nil) (list (%iconst 1)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Wrap-aroundのテスト (デバイス間で抽象化できない)
-;; [TODO] VM/JITはScalar/MatrixのBroadcastはSupportするべき (左辺の時だけ)
 (defun %threefry2x32 (size x seed &aux (rotations `((13 15 26 6) (17 29 16 24))) (*wrap-around-mode* t))
-  "Paper: https://www.thesalmons.org/john/random123/papers/random123sc11.pdf"
+  "Implements threefry2x32
+- Paper: https://www.thesalmons.org/john/random123/papers/random123sc11.pdf"
   (declare (type list size) (type fixnum seed))
   (multiple-value-bind (seed x0 x1)
       (values
@@ -63,7 +71,6 @@
 					  (%autocast size (%idiv1 size (nth 1 xr) (expt 2 (- 32 r))) :uint32)))))
 	(setf xr (list (%add (first xr) (nth (mod i 3) ks)) (%add (second xr) (%add (nth (mod (1+ i) 3) ks) (%uconst (1+ i) :dtype :uint32))))))
       (%or (%mul (%autocast size (second xr) :uint64) (%uconst (expt 2 32) :dtype :uint64)) (%autocast size (car xr) :uint64)))))
-
 (defclass RandNode (Func) ((shape :initform nil :accessor rand-shape))
   (:documentation "Initializes a uniform random tensor sampled from [0, 1)"))
 (defmethod forward ((op RandNode) &rest inputs) (st "A[~] Counter[x] -> A[~]" (inputs) (:x . 1)))
@@ -72,7 +79,8 @@
   (multiple-value-bind (x rng-counter) (apply #'values inputs)
     (multiple-value-bind (xt) (apply #'values (func-variables op))
       (with-context
-	(num (reduce #'%mul (%shape (shape xt))))
+	(base-shape (%shape (shape xt)))
+	(num (reduce #'%mul base-shape))
 	(rng-counter (%add rng-counter num :reduction t))
 	(size (%ceiling nil (%idiv nil num (%iconst 2))))
 	(counts1 (%make-tensor (list size) :dtype :uint32))
@@ -81,7 +89,15 @@
 	(counts1_64 (%make-tensor (list size) :dtype :uint64))
 	(counts2_64 (%make-tensor (list size) :dtype :uint64))
 	(x (%or (%mul (%cast counts2_64 counts2 :uint64) (%broadcast-to (list size) (expt 2 32))) counts1_64))
-        (x (%threefry2x32 (list size) x *manual-seed*))))))
+        (x (%threefry2x32 (list size) x *manual-seed*))
+	(counts1 (%autocast (list size) (%and x (%uconst 4294967295 :dtype :uint32)) :uint32))
+	(counts2 (%autocast (list size) (%and (%shr (list size) x 32 :uint32) (%uconst 4294967295 :dtype :uint32)) :uint32))
+	(2xsize (%add size size))
+	(cc (%shr (list 2xsize) (%cat size :uint32 counts1 counts2) 8 :float32))
+	(cc (%div cc (%fconst (expt 2 24))))
+	(cc (%view cc (list num) (list (%iconst 0)) (list num) (list (%iconst 1)) (list nil) (list (%iconst 1))))
+	(cc (%reshape cc base-shape :order (order xt)))
+	(cc (if (eql (dtype-of xt) :float32) cc (%autocast base-shape cc (dtype-of xt))))))))
 
 (defun !rand (shape &key (dtype *default-float*) (order *default-order*))
   (forward (make-instance 'RandNode) (make-tensor shape :dtype dtype :order order) *rng-counter*))
