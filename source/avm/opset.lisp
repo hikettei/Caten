@@ -14,5 +14,4 @@
 	      (let ((val (vm/readvar *vm* from)))
 		(if (buffer-p val)
 		    val
-		    (error "When Processing ~a, the variable ~a should be declared in the VM, and it should be a variable, getting ~a."
-			   node from val))))))))
+		    (error "When Processing ~a, the variable ~a should be declared in the VM, and it should be a variable, getting ~a." node from val))))))))

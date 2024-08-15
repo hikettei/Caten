@@ -1,11 +1,8 @@
 (in-package :caten/apis)
-
-;; Compiles the ahead-of-time
-;; TODO: AOT=LISP,CLANG, ...
-;; Include them in CI
+;; TODO: Documentation
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *jit-devices* `(:clang)) ;; TODO: Relocate
-  (defparameter *vm-devices* `(:lisp)) ;; TODO: Relocate
+  (defparameter *aot-jit* (ctx:getenv :AOT))
+  (defparameter *aot-vm* (ctx:getenv :AOT_VM))
   (defgeneric invoke-aot-function (device-id default-dtype default-order op &rest args))
   (defun create-blueprint-from-body (name dtype order lambda-list body &aux (*default-order* order))
     (let* ((*default-float* (if (caten/common.dtype:dtype/floatp dtype)    dtype *default-float*))
@@ -28,8 +25,8 @@
 	       for dtype in dtypes
 	       append
 	       (loop
-		 for *device* in `(,@*vm-devices* ,@*jit-devices*)
-		 for jit-p = (find *device* *jit-devices*)
+		 for *device* in `(,@*aot-vm* ,@*aot-jit*)
+		 for jit-p = (find *device* *aot-jit*)
 		 for blueprint = (create-blueprint-from-body cffi-prefix dtype order lambda-list body)
 		 for avm = (if jit-p (caten/ajit:jit blueprint :backend *device*) blueprint)
 		 append
@@ -38,9 +35,8 @@
 		     (flet ((-> (x) (if (tensor-p x) (tensor-buffer x) x)))
 		       (multiple-value-bind (,@(collect-initargs-names lambda-list)) (apply #'values (map 'list #'-> args))
 			 (apply #'forward ,avm (list ,@(loop for name in (collect-initargs-names lambda-list) collect `(cons ',name ,name)))))))))))
-	 (defun ,name (,@lambda-list)
-	   ;; v one of float/int/uint mode only
-	   (invoke-aot-function *device* :float32 *default-order* ,op-dispatcher ,@(collect-initargs-names lambda-list))))))
+	 (defun ,name (dtype ,@lambda-list)
+	   (invoke-aot-function *device* dtype *default-order* ,op-dispatcher ,@(collect-initargs-names lambda-list))))))
   (defmacro caten/defun[all] ((name cffi-prefix) lambda-list &body body)
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:float64 :float32 :float16 :uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8)) (,@lambda-list) ,@body))
   (defmacro caten/defun[float] ((name cffi-prefix) lambda-list &body body)
@@ -50,17 +46,24 @@
   (defmacro caten/defun[uint] ((name cffi-prefix) lambda-list &body body)
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:uint64 :uint32 :uint16 :uint8)) (,@lambda-list) ,@body)))
 
+;; Compiles the ahead-of-time
+;; TODO: AOT=LISP,CLANG, ...
+;; Include them in CI
+
 ;; [TODO] Implement BLAS
 ;; should be separated from the main package though to avoid compilation error
-(caten/defun[T] (axpy! "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
+(caten/defun[T] (axpy! "axpy" :dtypes (:float32 :float32)) (x y n froma toa bya fromb tob byb)
   (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
 
-(caten/defun[T] (%rand "rand" :dtypes (:float32)) (size)
-  (!rand `(,size) :dtype :float32))
+;;(caten/defun[T] (%rand "rand" :dtypes (:float32)) (size)
+;;  (!rand `(,size) :dtype :float32))
 
 (caten/defun[T] (gemm! "gemm" :dtypes (:float32)) (x y m n k)
   (!matmul (make-tensor `(,m ,n) :from x) (make-tensor `(,n ,k) :from y)))
 
 ;; TODO: Load Tensor (OK)
+;; Test with clang
+;; Switch to JIT
+;; How to dump clang code?
 ;; TODO: Running Tests
 ;; TODO: ContextVar
