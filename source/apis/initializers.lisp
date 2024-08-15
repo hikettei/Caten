@@ -49,7 +49,7 @@
 	 (a (%move (%view after (list size) (list (%iconst 0)) (list size) (list (%iconst 1)) (list nil) (list (%iconst 1))) a))
 	 (b (%move (%view a (list size) (list size) (list 2xsize) (list (%iconst 1)) (list nil) (list (%iconst 1))) b)))
     (%view b (list 2xsize) (list (%iconst 0)) (list 2xsize) (list (%iconst 1)) (list nil) (list (%iconst 1)))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~ threefry2x32 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %threefry2x32 (size x seed &aux (rotations `((13 15 26 6) (17 29 16 24))) (*wrap-around-mode* t))
   "Implements threefry2x32
 - Paper: https://www.thesalmons.org/john/random123/papers/random123sc11.pdf"
@@ -65,10 +65,10 @@
 	(dolist (r (nth (mod i 2) rotations))
 	  (setf x0 (%add (car xr) (second xr))
 		(nth 0 xr) x0
-	        (nth 1 xr) (%xor x0 (%add (%mul (nth 1 xr) (%uconst (expt 2 r) :dtype :uint32))
-					  (%autocast size (%idiv1 size (nth 1 xr) (expt 2 (- 32 r))) :uint32)))))
+	        (nth 1 xr) (%xor x0 (%add (%mul (nth 1 xr) (%uconst (expt 2 r) :dtype :uint32)) (%autocast size (%idiv1 size (nth 1 xr) (expt 2 (- 32 r))) :uint32)))))
 	(setf xr (list (%add (first xr) (nth (mod i 3) ks)) (%add (second xr) (%add (nth (mod (1+ i) 3) ks) (%uconst (1+ i) :dtype :uint32))))))
       (%or (%mul (%autocast size (second xr) :uint64) (%uconst (expt 2 32) :dtype :uint64)) (%autocast size (car xr) :uint64)))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass RandNode (Func) ((shape :initform nil :accessor rand-shape))
   (:documentation "Initializes a uniform random tensor sampled from [0, 1)"))
 (defmethod forward ((op RandNode) &rest inputs) (st "A[~] Counter[x] -> A[~]" (inputs) (:x . 1)))
@@ -80,10 +80,9 @@
       (with-context
 	(base-shape (%shape (shape xt)))
 	(num (reduce #'%mul base-shape))
-	(rng-counter (%add rng-counter num :reduction t))
 	(size (%ceiling nil (%idiv nil num (%iconst 2))))
 	(counts1 (%make-tensor (list size) :dtype :uint32))
-	(counts1 (%index-components counts1))
+	(counts1 (%add (%index-components counts1) (%broadcast-to (list size) rng-counter :dtype :uint32 :skip-load t)))
 	(counts2 (%add counts1 size))
 	(counts1_64 (%make-tensor (list size) :dtype :uint64))
 	(counts2_64 (%make-tensor (list size) :dtype :uint64))
@@ -100,7 +99,7 @@
 
 (defun !rand (shape &key (dtype *default-float*) (order *default-order*))
   "Initializes a tensor with randomly sampled from [0, 1)"
-  (forward (make-instance 'RandNode) (make-tensor shape :dtype dtype :order order) *rng-counter*))
+  (forward (make-instance 'RandNode) (make-tensor shape :dtype dtype :order order) (!add *rng-counter* (apply #'!* (map 'list #'->iconst shape)) :reduce t)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ;; rand

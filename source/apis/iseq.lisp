@@ -350,7 +350,7 @@
   (vm/set-params avm params)
   (vm/forward avm)
   (avm/sync-tensors avm)
-  (apply #'values (map 'list #'(lambda (x) (gethash x (avm-id2tensor avm))) (avm-fw-outputs avm))))
+  (apply #'values (map 'list #'(lambda (x) (%apply-proceed (gethash x (avm-id2tensor avm)))) (avm-fw-outputs avm))))
 
 (defmethod backward ((avm caten/avm:AVM) &optional prev-dout)
   (declare (ignore prev-dout))

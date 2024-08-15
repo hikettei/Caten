@@ -49,7 +49,7 @@
     ((:Mul ((:_TmpScalarConst ((= 1))) x)) -> (:_TmpPurged (x)))
     ((:Add (x (:_TmpScalarConst ((= 0))))) -> (:_TmpPurged (x)))
     ((:Add ((:_TmpScalarConst ((= 0))) x)) -> (:_TmpPurged (x)))
-    ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype)
+    ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype :from from)
      -> ;; inlining the shape/stride computation
      ((node graph)
       (when ss
@@ -64,7 +64,7 @@
 	    (make-node
 	     :Buffer :Allocate
 	     (node-writes node) new-shape
-	     :nrank nrank :dtype dtype))))))
+	     :nrank nrank :dtype dtype :from from))))))
     ((:View (~ ss) :broadcast broadcast :nrank nrank)
      ->
      ((node graph)

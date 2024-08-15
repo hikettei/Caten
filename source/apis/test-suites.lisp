@@ -484,3 +484,10 @@
 	      (one (make-tensor `(3 3) :initial-element 1 :dtype dtype)))
 	  (ok (every (equal-to 1) (elements (proceed (!add max one))))))))))
 
+(deftest reduction-side-effects
+  (testing "A[RealizedBuffer] += B[Lazy or Realized] should be must have a side effect to increase *rng-counter*"
+    (let ((a (proceed (make-tensor `(1) :dtype :uint32 :initial-element 1))))
+      (proceed (!add a (iconst 1) :reduce t))
+      (proceed (!add a (iconst 1) :reduce t))
+      (proceed (!add a (iconst 1) :reduce t))
+      (ok (every (equal-to 4) (elements a))))))

@@ -22,6 +22,7 @@
   (tape-length (length (graph-nodes graph)) :type fixnum)
   (pc 0 :type fixnum)
   (variables (make-hash-table-from-params params) :type hash-table))
+
 (defun deepcopy-avm (avm &aux (avm (copy-avm avm)))
   (declare (type avm avm))
   (setf (avm-graph avm) (copy-graph (avm-graph avm)))
@@ -35,11 +36,13 @@
     (if (eql out :nil)
 	nil
 	(or out (error "AVM Runtime Error: ~a is not defined in ~a" id avm)))))
+
 (defun vm/setvar (avm id value)
   (declare (type avm avm)
 	   (type symbol id)
 	   (type Buffer value))
   (setf (gethash id (avm-variables avm)) value))
+
 (defun vm/step (avm &aux (*vm* avm))
   (declare (type avm avm))
   (let ((node (nth (avm-pc avm) (graph-nodes (avm-graph avm)))))
@@ -62,6 +65,7 @@
 	  ;; Move to the next tape
 	  (incf (avm-pc avm))))))
   t)
+
 (defun vm/forward (avm)
   (declare (type avm avm))
   (setf (avm-pc avm) 0)
@@ -70,6 +74,7 @@
     (loop while (< (avm-pc avm) (avm-tape-length avm)) do
       (unless (vm/step avm) (finish)))
     (finish)))
+
 (defun vm/backward (avm)
   (declare (type avm avm))
   (let ((current-tape (nth (avm-pc avm) (graph-nodes (avm-graph avm)))))
@@ -79,12 +84,14 @@
     (incf (avm-pc avm)))
   (loop while (< (avm-pc avm) (avm-tape-length avm)) do (vm/step avm))
   t)
+
 (defun vm/set-params (avm params)
   (loop for (k . v) in params
 	do (assert (and (symbolp k) (numberp v))
 		   ()
 		   "vm/set-params: Invaild params (~a . ~a)~%Params should be a cons of (symbol . number)." k v)
 	   (setf (gethash k (avm-variables avm)) v)))
+
 (defun %realize (graph)
   (declare (type graph graph))
   (let ((out (node-writes (car (last (graph-nodes graph))))))

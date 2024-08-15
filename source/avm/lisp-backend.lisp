@@ -74,7 +74,9 @@
 	(progn
 	  (setf (buffer-value out) (copy-seq (buffer-value out)))
 	  (if reduction-p
-	      (apply #'map-into/buffer out op `(,out ,@(cdr buffers)))
+	      (progn
+		(apply #'map-into/buffer out op `(,out ,@(cdr buffers)))
+		(setf (buffer-value (car buffers)) (buffer-value out)))
 	      (apply #'map-into/buffer out op buffers))))
     out))
 
