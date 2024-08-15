@@ -12,7 +12,7 @@
 	  (gethash nil out) :nil)
     out))
 (defstruct (AVM
-	    (:constructor make-avm (graph name id2tensor fw-outputs bw-outputs &optional params &aux (id2tensor (or id2tensor (make-hash-table))))))
+	    (:constructor make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil) &aux (id2tensor (or id2tensor (make-hash-table))))))
   "Tape based iseq executor"
   (graph graph :type graph)
   (name name :type keyword)
@@ -21,7 +21,21 @@
   (id2tensor id2tensor :type hash-table)
   (tape-length (length (graph-nodes graph)) :type fixnum)
   (pc 0 :type fixnum)
-  (variables (make-hash-table-from-params params) :type hash-table))
+  (variables (make-hash-table-from-params params) :type hash-table)
+  (dumped dumped :type boolean)) ;; If dumped: CLOS objects are removed which is unnecessary to reconstruct the executable graph.
+
+(defmethod make-load-form ((avm AVM) &optional env)
+  (declare (ignore env))
+  `(make-avm
+    (let ((graph (make-graph ,@(map 'list #'identity (graph-nodes (avm-graph avm))))))
+      (setf (graph-seen graph) ',(graph-seen (avm-graph avm))
+	    (graph-outputs graph) ',(graph-outputs (avm-graph avm)))
+      graph)
+    ,(avm-name avm)
+    ,(avm-id2tensor avm)
+    ',(avm-fw-outputs avm)
+    ',(avm-bw-outputs avm)
+    nil t))
 
 (defun deepcopy-avm (avm &aux (avm (copy-avm avm)))
   (declare (type avm avm))
