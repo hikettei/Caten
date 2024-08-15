@@ -101,7 +101,7 @@
 
 (defun vm/set-params (avm params)
   (loop for (k . v) in params
-	do (assert (and (symbolp k) (numberp v))
+	do (assert (and (symbolp k) (or (buffer-p v) (numberp v)))
 		   ()
 		   "vm/set-params: Invaild params (~a . ~a)~%Params should be a cons of (symbol . number)." k v)
 	   (setf (gethash k (avm-variables avm)) v)))

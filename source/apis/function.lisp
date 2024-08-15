@@ -32,7 +32,8 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defclass Allocate (Func)
   ((buffer :initarg :buffer :type Tensor :accessor alloc-buffer)
    (initial-element :initarg :initial-element :initform nil :accessor alloc-initial-element)
-   (id :initform nil :accessor alloc-id)))
+   (id :initform nil :accessor alloc-id)
+   (from :initform nil :initarg :from :accessor alloc-from)))
 (defmethod forward ((op Allocate) &rest tensors) (declare (ignore tensors)) (alloc-buffer op))
 (defmethod backward ((op Allocate) &optional dout)
   (let ((buff (alloc-buffer op)))
@@ -52,7 +53,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (let ((g
 	      (with-context
 		(s (map 'list #'->lower (tensor-shape buff)))
-		(a (%make-tensor s :dtype (tensor-dtype buff) :order (tensor-order buff) :id (tensor-id buff)))
+		(a (%make-tensor s :dtype (tensor-dtype buff) :order (tensor-order buff) :id (tensor-id buff) :from (alloc-from op)))
 		(a (when (alloc-initial-element op) (%load a (alloc-initial-element op)))))))
 	(push g nodes)
 	(apply #'make-graph (apply #'append (map 'list #'graph-nodes (reverse nodes))))))))

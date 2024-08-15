@@ -61,7 +61,10 @@ If i is a tensor, %load fills the visible area of i with value."
 	      (render-list (subseq (node-reads node) 0 nrank))
 	      (render-list (subseq (node-reads node) nrank))
 	      (if (getattr node :from)
-		  (format nil ", from=<~a Realized Array>" (uiop:symbol-call :caten/avm :buffer-shape (getattr node :from)))
+		  (let ((buffer (getattr node :from)))
+		    (if (symbolp buffer)
+			(format nil ", from=<~a, Realized Array>" buffer)
+			(format nil ", from=<~a Realized Array>" (uiop:symbol-call :caten/avm :buffer-shape buffer))))
 		  "")
 	      (render-attrs node :except-for `(:from))))))
 
