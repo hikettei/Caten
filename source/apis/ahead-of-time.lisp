@@ -16,7 +16,7 @@
       blueprint))
   (defmacro caten/defun[T] ((name cffi-prefix &key (dtypes) (orders `(:row :column))) lambda-list &body body)
     (declare (type string cffi-prefix))
-    (let ((op-dispatcher (intern cffi-prefix "KEYWORD")))
+    (let ((op-dispatcher (intern (format nil "~a/~a" name cffi-prefix) "KEYWORD")))
       `(progn
 	 ,@(loop
 	     for order in orders
@@ -37,7 +37,7 @@
 			 (apply #'forward ,avm (list ,@(loop for name in (collect-initargs-names lambda-list) collect `(cons ',name ,name)))))))))))
 	 ;; If not implemented -> jit+cache
 	 (defmethod invoke-aot-function (device-id default-dtype order (op (eql ,op-dispatcher)) &rest args)
-	   (let* ((avm (create-blueprint-from-body ',name default-dtype order ',lambda-list ',body :aot-mode nil)))
+	   (let* ((avm (create-blueprint-from-body ,cffi-prefix default-dtype order ',lambda-list ',body :aot-mode nil)))
 	     (when avm
 	       (eval
 		`(defmethod invoke-aot-function ((device-id (eql ,device-id)) (default-dtype (eql ,default-dtype)) (order (eql ,order)) (op (eql ,,op-dispatcher)) &rest args)
@@ -56,9 +56,8 @@
   (defmacro caten/defun[uint] ((name cffi-prefix) lambda-list &body body)
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:uint64 :uint32 :uint16 :uint8)) (,@lambda-list) ,@body)))
 
-;; [TODO] Implement BLAS
-;; should be separated from the main package though to avoid compilation error
-(caten/defun[T] (axpy! "axpy" :dtypes (:float32 :float32)) (x y n froma toa bya fromb tob byb)
+;; [TODO] Unbind all methods when redefining the method.
+(caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
   (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
 
 ;;(caten/defun[T] (%rand "rand" :dtypes (:float32)) (size)
@@ -67,10 +66,9 @@
 ;;(caten/defun[T] (gemm! "gemm" :dtypes (:float32)) (x y m n k)
 ;;  (!matmul (make-tensor `(,m ,n) :from x) (make-tensor `(,n ,k) :from y)))
 
-;; Problems w/ CLANG JIT?
+;; Problems w/ CLANG JIT? (OK)
 ;; TODO: Load Tensor (OK)
 ;; Test with clang
-;; Switch to JIT
+;; Switch to JIT (OK)
 ;; How to dump clang code?
-;; TODO: Running Tests
-;; TODO: ContextVar
+;; TODO: ContextVar (OK)
