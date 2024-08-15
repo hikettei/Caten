@@ -6,6 +6,9 @@
    #:dtype-t
    #:dtype->lisp
    #:dtype/cast)
+  ;; from helpers.lisp
+  (:export
+   #:apply-static-gensym)
   ;; from isl-objects.lisp
   (:export
    #:form

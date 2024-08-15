@@ -6,6 +6,7 @@
   :serial t
   :components
   ((:file "package")
+   (:file "opset")
    (:file "helpers")
    (:file "buffer")
    (:file "runtime")

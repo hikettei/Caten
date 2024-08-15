@@ -25,14 +25,19 @@
 ;; BinaryOps := [MOVE, Add, Mul, NEQ, LT, AND, OR, MAX, GCD]
 ;; reduction = nil -> | c = a + b
 ;; reduction = t   -> | a += b
-(macrolet ((def (fname opname)
-	     `(defun ,fname (x y &key (id (gensym "BID")) (reduction nil))
+(defparameter *wrap-around-mode* nil)
+(macrolet ((def (fname opname &optional possibly-overflow)
+	     `(defun ,fname (x y &key (id (gensym "BID")) (reduction nil) (wrap-around ,(if possibly-overflow '*wrap-around-mode* nil)))
+		"If wrap-around=t -> (mod (op x y) (max_value_of (dtype x)))"
 		(declare (type node x y))
-		(emit (make-node :BinaryOps ,opname (list id) (list (node->id x) (node->id y)) :reduction reduction)))))
-  (def %add :ADD)
-  (def %mul :MUL)
+		(when (and (null ,possibly-overflow) wrap-around)
+		  (error "~a does not support the wrap-around option." ',fname))
+		(emit (make-node :BinaryOps ,opname (list id) (list (node->id x) (node->id y)) :reduction reduction :wrap-around wrap-around)))))
+  (def %add :ADD t)
+  (def %mul :MUL t)
   (def %and :AND)
   (def %or :OR)
+  (def %xor :XOR)
   (def %move :MOVE)
   (def %max :MAX)
   (def %gcd :GCD))

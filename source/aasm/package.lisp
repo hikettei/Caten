@@ -36,6 +36,7 @@
   ;; from ops.lisp
   (:export
    ;; Binary
+   #:*wrap-around-mode*
    #:%add
    #:%sub
    #:%mul
@@ -43,6 +44,7 @@
    #:%move
    #:%and
    #:%or
+   #:%xor
    #:%max
    #:%gcd
 

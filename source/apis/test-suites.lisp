@@ -476,21 +476,44 @@
   (unary-dtype-test abs-test !abs abs)
   (unary-dtype-test signum-test !signum signum))
 
-;; TODO
-;; - Implement Autograd
-;;   - 1. View Backward
-;;       - BroadcastingとSliceは同時に適用できないとする (OK)
-;;       - Composed Slice Backward Test. (OK)
-;;   - 2. Sum/Mean Backward  (OK)
-;;   - 3. Test ChainRule (OK)
-;;   - 2回目のbw 呼び出し，zero_grads ok
-;; - Fix: Compilation process is very slow (finishes < 4s, needs more refactor)
-;;   ax+bからのSumができない？？ (OK)
-;; (Shape Inference) (caten (!sum (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 5)))) Fails.
-;; - 1. Node Creation. - 2. (!add (iconst 1) (iconst 1))のレベルでConstant Foldingする
-;; - Implement Matmul
-;;   - Float前範囲に対するULP検証は外でやる
-;; - AJiTでaasmをloweringする
-;;   - CLANG/METAL/CUDA JIT
-;; log1p fusionとか実装する
-;; TODO, Fix (!matmul (3 3 4) (3 4 3))
+(deftest test-wrapped-with
+  (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
+    (let ((caten/aasm::*wrap-around-mode* t))
+      (dolist (dtype `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8))
+	(let ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
+	      (one (make-tensor `(3 3) :initial-element 1 :dtype dtype)))
+	  (ok (every (equal-to 1) (elements (proceed (!add max one))))))))))
+
+(deftest reduction-side-effects
+  (testing "A[RealizedBuffer] += B[Lazy or Realized] should be must have a side effect to increase *rng-counter*"
+    (let ((a (proceed (make-tensor `(1) :dtype :uint32 :initial-element 1))))
+      (ok (every (equal-to 1) (elements a)))
+      (proceed (!add a (iconst 1) :reduce t))
+      (ok (every (equal-to 2) (elements a)))
+      (proceed (!add a (iconst 1) :reduce t))
+      (ok (every (equal-to 3) (elements a)))
+      (proceed (!add a (iconst 1) :reduce t))
+      (ok (every (equal-to 4) (elements a))))))
+
+(deftest threefry2x32
+  (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
+    (with-manual-seed (0)
+      (let* ((n 100)
+	     (first-rand (elements (proceed (!rand `(,n ,n)))))
+	     (avg1 (/ (reduce #'+ first-rand) (* n n)))
+	     (scnd-rand (elements (proceed (!rand `(,n ,n)))))
+	     (avg2 (/ (reduce #'+ scnd-rand) (* n n)))
+	     (third-rand (elements (proceed (!rand `(,n ,n)))))
+	     (avg3 (/ (reduce #'+ third-rand) (* n n))))
+	(ok (< (abs (- avg1 0.5)) 0.01))
+	(ok (< (abs (- avg2 0.5)) 0.01))
+	(ok (< (abs (- avg3 0.5)) 0.01))
+	(ng (some #'= first-rand scnd-rand third-rand))
+	(testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
+	  (with-manual-seed (0)
+	    (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
+	      (testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
+		(ok (every #'= first-rand first-rand1)))
+	      (testing "Then, reproduce second/third randomness in a single call of proceed."
+		(let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
+		  (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand)))))))))))

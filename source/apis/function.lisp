@@ -363,3 +363,19 @@ save-for-backward is determined automatically, so you do not have to consider ab
   "Creates a scalar tensor"
   (declare (type tensor tensor) (type (or number symbol) value))
   (make-scalar value :dtype (dtype-of tensor)))
+
+;; ~~ Proceed ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass ProceedNode (Func) nil)
+(defmethod forward ((op ProceedNode) &rest inputs) (st "A[~] -> A[~]" (inputs)))
+(defmethod backward ((op ProceedNode) &optional prev-grad) prev-grad)
+(defmethod lower ((op ProceedNode) &rest inputs)
+  (declare (ignore inputs))
+  (with-context (_ (%make-tensor (%shape (shape (car (func-variables op)))) :dtype (dtype-of (car (func-variables op))) :order (order (car (func-variables op))) :id (tensor-id (car (func-variables op))) :from (tensor-buffer (car (func-variables op)))))))
+(defun %apply-proceed (proceed-output)
+  "Proceed-Output[Tensor] - a realized tensor."
+  (declare (type tensor proceed-output))
+  (let* ((detached-tensor (st "A[~] -> A[~]" (proceed-output))))
+    (setf (tensor-buffer detached-tensor) (tensor-buffer proceed-output))
+    (let ((output (forward (make-instance 'ProceedNode) detached-tensor)))
+      (setf (tensor-buffer output) (tensor-buffer detached-tensor))
+      output)))

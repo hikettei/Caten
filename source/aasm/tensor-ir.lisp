@@ -18,8 +18,9 @@
 (defparameter *default-int*   (ctx:getenv :DEFAULT_INT))
 (defparameter *default-uint*  (ctx:getenv :DEFAULT_UINT))
 
-(defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")))
-  "Equivalent to `dtype i[shape];`"
+(defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")) (from nil))
+  "Equivalent to `dtype i[shape];`
+From can be either of nil or Buffer, if buffer is specified, it loads the content of buffer instead of allocating it."
   (declare (type fixnum nrank)
 	   (type list shape stride)
 	   (type dtype-t dtype)
@@ -34,7 +35,7 @@ stride=~a" nrank shape stride)
       (values
        (map 'list #'node->id shape)
        (map 'list #'node->id stride))
-    (emit (make-node :Buffer :Allocate (list id) (append shape stride) :nrank nrank :dtype dtype))))
+    (emit (make-node :Buffer :Allocate (list id) (append shape stride) :nrank nrank :dtype dtype :from from))))
 
 (defun %salloc (&key (dtype *default-float*) (id (gensym "SID")))
   "Equivalent to: `dtype i;` but nrank=0"
@@ -54,12 +55,15 @@ If i is a tensor, %load fills the visible area of i with value."
 (defmethod print-node ((node Node) (id (eql :Allocate)))
   (let ((nrank (getattr node :nrank)))
     (when (and nrank (not (= nrank 0)))
-      (format nil "<~a : ~a <- (shape=(~a), stride=(~a))~a>"
+      (format nil "<~a : ~a <- (shape=(~a), stride=(~a)~a)~a>"
 	      (node-type node)
 	      (render-list (node-writes node))
 	      (render-list (subseq (node-reads node) 0 nrank))
-	      (render-list (subseq (node-reads node) nrank))		  
-	      (render-attrs node)))))
+	      (render-list (subseq (node-reads node) nrank))
+	      (if (getattr node :from)
+		  (format nil ", from=<~a Realized Array>" (uiop:symbol-call :caten/avm :buffer-shape (getattr node :from)))
+		  "")
+	      (render-attrs node :except-for `(:from))))))
 
 (defun %store (x y &key (id (gensym "LID")) (reduction nil))
   "Equivalent to x = y;"
@@ -90,17 +94,20 @@ If i is a tensor, %load fills the visible area of i with value."
   (flet ((const (n) (if (node-p n) n (%load (%salloc :dtype dtype) n))))
     (map 'list #'const shape)))
 
-(defun %make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")))
+(defun %make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (from nil))
   "A useful wrapper for %alloc. it computes stride based on order.
-%make-tensor is used to allocate the initial tensor, later weights are loaded."
+%make-tensor is used to allocate the initial tensor, later weights are loaded.
+Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=nrank>"
   (declare (type list shape)
 	   (type dtype-t dtype)
 	   (type (member :row :column) order))
   (assert (every #'(lambda (x) (or (symbolp x) (integerp x) (node-p x))) shape)
 	  ()
 	  "%make-tensor: Shape is designed as symbol (existing in the graph), integer or node.~%butgot ~a" shape)
-  (when (= 0 (length shape)) (return-from %make-tensor (%salloc :dtype dtype :id id)))
-  (%alloc (length shape) (%shape shape) (%stride shape order) :dtype dtype :id id))
+  (when (= 0 (length shape))
+    (assert (null from) () ":from for a scalar creation is ignored. Use %load instead.")
+    (return-from %make-tensor (%salloc :dtype dtype :id id)))
+  (%alloc (length shape) (%shape shape) (%stride shape order) :dtype dtype :id id :from from))
 
 (defun %index-components (x &key (id (gensym "IID")))
   "the equivalent to doing: `for (int i=x.view.from;i<x.view.to;i+=x.view.by) { id[i] = i; }`"

@@ -26,11 +26,11 @@
 	 (butlast (loop for n in list
 			append (list (format nil "~a" n) ", ")))))
 
-(defun render-attrs (node)
+(defun render-attrs (node &key (except-for nil))
   (if (node-attrs node)	      
       (with-output-to-string (out)
 	(format out " where")
 	(dolist (k (getattrs node))
-	  (when k
+	  (when (and k (null (find k except-for)))
 	    (format out " :~(~a~)=~a" k (getattr node k)))))
       ""))

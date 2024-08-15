@@ -24,7 +24,7 @@
 	    "Assertion Failed: IndexComponents(x: Bool) is not supported now."))
   (assert (every #'(lambda (x) (or (= (buffer-nrank x) 0)  (= (buffer-nrank x) (buffer-nrank result)))) buffers)
 	  ()
-	  "Assertion Failed: All buffers should have the same rank.")
+	  "Assertion Failed: All buffers should have the same rank, getting ~a." (map 'list #'buffer-nrank buffers))
   (let* ((nrank (buffer-nrank (car buffers)))
 	 (index-components-p (eql op #'index-components))
 	 (index-components (when index-components-p (coerce 0 (dtype->lisp (buffer-dtype (car buffers))))))
@@ -74,7 +74,9 @@
 	(progn
 	  (setf (buffer-value out) (copy-seq (buffer-value out)))
 	  (if reduction-p
-	      (apply #'map-into/buffer out op `(,out ,@(cdr buffers)))
+	      (progn
+		(apply #'map-into/buffer out op `(,out ,@(cdr buffers)))
+		(setf (buffer-value (car buffers)) (buffer-value out)))
 	      (apply #'map-into/buffer out op buffers))))
     out))
 
@@ -106,12 +108,15 @@
   (map-view nil #'index-components (car args)))
 
 (macrolet ((impl (kw op)
-	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args) (apply #'map-view (getattr node :reduction) ,op args))))
-  (impl :add #'+)
-  (impl :mul #'*)
+	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args &aux (max (caten/common.dtype:dtype/max (buffer-dtype (car args)))) (wrap-around (getattr node :wrap-around)))
+		(declare (ignorable max wrap-around))
+		(apply #'map-view (getattr node :reduction) ,op args))))
+  (impl :add #'(lambda (&rest args &aux (out (apply #'+ args))) (if wrap-around (mod out max) out)))
+  (impl :mul #'(lambda (&rest args &aux (out (apply #'* args))) (if wrap-around (mod out max) out)))
   (impl :move #'(lambda (x y) x y))
   (impl :and #'(lambda (x y) (if (and (numberp x) (numberp y)) (logand x y) (and x y))))
   (impl :or #'(lambda (x y) (if (and (numberp x) (numberp y)) (logior x y) (or x y))))
+  (impl :xor #'(lambda (x y) (if (and (numberp x) (numberp y)) (logxor x y) (xor x y))))
   (impl :gcd #'gcd)
   (impl :max #'max)  
   (impl :sqrt  #'sqrt)
