@@ -1,5 +1,6 @@
 (in-package :caten/apis)
 ;; TODO: Documentation
+;; TODO: Involve them unittests
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *aot-jit* (ctx:getenv :AOT))
   (defparameter *aot-vm* (ctx:getenv :AOT_VM))
@@ -57,18 +58,11 @@
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:uint64 :uint32 :uint16 :uint8)) (,@lambda-list) ,@body)))
 
 ;; [TODO] Unbind all methods when redefining the method.
-(caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
-  (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
+;;(caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
+;;  (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
 
 ;;(caten/defun[T] (%rand "rand" :dtypes (:float32)) (size)
 ;;  (!rand `(,size) :dtype :float32))
 
 ;;(caten/defun[T] (gemm! "gemm" :dtypes (:float32)) (x y m n k)
 ;;  (!matmul (make-tensor `(,m ,n) :from x) (make-tensor `(,n ,k) :from y)))
-
-;; Problems w/ CLANG JIT? (OK)
-;; TODO: Load Tensor (OK)
-;; Test with clang
-;; Switch to JIT (OK)
-;; How to dump clang code?
-;; TODO: ContextVar (OK)
