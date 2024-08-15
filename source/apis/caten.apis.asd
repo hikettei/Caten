@@ -15,6 +15,7 @@
 	       (:file "function")
 	       (:file "module")
 	       (:file "model")
+	       (:file "ahead-of-time")
 	       (:file "initializers")
 	       (:file "syntax-sugar"))
   :in-order-to

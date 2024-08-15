@@ -154,15 +154,11 @@
     (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+;;TODO: Xavier
 ;; TODO: (parameter x :requires-grad t :id xx)
-;; TODO: Pre-compile the function
-;; rand
-;; beta
-;; Ref: https://dl.acm.org/doi/pdf/10.1145/359460.359482
-;; gamma
-;; chisquare
-;; xavier
-;; uniform
-;; randint
-;; AxpyみたいにCompileした物を事前にLoadしておく
-;; (~ shape)
+;; TODO: Pre-compile the function (symbolic!)
+;; (export avm)
+;; (defstatic
+;; (defstatic randn (a b) (!randn ))
+  
+;; (compile module)

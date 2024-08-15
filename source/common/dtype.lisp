@@ -8,6 +8,7 @@
    #:dtype/cast
    #:dtype/floatp
    #:dtype/integerp
+   #:dtype/uintegerp
    #:dtype/max
    #:dtype/min
    #:dtype/min
@@ -58,7 +59,8 @@
 (defun dtype/floatp (dtype)
   (declare (type dtype-t dtype))
   (find dtype `(:float64 :float32 :float16 :bfloat16)))
-(defun dtype/integerp (dtype) (not (dtype/floatp dtype)))
+(defun dtype/uintegerp (dtype) (find dtype `(:uint64 :uint32 :uint16 :uint8)))
+(defun dtype/integerp (dtype) (find dtype `(:int64 :int32 :int16 :int8)))
 
 (defun dtype/cast (x cast-to)
   "Casts the given number x into cast-to"
