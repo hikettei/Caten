@@ -49,21 +49,19 @@ Compiled with: ~a"
 			  (,@(node-writes (car rest-forms)) (buffer-value ,@(node-writes (car rest-forms))))
 			,(expand (cdr rest-forms) body)))
 		 `(progn ,@body))))
-    (compile
-     nil
-     `(lambda (,@(apply #'append (map 'list #'node-writes allocs)))
-	(declare (optimize (compilation-speed 3)))
-	,(expand
-	  allocs
-	  `((cffi:foreign-funcall
-	     ,(format nil "~(~a~)" (avm-name avm))
-	     ,@(loop for node in allocs
-		     for type = (->cffi-dtype(getattr node :dtype))
-		     if (= (getattr node :nrank) 0)
-		       append `(,type (dtype/cast (buffer-value ,(car (node-writes node))) ,(getattr node :dtype)))
-		     else
-		       append `(:pointer ,(car (node-writes node))))
-	     :void)))))))
+    `(lambda (,@(apply #'append (map 'list #'node-writes allocs)))
+       (declare (optimize (compilation-speed 3)))
+       ,(expand
+	 allocs
+	 `((cffi:foreign-funcall
+	    ,(format nil "~(~a~)" (avm-name avm))
+	    ,@(loop for node in allocs
+		    for type = (->cffi-dtype(getattr node :dtype))
+		    if (= (getattr node :nrank) 0)
+		      append `(,type (dtype/cast (buffer-value ,(car (node-writes node))) ,(getattr node :dtype)))
+		    else
+		      append `(:pointer ,(car (node-writes node))))
+	    :void))))))
 
 (defun render-to-c (obj)
   (let ((obj (format nil "~(~a~)" obj)))

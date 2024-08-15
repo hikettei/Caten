@@ -444,16 +444,21 @@ Options:
     polyhedral))
 ;; ~~ Fused Kernel Objects ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (JIT-Info)
-  (caller #'(lambda ()) :type function)
+  (caller #'(lambda ()) :type (or null function))
+  (caller-body nil :type list)
   (lang :nil :type keyword)
   (code "" :type string)
-  (n-kernels 0 :type fixnum)) ;; the count of outermost loops
+  (n-kernels 0 :type fixnum)
+  (load-p t :type boolean)) ;; the count of outermost loops
+(defmethod make-load-form ((jit Jit-Info) &optional env)
+  (declare (ignore env))
+  `(make-jit-info :caller ,(jit-info-caller-body jit) :caller-body nil :lang ,(jit-info-lang jit) :code ,(jit-info-code jit) :n-kernels ,(jit-info-n-kernels jit) :load-p nil))
 (defmethod print-object ((s jit-info) stream) (format stream "<~a Code [~a kernels]>" (jit-info-lang s) (jit-info-n-kernels s)))
-(defun make-fused-kernel-caller (allocs lambda code lang n-kernels)
+(defun make-fused-kernel-caller (allocs lambda fcaller-body code lang n-kernels)
   (make-node :IR :JIT_KERNEL
 	     (apply #'append (map 'list #'node-writes allocs))
 	     (apply #'append (map 'list #'node-writes allocs))
-	     :jit-info (make-jit-info :caller lambda :lang lang :code code :n-kernels n-kernels)))
+	     :jit-info (make-jit-info :caller lambda :caller-body fcaller-body :lang lang :code code :n-kernels n-kernels)))
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((jit (getattr node :jit-info)))
     (assert (jit-info-p jit) () "~a is not a jit kernel. :jit-info=~a" node jit)
@@ -475,7 +480,8 @@ Options:
 	 (body (%render-body backend backend rendering-graph polyhedron 1))
 	 (function (%render-function backend avm allocs body))
 	 (function (%render-program-toplevel backend function))
-	 (f (%render-function-caller backend avm allocs)))
+	 (fcaller-body (%render-function-caller backend avm allocs))
+	 (f (compile nil fcaller-body)))
     (declare (ignore _))
     (assert (functionp f) () "%render-function-caller should return a function!")
     (when (>= debug 1) (format t "Compiled[~a]:~%~a" name function))
@@ -490,7 +496,7 @@ Options:
 			 (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))
 		   allocs))))
       (setf (avm-name avm) base-name)
-      (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f function backend (count-n-kernels rendering-graph))))) seen))))
+      (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f fcaller-body function backend (count-n-kernels rendering-graph))))) seen))))
 
 (defun jit (avm
 	    &key

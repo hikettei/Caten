@@ -41,7 +41,7 @@
     ,(node-class node) ,(node-type node) ',(node-writes node) ',(node-reads node)
     ,@(loop for attr in (getattrs node)
 	    for val = (getattr node attr)
-	    if (or (typep val 'dumpable-type) (and (listp val) (every #'(lambda (x) (typep x 'dumpable-type)) val)))
+	    if (or (eql attr :jit-info) (typep val 'dumpable-type) (and (listp val) (every #'(lambda (x) (typep x 'dumpable-type)) val)))
 	      append (if (or (listp val) (and (symbolp val) (not (keywordp val))))
 			 `(,attr ',val)
 			 `(,attr ,val))
