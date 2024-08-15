@@ -99,8 +99,18 @@
 	 (!sqrt (!mul (!log (!sub (fconst 1 :dtype :float32) (apply #'!view source (funcall mapper 1)))) (fconst -2 :dtype :float32))))
 	(shape x))
        (dtype-of x)))))
-	
-(defmodel (RandNormal (&key (mean 0.0) (std 1.0)) :where "A[~] -> A[~]") ((mean mean) (std std)))
+
+(defmodel (Random-Normal () :where "A[~] STD[] MEAN[] -> A[~]") ())
+(defmethod call ((op Random-Normal) &rest inputs)
+  (st "A[~] STD[] MEAN[] -> A[~]" (inputs))
+  (multiple-value-bind (x std mean) (apply #'values inputs)
+    (!add (!mul (!randn (shape x) :dtype (dtype-of x) :order (order x) :out x) std) mean)))
+
+(defmodel (Uniform-Random () :where "A[~] Upfrom[] Below[] -> A[~]") ())
+(defmethod call ((op Uniform-Random) &rest inputs)
+  (st "A[~] Upfrom[] Below[] -> A[~]" (inputs))
+  (multiple-value-bind (x upfrom below) (apply #'values inputs)
+    (!add (!cast (!mul (!sub below upfrom) (!rand (shape x) :dtype (dtype-of x) :order (order x) :out x)) (dtype-of x)) upfrom)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Linspace (Func) nil
   (:documentation "Generates an array sampled from this formula: x_i = a * index_components(i) + b"))
@@ -113,6 +123,39 @@
       (t1 (%mul i a))
       (t2 (%add t1 b))
       (c  (%store x t2)))))
+;; ~~ callers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun ax+b (shape a b &key (out nil) (dtype *default-float*) (order *default-order*))
+  "Initializes a tensor"
+  (declare (type list shape))
+  (flet ((->val (x) (->const x #'(lambda (x) (make-scalar x :dtype dtype :order order)))))
+    (forward (make-instance 'Linspace) (->val a) (->val b) (or out (make-tensor shape :dtype dtype :order order)))))
+
+(defun !rand (shape &key (dtype *default-float*) (order *default-order*) (out nil))
+  "Initializes a tensor with randomly sampled from [0, 1)"
+  (forward (make-instance 'RandNode) (or out (make-tensor shape :dtype dtype :order order)) (!add *rng-counter* (apply #'!* (map 'list #'->iconst shape)) :reduce t)))
+
+(defun !normal (shape &key (mean 0.0) (std 1.0) (dtype *default-float*) (order *default-order*) (out nil))
+  "Initializes a tensor, filled with random value sampled from a normal distribution."
+  (declare (type (or Tensor symbol number) mean std) (type list shape))
+  (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
+    (call (make-instance 'Random-Normal)
+	  (or out (make-tensor shape :dtype dtype :order order))
+	  (->cast std) (->cast mean))))
+
+(defun !randn (shape &key (dtype *default-float*) (order *default-order*) (out nil))
+  (call (make-instance 'Gaussian-Distribution-Node) (or out (make-tensor shape :dtype dtype :order order))))
+
+(defun !uniform (shape &key (upfrom 0.0) (below 1.0) (dtype *default-float*) (order *default-order*) (out nil))
+  (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
+    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
+
+(defun !randint (shape &key (upfrom 0) (below 1) (dtype *default-int*) (order *default-order*) (out nil))
+  (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
+    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+;; TODO: (parameter x :requires-grad t :id xx)
+;; TODO: Pre-compile the function
 ;; rand
 ;; beta
 ;; Ref: https://dl.acm.org/doi/pdf/10.1145/359460.359482
@@ -123,19 +166,3 @@
 ;; randint
 ;; AxpyみたいにCompileした物を事前にLoadしておく
 ;; (~ shape)
-(defun ax+b (shape a b &key (out nil) (dtype *default-float*) (order *default-order*))
-  "Initializes a tensor"
-  (declare (type list shape))
-  (flet ((->val (x) (->const x #'(lambda (x) (make-scalar x :dtype dtype :order order)))))
-    (forward (make-instance 'Linspace) (->val a) (->val b) (or out (make-tensor shape :dtype dtype :order order)))))
-
-(defun !rand (shape &key (dtype *default-float*) (order *default-order*))
-  "Initializes a tensor with randomly sampled from [0, 1)"
-  (forward (make-instance 'RandNode) (make-tensor shape :dtype dtype :order order) (!add *rng-counter* (apply #'!* (map 'list #'->iconst shape)) :reduce t)))
-
-(defun !randn (shape &key (dtype *default-float*) (order *default-order*))
-  (forward (make-instance 'Gaussian-Distribution-Node) (make-tensor shape :dtype dtype :order order)))
-
-
-;; TODO: (parameter x :requires-grad t :id xx)
-;; TODO: Pre-compile the function
