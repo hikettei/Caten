@@ -52,7 +52,7 @@
 	  (tensor-requires-grad tensor)
 	  (map 'list #'tensor-id (tensor-variables tensor))))
 
-(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil))
+(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil) (from nil))
   "## [function] make-tensor
 Create a new lazy tensor.
 Shape := (Integer > 1) | Symbol | Tensor"
@@ -60,7 +60,8 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	   (type dtype-t dtype)
 	   (type (member :column :row) order)
 	   (type symbol id)
-	   (type (or null number symbol) initial-element))
+	   (type (or null number symbol) initial-element)
+	   (type (or null symbol) from))
   (dolist (s shape)
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()
@@ -69,7 +70,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
     ;; Weird thing: The Top of the graph should not have variables.
     ;; AD recognises (null (func-variables op)) as an Allocation.
     ;; So do not modify the (tensor-variables tensor), as well as (func-variables Allocation)
-    (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element))
+    (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element :from from))
     buff))
 
 (defun make-scalar (value &key (dtype *default-float*) (order *default-order*) (id (gensym "SID")) (requires-grad nil))

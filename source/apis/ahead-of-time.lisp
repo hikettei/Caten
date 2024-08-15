@@ -4,7 +4,7 @@
 ;; TODO: AOT=LISP,CLANG, ...
 ;; Include them in CI
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *jit-devices* `()) ;; TODO: Relocate
+  (defparameter *jit-devices* `(:clang)) ;; TODO: Relocate
   (defparameter *vm-devices* `(:lisp)) ;; TODO: Relocate
   (defgeneric invoke-aot-function (device-id default-dtype default-order op &rest args))
   (defun create-blueprint-from-body (name dtype order lambda-list body &aux (*default-order* order))
@@ -15,8 +15,7 @@
 	   (outputs (multiple-value-list (apply graph-f (collect-initargs-names lambda-list))))
 	   (name (intern (format nil "~(~a~)_~(~a~)_~(~a~)" name order dtype) "KEYWORD"))
 	   (blueprint (let ((*device* :lisp)) (caten outputs :jit nil :name name))))
-      (when (= 1 (ctx:getenv :STATIC_GENSYM))
-	(caten/ajit:apply-static-gensym blueprint))	
+      (when (= 1 (ctx:getenv :STATIC_GENSYM)) (caten/ajit:apply-static-gensym blueprint))	
       blueprint))
   (defmacro caten/defun[T] ((name cffi-prefix &key (dtypes) (orders `(:row :column))) lambda-list &body body)
     (declare (type string cffi-prefix))
@@ -36,8 +35,9 @@
 		 append
 		 `((defmethod invoke-aot-function ((device-id (eql ,*device*)) (default-dtype (eql ,dtype))
 						   (order (eql ,order)) (op (eql ,op-dispatcher)) &rest args)
-		     (multiple-value-bind (,@(collect-initargs-names lambda-list)) (apply #'values args)
-		       (apply #'forward ,avm (list ,@(loop for name in (collect-initargs-names lambda-list) collect `(cons ',name ,name))))))))))
+		     (flet ((-> (x) (if (tensor-p x) (tensor-buffer x) x)))
+		       (multiple-value-bind (,@(collect-initargs-names lambda-list)) (apply #'values (map 'list #'-> args))
+			 (apply #'forward ,avm (list ,@(loop for name in (collect-initargs-names lambda-list) collect `(cons ',name ,name)))))))))))
 	 (defun ,name (,@lambda-list)
 	   ;; v one of float/int/uint mode only
 	   (invoke-aot-function *device* :float32 *default-order* ,op-dispatcher ,@(collect-initargs-names lambda-list))))))
@@ -52,12 +52,15 @@
 
 ;; [TODO] Implement BLAS
 ;; should be separated from the main package though to avoid compilation error
-(caten/defun[T] (axpy! "axpy" :dtypes (:float32)) (n froma toa bya fromb tob byb)
-  (!add (!view (make-tensor `(,n)) `(,froma ,toa ,bya)) (!view (make-tensor `(,n)) `(,fromb ,tob ,byb)))) 
+(caten/defun[T] (axpy! "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
+  (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
 
 (caten/defun[T] (%rand "rand" :dtypes (:float32)) (size)
   (!rand `(,size) :dtype :float32))
-;;(caten/defun[T] (gemm! "gemm" :dtypes (:float32)) (m n k)
-;;  (!matmul (make-tensor `(,m ,n) :id 'x) (make-tensor `(,n ,k) :id 'y)))
 
-;; (print (%rand 10))
+(caten/defun[T] (gemm! "gemm" :dtypes (:float32)) (x y m n k)
+  (!matmul (make-tensor `(,m ,n) :from x) (make-tensor `(,n ,k) :from y)))
+
+;; TODO: Load Tensor (OK)
+;; TODO: Running Tests
+;; TODO: ContextVar
