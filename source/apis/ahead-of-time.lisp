@@ -4,15 +4,15 @@
   (defparameter *aot-jit* (ctx:getenv :AOT))
   (defparameter *aot-vm* (ctx:getenv :AOT_VM))
   (defgeneric invoke-aot-function (device-id default-dtype default-order op &rest args))
-  (defun create-blueprint-from-body (name dtype order lambda-list body &aux (*default-order* order))
+  (defun create-blueprint-from-body (name dtype order lambda-list body &key (aot-mode t) &aux (*default-order* order))
     (let* ((*default-float* (if (caten/common.dtype:dtype/floatp dtype)    dtype *default-float*))
 	   (*default-uint*  (if (caten/common.dtype:dtype/uintegerp dtype) dtype *default-uint*))
 	   (*default-int*   (if (caten/common.dtype:dtype/integerp dtype)  dtype *default-int*))	   
 	   (graph-f (compile nil `(lambda (,@(collect-initargs-names lambda-list)) ,@body)))
 	   (outputs (multiple-value-list (apply graph-f (collect-initargs-names lambda-list))))
 	   (name (intern (format nil "~(~a~)_~(~a~)_~(~a~)" name order dtype) "KEYWORD"))
-	   (blueprint (let ((*device* :lisp)) (caten outputs :jit nil :name name))))
-      (when (= 1 (ctx:getenv :STATIC_GENSYM)) (caten/ajit:apply-static-gensym blueprint))	
+	   (blueprint (if aot-mode (let ((*device* :lisp)) (caten outputs :jit nil :name name)) (caten outputs :name name))))
+      (when aot-mode (when (= 1 (ctx:getenv :STATIC_GENSYM)) (caten/ajit:apply-static-gensym blueprint)))	
       blueprint))
   (defmacro caten/defun[T] ((name cffi-prefix &key (dtypes) (orders `(:row :column))) lambda-list &body body)
     (declare (type string cffi-prefix))
@@ -35,6 +35,16 @@
 		     (flet ((-> (x) (if (tensor-p x) (tensor-buffer x) x)))
 		       (multiple-value-bind (,@(collect-initargs-names lambda-list)) (apply #'values (map 'list #'-> args))
 			 (apply #'forward ,avm (list ,@(loop for name in (collect-initargs-names lambda-list) collect `(cons ',name ,name)))))))))))
+	 ;; If not implemented -> jit+cache
+	 (defmethod invoke-aot-function (device-id default-dtype order (op (eql ,op-dispatcher)) &rest args)
+	   (let* ((avm (create-blueprint-from-body ',name default-dtype order ',lambda-list ',body :aot-mode nil)))
+	     (when avm
+	       (eval
+		`(defmethod invoke-aot-function ((device-id (eql ,device-id)) (default-dtype (eql ,default-dtype)) (order (eql ,order)) (op (eql ,,op-dispatcher)) &rest args)
+		   (flet ((-> (x) (if (tensor-p x) (tensor-buffer x) x)))
+		     (multiple-value-bind (,@(collect-initargs-names ',lambda-list)) (apply #'values (map 'list #'-> args))
+		       (apply #'forward ,avm (list ,@(loop for name in (collect-initargs-names ',lambda-list) collect `(cons ',name ,name))))))))
+	       (apply #'invoke-aot-function device-id default-dtype order op args))))
 	 (defun ,name (dtype ,@lambda-list)
 	   (invoke-aot-function *device* dtype *default-order* ,op-dispatcher ,@(collect-initargs-names lambda-list))))))
   (defmacro caten/defun[all] ((name cffi-prefix) lambda-list &body body)
@@ -46,10 +56,6 @@
   (defmacro caten/defun[uint] ((name cffi-prefix) lambda-list &body body)
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:uint64 :uint32 :uint16 :uint8)) (,@lambda-list) ,@body)))
 
-;; Compiles the ahead-of-time
-;; TODO: AOT=LISP,CLANG, ...
-;; Include them in CI
-
 ;; [TODO] Implement BLAS
 ;; should be separated from the main package though to avoid compilation error
 (caten/defun[T] (axpy! "axpy" :dtypes (:float32 :float32)) (x y n froma toa bya fromb tob byb)
@@ -58,9 +64,10 @@
 ;;(caten/defun[T] (%rand "rand" :dtypes (:float32)) (size)
 ;;  (!rand `(,size) :dtype :float32))
 
-(caten/defun[T] (gemm! "gemm" :dtypes (:float32)) (x y m n k)
-  (!matmul (make-tensor `(,m ,n) :from x) (make-tensor `(,n ,k) :from y)))
+;;(caten/defun[T] (gemm! "gemm" :dtypes (:float32)) (x y m n k)
+;;  (!matmul (make-tensor `(,m ,n) :from x) (make-tensor `(,n ,k) :from y)))
 
+;; Problems w/ CLANG JIT?
 ;; TODO: Load Tensor (OK)
 ;; Test with clang
 ;; Switch to JIT
