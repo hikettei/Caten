@@ -19,9 +19,10 @@
   (grad-id grad-id :type symbol)
   (variables variables :type list))
 
-(defmethod make-load-form ((tensor Tensor) &optional env)
+(defmethod make-load-form ((tensor Tensor) &optional env &aux (debug-p (= 1 (ctx:getenv :AOT_VERBOSE))))
   (declare (ignore env))
-  ;; (when (tensor-buffer tensor) (warn "the buffer of ~a may be lost" tensor))
+  (when (and (tensor-buffer tensor) debug-p)
+    (warn "Removing the buffer of ~a when dumping it." tensor))
   (values
    `(%internal-make-tensor
      nil ',(tensor-shape tensor)
@@ -117,4 +118,3 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	;; Fold Constants in Shape (detached from the graph, no side effects)
 	(setf (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
 	buff))))
-

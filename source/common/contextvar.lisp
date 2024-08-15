@@ -6,7 +6,7 @@ Usage:
 (setf (ctx:getenv :SERIALIZE) 1)
 (help) -> full documentation")
   (:nicknames :ctx)
-  (:use :cl)
+  (:use :cl :cl-ppcre)
   (:export
    #:*ctx*
    #:help
@@ -27,7 +27,10 @@ Usage:
        (when (null (find x ',@options))
 	 (warn "ContextVar: ~a expects one of ~a butgot ~a, setting ~a" ',name ',options x ',default)
 	 (setf x ',default))
-       x)))
+       x))
+  (defun parse-list->kw (string)
+    (declare (type string string))
+    (map 'list #'(lambda (x) (intern (regex-replace-all " " x "") "KEYWORD")) (split "," string))))
 
 (macrolet ((defcontext (&rest slots)
 	     (assert (every
@@ -54,7 +57,7 @@ Usage:
 		,@(loop for slot in slots
 			collect
 			`(defmethod getenv ((id (eql ,(car slot))))
-			   (assert (contextvar-p *ctx*) () "Caten/common.contextvar: *ctx* is not initialized, getting ~a." *ctx*)
+			   (assert (contextvar-p *ctx*) () "Caten/common.contextvar: *ctx* is not initialized, or recompiled after changing the slots, getting ~a." *ctx*)
 			   (let ((val (uiop:getenv ,(symbol-name (car slot)))))
 			     (funcall
 			      #',(fourth slot)
@@ -135,7 +138,14 @@ Usage:
      "Default C Compiler")
     (:AOT_VERBOSE
      0 :int #.(oneof "AOT_VERBOSE" 0 `(0 1))
-     "")))
+     "When this option is set to 1, it prints all the information that AIR deletes during AOT compilation.")
+    (:AOT
+     "" :string parse-list->kw
+     "For AOT, please set the list of devices that will execute AOT compilation. The devices specified here must have all Renderers implemented.
+(e.g.: AOT=CLANG,METAL)")
+    (:AOT_VM
+     "" :string parse-list->kw
+     "For AOT_VM, please set the list of devices that will execute AOT compilation. The devices configured here are implemented through a VM, not a Renderer (i.e., devices without JIT implementation).")))
 
 (defparameter *ctx* (make-contextvar))
 (defmacro with-contextvar ((&rest configurations) &body body)
