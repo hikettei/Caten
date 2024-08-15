@@ -1,22 +1,10 @@
 (in-package :caten/apis)
-
-(defclass Linspace (Func) nil)
-(defmethod forward ((op Linspace) &rest inputs) (st "A[] B[] X[~] -> X[~]" (inputs)))
-(defmethod backward ((op Linspace) &optional dout) (values nil nil dout))
-(defmethod lower ((op Linspace) &rest inputs)
-  (multiple-value-bind (a b x) (apply #'values inputs)
-    (with-context
-      (i (%index-components x))
-      (t1 (%mul i a))
-      (t2 (%add t1 b))
-      (c  (%store x t2)))))
-(defun ax+b (shape a b &key (out nil) (dtype *default-float*) (order *default-order*))
-  "Initializes a tensor"
-  (declare (type list shape))
-  (flet ((->val (x) (->const x #'(lambda (x) (make-scalar x :dtype dtype :order order)))))
-    (forward (make-instance 'Linspace) (->val a) (->val b) (or out (make-tensor shape :dtype dtype :order order)))))
-
-;; ~~ randomness ~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; initializers.lisp: Implements the lazy (or static) initialization of dense/sparse arrays.
+;; How randomness should be implemented under the nature of laziness:
+;;   All computational nodes that exhibit random behavior must depend on `RandNode`.
+;;   it implements PRNG Generator based on threefry2x32.
+;;   *rng-counter* and *manual-seed* should be depended upon commonly by all graphs.
+;; ~~ randomness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-rng-counter () (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter)))
 (defparameter *manual-seed* 0)
 (defparameter *rng-counter* (make-rng-counter))
@@ -24,7 +12,7 @@
   "Sets the seed for random operations."
   (setf *manual-seed* seed *rng-counter* (make-rng-counter)))
 (defmacro with-manual-seed ((seed) &body body) `(let ((*manual-seed* ,seed) (*rng-counter* (make-rng-counter))) ,@body))
-;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ helpers for %threefry2x32 (should only be used here!) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %autocast (shape x dtype) (%cast (%make-tensor (%shape shape) :dtype dtype) x dtype))
 (defun %idiv (shape x divisor) (%mul (%autocast shape x *default-float*) (%recip (%autocast shape divisor *default-float*))))
 (defun %idiv1 (shape x divisor)
@@ -69,7 +57,8 @@
 	(setf xr (list (%add (first xr) (nth (mod i 3) ks)) (%add (second xr) (%add (nth (mod (1+ i) 3) ks) (%uconst (1+ i) :dtype :uint32))))))
       (%or (%mul (%autocast size (second xr) :uint64) (%uconst (expt 2 32) :dtype :uint64)) (%autocast size (car xr) :uint64)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass RandNode (Func) ((shape :initform nil :accessor rand-shape)) (:documentation "Initializes a uniform random tensor sampled from [0, 1)"))
+(defclass RandNode (Func) ((shape :initform nil :accessor rand-shape))
+  (:documentation "Generates an array sampled from a uniform distribution (threefry2x32) in the range of [0.0, 1.0)"))
 (defmethod forward ((op RandNode) &rest inputs) (st "A[~] Counter[x] -> A[~]" (inputs) (:x . 1)))
 (defmethod backward ((op RandNode) &optional dout) (declare (ignore op dout)))
 (defmethod lower ((op RandNode) &rest inputs)
@@ -96,11 +85,34 @@
 	(cc (%reshape cc base-shape :order (order xt)))
 	(cc (if (eql (dtype-of xt) :float32) cc (%autocast base-shape cc (dtype-of xt))))))))
 
-(defun !rand (shape &key (dtype *default-float*) (order *default-order*))
-  "Initializes a tensor with randomly sampled from [0, 1)"
-  (forward (make-instance 'RandNode) (make-tensor shape :dtype dtype :order order) (!add *rng-counter* (apply #'!* (map 'list #'->iconst shape)) :reduce t)))
+(defmodel (Gaussian-Distribution-Node () :where "A[~] -> A[~]") ())
+(defmethod call ((op Gaussian-Distribution-Node) &rest inputs)
+  ;; https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform
+  (st "A[~] -> A[~]" (inputs))
+  (multiple-value-bind (x) (apply #'values inputs)
+    (let* ((source (!rand `(2 ,@(shape x)) :dtype :float32 :order (order x)))
+	   (mapper #'(lambda (n) `(,n ,@(loop for s in (shape x) collect t)))))
+      (!cast
+       (!reshape
+	(!*
+	 (!cos (!mul (apply #'!view source (funcall mapper 0)) (fconst (* pi 2) :dtype :float32)))
+	 (!sqrt (!mul (!log (!sub (fconst 1 :dtype :float32) (apply #'!view source (funcall mapper 1)))) (fconst -2 :dtype :float32))))
+	(shape x))
+       (dtype-of x)))))
+	
+(defmodel (RandNormal (&key (mean 0.0) (std 1.0)) :where "A[~] -> A[~]") ((mean mean) (std std)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
+(defclass Linspace (Func) nil
+  (:documentation "Generates an array sampled from this formula: x_i = a * index_components(i) + b"))
+(defmethod forward ((op Linspace) &rest inputs) (st "A[] B[] X[~] -> X[~]" (inputs)))
+(defmethod backward ((op Linspace) &optional dout) (values nil nil dout))
+(defmethod lower ((op Linspace) &rest inputs)
+  (multiple-value-bind (a b x) (apply #'values inputs)
+    (with-context
+      (i (%index-components x))
+      (t1 (%mul i a))
+      (t2 (%add t1 b))
+      (c  (%store x t2)))))
 ;; rand
 ;; beta
 ;; Ref: https://dl.acm.org/doi/pdf/10.1145/359460.359482
@@ -110,4 +122,20 @@
 ;; uniform
 ;; randint
 ;; AxpyみたいにCompileした物を事前にLoadしておく
+;; (~ shape)
+(defun ax+b (shape a b &key (out nil) (dtype *default-float*) (order *default-order*))
+  "Initializes a tensor"
+  (declare (type list shape))
+  (flet ((->val (x) (->const x #'(lambda (x) (make-scalar x :dtype dtype :order order)))))
+    (forward (make-instance 'Linspace) (->val a) (->val b) (or out (make-tensor shape :dtype dtype :order order)))))
 
+(defun !rand (shape &key (dtype *default-float*) (order *default-order*))
+  "Initializes a tensor with randomly sampled from [0, 1)"
+  (forward (make-instance 'RandNode) (make-tensor shape :dtype dtype :order order) (!add *rng-counter* (apply #'!* (map 'list #'->iconst shape)) :reduce t)))
+
+(defun !randn (shape &key (dtype *default-float*) (order *default-order*))
+  (forward (make-instance 'Gaussian-Distribution-Node) (make-tensor shape :dtype dtype :order order)))
+
+
+;; TODO: (parameter x :requires-grad t :id xx)
+;; TODO: Pre-compile the function
