@@ -1,8 +1,10 @@
 (in-package :caten/apis)
 
 ;; Compiles the ahead-of-time
+;; TODO: AOT=LISP,CLANG, ...
+;; Include them in CI
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  (defparameter *jit-devices* `(:clang)) ;; TODO: Relocate
+  (defparameter *jit-devices* `()) ;; TODO: Relocate
   (defparameter *vm-devices* `(:lisp)) ;; TODO: Relocate
   (defgeneric invoke-aot-function (device-id default-dtype default-order op &rest args))
   (defun create-blueprint-from-body (name dtype order lambda-list body &aux (*default-order* order))
@@ -34,13 +36,11 @@
 		 append
 		 `((defmethod invoke-aot-function ((device-id (eql ,*device*)) (default-dtype (eql ,dtype))
 						   (order (eql ,order)) (op (eql ,op-dispatcher)) &rest args)
-		     ;; TODO: dump avm
-		     ;; (forward avm `(:a . ...) `(:b . ...))
-		     )))))
+		     (multiple-value-bind (,@(collect-initargs-names lambda-list)) (apply #'values args)
+		       (apply #'forward ,avm (list ,@(loop for name in (collect-initargs-names lambda-list) collect `(cons ',name ,name))))))))))
 	 (defun ,name (,@lambda-list)
 	   ;; v one of float/int/uint mode only
 	   (invoke-aot-function *device* :float32 *default-order* ,op-dispatcher ,@(collect-initargs-names lambda-list))))))
-  
   (defmacro caten/defun[all] ((name cffi-prefix) lambda-list &body body)
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:float64 :float32 :float16 :uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8)) (,@lambda-list) ,@body))
   (defmacro caten/defun[float] ((name cffi-prefix) lambda-list &body body)
@@ -50,9 +50,14 @@
   (defmacro caten/defun[uint] ((name cffi-prefix) lambda-list &body body)
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:uint64 :uint32 :uint16 :uint8)) (,@lambda-list) ,@body)))
 
-;;(caten/defun[int] randn (size) (!randn `(,size)))
-
 ;; [TODO] Implement BLAS
 ;; should be separated from the main package though to avoid compilation error
 (caten/defun[T] (axpy! "axpy" :dtypes (:float32)) (n froma toa bya fromb tob byb)
   (!add (!view (make-tensor `(,n)) `(,froma ,toa ,bya)) (!view (make-tensor `(,n)) `(,fromb ,tob ,byb)))) 
+
+(caten/defun[T] (%rand "rand" :dtypes (:float32)) (size)
+  (!rand `(,size) :dtype :float32))
+;;(caten/defun[T] (gemm! "gemm" :dtypes (:float32)) (m n k)
+;;  (!matmul (make-tensor `(,m ,n) :id 'x) (make-tensor `(,n ,k) :id 'y)))
+
+;; (print (%rand 10))

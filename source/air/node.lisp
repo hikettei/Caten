@@ -34,15 +34,15 @@
   (reads  reads :type list)
   (attrs  attrs :type list))
 
-(deftype dumpable-type () `(or symbol number keyword list))
+(deftype dumpable-type () `(or symbol number keyword))
 (defmethod make-load-form ((node Node) &optional env &aux (debug-dump (= 1 (ctx:getenv :AOT_VERBOSE))))
   (declare (ignore env))
   `(make-node
     ,(node-class node) ,(node-type node) ',(node-writes node) ',(node-reads node)
     ,@(loop for attr in (getattrs node)
 	    for val = (getattr node attr)
-	    if (typep val 'dumpable-type)
-	      append (if (and (symbolp val) (not (keywordp val)))
+	    if (or (typep val 'dumpable-type) (and (listp val) (every #'(lambda (x) (typep x 'dumpable-type)) val)))
+	      append (if (or (listp val) (and (symbolp val) (not (keywordp val))))
 			 `(,attr ',val)
 			 `(,attr ,val))
 	    else

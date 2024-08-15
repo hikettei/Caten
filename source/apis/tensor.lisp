@@ -4,18 +4,31 @@
 	    (:constructor %internal-make-tensor (op shape
 						 &key
 						   (dtype *default-float*) (order *default-order*) (id (gensym "TID"))
-						   (variables nil) (views nil) (requires-grad nil))))
+						   (variables nil) (views nil) (requires-grad nil)
+						   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD"))))
+						   (grad-id (when requires-grad (gensym "TGRAD"))))))
   (shape shape :type list)
   (buffer nil :type (or null Buffer))
   (dtype dtype :type dtype-t)
   (order order :type (member :row :column))
   (id id :type symbol)
   (op op :type (or null Func)) ;; Type Func or Module
-  (views nil :type list)
+  (views views :type list)
   (requires-grad requires-grad :type boolean)
-  (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD"))) :type (or null Tensor))
-  (grad-id (when requires-grad (gensym "TGRAD")) :type symbol)
+  (grad grad :type (or null Tensor))
+  (grad-id grad-id :type symbol)
   (variables variables :type list))
+
+(defmethod make-load-form ((tensor Tensor) &optional env)
+  (declare (ignore env))
+  ;; (when (tensor-buffer tensor) (warn "the buffer of ~a may be lost" tensor))
+  (values
+   `(%internal-make-tensor
+     nil ',(tensor-shape tensor)
+     :dtype ,(tensor-dtype tensor) :order ',(tensor-order tensor)
+     :id ',(tensor-id tensor) :variables ',(tensor-variables tensor)
+     :views nil :requires-grad ,(tensor-requires-grad tensor)
+     :grad ,(tensor-grad tensor) :grad-id ',(tensor-grad-id tensor))))
 
 (defun grad (tensor) (tensor-grad tensor))
 (defun shape (tensor) (copy-list (tensor-shape tensor)))
