@@ -54,5 +54,5 @@
 
 ;; [TODO] Implement BLAS
 ;; should be separated from the main package though to avoid compilation error
-;;(caten/defun[T] (axpy! "axpy" :dtypes (:float32)) (n froma toa bya fromb tob byb)
-;;  (!add (!view (make-tensor `(,n)) `(,froma ,toa ,bya)) (!view (make-tensor `(,n)) `(,fromb ,tob ,byb)))) 
+(caten/defun[T] (axpy! "axpy" :dtypes (:float32)) (n froma toa bya fromb tob byb)
+  (!add (!view (make-tensor `(,n)) `(,froma ,toa ,bya)) (!view (make-tensor `(,n)) `(,fromb ,tob ,byb)))) 
