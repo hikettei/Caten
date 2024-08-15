@@ -477,7 +477,7 @@
   (unary-dtype-test signum-test !signum signum))
 
 (deftest test-wrapped-with
-  (testing "Intentionally causes the overflow (which assumed by %threefy2x32)"
+  (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
     (let ((caten/aasm::*wrap-around-mode* t))
       (dolist (dtype `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8))
 	(let ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
