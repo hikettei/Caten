@@ -60,7 +60,7 @@ Everything is a syntax sugar for ./source/air.
 
 Please declare devices capable of AOT compilation in the environment variables AOT and AOT_VM.
 
-```AOT_VM=LISP AOT_JIT=CLANG,LISP make test``
+```AOT_VM=LISP AOT_JIT=CLANG,LISP make test```
 
 Afterwards, functions defined using the caten/defun macro will undergo AOT compilation. (Note that it does not analyze the source code, but traces the computational graph through Shape Tracker and lazy evaluation, so it does not behave exactly like defun).
 
