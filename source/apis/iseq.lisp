@@ -347,16 +347,18 @@
    (avm-id2tensor avm)))
 
 (defmethod forward ((avm caten/avm:AVM) &rest params)
-  (vm/set-params avm params)
-  (vm/forward avm)
-  (avm/sync-tensors avm)
-  (apply #'values (map 'list #'(lambda (x) (%apply-proceed (gethash x (avm-id2tensor avm)))) (avm-fw-outputs avm))))
+  (let ((*device* (ctx:getenv :AVM)))
+    (vm/set-params avm params)
+    (vm/forward avm)
+    (avm/sync-tensors avm)
+    (apply #'values (map 'list #'(lambda (x) (%apply-proceed (gethash x (avm-id2tensor avm)))) (avm-fw-outputs avm)))))
 
 (defmethod backward ((avm caten/avm:AVM) &optional prev-dout)
   (declare (ignore prev-dout))
-  (vm/backward avm)
-  (avm/sync-tensors avm)
-  t)
+  (let ((*device* (ctx:getenv :AVM)))
+    (vm/backward avm)
+    (avm/sync-tensors avm)
+    t))
 
 (defun proceed (&rest tensors)
   "Realizes the tensor"
@@ -366,4 +368,3 @@
 (defun %tensor->aasm (&rest tensors)
   (let ((sess (make-compiler-session :name :tensor->aasm)))
     (%lower-iseq sess (apply #'%tpsort-tensors sess tensors))))
-
