@@ -12,6 +12,16 @@
    :caten/common.dtype
    #:dtype-t
    #:dtype->lisp)
+  ;; from aot-compilation.lisp
+  (:export
+   #:*aot-jit*
+   #:*aot-vm*
+   #:*invoke-aot-function*
+   #:caten/defun[t]
+   #:caten/defun[all]
+   #:caten/defun[float]
+   #:caten/defun[int]
+   #:caten/defun[uint])
   ;; from tensor.lisp
   (:export
    #:make-tensor

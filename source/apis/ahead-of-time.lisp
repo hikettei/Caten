@@ -58,8 +58,8 @@
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:uint64 :uint32 :uint16 :uint8)) (,@lambda-list) ,@body)))
 
 ;; [TODO] Unbind all methods when redefining the method.
-;;(caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
-;;  (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
+(caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
+  (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
 
 ;;(caten/defun[T] (%rand "rand" :dtypes (:float32)) (size)
 ;;  (!rand `(,size) :dtype :float32))

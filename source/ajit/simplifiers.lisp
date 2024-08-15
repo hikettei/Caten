@@ -175,7 +175,7 @@
 	for write-to = (case (node-type node) (:ALLOCATE nil) (:WHERE (second (node-reads node))) (otherwise (car (node-reads node))))
 	if (eql write-to id)
 	  collect node))
-;; MULTIEXPR ... JIT関数作成時点で適用，Groupingの流れにする
+
 (defun apply-memory-planner (refcount pipeline avm schedule-graph)
   (let* ((pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
 	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
