@@ -16,7 +16,7 @@
   (flet ((->val (x) (->const x #'(lambda (x) (make-scalar x :dtype dtype :order order)))))
     (forward (make-instance 'Linspace) (->val a) (->val b) (or out (make-tensor shape :dtype dtype :order order)))))
 
-;; ~~ random ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ randomness ~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-rng-counter () (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter)))
 (defparameter *manual-seed* 0)
 (defparameter *rng-counter* (make-rng-counter))
@@ -69,8 +69,7 @@
 	(setf xr (list (%add (first xr) (nth (mod i 3) ks)) (%add (second xr) (%add (nth (mod (1+ i) 3) ks) (%uconst (1+ i) :dtype :uint32))))))
       (%or (%mul (%autocast size (second xr) :uint64) (%uconst (expt 2 32) :dtype :uint64)) (%autocast size (car xr) :uint64)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass RandNode (Func) ((shape :initform nil :accessor rand-shape))
-  (:documentation "Initializes a uniform random tensor sampled from [0, 1)"))
+(defclass RandNode (Func) ((shape :initform nil :accessor rand-shape)) (:documentation "Initializes a uniform random tensor sampled from [0, 1)"))
 (defmethod forward ((op RandNode) &rest inputs) (st "A[~] Counter[x] -> A[~]" (inputs) (:x . 1)))
 (defmethod backward ((op RandNode) &optional dout) (declare (ignore op dout)))
 (defmethod lower ((op RandNode) &rest inputs)
@@ -100,7 +99,7 @@
 (defun !rand (shape &key (dtype *default-float*) (order *default-order*))
   "Initializes a tensor with randomly sampled from [0, 1)"
   (forward (make-instance 'RandNode) (make-tensor shape :dtype dtype :order order) (!add *rng-counter* (apply #'!* (map 'list #'->iconst shape)) :reduce t)))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ;; rand
 ;; beta
@@ -111,3 +110,4 @@
 ;; uniform
 ;; randint
 ;; AxpyみたいにCompileした物を事前にLoadしておく
+
