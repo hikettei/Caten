@@ -132,7 +132,10 @@ Usage:
      "Set 0 to disable the animated progress bar of common/tqdm.lisp")
     (:CC
      "gcc" :string identity
-     "Default C Compiler")))
+     "Default C Compiler")
+    (:AOT_VERBOSE
+     0 :int #.(oneof "AOT_VERBOSE" 0 `(0 1))
+     "")))
 
 (defparameter *ctx* (make-contextvar))
 (defmacro with-contextvar ((&rest configurations) &body body)

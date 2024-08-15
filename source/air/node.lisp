@@ -33,6 +33,21 @@
   (writes writes :type list)
   (reads  reads :type list)
   (attrs  attrs :type list))
+
+(deftype dumpable-type () `(or symbol number keyword list))
+(defmethod make-load-form ((node Node) &optional env &aux (debug-dump (= 1 (ctx:getenv :AOT_VERBOSE))))
+  (declare (ignore env))
+  `(make-node
+    ,(node-class node) ,(node-type node) ',(node-writes node) ',(node-reads node)
+    ,@(loop for attr in (getattrs node)
+	    for val = (getattr node attr)
+	    if (typep val 'dumpable-type)
+	      append (if (and (symbolp val) (not (keywordp val)))
+			 `(,attr ',val)
+			 `(,attr ,val))
+	    else
+	      do (when debug-dump (warn "The slot ~a=~a is skipped when dumping ~a" attr val node)))))
+
 (defgeneric print-node (node id))
 (defmethod print-node ((node Node) id)
   (if (next-method-p)
@@ -61,12 +76,13 @@
 		      ""))))))
 ;;(defgeneric lower ())
 ;;(defgeneric mutate ())
-;; NOTE: attrs must be updated via simplifier, not (setf getattr)
+;; NOTE: attrs must be updated via simplifier (as much as possible!), not (setf getattr)
 (defun getattrs (node)
   (declare (type node node))
   (verify-attrs (node-attrs node))
   (loop for i upfrom 0 to (1+ (/ (length (node-attrs node)) 2)) by 2
-	collect (nth i (node-attrs node))))
+	if (keywordp (nth i (node-attrs node)))
+	  collect (nth i (node-attrs node))))
 (defun getattr (node id)
   (declare (type node node) (type keyword id))
   (ematch (node-attrs node) ((property id value) value)))
