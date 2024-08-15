@@ -154,11 +154,7 @@
     (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-;;TODO: Xavier
+;; TODO: Xavier/He/Orthogonal etc ...
 ;; TODO: (parameter x :requires-grad t :id xx)
 ;; TODO: Pre-compile the function (symbolic!)
-;; (export avm)
-;; (defstatic
-;; (defstatic randn (a b) (!randn ))
-  
-;; (compile module)
+;; (export-avm :clang avm)
