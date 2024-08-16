@@ -329,11 +329,13 @@
 	      &key
 		(jit (= 1 (ctx:getenv :JIT)))
 		(name (intern (symbol-name (gensym "MAIN")) "KEYWORD"))
+		(static-gensym (= 1 (ctx:getenv :STATIC_GENSYM)))
 		(simplifiers *external-simplifiers*)) ;; TODO disassemble options etc
   "Compiles the (Abstract) tensor"
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
   (let ((avm (%compile-toplevel tensors :name name :external-simplifiers simplifiers)))
+    (when static-gensym (caten/ajit:apply-static-gensym avm))
     (if jit (caten/ajit:jit avm) avm)))
 
 (defun avm/sync-tensors (avm)
