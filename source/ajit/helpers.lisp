@@ -100,7 +100,7 @@
    (null (getattr node :_tmp))
    (not (= (getattr node :nrank) 0))))
 
-(defun purge-allocations (poly pipeline dynamic-shapes &aux (allocs nil) (types (poly-vm-io-types poly)))
+(defun purge-allocations (poly pipeline dynamic-shapes &aux (allocs nil) (types (poly-vm-io-types poly)) (outputs (poly-vm-outputs poly)))
   (declare (type polyhedral poly) (type hash-table pipeline))
   (maphash
    #'(lambda (k graph)
@@ -109,7 +109,7 @@
 	     (loop for node in (graph-nodes graph)
 		   if (alloc-args-p node)
 		     do (push node allocs)
-		   else
+		   else unless (and (eql (node-type node) :Allocate) (find (car (node-writes node)) outputs))
 		     collect node)))
    pipeline)
   (let ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
