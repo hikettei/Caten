@@ -46,13 +46,15 @@ Compiled with: ~a"
   (labels ((expand (rest-forms body)
              (if rest-forms
 		 (if (= 0 (getattr (car rest-forms) :nrank))
-		     (let ((node (car rest-forms))
-			   (tmp (gensym)))
-		       (push (cons tmp node) tmps)
-		       `(let ((,tmp ,@(node-writes (car rest-forms))))
-			  (with-foreign-object (,@(node-writes (car rest-forms)) ,(->cffi-dtype (getattr node :dtype)))
-			    (setf (mem-ref ,@(node-writes (car rest-forms)) ,(->cffi-dtype (getattr node :dtype))) (buffer-value ,tmp))
-			    ,(expand (cdr rest-forms) body))))
+		     (if (null (getattr (car rest-forms) :_pointer))
+			 (expand (cdr rest-forms) body)
+			 (let ((node (car rest-forms))
+			       (tmp (gensym)))
+			   (push (cons tmp node) tmps)
+			   `(let ((,tmp ,@(node-writes (car rest-forms))))
+			      (with-foreign-object (,@(node-writes (car rest-forms)) ,(->cffi-dtype (getattr node :dtype)))
+				(setf (mem-ref ,@(node-writes (car rest-forms)) ,(->cffi-dtype (getattr node :dtype))) (buffer-value ,tmp))
+				,(expand (cdr rest-forms) body)))))
 		     `(with-pointer-to-vector-data
 			  (,@(node-writes (car rest-forms)) (buffer-value ,@(node-writes (car rest-forms))))
 			,(expand (cdr rest-forms) body)))
@@ -69,7 +71,11 @@ Compiled with: ~a"
 	 `((cffi:foreign-funcall
             ,(format nil "~(~a~)" (avm-name avm))
             ,@(loop for node in allocs
-		    append `(:pointer ,(car (node-writes node))))
+		    for is-pointer = (getattr node :_pointer)
+		    if (null is-pointer)
+		      append `(,(->cffi-dtype (getattr node :dtype)) (buffer-value ,(car (node-writes node))))
+		    else
+		      append `(:pointer ,(car (node-writes node))))
             :void))))))
 
 (defun render-to-c (obj)
@@ -98,8 +104,11 @@ Compiled with: ~a"
 		    (loop for node in allocs
 			  append
 			  (list
-			   (format nil "~a* ~(~a~)"
+			   (format nil "~a~a ~(~a~)"
 				   (->cdtype (getattr node :dtype))
+				   (if (= (getattr node :nrank) 0)
+				       (if (getattr node :_pointer) "*" "")
+				       "*")
 				   (car (node-writes node)))
 			   ", "))))))
 	(shapes
@@ -111,7 +120,6 @@ Compiled with: ~a"
 				     (if (getattr node :_not_a_input)
 					 " // Tmp"
 					 "")))))))
-    
     (format nil "~a~a;~%~a {~%~a}" shapes header header body)))	  
 
 (macrolet ((unary (name render)
@@ -184,7 +192,7 @@ Compiled with: ~a"
   (declare (type graph jit-graph)
 	   (type polyhedral polyhedral)
 	   (type fixnum indent))
-  (let ((*args* (map 'list #'(lambda (x) (car (node-writes x))) allocs)))
+  (let ((*args* (loop for alloc in allocs if (getattr alloc :_pointer) collect (car (node-writes alloc)))))
     (with-output-to-string (out)
       (macrolet ((line (designator &rest args)
 		   `(progn
