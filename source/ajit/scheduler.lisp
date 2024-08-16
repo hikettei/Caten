@@ -193,14 +193,12 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	  (list
 	   (progn
 	     ;; Ugly solution... should be temporary...
+	     ;; [TODO] FIX This (when `if` is scheduled by ISL, there's no way to update the index) to make mean working
 	     (when (and (not (numberp stride)) access-rep) (setf stride 1))
 	     (when (and (not (numberp by)) access-rep) (setf by 2))
 	     (when (and (not (numberp upfrom)) access-rep) (setf upfrom 1))
 	     (if broadcast-p
 		 (format nil "~a" upfrom)
-		 ;; とにかくこの箇所を修正する for index accessing and proper scheduling
-		 ;; stride * by * gid + upfrom * by * loop-size
-		 ;; symbolicが動かないのは簡略化のせいでは？ setf 1
 		 (format nil "~a~a~a"
 			 (if (eql by 1)
 			     (if (and (numberp stride) (= stride 1))
