@@ -137,7 +137,9 @@ Compiled with: ~a"
   (assert (or (stringp lhs) (symbolp lhs) (numberp lhs)))
   (assert (null z))
   (assert (null rhs))
-  (format nil "~(~a~)" (render-to-c lhs)))
+  (if (args-p lhs)
+      (format nil "(*~(~a~))" (render-to-c lhs))
+      (format nil "~(~a~)" (render-to-c lhs))))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :MAX)) lhs rhs z)
   (assert (and lhs rhs))
