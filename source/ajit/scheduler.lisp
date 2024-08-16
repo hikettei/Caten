@@ -198,7 +198,10 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	     (when (and (not (numberp upfrom)) access-rep) (setf upfrom 1))
 	     (if broadcast-p
 		 (format nil "~a" upfrom)
-		 (format nil "~a(~a~a)"
+		 ;; とにかくこの箇所を修正する for index accessing and proper scheduling
+		 ;; stride * by * gid + upfrom * by * loop-size
+		 ;; symbolicが動かないのは簡略化のせいでは？ setf 1
+		 (format nil "~a~a~a"
 			 (if (eql by 1)
 			     (if (and (numberp stride) (= stride 1))
 				 ""
@@ -209,7 +212,9 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 				     (format nil "~a*" (* stride by))
 				     (format nil "~a*~a*" by stride))))
 			 gid
-			 (if (eql upfrom 0) "" (format nil "+~a" upfrom)))))
+			 (if (eql upfrom 0)
+			     ""
+			     (format nil "+(~a*~a)" upfrom stride)))))
 	   "+")))))
 
 (defun render-domain (pipeline &key (depends-on nil))
