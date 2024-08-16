@@ -176,15 +176,18 @@
 	if (eql write-to id)
 	  collect node))
 
-(defun apply-memory-planner (refcount pipeline avm schedule-graph)
-  (let* ((pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
+(defun apply-memory-planner (refcount polyhedron avm schedule-graph)
+  (declare (type Reference-counter refcount) (type Polyhedral polyhedron) (type avm avm))
+  (let* ((pipeline (poly-pipeline polyhedron))
+	 (pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
 	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
 	 (allocated-items
 	   (loop for time in `(,@alloc-ids ,@pipeline-ids)
 		 append
 		 (loop for node in (graph-nodes (gethash time pipeline))
 		       if (eql (node-type node) :Allocate)
-			 collect (car (node-writes node))))))
+			 collect (car (node-writes node)))))
+	 (allocated-items (append allocated-items (poly-vm-inputs polyhedron))))
     (labels ((inplace-p (node time)
 	       ;; (in-place-p . intersects-with-current-pipeline?)
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
@@ -226,6 +229,9 @@
 		;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
 		)
 	      (refcount/update-node node refcount)))
+
+      ;; Update allocated-items
+      (setf allocated-items (map 'list #'newid allocated-items))
       (loop for time in `(,@alloc-ids ,@pipeline-ids)
 	    for graph = (gethash time pipeline) do
 	      (loop for node in (graph-nodes graph)
@@ -250,7 +256,8 @@
 		(expr-recursive-replace (getattr g :by) #'replacer)))
       
       (setf (avm-fw-outputs avm) (map 'list #'newid (avm-fw-outputs avm))
-	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm)))
+	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm))
+	    (poly-vm-inputs polyhedron) (map 'list #'newid (poly-vm-inputs polyhedron)))
       
       (let ((new-id2tensor (make-hash-table)))
 	(maphash

@@ -393,7 +393,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	    (format t "== [Initial Scheduling domain (=domain)] ======")
 	    (format t "~%~a~%" schedule)
 	    (isl-schedule-dump schedule))
-	  (values (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs) seen))))))
+	  (values (make-polyhedral avm pipeline domain read-access write-access schedule (append vm-inputs recursive-top-ids)) seen))))))
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
@@ -474,7 +474,7 @@ Options:
   ;; Preprocessing
   (let* ((extracted-schedule (finalize-schedule polyhedron))
 	 (rendering-graph (create-rendering-graph polyhedron extracted-schedule))
-	 (_ (apply-memory-planner refcount (poly-pipeline polyhedron) avm rendering-graph))
+	 (_ (apply-memory-planner refcount polyhedron avm rendering-graph))
 	 (allocs (purge-allocations (poly-pipeline polyhedron) (poly-vm-inputs polyhedron)))
 	 ;; Start Rendering
 	 (body (%render-body backend backend rendering-graph polyhedron 1))
