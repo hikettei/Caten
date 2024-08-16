@@ -478,7 +478,7 @@ Options:
 	 (outputs (loop for o in (poly-vm-outputs polyhedron) if (poly/io-scalar-p polyhedron o) collect o))
 	 (allocs (purge-allocations polyhedron (poly-pipeline polyhedron) (append (poly-vm-inputs polyhedron) outputs)))
 	 ;; Start Rendering
-	 (body     (%render-body backend backend rendering-graph polyhedron 1))
+	 (body     (%render-body backend backend rendering-graph polyhedron 1 allocs))
 	 (function (%render-function backend avm allocs body))
 	 (function (%render-program-toplevel backend function))
 	 (fcaller-body (%render-function-caller backend avm allocs))

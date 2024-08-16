@@ -80,7 +80,9 @@
       (:WHERE (make-expr (node-type node) (first parents) (second parents) (third parents)))
       (:LT    (make-expr (node-type node) (second parents) (third parents)))
       (:NEQ   (make-expr (node-type node) (second parents) (third parents)))
-      (:Load (expr-const (getattr node :value)))
+      (:Load (if (numberp (getattr node :value))
+		 (expr-const (getattr node :value))
+		 (expr-aref (getattr node :value) (car (relay-writes (read-type-relay node))))))
       (:Cast (expr-cast (second parents) (getattr node :dtype)))
       (otherwise (make-expr (node-type node) (first parents) (second parents))))))
 

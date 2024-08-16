@@ -6,6 +6,8 @@
 (in-package :caten/ajit.backends.clang)
 ;; ~~~ CLANG ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *access* nil)
+(defparameter *args* nil)
+(defun args-p (id) (find id *args*))
 
 (defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags))
   (declare (type string source compiler))
@@ -40,28 +42,35 @@ Compiled with: ~a"
 (defmethod %render-compile ((lang (eql :clang)) avm allocs function)
   (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3")))
 
-(defmethod %render-function-caller ((lang (eql :clang)) avm allocs)
+(defmethod %render-function-caller ((lang (eql :clang)) avm allocs &aux (tmps))
   (labels ((expand (rest-forms body)
-	     (if rest-forms
+             (if rest-forms
 		 (if (= 0 (getattr (car rest-forms) :nrank))
-		     (expand (cdr rest-forms) body)
+		     (let ((node (car rest-forms))
+			   (tmp (gensym)))
+		       (push (cons tmp node) tmps)
+		       `(let ((,tmp ,@(node-writes (car rest-forms))))
+			  (with-foreign-object (,@(node-writes (car rest-forms)) ,(->cffi-dtype (getattr node :dtype)))
+			    (setf (mem-ref ,@(node-writes (car rest-forms)) ,(->cffi-dtype (getattr node :dtype))) (buffer-value ,tmp))
+			    ,(expand (cdr rest-forms) body))))
 		     `(with-pointer-to-vector-data
 			  (,@(node-writes (car rest-forms)) (buffer-value ,@(node-writes (car rest-forms))))
 			,(expand (cdr rest-forms) body)))
-		 `(progn ,@body))))
+		 `(progn
+		    ,@body
+		    ,@(loop for (buffer . node) in tmps
+			    for cffi = (car (node-writes node))
+			    for type = (->cffi-dtype (getattr node :dtype))
+			    collect `(setf (buffer-value ,buffer) (mem-ref ,cffi ,type)))))))
     `(lambda (,@(apply #'append (map 'list #'node-writes allocs)))
        (declare (optimize (compilation-speed 3)))
        ,(expand
 	 allocs
 	 `((cffi:foreign-funcall
-	    ,(format nil "~(~a~)" (avm-name avm))
-	    ,@(loop for node in allocs
-		    for type = (->cffi-dtype(getattr node :dtype))
-		    if (= (getattr node :nrank) 0)
-		      append `(,type (dtype/cast (buffer-value ,(car (node-writes node))) ,(getattr node :dtype)))
-		    else
-		      append `(:pointer ,(car (node-writes node))))
-	    :void))))))
+            ,(format nil "~(~a~)" (avm-name avm))
+            ,@(loop for node in allocs
+		    append `(:pointer ,(car (node-writes node))))
+            :void))))))
 
 (defun render-to-c (obj)
   (let ((obj (format nil "~(~a~)" obj)))
@@ -89,11 +98,8 @@ Compiled with: ~a"
 		    (loop for node in allocs
 			  append
 			  (list
-			   (format nil "~a~a ~(~a~)"
+			   (format nil "~a* ~(~a~)"
 				   (->cdtype (getattr node :dtype))
-				   (if (= 0 (getattr node :nrank))
-				       ""
-				       "*")
 				   (car (node-writes node)))
 			   ", "))))))
 	(shapes
@@ -144,7 +150,9 @@ Compiled with: ~a"
   (assert (and lhs rhs))
   (let ((ref (render-isl-aref rhs :genid #'(lambda (x) (nth x *access*)))))
     (if (string= ref "")
-	(format nil "~(~a~)" lhs)
+	(if (args-p lhs)
+	    (format nil "(*~(~a~))" lhs)
+	    (format nil "~(~a~)" lhs))
 	(format nil "~(~a~)[~(~a~)]" lhs ref))))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
@@ -172,46 +180,47 @@ Compiled with: ~a"
   (assert (and x y z))
   (format nil "(~(~a~) ? ~(~a~) : ~(~a~))" (render-expr lang x) (render-expr lang y) (render-expr lang z)))
 
-(defmethod %render-body ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent)
+(defmethod %render-body ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent allocs)
   (declare (type graph jit-graph)
 	   (type polyhedral polyhedral)
 	   (type fixnum indent))
-  (with-output-to-string (out)
-    (macrolet ((line (designator &rest args)
-		 `(progn
-		    (dotimes (i (* 2 indent)) (princ " " out))
-		    (format out ,designator ,@args)
-		    (format out "~%")))
-	       (r (obj) `(render-expr lang ,obj)))
-      (loop for node in (graph-nodes jit-graph)
-	    for type = (node-type node) do
-	      (assert (eql :Render (node-class node)))
-	      (ecase type
-		(:FOR
-		 (multiple-value-bind (idx upfrom below by)
-		     (values (getattr node :idx) (getattr node :upfrom) (getattr node :below) (getattr node :by))
-		   (assert (and idx upfrom below by) () "Missing ~a" (list idx upfrom below by))
-		   (line "for(int ~(~a~)=~a;~a;~a+=~a) {" (r idx) (r upfrom) (r below) (r idx) (r by))
-		   (incf indent)))
-		(:ENDFOR
-		 (decf indent)
-		 (line "}"))
-		(:IF
-		 (let ((c (getattr node :condition)))
-		   (assert c () "Missing condition")
-		   (line "if ~a {" (r c))
-		   (incf indent)))
-		(:ELSE
-		 (decf indent)
-		 (line "} else {")
-		 (incf indent))
-		(:ENDIF
-		 (decf indent)
-		 (line "}"))
-		(:FUNCALL
-		 (let ((idx (getattr node :idx))
-		       (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
-		   (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out))))))))
+  (let ((*args* (map 'list #'(lambda (x) (car (node-writes x))) allocs)))
+    (with-output-to-string (out)
+      (macrolet ((line (designator &rest args)
+		   `(progn
+		      (dotimes (i (* 2 indent)) (princ " " out))
+		      (format out ,designator ,@args)
+		      (format out "~%")))
+		 (r (obj) `(render-expr lang ,obj)))
+	(loop for node in (graph-nodes jit-graph)
+	      for type = (node-type node) do
+		(assert (eql :Render (node-class node)))
+		(ecase type
+		  (:FOR
+		   (multiple-value-bind (idx upfrom below by)
+		       (values (getattr node :idx) (getattr node :upfrom) (getattr node :below) (getattr node :by))
+		     (assert (and idx upfrom below by) () "Missing ~a" (list idx upfrom below by))
+		     (line "for(int ~(~a~)=~a;~a;~a+=~a) {" (r idx) (r upfrom) (r below) (r idx) (r by))
+		     (incf indent)))
+		  (:ENDFOR
+		   (decf indent)
+		   (line "}"))
+		  (:IF
+		   (let ((c (getattr node :condition)))
+		     (assert c () "Missing condition")
+		     (line "if ~a {" (r c))
+		     (incf indent)))
+		  (:ELSE
+		   (decf indent)
+		   (line "} else {")
+		   (incf indent))
+		  (:ENDIF
+		   (decf indent)
+		   (line "}"))
+		  (:FUNCALL
+		   (let ((idx (getattr node :idx))
+			 (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
+		     (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out)))))))))
 
 (defun ->cdtype (dtype)
   (ecase dtype
@@ -264,7 +273,9 @@ Compiled with: ~a"
       (labels ((render-aref (id type)
 		 (let ((ref (render-isl-aref type :genid #'(lambda (x) (nth x access)))))
 		   (if (string= ref "")
-		       (format nil "~(~a~)" id)
+		       (if (args-p id)
+			   (format nil "(*~(~a~))" id)
+			   (format nil "~(~a~)" id))
 		       (format nil "~(~a~)[~(~a~)]" id ref)))))
 	(loop with *access* = access
 	      for node in (graph-nodes graph)
