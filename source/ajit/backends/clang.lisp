@@ -336,7 +336,7 @@ Compiled with: ~a"
 		  #.(impl-unary :SQRT "sqrt")
 		  #.(impl-unary :NOT "!")
 		  (:INDEX-COMPONENTS
-		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (format nil "c~a" x))))))
+		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (nth x *access*))))))
 		  #.(impl-binary :OR "|")
 		  #.(impl-binary :AND "&")
 		  (:WHERE
