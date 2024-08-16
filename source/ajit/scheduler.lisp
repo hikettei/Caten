@@ -132,7 +132,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	  (assert (every #'(lambda (x) (or (null x) (= 0 (buffer-nrank x)) (= (buffer-nrank x) (buffer-nrank (car reads))))) reads)
 		  ()
 		  "Tensors are not broadcasted properly: ~a" reads)
-	  (setf nrank (max nrank (apply #'max (map 'list #'buffer-nrank reads))))
+	  (setf nrank (max nrank (apply #'max (map 'list #'(lambda (x) (if x (buffer-nrank x) 0)) reads))))
 	  (mapc #'(lambda (r type) (when (find r deps) (push type args))) (node-reads node) reads))
   (let* ((index-components (map 'list #'gid (range 0 nrank)))
 	 (loopsizes (map 'list #'(lambda (x) (apply #'buffer->loop-size x nrank args)) (range 0 nrank))))
@@ -170,7 +170,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
 
-(defun render-isl-aref (buffer &key (genid #'gid) (access-rep nil))
+(defun render-isl-aref (buffer &key (genid #'gid) (access-rep nil) (strides nil))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -182,7 +182,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
    'string
    (butlast
     (loop for nth upfrom 0
-	  for stride-nth in (buffer-stride buffer)
+	  for stride-nth in (or strides (buffer-stride buffer))
 	  for view in (buffer-views buffer)
 	  for stride = (reveal-buffer stride-nth)
 	  for upfrom = (reveal-buffer (or (nth 0 view) 0))

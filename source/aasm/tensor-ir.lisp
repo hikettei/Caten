@@ -112,7 +112,7 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
     (return-from %make-tensor (%salloc :dtype dtype :id id)))
   (%alloc (length shape) (%shape shape) (%stride shape order) :dtype dtype :id id :from from))
 
-(defun %index-components (x &key (id (gensym "IID")))
+(defun %index-components (x shape &key (id (gensym "IID")))
   "the equivalent to doing: `for (int i=x.view.from;i<x.view.to;i+=x.view.by) { id[i] = i; }`"
-  (declare (type node x))
-  (emit (make-node :Indexing :Index-Components (list id) (list (node->id x)))))
+  (declare (type node x) (type list shape))
+  (emit (make-node :Indexing :Index-Components (list id) `(,(node->id x) ,@(map 'list #'node->id (%stride shape :row))))))

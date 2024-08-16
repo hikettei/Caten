@@ -71,14 +71,16 @@
 
 (defun reveal-buffer (object)
   "Extracts the initial-value from the nested buffer/fake-array"
-  (declare (type (or buffer fakearray integer-t) object))
-  (if (buffer-p object)
-      (if (fakearray-p (buffer-value object))
-	  (fakearray-initial-element (buffer-value object))
-	  (buffer-value object))
-      (if (fakearray-p object)
-	  (fakearray-initial-element object)
-	  object)))
+  (declare (type (or buffer fakearray integer-t string) object))
+  (if (stringp object)
+      object
+      (if (buffer-p object)
+	  (if (fakearray-p (buffer-value object))
+	      (fakearray-initial-element (buffer-value object))
+	      (buffer-value object))
+	  (if (fakearray-p object)
+	      (fakearray-initial-element object)
+	      object))))
 
 (defmacro with-inlined-foreign-funcall-mode (&body body)
   "Enables %\"foreign-name\":return-dtype &rest args syntax under the body execution"

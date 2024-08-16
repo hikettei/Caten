@@ -168,7 +168,8 @@ Compiled with: ~a"
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
   (assert (buffer-p (expr-y lhs)))
   (assert (null z))
-  (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (nth x *access*))))))
+  (let ((strides (map 'list #'(lambda (x) (render-expr lang x)) rhs)))
+    (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (nth x *access*))) :strides strides))))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :NOT)) lhs rhs z)
   (assert (and lhs (null rhs) (null z)))
@@ -336,7 +337,7 @@ Compiled with: ~a"
 		  #.(impl-unary :SQRT "sqrt")
 		  #.(impl-unary :NOT "!")
 		  (:INDEX-COMPONENTS
-		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (nth x *access*))))))
+		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (nth x *access*))) :strides (cdr (node-reads node)))))
 		  #.(impl-binary :OR "|")
 		  #.(impl-binary :AND "&")
 		  (:WHERE
