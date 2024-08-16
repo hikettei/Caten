@@ -474,16 +474,15 @@ Options:
   ;; Preprocessing
   (let* ((extracted-schedule (finalize-schedule polyhedron))
 	 (rendering-graph (create-rendering-graph polyhedron extracted-schedule))
-	 (_ (apply-memory-planner refcount polyhedron avm rendering-graph))
-	 (allocs (purge-allocations (poly-pipeline polyhedron) (append (poly-vm-inputs polyhedron) (poly-vm-outputs polyhedron))))
+	 (_      (apply-memory-planner refcount polyhedron avm rendering-graph))
+	 (allocs (purge-allocations polyhedron (poly-pipeline polyhedron) (append (poly-vm-inputs polyhedron) (poly-vm-outputs polyhedron))))
 	 ;; Start Rendering
-	 (body (%render-body backend backend rendering-graph polyhedron 1))
+	 (body     (%render-body backend backend rendering-graph polyhedron 1))
 	 (function (%render-function backend avm allocs body))
 	 (function (%render-program-toplevel backend function))
 	 (fcaller-body (%render-function-caller backend avm allocs))
 	 (f (compile nil fcaller-body)))
     (declare (ignore _))
-    (assert (functionp f) () "%render-function-caller should return a function!")
     (when (>= debug 1) (format t "Compiled[~a]:~%~a" name function))
     (%render-compile backend avm allocs function)
     (let* ((subgraph

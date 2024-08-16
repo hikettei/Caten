@@ -52,6 +52,23 @@
 	  unless (find a `(t nil))
 	    collect a)))
 
+(defun infer-vm-io-types (avm scalars)
+  (declare (type avm avm) (type list scalars))
+  (let ((out (make-hash-table)))
+    (map
+     'list
+     #'(lambda (x)
+	 (let ((type (read-type-relay
+		      (or
+		       (find x (graph-nodes (avm-graph avm))
+			     :test #'eql
+			     :key #'(lambda (node) (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)) (getattr node :value))))
+		       (find x (graph-nodes (avm-graph avm)) :test #'eql :key (compose #'car #'node-writes))
+		       (error "(Bug) No definition for ~a in AVM!~%~a" x avm)))))
+	   (setf (gethash x out) type)))
+     scalars)
+    out))
+
 (defun reveal-buffer (object)
   "Extracts the initial-value from the nested buffer/fake-array"
   (declare (type (or buffer fakearray integer-t) object))
@@ -83,8 +100,8 @@
    (null (getattr node :_tmp))
    (not (= (getattr node :nrank) 0))))
 
-(defun purge-allocations (pipeline dynamic-shapes &aux (allocs nil))
-  (declare (type hash-table pipeline))
+(defun purge-allocations (poly pipeline dynamic-shapes &aux (allocs nil) (types (poly-vm-io-types poly)))
+  (declare (type polyhedral poly) (type hash-table pipeline))
   (maphash
    #'(lambda (k graph)
        (declare (ignore k))
@@ -96,7 +113,8 @@
 		     collect node)))
    pipeline)
   (let ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
-	(shapes (map 'list #'(lambda (x) (%alloc 0 nil nil :dtype caten/aasm:*default-uint* :id x)) dynamic-shapes)))
+	(shapes (map 'list #'(lambda (x &aux (type (or (gethash x types) (error "~a is not inferred by poly-vm-io-types" x))))
+			       (%alloc 0 nil nil :dtype (buffer-dtype (car (relay-writes type))) :id x)) dynamic-shapes)))
     (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes))))
 
 (defun get-subgraph-recursively (node graph dynamic-shapes dtype)

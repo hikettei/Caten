@@ -10,6 +10,7 @@
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)
+  (vm-io-types (infer-vm-io-types avm `(,@vm-inputs ,@vm-outputs)) :type hash-table)
   (pipeline pipeline :type hash-table)
   ;; constraints
   (domain domain :type string)

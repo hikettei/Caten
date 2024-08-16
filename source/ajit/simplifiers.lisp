@@ -259,20 +259,17 @@
 	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm))
 	    ;; vm-inputs are fixed (they are dynamic shapes)
 	    (poly-vm-outputs polyhedron) (map 'list #'newid (poly-vm-outputs polyhedron)))
-      
-      (let ((new-id2tensor (make-hash-table)))
-	(maphash
-	 #'(lambda (k v)
-	     (setf (gethash (newid k) new-id2tensor) v))
-	 (avm-id2tensor avm))
-	(setf (avm-id2tensor avm) new-id2tensor))
-      
-      (let ((new-variables (make-hash-table)))
-	(maphash
-	 #'(lambda (k v)
-	     (setf (gethash (newid k) new-variables) v))
-	 (avm-variables avm))
-	(setf (avm-variables avm) new-variables)))))
+
+      (macrolet ((renew (accessor)
+		   `(let ((new-table (make-hash-table)))
+		      (maphash
+		       #'(lambda (k v)
+			   (setf (gethash (newid k) new-table) v))
+		       ,accessor)
+		      (setf ,accessor new-table))))
+	(renew (avm-id2tensor avm))
+	(renew (poly-vm-io-types polyhedron))
+	(renew (avm-variables avm))))))
 
 (defun apply-multiexpr-grouping (pipeline)
   "Group several computation into a single :EXPR Node to simplify.
