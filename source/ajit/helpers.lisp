@@ -113,8 +113,14 @@
 		     collect node)))
    pipeline)
   (let ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
-	(shapes (map 'list #'(lambda (x &aux (type (or (gethash x types) (error "~a is not inferred by poly-vm-io-types" x))))
-			       (%alloc 0 nil nil :dtype (buffer-dtype (car (relay-writes type))) :id x)) dynamic-shapes)))
+	(shapes (map 'list
+		     #'(lambda (x &aux (type (or (gethash x types) (error "~a is not inferred by poly-vm-io-types" x))))
+			 (let ((out (%alloc 0 nil nil :dtype (buffer-dtype (car (relay-writes type))) :id x)))
+			   (when (find x (poly-vm-outputs poly))
+			     ;; x should be a pointer to obtain the result
+			     (setf (getattr out :_pointer) t))
+			   out))
+		     dynamic-shapes)))
     (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes))))
 
 (defun get-subgraph-recursively (node graph dynamic-shapes dtype)

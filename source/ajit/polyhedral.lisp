@@ -21,6 +21,11 @@
   (write-ptr (isl-union-map-read-from-str write) :type isl-obj)
   (schedule schedule :type isl-obj))
 
+(defun poly/io-scalar-p (poly x)
+  (let ((type (gethash x (poly-vm-io-types poly))))
+    (when (null type) (error "~a is not input/output" type))
+    (= (buffer-nrank (car (relay-writes type))) 0)))
+
 (defun finalize-polyhedral (polyhedral &aux (schedule (poly-schedule polyhedral)))
   (declare (type polyhedral polyhedral))
   (macrolet ((set-option (name level)

@@ -187,7 +187,10 @@
 		 (loop for node in (graph-nodes (gethash time pipeline))
 		       if (eql (node-type node) :Allocate)
 			 collect (car (node-writes node)))))
-	 (allocated-items (append allocated-items (poly-vm-inputs polyhedron) (poly-vm-outputs polyhedron))))
+	 (allocated-items (append allocated-items
+				  (poly-vm-inputs polyhedron)
+				  (loop for o in (poly-vm-outputs polyhedron)
+					if (poly/io-scalar-p polyhedron o) collect o))))
     (labels ((inplace-p (node time)
 	       ;; (in-place-p . intersects-with-current-pipeline?)
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
