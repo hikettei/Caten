@@ -393,7 +393,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	    (format t "== [Initial Scheduling domain (=domain)] ======")
 	    (format t "~%~a~%" schedule)
 	    (isl-schedule-dump schedule))
-	  (values (make-polyhedral avm pipeline domain read-access write-access schedule (append vm-inputs recursive-top-ids)) seen))))))
+	  (values (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs recursive-top-ids) seen))))))
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
@@ -475,7 +475,7 @@ Options:
   (let* ((extracted-schedule (finalize-schedule polyhedron))
 	 (rendering-graph (create-rendering-graph polyhedron extracted-schedule))
 	 (_ (apply-memory-planner refcount polyhedron avm rendering-graph))
-	 (allocs (purge-allocations (poly-pipeline polyhedron) (poly-vm-inputs polyhedron)))
+	 (allocs (purge-allocations (poly-pipeline polyhedron) (append (poly-vm-inputs polyhedron) (poly-vm-outputs polyhedron))))
 	 ;; Start Rendering
 	 (body (%render-body backend backend rendering-graph polyhedron 1))
 	 (function (%render-function backend avm allocs body))
@@ -489,12 +489,12 @@ Options:
     (let* ((subgraph
 	     (apply
 	      #'append
-	      (map 'list
-		   #'(lambda (x &aux (x-in-base (or (id->value (avm-graph base-avm) (car (node-writes x))) x)))
-		       (when (null (find x seen))
-			 (push x seen)
-			 (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))
-		   allocs))))
+	      (map
+	       'list
+	       #'(lambda (x &aux (x-in-base (or (id->value (avm-graph base-avm) (car (node-writes x))) x)))
+		   (when (null (find x seen))
+		     (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))
+	       allocs))))
       (setf (avm-name avm) base-name)
       (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f fcaller-body function backend (count-n-kernels rendering-graph))))) seen))))
 

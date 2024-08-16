@@ -187,7 +187,7 @@
 		 (loop for node in (graph-nodes (gethash time pipeline))
 		       if (eql (node-type node) :Allocate)
 			 collect (car (node-writes node)))))
-	 (allocated-items (append allocated-items (poly-vm-inputs polyhedron))))
+	 (allocated-items (append allocated-items (poly-vm-inputs polyhedron) (poly-vm-outputs polyhedron))))
     (labels ((inplace-p (node time)
 	       ;; (in-place-p . intersects-with-current-pipeline?)
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
@@ -257,7 +257,8 @@
       
       (setf (avm-fw-outputs avm) (map 'list #'newid (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm))
-	    (poly-vm-inputs polyhedron) (map 'list #'newid (poly-vm-inputs polyhedron)))
+	    ;; vm-inputs are fixed (they are dynamic shapes)
+	    (poly-vm-outputs polyhedron) (map 'list #'newid (poly-vm-outputs polyhedron)))
       
       (let ((new-id2tensor (make-hash-table)))
 	(maphash
