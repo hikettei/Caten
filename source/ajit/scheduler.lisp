@@ -343,7 +343,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 (declaim (ftype (function (AVM list &key (:verbose boolean) (:seen list)) (values Polyhedral list)) create-polyhedral-model-from-top-ids))
 (defun create-polyhedral-model-from-top-ids (avm recursive-top-ids &key (verbose nil) (seen nil))
   "Input: AVM: JIT-Specific Optimization Applied AVM"
-  (declare (type avm avm) (type list recursive-top-ids) (type boolean))
+  (declare (type avm avm) (type list recursive-top-ids) (type boolean) (type list seen))
   (when verbose (format t "[Creating a polyhedron for group: ~a]~%" recursive-top-ids))
   (flet ((id->buffer (id)
 	   (assert (symbolp id) () "Graph should not return a number!")
@@ -396,7 +396,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	    (format t "== [Initial Scheduling domain (=domain)] ======")
 	    (format t "~%~a~%" schedule)
 	    (isl-schedule-dump schedule))
-	  (values (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs recursive-top-ids) seen))))))
+	  (values (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs recursive-top-ids nil) seen))))))
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
@@ -503,7 +503,7 @@ Options:
 	       allocs))))
       (setf (avm-name avm) base-name)
       (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f fcaller-body function backend (count-n-kernels rendering-graph))))) seen))))
-;; TODO: Memory-Planner involving backward
+
 (defun jit (avm
 	    &key
 	      (more-groups nil)
@@ -511,7 +511,6 @@ Options:
 	      (serialize (= 1 (ctx:getenv :SERIALIZE)))
 	      (static-gensym (= 1 (ctx:getenv :STATIC_GENSYM)))
 	      (backend (or (ctx:getenv :JIT_BACKEND) :clang))
-	      (multiexpr (= 1 (ctx:getenv :MULTIEXPR)))
 	    &aux
 	      (_ (when static-gensym (apply-static-gensym avm)))
 	      (base-avm avm)
@@ -533,9 +532,15 @@ Options:
        polyhedrons)
       ;; Polyhedron supercedes :FOR/:ENDFOR, and we dont need it anymroe, remove them.
       (mapc (compose #'remove-iteration-ir #'poly-pipeline) polyhedrons)
-      ;; [TODO] When polyhedron >= 1 (conflicts with backward)
-      (when (and (= (length polyhedrons) 1) multiexpr)
-	(mapc #'(lambda (x) (apply-multiexpr-grouping (poly-pipeline x))) polyhedrons))
+      (poly/solve-group-deps polyhedrons)
+      (mapc #'apply-multiexpr-grouping polyhedrons)
+      ;; Remove extra allocations
+      ;; [TODO] 全部EXPRにする
+      ;; No-need-to-allocationが発生する
+      ;; そうしたらAllocを削除
+      ;;(when (and (= (length polyhedrons) 1) multiexpr)
+      ;;  (mapc #'(lambda (x) (apply-multiexpr-grouping (poly-pipeline x))) polyhedrons))
+      (error "STOP")
       (let* ((seen)
 	     (jit-graphs
 	       (map 'list

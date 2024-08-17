@@ -6,7 +6,8 @@
 ;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write schedule vm-inputs vm-outputs)))
+	    (:constructor make-polyhedral (avm pipeline domain read write schedule vm-inputs vm-outputs depends-across-group)))
+  (deps-across-group depends-across-group :type list) ;; A list of tensor ids used in another groups
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)
@@ -25,6 +26,27 @@
   (let ((type (gethash x (poly-vm-io-types poly))))
     (when (null type) (error "~a is not input/output" type))
     (= (buffer-nrank (car (relay-writes type))) 0)))
+
+(declaim (ftype (function (list) list) poly/solve-group-deps))
+(defun poly/solve-group-deps (groups)
+  ;; groups: T0, T1, ..., T_n
+  (declare (type list groups) (optimize (speed 3)))
+  (flet ((->pipeline-deps (poly f)
+	   (declare (type function f))
+	   (remove-duplicates
+	    (loop for graph in (hash-table-values (poly-pipeline poly))
+		  append
+		  (loop for node in (graph-nodes graph)
+			append
+			(loop for id in (funcall f node)
+			      if (symbolp id) collect id))))))
+    (let ((reads `(nil ,@(map 'list #'(lambda (x) (->pipeline-deps x #'node-reads)) groups))))
+      (loop for nth fixnum upfrom 0
+	    for g in (butlast groups)
+	    for subsequent-deps = (apply #'append (nthcdr nth (cdr reads)))
+	    for write-n = (->pipeline-deps g #'node-writes) do
+	      (setf (poly-deps-across-group g) (intersection write-n subsequent-deps))))							     
+    groups))
 
 (defun finalize-polyhedral (polyhedral &aux (schedule (poly-schedule polyhedral)))
   (declare (type polyhedral polyhedral))

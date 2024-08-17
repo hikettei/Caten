@@ -55,12 +55,39 @@
       (setf (expr-x expr) (->new (expr-x expr))))))
 
 ;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter *allocated-aref* nil)
-(defun expr-aref (id buffer &aux (aref (make-expr :Aref id buffer)))
-  (push aref *allocated-aref*)
-  aref)
-(defun expr-const (object) (make-expr :Const object))
-(defun expr-cast (obj dtype) (make-expr :Cast obj dtype))
+;; [TODO] ISL_AST_HELPER 全部これで書き換える
+;; Deftype koko de suru
+;; aIR Graphの方が良くない？
+;; REMOVE EXPR!
+(defun %make-expr (op to &rest args) (make-node :RENDER op (list to) args))
+(macrolet ((expr (name (&rest args) (&rest types))
+	     `(defun ,(symb 'make- name) (,@args)
+		(declare ,@(loop for arg in args for typ in types collect `(type ,typ ,arg)))
+		(%make-expr ,(intern (symbol-name (symb 'make- name)) "KEYWORD") ,@args))))
+  ;; Buffer Ops
+  (expr Const (obj) (t))
+  (expr Cast  (obj dtype) (Expr Keyword))
+  (expr Aref  (id  buffer) (Symbol Buffer))
+
+  ;; Ternary Ops
+  (expr WHERE (condition x y) (Expr Expr Expr))
+  ;; Binary Ops
+  
+  ;; Compare
+  (expr <  (x y) (Expr Expr))
+  (expr <= (x y) (Expr Expr))
+  (expr >  (x y) (Expr Expr))
+  (expr >= (x y) (Expr Expr))
+  (expr != (x y) (Expr Expr))
+  (expr == (x y) (Expr Expr))
+
+  ;; Logical
+  (expr AND (x y) (Expr Expr))
+  (expr OR  (x y) (Expr Expr))
+  )
+			   
+		  
+
 (declaim (ftype (function (Symbol Graph) Expr) create-expr-from-air))
 (defun create-expr-from-air (output graph)
   (declare (type symbol output) (type graph graph))
@@ -94,3 +121,54 @@
     (make-node :EXPR :EXPR (list output) `(,read-from ,@(map 'list #'expr-x *allocated-aref*)) :expr expr
 	       :_type_relay (make-inferred-type `(,read-type ,@(map 'list #'expr-y *allocated-aref*)) (list output-type))
 	       :buffers *allocated-aref*)))
+
+;; BinaryOps ADD(x y z c) -> EXPR(EXPR(EXPR ...)))
+(defun recursively-group-expr (poly graph outputs)
+  (declare (type graph graph) (type list outputs))
+  (let* ((seen)
+	 (stash))
+    (flet ((pause? (x) (declare (type node x)) (find (car (node-writes x)) (poly-deps-across-group poly)))
+	   (first? (x) (declare (type node x)) (not (find (node-id x) seen)))
+	   (stash (x) (declare (type node x)) (push (car (node-writes x)) stash))
+	   (saw (x) (declare (type node x)) (push (node-id x) seen)))
+      (labels ((fuse-helper (id &aux (x (id->value graph id)))
+		 (if (first? x)
+		     (progn
+		       (saw x)
+		       (let* ((parents
+				(loop for arg in (node-reads x)
+				      for type in (relay-reads (read-type-relay x))
+				      if (symbolp arg) do
+					(let ((arg-node (id->value graph arg)))
+					  ;; (Assert or .. ....)
+					  ;; Render Type宣言必要！
+					  ;; Arg-Node is :ALLOCATE? -> SPLIT
+					  ;; Typep arg-node :EXPR
+					  (if (pause? arg-node) ;; If arg-node needs to be explicitly allocated? -> SPLIT
+					      (and (stash arg-node) (expr-aref arg type))
+					      (fuse-helper arg)))
+				      else
+					do (expr-const arg))))
+			 (make-expr-helper parents)))
+		     (expr-const id))))
+	(let ((expr (map 'list #'fuse-helper outputs)))
+	  (loop while stash do (setf expr (append (list (fuse-helper (pop stash))) expr)))
+	  ;; TODO: Update type
+	  expr)))))
+
+(defun graph-out-to (graph) (remove-duplicates (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) (graph-seen graph)))))
+(defun apply-multiexpr-grouping (poly)
+  "Group several computation into a single :EXPR Node to simplify.
+E.g.:
+  T0 : X <- sin(m)
+  T1 : Y <- cos(X)
+is updated to:
+  T0+T1 : Y <- cos(sin(m))
+It uses aIR graph features; accordingly must be applied before doing memory-planner optimization!"
+  (declare (type polyhedral poly) (optimize (speed 3)))
+  (maphash
+   #'(lambda (ts graph)
+       (declare (type graph graph) (ignore ts))
+       (let* ((exprs (recursively-group-expr poly graph (graph-out-to graph))))
+	 (setf (graph-nodes graph) exprs)))
+   (poly-pipeline poly)))

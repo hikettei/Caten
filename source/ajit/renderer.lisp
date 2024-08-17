@@ -48,7 +48,9 @@ function void (args) { body };
     :NEG
     :SIN :LOG2 :EXP2
     :RECIP :SQRT :NOT
-    :INDEX-COMPONENTS))
+    :INDEX-COMPONENTS
+
+    :LOAD))
 
 (defgeneric %render-expr (lang op lhs rhs z)
   (:documentation "
