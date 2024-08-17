@@ -189,7 +189,7 @@ Graph must be verified in advance."
 	(setf (avm-variables avm) new-variables)))))
 
 (defun zenity/prompt-new-value (code)
-  (let* ((zenity-cmd `("zenity" "--text-info" "--editable" "--width=800" "--height=600"))
+  (let* ((zenity-cmd `("zenity" "--text-info" "--editable" "--width=800" "--height=600" "--title=Code_Editor"))
 	 (process-info (uiop:launch-program zenity-cmd :input :stream :output :stream :error-output :stream))
 	 (input (uiop:process-info-input process-info))
 	 (output (uiop:process-info-output process-info))
