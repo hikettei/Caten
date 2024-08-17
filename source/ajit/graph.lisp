@@ -126,9 +126,10 @@
 			     (mapc #'(lambda (x &aux (n (id->value graph x))) (when n (stash n))) reads)
 			     node))
 		       (list (fuse-helper x) node *aref-list*)))))
-	(let ((exprs (map 'list #'fuse outputs))
-	      (stash (reverse stash)))
+	(setf stash (reverse stash))
+	(let ((exprs (map 'list #'fuse outputs)))
 	  (loop while stash do (setf exprs (append (list (fuse (pop stash))) exprs)))
+	  (assert (null stash))
 	  (setf exprs (loop for e in exprs if e collect e))
 	  (let ((exprs
 		  (loop for expr in exprs
@@ -185,7 +186,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 		     ()
 		     "~a is removed by the multiexpr! (a bug)" (node-reads node)))
 	   (when out-to
-	     (multiple-value-bind (expr-nodes expr-reads) (recursively-group-expr poly graph out-to  (nthcdr c read-by-time))
+	     (multiple-value-bind (expr-nodes expr-reads) (recursively-group-expr poly graph out-to (nthcdr c read-by-time))
 	       (declare (type list expr-nodes expr-reads))
 	       (setf removed-vars (remove-duplicates (append removed-vars (intersection (nth c read-by-time) expr-reads))))
 	       (setf (graph-nodes graph) expr-nodes)))
