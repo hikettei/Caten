@@ -291,7 +291,7 @@ Compiled with: ~a"
 	(loop with *access* = access
 	      for node in (graph-nodes graph)
 	      for type = (read-type-relay node) do		
-		(case (node-type node)
+		(ecase (node-type node)
 		  (:ALLOCATE
 		   (line "~(~a~) ~(~a~)~a;"
 			 (->cdtype (getattr node :dtype)) (car (node-writes node))
@@ -307,6 +307,10 @@ Compiled with: ~a"
 				 (butlast
 				  (loop for x in (subseq (node-reads node) 0 nrank)
 					append (list (format nil "~a" x) "*")))))))))
+		  (:WMMA
+		   (multiple-value-bind (c a b) (apply #'values (node-reads node))
+		     (multiple-value-bind (ct at bt) (apply #'values (relay-reads type))
+		       (line "~(~a~) += ~(~a~) * ~(~a~);" (render-aref c ct) (render-aref a at) (render-aref b bt)))))
 		  (:EXPR
 		   (multiple-value-bind (at) (apply #'values (relay-writes type))		     
 		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))))))))

@@ -135,7 +135,6 @@
 			if (listp expr)
 			  collect
 			  (multiple-value-bind (expr node arefs) (apply #'values expr)
-			    (setf arefs (remove-duplicates arefs :key #'expr-x))
 			    (let ((out-to (if (eql (node-type node) :WHERE)
 					      (second (node-reads node))
 					      (car (node-reads node))))
@@ -188,7 +187,6 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	   (when out-to
 	     (multiple-value-bind (expr-nodes expr-reads) (recursively-group-expr poly graph out-to  (nthcdr c read-by-time))
 	       (declare (type list expr-nodes expr-reads))
-	       (print expr-nodes)
 	       (setf removed-vars (remove-duplicates (append removed-vars (intersection (nth c read-by-time) expr-reads))))
 	       (setf (graph-nodes graph) expr-nodes)))
 	   (incf c))
