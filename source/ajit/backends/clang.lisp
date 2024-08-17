@@ -326,9 +326,9 @@ Compiled with: ~a"
 		       (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref b bt)))))
 		  (:CAST
 		   (line "~(~a~) = (~a)~(~a~);"
-			 (render-aref (car (node-writes node)) (car (relay-writes (read-type-relay node))))
+			 (render-aref (car (node-reads node)) (car (relay-reads (read-type-relay node))))
 			 (->cdtype (getattr node :dtype))
-			 (render-aref (car (node-reads node)) (car (relay-reads (read-type-relay node))))))
+			 (render-aref (second (node-reads node)) (second (relay-reads (read-type-relay node))))))
 		  #.(impl-unary :SIN "sin")
 		  #.(impl-unary :LOG2 "log2")
 		  #.(impl-unary :EXP2 "exp2")
