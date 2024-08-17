@@ -84,25 +84,24 @@
 	 ;; [TODO] Since we intentionally detached the gradient accumlation
 	 ;; we got a lot of additional change here to optimize/inline zero_grad/accum_grad
 	 ;; e.g.: rewriting ADD -> MOVE
-	 (let* ((subgrads (map 'list #'(lambda (x) (session/read session x)) rest-grads))
-		(subgrad-id (gensym "SUBGRAD"))
-		(total (if (>= (length subgrads) 2)
-			   (let ((node
-				   (make-node :BinaryOps :ADD (list subgrad-id) (map 'list #'node->id subgrads) :reduction nil)))
-			     (push node (graph-nodes graph))
-			     node)
-			   (car subgrads))))
-	   (if total
+	 (if (= (length rest-grads) 0)
+	     (loop for node in (graph-nodes graph)
+		   if (and (= (length (node-writes node)) 1) (eql final-grad-id (car (node-writes node))))
+		     do (setf (node-writes node) (list grad-id))
+			(session/assign session grad-id node))
+	     (let* ((subgrads (map 'list #'(lambda (x) (session/read session x)) rest-grads))
+		    (subgrad-id (gensym "SUBGRAD"))
+		    (total (if (>= (length subgrads) 2)
+			       (let ((node
+				       (make-node :BinaryOps :ADD (list subgrad-id) (map 'list #'node->id subgrads) :reduction nil)))
+				 (push node (graph-nodes graph))
+				 node)
+			       (car subgrads))))
 	       (let ((final-node
 		       ;; TODO: Fuse them
-		       (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id (node->id total)) :reduction nil)))
+		       (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id (node->id total)))))
 		 (push final-node (graph-nodes graph))
-		 (session/assign session grad-id final-node))
-	       (loop for node in (graph-nodes graph)
-		     if (and (= (length (node-writes node)) 1)
-			     (eql final-grad-id (car (node-writes node))))
-		       do (setf (node-writes node) (list grad-id))
-			  (session/assign session grad-id node))))))
+		 (session/assign session grad-id final-node))))))
    (session-grad->grads session)))
 ;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %lower-iseq (session iseq &key (no-verify nil))
