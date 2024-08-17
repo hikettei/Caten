@@ -500,7 +500,7 @@ Options:
 	       allocs))))
       (setf (avm-name avm) base-name)
       (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f fcaller-body function backend (count-n-kernels rendering-graph))))) seen))))
-
+;; TODO: Memory-Planner involving backward
 (defun jit (avm
 	    &key
 	      (more-groups nil)
