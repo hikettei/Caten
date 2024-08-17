@@ -81,6 +81,8 @@ $ make test
 
 ```sh
 $ brew install isl
+# (Optional, For runtime code modification when debugging)
+$ brew install zenity
 ```
 
 ## Dependencies
