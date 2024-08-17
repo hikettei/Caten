@@ -490,7 +490,7 @@ Options:
     (when (>= debug 1) (format t "Compiled[~a]:~%~a" name function))
     (restart-case (%render-compile backend avm allocs function)
       (zenity/hand-rewrite-code ()
-	:report "Calling a GUI Editor, fix the code manually. (FOR DEBUGGING)"
+	:report "Calling a GUI Editor, update the code manually. (SHOULD ONLY BE USED FOR DEBUGGING)"
 	(%render-compile backend avm allocs (zenity/prompt-new-value function))))
     (let* ((subgraph
 	     (apply
