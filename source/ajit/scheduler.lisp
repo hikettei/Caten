@@ -132,7 +132,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	  (assert (every #'(lambda (x) (or (null x) (= 0 (buffer-nrank x)) (= (buffer-nrank x) (buffer-nrank (car reads))))) reads)
 		  ()
 		  "Tensors are not broadcasted properly: ~a" reads)
-	  (setf nrank (max nrank (apply #'max (map 'list #'buffer-nrank reads))))
+	  (setf nrank (max nrank (apply #'max (map 'list #'(lambda (x) (if x (buffer-nrank x) 0)) reads))))
 	  (mapc #'(lambda (r type) (when (find r deps) (push type args))) (node-reads node) reads))
   (let* ((index-components (map 'list #'gid (range 0 nrank)))
 	 (loopsizes (map 'list #'(lambda (x) (apply #'buffer->loop-size x nrank args)) (range 0 nrank))))
@@ -170,7 +170,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
 
-(defun render-isl-aref (buffer &key (genid #'gid) (access-rep nil))
+(defun render-isl-aref (buffer &key (genid #'gid) (access-rep nil) (strides nil))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -182,7 +182,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
    'string
    (butlast
     (loop for nth upfrom 0
-	  for stride-nth in (buffer-stride buffer)
+	  for stride-nth in (or strides (buffer-stride buffer))
 	  for view in (buffer-views buffer)
 	  for stride = (reveal-buffer stride-nth)
 	  for upfrom = (reveal-buffer (or (nth 0 view) 0))
@@ -193,12 +193,13 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	  (list
 	   (progn
 	     ;; Ugly solution... should be temporary...
+	     ;; [TODO] FIX This (when `if` is scheduled by ISL, there's no way to update the index) to make mean working
 	     (when (and (not (numberp stride)) access-rep) (setf stride 1))
 	     (when (and (not (numberp by)) access-rep) (setf by 2))
 	     (when (and (not (numberp upfrom)) access-rep) (setf upfrom 1))
 	     (if broadcast-p
 		 (format nil "~a" upfrom)
-		 (format nil "~a(~a~a)"
+		 (format nil "~a~a~a"
 			 (if (eql by 1)
 			     (if (and (numberp stride) (= stride 1))
 				 ""
@@ -209,7 +210,9 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 				     (format nil "~a*" (* stride by))
 				     (format nil "~a*~a*" by stride))))
 			 gid
-			 (if (eql upfrom 0) "" (format nil "+~a" upfrom)))))
+			 (if (eql upfrom 0)
+			     ""
+			     (format nil "+(~a*~a)" upfrom stride)))))
 	   "+")))))
 
 (defun render-domain (pipeline &key (depends-on nil))
@@ -393,7 +396,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	    (format t "== [Initial Scheduling domain (=domain)] ======")
 	    (format t "~%~a~%" schedule)
 	    (isl-schedule-dump schedule))
-	  (values (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs) seen))))))
+	  (values (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs recursive-top-ids) seen))))))
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
@@ -474,27 +477,27 @@ Options:
   ;; Preprocessing
   (let* ((extracted-schedule (finalize-schedule polyhedron))
 	 (rendering-graph (create-rendering-graph polyhedron extracted-schedule))
-	 (_ (apply-memory-planner refcount (poly-pipeline polyhedron) avm rendering-graph))
-	 (allocs (purge-allocations (poly-pipeline polyhedron) (poly-vm-inputs polyhedron)))
+	 (_      (apply-memory-planner refcount polyhedron avm rendering-graph))
+	 (outputs (loop for o in (poly-vm-outputs polyhedron) if (poly/io-scalar-p polyhedron o) collect o))
+	 (allocs (purge-allocations polyhedron (poly-pipeline polyhedron) (append (poly-vm-inputs polyhedron) outputs)))
 	 ;; Start Rendering
-	 (body (%render-body backend backend rendering-graph polyhedron 1))
+	 (body     (%render-body backend backend rendering-graph polyhedron 1 allocs))
 	 (function (%render-function backend avm allocs body))
 	 (function (%render-program-toplevel backend function))
 	 (fcaller-body (%render-function-caller backend avm allocs))
 	 (f (compile nil fcaller-body)))
     (declare (ignore _))
-    (assert (functionp f) () "%render-function-caller should return a function!")
     (when (>= debug 1) (format t "Compiled[~a]:~%~a" name function))
     (%render-compile backend avm allocs function)
     (let* ((subgraph
 	     (apply
 	      #'append
-	      (map 'list
-		   #'(lambda (x &aux (x-in-base (or (id->value (avm-graph base-avm) (car (node-writes x))) x)))
-		       (when (null (find x seen))
-			 (push x seen)
-			 (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))
-		   allocs))))
+	      (map
+	       'list
+	       #'(lambda (x &aux (x-in-base (or (id->value (avm-graph base-avm) (car (node-writes x))) x)))
+		   (when (null (find x seen))
+		     (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))
+	       allocs))))
       (setf (avm-name avm) base-name)
       (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f fcaller-body function backend (count-n-kernels rendering-graph))))) seen))))
 

@@ -75,6 +75,8 @@
 				(expr-aref arg typ)))		    
 			else
 			  collect (expr-const arg))))
+    (when (eql (node-type node) :INDEX-COMPONENTS)
+      (return-from create-expr-from-air (make-expr :INDEX-COMPONENTS (first parents) (cdr parents))))
     (assert (<= (length parents) 3) () "~a cannot be grouped to multi expr! (too many arguments)" node)
     (case (node-type node)
       (:WHERE (make-expr (node-type node) (first parents) (second parents) (third parents)))

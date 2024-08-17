@@ -52,16 +52,35 @@
 	  unless (find a `(t nil))
 	    collect a)))
 
+(defun infer-vm-io-types (avm scalars)
+  (declare (type avm avm) (type list scalars))
+  (let ((out (make-hash-table)))
+    (map
+     'list
+     #'(lambda (x)
+	 (let ((type (read-type-relay
+		      (or
+		       (find x (graph-nodes (avm-graph avm))
+			     :test #'eql
+			     :key #'(lambda (node) (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)) (getattr node :value))))
+		       (find x (graph-nodes (avm-graph avm)) :test #'eql :key (compose #'car #'node-writes))
+		       (error "(Bug) No definition for ~a in AVM!~%~a" x avm)))))
+	   (setf (gethash x out) type)))
+     scalars)
+    out))
+
 (defun reveal-buffer (object)
   "Extracts the initial-value from the nested buffer/fake-array"
-  (declare (type (or buffer fakearray integer-t) object))
-  (if (buffer-p object)
-      (if (fakearray-p (buffer-value object))
-	  (fakearray-initial-element (buffer-value object))
-	  (buffer-value object))
-      (if (fakearray-p object)
-	  (fakearray-initial-element object)
-	  object)))
+  (declare (type (or buffer fakearray integer-t string) object))
+  (if (stringp object)
+      object
+      (if (buffer-p object)
+	  (if (fakearray-p (buffer-value object))
+	      (fakearray-initial-element (buffer-value object))
+	      (buffer-value object))
+	  (if (fakearray-p object)
+	      (fakearray-initial-element object)
+	      object))))
 
 (defmacro with-inlined-foreign-funcall-mode (&body body)
   "Enables %\"foreign-name\":return-dtype &rest args syntax under the body execution"
@@ -83,8 +102,8 @@
    (null (getattr node :_tmp))
    (not (= (getattr node :nrank) 0))))
 
-(defun purge-allocations (pipeline dynamic-shapes &aux (allocs nil))
-  (declare (type hash-table pipeline))
+(defun purge-allocations (poly pipeline dynamic-shapes &aux (allocs nil) (types (poly-vm-io-types poly)) (outputs (poly-vm-outputs poly)))
+  (declare (type polyhedral poly) (type hash-table pipeline))
   (maphash
    #'(lambda (k graph)
        (declare (ignore k))
@@ -92,12 +111,21 @@
 	     (loop for node in (graph-nodes graph)
 		   if (alloc-args-p node)
 		     do (push node allocs)
-		   else
-		     collect node)))
+		   else unless (and (eql (node-type node) :Allocate) (find (car (node-writes node)) outputs))
+			  collect node)))
    pipeline)
-  (let ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
-	(shapes (map 'list #'(lambda (x) (%alloc 0 nil nil :dtype caten/aasm:*default-uint* :id x)) dynamic-shapes)))
-    (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes))))
+  (let* ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
+ 	 (shapes (map 'list
+		      #'(lambda (x &aux (type (or (gethash x types) (error "~a is not inferred by poly-vm-io-types" x))))
+			  (%alloc 0 nil nil :dtype (buffer-dtype (car (relay-writes type))) :id x))
+		      dynamic-shapes))
+	 (allocs (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes))))
+    (loop for alloc in allocs
+	  if (find (car (node-writes alloc)) (poly-vm-inputs poly)) ;; Shapes are not pointer
+	    do (setf (getattr alloc :_pointer) nil)
+	  else
+	    do (setf (getattr alloc :_pointer) t))
+    allocs))
 
 (defun get-subgraph-recursively (node graph dynamic-shapes dtype)
   (declare (type node node) (type graph graph))

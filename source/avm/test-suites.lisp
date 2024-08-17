@@ -15,7 +15,7 @@
 (defun %arange (shape a b &key (dtype :float32) (order :row))
   (with-asm
     (m (%make-tensor shape :dtype dtype :order order))
-    (i (%index-components m))
+    (i (%index-components m (%shape shape)))
     (alpha (%load (%salloc :dtype dtype) a))
     (beta  (%load (%salloc :dtype dtype) b))
     ;; a = alpha * i + b
@@ -102,7 +102,7 @@
 		 ,ans
 		 (with-context
 		   (a (%make-tensor ',shape :order ,order))
-		   (b (%index-components a))))))
+		   (b (%index-components a (%shape ',shape)))))))
     (testwhen :row (3 3) #(0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0))
     (testwhen :column (3 3) #(0.0 3.0 6.0 1.0 4.0 7.0 2.0 5.0 8.0))
     (testwhen :row (3 4 5) #(0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0

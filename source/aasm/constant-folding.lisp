@@ -28,7 +28,7 @@
     ((:Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean x)) -> (:_TmpScalarBool () :value x)))
 
 (defsimplifier
-    (%1_fold_constant)
+    (%1_fold_constant :speed 0)
     ((:Add ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((+ x y)) :dtype dtype))
     ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((* x y)) :dtype dtype))
     ((:Neg ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((- x)) :dtype dtype))
@@ -49,6 +49,21 @@
     ((:Mul ((:_TmpScalarConst ((= 1))) x)) -> (:_TmpPurged (x)))
     ((:Add (x (:_TmpScalarConst ((= 0))))) -> (:_TmpPurged (x)))
     ((:Add ((:_TmpScalarConst ((= 0))) x)) -> (:_TmpPurged (x)))
+    ((:INDEX-COMPONENTS (~ ss))
+     -> ;; inlining the shape/stride computation
+     ((node graph)
+      (when ss
+	(let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
+	       (new-shape (loop for ss-node in (cdr ss-nodes)
+				for ss-val  in (cdr ss)
+				if (and ss-node (eql (node-type ss-node) :_TmpScalarConst))
+				  collect (car (node-reads ss-node))
+				else
+				  collect ss-val)))
+	  (unless (equal new-shape (cdr ss))
+	    (make-node
+	     :Indexing :INDEX-COMPONENTS
+	     (node-writes node) `(,(car ss) ,@new-shape)))))))
     ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype :from from)
      -> ;; inlining the shape/stride computation
      ((node graph)

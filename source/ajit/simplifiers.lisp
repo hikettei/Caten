@@ -176,15 +176,21 @@
 	if (eql write-to id)
 	  collect node))
 
-(defun apply-memory-planner (refcount pipeline avm schedule-graph)
-  (let* ((pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
+(defun apply-memory-planner (refcount polyhedron avm schedule-graph)
+  (declare (type Reference-counter refcount) (type Polyhedral polyhedron) (type avm avm))
+  (let* ((pipeline (poly-pipeline polyhedron))
+	 (pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
 	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
 	 (allocated-items
 	   (loop for time in `(,@alloc-ids ,@pipeline-ids)
 		 append
 		 (loop for node in (graph-nodes (gethash time pipeline))
 		       if (eql (node-type node) :Allocate)
-			 collect (car (node-writes node))))))
+			 collect (car (node-writes node)))))
+	 (allocated-items (append allocated-items
+				  (poly-vm-inputs polyhedron)
+				  (loop for o in (poly-vm-outputs polyhedron)
+					if (poly/io-scalar-p polyhedron o) collect o))))
     (labels ((inplace-p (node time)
 	       ;; (in-place-p . intersects-with-current-pipeline?)
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
@@ -226,6 +232,9 @@
 		;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
 		)
 	      (refcount/update-node node refcount)))
+
+      ;; Update allocated-items
+      (setf allocated-items (map 'list #'newid allocated-items))
       (loop for time in `(,@alloc-ids ,@pipeline-ids)
 	    for graph = (gethash time pipeline) do
 	      (loop for node in (graph-nodes graph)
@@ -250,21 +259,20 @@
 		(expr-recursive-replace (getattr g :by) #'replacer)))
       
       (setf (avm-fw-outputs avm) (map 'list #'newid (avm-fw-outputs avm))
-	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm)))
-      
-      (let ((new-id2tensor (make-hash-table)))
-	(maphash
-	 #'(lambda (k v)
-	     (setf (gethash (newid k) new-id2tensor) v))
-	 (avm-id2tensor avm))
-	(setf (avm-id2tensor avm) new-id2tensor))
-      
-      (let ((new-variables (make-hash-table)))
-	(maphash
-	 #'(lambda (k v)
-	     (setf (gethash (newid k) new-variables) v))
-	 (avm-variables avm))
-	(setf (avm-variables avm) new-variables)))))
+	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm))
+	    ;; vm-inputs are fixed (they are dynamic shapes)
+	    (poly-vm-outputs polyhedron) (map 'list #'newid (poly-vm-outputs polyhedron)))
+
+      (macrolet ((renew (accessor)
+		   `(let ((new-table (make-hash-table)))
+		      (maphash
+		       #'(lambda (k v)
+			   (setf (gethash (newid k) new-table) v))
+		       ,accessor)
+		      (setf ,accessor new-table))))
+	(renew (avm-id2tensor avm))
+	(renew (poly-vm-io-types polyhedron))
+	(renew (avm-variables avm))))))
 
 (defun apply-multiexpr-grouping (pipeline)
   "Group several computation into a single :EXPR Node to simplify.

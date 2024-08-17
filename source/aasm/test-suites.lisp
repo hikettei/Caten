@@ -92,7 +92,7 @@
 (defun %arange (shape a b &key (dtype :float32) (order :row))
   (with-context
     (m (%make-tensor shape :dtype dtype :order order))
-    (i (%index-components m))
+    (i (%index-components m (%shape shape)))
     (alpha (%load (%salloc :dtype dtype) a))
     (beta  (%load (%salloc :dtype dtype) b))
     ;; a = alpha * i + b

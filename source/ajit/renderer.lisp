@@ -15,7 +15,7 @@
 function void (args) { body };
 ```"))
 
-(defgeneric %render-body (lang kernel-lang jit-graph polyhedral indent)
+(defgeneric %render-body (lang kernel-lang jit-graph polyhedral indent allocs)
   (:documentation
    "IRs used in the jit-graph:
 (TODO: Docs)

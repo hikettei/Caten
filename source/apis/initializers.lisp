@@ -70,7 +70,7 @@
 	(num (reduce #'%mul base-shape))
 	(size (%ceiling nil (%idiv nil num (%iconst 2))))
 	(counts1 (%make-tensor (list size) :dtype :uint32))
-	(counts1 (%add (%index-components counts1) (%broadcast-to (list size) rng-counter :dtype :uint32 :skip-load t)))
+	(counts1 (%add (%index-components counts1 base-shape) (%broadcast-to (list size) rng-counter :dtype :uint32 :skip-load t)))
 	(counts2 (%add counts1 size))
 	(counts1_64 (%make-tensor (list size) :dtype :uint64))
 	(counts2_64 (%make-tensor (list size) :dtype :uint64))
@@ -119,7 +119,7 @@
 (defmethod lower ((op Linspace) &rest inputs)
   (multiple-value-bind (a b x) (apply #'values inputs)
     (with-context
-      (i (%index-components x))
+      (i (%index-components x (%shape (shape (third (func-variables op))))))
       (t1 (%mul i a))
       (t2 (%add t1 b))
       (c  (%store x t2)))))
