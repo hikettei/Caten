@@ -75,7 +75,7 @@
     (:MOVE             (second parents))
     (:STORE            (second parents))
     (otherwise
-     ;; TODO: Reduce for BinaryOps
+     ;; TODO: Reduce for BinaryOps for MULTIEXPR!!!!
      ;; BinaryOps ADD(x y z c) -> EXPR(EXPR(EXPR ...)))
      (assert (<= (length parents) 3) () "~a cannot be grouped to multi expr! (too many arguments)" node)
      (apply #'make-expr (node-type node) parents))))
@@ -88,7 +88,6 @@
     (flet ((pause? (x) (declare (type node x))
 	     (or (find (car (node-writes x)) (poly-deps-across-group poly))
 		 (not (typep (node-type x) 'op/expr))
-		 ;; read-by-timeを追加 + MOVE/STOREも
 		 (> (count x read-by-time) 1)
 		 no-multi-expr))
 	   (first? (x) (declare (type node x)) (not (find (node-id x) *group-seen*)))
@@ -139,7 +138,7 @@
 			    (setf arefs (remove-duplicates arefs :key #'expr-x))
 			    (make-node :EXPR :EXPR (node-writes node) (map 'list #'expr-x arefs)
 				       :expr expr :_type_relay (make-inferred-type (map 'list #'expr-y arefs) (relay-writes (read-type-relay node)))
-				       :buffers (map 'list #'expr-y arefs)))
+				       :buffers arefs))
 			else
 			  collect expr)))
 	    (values
@@ -148,7 +147,7 @@
 	      (loop for expr in exprs
 		    if (eql (node-type expr) :EXPR)
 		      append (node-reads expr))))))))))
-;; WMMA
+
 (defun graph-out-to (graph) (remove-duplicates (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) (graph-seen graph)))))
 (defun apply-multiexpr-grouping (poly)
   "Group several computation into a single :EXPR Node to simplify.
@@ -182,12 +181,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	     (multiple-value-bind (expr-nodes expr-reads) (recursively-group-expr poly graph out-to  (nthcdr c read-by-time))
 	       (declare (type list expr-nodes expr-reads))
 	       (setf removed-vars (remove-duplicates (append removed-vars (intersection (nth c read-by-time) expr-reads))))
-	       (print "++++++++")
-	       (print out-to)
-	       (print (graph-nodes graph))
-	       (setf (graph-nodes graph) (print expr-nodes))))
+	       (setf (graph-nodes graph) expr-nodes)))
 	   (incf c))
        (poly-pipeline poly))
-      (format t "~%Removed ~a Variables! ~a~%" (length removed-vars) removed-vars)
       removed-vars)))
-;; MOVE消失のバグ直したら:MOVE Fusable

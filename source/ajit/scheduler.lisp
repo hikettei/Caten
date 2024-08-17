@@ -533,14 +533,16 @@ Options:
       ;; Polyhedron supercedes :FOR/:ENDFOR, and we dont need it anymroe, remove them.
       (mapc (compose #'remove-iteration-ir #'poly-pipeline) polyhedrons)
       (poly/solve-group-deps polyhedrons)
-      (mapc #'apply-multiexpr-grouping polyhedrons)
+      (let ((vars (apply #'append (map 'list #'apply-multiexpr-grouping polyhedrons))))
+	(when (>= debug 1)
+	  (format t "~%[JIT] Removed ~a tensors by multiexpr-grouping.~a~%" (length vars)
+		  (if (>= debug 4) (format nil ":~%~a" vars) ""))))
       ;; Remove extra allocations
       ;; [TODO] 全部EXPRにする
       ;; No-need-to-allocationが発生する
       ;; そうしたらAllocを削除
       ;;(when (and (= (length polyhedrons) 1) multiexpr)
       ;;  (mapc #'(lambda (x) (apply-multiexpr-grouping (poly-pipeline x))) polyhedrons))
-      (error "STOP")
       (let* ((seen)
 	     (jit-graphs
 	       (map 'list
