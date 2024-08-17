@@ -187,3 +187,17 @@ Graph must be verified in advance."
 	     (setf (gethash (val-gensym k) new-variables) v))
 	 (avm-variables avm))
 	(setf (avm-variables avm) new-variables)))))
+
+(defun zenity/prompt-new-value (code)
+  (let* ((zenity-cmd `("zenity" "--text-info" "--editable" "--width=800" "--height=600"))
+	 (process-info (uiop:launch-program zenity-cmd :input :stream :output :stream :error-output :stream))
+	 (input (uiop:process-info-input process-info))
+	 (output (uiop:process-info-output process-info))
+	 (error-out (uiop:process-info-error-output process-info)))
+    (unwind-protect
+         (progn
+           (princ code input)
+           (close input)))
+    (if (zerop (uiop:wait-process process-info))
+        (alexandria:read-stream-content-into-string output)
+        (error "Failed: ~a" (alexandria:read-stream-content-into-string error-out)))))
