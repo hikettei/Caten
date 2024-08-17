@@ -417,15 +417,15 @@
   (let ((a (make-tensor `(3 3) :requires-grad t)))
     (let ((m (caten (!sum a :axis t))))
       (forward m) (backward m nil) (forward m) (backward m nil)
-      (every (equal-to 1) (elements (grad a)))))
+      (ok (every (equal-to 1) (elements (grad a))))))
   (let ((a (make-tensor `(3 3) :requires-grad t)))
     (let ((m (caten (!sum a :axis t :keepdims t))))
       (forward m) (backward m nil) (forward m) (backward m nil)
-      (every (equal-to 1) (elements (grad a)))))
+      (ok (every (equal-to 1) (elements (grad a))))))
   (let ((a (make-tensor `(3 3) :requires-grad t)))
     (let ((m (caten (!neg (!sum a :axis t)))))
       (forward m) (backward m nil) (forward m) (backward m nil)
-      (every (equal-to -1) (elements (grad a))))))
+      (ok (every (equal-to -1) (elements (grad a)))))))
 
 (deftest test-gemm
   (let ((a (ax+b `(3 4) 0 1))
