@@ -136,9 +136,17 @@
 			  collect
 			  (multiple-value-bind (expr node arefs) (apply #'values expr)
 			    (setf arefs (remove-duplicates arefs :key #'expr-x))
-			    (make-node :EXPR :EXPR (node-writes node) (map 'list #'expr-x arefs)
-				       :expr expr :_type_relay (make-inferred-type (map 'list #'expr-y arefs) (relay-writes (read-type-relay node)))
-				       :buffers arefs))
+			    (let ((out-to (if (eql (node-type node) :WHERE)
+					      (second (node-reads node))
+					      (car (node-reads node))))
+				  (out-to-type
+				    (if (eql (node-type node) :WHERE)
+					(second (relay-reads (read-type-relay node)))
+					(car (relay-reads (read-type-relay node))))))
+			      ;; EXPR (out-to aref ...)
+			      (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
+					 :expr expr :_type_relay (make-inferred-type `(,out-to-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
+					 :buffers arefs)))
 			else
 			  collect expr)))
 	    (values
@@ -176,10 +184,11 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
 	   (dolist (node (graph-nodes graph))
 	     (assert (null (some #'(lambda (x) (find x removed-vars)) (node-reads node)))
 		     ()
-		     "~a is removed from the multiexpr! (a bug)" (node-reads node)))
+		     "~a is removed by the multiexpr! (a bug)" (node-reads node)))
 	   (when out-to
 	     (multiple-value-bind (expr-nodes expr-reads) (recursively-group-expr poly graph out-to  (nthcdr c read-by-time))
 	       (declare (type list expr-nodes expr-reads))
+	       (print expr-nodes)
 	       (setf removed-vars (remove-duplicates (append removed-vars (intersection (nth c read-by-time) expr-reads))))
 	       (setf (graph-nodes graph) expr-nodes)))
 	   (incf c))
