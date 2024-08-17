@@ -43,13 +43,15 @@ function void (args) { body };
     :Const ;; Const (Value Nil)
     :Aref
     
-    :AND :OR :MAX :MIN
+    :ADD :MUL
+    :AND :OR
+    :MAX :MIN
     ;; Unary
     :NEG
     :SIN :LOG2 :EXP2
     :RECIP :SQRT :NOT
     :INDEX-COMPONENTS
-
+    
     :LOAD))
 
 (defgeneric %render-expr (lang op lhs rhs z)
@@ -67,7 +69,7 @@ Render the ops in ./source/aasm/ops.lisp.
 :ALLOC
 :EXPR
 "))
-
+;; (defstruct metadata)
 ;; TODO: verify-node
 (defun render-expr (lang expr)
   "Recursively render the expr"
@@ -75,4 +77,3 @@ Render the ops in ./source/aasm/ops.lisp.
   (if (expr-p expr)
       (%render-expr lang (expr-op expr) (expr-x expr) (expr-y expr) (expr-z expr))
       (%render-expr lang :Const expr nil nil)))
-
