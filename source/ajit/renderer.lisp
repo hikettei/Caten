@@ -15,6 +15,10 @@
 function void (args) { body };
 ```"))
 
+(deftype op/body ()
+  "A list of ops used for rendering the body."
+  `(member :FOR :ENDFOR :FUNCALL :IF :ELSE :ENDIF))
+
 (defgeneric %render-body (lang kernel-lang jit-graph polyhedral indent allocs)
   (:documentation
    "IRs used in the jit-graph:
@@ -27,33 +31,42 @@ function void (args) { body };
 - ENDIF
 "))
 
+(deftype op/expr ()
+  "A list of ops used for rendering the computation"
+  `(member
+    :WHERE ;; x = %where(condition, x, y)
+    ;; Comparisons
+    :< :<= :> :>= :==
+    ;; Arithmetic
+    :+ :- :* :/ :% ;; (mod)
+    ;; Constant
+    :Const ;; Const (Value Nil)
+    :Aref
+    
+    :AND :OR :MAX :MIN
+    ;; Unary
+    :NEG
+    :SIN :LOG2 :EXP2
+    :RECIP :SQRT :NOT
+    :INDEX-COMPONENTS))
+
 (defgeneric %render-expr (lang op lhs rhs z)
   (:documentation "
-TODO: Deftype
-OP :=
-:WHERE
-:LT
-:EQ
-:CONST(value, nil)
-:AND
-:OR
-:MAX
-:MIN
-:+ :- :* :/
-:NEG(value, nil)
-:% (mod)
-:equal
-:<=
-:>=
-:<
-:>
+op/expr
 "))
+
+(deftype op/node ()
+  "A list of nodes used for rendering the code"
+  `(member :ALLOC :WMMA :EXPR))
 
 (defgeneric %render-nodes (lang graph args indent)
   (:documentation "
-Render the ops in ./source/aasm/ops.lisp
+Render the ops in ./source/aasm/ops.lisp.
+:ALLOC
+:EXPR
 "))
 
+;; TODO: verify-node
 (defun render-expr (lang expr)
   "Recursively render the expr"
   (declare (type keyword lang))
