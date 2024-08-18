@@ -4,6 +4,19 @@
 (defgeneric %render-compile (lang avm allocs function)
   (:documentation "Compiles the function"))
 
+(defmethod %render-compile :around (lang avm allocs function)
+  (let ((code ""))
+    (restart-case (prog1
+		      (setf code (call-next-method))
+		    (when (= 1 (ctx:getenv :CALL_ZENITY)) (error "Triggered by CALL_ZENITY=1~%~%~a" code)))
+      (zenity/modify-code ()
+	:report "Calling a GUI Editor, update the code manually. (SHOULD ONLY BE USED FOR DEBUGGING)"
+	(%render-compile lang avm allocs (zenity/prompt-new-value function)))
+      (zenity/proceed ()
+	:report "Proceed w/ current code."
+	code))
+    code))
+
 (defgeneric %render-function-caller (lang avm allocs)
   (:documentation "Return a lambda function which calles the jit-compiled function."))
 

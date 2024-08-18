@@ -141,7 +141,10 @@ Usage:
 (e.g.: AOT=CLANG,METAL)")
     (:AOT_VM
      "" :string parse-list->kw
-     "For AOT_VM, please set the list of devices that will execute AOT compilation. The devices configured here are implemented through a VM, not a Renderer (i.e., devices without JIT implementation).")))
+     "For AOT_VM, please set the list of devices that will execute AOT compilation. The devices configured here are implemented through a VM, not a Renderer (i.e., devices without JIT implementation).")
+    (:CALL_ZENITY
+     0 :int #.(oneof "CALL_ZENITY" 0 `(0 1))
+     "(For JIT) %render-compile always produce an simple-error.")))
 
 (defparameter *ctx* (make-contextvar))
 (defmacro with-contextvar ((&rest configurations) &body body)

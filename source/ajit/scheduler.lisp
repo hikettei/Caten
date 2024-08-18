@@ -490,10 +490,7 @@ Options:
 	 (f (compile nil fcaller-body)))
     (declare (ignore _))
     (when (>= debug 1) (format t "Compiled[~a]:~%~a" name function))
-    (restart-case (%render-compile backend avm allocs function)
-      (zenity/hand-rewrite-code ()
-	:report "Calling a GUI Editor, update the code manually. (SHOULD ONLY BE USED FOR DEBUGGING)"
-	(%render-compile backend avm allocs (zenity/prompt-new-value function))))
+    (%render-compile backend avm allocs function)
     (let* ((subgraph
 	     (apply
 	      #'append
@@ -543,6 +540,7 @@ Options:
       ;; [TODO] 全部EXPRにする
       ;; No-need-to-allocationが発生する
       ;; そうしたらAllocを削除
+      ;; append graph: Written_by_JIT KernelはSeenにする
       ;;(when (and (= (length polyhedrons) 1) multiexpr)
       ;;  (mapc #'(lambda (x) (apply-multiexpr-grouping (poly-pipeline x))) polyhedrons))
       (let* ((seen)
