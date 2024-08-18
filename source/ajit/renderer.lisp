@@ -84,7 +84,8 @@ Render the ops in ./source/aasm/ops.lisp.
 :ALLOC
 :EXPR
 "))
-;; (defstruct metadata)
+
+;; TODO: (defstruct metadata)
 ;; TODO: verify-node
 (defun render-expr (lang expr)
   "Recursively render the expr"

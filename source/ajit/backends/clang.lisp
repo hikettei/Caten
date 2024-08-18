@@ -261,19 +261,6 @@ Compiled with: ~a"
     (:uint8 :uint8)
     (:int8 :int8)))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun impl-unary (op render)
-    `(,op
-      (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
-	(multiple-value-bind (b bt) (values (car (node-writes node)) (car (relay-writes type)))
-	  (line "~(~a~) = ~a(~(~a~));" (render-aref b bt) ,render (render-aref a at))))))
-  (defun impl-binary (op render)
-    `(,op
-      (multiple-value-bind (c ct) (values (car (node-writes node)) (car (relay-writes type)))
-	(multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
-	  (multiple-value-bind (b bt) (values (second (node-reads node)) (second (relay-reads type)))
-	    (line "~(~a~) = ~(~a~) ~a ~(~a~);" (render-aref c ct) (render-aref a at) ,render (render-aref b bt))))))))
-
 (defmethod %render-nodes ((lang (eql :clang)) graph access indent)
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
