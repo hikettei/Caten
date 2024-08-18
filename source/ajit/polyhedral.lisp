@@ -6,8 +6,9 @@
 ;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write schedule vm-inputs vm-outputs depends-across-group)))
+	    (:constructor make-polyhedral (avm pipeline domain read write schedule vm-inputs vm-outputs depends-across-group seen-in-groups)))
   (deps-across-group depends-across-group :type list) ;; A list of tensor ids used in another groups
+  (seen-in-groups seen-in-groups :type list) ;; A list of ids involved in the current polyhedral schedule.
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)

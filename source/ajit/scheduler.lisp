@@ -63,9 +63,13 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	     (children `(,@children ,@loop-bound-reads))
 	     (children-type `(,@children-type ,@loop-bound-types))
 	     (mergeable-list (map 'list #'(lambda (x x-type) (mergeable-p x latest x-type)) children children-type)))
+	;;(when (getattr node :_loop_bound_nodes) (return-from recursive-find-group))
 	(when loop-bound-reads
-	  (assert (null (getattr node :_loop_bound_nodes)))
-	  (assert (null (getattr node :_loop_bound_nodes_type)))
+	  (let* ((already-defined (or (getattr node :_loop_bound_nodes) (getattr node :_loop_bound_nodes_type)))
+		 (equal? (equal (getattr node :_loop_bound_nodes) loop-bound-reads)))
+	    (assert (or (null already-defined) equal?)
+		    ()
+		    ""))
 	  (setf (node-attrs node)
 		(append (node-attrs node)
 			`(:_loop_bound_nodes ,loop-bound-reads :_loop_bound_nodes_type ,loop-bound-types))))
@@ -361,11 +365,15 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			     (multiple-value-bind (out seen-new) (recursive-find-group avm x :seen seen)
 			       (setf seen seen-new)
 			       out))
-			 schedules)))))
+			 schedules))))
+	   (seen-in-groups))
       ;; verify-graph assets no duplication in branches from recursive-top-ids
       (loop for nth upfrom 0
 	    for s in scheduled
-	    do (setf (si-name s) (intern (format nil "T~a" nth) "KEYWORD")))
+	    do (dolist (node (si-nodes s))
+		 (unless (eql (node-type node) :Allocate)
+		   (setf seen-in-groups (append seen-in-groups (node-writes node)))))
+	       (setf (si-name s) (intern (format nil "T~a" nth) "KEYWORD")))
       (when verbose
 	(format t "== [Graph after applying an initial scheduler process] ==~%")
 	(print-schedules scheduled))
@@ -398,7 +406,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	    (format t "== [Initial Scheduling domain (=domain)] ======")
 	    (format t "~%~a~%" schedule)
 	    (isl-schedule-dump schedule))
-	  (values (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs recursive-top-ids nil) seen))))))
+	  (values
+	   (make-polyhedral avm pipeline domain read-access
+			    write-access schedule vm-inputs recursive-top-ids nil
+			    (remove-duplicates seen-in-groups))
+	   seen))))))
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
@@ -497,9 +509,35 @@ Options:
 	      (map
 	       'list
 	       #'(lambda (x &aux (x-in-base (or (id->value (avm-graph base-avm) (car (node-writes x))) x)))
-		   (when (null (find x seen))
-		     (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))
-		     ))
+		   (when (null (find (car (node-writes x)) seen))
+		     (push (car (node-writes x)) seen)
+		     (cond
+		       ((eql (node-type x-in-base) :Allocate)
+			(get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype)))
+		       ((find (car (node-writes x)) (poly-seen-in-groups polyhedron))
+			;; Initialized in the jit graph
+			;; -> Mutate them :Allocate (Also, they are labelled as TemporaryNode)
+			(let* ((buffer (car (relay-writes (read-type-relay x))))
+			       (args (append (buffer-shape buffer) (buffer-stride buffer)))
+			       (args (map 'list
+					  #'(lambda (id &aux (x (id->value (avm-graph base-avm) id)))
+					      (if (null x)
+						  id
+						  (get-subgraph-recursively
+						   x (avm-graph base-avm) (poly-vm-inputs polyhedron) (buffer-dtype buffer))))
+					  args))
+			       (args-list (loop for arg in args
+						if (listp arg)
+						  collect (car (node-writes (car (last arg))))
+						else
+						  collect arg)))
+		          (append
+			   (loop for n in (flatten args) if (node-p n) collect n)
+			   (list
+			    (make-node :Buffer :Allocate (node-writes x) args-list :dtype (buffer-dtype buffer) :nrank (buffer-nrank buffer) :_tmp t)))))
+		       (T
+			;; Not related to the current jit
+			(get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))))
 	       allocs)))
 	   (jit-kernel (make-fused-kernel-caller allocs f fcaller-body function backend (count-n-kernels rendering-graph))))
       (setf (avm-name avm) base-name)
