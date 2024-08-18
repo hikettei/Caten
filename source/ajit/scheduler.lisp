@@ -501,7 +501,7 @@ Options:
 			(get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype)))
 		       ((null (getattr x :_type_relay))
 			(get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype)))
-		       ((find (car (node-writes x)) (poly-seen-in-groups polyhedron))
+		       (T;;(find (car (node-writes x)) (poly-seen-in-groups polyhedron))
 			;; Initialized in the jit graph
 			;; -> Mutate them :Allocate (Also, they are labelled as TemporaryNode)
 			(let* ((buffer (car (relay-writes (read-type-relay x))))
@@ -521,10 +521,7 @@ Options:
 		          (append
 			   (loop for n in (flatten args) if (node-p n) collect n)
 			   (list
-			    (make-node :Buffer :Allocate (node-writes x) args-list :dtype (buffer-dtype buffer) :nrank (buffer-nrank buffer) :_tmp t)))))
-		       (T
-			;; Not related to the current jit
-			(get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))))
+			    (make-node :Buffer :Allocate (node-writes x) args-list :dtype (buffer-dtype buffer) :nrank (buffer-nrank buffer) :_tmp t))))))))
 	       allocs)))
 	   (jit-kernel (make-fused-kernel-caller allocs f fcaller-body function backend (count-n-kernels rendering-graph))))
       (setf (avm-name avm) base-name)
