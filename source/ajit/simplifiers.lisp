@@ -61,12 +61,13 @@
 ;; - :_loop_bound_nodes      : a list of nodes used to compute the bound
 ;; - :_loop_bound_nodes_type : types for _loop_bound_types
 (defun get-parent-nodes (node graph)
+  ;; SLOW
   (declare (type node node) (type graph graph))
   (append
    ;; :Allocate is placed in the VM-level
    ;; nodes used to compute the shape is never used!
    (when (not (eql (node-type node) :Allocate))
-     (loop for r in `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))
+     (loop for r in (append (node-reads node) (getattr node :_loop_bound_nodes))
 	   if (and (symbolp r) (id->value graph r)) append (get-parent-nodes (id->value graph r) graph)))
    (list node)))
 ;; no duplicates are allowed
@@ -236,18 +237,20 @@
       (loop for time in `(,@alloc-ids ,@pipeline-ids)
 	    for graph = (gethash time pipeline) do
 	      (loop for node in (graph-nodes graph)
-		    for type = (read-type-relay node)
-		    if (null (find (car (node-writes node)) allocated-items))
-		      do (push (car (node-writes node)) allocated-items)
-			 (setf (graph-nodes (gethash time pipeline))
-			       (append
-				(list (make-node :Buffer :Allocate
-						 (node-writes node) (map 'list #'reveal-buffer `(,@(buffer-shape (car (relay-writes type))) ,@(buffer-stride (car (relay-writes type)))))
-						 :nrank (buffer-nrank (car (relay-writes type)))
-						 :dtype (buffer-dtype (car (relay-writes type)))
-						 :_type_relay (make-inferred-type nil (relay-writes type))
-						 :_not_a_input t))
-				(graph-nodes (gethash time pipeline))))))
+		    for type = (read-type-relay node) do
+		      (loop for id in `(,@(node-writes node) ,@(node-reads node))
+			    for typ in `(,@(relay-writes type) ,@(relay-reads type))
+			    if (and (symbolp id) (null (find id allocated-items))) do
+			      (push id allocated-items)
+			      (setf (graph-nodes (gethash time pipeline))
+				    (append
+				     (list (make-node :Buffer :Allocate
+						      (list id) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
+						      :nrank (buffer-nrank typ)
+						      :dtype (buffer-dtype typ)
+						      :_type_relay (make-inferred-type nil (list typ))
+						      :_not_a_input t))
+				     (graph-nodes (gethash time pipeline)))))))
       
       (flet ((replacer (x) (refcount/refalias refcount x)))
 	(loop for g in (graph-nodes schedule-graph)
@@ -271,4 +274,3 @@
 	(renew (avm-id2tensor avm))
 	(renew (poly-vm-io-types polyhedron))
 	(renew (avm-variables avm))))))
-
