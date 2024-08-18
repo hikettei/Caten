@@ -193,9 +193,11 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	  (list
 	   (progn
 	     ;; Ugly solution... should be temporary...
+	     ;; ISL assumes the domain to be an affine function.
 	     ;; [TODO] FIX This (when `if` is scheduled by ISL, there's no way to update the index) to make mean working
 	     (when (and (not (numberp stride)) access-rep) (setf stride 1))
 	     (when (and (not (numberp by)) access-rep) (setf by 2))
+	     ;; [TODO] upfrom can be a symbol? stride * (index + offset)
 	     (when (and (not (numberp upfrom)) access-rep) (setf upfrom 1))
 	     (if broadcast-p
 		 (format nil "~a" upfrom)

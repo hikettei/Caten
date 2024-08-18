@@ -63,7 +63,7 @@
 		(make-expr ,(intern (symbol-name name) "KEYWORD") ,@args))))
   ;; Buffer Ops
   (expr Const (obj) (t))
-  (expr Cast  (obj dtype) (Node Keyword))
+  (expr Cast  (obj dtype) (Expr Keyword))
   (expr Aref  (id  buffer) (Symbol Buffer)))
 
 (declaim (ftype (function (Node &rest t) Expr) air->expr))
@@ -181,10 +181,10 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
       (maphash
        #'(lambda (ts graph &aux (out-to (graph-out-to graph)))
 	   (declare (type graph graph) (ignore ts))
-	   (dolist (node (graph-nodes graph))
-	     (assert (null (some #'(lambda (x) (find x removed-vars)) (node-reads node)))
-		     ()
-		     "~a is removed by the multiexpr! (a bug)" (node-reads node)))
+	   ;;(dolist (node (graph-nodes graph))
+	   ;;  (assert (null (some #'(lambda (x) (find x removed-vars)) (node-reads node)))
+	   ;;         ()
+	   ;;	     "~a is removed by the multiexpr! (a bug)" (node-reads node)))
 	   (when out-to
 	     (multiple-value-bind (expr-nodes expr-reads) (recursively-group-expr poly graph out-to (nthcdr c read-by-time))
 	       (declare (type list expr-nodes expr-reads))

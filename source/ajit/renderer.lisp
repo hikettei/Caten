@@ -43,6 +43,7 @@ When creating a MultiExpr, it is only fused if the node-type is op/expr!"
     ;; Constant
     :Const ;; Const (Value Nil)
     :Aref
+    :CAST
     
     :ADD :MUL
     :AND :OR

@@ -208,8 +208,6 @@
 	    for (inplace-p . all-exists-in-the-same-pipeline) = (inplace-p node time) do
 	      (assert (= 1 (length (node-writes node))) ())
 	      (refcount/make-alias refcount node inplace-p)
-	      ;; (print node)
-	      ;; (print inplace-p)
 	      ;; If write-to area is not going to be used by any other ops, let's make it in-place
 	      ;; otherwise:
 	      ;;  - If write-to-user exists in the same schedule -> create a tmpvar.
