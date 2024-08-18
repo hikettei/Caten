@@ -35,13 +35,14 @@ Further op-fusion optimization are done by the polyhedral-compiler."
     ;; They still have a chance to be merged by the polyhedral compiler.
     ->ng))
 
-(defun recursive-find-group (avm scheduled-items &key (seen nil))
+(defparameter *recursive-find-seen* nil)
+(defun recursive-find-group (avm scheduled-items)
   "Return -> (list scheduled-items ...)"
   (declare (type avm avm) (type scheduled-items scheduled-items))
-  (flet ((explore (x) (when x (recursive-find-group avm x :seen seen)))
+  (flet ((explore (x) (when x (recursive-find-group avm x)))
 	 (mergeable-p (x latest x-type) (or (numberp x) (and (id->value (avm-graph avm) x) (not (eql (node-type (id->value (avm-graph avm) x)) :Allocate)) (buffer-intersect-p latest x-type)))))
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
-      (when (find latest-id seen) (return-from recursive-find-group))
+      (when (find latest-id *recursive-find-seen*) (return-from recursive-find-group))
       (let* ((node (or (id->value (avm-graph avm) latest-id) (return-from recursive-find-group)))
 	     ;; Allocation is done at the (Exported) VM Level
 	     ;; - (1.) dynamic shapes are computed under VM Level
@@ -58,7 +59,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 					       (flatten
 						`(,@(map 'list #'buffer-reconstruct-view-args (relay-writes type))
 						  ,@(map 'list #'buffer-reconstruct-view-args (relay-reads type)))))
-				     if (and (null (find s seen)) (id->value (avm-graph avm) s)) collect s))
+				     if (and (null (find s *recursive-find-seen*)) (id->value (avm-graph avm) s)) collect s))
 	     (loop-bound-types (map 'list #'(lambda (x) (car (relay-writes (read-type-relay (id->value (avm-graph avm) x))))) loop-bound-reads))
 	     (children `(,@children ,@loop-bound-reads))
 	     (children-type `(,@children-type ,@loop-bound-types))
@@ -73,7 +74,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	  (setf (node-attrs node)
 		(append (node-attrs node)
 			`(:_loop_bound_nodes ,loop-bound-reads :_loop_bound_nodes_type ,loop-bound-types))))
-	(setf seen (append seen (node-writes node)))
+	(setf *recursive-find-seen* (append *recursive-find-seen* (node-writes node)))
 	;; node_id <- F(Children[0], Children[1], ...)
 	;;              mergeable[0] mergeable[1], ...
 	;; All mergeable -> merge them!
@@ -89,7 +90,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 			(setf (si-latest scheduled-items) ct
 			      (si-latest-id scheduled-items) c)
 			(setf parent-groups (append parent-groups (cdr (explore scheduled-items))))))
-	      (values (append (list scheduled-items) parent-groups) seen))
+	      (append (list scheduled-items) parent-groups))
 	    ;; Create new and independent schedule item for each args.
 	    (let ((new-groups
 		    (map
@@ -97,12 +98,10 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 		     #'(lambda (x x-type)
 			 (when (not (numberp x))
 			   (make-scheduled-items (list (id->value (avm-graph avm) x) x-type x))))
-		     children children-type)))
-	      (values
-	       (append
-		(list scheduled-items)
-		(loop for n in (map 'list #'explore new-groups) if n collect n))
-	       seen)))))))
+		     children children-type)))	      
+	      (append
+	       (list scheduled-items)
+	       (loop for n in (map 'list #'explore new-groups) if n collect n))))))))
 ;; ~~ JIT-Specific IRs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %for (gid size)
   (declare (type (or number symbol) size))
@@ -346,10 +345,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     schedule))
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(declaim (ftype (function (AVM list &key (:verbose boolean) (:seen list)) (values Polyhedral list)) create-polyhedral-model-from-top-ids))
-(defun create-polyhedral-model-from-top-ids (avm recursive-top-ids &key (verbose nil) (seen nil))
+(declaim (ftype (function (AVM list &key (:verbose boolean)) (values Polyhedral)) create-polyhedral-model-from-top-ids))
+(defun create-polyhedral-model-from-top-ids (avm recursive-top-ids &key (verbose nil))
   "Input: AVM: JIT-Specific Optimization Applied AVM"
-  (declare (type avm avm) (type list recursive-top-ids) (type boolean) (type list seen))
+  (declare (type avm avm) (type list recursive-top-ids) (type boolean))
   (when verbose (format t "[Creating a polyhedron for group: ~a]~%" recursive-top-ids))
   (flet ((id->buffer (id)
 	   (assert (symbolp id) () "Graph should not return a number!")
@@ -357,15 +356,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	     (list node (car (relay-writes (read-type-relay node))) id))))
     ;; Creating a JIT groups for this recursive-top-ids
     (let* ((schedules (map 'list (compose #'make-scheduled-items #'id->buffer) recursive-top-ids))
-	   (scheduled (reverse
-		       (flatten
-			(map
-			 'list
-			 #'(lambda (x)
-			     (multiple-value-bind (out seen-new) (recursive-find-group avm x :seen seen)
-			       (setf seen seen-new)
-			       out))
-			 schedules))))
+	   (scheduled (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group avm x)) schedules))))
 	   (seen-in-groups))
       ;; verify-graph assets no duplication in branches from recursive-top-ids
       (loop for nth upfrom 0
@@ -406,41 +397,35 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	    (format t "== [Initial Scheduling domain (=domain)] ======")
 	    (format t "~%~a~%" schedule)
 	    (isl-schedule-dump schedule))
-	  (values
-	   (make-polyhedral avm pipeline domain read-access
-			    write-access schedule vm-inputs recursive-top-ids nil
-			    (remove-duplicates seen-in-groups))
-	   seen))))))
+	  (make-polyhedral avm pipeline domain read-access
+			   write-access schedule vm-inputs recursive-top-ids nil
+			   (remove-duplicates seen-in-groups)))))))
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
 (declaim (ftype (function (AVM &key (:verbose boolean) (:more-groups list)) list) create-polyhedral-model))
-(defun create-polyhedral-model (avm &key (verbose nil) (more-groups nil) &aux (seen nil))
+(defun create-polyhedral-model (avm &key (verbose nil) (more-groups nil))
   "Creates the polyhedral model given the avm."
   (declare (type avm avm) (type boolean verbose))
   (let* ((type-map (run-type-infer avm)))
-    (flet ((%create-polyhedral-model-from-top-ids (&rest args)
-	     (multiple-value-bind (out seen-new) (apply #'create-polyhedral-model-from-top-ids args)
-	       (setf seen seen-new)
-	       out)))
-      (when (and (null (avm-bw-outputs avm))
-		 (graph-nodes (avm-graph avm))
-		 (eql :PAUSE/BACKWARD (node-type (car (last (graph-nodes (avm-graph avm)))))))
-	(setf (graph-nodes (avm-graph avm)) (butlast (graph-nodes (avm-graph avm)))))
-      (when verbose
-	(format t "== [Initial Graph] ==~%")
-	(uiop:symbol-call (find-package :caten) :print-avm avm))
-      ;; ~ JIT-Specific Optimizations ~~
-      ;; Do not verify the graph; nodes used to compute views may lost.
-      (deploy-type-infer-results avm type-map) ;; Let them include :VIEW node inside :_type_relay attrs
-      (apply-jit-specific-simplifiers avm)     ;; WMMA Accumlation etc
-      (append
-       ;; Forward Group
-       (list (%create-polyhedral-model-from-top-ids avm (avm-fw-outputs avm) :verbose verbose :seen seen))
-       ;; Backward Group
-       (when (avm-bw-outputs avm)
-	 (list (%create-polyhedral-model-from-top-ids avm (avm-bw-outputs avm) :verbose verbose :seen seen)))
-       (map 'list #'(lambda (x) (%create-polyhedral-model-from-top-ids avm x :verbose verbose :seen seen)) more-groups)))))
+    (when (and (null (avm-bw-outputs avm))
+	       (graph-nodes (avm-graph avm))
+	       (eql :PAUSE/BACKWARD (node-type (car (last (graph-nodes (avm-graph avm)))))))
+      (setf (graph-nodes (avm-graph avm)) (butlast (graph-nodes (avm-graph avm)))))
+    (when verbose
+      (format t "== [Initial Graph] ==~%")
+      (uiop:symbol-call (find-package :caten) :print-avm avm))
+    ;; ~ JIT-Specific Optimizations ~~
+    ;; Do not verify the graph; nodes used to compute views may lost.
+    (deploy-type-infer-results avm type-map) ;; Let them include :VIEW node inside :_type_relay attrs
+    (apply-jit-specific-simplifiers avm)     ;; WMMA Accumlation etc
+    (append
+     ;; Forward Group
+     (list (create-polyhedral-model-from-top-ids avm (avm-fw-outputs avm) :verbose verbose))
+     ;; Backward Group
+     (when (avm-bw-outputs avm)
+       (list (create-polyhedral-model-from-top-ids avm (avm-bw-outputs avm) :verbose verbose)))
+     (map 'list #'(lambda (x) (create-polyhedral-model-from-top-ids avm x :verbose verbose)) more-groups))))
 
 (declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
 (defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
@@ -558,7 +543,8 @@ Options:
 	      (_ (when static-gensym (apply-static-gensym avm)))
 	      (base-avm avm)
 	      (avm (deepcopy-avm avm))
-	      (*isl-context* (isl-ctx-alloc)))
+	      (*isl-context* (isl-ctx-alloc))
+	      (*recursive-find-seen* nil))
   "Applies the jit"
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
@@ -580,14 +566,6 @@ Options:
 	(when (>= debug 1)
 	  (format t "~%[JIT] Removed ~a tensors by multiexpr-grouping.~a~%" (length vars)
 		  (if (>= debug 4) (format nil ":~%~a" vars) ""))))
-      ;; Remove extra allocations
-      ;; [TODO] 全部EXPRにする
-      ;; No-need-to-allocationが発生する
-      ;; そうしたらAllocを削除
-      ;; append graph: Written_by_JIT KernelはSeenにする
-      ;;(when (and (= (length polyhedrons) 1) multiexpr)
-      ;;  (mapc #'(lambda (x) (apply-multiexpr-grouping (poly-pipeline x))) polyhedrons))
-      ;; FromがAllocationならGo ahead, otherwise, allocation+Allocationを探し当ててAllocationのSubgraphはRecursively Explore
       (let* ((seen)
 	     (jit-graphs
 	       (map 'list
