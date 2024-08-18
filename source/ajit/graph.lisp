@@ -75,13 +75,12 @@
     (:MOVE             (second parents))
     (:STORE            (second parents))
     (otherwise
-     ;; TODO: Reduce for BinaryOps for MULTIEXPR!!!!
-     ;; BinaryOps ADD(x y z c) -> EXPR(EXPR(EXPR ...)))
-     (assert (<= (length parents) 3) () "~a cannot be grouped to multi expr! (too many arguments)" node)
      (if (and (eql (node-type node) :ADD) (>= (length parents) 3))
 	 (flet ((add (x y) (make-expr :ADD x y)))
 	   (reduce #'add parents))
-	 (apply #'make-expr (node-type node) parents)))))
+	 (progn
+	   (assert (<= (length parents) 3) () "~a cannot be grouped to multi expr! (too many arguments)" node)
+	   (apply #'make-expr (node-type node) parents))))))
 
 (defparameter *aref-list* nil)
 (defparameter *group-seen* nil)
