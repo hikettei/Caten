@@ -247,7 +247,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 
 (defclass SinNode (Func) nil)
 (defmethod forward ((op SinNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op SinNode) &optional dout) (values (!cos dout)))
+(defmethod backward ((op SinNode) &optional dout) (values (!mul dout (!cos (car (func-variables op))))))
 (defmethod lower ((op SinNode) &rest inputs) (with-context (a (%sin (car inputs)))))
 (defun !sin (x) (forward (make-instance 'SinNode) x))
 
