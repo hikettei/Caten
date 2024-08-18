@@ -515,7 +515,7 @@ Options:
 		       ((eql (node-type x-in-base) :Allocate)
 			(get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype)))
 		       ((null (getattr x :_type_relay))
-			(get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype)))		 
+			(get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype)))
 		       ((find (car (node-writes x)) (poly-seen-in-groups polyhedron))
 			;; Initialized in the jit graph
 			;; -> Mutate them :Allocate (Also, they are labelled as TemporaryNode)
