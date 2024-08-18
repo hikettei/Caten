@@ -116,7 +116,7 @@
 			 (apply #'air->expr x parents)))
 		     (if (symbolp id)
 			 (progn (assert type) (make-aref-helper id type))
-			 (expr-const id))))
+			 (make-const id))))
 	       (fuse (x &aux (*aref-list*) (*group-seen*) (node (id->value graph x)))
 		 (when node
 		   (if (pause? node)
@@ -130,7 +130,8 @@
 	(let ((exprs (map 'list #'fuse outputs)))
 	  (loop while stash do (setf exprs (append (list (fuse (pop stash))) exprs)))
 	  (assert (null stash))
-	  (setf exprs (loop for e in exprs if e collect e))
+	  (setf exprs (loop for e in exprs if e collect e)
+		exprs (remove-duplicates exprs :key #'(lambda (x) (if (node-p x) (node-id x) (gensym)))))
 	  (let ((exprs
 		  (loop for expr in exprs
 			if (listp expr)
