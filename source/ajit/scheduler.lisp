@@ -498,10 +498,14 @@ Options:
 	       'list
 	       #'(lambda (x &aux (x-in-base (or (id->value (avm-graph base-avm) (car (node-writes x))) x)))
 		   (when (null (find x seen))
-		     (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))))
-	       allocs))))
+		     (get-subgraph-recursively x-in-base (avm-graph base-avm) (poly-vm-inputs polyhedron) (getattr x :dtype))
+		     ))
+	       allocs)))
+	   (jit-kernel (make-fused-kernel-caller allocs f fcaller-body function backend (count-n-kernels rendering-graph))))
       (setf (avm-name avm) base-name)
-      (values (apply #'make-graph (append subgraph (list (make-fused-kernel-caller allocs f fcaller-body function backend (count-n-kernels rendering-graph))))) seen))))
+      (values
+       (apply #'make-graph (append subgraph (list jit-kernel)))
+       (append seen (node-writes jit-kernel))))))
 
 (defun jit (avm
 	    &key
@@ -543,6 +547,7 @@ Options:
       ;; append graph: Written_by_JIT KernelはSeenにする
       ;;(when (and (= (length polyhedrons) 1) multiexpr)
       ;;  (mapc #'(lambda (x) (apply-multiexpr-grouping (poly-pipeline x))) polyhedrons))
+      ;; FromがAllocationならGo ahead, otherwise, allocation+Allocationを探し当ててAllocationのSubgraphはRecursively Explore
       (let* ((seen)
 	     (jit-graphs
 	       (map 'list
