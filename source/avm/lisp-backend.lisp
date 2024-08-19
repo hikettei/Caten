@@ -129,8 +129,8 @@
   (impl :cast #'(lambda (m x)
 		  (declare (ignore m))
 		  (dtype/cast x (getattr node :dtype))))
-  (impl :NEQ #'(lambda (_ x y) _ (not (= x y)))) ;; input is a boolean
-  (impl :LT #'(lambda (_ x y) _ (< x y)))
+  (impl :!= #'(lambda (_ x y) _ (not (= x y)))) ;; input is a boolean
+  (impl :< #'(lambda (_ x y) _ (< x y)))
   (impl :WHERE #'(lambda (c x y) (if c x y))))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :view)) graph node args)

@@ -183,7 +183,7 @@ Compiled with: ~a"
 	  (ecase op
 	    (:+ :+) (:- :-) (:* :*) (:/ :/)
 	    (:ADD :+) (:MUL :*)
-	    (:AND :&&) (:OR "||") (:NEQ :!=) (:EQ :=)
+	    (:AND :&&) (:OR "||") (:!= :!=) (:EQ :=)
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
@@ -299,5 +299,5 @@ Compiled with: ~a"
 		     (multiple-value-bind (ct at bt) (apply #'values (relay-reads type))
 		       (line "~(~a~) += ~(~a~) * ~(~a~);" (render-aref c ct) (render-aref a at) (render-aref b bt)))))
 		  (:EXPR
-		   (multiple-value-bind (at) (apply #'values (relay-writes type))		     
+		   (multiple-value-bind (at) (apply #'values (relay-writes type))
 		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))))))))
