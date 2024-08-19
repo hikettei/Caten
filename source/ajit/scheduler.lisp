@@ -375,6 +375,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	(loop for nth upfrom 0
 	      for g in graphs
 	      do (setf (gethash nth pipeline) g))
+	;; not working?
 	(%simplify-pipeline pipeline recursive-top-ids)
 	(when verbose
 	  (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
