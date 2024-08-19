@@ -479,10 +479,12 @@
 (deftest test-wrapped-with
   (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
     (let ((caten/aasm::*wrap-around-mode* t))
-      (dolist (dtype `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8))
-	(let ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
-	      (one (make-tensor `(3 3) :initial-element 1 :dtype dtype)))
-	  (ok (every (equal-to 1) (elements (proceed (!add max one))))))))))
+      (loop for dtype in `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8)
+	    for ans   in `(1 1 1 1 9223372036854775809 -2147483647 -32767 -127)do
+	(let* ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
+	       (one (make-tensor `(3 3) :initial-element 2 :dtype dtype))
+	       (val (proceed (!add max one))))
+	  (ok (every (equal-to ans) (elements val)) (format nil "[~a] got ~a, expected ~a." dtype (elements val) ans)))))))
 
 (deftest reduction-side-effects
   (testing "A[RealizedBuffer] += B[Lazy or Realized] should be must have a side effect to increase *rng-counter*"

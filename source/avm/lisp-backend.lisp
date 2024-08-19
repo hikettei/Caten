@@ -106,13 +106,17 @@
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Index-Components)) graph node args)
   (map-view nil #'index-components (car args)))
-
+(defun wrap-around (x max min)
+  (if (= min 0)
+      (mod x (1+ max))
+      ;; TODO
+      (mod x (1+ max))))
 (macrolet ((impl (kw op)
-	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args &aux (max (caten/common.dtype:dtype/max (buffer-dtype (car args)))) (wrap-around (getattr node :wrap-around)))
-		(declare (ignorable max wrap-around))
+	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args &aux (min (caten/common.dtype:dtype/min (buffer-dtype (car args)))) (max (caten/common.dtype:dtype/max (buffer-dtype (car args)))) (wrap-around (getattr node :wrap-around)))
+		(declare (ignorable max min wrap-around))
 		(apply #'map-view (getattr node :reduction) ,op args))))
-  (impl :add #'(lambda (&rest args &aux (out (apply #'+ args))) (if wrap-around (mod out max) out)))
-  (impl :mul #'(lambda (&rest args &aux (out (apply #'* args))) (if wrap-around (mod out max) out)))
+  (impl :add #'(lambda (&rest args &aux (out (apply #'+ args))) (if wrap-around (wrap-around out max min) out)))
+  (impl :mul #'(lambda (&rest args &aux (out (apply #'* args))) (if wrap-around (wrap-around out max min) out)))
   (impl :move #'(lambda (x y) x y))
   (impl :and #'(lambda (x y) (if (and (numberp x) (numberp y)) (logand x y) (and x y))))
   (impl :or #'(lambda (x y) (if (and (numberp x) (numberp y)) (logior x y) (or x y))))
