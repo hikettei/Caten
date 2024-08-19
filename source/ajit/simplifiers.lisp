@@ -245,7 +245,7 @@
 
       ;; Update allocated-items
       (setf allocated-items (map 'list #'newid allocated-items))
-      (loop for time in `(,@alloc-ids ,@pipeline-ids)
+      (loop for time in `(,@pipeline-ids)
 	    for graph = (gethash time pipeline) do
 	      (loop for node in (graph-nodes graph)
 		    for type = (read-type-relay node) do
