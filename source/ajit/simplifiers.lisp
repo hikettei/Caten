@@ -66,16 +66,19 @@
 ;; Under the step2, some nodes have the following attributes:
 ;; - :_loop_bound_nodes      : a list of nodes used to compute the bound
 ;; - :_loop_bound_nodes_type : types for _loop_bound_types
-(defun get-parent-nodes (node graph)
-  ;; SLOW
+(defun get-parent-nodes (node graph &aux (seen nil))
   (declare (type node node) (type graph graph))
-  (append
-   ;; :Allocate is placed in the VM-level
-   ;; nodes used to compute the shape is never used!
-   (when (not (eql (node-type node) :Allocate))
-     (loop for r in (append (node-reads node) (getattr node :_loop_bound_nodes))
-	   if (and (symbolp r) (id->value graph r)) append (get-parent-nodes (id->value graph r) graph)))
-   (list node)))
+  (labels ((explore (node graph)
+	     (when (null (find (node-id node) seen))
+	       (push (node-id node) seen)
+	       (append
+		;; :Allocate is placed in the VM-level
+		;; nodes used to compute the shape is never used!
+		(when (not (eql (node-type node) :Allocate))
+		  (loop for r in (append (node-reads node) (getattr node :_loop_bound_nodes))
+			if (and (symbolp r) (id->value graph r)) append (explore (id->value graph r) graph)))
+		(list node)))))
+    (explore node graph)))
 ;; no duplicates are allowed
 (defun %simplify-pipeline (pipeline top-ids)
   "Removes all unused nodes from the pipeline (incl, :FOR, :ENDFOR)"
@@ -101,7 +104,7 @@
 	 (setf (graph-nodes graph)
 	       (loop for node in (graph-nodes graph)
 		     if (and (null (find (node-id node) seen)) (or (find (node-type node) `(:FOR :ENDFOR)) (find (node-id node) used-node-ids)))
-		       collect (progn (push (node-id node) seen)  node))))
+		       collect (progn (push (node-id node) seen) node))))
      pipeline)
     (maphash
      #'(lambda (k graph)

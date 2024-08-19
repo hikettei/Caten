@@ -138,14 +138,18 @@
 	   (_ (%load (%salloc :dtype dtype) (car (node-writes node)) :id (car (node-writes node)))))
        (list node))))
 
-(defun recursively-find-output-id (id graph)
+(defun recursively-find-output-id (id graph &aux (seen nil))
   "Exploring the graph from id, returns a list of buffer ids which is not used in the graph (i.e.: outputs).
 Graph must be verified in advance."
   (declare (type symbol id) (type graph graph))
-  (let ((outputs (id->users graph id)))
-    (if (null outputs)
-	(list id)
-	(apply #'append (map 'list #'(lambda (x) (recursively-find-output-id (car (node-writes x)) graph)) outputs)))))
+  (labels ((explore (id)
+	     (when (null (find id seen))
+	       (push id seen)
+	       (let ((outputs (id->users graph id)))
+		 (if (null outputs)
+		     (list id)
+		     (apply #'append (map 'list #'(lambda (x) (explore (car (node-writes x)))) outputs)))))))
+    (explore id)))
 
 (defun buffer-reconstruct-view-args (buffer)
   "Reconstruct a list of symbols used to compute the buffer bound."
