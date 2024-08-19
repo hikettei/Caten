@@ -42,6 +42,12 @@ Compiled with: ~a"
 (defmethod %render-compile ((lang (eql :clang)) avm allocs function)
   (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3")))
 
+(defun bool->bit (x)
+  (declare (type buffer x))
+  (if (eql (buffer-dtype x) :bool)
+      (make-array (array-total-size (buffer-value x)) :element-type 'bit :initial-contents (map 'list #'(lambda (x) (if x 1 0)) (buffer-value x)))
+      (buffer-value x)))
+
 (defmethod %render-function-caller ((lang (eql :clang)) avm allocs &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
@@ -56,7 +62,7 @@ Compiled with: ~a"
 				(setf (mem-ref ,@(node-writes (car rest-forms)) ,(->cffi-dtype (getattr node :dtype))) (buffer-value ,tmp))
 				,(expand (cdr rest-forms) body)))))
 		     `(with-pointer-to-vector-data
-			  (,@(node-writes (car rest-forms)) (buffer-value ,@(node-writes (car rest-forms))))
+			  (,@(node-writes (car rest-forms)) (bool->bit ,@(node-writes (car rest-forms))))
 			,(expand (cdr rest-forms) body)))
 		 `(progn
 		    ,@body
