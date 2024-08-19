@@ -32,7 +32,13 @@
 		  unless (eql (node-type n) :View)
 		    collect
 		    (progn		      
-		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n)))
+		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n))
+			    (node-reads n) (loop for r in (node-reads n)
+						 for val = (id->value (avm-graph avm) r)
+						 if (and (symbolp r) (eql (node-type val) :View))
+						   collect (->aft (car (node-writes val)))
+						 else
+						   collect r))
 		      n))))))
 
 (defun wmma-relay-from (t1 tc nth)
