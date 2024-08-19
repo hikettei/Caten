@@ -90,7 +90,7 @@
     (flet ((pause? (x) (declare (type node x))
 	     (or (find (car (node-writes x)) (poly-deps-across-group poly))
 		 (not (typep (node-type x) 'op/expr))
-		 (> (count x read-by-time) 1)
+		 (> (count (car (node-writes x)) read-by-time) 1)
 		 no-multi-expr))
 	   (first? (x) (declare (type node x)) (not (find (node-id x) *group-seen*)))
 	   (stash (x) (declare (type node x)) (push (car (node-writes x)) stash))
