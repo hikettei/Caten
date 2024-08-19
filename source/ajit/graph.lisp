@@ -88,8 +88,7 @@
 	   (apply #'make-expr (node-type node) parents))))))
 
 (defparameter *aref-list* nil)
-(defparameter *group-seen* nil)
-(defun recursively-group-expr (poly graph outputs read-by-time &key (no-multi-expr nil))
+(defun recursively-group-expr (poly graph outputs read-by-time &key (no-multi-expr nil) (seen))
   (declare (type graph graph) (type list outputs))
   (let* ((stash) (read-by-time (apply #'append read-by-time)))
     (flet ((pause? (x) (declare (type node x))
@@ -97,16 +96,15 @@
 		 (not (typep (node-type x) 'op/expr))
 		 (> (count (car (node-writes x)) read-by-time) 1)
 		 no-multi-expr))
-	   (first? (x) (declare (type node x)) (not (find (node-id x) *group-seen*)))
+	   (first? (x) (declare (type node x)) (not (find `(,(car (node-writes x)) ,(node-id x)) seen :test #'equal)))
 	   (stash (x) (declare (type node x)) (push (car (node-writes x)) stash))
-	   (saw (x) (declare (type node x)) (push (node-id x) *group-seen*))
+	   (saw (x) (declare (type node x)) (push `(,(car (node-writes x)) ,(node-id x)) seen))
 	   (make-aref-helper (arg type &aux (aref (make-aref arg type)))
 	     (push aref *aref-list*)
 	     aref))
       (labels ((fuse-helper (id &key (type nil) &aux (x (id->value graph id)))
 		 (if (and x (first? x))
 		     (progn
-		       (saw x)
 		       (let* ((parents
 				(loop for arg in (node-reads x)
 				      for type in (relay-reads (read-type-relay x))
@@ -117,22 +115,24 @@
 					    (progn
 					      (stash arg-node)
 					      (make-aref-helper arg type))
-					    (fuse-helper arg :type type))
+					    (progn
+					      (saw x)
+					      (fuse-helper arg :type type)))
 				      else
 					collect (if (symbolp arg) (make-aref-helper arg type) (make-const arg)))))
 			 (apply #'air->expr x parents)))
 		     (if (symbolp id)
 			 (progn (assert type) (make-aref-helper id type))
 			 (make-const id))))
-	       (fuse (x &aux (*aref-list*) (*group-seen*) (node (id->value graph x)))
+	       (fuse (x &aux (*aref-list*) (node (id->value graph x)) (type (when node (car (relay-writes (read-type-relay node))))))
 		 (when node
 		   (if (pause? node)
 		       (if (typep (node-type node) 'op/expr)
-			   (list (fuse-helper x) node *aref-list*)
+			   (list (fuse-helper x :type type) node *aref-list*)
 			   (let ((reads (node-reads node)))
 			     (mapc #'(lambda (x &aux (n (id->value graph x))) (when n (stash n))) reads)
 			     node))
-		       (list (fuse-helper x) node *aref-list*)))))
+		       (list (fuse-helper x :type type) node *aref-list*)))))
 	(setf stash (reverse stash))
 	(let ((exprs (map 'list #'fuse outputs)))
 	  (loop while stash do (setf exprs (append (list (fuse (pop stash))) exprs)))
@@ -177,7 +177,7 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
   (let ((read-by-time))
     (maphash
      #'(lambda (ts graph)
-	 (declare (ignore ts))
+  	 (declare (ignore ts))
 	 (let ((reads (loop for node in (graph-nodes graph)
 			    append
 			    (remove-duplicates (loop for r in (node-reads node) if (symbolp r) collect r)))))
