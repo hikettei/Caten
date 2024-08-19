@@ -72,7 +72,10 @@
     (:INDEX-COMPONENTS (make-expr :INDEX-COMPONENTS (first parents) (cdr parents)))
     (:Cast             (make-cast (second parents) (getattr node :dtype)))
     (:Load             (make-const (getattr node :value)))
-    (:MOVE             (second parents))
+    (:MOVE
+     (if (getattr node :_jit_dont_render_me)
+	 (car parents)
+	 (second parents)))
     (:STORE            (second parents))
     (otherwise
      (if (and (eql (node-type node) :ADD) (>= (length parents) 3))

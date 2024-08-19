@@ -497,6 +497,7 @@
 
 (deftest threefry2x32
   (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
+    (assert (= 0 (ctx:getenv :JIT)) () "segv w/ JIT")
     (with-manual-seed (0)
       (let* ((n 100)
 	     (first-rand (elements (proceed (!rand `(,n ,n)))))
