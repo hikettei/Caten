@@ -117,8 +117,8 @@
     (labels ((relevant-graph (pos) (apply #'make-graph (subseq (graph-nodes graph) pos)))
 	     (inplace (node pos)
 	       ;; (in-place-p . users)
-	       (let* ((usrs (id->memwrites (relevant-graph pos) (car (node-writes node)))))
-		 (cons (length usrs) usrs))))
+	       (multiple-value-bind (count users) (id->memwrites (relevant-graph pos) (car (node-writes node)))
+		 (cons count users))))	     
       (loop for node in (graph-nodes graph)
 	    for pos upfrom 0
 	    for (refc . refb) = (inplace node pos)
@@ -172,10 +172,14 @@
 	  (node-writes node) (map 'list #'ref (node-writes node)))))
 
 (defun id->memwrites (graph id)
-  (loop for node in (graph-nodes graph)
-	for write-to = (case (node-type node) (:ALLOCATE nil) (:WHERE (second (node-reads node))) (otherwise (car (node-reads node))))
-	if (eql write-to id)
-	  collect node))
+  "Counts how many times id was read in the graph, and by who?"
+  (let ((count 0)
+	(nodes))
+    (loop for node in (graph-nodes graph)
+	  for reads = (node-reads node) do
+	    (loop for r in reads
+		  if (eql r id) do (incf count) (push node nodes)))
+    (values count (remove-duplicates nodes :key #'node-id))))
 
 (defun apply-memory-planner (refcount polyhedron avm schedule-graph)
   (declare (type Reference-counter refcount) (type Polyhedral polyhedron) (type avm avm))
@@ -195,10 +199,11 @@
     (labels ((inplace-p (node time)
 	       ;; (in-place-p . intersects-with-current-pipeline?)
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
-	       (decf (gethash (node-output-position node) (refcount-refcount refcount)))
-	       (let ((refcount (gethash (node-output-position node) (refcount-refcount refcount)))
-		     (refdom   (gethash (node-output-position node) (refcount-refcount-by refcount))))
-		 (cons (<= refcount 0) (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))))
+	       (let ((refcount-n (gethash (node-output-position node) (refcount-refcount refcount)))
+		     (refdom     (gethash (node-output-position node) (refcount-refcount-by refcount))))
+		 (dolist (r (node-reads node)) (when (symbolp r) (decf (gethash r (refcount-refcount refcount)))))
+		 ;;(assert (>= refcount-n -1))
+		 (cons (<= refcount-n 1) (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))))
 	     (newid (x) (refcount/refalias refcount x)))
       ;; O(nlogn) * the cost of id->users ...
       (loop
