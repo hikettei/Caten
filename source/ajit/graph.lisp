@@ -111,7 +111,7 @@
 				      for arg-node = (when (symbolp arg) (id->value graph arg))
 				      if arg-node
 					collect
-					(if (pause? arg-node) 
+					(if (pause? arg-node)
 					    (progn
 					      (stash arg-node)
 					      (make-aref-helper arg type))
@@ -178,9 +178,10 @@ It uses aIR graph features; accordingly must be applied before doing memory-plan
     (maphash
      #'(lambda (ts graph)
   	 (declare (ignore ts))
-	 (let ((reads (loop for node in (graph-nodes graph)
-			    append
-			    (remove-duplicates (loop for r in (node-reads node) if (symbolp r) collect r)))))
+	 (let ((reads
+		 (loop for node in (graph-nodes graph)
+		       append
+		       (remove-duplicates (loop for r in (node-reads node) if (symbolp r) collect r)))))
 	   (push reads read-by-time)))
      (poly-pipeline poly))
     (setf read-by-time (reverse read-by-time))
