@@ -215,7 +215,7 @@
 		 (dolist (r (node-reads node)) (when (symbolp r) (decf (gethash r (refcount-refcount refcount)))))
 		 ;;(assert (>= refcount-n -1))
 		 (cons
-		  (or (<= refcount-n 1) (print (depends-across-pipeline? id)))
+		  (<= refcount-n 1)
 		  (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))))
 	     (depends-across-pipeline? (id)
 	       (find id (poly-deps-across-group polyhedron)))
@@ -234,8 +234,8 @@
 		;; otherwise:
 		;;  - If write-to-user exists in the same schedule -> create a tmpvar.
 		;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
-		
 		(when (and (null inplace-p) all-exists-in-the-same-pipeline)
+		  ;;(print "A")
 		  ;; [TODO]
 		  ;; Minimizing the number of allocations by following the rule:
 		  ;; 1. (car reads) becomes write, (except for %WHERE)
