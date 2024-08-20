@@ -205,3 +205,14 @@ Graph must be verified in advance."
     (if (zerop (uiop:wait-process process-info))
         (alexandria:read-stream-content-into-string output)
         (error "Failed: ~a" (alexandria:read-stream-content-into-string error-out)))))
+
+(defun render-graph/sort-by-time (rendering-graph)
+  "FUNCALL existing in the same loop, can be recognised as the same schedule."
+  (declare (type graph rendering-graph))
+  (let ((groups (list nil)))
+    (loop for node in (graph-nodes rendering-graph)
+	  if (eql (node-type node) :FUNCALL)
+	    do (setf (car groups) (append (car groups) (list (getattr node :idx))))
+	  if (or (eql (node-type node) :ENDFOR) (eql (node-type node) :FOR))
+	    do (push nil groups))
+    (reverse (loop for g in groups if g collect g))))

@@ -194,9 +194,9 @@
   (declare (type Reference-counter refcount) (type Polyhedral polyhedron) (type avm avm))
   (let* ((pipeline (poly-pipeline polyhedron))
 	 (pipeline-ids (loop for r in (graph-nodes schedule-graph) if (eql (node-type r) :FUNCALL) collect (getattr r :idx)))
-	 (alloc-ids (loop for k in (hash-table-keys pipeline) unless (find k pipeline-ids) collect k))
+	 (pipeline-ids-by-loop (render-graph/sort-by-time schedule-graph))
 	 (allocated-items
-	   (loop for time in `(,@alloc-ids ,@pipeline-ids)
+	   (loop for time in `(,@pipeline-ids)
 		 append
 		 (loop for node in (graph-nodes (gethash time pipeline))
 		       if (eql (node-type node) :Allocate)
@@ -205,46 +205,53 @@
 				  (poly-vm-inputs polyhedron)
 				  (loop for o in (poly-vm-outputs polyhedron)
 					if (poly/io-scalar-p polyhedron o) collect o))))
+    (assert (equal (flatten pipeline-ids-by-loop) pipeline-ids))
     (labels ((inplace-p (node time)
 	       ;; (in-place-p . intersects-with-current-pipeline?)
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
-	       (let ((refcount-n (gethash (node-output-position node) (refcount-refcount refcount)))
-		     (refdom     (gethash (node-output-position node) (refcount-refcount-by refcount))))
+	       (let* ((id (node-output-position node))
+		      (refcount-n (gethash id (refcount-refcount refcount)))
+		      (refdom     (gethash id (refcount-refcount-by refcount))))
 		 (dolist (r (node-reads node)) (when (symbolp r) (decf (gethash r (refcount-refcount refcount)))))
 		 ;;(assert (>= refcount-n -1))
-		 (cons (<= refcount-n 1) (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))))
+		 (cons
+		  (or (<= refcount-n 1) (print (depends-across-pipeline? id)))
+		  (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))))
+	     (depends-across-pipeline? (id)
+	       (find id (poly-deps-across-group polyhedron)))
 	     (newid (x) (refcount/refalias refcount x)))
       ;; O(nlogn) * the cost of id->users ...
-      (loop
-	for time in `(,@alloc-ids ,@pipeline-ids)
-	for graph = (gethash time pipeline) do
-	  (loop
-	    for node in (graph-nodes graph)
-	    for (inplace-p . all-exists-in-the-same-pipeline) = (inplace-p node time) do
-	      (assert (= 1 (length (node-writes node))) ())
-	      (refcount/make-alias refcount node inplace-p)
-	      ;; If write-to area is not going to be used by any other ops, let's make it in-place
-	      ;; otherwise:
-	      ;;  - If write-to-user exists in the same schedule -> create a tmpvar.
-	      ;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
-	      
-	      (when (and (null inplace-p) all-exists-in-the-same-pipeline)
-		;; [TODO]
-		;; Minimizing the number of allocations by following the rule:
-		;; 1. (car reads) becomes write, (except for %WHERE)
-		;;  | -   A <- f(B, C, D)
-		;;  | ->  B <- f(B, C, D)
-		;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
-		;;  | -   A1 <- f(A, B)
-		;;  | -   A2 <- f(A, C)
-		;;  | -   O1 <- f(A1, A2)
-		;;   ->
-		;;  | -   At1 <- f(A, B)
-		;;  | -   At2 <- f(A, C)
-		;;  | -   O1 <-  f(At1, At2)
-		;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
-		)
-	      (refcount/update-node node refcount)))
+      (loop for loop-ids in pipeline-ids-by-loop do
+	(loop
+	  for time in loop-ids
+	  for graph = (gethash time pipeline) do
+	    (loop
+	      for node in (graph-nodes graph)
+	      for (inplace-p . all-exists-in-the-same-pipeline) = (inplace-p node time) do
+		(assert (= 1 (length (node-writes node))) ())
+		(refcount/make-alias refcount node inplace-p)
+		;; If write-to area is not going to be used by any other ops, let's make it in-place
+		;; otherwise:
+		;;  - If write-to-user exists in the same schedule -> create a tmpvar.
+		;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
+		
+		(when (and (null inplace-p) all-exists-in-the-same-pipeline)
+		  ;; [TODO]
+		  ;; Minimizing the number of allocations by following the rule:
+		  ;; 1. (car reads) becomes write, (except for %WHERE)
+		  ;;  | -   A <- f(B, C, D)
+		  ;;  | ->  B <- f(B, C, D)
+		  ;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
+		  ;;  | -   A1 <- f(A, B)
+		  ;;  | -   A2 <- f(A, C)
+		  ;;  | -   O1 <- f(A1, A2)
+		  ;;   ->
+		  ;;  | -   At1 <- f(A, B)
+		  ;;  | -   At2 <- f(A, C)
+		  ;;  | -   O1 <-  f(At1, At2)
+		  ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
+		  )
+		(refcount/update-node node refcount))))
 
       ;; Update allocated-items
       (setf allocated-items (map 'list #'newid allocated-items))
