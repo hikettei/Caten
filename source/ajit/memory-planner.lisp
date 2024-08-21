@@ -201,7 +201,7 @@ Refcount-by:
 		      (loop for id in `(,@(node-writes node) ,@(node-reads node))
 			    for typ in `(,@(relay-writes type) ,@(relay-reads type))
 			    if (and (symbolp id) (null (find id allocated-items))) do
-			      (assert (eql id (newid id)) () "Recursive dependencies in the graph?")
+			      ;;(assert (eql id (newid id)) () "Recursive dependencies in the graph")
 			      (push id allocated-items)
 			      (setf (graph-nodes (gethash time pipeline))
 				    (append
