@@ -349,7 +349,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list list list)) create-schedules-from-avm))
-(defun create-schedules-from-avm (avm &key (verbose nil)  &aux (backward-mode-p (not (null (avm-bw-outputs avm)))))
+(defun create-schedules-from-avm (avm &key (verbose nil) &aux (backward-mode-p (not (null (avm-bw-outputs avm)))))
   "Step1, Creates an initial schedule"
   (declare (type avm avm) (type boolean verbose))
   ;; Trace the view and dtype information.
@@ -397,8 +397,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			    append
 			    (loop for read in (node-reads node)
 				  if (symbolp read) collect read))))))
-      (let* ((fw-schedule (schedule (map 'list #'make-top-schedule (avm-fw-outputs avm))))
-	     (bw-schedule (when (avm-bw-outputs avm) (schedule (map 'list #'make-top-schedule (avm-bw-outputs avm)))))
+      (let* ((fw-schedule (schedule (make-top-schedule (avm-fw-outputs avm))))
+	     (bw-schedule (when (avm-bw-outputs avm) (schedule (avm-bw-outputs avm))))
 	     (fw-seen-in-group (seen-in-groups fw-schedule))
 	     (bw-seen-in-group (seen-in-groups bw-schedule))
 	     (bw-read-in-group (read-in-groups bw-schedule))
@@ -472,9 +472,10 @@ Options:
     (debug-print "Reschedule")
     polyhedral))
 
+(declaim (ftype (function (Polyhedral) graph) finalize-and-get-graph))
 (defun finalize-and-get-render-graph (polyhedral)
   "Step4, Extract the schedule from ISL."
-  (declare (type polyhedral polyhedral))
+  (declare (type Polyhedral polyhedral))
   (create-rendering-graph polyhedral (finalize-schedule polyhedral)))
 
 (defun render-to-string (backend name avm polyhedron rendering-graph debug compile-later &aux (base-name (avm-name avm)))

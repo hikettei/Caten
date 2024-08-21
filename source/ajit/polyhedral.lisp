@@ -41,7 +41,7 @@
 	 (ast   (isl-ast-build-node-from-schedule build	schedule)))
     ast))
 
-(defmethod print-object ((poly Polyhedral) stream)
+(defmethod print-polyhedral ((poly Polyhedral) stream)
   (format stream "
 = [Polyhedral] ========================================================
 Domain:
