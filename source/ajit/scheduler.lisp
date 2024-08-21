@@ -84,7 +84,9 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	    (let ((parent-groups))
 	      (dolist (c children)
 		(when (not (numberp c))
-		  (si/append-item scheduled-items (id->value (avm-graph avm) c))))
+		  (let ((node (id->value (avm-graph avm) c)))
+		    (when (null (find (node-id node) *recursive-find-seen*))
+		      (si/append-item scheduled-items node)))))
 	      (loop for c in children
 		    for ct in children-type do
 		      (when (not (numberp c))
@@ -98,7 +100,9 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 		     'list
 		     #'(lambda (x x-type)
 			 (when (not (numberp x))
-			   (make-scheduled-items (list (id->value (avm-graph avm) x) x-type x))))
+			   (let ((node (id->value (avm-graph avm) x)))
+			     (when (find (node-id node) *recursive-find-seen*)
+			       (make-scheduled-items (list node x-type x))))))
 		     children children-type)))	      
 	      (append
 	       (list scheduled-items)
