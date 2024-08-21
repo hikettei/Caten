@@ -214,7 +214,10 @@ Refcount-by:
 						    :nrank (buffer-nrank typ)
 						    :dtype (buffer-dtype typ)
 						    :_type_relay (make-inferred-type nil (list typ))
-						    :_not_a_input t))))
+						    :_labelled
+						    (if (find id save-for-backwards)
+							"Save_for_backward"
+							"Tmp")))))
 				     (graph-nodes (gethash time pipeline)))))))
       
       (flet ((replacer (x) (refcount/refalias refcount x)))

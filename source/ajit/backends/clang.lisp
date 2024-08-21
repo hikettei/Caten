@@ -123,8 +123,8 @@ Compiled with: ~a"
 		    (loop for node in allocs
 			  for nrank = (getattr node :nrank)
 			  do (format out "  - ~a[~(~a~)]: ~a~a~%" (car (node-writes node)) (getattr node :dtype) (subseq (node-reads node) 0 nrank)
-				     (if (getattr node :_not_a_input)
-					 " // Tmp"
+				     (if (getattr node :_labelled)
+					 (format nil " // ~a" (getattr node :_labelled))
 					 "")))))))
     (format nil "~a~a;~%~a {~%~a}" shapes header header body)))	  
 
