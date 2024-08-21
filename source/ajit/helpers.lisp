@@ -33,7 +33,7 @@
   (declare (type list nodes))
   (let ((seen) (depends-on))
     (loop for node in nodes do
-      (dolist (r (node-reads node))
+      (dolist (r `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes)))
 	(when (null (find r seen))
 	  (when (symbolp r)
 	    (push r depends-on))
@@ -233,8 +233,7 @@ tgt-id-> C    D
 Consider the subgraph above, C was appeared in the another subgraph, therefore, C cannot be merged
 in a single timestamp otherwise recursive dependencies will occur.
 "
-  ;; dynamic shape!
-  ;; If xxx wo kesu
+  ;; If (xxx) wo kesu
   (let ((out) (stashed) (seen seen))
     (labels ((seen-p (x) (or (numberp x) (find x seen :test #'eql)))
 	     (read-p (deps) (every #'seen-p deps)))
