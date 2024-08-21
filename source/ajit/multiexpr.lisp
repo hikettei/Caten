@@ -108,7 +108,7 @@
 			   collect
 			   (multiple-value-bind (expr node arefs) (apply #'values expr)
 			     (let* ((out-type (if (eql (node-type node) :WHERE)
-						  (second (relay-reads (read-type-relay node)))
+						  (second (relay-reads(read-type-relay node)))
 						  (car (relay-reads (read-type-relay node)))))
 				    (out-to (if (eql (node-type node) :WHERE)
 						(second (node-reads node))

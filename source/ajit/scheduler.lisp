@@ -251,12 +251,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		 (format out " : ")
 		 (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
 		 (format out ";~%"))
-	       ;; fails to render :Allocate to purge the allocation in the schedule.
-	       ;; It is asserted that :Allocation is always alone in the schedule.
-	       (when (not (and (= 1 (length (graph-nodes subgraph)))
-			       (eql :Allocate (node-type (car (graph-nodes subgraph))))
-			       (> (getattr (car (graph-nodes subgraph)) :nrank) 0)))
-		 (format out "  T~a[];~%" timestamp)))))
+	       (format out "  T~a[];~%" timestamp))))
      pipeline)
     (format out "}")))
 

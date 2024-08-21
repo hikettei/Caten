@@ -131,19 +131,20 @@ Refcount-by:
     (assert (equal (flatten pipeline-ids-by-loop) pipeline-ids))
     (labels ((inplace-p (node time)
 	       ;; Return: (in-place-p . intersects-with-current-pipeline?)
+	       (dolist (r (node-reads node))
+		 (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
+		   (decf (gethash r (refcount-refcount refcount)))))
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
 	       (when (find (car (node-writes node)) save-for-backwards) (return-from inplace-p (cons nil nil)))
-	       (let* ((id         (car (node-writes node)))
+	       (let* ((id (or (node/in-place-mutation (node-type node) node)
+			      (return-from inplace-p (cons nil nil))))
 		      (refcount-n (gethash id (refcount-refcount refcount)))
 		      (refdom     (gethash id (refcount-refcount-by refcount))))
-		 (assert refcount-n () "~a is not in the reference counter!" id)
-		 (dolist (r (node-reads node))
-		   (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
-		     (decf (gethash r (refcount-refcount refcount)))))
-		 ;;(assert (>= refcount-n -1))
-		 (cons
-		  (<= refcount-n 1)
-		  (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))))
+		 (if refcount-n
+		     (cons
+		      (<= refcount-n 1)
+		      (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))
+		     (cons t t))))
 	     (newid (x) (refcount/refalias refcount x)))
       ;; O(nlogn) * the cost of id->users ...
       (loop for loop-ids in pipeline-ids-by-loop do
@@ -187,6 +188,7 @@ Refcount-by:
 			    for typ in `(,@(relay-writes type) ,@(relay-reads type))
 			    if (and (symbolp id) (null (find id allocated-items))) do
 			      (push id allocated-items)
+			      (warn "~a is not defined" id)
 			      (setf (graph-nodes (gethash time pipeline))
 				    (append
 				     (list (make-node :Buffer :Allocate
