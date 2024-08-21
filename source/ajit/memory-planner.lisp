@@ -46,14 +46,19 @@ Refcount-by:
 	    (loop for r in reads
 		  if (eql r id) do (incf count) (push node nodes)))
     (values count (remove-duplicates nodes :key #'node-id))))
-(defun create-reference-counter (poly render-graph)
+(defun create-reference-counter (poly render-graph &optional poly-bw bw-render-graph)
   (declare (type polyhedral poly) (type graph render-graph))
   (let ((refcount (make-hash-table))
 	(refby (make-hash-table))
 	(graph
-	  (apply #'make-graph
-		 (loop for idx in (render-graph/get-timestamps render-graph)
-		       append (graph-nodes (gethash idx (poly-pipeline poly)))))))
+	  (apply
+	   #'make-graph
+	   (append
+	    (loop for idx in (render-graph/get-timestamps render-graph)
+		  append (graph-nodes (gethash idx (poly-pipeline poly))))
+	    (when poly-bw
+	      (loop for idx in (render-graph/get-timestamps bw-render-graph)
+		    append (graph-nodes (gethash idx (poly-pipeline poly-bw)))))))))
     (labels ((relevant-graph (pos) (apply #'make-graph (subseq (graph-nodes graph) pos)))
 	     (inplace (node pos)
 	       ;; (in-place-p . users)

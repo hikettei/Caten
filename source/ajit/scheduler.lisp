@@ -101,7 +101,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 		     #'(lambda (x x-type)
 			 (when (not (numberp x))
 			   (let ((node (id->value (avm-graph avm) x)))
-			     (when (find (node-id node) *recursive-find-seen*)
+			     (when (null (find (node-id node) *recursive-find-seen*))
 			       (make-scheduled-items (list node x-type x))))))
 		     children children-type)))	      
 	      (append
@@ -407,8 +407,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (let* ((fw-schedule (schedule (make-top-schedule (avm-fw-outputs avm))))
 	     (bw-schedule (when (avm-bw-outputs avm) (schedule (make-top-schedule (avm-bw-outputs avm)))))
 	     (fw-seen-in-group (seen-in-groups fw-schedule))
-	     (bw-seen-in-group (seen-in-groups bw-schedule))
 	     (fw-read-in-group (read-in-groups fw-schedule))
+	     (bw-seen-in-group (seen-in-groups bw-schedule))
 	     (bw-read-in-group (read-in-groups bw-schedule))
 	     ;; If tensor firstly written in forward, was read in backward -> they are save-for-backward, and across-group dependencies.
 	     (save-for-backwards (intersection bw-read-in-group fw-read-in-group :test #'eql)))
@@ -599,11 +599,10 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
       ;; Finalize-schedule
       (let* ((fw-render-graph (finalize-and-get-render-graph fw-polyhedron))
 	     (bw-render-graph (when bw-polyhedron (finalize-and-get-render-graph bw-polyhedron)))
-	     (fw-refcount (create-reference-counter fw-polyhedron fw-render-graph))
-	     (bw-refcount (when bw-polyhedron (create-reference-counter bw-polyhedron bw-render-graph))))
+	     (refcount (create-reference-counter fw-polyhedron fw-render-graph bw-polyhedron bw-render-graph)))
 	;; Create a reference count and apply memory-planner
-	(apply-memory-planner! avm fw-polyhedron fw-refcount fw-render-graph save-for-backwards)
-	(when bw-polyhedron (apply-memory-planner! avm bw-polyhedron bw-refcount bw-render-graph nil))
+	(apply-memory-planner! avm fw-polyhedron refcount fw-render-graph save-for-backwards)
+	(when bw-polyhedron (apply-memory-planner! avm bw-polyhedron refcount bw-render-graph nil))
 	;; Compilation process was finished
 	;; Rendering the graph
 	;; (values fname compiled-code kernel-caller invoke-compile-f
