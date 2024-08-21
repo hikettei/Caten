@@ -517,7 +517,7 @@ Options:
      allocs
      #'(lambda () (%render-compile backend avm allocs function)))))
 
-(defun jit->vm (base-avm compiled-result polyhedron rendering-graph backend seen)
+(defun jit->vm (base-avm compiled-result polyhedron rendering-graph backend seen avm default-outs)
   "Step5, collects the related nodes."
   (multiple-value-bind (fname compiled-code fcaller-body allocs) (apply #'values compiled-result)
     (let* ((subgraph
@@ -554,11 +554,15 @@ Options:
 			   (loop for n in (flatten args) if (node-p n) collect n)
 			   (list
 			    (make-node :Buffer :Allocate (node-writes x) args-list :dtype (buffer-dtype buffer) :nrank (buffer-nrank buffer) :_tmp t))))))))
-	       allocs)))
+	       (or
+		allocs
+		;; If no allocations occured:
+		(loop for o in default-outs
+		      collect
+		      (find o (graph-nodes (avm-graph avm)) :key (compose #'car #'node-writes)))))))
 	   (jit-kernel (make-fused-kernel-caller
 			fname allocs (compile nil fcaller-body) fcaller-body
 			compiled-code backend (count-n-kernels rendering-graph))))
-      
       (values
        (apply #'make-graph (append subgraph (list jit-kernel)))
        (append seen (node-writes jit-kernel))))))
@@ -613,8 +617,8 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		(when bw-polyhedron
 		  (multiple-value-list
 		   (render-to-string backend "backward" avm bw-polyhedron bw-render-graph debug compile-later)))))
-	  (multiple-value-bind (graphf seen) (jit->vm base-avm forward fw-polyhedron fw-render-graph backend nil)
-	    (multiple-value-bind (graphb seen) (when bw-polyhedron (jit->vm base-avm backward bw-polyhedron bw-render-graph backend seen))
+	  (multiple-value-bind (graphf seen) (jit->vm base-avm forward fw-polyhedron fw-render-graph backend nil avm (avm-fw-outputs avm))
+	    (multiple-value-bind (graphb seen) (when bw-polyhedron (jit->vm base-avm backward bw-polyhedron bw-render-graph backend seen avm (avm-bw-outputs avm)))
 	      (declare (ignore seen))
 	      (values avm forward graphf backward graphb))))))))	      
 
