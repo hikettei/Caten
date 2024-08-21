@@ -48,9 +48,9 @@
 
 ;; ~~ MULTIEXPR CREATION ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *aref-list* nil)
-(defun recursively-group-expr (across-group graph outputs read-by-time &key (no-multi-expr nil) (seen))
+(defun recursively-group-expr (across-group graph outputs read-by-time  &key (no-multi-expr nil) (seen))
   (declare (type graph graph) (type list outputs))
-  (let* ((stash) (read-by-time (apply #'append read-by-time)))
+  (let* ((stash) (read-by-time (apply #'append read-by-time)) (buffers))
     (flet ((pause? (x) (declare (type node x))
 	     (or (find (car (node-writes x)) across-group)
 		 (not (typep (node-type x) 'op/expr))
@@ -58,7 +58,13 @@
 		 no-multi-expr))
 	   (first? (x) (declare (type node x)) (not (find `(,(car (node-writes x)) ,(node-id x)) seen :test #'equal)))
 	   (stash (x) (declare (type node x)) (push (car (node-writes x)) stash))
-	   (saw (x) (declare (type node x)) (push `(,(car (node-writes x)) ,(node-id x)) seen)))
+	   (saw (x) (declare (type node x)) (push `(,(car (node-writes x)) ,(node-id x)) seen))
+	   (buffer-eq (x y) (and (equal (buffer-shape x) (buffer-shape y))
+				 (equal (buffer-dtype x) (buffer-dtype y))
+				 (equal (buffer-views x) (buffer-views y))))
+	   (make-aref-helper (id type &aux (arf (make-aref id type)))
+	     (push arf buffers)
+	     arf))
       (labels ((fuse-helper (id &key (type nil) &aux (x (id->value graph id)))
 		 (if (and x (first? x))
 		     (progn
@@ -71,15 +77,15 @@
 					(if (pause? arg-node)
 					    (progn
 					      (stash arg-node)
-					      (make-aref arg type))
+					      (make-aref-helper arg type))
 					    (progn
 					      (saw x)
 					      (fuse-helper arg :type type)))
 				      else
-					collect (if (symbolp arg) (make-aref arg type) (make-const arg)))))
+					collect (if (symbolp arg) (make-aref-helper arg type) (make-const arg)))))
 			 (apply #'air->expr x parents)))
 		     (if (symbolp id)
-			 (progn (assert type) (make-aref id type))
+			 (progn (assert type) (make-aref-helper id type))
 			 (make-const id))))
 	       (fuse (x &aux (*aref-list*) (node (id->value graph x)) (type (when node (car (relay-writes (read-type-relay node))))))
 		 (when node
@@ -96,20 +102,23 @@
 	  (assert (null stash))
 	  (setf exprs (loop for e in exprs if e collect e)
 		exprs (remove-duplicates exprs :key #'(lambda (x) (if (node-p x) (node-id x) (gensym)))))
-	  (let* ((candidates (print (graph-seen graph)))
-		 (exprs
+	  (let* ((exprs
 		   (loop for expr in exprs
 			 if (listp expr)
 			   collect
 			   (multiple-value-bind (expr node arefs) (apply #'values expr)
-			     (let* ((expect-output-type (car (relay-writes (read-type-relay node))))
-				    (out-to (find (buffer-dtype expect-output-type) arefs :key (compose #'buffer-dtype #'expr-y)))
-				    (out-to (if out-to
-						(expr-x out-to)
-						(car (node-reads node)))))
+			     (let* ((out-type (if (eql (node-type node) :WHERE)
+						  (second (relay-reads (read-type-relay node)))
+						  (car (relay-reads (read-type-relay node)))))
+				    (out-to (if (eql (node-type node) :WHERE)
+						(second (node-reads node))
+						(let ((c (find out-type arefs :key #'expr-y :test #'buffer-eq)))
+						  (if c
+						      (expr-x c)
+						      (car (node-reads node)))))))
 			       ;; EXPR (out-to aref ...)
 			       (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
-					  :expr expr :_type_relay (make-inferred-type `(,expect-output-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
+					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
 					  :buffers arefs)))
 			 else
 			   collect expr)))
