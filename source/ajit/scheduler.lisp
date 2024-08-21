@@ -444,8 +444,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (loop for nth upfrom 0
 	  for s in submodule
 	  do (setf (gethash nth pipeline) s))
-    ;; (%simplify-pipeline pipeline) multiexpr does the same thing!
-    ;; ^ Loop ForがTopIdになってないから(i.e.: nodes-depends-on in multiexpr)，randでCompile Errorが発生するんじゃね？
     (when verbose
       (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
       (print-pipeline pipeline))
@@ -482,7 +480,7 @@ Options:
   the same strongly connected component at the point where the band node is constructed."
   (declare (type Polyhedral polyhedral)
 	   (type boolean verbose serialize))
-  (macrolet ((debug-print (step-name) `(when verbose (format t "~%[~a]~%~a~%" ,step-name polyhedral))))
+  (macrolet ((debug-print (step-name) `(when verbose (format t "~%[~a]~%~a~%" ,step-name (print-polyhedral polyhedral nil)))))
     (debug-print "Initial")
     ;; Loop Fusion
     (poly/reschedule polyhedral :serialize serialize)
