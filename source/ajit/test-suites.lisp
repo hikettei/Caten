@@ -18,9 +18,16 @@
 (defun n-kernels (avm)
   (declare (type avm avm))
   (jit-info-n-kernels (getattr (get-jit-info avm) :jit-info)))
+(defun n-args (avm)
+  (declare (type avm avm))
+  (length (node-reads (get-jit-info avm))))
 (defun check-kernels (n avm)
   (if (= 1 (ctx:getenv :JIT))
       (ok (= n (n-kernels avm)))
+      (skip "Needs JIT")))
+(defun check-args (n avm)
+  (if (= 1 (ctx:getenv :JIT))
+      (ok (= n (n-args avm)))
       (skip "Needs JIT")))
 
 (deftest check-kernel-counts
@@ -34,6 +41,14 @@
     (check-kernels 1 (caten (!tan (make-tensor `(10 10)))))
     (check-kernels 2 (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))
     (check-kernels 1 (caten (!mean (make-tensor `(a b c)))))))
+
+(deftest check-in-place-mutation
+  (with-no-grad
+    (check-args 2 (caten (!tan (make-tensor `(3 3)))))
+    (check-args 4 (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
+    ;; [TODO] Fuse <= 1 args
+    (check-args 4 (caten (!softmax (make-tensor `(3 3)))))
+    ))
 
 (deftest symbolic-function-args-test
   (with-no-grad
