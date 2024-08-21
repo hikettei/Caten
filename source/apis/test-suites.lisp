@@ -497,6 +497,34 @@
       (proceed (!add a (iconst 1) :reduce t))
       (ok (every (equal-to 4) (elements a))))))
 
+(defclass TestIndexComponents (Func) nil)
+(defmethod forward ((op TestIndexComponents) &rest inputs) (st "A[~] -> A[~]" ((car inputs))))
+(defmethod backward ((op TestIndexComponents) &optional dout) dout)
+(defmethod lower ((op TestIndexComponents) &rest inputs)
+  (with-context
+      (_ (%index-components (car inputs) (cdr inputs)))))
+(defun test-ic (tensor) (apply #'forward (make-instance 'TestIndexComponents) tensor (shape tensor)))
+(deftest regression-test-index-component-lazy-shaped
+  (let ((*default-order* :row))
+    (ok (every #'= #(0 1 2 3 4 5 6 7 8) (elements (proceed (test-ic (make-tensor `(3 3))))))
+	"First, confirm the function works against the normal inputs.")
+    (ok (every #'=
+	       (elements (pproceed `((a . 4) (b . 5)) (test-ic (make-tensor `(a b)))))
+	       (elements (proceed (test-ic (make-tensor `(4 5))))))
+	"Does symbolic index-component work?")
+    (ok (every #'=
+	       (elements (pproceed `((a . 4) (b . 5)) (!sin (test-ic (make-tensor `(a b))))))
+	       (elements (proceed (!sin (test-ic (make-tensor `(4 5)))))))
+	"Fused with Unary")
+    ;; Tensor-shaped-tensor
+    (let* ((a (iconst 'a))
+	   (b (iconst 'b))
+	   (size (!add a b)))
+      (ok (every #'=
+		 (elements (pproceed `((a . 3) (b . 3)) (!sin (test-ic (make-tensor (list size size))))))
+		 (elements (proceed (!sin (test-ic (make-tensor (list 6 6)))))))
+	  "As well as tensor-shaped-tensor"))))
+
 (deftest threefry2x32
   (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
     (with-manual-seed (0)

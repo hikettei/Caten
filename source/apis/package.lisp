@@ -93,6 +93,9 @@
 
   ;; from function.lisp
   (:export
+   #:Func
+   #:func-variables
+   #:lower
    ;; shaping
    #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!permute #:!t
    #:!expand
