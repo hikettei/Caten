@@ -233,8 +233,10 @@ tgt-id-> C    D
 Consider the subgraph above, C was appeared in the another subgraph, therefore, C cannot be merged
 in a single timestamp otherwise recursive dependencies will occur.
 "
+  ;; dynamic shape!
+  ;; If xxx wo kesu
   (let ((out) (stashed) (seen seen))
-    (labels ((seen-p (x) (or (numberp x) (find x seen)))
+    (labels ((seen-p (x) (or (numberp x) (find x seen :test #'eql)))
 	     (read-p (deps) (every #'seen-p deps)))
       (loop for schedule in schedules
 	    for deps = (nodes-depends-on (si-nodes schedule))
@@ -250,12 +252,13 @@ in a single timestamp otherwise recursive dependencies will occur.
 		     while (not finish-p)
 		     do (setf changed-p nil)
 			(loop for (deps-old . sched-old) in stashed
-			      if (seen-p deps-old)
+			      if (read-p deps-old)
 				do (push sched-old out)
 				   (setf changed-p t)
 				   (dolist (node (si-nodes sched-old))
 				     (dolist (w (node-writes node)) (push w seen)))
-				   (setf stashed (remove sched-old stashed :key (compose #'si-name #'cdr) :test #'equal)))
+				   (setf stashed (remove (si-name sched-old) stashed :key (compose #'si-name #'cdr) :test #'equal)))
 			(setf finish-p (not changed-p)))))
+    (when stashed (format t "~a is isolated?" stashed))
     (loop for (_ . s) in (reverse stashed) do (push s out))
     (values (reverse out) seen)))
