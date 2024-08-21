@@ -251,7 +251,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		 (format out " : ")
 		 (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
 		 (format out ";~%"))
-	       (format out "  T~a[];~%" timestamp))))
+	       ;; It is asserted that :Allocation is always alone in the schedule.
+	       (when (not
+		      (and (= 1 (length (graph-nodes subgraph)))
+			   (eql :Allocate (node-type (car (graph-nodes subgraph)))) ))
+		 (format out "  T~a[];~%" timestamp)))))
      pipeline)
     (format out "}")))
 

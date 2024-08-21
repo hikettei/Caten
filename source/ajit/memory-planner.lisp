@@ -117,6 +117,10 @@ Refcount-by:
 	   (type graph render-graph) (type list save-for-backwards))
   (let* ((pipeline (poly-pipeline polyhedral))
 	 (pipeline-ids (render-graph/get-timestamps render-graph))
+	 (pipeline-ids-all (hash-table-keys pipeline))
+	 (default-allocs (loop for node in (loop for k in pipeline-ids-all append (graph-nodes (gethash k pipeline)))
+			       if (eql (node-type node) :Allocate)
+				 collect node))
 	 (pipeline-ids-by-loop (render-graph/sort-by-time render-graph))
 	 (allocated-items
 	   (loop for time in `(,@pipeline-ids)
@@ -129,7 +133,9 @@ Refcount-by:
 				  (loop for o in (poly-vm-outputs polyhedral)
 					if (poly/io-scalar-p polyhedral o) collect o))))
     (assert (equal (flatten pipeline-ids-by-loop) pipeline-ids))
-    (labels ((inplace-p (node time)
+    (labels ((find-alloc (id)
+	       (find id default-allocs :key (compose #'car #'node-writes)))
+	     (inplace-p (node time)
 	       ;; Return: (in-place-p . intersects-with-current-pipeline?)
 	       (dolist (r (node-reads node))
 		 (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
@@ -179,6 +185,7 @@ Refcount-by:
 		(refcount/update-node node refcount))))
 
       ;; Update allocated-items
+      ;; undecl var wo all kaiketu siyou
       (setf allocated-items (map 'list #'newid allocated-items))
       (loop for time in `(,@pipeline-ids)
 	    for graph = (gethash time pipeline) do
@@ -188,15 +195,19 @@ Refcount-by:
 			    for typ in `(,@(relay-writes type) ,@(relay-reads type))
 			    if (and (symbolp id) (null (find id allocated-items))) do
 			      (push id allocated-items)
-			      (warn "~a is not defined" id)
 			      (setf (graph-nodes (gethash time pipeline))
 				    (append
-				     (list (make-node :Buffer :Allocate
-						      (list id) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
-						      :nrank (buffer-nrank typ)
-						      :dtype (buffer-dtype typ)
-						      :_type_relay (make-inferred-type nil (list typ))
-						      :_not_a_input t))
+				     (list
+				      (or
+				       (find-alloc id)
+				       (progn
+					 (warn "~a is not defined" id)
+					 (make-node :Buffer :Allocate
+						    (list id) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
+						    :nrank (buffer-nrank typ)
+						    :dtype (buffer-dtype typ)
+						    :_type_relay (make-inferred-type nil (list typ))
+						    :_not_a_input t))))
 				     (graph-nodes (gethash time pipeline)))))))
       
       (flet ((replacer (x) (refcount/refalias refcount x)))
