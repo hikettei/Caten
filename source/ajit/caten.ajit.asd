@@ -16,6 +16,7 @@
    (:file "graph")
    (:file "kernel-info")
    (:file "multiexpr")
+   (:file "memory-planner")
    (:file "renderer")
    (:file "polyhedral")
    (:file "backends/clang"))

@@ -1,7 +1,5 @@
 (in-package :caten/ajit)
 
-
-
 (defun expr-recursive-replace (expr map)
   (declare (type expr) (type function map))
   (flet ((->new (x) (if (stringp x) (format nil "~a" (or (funcall map (intern x)) x)) x)))
@@ -14,7 +12,7 @@
     (when (eql (expr-op expr) :Const)
       (setf (expr-x expr) (->new (expr-x expr))))))
 
-;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((expr (name (&rest args) (&rest types))
 	     `(defun ,(symb 'make- name) (,@args)
 		(declare ,@(loop for arg in args for typ in types collect `(type ,typ ,arg)))
@@ -45,6 +43,7 @@
 	   (assert (<= (length parents) 3) () "~a cannot be grouped to multi expr! (too many arguments)" node)
 	   (apply #'make-expr (node-type node) parents))))))
 
+;; ~~ MULTIEXPR CREATION ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *aref-list* nil)
 (defun recursively-group-expr (across-group graph outputs read-by-time &key (no-multi-expr nil) (seen))
   (declare (type graph graph) (type list outputs))
@@ -123,40 +122,49 @@
 		      append (node-reads expr))))))))))
 
 (defun graph-out-to (graph) (remove-duplicates (apply #'append (map 'list #'(lambda (x) (recursively-find-output-id x graph)) (graph-seen graph)))))
-(defun apply-multiexpr-grouping (poly)
+(defun si->graph (schedule)
+  (let ((g (apply #'make-graph (si-nodes schedule))))
+    (setf (graph-seen g) (nodes-depends-on (si-nodes schedule)))
+    g))
+(defun apply-multiexpr-grouping (schedules across-group-deps)
   "Group several computation into a single :EXPR Node to simplify.
-E.g.:
+Especially, when rendering the code, all computation should be expressed as :EXPR except for the CUSTOM Kernel.
+For example:
   T0 : X <- sin(m)
   T1 : Y <- cos(X)
-is updated to:
+is rewritten as:
   T0+T1 : Y <- cos(sin(m))
-It uses aIR graph features; accordingly must be applied before doing memory-planner optimization!"
-  (declare (type polyhedral poly))
-  (let ((read-by-time))
-    (maphash
-     #'(lambda (ts graph)
-  	 (declare (ignore ts))
-	 (let ((reads
-		 (loop for node in (graph-nodes graph)
-		       append
-		       (remove-duplicates (loop for r in (node-reads node) if (symbolp r) collect r)))))
-	   (push reads read-by-time)))
-     (poly-pipeline poly))
-    (setf read-by-time (reverse read-by-time))
-    (let ((c 0) (removed-vars))
-      (declare (type fixnum c) (type list removed-vars))
-      (maphash
-       #'(lambda (ts graph &aux (out-to (graph-out-to graph)))
-	   (declare (type graph graph) (ignore ts))
-	   ;;(dolist (node (graph-nodes graph))
-	   ;;  (assert (null (some #'(lambda (x) (find x removed-vars)) (node-reads node)))
-	   ;;         ()
-	   ;;	     "~a is removed by the multiexpr! (a bug)" (node-reads node)))
-	   (when out-to
-	     (multiple-value-bind (expr-nodes expr-reads) (recursively-group-expr (poly-deps-across-group poly) graph out-to (nthcdr c read-by-time))
-	       (declare (type list expr-nodes expr-reads))
-	       (setf removed-vars (remove-duplicates (append removed-vars (intersection (nth c read-by-time) expr-reads))))
-	       (setf (graph-nodes graph) expr-nodes)))
-	   (incf c))
-       (poly-pipeline poly))
-      removed-vars)))
+Here, X is a temporary variable if it is not specified in across-group-deps, so it and its allocation can be purged from the graph!
+It uses aIR graph features (id->value, etc); accordingly must be applied before doing memory-planner optimization!
+across-group-deps = save-for-backward in the almost use-case."
+  (declare (type list schedules across-group-deps))
+  (let ((tn-read-list) (removed-vars))
+    ;; Do not apply multiexpr across different timestamp. e.g.:
+    ;;       Before       =>       After
+    ;; T0 { A = 1 + 1 
+    ;;    { B = sin(A)    => C = sin(sin(1+1))
+    ;;    { C = sin(B)
+    ;; T1 { D = sin(B)
+    ;;    { E = sin(D)    => F = sin(sin(B)) <- B is purged! (need a stopper when folding T0)
+    ;;    { F = sin(E)
+    (loop for schedule in schedules
+	  for reads = (loop for node in (si-nodes schedule)
+			    append
+			    (remove-duplicates (loop for r in (node-reads node) if (symbolp r) collect r)))
+	  do (push reads tn-read-list))
+    ;; read-by-time = (T0_Read_list T1_Read_List, ..., Tn_Read_list)
+    ;; T0 Read_list should not rewrite the expr that violates {T1~Tn}_Read_list deps!
+    (setf tn-read-list (reverse tn-read-list))
+    (loop for schedule in schedules
+	  for n upfrom 0
+	  for graph = (si->graph schedule)
+	  for out-to = (graph-out-to graph)
+	  for across-read-dep-list = (nthcdr n tn-read-list) do
+	    (when out-to
+	      (multiple-value-bind (expr-nodes expr-reads)
+		  (recursively-group-expr across-group-deps graph out-to across-read-dep-list)
+		(nconc removed-vars expr-reads)
+		(setf (si-nodes schedule) expr-nodes))))
+    removed-vars))
+
+

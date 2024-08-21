@@ -102,17 +102,21 @@
    (null (getattr node :_tmp))
    (not (= (getattr node :nrank) 0))))
 
-(defun purge-allocations (poly pipeline dynamic-shapes &aux (allocs nil) (types (poly-vm-io-types poly)) (outputs (poly-vm-outputs poly)))
+(defun purge-allocations (poly pipeline dynamic-shapes render-graph
+			  &aux
+			    (pipeline-ids (render-graph/get-timestamps render-graph))
+			    (allocs nil) (types (poly-vm-io-types poly)) (outputs (poly-vm-outputs poly)))
+  "Collects a list of allocation that moved to args"
   (declare (type polyhedral poly) (type hash-table pipeline))
   (maphash
    #'(lambda (k graph)
-       (declare (ignore k))
-       (setf (graph-nodes graph)
-	     (loop for node in (graph-nodes graph)
-		   if (alloc-args-p node)
-		     do (push node allocs)
-		   else unless (and (eql (node-type node) :Allocate) (find (car (node-writes node)) outputs))
-			  collect node)))
+       (when (find k pipeline-ids)
+	 (setf (graph-nodes graph)
+	       (loop for node in (graph-nodes graph)
+		     if (alloc-args-p node)
+		       do (push node allocs)
+		     else unless (and (eql (node-type node) :Allocate) (find (car (node-writes node)) outputs))
+			    collect node))))
    pipeline)
   (let* ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
  	 (shapes (map 'list
