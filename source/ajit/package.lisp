@@ -48,6 +48,9 @@
    #:poly-avm
    #:poly-pipeline
    )
+  ;; from memory-planner.lisp
+  (:export
+   #:node/in-place-mutation)
   ;; from renderer.lisp
   (:export
    #:%render-function-caller

@@ -417,15 +417,15 @@
   (let ((a (make-tensor `(3 3) :requires-grad t)))
     (let ((m (caten (!sum a :axis t))))
       (forward m) (backward m nil) (forward m) (backward m nil)
-      (every (equal-to 1) (elements (grad a)))))
+      (ok (every (equal-to 1) (elements (grad a))))))
   (let ((a (make-tensor `(3 3) :requires-grad t)))
     (let ((m (caten (!sum a :axis t :keepdims t))))
       (forward m) (backward m nil) (forward m) (backward m nil)
-      (every (equal-to 1) (elements (grad a)))))
+      (ok (every (equal-to 1) (elements (grad a))))))
   (let ((a (make-tensor `(3 3) :requires-grad t)))
     (let ((m (caten (!neg (!sum a :axis t)))))
       (forward m) (backward m nil) (forward m) (backward m nil)
-      (every (equal-to -1) (elements (grad a))))))
+      (ok (every (equal-to -1) (elements (grad a)))))))
 
 (deftest test-gemm
   (let ((a (ax+b `(3 4) 0 1))
@@ -479,10 +479,12 @@
 (deftest test-wrapped-with
   (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
     (let ((caten/aasm::*wrap-around-mode* t))
-      (dolist (dtype `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8))
-	(let ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
-	      (one (make-tensor `(3 3) :initial-element 1 :dtype dtype)))
-	  (ok (every (equal-to 1) (elements (proceed (!add max one))))))))))
+      (loop for dtype in `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8)
+	    for ans   in `(1 1 1 1 9223372036854775809 -2147483647 -32767 -127)do
+	(let* ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
+	       (one (make-tensor `(3 3) :initial-element 2 :dtype dtype))
+	       (val (proceed (!add max one))))
+	  (ok (every (equal-to ans) (elements val)) (format nil "[~a] got ~a, expected ~a." dtype (elements val) ans)))))))
 
 (deftest reduction-side-effects
   (testing "A[RealizedBuffer] += B[Lazy or Realized] should be must have a side effect to increase *rng-counter*"
@@ -495,32 +497,55 @@
       (proceed (!add a (iconst 1) :reduce t))
       (ok (every (equal-to 4) (elements a))))))
 
+(defclass TestIndexComponents (Func) nil)
+(defmethod forward ((op TestIndexComponents) &rest inputs) (st "A[~] -> A[~]" ((car inputs))))
+(defmethod backward ((op TestIndexComponents) &optional dout) dout)
+(defmethod lower ((op TestIndexComponents) &rest inputs)
+  (with-context
+      (_ (%index-components (car inputs) (cdr inputs)))))
+(defun test-ic (tensor) (apply #'forward (make-instance 'TestIndexComponents) tensor (map 'list #'iconst (shape tensor))))
+(deftest regression-test-index-component-lazy-shaped
+  (let ((*default-order* :row))
+    (ok (every #'= #(0 1 2 3 4 5 6 7 8) (elements (proceed (test-ic (make-tensor `(3 3))))))
+	"First, confirm the function works against the normal inputs.")
+    (ok (every #'=
+	       (elements (pproceed `((a . 4) (b . 5)) (test-ic (make-tensor `(a b)))))
+	       (elements (proceed (test-ic (make-tensor `(4 5))))))
+	"Does symbolic index-component work?")
+    (ok (every #'=
+	       (elements (pproceed `((a . 4) (b . 5)) (!sin (test-ic (make-tensor `(a b))))))
+	       (elements (proceed (!sin (test-ic (make-tensor `(4 5)))))))
+	"Fused with Unary")))
+
 (deftest threefry2x32
-  (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
-    (with-manual-seed (0)
-      (let* ((n 100)
-	     (first-rand (elements (proceed (!rand `(,n ,n)))))
-	     (avg1 (/ (reduce #'+ first-rand) (* n n)))
-	     (scnd-rand (elements (proceed (!rand `(,n ,n)))))
-	     (avg2 (/ (reduce #'+ scnd-rand) (* n n)))
-	     (third-rand (elements (proceed (!rand `(,n ,n)))))
-	     (avg3 (/ (reduce #'+ third-rand) (* n n))))
-	(ok (< (abs (- avg1 0.5)) 0.01))
-	(ok (< (abs (- avg2 0.5)) 0.01))
-	(ok (< (abs (- avg3 0.5)) 0.01))
-	(ng (some #'= first-rand scnd-rand third-rand))
-	(testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
-	  (with-manual-seed (0)
-	    (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
-	      (testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
-		(ok (every #'= first-rand first-rand1)))
-	      (testing "Then, reproduce second/third randomness in a single call of proceed."
-		(let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
-		  (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand)))))))))))
+  (when (= (ctx:getenv :JIT) 0)
+    (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
+      (with-manual-seed (0)
+	(let* ((n 100)
+	       (first-rand (elements (proceed (!rand `(,n ,n)))))
+	       (avg1 (/ (reduce #'+ first-rand) (* n n)))
+	       (scnd-rand (elements (proceed (!rand `(,n ,n)))))
+	       (avg2 (/ (reduce #'+ scnd-rand) (* n n)))
+	       (third-rand (elements (proceed (!rand `(,n ,n)))))
+	       (avg3 (/ (reduce #'+ third-rand) (* n n))))
+	  (ok (< (abs (- avg1 0.5)) 0.01))
+	  (ok (< (abs (- avg2 0.5)) 0.01))
+	  (ok (< (abs (- avg3 0.5)) 0.01))
+	  (ng (some #'= first-rand scnd-rand third-rand))
+	  (testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
+	    (with-manual-seed (0)
+	      (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
+		(testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
+		  (ok (every #'= first-rand first-rand1)))
+		(testing "Then, reproduce second/third randomness in a single call of proceed."
+		  (let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
+		    (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand))))))))))))
 
 (caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
   (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
 
 (deftest call-aot
-  (let ((a (with-device :lisp (proceed (ax+b `(3 3) 1 1)))) (b (with-device :lisp (proceed (ax+b `(3 3) 1 1)))))
-    (ok (every #'= #(2 4 6 8 10 12 14 16 18) (elements (axpy :float32 a b 9 0 9 1 0 9 1))))))
+  (if (= (ctx:getenv :JIT) 1) (skip "Skipped for a JIT"))
+  (when (= (ctx:getenv :JIT) 0)
+    (let ((a (with-device :lisp (proceed (ax+b `(3 3) 1 1)))) (b (with-device :lisp (proceed (ax+b `(3 3) 1 1)))))
+      (ok (every #'= #(2 4 6 8 10 12 14 16 18) (elements (axpy :float32 a b 9 0 9 1 0 9 1)))))))

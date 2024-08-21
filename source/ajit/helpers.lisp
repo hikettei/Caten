@@ -33,7 +33,7 @@
   (declare (type list nodes))
   (let ((seen) (depends-on))
     (loop for node in nodes do
-      (dolist (r (node-reads node))
+      (dolist (r `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes)))
 	(when (null (find r seen))
 	  (when (symbolp r)
 	    (push r depends-on))
@@ -102,17 +102,21 @@
    (null (getattr node :_tmp))
    (not (= (getattr node :nrank) 0))))
 
-(defun purge-allocations (poly pipeline dynamic-shapes &aux (allocs nil) (types (poly-vm-io-types poly)) (outputs (poly-vm-outputs poly)))
+(defun purge-allocations (poly pipeline dynamic-shapes render-graph
+			  &aux
+			    (pipeline-ids (render-graph/get-timestamps render-graph))
+			    (allocs nil) (types (poly-vm-io-types poly)) (outputs (poly-vm-outputs poly)))
+  "Collects a list of allocation that moved to args"
   (declare (type polyhedral poly) (type hash-table pipeline))
   (maphash
    #'(lambda (k graph)
-       (declare (ignore k))
-       (setf (graph-nodes graph)
-	     (loop for node in (graph-nodes graph)
-		   if (alloc-args-p node)
-		     do (push node allocs)
-		   else unless (and (eql (node-type node) :Allocate) (find (car (node-writes node)) outputs))
-			  collect node)))
+       (when (find k pipeline-ids)
+	 (setf (graph-nodes graph)
+	       (loop for node in (graph-nodes graph)
+		     if (alloc-args-p node)
+		       do (push node allocs)
+		     else unless (and (eql (node-type node) :Allocate) (find (car (node-writes node)) outputs))
+			    collect node))))
    pipeline)
   (let* ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
  	 (shapes (map 'list
@@ -138,14 +142,18 @@
 	   (_ (%load (%salloc :dtype dtype) (car (node-writes node)) :id (car (node-writes node)))))
        (list node))))
 
-(defun recursively-find-output-id (id graph)
+(defun recursively-find-output-id (id graph &aux (seen nil))
   "Exploring the graph from id, returns a list of buffer ids which is not used in the graph (i.e.: outputs).
 Graph must be verified in advance."
   (declare (type symbol id) (type graph graph))
-  (let ((outputs (id->users graph id)))
-    (if (null outputs)
-	(list id)
-	(apply #'append (map 'list #'(lambda (x) (recursively-find-output-id (car (node-writes x)) graph)) outputs)))))
+  (labels ((explore (id)
+	     (when (null (find id seen))
+	       (push id seen)
+	       (let ((outputs (id->users graph id)))
+		 (if (null outputs)
+		     (list id)
+		     (apply #'append (map 'list #'(lambda (x) (explore (car (node-writes x)))) outputs)))))))
+    (explore id)))
 
 (defun buffer-reconstruct-view-args (buffer)
   "Reconstruct a list of symbols used to compute the buffer bound."
@@ -187,3 +195,97 @@ Graph must be verified in advance."
 	     (setf (gethash (val-gensym k) new-variables) v))
 	 (avm-variables avm))
 	(setf (avm-variables avm) new-variables)))))
+
+(defun zenity/prompt-new-value (code)
+  (let* ((zenity-cmd `("zenity" "--text-info" "--editable" "--width=800" "--height=600" "--title=Code_Editor"))
+	 (process-info (uiop:launch-program zenity-cmd :input :stream :output :stream :error-output :stream))
+	 (input (uiop:process-info-input process-info))
+	 (output (uiop:process-info-output process-info))
+	 (error-out (uiop:process-info-error-output process-info)))
+    (unwind-protect
+         (progn
+           (princ code input)
+           (close input)))
+    (if (zerop (uiop:wait-process process-info))
+        (alexandria:read-stream-content-into-string output)
+        (error "Failed: ~a" (alexandria:read-stream-content-into-string error-out)))))
+
+(defun render-graph/sort-by-time (rendering-graph)
+  "FUNCALL existing in the same loop, can be recognised as the same schedule."
+  (declare (type graph rendering-graph))
+  (let ((groups (list nil)))
+    (loop for node in (graph-nodes rendering-graph)
+	  if (eql (node-type node) :FUNCALL)
+	    do (setf (car groups) (append (car groups) (list (getattr node :idx))))
+	  if (or (eql (node-type node) :ENDFOR) (eql (node-type node) :FOR))
+	    do (push nil groups))
+    (reverse (loop for g in groups if g collect g))))
+
+(defun break-schedule (schedule split-at)
+  (declare (type scheduled-items schedule) (type list split-at))
+  (let ((new-schedules nil) (stack))
+    (loop for node in (si-nodes schedule)
+	  if (find (car (node-writes node)) split-at)
+	    do (push node stack) (push stack new-schedules) (setf stack nil)
+	  else
+	    do (push node stack))
+    (when stack (push stack new-schedules))
+    (map 'list #'(lambda (x &aux (x (reverse x)))
+		   (let ((out (make-scheduled-items (list (car x) (si-latest schedule) (si-latest-id schedule)))))
+		     (setf (si-nodes out) x)
+		     out))
+	 (reverse new-schedules))))
+
+(defun schedule/resolve-isolated-ops (schedules seen-old)
+  "    A   B
+        \ / C   D
+         |   \ /
+tgt-id-> C    D
+          \   /             C <- violates the dependency graph (if not scheduled in the same group)
+           out <- from-node |
+            \          ..  /
+            
+Consider the subgraph above, C was appeared in the another subgraph, therefore, C cannot be merged
+in a single timestamp otherwise recursive dependencies will occur.
+"
+  ;; If (xxx) wo kesu
+  (let ((out) (stashed) (seen (copy-list seen-old)))
+    (labels ((seen-p (x) (assert (not (listp x))) (or (numberp x) (find x seen :test #'eql)))
+	     (read-p (deps) (every #'seen-p deps)))
+      (loop for schedule in schedules
+	    for deps = (nodes-depends-on (si-nodes schedule))
+	    if (read-p deps) do
+	      (dolist (node (si-nodes schedule))
+		(dolist (w (node-writes node)) (push w seen)))
+	      (push schedule out)
+	    else
+	      do (push (cons deps schedule) stashed)
+	    end
+	    do (loop with finish-p = nil
+		     with changed-p = nil
+		     while (not finish-p)
+		     do (setf changed-p nil)
+			(loop for (deps-old . sched-old) in stashed
+			      if (read-p deps-old)
+				do (push sched-old out)
+				   (setf changed-p t)
+				   (dolist (node (si-nodes sched-old))
+				     (dolist (w (node-writes node)) (push w seen)))
+				   (setf stashed (remove (si-name sched-old) stashed :key (compose #'si-name #'cdr) :test #'equal)))
+			(setf finish-p (not changed-p))))
+      (when stashed
+	(let ((split-at))
+	  (loop for (deps . sched) in (reverse stashed) do
+	    (dolist (d deps)
+	      (unless (seen-p d) (push d split-at))))
+	  (setf split-at (remove-duplicates split-at))
+	  ;; Split the schedule and try again
+	  (let ((old-size (length schedules))
+		(new-schedule (apply #'append (map 'list #'(lambda (x) (break-schedule x split-at)) schedules))))
+	    (when (= old-size (length new-schedule))
+	      (error "Could not resolve this circular dependencies: ~a" (map 'list #'car stashed)))
+	    (return-from schedule/resolve-isolated-ops
+	      (schedule/resolve-isolated-ops
+	       new-schedule
+	       seen-old)))))
+      (values (reverse out) seen))))

@@ -42,6 +42,12 @@ Compiled with: ~a"
 (defmethod %render-compile ((lang (eql :clang)) avm allocs function)
   (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3")))
 
+(defun bool->bit (x)
+  (declare (type buffer x))
+  (if (eql (buffer-dtype x) :bool)
+      (make-array (array-total-size (buffer-value x)) :element-type 'bit :initial-contents (map 'list #'(lambda (x) (if x 1 0)) (buffer-value x)))
+      (buffer-value x)))
+
 (defmethod %render-function-caller ((lang (eql :clang)) avm allocs &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
@@ -56,7 +62,7 @@ Compiled with: ~a"
 				(setf (mem-ref ,@(node-writes (car rest-forms)) ,(->cffi-dtype (getattr node :dtype))) (buffer-value ,tmp))
 				,(expand (cdr rest-forms) body)))))
 		     `(with-pointer-to-vector-data
-			  (,@(node-writes (car rest-forms)) (buffer-value ,@(node-writes (car rest-forms))))
+			  (,@(node-writes (car rest-forms)) (bool->bit ,@(node-writes (car rest-forms))))
 			,(expand (cdr rest-forms) body)))
 		 `(progn
 		    ,@body
@@ -117,8 +123,8 @@ Compiled with: ~a"
 		    (loop for node in allocs
 			  for nrank = (getattr node :nrank)
 			  do (format out "  - ~a[~(~a~)]: ~a~a~%" (car (node-writes node)) (getattr node :dtype) (subseq (node-reads node) 0 nrank)
-				     (if (getattr node :_not_a_input)
-					 " // Tmp"
+				     (if (getattr node :_labelled)
+					 (format nil " // ~a" (getattr node :_labelled))
 					 "")))))))
     (format nil "~a~a;~%~a {~%~a}" shapes header header body)))	  
 
@@ -169,7 +175,7 @@ Compiled with: ~a"
   (assert (buffer-p (expr-y lhs)))
   (assert (null z))
   (let ((strides (map 'list #'(lambda (x) (render-expr lang x)) rhs)))
-    (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (nth x *access*))) :strides strides))))
+    (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (or (nth x *access*) (car *access*)))) :strides strides))))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :NOT)) lhs rhs z)
   (assert (and lhs (null rhs) (null z)))
@@ -183,7 +189,8 @@ Compiled with: ~a"
 	  (ecase op
 	    (:+ :+) (:- :-) (:* :*) (:/ :/)
 	    (:ADD :+) (:MUL :*)
-	    (:AND :&&) (:OR "||") (:NEQ :!=) (:EQ :=)
+	    (:AND :&) (:OR "||") (:!= :!=) (:EQ :=)
+	    (:XOR "^")
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
@@ -261,19 +268,6 @@ Compiled with: ~a"
     (:uint8 :uint8)
     (:int8 :int8)))
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  (defun impl-unary (op render)
-    `(,op
-      (multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
-	(multiple-value-bind (b bt) (values (car (node-writes node)) (car (relay-writes type)))
-	  (line "~(~a~) = ~a(~(~a~));" (render-aref b bt) ,render (render-aref a at))))))
-  (defun impl-binary (op render)
-    `(,op
-      (multiple-value-bind (c ct) (values (car (node-writes node)) (car (relay-writes type)))
-	(multiple-value-bind (a at) (values (car (node-reads node)) (car (relay-reads type)))
-	  (multiple-value-bind (b bt) (values (second (node-reads node)) (second (relay-reads type)))
-	    (line "~(~a~) = ~(~a~) ~a ~(~a~);" (render-aref c ct) (render-aref a at) ,render (render-aref b bt))))))))
-
 (defmethod %render-nodes ((lang (eql :clang)) graph access indent)
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
@@ -291,7 +285,7 @@ Compiled with: ~a"
 	(loop with *access* = access
 	      for node in (graph-nodes graph)
 	      for type = (read-type-relay node) do		
-		(case (node-type node)
+		(ecase (node-type node)
 		  (:ALLOCATE
 		   (line "~(~a~) ~(~a~)~a;"
 			 (->cdtype (getattr node :dtype)) (car (node-writes node))
@@ -307,77 +301,10 @@ Compiled with: ~a"
 				 (butlast
 				  (loop for x in (subseq (node-reads node) 0 nrank)
 					append (list (format nil "~a" x) "*")))))))))
-		  (:LOAD
-		   (let ((value (getattr node :value)))
-		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) (render-to-c value))))
 		  (:WMMA
 		   (multiple-value-bind (c a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (ct at bt) (apply #'values (relay-reads type))
 		       (line "~(~a~) += ~(~a~) * ~(~a~);" (render-aref c ct) (render-aref a at) (render-aref b bt)))))
 		  (:EXPR
-		   (multiple-value-bind (at) (apply #'values (relay-writes type))		     
-		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))
-		  (:STORE
-		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type)))
-			 (render-aref (second (node-reads node)) (second (relay-reads type)))))
-		  (:MOVE
-		   (multiple-value-bind (a b) (apply #'values (node-reads node))
-		     (multiple-value-bind (at bt) (apply #'values (relay-reads type))
-		       (line "~(~a~) = ~(~a~);" (render-aref a at) (render-aref b bt)))))
-		  (:CAST
-		   (line "~(~a~) = (~a)~(~a~);"
-			 (render-aref (car (node-writes node)) (car (relay-writes (read-type-relay node))))
-			 (->cdtype (getattr node :dtype))
-			 (render-aref (car (node-reads node)) (car (relay-reads (read-type-relay node))))))
-		  #.(impl-unary :SIN "sin")
-		  #.(impl-unary :LOG2 "log2")
-		  #.(impl-unary :EXP2 "exp2")
-		  #.(impl-unary :NEG "-")
-		  #.(impl-unary :RECIP "1.0 / ")
-		  #.(impl-unary :SQRT "sqrt")
-		  #.(impl-unary :NOT "!")
-		  (:INDEX-COMPONENTS
-		   (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type))) (render-isl-aref (car (relay-reads type)) :genid #'(lambda (x) (intern (nth x *access*))) :strides (cdr (node-reads node)))))
-		  #.(impl-binary :OR "|")
-		  #.(impl-binary :AND "&")
-		  (:WHERE
-		   (multiple-value-bind (o ot) (values (car (node-writes node)) (car (relay-writes type)))
-		     (multiple-value-bind (a at) (values (nth 0 (node-reads node)) (nth 0 (relay-reads type)))
-		       (multiple-value-bind (b bt) (values (nth 1 (node-reads node)) (nth 1 (relay-reads type)))
-			 (multiple-value-bind (c ct) (values (nth 2 (node-reads node)) (nth 2 (relay-reads type)))
-			   (line "~(~a~) = ~(~a~) ? ~(~a~) : ~(~a~);" (render-aref o ot) (render-aref a at) (render-aref b bt) (render-aref c ct)))))))
-		  (otherwise
-		   (case (node-class node)
-		     (:BinaryOps
-		      (let* ((r (getattr node :reduction))
-			     (op (case (node-type node)
-				   (:ADD (if r "+=" "+")) (:MUL (if r "*=" "*")))))
-			(if op
-			    (if r
-				(line "~(~a~) ~a ~(~a~);" (render-aref (car (node-reads node)) (car (relay-reads type))) op (render-aref (second (node-reads node)) (second (relay-reads type))))
-				(line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) (car (relay-writes type)))
-				      (apply
-				       #'concatenate
-				       'string
-				       (butlast
-					(loop for r in (node-reads node)
-					      for rt in (relay-reads type)
-					      append (list (render-aref r rt) op))))))
-			    (let ((op (ecase (node-type node)
-					(:MAX "max"))))
-			      (line "~(~a~) = ~a(~a);" (render-aref (car (node-writes node)) (car (relay-writes type))) op
-				    (apply
-				     #'concatenate
-				     'string
-				     (butlast
-				      (loop for r in (node-reads node)
-					    for rt in (relay-reads type)
-					    append (list (render-aref r rt) ", ")))))))))
-		     (:TernaryOps
-		      (let ((op (ecase (node-type node) (:NEQ "!=") (:LT "<"))))
-			(multiple-value-bind (o ot) (values (car (node-writes node)) (car (relay-writes type)))
-			  (multiple-value-bind (b bt) (values (nth 1 (node-reads node)) (nth 1 (relay-reads type)))
-			    (multiple-value-bind (c ct) (values (nth 2 (node-reads node)) (nth 2 (relay-reads type)))
-			      (line "~(~a~) = ~(~a~) ~a ~(~a~);" (render-aref o ot) (render-aref b bt) op (render-aref c ct)))))))
-		     (otherwise
-		      (error "Renderer for ~a is not implemented yet." node))))))))))
+		   (multiple-value-bind (at) (apply #'values (relay-writes type))
+		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))))))))

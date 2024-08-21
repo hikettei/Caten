@@ -14,6 +14,9 @@
    (:file "isl-objects")
    (:file "isl-ast-helpers")
    (:file "graph")
+   (:file "kernel-info")
+   (:file "multiexpr")
+   (:file "memory-planner")
    (:file "renderer")
    (:file "polyhedral")
    (:file "backends/clang"))
@@ -25,4 +28,4 @@
   :components
   ((:file "test-suites"))
   :perform
-  (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style :dot)))
+  (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style (if (uiop:getenv "DOT") :dot :spec))))
