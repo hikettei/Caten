@@ -365,6 +365,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     ;; ~~ JIT Specific Graph rewriting Processes ~~~~~~~~~~~~~~~~~~~~
     (deploy-type-infer-results avm type-map) ;; Move buffer/view nodes into :_type_relay attribtutes
     (apply-jit-specific-simplifiers avm)     ;; Purge :view nodes, WMMA Accumlation, contiguous elimination etc...
+    (when verbose
+      (format t "Verbose: Simplified Graph[Forward/Backward]~%")
+      (uiop:symbol-call (find-package :caten) :print-avm avm))
     ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     ;; Creating a Polyhedral Compilation Group: (Group1 = Forward, Group2=Backward)
     ;; Assume there's only two groups for simplicity:

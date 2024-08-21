@@ -96,22 +96,23 @@
 	  (assert (null stash))
 	  (setf exprs (loop for e in exprs if e collect e)
 		exprs (remove-duplicates exprs :key #'(lambda (x) (if (node-p x) (node-id x) (gensym)))))
-	  (let ((exprs
-		  (loop for expr in exprs
-			if (listp expr)
-			  collect
-			  (multiple-value-bind (expr node arefs) (apply #'values expr)
-			    (let* ((expect-output-type (car (relay-writes (read-type-relay node))))
-				   (out-to (find (buffer-dtype expect-output-type) arefs :key (compose #'buffer-dtype #'expr-y)))
-				   (out-to (if out-to
-					       (expr-x out-to)
-					       (car (node-reads node)))))
-			      ;; EXPR (out-to aref ...)
-			      (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
-					 :expr expr :_type_relay (make-inferred-type `(,expect-output-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
-					 :buffers arefs)))
-			else
-			  collect expr)))
+	  (let* ((candidates (print (graph-seen graph)))
+		 (exprs
+		   (loop for expr in exprs
+			 if (listp expr)
+			   collect
+			   (multiple-value-bind (expr node arefs) (apply #'values expr)
+			     (let* ((expect-output-type (car (relay-writes (read-type-relay node))))
+				    (out-to (find (buffer-dtype expect-output-type) arefs :key (compose #'buffer-dtype #'expr-y)))
+				    (out-to (if out-to
+						(expr-x out-to)
+						(car (node-reads node)))))
+			       ;; EXPR (out-to aref ...)
+			       (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
+					  :expr expr :_type_relay (make-inferred-type `(,expect-output-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
+					  :buffers arefs)))
+			 else
+			   collect expr)))
 	    (values
 	     exprs
 	     (remove-duplicates

@@ -4,6 +4,16 @@
   (declare (type graph graph))
   (loop for node in (graph-nodes graph)	if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
 
+(defgeneric node/in-place-mutation (id node) (:documentation "Return a symbol indicating the position of output (chosen from node-reads)"))
+(defmethod node/in-place-mutation :around (id node)
+  (if (next-method-p)
+      (call-next-method)
+      (progn
+	(warn "node/in-place-mutation for ~a is not defined, ignoring in-place-mutation opt." id)
+	nil)))
+(defmethod node/in-place-mutation ((id (eql :EXPR)) node) (car (node-reads node)))
+(defmethod node/in-place-mutation ((id (eql :WMMA)) node) (car (node-reads node)))
+  
 ;; ~~ reference-counter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Reference-Counter
 	    (:conc-name refcount-))
@@ -68,10 +78,8 @@ Refcount-by:
   (if (eql (node-type node) :Allocate)
       (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node)))
       (if in-place
-	  (if (eql (node-type node) :EXPR)
-	      (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-reads node)))
-	      ;; When implementing custom-op, implement user-extensible in-place
-	      (warn "~a cannot be inplaced because it is not EXPR! (TODO: Support)" node))
+	  (let ((id (node/in-place-mutation (node-type node) node)))
+	    (when id (setf (gethash (car (node-writes node)) (refcount-alias count)) id)))
 	  (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node))))))
 
 (defun refcount/update-buffer (count buffer)
