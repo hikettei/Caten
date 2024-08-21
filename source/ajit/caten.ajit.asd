@@ -14,6 +14,8 @@
    (:file "isl-objects")
    (:file "isl-ast-helpers")
    (:file "graph")
+   (:file "kernel-info")
+   (:file "multiexpr")
    (:file "renderer")
    (:file "polyhedral")
    (:file "backends/clang"))

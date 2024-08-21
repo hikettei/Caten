@@ -372,10 +372,12 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (let* ((graphs (map 'list #'schedule->submodule scheduled))
 	     (pipeline (make-hash-table)))
 	;; Pipeline is a hash table where key and values are: T_ID -> Submodule_Graph
+	;; 必要なリファクタ一覧
+	;; ↓でsubmodules/apply-multiexpr-groupingをする
+	;;   - deps-acrossは，recursively-find-groupを最初に呼び出して，depsを解析してからやる
 	(loop for nth upfrom 0
 	      for g in graphs
 	      do (setf (gethash nth pipeline) g))
-	;; not working?
 	(%simplify-pipeline pipeline recursive-top-ids)
 	(when verbose
 	  (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
@@ -445,28 +447,7 @@ Options:
     (poly/reschedule polyhedral :serialize serialize)
     (debug-print "Reschedule")
     polyhedral))
-;; ~~ Fused Kernel Objects ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defstruct (JIT-Info)
-  (caller #'(lambda ()) :type (or null function))
-  (caller-body nil :type list)
-  (lang :nil :type keyword)
-  (code "" :type string)
-  (n-kernels 0 :type fixnum)
-  (load-p t :type boolean)) ;; the count of outermost loops
-(defmethod make-load-form ((jit Jit-Info) &optional env)
-  (declare (ignore env))
-  `(make-jit-info :caller ,(jit-info-caller-body jit) :caller-body nil :lang ,(jit-info-lang jit) :code ,(jit-info-code jit) :n-kernels ,(jit-info-n-kernels jit) :load-p nil))
-(defmethod print-object ((s jit-info) stream) (format stream "<~a Code [~a kernels]>" (jit-info-lang s) (jit-info-n-kernels s)))
-(defun make-fused-kernel-caller (allocs lambda fcaller-body code lang n-kernels)
-  (make-node :IR :JIT_KERNEL
-	     (apply #'append (map 'list #'node-writes allocs))
-	     (apply #'append (map 'list #'node-writes allocs))
-	     :jit-info (make-jit-info :caller lambda :caller-body fcaller-body :lang lang :code code :n-kernels n-kernels)))
-(defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
-  (let ((jit (getattr node :jit-info)))
-    (assert (jit-info-p jit) () "~a is not a jit kernel. :jit-info=~a" node jit)
-    (apply (jit-info-caller jit) args))
-  (apply #'values args))
+
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun compile/polyhedron (refcount base-avm avm polyhedron &key (debug 0) (name nil) (backend nil) (seen nil) &aux (base-name (avm-name avm)))
   (declare (type polyhedral polyhedron))
@@ -550,7 +531,7 @@ Options:
 	   (ignore _))
   (multiple-value-bind (verbose-schedule verbose-auto)
       (values (or (= debug 4) (= debug 3)) (or (= debug 4) (= debug 2)))
-    (let* ((refcount (create-reference-count (avm-graph avm)))
+    (let* ((refcount (create-reference-count (avm-graph avm))) ;; <- ここのRefcountは削除して，MultiExprした後に作り直す
 	   (polyhedrons (create-polyhedral-model avm :verbose verbose-schedule :more-groups more-groups)))
       (mapc
        #'(lambda (x)
