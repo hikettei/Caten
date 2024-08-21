@@ -65,7 +65,7 @@
 	   (make-aref-helper (id type &aux (arf (make-aref id type)))
 	     (push arf buffers)
 	     arf))
-      (labels ((fuse-helper (id &key (type nil) &aux (x (id->value graph id)))
+      (labels ((fuse-helper (id &key (type nil) (args nil) &aux (x (id->value graph id)))
 		 (if (and x (first? x))
 		     (progn
 		       (let* ((parents
@@ -80,12 +80,12 @@
 					      (make-aref-helper arg type))
 					    (progn
 					      (saw x)
-					      (fuse-helper arg :type type)))
+					      (fuse-helper arg :type type :args t)))
 				      else
 					collect (if (symbolp arg) (make-aref-helper arg type) (make-const arg)))))
 			 (apply #'air->expr x parents)))
 		     (if (symbolp id)
-			 (progn (assert type) (make-aref-helper id type))
+			 (when args (make-aref-helper id type))
 			 (make-const id))))
 	       (fuse (x &aux (*aref-list*) (node (id->value graph x)) (type (when node (car (relay-writes (read-type-relay node))))))
 		 (when node
@@ -122,6 +122,8 @@
 					  :buffers arefs)))
 			 else
 			   collect expr)))
+	    ;; :expr nil is removed
+	    (setf exprs (loop for e in exprs if (getattr e :expr) collect e))
 	    (values
 	     exprs
 	     (remove-duplicates
