@@ -24,24 +24,27 @@
 
 (declaim (ftype (function (Node &rest t) (values Expr &optional)) air->expr))
 (defun air->expr (node &rest parents)
-  (case (node-type node)
-    (:INDEX-COMPONENTS (make-expr :INDEX-COMPONENTS (first parents) (cdr parents)))
-    (:Cast             (make-cast (second parents) (getattr node :dtype)))
-    (:Load             (make-const (getattr node :value)))
-    (:!=               (make-expr :!= (second parents) (third parents)))
-    (:<                (make-expr :< (second parents) (third parents)))
-    (:MOVE
-     (if (getattr node :_jit_dont_render_me)
-	 (car parents)
-	 (second parents)))
-    (:STORE            (second parents))
-    (otherwise
-     (if (and (eql (node-type node) :ADD) (>= (length parents) 3))
-	 (flet ((add (x y) (make-expr :ADD x y)))
-	   (reduce #'add parents))
-	 (progn
-	   (assert (<= (length parents) 3) () "~a cannot be grouped to multi expr! (too many arguments)" node)
-	   (apply #'make-expr (node-type node) parents))))))
+  (flet ((use (obj) (when (and (expr-p obj) (eql (expr-op obj) :AREF)) (push obj *aref-list*)) obj))
+    (case (node-type node)
+      (:INDEX-COMPONENTS (make-expr :INDEX-COMPONENTS (use (first parents)) (map 'list #'use (cdr parents))))
+      (:Cast             (make-cast (use (second parents)) (getattr node :dtype)))
+      (:Load             (make-const (getattr node :value)))
+      (:!=               (make-expr :!= (use (second parents)) (use (third parents))))
+      (:<                (make-expr :< (use (second parents)) (use (third parents))))
+      (:MOVE
+       (if (getattr node :_jit_dont_render_me)
+	   (use (car parents))
+	   (use (second parents))))
+      (:STORE            (use (second parents)))
+      (otherwise
+       (if (and (eql (node-type node) :ADD) (>= (length parents) 3))
+	   (flet ((add (x y) (make-expr :ADD x y)))
+	     (mapc #'use parents)
+	     (reduce #'add parents))
+	   (progn
+	     (assert (<= (length parents) 3) () "~a cannot be grouped to multi expr! (too many arguments)" node)
+	     (mapc #'use parents)
+	     (apply #'make-expr (node-type node) parents)))))))
 
 ;; ~~ MULTIEXPR CREATION ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *aref-list* nil)
@@ -55,10 +58,7 @@
 		 no-multi-expr))
 	   (first? (x) (declare (type node x)) (not (find `(,(car (node-writes x)) ,(node-id x)) seen :test #'equal)))
 	   (stash (x) (declare (type node x)) (push (car (node-writes x)) stash))
-	   (saw (x) (declare (type node x)) (push `(,(car (node-writes x)) ,(node-id x)) seen))
-	   (make-aref-helper (arg type &aux (aref (make-aref arg type)))
-	     (push aref *aref-list*)
-	     aref))
+	   (saw (x) (declare (type node x)) (push `(,(car (node-writes x)) ,(node-id x)) seen)))
       (labels ((fuse-helper (id &key (type nil) &aux (x (id->value graph id)))
 		 (if (and x (first? x))
 		     (progn
@@ -71,15 +71,15 @@
 					(if (pause? arg-node)
 					    (progn
 					      (stash arg-node)
-					      (make-aref-helper arg type))
+					      (make-aref arg type))
 					    (progn
 					      (saw x)
 					      (fuse-helper arg :type type)))
 				      else
-					collect (if (symbolp arg) (make-aref-helper arg type) (make-const arg)))))
+					collect (if (symbolp arg) (make-aref arg type) (make-const arg)))))
 			 (apply #'air->expr x parents)))
 		     (if (symbolp id)
-			 (progn (assert type) (make-aref-helper id type))
+			 (progn (assert type) (make-aref id type))
 			 (make-const id))))
 	       (fuse (x &aux (*aref-list*) (node (id->value graph x)) (type (when node (car (relay-writes (read-type-relay node))))))
 		 (when node
@@ -101,16 +101,14 @@
 			if (listp expr)
 			  collect
 			  (multiple-value-bind (expr node arefs) (apply #'values expr)
-			    (let ((out-to (if (eql (node-type node) :WHERE)
-					      (second (node-reads node))
-					      (car (node-reads node))))
-				  (out-to-type
-				    (if (eql (node-type node) :WHERE)
-					(second (relay-reads (read-type-relay node)))
-					(car (relay-reads (read-type-relay node))))))
+			    (let* ((expect-output-type (car (relay-writes (read-type-relay node))))
+				   (out-to (find (buffer-dtype expect-output-type) arefs :key (compose #'buffer-dtype #'expr-y)))
+				   (out-to (if out-to
+					       (expr-x out-to)
+					       (car (node-reads node)))))
 			      ;; EXPR (out-to aref ...)
 			      (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
-					 :expr expr :_type_relay (make-inferred-type `(,out-to-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
+					 :expr expr :_type_relay (make-inferred-type `(,expect-output-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
 					 :buffers arefs)))
 			else
 			  collect expr)))
