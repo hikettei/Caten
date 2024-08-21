@@ -220,3 +220,42 @@ Graph must be verified in advance."
 	  if (or (eql (node-type node) :ENDFOR) (eql (node-type node) :FOR))
 	    do (push nil groups))
     (reverse (loop for g in groups if g collect g))))
+
+(defun schedule/resolve-isolated-ops (schedules seen)
+  "    A   B
+        \ / C   D
+         |   \ /
+tgt-id-> C    D
+          \   /             C <- violates the dependency graph (if not scheduled in the same group)
+           out <- from-node |
+            \          ..  /
+            
+Consider the subgraph above, C was appeared in the another subgraph, therefore, C cannot be merged
+in a single timestamp otherwise recursive dependencies will occur.
+"
+  (let ((out) (stashed) (seen seen))
+    (labels ((seen-p (x) (find x seen))
+	     (read-p (deps) (every #'seen-p deps)))
+      (loop for schedule in schedules
+	    for deps = (nodes-depends-on (si-nodes schedule))
+	    if (read-p deps) do
+	      (dolist (node (si-nodes schedule))
+		(dolist (w (node-writes node)) (push w seen)))
+	      (push schedule out)
+	    else
+	      do (push (cons deps schedule) stashed)
+	    end
+	    do (loop with finish-p = nil
+		     with changed-p = nil
+		     while (not finish-p)
+		     do (setf changed-p nil)
+			(loop for (deps-old . sched-old) in stashed
+			      if (seen-p deps-old)
+				do (push sched-old out)
+				   (setf changed-p t)
+				   (dolist (node (si-nodes sched-old))
+				     (dolist (w (node-writes node)) (push w seen)))
+				   (setf stashed (remove sched-old stashed :key (compose #'si-name #'cdr) :test #'equal)))
+			(setf finish-p (not changed-p)))))
+    (loop for (_ . s) in stashed do (push s out))
+    (values (reverse out) seen)))

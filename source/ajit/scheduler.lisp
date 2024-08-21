@@ -357,7 +357,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   "Step1, Creates an initial schedule"
   (declare (type avm avm) (type boolean verbose))
   ;; Trace the view and dtype information.
-  (let* ((type-map (run-type-infer avm)) (*recursive-find-seen* nil))
+  (let* ((type-map (run-type-infer avm)) (*recursive-find-seen* nil) (seen nil))
     (when (and (not backward-mode-p)
 	       (graph-nodes (avm-graph avm))
 	       (eql :PAUSE/BACKWARD (node-type (car (last (graph-nodes (avm-graph avm)))))))
@@ -387,7 +387,13 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (let ((node (id->value (avm-graph avm) id)))
 		 (list node (car (relay-writes (read-type-relay node))) id)))
 	     (make-top-schedule (top-ids) (map 'list (compose #'make-scheduled-items #'id->buffer) top-ids))
-	     (schedule (schedules) (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group avm x)) schedules))))
+	     (schedule (schedules)
+	       (multiple-value-bind (sorted seen-new)
+		   (schedule/resolve-isolated-ops
+		    (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group avm x)) schedules)))
+		    seen)
+		 (setf seen seen-new)
+		 sorted))
 	     (seen-in-groups (scheduled &aux (seen-in-groups nil))
 	       (loop for nth upfrom 0
 		     for s in scheduled
