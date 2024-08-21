@@ -48,7 +48,24 @@
     (check-args 4 (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
     ;; [TODO] Fuse <= 1 args
     (check-args 4 (caten (!softmax (make-tensor `(3 3)))))
+        
     ))
+
+(deftest matmul-is-small
+  (with-no-grad
+    (unless (= 1 (ctx:getenv :JIT))
+      (skip "Needs JIT"))
+    (let* ((m (caten (!matmul (make-tensor `(3 10)) (make-tensor `(10 20)))))
+	   (allocs (loop for node in (graph-nodes (avm-graph m))
+			 if (eql (node-type node) :Allocate) collect node)))
+      (ok (= (length allocs) 3) "gemm(a, b, c)")
+      (ok (every #'(lambda (x) (if (= (getattr x :nrank) 2)
+				   t
+				   (if (= (getattr x :nrank) 3)
+				       (some #'(lambda (x) (= x 1)) (subseq (node-reads x) 0 3))
+				       nil)))
+		 allocs)
+	  "Contiguous array creations are not allowed"))))
 
 (deftest symbolic-function-args-test
   (with-no-grad
