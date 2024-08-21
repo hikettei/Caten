@@ -503,7 +503,7 @@
 (defmethod lower ((op TestIndexComponents) &rest inputs)
   (with-context
       (_ (%index-components (car inputs) (cdr inputs)))))
-(defun test-ic (tensor) (apply #'forward (make-instance 'TestIndexComponents) tensor (shape tensor)))
+(defun test-ic (tensor) (apply #'forward (make-instance 'TestIndexComponents) tensor (map 'list #'iconst (shape tensor))))
 (deftest regression-test-index-component-lazy-shaped
   (let ((*default-order* :row))
     (ok (every #'= #(0 1 2 3 4 5 6 7 8) (elements (proceed (test-ic (make-tensor `(3 3))))))
