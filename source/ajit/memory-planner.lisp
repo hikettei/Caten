@@ -203,7 +203,7 @@ Refcount-by:
 			    if (and (symbolp id) (null (find id allocated-items))) do
 			      ;;(assert (eql id (newid id)) () "Recursive dependencies in the graph")
 			      (push id allocated-items)
-			      (setf (graph-nodes (gethash time pipeline))
+			      (setf (graph-nodes (gethash -1 pipeline))
 				    (append
 				     (list
 				      (or
@@ -219,7 +219,7 @@ Refcount-by:
 						    (if (find id save-for-backwards)
 							"Save_for_backward"
 							"Tmp")))))
-				     (graph-nodes (gethash time pipeline)))))))
+				     (graph-nodes (gethash -1 pipeline)))))))
       
       (flet ((replacer (x) (refcount/refalias refcount x)))
 	(loop for g in (graph-nodes render-graph) do

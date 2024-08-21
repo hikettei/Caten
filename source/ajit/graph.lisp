@@ -9,9 +9,9 @@
 (defun r/else () (make-node :Render :ELSE nil nil))
 (defun r/endif () (make-node :Render :ENDIF nil nil))
 (defun create-rendering-graph (polyhedron lisp-ast)
-  (declare (type polyhedral polyhedron)
-	   (ignore polyhedron))
-  (let ((new-graph nil))
+  (declare (type polyhedral polyhedron))
+  ;; -1 is a placeholder for the tmpvar allocation.
+  (let ((new-graph (list (r/funcall "T-1" nil))))
     (labels ((lower (object)
 	       (when (listp object) (return-from lower (map 'list #'lower object)))
 	       (trivia:ematch object
@@ -32,5 +32,6 @@
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
+    (setf (gethash -1 (poly-pipeline polyhedron)) (make-graph))
     (apply #'make-graph (reverse new-graph))))
 
