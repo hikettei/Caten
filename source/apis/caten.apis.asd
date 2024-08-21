@@ -31,4 +31,4 @@
   ("rove")
   :components ((:file "test-suites"))
   :perform
-  (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style :dot)))
+  (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style :spec)))
