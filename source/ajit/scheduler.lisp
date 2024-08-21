@@ -559,9 +559,13 @@ Options:
 	       (avm (deepcopy-avm avm))
 	       (*isl-context* (isl-ctx-alloc))
 	       (*recursive-find-seen* nil)
-	       (verbose-schedule (or (= debug 3) (= debug 4)))
-	       (verbose-auto (or (= debug 4) (= debug 2))))
-  "Applies the jit, returning the compiled code"
+	       (verbose-schedule (or (= debug 2) (= debug 4)))
+	       (verbose-auto (or (= debug 4) (= debug 3))))
+  "Applies the jit, returning the compiled code.
+DEBUG=1 to see the compiled code
+DEBUG=2 to debug the scheduling process
+DEBUG=3 to debug the ISL process
+DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
 	   (type boolean serialize)

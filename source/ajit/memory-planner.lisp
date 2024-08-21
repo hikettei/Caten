@@ -10,7 +10,32 @@
   (alias (make-hash-table) :type hash-table)
   (refcount (make-hash-table) :type hash-table)
   (refcount-by (make-hash-table) :type hash-table))
-(defun node-output-position (node) (case (node-type node) (:WHERE (second (node-reads node))) (otherwise (car (node-reads node)))))
+(defmethod print-object ((r reference-counter) stream)
+  (flet ((print-hash (obj)
+	   (with-output-to-string (out)
+	     (maphash #'(lambda (k v) (format out "~a -> ~a~%" k v)) obj))))
+    (format stream "<Reference-Counter
+Alias:
+~a
+Refcount:
+~a
+Refcount-by:
+~a
+>"
+	    (print-hash (refcount-alias r))
+	    (print-hash (refcount-refcount r))
+	    (print-hash (refcount-refcount-by r)))))
+(defun node-output-position (node) (error "deprecated") (case (node-type node) (:WHERE (second (node-reads node))) (otherwise (car (node-reads node)))))
+(defun id->memwrites (graph id)
+  "Counts how many times id was read in the graph, and by who?"
+  (declare (type graph graph) (type symbol id))
+  (let ((count 0)
+	(nodes))
+    (loop for node in (graph-nodes graph)
+	  for reads = (node-reads node) do
+	    (loop for r in reads
+		  if (eql r id) do (incf count) (push node nodes)))
+    (values count (remove-duplicates nodes :key #'node-id))))
 (defun create-reference-counter (poly render-graph)
   (declare (type polyhedral poly) (type graph render-graph))
   (let ((refcount (make-hash-table))
@@ -43,7 +68,10 @@
   (if (eql (node-type node) :Allocate)
       (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node)))
       (if in-place
-	  (setf (gethash (car (node-writes node)) (refcount-alias count)) (node-output-position node))
+	  (if (eql (node-type node) :EXPR)
+	      (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-reads node)))
+	      ;; When implementing custom-op, implement user-extensible in-place
+	      (warn "~a cannot be inplaced because it is not EXPR! (TODO: Support)" node))
 	  (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node))))))
 
 (defun refcount/update-buffer (count buffer)
@@ -76,16 +104,6 @@
 	  (node-reads node) (map 'list #'ref (node-reads node))
 	  (node-writes node) (map 'list #'ref (node-writes node)))))
 
-(defun id->memwrites (graph id)
-  "Counts how many times id was read in the graph, and by who?"
-  (let ((count 0)
-	(nodes))
-    (loop for node in (graph-nodes graph)
-	  for reads = (node-reads node) do
-	    (loop for r in reads
-		  if (eql r id) do (incf count) (push node nodes)))
-    (values count (remove-duplicates nodes :key #'node-id))))
-
 (defun apply-memory-planner! (avm polyhedral refcount render-graph save-for-backwards)
   (declare (type avm avm) (type polyhedral polyhedral) (type Reference-counter refcount)
 	   (type graph render-graph) (type list save-for-backwards))
@@ -107,10 +125,13 @@
 	       ;; Return: (in-place-p . intersects-with-current-pipeline?)
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
 	       (when (find (car (node-writes node)) save-for-backwards) (return-from inplace-p (cons nil nil)))
-	       (let* ((id (node-output-position node))
+	       (let* ((id         (car (node-writes node)))
 		      (refcount-n (gethash id (refcount-refcount refcount)))
 		      (refdom     (gethash id (refcount-refcount-by refcount))))
-		 (dolist (r (node-reads node)) (when (symbolp r) (decf (gethash r (refcount-refcount refcount)))))
+		 (assert refcount-n () "~a is not in the reference counter!" id)
+		 (dolist (r (node-reads node))
+		   (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
+		     (decf (gethash r (refcount-refcount refcount)))))
 		 ;;(assert (>= refcount-n -1))
 		 (cons
 		  (<= refcount-n 1)
@@ -131,7 +152,6 @@
 		;;  - If write-to-user exists in the same schedule -> create a tmpvar.
 		;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
 		(when (and (null inplace-p) all-exists-in-the-same-pipeline)
-		  ;;(print "A")
 		  ;; [TODO]
 		  ;; Minimizing the number of allocations by following the rule:
 		  ;; 1. (car reads) becomes write, (except for %WHERE)
