@@ -234,7 +234,7 @@ Consider the subgraph above, C was appeared in the another subgraph, therefore, 
 in a single timestamp otherwise recursive dependencies will occur.
 "
   (let ((out) (stashed) (seen seen))
-    (labels ((seen-p (x) (find x seen))
+    (labels ((seen-p (x) (or (numberp x) (find x seen)))
 	     (read-p (deps) (every #'seen-p deps)))
       (loop for schedule in schedules
 	    for deps = (nodes-depends-on (si-nodes schedule))
@@ -257,5 +257,5 @@ in a single timestamp otherwise recursive dependencies will occur.
 				     (dolist (w (node-writes node)) (push w seen)))
 				   (setf stashed (remove sched-old stashed :key (compose #'si-name #'cdr) :test #'equal)))
 			(setf finish-p (not changed-p)))))
-    (loop for (_ . s) in stashed do (push s out))
+    (loop for (_ . s) in (reverse stashed) do (push s out))
     (values (reverse out) seen)))
