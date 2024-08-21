@@ -221,7 +221,22 @@ Graph must be verified in advance."
 	    do (push nil groups))
     (reverse (loop for g in groups if g collect g))))
 
-(defun schedule/resolve-isolated-ops (schedules seen)
+(defun break-schedule (schedule split-at)
+  (declare (type scheduled-items schedule) (type list split-at))
+  (let ((new-schedules nil) (stack))
+    (loop for node in (si-nodes schedule)
+	  if (find (car (node-writes node)) split-at)
+	    do (push node stack) (push stack new-schedules) (setf stack nil)
+	  else
+	    do (push node stack))
+    (when stack (push stack new-schedules))
+    (map 'list #'(lambda (x &aux (x (reverse x)))
+		   (let ((out (make-scheduled-items (list (car x) (si-latest schedule) (si-latest-id schedule)))))
+		     (setf (si-nodes out) x)
+		     out))
+	 (reverse new-schedules))))
+
+(defun schedule/resolve-isolated-ops (schedules seen-old)
   "    A   B
         \ / C   D
          |   \ /
@@ -234,8 +249,8 @@ Consider the subgraph above, C was appeared in the another subgraph, therefore, 
 in a single timestamp otherwise recursive dependencies will occur.
 "
   ;; If (xxx) wo kesu
-  (let ((out) (stashed) (seen seen))
-    (labels ((seen-p (x) (or (numberp x) (find x seen :test #'eql)))
+  (let ((out) (stashed) (seen (copy-list seen-old)))
+    (labels ((seen-p (x) (assert (not (listp x))) (or (numberp x) (find x seen :test #'eql)))
 	     (read-p (deps) (every #'seen-p deps)))
       (loop for schedule in schedules
 	    for deps = (nodes-depends-on (si-nodes schedule))
@@ -257,7 +272,20 @@ in a single timestamp otherwise recursive dependencies will occur.
 				   (dolist (node (si-nodes sched-old))
 				     (dolist (w (node-writes node)) (push w seen)))
 				   (setf stashed (remove (si-name sched-old) stashed :key (compose #'si-name #'cdr) :test #'equal)))
-			(setf finish-p (not changed-p)))))
-    (when stashed (format t "~a is isolated?" stashed))
-    (loop for (_ . s) in (reverse stashed) do (push s out))
-    (values (reverse out) seen)))
+			(setf finish-p (not changed-p))))
+      (when stashed
+	(let ((split-at))
+	  (loop for (deps . sched) in (reverse stashed) do
+	    (dolist (d deps)
+	      (unless (seen-p d) (push d split-at))))
+	  (setf split-at (remove-duplicates split-at))
+	  ;; Split the schedule and try again
+	  (let ((old-size (length schedules))
+		(new-schedule (apply #'append (map 'list #'(lambda (x) (break-schedule x split-at)) schedules))))
+	    (when (= old-size (length new-schedule))
+	      (error "Could not resolve this circular dependencies: ~a" (map 'list #'car stashed)))
+	    (return-from schedule/resolve-isolated-ops
+	      (schedule/resolve-isolated-ops
+	       new-schedule
+	       seen-old)))))
+      (values (reverse out) seen))))
