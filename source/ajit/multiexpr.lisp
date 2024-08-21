@@ -123,7 +123,7 @@
 			 else
 			   collect expr)))
 	    ;; :expr nil is removed
-	    (setf exprs (loop for e in exprs if (getattr e :expr) collect e))
+	    (setf exprs (loop for e in exprs if (or (not (eql (node-type e) :EXPR)) (getattr e :expr)) collect e))
 	    (values
 	     exprs
 	     (remove-duplicates
