@@ -222,11 +222,14 @@ Refcount-by:
 				     (graph-nodes (gethash time pipeline)))))))
       
       (flet ((replacer (x) (refcount/refalias refcount x)))
-	(loop for g in (graph-nodes render-graph)
-	      if (eql (node-type g) :FOR) do
-		(expr-recursive-replace (getattr g :below) #'replacer)
-		(expr-recursive-replace (getattr g :upfrom) #'replacer)
-		(expr-recursive-replace (getattr g :by) #'replacer)))
+	(loop for g in (graph-nodes render-graph) do
+	  (case (node-type g)
+	    (:FOR
+	     (expr-recursive-replace (getattr g :below) #'replacer)
+	     (expr-recursive-replace (getattr g :upfrom) #'replacer)
+	     (expr-recursive-replace (getattr g :by) #'replacer))
+	    (:IF
+	     (expr-recursive-replace (getattr g :condition) #'replacer)))))
       
       (setf (avm-fw-outputs avm) (map 'list #'newid (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm))

@@ -175,7 +175,7 @@ Compiled with: ~a"
   (assert (buffer-p (expr-y lhs)))
   (assert (null z))
   (let ((strides (map 'list #'(lambda (x) (render-expr lang x)) rhs)))
-    (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (nth x *access*))) :strides strides))))
+    (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (or (nth x *access*) (car *access*)))) :strides strides))))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :NOT)) lhs rhs z)
   (assert (and lhs (null rhs) (null z)))
