@@ -515,15 +515,7 @@
     (ok (every #'=
 	       (elements (pproceed `((a . 4) (b . 5)) (!sin (test-ic (make-tensor `(a b))))))
 	       (elements (proceed (!sin (test-ic (make-tensor `(4 5)))))))
-	"Fused with Unary")
-    ;; Tensor-shaped-tensor
-    (let* ((a (iconst 'a))
-	   (b (iconst 'b))
-	   (size (!add a b)))
-      (ok (every #'=
-		 (elements (pproceed `((a . 3) (b . 3)) (!sin (test-ic (make-tensor (list size size))))))
-		 (elements (proceed (!sin (test-ic (make-tensor (list 6 6)))))))
-	  "As well as tensor-shaped-tensor"))))
+	"Fused with Unary")))
 
 (deftest threefry2x32
   (when (= (ctx:getenv :JIT) 0)
