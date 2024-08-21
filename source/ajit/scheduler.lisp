@@ -63,8 +63,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	     (children `(,@children ,@loop-bound-reads))
 	     (children-type `(,@children-type ,@loop-bound-types))
 	     (mergeable-list (map 'list #'(lambda (x x-type) (mergeable-p x latest x-type)) children children-type)))
-	(print node)
-	(when (find (node-id node) *recursive-find-seen*) (print "SEEN") (return-from recursive-find-group))
+	(when (find (node-id node) *recursive-find-seen*) (return-from recursive-find-group))
 	(assert (eql latest-id (car (node-writes node))) () "~a" node)
 	;;(when (getattr node :_loop_bound_nodes) (return-from recursive-find-group))
 	(when loop-bound-reads
@@ -614,7 +613,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	  (multiple-value-bind (graphf seen) (jit->vm base-avm forward fw-polyhedron fw-render-graph backend nil)
 	    (multiple-value-bind (graphb seen) (when bw-polyhedron (jit->vm base-avm backward bw-polyhedron bw-render-graph backend seen))
 	      (declare (ignore seen))
-	      (values forward graphf backward graphb))))))))	      
+	      (values avm forward graphf backward graphb))))))))	      
 
 (defun jit (avm
 	    &key
@@ -627,7 +626,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type (integer 0 4) debug)
 	   (type boolean serialize))
 
-  (multiple-value-bind (fw-result fw-graph bw-result bw-graph)
+  (multiple-value-bind (avm fw-result fw-graph bw-result bw-graph)
       (%jit avm :debug debug :serialize serialize :static-gensym static-gensym
 		:backend backend :compile-later nil)
     (declare (ignore fw-result bw-result))
