@@ -208,7 +208,7 @@ Refcount-by:
 				      (or
 				       (find-alloc id)
 				       (progn
-					 (warn "~a is not defined" id)
+					 ;;(warn "~a is not defined" id)
 					 (make-node :Buffer :Allocate
 						    (list id) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
 						    :nrank (buffer-nrank typ)
