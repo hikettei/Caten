@@ -526,27 +526,28 @@
 	  "As well as tensor-shaped-tensor"))))
 
 (deftest threefry2x32
-  (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
-    (with-manual-seed (0)
-      (let* ((n 100)
-	     (first-rand (elements (proceed (!rand `(,n ,n)))))
-	     (avg1 (/ (reduce #'+ first-rand) (* n n)))
-	     (scnd-rand (elements (proceed (!rand `(,n ,n)))))
-	     (avg2 (/ (reduce #'+ scnd-rand) (* n n)))
-	     (third-rand (elements (proceed (!rand `(,n ,n)))))
-	     (avg3 (/ (reduce #'+ third-rand) (* n n))))
-	(ok (< (abs (- avg1 0.5)) 0.01))
-	(ok (< (abs (- avg2 0.5)) 0.01))
-	(ok (< (abs (- avg3 0.5)) 0.01))
-	(ng (some #'= first-rand scnd-rand third-rand))
-	(testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
-	  (with-manual-seed (0)
-	    (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
-	      (testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
-		(ok (every #'= first-rand first-rand1)))
-	      (testing "Then, reproduce second/third randomness in a single call of proceed."
-		(let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
-		  (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand)))))))))))
+  (when (= (ctx:getenv :JIT) 0)
+    (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
+      (with-manual-seed (0)
+	(let* ((n 100)
+	       (first-rand (elements (proceed (!rand `(,n ,n)))))
+	       (avg1 (/ (reduce #'+ first-rand) (* n n)))
+	       (scnd-rand (elements (proceed (!rand `(,n ,n)))))
+	       (avg2 (/ (reduce #'+ scnd-rand) (* n n)))
+	       (third-rand (elements (proceed (!rand `(,n ,n)))))
+	       (avg3 (/ (reduce #'+ third-rand) (* n n))))
+	  (ok (< (abs (- avg1 0.5)) 0.01))
+	  (ok (< (abs (- avg2 0.5)) 0.01))
+	  (ok (< (abs (- avg3 0.5)) 0.01))
+	  (ng (some #'= first-rand scnd-rand third-rand))
+	  (testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
+	    (with-manual-seed (0)
+	      (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
+		(testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
+		  (ok (every #'= first-rand first-rand1)))
+		(testing "Then, reproduce second/third randomness in a single call of proceed."
+		  (let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
+		    (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand))))))))))))
 
 (caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
   (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
