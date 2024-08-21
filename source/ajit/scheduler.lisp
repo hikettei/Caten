@@ -537,7 +537,7 @@ Options:
 			;; Initialized in the jit graph
 			;; -> Mutate them :Allocate (Also, they are labelled as TemporaryNode)
 			(let* ((buffer (car (relay-writes (read-type-relay x))))
-			       (args (append (buffer-shape buffer) (buffer-stride buffer)))
+			       (args (map 'list #'reveal-buffer (append (buffer-shape buffer) (buffer-stride buffer))))
 			       (args (map 'list
 					  #'(lambda (id &aux (x (id->value (avm-graph base-avm) id)))
 					      (if (null x)
