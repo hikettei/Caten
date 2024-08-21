@@ -74,12 +74,14 @@ Refcount-by:
 	    (refcount/refalias count val))
 	id)))
 
-(defun refcount/make-alias (count node in-place)
+(defun refcount/make-alias (count node in-place save-for-backwards)
   (if (eql (node-type node) :Allocate)
       (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node)))
       (if in-place
 	  (let ((id (node/in-place-mutation (node-type node) node)))
-	    (when id (setf (gethash (car (node-writes node)) (refcount-alias count)) id)))
+	    (if (find id save-for-backwards)
+		nil
+		(when id (setf (gethash (car (node-writes node)) (refcount-alias count)) id))))
 	  (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node))))))
 
 (defun refcount/update-buffer (count buffer)
@@ -141,7 +143,7 @@ Refcount-by:
 		 (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
 		   (decf (gethash r (refcount-refcount refcount)))))
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
-	       (when (find (car (node-writes node)) save-for-backwards) (return-from inplace-p (cons nil nil)))
+	       ;(when (find (car (node-writes node)) save-for-backwards) (return-from inplace-p (cons nil nil)))
 	       (let* ((id (or (node/in-place-mutation (node-type node) node)
 			      (return-from inplace-p (cons nil nil))))
 		      (refcount-n (gethash id (refcount-refcount refcount)))
@@ -161,7 +163,7 @@ Refcount-by:
 	      for node in (graph-nodes graph)
 	      for (inplace-p . all-exists-in-the-same-pipeline) = (inplace-p node time) do
 		(assert (= 1 (length (node-writes node))) ())
-		(refcount/make-alias refcount node inplace-p)
+		(refcount/make-alias refcount node inplace-p save-for-backwards)
 		;; If write-to area is not going to be used by any other ops, let's make it in-place
 		;; otherwise:
 		;;  - If write-to-user exists in the same schedule -> create a tmpvar.

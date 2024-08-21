@@ -42,7 +42,6 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (flet ((explore (x) (when x (recursive-find-group avm x)))
 	 (mergeable-p (x latest x-type) (or (numberp x) (and (id->value (avm-graph avm) x) (not (eql (node-type (id->value (avm-graph avm) x)) :Allocate)) (buffer-intersect-p latest x-type)))))
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
-      (when (find latest-id *recursive-find-seen*) (return-from recursive-find-group))
       (let* ((node (or (id->value (avm-graph avm) latest-id) (return-from recursive-find-group)))
 	     ;; Allocation is done at the (Exported) VM Level
 	     ;; - (1.) dynamic shapes are computed under VM Level
@@ -64,6 +63,9 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	     (children `(,@children ,@loop-bound-reads))
 	     (children-type `(,@children-type ,@loop-bound-types))
 	     (mergeable-list (map 'list #'(lambda (x x-type) (mergeable-p x latest x-type)) children children-type)))
+	(print node)
+	(when (find (node-id node) *recursive-find-seen*) (print "SEEN") (return-from recursive-find-group))
+	(assert (eql latest-id (car (node-writes node))) () "~a" node)
 	;;(when (getattr node :_loop_bound_nodes) (return-from recursive-find-group))
 	(when loop-bound-reads
 	  (let* ((already-defined (or (getattr node :_loop_bound_nodes) (getattr node :_loop_bound_nodes_type)))
@@ -74,7 +76,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	  (setf (node-attrs node)
 		(append (node-attrs node)
 			`(:_loop_bound_nodes ,loop-bound-reads :_loop_bound_nodes_type ,loop-bound-types))))
-	(setf *recursive-find-seen* (append *recursive-find-seen* (node-writes node)))
+	(push (node-id node) *recursive-find-seen*)
 	;; node_id <- F(Children[0], Children[1], ...)
 	;;              mergeable[0] mergeable[1], ...
 	;; All mergeable -> merge them!
@@ -352,7 +354,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   "Step1, Creates an initial schedule"
   (declare (type avm avm) (type boolean verbose))
   ;; Trace the view and dtype information.
-  (let* ((type-map (run-type-infer avm)))
+  (let* ((type-map (run-type-infer avm)) (*recursive-find-seen* nil))
     (when (and (not backward-mode-p)
 	       (graph-nodes (avm-graph avm))
 	       (eql :PAUSE/BACKWARD (node-type (car (last (graph-nodes (avm-graph avm)))))))
@@ -400,22 +402,32 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			    (loop for read in (node-reads node)
 				  if (symbolp read) collect read))))))
       (let* ((fw-schedule (schedule (make-top-schedule (avm-fw-outputs avm))))
-	     (bw-schedule (when (avm-bw-outputs avm) (schedule (avm-bw-outputs avm))))
+	     (bw-schedule (when (avm-bw-outputs avm) (schedule (make-top-schedule (avm-bw-outputs avm)))))
 	     (fw-seen-in-group (seen-in-groups fw-schedule))
 	     (bw-seen-in-group (seen-in-groups bw-schedule))
+	     (fw-read-in-group (read-in-groups fw-schedule))
 	     (bw-read-in-group (read-in-groups bw-schedule))
 	     ;; If tensor firstly written in forward, was read in backward -> they are save-for-backward, and across-group dependencies.
-	     (save-for-backwards (intersection fw-seen-in-group bw-read-in-group :test #'eql)))
+	     (save-for-backwards (intersection bw-read-in-group fw-read-in-group :test #'eql)))
+	(declare (ignore fw-seen-in-group))
 	;; Applying a multigroup optimization w/ paying attention for save-for-backward
 	;; Temporary values should be cached as a tensor if they are used for computing backwards
 	;; Otherwise, it is free to eliminate or make it scalar by compiler.
-	(when backward-mode-p
+	(when (null backward-mode-p)
 	  (assert (null bw-seen-in-group))
 	  ;; There's no extra dependencies across group (i.e.: no need to cache the temporary value as a tensor)
+	  (when verbose
+	    (format t "~%= Verbose: Recursively grouped forward group ====~%")
+	    (print-schedules fw-schedule))
 	  (apply-multiexpr-grouping fw-schedule nil))
 
-	(when (null backward-mode-p)
+	(when backward-mode-p
 	  ;; Fold multiexpr w/ keeping save-for-backwards
+	  (when verbose
+	    (format t "~%= Verbose: Recursively grouped forward group ====~%")
+	    (print-schedules fw-schedule)
+	    (format t "~%= Verbose: Recursively grouped backward group ====~%")
+	    (print-schedules bw-schedule))
 	  (apply-multiexpr-grouping fw-schedule save-for-backwards)
 	  (apply-multiexpr-grouping bw-schedule nil))
 	(values fw-schedule bw-schedule save-for-backwards)))))
@@ -560,7 +572,6 @@ Options:
 	       (base-avm avm)
 	       (avm (deepcopy-avm avm))
 	       (*isl-context* (isl-ctx-alloc))
-	       (*recursive-find-seen* nil)
 	       (verbose-schedule (or (= debug 2) (= debug 4)))
 	       (verbose-auto (or (= debug 4) (= debug 3))))
   "Applies the jit, returning the compiled code.
