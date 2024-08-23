@@ -348,6 +348,21 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (setf schedule (isl-schedule-sequence schedule sched)))))
      pipeline)
     schedule))
+;; TODO: コンパイルされた関数のデータ構造をきれいにしたい (defstruct Compiled-Function
+(defun split-into-subgroups (graph)
+  "Graphs are first breaked into subgroups only after:
+- Tensor is shaped by a tensor
+- :PAUSE/BACKWARD"
+  (declare (type graph graph))
+  (let ((sublist))
+    `(,@(loop for node in (graph-nodes graph)
+	      if (or
+		  (eql (node-type node) :pause/backward)
+		  )
+		collect (nreverse sublist) and do (setf sublist nil)
+	      else
+		do (push node sublist))
+      ,sublist)))
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
@@ -624,7 +639,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	  (multiple-value-bind (graphf seen) (jit->vm base-avm forward fw-polyhedron fw-render-graph backend nil avm (avm-fw-outputs avm))
 	    (multiple-value-bind (graphb seen) (when bw-polyhedron (jit->vm base-avm backward bw-polyhedron bw-render-graph backend seen avm (avm-bw-outputs avm)))
 	      (declare (ignore seen))
-	      (values avm forward graphf backward graphb))))))))	      
+	      (values avm forward graphf backward graphb))))))))
 
 (defun jit (avm
 	    &key
