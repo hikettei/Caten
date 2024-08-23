@@ -100,41 +100,6 @@
 		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
 			 collect node))))
 
-(defun alloc-args-p (node)
-  (and
-   (eql (node-type node) :Allocate)
-   (null (getattr node :_tmp))
-   (not (= (getattr node :nrank) 0))))
-
-(defun purge-allocations (poly pipeline dynamic-shapes render-graph
-			  &aux
-			    (pipeline-ids (render-graph/get-timestamps render-graph))
-			    (allocs nil) (types (poly-vm-io-types poly)) (outputs (poly-vm-outputs poly)))
-  "Collects a list of allocation that moved to args"
-  (declare (type polyhedral poly) (type hash-table pipeline))
-  (maphash
-   #'(lambda (k graph)
-       (when (find k pipeline-ids)
-	 (setf (graph-nodes graph)
-	       (loop for node in (graph-nodes graph)
-		     if (alloc-args-p node)
-		       do (push node allocs)
-		     else unless (and (eql (node-type node) :Allocate) (find (car (node-writes node)) outputs))
-			    collect node))))
-   pipeline)
-  (let* ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
- 	 (shapes (map 'list
-		      #'(lambda (x &aux (type (or (gethash x types) (error "~a is not inferred by poly-vm-io-types" x))))
-			  (%alloc 0 nil nil :dtype (buffer-dtype (car (relay-writes type))) :id x))
-		      dynamic-shapes))
-	 (allocs (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes))))
-    (loop for alloc in allocs
-	  if (find (car (node-writes alloc)) (poly-vm-inputs poly)) ;; Shapes are not pointer
-	    do (setf (getattr alloc :_pointer) nil)
-	  else
-	    do (setf (getattr alloc :_pointer) t))
-    allocs))
-
 (defun get-subgraph-recursively (node graph dynamic-shapes dtype &aux (seen nil))
   (declare (type node node) (type graph graph) (optimize (speed 3)))
   (labels ((explore (node graph)

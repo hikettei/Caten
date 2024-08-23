@@ -46,24 +46,23 @@ Refcount-by:
 	    (loop for r in reads
 		  if (eql r id) do (incf count) (push node nodes)))
     (values count (remove-duplicates nodes :key #'node-id))))
-(defun create-reference-counter (poly render-graph &optional poly-bw bw-render-graph)
-  (declare (type polyhedral poly) (type graph render-graph))
+(defun create-reference-counter (groups)
+  (declare (type list groups))
   (let ((refcount (make-hash-table))
 	(refby (make-hash-table))
 	(graph
 	  (apply
 	   #'make-graph
-	   (append
-	    (loop for idx in (render-graph/get-timestamps render-graph)
-		  append (graph-nodes (gethash idx (poly-pipeline poly))))
-	    (when poly-bw
-	      (loop for idx in (render-graph/get-timestamps bw-render-graph)
-		    append (graph-nodes (gethash idx (poly-pipeline poly-bw)))))))))
+	   (loop for group in groups
+		 unless (group-realize-on-vm group)
+		   append
+		   (loop for idx in (render-graph/get-timestamps (group-render-graph group))
+			 append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
     (labels ((relevant-graph (pos) (apply #'make-graph (subseq (graph-nodes graph) pos)))
 	     (inplace (node pos)
 	       ;; (in-place-p . users)
 	       (multiple-value-bind (count users) (id->memwrites (relevant-graph pos) (car (node-writes node)))
-		 (cons count users))))	     
+		 (cons count users))))
       (loop for node in (graph-nodes graph)
 	    for pos upfrom 0
 	    for (refc . refb) = (inplace node pos)
@@ -119,8 +118,8 @@ Refcount-by:
 	  (node-reads node) (map 'list #'ref (node-reads node))
 	  (node-writes node) (map 'list #'ref (node-writes node)))))
 
-(defun apply-memory-planner! (avm polyhedral refcount render-graph save-for-backwards)
-  (declare (type avm avm) (type polyhedral polyhedral) (type Reference-counter refcount)
+(defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards)
+  (declare (type avm avm) (type group group) (type polyhedral polyhedral) (type Reference-counter refcount)
 	   (type graph render-graph) (type list save-for-backwards))
   (let* ((pipeline (poly-pipeline polyhedral))
 	 (pipeline-ids (render-graph/get-timestamps render-graph))
@@ -234,7 +233,8 @@ Refcount-by:
       (setf (avm-fw-outputs avm) (map 'list #'newid (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm))
 	    ;; vm-inputs are fixed (they are dynamic shapes)
-	    (poly-vm-outputs polyhedral) (map 'list #'newid (poly-vm-outputs polyhedral)))
+	    (poly-vm-outputs polyhedral) (map 'list #'newid (poly-vm-outputs polyhedral))
+	    (group-args group) (map 'list #'newid (group-args group)))
 
       (macrolet ((renew (accessor)
 		   `(let ((new-table (make-hash-table)))
