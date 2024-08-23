@@ -352,6 +352,50 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
+;; TODO: コンパイルされた関数のデータ構造をきれいにしたい (defstruct Compiled-Function
+(defstruct Group
+  (nodes (error "nodes must be occured") :type list)
+  (realize-on-vm nil :type boolean))
+
+(defun subgraph-scalar-load-p (graph id &aux (seen (make-hash-table)))
+  (declare (type graph graph))
+  (labels ((explore (x)
+	     (or (numberp x)
+		 (if (gethash x seen)
+		     (= 0 (gethash x seen))
+		     (let* ((node (id->value graph x))
+			    (buff (car (relay-writes (read-type-relay node)))))
+		       (setf (gethash x seen) (buffer-nrank buff))
+		       (and
+			(= 0 (buffer-nrank buff))
+			(case (node-type node)
+			  (:Load t)
+			  (:Allocate (null (node-reads node)))
+			  (otherwise nil))
+			(every #'explore (node-reads node))))))))
+    (explore id)))
+
+(defun split-into-subgroups (graph)
+  "Graphs are first breaked into subgroups only after:
+- Tensor is shaped by a tensor
+- :PAUSE/BACKWARD"
+  (declare (type graph graph))
+  (let ((groups))
+    (labels ((scalar-load-p (id) (subgraph-scalar-load-p graph id))
+	     (force-realize-on-vm (node)
+	       (or
+		(eql (node-type node) :pause/backward)
+		(when (eql (node-type node) :Allocate)
+		  (some #'null (map 'list #'scalar-load-p (node-reads node)))))))
+      `(,@(loop for node in (graph-nodes graph)
+		if (force-realize-on-vm node)
+		  collect (make-group :nodes (nreverse groups))
+		  and collect (make-group :nodes (list node) :realize-on-vm t)
+		  and do (setf groups nil)
+		else
+		  do (push node groups))
+	,(make-group :nodes (nreverse groups))))))
+
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list list list)) create-schedules-from-avm))
 (defun create-schedules-from-avm (avm &key (verbose nil) &aux (backward-mode-p (not (null (avm-bw-outputs avm)))))
   "Step1, Creates an initial schedule"
@@ -369,6 +413,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     ;; ~~ JIT Specific Graph rewriting Processes ~~~~~~~~~~~~~~~~~~~~
     (deploy-type-infer-results avm type-map) ;; Move buffer/view nodes into :_type_relay attribtutes
     (apply-jit-specific-simplifiers avm)     ;; Purge :view nodes, WMMA Accumlation, contiguous elimination etc...
+    (print (split-into-subgroups (avm-graph avm)))
+    (error "STOP")
     (when verbose
       (format t "Verbose: Simplified Graph[Forward/Backward]~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))
