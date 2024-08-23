@@ -36,13 +36,13 @@ Further op-fusion optimization are done by the polyhedral-compiler."
     ->ng))
 
 (defparameter *recursive-find-seen* nil)
-(defun recursive-find-group (avm scheduled-items)
+(defun recursive-find-group (graph scheduled-items)
   "Return -> (list scheduled-items ...)"
-  (declare (type avm avm) (type scheduled-items scheduled-items))
-  (flet ((explore (x) (when x (recursive-find-group avm x)))
-	 (mergeable-p (x latest x-type) (or (numberp x) (and (id->value (avm-graph avm) x) (not (eql (node-type (id->value (avm-graph avm) x)) :Allocate)) (buffer-intersect-p latest x-type)))))
+  (declare (type graph graph) (type scheduled-items scheduled-items))
+  (flet ((explore (x) (when x (recursive-find-group graph x)))
+	 (mergeable-p (x latest x-type) (or (numberp x) (and (id->value graph x) (not (eql (node-type (id->value graph x)) :Allocate)) (buffer-intersect-p latest x-type)))))
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
-      (let* ((node (or (id->value (avm-graph avm) latest-id) (return-from recursive-find-group)))
+      (let* ((node (or (id->value graph latest-id) (return-from recursive-find-group)))
 	     ;; Allocation is done at the (Exported) VM Level
 	     ;; - (1.) dynamic shapes are computed under VM Level
 	     ;; - (2.) dynamic strides are computed under JIT Level
@@ -58,8 +58,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 					       (flatten
 						`(,@(map 'list #'buffer-reconstruct-view-args (relay-writes type))
 						  ,@(map 'list #'buffer-reconstruct-view-args (relay-reads type)))))
-				     if (and (null (find s *recursive-find-seen*)) (id->value (avm-graph avm) s)) collect s))
-	     (loop-bound-types (map 'list #'(lambda (x) (car (relay-writes (read-type-relay (id->value (avm-graph avm) x))))) loop-bound-reads))
+				     if (and (null (find s *recursive-find-seen*)) (id->value graph s)) collect s))
+	     (loop-bound-types (map 'list #'(lambda (x) (car (relay-writes (read-type-relay (id->value graph x))))) loop-bound-reads))
 	     (children `(,@children ,@loop-bound-reads))
 	     (children-type `(,@children-type ,@loop-bound-types))
 	     (mergeable-list (map 'list #'(lambda (x x-type) (mergeable-p x latest x-type)) children children-type)))
@@ -84,8 +84,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	    (let ((parent-groups))
 	      (dolist (c children)
 		(when (not (numberp c))
-		  (let ((node (id->value (avm-graph avm) c)))
-		    (when (null (find (node-id node) *recursive-find-seen*))
+		  (let ((node (id->value graph c)))
+		    (when (and node (null (find (node-id node) *recursive-find-seen*)))
 		      (si/append-item scheduled-items node)))))
 	      (loop for c in children
 		    for ct in children-type do
@@ -100,8 +100,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 		     'list
 		     #'(lambda (x x-type)
 			 (when (not (numberp x))
-			   (let ((node (id->value (avm-graph avm) x)))
-			     (when (null (find (node-id node) *recursive-find-seen*))
+			   (let ((node (id->value graph x)))
+			     (when (and node (null (find (node-id node) *recursive-find-seen*)))
 			       (make-scheduled-items (list node x-type x))))))
 		     children children-type)))	      
 	      (append
@@ -356,8 +356,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; (!rand (!softmax する時に，AoTしたrandを用いてx <- AUTOGEN_CUSTOM/RAND(x)みたいなのをできるようにしたい。
 (defstruct (Group
 	    (:constructor make-group (nodes realize-on-vm &aux (args (nodes-depends-on nodes)) (shapes (nodes-gather-args nodes)))))
-  (nodes nodes :type list)
+  (graph (apply #'make-graph nodes) :type graph)
+  (sched nil :type list)
   (realize-on-vm realize-on-vm :type boolean)
+  (across-time-deps nil :type list)
   (args args :type list)
   (shapes shapes :type list)
   (writes (nodes-output-ids nodes) :type list))
@@ -380,6 +382,48 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			(every #'explore (node-reads node))))))))
     (explore id)))
 
+(defun relocate-independent-allocations! (graph)
+  "
+  X   A+B
+  |    |
+  Y  Alloc <- If A+B is an independant operatin, Alloc and its subgraph
+   \  /       can be relocated into the top of graph.
+     Z
+"
+  (declare (type graph graph))
+  (let ((alloc-candidates
+	  (loop for node in (graph-nodes graph)
+		if (eql (node-type node) :Allocate)
+		  collect node)))
+    (labels ((subgraph (alloc)
+	       (loop for r in (node-reads alloc)
+		     if (symbolp r)
+		       append (get-subgraph r graph)))
+	     (alloc-p (node alloc subgraph)
+	       (or (find (node-id node) subgraph :key #'node-id)
+		   (and
+		    (eql (node-type node) :Allocate)
+		    (eql (node-id node) (node-id alloc)))))	       
+	     (relocate (alloc subgraph)
+	       (setf (graph-nodes graph)
+		     (append
+		      subgraph
+		      (list alloc)
+		      (loop for node in (graph-nodes graph)
+			    unless (alloc-p node alloc subgraph)
+			      collect node))))
+	     (isolated-p (subgraph)
+	       (when subgraph
+		 (loop with writes = (apply #'append (map 'list #'node-writes subgraph))
+		       for node in (graph-nodes graph)
+		       unless (find (node-id node) subgraph :key #'node-id)
+			 do (when (intersection (node-reads node) writes) (return-from isolated-p nil))))
+	       t))
+      (loop for alloc in alloc-candidates
+	    for subgraph = (subgraph alloc)
+	    if (isolated-p subgraph)
+	      do (relocate alloc subgraph)))))
+
 (defun split-into-subgroups (graph)
   "Graphs are first breaked into subgroups only after:
 - Tensor is shaped by a tensor
@@ -399,9 +443,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		  and do (setf groups nil)
 		else
 		  do (push node groups))
-	,(make-group (nreverse groups) t)))))
-
-(declaim (ftype (function (AVM &key (:verbose boolean)) (values list list list)) create-schedules-from-avm))
+	,(make-group (nreverse groups) nil)))))
+;; GroupでJITに渡す前のAlloc管理したい。。。やっぱTreeで探索するべき
+;; TODO: Relocate Alloc to the top of the nodes
+;; TODO: Allocateと，そこから伸びるSubgraphの判定
+(declaim (ftype (function (AVM &key (:verbose boolean)) (values list)) create-schedules-from-avm))
 (defun create-schedules-from-avm (avm &key (verbose nil) &aux (backward-mode-p (not (null (avm-bw-outputs avm)))))
   "Step1, Creates an initial schedule"
   (declare (type avm avm) (type boolean verbose))
@@ -418,7 +464,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     ;; ~~ JIT Specific Graph rewriting Processes ~~~~~~~~~~~~~~~~~~~~
     (deploy-type-infer-results avm type-map) ;; Move buffer/view nodes into :_type_relay attribtutes
     (apply-jit-specific-simplifiers avm)     ;; Purge :view nodes, WMMA Accumlation, contiguous elimination etc...
-    (print (split-into-subgroups (avm-graph avm)))
     (when verbose
       (format t "Verbose: Simplified Graph[Forward/Backward]~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))
@@ -432,69 +477,75 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     ;; We also assumed that all custom kernels are scheduled as a scalar function having vector array on ISL,
     ;; there is no need to consider the situation that where a complete array used in forward, is required by another kernel
     ;; except for backward. (that's why we only create a list of save-for-backward)
-    (labels ((id->buffer (id)
-	       (assert (symbolp id) () "Graph should not return a number!")
-	       (let ((node (id->value (avm-graph avm) id)))
-		 (list node (car (relay-writes (read-type-relay node))) id)))
-	     (make-top-schedule (top-ids) (map 'list (compose #'make-scheduled-items #'id->buffer) top-ids))
-	     (schedule (schedules)
+    (labels ((id->buffer (graph)
+	       #'(lambda (id)
+		   (assert (symbolp id) () "Graph should not return a number!")
+		   (let ((node (id->value graph id)))
+		     (list node (car (relay-writes (read-type-relay node))) id))))
+	     (make-top-schedule (group) (map 'list (compose #'make-scheduled-items (id->buffer (group-graph group))) (group-writes group)))
+	     (schedule (group schedules)
+	       (nconc seen (group-writes group))
 	       (multiple-value-bind (sorted seen-new)
 		   (schedule/resolve-isolated-ops
-		    (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group avm x)) schedules)))
+		    (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group (group-graph group) x)) schedules)))
 		    seen)
 		 (setf seen seen-new)
 		 sorted))
-	     (seen-in-groups (scheduled &aux (seen-in-groups nil))
-	       (loop for nth upfrom 0
-		     for s in scheduled
-		     do (dolist (node (si-nodes s))
-			  (unless (eql (node-type node) :Allocate)
-			    (setf seen-in-groups (append seen-in-groups (node-writes node)))))
-			(setf (si-name s) (intern (format nil "T~a" nth) "KEYWORD")))
+	     (seen-in-groups (group &aux (seen-in-groups nil))
+	       (if (group-sched group)
+		   (loop for nth upfrom 0
+			 for s in (group-sched group)
+			 do (dolist (node (si-nodes s))
+			      (unless (eql (node-type node) :Allocate)
+				(nconc seen-in-groups (node-writes node))))
+			    (setf (si-name s) (intern (format nil "T~a" nth) "KEYWORD")))
+		   (loop for node in (graph-nodes (group-graph group))
+			 unless (eql (node-type node) :Allocate)
+			   do (nconc seen-in-groups (node-writes node))))
 	       (remove-duplicates seen-in-groups))
-	     (read-in-groups (scheduled)
-	       (remove-duplicates
-		(loop for s in scheduled
-		      append
-		      (loop for node in (si-nodes s)
-			    append
-			    (loop for read in (node-reads node)
-				  if (symbolp read) collect read))))))
-      (let* ((fw-schedule (schedule (make-top-schedule (avm-fw-outputs avm))))
-	     (bw-schedule (when (avm-bw-outputs avm) (schedule (make-top-schedule (avm-bw-outputs avm)))))
-	     (fw-seen-in-group (seen-in-groups fw-schedule))
-	     (fw-read-in-group (read-in-groups fw-schedule))
-	     (bw-seen-in-group (seen-in-groups bw-schedule))
-	     (bw-read-in-group (read-in-groups bw-schedule))
-	     ;; If tensor firstly written in forward, was read in backward -> they are save-for-backward, and across-group dependencies.
-	     (save-for-backwards (intersection bw-read-in-group fw-read-in-group :test #'eql)))
-	(declare (ignore fw-seen-in-group))
-	;; Applying a multigroup optimization w/ paying attention for save-for-backward
-	;; Temporary values should be cached as a tensor if they are used for computing backwards
-	;; Otherwise, it is free to eliminate or make it scalar by compiler.
-	(when (null backward-mode-p)
-	  (assert (null bw-seen-in-group))
-	  ;; There's no extra dependencies across group (i.e.: no need to cache the temporary value as a tensor)
-	  (when verbose
-	    (format t "~%= Verbose: Recursively grouped forward group ====~%")
-	    (print-schedules fw-schedule))
-	  (apply-multiexpr-grouping fw-schedule nil))
+	     (read-in-groups (group &aux (read-in-groups nil))
+	       (if (group-sched group)
+		   (loop for s in (group-sched group) do
+		     (dolist (node (si-nodes s))
+		       (dolist (r (node-reads node)) (when (symbolp r) (push r read-in-groups)))))
+		   (loop for node in (graph-nodes (group-graph group)) do
+		     (dolist (r (node-reads node)) (when (symbolp r) (push r read-in-groups)))))
+	       (remove-duplicates read-in-groups)))
+      (relocate-independent-allocations! (avm-graph avm))
+      (print (avm-graph avm))
+      (let* ((groups (split-into-subgroups (avm-graph avm))))
+	(loop for group in groups
+	      if (group-realize-on-vm group)
+		do (nconc seen (group-writes group))
+	      else
+		collect (setf (group-sched group) (schedule group (make-top-schedule group))))
+	(loop with write-deps = (map 'list #'seen-in-groups groups)
+	      with read-deps = (map 'list #'read-in-groups groups)
+	      for nth upfrom 1
+	      for group in groups
+	      for writing in write-deps
+	      collect (setf (group-across-time-deps group) (intersection writing (apply #'append (nthcdr nth read-deps)))))
+	(mapc
+	 #'(lambda (x)
+	     (unless (group-realize-on-vm x)
+	       (apply-multiexpr-grouping (group-sched x) (group-across-time-deps x))))
+	 groups)
 
-	(when backward-mode-p
-	  ;; Fold multiexpr w/ keeping save-for-backwards
-	  (when verbose
-	    (format t "~%= Verbose: Recursively grouped forward group ====~%")
-	    (print-schedules fw-schedule)
-	    (format t "~%= Verbose: Recursively grouped backward group ====~%")
-	    (print-schedules bw-schedule))
-	  (apply-multiexpr-grouping fw-schedule save-for-backwards)
-	  (apply-multiexpr-grouping bw-schedule nil))
-	(values fw-schedule bw-schedule save-for-backwards)))))
+	(when verbose
+	  (loop for group in groups
+		for nth upfrom 0 do
+		  (format t "~%= Verbose: ~ath group === ~%" nth)
+		  (if (group-realize-on-vm group)
+		      (print group)
+		      (print-schedules (group-sched group)))))
+	groups
+	(error "STOP")
+	))))
 
-(declaim (ftype (function (AVM list list &key (:verbose boolean)) (values Polyhedral)) create-polyhedron-from-schedule))
-(defun create-polyhedron-from-schedule (avm schedules recursive-top-ids &key (verbose nil))
+(declaim (ftype (function (AVM group list &key (:verbose boolean)) (values Polyhedral)) create-polyhedron-from-schedule))
+(defun create-polyhedron-from-schedule (avm group recursive-top-ids &key (verbose nil))
   "Step2, create a polyhedron from the scheduled items."
-  (declare (type list schedules) (type boolean verbose))
+  (declare (type group group) (type boolean verbose))
   (let* ((submodule (map 'list #'schedule->submodule schedules)) ;; Rendering :FOR and :ENDFOR
 	 (pipeline (make-hash-table)))
     (loop for nth upfrom 0
@@ -644,37 +695,36 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type (integer 0 4) debug)
 	   (type boolean serialize)
 	   (ignore _))
-  (multiple-value-bind (fw-schedule bw-schedule save-for-backwards)
-      (create-schedules-from-avm avm :verbose verbose-schedule)
-    (let ((fw-polyhedron (create-polyhedron-from-schedule avm fw-schedule (avm-fw-outputs avm) :verbose verbose-schedule))
-	  (bw-polyhedron (when bw-schedule (create-polyhedron-from-schedule avm bw-schedule (avm-bw-outputs avm) :verbose verbose-schedule))))
-      ;; Doing auto-schedule
-      (auto-schedule! fw-polyhedron :verbose verbose-auto :serialize serialize)
-      (when bw-polyhedron (auto-schedule! bw-polyhedron :verbose verbose-auto :serialize serialize))
-      ;; Remove :FOR :ENDFOR
-      (funcall (compose #'remove-iteration-ir #'poly-pipeline) fw-polyhedron)
-      (when bw-polyhedron (funcall (compose #'remove-iteration-ir #'poly-pipeline) bw-polyhedron))
-      ;; Finalize-schedule
-      (let* ((fw-render-graph (finalize-and-get-render-graph fw-polyhedron))
-	     (bw-render-graph (when bw-polyhedron (finalize-and-get-render-graph bw-polyhedron)))
-	     (refcount (create-reference-counter fw-polyhedron fw-render-graph bw-polyhedron bw-render-graph)))
-	;; Create a reference count and apply memory-planner
-	(apply-memory-planner! avm fw-polyhedron refcount fw-render-graph save-for-backwards)
-	(when bw-polyhedron (apply-memory-planner! avm bw-polyhedron refcount bw-render-graph nil))
-	;; Compilation process was finished
-	;; Rendering the graph
-	;; (values fname compiled-code kernel-caller invoke-compile-f
-	(let ((forward
+  (let ((groups (create-schedules-from-avm avm :verbose verbose-schedule))
+	(fw-polyhedron (create-polyhedron-from-schedule avm fw-schedule (avm-fw-outputs avm) :verbose verbose-schedule))
+	(bw-polyhedron (when bw-schedule (create-polyhedron-from-schedule avm bw-schedule (avm-bw-outputs avm) :verbose verbose-schedule))))
+    ;; Doing auto-schedule
+    (auto-schedule! fw-polyhedron :verbose verbose-auto :serialize serialize)
+    (when bw-polyhedron (auto-schedule! bw-polyhedron :verbose verbose-auto :serialize serialize))
+    ;; Remove :FOR :ENDFOR
+    (funcall (compose #'remove-iteration-ir #'poly-pipeline) fw-polyhedron)
+    (when bw-polyhedron (funcall (compose #'remove-iteration-ir #'poly-pipeline) bw-polyhedron))
+    ;; Finalize-schedule
+    (let* ((fw-render-graph (finalize-and-get-render-graph fw-polyhedron))
+	   (bw-render-graph (when bw-polyhedron (finalize-and-get-render-graph bw-polyhedron)))
+	   (refcount (create-reference-counter fw-polyhedron fw-render-graph bw-polyhedron bw-render-graph)))
+      ;; Create a reference count and apply memory-planner
+      (apply-memory-planner! avm fw-polyhedron refcount fw-render-graph save-for-backwards)
+      (when bw-polyhedron (apply-memory-planner! avm bw-polyhedron refcount bw-render-graph nil))
+      ;; Compilation process was finished
+      ;; Rendering the graph
+      ;; (values fname compiled-code kernel-caller invoke-compile-f
+      (let ((forward
+	      (multiple-value-list
+	       (render-to-string backend "forward" avm fw-polyhedron fw-render-graph debug compile-later)))
+	    (backward
+	      (when bw-polyhedron
 		(multiple-value-list
-		 (render-to-string backend "forward" avm fw-polyhedron fw-render-graph debug compile-later)))
-	      (backward
-		(when bw-polyhedron
-		  (multiple-value-list
-		   (render-to-string backend "backward" avm bw-polyhedron bw-render-graph debug compile-later)))))
-	  (multiple-value-bind (graphf seen) (jit->vm base-avm forward fw-polyhedron fw-render-graph backend nil avm (avm-fw-outputs avm))
-	    (multiple-value-bind (graphb seen) (when bw-polyhedron (jit->vm base-avm backward bw-polyhedron bw-render-graph backend seen avm (avm-bw-outputs avm)))
-	      (declare (ignore seen))
-	      (values avm forward graphf backward graphb))))))))	      
+		 (render-to-string backend "backward" avm bw-polyhedron bw-render-graph debug compile-later)))))
+	(multiple-value-bind (graphf seen) (jit->vm base-avm forward fw-polyhedron fw-render-graph backend nil avm (avm-fw-outputs avm))
+	  (multiple-value-bind (graphb seen) (when bw-polyhedron (jit->vm base-avm backward bw-polyhedron bw-render-graph backend seen avm (avm-bw-outputs avm)))
+	    (declare (ignore seen))
+	    (values avm forward graphf backward graphb)))))))	      
 
 (defun jit (avm
 	    &key

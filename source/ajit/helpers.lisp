@@ -145,6 +145,7 @@
        (with-context-nodes
 	   (_ (%load (%salloc :dtype dtype) (car (node-writes node)) :id (car (node-writes node)))))
        (list node))))
+(defun get-subgraph (id graph) (get-subgraph-recursively (id->value graph id) graph nil nil))
 
 (defun recursively-find-output-id (id graph &aux (seen nil))
   "Exploring the graph from id, returns a list of buffer ids which is not used in the graph (i.e.: outputs).
