@@ -35,7 +35,6 @@
        (if (getattr node :_jit_dont_render_me)
 	   (use (car parents))
 	   (use (second parents))))
-      (:STORE            (use (second parents)))
       (otherwise
        (if (and (eql (node-type node) :ADD) (>= (length parents) 3))
 	   (flet ((add (x y) (make-expr :ADD x y)))

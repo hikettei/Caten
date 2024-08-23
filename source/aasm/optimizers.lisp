@@ -1,8 +1,8 @@
 (in-package :caten/aasm)
 
 (defsimplifier
-    (fuse-duplicated-store :speed 0)
-    ((:Store ((:Allocate (~ s1) :nrank nrank :dtype dtype1) (:Allocate (~ s2) :dtype dtype2)))
+    (fuse-duplicated-move :speed 0)
+    ((:MOVE ((:Allocate (~ s1) :nrank nrank :dtype dtype1) (:Allocate (~ s2) :dtype dtype2)))
      ->
      ((node graph)
       (when (and (eql dtype1 dtype2) (equal s1 s2))
@@ -36,4 +36,4 @@ tmp2 <- tmp1"
 (defun optimize-aasm (graph)
   (declare (type graph graph))
   (fold-constant graph)
-  (fuse-duplicated-store graph))
+  (fuse-duplicated-move graph))
