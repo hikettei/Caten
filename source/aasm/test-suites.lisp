@@ -26,8 +26,8 @@
 		      (c (%add a b)))
 		    ,count))))
       (check (3 3) (3 3) 3)
-      (check (a b) (3 3) 9)
-      (check (3 3) (a b) 9)
+      (check (a b) (3 3) 7)
+      (check (3 3) (a b) 7)
       (check (a 3) (3 3) 5)))
   (testing "Tensor Creation (w/o constant folding vs worst case)"
     (macrolet ((make (s1 s2)
@@ -48,7 +48,7 @@
 		      (b (%view a ',frm ',frm ',to ',by ',bc (%stride ',frm :column))))
 		    ,count))))
       (check (5 5 5) (0 0 0) (5 5 5) (1 1 1) (nil nil nil) 2)
-      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 42)))
+      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 28)))
   (testing "Reshape Creation"
     (macrolet ((check (s1 s2 count)
 		 `(ok
@@ -59,7 +59,7 @@
 		    ,count))))
       (check (1 2 3) (6) 2)
       (check (1 2 3) (d) 4)
-      (check (a b c) (d) 15))))
+      (check (a b c) (d) 11))))
 
 (deftest infer-tensor-info
   (macrolet ((ssa-form (&rest form) `(fold-constant (with-context ,@form))))
@@ -101,7 +101,7 @@
     (c  (%store m t2))))
 
 (deftest test-arange-kernel-count
-  (ok (check-schedule (%arange `(3 3) 3 3) 9))
+  (ok (check-schedule (%arange `(3 3) 3 3) 7))
   (ok (check-schedule (%arange `(3 3) 0 3) 6))
   (ok (check-schedule (%arange `(3 3) 3 0) 6))
   (ok (check-schedule (%arange `(3 3) 0 0) 1)))

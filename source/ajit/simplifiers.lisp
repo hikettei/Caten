@@ -7,39 +7,19 @@
 (defun %safely-purge-views-from-graph (avm)
   "(1.) Removes :VIEW from avm graph, (2.) Updates the read/write graph relations"
   (declare (type avm avm))
-  (let ((rewrite-map
+  (let ((views
 	  (loop for node in (graph-nodes (avm-graph avm))
 		if (eql (node-type node) :View)
-		  collect (cons (car (node-reads node)) (car (node-writes node))))))
-    (labels ((->find (id) (find id rewrite-map :key #'car :test #'eql))
-	     (view-composed? (id &aux (node (id->value (avm-graph avm) id)))
-	       (and node (eql (node-type node) :View)))
-	     (->aft (id &aux (last id))
-	       (if (symbolp id)
-		   (labels ((f (x &aux (next (->find x)))
-			      (if next
-				  (progn
-				    (setf last (cdr next))
-				    (if (view-composed? (cdr next))
-					(f (cdr next))
-					last))
-				  nil)))
-		     (f last)
-		     last)
-		   id)))
-      (setf (graph-nodes (avm-graph avm))
-	    (loop for n in (graph-nodes (avm-graph avm))
-		  unless (eql (node-type n) :View)
-		    collect
-		    (progn		      
-		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n))
-			    (node-reads n) (loop for r in (node-reads n)
-						 for val = (id->value (avm-graph avm) r)
-						 if (and (symbolp r) (eql (node-type val) :View))
-						   collect (->aft (car (node-writes val)))
-						 else
-						   collect r))
-		      n))))))
+		  collect node)))
+    (setf (graph-nodes (avm-graph avm))
+	  (loop for node in (graph-nodes (avm-graph avm))
+		unless (eql (node-type node) :View)
+		  collect node))
+    (loop for view in views
+	  for key = (car (node-writes view))
+	  for to = (car (node-reads view)) do
+	    (flet ((new (id) (if (eql id key) to id)))
+	      (dolist (n (graph-nodes (avm-graph avm))) (setf (node-reads n) (map 'list #'new (node-reads n))))))))
 
 (defun wmma-relay-from (t1 tc nth)
   (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))

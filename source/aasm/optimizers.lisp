@@ -27,8 +27,10 @@ tmp2 <- tmp1"
 		  if (and
 		      (eql type :Load)
 		      (let ((prev (id->value graph (car (node-reads node)))))
-			(eql (node-type prev) :Allocate)
-			))
+			(and
+			 prev
+			 (eql (node-type prev) :Allocate)
+			 (= 0 (getattr prev :nrank)))))
 		    collect
 		    (if (getvar (getattr node :value))
 			(let ((assign (make-node :Buffer :ASSIGN (list (car (node-writes node))) (list (getvar (getattr node :value))))))
@@ -53,4 +55,5 @@ tmp2 <- tmp1"
   (fold-constant graph)
   (fuse-duplicated-move graph)
   (rewrite-duplicated-load graph)
-  (verify-graph graph))
+  (verify-graph graph)
+  graph)
