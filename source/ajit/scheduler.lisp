@@ -358,11 +358,13 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     `(,@(loop for node in (graph-nodes graph)
 	      if (or
 		  (eql (node-type node) :pause/backward)
-		  )
-		collect (nreverse sublist) and do (setf sublist nil)
+		  (and
+		   (eql (node-type node) :Allocate)
+		   (some #'symbolp (node-reads node))))
+		collect (nreverse sublist) and collect (list node) and do (setf sublist nil)
 	      else
 		do (push node sublist))
-      ,sublist)))
+      ,(nreverse sublist))))
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
