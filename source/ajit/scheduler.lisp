@@ -256,11 +256,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		 (format out " : ")
 		 (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
 		 (format out ";~%"))
-	       ;; It is asserted that :Allocation is always alone in the schedule.
-	       (when (not
-		      (and (= 1 (length (graph-nodes subgraph)))
-			   (eql :Allocate (node-type (car (graph-nodes subgraph)))) ))
-		 (format out "  T~a[];~%" timestamp)))))
+	       (format out "  T~a[];~%" timestamp))))
      pipeline)
     (format out "}")))
 
@@ -367,25 +363,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   (shapes shapes :type list)
   (writes (nodes-output-ids nodes) :type list))
 
-#|
-(defun subgraph-scalar-load-p (graph id &aux (seen (make-hash-table)))
-  (declare (type graph graph))
-  (labels ((explore (x)
-	     (or (numberp x)
-		 (if (gethash x seen)
-		     (= 0 (gethash x seen))
-		     (let* ((node (id->value graph x))
-			    (buff (car (relay-writes (read-type-relay node)))))
-		       (setf (gethash x seen) (buffer-nrank buff))
-		       (and
-			(= 0 (buffer-nrank buff))
-			(case (node-type node)
-			  (:Load t)
-			  (:Allocate (null (node-reads node)))
-			  (otherwise nil))
-			(every #'explore (node-reads node))))))))
-    (explore id)))
-|#
 (defun relocate-independent-allocations! (graph)
   "
   X   A+B
@@ -522,7 +499,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		     (list node (car (relay-writes (read-type-relay node))) id))))
 	     (make-top-schedule (group) (map 'list (compose #'make-scheduled-items (id->buffer (group-graph group))) (group-writes group)))
 	     (schedule (group schedules)
-	       (nconc seen (group-writes group))
+	       (setf seen (append seen (group-writes group)))
 	       (multiple-value-bind (sorted seen-new)
 		   (schedule/resolve-isolated-ops
 		    (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group (group-graph group) x)) schedules)))
@@ -535,11 +512,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			 for s in (group-sched group)
 			 do (dolist (node (si-nodes s))
 			      (unless (eql (node-type node) :Allocate)
-				(nconc seen-in-groups (node-writes node))))
+				(setf seen-in-groups (append seen-in-groups (node-writes node)))))
 			    (setf (si-name s) (intern (format nil "T~a" nth) "KEYWORD")))
 		   (loop for node in (graph-nodes (group-graph group))
 			 unless (eql (node-type node) :Allocate)
-			   do (nconc seen-in-groups (node-writes node))))
+			   do (setf seen-in-groups (append seen-in-groups (node-writes node)))))
 	       (remove-duplicates seen-in-groups))
 	     (read-in-groups (group &aux (read-in-groups nil))
 	       (if (group-sched group)
@@ -550,10 +527,12 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		     (dolist (r (node-reads node)) (when (symbolp r) (push r read-in-groups)))))
 	       (remove-duplicates read-in-groups)))
       (relocate-independent-allocations! (avm-graph avm))
-      (let* ((groups (split-into-subgroups (avm-graph avm))))
+      (let* ((groups (loop for g in (split-into-subgroups (avm-graph avm))
+			   if (graph-nodes (group-graph g))
+			     collect g)))
 	(loop for group in groups
 	      if (group-realize-on-vm group)
-		do (nconc seen (group-writes group))
+		do (setf seen (append seen (group-writes group)))
 	      else
 		collect (setf (group-sched group) (schedule group (make-top-schedule group))))
 	(loop with write-deps = (map 'list #'seen-in-groups groups)
@@ -725,7 +704,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
       (mapc
        #'(lambda (x)
 	   (when (null (group-realize-on-vm x))
-	     (apply-memory-planner! avm x (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x))))
+	     (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x))))
        groups)
       (loop for group in groups
 	    for nth upfrom 0
