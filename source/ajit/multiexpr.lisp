@@ -31,6 +31,7 @@
       (:Load             (make-const (getattr node :value)))
       (:!=               (make-expr :!= (use (second parents)) (use (third parents))))
       (:<                (make-expr :< (use (second parents)) (use (third parents))))
+      (:ASSIGN (use (car parents)))
       (:MOVE
        (if (getattr node :_jit_dont_render_me)
 	   (use (car parents))

@@ -63,7 +63,7 @@ When creating a MultiExpr, it is only fused if the node-type is op/expr!"
     :RECIP :SQRT :NOT
     :INDEX-COMPONENTS
     
-    :LOAD :MOVE))
+    :LOAD :MOVE :ASSIGN))
 
 (defgeneric %render-expr (lang op lhs rhs z)
   (:documentation "

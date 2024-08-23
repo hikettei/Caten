@@ -73,6 +73,11 @@ If i is a tensor, %load fills the visible area of i with value."
   (declare (type node x y))
   (%move x y :id id :reduction reduction))
 
+(defun %assign (x y)
+  "Set: x[...] = y[...]"
+  (declare (type node x y))
+  (emit (make-node :Buffer :ASSIGN (list (node->id x)) (list (node->id y)))))
+
 (defun %uconst (value &key (dtype *default-uint*))
   "Creates an unsigned integer"
   (%load (%salloc :dtype dtype) value))

@@ -21,6 +21,7 @@
    #:%salloc
    #:%load
    #:%store
+   #:%assign
    #:%stride
    #:%shape
    #:%make-tensor
