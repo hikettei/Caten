@@ -19,7 +19,8 @@
 	    (:conc-name refcount-))
   (alias (make-hash-table) :type hash-table)
   (refcount (make-hash-table) :type hash-table)
-  (refcount-by (make-hash-table) :type hash-table))
+  (refcount-by (make-hash-table) :type hash-table)
+  (tmpvars nil :type list))
 (defmethod print-object ((r reference-counter) stream)
   (flet ((print-hash (obj)
 	   (with-output-to-string (out)
@@ -35,7 +36,6 @@ Refcount-by:
 	    (print-hash (refcount-alias r))
 	    (print-hash (refcount-refcount r))
 	    (print-hash (refcount-refcount-by r)))))
-(defun node-output-position (node) (error "deprecated") (case (node-type node) (:WHERE (second (node-reads node))) (otherwise (car (node-reads node)))))
 (defun id->memwrites (graph id)
   "Counts how many times id was read in the graph, and by who?"
   (declare (type graph graph) (type symbol id))
@@ -121,7 +121,8 @@ Refcount-by:
 (defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards)
   (declare (type avm avm) (type group group) (type polyhedral polyhedral) (type Reference-counter refcount)
 	   (type graph render-graph) (type list save-for-backwards))
-  (let* ((pipeline (poly-pipeline polyhedral))
+  (let* ((kernels (split-kernel (graph-nodes render-graph)))
+	 (pipeline (poly-pipeline polyhedral))
 	 (pipeline-ids (render-graph/get-timestamps render-graph))
 	 (pipeline-ids-all (hash-table-keys pipeline))
 	 (default-allocs (loop for node in (loop for k in pipeline-ids-all append (graph-nodes (gethash k pipeline)))
@@ -147,7 +148,7 @@ Refcount-by:
 		 (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
 		   (decf (gethash r (refcount-refcount refcount)))))
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
-	       ;(when (find (car (node-writes node)) save-for-backwards) (return-from inplace-p (cons nil nil)))
+	       ;;(when (find (car (node-writes node)) save-for-backwards) (return-from inplace-p (cons nil nil)))
 	       (let* ((id (or (node/in-place-mutation (node-type node) node)
 			      (return-from inplace-p (cons nil nil))))
 		      (refcount-n (gethash id (refcount-refcount refcount)))
@@ -159,37 +160,42 @@ Refcount-by:
 		     (cons t t))))
 	     (newid (x) (refcount/refalias refcount x)))
       ;; O(nlogn) * the cost of id->users ...
-      (loop for loop-ids in pipeline-ids-by-loop do
-	(loop
-	  for time in loop-ids
-	  for graph = (gethash time pipeline) do
-	    (loop
-	      for node in (graph-nodes graph)
-	      for (inplace-p . all-exists-in-the-same-pipeline) = (inplace-p node time) do
-		(assert (= 1 (length (node-writes node))) ())
-		(refcount/make-alias refcount node inplace-p save-for-backwards)
-		;; If write-to area is not going to be used by any other ops, let's make it in-place
-		;; otherwise:
-		;;  - If write-to-user exists in the same schedule -> create a tmpvar.
-		;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
-		(when (and (null inplace-p) all-exists-in-the-same-pipeline)
-		  ;; [TODO]
-		  ;; Minimizing the number of allocations by following the rule:
-		  ;; 1. (car reads) becomes write, (except for %WHERE)
-		  ;;  | -   A <- f(B, C, D)
-		  ;;  | ->  B <- f(B, C, D)
-		  ;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
-		  ;;  | -   A1 <- f(A, B)
-		  ;;  | -   A2 <- f(A, C)
-		  ;;  | -   O1 <- f(A1, A2)
-		  ;;   ->
-		  ;;  | -   At1 <- f(A, B)
-		  ;;  | -   At2 <- f(A, C)
-		  ;;  | -   O1 <-  f(At1, At2)
-		  ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
-		  )
-		(refcount/update-node node refcount))))
-
+      (loop
+	for kernel in kernels
+	for timestamps = (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel))) do
+	  (loop
+	    for time in timestamps
+	    for graph = (gethash time pipeline) do
+	      (loop
+		for node in (graph-nodes graph)
+		for (inplace-p . all-exists-in-the-same-pipeline) = (inplace-p node time) do
+		  (assert (= 1 (length (node-writes node))) ())
+		  (refcount/make-alias refcount node inplace-p save-for-backwards)
+		  ;; If write-to area is not going to be used by any other ops, let's make it in-place
+		  ;; otherwise:
+		  ;;  - If write-to-user exists in the same schedule -> create a tmpvar.
+		  ;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
+		  (when (and (null inplace-p) all-exists-in-the-same-pipeline)
+		    ;; [TODO]
+		    ;; Minimizing the number of allocations by following the rule:
+		    ;; 1. (car reads) becomes write, (except for %WHERE)
+		    ;;  | -   A <- f(B, C, D)
+		    ;;  | ->  B <- f(B, C, D)
+		    ;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
+		    ;;  | -   A1 <- f(A, B)
+		    ;;  | -   A2 <- f(A, C)
+		    ;;  | -   O1 <- f(A1, A2)
+		    ;;   ->
+		    ;;  | -   At1 <- f(A, B)
+		    ;;  | -   At2 <- f(A, C)
+		    ;;  | -   O1 <-  f(At1, At2)
+		    ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
+		    )
+		  (refcount/update-node node refcount)))
+	  (let ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps))))
+	    (print (nodes-depends-on nodes))
+	    (print (nodes-gather-args nodes)))
+	)
       ;; Update allocated-items
       ;; undecl var wo all kaiketu siyou
       (setf allocated-items (map 'list #'newid allocated-items))
@@ -245,4 +251,5 @@ Refcount-by:
 		      (setf ,accessor new-table))))
 	(renew (avm-id2tensor avm))
 	(renew (poly-vm-io-types polyhedral))
-	(renew (avm-variables avm))))))
+	(renew (avm-variables avm)))
+      kernels)))

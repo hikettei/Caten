@@ -42,14 +42,14 @@
 	(push w seen)))
     (reverse depends-on)))
 
-(defun nodes-gather-args (nodes)
+(defun nodes-gather-args (nodes &key (get-nodes nil))
   (declare (type list nodes))
   (let ((args (remove-duplicates
 	       (loop for node in nodes
 		     if (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)))
-		       collect (getattr node :value)))))
+		       collect (if get-nodes node (getattr node :value))))))
     (loop for a in args
-	  unless (find a `(t nil))
+	  unless (find (if get-nodes (getattr a :value) a) `(t nil))
 	    collect a)))
 
 (defun avm-gather-args (avm)

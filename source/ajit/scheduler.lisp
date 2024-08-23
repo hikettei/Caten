@@ -711,7 +711,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
       (loop for group in groups
 	    for nth upfrom 0
 	    collect
-	    (render-to-string backend group (format nil "E_~a_" nth) avm debug compile-later)))))
+	    (render-to-string backend group (format nil "E_~a" nth) avm debug compile-later)))))
 
 (defun jit (avm
 	    &key

@@ -1,5 +1,12 @@
 (in-package :caten/ajit)
 
+(defstruct (Argument)
+  (pointer-p nil :type boolean)
+  (dtype (error "dtype must occur") :type dtype-t)
+  (type :input :type (and keyword (member :shape :input :tmp)))
+  (metadata (error "metadata must occur") :type node))
+;; (defstruct Metadata
+;;  *accessing* ...
 ;; ~~ Abstraction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defgeneric %render-compile (lang avm allocs function)
   (:documentation "Compiles the function"))
@@ -81,7 +88,6 @@ Render the ops in ./source/aasm/ops.lisp.
 :EXPR
 "))
 
-;; TODO: (defstruct metadata)
 ;; TODO: verify-node
 (defun render-expr (lang expr)
   "Recursively render the expr"

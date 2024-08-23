@@ -1,4 +1,29 @@
 (in-package :caten/ajit)
+
+(defstruct (Kernel-Renderer)
+  (nodes (error "nodes must occur!") :type list)
+  (nth 0 :type fixnum)
+  (args nil))
+
+(defun split-kernel (nodes)
+  (declare (type list nodes))
+  (let ((kernels) (outputs))
+    (loop with nest = 0
+	  for node in nodes
+	  for type = (node-type node)
+	  if (eql type :FOR)
+	    do (push node kernels) (incf nest)
+	  else if (eql type :ENDFOR) do
+	    (if (= 1 nest)
+		(progn (decf nest) (push node kernels) (push (nreverse kernels) outputs) (setf kernels nil))
+		(progn (decf nest) (push node kernels)))
+	  else do
+	    (push node kernels))
+    (when kernels (push kernels outputs))
+    (loop for out in outputs
+	  for nth upfrom 0
+	  collect (make-kernel-renderer :nodes out :nth nth))))
+
 ;; A special graph dedicated to the rendering process
 (defun r/for (idx upfrom below by) (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by))
 (defun r/endfor (idx) (make-node :Render :ENDFOR nil nil :idx idx))
@@ -34,4 +59,3 @@
       (lower lisp-ast))
     (setf (gethash -1 (poly-pipeline polyhedron)) (make-graph))
     (apply #'make-graph (reverse new-graph))))
-
