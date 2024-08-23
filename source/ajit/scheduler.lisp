@@ -412,17 +412,53 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		      (loop for node in (graph-nodes graph)
 			    unless (alloc-p node alloc subgraph)
 			      collect node))))
-	     (isolated-p (subgraph)
+	     (isolated-p (alloc subgraph)
 	       (when subgraph
 		 (loop with writes = (apply #'append (map 'list #'node-writes subgraph))
 		       for node in (graph-nodes graph)
-		       unless (find (node-id node) subgraph :key #'node-id)
+		       unless (alloc-p node alloc subgraph)
 			 do (when (intersection (node-reads node) writes) (return-from isolated-p nil))))
 	       t))
       (loop for alloc in alloc-candidates
 	    for subgraph = (subgraph alloc)
-	    if (isolated-p subgraph)
+	    if (isolated-p alloc subgraph)
 	      do (relocate alloc subgraph)))))
+
+(defun relocate-independent-loop-bound-computation! (graph)
+  "Applies the same relocation as relocate-independent-allocation! against views, simplifying the scheduling for dynamic-shaped kernels."
+  (declare (type graph graph))
+  (let ((view-candidates
+	  (loop for node in (graph-nodes graph)
+		if (eql (node-type node) :View)
+		  collect node)))
+    (labels ((subgraph (view)
+	       (loop for r in (node-reads view)
+		     if (symbolp r)
+		       append (get-subgraph r graph)))
+	     (view-p (node view subgraph)
+	       (or (find (node-id node) subgraph :key #'node-id)
+		   (and
+		    (eql (node-type node) :View)
+		    (eql (node-id node) (node-id view)))))	       
+	     (relocate (view subgraph)
+	       (setf (graph-nodes graph)
+		     (append
+		      subgraph
+		      (list view)
+		      (loop for node in (graph-nodes graph)
+			    unless (view-p node view subgraph)
+			      collect node))))
+	     (isolated-p (view subgraph)
+	       (when subgraph
+		 (loop with writes = (apply #'append (map 'list #'node-writes subgraph))
+		       for node in (graph-nodes graph)
+		       unless (view-p node view subgraph)
+			 do (when (intersection (node-reads node) writes) (return-from isolated-p nil))))
+	       t))
+      (loop for view in view-candidates
+	    for subgraph = (subgraph view)
+	    if (isolated-p view subgraph)
+	      do (relocate view subgraph)))))
 
 (defun split-into-subgroups (graph)
   "Graphs are first breaked into subgroups only after:
@@ -444,7 +480,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		else
 		  do (push node groups))
 	,(make-group (nreverse groups) nil)))))
-;; GroupでJITに渡す前のAlloc管理したい。。。やっぱTreeで探索するべき
 ;; TODO: Relocate Alloc to the top of the nodes
 ;; TODO: Allocateと，そこから伸びるSubgraphの判定
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list)) create-schedules-from-avm))
@@ -463,6 +498,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (uiop:symbol-call (find-package :caten) :print-avm avm))
     ;; ~~ JIT Specific Graph rewriting Processes ~~~~~~~~~~~~~~~~~~~~
     (deploy-type-infer-results avm type-map) ;; Move buffer/view nodes into :_type_relay attribtutes
+    (relocate-independent-loop-bound-computation! (avm-graph avm))
     (apply-jit-specific-simplifiers avm)     ;; Purge :view nodes, WMMA Accumlation, contiguous elimination etc...
     (when verbose
       (format t "Verbose: Simplified Graph[Forward/Backward]~%")
