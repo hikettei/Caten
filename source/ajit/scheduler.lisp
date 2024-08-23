@@ -497,12 +497,13 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (uiop:symbol-call (find-package :caten) :print-avm avm))
     ;; ~~ JIT Specific Graph rewriting Processes ~~~~~~~~~~~~~~~~~~~~
     (deploy-type-infer-results avm type-map) ;; Move buffer/view nodes into :_type_relay attribtutes
-    (relocate-independent-loop-bound-computation! (avm-graph avm))
+    (relocate-independent-loop-bound-computation! (avm-graph avm)) ;; for (...;by+=a*b) is equivalent to for(...;by+=val_xx)
     (apply-jit-specific-simplifiers avm)     ;; Purge :view nodes, WMMA Accumlation, contiguous elimination etc...
     (when verbose
       (format t "Verbose: Simplified Graph[Forward/Backward]~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))
     ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    ;; (The comment below is out-of-date. we will create more than 2 groups)
     ;; Creating a Polyhedral Compilation Group: (Group1 = Forward, Group2=Backward)
     ;; Assume there's only two groups for simplicity:
     ;;  - Forward Computation
@@ -572,9 +573,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		  (if (group-realize-on-vm group)
 		      (print group)
 		      (print-schedules (group-sched group)))))
-	groups
-	(error "STOP")
-	))))
+	groups))))
 
 (declaim (ftype (function (AVM group list &key (:verbose boolean)) (values Polyhedral)) create-polyhedron-from-schedule))
 (defun create-polyhedron-from-schedule (avm group recursive-top-ids &key (verbose nil))

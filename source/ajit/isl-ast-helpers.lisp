@@ -13,6 +13,15 @@
 (defstruct (Expr (:constructor make-expr (op x &optional (y nil) (z nil))))
   (op op) (x x) (y y) (z z))
 
+(defmethod print-object ((expr Expr) stream)
+  (if (eql (expr-op expr) :Aref)
+      (format stream "{~(~a~):~(~a~)}" (expr-x expr) (buffer-dtype (expr-y expr)))
+      (if (expr-z expr)
+	  (format stream "~(~a~)(~(~a~), ~(~a~), ~(~a~))" (expr-op expr) (expr-x expr) (expr-y expr) (expr-z expr))
+	  (if (expr-y expr)
+	      (format stream "~(~a~)(~(~a~), ~(~a~))" (expr-op expr) (expr-x expr) (expr-y expr))
+	      (format stream "~(~a~)(~(~a~))" (expr-op expr) (expr-x expr))))))
+
 (defstruct (ASTFor
 	    (:constructor make-for (idx from to by body execute-once)))
   (idx idx :type string)
