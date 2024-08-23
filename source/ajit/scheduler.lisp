@@ -632,22 +632,24 @@ Options:
 	 (polyhedron (group-polyhedron group))
 	 (outputs (loop for o in (poly-vm-outputs polyhedron) if (poly/io-scalar-p polyhedron o) collect o))
 	 ;; purge-allocationsw
-	 (args (remove-duplicates (append (group-shapes group) (group-args group))))
+	 ;; (append outputs sita?)
+	 (args (print (remove-duplicates (append (group-shapes group) (group-args group)))))
+	 (args nil)
 	 ;; Start Rendering
-	 (body     (%render-body backend backend rendering-graph polyhedron 1 allocs))
-	 (function (%render-function backend avm allocs body))
+	 (body     (%render-body backend backend rendering-graph polyhedron 1 args))
+	 (function (%render-function backend avm args body))
 	 (function (%render-program-toplevel backend function))
-	 (fcaller-body (%render-function-caller backend avm allocs))
+	 (fcaller-body (%render-function-caller backend avm args))
 	 (name (avm-name avm)))
     (when (>= debug 1) (format t "Compiled[~a]:~%~a" name function))
     (setf (avm-name avm) base-name)
-    (unless compile-later (%render-compile backend avm allocs function))
+    (unless compile-later (%render-compile backend avm args function))
     (make-compiled-kernel
      name
      args
      function
      fcaller-body
-     #'(lambda () (%render-compile backend avm allocs function))
+     #'(lambda () (%render-compile backend avm args args))
      group)))
 
 (defun jit->vm (backend compiled-kernels)
