@@ -69,9 +69,9 @@ If i is a tensor, %load fills the visible area of i with value."
 	      (render-attrs node :except-for `(:from))))))
 
 (defun %store (x y &key (id (gensym "LID")) (reduction nil))
-  "Equivalent to x = y;"
+  "Alias for move"
   (declare (type node x y))
-  (emit (make-node :Buffer :Store (list id) (list (node->id x) (node->id y)) :reduction reduction)))
+  (%move x y :id id :reduction reduction))
 
 (defun %uconst (value &key (dtype *default-uint*))
   "Creates an unsigned integer"

@@ -110,7 +110,7 @@
     ((:_TmpPurged (x))
      ->
      ((node graph)
-      (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))))
+      (make-node :Buffer :Move (node-writes node) (list (car (node-writes node)) x)))))
 
 (defun fold-constant (graph &aux (n (length (graph-nodes graph))))
   (declare (type Graph graph))

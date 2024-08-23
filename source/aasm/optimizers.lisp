@@ -2,7 +2,7 @@
 
 (defsimplifier
     (fuse-duplicated-store :speed 0)
-    ((:Store ((:Allocate (~ s1) :nrank nrank :dtype dtype1) (:Allocate (~ s2) :dtype dtype2)))
+    ((:MOVE ((:Allocate (~ s1) :nrank nrank :dtype dtype1) (:Allocate (~ s2) :dtype dtype2)))
      ->
      ((node graph)
       (when (and (eql dtype1 dtype2) (equal s1 s2))

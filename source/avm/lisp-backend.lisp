@@ -99,11 +99,6 @@
 	  out)
 	(map-view nil #'(lambda (x) x val) (car args)))))
 
-(defmethod %impl ((device-id (eql :lisp)) (op (eql :store)) graph node args)
-  (let* ((to (copy-buffer (car args))))
-    (setf (buffer-value to) (buffer-value (second args)))
-    to))
-
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Index-Components)) graph node args)
   (map-view nil #'index-components (car args)))
 (defun wrap-around (x max min)
