@@ -135,16 +135,21 @@
 	    do (setf (getattr alloc :_pointer) t))
     allocs))
 
-(defun get-subgraph-recursively (node graph dynamic-shapes dtype)
-  (declare (type node node) (type graph graph))
-  (append
-   (loop for r in (node-reads node)
-	 if (symbolp r)
-	   append (get-subgraph-recursively (id->value graph r) graph dynamic-shapes dtype))
-   (if (find (car (node-writes node)) dynamic-shapes)
-       (with-context-nodes
-	   (_ (%load (%salloc :dtype dtype) (car (node-writes node)) :id (car (node-writes node)))))
-       (list node))))
+(defun get-subgraph-recursively (node graph dynamic-shapes dtype &aux (seen nil))
+  (declare (type node node) (type graph graph) (optimize (speed 3)))
+  (labels ((explore (node graph)
+	     (when (null (find (node-id node) seen))
+	       (push (node-id node) seen)
+	       (nconc
+		(loop for r in (node-reads node)
+		      if (symbolp r)
+			append (explore (id->value graph r) graph))
+		(if (find (the symbol (car (node-writes node))) (the list dynamic-shapes))
+		    (with-context-nodes
+			(_ (%load (%salloc :dtype dtype) (car (node-writes node)) :id (car (node-writes node)))))
+		    (list node))))))
+    (explore node graph)))
+
 (defun get-subgraph (id graph) (get-subgraph-recursively (id->value graph id) graph nil nil))
 
 (defun recursively-find-output-id (id graph &aux (seen nil))

@@ -480,8 +480,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		else
 		  do (push node groups))
 	,(make-group (nreverse groups) nil)))))
-;; TODO: Relocate Alloc to the top of the nodes
-;; TODO: Allocateと，そこから伸びるSubgraphの判定
+
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list)) create-schedules-from-avm))
 (defun create-schedules-from-avm (avm &key (verbose nil) &aux (backward-mode-p (not (null (avm-bw-outputs avm)))))
   "Step1, Creates an initial schedule"
@@ -548,7 +547,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		     (dolist (r (node-reads node)) (when (symbolp r) (push r read-in-groups)))))
 	       (remove-duplicates read-in-groups)))
       (relocate-independent-allocations! (avm-graph avm))
-      (print (avm-graph avm))
       (let* ((groups (split-into-subgroups (avm-graph avm))))
 	(loop for group in groups
 	      if (group-realize-on-vm group)
