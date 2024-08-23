@@ -42,15 +42,19 @@
 	(push w seen)))
     (reverse depends-on)))
 
-(defun avm-gather-args (avm)
-  (declare (type avm avm))
+(defun nodes-gather-args (nodes)
+  (declare (type list nodes))
   (let ((args (remove-duplicates
-	       (loop for node in (graph-nodes (avm-graph avm))
+	       (loop for node in nodes
 		     if (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)))
 		       collect (getattr node :value)))))
     (loop for a in args
 	  unless (find a `(t nil))
 	    collect a)))
+
+(defun avm-gather-args (avm)
+  (declare (type avm avm))
+  (nodes-gather-args (graph-nodes (avm-graph avm))))
 
 (defun infer-vm-io-types (avm scalars)
   (declare (type avm avm) (type list scalars))
@@ -154,6 +158,13 @@ Graph must be verified in advance."
 		     (list id)
 		     (apply #'append (map 'list #'(lambda (x) (explore (car (node-writes x)))) outputs)))))))
     (explore id)))
+
+(defun nodes-output-ids (nodes)
+  (flet ((used-p (id) (find id nodes :key #'node-reads :test #'find)))
+    (loop for node in nodes
+	  append
+	  (loop for w in (node-writes node)
+		if (not (used-p w)) collect w))))
 
 (defun buffer-reconstruct-view-args (buffer)
   "Reconstruct a list of symbols used to compute the buffer bound."

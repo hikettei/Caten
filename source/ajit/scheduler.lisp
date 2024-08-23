@@ -353,9 +353,14 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
 ;; TODO: コンパイルされた関数のデータ構造をきれいにしたい (defstruct Compiled-Function
-(defstruct Group
-  (nodes (error "nodes must be occured") :type list)
-  (realize-on-vm nil :type boolean))
+;; (!rand (!softmax する時に，AoTしたrandを用いてx <- AUTOGEN_CUSTOM/RAND(x)みたいなのをできるようにしたい。
+(defstruct (Group
+	    (:constructor make-group (nodes realize-on-vm &aux (args (nodes-depends-on nodes)) (shapes (nodes-gather-args nodes)))))
+  (nodes nodes :type list)
+  (realize-on-vm realize-on-vm :type boolean)
+  (args args :type list)
+  (shapes shapes :type list)
+  (writes (nodes-output-ids nodes) :type list))
 
 (defun subgraph-scalar-load-p (graph id &aux (seen (make-hash-table)))
   (declare (type graph graph))
@@ -389,12 +394,12 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		  (some #'null (map 'list #'scalar-load-p (node-reads node)))))))
       `(,@(loop for node in (graph-nodes graph)
 		if (force-realize-on-vm node)
-		  collect (make-group :nodes (nreverse groups))
-		  and collect (make-group :nodes (list node) :realize-on-vm t)
+		  collect (make-group (nreverse groups) nil)
+		  and collect (make-group (list node) t)
 		  and do (setf groups nil)
 		else
 		  do (push node groups))
-	,(make-group :nodes (nreverse groups))))))
+	,(make-group (nreverse groups) t)))))
 
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list list list)) create-schedules-from-avm))
 (defun create-schedules-from-avm (avm &key (verbose nil) &aux (backward-mode-p (not (null (avm-bw-outputs avm)))))
@@ -414,7 +419,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (deploy-type-infer-results avm type-map) ;; Move buffer/view nodes into :_type_relay attribtutes
     (apply-jit-specific-simplifiers avm)     ;; Purge :view nodes, WMMA Accumlation, contiguous elimination etc...
     (print (split-into-subgroups (avm-graph avm)))
-    (error "STOP")
     (when verbose
       (format t "Verbose: Simplified Graph[Forward/Backward]~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))
