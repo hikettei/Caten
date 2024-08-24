@@ -625,17 +625,16 @@ Options:
   (code code :type string)
   (fcaller-list fcaller-list :type list))
 
-(defun render-to-string (backend group name avm debug compile-later kernels &aux (base-name (avm-name avm)))
+(defun render-to-string (backend group name-prefix avm debug compile-later kernels &aux (base-name (avm-name avm)))
   "Step5, rendering the graph.
 (values cffi-name body foreign-function-caller compile-function-lambda)"
   (when (group-realize-on-vm group) (return-from render-to-string (values (list group) "")))
   (assert (listp kernels))
-  (setf (avm-name avm) (intern (string-upcase (format nil "~a_~a" (avm-name avm) name)) "KEYWORD"))
   (let ((code ""))
     (values
      (loop for kernel in kernels
 	   for nth upfrom 0
-	   for name = (setf (avm-name avm) (intern (format nil "~a_k~a" base-name (kernel-renderer-nth kernel)) "KEYWORD"))
+	   for name = (setf (avm-name avm) (intern (format nil "~a_~a_k~a" base-name name-prefix (kernel-renderer-nth kernel)) "KEYWORD"))
 	   for body = (%render-body backend backend (apply #'make-graph (kernel-renderer-nodes kernel))
 				    (group-polyhedron group) 1 (kernel-renderer-args kernel))
 	   for function = (%render-function backend avm (kernel-renderer-args kernel) body)
@@ -646,7 +645,7 @@ Options:
 				   function (%render-function-caller backend avm (kernel-renderer-args kernel)) group)))
      (progn
        (setf code (%render-program-toplevel backend code))
-       (when (>= debug 1) (format t "Compiled[~a]:~%~a" name code))
+       (when (>= debug 1) (format t "Compiled[~a]:~%~a" name-prefix code))
        (unless compile-later (%render-compile backend avm code))
        (setf (avm-name avm) base-name)
        code))))

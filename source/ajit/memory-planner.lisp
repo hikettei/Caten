@@ -162,6 +162,7 @@ Refcount-by:
       (loop
 	for kernel in kernels
 	for timestamps = (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel))) do
+	  (print kernel)
 	  (loop
 	    for time in timestamps
 	    for graph = (gethash time pipeline) do
@@ -234,6 +235,7 @@ Refcount-by:
 		 (kernel-args (remove-duplicates `(,@shape-args ,@buffer-args) :key #'argument-name)))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
+      ;;   ^ buffer computeにInlineしたい
       ;; 2. ^ Symbolicもうごく？
       ;; 3. Float accumlation
       ;; 4. Scheduleの工夫で無理だったら手動でIfとかIfの中身を移動する
