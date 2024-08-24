@@ -635,7 +635,7 @@ Options:
     (values
      (loop for kernel in kernels
 	   for nth upfrom 0
-	   for name = (setf (avm-name avm) (intern (format nil "~a_~a" (avm-name avm) (kernel-renderer-nth kernel)) "KEYWORD"))
+	   for name = (setf (avm-name avm) (intern (format nil "~a_k~a" (avm-name avm) (kernel-renderer-nth kernel)) "KEYWORD"))
 	   for body = (%render-body backend backend (apply #'make-graph (kernel-renderer-nodes kernel))
 				    (group-polyhedron group) 1 (kernel-renderer-args kernel))
 	   for function = (%render-function backend avm (kernel-renderer-args kernel) body)
@@ -711,7 +711,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	    for kernel in kernels
 	    for nth upfrom 0
 	    collect
-	    (multiple-value-list (render-to-string backend group (format nil "E_~a" nth) avm debug compile-later kernel))))))
+	    (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug compile-later kernel))))))
 
 (defun jit (avm
 	    &key
@@ -727,7 +727,9 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
     (make-avm
      (apply
       #'make-graph
-      (map 'list #'(lambda (x) (jit->vm backend x)) (map 'list #'car compiled-kernels)))
+      (apply
+       #'append
+       (map 'list #'(lambda (x) (jit->vm backend x)) (map 'list #'car compiled-kernels))))
      (avm-name avm)
      (avm-id2tensor avm)
      (avm-fw-outputs avm)
