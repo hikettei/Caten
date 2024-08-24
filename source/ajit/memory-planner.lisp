@@ -222,12 +222,7 @@ Refcount-by:
 	  ;; Loadはval_にLoadしないで(書き込み以外) In-place Ruleに書き換えられるべきじゃね？
 	  ;; save-for-backwardsはTimestampの単位で，ここはKernelの単位でも依存を確認する必要がある。
 	  ;; Reduce AccumlationはVectorizeを実装してからやる？とりあえずこのPRではMemory-Plannerのみを考える
-	  (let* ((old->new
-		   (let ((table (make-hash-table)))
-		     (loop for arg in (group-args group)
-			   do (setf (gethash (newid arg) table) arg))
-		     table))
-		 (nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))					  
+	  (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))					  
 		 (buffer-args (loop for (name . type) in (nodes-depends-on/buffers nodes)
 				    for only-used-in-this-kernel-p = (find name save-for-backwards)
 				    for written = (find name nodes :key #'node-writes :test #'find)
@@ -241,7 +236,6 @@ Refcount-by:
 								       else
 									 collect 1))
 				    collect (make-argument :name name
-							   :vm-name (gethash name old->new name)
 							   :pointer-p (if (= (buffer-nrank type) 0)
 									  (if written t nil)
 									  t)

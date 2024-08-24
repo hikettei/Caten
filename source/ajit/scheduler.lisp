@@ -670,7 +670,6 @@ Options:
 	       (compile-later nil)
 	     &aux
 	       (_ (when static-gensym (apply-static-gensym avm)))
-	       (avm (deepcopy-avm avm))
 	       (*isl-context* (isl-ctx-alloc))
 	       (verbose-schedule (or (= debug 2) (= debug 4)))
 	       (verbose-auto (or (= debug 4) (= debug 3))))
@@ -726,7 +725,9 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	      (debug (ctx:getenv :JIT_DEBUG))
 	      (serialize (= 1 (ctx:getenv :SERIALIZE)))
 	      (static-gensym (= 1 (ctx:getenv :STATIC_GENSYM)))
-	      (backend (or (ctx:getenv :JIT_BACKEND) :clang)))
+	      (backend (or (ctx:getenv :JIT_BACKEND) :clang))
+	    &aux
+	      (avm (deepcopy-avm avm)))
   "Applies the jit"
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
