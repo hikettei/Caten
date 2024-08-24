@@ -48,6 +48,7 @@ Compiled with: ~a"
       (make-array (array-total-size (buffer-value x)) :element-type 'bit :initial-contents (map 'list #'(lambda (x) (if x 1 0)) (buffer-value x)))
       (buffer-value x)))
 
+(defun maybe-buffer-value (x) (if (buffer-p x) (buffer-value x) x))
 (defmethod %render-function-caller ((lang (eql :clang)) avm args &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
@@ -79,7 +80,7 @@ Compiled with: ~a"
             ,@(loop for arg in args
 		    for is-pointer = (argument-pointer-p arg)
 		    if (not is-pointer)
-		      append `(,(->cffi-dtype (argument-dtype arg)) (buffer-value ,(caten/ajit:argument-name arg)))
+		      append `(,(->cffi-dtype (argument-dtype arg)) (maybe-buffer-value ,(caten/ajit:argument-name arg)))
 		    else
 		      append `(:pointer ,(caten/ajit:argument-name arg)))
             :void))))))

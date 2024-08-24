@@ -244,7 +244,7 @@ tgt-id-> C    D
 Consider the subgraph above, C was appeared in the another subgraph, therefore, C cannot be merged
 in a single timestamp otherwise recursive dependencies will occur.
 "
-  ;; If (xxx) wo kesu
+  ;; [TODO] If delete (xxx)
   (let ((out) (stashed) (seen (copy-list seen-old)))
     (labels ((seen-p (x) (assert (not (listp x))) (or (numberp x) (find x seen :test #'eql)))
 	     (read-p (deps) (every #'seen-p deps)))
@@ -285,3 +285,48 @@ in a single timestamp otherwise recursive dependencies will occur.
 	       new-schedule
 	       seen-old)))))
       (values (reverse out) seen))))
+
+(defun remove-unused-allocs (graph)
+  (apply
+   #'make-graph
+   (loop for node in (graph-nodes graph)
+	 if (and
+	     (eql (node-type node) :Allocate)
+	     (find (car (node-writes node)) (graph-nodes graph) :key #'node-reads :test #'find))
+	   collect node
+	 if (not (eql (node-type node) :Allocate)) collect node)))
+
+(defun optimize-non-in-place-buffers (avm graph seen verbose)
+  (let* ((kernel-arg-symbols
+	   (loop for node in (graph-nodes graph)
+		 if (eql (node-type node) :JIT_KERNEL)
+		   append
+		   (loop for r in (node-reads node)
+			 unless (find r seen) collect r)))
+	 (declared
+	   (loop for node in (graph-nodes graph)
+		 unless (eql (node-type node) :JIT_KERNEL)
+		   append (node-writes node)))
+	 (non-in-place-list
+	   (loop for k in kernel-arg-symbols
+		 if (null (find k declared))
+		   collect k))
+	 (extra-allocs
+	   (loop for name in non-in-place-list
+		 collect
+		 (let* ((node (or (find name (graph-nodes (avm-graph avm)) :test #'find :key #'node-writes)
+				  (error "~a is not declared in the original vm." name)))
+			(pos  (position name (node-writes node)))
+			(typ  (nth pos (relay-writes (read-type-relay node)))))
+		   (make-node :Buffer :Allocate
+			      (list name) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
+			      :nrank (buffer-nrank typ)
+			      :dtype (buffer-dtype typ)
+			      :_type_relay (make-inferred-type nil (list typ)))))))
+    (when verbose (format t "~%A number of buffers that failed to mutate in-place: ~a" (length extra-allocs)))
+    ;; [TODO] Schedule to reuse the allocated buffer in non-in-place-list
+    (setf (graph-nodes graph) (append extra-allocs (graph-nodes graph)))
+    graph))
+
+;; (caten (!sin (make-tensor `(3 3) :requires-grad t :initial-element 1.0)))
+;; (caten (!add 'a 'b))

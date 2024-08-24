@@ -222,11 +222,12 @@ Refcount-by:
 	  ;; Loadはval_にLoadしないで(書き込み以外) In-place Ruleに書き換えられるべきじゃね？
 	  ;; save-for-backwardsはTimestampの単位で，ここはKernelの単位でも依存を確認する必要がある。
 	  ;; Reduce AccumlationはVectorizeを実装してからやる？とりあえずこのPRではMemory-Plannerのみを考える
-	  (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))					  
+	  ;; In-place失敗するとUndefined Varを生成するけど，これはCache使いまわす処理を実装したいから，最後にやる
+	  (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))
 		 (buffer-args (loop for (name . type) in (nodes-depends-on/buffers nodes)
 				    for only-used-in-this-kernel-p = (find name save-for-backwards)
 				    for written = (find name nodes :key #'node-writes :test #'find)
-				    for read   =  (find name nodes :key #'node-reads  :test #'find)
+				    for read    = (find name nodes :key #'node-reads  :test #'find)
 				    do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type))
 					     (buffer-shape type) (loop for s in (buffer-shape type)
 								       for nth upfrom 0

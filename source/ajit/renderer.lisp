@@ -2,7 +2,6 @@
 
 (defstruct (Argument)
   (name nil :type symbol)
-  (vm-name nil :type symbol)
   (pointer-p nil :type boolean)
   (dtype (error "dtype must occur") :type dtype-t)
   (type :input :type (and keyword (member :shape :tmp :user)))

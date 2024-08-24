@@ -710,16 +710,6 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	    collect
 	    (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug compile-later kernel))))))
 
-(defun remove-unused-allocs (graph)
-  (apply
-   #'make-graph
-   (loop for node in (graph-nodes graph)
-	 if (and
-	     (eql (node-type node) :Allocate)
-	     (find (car (node-writes node)) (graph-nodes graph) :key #'node-reads :test #'find))
-	   collect node
-	 if (not (eql (node-type node) :Allocate)) collect node)))
-
 (defun jit (avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))
@@ -734,10 +724,14 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type boolean serialize))
   (let ((compiled-kernels (%jit avm :debug debug :serialize serialize :static-gensym static-gensym :backend backend :compile-later nil)))
     (make-avm
-     (remove-unused-allocs
-      (apply
-       #'make-graph
-       (apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) (map 'list #'car compiled-kernels)))))
+     (optimize-non-in-place-buffers
+      avm
+      (remove-unused-allocs
+       (apply
+	#'make-graph
+	(apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) (map 'list #'car compiled-kernels)))))
+      (nodes-gather-args (graph-nodes (avm-graph avm)))
+      (or (= debug 2) (= debug 4)))
      (avm-name avm)
      (avm-id2tensor avm)
      (avm-fw-outputs avm)
