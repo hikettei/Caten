@@ -168,6 +168,7 @@ Refcount-by:
 			 append
 			 (loop for node in (graph-nodes (gethash time pipeline))
 			       ;; again: Indexingで使うSymbolはここに追加
+			       append (node-writes node)
 			       append (node-reads node)))))))
       (loop for k in kernels do
 	(setf (kernel-renderer-args k)
@@ -250,7 +251,21 @@ Refcount-by:
 								       :output
 								       :input))
 							   :metadata type)))
-		 (kernel-args (remove-duplicates (reverse buffer-args) :key #'argument-name)))
+		 (read-set (remove-duplicates (apply #'append (map 'list #'node-reads nodes))))
+		 (failed-inplace-list
+		   (loop for node in nodes
+			 append
+			 (loop for write in (node-writes node)
+			       for type in (relay-writes (read-type-relay node))
+			       if (null (find write read-set))
+				 collect
+				 (make-argument :name write
+						:pointer-p t
+						:dtype (buffer-dtype type)
+						:type :tmp
+						:io :output
+						:metadata type))))
+		 (kernel-args (remove-duplicates `(,@(reverse buffer-args) ,@failed-inplace-list) :key #'argument-name)))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
       ;; TmpVar全部消す
@@ -282,6 +297,7 @@ Refcount-by:
       ;; Vectorize/Unroll/Tilingはどうやる？
       ;; KernelをCompileしたら，ここで書き換えを実行する
       ;; Update allocated-items
+      ;; Loop Forを読む
       (flet ((replacer (x) (refcount/refalias refcount x)))
 	(loop for g in (graph-nodes render-graph) do
 	  (case (node-type g)
