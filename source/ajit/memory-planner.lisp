@@ -118,30 +118,68 @@ Refcount-by:
 	  (node-reads node) (map 'list #'ref (node-reads node))
 	  (node-writes node) (map 'list #'ref (node-writes node)))))
 
+(defun remove-unused-kernels! (kernels pipeline save-for-backwards)
+  (declare (type list kernels save-for-backwards)
+	   (type hash-table pipeline))
+  (let ((seen (loop for kernel in kernels
+		    collect
+		    (loop for arg in (kernel-renderer-args kernel)
+			  collect
+			  ;; Randが終わらない
+			  ;; Indexingで使うSymbolはここに追加すれば消えない
+			  (argument-name arg)))))
+    (labels ((not-used-p (val nth)
+	       (declare (type (or symbol number) val))
+	       (if (numberp val)
+		   nil
+		   (not
+		    (if (find val save-for-backwards)
+			t
+			(find val (the list (nthcdr nth seen)))))))
+	     (timestamp-not-used-p (graph nth)
+	       (every #'(lambda (x) (not-used-p x nth))
+		      (nconc
+		       (apply #'append (map 'list #'node-writes (graph-nodes graph)))
+		       (apply #'append (map 'list #'node-reads (graph-nodes graph))))))
+	     (kernel-not-used-p (kernel nth)
+	       (every
+		#'identity
+		(loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
+		      if (timestamp-not-used-p (gethash time pipeline) nth)
+			collect
+			(progn
+			  (setf (kernel-renderer-nodes kernel)
+				(remove time (kernel-renderer-nodes kernel)
+					:key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))))
+			  t)
+		      else
+			collect nil))))
+      (setf kernels
+	    (loop for kernel in kernels
+		  for nth upfrom 1
+		  if (not (kernel-not-used-p kernel nth))
+		    collect kernel)))
+    (let ((seen
+	    (remove-duplicates
+	     (loop for kernel in kernels
+		   append
+		   (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
+			 append
+			 (loop for node in (graph-nodes (gethash time pipeline))
+			       ;; again: Indexingで使うSymbolはここに追加
+			       append (node-reads node)))))))
+      (loop for k in kernels do
+	(setf (kernel-renderer-args k)
+	      (loop for arg in (kernel-renderer-args k)
+		    if (find (argument-name arg) seen)
+		      collect arg))))))
+
 (defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards)
   (declare (type avm avm) (type group group) (type polyhedral polyhedral) (type Reference-counter refcount)
 	   (type graph render-graph) (type list save-for-backwards))
   (let* ((kernels (split-kernel (graph-nodes render-graph)))
-	 (pipeline (poly-pipeline polyhedral))
-	 (pipeline-ids (render-graph/get-timestamps render-graph))
-	 (pipeline-ids-all (hash-table-keys pipeline))
-	 (default-allocs (loop for node in (loop for k in pipeline-ids-all append (graph-nodes (gethash k pipeline)))
-			       if (eql (node-type node) :Allocate)
-				 collect node))
-	 (pipeline-ids-by-loop (render-graph/sort-by-time render-graph))
-	 (allocated-items
-	   (loop for time in `(,@pipeline-ids)
-		 append
-		 (loop for node in (graph-nodes (gethash time pipeline))
-		       if (eql (node-type node) :Allocate)
-			 collect (car (node-writes node)))))
-	 (allocated-items (append allocated-items
-				  (poly-vm-inputs polyhedral)
-				  (loop for o in (poly-vm-outputs polyhedral)
-					if (poly/io-scalar-p polyhedral o) collect o))))
-    (assert (equal (flatten pipeline-ids-by-loop) pipeline-ids))
-    (labels ((find-alloc (id) (find id default-allocs :key (compose #'car #'node-writes)))
-	     (inplace-p (node time)
+	 (pipeline (poly-pipeline polyhedral)))
+    (labels ((inplace-p (node time)
 	       ;; Return: (in-place-p . intersects-with-current-pipeline?)
 	       (dolist (r (node-reads node))
 		 (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
@@ -162,7 +200,6 @@ Refcount-by:
       (loop
 	for kernel in kernels
 	for timestamps = (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel))) do
-	  (print kernel)
 	  (loop
 	    for time in timestamps
 	    for graph = (gethash time pipeline) do
@@ -176,22 +213,6 @@ Refcount-by:
 		  ;; otherwise:
 		  ;;  - If write-to-user exists in the same schedule -> create a tmpvar.
 		  ;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
-		  (when (and (null inplace-p) all-exists-in-the-same-pipeline)
-		    ;; [TODO]
-		    ;; Minimizing the number of allocations by following the rule:
-		    ;; 1. (car reads) becomes write, (except for %WHERE)
-		    ;;  | -   A <- f(B, C, D)
-		    ;;  | ->  B <- f(B, C, D)
-		    ;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
-		    ;;  | -   A1 <- f(A, B)
-		    ;;  | -   A2 <- f(A, C)
-		    ;;  | -   O1 <- f(A1, A2)
-		    ;;   ->
-		    ;;  | -   At1 <- f(A, B)
-		    ;;  | -   At2 <- f(A, C)
-		    ;;  | -   O1 <-  f(At1, At2)
-		    ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
-		    )
 		  (refcount/update-node node refcount)))
 	  ;; save-for-backwardsはnewidする (OK)
 	  ;; Argsを宣言するノードはどこに存在するか？-> 削除
@@ -199,6 +220,7 @@ Refcount-by:
 	  ;; Creating a final allocation information:
 	  ;; Loadはval_にLoadしないで(書き込み以外) In-place Ruleに書き換えられるべきじゃね？
 	  ;; save-for-backwardsはTimestampの単位で，ここはKernelの単位でも依存を確認する必要がある。
+	  ;; Reduce AccumlationはVectorizeを実装してからやる？とりあえずこのPRではMemory-Plannerのみを考える
 	  (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))
 		 (shape-args (loop for load-node in (nodes-gather-args nodes :get-nodes t)
 				   collect
@@ -235,60 +257,28 @@ Refcount-by:
 		 (kernel-args (remove-duplicates `(,@shape-args ,@buffer-args) :key #'argument-name)))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
-      (let ((seen (loop for kernel in kernels
-			collect
-			(loop for arg in (kernel-renderer-args kernel)
-			      collect
-			      ;; Indexingで使うSymbolはここに追加すれば消えない
-			      (argument-name arg)))))
-	(labels ((not-used-p (val nth)
-		   (declare (type (or symbol number) val))
-		   (if (numberp val)
-		       nil
-		       (not
-			(if (find val save-for-backwards)
-			    t
-			    (find val (nthcdr nth seen))))))
-		 (timestamp-not-used-p (graph nth)
-		   (every #'(lambda (x) (not-used-p x nth))
-			  (nconc
-			   (apply #'append (map 'list #'node-writes (graph-nodes graph)))
-			   (apply #'append (map 'list #'node-reads (graph-nodes graph))))))
-		 (kernel-not-used-p (kernel nth)
-		   (every
-		    #'identity
-		    (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
-			  if (timestamp-not-used-p (gethash time pipeline) nth)
-			    collect
-			    (progn
-			      (setf (kernel-renderer-nodes kernel)
-				    (remove time (kernel-renderer-nodes kernel)
-					    :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))))
-			      t)
-			  else
-			    collect nil))))
-	  (setf kernels
-		(loop for kernel in kernels
-		      for nth upfrom 1
-		      unless (kernel-not-used-p kernel nth)
-			collect kernel)))
-	(let ((seen
-		(remove-duplicates
-		 (loop for kernel in kernels
-		       append
-		       (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
-			     append
-			     (loop for node in (graph-nodes (gethash time pipeline))
-				   ;; again: Indexingで使うSymbolはここに追加
-				   append (node-reads node)))))))
-	  (loop for k in kernels do
-	    (setf (kernel-renderer-args k)
-		  (loop for arg in (kernel-renderer-args k)
-		        if (find (argument-name arg) seen)
-			  collect arg)))))
-      ;;   ^ buffer computeにInlineしたい
-      ;; 2. ^ Symbolicもうごく？
-      ;; 3. Float accumlation
+      ;; TmpVar全部消す
+      ;; 使わないAllocate削除
+      ;; Symbolic!
+      (remove-unused-kernels! kernels pipeline save-for-backwards)
+      ;; Reduction
+      ;;   Reduce  [1, 2, 3] -> [1]
+      ;;   Scatter [1] -> [1 2 3]
+      ;; TODO: tmpvar optimization
+      ;; [TODO]
+      ;; Minimizing the number of allocations by following the rule:
+      ;; 1. (car reads) becomes write, (except for %WHERE)
+      ;;  | -   A <- f(B, C, D)
+      ;;  | ->  B <- f(B, C, D)
+      ;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
+      ;;  | -   A1 <- f(A, B)
+      ;;  | -   A2 <- f(A, C)
+      ;;  | -   O1 <- f(A1, A2)
+      ;;   ->
+      ;;  | -   At1 <- f(A, B)
+      ;;  | -   At2 <- f(A, C)
+      ;;  | -   O1 <-  f(At1, At2)
+      ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
       ;; 4. Scheduleの工夫で無理だったら手動でIfとかIfの中身を移動する
       ;; 5. VM/IfNodeを実装してAllocationをする (a < 100ならreuse, a >= 100ならKeep Usingみたいに)
       ;; TODO: TmpVar
@@ -296,36 +286,6 @@ Refcount-by:
       ;; Vectorize/Unroll/Tilingはどうやる？
       ;; KernelをCompileしたら，ここで書き換えを実行する
       ;; Update allocated-items
-      ;; undecl var wo all kaiketu siyou
-      #|
-      (setf allocated-items (map 'list #'newid allocated-items))
-      (loop for time in `(,@pipeline-ids)
-	    for graph = (gethash time pipeline) do
-	      (loop for node in (graph-nodes graph)
-		    for type = (read-type-relay node) do
-		      (loop for id in `(,@(node-writes node) ,@(node-reads node))
-			    for typ in `(,@(relay-writes type) ,@(relay-reads type))
-			    if (and (symbolp id) (null (find id allocated-items))) do
-			      ;;(assert (eql id (newid id)) () "Recursive dependencies in the graph")
-			      (push id allocated-items)
-			      (setf (graph-nodes (gethash -1 pipeline))
-				    (append
-				     (list
-				      (or
-				       (find-alloc id)
-				       (progn
-					 (warn "~a is not defined" id)
-					 (make-node :Buffer :Allocate
-						    (list id) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
-						    :nrank (buffer-nrank typ)
-						    :dtype (buffer-dtype typ)
-						    :_type_relay (make-inferred-type nil (list typ))
-						    :_labelled
-						    (if (find id save-for-backwards)
-							"Save_for_backward"
-							"Tmp")))))
-      (graph-nodes (gethash -1 pipeline)))))))
-      |#      
       (flet ((replacer (x) (refcount/refalias refcount x)))
 	(loop for g in (graph-nodes render-graph) do
 	  (case (node-type g)
@@ -352,7 +312,7 @@ Refcount-by:
 	(renew (avm-id2tensor avm))
 	(renew (poly-vm-io-types polyhedral))
 	(renew (avm-variables avm)))
-      kernels)))
+      (loop for k in kernels if (kernel-renderer-nodes k) collect k))))
 
 (defun group/apply-memory-planner! (group refcount)
   (loop for node in (graph-nodes (group-graph group))
