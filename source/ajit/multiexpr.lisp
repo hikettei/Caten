@@ -18,17 +18,21 @@
 		(declare ,@(loop for arg in args for typ in types collect `(type ,typ ,arg)))
 		(make-expr ,(intern (symbol-name name) "KEYWORD") ,@args))))
   ;; Buffer Ops
-  (expr Const (obj) (t))
+  (expr Const (obj type) (t (or null Buffer)))
   (expr Cast  (obj dtype) (Expr Keyword))
   (expr Aref  (id  buffer) (Symbol Buffer)))
 
 (declaim (ftype (function (Node &rest t) (values Expr &optional)) air->expr))
 (defun air->expr (node &rest parents)
-  (flet ((use (obj) (when (and (expr-p obj) (eql (expr-op obj) :AREF)) (push obj *aref-list*)) obj))
+  (flet ((use (obj)
+	   (when (and (expr-p obj) (find (expr-op obj) `(:aref :const)))
+	     (when (symbolp (expr-x obj))
+	       (push obj *aref-list*)))
+	   obj))
     (case (node-type node)
       (:INDEX-COMPONENTS (make-expr :INDEX-COMPONENTS (use (first parents)) (map 'list #'use (cdr parents))))
       (:Cast             (make-cast (use (second parents)) (getattr node :dtype)))
-      (:Load             (make-const (getattr node :value)))
+      (:Load             (make-const (getattr node :value) (car (relay-writes (read-type-relay node)))))
       (:!=               (make-expr :!= (use (second parents)) (use (third parents))))
       (:<                (make-expr :< (use (second parents)) (use (third parents))))
       (:MOVE
@@ -82,11 +86,11 @@
 					      (saw x)
 					      (fuse-helper arg :type type :args t)))
 				      else
-					collect (if (symbolp arg) (make-aref-helper arg type) (make-const arg)))))
+					collect (if (symbolp arg) (make-aref-helper arg type) (make-const arg type)))))
 			 (apply #'air->expr x parents)))
 		     (if (symbolp id)
 			 (when args (make-aref-helper id type))
-			 (make-const id))))
+			 (make-const id type))))
 	       (fuse (x &aux (*aref-list*) (node (id->value graph x)) (type (when node (car (relay-writes (read-type-relay node))))))
 		 (when node
 		   (if (pause? node)
@@ -108,11 +112,12 @@
 			   collect
 			   (multiple-value-bind (expr node arefs) (apply #'values expr)
 			     (let* ((out-type (if (eql (node-type node) :WHERE)
-						  (second (relay-reads(read-type-relay node)))
+						  (second (relay-reads (read-type-relay node)))
 						  (car (relay-reads (read-type-relay node)))))
 				    (out-to (if (eql (node-type node) :WHERE)
 						(second (node-reads node))
-						(let ((c (find out-type arefs :key #'expr-y :test #'buffer-eq)))
+						(let* ((arefs1 (loop for a in arefs if (eql (expr-op a) :AREF) collect a))
+						       (c (find out-type arefs1 :key #'expr-y :test #'buffer-eq)))
 						  (if c
 						      (expr-x c)
 						      (car (node-reads node)))))))
