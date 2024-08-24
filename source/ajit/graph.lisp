@@ -20,7 +20,7 @@
 	  else do
 	    (push node kernels))
     (when kernels (push kernels outputs))
-    (loop for out in outputs
+    (loop for out in (reverse outputs)
 	  for nth upfrom 0
 	  collect (make-kernel-renderer :nodes out :nth nth))))
 

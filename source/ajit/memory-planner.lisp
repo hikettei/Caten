@@ -235,6 +235,57 @@ Refcount-by:
 		 (kernel-args (remove-duplicates `(,@shape-args ,@buffer-args) :key #'argument-name)))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
+      (let ((seen (loop for kernel in kernels
+			collect
+			(loop for arg in (kernel-renderer-args kernel)
+			      collect
+			      ;; Indexingで使うSymbolはここに追加すれば消えない
+			      (argument-name arg)))))
+	(labels ((not-used-p (val nth)
+		   (declare (type (or symbol number) val))
+		   (if (numberp val)
+		       nil
+		       (not
+			(if (find val save-for-backwards)
+			    t
+			    (find val (nthcdr nth seen))))))
+		 (timestamp-not-used-p (graph nth)
+		   (every #'(lambda (x) (not-used-p x nth))
+			  (nconc
+			   (apply #'append (map 'list #'node-writes (graph-nodes graph)))
+			   (apply #'append (map 'list #'node-reads (graph-nodes graph))))))
+		 (kernel-not-used-p (kernel nth)
+		   (every
+		    #'identity
+		    (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
+			  if (timestamp-not-used-p (gethash time pipeline) nth)
+			    collect
+			    (progn
+			      (setf (kernel-renderer-nodes kernel)
+				    (remove time (kernel-renderer-nodes kernel)
+					    :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))))
+			      t)
+			  else
+			    collect nil))))
+	  (setf kernels
+		(loop for kernel in kernels
+		      for nth upfrom 1
+		      unless (kernel-not-used-p kernel nth)
+			collect kernel)))
+	(let ((seen
+		(remove-duplicates
+		 (loop for kernel in kernels
+		       append
+		       (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
+			     append
+			     (loop for node in (graph-nodes (gethash time pipeline))
+				   ;; again: Indexingで使うSymbolはここに追加
+				   append (node-reads node)))))))
+	  (loop for k in kernels do
+	    (setf (kernel-renderer-args k)
+		  (loop for arg in (kernel-renderer-args k)
+		        if (find (argument-name arg) seen)
+			  collect arg)))))
       ;;   ^ buffer computeにInlineしたい
       ;; 2. ^ Symbolicもうごく？
       ;; 3. Float accumlation

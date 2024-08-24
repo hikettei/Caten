@@ -65,7 +65,6 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	     (mergeable-list (map 'list #'(lambda (x x-type) (mergeable-p x latest x-type)) children children-type)))
 	(when (find (node-id node) *recursive-find-seen*) (return-from recursive-find-group))
 	(assert (eql latest-id (car (node-writes node))) () "~a" node)
-	;;(when (getattr node :_loop_bound_nodes) (return-from recursive-find-group))
 	(when loop-bound-reads
 	  (let* ((already-defined (or (getattr node :_loop_bound_nodes) (getattr node :_loop_bound_nodes_type)))
 		 (equal? (equal (getattr node :_loop_bound_nodes) loop-bound-reads)))

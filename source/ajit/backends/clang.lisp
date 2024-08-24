@@ -62,7 +62,7 @@ Compiled with: ~a"
 				(setf (mem-ref ,(caten/ajit:argument-name (car rest-forms)) ,(->cffi-dtype (argument-dtype node))) (buffer-value ,tmp))
 				,(expand (cdr rest-forms) body)))))
 		     `(with-pointer-to-vector-data
-			  (,(caten/ajit:argument-name (car rest-forms)) (bool->bit ,@(caten/ajit:argument-name (car rest-forms))))
+			  (,(caten/ajit:argument-name (car rest-forms)) (bool->bit ,(caten/ajit:argument-name (car rest-forms))))
 			,(expand (cdr rest-forms) body)))
 		 `(progn
 		    ,@body
