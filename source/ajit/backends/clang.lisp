@@ -52,7 +52,7 @@ Compiled with: ~a"
   (labels ((expand (rest-forms body)
              (if rest-forms
 		 (if (= 0 (buffer-nrank (argument-metadata (car rest-forms))))
-		     (if (argument-pointer-p (car rest-forms))
+		     (if (not (argument-pointer-p (car rest-forms)))
 			 (expand (cdr rest-forms) body)
 			 (let ((node (car rest-forms))
 			       (tmp (gensym)))
@@ -78,7 +78,7 @@ Compiled with: ~a"
             ,(format nil "~(~a~)" (avm-name avm))
             ,@(loop for arg in args
 		    for is-pointer = (argument-pointer-p arg)
-		    if (null is-pointer)
+		    if (not is-pointer)
 		      append `(,(->cffi-dtype (argument-dtype arg)) (buffer-value ,(caten/ajit:argument-name arg)))
 		    else
 		      append `(:pointer ,(caten/ajit:argument-name arg)))
@@ -140,7 +140,6 @@ Compiled with: ~a"
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :Const)) lhs rhs z)
   (assert (or (stringp lhs) (symbolp lhs) (numberp lhs)))
   (assert (null z))
-  (assert (null rhs))
   (if (args-p lhs)
       (format nil "(*~(~a~))" (render-to-c lhs))
       (format nil "~(~a~)" (render-to-c lhs))))

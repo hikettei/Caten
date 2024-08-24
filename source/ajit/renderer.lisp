@@ -2,6 +2,7 @@
 
 (defstruct (Argument)
   (name nil :type symbol)
+  (vm-name nil :type symbol)
   (pointer-p nil :type boolean)
   (dtype (error "dtype must occur") :type dtype-t)
   (type :input :type (and keyword (member :shape :tmp :user)))
@@ -10,7 +11,7 @@
 ;; (defstruct Metadata
 ;;  *accessing* ...
 ;; ~~ Abstraction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defgeneric %render-compile (lang avm allocs function)
+(defgeneric %render-compile (lang avm function)
   (:documentation "Compiles the function"))
 
 (defmethod %render-compile :around (lang avm function)

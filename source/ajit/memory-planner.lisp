@@ -104,14 +104,15 @@ Refcount-by:
   (flet ((ref (x) (refcount/refalias refcount x)))
     (when (eql (node-type node) :EXPR)
       (let ((buffers (getattr node :buffers)))
-	(assert (every #'(lambda (x) (eql :AREF (expr-op x))) buffers))
+	(assert (every #'(lambda (x) (find (expr-op x) `(:Const :Aref))) buffers))
 	(mapc
 	 #'(lambda (aref)
 	     (setf (expr-x aref) (ref (expr-x aref))))
 	 buffers)))
     ;;(assert (null (getattr node :_reads)))
     ;;(assert (null (getattr node :_writes)))
-    (map 'list #'(lambda (x) (when x (refcount/update-buffer refcount x))) `(,@(relay-writes (read-type-relay node)) ,@(relay-reads (read-type-relay node))))
+    (when (getattr node :_type_relay)
+      (map 'list #'(lambda (x) (when x (refcount/update-buffer refcount x))) `(,@(relay-writes (read-type-relay node)) ,@(relay-reads (read-type-relay node)))))
     (setf (getattr node :_loop_bound_nodes) (map 'list #'ref (getattr node :_loop_bound_nodes))
 	  (getattr node :_reads)  (node-reads node)
 	  (getattr node :_writes) (node-writes node)
@@ -123,22 +124,22 @@ Refcount-by:
 	   (type hash-table pipeline))
   (let ((seen (loop for kernel in kernels
 		    collect
-		    (loop for arg in (kernel-renderer-args kernel)
-			  collect
-			  ;; Randが終わらない
-			  ;; Indexingで使うSymbolはここに追加すれば消えない
-			  (argument-name arg)))))
+		    (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
+			  append
+			  (loop for node in (graph-nodes (gethash time pipeline))
+				append
+				;; Indexingで使うNodeはここに追加すれば良い
+				(node-reads node))))))
     (labels ((not-used-p (val nth)
 	       (declare (type (or symbol number) val))
 	       (if (numberp val)
 		   nil
-		   (not
-		    (if (find val save-for-backwards)
-			t
-			(find val (the list (nthcdr nth seen)))))))
+		   (if (find val save-for-backwards)
+		       nil
+		       (<= (count val (the list (apply #'append (nthcdr nth seen)))) 1))))
 	     (timestamp-not-used-p (graph nth)
 	       (every #'(lambda (x) (not-used-p x nth))
-		      (nconc
+		      (append
 		       (apply #'append (map 'list #'node-writes (graph-nodes graph)))
 		       (apply #'append (map 'list #'node-reads (graph-nodes graph))))))
 	     (kernel-not-used-p (kernel nth)
@@ -156,8 +157,8 @@ Refcount-by:
 			collect nil))))
       (setf kernels
 	    (loop for kernel in kernels
-		  for nth upfrom 1
-		  if (not (kernel-not-used-p kernel nth))
+		  for nth upfrom 0
+		  unless (kernel-not-used-p kernel nth)
 		    collect kernel)))
     (let ((seen
 	    (remove-duplicates
@@ -221,15 +222,12 @@ Refcount-by:
 	  ;; Loadはval_にLoadしないで(書き込み以外) In-place Ruleに書き換えられるべきじゃね？
 	  ;; save-for-backwardsはTimestampの単位で，ここはKernelの単位でも依存を確認する必要がある。
 	  ;; Reduce AccumlationはVectorizeを実装してからやる？とりあえずこのPRではMemory-Plannerのみを考える
-	  (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))
-		 (shape-args (loop for load-node in (nodes-gather-args nodes :get-nodes t)
-				   collect
-				   (make-argument :name (getattr load-node :value)
-						  :pointer-p nil
-						  :dtype (buffer-dtype (car (node-reads (read-type-relay load-node))))
-						  :type :shape
-						  :io :const
-						  :metadata (car (node-reads (read-type-relay load-node))))))						  
+	  (let* ((old->new
+		   (let ((table (make-hash-table)))
+		     (loop for arg in (group-args group)
+			   do (setf (gethash (newid arg) table) arg))
+		     table))
+		 (nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))					  
 		 (buffer-args (loop for (name . type) in (nodes-depends-on/buffers nodes)
 				    for only-used-in-this-kernel-p = (find name save-for-backwards)
 				    for written = (find name nodes :key #'node-writes :test #'find)
@@ -243,7 +241,10 @@ Refcount-by:
 								       else
 									 collect 1))
 				    collect (make-argument :name name
-							   :pointer-p (not (= (buffer-nrank type) 0))
+							   :vm-name (gethash name old->new name)
+							   :pointer-p (if (= (buffer-nrank type) 0)
+									  (if written t nil)
+									  t)
 							   :dtype (buffer-dtype type)
 							   :type (if (null (find name save-for-backwards))
 								     :tmp ;; potentially can be rewritten as a float _tmp_xxx
@@ -254,7 +255,7 @@ Refcount-by:
 								       :output
 								       :input))
 							   :metadata type)))
-		 (kernel-args (remove-duplicates `(,@shape-args ,@buffer-args) :key #'argument-name)))
+		 (kernel-args (remove-duplicates (reverse buffer-args) :key #'argument-name)))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
       ;; TmpVar全部消す
