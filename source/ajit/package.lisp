@@ -61,6 +61,14 @@
    #:%render-expr
    #:%render-nodes
    #:render-expr
+   #:Argument
+   #:argument-name
+   #:argument-p
+   #:argument-pointer-p
+   #:argument-dtype
+   #:argument-type
+   #:argument-io
+   #:argument-metadata
   ))
 
 (in-package :caten/ajit)

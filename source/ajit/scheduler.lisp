@@ -540,7 +540,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      for nth upfrom 1
 	      for group in groups
 	      for writing in write-deps
-	      collect (setf (group-across-time-deps group) (intersection writing (apply #'append (nthcdr nth read-deps)))))
+	      collect (setf (group-across-time-deps group)
+			    (intersection writing `(,@(avm-fw-outputs avm)
+						    ,@(avm-bw-outputs avm)
+						    ,@(apply #'append (nthcdr nth read-deps))))))
 	(mapc
 	 #'(lambda (x)
 	     (unless (group-realize-on-vm x)
@@ -615,42 +618,38 @@ Options:
 
 (defstruct (Compiled-Kernel
 	    (:conc-name ck-)
-	    (:constructor make-compiled-kernel (name args code fcaller-list compile group)))
+	    (:constructor make-compiled-kernel (name args code fcaller-list group)))
   (group group :type group)
   (name name :type keyword)
   (args args :type list)
   (code code :type string)
-  (fcaller-list fcaller-list :type list)
-  (compile compile :type function))
+  (fcaller-list fcaller-list :type list))
 
-(defun render-to-string (backend group name avm debug compile-later &aux (base-name (avm-name avm)))
+(defun render-to-string (backend group name avm debug compile-later kernels &aux (base-name (avm-name avm)))
   "Step5, rendering the graph.
 (values cffi-name body foreign-function-caller compile-function-lambda)"
-  (when (group-realize-on-vm group) (return-from render-to-string group))
+  (when (group-realize-on-vm group) (return-from render-to-string (values (list group) "")))
+  (assert (listp kernels))
   (setf (avm-name avm) (intern (string-upcase (format nil "~a_~a" (avm-name avm) name)) "KEYWORD"))
-  (let* ((rendering-graph (group-render-graph group))
-	 (polyhedron (group-polyhedron group))
-	 (outputs (loop for o in (poly-vm-outputs polyhedron) if (poly/io-scalar-p polyhedron o) collect o))
-	 ;; purge-allocationsw
-	 ;; (append outputs sita?)
-	 (args (print (remove-duplicates (append (group-shapes group) (group-args group)))))
-	 (args nil)
-	 ;; Start Rendering
-	 (body     (%render-body backend backend rendering-graph polyhedron 1 args))
-	 (function (%render-function backend avm args body))
-	 (function (%render-program-toplevel backend function))
-	 (fcaller-body (%render-function-caller backend avm args))
-	 (name (avm-name avm)))
-    (when (>= debug 1) (format t "Compiled[~a]:~%~a" name function))
-    (setf (avm-name avm) base-name)
-    (unless compile-later (%render-compile backend avm args function))
-    (make-compiled-kernel
-     name
-     args
-     function
-     fcaller-body
-     #'(lambda () (%render-compile backend avm args args))
-     group)))
+  (let ((code ""))
+    (values
+     (loop for kernel in kernels
+	   for nth upfrom 0
+	   for name = (setf (avm-name avm) (intern (format nil "~a_~a" (avm-name avm) (kernel-renderer-nth kernel)) "KEYWORD"))
+	   for body = (%render-body backend backend (apply #'make-graph (kernel-renderer-nodes kernel))
+				    (group-polyhedron group) 1 (kernel-renderer-args kernel))
+	   for function = (%render-function backend avm (kernel-renderer-args kernel) body)
+	   collect
+	   (progn
+	     (setf code (format nil "~a~%~a~%" code function))
+	     (make-compiled-kernel name (kernel-renderer-args kernel)
+				   function (%render-function-caller backend avm (kernel-renderer-args kernel)) group)))
+     (progn
+       (setf code (%render-program-toplevel backend code))
+       (when (>= debug 1) (format t "Compiled[~a]:~%~a" name code))
+       (unless compile-later (%render-compile backend avm code))
+       (setf (avm-name avm) base-name)
+       code))))
 
 (defun jit->vm (backend compiled-kernels)
   "Step5, collects the related nodes."
@@ -662,8 +661,7 @@ Options:
 	    (make-fused-kernel-caller (ck-name kernel) (ck-args kernel) (compile nil (ck-fcaller-list kernel))
 				      (ck-fcaller-list kernel)
 				      (ck-code kernel) backend (count-n-kernels (group-render-graph (ck-group kernel))))))
-	  (Group
-	   (graph-nodes (group-graph kernel))))))
+	  (Group (graph-nodes (group-graph kernel))))))
 
 (defun %jit (avm
 	     &key
@@ -674,7 +672,6 @@ Options:
 	       (compile-later nil)
 	     &aux
 	       (_ (when static-gensym (apply-static-gensym avm)))
-	       (base-avm avm)
 	       (avm (deepcopy-avm avm))
 	       (*isl-context* (isl-ctx-alloc))
 	       (verbose-schedule (or (= debug 2) (= debug 4)))
@@ -701,17 +698,20 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   ;; [TODO] Free Polyhedron
 	   (setf (group-render-graph x) (finalize-and-retrive-render-graph x))))
      groups)
-    (let ((refcount (create-reference-counter groups)))
+    (let* ((refcount (create-reference-counter groups))
+	   (kernels (map
+		     'list
+		     #'(lambda (x)
+			 (if (group-realize-on-vm x)
+			     (group/apply-memory-planner! x refcount)
+			     (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x))))
+		     groups)))
       ;; Create a reference count and apply memory-planner
-      (mapc
-       #'(lambda (x)
-	   (when (null (group-realize-on-vm x))
-	     (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x))))
-       groups)
       (loop for group in groups
+	    for kernel in kernels
 	    for nth upfrom 0
 	    collect
-	    (render-to-string backend group (format nil "E_~a" nth) avm debug compile-later)))))
+	    (multiple-value-list (render-to-string backend group (format nil "E_~a" nth) avm debug compile-later kernel))))))
 
 (defun jit (avm
 	    &key
@@ -727,7 +727,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
     (make-avm
      (apply
       #'make-graph
-      (jit->vm backend compiled-kernels))
+      (map 'list #'(lambda (x) (jit->vm backend x)) (map 'list #'car compiled-kernels)))
      (avm-name avm)
      (avm-id2tensor avm)
      (avm-fw-outputs avm)

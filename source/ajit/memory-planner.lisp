@@ -140,8 +140,7 @@ Refcount-by:
 				  (loop for o in (poly-vm-outputs polyhedral)
 					if (poly/io-scalar-p polyhedral o) collect o))))
     (assert (equal (flatten pipeline-ids-by-loop) pipeline-ids))
-    (labels ((find-alloc (id)
-	       (find id default-allocs :key (compose #'car #'node-writes)))
+    (labels ((find-alloc (id) (find id default-allocs :key (compose #'car #'node-writes)))
 	     (inplace-p (node time)
 	       ;; Return: (in-place-p . intersects-with-current-pipeline?)
 	       (dolist (r (node-reads node))
@@ -171,6 +170,7 @@ Refcount-by:
 		for (inplace-p . all-exists-in-the-same-pipeline) = (inplace-p node time) do
 		  (assert (= 1 (length (node-writes node))) ())
 		  (refcount/make-alias refcount node inplace-p save-for-backwards)
+		  (setf save-for-backwards (map 'list #'newid save-for-backwards))
 		  ;; If write-to area is not going to be used by any other ops, let's make it in-place
 		  ;; otherwise:
 		  ;;  - If write-to-user exists in the same schedule -> create a tmpvar.
@@ -192,12 +192,47 @@ Refcount-by:
 		    ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
 		    )
 		  (refcount/update-node node refcount)))
-	  (let ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps))))
-	    (print (nodes-depends-on nodes))
-	    (print (nodes-gather-args nodes)))
-	)
+	  ;; save-for-backwardsはnewidする (OK)
+	  ;; Argsを宣言するノードはどこに存在するか？-> 削除
+	  ;; Stride/Shape/Loop_Bound計算に必要である計算ノード?
+	  ;; Creating a final allocation information:
+	  ;; Loadはval_にLoadしないで(書き込み以外) In-place Ruleに書き換えられるべきじゃね？
+	  ;; save-for-backwardsはTimestampの単位で，ここはKernelの単位でも依存を確認する必要がある。
+	  (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))
+		 (shape-args (loop for load-node in (nodes-gather-args nodes :get-nodes t)
+				   collect
+				   (make-argument :name (getattr load-node :value)
+						  :pointer-p nil
+						  :dtype (buffer-dtype (car (node-reads (read-type-relay load-node))))
+						  :type :shape
+						  :io :const
+						  :metadata (car (node-reads (read-type-relay load-node))))))						  
+		 (buffer-args (loop for (name . type) in (nodes-depends-on/buffers nodes)
+				    for only-used-in-this-kernel-p = (find name save-for-backwards)
+				    for written = (find name nodes :key #'node-writes :test #'find)
+				    for read   =  (find name nodes :key #'node-reads  :test #'find)
+				    do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type)))
+				    collect (make-argument :name name
+							   :pointer-p (not (= (buffer-nrank type) 0))
+							   :dtype (buffer-dtype type)
+							   :type (if (null (find name save-for-backwards))
+								     :tmp ;; potentially can be rewritten as a float _tmp_xxx
+								     :user)
+							   :io (if (and written read)
+								   :io
+								   (if written
+								       :output
+								       :input))
+							   :metadata type)))
+		 (kernel-args (remove-duplicates `(,@shape-args ,@buffer-args) :key #'argument-name)))
+	    (setf (kernel-renderer-args kernel) kernel-args)))
+      ;; TODO: TmpVar
+      ;; loop_nodes_boundが実際Loopの計算に必要か？を検証する
+      ;; Vectorize/Unroll/Tilingはどうやる？
+      ;; KernelをCompileしたら，ここで書き換えを実行する
       ;; Update allocated-items
       ;; undecl var wo all kaiketu siyou
+      #|
       (setf allocated-items (map 'list #'newid allocated-items))
       (loop for time in `(,@pipeline-ids)
 	    for graph = (gethash time pipeline) do
@@ -214,7 +249,7 @@ Refcount-by:
 				      (or
 				       (find-alloc id)
 				       (progn
-					 ;;(warn "~a is not defined" id)
+					 (warn "~a is not defined" id)
 					 (make-node :Buffer :Allocate
 						    (list id) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
 						    :nrank (buffer-nrank typ)
@@ -224,8 +259,8 @@ Refcount-by:
 						    (if (find id save-for-backwards)
 							"Save_for_backward"
 							"Tmp")))))
-				     (graph-nodes (gethash -1 pipeline)))))))
-      
+      (graph-nodes (gethash -1 pipeline)))))))
+      |#      
       (flet ((replacer (x) (refcount/refalias refcount x)))
 	(loop for g in (graph-nodes render-graph) do
 	  (case (node-type g)
@@ -253,3 +288,8 @@ Refcount-by:
 	(renew (poly-vm-io-types polyhedral))
 	(renew (avm-variables avm)))
       kernels)))
+
+(defun group/apply-memory-planner! (group refcount)
+  (loop for node in (graph-nodes (group-graph group))
+	do (refcount/update-node node refcount))
+  group)
