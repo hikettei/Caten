@@ -211,7 +211,14 @@ Refcount-by:
 				    for only-used-in-this-kernel-p = (find name save-for-backwards)
 				    for written = (find name nodes :key #'node-writes :test #'find)
 				    for read   =  (find name nodes :key #'node-reads  :test #'find)
-				    do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type)))
+				    do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type))
+					     (buffer-shape type) (loop for s in (buffer-shape type)
+								       for nth upfrom 0
+								       for view = (nth nth (buffer-views type))
+								       if (or (null view) (null (fourth view)))
+									 collect s
+								       else
+									 collect 1))
 				    collect (make-argument :name name
 							   :pointer-p (not (= (buffer-nrank type) 0))
 							   :dtype (buffer-dtype type)
@@ -226,6 +233,11 @@ Refcount-by:
 							   :metadata type)))
 		 (kernel-args (remove-duplicates `(,@shape-args ,@buffer-args) :key #'argument-name)))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
+      ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
+      ;; 2. ^ Symbolicもうごく？
+      ;; 3. Float accumlation
+      ;; 4. Scheduleの工夫で無理だったら手動でIfとかIfの中身を移動する
+      ;; 5. VM/IfNodeを実装してAllocationをする (a < 100ならreuse, a >= 100ならKeep Usingみたいに)
       ;; TODO: TmpVar
       ;; loop_nodes_boundが実際Loopの計算に必要か？を検証する
       ;; Vectorize/Unroll/Tilingはどうやる？

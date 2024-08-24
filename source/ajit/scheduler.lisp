@@ -635,7 +635,7 @@ Options:
     (values
      (loop for kernel in kernels
 	   for nth upfrom 0
-	   for name = (setf (avm-name avm) (intern (format nil "~a_k~a" (avm-name avm) (kernel-renderer-nth kernel)) "KEYWORD"))
+	   for name = (setf (avm-name avm) (intern (format nil "~a_k~a" base-name (kernel-renderer-nth kernel)) "KEYWORD"))
 	   for body = (%render-body backend backend (apply #'make-graph (kernel-renderer-nodes kernel))
 				    (group-polyhedron group) 1 (kernel-renderer-args kernel))
 	   for function = (%render-function backend avm (kernel-renderer-args kernel) body)
