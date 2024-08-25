@@ -137,7 +137,8 @@ Refcount-by:
 		       nil
 		       (<= (count val (the list (apply #'append (nthcdr nth seen)))) 1))))
 	     (timestamp-not-used-p (graph nth)
-	       (every #'(lambda (x) (not-used-p x nth)) (apply #'append (map 'list #'node-writes (graph-nodes graph)))))
+	       (every #'(lambda (x) (not-used-p x nth))
+		      (apply #'append (map 'list #'(lambda (x) (append (node-writes x) (node-reads x))) (graph-nodes graph)))))
 	     (kernel-not-used-p (kernel nth)
 	       (every
 		#'identity
@@ -173,7 +174,7 @@ Refcount-by:
       (loop for k in kernels do
 	(setf (kernel-renderer-args k)
 	      (loop for arg in (kernel-renderer-args k)
-		    if (find (argument-name arg) seen)
+		    if (or (find (argument-name arg) seen) (find (argument-name arg) seen-by-rendering-graph))
 		      collect arg))))))
 
 (defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards)
@@ -314,7 +315,7 @@ Refcount-by:
 		     kernel-args)
 		    (push s meta-ids)))))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
-      (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
+     ; (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
       ;; ここでArgsの判定 etc
       ;; Reduction
       ;;   Reduce  [1, 2, 3] -> [1]
