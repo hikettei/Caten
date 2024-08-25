@@ -22,9 +22,13 @@
 						   :argtypes (map 'list #'argument-dtype args))))
 (defun maybe-scal-buffer (arg type)
   (if (buffer-p arg)
-      arg
+      (if (= (buffer-nrank arg) 0)
+	  (progn
+	    (setf (buffer-value arg) (caten/common.dtype:dtype/cast (buffer-value arg) type))
+	    arg)
+	  arg)
       (let ((x (make-buffer 0 nil nil type nil)))
-	(setf (buffer-value x) arg)
+	(setf (buffer-value x) (caten/common.dtype:dtype/cast arg type))
 	x)))
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
