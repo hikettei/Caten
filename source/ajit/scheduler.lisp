@@ -673,10 +673,12 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
 	   (type boolean serialize))
-  (let ((groups (create-schedules-from-avm avm :verbose verbose-schedule)))
-    (loop for group in groups
-	  unless (group-realize-on-vm group)
-	    do (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule)))
+  (let* ((groups (create-schedules-from-avm avm :verbose verbose-schedule))
+	 (groups (loop for group in groups
+		       if (group-realize-on-vm group) collect group
+			 else if (group-sched group) do
+			   (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule))
+			   and collect group)))
     (mapc
      #'(lambda (x)
 	 (when (group-polyhedron x)

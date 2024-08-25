@@ -312,6 +312,7 @@ in a single timestamp otherwise recursive dependencies will occur.
 	 if (not (eql (node-type node) :Allocate)) collect node)))
 
 (defun optimize-non-in-place-buffers (base-avm avm refcounter graph seen verbose)
+  (declare (ignore refcounter))
   (let* ((kernel-arg-symbols
 	   (loop for node in (graph-nodes graph)
 		 if (eql (node-type node) :JIT_KERNEL)
@@ -328,16 +329,16 @@ in a single timestamp otherwise recursive dependencies will occur.
 		   collect k))
 	 (extra-allocs
 	   (loop for name in non-in-place-list
-		 collect
-		 (let* ((node (or (find name (graph-nodes (avm-graph avm)) :test #'find :key #'node-writes)
-				  (error "~a is not declared in the original vm." name)))
-			(pos  (position name (node-writes node)))
-			(typ  (nth pos (relay-writes (read-type-relay node)))))
-		   (make-node :Buffer :Allocate
-			      (list name) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
-			      :nrank (buffer-nrank typ)
-			      :dtype (buffer-dtype typ)
-			      :_type_relay (make-inferred-type nil (list typ)))))))
+		 for node = (find name (graph-nodes (avm-graph avm)) :test #'find :key #'node-writes)
+		 if node
+		   collect
+		   (let* ((pos  (position name (node-writes node)))
+			  (typ  (nth pos (relay-writes (read-type-relay node)))))
+		     (make-node :Buffer :Allocate
+				(list name) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
+				:nrank (buffer-nrank typ)
+				:dtype (buffer-dtype typ)
+				:_type_relay (make-inferred-type nil (list typ)))))))
     (when verbose (format t "~%A number of buffers that failed to mutate in-place: ~a" (length extra-allocs)))
     ;; [TODO] Schedule to reuse the allocated buffer in non-in-place-list
     ;; Relocate to the most nearest
