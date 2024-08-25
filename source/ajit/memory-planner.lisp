@@ -196,7 +196,7 @@ Refcount-by:
 		      (refdom     (gethash id (refcount-refcount-by refcount))))
 		 (if refcount-n
 		     (cons
-		      (<= refcount-n 1)
+		      (<= refcount-n 0)
 		      (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))
 		     (cons t t))))
 	     (newid (x) (refcount/refalias refcount x))
