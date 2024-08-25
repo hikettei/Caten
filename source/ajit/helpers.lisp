@@ -48,7 +48,7 @@
 (defun nodes-depends-on/buffers (nodes)
   "Enumerates the unsolved buffer ids from the sched graph."
   (declare (type list nodes))
-  (let ((seen) (depends-on))
+  (let ((seen `(t nil)) (depends-on))
     (loop for node in nodes do
       (loop for r in `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))
 	    for typ in `(,@(relay-reads (read-type-relay node)) ,@(getattr node :_loop_bound_nodes_type))
