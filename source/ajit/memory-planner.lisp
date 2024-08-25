@@ -199,7 +199,12 @@ Refcount-by:
 		      (<= refcount-n 1)
 		      (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))
 		     (cons t t))))
-	     (newid (x) (refcount/refalias refcount x)))
+	     (newid (x) (refcount/refalias refcount x))
+	     (newid-from-str (x)
+	       (if (stringp x)
+		   (or (find x (poly-vm-inputs polyhedral) :test #'equalp :key #'symbol-name)
+		       (intern x))
+		   (newid x))))
       ;; O(nlogn) * the cost of id->users ...
       (loop
 	for kernel in kernels
@@ -288,7 +293,7 @@ Refcount-by:
 				      (expr-recursive-deps (getattr ir :below))
 				      (expr-recursive-deps (getattr ir :by))))))
 			      (loop for dep in deps
-				    for name = (newid (if (stringp dep) (intern dep) dep))
+				    for name = (newid-from-str dep)
 				    unless (find name index-components)
 				      ;; Indices are created as default-uint
 				      do (push name meta-ids) and collect
@@ -299,7 +304,7 @@ Refcount-by:
 				    (remove-duplicates
 				     (expr-recursive-deps (getattr ir :condition)))))
 			      (loop for dep in deps
-				    for name = (newid (if (stringp dep) (intern dep) dep))
+				    for name = (newid-from-str dep)
 				    unless (find name index-components)
 				      do (push name meta-ids) and collect
 					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
