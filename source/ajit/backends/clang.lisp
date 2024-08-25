@@ -147,8 +147,9 @@ Compiled with: ~a"
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :MAX)) lhs rhs z)
   (assert (and lhs rhs))
-  (assert (null z))
-  (format nil "max(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
+  (if z
+      (format nil "max(~a, max(~a, ~a))" (render-expr lang lhs) (render-expr lang rhs) (render-expr lang z))
+      (format nil "max(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs))))
 
 (defmethod %render-expr ((lang (eql :clang)) (op (eql :CAST)) lhs rhs z)
   (assert (null z))

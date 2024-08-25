@@ -276,6 +276,10 @@ Refcount-by:
 		 (irs (loop for node in (kernel-renderer-nodes kernel)
 			    if (find (node-type node) `(:FOR :IF))
 			      collect node))
+		 (index-components
+		   (loop for node in (kernel-renderer-nodes kernel)
+			 if (eql (node-type node) :FOR)
+			   collect (intern (getattr node :idx))))
 		 (loop-args
 		   (loop for ir in irs
 			 append
@@ -289,26 +293,22 @@ Refcount-by:
 				      (expr-recursive-deps (getattr ir :by))))))
 			      (loop for dep in deps
 				    for name = (newid (if (stringp dep) (intern dep) dep))
-				    unless (eql name (intern (getattr ir :idx)))
+				    unless (find name index-components)
 				      ;; Indices are created as default-uint
 				      do (push name meta-ids) and collect
-					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input :metadata
-							(make-buffer 0 nil nil *default-uint* nil)))))
+					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
+							:metadata (make-buffer 0 nil nil *default-uint* nil)))))
 			   (:IF
-			    ;; 不要
-			    #|
 			    (let ((deps
 				    (remove-duplicates
 				     (expr-recursive-deps (getattr ir :condition)))))
 			      (loop for dep in deps
 				    for name = (if (stringp dep) (intern dep) dep)
-				    do (push name save-for-backwards)
-				    collect
-				    ;; 100% uintではなくない？
-				    (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input :metadata
-			    (make-buffer 0 nil nil *default-uint* nil))))
-			    |#
-			    ))))
+				    unless (find name index-components)
+				      ;; [FIX] Index計算専用としてuint32と仮定していい？
+				      do (push name meta-ids) and collect
+					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
+							:metadata (make-buffer 0 nil nil *default-uint* nil))))))))
 		 (kernel-args (remove-duplicates `(,@loop-args ,@(reverse buffer-args) ,@failed-inplace-list) :key #'argument-name)))
 	    (print save-for-backwards)
 	    (setf (kernel-renderer-args kernel) kernel-args)))
