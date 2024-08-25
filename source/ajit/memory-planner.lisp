@@ -274,7 +274,7 @@ Refcount-by:
 		 (index-components
 		   (loop for node in (kernel-renderer-nodes kernel)
 			 if (eql (node-type node) :FOR)
-			   collect (intern (getattr node :idx))))
+			   collect (intern (string-upcase (getattr node :idx)))))
 		 (loop-args
 		   (loop for ir in irs
 			 append
@@ -287,7 +287,7 @@ Refcount-by:
 				      (expr-recursive-deps (getattr ir :below))
 				      (expr-recursive-deps (getattr ir :by))))))
 			      (loop for dep in deps
-				    for name = (newid (if (stringp dep) (intern dep) dep))
+				    for name = (newid (if (stringp dep) (intern (string-upcase dep)) dep))
 				    unless (find name index-components)
 				      ;; Indices are created as default-uint
 				      do (push name meta-ids) and collect
@@ -298,7 +298,7 @@ Refcount-by:
 				    (remove-duplicates
 				     (expr-recursive-deps (getattr ir :condition)))))
 			      (loop for dep in deps
-				    for name = (newid (if (stringp dep) (intern dep) dep))
+				    for name = (newid (if (stringp dep) (intern (string-upcase dep)) dep))
 				    unless (find name index-components)
 				      do (push name meta-ids) and collect
 					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
@@ -306,8 +306,12 @@ Refcount-by:
 		 (kernel-args (remove-duplicates `(,@loop-args ,@(reverse buffer-args) ,@failed-inplace-list) :key #'argument-name)))
 	    (dolist (node nodes)
 	      (dolist (r (relay-reads (read-type-relay node)))
-		(dolist (s (buffer-reconstruct-view-args r :view-only t))
-		  (when (and (symbolp s) (find s buffer-args :key #'argument-name))
+		(dolist (s (buffer-reconstruct-view-args r :except-for-shape t))
+		  (when (and (symbolp s) (null (find s buffer-args :key #'argument-name)))
+		    (push
+		     (make-argument :name s :pointer-p nil :dtype *default-uint* :type :shape :io :input
+				    :metadata (make-uconst-buffer))
+		     kernel-args)
 		    (push s meta-ids)))))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)

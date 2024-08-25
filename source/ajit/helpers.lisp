@@ -159,7 +159,7 @@ Graph must be verified in advance."
 	  (loop for w in (node-writes node)
 		if (not (used-p w)) collect w))))
 
-(defun buffer-reconstruct-view-args (buffer &key (view-only nil))
+(defun buffer-reconstruct-view-args (buffer &key (except-for-shape nil))
   "Reconstruct a list of symbols used to compute the buffer bound."
   (when (buffer-p buffer)
     ;; Shape, Stride, and Views
@@ -173,7 +173,8 @@ Graph must be verified in advance."
 	  for broadcast = (nth 3 view)
 	  unless broadcast
 	    append
-	    (loop for val in (if view-only `(,upfrom ,below ,by)
+	    (loop for val in (if except-for-shape
+				 `(,stride ,upfrom ,below ,by)
 				 `(,shape ,stride ,upfrom ,below ,by))
 		  for r = (and val (reveal-buffer val))
 		  if (and val (symbolp r)) collect r))))
