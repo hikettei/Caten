@@ -275,7 +275,7 @@ Refcount-by:
 		 (index-components
 		   (loop for node in (kernel-renderer-nodes kernel)
 			 if (eql (node-type node) :FOR)
-			   collect (intern (string-upcase (getattr node :idx)))))
+			   collect (intern (getattr node :idx))))
 		 (loop-args
 		   (loop for ir in irs
 			 append
@@ -288,7 +288,7 @@ Refcount-by:
 				      (expr-recursive-deps (getattr ir :below))
 				      (expr-recursive-deps (getattr ir :by))))))
 			      (loop for dep in deps
-				    for name = (newid (if (stringp dep) (intern (string-upcase dep)) dep))
+				    for name = (newid (if (stringp dep) (intern dep) dep))
 				    unless (find name index-components)
 				      ;; Indices are created as default-uint
 				      do (push name meta-ids) and collect
@@ -299,7 +299,7 @@ Refcount-by:
 				    (remove-duplicates
 				     (expr-recursive-deps (getattr ir :condition)))))
 			      (loop for dep in deps
-				    for name = (newid (if (stringp dep) (intern (string-upcase dep)) dep))
+				    for name = (newid (if (stringp dep) (intern dep) dep))
 				    unless (find name index-components)
 				      do (push name meta-ids) and collect
 					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
