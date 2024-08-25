@@ -19,8 +19,8 @@
 		(progn (decf nest) (push node kernels)))
 	  else do
 	    (push node kernels))
-    (when kernels (push (reverse kernels) outputs))
-    (loop for out in (reverse outputs)
+    (when kernels (push (nreverse kernels) outputs))
+    (loop for out in (nreverse outputs)
 	  for nth upfrom 0
 	  collect (make-kernel-renderer :nodes out :nth nth))))
 
@@ -34,7 +34,8 @@
 (defun r/else () (make-node :Render :ELSE nil nil))
 (defun r/endif () (make-node :Render :ENDIF nil nil))
 (defun create-rendering-graph (polyhedron lisp-ast)
-  (declare (type polyhedral polyhedron))
+  (declare (type polyhedral polyhedron)
+	   (ignore polyhedron))
   ;; -1 is a placeholder for the tmpvar allocation.
   (let ((new-graph))
     (labels ((lower (object)
@@ -57,16 +58,17 @@
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (simplifier/remove-empty-if
-     (apply #'make-graph (reverse new-graph)))))
+    (apply #'make-graph (simplify-rendering-nodes (reverse new-graph)))))
 
-(defun simplifier/remove-empty-if (graph)
-  (declare (type graph graph))
-  (setf (graph-nodes graph)
-	(loop for node in (graph-nodes graph)
-	      for nth upfrom 0
-	      unless (and (eql (node-type node) :IF)
-			  (nth (1+ nth) (graph-nodes graph))
-			  (eql (node-type (nth (1+ nth) (graph-nodes graph))) :ENDIF))
-		collect node))
-  graph)
+(defun simplify-rendering-nodes (nodes)
+  (funcall (compose #'simplifier/remove-empty-if) nodes))
+
+(defun simplifier/remove-empty-if (nodes &aux (removed nil))
+  (loop for node in nodes
+	for nth upfrom 0
+	if (and (eql (node-type node) :IF)
+		    (nth (1+ nth) nodes)
+		    (eql (node-type (nth (1+ nth) nodes)) :ENDIF))
+	  do (push (node-id (nth (1+ nth) nodes)) removed)
+	else unless (find (node-id node) removed)
+	       collect node))

@@ -12,6 +12,18 @@
     (when (eql (expr-op expr) :Const)
       (setf (expr-x expr) (->new (expr-x expr))))))
 
+(defun expr-recursive-deps (expr)
+  (declare (type expr expr))
+  (let ((out))
+    (when (or (eql (expr-op expr) :AREF)
+	      (eql (expr-op expr) :CONST))
+      (when (or (stringp (expr-x expr)) (symbolp (expr-x expr)))
+	(push (expr-x expr) out)))
+    (setf out (append out
+		      (when (expr-p (expr-x expr)) (expr-recursive-deps (expr-x expr)))
+		      (when (expr-p (expr-y expr)) (expr-recursive-deps (expr-y expr)))
+		      (when (expr-p (expr-z expr)) (expr-recursive-deps (expr-z expr)))))
+    out))
 ;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((expr (name (&rest args) (&rest types))
 	     `(defun ,(symb 'make- name) (,@args)

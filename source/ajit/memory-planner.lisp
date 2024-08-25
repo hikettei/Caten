@@ -149,9 +149,12 @@ Refcount-by:
 		      if (timestamp-not-used-p (gethash time pipeline) nth)
 			collect
 			(progn
+			  ;; 1. Remove the unused pipeline
+			  ;; 2. Calls simplifier
 			  (setf (kernel-renderer-nodes kernel)
-				(remove time (kernel-renderer-nodes kernel)
-					:key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))))
+				(remove time (kernel-renderer-nodes kernel) :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx))))
+				(kernel-renderer-nodes kernel)
+				(simplify-rendering-nodes (kernel-renderer-nodes kernel)))
 			  t)
 		      else
 			collect nil))))
@@ -265,6 +268,29 @@ Refcount-by:
 						:type :tmp
 						:io :output
 						:metadata type))))
+		 (irs (loop for node in (kernel-renderer-nodes kernel) if (find (node-type node) `(:FOR :IF)) collect node))
+		 (loop-args
+		   (loop for ir in irs
+			 collect
+			 (ecase (node-type ir)
+			   (:FOR
+			    (let ((deps
+				    (remove-duplicates
+				     (append
+				      (expr-recursive-deps (getattr ir :upfrom))
+				      (expr-recursive-deps (getattr ir :below))
+				      (expr-recursive-deps (getattr ir :by))))))
+			      (loop for dep in deps
+				    for name = (if (stringp dep) (intern dep) dep)
+				    unless (eql name (intern (getattr ir :idx)))
+				      do (print name))))
+			   (:IF
+			    (let ((deps
+				    (remove-duplicates
+				     (expr-recursive-deps (getattr ir :condition)))))
+			      ;; 不要
+			      
+			      )))))
 		 (kernel-args (remove-duplicates `(,@(reverse buffer-args) ,@failed-inplace-list) :key #'argument-name)))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
@@ -298,6 +324,9 @@ Refcount-by:
       ;; KernelをCompileしたら，ここで書き換えを実行する
       ;; Update allocated-items
       ;; Loop Forを読む
+      ;;  -> Remove Empty If
+      ;;  -> Loop ForのArgsもDependenciesに
+      ;;  -> ISL GraphのSimplifyをする
       (flet ((replacer (x) (refcount/refalias refcount x)))
 	(loop for g in (graph-nodes render-graph) do
 	  (case (node-type g)
