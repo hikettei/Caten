@@ -86,12 +86,14 @@ Compiled with: ~a"
             :void))))))
 
 (defun render-to-c (obj)
-  (let ((obj (format nil "~(~a~)" obj)))
-    (if (string= obj "t")
-	"1"
-	(if (string= obj "nil")
-	    "0"
-	    obj))))
+  (if (typep obj 'double-float)
+      (cl-ppcre:regex-replace "d" (format nil "~a" obj) "e")
+      (let ((obj (format nil "~(~a~)" obj)))
+	(if (string= obj "t")
+	    "1"
+	    (if (string= obj "nil")
+		"0"
+		obj)))))
 
 (defmethod %render-program-toplevel ((lang (eql :clang)) body)
   (format nil "~%#include <math.h>
