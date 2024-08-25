@@ -28,6 +28,8 @@
 	 if (equal s from) collect to
 	   else collect s)))
 
+(defun make-uconst-buffer () (make-buffer 0 nil nil *default-uint* nil))
+
 (defun nodes-depends-on (nodes)
   "Enumerates the unsolved buffer ids from the sched graph."
   (declare (type list nodes))
@@ -52,6 +54,11 @@
 	    if (null (find r seen)) do
 	      (when (symbolp r) (push (cons r typ) depends-on))
 	      (push r seen))
+      (loop for read in (node-reads node) do
+	(loop for shape in (buffer-reconstruct-view-args read)
+	      if (null (find shape seen)) do
+		(push (cons shape (make-uconst-buffer)) depends-on)
+		(push shape seen)))
       (dolist (w (node-writes node))
 	(push w seen)))
     (reverse depends-on)))
@@ -151,16 +158,24 @@ Graph must be verified in advance."
 	  (loop for w in (node-writes node)
 		if (not (used-p w)) collect w))))
 
-(defun buffer-reconstruct-view-args (buffer)
+(defun buffer-reconstruct-view-args (buffer &key (view-only nil))
   "Reconstruct a list of symbols used to compute the buffer bound."
   (when (buffer-p buffer)
     ;; Shape, Stride, and Views
-    (let* ((shape (buffer-shape buffer))
-	   (stride (buffer-stride buffer))
-	   (views (apply #'append (map 'list #'(lambda (x) (and x (not (fourth x)) (subseq x 0 3))) (buffer-views buffer)))))
-      (loop for s1 in `(,@shape ,@stride ,@views)
-	    for s = (reveal-buffer s1)
-	    if (and (symbolp s) s) collect s))))
+    (loop for shape in (buffer-shape buffer)
+	  for stride in (buffer-stride buffer)
+	  for nth upfrom 0
+	  for view = (nth nth (buffer-views buffer))
+	  for upfrom = (nth 0 view)
+	  for below = (nth 1 view)
+	  for by  = (nth 2 view)
+	  for broadcast = (nth 3 view)
+	  unless broadcast
+	    append
+	    (loop for val in (if view-only `(,upfrom ,below ,by)
+				 `(,shape ,stride ,upfrom ,below ,by))
+		  for r = (and val (reveal-buffer val))
+		  if (and val (symbolp r)) collect r))))
 
 (defun apply-static-gensym (avm)
   (declare (type avm avm))
@@ -295,7 +310,7 @@ in a single timestamp otherwise recursive dependencies will occur.
 	   collect node
 	 if (not (eql (node-type node) :Allocate)) collect node)))
 
-(defun optimize-non-in-place-buffers (avm graph seen verbose)
+(defun optimize-non-in-place-buffers (base-avm avm refcounter graph seen verbose)
   (let* ((kernel-arg-symbols
 	   (loop for node in (graph-nodes graph)
 		 if (eql (node-type node) :JIT_KERNEL)
@@ -338,5 +353,29 @@ in a single timestamp otherwise recursive dependencies will occur.
 		      collect node
 		  else
 		    collect node))
-      graph)))
+      (flet ((finalize (id-base id-comp)
+	       (let ((result1 (find id-base (graph-nodes (avm-graph base-avm)) :key (compose #'car #'node-writes)))
+		     (result2 (find id-comp (reverse (graph-nodes (avm-graph avm))) :key (compose #'car #'node-writes))))
+		 (when (and result1 result2)
+		   (case (node-type result1)
+		     (:Allocate
+		      (when (eql :Allocate (node-type result2)) result2))
+		     (:View
+		      (let ((view1 (copy-node result1)))
+			(flet ((newid (x)
+				 (let* ((val-node (id->value (avm-graph base-avm) x)))
+				   (if (eql (node-type val-node) :Load)
+				       (getattr val-node :value)
+				       (if (numberp x)
+					   x
+					   (progn
+					     (warn ":View cannot be traced in the graph recursively")
+					     (return-from finalize nil)))))))
+			  (setf
+			   (node-writes view1) (list id-comp)
+			   (node-reads view1) `(,id-comp ,@(map 'list #'newid (cdr (node-reads view1)))))
+			  view1))))))))
+	(loop for additional-graph in (map 'list #'finalize (avm-fw-outputs base-avm) (avm-fw-outputs avm))
+	      if additional-graph collect (nconc (graph-nodes graph) (list additional-graph)))
+	graph))))
 

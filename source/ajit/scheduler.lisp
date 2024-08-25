@@ -71,7 +71,6 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	    (assert (or (null already-defined) equal?)
 		    ()
 		    ""))
-	  (print loop-bound-reads)
 	  (setf (node-attrs node)
 		(append (node-attrs node)
 			`(:_loop_bound_nodes ,loop-bound-reads :_loop_bound_nodes_type ,loop-bound-types))))
@@ -496,7 +495,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		     (list node (car (relay-writes (read-type-relay node))) id))))
 	     (make-top-schedule (group) (map 'list (compose #'make-scheduled-items (id->buffer (group-graph group))) (group-writes group)))
 	     (schedule (group schedules)
-	       
 	       (multiple-value-bind (sorted seen-new)
 		   (schedule/resolve-isolated-ops
 		    (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group (group-graph group) x)) schedules)))
@@ -519,9 +517,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (if (group-sched group)
 		   (loop for s in (group-sched group) do
 		     (dolist (node (si-nodes s))
-		       (dolist (r (node-reads node)) (when (symbolp r) (push r read-in-groups)))))
+		       (dolist (r `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))) (when (symbolp r) (push r read-in-groups)))))
 		   (loop for node in (graph-nodes (group-graph group)) do
-		     (dolist (r (node-reads node)) (when (symbolp r) (push r read-in-groups)))))
+		     (dolist (r `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))) (when (symbolp r) (push r read-in-groups)))))
 	       (remove-duplicates read-in-groups)))
       (relocate-independent-allocations! (avm-graph avm))
       (let* ((groups (loop for g in (split-into-subgroups (avm-graph avm))
@@ -573,8 +571,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			    append (graph->loop-size value)))
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
 	   (domain       (render-domain pipeline :depends-on dynamic-shapes))
-	   (read-access  (render-access :read pipeline :depends-on vm-inputs))
-	   (write-access (render-access :write pipeline :depends-on vm-inputs))
+	   (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
+	   (write-access (render-access :write pipeline :depends-on dynamic-shapes))
 	   (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))
       (when verbose
 	(format t "== [Domain] ===========")
@@ -661,11 +659,9 @@ Options:
 	     &key
 	       (debug (ctx:getenv :JIT_DEBUG))
 	       (serialize (= 1 (ctx:getenv :SERIALIZE)))
-	       (static-gensym (= 1 (ctx:getenv :STATIC_GENSYM)))
 	       (backend (or (ctx:getenv :JIT_BACKEND) :clang))
 	       (compile-later nil)
 	     &aux
-	       (_ (when static-gensym (apply-static-gensym avm)))
 	       (*isl-context* (isl-ctx-alloc))
 	       (verbose-schedule (or (= debug 2) (= debug 4)))
 	       (verbose-auto (or (= debug 4) (= debug 3))))
@@ -676,8 +672,7 @@ DEBUG=3 to debug the ISL process
 DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
-	   (type boolean serialize)
-	   (ignore _))
+	   (type boolean serialize))
   (let ((groups (create-schedules-from-avm avm :verbose verbose-schedule)))
     (loop for group in groups
 	  unless (group-realize-on-vm group)
@@ -709,24 +704,28 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
       (unless compile-later (%render-compile backend avm final-code))
       (values
        (map 'list #'car blueprints/codes)
-       final-code))))
+       final-code
+       refcount))))
 
-(defun jit (avm
+(defun jit (base-avm
 	    &key
 	      (debug (ctx:getenv :JIT_DEBUG))
 	      (serialize (= 1 (ctx:getenv :SERIALIZE)))
-	      (static-gensym (= 1 (ctx:getenv :STATIC_GENSYM)))
 	      (backend (or (ctx:getenv :JIT_BACKEND) :clang))
 	    &aux
-	      (avm (deepcopy-avm avm)))
+	      (_ (apply-static-gensym base-avm))
+	      (avm (deepcopy-avm base-avm)))
   "Applies the jit"
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
-	   (type boolean serialize))
-  (let ((compiled-kernels (%jit avm :debug debug :serialize serialize :static-gensym static-gensym :backend backend :compile-later nil)))
+	   (type boolean serialize)
+	   (ignore  _))
+  (multiple-value-bind (compiled-kernels code refcount)
+      (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil)
+    (declare (ignore code))
     (make-avm
      (optimize-non-in-place-buffers
-      avm
+      base-avm avm refcount
       (remove-unused-allocs
        (apply
 	#'make-graph

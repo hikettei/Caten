@@ -309,11 +309,13 @@ Refcount-by:
 					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
 							:metadata (make-buffer 0 nil nil *default-uint* nil))))))))
 		 (kernel-args (remove-duplicates `(,@loop-args ,@(reverse buffer-args) ,@failed-inplace-list) :key #'argument-name)))
+	    (dolist (node nodes)
+	      (dolist (r (relay-reads (read-type-relay node)))
+		(dolist (s (buffer-reconstruct-view-args r :view-only t))
+		  (when (and (symbolp s) (find s buffer-args :key #'argument-name))
+		    (print s)
+		    (push s meta-ids)))))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
-      ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
-      ;; TmpVar全部消す
-      ;; 使わないAllocate削除
-      ;; Symbolic!
       (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
       ;; ここでArgsの判定 etc
       ;; Reduction
