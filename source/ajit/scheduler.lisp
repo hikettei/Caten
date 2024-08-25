@@ -624,7 +624,7 @@ Options:
   (code code :type string)
   (fcaller-list fcaller-list :type list))
 
-(defun render-to-string (backend group name-prefix avm debug compile-later kernels &aux (base-name (avm-name avm)))
+(defun render-to-string (backend group name-prefix avm debug kernels &aux (base-name (avm-name avm)))
   "Step5, rendering the graph.
 (values cffi-name body foreign-function-caller compile-function-lambda)"
   (when (group-realize-on-vm group) (return-from render-to-string (values (list group) "")))
@@ -643,9 +643,7 @@ Options:
 	     (make-compiled-kernel name (kernel-renderer-args kernel)
 				   function (%render-function-caller backend avm (kernel-renderer-args kernel)) group)))
      (progn
-       (setf code (%render-program-toplevel backend code))
        (when (>= debug 1) (format t "Compiled[~a]:~%~a" name-prefix code))
-       (unless compile-later (%render-compile backend avm code))
        (setf (avm-name avm) base-name)
        code))))
 
@@ -702,13 +700,18 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			 (if (group-realize-on-vm x)
 			     (group/apply-memory-planner! x refcount)
 			     (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x))))
-		     groups)))
-      ;; Create a reference count and apply memory-planner
-      (loop for group in groups
-	    for kernel in kernels
-	    for nth upfrom 0
-	    collect
-	    (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug compile-later kernel))))))
+		     groups))
+	   (blueprints/codes
+	     (loop for group in groups
+		   for kernel in kernels
+		   for nth upfrom 0
+		   collect
+		   (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
+	   (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
+      (unless compile-later (%render-compile backend avm final-code))
+      (values
+       (map 'list #'car blueprints/codes)
+       final-code))))
 
 (defun jit (avm
 	    &key
@@ -729,7 +732,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
       (remove-unused-allocs
        (apply
 	#'make-graph
-	(apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) (map 'list #'car compiled-kernels)))))
+	(apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) compiled-kernels))))
       (nodes-gather-args (graph-nodes (avm-graph avm)))
       (or (= debug 2) (= debug 4)))
      (avm-name avm)
