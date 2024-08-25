@@ -119,7 +119,7 @@ Refcount-by:
 	  (node-reads node) (map 'list #'ref (node-reads node))
 	  (node-writes node) (map 'list #'ref (node-writes node)))))
 
-(defun remove-unused-kernels! (kernels pipeline save-for-backwards)
+(defun remove-unused-kernels! (kernels pipeline save-for-backwards seen-by-rendering-graph)
   (declare (type list kernels save-for-backwards)
 	   (type hash-table pipeline))
   (let ((seen (loop for kernel in kernels
@@ -134,7 +134,7 @@ Refcount-by:
 	       (declare (type (or symbol number) val))
 	       (if (numberp val)
 		   nil
-		   (if (find val save-for-backwards)
+		   (if (or (find val save-for-backwards) (find val seen-by-rendering-graph))
 		       nil
 		       (<= (count val (the list (apply #'append (nthcdr nth seen)))) 1))))
 	     (timestamp-not-used-p (graph nth)
@@ -165,14 +165,16 @@ Refcount-by:
 		    collect kernel)))
     (let ((seen
 	    (remove-duplicates
-	     (loop for kernel in kernels
-		   append
-		   (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
-			 append
-			 (loop for node in (graph-nodes (gethash time pipeline))
-			       ;; again: Indexingで使うSymbolはここに追加
-			       append (node-writes node)
-			       append (node-reads node)))))))
+	     (append
+	      seen-by-rendering-graph
+	      (loop for kernel in kernels
+		    append
+		    (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
+			  append
+			  (loop for node in (graph-nodes (gethash time pipeline))
+				;; again: Indexingで使うSymbolはここに追加
+				append (node-writes node)
+				append (node-reads node))))))))
       (loop for k in kernels do
 	(setf (kernel-renderer-args k)
 	      (loop for arg in (kernel-renderer-args k)
@@ -183,7 +185,8 @@ Refcount-by:
   (declare (type avm avm) (type group group) (type polyhedral polyhedral) (type Reference-counter refcount)
 	   (type graph render-graph) (type list save-for-backwards))
   (let* ((kernels (split-kernel (graph-nodes render-graph)))
-	 (pipeline (poly-pipeline polyhedral)))
+	 (pipeline (poly-pipeline polyhedral))
+	 (meta-ids))
     (labels ((inplace-p (node time)
 	       ;; Return: (in-place-p . intersects-with-current-pipeline?)
 	       (dolist (r (node-reads node))
@@ -227,6 +230,7 @@ Refcount-by:
 	  ;; save-for-backwardsはTimestampの単位で，ここはKernelの単位でも依存を確認する必要がある。
 	  ;; Reduce AccumlationはVectorizeを実装してからやる？とりあえずこのPRではMemory-Plannerのみを考える
 	  ;; In-place失敗するとUndefined Varを生成するけど，これはCache使いまわす処理を実装したいから，最後にやる
+	  ;; ここら辺でIndex計算に使用したSymbolを列挙し，Depsに含める
 	  (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))
 		 (buffer-args (loop for (name . type) in (nodes-depends-on/buffers nodes)
 				    for only-used-in-this-kernel-p = (find name save-for-backwards)
@@ -254,13 +258,14 @@ Refcount-by:
 								       :output
 								       :input))
 							   :metadata type)))
-		 (read-set (remove-duplicates (apply #'append (map 'list #'node-reads nodes))))
 		 (failed-inplace-list
-		   (loop for node in nodes
+		   (loop with read-set = (map 'list #'node-reads nodes)
+			 for node in nodes
+			 for nth upfrom 0
 			 append
 			 (loop for write in (node-writes node)
 			       for type in (relay-writes (read-type-relay node))
-			       if (null (find write read-set))
+			       if (null (find write (apply #'append (subseq read-set 0 nth))))
 				 collect
 				 (make-argument :name write
 						:pointer-p t
@@ -268,10 +273,12 @@ Refcount-by:
 						:type :tmp
 						:io :output
 						:metadata type))))
-		 (irs (loop for node in (kernel-renderer-nodes kernel) if (find (node-type node) `(:FOR :IF)) collect node))
+		 (irs (loop for node in (kernel-renderer-nodes kernel)
+			    if (find (node-type node) `(:FOR :IF))
+			      collect node))
 		 (loop-args
 		   (loop for ir in irs
-			 collect
+			 append
 			 (ecase (node-type ir)
 			   (:FOR
 			    (let ((deps
@@ -281,23 +288,35 @@ Refcount-by:
 				      (expr-recursive-deps (getattr ir :below))
 				      (expr-recursive-deps (getattr ir :by))))))
 			      (loop for dep in deps
-				    for name = (if (stringp dep) (intern dep) dep)
+				    for name = (newid (if (stringp dep) (intern dep) dep))
 				    unless (eql name (intern (getattr ir :idx)))
-				      do (print name))))
+				      ;; Indices are created as default-uint
+				      do (push name meta-ids) and collect
+					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input :metadata
+							(make-buffer 0 nil nil *default-uint* nil)))))
 			   (:IF
+			    ;; 不要
+			    #|
 			    (let ((deps
 				    (remove-duplicates
 				     (expr-recursive-deps (getattr ir :condition)))))
-			      ;; 不要
-			      
-			      )))))
-		 (kernel-args (remove-duplicates `(,@(reverse buffer-args) ,@failed-inplace-list) :key #'argument-name)))
+			      (loop for dep in deps
+				    for name = (if (stringp dep) (intern dep) dep)
+				    do (push name save-for-backwards)
+				    collect
+				    ;; 100% uintではなくない？
+				    (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input :metadata
+			    (make-buffer 0 nil nil *default-uint* nil))))
+			    |#
+			    ))))
+		 (kernel-args (remove-duplicates `(,@loop-args ,@(reverse buffer-args) ,@failed-inplace-list) :key #'argument-name)))
+	    (print save-for-backwards)
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
       ;; TmpVar全部消す
       ;; 使わないAllocate削除
       ;; Symbolic!
-      (remove-unused-kernels! kernels pipeline save-for-backwards)
+      (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
       ;; Reduction
       ;;   Reduce  [1, 2, 3] -> [1]
       ;;   Scatter [1] -> [1 2 3]

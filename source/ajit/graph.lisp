@@ -67,8 +67,8 @@
   (loop for node in nodes
 	for nth upfrom 0
 	if (and (eql (node-type node) :IF)
-		    (nth (1+ nth) nodes)
-		    (eql (node-type (nth (1+ nth) nodes)) :ENDIF))
+		(nth (1+ nth) nodes)
+		(eql (node-type (nth (1+ nth) nodes)) :ENDIF))
 	  do (push (node-id (nth (1+ nth) nodes)) removed)
 	else unless (find (node-id node) removed)
 	       collect node))
