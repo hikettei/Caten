@@ -20,19 +20,19 @@
 	     (map 'list #'argument-name args)
 	     :fname fname :jit-info (make-jit-info :caller lambda :caller-body fcaller-body :lang lang :code code :n-kernels n-kernels
 						   :argtypes (map 'list #'argument-dtype args))))
+(defun maybe-scal-buffer (arg type)
+  (if (buffer-p arg)
+      arg
+      (let ((x (make-buffer 0 nil nil type nil)))
+	(setf (buffer-value x) arg)
+	x)))
+
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((jit (getattr node :jit-info)))
     (assert (jit-info-p jit) () "~a is not a jit kernel. :jit-info=~a" node jit)
-    (apply (jit-info-caller jit) args)
-    (apply #'values
-	   (loop for a in args
-		 for type in (jit-info-argtypes jit)
-		 if (buffer-p a) collect a
-		   else
-		     collect
-		     (let ((x (make-buffer 0 nil nil type nil)))
-		       (setf (buffer-value x) a)
-		       x)))))
+    (let ((args (map 'list #'maybe-scal-buffer args (jit-info-argtypes jit))))
+      (apply (jit-info-caller jit) args)
+      (apply #'values args))))
 
 (defun count-n-kernels (rendering-graph &aux (count 0) (level 0))
   "Counts the number of the outermost loops (= n-kernels)"

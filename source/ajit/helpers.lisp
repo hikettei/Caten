@@ -29,6 +29,7 @@
 	   else collect s)))
 
 (defun make-uconst-buffer () (make-buffer 0 nil nil *default-uint* nil))
+(defun make-const-buffer (dtype) (make-buffer 0 nil nil dtype nil))
 
 (defun nodes-depends-on (nodes)
   "Enumerates the unsolved buffer ids from the sched graph."

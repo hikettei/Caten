@@ -44,7 +44,7 @@
     (case (node-type node)
       (:INDEX-COMPONENTS (make-expr :INDEX-COMPONENTS (use (first parents)) (map 'list #'use (cdr parents))))
       (:Cast             (make-cast (use (second parents)) (getattr node :dtype)))
-      (:Load             (use (make-const (getattr node :value) (car (relay-writes (read-type-relay node))))))
+      (:Load             (use (make-const (getattr node :value) (make-const-buffer (buffer-dtype (car (relay-writes (read-type-relay node))))))))
       (:!=               (make-expr :!= (use (second parents)) (use (third parents))))
       (:<                (make-expr :< (use (second parents)) (use (third parents))))
       (:MOVE
