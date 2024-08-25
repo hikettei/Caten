@@ -325,8 +325,19 @@ in a single timestamp otherwise recursive dependencies will occur.
 			      :_type_relay (make-inferred-type nil (list typ)))))))
     (when verbose (format t "~%A number of buffers that failed to mutate in-place: ~a" (length extra-allocs)))
     ;; [TODO] Schedule to reuse the allocated buffer in non-in-place-list
-    (setf (graph-nodes graph) (append extra-allocs (graph-nodes graph)))
-    graph))
+    ;; Relocate to the most nearest
+    (flet ((consume (alloc)
+	     (setf extra-allocs (remove (car (node-writes alloc)) extra-allocs :key (compose #'car #'node-writes)))
+	     alloc))
+      (setf (graph-nodes graph)
+	    (loop for node in (graph-nodes graph)
+		  if (eql (node-type node) :JIT_KERNEL)
+		    append (loop for read in (node-reads node)
+				 for alloc = (find read extra-allocs :key (compose #'car #'node-writes))
+				 if alloc collect (consume alloc))
+		    and
+		      collect node
+		  else
+		    collect node))
+      graph)))
 
-;; (caten (!sin (make-tensor `(3 3) :requires-grad t :initial-element 1.0)))
-;; (caten (!add 'a 'b))
