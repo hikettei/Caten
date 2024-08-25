@@ -304,7 +304,7 @@ Refcount-by:
 				      do (push name meta-ids) and collect
 					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
 							:metadata (make-buffer 0 nil nil *default-uint* nil))))))))
-		 (kernel-args (remove-duplicates `(,@loop-args ,@(reverse buffer-args) ,@failed-inplace-list) :key #'argument-name)))
+		 (kernel-args `(,@loop-args ,@(reverse buffer-args) ,@failed-inplace-list)))
 	    (dolist (node nodes)
 	      (dolist (r (relay-reads (read-type-relay node)))
 		(dolist (s (buffer-reconstruct-view-args r :except-for-shape t))
@@ -314,7 +314,7 @@ Refcount-by:
 				    :metadata (make-uconst-buffer))
 		     kernel-args)
 		    (push s meta-ids)))))
-	    (setf (kernel-renderer-args kernel) kernel-args)))
+	    (setf (kernel-renderer-args kernel) (remove-duplicates kernel-args :key #'argument-name))))
       (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
       ;; ここでArgsの判定 etc
       ;; Reduction
