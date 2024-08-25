@@ -9,11 +9,12 @@
   (declare (type list nodes))
   (let ((kernels) (outputs))
     (loop with nest = 0
+	  with nest-by-loop = 0
 	  for node in nodes
 	  for type = (node-type node)
-	  if (eql type :FOR)
+	  if (find type `(:FOR :IF))
 	    do (push node kernels) (incf nest)
-	  else if (eql type :ENDFOR) do
+	  else if (find type `(:ENDFOR :ENDIF)) do
 	    (if (= 1 nest)
 		(progn (decf nest) (push node kernels) (push (nreverse kernels) outputs) (setf kernels nil))
 		(progn (decf nest) (push node kernels)))
