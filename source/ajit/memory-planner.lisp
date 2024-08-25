@@ -315,7 +315,7 @@ Refcount-by:
 		     kernel-args)
 		    (push s meta-ids)))))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
-     ; (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
+      (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
       ;; ここでArgsの判定 etc
       ;; Reduction
       ;;   Reduce  [1, 2, 3] -> [1]
