@@ -15,7 +15,7 @@
 	  if (find type `(:FOR :IF))
 	    do (push node kernels) (incf nest)
 	  else if (find type `(:ENDFOR :ENDIF)) do
-	    (if (= 1 nest)
+	    (if (and (= 1 nest) (some #'(lambda (x) (eql (node-type x) :FOR)) kernels))
 		(progn (decf nest) (push node kernels) (push (nreverse kernels) outputs) (setf kernels nil))
 		(progn (decf nest) (push node kernels)))
 	  else do
