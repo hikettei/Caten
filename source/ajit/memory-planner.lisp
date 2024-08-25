@@ -202,8 +202,9 @@ Refcount-by:
 	     (newid (x) (refcount/refalias refcount x))
 	     (newid-from-str (x)
 	       (if (stringp x)
-		   (or (find x (poly-vm-inputs polyhedral) :test #'equalp :key #'symbol-name)
-		       (intern x))
+		   (newid
+		    (or (find x (poly-vm-inputs polyhedral) :test #'equalp :key #'symbol-name)
+			(intern x)))
 		   (newid x))))
       ;; O(nlogn) * the cost of id->users ...
       (loop
@@ -280,7 +281,7 @@ Refcount-by:
 		 (index-components
 		   (loop for node in (kernel-renderer-nodes kernel)
 			 if (eql (node-type node) :FOR)
-			   collect (intern (getattr node :idx))))
+			   collect (newid-from-str (getattr node :idx))))
 		 (loop-args
 		   (loop for ir in irs
 			 append
