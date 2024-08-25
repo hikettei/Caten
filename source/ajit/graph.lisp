@@ -19,7 +19,7 @@
 		(progn (decf nest) (push node kernels)))
 	  else do
 	    (push node kernels))
-    (when kernels (push kernels outputs))
+    (when kernels (push (reverse kernels) outputs))
     (loop for out in (reverse outputs)
 	  for nth upfrom 0
 	  collect (make-kernel-renderer :nodes out :nth nth))))
@@ -57,4 +57,16 @@
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (apply #'make-graph (reverse new-graph))))
+    (simplifier/remove-empty-if
+     (apply #'make-graph (reverse new-graph)))))
+
+(defun simplifier/remove-empty-if (graph)
+  (declare (type graph graph))
+  (setf (graph-nodes graph)
+	(loop for node in (graph-nodes graph)
+	      for nth upfrom 0
+	      unless (and (eql (node-type node) :IF)
+			  (nth (1+ nth) (graph-nodes graph))
+			  (eql (node-type (nth (1+ nth) (graph-nodes graph))) :ENDIF))
+		collect node))
+  graph)
