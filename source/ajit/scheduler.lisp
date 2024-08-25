@@ -71,6 +71,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	    (assert (or (null already-defined) equal?)
 		    ()
 		    ""))
+	  (print loop-bound-reads)
 	  (setf (node-attrs node)
 		(append (node-attrs node)
 			`(:_loop_bound_nodes ,loop-bound-reads :_loop_bound_nodes_type ,loop-bound-types))))
@@ -347,9 +348,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
-;; TODO: コンパイルされた関数のデータ構造をきれいにしたい (defstruct Compiled-Function
-;; (!rand (!softmax する時に，AoTしたrandを用いてx <- AUTOGEN_CUSTOM/RAND(x)みたいなのをできるようにしたい。
-;; ループをまたくDomainの依存は処理される？
 (defstruct (Group
 	    (:constructor make-group (nodes realize-on-vm &aux (args (nodes-depends-on nodes)) (shapes (nodes-gather-args nodes)))))
   (graph (apply #'make-graph nodes) :type graph)
@@ -498,12 +496,12 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		     (list node (car (relay-writes (read-type-relay node))) id))))
 	     (make-top-schedule (group) (map 'list (compose #'make-scheduled-items (id->buffer (group-graph group))) (group-writes group)))
 	     (schedule (group schedules)
-	       (setf seen (append seen (group-writes group)))
+	       
 	       (multiple-value-bind (sorted seen-new)
 		   (schedule/resolve-isolated-ops
 		    (reverse (flatten (map 'list #'(lambda (x) (recursive-find-group (group-graph group) x)) schedules)))
 		    seen)
-		 (setf seen seen-new)
+		 (setf seen (append seen-new (group-writes group)))
 		 sorted))
 	     (seen-in-groups (group &aux (seen-in-groups nil))
 	       (if (group-sched group)
@@ -575,8 +573,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			    append (graph->loop-size value)))
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
 	   (domain       (render-domain pipeline :depends-on dynamic-shapes))
-	   (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
-	   (write-access (render-access :write pipeline :depends-on dynamic-shapes))
+	   (read-access  (render-access :read pipeline :depends-on vm-inputs))
+	   (write-access (render-access :write pipeline :depends-on vm-inputs))
 	   (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))
       (when verbose
 	(format t "== [Domain] ===========")

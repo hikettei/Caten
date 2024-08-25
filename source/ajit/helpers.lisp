@@ -244,7 +244,6 @@ tgt-id-> C    D
 Consider the subgraph above, C was appeared in the another subgraph, therefore, C cannot be merged
 in a single timestamp otherwise recursive dependencies will occur.
 "
-  ;; [TODO] If delete (xxx)
   (let ((out) (stashed) (seen (copy-list seen-old)))
     (labels ((seen-p (x) (assert (not (listp x))) (or (numberp x) (find x seen :test #'eql)))
 	     (read-p (deps) (every #'seen-p deps)))

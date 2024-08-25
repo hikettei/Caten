@@ -303,20 +303,19 @@ Refcount-by:
 				    (remove-duplicates
 				     (expr-recursive-deps (getattr ir :condition)))))
 			      (loop for dep in deps
-				    for name = (if (stringp dep) (intern dep) dep)
+				    for name = (newid (if (stringp dep) (intern dep) dep))
 				    unless (find name index-components)
-				      ;; [FIX] Index計算専用としてuint32と仮定していい？
 				      do (push name meta-ids) and collect
 					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
 							:metadata (make-buffer 0 nil nil *default-uint* nil))))))))
 		 (kernel-args (remove-duplicates `(,@loop-args ,@(reverse buffer-args) ,@failed-inplace-list) :key #'argument-name)))
-	    (print save-for-backwards)
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       ;; 1. 不要なScalar計算(For Computing Index, etc)が発生するので削除する
       ;; TmpVar全部消す
       ;; 使わないAllocate削除
       ;; Symbolic!
       (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
+      ;; ここでArgsの判定 etc
       ;; Reduction
       ;;   Reduce  [1, 2, 3] -> [1]
       ;;   Scatter [1] -> [1 2 3]
@@ -343,8 +342,6 @@ Refcount-by:
       ;; KernelをCompileしたら，ここで書き換えを実行する
       ;; Update allocated-items
       ;; Loop Forを読む
-      ;;  -> Remove Empty If
-      ;;  -> Loop ForのArgsもDependenciesに
       ;;  -> ISL GraphのSimplifyをする
       (flet ((replacer (x) (refcount/refalias refcount x)))
 	(loop for g in (graph-nodes render-graph) do

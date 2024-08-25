@@ -19,8 +19,8 @@
 		(progn (decf nest) (push node kernels)))
 	  else do
 	    (push node kernels))
-    (when kernels (push (nreverse kernels) outputs))
-    (loop for out in (nreverse outputs)
+    (push (nreverse kernels) outputs)
+    (loop for out in (reverse outputs)
 	  for nth upfrom 0
 	  collect (make-kernel-renderer :nodes out :nth nth))))
 
