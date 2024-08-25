@@ -128,7 +128,6 @@ Refcount-by:
 			  append
 			  (loop for node in (graph-nodes (gethash time pipeline))
 				append
-				;; Indexingで使うNodeはここに追加すれば良い
 				(node-reads node))))))
     (labels ((not-used-p (val nth)
 	       (declare (type (or symbol number) val))
@@ -138,10 +137,7 @@ Refcount-by:
 		       nil
 		       (<= (count val (the list (apply #'append (nthcdr nth seen)))) 1))))
 	     (timestamp-not-used-p (graph nth)
-	       (every #'(lambda (x) (not-used-p x nth))
-		      (append
-		       (apply #'append (map 'list #'node-writes (graph-nodes graph)))
-		       (apply #'append (map 'list #'node-reads (graph-nodes graph))))))
+	       (every #'(lambda (x) (not-used-p x nth)) (apply #'append (map 'list #'node-writes (graph-nodes graph)))))
 	     (kernel-not-used-p (kernel nth)
 	       (every
 		#'identity
@@ -172,7 +168,6 @@ Refcount-by:
 		    (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
 			  append
 			  (loop for node in (graph-nodes (gethash time pipeline))
-				;; again: Indexingで使うSymbolはここに追加
 				append (node-writes node)
 				append (node-reads node))))))))
       (loop for k in kernels do
@@ -313,7 +308,6 @@ Refcount-by:
 	      (dolist (r (relay-reads (read-type-relay node)))
 		(dolist (s (buffer-reconstruct-view-args r :view-only t))
 		  (when (and (symbolp s) (find s buffer-args :key #'argument-name))
-		    (print s)
 		    (push s meta-ids)))))
 	    (setf (kernel-renderer-args kernel) kernel-args)))
       (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
