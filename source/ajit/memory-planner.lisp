@@ -224,15 +224,6 @@ Refcount-by:
 		  ;;  - If write-to-user exists in the same schedule -> create a tmpvar.
 		  ;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
 		  (refcount/update-node node refcount)))
-	  ;; save-for-backwardsはnewidする (OK)
-	  ;; Argsを宣言するノードはどこに存在するか？-> 削除
-	  ;; Stride/Shape/Loop_Bound計算に必要である計算ノード?
-	  ;; Creating a final allocation information:
-	  ;; Loadはval_にLoadしないで(書き込み以外) In-place Ruleに書き換えられるべきじゃね？
-	  ;; save-for-backwardsはTimestampの単位で，ここはKernelの単位でも依存を確認する必要がある。
-	  ;; Reduce AccumlationはVectorizeを実装してからやる？とりあえずこのPRではMemory-Plannerのみを考える
-	  ;; In-place失敗するとUndefined Varを生成するけど，これはCache使いまわす処理を実装したいから，最後にやる
-	  ;; ここら辺でIndex計算に使用したSymbolを列挙し，Depsに含める
 	  (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))
 		 (buffer-args (loop for (name . type) in (nodes-depends-on/buffers nodes)
 				    for only-used-in-this-kernel-p = (find name save-for-backwards)
@@ -343,15 +334,6 @@ Refcount-by:
       ;;  | -   At2 <- f(A, C)
       ;;  | -   O1 <-  f(At1, At2)
       ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
-      ;; 4. Scheduleの工夫で無理だったら手動でIfとかIfの中身を移動する
-      ;; 5. VM/IfNodeを実装してAllocationをする (a < 100ならreuse, a >= 100ならKeep Usingみたいに)
-      ;; TODO: TmpVar
-      ;; loop_nodes_boundが実際Loopの計算に必要か？を検証する
-      ;; Vectorize/Unroll/Tilingはどうやる？
-      ;; KernelをCompileしたら，ここで書き換えを実行する
-      ;; Update allocated-items
-      ;; Loop Forを読む
-      ;;  -> ISL GraphのSimplifyをする
       (flet ((replacer (x) (refcount/refalias refcount x)))
 	(loop for g in (graph-nodes render-graph) do
 	  (case (node-type g)

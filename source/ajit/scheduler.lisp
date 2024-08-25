@@ -446,7 +446,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (labels ((force-realize-on-vm (node)
 	       (or
 		(eql (node-type node) :pause/backward)
-		(eql (node-type node) :Allocate))))
+		(eql (node-type node) :Allocate)
+		(and (eql (node-type node) :LOAD)
+		     (symbolp (getattr node :value))))))
       `(,@(loop for node in (graph-nodes graph)
 		if (force-realize-on-vm node)
 		  collect (make-group (nreverse groups) nil)
