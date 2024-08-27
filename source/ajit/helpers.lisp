@@ -171,10 +171,12 @@ Graph must be verified in advance."
 	  for below = (nth 1 view)
 	  for by  = (nth 2 view)
 	  for broadcast = (nth 3 view)
-	  unless broadcast
+	  if broadcast
+	    append (if except-for-shape `(,shape ,upfrom) `(,upfrom))
+	  else
 	    append
 	    (loop for val in (if except-for-shape
-				 `(,stride ,upfrom ,below ,by)
+				 `(,stride ,upfrom ,upfrom ,by)
 				 `(,shape ,stride ,upfrom ,below ,by))
 		  for r = (and val (reveal-buffer val))
 		  if (and val (symbolp r)) collect r))))

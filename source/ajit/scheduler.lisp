@@ -197,7 +197,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 
 (defun isl-access-renderer (gid stride upfrom by broadcast-p)
   (declare (ignore stride))
-  (assert (numberp by) () "Compute by is expected to be a number!")
+  (assert (numberp by) () "by is expected to be a constant to create an affine schedule! (TODO: Fix)")
   (if broadcast-p
       (format nil "~a" upfrom)
       (format nil "~a~a~a"
@@ -236,26 +236,9 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	   for gid = (funcall genid nth)
 	   append
 	   (list
-	    (progn
-	      ;; ここでSymbolicをAffineで計算するのは100% Must
-	      ;; Ugly solution... should be temporary...
-	      ;; ISL assumes the domain to be an affine function.
-	      ;; [TODO] FIX This (when `if` is scheduled by ISL, there's no way to update the index) to make mean working
-	      ;;(when (and (not (numberp stride)) access-rep) (setf stride 1))
-	      ;;(when (and (not (numberp by)) access-rep) (setf by 2))
-	      ;; [TODO] upfrom can be a symbol? stride * (index + offset)
-	      ;;(when (and (not (numberp upfrom)) access-rep) (setf upfrom 1))
-	      ;; permute orders needs to be inferenced at that moment
-	      ;; when composed? (test w/ convnd)
-	      ;; (!reshape (!view ) ) <- これってInference不可能じゃない？
-	      ;; TODO: support any renderer
-	      ;; Fused Permute Test
-	      (when (buffer-inferred-permute buffer)
-		(print (buffer-inferred-permute buffer)))
-	      (funcall indexing gid stride upfrom by broadcast-p))
+	    (funcall indexing gid stride upfrom by broadcast-p)
 	    split))
-     (when upper
-       (loop repeat (- upper (buffer-nrank buffer)) append (list "0" split)))))))
+     (when upper (loop repeat (- upper (buffer-nrank buffer)) append (list "0" split)))))))
 
 (defun render-domain (pipeline &key (depends-on nil))
   "Render the domain notation from the scheduled subgraphs
@@ -590,8 +573,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		      (print-schedules (group-sched group)))))
 	groups))))
 
-(declaim (ftype (function (AVM group &key (:verbose boolean)) (values Polyhedral)) create-polyhedron-from-group))
-(defun create-polyhedron-from-group (avm group &key (verbose nil))
+(declaim (ftype (function (AVM group &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
+(defun create-polyhedron-from-group (avm group &key (verbose nil) (verbose-auto nil))
   "Step2, create a polyhedron from the scheduled items."
   (declare (type group group) (type boolean verbose))
   (let* ((submodule (map 'list #'schedule->submodule (group-sched group))) ;; Rendering :FOR and :ENDFOR
@@ -610,7 +593,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
 	   (write-access (render-access :write pipeline :depends-on dynamic-shapes))
 	   (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))
-      (when verbose
+      (when verbose-auto
 	(format t "== [Domain] ===========")
 	(format t "~%~a~%" domain)
 	(format t "== [Read Accesses] =======")
@@ -713,7 +696,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	 (groups (loop for group in groups
 		       if (group-realize-on-vm group) collect group
 			 else if (group-sched group) do
-			   (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule))
+			   (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule :verbose-auto verbose-auto))
 			   and collect group)))
     (mapc
      #'(lambda (x)

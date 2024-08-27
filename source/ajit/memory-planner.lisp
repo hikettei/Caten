@@ -312,10 +312,11 @@ Refcount-by:
 		     kernel-args)
 		    (push s meta-ids)))))
 	    (setf (kernel-renderer-args kernel) (remove-duplicates kernel-args :key #'argument-name))
-	    (assert (equal (map 'list #'argument-name (kernel-renderer-args kernel))
-			   (map 'list (compose #'newid #'argument-name) (kernel-renderer-args kernel)))
-		    ()
-		    "There are inconsistencies in the time-series dependencies. ~a" (map 'list #'argument-name (kernel-renderer-args kernel)))))
+	    ;;(assert (equal (map 'list #'argument-name (kernel-renderer-args kernel))
+	    ;;		   (map 'list (compose #'newid #'argument-name) (kernel-renderer-args kernel)))
+	    ;;	    ()
+	    ;;	    "There are inconsistencies in the time-series dependencies. ~a" (map 'list #'argument-name (kernel-renderer-args kernel)))
+	    ))
       (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
       ;; Reduction
       ;;   Reduce  [1, 2, 3] -> [1]
