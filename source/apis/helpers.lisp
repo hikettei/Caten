@@ -152,7 +152,7 @@ Reads and binds attributes from module.
 	     else if (eql (Node-type node) :View) do
 	       (let ((nrank (getattr node :nrank)))
 		 (flet ((subseq1p (x y z) (subseq x (1+ y) (1+ z))))
-		   (format out "~a~(~a~) = ~(~a~)(~(~a~), shape=(~a), views=(~a), stride=(~a));~%"
+		   (format out "~a~(~a~) = ~(~a~)(~(~a~), shape=(~a), views=(~a), stride=(~a)~a);~%"
 			   (indent n-indent)
 			   (render-list (node-writes node))
 			   (node-type node)
@@ -164,7 +164,10 @@ Reads and binds attributes from module.
 				 (bc (getattr node :broadcast)))
 			     (render-list
 			      (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
-			   (render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank))))))
+			   (render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank)))
+			   (if (getattr node :permute)
+			       (format nil ", permute=~a" (getattr node :permute))
+			       ""))))
 	     else
 	       do (format out "~a~(~a~)~a~(~a~)(~(~a~)~a);~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "") (node-type node) (render-list (node-reads node)) (render-attrs node)))))))
 

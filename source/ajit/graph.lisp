@@ -1,4 +1,30 @@
 (in-package :caten/ajit)
+
+(defstruct (Kernel-Renderer)
+  (nodes (error "nodes must occur!") :type list)
+  (nth 0 :type fixnum)
+  (args nil))
+
+(defun split-kernel (nodes)
+  (declare (type list nodes))
+  (let ((kernels) (outputs))
+    (loop with nest = 0
+	  with nest-by-loop = 0
+	  for node in nodes
+	  for type = (node-type node)
+	  if (find type `(:FOR :IF))
+	    do (push node kernels) (incf nest)
+	  else if (find type `(:ENDFOR :ENDIF)) do
+	    (if (and (= 1 nest) (some #'(lambda (x) (eql (node-type x) :FOR)) kernels))
+		(progn (decf nest) (push node kernels) (push (nreverse kernels) outputs) (setf kernels nil))
+		(progn (decf nest) (push node kernels)))
+	  else do
+	    (push node kernels))
+    (push (nreverse kernels) outputs)
+    (loop for out in (reverse outputs)
+	  for nth upfrom 0
+	  collect (make-kernel-renderer :nodes out :nth nth))))
+
 ;; A special graph dedicated to the rendering process
 (defun r/for (idx upfrom below by) (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by))
 (defun r/endfor (idx) (make-node :Render :ENDFOR nil nil :idx idx))
@@ -9,9 +35,10 @@
 (defun r/else () (make-node :Render :ELSE nil nil))
 (defun r/endif () (make-node :Render :ENDIF nil nil))
 (defun create-rendering-graph (polyhedron lisp-ast)
-  (declare (type polyhedral polyhedron))
+  (declare (type polyhedral polyhedron)
+	   (ignore polyhedron))
   ;; -1 is a placeholder for the tmpvar allocation.
-  (let ((new-graph (list (r/funcall "T-1" nil))))
+  (let ((new-graph))
     (labels ((lower (object)
 	       (when (listp object) (return-from lower (map 'list #'lower object)))
 	       (trivia:ematch object
@@ -32,6 +59,17 @@
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (setf (gethash -1 (poly-pipeline polyhedron)) (make-graph))
-    (apply #'make-graph (reverse new-graph))))
+    (apply #'make-graph (simplify-rendering-nodes (reverse new-graph)))))
 
+(defun simplify-rendering-nodes (nodes)
+  (funcall (compose #'simplifier/remove-empty-if) nodes))
+
+(defun simplifier/remove-empty-if (nodes &aux (removed nil))
+  (loop for node in nodes
+	for nth upfrom 0
+	if (and (eql (node-type node) :IF)
+		(nth (1+ nth) nodes)
+		(eql (node-type (nth (1+ nth) nodes)) :ENDIF))
+	  do (push (node-id (nth (1+ nth) nodes)) removed)
+	else unless (find (node-id node) removed)
+	       collect node))

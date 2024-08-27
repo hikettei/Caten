@@ -1,14 +1,23 @@
 (in-package :caten/ajit)
 
+(defstruct (Argument)
+  (name nil :type symbol)
+  (pointer-p nil :type boolean)
+  (dtype (error "dtype must occur") :type dtype-t)
+  (type :input :type (and keyword (member :shape :tmp :user)))
+  (io :input :type (and keyword (member :const :input :output :io)))
+  (metadata (error "metadata must occur") :type Buffer))
+;; (defstruct Metadata
+;;  *accessing* ...
 ;; ~~ Abstraction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defgeneric %render-compile (lang avm allocs function)
+(defgeneric %render-compile (lang avm function)
   (:documentation "Compiles the function"))
 
-(defmethod %render-compile :around (lang avm allocs function)
+(defmethod %render-compile :around (lang avm function)
   (restart-case (if (= 1 (ctx:getenv :CALL_ZENITY)) (error "Triggered by CALL_ZENITY=1~%~%~a" function) (call-next-method))
     (zenity/modify-code ()
       :report "Calling a GUI Editor, update the code manually. (SHOULD ONLY BE USED FOR DEBUGGING)"
-      (%render-compile lang avm allocs (zenity/prompt-new-value function)))
+      (%render-compile lang avm (zenity/prompt-new-value function)))
     (zenity/proceed ()
       :report "Proceed w/ current code."
       (when (= 1 (ctx:getenv :CALL_ZENITY)) (call-next-method)))))
@@ -81,7 +90,6 @@ Render the ops in ./source/aasm/ops.lisp.
 :EXPR
 "))
 
-;; TODO: (defstruct metadata)
 ;; TODO: verify-node
 (defun render-expr (lang expr)
   "Recursively render the expr"

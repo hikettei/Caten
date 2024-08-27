@@ -320,7 +320,11 @@
       (let ((tensor (make-tensor `(10) :requires-grad t)))
 	(okwhen (!view tensor `(2 4)) tensor #(0 0 1 1 0 0 0 0 0)))
       (let ((tensor (make-tensor `(10) :requires-grad t)))
-	(okwhen (!view tensor `(4 1 -1)) tensor #(0 0 1 1 1 0 0 0 0 0)))
+	(okwhen (!contiguous (!view tensor `(4 1 -1))) tensor #(0 0 1 1 1 0 0 0 0 0)))
+      (testing "Should work w/o !contiguous in the jit"
+	;; Failing ...
+	(let ((tensor (make-tensor `(10) :requires-grad t)))
+	  (okwhen (!view tensor `(4 1 -1)) tensor #(0 0 1 1 1 0 0 0 0 0))))
       (let ((tensor (make-tensor `(7 7 7) :requires-grad t)))
 	(okwhen (!view tensor `(1 4) `(2 5) `(3 5)) tensor #(0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 							     0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
@@ -432,7 +436,7 @@
 	(b (ax+b `(4 3) 0 1)))
     (ok (equal-to 4) (elements (proceed (!matmul a b)))))
   (let ((m (proceed (!matmul (ax+b `(3 4) 1 1) (ax+b `(4 3) 1 1)))))
-    (ok (every #'= (elements m) #(70 80 90 158 184 210 246 288 330)))))
+    (ok (every #'= (elements m) #(70 80 90 158 184 210 246 288 330)) "TODO: Update")))
 
 (deftest broadcast-regression-test
   (ok (every #'= (elements (proceed (!mul (ax+b `(1 10) 1 0) (ax+b `(10 1) 1 0))))
@@ -518,28 +522,30 @@
 	"Fused with Unary")))
 
 (deftest threefry2x32
-  (when (= (ctx:getenv :JIT) 0)
-    (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
-      (with-manual-seed (0)
-	(let* ((n 100)
-	       (first-rand (elements (proceed (!rand `(,n ,n)))))
-	       (avg1 (/ (reduce #'+ first-rand) (* n n)))
-	       (scnd-rand (elements (proceed (!rand `(,n ,n)))))
-	       (avg2 (/ (reduce #'+ scnd-rand) (* n n)))
-	       (third-rand (elements (proceed (!rand `(,n ,n)))))
-	       (avg3 (/ (reduce #'+ third-rand) (* n n))))
-	  (ok (< (abs (- avg1 0.5)) 0.01))
-	  (ok (< (abs (- avg2 0.5)) 0.01))
-	  (ok (< (abs (- avg3 0.5)) 0.01))
-	  (ng (some #'= first-rand scnd-rand third-rand))
-	  (testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
-	    (with-manual-seed (0)
-	      (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
-		(testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
-		  (ok (every #'= first-rand first-rand1)))
-		(testing "Then, reproduce second/third randomness in a single call of proceed."
-		  (let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
-		    (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand))))))))))))
+  (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
+    (with-manual-seed (0)
+      (let* ((n 100)
+	     (first-rand (elements (proceed (!rand `(,n ,n)))))
+	     (avg1 (/ (reduce #'+ first-rand) (* n n)))
+	     (scnd-rand (elements (proceed (!rand `(,n ,n)))))
+	     (avg2 (/ (reduce #'+ scnd-rand) (* n n)))
+	     (third-rand (elements (proceed (!rand `(,n ,n)))))
+	     (avg3 (/ (reduce #'+ third-rand) (* n n))))
+	(ok (< (abs (- avg1 0.5)) 0.01))
+	(ok (< (abs (- avg2 0.5)) 0.01))
+	(ok (< (abs (- avg3 0.5)) 0.01))
+	(ng (some #'= first-rand scnd-rand third-rand))
+	(testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
+	  (with-manual-seed (0)
+	    (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
+	      (testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
+		(ok (every #'= first-rand first-rand1)))
+	      (testing "Then, reproduce second/third randomness in a single call of proceed."
+		(let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n))))))
+		       (skip (= (ctx:getenv :JIT) 1)))
+		  (if skip
+		      (skip "Failing w/ JIT")
+		      (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand))))))))))))
 
 (caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
   (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 

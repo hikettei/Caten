@@ -69,11 +69,12 @@
 ;;	       id nrank shape dtype view-from view-to view-by broadcast stride)
 	))))
 
-(defun %view (base shape from to by broadcast stride &key (id (gensym "VID")))
-  "Creates a view against base. (views are only created against the original buffer)"
+(defun %view (base shape from to by broadcast stride &key (id (gensym "VID")) (permute nil))
+  "Creates a view against base. (views are only created against the original buffer)
+Permute is an optional parameter and does nothing, but MUST required to enable Polyhedral Compiler, to inference an index of iteration by type-relay.lisp"
   ;; Allocation w/o allocation
   (declare (type node base)
-	   (type list from to by broadcast shape stride))
+	   (type list from to by broadcast shape stride permute))
   (flet ((->const (x)
 	   (if (node-p x)
 	       x
@@ -103,7 +104,7 @@ broadcast=~a"
 			     (map 'list #'node->id to)
 			     (map 'list #'node->id by)
 			     (map 'list #'node->id stride))
-		     :nrank nrank :broadcast broadcast))))
+		     :nrank nrank :broadcast broadcast :permute permute))))
 ;; Not recommended; use %view instead
 (defun %reshape (x shape &key (id (gensym "RID")) (order :row))
   "In-placed reshape"
@@ -136,7 +137,7 @@ broadcast=~a"
   (let ((nrank (getattr node :nrank)))
     (when (and nrank (not (= nrank 0)) (eql (node-class node) :Buffer))
       (flet ((subseq1p (x y z) (subseq x (1+ y) (1+ z))))
-	(format nil "<~a : ~a <- (~a, shape=(~a), views=(~a), stride=(~a))>"
+	(format nil "<~a : ~a <- (~a, shape=(~a), views=(~a), stride=(~a)~a)>"
 		(node-type node)
 		(render-list (node-writes node))
 		(car (node-reads node))
@@ -147,6 +148,9 @@ broadcast=~a"
 		      (bc (getattr node :broadcast)))
 		  (render-list
 		   (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
-		(render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank))))))))
+		(render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank)))
+		(if (getattr node :permute)
+		    (format nil ", permute=~a" (getattr node :permute))
+		    ""))))))
 ;; WIP: will be moved to frontend
 (defun %bitcast ())

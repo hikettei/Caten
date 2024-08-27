@@ -50,24 +50,29 @@
     (lambda (c) (isl-union-set-read-from-str (format nil "{ ~a }" c)))
     "isl_union_set_free"
     "Union: [m] where m = alpha * index + beta"
-    ((index &optional (alpha 1) (beta 0))
-     (index index :type integer-t)
-     (alpha alpha :type integer-t)
-     (beta beta :type integer-t))
-  (with-slots ((index index) (alpha alpha) (beta beta)) c
-    (cond
-      ((every #'numberp `(,index ,alpha ,beta))
-       (format nil "[ ~a ]" (+ (* index alpha) beta)))
-      ((and (numberp alpha) (numberp beta) (= alpha 1) (= beta 0))
-       (format nil "[ ~(~a~) ]" index))
-      ((and (numberp alpha) (numberp beta) (= 0 beta alpha))
-       (format nil " [ 0 ] "))
-      ((and (numberp beta) (= beta 0))
-       (format nil "[ ~(~a~)*~(~a~) ]" index alpha))
-      ((and (numberp alpha) (= alpha 0))
-       (format nil "[ ~(~a~) ]" beta))
-      (T
-       (format nil "[ ~(~a~)*~(~a~)+~(~a~) ]" index alpha beta)))))
+    ((indices &optional (alphas '(1)) (betas '(0)))
+     (indices indices :type list)
+     (alphas alphas :type list)
+     (betas betas :type list))
+  (with-output-to-string (out)
+    (with-slots ((indices indices) (alphas alphas) (betas betas)) c
+      (format out "[ ")
+      (loop for index in indices for alpha in alphas for beta in betas do
+	(cond
+	  ((every #'numberp `(,index ,alpha ,beta))
+	   (format out "~a" (+ (* index alpha) beta)))
+	  ((and (numberp alpha) (numberp beta) (= alpha 1) (= beta 0))
+	   (format out "~(~a~)" index))
+	  ((and (numberp alpha) (numberp beta) (= 0 beta alpha))
+	   (format out "0"))
+	  ((and (numberp beta) (= beta 0))
+	   (format out "~(~a~)*~(~a~)" index alpha))
+	  ((and (numberp alpha) (= alpha 0))
+	   (format out "~(~a~)" beta))
+	  (T
+	   (format out "(~(~a~)*~(~a~)+~(~a~))" index alpha beta)))
+	(format out "+"))
+      (format out "0 ]"))))
 
 (define-isl-object "IMap" isl-union-map-read-from-str "isl_union_map_free"
     "IMap: { Union -> Union }"

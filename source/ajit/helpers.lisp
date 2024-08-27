@@ -28,6 +28,9 @@
 	 if (equal s from) collect to
 	   else collect s)))
 
+(defun make-uconst-buffer () (make-buffer 0 nil nil *default-uint* nil))
+(defun make-const-buffer (dtype) (make-buffer 0 nil nil dtype nil))
+
 (defun nodes-depends-on (nodes)
   "Enumerates the unsolved buffer ids from the sched graph."
   (declare (type list nodes))
@@ -42,15 +45,38 @@
 	(push w seen)))
     (reverse depends-on)))
 
+(defun nodes-depends-on/buffers (nodes)
+  "Enumerates the unsolved buffer ids from the sched graph."
+  (declare (type list nodes))
+  (let ((seen `(t nil)) (depends-on))
+    (loop for node in nodes do
+      (loop for r in `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))
+	    for typ in `(,@(relay-reads (read-type-relay node)) ,@(getattr node :_loop_bound_nodes_type))
+	    if (null (find r seen)) do
+	      (when (symbolp r) (push (cons r typ) depends-on))
+	      (push r seen))
+      (loop for read in (node-reads node) do
+	(loop for shape in (buffer-reconstruct-view-args read)
+	      if (null (find shape seen)) do
+		(push (cons shape (make-uconst-buffer)) depends-on)
+		(push shape seen)))
+      (dolist (w (node-writes node))
+	(push w seen)))
+    (reverse depends-on)))
+
+(defun nodes-gather-args (nodes &key (get-nodes nil))
+  (declare (type list nodes))
+  (let ((args (remove-duplicates
+	       (loop for node in nodes
+		     if (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)))
+		       collect (if get-nodes node (getattr node :value))))))
+    (loop for a in args
+	  unless (find (if get-nodes (getattr a :value) a) `(t nil))
+	    collect a)))
+
 (defun avm-gather-args (avm)
   (declare (type avm avm))
-  (let ((args (remove-duplicates
-	       (loop for node in (graph-nodes (avm-graph avm))
-		     if (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)))
-		       collect (getattr node :value)))))
-    (loop for a in args
-	  unless (find a `(t nil))
-	    collect a)))
+  (nodes-gather-args (graph-nodes (avm-graph avm))))
 
 (defun infer-vm-io-types (avm scalars)
   (declare (type avm avm) (type list scalars))
@@ -96,51 +122,22 @@
 		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
 			 collect node))))
 
-(defun alloc-args-p (node)
-  (and
-   (eql (node-type node) :Allocate)
-   (null (getattr node :_tmp))
-   (not (= (getattr node :nrank) 0))))
+(defun get-subgraph-recursively (node graph dynamic-shapes dtype &aux (seen nil))
+  (declare (type node node) (type graph graph) (optimize (speed 3)))
+  (labels ((explore (node graph)
+	     (when (null (find (node-id node) seen))
+	       (push (node-id node) seen)
+	       (nconc
+		(loop for r in (node-reads node)
+		      if (symbolp r)
+			append (explore (id->value graph r) graph))
+		(if (find (the symbol (car (node-writes node))) (the list dynamic-shapes))
+		    (with-context-nodes
+			(_ (%load (%salloc :dtype dtype) (car (node-writes node)) :id (car (node-writes node)))))
+		    (list node))))))
+    (explore node graph)))
 
-(defun purge-allocations (poly pipeline dynamic-shapes render-graph
-			  &aux
-			    (pipeline-ids (render-graph/get-timestamps render-graph))
-			    (allocs nil) (types (poly-vm-io-types poly)) (outputs (poly-vm-outputs poly)))
-  "Collects a list of allocation that moved to args"
-  (declare (type polyhedral poly) (type hash-table pipeline))
-  (maphash
-   #'(lambda (k graph)
-       (when (find k pipeline-ids)
-	 (setf (graph-nodes graph)
-	       (loop for node in (graph-nodes graph)
-		     if (alloc-args-p node)
-		       do (push node allocs)
-		     else unless (and (eql (node-type node) :Allocate) (find (car (node-writes node)) outputs))
-			    collect node))))
-   pipeline)
-  (let* ((tensor-allocs (remove-duplicates allocs :key (compose #'car #'node-writes)))
- 	 (shapes (map 'list
-		      #'(lambda (x &aux (type (or (gethash x types) (error "~a is not inferred by poly-vm-io-types" x))))
-			  (%alloc 0 nil nil :dtype (buffer-dtype (car (relay-writes type))) :id x))
-		      dynamic-shapes))
-	 (allocs (remove-duplicates `(,@shapes ,@tensor-allocs) :key (compose #'car #'node-writes))))
-    (loop for alloc in allocs
-	  if (find (car (node-writes alloc)) (poly-vm-inputs poly)) ;; Shapes are not pointer
-	    do (setf (getattr alloc :_pointer) nil)
-	  else
-	    do (setf (getattr alloc :_pointer) t))
-    allocs))
-
-(defun get-subgraph-recursively (node graph dynamic-shapes dtype)
-  (declare (type node node) (type graph graph))
-  (append
-   (loop for r in (node-reads node)
-	 if (symbolp r)
-	   append (get-subgraph-recursively (id->value graph r) graph dynamic-shapes dtype))
-   (if (find (car (node-writes node)) dynamic-shapes)
-       (with-context-nodes
-	   (_ (%load (%salloc :dtype dtype) (car (node-writes node)) :id (car (node-writes node)))))
-       (list node))))
+(defun get-subgraph (id graph) (get-subgraph-recursively (id->value graph id) graph nil nil))
 
 (defun recursively-find-output-id (id graph &aux (seen nil))
   "Exploring the graph from id, returns a list of buffer ids which is not used in the graph (i.e.: outputs).
@@ -155,16 +152,34 @@ Graph must be verified in advance."
 		     (apply #'append (map 'list #'(lambda (x) (explore (car (node-writes x)))) outputs)))))))
     (explore id)))
 
-(defun buffer-reconstruct-view-args (buffer)
+(defun nodes-output-ids (nodes)
+  (flet ((used-p (id) (find id nodes :key #'node-reads :test #'find)))
+    (loop for node in nodes
+	  append
+	  (loop for w in (node-writes node)
+		if (not (used-p w)) collect w))))
+
+(defun buffer-reconstruct-view-args (buffer &key (except-for-shape nil))
   "Reconstruct a list of symbols used to compute the buffer bound."
   (when (buffer-p buffer)
     ;; Shape, Stride, and Views
-    (let* ((shape (buffer-shape buffer))
-	   (stride (buffer-stride buffer))
-	   (views (apply #'append (map 'list #'(lambda (x) (and x (not (fourth x)) (subseq x 0 3))) (buffer-views buffer)))))
-      (loop for s1 in `(,@shape ,@stride ,@views)
-	    for s = (reveal-buffer s1)
-	    if (and (symbolp s) s) collect s))))
+    (loop for shape in (buffer-shape buffer)
+	  for stride in (buffer-stride buffer)
+	  for nth upfrom 0
+	  for view = (nth nth (buffer-views buffer))
+	  for upfrom = (nth 0 view)
+	  for below = (nth 1 view)
+	  for by  = (nth 2 view)
+	  for broadcast = (nth 3 view)
+	  if broadcast
+	    append (if except-for-shape `(,shape ,upfrom) `(,upfrom))
+	  else
+	    append
+	    (loop for val in (if except-for-shape
+				 `(,stride ,upfrom ,upfrom ,by)
+				 `(,shape ,stride ,upfrom ,below ,by))
+		  for r = (and val (reveal-buffer val))
+		  if (and val (symbolp r)) collect r))))
 
 (defun apply-static-gensym (avm)
   (declare (type avm avm))
@@ -248,7 +263,6 @@ tgt-id-> C    D
 Consider the subgraph above, C was appeared in the another subgraph, therefore, C cannot be merged
 in a single timestamp otherwise recursive dependencies will occur.
 "
-  ;; If (xxx) wo kesu
   (let ((out) (stashed) (seen (copy-list seen-old)))
     (labels ((seen-p (x) (assert (not (listp x))) (or (numberp x) (find x seen :test #'eql)))
 	     (read-p (deps) (every #'seen-p deps)))
@@ -289,3 +303,93 @@ in a single timestamp otherwise recursive dependencies will occur.
 	       new-schedule
 	       seen-old)))))
       (values (reverse out) seen))))
+
+(defun remove-unused-allocs (graph)
+  (apply
+   #'make-graph
+   (loop for node in (graph-nodes graph)
+	 if (and
+	     (eql (node-type node) :Allocate)
+	     (find (car (node-writes node)) (graph-nodes graph) :key #'node-reads :test #'find))
+	   collect node
+	 if (not (eql (node-type node) :Allocate)) collect node)))
+
+(defun optimize-non-in-place-buffers (base-avm avm refcounter graph seen verbose)
+  (declare (ignore refcounter))
+  (let* ((kernel-arg-symbols
+	   (loop for node in (graph-nodes graph)
+		 if (eql (node-type node) :JIT_KERNEL)
+		   append
+		   (loop for r in (node-reads node)
+			 unless (find r seen) collect r)))
+	 (declared
+	   (loop for node in (graph-nodes graph)
+		 unless (eql (node-type node) :JIT_KERNEL)
+		   append (node-writes node)))
+	 (non-in-place-list
+	   (loop for k in kernel-arg-symbols
+		 if (null (find k declared))
+		   collect k))
+	 (extra-allocs
+	   (loop for name in non-in-place-list
+		 for node = (find name (graph-nodes (avm-graph avm)) :test #'find :key #'node-writes)
+		 if node
+		   collect
+		   (let* ((pos  (position name (node-writes node)))
+			  (typ  (nth pos (relay-writes (read-type-relay node)))))
+		     (make-node :Buffer :Allocate
+				(list name) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
+				:nrank (buffer-nrank typ)
+				:dtype (buffer-dtype typ)
+				:_type_relay (make-inferred-type nil (list typ)))))))
+    (when verbose (format t "~%A number of buffers that failed to mutate in-place: ~a" (length extra-allocs)))
+    ;; [TODO] Schedule to reuse the allocated buffer in non-in-place-list
+    ;; Relocate to the most nearest
+    (flet ((consume (alloc)
+	     (setf extra-allocs (remove (car (node-writes alloc)) extra-allocs :key (compose #'car #'node-writes)))
+	     alloc))
+      (setf (graph-nodes graph)
+	    (loop for node in (graph-nodes graph)
+		  if (eql (node-type node) :JIT_KERNEL)
+		    append (loop for read in (node-reads node)
+				 for alloc = (find read extra-allocs :key (compose #'car #'node-writes))
+				 if alloc collect (consume alloc))
+		    and
+		      collect node
+		  else
+		    collect node))
+      (flet ((finalize (id-base id-comp)
+	       (let ((result1 (find id-base (graph-nodes (avm-graph base-avm)) :key (compose #'car #'node-writes)))
+		     (result2 (find id-comp (reverse (graph-nodes (avm-graph avm))) :key (compose #'car #'node-writes))))
+		 (when (and result1 result2)
+		   (case (node-type result1)
+		     (:Allocate
+		      (when (eql :Allocate (node-type result2)) result2))
+		     (:View
+		      (let ((view1 (copy-node result1)))
+			(flet ((newid (x)
+				 (let* ((val-node (id->value (avm-graph base-avm) x)))
+				   (if (eql (node-type val-node) :Load)
+				       (getattr val-node :value)
+				       (if (numberp x)
+					   x
+					   (progn
+					     (warn ":View cannot be traced in the graph recursively")
+					     (return-from finalize nil)))))))
+			  (setf
+			   (node-writes view1) (list id-comp)
+			   (node-reads view1) `(,id-comp ,@(map 'list #'newid (cdr (node-reads view1)))))
+			  view1))))))))
+	(loop for additional-graph in (map 'list #'finalize (avm-fw-outputs base-avm) (avm-fw-outputs avm))
+	      if additional-graph collect (nconc (graph-nodes graph) (list additional-graph)))
+	graph))))
+
+(defun pipeline/upper-nrank (pipeline)
+  (apply
+   #'max
+   (loop for key in (hash-table-keys pipeline)
+	 append
+	 (loop for node in (graph-nodes (gethash key pipeline))
+	       if (getattr node :_type_relay)
+		 append
+		 (map 'list #'buffer-nrank `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node))))))))

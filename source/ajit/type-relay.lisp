@@ -1,7 +1,15 @@
 (in-package :caten/ajit)
 ;; Perform the following inference given the graph by direcly running it in :relay-checker VM.
 ;; - Shape/View/Stride Information
-;; - A list of tensors used in the graph
+;; - (Plus) Permute information.
+;;   - The idea of "permute" and permutation inference is an afterthought.
+;;     - because there were no plans to implement Permute in the initial JIT.
+;;     - The initial JIT implementation plan was to treat all internal Tensors as one-dimensional, but now they are multidimensional in order to express the accesing relations in an affine function for symbolic compilation.
+;;     - This is a trade-off, Symbolic Compilation is possible instead of being able to hack the stride by rewriting it to whatever value you want. Functions that should be implemented with the former should be implemented by introducing another API.
+;;   - Plus, we refer to "permute" as:
+;;     - How the original shape/view/stride was shuffled to obtain the current shape/view/stride.
+;;     - Therefore, when shuffling the shape/stride/view in the aIR level, you must to add :permute attribute in the VIEW node.
+;;     - We have no plan for refactoring this, as "permute inference" is a still simple solution, and arrays are one-dimensional anyway when rendering.
 (defparameter *type-reporter* nil)
 (defstruct (Type-Reporter
 	    (:conc-name rp-)
@@ -46,22 +54,30 @@
   (if (next-method-p)
       (call-next-method)
       (let ((buff (make-buffer (buffer-nrank (car args)) (buffer-shape (car args)) (buffer-stride (car args)) (buffer-dtype (car args)) (buffer-views (car args)))))
-	(setf (buffer-value buff) (make-fakearray (buffer-shape buff) (buffer-dtype buff) (car (node-writes node))))
+	(setf (buffer-value buff) (make-fakearray (buffer-shape buff) (buffer-dtype buff) (car (node-writes node)))
+	      (buffer-inferred-permute buff) (buffer-inferred-permute buff))
 	buff)))
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :Allocate)) graph node args)
   (multiple-value-bind (shape stride) (parse-allocate-node node args)
     (realize-buffer graph (node->id node) :shape1 shape :stride1 stride)))
+;; The same algorithm in function.lisp (class Permute)
+(defun permute-list (order list) (loop for nth in order collect (nth nth list)))
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :view)) graph node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)
       (parse-view-node node args)
-      (let ((buffer (copy-buffer (car args))))
-	(setf (buffer-shape buffer) (map 'list #'reveal-buffer shape)
-	      (buffer-stride buffer) (map 'list #'reveal-buffer stride)
-	      (buffer-views buffer)
-	      (loop for i upfrom 0 below (length v1)
-		    collect (list (reveal-buffer (nth i v1)) (reveal-buffer (nth i v2)) (reveal-buffer (nth i v3)) (nth i bc)))
-	      (buffer-nrank buffer) (length shape))
-	buffer)))
+    (let ((buffer (copy-buffer (car args))))
+      (setf (buffer-shape buffer) (map 'list #'reveal-buffer shape)
+	    (buffer-stride buffer) (map 'list #'reveal-buffer stride)
+	    (buffer-views buffer)
+	    (loop for i upfrom 0 below (length v1)
+		  collect (list (reveal-buffer (nth i v1)) (reveal-buffer (nth i v2)) (reveal-buffer (nth i v3)) (nth i bc)))
+	    (buffer-nrank buffer) (length shape)
+	    (buffer-inferred-permute buffer) (if (and (buffer-inferred-permute buffer) (getattr node :permute))
+						 (permute-list (getattr node :permute) (buffer-inferred-permute buffer))
+						 (or
+						  (buffer-inferred-permute buffer)
+						  (getattr node :permute))))
+      buffer)))
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :Load)) graph node args)
   (let* ((tgt (car args))
 	 (val (getattr node :value)))
