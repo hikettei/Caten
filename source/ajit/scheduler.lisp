@@ -197,8 +197,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 
 (defun isl-access-renderer (gid stride upfrom by broadcast-p)
   (declare (ignore stride))
-  ;;(assert (numberp by) () "by is expected to be a constant to create an affine schedule! (TODO: Fix)")
-  (when (symbolp by) (setf by 2))
+  (assert (numberp by) () "by is expected to be a constant to create an affine schedule! (TODO: Fix)")
+  ;;(when (symbolp by) (setf by 2))
   (if broadcast-p
       (format nil "~a" upfrom)
       (format nil "~a~a~a"
