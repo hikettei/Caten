@@ -320,7 +320,11 @@
       (let ((tensor (make-tensor `(10) :requires-grad t)))
 	(okwhen (!view tensor `(2 4)) tensor #(0 0 1 1 0 0 0 0 0)))
       (let ((tensor (make-tensor `(10) :requires-grad t)))
-	(okwhen (!view tensor `(4 1 -1)) tensor #(0 0 1 1 1 0 0 0 0 0)))
+	(okwhen (!contiguous (!view tensor `(4 1 -1))) tensor #(0 0 1 1 1 0 0 0 0 0)))
+      (testing "Should work w/o !contiguous in the jit"
+	;; Failing ...
+	(let ((tensor (make-tensor `(10) :requires-grad t)))
+	  (okwhen (!view tensor `(4 1 -1)) tensor #(0 0 1 1 1 0 0 0 0 0))))
       (let ((tensor (make-tensor `(7 7 7) :requires-grad t)))
 	(okwhen (!view tensor `(1 4) `(2 5) `(3 5)) tensor #(0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
 							     0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0
@@ -432,7 +436,7 @@
 	(b (ax+b `(4 3) 0 1)))
     (ok (equal-to 4) (elements (proceed (!matmul a b)))))
   (let ((m (proceed (!matmul (ax+b `(3 4) 1 1) (ax+b `(4 3) 1 1)))))
-    (ok (every #'= (elements m) #(70 80 90 158 184 210 246 288 330)))))
+    (ok (every #'= (elements m) #(70 80 90 158 184 210 246 288 330)) "TODO: Update")))
 
 (deftest broadcast-regression-test
   (ok (every #'= (elements (proceed (!mul (ax+b `(1 10) 1 0) (ax+b `(10 1) 1 0))))

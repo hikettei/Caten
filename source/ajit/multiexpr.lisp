@@ -10,7 +10,9 @@
     (when (expr-p (expr-z expr))
       (expr-recursive-replace (expr-z expr) map))
     (when (or (eql (expr-op expr) :Const) (eql (expr-op expr) :Aref))
-      (setf (expr-x expr) (->new (expr-x expr))))))
+      (setf (expr-x expr) (->new (expr-x expr))))
+    (when (eql (expr-op expr) :INDEX-COMPONENTS)
+      (map 'list #'(lambda (x) (expr-recursive-replace x map)) (expr-y expr)))))
 
 (defun expr-recursive-deps (expr)
   (declare (type expr expr))
