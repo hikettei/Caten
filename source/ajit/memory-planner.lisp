@@ -344,7 +344,11 @@ Refcount-by:
 	     (expr-recursive-replace (getattr g :upfrom) #'replacer)
 	     (expr-recursive-replace (getattr g :by) #'replacer))
 	    (:IF
-	     (expr-recursive-replace (getattr g :condition) #'replacer)))))
+	     (expr-recursive-replace (getattr g :condition) #'replacer))
+	    (:FUNCALL
+	     (when (getattr g :args)
+	       (dolist (x (getattr g :args))
+		 (expr-recursive-replace x #'replacer)))))))
       
       (setf (avm-fw-outputs avm) (map 'list #'newid (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm))
