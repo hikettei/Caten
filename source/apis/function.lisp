@@ -137,7 +137,8 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			 (subseq1p inputs (* 2 nrank) (* 3 nrank))
 			 (subseq1p inputs (* 3 nrank) (* 4 nrank))
 			 (permute-list op (map 'list #'viewrange-broadcast (tensor-views bs)))
-			 (permute-list op (%stride (subseq1p inputs (* 4 nrank) (* 5 nrank)) (tensor-order bs)))))))))
+			 (permute-list op (%stride (subseq1p inputs (* 4 nrank) (* 5 nrank)) (tensor-order bs)))
+			 :permute (permute-order op)))))))
 
 (defun !permute (tensor order) (forward (make-instance 'Permute :order order) tensor))
 (defun !t (tensor)

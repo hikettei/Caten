@@ -192,8 +192,11 @@ for (int c0 = 0; c0 < a; c0 += 1)
 				 :pointer (isl-ctx-ptr *isl-context*)
 				 :int ,level
 				 :void))))
+    (when serialize (set-option "schedule_serialize_sccs" 1))
+    ;;(set-option "schedule_maximize_band_depth" 1)
+    ;;(set-option "schedule_whole_component" 1)
     ;;(set-option "schedule_treat_coalescing" 1)
-    (when serialize (set-option "schedule_serialize_sccs" 1)))
+    )
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr) (schedule schedule)) polyhedral
     (let* ((constraints (poly/make-constraints polyhedral))
 	   (schedule (foreign-funcall "isl_schedule_constraints_compute_schedule" :pointer (isl-obj-ptr constraints) :pointer)))

@@ -12,6 +12,7 @@
    #:*max-display-len*
    #:with-device
    #:Buffer #:make-buffer #:copy-buffer #:buffer-p #:buffer-nrank #:buffer-value #:buffer-dtype #:buffer-shape #:buffer-stride #:buffer-views
+   #:buffer-inferred-permute
    #:%vm/allocate-buffer
    #:%vm/read-index
    #:realize-buffer

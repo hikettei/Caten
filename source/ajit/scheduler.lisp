@@ -177,7 +177,41 @@ Further op-fusion optimization are done by the polyhedral-compiler."
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
 
-(defun render-isl-aref (buffer &key (genid #'gid) (access-rep nil) (strides nil))
+(defun one-dimensional-renderer (gid stride upfrom by broadcast-p)
+  (if broadcast-p
+      (format nil "~a" upfrom)
+      (format nil "~a~a~a"
+	      (if (eql by 1)
+		  (if (and (numberp stride) (= stride 1))
+		      ""
+		      (format nil "~a*" stride))
+		  (if (and (numberp stride) (= stride 1))
+		      (format nil "~a*" by)
+		      (if (and (numberp stride) (numberp by))
+			  (format nil "~a*" (* stride by))
+			  (format nil "~a*~a*" by stride))))
+	      gid
+	      (if (eql upfrom 0)
+		  ""
+		  (format nil "+(~a*~a)" upfrom stride)))))
+
+(defun isl-access-renderer (gid stride upfrom by broadcast-p)
+  (declare (ignore stride))
+  (assert (numberp by) () "Compute by is expected to be a number!")
+  (if broadcast-p
+      (format nil "~a" upfrom)
+      (format nil "~a~a~a"
+	      (if (eql by 1)
+		  ""
+		  (format nil "~a*" by))
+	      gid
+	      (if (eql upfrom 0)
+		  ""
+		  (if (eql by 1)
+		      (format nil "+~a" upfrom)
+		      (format nil "+(~a*~a)" upfrom by))))))
+		      
+(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -188,41 +222,40 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
    #'concatenate
    'string
    (butlast
-    (loop for nth upfrom 0
-	  for stride-nth in (or strides (buffer-stride buffer))
-	  for view in (buffer-views buffer)
-	  for stride = (reveal-buffer stride-nth)
-	  for upfrom = (reveal-buffer (or (nth 0 view) 0))
-	  for by     = (reveal-buffer (or (nth 2 view) 1))
-	  for broadcast-p = (nth 3 view)
-	  for gid = (funcall genid nth)
-	  append
-	  (list
-	   (progn
-	     ;; Ugly solution... should be temporary...
-	     ;; ISL assumes the domain to be an affine function.
-	     ;; [TODO] FIX This (when `if` is scheduled by ISL, there's no way to update the index) to make mean working
-	     (when (and (not (numberp stride)) access-rep) (setf stride 1))
-	     (when (and (not (numberp by)) access-rep) (setf by 2))
-	     ;; [TODO] upfrom can be a symbol? stride * (index + offset)
-	     (when (and (not (numberp upfrom)) access-rep) (setf upfrom 1))
-	     (if broadcast-p
-		 (format nil "~a" upfrom)
-		 (format nil "~a~a~a"
-			 (if (eql by 1)
-			     (if (and (numberp stride) (= stride 1))
-				 ""
-				 (format nil "~a*" stride))
-			     (if (and (numberp stride) (= stride 1))
-				 (format nil "~a*" by)
-				 (if (and (numberp stride) (numberp by))
-				     (format nil "~a*" (* stride by))
-				     (format nil "~a*~a*" by stride))))
-			 gid
-			 (if (eql upfrom 0)
-			     ""
-			     (format nil "+(~a*~a)" upfrom stride)))))
-	   "+")))))
+    (append
+     (loop with order = (if (and use-permute (buffer-inferred-permute buffer))
+			    (buffer-inferred-permute buffer)
+			    (range 0 (buffer-nrank buffer)))
+	   for nth in order
+	   for stride-nth in (or strides (buffer-stride buffer))
+	   for view in (buffer-views buffer)
+	   for stride = (reveal-buffer stride-nth)
+	   for upfrom = (reveal-buffer (or (nth 0 view) 0))
+	   for by     = (reveal-buffer (or (nth 2 view) 1))
+	   for broadcast-p = (nth 3 view)
+	   for gid = (funcall genid nth)
+	   append
+	   (list
+	    (progn
+	      ;; ここでSymbolicをAffineで計算するのは100% Must
+	      ;; Ugly solution... should be temporary...
+	      ;; ISL assumes the domain to be an affine function.
+	      ;; [TODO] FIX This (when `if` is scheduled by ISL, there's no way to update the index) to make mean working
+	      ;;(when (and (not (numberp stride)) access-rep) (setf stride 1))
+	      ;;(when (and (not (numberp by)) access-rep) (setf by 2))
+	      ;; [TODO] upfrom can be a symbol? stride * (index + offset)
+	      ;;(when (and (not (numberp upfrom)) access-rep) (setf upfrom 1))
+	      ;; permute orders needs to be inferenced at that moment
+	      ;; when composed? (test w/ convnd)
+	      ;; (!reshape (!view ) ) <- これってInference不可能じゃない？
+	      ;; TODO: support any renderer
+	      ;; Fused Permute Test
+	      (when (buffer-inferred-permute buffer)
+		(print (buffer-inferred-permute buffer)))
+	      (funcall indexing gid stride upfrom by broadcast-p))
+	    split))
+     (when upper
+       (loop repeat (- upper (buffer-nrank buffer)) append (list "0" split)))))))
 
 (defun render-domain (pipeline &key (depends-on nil))
   "Render the domain notation from the scheduled subgraphs
@@ -259,7 +292,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-(defun render-access (mode pipeline &key (depends-on nil))
+(defun render-access (mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
   "Render the read/write accessing relation ship in the following notation:
 ```
 [depends-on] -> {
@@ -290,7 +323,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		       (rt        (car (relay-reads (read-type-relay node)))))
 		   (when (symbolp reduce-to)
 		     (if (vm-instruction-p node)
-			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref rt :access-rep t))
+			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank))
 			 (error ":reduction for the op ~a is invaild." node)))))
 	       (loop for r in (funcall (if (eql mode :read) #'node-reads #'node-writes) node)
 		     for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
@@ -299,7 +332,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			 (if (null lf)
 			     (format out "  ~a -> ~(~a~)[_total] : _total >= 0;~%" occur-from r)
 			     (when (vm-instruction-p node)
-			       (let ((access (render-isl-aref rt :access-rep t)))
+			       (let ((access (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank)))
 				 (if (string= access "")
 				     (format out "  ~a -> ~(~a~)[0];~%" occur-from r)
 				     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))
@@ -380,7 +413,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (or (find (node-id node) subgraph :key #'node-id)
 		   (and
 		    (eql (node-type node) :Allocate)
-		    (eql (node-id node) (node-id alloc)))))	       
+		    (eql (node-id node) (node-id alloc)))))
 	     (relocate (alloc subgraph)
 	       (setf (graph-nodes graph)
 		     (append

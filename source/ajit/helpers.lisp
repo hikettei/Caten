@@ -382,3 +382,12 @@ in a single timestamp otherwise recursive dependencies will occur.
 	      if additional-graph collect (nconc (graph-nodes graph) (list additional-graph)))
 	graph))))
 
+(defun pipeline/upper-nrank (pipeline)
+  (apply
+   #'max
+   (loop for key in (hash-table-keys pipeline)
+	 append
+	 (loop for node in (graph-nodes (gethash key pipeline))
+	       if (getattr node :_type_relay)
+		 append
+		 (map 'list #'buffer-nrank `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node))))))))
