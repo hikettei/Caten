@@ -2,7 +2,7 @@
 
 (defun render-graph/get-timestamps (graph)
   (declare (type graph graph))
-  (loop for node in (graph-nodes graph)	if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
+  (loop for node in (graph-nodes graph) if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
 
 (defgeneric node/in-place-mutation (id node) (:documentation "Return a symbol indicating the position of output (chosen from node-reads)"))
 (defmethod node/in-place-mutation :around (id node)
@@ -103,12 +103,8 @@ Refcount-by:
   (declare (type node node))
   (flet ((ref (x) (refcount/refalias refcount x)))
     (when (eql (node-type node) :EXPR)
-      (let ((buffers (getattr node :buffers)))
-	(assert (every #'(lambda (x) (find (expr-op x) `(:Const :Aref))) buffers))
-	(mapc
-	 #'(lambda (aref)
-	     (setf (expr-x aref) (ref (expr-x aref))))
-	 buffers)))
+      (flet ((replacer (x) (refcount/refalias refcount x)))
+	(expr-recursive-replace (getattr node :expr) #'replacer)))
     ;;(assert (null (getattr node :_reads)))
     ;;(assert (null (getattr node :_writes)))
     (when (getattr node :_type_relay)
@@ -207,11 +203,7 @@ Refcount-by:
 			(intern x)))
 		   (newid x))))
       ;; O(nlogn) * the cost of id->users ...
-      (loop
-	for kernel in kernels
-	for timestamps = (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel))) do
-	  (loop
-	    for time in timestamps
+      (loop for time in (sort (render-graph/get-timestamps render-graph) #'<)
 	    for graph = (gethash time pipeline) do
 	      (loop
 		for node in (graph-nodes graph)
@@ -220,72 +212,71 @@ Refcount-by:
 		  (refcount/make-alias refcount node inplace-p save-for-backwards)
 		  (setf save-for-backwards (map 'list #'newid save-for-backwards))
 		  ;; If write-to area is not going to be used by any other ops, let's make it in-place
-		  ;; otherwise:
-		  ;;  - If write-to-user exists in the same schedule -> create a tmpvar.
-		  ;;  - If write-to-user exists in the another schedule -> they are save-for-backwards, lets keep them copying
 		  (refcount/update-node node refcount)))
-	  (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))
-		 (buffer-args (loop for (name . type) in (nodes-depends-on/buffers nodes)
-				    for only-used-in-this-kernel-p = (find name save-for-backwards)
-				    for written = (find name nodes :key #'node-writes :test #'find)
-				    for read    = (find name nodes :key #'node-reads  :test #'find)
-				    do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type))
-					     (buffer-shape type) (loop for s in (buffer-shape type)
-								       for nth upfrom 0
-								       for view = (nth nth (buffer-views type))
-								       if (or (null view) (null (fourth view)))
-									 collect s
-								       else
-									 collect 1))
-				    collect (make-argument :name name
-							   :pointer-p (if (= (buffer-nrank type) 0)
-									  (if written t nil)
-									  t)
-							   :dtype (buffer-dtype type)
-							   :type (if (null (find name save-for-backwards))
-								     :tmp ;; potentially can be rewritten as a float _tmp_xxx
-								     :user)
-							   :io (if (and written read)
-								   :io
-								   (if written
-								       :output
-								       :input))
-							   :metadata type)))
-		 (failed-inplace-list
-		   (loop with read-set = (map 'list #'node-reads nodes)
-			 for node in nodes
-			 for nth upfrom 0
-			 append
-			 (loop for write in (node-writes node)
-			       for type in (relay-writes (read-type-relay node))
-			       if (null (find write (apply #'append (subseq read-set 0 nth))))
-				 collect
-				 (make-argument :name write
-						:pointer-p t
-						:dtype (buffer-dtype type)
-						:type :tmp
-						:io :output
-						:metadata type))))
-		 (irs (loop for node in (kernel-renderer-nodes kernel)
-			    if (find (node-type node) `(:FOR :IF))
-			      collect node))
-		 (index-components
-		   (loop for node in (kernel-renderer-nodes kernel)
-			 if (eql (node-type node) :FOR)
-			   collect (newid-from-str (getattr node :idx))))
-		 (loop-args
-		   (loop for ir in irs
-			 append
-			 (ecase (node-type ir)
-			   (:FOR
-			    (let ((deps
-				    (remove-duplicates
-				     (append
-				      (expr-recursive-deps (getattr ir :upfrom))
-				      (expr-recursive-deps (getattr ir :below))
-				      (expr-recursive-deps (getattr ir :by))))))
-			      (loop for dep in deps
-				    for name = (newid-from-str dep)
+      (loop for kernel in kernels
+	    for timestamps = (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel))) do
+	      (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))
+		     (buffer-args (loop for (name . type) in (nodes-depends-on/buffers nodes)
+					for only-used-in-this-kernel-p = (find name save-for-backwards)
+					for written = (find name nodes :key #'node-writes :test #'find)
+					for read    = (find name nodes :key #'node-reads  :test #'find)
+					do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type))
+						 (buffer-shape type) (loop for s in (buffer-shape type)
+									   for nth upfrom 0
+									   for view = (nth nth (buffer-views type))
+									   if (or (null view) (null (fourth view)))
+									     collect s
+									   else
+									     collect 1))
+					collect (make-argument :name name
+							       :pointer-p (if (= (buffer-nrank type) 0)
+									      (if written t nil)
+									      t)
+							       :dtype (buffer-dtype type)
+							       :type (if (null (find name save-for-backwards))
+									 :tmp ;; potentially can be rewritten as a float _tmp_xxx
+									 :user)
+							       :io (if (and written read)
+								       :io
+								       (if written
+									   :output
+									   :input))
+							       :metadata type)))
+		     (failed-inplace-list
+		       (loop with read-set = (map 'list #'node-reads nodes)
+			     for node in nodes
+			     for nth upfrom 0
+			     append
+			     (loop for write in (node-writes node)
+				   for type in (relay-writes (read-type-relay node))
+				   if (null (find write (apply #'append (subseq read-set 0 nth))))
+				     collect
+				     (make-argument :name write
+						    :pointer-p t
+						    :dtype (buffer-dtype type)
+						    :type :tmp
+						    :io :output
+						    :metadata type))))
+		     (irs (loop for node in (kernel-renderer-nodes kernel)
+				if (find (node-type node) `(:FOR :IF))
+				  collect node))
+		     (index-components
+		       (loop for node in (kernel-renderer-nodes kernel)
+			     if (eql (node-type node) :FOR)
+			       collect (newid-from-str (getattr node :idx))))
+		     (loop-args
+		       (loop for ir in irs
+			     append
+			     (ecase (node-type ir)
+			       (:FOR
+				(let ((deps
+					(remove-duplicates
+					 (append
+					  (expr-recursive-deps (getattr ir :upfrom))
+					  (expr-recursive-deps (getattr ir :below))
+					  (expr-recursive-deps (getattr ir :by))))))
+				  (loop for dep in deps
+					for name = (newid-from-str dep)
 				    unless (find name index-components)
 				      ;; Indices are created as default-uint
 				      do (push name meta-ids) and collect

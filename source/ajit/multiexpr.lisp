@@ -2,14 +2,14 @@
 
 (defun expr-recursive-replace (expr map)
   (declare (type expr) (type function map))
-  (flet ((->new (x) (if (stringp x) (format nil "~a" (or (funcall map (intern x)) x)) x)))
+  (flet ((->new (x) (if (stringp x) (format nil "~a" (or (funcall map (intern x)) x)) (funcall map x))))
     (when (expr-p (expr-x expr))
       (expr-recursive-replace (expr-x expr) map))
     (when (expr-p (expr-y expr))
       (expr-recursive-replace (expr-y expr) map))
     (when (expr-p (expr-z expr))
       (expr-recursive-replace (expr-z expr) map))
-    (when (eql (expr-op expr) :Const)
+    (when (or (eql (expr-op expr) :Const) (eql (expr-op expr) :Aref))
       (setf (expr-x expr) (->new (expr-x expr))))))
 
 (defun expr-recursive-deps (expr)
@@ -135,8 +135,7 @@
 						      (car (node-reads node)))))))
 			       ;; EXPR (out-to aref ...)
 			       (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
-					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
-					  :buffers arefs)))
+					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node))))))
 			 else
 			   collect expr)))
 	    ;; :expr nil is removed
