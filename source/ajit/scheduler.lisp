@@ -294,7 +294,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	 (let* ((lf (graph->loop-factors subgraph))
 		(occur-from
 		  (format nil "T~a[~(~a~)]"
-			  timestamp (render-list lf))))
+			  timestamp (render-list lf)))
+		(scalar
+		  (apply #'concatenate 'string (butlast (loop repeat kernel-rank append (list "0" ", "))))))
 	   (dolist (node (graph-nodes subgraph))
 	     (when (not (eql (node-class node) :IR))
 	       ;; When reduction is T, the first argument becomes the dependency
@@ -313,11 +315,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		       ;; When node has a :reduction
 		       (when (symbolp r)
 			 (if (null lf)
-			     (format out "  ~a -> ~(~a~)[_total] : _total >= 0;~%" occur-from r)
+			     (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 			     (when (vm-instruction-p node)
 			       (let ((access (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank)))
 				 (if (string= access "")
-				     (format out "  ~a -> ~(~a~)[0];~%" occur-from r)
+				     (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 				     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))
 	       ;; Symbols for computing the stride
 	       (when (and node (eql mode :read))
@@ -330,7 +332,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 				for s = (reveal-buffer s1)
 				if (and (symbolp s) (not (eql s t)) (not (eql s nil)))
 				  collect s)))
-		   (dolist (s symbols) (format out "  ~a -> ~(~a~)[0];~%" occur-from s))))))))
+		   (dolist (s symbols) (format out "  ~a -> ~(~a~)[~a];~%" occur-from s scalar))))))))
      pipeline)
     (format out "}")))
 
