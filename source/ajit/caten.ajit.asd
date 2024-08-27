@@ -9,6 +9,7 @@
    (:file "helpers")
    (:file "simplifiers")
    (:file "type-relay")
+   (:file "polyhedral")
    (:file "scheduler")
    (:file "isl-wrappers")
    (:file "isl-objects")
@@ -18,7 +19,6 @@
    (:file "multiexpr")
    (:file "memory-planner")
    (:file "renderer")
-   (:file "polyhedral")
    (:file "backends/clang"))
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))
 
