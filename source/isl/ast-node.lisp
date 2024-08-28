@@ -76,6 +76,10 @@
   (:give ast-expr)
   (:keep user-node))
 
+(define-isl-function user-get-expr %isl-ast-node-user-get-expr
+  (:give ast-expr)
+  (:keep ast-node))
+
 ;; Creation of which node it is based on type
 
 (defun %make-ast-node (handle)

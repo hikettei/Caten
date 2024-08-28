@@ -1,8 +1,13 @@
 (cl:in-package :cl-user)
 (defpackage :caten/isl
   (:use :cl :cffi)
+  (:nicknames #:isl)
   (:shadow #:set #:map #:space)
   (:export
+   ;; building ast
+   #:ast-build-from-context
+   #:ast-build-node-from-schedule
+   
    #:copy
    ;; Context
    #:context
@@ -98,9 +103,19 @@
    #:affine-sub
    #:affine-mul
    #:affine-div
+   ;; Union Access Info
+   #:union-access-info
+   #:union-access-info-from-sink
+   #:union-access-info-set-must-source
+   #:union-access-info-set-may-source
+   
+   #:union-access-info-set-schedule
+   #:union-access-info-compute-flow
+   #:union-flow-get-must-dependence
+   #:union-flow-get-may-dependence
    ;; Set
    #:set
-   #:setp
+   ;;#:setp
    #:set-from-str
    #:set-empty
    #:set-universe
@@ -287,6 +302,7 @@
    #:user-node
    #:user-node-p
    #:user-node-get-expr
+   #:user-get-expr
    ;; Ast build
    #:ast-build
    #:ast-build-p
@@ -296,14 +312,22 @@
    #:schedule
    #:schedulep
    #:schedule-constraints-compute-schedule
+
+   #:schedule-from-domain
+   #:schedule-sequence
+   #:schedule-to-str
    ;; Schedule constraints
    #:schedule-constraints
    #:schedule-constraints-p
+   #:schedule-constraints-on-domain
    #:schedule-constraints-set-context
    #:schedule-constraints-set-validity
    #:schedule-constraints-set-coincidence
    #:schedule-constraints-set-proximity
-   #:schedule-constraints-set-conditional-validity))
+   #:schedule-constraints-set-conditional-validity
+   ;; printer.lisp
+   #:isl-printer-to-str
+   ))
 
 (in-package :caten/isl)
 

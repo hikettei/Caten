@@ -349,17 +349,17 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			  (progn
 			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
 			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
-		(dom (isl-union-set-read-from-str
+		(dom (union-set-from-str
 		      (format nil
 			      "[~(~a~)] -> { T~a[~(~a~)] : ~a }"
 			      (render-list depends-on)
 			      ts
 			      (render-list loop-factors)
 			      (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))))
-		(sched (isl-schedule-from-domain dom)))
+		(sched (schedule-from-domain dom)))
 	   (if (eql schedule :nothing)
 	       (setf schedule sched)
-	       (setf schedule (isl-schedule-sequence schedule sched)))))
+	       (setf schedule (schedule-sequence schedule sched)))))
      pipeline)
     schedule))
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -604,8 +604,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	(format t "== [Write Accesses] ======")
 	(format t "~%~a~%" write-access)
 	(format t "== [Initial Scheduling domain (=domain)] ======")
-	(format t "~%~a~%" schedule)
-	(isl-schedule-dump schedule))
+	(format t "~%~a~%" schedule))
       (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs (group-writes group)))))
 
 (declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
@@ -684,7 +683,6 @@ Options:
 	       (backend (or (ctx:getenv :JIT_BACKEND) :clang))
 	       (compile-later nil)
 	     &aux
-	       (*isl-context* (isl-ctx-alloc))
 	       (verbose-schedule (or (= debug 2) (= debug 4)))
 	       (verbose-auto (or (= debug 4) (= debug 3))))
   "Applies the jit, returning the compiled code.
