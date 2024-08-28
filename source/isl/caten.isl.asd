@@ -1,5 +1,5 @@
 (asdf:defsystem "caten.isl"
-  :description "ISL Wrapper for Caten"
+  :description "ISL Wrapper for Caten, with a little tweaking. The original code is derivered from https://github.com/marcoheisig/cl-isl. Please see `./LICENCE`."
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
   :defsystem-depends-on ("cffi-grovel")
