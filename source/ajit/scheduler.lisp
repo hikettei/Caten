@@ -705,8 +705,6 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (when (group-polyhedron x)
 	     (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
-	     ;; Finalize the schedule
-	     ;; [TODO] Free Polyhedron
 	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x))))
        groups)
       (let* ((refcount (create-reference-counter groups))
