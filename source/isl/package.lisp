@@ -4,6 +4,7 @@
   (:nicknames #:isl)
   (:shadow #:set #:map #:space)
   (:export
+   #:with-isl-context
    ;; building ast
    #:ast-build-from-context
    #:ast-build-node-from-schedule

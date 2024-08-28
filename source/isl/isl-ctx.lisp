@@ -1,6 +1,6 @@
 (in-package :caten/isl)
 
-(define-isl-object context :free %isl-ctx-free)
+(define-isl-object context :free identity)
 (defun make-context ()
   (let ((handle (%isl-ctx-alloc)))
     (%isl-options-set-on-error handle +isl-on-error-continue+)

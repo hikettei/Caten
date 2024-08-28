@@ -31,6 +31,15 @@ of type OBJECT-NAME."
 ;;; This hash table is used in each ISL object constructor to ensure that
 ;;; each handle has exactly one corresponding wrapper object.
 (defvar *isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value))
+(defmacro with-isl-context (&body body)
+  "Assumes under the body is a thread-safe"
+  `(let ((*context* (make-context)))
+     (prog1
+	 (let ((*isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value)))
+	   ,@body)
+       (remhash (cffi:pointer-address (context-handle *context*)) *isl-object-table*)
+       (%isl-ctx-free (context-handle *context*)))))
+
 (defmacro define-isl-object
     (name &key (abstract nil)
             (list-type nil)
@@ -42,8 +51,7 @@ of type OBJECT-NAME."
         (%make (make-isl-sym "%MAKE-" name))
         (%%make (make-isl-sym "%%MAKE-" name))
         (%from-str-us (make-isl-sym name "-FROM-STR"))
-        (%from-str-library (make-isl-sym "%ISL-" name "-READ-FROM-STR"))
-        )
+        (%from-str-library (make-isl-sym "%ISL-" name "-READ-FROM-STR")))
     (setf (isl-object-%copy name) %copy)
     (setf (isl-object-%make name) %make)
     (setf (isl-object-%free name) %free)
@@ -66,11 +74,11 @@ of type OBJECT-NAME."
                (values
                 (alexandria:ensure-gethash
                  (cffi:pointer-address handle)
-                 *isl-object-table*
+		 *isl-object-table*
                  (trivial-garbage:finalize (,%%make handle)
                                            (lambda ()
-                                             (remhash (cffi:pointer-address handle) *isl-object-table*)
-                                             (,%free handle))))))))
+					     (remhash (cffi:pointer-address handle) *isl-object-table*)
+					     (,%free handle))))))))
        ,@(when %copy
            `((defmethod copy ((,name ,name))
                (,%make (,%copy (isl-object-handle ,name)))))))))

@@ -693,41 +693,42 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
 	   (type boolean serialize))
-  (let* ((groups (create-schedules-from-avm avm :verbose verbose-schedule))
-	 (groups (loop for group in groups
-		       if (group-realize-on-vm group) collect group
-			 else if (group-sched group) do
-			   (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule :verbose-auto verbose-auto))
-			   and collect group)))
-    (mapc
-     #'(lambda (x)
-	 (when (group-polyhedron x)
-	   (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
-	   (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
-	   ;; Finalize the schedule
-	   ;; [TODO] Free Polyhedron
-	   (setf (group-render-graph x) (finalize-and-retrive-render-graph x))))
-     groups)
-    (let* ((refcount (create-reference-counter groups))
-	   (kernels (map
-		     'list
-		     #'(lambda (x)
-			 (if (group-realize-on-vm x)
-			     (group/apply-memory-planner! x refcount)
-			     (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x))))
-		     groups))
-	   (blueprints/codes
-	     (loop for group in groups
-		   for kernel in kernels
-		   for nth upfrom 0
-		   collect
-		   (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
-	   (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
-      (unless compile-later (%render-compile backend avm final-code))
-      (values
-       (map 'list #'car blueprints/codes)
-       final-code
-       refcount))))
+  (with-isl-context
+    (let* ((groups (create-schedules-from-avm avm :verbose verbose-schedule))
+	   (groups (loop for group in groups
+			 if (group-realize-on-vm group) collect group
+			   else if (group-sched group) do
+			     (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule :verbose-auto verbose-auto))
+				and collect group)))
+      (mapc
+       #'(lambda (x)
+	   (when (group-polyhedron x)
+	     (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
+	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
+	     ;; Finalize the schedule
+	     ;; [TODO] Free Polyhedron
+	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x))))
+       groups)
+      (let* ((refcount (create-reference-counter groups))
+	     (kernels (map
+		       'list
+		       #'(lambda (x)
+			   (if (group-realize-on-vm x)
+			       (group/apply-memory-planner! x refcount)
+			       (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x))))
+		       groups))
+	     (blueprints/codes
+	       (loop for group in groups
+		     for kernel in kernels
+		     for nth upfrom 0
+		     collect
+		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
+	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
+	(unless compile-later (%render-compile backend avm final-code))
+	(values
+	 (map 'list #'car blueprints/codes)
+	 final-code
+	 refcount)))))
 
 (defun jit (base-avm
 	    &key
