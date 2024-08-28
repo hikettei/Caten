@@ -40,12 +40,12 @@
 (defun finalize-schedule (polyhedral)
   "Finalizes the polyhedral model (frees the memory), returning Lisp_AST (see above)"
   (declare (type Polyhedral polyhedral))
-  (parse-isl-ast (finalize-polyhedral polyhedral)))
+  (parse-isl-ast (isl::ast-node-handle (finalize-polyhedral polyhedral))))
 
-(declaim (ftype (function (ast-node) t) parse-isl-ast))
+(declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast))
 (defun parse-isl-ast (ast)
-  (declare (type ast-node ast))
-  (let ((type (isl::%isl-ast-node-get-type (isl::ast-node-handle ast))))
+  (declare (type cffi:foreign-pointer ast))
+  (let ((type (isl::%isl-ast-node-get-type ast)))
     (ecase type
       (:ast-node-error (isl::isl-error))
       (:ast-node-for   (parse-isl-ast-for ast))
@@ -54,21 +54,21 @@
       (:ast-node-mark  (error ":isl_ast_node_mark is not supported"))
       (:ast-node-user  (parse-isl-ast-user ast)))))
 
-(declaim (ftype (function (ast-node) ASTBlock) parse-isl-ast-block))
+(declaim (ftype (function (cffi:foreign-pointer) ASTBlock) parse-isl-ast-block))
 (defun parse-isl-ast-block (ast)
-  (declare (type ast-node ast))
-  (let* ((children (isl::%isl-ast-node-block-get-children (isl::ast-node-handle ast)))
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((children (isl::%isl-ast-node-block-get-children ast))
 	 (n        (isl::%isl-ast-node-list-n-ast-node children)))
     (make-block
      (loop for i upfrom 0 below n
-	   for child = (isl::%make-ast-node (isl::%isl-ast-node-list-get-at children i))
+	   for child = (isl::%isl-ast-node-list-get-at children i)
 	   collect
 	   (parse-isl-ast child)))))
 
-(declaim (ftype (function (ast-node) User) parse-isl-ast-user))
+(declaim (ftype (function (cffi:foreign-pointer) User) parse-isl-ast-user))
 (defun parse-isl-ast-user (ast)
-  (declare (type ast-node ast))
-  (let ((expr (isl::%isl-ast-node-user-get-expr (isl::ast-node-handle ast))))
+  (declare (type cffi:foreign-pointer ast))
+  (let ((expr (isl::%isl-ast-node-user-get-expr ast)))
     (let* ((first-expr (isl::%isl-ast-expr-op-get-arg expr 0))
 	   (n          (isl::%isl-ast-expr-get-op-n-arg expr))
 	   (id         (isl::%isl-ast-expr-id-get-id first-expr))
@@ -139,30 +139,28 @@
 	       (otherwise
 		(error "~a is not supported by caten" op-type))))))))))
 
-(declaim (ftype (function (ast-node) ASTFor) parse-isl-ast-for))
+(declaim (ftype (function (cffi:foreign-pointer) ASTFor) parse-isl-ast-for))
 (defun parse-isl-ast-for (ast)
-  (declare (type ast-node ast))
-  (let* ((ast (isl::ast-node-handle ast))
-	 (execute-once (isl::%isl-ast-node-for-is-degenerate ast))
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((execute-once (isl::%isl-ast-node-for-is-degenerate ast))
 	 (iter (isl::%isl-ast-node-for-get-iterator ast))
 	 (id (isl::%isl-ast-expr-get-id iter))
 	 (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
-	 (from (parse-isl-expr (isl::%make-ast-node (isl::%isl-ast-node-for-get-init ast))))
-	 (by (parse-isl-expr (isl::%make-ast-node (isl::%isl-ast-node-for-get-inc ast))))
+	 (from (parse-isl-expr (isl::%isl-ast-node-for-get-init ast)))
+	 (by (parse-isl-expr (isl::%isl-ast-node-for-get-inc ast)))
 	 (to (parse-isl-expr (isl::%isl-ast-node-for-get-cond ast)))
-	 (body (parse-isl-ast (isl::%make-ast-node (isl::%isl-ast-node-for-get-body ast)))))
+	 (body (parse-isl-ast (isl::%isl-ast-node-for-get-body ast))))
     (make-for name from to by body (ecase execute-once (:bool-false nil) (:bool-true t)))))
 
-(declaim (ftype (function (ast-node) AstIf) parse-isl-ast-if))
+(declaim (ftype (function (cffi:foreign-pointer) AstIf) parse-isl-ast-if))
 (defun parse-isl-ast-if (ast)
-  (declare (type ast-node ast))
-  (let* ((ast (isl::ast-node-handle ast))
-	 (condition
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((condition
 	   (parse-isl-expr (isl::%isl-ast-node-if-get-cond ast)))
 	 (then-node
-	   (parse-isl-ast (isl::%make-ast-node (isl::%isl-ast-node-if-get-then-node ast))))
+	   (parse-isl-ast (isl::%isl-ast-node-if-get-then-node ast)))
 	 (else-p (isl::%isl-ast-node-if-has-else-node ast))
 	 (else-node
 	   (when (eql else-p :bool-true)
-	     (parse-isl-ast (isl::%make-ast-node (isl::%isl-ast-node-if-get-else-node ast))))))
+	     (parse-isl-ast (isl::%isl-ast-node-if-get-else-node ast)))))
     (make-if condition then-node else-node)))
