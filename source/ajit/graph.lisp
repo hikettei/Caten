@@ -62,14 +62,28 @@
     (apply #'make-graph (simplify-rendering-nodes (reverse new-graph)))))
 
 (defun simplify-rendering-nodes (nodes)
-  (funcall (compose #'simplifier/remove-empty-if) nodes))
-
+  (let ((len (length nodes)))
+    (let ((new (funcall (compose #'simplifier/remove-empty-for #'simplifier/remove-empty-if) nodes)))
+      (if (= (length new) len)
+	  new
+	  (simplify-rendering-nodes new)))))
+	  
 (defun simplifier/remove-empty-if (nodes &aux (removed nil))
   (loop for node in nodes
 	for nth upfrom 0
 	if (and (eql (node-type node) :IF)
 		(nth (1+ nth) nodes)
 		(eql (node-type (nth (1+ nth) nodes)) :ENDIF))
+	  do (push (node-id (nth (1+ nth) nodes)) removed)
+	else unless (find (node-id node) removed)
+	       collect node))
+
+(defun simplifier/remove-empty-for (nodes &aux (removed nil))
+  (loop for node in nodes
+	for nth upfrom 0
+	if (and (eql (node-type node) :FOR)
+		(nth (1+ nth) nodes)
+		(eql (node-type (nth (1+ nth) nodes)) :ENDFOR))
 	  do (push (node-id (nth (1+ nth) nodes)) removed)
 	else unless (find (node-id node) removed)
 	       collect node))
