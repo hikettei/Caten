@@ -2,7 +2,7 @@
   :description "Abstract JIT System"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("trivia" "alexandria" "cffi" "trivial-garbage")
+  :depends-on ("caten.isl" "trivia" "alexandria" "cffi" "trivial-garbage")
   :serial t
   :components
   ((:file "package")
@@ -11,7 +11,6 @@
    (:file "type-relay")
    (:file "polyhedral")
    (:file "scheduler")
-   (:file "isl-wrappers")
    (:file "isl-objects")
    (:file "isl-ast-helpers")
    (:file "graph")
