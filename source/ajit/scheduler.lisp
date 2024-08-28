@@ -256,7 +256,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   (with-output-to-string (out)
     ;; renders depends-on
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
-    (maphash
+    (maphash1
      #'(lambda (timestamp subgraph)
 	 (let* ((loop-factors (graph->loop-factors subgraph))
 		(constraints
@@ -290,7 +290,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (type hash-table pipeline))
   (with-output-to-string (out)
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
-    (maphash
+    (maphash1
      #'(lambda (timestamp subgraph)
 	 (let* ((lf (graph->loop-factors subgraph))
 		(occur-from
@@ -339,7 +339,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 
 (defun isl-initial-schedule (pipeline &key depends-on)
   (let ((schedule :nothing))
-    (maphash
+    (maphash1
      #'(lambda (ts graph)
 	 (let* ((loop-factors (graph->loop-factors graph))
 		(constraints
