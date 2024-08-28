@@ -11,7 +11,6 @@
    (:file "type-relay")
    (:file "polyhedral")
    (:file "scheduler")
-   (:file "isl-wrappers")
    (:file "isl-objects")
    (:file "isl-ast-helpers")
    (:file "graph")
