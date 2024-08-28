@@ -31,13 +31,4 @@
    (:file "ast-build")
    (:file "schedule-constraints")
    (:file "schedule")
-   (:file "ast"))
-  :in-order-to ((test-op (asdf:test-op "caten.isl/test"))))
-
-(asdf:defsystem "caten.isl/test"
-  :depends-on
-  ("rove" "caten.isl")
-  :components
-  ((:file "test-suites"))
-  :perform
-  (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style (if (uiop:getenv "DOT") :dot :spec))))
+   (:file "ast")))
