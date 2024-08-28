@@ -6,6 +6,16 @@
 (defmacro range (from below &optional (by 1))
   `(loop for i from ,from below ,below by ,by collect i))
 
+(defun maphash1 (function hash-table)
+  "Equivalent to the maphash, but the order in which keys are called is sorted.
+Since the order in which functions are executed are not ANSI Portable. For scheduler related algorithm, this function
+should be used instead"
+  (declare (type function function) (type hash-table hash-table))
+  (let ((keys (hash-table-keys hash-table)))
+    (assert (every #'numberp keys))
+    (loop for key in (sort keys #'<)
+	  do (funcall function key (gethash key hash-table)))))
+
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
 (defun render-schedule (sched)
   (let* ((graph (apply #'make-graph (si-nodes sched)))
