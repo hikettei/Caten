@@ -25,7 +25,30 @@
 	  for nth upfrom 0
 	  collect (make-kernel-renderer :nodes out :nth nth))))
 
+(defun apply-bands (bands nodes &key (global-rank 2))
+  (flet ((find-band (sched)
+	   ;; obviously this needs to be reconsidered
+	   (find sched bands :test #'(lambda (x y) (search x (format nil "~a" (band-domain y)) :test #'char=)))))
+    (loop with stacked-loops = nil
+	  for node in nodes
+	  if (eql (node-type node) :FUNCALL)
+	    do (let ((band (find-band (getattr node :name))))
+		 (when band
+		   (loop with last-dim = (1- (length stacked-loops))
+			 for lp in (reverse stacked-loops)
+			 for c in (band-coincident band)
+			 for rank upfrom 0
+			 do (setf (getattr lp :scope) (if (and (<= rank global-rank) (not (= last-dim rank))) (if c :global :local) :local)
+				  (getattr lp :coincident) c
+				  (getattr lp :permutable) (band-permutable band)))))
+	  else if (eql (node-type node) :FOR)
+		 do (push node stacked-loops)
+	  else if (eql (node-type node) :ENDFOR)
+		 do (setf stacked-loops (remove (getattr node :idx) stacked-loops :test #'string= :key #'(lambda (x) (getattr x :idx)))))
+    nodes))
 ;; A special graph dedicated to the rendering process
+;; Loop is either of :Global or :Local
+;; :Global is attributed only after the polyhedral compiler is confirmed that it is parallelized.
 (defun r/for (idx upfrom below by) (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by))
 (defun r/endfor (idx) (make-node :Render :ENDFOR nil nil :idx idx))
 (defun r/funcall (name args)
@@ -34,9 +57,7 @@
 (defun r/if (condition) (make-node :Render :IF nil nil :condition condition))
 (defun r/else () (make-node :Render :ELSE nil nil))
 (defun r/endif () (make-node :Render :ENDIF nil nil))
-(defun create-rendering-graph (polyhedron lisp-ast)
-  (declare (type polyhedral polyhedron)
-	   (ignore polyhedron))
+(defun create-rendering-graph (lisp-ast bands)
   ;; -1 is a placeholder for the tmpvar allocation.
   (let ((new-graph))
     (labels ((lower (object)
@@ -59,7 +80,7 @@
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (apply #'make-graph (simplify-rendering-nodes (reverse new-graph)))))
+    (apply #'make-graph (apply-bands bands (simplify-rendering-nodes (reverse new-graph))))))
 
 (defun simplify-rendering-nodes (nodes)
   (let ((len (length nodes)))
@@ -67,7 +88,7 @@
       (if (= (length new) len)
 	  new
 	  (simplify-rendering-nodes new)))))
-	  
+
 (defun simplifier/remove-empty-if (nodes &aux (removed nil))
   (loop for node in nodes
 	for nth upfrom 0

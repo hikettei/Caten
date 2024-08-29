@@ -630,7 +630,8 @@ Options:
 (defun finalize-and-retrive-render-graph (group)
   "Step4, Extract the schedule from ISL."
   (declare (type group group))
-  (create-rendering-graph (group-polyhedron group) (finalize-schedule (group-polyhedron group))))
+  (multiple-value-bind (ast bands) (finalize-schedule (group-polyhedron group))
+    (create-rendering-graph ast bands)))
 
 (defstruct (Compiled-Kernel
 	    (:conc-name ck-)

@@ -4,7 +4,7 @@
    :caten/common.dtype
    #:dtype/cast))
 (in-package :caten/external.backends.metal)
-
+;; Reading: https://dl.acm.org/doi/pdf/10.1145/2400682.2400713
 (defparameter *access* nil)
 (defparameter *args* nil)
 (defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))
@@ -17,6 +17,7 @@
     (:bool "boolean")
     (:float64 "double")
     (:float32 "float")
+    (:float16 "bfloat")
     (:uint64 "uint64_t")
     (:int64 "int64_t")
     (:int32 "int32_t")
@@ -26,6 +27,7 @@
     (:uint8 "uint8_t")
     (:int8 "int8_t")))
 
+;; TODO: Global/Local Loop Scheduling
 #|
 float2 __WMMA_8_8_8_float_float(float2 m, float2 n, float2 o) {
   simdgroup_float8x8 a,b,c; a.thread_elements()[0] = m.x; a.thread_elements()[1] = m.y; b.thread_elements()[0] = n.x;
@@ -55,3 +57,44 @@ float2 __WMMA_8_8_8_float_float(float2 m, float2 n, float2 o) {
 	    (car extra-args)
 	    (second extra-args)
 	    body)))
+
+(defmethod %render-body ((lang (eql :metal)) kernel-lang jit-graph polyhedral indent args)
+  (declare (type graph jit-graph) (type polyhedral polyhedral) (type fixnum indent))
+  (let ((*args* (loop for arg in args if (argument-pointer-p arg) collect (caten/ajit:argument-name arg))))
+    (with-output-to-string (out)
+      (macrolet ((line (designator &rest args)
+		   `(progn
+		      (dotimes (i (* 2 indent)) (princ " " out))
+		      (format out ,designator ,@args)
+		      (format out "~%")))
+		 (r (obj) `(render-expr lang ,obj)))
+	(loop for node in (graph-nodes jit-graph)
+	      for type = (node-type node) do
+		(assert (eql :Render (node-class node)))
+		(ecase type
+		  (:FOR
+		   (multiple-value-bind (idx upfrom below by)
+		       (values (getattr node :idx) (getattr node :upfrom) (getattr node :below) (getattr node :by))
+		     (assert (and idx upfrom below by) () "Missing ~a" (list idx upfrom below by))
+		     (line "for(int ~(~a~)=~a;~a;~a+=~a) {" (r idx) (r upfrom) (r below) (r idx) (r by))
+		     (incf indent)))
+		  (:ENDFOR
+		   (decf indent)
+		   (line "}"))
+		  (:IF
+		   (let ((c (getattr node :condition)))
+		     (assert c () "Missing condition")
+		     (line "if ~a {" (r c))
+		     (incf indent)))
+		  (:ELSE
+		   (decf indent)
+		   (line "} else {")
+		   (incf indent))
+		  (:ENDIF
+		   (decf indent)
+		   (line "}"))
+		  (:FUNCALL
+		   (let ((idx (getattr node :idx))
+			 (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
+		     (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out)))))))))
+
