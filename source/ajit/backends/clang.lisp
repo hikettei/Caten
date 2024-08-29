@@ -216,9 +216,9 @@ Compiled with: ~a"
 		      (format out ,designator ,@args)
 		      (format out "~%")))
 		 (r (obj) `(render-expr lang ,obj)))
-	(loop for node in (graph-nodes jit-graph)
+	(loop with nth = 0
+	      for node in (graph-nodes jit-graph)
 	      for type = (node-type node)
-	      for nth upfrom 0
 	      for outermost-p = (= nth 0) do
 		(assert (eql :Render (node-class node)))
 		(ecase type
@@ -229,7 +229,8 @@ Compiled with: ~a"
 		     (when (and outermost-p (eql :global (getattr node :scope)) (= 1 (ctx:getenv :OMP)))
 		       (line "#pragma omp parallel for"))
 		     (line "for(int ~(~a~)=~a;~a;~a+=~a) {" (r idx) (r upfrom) (r below) (r idx) (r by))
-		     (incf indent)))
+		     (incf indent))
+		   (incf nth))
 		  (:ENDFOR
 		   (decf indent)
 		   (line "}"))

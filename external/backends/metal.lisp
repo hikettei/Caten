@@ -168,9 +168,9 @@ float2 __WMMA_8_8_8_float_float(float2 m, float2 n, float2 o) {
 		      (format out "~%")))
 		 (r (obj) `(render-expr lang ,obj))
 		 (global-p (node) `(find (getattr ,node :idx) global-loops :key #'(lambda (x) (getattr x :idx)) :test #'string=)))
-	(loop for node in (graph-nodes jit-graph)
-	      for type = (node-type node)
-	      for nth upfrom 0 do
+	(loop with nth = 0
+	      for node in (graph-nodes jit-graph)
+	      for type = (node-type node) do
 		(assert (eql :Render (node-class node)))
 		(ecase type
 		  (:FOR
@@ -182,7 +182,8 @@ float2 __WMMA_8_8_8_float_float(float2 m, float2 n, float2 o) {
 			   (line "uint ~a = gid.~a;" idx (ecase nth (0 "x") (1 "y") (2 "z"))))
 			 (progn
 			   (line "for(int ~(~a~)=~a;~a;~a+=~a) {" (r idx) (r upfrom) (r below) (r idx) (r by))
-			   (incf indent)))))
+			   (incf indent)))
+		     (incf nth)))
 		  (:ENDFOR
 		   (decf indent)
 		   (if (global-p node)
