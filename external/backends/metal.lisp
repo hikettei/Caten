@@ -4,6 +4,19 @@
    :caten/common.dtype
    #:dtype/cast))
 (in-package :caten/external.backends.metal)
+;; TODO: Initialize the backend like:
+;; (with-backend (metal :device 0)
+;;   ...
+;;   )
+;; (with-backend (clang :omp t)
+;;  ...
+;;  )
+;; (with-backend (default-config)
+;;  ...
+;;  )
+;; ちゃんと並列化できるようにISLの段階でSchedulingする
+;; 特に，Partial Scheduleを最初に設定しておく
+;; Update this line: https://github.com/hikettei/cl-metal/blob/main/lib/Sources/CLMetal/cl-metal.swift#L333
 ;; Reading: https://dl.acm.org/doi/pdf/10.1145/2400682.2400713
 ;; https://developer.apple.com/documentation/metal/compute_passes/creating_threads_and_threadgroups
 ;; 
