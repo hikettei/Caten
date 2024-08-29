@@ -38,9 +38,12 @@
     (:int8 'int8-t)))
 
 (defun io->metal (io) (ecase io (:input :in) (:output :out) (:io :io)))
-
+(defun maybe-buffer-value (x)
+  (if (buffer-p x)
+      (buffer-value x)
+      x))
 (defmethod %render-compile ((lang (eql :metal)) avm function) (eval (read-from-string function)))
-(defmethod %render-function-caller ((lang (eql :metal)) avm args) `(lambda ()))
+(defmethod %render-function-caller ((lang (eql :metal)) avm args) `(lambda (&rest args) (apply #',(avm-name avm) (map 'list #'maybe-buffer-value args))))
 
 ;; ~~ EXPRS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((unary (name render)
@@ -125,7 +128,7 @@ float2 __WMMA_8_8_8_float_float(float2 m, float2 n, float2 o) {
 (defmethod %render-function ((lang (eql :metal)) avm args body)
   (with-output-to-string (out)
     (prin1
-     `(make-kernel (:threadgroup-position-in-grid gid :thread-position-in-threadgroup lid :style :metal)
+     `(define-kernel (,(avm-name avm) :threadgroup-position-in-grid gid :thread-position-in-threadgroup lid :style :metal :stream ,(>= (ctx:getenv :JIT_DEBUG) 1))
 	  (void (,@(loop for arg in args
 			 collect `(,(intern (string-upcase (format nil "~a~a" (argument-name arg) (if (argument-pointer-p arg) "*" ""))))
 				   ,(dtype->mtype (argument-dtype arg))
