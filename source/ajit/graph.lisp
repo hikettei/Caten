@@ -38,7 +38,9 @@
 			 for lp in (reverse stacked-loops)
 			 for c in (band-coincident band)
 			 for rank upfrom 0
-			 do (setf (getattr lp :scope) (if (and (<= rank global-rank) (not (= last-dim rank))) (if c :global :local) :local)
+			 do (setf (getattr lp :scope) (if (= (length stacked-loops) 1)
+							  :global
+							  (if (and (<= rank global-rank) (not (= last-dim rank))) (if c :global :local) :local))
 				  (getattr lp :coincident) c
 				  (getattr lp :permutable) (band-permutable band)))))
 	  else if (eql (node-type node) :FOR)

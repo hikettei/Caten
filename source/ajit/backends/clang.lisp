@@ -98,9 +98,14 @@ Compiled with: ~a"
 (defmethod %render-program-toplevel ((lang (eql :clang)) body)
   (format nil "~%#include <math.h>
 #include <stdint.h>
+~a
 #define boolean _Bool
 #define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
-~a" body))
+~a"
+	  (if (= 1 (ctx:getenv :OMP))
+	      "#include <omp.h>"
+	      "")
+	  body))
 
 (defmethod %render-function ((lang (eql :clang)) avm args body)
   (let ((header
@@ -212,13 +217,17 @@ Compiled with: ~a"
 		      (format out "~%")))
 		 (r (obj) `(render-expr lang ,obj)))
 	(loop for node in (graph-nodes jit-graph)
-	      for type = (node-type node) do
+	      for type = (node-type node)
+	      for nth upfrom 0
+	      for outermost-p = (= nth 0) do
 		(assert (eql :Render (node-class node)))
 		(ecase type
 		  (:FOR
 		   (multiple-value-bind (idx upfrom below by)
 		       (values (getattr node :idx) (getattr node :upfrom) (getattr node :below) (getattr node :by))
 		     (assert (and idx upfrom below by) () "Missing ~a" (list idx upfrom below by))
+		     (when (and outermost-p (eql :global (getattr node :scope)) (= 1 (ctx:getenv :OMP)))
+		       (line "#pragma omp parallel for"))
 		     (line "for(int ~(~a~)=~a;~a;~a+=~a) {" (r idx) (r upfrom) (r below) (r idx) (r by))
 		     (incf indent)))
 		  (:ENDFOR
