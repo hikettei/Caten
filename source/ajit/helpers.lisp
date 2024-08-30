@@ -490,8 +490,4 @@ in a single timestamp otherwise recursive dependencies will occur.
   (apply
    #'max
    (loop for key in (hash-table-keys pipeline)
-	 append
-	 (loop for node in (graph-nodes (gethash key pipeline))
-	       if (getattr node :_type_relay)
-		 append
-		 (map 'list #'buffer-nrank `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node))))))))
+	 collect (length (graph->loop-factors (gethash key pipeline))))))
