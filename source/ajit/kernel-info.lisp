@@ -15,11 +15,13 @@
   `(make-jit-info :argtypes ,(jit-info-argtypes jit) :fname ,(jit-info-fname jit) :caller ,(jit-info-caller-body jit) :caller-body nil :lang ,(jit-info-lang jit) :code ,(jit-info-code jit) :n-kernels ,(jit-info-n-kernels jit) :load-p nil))
 (defmethod print-object ((s jit-info) stream) (format stream "<~a[~a] Code [~a kernels]>" (jit-info-lang s) (jit-info-fname s) (jit-info-n-kernels s)))
 (defun make-fused-kernel-caller (fname args lambda fcaller-body code lang n-kernels)
-  (make-node :IR :JIT_KERNEL
-	     (map 'list #'argument-name args)
-	     (map 'list #'argument-name args)
-	     :fname fname :jit-info (make-jit-info :caller lambda :caller-body fcaller-body :lang lang :code code :n-kernels n-kernels
-						   :argtypes (map 'list #'argument-dtype args))))
+  (declare (type device lang))
+  (let ((lang (intern (symbol-name (class-name (class-of lang))) "KEYWORD")))
+    (make-node :IR :JIT_KERNEL
+	       (map 'list #'argument-name args)
+	       (map 'list #'argument-name args)
+	       :fname fname :jit-info (make-jit-info :caller lambda :caller-body fcaller-body :lang lang :code code :n-kernels n-kernels
+						     :argtypes (map 'list #'argument-dtype args)))))
 (defun maybe-scal-buffer (arg type)
   (if (buffer-p arg)
       (if (= (buffer-nrank arg) 0)

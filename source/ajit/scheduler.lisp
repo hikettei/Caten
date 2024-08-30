@@ -684,6 +684,9 @@ Options:
 	       (backend (or (ctx:getenv :JIT_BACKEND) :clang))
 	       (compile-later nil)
 	     &aux
+	       (backend (if (keywordp backend)
+			    (default-device backend)
+			    backend))
 	       (verbose-schedule (or (= debug 2) (= debug 4)))
 	       (verbose-auto (or (= debug 4) (= debug 3))))
   "Applies the jit, returning the compiled code.
@@ -736,6 +739,9 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	      (backend (or (ctx:getenv :JIT_BACKEND) :clang))
 	    &aux
 	      (_ (apply-static-gensym base-avm))
+	      (backend (if (keywordp backend)
+			   (default-device backend)
+			   backend))
 	      (avm (deepcopy-avm base-avm)))
   "Applies the jit"
   (declare (type avm avm)
