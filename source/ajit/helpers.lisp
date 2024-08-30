@@ -182,7 +182,7 @@ Graph must be verified in advance."
 	  for by  = (nth 2 view)
 	  for broadcast = (nth 3 view)
 	  if broadcast
-	    append (if except-for-shape `(,shape ,upfrom) `(,upfrom))
+	    append (if except-for-shape `(,shape) nil)
 	  else
 	    append
 	    (loop for val in (if except-for-shape
