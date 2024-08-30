@@ -366,8 +366,12 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
+;; Set no-writes=t to skip O(N) search algorithm.
 (defstruct (Group
-	    (:constructor make-group (nodes realize-on-vm &aux (args (nodes-depends-on nodes)) (shapes (nodes-gather-args nodes)))))
+	    (:constructor make-group (nodes realize-on-vm &key (no-writes nil)
+				      &aux
+					(args (when (null no-writes) (nodes-depends-on nodes)))
+					(shapes (when (null no-writes) (nodes-gather-args nodes))))))
   (graph (apply #'make-graph nodes) :type graph)
   (sched nil :type list)
   (realize-on-vm realize-on-vm :type boolean)
@@ -376,7 +380,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   (across-time-deps nil :type list)
   (args args :type list)
   (shapes shapes :type list)
-  (writes (nodes-output-ids nodes) :type list))
+  (writes (when (null no-writes) (nodes-output-ids nodes)) :type list))
 
 (defun relocate-independent-allocations! (graph)
   "
@@ -456,27 +460,82 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	    if (isolated-p view subgraph)
 	      do (relocate view subgraph)))))
 
+(defun recursive-split-into-subgroups (group)
+  (declare (type group group))
+  (let ((graph (group-graph group))
+	(stashed-path)
+	(seen))
+    (labels ((finalize-group (group)
+	       ;; Infers group-writes
+	       (make-group (graph-nodes (group-graph group)) (group-realize-on-vm group)))
+	     (force-realize-on-vm (node)
+	       (or
+		(eql (node-type node) :Allocate)
+		(and (eql (node-type node) :LOAD)
+		     (symbolp (getattr node :value))
+		     (= 0 (buffer-nrank (car (relay-writes (read-type-relay node))))))))
+	     (explore (id)
+	       (declare (type symbol id))
+	       (let ((node (id->value graph id)))
+		 (when (null (find (node-id node) seen :key #'node-id))
+		   ;; dynamic shapes are stashed and excluded from the graph, or exists in the toplevel?
+		   (push node seen)
+		   (if (force-realize-on-vm node)
+		       (progn
+			 (push node stashed-path)
+			 nil)			 
+		       (make-group
+			(append
+			 (loop for read in (node-reads node)
+			       for parent = (when (symbolp read) (explore read))
+			       if parent
+				 append (graph-nodes (group-graph parent)))
+			 (list node))
+			nil
+			:no-writes t)))))
+	     (restart-from-stashed-node (node)
+	       (list
+		(make-group
+		 (list node)
+		 t
+		 :no-writes t)
+		(make-group
+		 (loop for read in (node-reads node)
+		       for parent = (when (symbolp read) (explore read))
+		       if parent
+			 append (graph-nodes (group-graph parent)))
+		 nil
+		 :no-writes t))))
+      (let ((new-groups (map 'list #'explore (group-writes group))))
+	;; TODO: Remove duplicated LOAD! they are in stashed-path
+	;; Rewrite LOAD X <- A with a_float
+	;; Group-Equalを実装する?
+	(loop while stashed-path
+	      do (setf new-groups (append (restart-from-stashed-node (pop stashed-path)) new-groups)))
+	(loop for g in new-groups
+	      ;; Empty group can be removed
+	      if (and g (graph-nodes (group-graph g))) collect (finalize-group g))))))
+
 (defun split-into-subgroups (graph)
   "Graphs are first breaked into subgroups only after:
 - Tensor is shaped by a tensor
 - :PAUSE/BACKWARD"
   (declare (type graph graph))
   (let ((groups))
-    (labels ((force-realize-on-vm (node)
-	       (or
-		(eql (node-type node) :pause/backward)
-		(eql (node-type node) :Allocate)
-		(and (eql (node-type node) :LOAD)
-		     (symbolp (getattr node :value))
-		     (= 0 (buffer-nrank (car (relay-writes (read-type-relay node)))))))))
-      `(,@(loop for node in (graph-nodes graph)
-		if (force-realize-on-vm node)
-		  collect (make-group (nreverse groups) nil)
-		  and collect (make-group (list node) t)
-		  and do (setf groups nil)
-		else
-		  do (push node groups))
-	,(make-group (nreverse groups) nil)))))
+    (labels ((force-realize-on-vm (node) (or (eql (node-type node) :pause/backward))))
+      (apply
+       #'append
+       (map
+	'list
+	#'recursive-split-into-subgroups
+	`(,@(loop for node in (graph-nodes graph)
+		  if (force-realize-on-vm node)
+		    collect (make-group (nreverse groups) nil)
+		    and collect (make-group (list node) t)
+		    and do (setf groups nil)
+		  else
+		    do (push node groups))
+	  ,(make-group (nreverse groups) nil)))))))
 
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list)) create-schedules-from-avm))
 (defun create-schedules-from-avm (avm &key (verbose nil) &aux (backward-mode-p (not (null (avm-bw-outputs avm)))))
@@ -547,6 +606,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (let* ((groups (loop for g in (split-into-subgroups (avm-graph avm))
 			   if (graph-nodes (group-graph g))
 			     collect g)))
+	(print groups)
 	(loop for group in groups
 	      if (group-realize-on-vm group)
 		do (setf seen (append seen (group-writes group)))
