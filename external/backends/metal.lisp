@@ -62,7 +62,12 @@
       (buffer-value x)
       x))
 (defmethod %render-compile ((lang Metal) avm function) (eval (read-from-string function)))
-(defmethod %render-function-caller ((lang Metal) avm args) `(lambda (&rest args) (apply #',(avm-name avm) (map 'list #'maybe-buffer-value args))))
+(defmethod %render-function-caller ((lang Metal) avm args)
+  `(lambda (&rest args)
+     (%funcall-metal
+      (get-kernel ',(avm-name avm)) :args (map 'list #'maybe-buffer-value args)
+				    :global-size `(1 1 1)
+				    :local-size `(1 1 1))))
 
 ;; ~~ EXPRS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((unary (name render)
