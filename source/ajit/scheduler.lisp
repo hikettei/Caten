@@ -179,7 +179,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 
 (defun one-dimensional-renderer (gid stride upfrom by broadcast-p)
   (if broadcast-p
-      (format nil "~a" upfrom)
+      (format nil "0")
       (format nil "~a~a~a"
 	      (if (eql by 1)
 		  (if (and (numberp stride) (= stride 1))
@@ -200,7 +200,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (assert (numberp by) () "by is expected to be a constant to create an affine schedule! (TODO: Fix)")
   ;;(when (symbolp by) (setf by 2))
   (if broadcast-p
-      (format nil "~a" upfrom)
+      (format nil "0")
       (format nil "~a~a~a"
 	      (if (eql by 1)
 		  ""
@@ -345,71 +345,34 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	 (declare (ignore ts))
 	 (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph))))
      pipeline)
-    (labels ((find-related-schedules (self-time self-graph)
-	       ;; Assume there's no recursive deps in pipeline; this thing is confirmed this by schedule/resolve-isolated-ops
-	       (loop for time in (hash-table-keys pipeline)
-		     for graph = (gethash time pipeline)
-		     if (and (not (= self-time time))
-			     (intersection (graph-outputs graph) (graph-seen self-graph)))
-		       collect time))
-	     (partial-schedule1 (parent-time timestamps)
-	       (with-output-to-string (mupa)
-		 (format mupa "[{")
-		 (format
-		  mupa
-		  (apply
-		   #'concatenate
-		   'string
-		   (butlast
-		    (loop with seen = timestamps
-			  with parent-factors = (graph->loop-factors (gethash parent-time pipeline))
-			  for time in timestamps
-			  for graph = (gethash time pipeline)
-			  for loop-factors = (graph->loop-factors graph)
-			  ;; time[_gid0, _gid1, _gid2] -> self_domain
-			  append
-			  (loop
-			    for i in (intersection loop-factors parent-factors)
-			    append
-			    (list
-			     (format nil "T~a[~(~a~)] -> [~(~a~)]" parent-time (render-list loop-factors) i)
-			     ";"))))))
-		 (format mupa "}]"))))
-      (maphash1
-       #'(lambda (ts graph)
-	   (let* ((loop-factors (graph->loop-factors graph))
-		  (constraints
-		    (loop for node in (graph-nodes graph)
-			  if (eql (node-type node) :FOR)
-			    collect
-			    (progn
-			      (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
-			      (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
-		  ;; e.g.:
-		  ;; domain:
-		  ;; - { T0[_gid0, _gid1] : 0 <= _gid0 <= 3 and 0 <= _gid1 <= 3 ... }
-		  ;;
-		  ;; TODO isl_ast_node_context? from outer variables.
-		  (dom (union-set-from-str
-			(format nil
-				"[~(~a~)] -> { T~a[~(~a~)] : ~a }"
-				(render-list depends-on)
-				ts
-				(render-list loop-factors)
-				(apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))))
-		  (sched (schedule-from-domain dom))
-		  ;;(partial (partial-schedule ts (find-related-schedules ts graph)))
-		  )
-;	     (when (not (string= partial "[{}]"))
-;	       (print ts)
-;	       (print partial)
-;	       (let ((partial (multi-union-pw-aff-from-str partial)))
-;		 (isl::%isl-schedule-insert-partial-schedule (isl::schedule-handle sched) (isl::multi-union-pw-aff-handle partial))))
-	     (if (eql schedule :nothing)
-		 (setf schedule sched)
-		 (setf schedule (schedule-sequence schedule sched)))))
-       pipeline)
-      schedule)))
+    (maphash1
+     #'(lambda (ts graph)
+	 (let* ((loop-factors (graph->loop-factors graph))
+		(constraints
+		  (loop for node in (graph-nodes graph)
+			if (eql (node-type node) :FOR)
+			  collect
+			  (progn
+			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
+			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
+		;; e.g.:
+		;; domain:
+		;; - { T0[_gid0, _gid1] : 0 <= _gid0 <= 3 and 0 <= _gid1 <= 3 ... }
+		;;
+		;; TODO isl_ast_node_context? from outer variables.
+		(dom (union-set-from-str
+		      (format nil
+			      "[~(~a~)] -> { T~a[~(~a~)] : ~a }"
+			      (render-list depends-on)
+			      ts
+			      (render-list loop-factors)
+			      (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))))
+		(sched (schedule-from-domain dom)))
+	   (if (eql schedule :nothing)
+	       (setf schedule sched)
+	       (setf schedule (schedule-sequence schedule sched)))))
+     pipeline)
+    schedule))
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
@@ -488,7 +451,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (or (find (node-id node) subgraph :key #'node-id)
 		   (and
 		    (eql (node-type node) :View)
-		    (eql (node-id node) (node-id view)))))	       
+		    (eql (node-id node) (node-id view)))))
 	     (relocate (view subgraph)
 	       (setf (graph-nodes graph)
 		     (append
@@ -559,7 +522,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	;; TODO: Remove duplicated LOAD! they are in stashed-path
 	;; Rewrite LOAD X <- A with a_float
 	;; Group-Equalを実装する?
+	;; ↓ auto-schedule無効化で動く
 	;; !randを動かす + Indexingの計算はCompileしない + Indexingの計算を最適化する + いらないJIT KERNELは除外する
+	;; !mean :keepdims nilが動かない
 	;; ISLのc0==0を消したい
 	;; !sum !randが動かないのはISLのauto-schedule!のせい
 	;; schedule-bandを真面目に設定してみる
