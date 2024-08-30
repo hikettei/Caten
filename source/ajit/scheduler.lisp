@@ -208,10 +208,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	      gid
 	      (if (eql upfrom 0)
 		  ""
-		  (if (eql by 1)
-		      (format nil "+~a" upfrom)
-		      (format nil "+(~a*~a)" upfrom by))))))
-		      
+		  (format nil "+~a" upfrom)))))
+
 (defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil) &aux (c 0))
   "Renders the stride computation for ISL:
 ```
@@ -349,7 +347,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 ;; 1 domain 1 instruction for simplifity
 ;; RaW/WaWを修正する
 ;; initial-scheduleを考え直す
-(defun isl-initial-schedule (pipeline &key depends-on)
+(defun isl-initial-schedule (pipeline)
   (let ((schedule :nothing))
     (maphash
      #'(lambda (ts graph)
@@ -358,7 +356,12 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (maphash1
      #'(lambda (ts graph)
-	 (let* ((loop-factors (graph->loop-factors graph))
+	 (let* ((depends-on
+		  (remove-duplicates
+		   (append
+		    (nodes-gather-args (graph-nodes graph))
+		    (nodes-depends-on (graph-nodes graph)))))
+		(loop-factors (graph->loop-factors graph))
 		(constraints
 		  (loop for node in (graph-nodes graph)
 			if (eql (node-type node) :FOR)
@@ -685,11 +688,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (loop-size (loop for value being the hash-values of pipeline
 			    append (graph->loop-size value)))
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
-	   (domain       (render-domain pipeline :depends-on dynamic-shapes))
-	   (dynamic-shapes `(,@dynamic-shapes ,@vm-input-tensors))
+	   (domain         (render-domain pipeline :depends-on dynamic-shapes))
+	   (dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
 	   (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
 	   (write-access (render-access :write pipeline :depends-on dynamic-shapes))
-	   (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))
+	   (schedule     (isl-initial-schedule pipeline)))
       (when verbose-auto
 	(format t "== [Domain] ===========")
 	(format t "~%~a~%" domain)
