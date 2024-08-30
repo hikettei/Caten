@@ -20,6 +20,7 @@
 (defun Metal (&key (gpu 0))
   (make-instance 'Metal :id gpu))
 
+;; bfloat16/float16
 ;; ちゃんと並列化できるようにISLの段階でSchedulingする
 ;; 特に，Partial Scheduleを最初に設定しておく
 ;; Update this line: https://github.com/hikettei/cl-metal/blob/main/lib/Sources/CLMetal/cl-metal.swift#L333
@@ -46,7 +47,7 @@
     (:bool 'boolean)
     (:float64 'double)
     (:float32 'float)
-    (:float16 'bfloat)
+    (:bfloat16 'bfloat)
     (:uint64 'uint64-t)
     (:int64 'int64-t)
     (:int32 'int32-t)
@@ -65,9 +66,10 @@
 (defmethod %render-function-caller ((lang Metal) avm args)
   `(lambda (&rest args)
      (%funcall-metal
-      (get-kernel ',(avm-name avm)) :args (map 'list #'maybe-buffer-value args)
-				    :global-size `(1 1 1)
-				    :local-size `(1 1 1))))
+      (get-kernel ,(avm-name avm))
+      :args (map 'list #'maybe-buffer-value args)
+      :global-size `(1 1 1)
+      :local-size `(1 1 1))))
 
 ;; ~~ EXPRS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((unary (name render)
@@ -190,7 +192,7 @@ float2 __WMMA_8_8_8_float_float(float2 m, float2 n, float2 o) {
 		     (assert (and idx upfrom below by) () "Missing ~a" (list idx upfrom below by))
 		     (if (global-p node)
 			 (progn
-			   (line "uint ~a = gid.~a;" idx (ecase nth (0 "x") (1 "y") (2 "z"))))
+			   (line "uint ~a = lid.~a;" idx (ecase nth (0 "x") (1 "y") (2 "z"))))
 			 (progn
 			   (line "for(int ~(~a~)=~a;~a;~a+=~a) {" (r idx) (r upfrom) (r below) (r idx) (r by))
 			   (incf indent)))
