@@ -530,6 +530,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	;; !mean :keepdims nilが動かない
 	;; ISLのc0==0を消したい
 	;; !sum !randが動かないのはISLのauto-schedule!のせい
+	;;  - dependencyの作り方が悪くて動かないコードがそこそこあるように見える
 	;; schedule-bandを真面目に設定してみる
 	(loop while stashed-path
 	      do (setf new-groups (append (restart-from-stashed-node (pop stashed-path)) new-groups)))
