@@ -294,6 +294,15 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (maphash1
      #'(lambda (timestamp subgraph)
 	 (let* ((lf (graph->loop-factors subgraph))
+		(constraints
+		  (loop for node in (graph-nodes subgraph)
+			if (eql (node-type node) :FOR)
+			  collect
+			  (progn
+			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
+			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
+		(constraints
+		  (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
 		(occur-from
 		  (format nil "T~a[~(~a~)]"
 			  timestamp (render-list lf)))
@@ -310,7 +319,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		       (rt        (car (relay-reads (read-type-relay node)))))
 		   (when (symbolp reduce-to)
 		     (if (vm-instruction-p node)
-			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank))
+			 (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank) constraints)
 			 (error ":reduction for the op ~a is invaild." node)))))
 	       (loop for r in (funcall (if (eql mode :read) #'node-reads #'node-writes) node)
 		     for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
@@ -322,7 +331,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			       (let ((access (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank)))
 				 (if (string= access "")
 				     (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
-				     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))
+				     (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from r access constraints)))))))
 	       ;; Symbols for computing the stride
 	       (when (and node (eql mode :read))
 		 (let* ((symbols
@@ -338,6 +347,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 ;; 1 domain 1 instruction for simplifity
+;; RaW/WaWを修正する
+;; initial-scheduleを考え直す
 (defun isl-initial-schedule (pipeline &key depends-on)
   (let ((schedule :nothing))
     (maphash
@@ -670,10 +681,12 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
       (print-pipeline pipeline))
     (let* ((vm-inputs (avm-gather-args avm))
+	   (vm-input-tensors (nodes-depends-on (graph-nodes (group-graph group))))
 	   (loop-size (loop for value being the hash-values of pipeline
 			    append (graph->loop-size value)))
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
 	   (domain       (render-domain pipeline :depends-on dynamic-shapes))
+	   (dynamic-shapes `(,@dynamic-shapes ,@vm-input-tensors))
 	   (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
 	   (write-access (render-access :write pipeline :depends-on dynamic-shapes))
 	   (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))

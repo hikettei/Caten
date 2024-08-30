@@ -132,6 +132,10 @@ Expected Output (Scalar ops are temporarily excluded):
 	   (flow (union-access-info-compute-flow access))
 	   (waw-deps (union-flow-get-must-dependence flow))
 	   (war-deps (union-flow-get-may-dependence flow)))
+      ;;(print "DEPENDENCIES")
+      ;;(print raw-deps)
+      ;;(print war-deps)
+      ;;(print war-deps)
       (values raw-deps waw-deps war-deps))))
 
 (defun poly/make-constraints (polyhedral)
