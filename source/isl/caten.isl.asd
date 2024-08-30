@@ -29,6 +29,7 @@
    (:file "schedule-constraints")
    (:file "schedule")
    (:file "union-access")
+   (:file "multi-union-pw-aff")
    (:file "ast-expr")
    (:file "ast-node")
    (:file "ast-build")

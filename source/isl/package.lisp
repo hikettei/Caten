@@ -130,6 +130,9 @@
    #:basic-set-set
    #:basic-set-add-constraint
    #:basic-set-apply
+   ;; MultiUnionPwAff
+   #:multi-union-pw-aff
+   #:multi-union-pw-aff-from-str
    ;; Union set
    #:union-set
    #:union-set-p
