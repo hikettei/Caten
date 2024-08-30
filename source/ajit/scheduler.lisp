@@ -380,7 +380,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   (across-time-deps nil :type list)
   (args args :type list)
   (shapes shapes :type list)
-  (writes (when (null no-writes) (nodes-output-ids nodes)) :type list))
+  (writes (when (null no-writes) (nodes-output-ids nodes)) :type list)
+  (id (gensym)))
 
 (defun relocate-independent-allocations! (graph)
   "
@@ -477,7 +478,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	     (explore (id)
 	       (declare (type symbol id))
 	       (let ((node (id->value graph id)))
-		 (when (null (find (node-id node) seen :key #'node-id))
+		 (when (and node (null (find (node-id node) seen :key #'node-id)))
 		   ;; dynamic shapes are stashed and excluded from the graph, or exists in the toplevel?
 		   (push node seen)
 		   (if (force-realize-on-vm node)
@@ -603,10 +604,9 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		     (dolist (r `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))) (when (symbolp r) (push r read-in-groups)))))
 	       (remove-duplicates read-in-groups)))
       (relocate-independent-allocations! (avm-graph avm))
-      (let* ((groups (loop for g in (split-into-subgroups (avm-graph avm))
+      (let* ((groups (loop for g in (group/resolve-dependencies (split-into-subgroups (avm-graph avm)))
 			   if (graph-nodes (group-graph g))
 			     collect g)))
-	(print groups)
 	(loop for group in groups
 	      if (group-realize-on-vm group)
 		do (setf seen (append seen (group-writes group)))

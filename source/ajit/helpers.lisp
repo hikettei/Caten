@@ -246,6 +246,7 @@ Graph must be verified in advance."
 	    do (push nil groups))
     (reverse (loop for g in groups if g collect g))))
 
+;; TODO: Delete this
 (defun break-schedule (schedule split-at)
   (declare (type scheduled-items schedule) (type list split-at))
   (let ((new-schedules nil) (stack))
@@ -260,6 +261,22 @@ Graph must be verified in advance."
 		     (setf (si-nodes out) x)
 		     out))
 	 (reverse new-schedules))))
+
+(defun break-group (group split-at)
+  (declare (type group group) (type list split-at))
+  (let ((new-groups nil) (stack))
+    (loop for node in (graph-nodes (group-graph group))
+	  if (find (car (node-writes node)) split-at)
+	    do (push node stack) (push stack new-groups) (setf stack nil)
+	  else
+	    do (push node stack))
+    (when stack (push stack new-groups))
+    (map
+     'list
+     #'(lambda (x &aux (x (reverse x)))
+	 ;; force-realize-vm groups are always standalone.
+	 (make-group x (group-realize-on-vm group)))
+     (reverse new-groups))))
 
 (defun schedule/resolve-isolated-ops (schedules seen-old)
   "    A   B
@@ -312,6 +329,67 @@ in a single timestamp otherwise recursive dependencies will occur.
 	      (schedule/resolve-isolated-ops
 	       new-schedule
 	       seen-old)))))
+      (values (reverse out) seen))))
+
+(defun group/resolve-dependencies (groups &key (seen-old nil))
+  "    A   B
+        \ / C   D
+         |   \ /
+tgt-id-> C    D
+          \   /             C <- violates the dependency graph (if not scheduled in the same group)
+           out <- from-node |
+            \          ..  /
+            
+Consider the subgraph above, C was appeared in the another subgraph, therefore, C cannot be merged
+in a single timestamp otherwise recursive dependencies will occur.
+"
+  (declare (type list groups seen-old))
+  (let ((out) (stashed) (seen (copy-list seen-old)))
+    (labels ((seen-p (x) (assert (not (listp x))) (or (numberp x) (find x seen :test #'eql)))
+	     (read-p (deps) (every #'seen-p deps)))
+      (loop for group in groups
+	    for nodes = (graph-nodes (group-graph group))
+	    for deps = (nodes-depends-on nodes)
+	    if (read-p deps) do
+	      (dolist (node nodes)
+		(dolist (w (node-writes node)) (push w seen)))
+	      ;; satisfied all dependencies -> OK
+	      (push group out)
+	    else
+	      ;; the dep was not satisfied -> wait till satisfied w/ missing vars.
+	      do (push (cons deps group) stashed)
+	    end
+	    do (loop with finish-p = nil
+		     with changed-p = nil
+		     while (not finish-p)
+		     do (setf changed-p nil)
+			(loop for (deps-old . group-old) in stashed
+			      for old-nodes = (graph-nodes (group-graph group-old))
+			      if (read-p deps-old)
+				;; waiting until all deps are satisfied, and ready -> OK
+				do (push group-old out)
+				   (setf changed-p t)
+				   (dolist (node old-nodes)
+				     (dolist (w (node-writes node)) (push w seen)))
+				   (setf stashed (remove (group-id group-old) stashed :key (compose #'group-id #'cdr) :test #'equal)))
+			(setf finish-p (not changed-p))))
+      ;; still some groups are remained? -> split the group at
+      (when stashed
+	(let ((split-at))
+	  (loop for (deps . group) in (reverse stashed) do
+	    (dolist (d deps)
+	      ;; enumerate failing points
+	      (unless (seen-p d) (push d split-at))))
+	  (setf split-at (remove-duplicates split-at))
+	  ;; Split the schedule and try again
+	  (let ((old-size (length groups))
+		(new-groups (apply #'append (map 'list #'(lambda (x) (break-group x split-at)) groups))))
+	    (when (= old-size (length new-groups))
+	      (error "Could not resolve this circular dependencies: ~a" (map 'list #'car stashed)))
+	    (return-from group/resolve-dependencies
+	      (group/resolve-dependencies
+	       new-groups
+	       :seen-old seen-old)))))
       (values (reverse out) seen))))
 
 (defun remove-unused-allocs (graph)
