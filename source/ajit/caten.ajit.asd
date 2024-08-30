@@ -17,6 +17,7 @@
    (:file "kernel-info")
    (:file "multiexpr")
    (:file "memory-planner")
+   (:file "device")
    (:file "renderer")
    (:file "backends/clang"))
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))
