@@ -409,7 +409,8 @@ in a single timestamp otherwise recursive dependencies will occur.
 		 for nth upfrom 0
 		 for reads = (flatten (nthcdr (1+ nth) read-by-time))
 		 for dep = (nconc reads use)
-		 if (every #'(lambda (x) (null (find x dep))) writes)
+		 if (and (not (eql (node-type node) :pause/backward))
+			 (every #'(lambda (x) (null (find x dep))) writes))
 		   do (remnode graph (node-id node))
 		      (setf changed-p t))
 	   changed-p))

@@ -477,11 +477,14 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   (let ((graph (group-graph group))
 	(stashed-path)
 	(seen))
+    (when (eql (node-type (car (graph-nodes (group-graph group)))) :pause/backward)
+      (return-from recursive-split-into-subgroups (list group)))
     (labels ((finalize-group (group)
 	       ;; Infers group-writes
 	       (make-group (graph-nodes (group-graph group)) (group-realize-on-vm group)))
 	     (force-realize-on-vm (node)
 	       (or
+		(eql (node-type node) :pause/backward)
 		(eql (node-type node) :Allocate)
 		(and (eql (node-type node) :LOAD)
 		     (symbolp (getattr node :value))
