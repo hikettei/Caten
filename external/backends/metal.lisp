@@ -2,24 +2,30 @@
   (:use :cl :caten/ajit :caten/air :caten/avm :cffi :cl-metal)
   (:import-from
    :caten/common.dtype
-   #:dtype/cast))
+   #:dtype/cast)
+  (:export
+   #:Metal))
+
 (in-package :caten/external.backends.metal)
-;; TODO: Initialize the backend like:
-;; (with-backend (metal :device 0)
-;;   ...
-;;   )
-;; (with-backend (clang :omp t)
-;;  ...
-;;  )
-;; (with-backend (default-config)
-;;  ...
-;;  )
+
+(defclass Metal (Device)
+  ((device-id :initform 0 :initarg :id :accessor metal-device-id)))
+(defmethod initialize-instance :after ((metal Metal) &rest initargs &key &allow-other-keys)
+  (declare (ignore initargs))
+  (use-device (metal-device-id metal)))
+
+(defmethod default-device ((lang (eql :metal)))
+  (make-instance 'Metal :id 0))
+
+(defun Metal (&key (gpu 0))
+  (make-instance 'Metal :id gpu))
+
 ;; ちゃんと並列化できるようにISLの段階でSchedulingする
 ;; 特に，Partial Scheduleを最初に設定しておく
 ;; Update this line: https://github.com/hikettei/cl-metal/blob/main/lib/Sources/CLMetal/cl-metal.swift#L333
 ;; Reading: https://dl.acm.org/doi/pdf/10.1145/2400682.2400713
 ;; https://developer.apple.com/documentation/metal/compute_passes/creating_threads_and_threadgroups
-;; 
+;; cl-metalも少しいじらないと行けなさそう
 (defparameter *access* nil)
 (defparameter *args* nil)
 (defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))
@@ -55,12 +61,12 @@
   (if (buffer-p x)
       (buffer-value x)
       x))
-(defmethod %render-compile ((lang (eql :metal)) avm function) (eval (read-from-string function)))
-(defmethod %render-function-caller ((lang (eql :metal)) avm args) `(lambda (&rest args) (apply #',(avm-name avm) (map 'list #'maybe-buffer-value args))))
+(defmethod %render-compile ((lang Metal) avm function) (eval (read-from-string function)))
+(defmethod %render-function-caller ((lang Metal) avm args) `(lambda (&rest args) (apply #',(avm-name avm) (map 'list #'maybe-buffer-value args))))
 
 ;; ~~ EXPRS ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((unary (name render)
-	     `(defmethod %render-expr ((lang (eql :metal)) (op (eql ,name)) lhs rhs z)
+	     `(defmethod %render-expr ((lang Metal) (op (eql ,name)) lhs rhs z)
 		(assert (null rhs)) (assert (null z))
 		(format nil "~a(~(~a~))" ,render (render-expr lang lhs)))))
   (unary :NEG "-")
@@ -70,29 +76,29 @@
   (unary :LOG2 "log2")
   (unary :EXP2 "exp2"))
 
-(defmethod %render-expr ((lang (eql :metal)) (op (eql :Const)) lhs rhs z)
+(defmethod %render-expr ((lang Metal) (op (eql :Const)) lhs rhs z)
   (assert (or (stringp lhs) (symbolp lhs) (numberp lhs)))
   (assert (null z))
   (if (args-p lhs)
       (format nil "(*~(~a~))" (render-to-c lhs))
       (format nil "~(~a~)" (render-to-c lhs))))
 
-(defmethod %render-expr ((lang (eql :metal)) (op (eql :MAX)) lhs rhs z)
+(defmethod %render-expr ((lang Metal) (op (eql :MAX)) lhs rhs z)
   (assert (and lhs rhs))
   (if z
       (format nil "max(~a, max(~a, ~a))" (render-expr lang lhs) (render-expr lang rhs) (render-expr lang z))
       (format nil "max(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs))))
 
-(defmethod %render-expr ((lang (eql :metal)) (op (eql :CAST)) lhs rhs z)
+(defmethod %render-expr ((lang Metal) (op (eql :CAST)) lhs rhs z)
   (assert (null z))
   (format nil "(~a)~a" (->cdtype rhs) (render-expr lang lhs)))
 
-(defmethod %render-expr ((lang (eql :metal)) (op (eql :MIN)) lhs rhs z)
+(defmethod %render-expr ((lang Metal) (op (eql :MIN)) lhs rhs z)
   (assert (and lhs rhs))
   (assert (null z))
   (format nil "min(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
 
-(defmethod %render-expr ((lang (eql :metal)) (op (eql :Aref)) lhs rhs z)
+(defmethod %render-expr ((lang Metal) (op (eql :Aref)) lhs rhs z)
   (assert (null z))
   (assert (and lhs rhs))
   (let ((ref (render-isl-aref rhs :genid #'(lambda (x) (nth x *access*)))))
@@ -102,17 +108,17 @@
 	    (format nil "~(~a~)" lhs))
 	(format nil "~(~a~)[~(~a~)]" lhs ref))))
 
-(defmethod %render-expr ((lang (eql :metal)) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
+(defmethod %render-expr ((lang Metal) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
   (assert (buffer-p (expr-y lhs)))
   (assert (null z))
   (let ((strides (map 'list #'(lambda (x) (render-expr lang x)) rhs)))
     (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (or (nth x *access*) (car *access*)))) :strides strides))))
 
-(defmethod %render-expr ((lang (eql :metal)) (op (eql :NOT)) lhs rhs z)
+(defmethod %render-expr ((lang Metal) (op (eql :NOT)) lhs rhs z)
   (assert (and lhs (null rhs) (null z)))
   (format nil "!~a" (render-expr lang lhs)))
 
-(defmethod %render-expr ((lang (eql :metal)) op lhs rhs z)
+(defmethod %render-expr ((lang Metal) op lhs rhs z)
   (assert (and lhs rhs) () "~a is not implemented?" op)
   (assert (null z))
   (format nil "(~a~(~a~)~a)"
@@ -125,7 +131,7 @@
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
-(defmethod %render-expr ((lang (eql :metal)) (op (eql :WHERE)) x y z)
+(defmethod %render-expr ((lang Metal) (op (eql :WHERE)) x y z)
   (assert (and x y z))
   (format nil "(~(~a~) ? ~(~a~) : ~(~a~))" (render-expr lang x) (render-expr lang y) (render-expr lang z)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -137,8 +143,8 @@ float2 __WMMA_8_8_8_float_float(float2 m, float2 n, float2 o) {
 }
 |#
 
-(defmethod %render-program-toplevel ((lang (eql :metal)) body) body)
-(defmethod %render-function ((lang (eql :metal)) avm args body)
+(defmethod %render-program-toplevel ((lang Metal) body) body)
+(defmethod %render-function ((lang Metal) avm args body)
   (with-output-to-string (out)
     (prin1
      `(define-kernel (,(avm-name avm) :threadgroup-position-in-grid gid :thread-position-in-threadgroup lid :style :metal :stream ,(>= (ctx:getenv :JIT_DEBUG) 1))
@@ -149,7 +155,7 @@ float2 __WMMA_8_8_8_float_float(float2 m, float2 n, float2 o) {
 	  ,body)
      out)))
 
-(defmethod %render-body ((lang (eql :metal)) kernel-lang jit-graph polyhedral indent args)
+(defmethod %render-body ((lang Metal) kernel-lang jit-graph polyhedral indent args)
   (declare (type graph jit-graph) (type polyhedral polyhedral) (type fixnum indent))
   (let* ((global-loops
 	   (loop for node in (graph-nodes jit-graph)
@@ -206,7 +212,7 @@ float2 __WMMA_8_8_8_float_float(float2 m, float2 n, float2 o) {
 			 (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
 		     (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out)))))))))
 
-(defmethod %render-nodes ((lang (eql :metal)) graph access indent)
+(defmethod %render-nodes ((lang Metal) graph access indent)
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
 		 `(progn
