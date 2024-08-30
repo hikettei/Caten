@@ -402,6 +402,19 @@ in a single timestamp otherwise recursive dependencies will occur.
 	   collect node
 	 if (not (eql (node-type node) :Allocate)) collect node)))
 
+(defun remove-unused-nodes (graph use)
+  (flet ((f (&aux (changed-p nil) (read-by-time (map 'list #'node-reads (graph-nodes graph))))
+	   (loop for node in (graph-nodes graph)
+		 for writes = (node-writes node)
+		 for nth upfrom 0
+		 for reads = (flatten (nthcdr (1+ nth) read-by-time))
+		 for dep = (nconc reads use)
+		 if (every #'(lambda (x) (null (find x dep))) writes)
+		   do (remnode graph (node-id node))
+		      (setf changed-p t))
+	   changed-p))
+    (loop while (f))))
+
 (defun optimize-non-in-place-buffers (base-avm avm refcounter graph seen verbose)
   (declare (ignore refcounter))
   (let* ((kernel-arg-symbols
@@ -470,6 +483,7 @@ in a single timestamp otherwise recursive dependencies will occur.
 			  view1))))))))
 	(loop for additional-graph in (map 'list #'finalize (avm-fw-outputs base-avm) (avm-fw-outputs avm))
 	      if additional-graph collect (nconc (graph-nodes graph) (list additional-graph)))
+	(remove-unused-nodes graph (append (avm-fw-outputs avm) (avm-bw-outputs avm)))
 	graph))))
 
 (defun pipeline/upper-nrank (pipeline)
