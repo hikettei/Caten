@@ -25,7 +25,10 @@
 (defsimplifier
     (%0_fuse_load_alloc)
     ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (number x)) -> (:_TmpScalarConst (x) :dtype dtype))
-    ((:Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean x)) -> (:_TmpScalarBool () :value x)))
+    ((:Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean x)) -> (:_TmpScalarBool () :value x))
+    ((:Cast ((:Allocate () :nrank 0 :dtype dtype-to) (:_TmpScalarConst (val) :dtype dtype-from)))
+     ->
+     (:_TmpScalarConst ((caten/common.dtype:dtype/cast val dtype-to)) :dtype dtype-to)))
 
 (defsimplifier
     (%1_fold_constant :speed 0)
