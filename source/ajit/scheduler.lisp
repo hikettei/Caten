@@ -28,8 +28,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
     (when (or (= (buffer-nrank a) 0) (= 0 (buffer-nrank b)))->ok)
     ;; Contiguous and the same-shaped buffer -> merge them
     (when (and
-           (every #'null (buffer-views a))
-           (every #'null (buffer-views b))
+	   (every #'null (buffer-views a))
+	   (every #'null (buffer-views b))
            (equal (buffer-shape a) (buffer-shape b)))
       ->ok)
     ;; They still have a chance to be merged by the polyhedral compiler.
@@ -275,7 +275,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-(defun render-access (mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
+(defun render-access (alias-f mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
   "Render the read/write accessing relation ship in the following notation:
 ```
 [depends-on] -> {
@@ -284,7 +284,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 }
 ```
 "
-  (declare (type list depends-on)
+  (declare (type function alias-f)
+	   (type list depends-on)
 	   (type (member :read :write) mode)
 	   (type hash-table pipeline))
   (with-output-to-string (out)
@@ -313,13 +314,13 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       ;; Tn[...]: A = (X += Y),  i.e.: Tn[...]: A = (X = X + Y)
 	       ;; Here, X depends on X.
 	       (when (getattr node :reduction)
-		 (let ((reduce-to (car (node-reads node)))
+		 (let ((reduce-to (funcall alias-f (car (node-reads node))))
 		       (rt        (car (relay-reads (read-type-relay node)))))
 		   (when (symbolp reduce-to)
 		     (if (vm-instruction-p node)
 			 (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank) constraints)
 			 (error ":reduction for the op ~a is invaild." node)))))
-	       (loop for r in (funcall (if (eql mode :read) #'node-reads #'node-writes) node)
+	       (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
 		     for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
 		       ;; When node has a :reduction
 		       (when (symbolp r)
@@ -344,9 +345,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		   (dolist (s symbols) (format out "  ~a -> ~(~a~)[~a];~%" occur-from s scalar))))))))
      pipeline)
     (format out "}")))
+
 ;; 1 domain 1 instruction for simplifity
-;; RaW/WaWを修正する
-;; initial-scheduleを考え直す
 (defun isl-initial-schedule (pipeline)
   (let ((schedule :nothing))
     (maphash
@@ -537,15 +537,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		 :no-writes t))))
       (let ((new-groups (map 'list #'explore (group-writes group))))
 	;; TODO: Remove duplicated LOAD! they are in stashed-path
-	;; Rewrite LOAD X <- A with a_float
-	;; Group-Equalを実装する?
-	;; ↓ auto-schedule無効化で動く
-	;; !randを動かす + Indexingの計算はCompileしない + Indexingの計算を最適化する + いらないJIT KERNELは除外する
-	;; !mean :keepdims nilが動かない
-	;; ISLのc0==0を消したい
-	;; !sum !randが動かないのはISLのauto-schedule!のせい
-	;;  - dependencyの作り方が悪くて動かないコードがそこそこあるように見える
-	;; schedule-bandを真面目に設定してみる
 	(loop while stashed-path
 	      do (setf new-groups (append (restart-from-stashed-node (pop stashed-path)) new-groups)))
 	(loop for g in new-groups
@@ -671,8 +662,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		      (print-schedules (group-sched group)))))
 	groups))))
 
-(declaim (ftype (function (AVM group &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
-(defun create-polyhedron-from-group (avm group &key (verbose nil) (verbose-auto nil))
+(declaim (ftype (function (AVM group function &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
+(defun create-polyhedron-from-group (avm group alias &key (verbose nil) (verbose-auto nil))
   "Step2, create a polyhedron from the scheduled items."
   (declare (type group group) (type boolean verbose))
   (let* ((submodule (map 'list #'schedule->submodule (group-sched group))) ;; Rendering :FOR and :ENDFOR
@@ -690,8 +681,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
 	   (domain         (render-domain pipeline :depends-on dynamic-shapes))
 	   (dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
-	   (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
-	   (write-access (render-access :write pipeline :depends-on dynamic-shapes))
+	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes))
+	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes))
 	   (schedule     (isl-initial-schedule pipeline)))
       (when verbose-auto
 	(format t "== [Domain] ===========")
@@ -796,10 +787,11 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type boolean serialize))
   (with-isl-context
     (let* ((groups (create-schedules-from-avm avm :verbose verbose-schedule))
+	   (alias (create-reduction-alias-f (graph-nodes (avm-graph avm))))
 	   (groups (loop for group in groups
 			 if (group-realize-on-vm group) collect group
 			   else if (group-sched group) do
-			     (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule :verbose-auto verbose-auto))
+			     (setf (group-polyhedron group) (create-polyhedron-from-group avm group alias :verbose verbose-schedule :verbose-auto verbose-auto))
 				and collect group)))
       (mapc
        #'(lambda (x)

@@ -79,3 +79,16 @@
 			if (and (symbolp r) (id->value graph r)) append (explore (id->value graph r) graph)))
 		(list node)))))
     (explore node graph)))
+
+(defun create-reduction-alias-f (nodes)
+  (let ((table (make-hash-table)))
+    (labels ((ref (x)
+	       (if (gethash x table)
+		   (ref (gethash x table))
+		   x)))
+      (loop for node in nodes
+	    if (getattr node :reduction)
+	      do (setf (gethash (car (node-writes node)) table) (car (node-reads node)))
+	    else
+	      do (setf (node-reads node) (map 'list #'ref (node-reads node))))
+      #'ref)))
