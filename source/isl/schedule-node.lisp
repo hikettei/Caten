@@ -8,10 +8,10 @@
 (macrolet ((def (name)
 	     `(progn
 		(export ',name)
+		(define-isl-object ,name :superclass schedule-node)
 		(defmethod print-object ((value ,name) stream)
 		  (print-unreadable-object (value stream :type t)
-		    (write-string (%isl-schedule-node-to-str (isl-object-handle value)) stream)))
-		(define-isl-object ,name :superclass schedule-node))))
+		    (write-string (%isl-schedule-node-to-str (isl-object-handle value)) stream))))))
   (def schedule-node-leaf)
   (def schedule-node-filter)
   (def schedule-node-sequence)
@@ -41,3 +41,15 @@
 (define-isl-function schedule-get-root %isl-schedule-get-root
   (:give schedule-node)
   (:keep schedule))
+
+(define-isl-function schedule-node-graft-after %isl-schedule-node-graft-after
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take schedule-node))
+
+(define-isl-function schedule-node-graft-before %isl-schedule-node-graft-before
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take schedule-node))
+
+

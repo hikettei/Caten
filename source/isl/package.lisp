@@ -333,6 +333,8 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-node-graft-after
+   #:schedule-node-graft-before
    ))
 
 (in-package :caten/isl)
