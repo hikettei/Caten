@@ -94,6 +94,7 @@
   "Run the shape-inference given AVM, returning Type-Reporter"
   (declare (type avm avm))
   (let ((*device* :relay-checker) (*type-reporter* (make-type-reporter)))
+    (setf (avm-tape-length avm) (length (graph-nodes (avm-graph avm))))
     (vm/forward avm) (vm/backward avm)
     *type-reporter*))
 
