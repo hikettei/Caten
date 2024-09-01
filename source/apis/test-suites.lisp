@@ -322,7 +322,6 @@
       (let ((tensor (make-tensor `(10) :requires-grad t)))
 	(okwhen (!contiguous (!view tensor `(4 1 -1))) tensor #(0 0 1 1 1 0 0 0 0 0)))
       (testing "Should work w/o !contiguous in the jit"
-	;; Failing ...
 	(let ((tensor (make-tensor `(10) :requires-grad t)))
 	  (okwhen (!view tensor `(4 1 -1)) tensor #(0 0 1 1 1 0 0 0 0 0))))
       (let ((tensor (make-tensor `(7 7 7) :requires-grad t)))
