@@ -34,4 +34,5 @@
    (:file "ast-node")
    (:file "ast-build")
    (:file "ast")
-   (:file "printer")))
+   (:file "printer")
+   (:file "schedule-node")))

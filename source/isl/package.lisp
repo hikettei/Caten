@@ -331,6 +331,8 @@
    #:schedule-constraints-set-conditional-validity
    ;; printer.lisp
    #:isl-printer-to-str
+   ;; from schedule-node.lisp
+   
    ))
 
 (in-package :caten/isl)
