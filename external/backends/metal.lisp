@@ -21,12 +21,9 @@
   (make-instance 'Metal :id gpu))
 
 ;; bfloat16/float16
-;; ちゃんと並列化できるようにISLの段階でSchedulingする
-;; 特に，Partial Scheduleを最初に設定しておく
 ;; Update this line: https://github.com/hikettei/cl-metal/blob/main/lib/Sources/CLMetal/cl-metal.swift#L333
 ;; Reading: https://dl.acm.org/doi/pdf/10.1145/2400682.2400713
 ;; https://developer.apple.com/documentation/metal/compute_passes/creating_threads_and_threadgroups
-;; cl-metalも少しいじらないと行けなさそう
 (defparameter *access* nil)
 (defparameter *args* nil)
 (defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))
