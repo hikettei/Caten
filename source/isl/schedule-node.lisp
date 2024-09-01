@@ -6,7 +6,12 @@
   :copy %isl-schedule-node-copy)
 
 (macrolet ((def (name)
-	     `(define-isl-object ,name :superclass schedule-node)))
+	     `(progn
+		(export ',name)
+		(defmethod print-object ((value ,name) stream)
+		  (print-unreadable-object (value stream :type t)
+		    (write-string (%isl-schedule-node-to-str (isl-object-handle value)) stream)))
+		(define-isl-object ,name :superclass schedule-node))))
   (def schedule-node-leaf)
   (def schedule-node-filter)
   (def schedule-node-sequence)
@@ -32,3 +37,7 @@
     (:Schedule-Node-Set (%make-schedule-node-set handle))
     (:Schedule-Node-Context (%make-schedule-node-context handle))
     (:Schedule-Node-Guard (%make-schedule-node-guard handle))))
+
+(define-isl-function schedule-get-root %isl-schedule-get-root
+  (:give schedule-node)
+  (:keep schedule))

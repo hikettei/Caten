@@ -332,7 +332,7 @@
    ;; printer.lisp
    #:isl-printer-to-str
    ;; from schedule-node.lisp
-   
+   #:schedule-get-root
    ))
 
 (in-package :caten/isl)
