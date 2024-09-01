@@ -796,9 +796,10 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
       (mapc
        #'(lambda (x)
 	   (when (group-polyhedron x)
-	     (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
-	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
-	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x))))
+	     (with-isl-context
+	       (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
+	       (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
+	       (setf (group-render-graph x) (finalize-and-retrive-render-graph x)))))
        groups)
       (let* ((refcount (create-reference-counter groups))
 	     (kernels (map
