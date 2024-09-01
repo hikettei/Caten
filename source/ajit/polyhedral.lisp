@@ -103,7 +103,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	  (poly-domain poly)
 	  (poly-read poly)
 	  (poly-write poly)
-	  (poly-schedule poly)
+	  (schedule-get-root (poly-schedule poly))
 	  (debug/render-c poly)))
 
 (defun debug/render-c (polyhedral &aux (schedule (poly-schedule polyhedral)))

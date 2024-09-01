@@ -386,6 +386,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (setf schedule sched)
 	       (setf schedule (schedule-sequence schedule sched)))))
      pipeline)
+    ;; gradft_after?
     schedule))
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; polyhedral compilation to determine the parallelization strategy
@@ -692,7 +693,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	(format t "== [Write Accesses] ======")
 	(format t "~%~a~%" write-access)
 	(format t "== [Initial Scheduling domain (=domain)] ======")
-	(format t "~%~a~%" schedule))
+	(format t "~%~a~%" (schedule-get-root schedule)))
       (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs (group-writes group)))))
 
 (declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
