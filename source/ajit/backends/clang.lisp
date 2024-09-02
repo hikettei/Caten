@@ -253,6 +253,7 @@ Compiled with: ~a"
 		  (:FUNCALL
 		   (let ((idx (getattr node :idx))
 			 (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
+		     ;;(format out "//[T~a]~%" idx)
 		     (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out)))))))))
 
 (defun ->cdtype (dtype)

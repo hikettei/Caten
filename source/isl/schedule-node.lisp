@@ -82,3 +82,8 @@
 (defun schedule-node-get-type (schedule-node)
   (declare (type schedule-node schedule-node))
   (%isl-schedule-node-get-type (schedule-node-handle schedule-node)))
+
+(define-isl-function schedule-insert-sequence %isl-schedule-node-insert-sequence
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set-list))

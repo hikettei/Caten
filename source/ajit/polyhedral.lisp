@@ -6,7 +6,7 @@
 ;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write schedule vm-inputs vm-outputs)))
+	    (:constructor make-polyhedral (avm pipeline domain read write schedule-initial vm-inputs vm-outputs)))
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)
@@ -19,7 +19,8 @@
   (read-ptr (union-map-from-str read) :type union-map)
   (write write :type string)
   (write-ptr (union-map-from-str write) :type union-map)
-  (schedule schedule :type Schedule))
+  (schedule-initial schedule-initial :type union-map)
+  (schedule nil :type (or null Schedule)))
 
 (defun poly/io-scalar-p (poly x)
   (let ((type (gethash x (poly-vm-io-types poly))))
@@ -28,7 +29,8 @@
 
 (defun poly/schedule-metadata (polyhedral)
   (declare (type polyhedral polyhedral))
-  (yaml:parse (schedule-to-str (poly-schedule polyhedral))))
+  (when (poly-schedule polyhedral)
+    (yaml:parse (schedule-to-str (poly-schedule polyhedral)))))
 
 (defstruct (Band)
   (domain (error "") :type union-set)
@@ -103,7 +105,8 @@ Expected Output (Scalar ops are temporarily excluded):
 	  (poly-domain poly)
 	  (poly-read poly)
 	  (poly-write poly)
-	  (schedule-get-root (poly-schedule poly))
+	  (when (poly-schedule poly)
+	    (schedule-get-root (poly-schedule poly)))
 	  (debug/render-c poly)))
 
 (defun debug/render-c (polyhedral &aux (schedule (poly-schedule polyhedral)))
@@ -117,26 +120,20 @@ Expected Output (Scalar ops are temporarily excluded):
 
 (defun create-dependency-graph (polyhedral)
   (declare (type polyhedral polyhedral))
-  (with-slots ((schedule schedule) (may-read read-ptr) (must-write write-ptr)) polyhedral
-    (let* (;; 1. RAW (Read After Write), a=1 then b=a
-	   (access (union-access-info-from-sink (copy may-read)))
-	   (access (union-access-info-set-must-source access must-write))
-	   (access (union-access-info-set-schedule access schedule))
-	   (flow (union-access-info-compute-flow access))
-	   (raw-deps (union-flow-get-must-dependence flow))
-	   ;; 2. WAR (Write After Read) deps
-	   (access (union-access-info-from-sink must-write))
-	   (access (union-access-info-set-must-source access must-write))
-	   (access (union-access-info-set-may-source access may-read))
-	   (access (union-access-info-set-schedule access schedule))
-	   (flow (union-access-info-compute-flow access))
-	   (waw-deps (union-flow-get-must-dependence flow))
-	   (war-deps (union-flow-get-may-dependence flow)))
-      ;;(print "DEPENDENCIES")
-      ;;(print raw-deps)
-      ;;(print war-deps)
-      ;;(print war-deps)
-      (values raw-deps waw-deps war-deps))))
+  (with-slots ((domain domain-ptr) (schedule schedule-initial) (may-read read-ptr) (must-write write-ptr)) polyhedral
+    (let* ((before-map (union-map-lex-lt-union-map schedule schedule))
+           (read-access (union-map-intersect-domain may-read domain))
+           (write-access (union-map-intersect-domain must-write domain))
+           (RaW (union-map-intersect
+		 (union-map-apply-range write-access (union-map-reverse read-access))
+		 before-map))
+           (WaW (union-map-intersect
+		 (union-map-apply-range write-access (union-map-reverse write-access))
+		 before-map))
+           (WaR (union-map-intersect
+		 (union-map-apply-range read-access (union-map-reverse write-access))
+		 before-map)))
+      (values RaW WaW WaR))))
 
 (defun poly/make-constraints (polyhedral)
   "(2) Validty/Legality Constraints"
@@ -149,6 +146,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	     (schedule-constraints (schedule-constraints-on-domain domain))
 	     (schedule-constraints (schedule-constraints-set-validity schedule-constraints all-deps))
 	     ;; proximity constraints (keeps loops nested based on dependencies)
+	     (schedule-constraints (schedule-constraints-set-coincidence schedule-constraints all-deps))
 	     (schedule-constraints (schedule-constraints-set-proximity schedule-constraints all-deps)))
 	schedule-constraints))))
 
@@ -191,7 +189,6 @@ for (int c0 = 0; c0 < a; c0 += 1)
 	    do (incf n (length (graph-nodes g))))
       (set-option "schedule_outer_coincidence" 1)
       (set-option "schedule_maximize_band_depth" 1)
-      ;; (when (<= n ...)
       ;;(set-option "schedule_whole_component" 1)
       (set-option "schedule_treat_coalescing" 1)
       ))

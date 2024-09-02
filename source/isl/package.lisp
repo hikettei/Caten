@@ -343,6 +343,7 @@
    #:schedule-node-get-children
    #:schedule-node-get-type
    #:schedule-node-insert-partial-schedule
+   #:schedule-insert-sequence
    ))
 
 (in-package :caten/isl)

@@ -1,7 +1,16 @@
 (in-package :caten/ajit)
 ;; First, Nodes determined to be necessarily Fused (e.g.: non-viewed and same shaped tensors)
 ;; are combined into a single SubGraph and converted into an ISL AST.
-;; Refenreces: https://pliss2019.github.io/albert_cohen_slides.pdf
+;; Refenreces:
+;; - https://pliss2019.github.io/albert_cohen_slides.pdf
+;; - https://www.slideshare.net/slideshow/introduction-to-polyhedral-compilation/70482946
+;; - https://www.researchgate.net/publication/273651704_Schedule_Trees
+;; - https://www.researchgate.net/publication/317826152_Scheduling_for_PPCG
+;; - https://groups-google-com.translate.goog/g/isl-development/c/2bgepkLQBhY/m/BmiDq1nDAAAJ?_x_tr_sl=en&_x_tr_tl=ja&_x_tr_hl=ja&_x_tr_pto=sc
+;; - https://libisl.sourceforge.io/tutorial.pdf
+;; - https://libisl.sourceforge.io/manual.pdf
+;; - https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
+;; - https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
 ;; ~~~~ Subgraph initializers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Scheduled-Items
 	    (:conc-name si-)
@@ -162,6 +171,14 @@ Further op-fusion optimization are done by the polyhedral-compiler."
    (loop for node in (graph-nodes graph)
 	 if (eql (node-type node) :FOR)
 	   collect (car (node-writes node)))))
+
+(defun graph->loop-depends-on (graph)
+  (declare (type graph graph))
+  (remove-duplicates
+   (loop for node in (graph-nodes graph)
+	 if (eql (node-type node) :FOR)
+	   append (loop for read in (node-reads node)
+			if (symbolp read) collect read))))
 
 (defun graph->loop-size (graph)
   (remove-duplicates
@@ -346,48 +363,71 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-;; 1 domain 1 instruction for simplifity
-(defun isl-initial-schedule (pipeline)
-  (let ((schedule :nothing))
-    (maphash
-     #'(lambda (ts graph)
-	 (declare (ignore ts))
-	 (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph))))
-     pipeline)
-    (maphash1
-     #'(lambda (ts graph)
-	 (let* ((depends-on
-		  (remove-duplicates
-		   (append
-		    (nodes-gather-args (graph-nodes graph))
-		    (nodes-depends-on (graph-nodes graph)))))
-		(loop-factors (graph->loop-factors graph))
-		(constraints
-		  (loop for node in (graph-nodes graph)
-			if (eql (node-type node) :FOR)
-			  collect
-			  (progn
-			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
-			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
-		;; e.g.:
-		;; domain:
-		;; - { T0[_gid0, _gid1] : 0 <= _gid0 <= 3 and 0 <= _gid1 <= 3 ... }
-		;;
-		;; TODO isl_ast_node_context? from outer variables.
-		(dom (union-set-from-str
-		      (format nil
-			      "[~(~a~)] -> { T~a[~(~a~)] : ~a }"
-			      (render-list depends-on)
-			      ts
-			      (render-list loop-factors)
-			      (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))))
-		(sched (schedule-from-domain dom)))
-	   (if (eql schedule :nothing)
-	       (setf schedule sched)
-	       (setf schedule (schedule-sequence schedule sched)))))
-     pipeline)
-    ;; gradft_after?
-    schedule))
+(defun isl-initial-schedule (pipeline &key (depends-on nil))
+  (let ((lex (pipeline->timestamp pipeline)))
+    (union-map-from-str
+     (with-output-to-string (out)
+       (format out "[~(~a~)] -> " (render-list depends-on))
+       (format out "{~%")
+       (maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
+	#'(lambda (ts graph)
+	    (let* ((loop-factors (graph->loop-factors graph))
+		   (constraints
+		     (loop for node in (graph-nodes graph)
+			   if (eql (node-type node) :FOR)
+			     collect
+			     (progn
+			       (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
+			       (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
+		   ;; e.g.:
+		   ;; domain:
+		   ;; - { T0[_gid0, _gid1] : 0 <= _gid0 <= 3 and 0 <= _gid1 <= 3 ... }
+		   ;;
+		   ;; TODO isl_ast_node_context? from outer variables.
+		   (constraints (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
+		   (dom (format nil
+				"  T~a[~(~a~)] -> [~(~a~)]~a ~a"
+				ts
+				(render-list loop-factors)
+				(render-list `(,(gethash ts lex) ,@loop-factors))
+				(if (string= constraints "")
+				    ""
+				    ":")
+				constraints)))
+	      (format out "~a;~%" dom)))
+	pipeline)
+       (format out "~%}")))))
+
+(defun pipeline->timestamp (pipeline)
+  (declare (type hash-table pipeline))
+  (maphash
+   #'(lambda (ts graph)
+       (declare (ignore ts))
+       (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph))))
+   pipeline)
+  (let ((graph
+	  (apply
+	   #'make-graph
+	   (loop for time in (hash-table-keys pipeline)
+		 for graph = (gethash time pipeline)
+		 collect (make-node :TIME :GRAPH (graph-outputs graph) (graph-seen graph) :id time))))
+	(lex (make-hash-table))
+	(seen))
+    ;; TODO: Relocate Isolated nodes w/ the end of nodes. (when debugging, should produce a warning)
+    (labels ((explore (id &key (time 0) &aux (val (id->value graph id)))
+	       (when (and val (null (find (node-id val) seen)))
+		 (push (node-id val) seen)
+		 (let* ((key (getattr val :id)))
+		   (mapc #'(lambda (x) (explore x :time (1+ time))) (node-reads val))
+		   (setf (gethash key lex) time)))))
+      (mapc #'explore (nodes-output-ids (graph-nodes graph)))
+      (assert (every #'(lambda (x) (find x seen)) (map 'list #'node-id (graph-nodes graph))))
+      (let ((tree-max-depth (apply #'max (hash-table-values lex))))
+	(maphash
+	 #'(lambda (x y)
+	     (setf (gethash x lex) (- tree-max-depth y)))
+	 lex)
+	lex))))
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
@@ -684,7 +724,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
 	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes))
 	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes))
-	   (schedule     (isl-initial-schedule pipeline)))
+	   (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))
       (when verbose-auto
 	(format t "== [Domain] ===========")
 	(format t "~%~a~%" domain)
@@ -693,7 +733,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	(format t "== [Write Accesses] ======")
 	(format t "~%~a~%" write-access)
 	(format t "== [Initial Scheduling domain (=domain)] ======")
-	(format t "~%~a~%" (schedule-get-root schedule)))
+	(format t "~%~a~%" schedule))
       (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs (group-writes group)))))
 
 (declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
@@ -711,7 +751,8 @@ Options:
   (macrolet ((debug-print (step-name) `(when verbose (format t "~%[~a]~%~a~%" ,step-name (print-polyhedral polyhedral nil)))))
     (debug-print "Initial")
     ;; Loop Fusion
-    (poly/reschedule polyhedral :serialize serialize)
+    (poly/reschedule polyhedral :serialize serialize)    
+    (print (schedule-get-root (poly-schedule polyhedral)))
     (debug-print "Reschedule")
     polyhedral))
 
