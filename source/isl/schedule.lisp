@@ -24,3 +24,8 @@
 (define-isl-function schedule-to-str %isl-schedule-to-str
   (:give string)
   (:keep schedule))
+
+(define-isl-function schedule-set %isl-schedule-set
+  (:give schedule)
+  (:take schedule)
+  (:take schedule))

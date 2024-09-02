@@ -22,12 +22,13 @@
   (def schedule-node-mark)
   (def schedule-node-set)
   (def schedule-node-context)
-  (def schedule-node-guard))
+  (def schedule-node-guard)
+  (def schedule-node-error))
 
 (defun %make-schedule-node (handle)
   (ecase (%isl-schedule-node-get-type handle)
     (:Schedule-Node-Leaf (%make-schedule-node-leaf handle))
-    (:Schedule-Node-Filter (%make-schedule-node-Filter handle))
+    (:Schedule-Node-Filter (%make-schedule-node-filter handle))
     (:Schedule-Node-Sequence (%make-schedule-node-sequence handle))
     (:Schedule-Node-Band (%make-schedule-node-band handle))
     (:Schedule-Node-Domain (%make-schedule-node-domain handle))
@@ -36,7 +37,8 @@
     (:Schedule-Node-Mark (%make-schedule-node-mark handle))
     (:Schedule-Node-Set (%make-schedule-node-set handle))
     (:Schedule-Node-Context (%make-schedule-node-context handle))
-    (:Schedule-Node-Guard (%make-schedule-node-guard handle))))
+    (:Schedule-Node-Guard (%make-schedule-node-guard handle))
+    (:Schedule-Node-Error (%make-schedule-node-error handle))))
 
 (define-isl-function schedule-get-root %isl-schedule-get-root
   (:give schedule-node)
@@ -52,4 +54,36 @@
   (:take schedule-node)
   (:take schedule-node))
 
+(define-isl-function schedule-insert-partial-schedule %isl-schedule-insert-partial-schedule
+  (:give schedule)
+  (:take schedule)
+  (:take multi-union-pw-aff))
 
+(define-isl-function schedule-node-insert-partial-schedule %isl-schedule-node-insert-partial-schedule
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-union-pw-aff))
+
+(define-isl-function schedule-node-from-domain %isl-schedule-node-from-domain
+  (:give schedule-node)
+  (:take union-set))
+
+(define-isl-function schedule-node-get-schedule %isl-schedule-node-get-schedule
+  (:give schedule)
+  (:keep schedule-node))
+
+(defun schedule-node-get-children (schedule-node)
+  (declare (type schedule-node schedule-node))
+  (when (eql :bool-true (isl::%isl-schedule-node-has-children (schedule-node-handle schedule-node)))
+    (let ((n (isl::%isl-schedule-node-n-children (schedule-node-handle schedule-node))))
+      (loop for nth upfrom 0 below n
+	    collect (isl::%isl-schedule-node-child (schedule-node-handle schedule-node) nth)))))
+
+(defun schedule-node-get-type (schedule-node)
+  (declare (type schedule-node schedule-node))
+  (%isl-schedule-node-get-type (schedule-node-handle schedule-node)))
+
+(define-isl-function schedule-insert-sequence %isl-schedule-node-insert-sequence
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set-list))
