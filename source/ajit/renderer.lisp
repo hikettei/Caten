@@ -93,7 +93,7 @@ Render the ops in ./source/aasm/ops.lisp.
 ;; TODO: verify-node
 (defun render-expr (lang expr)
   "Recursively render the expr"
-  (declare (type keyword lang))
+  (declare (type device lang))
   (if (expr-p expr)
       (%render-expr lang (expr-op expr) (expr-x expr) (expr-y expr) (expr-z expr))
       (%render-expr lang :Const expr nil nil)))

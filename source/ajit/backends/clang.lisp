@@ -5,6 +5,10 @@
      #:dtype/cast))
 (in-package :caten/ajit.backends.clang)
 ;; ~~~ CLANG ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Clang (Device)
+  nil)
+(defmethod default-device ((id (eql :clang))) (make-instance 'clang))
+
 (defparameter *access* nil)
 (defparameter *args* nil)
 (defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))
@@ -39,7 +43,7 @@ Compiled with: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
-(defmethod %render-compile ((lang (eql :clang)) avm function)
+(defmethod %render-compile ((lang Clang) avm function)
   (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3")))
 
 (defun bool->bit (x)
@@ -49,7 +53,7 @@ Compiled with: ~a"
       (buffer-value x)))
 
 (defun maybe-buffer-value (x) (if (buffer-p x) (buffer-value x) x))
-(defmethod %render-function-caller ((lang (eql :clang)) avm args &aux (tmps))
+(defmethod %render-function-caller ((lang Clang) avm args &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
 		 (if (= 0 (buffer-nrank (argument-metadata (car rest-forms))))
@@ -95,14 +99,19 @@ Compiled with: ~a"
 		"0"
 		obj)))))
 
-(defmethod %render-program-toplevel ((lang (eql :clang)) body)
+(defmethod %render-program-toplevel ((lang Clang) body)
   (format nil "~%#include <math.h>
 #include <stdint.h>
+~a
 #define boolean _Bool
 #define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
-~a" body))
+~a"
+	  (if (= 1 (ctx:getenv :OMP))
+	      "#include <omp.h>"
+	      "")
+	  body))
 
-(defmethod %render-function ((lang (eql :clang)) avm args body)
+(defmethod %render-function ((lang Clang) avm args body)
   (let ((header
 	  (format nil "void ~(~a~)(~a)"
 		  (avm-name avm)
@@ -130,7 +139,7 @@ Compiled with: ~a"
     (format nil "~a~a;~%~a {~%~a}" shapes header header body)))	  
 
 (macrolet ((unary (name render)
-	     `(defmethod %render-expr ((lang (eql :clang)) (op (eql ,name)) lhs rhs z)
+	     `(defmethod %render-expr ((lang Clang) (op (eql ,name)) lhs rhs z)
 		(assert (null rhs)) (assert (null z))
 		(format nil "~a(~(~a~))" ,render (render-expr lang lhs)))))
   (unary :NEG "-")
@@ -140,29 +149,29 @@ Compiled with: ~a"
   (unary :LOG2 "log2")
   (unary :EXP2 "exp2"))
 
-(defmethod %render-expr ((lang (eql :clang)) (op (eql :Const)) lhs rhs z)
+(defmethod %render-expr ((lang Clang) (op (eql :Const)) lhs rhs z)
   (assert (or (stringp lhs) (symbolp lhs) (numberp lhs)))
   (assert (null z))
   (if (args-p lhs)
       (format nil "(*~(~a~))" (render-to-c lhs))
       (format nil "~(~a~)" (render-to-c lhs))))
 
-(defmethod %render-expr ((lang (eql :clang)) (op (eql :MAX)) lhs rhs z)
+(defmethod %render-expr ((lang Clang) (op (eql :MAX)) lhs rhs z)
   (assert (and lhs rhs))
   (if z
       (format nil "max(~a, max(~a, ~a))" (render-expr lang lhs) (render-expr lang rhs) (render-expr lang z))
       (format nil "max(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs))))
 
-(defmethod %render-expr ((lang (eql :clang)) (op (eql :CAST)) lhs rhs z)
+(defmethod %render-expr ((lang Clang) (op (eql :CAST)) lhs rhs z)
   (assert (null z))
   (format nil "(~a)~a" (->cdtype rhs) (render-expr lang lhs)))
 
-(defmethod %render-expr ((lang (eql :clang)) (op (eql :MIN)) lhs rhs z)
+(defmethod %render-expr ((lang Clang) (op (eql :MIN)) lhs rhs z)
   (assert (and lhs rhs))
   (assert (null z))
   (format nil "min(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs)))
 
-(defmethod %render-expr ((lang (eql :clang)) (op (eql :Aref)) lhs rhs z)
+(defmethod %render-expr ((lang Clang) (op (eql :Aref)) lhs rhs z)
   (assert (null z))
   (assert (and lhs rhs))
   (let ((ref (render-isl-aref rhs :genid #'(lambda (x) (nth x *access*)))))
@@ -172,17 +181,17 @@ Compiled with: ~a"
 	    (format nil "~(~a~)" lhs))
 	(format nil "~(~a~)[~(~a~)]" lhs ref))))
 
-(defmethod %render-expr ((lang (eql :clang)) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
+(defmethod %render-expr ((lang Clang) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
   (assert (buffer-p (expr-y lhs)))
   (assert (null z))
   (let ((strides (map 'list #'(lambda (x) (render-expr lang x)) rhs)))
     (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (or (nth x *access*) (car *access*)))) :strides strides))))
 
-(defmethod %render-expr ((lang (eql :clang)) (op (eql :NOT)) lhs rhs z)
+(defmethod %render-expr ((lang Clang) (op (eql :NOT)) lhs rhs z)
   (assert (and lhs (null rhs) (null z)))
   (format nil "!~a" (render-expr lang lhs)))
 
-(defmethod %render-expr ((lang (eql :clang)) op lhs rhs z)
+(defmethod %render-expr ((lang Clang) op lhs rhs z)
   (assert (and lhs rhs) () "~a is not implemented?" op)
   (assert (null z))
   (format nil "(~a~(~a~)~a)"
@@ -195,11 +204,11 @@ Compiled with: ~a"
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
-(defmethod %render-expr ((lang (eql :clang)) (op (eql :WHERE)) x y z)
+(defmethod %render-expr ((lang Clang) (op (eql :WHERE)) x y z)
   (assert (and x y z))
   (format nil "(~(~a~) ? ~(~a~) : ~(~a~))" (render-expr lang x) (render-expr lang y) (render-expr lang z)))
 
-(defmethod %render-body ((lang (eql :clang)) kernel-lang jit-graph polyhedral indent args)
+(defmethod %render-body ((lang Clang) kernel-lang jit-graph polyhedral indent args)
   (declare (type graph jit-graph)
 	   (type polyhedral polyhedral)
 	   (type fixnum indent))
@@ -211,16 +220,21 @@ Compiled with: ~a"
 		      (format out ,designator ,@args)
 		      (format out "~%")))
 		 (r (obj) `(render-expr lang ,obj)))
-	(loop for node in (graph-nodes jit-graph)
-	      for type = (node-type node) do
+	(loop with nth = 0
+	      for node in (graph-nodes jit-graph)
+	      for type = (node-type node)
+	      for outermost-p = (= nth 0) do
 		(assert (eql :Render (node-class node)))
 		(ecase type
 		  (:FOR
 		   (multiple-value-bind (idx upfrom below by)
 		       (values (getattr node :idx) (getattr node :upfrom) (getattr node :below) (getattr node :by))
 		     (assert (and idx upfrom below by) () "Missing ~a" (list idx upfrom below by))
+		     (when (and outermost-p (eql :global (getattr node :scope)) (= 1 (ctx:getenv :OMP)))
+		       (line "#pragma omp parallel for"))
 		     (line "for(int ~(~a~)=~a;~a;~a+=~a) {" (r idx) (r upfrom) (r below) (r idx) (r by))
-		     (incf indent)))
+		     (incf indent))
+		   (incf nth))
 		  (:ENDFOR
 		   (decf indent)
 		   (line "}"))
@@ -269,7 +283,7 @@ Compiled with: ~a"
     (:uint8 :uint8)
     (:int8 :int8)))
 
-(defmethod %render-nodes ((lang (eql :clang)) graph access indent)
+(defmethod %render-nodes ((lang Clang) graph access indent)
   (with-output-to-string (out)
     (macrolet ((line (designator &rest args)
 		 `(progn

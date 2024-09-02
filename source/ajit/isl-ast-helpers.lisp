@@ -40,7 +40,8 @@
 (defun finalize-schedule (polyhedral)
   "Finalizes the polyhedral model (frees the memory), returning Lisp_AST (see above)"
   (declare (type Polyhedral polyhedral))
-  (parse-isl-ast (isl::ast-node-handle (finalize-polyhedral polyhedral))))
+  (multiple-value-bind (ast-node bands) (finalize-polyhedral polyhedral)
+    (values (parse-isl-ast (isl::ast-node-handle ast-node)) bands)))
 
 (declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast))
 (defun parse-isl-ast (ast)

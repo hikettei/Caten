@@ -43,10 +43,31 @@
 
 (defun wmma-relay-from (t1 tc nth)
   (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))
-(defun wmma-relay-from1 (t1 t2 t3)
-  (make-inferred-type `(,@(relay-writes t3) ,(second (relay-reads t1)) ,(second (relay-reads t2))) (relay-writes t3))
-  (setf (nth 1 (relay-reads t3)) (second (relay-reads t1)))
-  t3)
+(defun wmma-relay-from-contiguous (t1 t2 t3)
+  (let ((a-base (second (relay-reads t3)))
+	(a (second (relay-reads t1)))
+	(b-base (third (relay-reads t3)))
+	(b (second (relay-reads t2)))
+	(c (car (relay-reads t3))))
+    (flet ((manual-infer (from to)
+	     ;; from = broadcasted and contiguous-applied buffer
+	     ;; to = before the `from` operation buffer.
+	     (let ((from (copy-buffer from)))
+	       (assert (= (buffer-nrank from) (buffer-nrank to)))
+	       (assert (eql (buffer-dtype from) (buffer-dtype to)))
+	       (setf (buffer-stride from) (buffer-stride to)
+		     (buffer-inferred-permute from) (buffer-inferred-permute to)
+		     ;; merge views (use broadcasted one)
+		     (buffer-views from) (loop for n upfrom 0 below (buffer-nrank from)
+					       if (and (nth n (buffer-views from)) (nth n (buffer-views to)))
+						 collect (if (fourth (nth n (buffer-views from)))
+							     (nth n (buffer-views from))
+							     (nth n (buffer-views to)))
+					       else
+						 collect (or (nth n (buffer-views from))
+							     (nth n (buffer-views to)))))
+	       from)))
+      (make-inferred-type `(,c ,(manual-infer a-base a) ,(manual-infer b-base b)) (relay-writes t3)))))
 ;; WMMA (c a b) <=> c = c + a * b (:reduction)
 (defsimplifier
     (wmma-rewriter :speed 0)
@@ -54,7 +75,7 @@
     ((:Add (c (:Mul (a b) :_type_relay t1)) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 0))))
 (defsimplifier
     (contiguous-after-wmma :speed 0)
-    ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3) -> (:WMMA (c a b) :reduction reduction :_type_relay (wmma-relay-from1 t1 t2 t3))))
+    ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3) -> (:WMMA (c a b) :reduction reduction :_type_relay (wmma-relay-from-contiguous t1 t2 t3))))
 
 (defun apply-jit-specific-simplifiers (avm)
   "A toplevel for jit-specific optimizers. (WMMA Simplification, Removing Views, Contiguous Node Removals)"
@@ -79,3 +100,16 @@
 			if (and (symbolp r) (id->value graph r)) append (explore (id->value graph r) graph)))
 		(list node)))))
     (explore node graph)))
+
+(defun create-reduction-alias-f (nodes)
+  (let ((table (make-hash-table)))
+    (labels ((ref (x)
+	       (if (gethash x table)
+		   (ref (gethash x table))
+		   x)))
+      (loop for node in nodes
+	    if (getattr node :reduction)
+	      do (setf (gethash (car (node-writes node)) table) (car (node-reads node)))
+	    else
+	      do (setf (node-reads node) (map 'list #'ref (node-reads node))))
+      #'ref)))

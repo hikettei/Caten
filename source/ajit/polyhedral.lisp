@@ -26,6 +26,53 @@
     (when (null type) (error "~a is not input/output" type))
     (= (buffer-nrank (car (relay-writes type))) 0)))
 
+(defun poly/schedule-metadata (polyhedral)
+  (declare (type polyhedral polyhedral))
+  (yaml:parse (schedule-to-str (poly-schedule polyhedral))))
+
+(defstruct (Band)
+  (domain (error "") :type union-set)
+  (permutable nil :type boolean)
+  (coincident nil :type list))
+
+(defun collect-bandnode (top &aux (out))
+  (declare (type polyhedral top))
+  (labels ((explore (schedule-node)
+	     (let ((c (isl::%isl-schedule-node-has-children schedule-node)))
+	       (when (eql c :bool-true)
+		 (loop for n upfrom 0 below (isl::%isl-schedule-node-n-children schedule-node)
+		       for node = (isl::%isl-schedule-node-get-child schedule-node n)
+		       do (explore node)))
+	       (ecase (isl::%isl-schedule-node-get-type schedule-node)
+		 (:Schedule-Node-Leaf)
+		 (:Schedule-Node-Filter)
+		 (:Schedule-Node-Sequence)
+		 (:Schedule-Node-Band
+		  (let ((dom (isl::%make-union-set (isl::%isl-schedule-node-get-domain schedule-node)))
+			(n (isl::%isl-schedule-node-band-n-member schedule-node))
+			(shuffle-p (eql :bool-true (isl::%isl-schedule-node-band-get-permutable schedule-node))))
+		    ;;(print (isl::%make-union-set (isl::%isl-schedule-node-band-get-ast-build-options schedule-node)))
+		    ;;(print dom)
+		    ;;(isl::%isl-schedule-node-band-set-ast-build-options schedule-node (isl::union-set-handle (union-set-from-str "{ separate[x] }")))
+		    ;;(print (isl::%make-union-set (isl::%isl-schedule-node-band-get-ast-build-options schedule-node)))
+		    (push
+		     (make-band
+		      :domain dom
+		      :permutable shuffle-p
+		      :coincident
+		      (loop for i upfrom 0 below n
+			    collect (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident schedule-node i))))
+		     out)))
+		 (:Schedule-Node-Domain)
+		 (:Schedule-Node-Expansion)
+		 (:Schedule-Node-Extension)
+		 (:Schedule-Node-Mark)
+		 (:Schedule-Node-Set)
+		 (:Schedule-Node-Context)
+		 (:Schedule-Node-Guard)))))
+    (explore (isl::%isl-schedule-get-root (isl::schedule-handle (poly-schedule top))))
+    out))
+
 (defun finalize-polyhedral (polyhedral &aux (schedule (poly-schedule polyhedral)))
   (declare (type polyhedral polyhedral))
   (macrolet ((set-option (name level)
@@ -36,7 +83,8 @@
     (set-option "ast_build_exploit_nested_bounds" 1)
     (set-option "ast_build_separation_bounds" 1)
     (set-option "ast_build_scale_strides" 1))
-  (ast-build-node-from-schedule (ast-build-from-context (set-from-str "{:}")) schedule))
+  (let ((bands (collect-bandnode polyhedral)))
+    (values (ast-build-node-from-schedule (ast-build-from-context (set-from-str "{:}")) schedule) bands)))
 
 (defmethod print-polyhedral ((poly Polyhedral) stream)
   (format stream "
@@ -55,14 +103,14 @@ Expected Output (Scalar ops are temporarily excluded):
 	  (poly-domain poly)
 	  (poly-read poly)
 	  (poly-write poly)
-	  (poly-schedule poly)
+	  (schedule-get-root (poly-schedule poly))
 	  (debug/render-c poly)))
 
 (defun debug/render-c (polyhedral &aux (schedule (poly-schedule polyhedral)))
   (let* ((build (ast-build-from-context (set-from-str "{:}")))
 	 (ast   (ast-build-node-from-schedule build schedule))
-	 (p     (isl-printer-to-str))
-	 (p     (isl::%isl-printer-set-output-format (isl::isl-printer-handle p) 4)) ;; 4 == Clang
+	 (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+	 (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
 	 (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
 	 (str   (isl::%isl-printer-get-str q)))
     str))
@@ -84,6 +132,10 @@ Expected Output (Scalar ops are temporarily excluded):
 	   (flow (union-access-info-compute-flow access))
 	   (waw-deps (union-flow-get-must-dependence flow))
 	   (war-deps (union-flow-get-may-dependence flow)))
+      ;;(print "DEPENDENCIES")
+      ;;(print raw-deps)
+      ;;(print war-deps)
+      ;;(print war-deps)
       (values raw-deps waw-deps war-deps))))
 
 (defun poly/make-constraints (polyhedral)
@@ -134,10 +186,15 @@ for (int c0 = 0; c0 < a; c0 += 1)
 				 :int ,level
 				 :void))))
     (when serialize (set-option "schedule_serialize_sccs" 1))
-    ;;(set-option "schedule_maximize_band_depth" 1)
-    ;;(set-option "schedule_whole_component" 1)
-    ;;(set-option "schedule_treat_coalescing" 1)
-    )
+    (let ((n 0))
+      (loop for g in (hash-table-values (poly-pipeline polyhedral))
+	    do (incf n (length (graph-nodes g))))
+      (set-option "schedule_outer_coincidence" 1)
+      (set-option "schedule_maximize_band_depth" 1)
+      ;; (when (<= n ...)
+      ;;(set-option "schedule_whole_component" 1)
+      (set-option "schedule_treat_coalescing" 1)
+      ))
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr) (schedule schedule)) polyhedral
     (let* ((constraints (poly/make-constraints polyhedral))
 	   (schedule (schedule-constraints-compute-schedule constraints)))

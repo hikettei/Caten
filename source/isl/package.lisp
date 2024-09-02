@@ -130,6 +130,9 @@
    #:basic-set-set
    #:basic-set-add-constraint
    #:basic-set-apply
+   ;; MultiUnionPwAff
+   #:multi-union-pw-aff
+   #:multi-union-pw-aff-from-str
    ;; Union set
    #:union-set
    #:union-set-p
@@ -328,6 +331,10 @@
    #:schedule-constraints-set-conditional-validity
    ;; printer.lisp
    #:isl-printer-to-str
+   ;; from schedule-node.lisp
+   #:schedule-get-root
+   #:schedule-node-graft-after
+   #:schedule-node-graft-before
    ))
 
 (in-package :caten/isl)

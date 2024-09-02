@@ -21,7 +21,10 @@
    #:Expr-x
    #:Expr-y
    )
-   
+  ;; from device.lisp
+  (:export
+   #:Device
+   #:default-device)
   ;; from scheduler.lisp
   (:export
    #:create-polyhedral-model

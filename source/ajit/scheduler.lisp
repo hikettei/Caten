@@ -28,8 +28,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
     (when (or (= (buffer-nrank a) 0) (= 0 (buffer-nrank b)))->ok)
     ;; Contiguous and the same-shaped buffer -> merge them
     (when (and
-           (every #'null (buffer-views a))
-           (every #'null (buffer-views b))
+	   (every #'null (buffer-views a))
+	   (every #'null (buffer-views b))
            (equal (buffer-shape a) (buffer-shape b)))
       ->ok)
     ;; They still have a chance to be merged by the polyhedral compiler.
@@ -179,7 +179,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 
 (defun one-dimensional-renderer (gid stride upfrom by broadcast-p)
   (if broadcast-p
-      (format nil "~a" upfrom)
+      (format nil "0")
       (format nil "~a~a~a"
 	      (if (eql by 1)
 		  (if (and (numberp stride) (= stride 1))
@@ -200,7 +200,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (assert (numberp by) () "by is expected to be a constant to create an affine schedule! (TODO: Fix)")
   ;;(when (symbolp by) (setf by 2))
   (if broadcast-p
-      (format nil "~a" upfrom)
+      (format nil "0")
       (format nil "~a~a~a"
 	      (if (eql by 1)
 		  ""
@@ -208,11 +208,9 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	      gid
 	      (if (eql upfrom 0)
 		  ""
-		  (if (eql by 1)
-		      (format nil "+~a" upfrom)
-		      (format nil "+(~a*~a)" upfrom by))))))
-		      
-(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil))
+		  (format nil "+~a" upfrom)))))
+
+(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil) &aux (c 0))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -235,11 +233,12 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	   for by     = (reveal-buffer (or (nth 2 view) 1))
 	   for broadcast-p = (nth 3 view)
 	   for gid = (funcall genid nth)
+	   do (incf c)
 	   append
 	   (list
 	    (funcall indexing gid stride upfrom by broadcast-p)
 	    split))
-     (when upper (loop repeat (- upper (buffer-nrank buffer)) append (list "0" split)))))))
+     (when upper (loop repeat (- upper c) append (list "0" split)))))))
 
 (defun render-domain (pipeline &key (depends-on nil))
   "Render the domain notation from the scheduled subgraphs
@@ -276,7 +275,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-(defun render-access (mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
+(defun render-access (alias-f mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
   "Render the read/write accessing relation ship in the following notation:
 ```
 [depends-on] -> {
@@ -285,7 +284,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 }
 ```
 "
-  (declare (type list depends-on)
+  (declare (type function alias-f)
+	   (type list depends-on)
 	   (type (member :read :write) mode)
 	   (type hash-table pipeline))
   (with-output-to-string (out)
@@ -293,6 +293,15 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (maphash1
      #'(lambda (timestamp subgraph)
 	 (let* ((lf (graph->loop-factors subgraph))
+		(constraints
+		  (loop for node in (graph-nodes subgraph)
+			if (eql (node-type node) :FOR)
+			  collect
+			  (progn
+			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
+			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
+		(constraints
+		  (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
 		(occur-from
 		  (format nil "T~a[~(~a~)]"
 			  timestamp (render-list lf)))
@@ -305,13 +314,13 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       ;; Tn[...]: A = (X += Y),  i.e.: Tn[...]: A = (X = X + Y)
 	       ;; Here, X depends on X.
 	       (when (getattr node :reduction)
-		 (let ((reduce-to (car (node-reads node)))
+		 (let ((reduce-to (funcall alias-f (car (node-reads node))))
 		       (rt        (car (relay-reads (read-type-relay node)))))
 		   (when (symbolp reduce-to)
 		     (if (vm-instruction-p node)
-			 (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank))
+			 (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank) constraints)
 			 (error ":reduction for the op ~a is invaild." node)))))
-	       (loop for r in (funcall (if (eql mode :read) #'node-reads #'node-writes) node)
+	       (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
 		     for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
 		       ;; When node has a :reduction
 		       (when (symbolp r)
@@ -321,7 +330,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			       (let ((access (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank)))
 				 (if (string= access "")
 				     (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
-				     (format out "  ~a -> ~(~a~)[~(~a~)];~%" occur-from r access)))))))
+				     (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from r access constraints)))))))
 	       ;; Symbols for computing the stride
 	       (when (and node (eql mode :read))
 		 (let* ((symbols
@@ -337,11 +346,22 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-(defun isl-initial-schedule (pipeline &key depends-on)
+;; 1 domain 1 instruction for simplifity
+(defun isl-initial-schedule (pipeline)
   (let ((schedule :nothing))
+    (maphash
+     #'(lambda (ts graph)
+	 (declare (ignore ts))
+	 (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph))))
+     pipeline)
     (maphash1
      #'(lambda (ts graph)
-	 (let* ((loop-factors (graph->loop-factors graph))
+	 (let* ((depends-on
+		  (remove-duplicates
+		   (append
+		    (nodes-gather-args (graph-nodes graph))
+		    (nodes-depends-on (graph-nodes graph)))))
+		(loop-factors (graph->loop-factors graph))
 		(constraints
 		  (loop for node in (graph-nodes graph)
 			if (eql (node-type node) :FOR)
@@ -349,6 +369,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			  (progn
 			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
 			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
+		;; e.g.:
+		;; domain:
+		;; - { T0[_gid0, _gid1] : 0 <= _gid0 <= 3 and 0 <= _gid1 <= 3 ... }
+		;;
+		;; TODO isl_ast_node_context? from outer variables.
 		(dom (union-set-from-str
 		      (format nil
 			      "[~(~a~)] -> { T~a[~(~a~)] : ~a }"
@@ -361,13 +386,18 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (setf schedule sched)
 	       (setf schedule (schedule-sequence schedule sched)))))
      pipeline)
+    ;; gradft_after?
     schedule))
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
 ;; This is the toplevel of all optimization stuff
+;; Set no-writes=t to skip O(N) search algorithm.
 (defstruct (Group
-	    (:constructor make-group (nodes realize-on-vm &aux (args (nodes-depends-on nodes)) (shapes (nodes-gather-args nodes)))))
+	    (:constructor make-group (nodes realize-on-vm &key (no-writes nil)
+				      &aux
+					(args (when (null no-writes) (nodes-depends-on nodes)))
+					(shapes (when (null no-writes) (nodes-gather-args nodes))))))
   (graph (apply #'make-graph nodes) :type graph)
   (sched nil :type list)
   (realize-on-vm realize-on-vm :type boolean)
@@ -376,7 +406,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   (across-time-deps nil :type list)
   (args args :type list)
   (shapes shapes :type list)
-  (writes (nodes-output-ids nodes) :type list))
+  (writes (when (null no-writes) (nodes-output-ids nodes)) :type list)
+  (id (gensym)))
 
 (defun relocate-independent-allocations! (graph)
   "
@@ -435,7 +466,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (or (find (node-id node) subgraph :key #'node-id)
 		   (and
 		    (eql (node-type node) :View)
-		    (eql (node-id node) (node-id view)))))	       
+		    (eql (node-id node) (node-id view)))))
 	     (relocate (view subgraph)
 	       (setf (graph-nodes graph)
 		     (append
@@ -456,27 +487,83 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	    if (isolated-p view subgraph)
 	      do (relocate view subgraph)))))
 
+(defun recursive-split-into-subgroups (group)
+  (declare (type group group))
+  (let ((graph (group-graph group))
+	(stashed-path)
+	(seen))
+    (when (eql (node-type (car (graph-nodes (group-graph group)))) :pause/backward)
+      (return-from recursive-split-into-subgroups (list group)))
+    (labels ((finalize-group (group)
+	       ;; Infers group-writes
+	       (make-group (graph-nodes (group-graph group)) (group-realize-on-vm group)))
+	     (force-realize-on-vm (node)
+	       (or
+		(eql (node-type node) :pause/backward)
+		(eql (node-type node) :Allocate)
+		(and (eql (node-type node) :LOAD)
+		     (symbolp (getattr node :value))
+		     (= 0 (buffer-nrank (car (relay-writes (read-type-relay node))))))))
+	     (explore (id)
+	       (declare (type symbol id))
+	       (let ((node (id->value graph id)))
+		 (when (and node (null (find (node-id node) seen :key #'node-id)))
+		   ;; dynamic shapes are stashed and excluded from the graph, or exists in the toplevel?
+		   (push node seen)
+		   (if (force-realize-on-vm node)
+		       (progn
+			 (push node stashed-path)
+			 nil)			 
+		       (make-group
+			(append
+			 (loop for read in (node-reads node)
+			       for parent = (when (symbolp read) (explore read))
+			       if parent
+				 append (graph-nodes (group-graph parent)))
+			 (list node))
+			nil
+			:no-writes t)))))
+	     (restart-from-stashed-node (node)
+	       (list
+		(make-group
+		 (list node)
+		 t
+		 :no-writes t)
+		(make-group
+		 (loop for read in (node-reads node)
+		       for parent = (when (symbolp read) (explore read))
+		       if parent
+			 append (graph-nodes (group-graph parent)))
+		 nil
+		 :no-writes t))))
+      (let ((new-groups (map 'list #'explore (group-writes group))))
+	;; TODO: Remove duplicated LOAD! they are in stashed-path
+	(loop while stashed-path
+	      do (setf new-groups (append (restart-from-stashed-node (pop stashed-path)) new-groups)))
+	(loop for g in new-groups
+	      ;; Empty group can be removed
+	      if (and g (graph-nodes (group-graph g))) collect (finalize-group g))))))
+
 (defun split-into-subgroups (graph)
   "Graphs are first breaked into subgroups only after:
 - Tensor is shaped by a tensor
 - :PAUSE/BACKWARD"
   (declare (type graph graph))
   (let ((groups))
-    (labels ((force-realize-on-vm (node)
-	       (or
-		(eql (node-type node) :pause/backward)
-		(eql (node-type node) :Allocate)
-		(and (eql (node-type node) :LOAD)
-		     (symbolp (getattr node :value))
-		     (= 0 (buffer-nrank (car (relay-writes (read-type-relay node)))))))))
-      `(,@(loop for node in (graph-nodes graph)
-		if (force-realize-on-vm node)
-		  collect (make-group (nreverse groups) nil)
-		  and collect (make-group (list node) t)
-		  and do (setf groups nil)
-		else
-		  do (push node groups))
-	,(make-group (nreverse groups) nil)))))
+    (labels ((force-realize-on-vm (node) (or (eql (node-type node) :pause/backward))))
+      (apply
+       #'append
+       (map
+	'list
+	#'recursive-split-into-subgroups
+	`(,@(loop for node in (graph-nodes graph)
+		  if (force-realize-on-vm node)
+		    collect (make-group (nreverse groups) nil)
+		    and collect (make-group (list node) t)
+		    and do (setf groups nil)
+		  else
+		    do (push node groups))
+	  ,(make-group (nreverse groups) nil)))))))
 
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list)) create-schedules-from-avm))
 (defun create-schedules-from-avm (avm &key (verbose nil) &aux (backward-mode-p (not (null (avm-bw-outputs avm)))))
@@ -544,7 +631,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		     (dolist (r `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))) (when (symbolp r) (push r read-in-groups)))))
 	       (remove-duplicates read-in-groups)))
       (relocate-independent-allocations! (avm-graph avm))
-      (let* ((groups (loop for g in (split-into-subgroups (avm-graph avm))
+      (let* ((groups (loop for g in (group/resolve-dependencies (split-into-subgroups (avm-graph avm)))
 			   if (graph-nodes (group-graph g))
 			     collect g)))
 	(loop for group in groups
@@ -576,8 +663,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		      (print-schedules (group-sched group)))))
 	groups))))
 
-(declaim (ftype (function (AVM group &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
-(defun create-polyhedron-from-group (avm group &key (verbose nil) (verbose-auto nil))
+(declaim (ftype (function (AVM group function &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
+(defun create-polyhedron-from-group (avm group alias &key (verbose nil) (verbose-auto nil))
   "Step2, create a polyhedron from the scheduled items."
   (declare (type group group) (type boolean verbose))
   (let* ((submodule (map 'list #'schedule->submodule (group-sched group))) ;; Rendering :FOR and :ENDFOR
@@ -589,13 +676,15 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
       (print-pipeline pipeline))
     (let* ((vm-inputs (avm-gather-args avm))
+	   (vm-input-tensors (nodes-depends-on (graph-nodes (group-graph group))))
 	   (loop-size (loop for value being the hash-values of pipeline
 			    append (graph->loop-size value)))
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
-	   (domain       (render-domain pipeline :depends-on dynamic-shapes))
-	   (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
-	   (write-access (render-access :write pipeline :depends-on dynamic-shapes))
-	   (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))
+	   (domain         (render-domain pipeline :depends-on dynamic-shapes))
+	   (dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
+	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes))
+	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes))
+	   (schedule     (isl-initial-schedule pipeline)))
       (when verbose-auto
 	(format t "== [Domain] ===========")
 	(format t "~%~a~%" domain)
@@ -604,7 +693,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	(format t "== [Write Accesses] ======")
 	(format t "~%~a~%" write-access)
 	(format t "== [Initial Scheduling domain (=domain)] ======")
-	(format t "~%~a~%" schedule))
+	(format t "~%~a~%" (schedule-get-root schedule)))
       (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs (group-writes group)))))
 
 (declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
@@ -630,7 +719,8 @@ Options:
 (defun finalize-and-retrive-render-graph (group)
   "Step4, Extract the schedule from ISL."
   (declare (type group group))
-  (create-rendering-graph (group-polyhedron group) (finalize-schedule (group-polyhedron group))))
+  (multiple-value-bind (ast bands) (finalize-schedule (group-polyhedron group))
+    (create-rendering-graph ast bands)))
 
 (defstruct (Compiled-Kernel
 	    (:conc-name ck-)
@@ -683,6 +773,9 @@ Options:
 	       (backend (or (ctx:getenv :JIT_BACKEND) :clang))
 	       (compile-later nil)
 	     &aux
+	       (backend (if (keywordp backend)
+			    (default-device backend)
+			    backend))
 	       (verbose-schedule (or (= debug 2) (= debug 4)))
 	       (verbose-auto (or (= debug 4) (= debug 3))))
   "Applies the jit, returning the compiled code.
@@ -695,17 +788,19 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type boolean serialize))
   (with-isl-context
     (let* ((groups (create-schedules-from-avm avm :verbose verbose-schedule))
+	   (alias (create-reduction-alias-f (graph-nodes (avm-graph avm))))
 	   (groups (loop for group in groups
 			 if (group-realize-on-vm group) collect group
 			   else if (group-sched group) do
-			     (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule :verbose-auto verbose-auto))
+			     (setf (group-polyhedron group) (create-polyhedron-from-group avm group alias :verbose verbose-schedule :verbose-auto verbose-auto))
 				and collect group)))
       (mapc
        #'(lambda (x)
 	   (when (group-polyhedron x)
-	     (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
-	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
-	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x))))
+	     (progn;with-isl-context
+	       (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
+	       (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
+	       (setf (group-render-graph x) (finalize-and-retrive-render-graph x)))))
        groups)
       (let* ((refcount (create-reference-counter groups))
 	     (kernels (map
@@ -735,6 +830,9 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	      (backend (or (ctx:getenv :JIT_BACKEND) :clang))
 	    &aux
 	      (_ (apply-static-gensym base-avm))
+	      (backend (if (keywordp backend)
+			   (default-device backend)
+			   backend))
 	      (avm (deepcopy-avm base-avm)))
   "Applies the jit"
   (declare (type avm avm)
