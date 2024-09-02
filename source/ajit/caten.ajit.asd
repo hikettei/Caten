@@ -2,7 +2,7 @@
   :description "Abstract JIT System"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("caten.isl" "trivia" "alexandria" "cffi" "trivial-garbage" "cl-yaml")
+  :depends-on ("caten.isl" "trivia" "alexandria" "cffi" "trivial-garbage")
   :serial t
   :components
   ((:file "package")
@@ -17,7 +17,6 @@
    (:file "kernel-info")
    (:file "multiexpr")
    (:file "memory-planner")
-   (:file "device")
    (:file "renderer")
    (:file "backends/clang"))
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))

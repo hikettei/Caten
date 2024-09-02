@@ -34,8 +34,8 @@
   "Conatenates two 1d tensors a and b"
   (let* ((2xsize (%add size size))
 	 (after (%make-tensor (list 2xsize) :dtype dtype))
-	 (a (%move (%view after (list size) (list (%iconst 0)) (list size) (list (%iconst 1)) (list nil) (list (%iconst 1))) a :reduction t))
-	 (b (%move (%view a (list size) (list size) (list 2xsize) (list (%iconst 1)) (list nil) (list (%iconst 1))) b :reduction t)))
+	 (a (%move (%view after (list size) (list (%iconst 0)) (list size) (list (%iconst 1)) (list nil) (list (%iconst 1))) a))
+	 (b (%move (%view a (list size) (list size) (list 2xsize) (list (%iconst 1)) (list nil) (list (%iconst 1))) b)))
     (%view b (list 2xsize) (list (%iconst 0)) (list 2xsize) (list (%iconst 1)) (list nil) (list (%iconst 1)))))
 ;; ~~~~ threefry2x32 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %threefry2x32 (size x seed &aux (rotations `((13 15 26 6) (17 29 16 24))) (*wrap-around-mode* t))

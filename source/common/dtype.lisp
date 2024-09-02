@@ -34,7 +34,7 @@
   "A list of available keywords as a dtype"
   `(and keyword
 	(member
-	 :float64 :float32 :float16 :bfloat16
+	 :float64 :float32 :float16
 	 :uint64 :uint32 :uint16 :uint8
 	 :int64 :int32 :int16 :int8 :bool)))
 
@@ -83,15 +83,13 @@
       (ecase dtype
 	(:float64 2.220446049250313e-16)
 	(:float32 1.1920928955078125e-07)
-	(:float16 0.0009765625)
-	(:bfloat16 0.0009765625))))
+	(:float16 0.0009765625))))
 (defun 3.5ulp (dtype) (* 3.5 (1.0ulp dtype)))
 (defun dtype/max (dtype)
   (ecase dtype
     (:float64 3.40282e+38) ;;1.79769313486232d+308
     (:float32 3.40282e+38)
     (:float16 6.55040e+04)
-    (:bfloat16 6.55040e+04)    
     (:uint64 (1- (expt 2 64)))
     (:int64  (1- (expt 2 63)))
     (:uint32 (1- (expt 2 32)))
@@ -116,7 +114,6 @@
     (:float64 2.2250738585072e-308)
     (:float32 1.17549e-38)
     (:float16 6.104e-05)
-    (:bfloat16 6.104e-05)    
     (:bool nil)
     (otherwise 0)))
 

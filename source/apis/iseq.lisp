@@ -8,10 +8,6 @@
 ;; 5. (Optimize) Simplifying the graph in a level of :Func.
 ;; 6. (Autodiff) Constructing the backward graph from (1.), lowering them in the same way as (2.) ~ (5.)
 ;; ~~ Compiler-Session (Utils) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter *jit-device* nil)
-(defmacro with-jit (device &body body)
-  `(let ((*jit-device* ,device)) ,@body))
-
 (defstruct (Compiler-Session
 	    (:conc-name session-)
 	    (:constructor make-compiler-session (&key (name :main))))
@@ -338,7 +334,7 @@
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
   (let ((avm (%compile-toplevel tensors :name name :external-simplifiers simplifiers)))
-    (if jit (caten/ajit:jit avm :backend (or *jit-device* (ctx:getenv :jit_backend))) avm)))
+    (if jit (caten/ajit:jit avm) avm)))
 
 (defun avm/sync-tensors (avm)
   "Synchronize buffer and tensor (but limited to the end of nodes, and grads)"

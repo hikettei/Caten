@@ -89,8 +89,7 @@
    #:caten
    #:forward
    #:backward
-   #:proceed
-   #:with-jit)
+   #:proceed)
 
   ;; from function.lisp
   (:export

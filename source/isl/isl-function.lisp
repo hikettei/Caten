@@ -184,10 +184,9 @@
                       collect
                       `(,(infer-result-wrapper (isl-type extra-result))
                         (cffi:mem-ref ,(isl-name extra-result) :pointer))))))
-         ;;(define-compiler-macro ,name (&whole whole ,@(mapcar #'isl-name explicit-args))
-         ;;  (declare (ignore ,@(mapcar #'isl-name explicit-args)))
-         ;;  (optimize-isl-function-call whole))
-	 ))))
+         (define-compiler-macro ,name (&whole whole ,@(mapcar #'isl-name explicit-args))
+           (declare (ignore ,@(mapcar #'isl-name explicit-args)))
+           (optimize-isl-function-call whole))))))
 
 (defun constructor-form-p (form isl-object-name)
   (and (consp form)

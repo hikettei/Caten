@@ -132,9 +132,6 @@ Usage:
     (:CC
      "gcc" :string identity
      "Default C Compiler")
-    (:OMP
-     0 :int #.(oneof "OMP" 0 `(0 1))
-     "Set 1 to use omp.h for Clang")
     (:AOT_VERBOSE
      0 :int #.(oneof "AOT_VERBOSE" 0 `(0 1))
      "When this option is set to 1, it prints all the information that AIR deletes during AOT compilation.")
