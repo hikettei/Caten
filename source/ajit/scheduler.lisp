@@ -1,7 +1,16 @@
 (in-package :caten/ajit)
 ;; First, Nodes determined to be necessarily Fused (e.g.: non-viewed and same shaped tensors)
 ;; are combined into a single SubGraph and converted into an ISL AST.
-;; Refenreces: https://pliss2019.github.io/albert_cohen_slides.pdf
+;; Refenreces:
+;; - https://pliss2019.github.io/albert_cohen_slides.pdf
+;; - https://www.slideshare.net/slideshow/introduction-to-polyhedral-compilation/70482946
+;; - https://www.researchgate.net/publication/273651704_Schedule_Trees
+;; - https://www.researchgate.net/publication/317826152_Scheduling_for_PPCG
+;; - https://groups-google-com.translate.goog/g/isl-development/c/2bgepkLQBhY/m/BmiDq1nDAAAJ?_x_tr_sl=en&_x_tr_tl=ja&_x_tr_hl=ja&_x_tr_pto=sc
+;; - https://libisl.sourceforge.io/tutorial.pdf
+;; - https://libisl.sourceforge.io/manual.pdf
+;; - https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
+;; - https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
 ;; ~~~~ Subgraph initializers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Scheduled-Items
 	    (:conc-name si-)
