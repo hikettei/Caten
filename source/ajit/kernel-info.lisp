@@ -1,6 +1,5 @@
 (in-package :caten/ajit)
 ;; ~~ Fused Kernel Objects ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 (defstruct (JIT-Info)
   (fname :nil :type keyword)
   (caller #'(lambda ()) :type (or null function))

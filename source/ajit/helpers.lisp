@@ -1,5 +1,6 @@
 (in-package :caten/ajit)
 
+(deftype integer-t () `(or number symbol))
 (defun gid (n) (intern (format nil "_GID~a" n)))
 (defun symb (&rest args) (intern (with-output-to-string (out) (dolist (n args) (princ n out)))))
 
@@ -492,3 +493,6 @@ in a single timestamp otherwise recursive dependencies will occur.
    #'max
    (loop for key in (hash-table-keys pipeline)
 	 collect (length (graph->loop-factors (gethash key pipeline))))))
+
+(defun padding-list (list rank &key (with 0))
+  (append list (loop for i in (range 0 (- rank (length list))) collect with)))

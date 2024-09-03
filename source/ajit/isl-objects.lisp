@@ -1,6 +1,5 @@
 (in-package :caten/ajit)
 
-(deftype integer-t () `(or number symbol))
 (defmacro define-isl-object (print-name docstring ((&rest args) &rest slots) &body body)
   (declare (type string print-name))
   (let* ((name (intern (string-upcase print-name)))

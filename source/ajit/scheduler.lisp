@@ -388,8 +388,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	 lex)
 	lex))))
 
-;; (caten (!matmul (ax+b `(10 20) 1 0) (!sin (ax+b `(20 30) 1 0))))
-;; Shape Inferの時点でよくみるとおかしい
 (defun isl-initial-schedule (pipeline &key (depends-on nil))
   "
 Optional order fusing softmax in a single kernel is:
