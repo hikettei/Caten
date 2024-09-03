@@ -311,6 +311,7 @@
    ;; Ast build
    #:ast-build
    #:ast-build-p
+   #:ast-build-set-options
    #:create-ast-build
    #:generate-optimized-ast
    ;; Schedule

@@ -12,7 +12,7 @@
   (:give ast-build)
   (:take set))
 
-(define-isl-function ast-build-node-from-schedule %isl-ast-build-node-from-schedule
-  (:give ast-node)
-  (:keep ast-build)
-  (:take schedule))
+(define-isl-function ast-build-set-options %isl-ast-build-set-options
+  (:give ast-build)
+  (:take ast-build)
+  (:take union-map))

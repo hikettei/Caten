@@ -110,3 +110,7 @@
 	  do (push (node-id (nth (1+ nth) nodes)) removed)
 	else unless (find (node-id node) removed)
 	       collect node))
+
+(defun padding-list (list rank &key (with 0))
+  (append list (loop for i in (range 0 (- rank (length list))) collect with)))
+

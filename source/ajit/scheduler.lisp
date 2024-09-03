@@ -355,48 +355,74 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-;; 1 domain 1 instruction for simplifity
-(defun isl-initial-schedule (pipeline)
-  (let ((schedule :nothing))
-    (maphash
-     #'(lambda (ts graph)
-	 (declare (ignore ts))
-	 (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph))))
-     pipeline)
-    (maphash1
-     #'(lambda (ts graph)
-	 (let* ((depends-on
-		  (remove-duplicates
-		   (append
-		    (nodes-gather-args (graph-nodes graph))
-		    (nodes-depends-on (graph-nodes graph)))))
-		(loop-factors (graph->loop-factors graph))
-		(constraints
-		  (loop for node in (graph-nodes graph)
-			if (eql (node-type node) :FOR)
-			  collect
-			  (progn
-			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
-			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
-		;; e.g.:
-		;; domain:
-		;; - { T0[_gid0, _gid1] : 0 <= _gid0 <= 3 and 0 <= _gid1 <= 3 ... }
-		;;
-		;; TODO isl_ast_node_context? from outer variables.
-		(dom (union-set-from-str
-		      (format nil
-			      "[~(~a~)] -> { T~a[~(~a~)] : ~a }"
-			      (render-list depends-on)
-			      ts
-			      (render-list loop-factors)
-			      (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))))
-		(sched (schedule-from-domain dom)))
-	   (if (eql schedule :nothing)
-	       (setf schedule sched)
-	       (setf schedule (schedule-sequence schedule sched)))))
-     pipeline)
-    ;; gradft_after?
-    schedule))
+(defun pipeline->timestamp (pipeline)
+  (declare (type hash-table pipeline))
+  (maphash
+   #'(lambda (ts graph)
+       (declare (ignore ts))
+       (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph))))
+   pipeline)
+  (let ((graph
+	  (apply
+	   #'make-graph
+	   (loop for time in (hash-table-keys pipeline)
+		 for graph = (gethash time pipeline)
+		 collect (make-node :TIME :GRAPH (graph-outputs graph) (graph-seen graph) :id time))))
+	(lex (make-hash-table))
+	(seen))
+    ;; TODO: Relocate Isolated nodes w/ the end of nodes. (when debugging, should produce a warning)
+    (labels ((explore (id &key (time 0) &aux (val (id->value graph id)))
+	       (when (and val (null (find `(,time ,(node-id val)) seen :test #'equal)))
+		 (push (list time (node-id val)) seen)
+		 (let* ((key (getattr val :id)))
+		   (mapc #'(lambda (x) (explore x :time (1+ time))) (remove-duplicates (node-reads val)))
+		   (if (gethash key lex)
+		       (push time (gethash key lex))
+		       (setf (gethash key lex) (list time)))))))
+      (mapc #'explore (nodes-output-ids (graph-nodes graph)))
+      (assert (every #'(lambda (x) (find x seen :key #'second)) (map 'list #'node-id (graph-nodes graph))))
+      (let ((tree-max-depth (apply #'max (apply #'append (hash-table-values lex)))))
+	(maphash
+	 #'(lambda (x y)
+	     (setf (gethash x lex) (map 'list #'(lambda (n) (- tree-max-depth n)) y)))
+	 lex)
+	lex))))
+
+;; (caten (!matmul (ax+b `(10 20) 1 0) (!sin (ax+b `(20 30) 1 0))))
+;; Shape Inferの時点でよくみるとおかしい
+(defun isl-initial-schedule (pipeline &key (depends-on nil))
+  "
+Optional order fusing softmax in a single kernel is:
+[val_1, val_0, val_7, val_11] -> {
+  T0[_gid0, _gid1] -> [3, _gid0, _gid1];
+  T1[_gid0, _gid1] -> [1, _gid0, _gid1];
+  T2[_gid0, _gid1] -> [2, _gid0, _gid1];
+  T3[_gid0, _gid1] -> [3, _gid0, _gid1];
+  T4[_gid0, _gid1] -> [4, _gid0, _gid1];
+  T5[_gid0, _gid1] -> [4, _gid0, _gid1];
+  T6[_gid0, _gid1] -> [5, _gid0, _gid1];
+  T7[_gid0, _gid1] -> [6, _gid0, _gid1];
+}
+"
+  (let ((lex (pipeline->timestamp pipeline))
+	(max-rank (1+ (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline))))))
+    (union-map-from-str
+     (with-output-to-string (out)
+       (format out "[~(~a~)] -> " (render-list depends-on))
+       (format out "{~%")
+       (maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
+	#'(lambda (ts graph)
+	    ;;(format t "T~a -> ~a~%" ts (gethash ts lex))
+	    (let* ((loop-factors (graph->loop-factors graph))
+		   (dom (format nil
+				"  T~a[~(~a~)] -> [~(~a~)]"
+				ts
+				(render-list loop-factors)
+				(render-list (padding-list `(,(apply #'min (gethash ts lex)) ,@loop-factors) max-rank)))))
+	      (format out "~a;~%" dom)))
+	pipeline)
+       (format out "}")))))
+
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; polyhedral compilation to determine the parallelization strategy
 ;; If we do; compile from avm into ISL, optimizng
@@ -693,7 +719,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
 	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes))
 	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes))
-	   (schedule     (isl-initial-schedule pipeline)))
+	   (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))
       (when verbose-auto
 	(format t "== [Domain] ===========")
 	(format t "~%~a~%" domain)
@@ -702,7 +728,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	(format t "== [Write Accesses] ======")
 	(format t "~%~a~%" write-access)
 	(format t "== [Initial Scheduling domain (=domain)] ======")
-	(format t "~%~a~%" (schedule-get-root schedule)))
+	(format t "~%~a~%" schedule))
       (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs (group-writes group)))))
 
 (declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
