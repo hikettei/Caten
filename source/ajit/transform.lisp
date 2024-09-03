@@ -12,7 +12,7 @@
 	    do (return-from find-outermost-for node))))
 
 (defmethod kernel-renderer-outermost-loop-eq ((a kernel-renderer) (b kernel-renderer))
-  "Assumes loop fusion in a base polyhedral is always valid."
+  "Compares two outermost loops in the a and b"
   (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
     (and a b
 	 (equal (getattr a :idx) (getattr b :idx))
@@ -22,6 +22,24 @@
 	 (eql (getattr a :scope) (getattr b :scope)))))
 
 (defun fuse-outermost-loops (blueprints)
+  "
+Fuses two rendering groups whose outermost loops are the completely equivalent.
+This fusion is only applied in the original polyhedral group, (which is assumed to no circular deps, and time series deps are in straight)
+So we asssume all pairs of loop fusion are always valid.
+e.g.:
+for(int i=0; i<10; i++) {
+  // some element-wise operations (1)
+}
+for(int i=0; i<10; i++) {
+  // some element-wise operations (2)
+}
+are fused into:
+for(int i=0; i<10; i++) {
+  // some element-wise operations (1)
+  // some element-wise-operations (2)
+}
+This may reduce the number of extra allocation for tmpvar.
+"
   (flet ((except-for (nodes for-a for-b)
 	   `(,for-a
 	     ,@(loop for node in nodes
@@ -48,6 +66,7 @@
      :key #'kernel-renderer-nth)))
 
 (defun split-kernel (nodes)
+  "Finalizes an rendering graph to use based on nodes."
   (declare (type list nodes))
   (let ((kernels) (outputs))
     (loop with nest = 0
@@ -67,12 +86,3 @@
      (loop for out in (reverse outputs)
 	   for nth upfrom 0
 	   collect (make-kernel-renderer :nodes out :nth nth)))))
-
-;; [TODO]
-;;  - coincidenceから Loop Collapseをここでやる
-;;  - TODO: Symbolic Loop Unrolling (not going to use ISL)
-;;  - gemm-testを通す
-;;  - !rand segvを修正する
-;;    - ;; (caten (!matmul (ax+b `(10 20) 1 0) (!sin (ax+b `(20 30) 1 0))))
-;;    - Shape Inferの時点でよくみるとおかしい
-;;  - graph.lispから，ループ関連の処理をどっかに分ける
