@@ -267,7 +267,7 @@ for(int i=0; i<10*10; i++) {
 		      (>= x unroll-by)
 		      t)
 		  (unroll-upfrom x unroll-by :1p nil))))))
-	   (extract-reminders (rem-table nodes)
+	   (extract-reminders (rem-table nodes &key (seen))
 	     (let ((out
 		     (loop with stacked-reminders = (make-hash-table :test #'equal)
 			   for node in nodes
@@ -276,7 +276,9 @@ for(int i=0; i<10*10; i++) {
 			   else if (eql (node-type node) :FOR)
 				  collect
 				  (let ((rem (gethash (node-id node) rem-table)))
-				    (when rem (setf (gethash (getattr node :idx) rem-table) rem))
+				    (when (null (find (node-id node) seen))
+				      (push (node-id node) seen)
+				      (when rem (setf (gethash (getattr node :idx) stacked-reminders) rem)))
 				    node)
 			   else if (eql (node-type node) :ENDFOR)
 				  append (append
@@ -288,17 +290,15 @@ for(int i=0; i<10*10; i++) {
 			     collect node)))
 	       (if (= (length out) (length nodes))
 		   out
-		   (extract-reminders rem-table out))))
+		   (extract-reminders rem-table out :seen seen))))
 	   (subseq-loops (nodes idx)
 	     ;; TODO: Consider loop reminders and update them
-	     ;; 最後の集約と同じノリでReminderを集める
-	     ;; :_val_suffix
+	     ;; :_val_suffix = _0_0
 	     (loop with flag = t
 		   for n in nodes
 		   if (and flag (eql (node-type n) :ENDFOR) (equal (getattr n :idx) idx))
-		     collect n and do (setf flag nil)
-		   else if flag
-			  collect n))
+		     collect (copy-node n) and do (setf flag nil)
+		   else if flag collect (copy-node n)))
 	   (unroll-valid-p (nodes)
 	     (every #'(lambda (x) (find (node-type x) `(:FOR :ENDFOR :FUNCALL))) nodes))
 	   (make-unroll (idx n-unroll base-funcall)
@@ -312,7 +312,6 @@ for(int i=0; i<10*10; i++) {
 				   (if (and (or (symbolp x) (stringp x)) (string= x idx))
 				       (format nil "(~a+~a)" x nth)
 				       x)))
-			    ;; TODO: Attribute _offset `(xxx) to update scalar (orthogonal) variables
 			    (r/funcall
 			     (getattr node :name)
 			     (map
@@ -327,7 +326,8 @@ for(int i=0; i<10*10; i++) {
 	    for nth upfrom 0
 	    for unroll-size = (unroll-size node)
 	    for unroll-with-reminder = (unroll-p-allow-reminder node)
-	    for loop-body = (when (or unroll-with-reminder unroll-size) (subseq-loops (nthcdr nth (kernel-renderer-nodes kr)) (getattr node :idx)))
+	    for loop-body = (when (or unroll-with-reminder unroll-size)
+			      (subseq-loops (nthcdr nth (kernel-renderer-nodes kr)) (getattr node :idx)))
 	    for unroll-valid-p = (unroll-valid-p loop-body)
 	    for idx = (getattr node :idx)
 	    if (and unroll-valid-p unroll-size) do
@@ -350,27 +350,17 @@ for(int i=0; i<10*10; i++) {
 		(setf (getattr base-loop :by) (make-expr :const 1)
 		      (getattr base-loop :upfrom) unroll-with-reminder 
 		      (car loop-body) base-loop
-		      ;; これするとAbstractTensor.lispの時はn段階でUnrollを生成した。これはどうなる？
-		      ;; !matmul 段階的にUnrollする，Reminderもまだvectorize可能 -> subseq-loops
 		      (gethash (node-id node) reminders) (append loop-body))))
       (setf (kernel-renderer-nodes kr)
-	    (loop with stacked-reminders = (make-hash-table :test #'equal)
-		  for node in (kernel-renderer-nodes kr)
-		  if (eql (node-type node) :FUNCALL)
-		    collect (or (gethash (getattr node :name) replacements) node)
-		  else if (eql (node-type node) :FOR)
-			 collect
-			 (let ((rem (gethash (node-id node) reminders)))
-			   (when rem (setf (gethash (getattr node :idx) stacked-reminders) rem))
-			   node)
-		  else if (eql (node-type node) :ENDFOR)
-			 append (append
-				 (list node)
-				 (prog1
-				     (gethash (getattr node :idx) stacked-reminders)
-				   (remhash (getattr node :idx) stacked-reminders)))
-		  else
-		    collect node))
+	    (extract-reminders
+	     reminders
+	     (loop
+	       for node in (kernel-renderer-nodes kr)
+	       if (eql (node-type node) :FUNCALL)
+		 collect (or (gethash (getattr node :name) replacements) node)
+	       else
+		 collect node)))
+      ;; [TODO] Vectorize the generated loop-reminder.
       kr)))
 
 (defun render-graph-from-polyhedral (polyhedral nodes)
@@ -397,7 +387,7 @@ for(int i=0; i<10*10; i++) {
        (funcall (if (= 0 (ctx:getenv :SERIALIZE))
 		    #'fuse-outermost-loops
 		    #'(lambda (x y) (declare (ignore x)) y))
-	polyhedral
-	(loop for out in (reverse outputs)
-	      for nth upfrom 0
-	      collect (make-kernel-renderer :nodes out :nth nth)))))))
+		polyhedral
+		(loop for out in (reverse outputs)
+		      for nth upfrom 0
+		      collect (make-kernel-renderer :nodes out :nth nth)))))))
