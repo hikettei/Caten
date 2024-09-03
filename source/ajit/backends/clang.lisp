@@ -250,9 +250,12 @@ Compiled with: ~a"
 		   (decf indent)
 		   (line "}"))
 		  (:FUNCALL
-		   (let ((idx (getattr node :idx))
-			 (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
-		     (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out)))))))))
+		   (dolist (node (if (getattr node :_packed)
+				     (getattr node :_unrolled)
+				     (list node)))
+		     (let ((idx (getattr node :idx))
+			   (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
+		     (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out))))))))))
 
 (defun ->cdtype (dtype)
   (ecase dtype

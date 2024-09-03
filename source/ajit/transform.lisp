@@ -175,6 +175,16 @@ for(int i=0; i<10*10; i++) {
 "
   kr)
 
+(defun r/packed-funcall (funcall unrolled idx size)
+  ;; :_packed t
+  ;; :_unrolled (a list of actually unrolled funcall)
+  ;; :_metadata ((idx1 . size) (idx . size) ...)
+  (let ((new-funcall (copy-node funcall)))
+    (setf (getattr new-funcall :_packed) t
+	  (getattr new-funcall :_unrolled) unrolled
+	  (getattr new-funcall :_metadata) (append (getattr new-funcall :_metadata) (list (cons idx size))))
+    new-funcall))
+
 (defmethod unroll-loop ((kr kernel-renderer) (poly polyhedral) (unroll-by fixnum))
   "TODO:
 外側から(device.config.parallelize_outermost_n)はParallelize
@@ -184,12 +194,18 @@ for(int i=0; i<10*10; i++) {
   ;; UnrollしてReminderが発生したらもう一度分割する必要がある
   ;; Reminderが発生しない場合のみを考えてみる (GPUだと余分なカーネルが増えて律速になる)
   ;; or UNROLL_SYMBOLIC=1 ?
-  ;; [Memo] apply-memory-plannerに影響しないの？
+  ;; [Memo] apply-memory-plannerに影響しない? -> しない
   ;; TODO: Metal float4を使いたい
+  ;; TODO: UnrolledFuncall
+  ;; TODO: VectorizedFuncall
+  ;;  - attributeとして実装する PackedFuncall
+  ;; 一番深いところより一個下はReminderを生成してもいい
+  ;; Index Computation Simplification is required!
+  ;; TODO: これする前にIndex ComputationをSimplifyする
   (labels ((unroll-size (node &aux (idx (getattr node :idx)))
 	     (and
 	      (eql (node-type node) :FOR)
-	      (eql (getattr node :scope) :LOCAL)
+	      (eql (getattr node :scope) :LOCAL) ;; <- need a lil tweak to metal backend
 	      (getattr node :coincident)
 	      (trivia:match (getattr node :upfrom)
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
@@ -211,21 +227,25 @@ for(int i=0; i<10*10; i++) {
 			  collect n))
 	   (unroll-valid-p (nodes)
 	     (every #'(lambda (x) (find (node-type x) `(:FOR :ENDFOR :FUNCALL))) nodes))
-	   (make-unroll (idx n-unroll nodes)
-	     (loop for node in nodes
-		   append
-		   (loop for nth upfrom 0 below n-unroll
-			 collect
-			 (flet ((mapper (x)
-				  (if (and (or (symbolp x) (stringp x)) (string= x idx))
-				      (format nil "(~a+~a)" x nth)
-				      x)))
-			   (r/funcall
-			    (getattr node :name)
-			    (map
-			     'list
-			     #'(lambda (x &aux (x (copy-expr x))) (expr-recursive-replace x #'mapper) x)
-			     (getattr node :args))))))))
+	   (make-unroll (idx n-unroll base-funcall)
+	     (r/packed-funcall
+	      base-funcall
+	      (loop for node in (or (getattr base-funcall :_unrolled) (list base-funcall))
+		    append
+		    (loop for nth upfrom 0 below n-unroll
+			  collect
+			  (flet ((mapper (x)
+				   (if (and (or (symbolp x) (stringp x)) (string= x idx))
+				       (format nil "(~a+~a)" x nth)
+				       x)))
+			    (r/funcall
+			     (getattr node :name)
+			     (map
+			      'list
+			      #'(lambda (x &aux (x (copy-expr x))) (expr-recursive-replace x #'mapper) x)
+			      (getattr node :args))))))
+	      idx
+	      n-unroll)))
     (let ((replacements (make-hash-table :test #'equal)))
       (loop for node in (kernel-renderer-nodes kr)
 	    for nth upfrom 0
@@ -238,11 +258,11 @@ for(int i=0; i<10*10; i++) {
 	      (dolist (node loop-body)
 		(when (eql (node-type node) :FUNCALL)
 		  (setf (gethash (getattr node :name) replacements)
-			(make-unroll idx unroll-by (or (gethash (getattr node :name) replacements) (list node)))))))
+			(make-unroll idx unroll-by (or (gethash (getattr node :name) replacements) node))))))
       (setf (kernel-renderer-nodes kr)
 	    (loop for node in (kernel-renderer-nodes kr)
 		  if (eql (node-type node) :FUNCALL)
-		    append (or (gethash (getattr node :name) replacements) (list node))
+		    collect (or (gethash (getattr node :name) replacements) node)
 		  else
 		    collect node))
       kr)))
