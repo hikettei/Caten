@@ -384,7 +384,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (let ((tree-max-depth (apply #'max (apply #'append (hash-table-values lex)))))
 	(maphash
 	 #'(lambda (x y)
-	     (setf (gethash x lex) (map 'list #'(lambda (n) (- tree-max-depth n)) y)))
+	     (setf (gethash x lex) (apply #'min (map 'list #'(lambda (n) (- tree-max-depth n)) y))))
 	 lex)
 	lex))))
 
@@ -404,22 +404,24 @@ Optional order fusing softmax in a single kernel is:
 "
   (let ((lex (pipeline->timestamp pipeline))
 	(max-rank (1+ (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline))))))
-    (union-map-from-str
-     (with-output-to-string (out)
-       (format out "[~(~a~)] -> " (render-list depends-on))
-       (format out "{~%")
-       (maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
-	#'(lambda (ts graph)
-	    ;;(format t "T~a -> ~a~%" ts (gethash ts lex))
-	    (let* ((loop-factors (graph->loop-factors graph))
-		   (dom (format nil
-				"  T~a[~(~a~)] -> [~(~a~)]"
-				ts
-				(render-list loop-factors)
-				(render-list (padding-list `(,(apply #'min (gethash ts lex)) ,@loop-factors) max-rank)))))
-	      (format out "~a;~%" dom)))
-	pipeline)
-       (format out "}")))))
+    (values
+     (union-map-from-str
+      (with-output-to-string (out)
+	(format out "[~(~a~)] -> " (render-list depends-on))
+	(format out "{~%")
+	(maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
+	 #'(lambda (ts graph)
+	     ;;(format t "T~a -> ~a~%" ts (gethash ts lex))
+	     (let* ((loop-factors (graph->loop-factors graph))
+		    (dom (format nil
+				 "  T~a[~(~a~)] -> [~(~a~)]"
+				 ts
+				 (render-list loop-factors)
+				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank)))))
+	       (format out "~a;~%" dom)))
+	 pipeline)
+	(format out "}")))
+     lex)))
 
 ;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; polyhedral compilation to determine the parallelization strategy
@@ -716,18 +718,18 @@ Optional order fusing softmax in a single kernel is:
 	   (domain         (render-domain pipeline :depends-on dynamic-shapes))
 	   (dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
 	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes))
-	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes))
-	   (schedule     (isl-initial-schedule pipeline :depends-on dynamic-shapes)))
-      (when verbose-auto
-	(format t "== [Domain] ===========")
-	(format t "~%~a~%" domain)
-	(format t "== [Read Accesses] =======")
-	(format t "~%~a~%" read-access)
-	(format t "== [Write Accesses] ======")
-	(format t "~%~a~%" write-access)
-	(format t "== [Initial Scheduling domain (=domain)] ======")
-	(format t "~%~a~%" schedule))
-      (make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs (group-writes group)))))
+	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes)))
+      (multiple-value-bind (schedule lex-table) (isl-initial-schedule pipeline :depends-on dynamic-shapes)
+	(when verbose-auto
+	  (format t "== [Domain] ===========")
+	  (format t "~%~a~%" domain)
+	  (format t "== [Read Accesses] =======")
+	  (format t "~%~a~%" read-access)
+	  (format t "== [Write Accesses] ======")
+	  (format t "~%~a~%" write-access)
+	  (format t "== [Initial Scheduling domain (=domain)] ======")
+	  (format t "~%~a~%" schedule))
+	(make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs (group-writes group) lex-table)))))
 
 (declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
 (defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
@@ -830,10 +832,9 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
       (mapc
        #'(lambda (x)
 	   (when (group-polyhedron x)
-	     (progn;with-isl-context
-	       (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
-	       (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
-	       (setf (group-render-graph x) (finalize-and-retrive-render-graph x)))))
+	     (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
+	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
+	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x))))
        groups)
       (let* ((refcount (create-reference-counter groups))
 	     (kernels (map

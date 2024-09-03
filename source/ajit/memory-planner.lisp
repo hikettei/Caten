@@ -176,7 +176,7 @@ Refcount-by:
 (defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards)
   (declare (type avm avm) (type group group) (type polyhedral polyhedral) (type Reference-counter refcount)
 	   (type graph render-graph) (type list save-for-backwards))
-  (let* ((kernels (split-kernel (graph-nodes render-graph)))
+  (let* ((kernels (render-graph-from-polyhedral polyhedral (graph-nodes render-graph)))
 	 (pipeline (poly-pipeline polyhedral))
 	 (meta-ids))
     (labels ((inplace-p (node time)

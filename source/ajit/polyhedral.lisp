@@ -6,7 +6,7 @@
 ;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs)))
+	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs lex-table)))
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)
@@ -20,7 +20,8 @@
   (write write :type string)
   (write-ptr (union-map-from-str write) :type union-map)
   (initial-schedule initial-schedule :type union-map)
-  (schedule nil :type (or null Schedule)))
+  (schedule nil :type (or null Schedule))
+  (lex-table lex-table :type hash-table))
 
 (defun poly/io-scalar-p (poly x)
   (let ((type (gethash x (poly-vm-io-types poly))))
@@ -198,40 +199,3 @@ for (int c0 = 0; c0 < a; c0 += 1)
 	   (schedule (schedule-constraints-compute-schedule constraints)))
       (setf (poly-schedule polyhedral) schedule)
       polyhedral)))
-;; Work in progress ...
-(defun poly/loop-collapse (polyhedral)
-  "
-[Scheduler]
-Try to apply the affine transformation is the iteration is contiguous in the polyhedral space.
-- Refernece: https://www.researchgate.net/publication/320992060_Consecutivity_in_the_isl_Polyhedral_Scheduler
-"
-  (declare (type polyhedral polyhedral))
-  
-  )
-
-(defun poly/vectorize (polyhedral)
-  ""
-  (declare (type polyhedral polyhedral))
-  (poly/loop-collapse polyhedral)
-  )
-
-(defun poly/parallel (polyhedral)
-  "[Scheduler]
-Reading the RAW/WAW/WAR dependencies, determines the parallelizable axis.
-If possible, attempts to reorder the iteration to enable outer-loop parallelism
-"
-  (declare (type polyhedral polyhedral))
-
-  )
-
-(defun poly/locality (polyhedral)
-  ""
-  (declare (type polyhedral polyhedral))
-
-  )
-
-(defun poly/tile (polyhedral)
-  ""
-  (declare (type polyhedral polyhedral))
-
-  )
