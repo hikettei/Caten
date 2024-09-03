@@ -185,27 +185,53 @@ for(int i=0; i<10*10; i++) {
 	  (getattr new-funcall :_metadata) (append (getattr new-funcall :_metadata) (list (cons idx size))))
     new-funcall))
 
-(defmethod unroll-loop ((kr kernel-renderer) (poly polyhedral) (unroll-by fixnum))
+(defun unroll-upfrom (below unroll-by &key (1p t))
+  ;; unroll_by * (mod size unroll-by)
+  (let* ((below (if 1p below (if (numberp below) (1+ below) (make-expr :+ below (make-expr :const 1)))))
+	 (rem (if (and (numberp below) (numberp unroll-by)) (mod below unroll-by) (make-expr :% below unroll-by))))
+    (if (and (numberp rem) (numberp below))
+	(make-expr :const (- below rem))
+	(make-expr :- below rem))))
+
+(defun decf-below (expr idx unroll-by)
+  (trivia:ematch expr
+    ((Expr :op :<= :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x x))
+     (make-expr :<= idx (if (and (numberp x) (numberp unroll-by))
+			    (- x unroll-by)
+			    (make-expr :- x unroll-by))))
+    ((Expr :op :< :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x x))
+     (make-expr :< idx (if (and (numberp x) (numberp unroll-by))
+			    (- x unroll-by)
+			    (make-expr :- x unroll-by))))))
+
+(defmethod pack-loop-funcall ((kr kernel-renderer) (poly polyhedral) (unroll-by fixnum))
   "TODO:
 外側から(device.config.parallelize_outermost_n)はParallelize
 それ以外はUnroll, Tilingをする
 ;; Unrollを考えてから，float Accumを考えた方がいいと思う。(float _acc_0は難しいこと考えなくて良くて，最初のwriteと最後のwriteをTrackすればいい)
 "
+  ;; [TODO] The Goal
+  ;; - Symbolic Unrolling
+  ;; - Support Loop Reminder
+  ;; - Optimize Gemm
+  ;; - float acc_0 temporary var
+  ;; - index computation simplification
   ;; UnrollしてReminderが発生したらもう一度分割する必要がある
   ;; Reminderが発生しない場合のみを考えてみる (GPUだと余分なカーネルが増えて律速になる)
   ;; or UNROLL_SYMBOLIC=1 ?
   ;; [Memo] apply-memory-plannerに影響しない? -> しない
-  ;; TODO: Metal float4を使いたい
-  ;; TODO: UnrolledFuncall
-  ;; TODO: VectorizedFuncall
+  ;; TODO: Metal float4を使いたい (OK)
+  ;; TODO: UnrolledFuncall         (OK)
+  ;; TODO: VectorizedFuncall       (OK)
   ;;  - attributeとして実装する PackedFuncall
   ;; 一番深いところより一個下はReminderを生成してもいい
   ;; Index Computation Simplification is required!
   ;; TODO: これする前にIndex ComputationをSimplifyする
+  (when (= 0 (ctx:getenv :PACKED)) (return-from pack-loop-funcall kr))
   (labels ((unroll-size (node &aux (idx (getattr node :idx)))
 	     (and
 	      (eql (node-type node) :FOR)
-	      (eql (getattr node :scope) :LOCAL) ;; <- need a lil tweak to metal backend
+	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete
 	      (getattr node :coincident)
 	      (trivia:match (getattr node :upfrom)
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
@@ -218,7 +244,55 @@ for(int i=0; i<10*10; i++) {
 		((Expr :op :< :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x (trivia:guard x (numberp x))))
 		 (and (= 0 (mod x unroll-by))
 		      (/ x unroll-by))))))
+	   (unroll-p-allow-reminder (node &aux (idx (getattr node :idx)))
+	     ;; Returning new :upfrom
+	     (and
+	      (eql (node-type node) :FOR)
+	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete
+	      (getattr node :coincident)
+	      (trivia:match (getattr node :upfrom)
+		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
+	      (trivia:match (getattr node :by)
+		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 1)))) t))
+	      (trivia:match (getattr node :below)
+		((Expr :op :<= :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x x))
+		 (and
+		  (if (numberp x)
+		      (>= (1+ x) unroll-by)
+		      t)
+		  (unroll-upfrom x unroll-by :1p t)))
+		((Expr :op :< :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x x))
+		 (and
+		  (if (numberp x)
+		      (>= x unroll-by)
+		      t)
+		  (unroll-upfrom x unroll-by :1p nil))))))
+	   (extract-reminders (rem-table nodes)
+	     (let ((out
+		     (loop with stacked-reminders = (make-hash-table :test #'equal)
+			   for node in nodes
+			   if (eql (node-type node) :FUNCALL)
+			     collect node
+			   else if (eql (node-type node) :FOR)
+				  collect
+				  (let ((rem (gethash (node-id node) rem-table)))
+				    (when rem (setf (gethash (getattr node :idx) rem-table) rem))
+				    node)
+			   else if (eql (node-type node) :ENDFOR)
+				  append (append
+					  (list node)
+					  (prog1
+					      (gethash (getattr node :idx) stacked-reminders)
+					    (remhash (getattr node :idx) stacked-reminders)))
+			   else
+			     collect node)))
+	       (if (= (length out) (length nodes))
+		   out
+		   (extract-reminders rem-table out))))
 	   (subseq-loops (nodes idx)
+	     ;; TODO: Consider loop reminders and update them
+	     ;; 最後の集約と同じノリでReminderを集める
+	     ;; :_val_suffix
 	     (loop with flag = t
 		   for n in nodes
 		   if (and flag (eql (node-type n) :ENDFOR) (equal (getattr n :idx) idx))
@@ -238,6 +312,7 @@ for(int i=0; i<10*10; i++) {
 				   (if (and (or (symbolp x) (stringp x)) (string= x idx))
 				       (format nil "(~a+~a)" x nth)
 				       x)))
+			    ;; TODO: Attribute _offset `(xxx) to update scalar (orthogonal) variables
 			    (r/funcall
 			     (getattr node :name)
 			     (map
@@ -246,11 +321,13 @@ for(int i=0; i<10*10; i++) {
 			      (getattr node :args))))))
 	      idx
 	      n-unroll)))
-    (let ((replacements (make-hash-table :test #'equal)))
+    (let ((replacements (make-hash-table :test #'equal))
+	  (reminders (make-hash-table :test #'equal)))
       (loop for node in (kernel-renderer-nodes kr)
 	    for nth upfrom 0
 	    for unroll-size = (unroll-size node)
-	    for loop-body = (when unroll-size (subseq-loops (nthcdr nth (kernel-renderer-nodes kr)) (getattr node :idx)))
+	    for unroll-with-reminder = (unroll-p-allow-reminder node)
+	    for loop-body = (when (or unroll-with-reminder unroll-size) (subseq-loops (nthcdr nth (kernel-renderer-nodes kr)) (getattr node :idx)))
 	    for unroll-valid-p = (unroll-valid-p loop-body)
 	    for idx = (getattr node :idx)
 	    if (and unroll-valid-p unroll-size) do
@@ -258,11 +335,40 @@ for(int i=0; i<10*10; i++) {
 	      (dolist (node loop-body)
 		(when (eql (node-type node) :FUNCALL)
 		  (setf (gethash (getattr node :name) replacements)
-			(make-unroll idx unroll-by (or (gethash (getattr node :name) replacements) node))))))
+			(make-unroll idx unroll-by (or (gethash (getattr node :name) replacements) node)))))
+	    else if unroll-with-reminder do
+	      ;; can be unrolled by introducing a reminder just after the loop
+	      ;; 並列化の次元に注意 (global-sizeと干渉すると新たなIterationが増える)
+	      (let ((base-loop (copy-node node)))
+		(setf (getattr node :by) (make-expr :const unroll-by)
+		      (getattr node :below) (decf-below (getattr node :below) idx unroll-by))
+		(dolist (node loop-body)
+		  (when (eql (node-type node) :FUNCALL)
+		    (setf (gethash (getattr node :name) replacements)
+			  (make-unroll idx unroll-by (or (gethash (getattr node :name) replacements) node)))))
+		;; Generating Loop Reminder
+		(setf (getattr base-loop :by) (make-expr :const 1)
+		      (getattr base-loop :upfrom) unroll-with-reminder 
+		      (car loop-body) base-loop
+		      ;; これするとAbstractTensor.lispの時はn段階でUnrollを生成した。これはどうなる？
+		      ;; !matmul 段階的にUnrollする，Reminderもまだvectorize可能 -> subseq-loops
+		      (gethash (node-id node) reminders) (append loop-body))))
       (setf (kernel-renderer-nodes kr)
-	    (loop for node in (kernel-renderer-nodes kr)
+	    (loop with stacked-reminders = (make-hash-table :test #'equal)
+		  for node in (kernel-renderer-nodes kr)
 		  if (eql (node-type node) :FUNCALL)
 		    collect (or (gethash (getattr node :name) replacements) node)
+		  else if (eql (node-type node) :FOR)
+			 collect
+			 (let ((rem (gethash (node-id node) reminders)))
+			   (when rem (setf (gethash (getattr node :idx) stacked-reminders) rem))
+			   node)
+		  else if (eql (node-type node) :ENDFOR)
+			 append (append
+				 (list node)
+				 (prog1
+				     (gethash (getattr node :idx) stacked-reminders)
+				   (remhash (getattr node :idx) stacked-reminders)))
 		  else
 		    collect node))
       kr)))
@@ -284,11 +390,13 @@ for(int i=0; i<10*10; i++) {
 	  else do
 	    (push node kernels))
     (push (nreverse kernels) outputs)
-    (flet ((opt (x) (unroll-loop (collapse-loop x polyhedral) polyhedral 4)))
+    (flet ((opt (x) (pack-loop-funcall (collapse-loop x polyhedral) polyhedral 4)))
       (map
        'list
        #'opt
-       (fuse-outermost-loops
+       (funcall (if (= 0 (ctx:getenv :SERIALIZE))
+		    #'fuse-outermost-loops
+		    #'(lambda (x y) (declare (ignore x)) y))
 	polyhedral
 	(loop for out in (reverse outputs)
 	      for nth upfrom 0

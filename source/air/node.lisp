@@ -21,6 +21,7 @@
   buffers)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Node
+	    (:copier %copy-node)
 	    (:constructor make-node (class type writes reads &rest attrs
 				     &aux
 				       (writes (verify-buffers writes))
@@ -33,6 +34,14 @@
   (writes writes :type list)
   (reads  reads :type list)
   (attrs  attrs :type list))
+
+(defun copy-node (node)
+  (declare (type node node))
+  (let ((copied-node (%copy-node node)))
+    (setf (node-reads copied-node) (copy-list (node-reads node))
+	  (node-writes copied-node) (copy-list (node-writes node))
+	  (node-attrs copied-node) (copy-list (node-attrs node)))
+    copied-node))
 
 (deftype dumpable-type () `(or symbol number keyword))
 (defmethod make-load-form ((node Node) &optional env &aux (debug-dump (= 1 (ctx:getenv :AOT_VERBOSE))))
