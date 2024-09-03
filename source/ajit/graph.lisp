@@ -36,7 +36,7 @@ Loop is either of :Global or :Local
 (defun r/else () (make-node :Render :ELSE nil nil))
 (defun r/endif () (make-node :Render :ENDIF nil nil))
 
-(defun create-rendering-graph (lisp-ast bands)
+(defun create-rendering-graph (lisp-ast bands device)
   ;; -1 is a placeholder for the tmpvar allocation.
   (let ((new-graph))
     (labels ((lower (object)
@@ -59,7 +59,7 @@ Loop is either of :Global or :Local
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (apply #'make-graph (apply-bands bands (simplify-rendering-nodes (reverse new-graph))))))
+    (apply #'make-graph (apply-bands bands (simplify-rendering-nodes (reverse new-graph)) :global-rank (device-parallel-depth device)))))
 
 (defun simplify-rendering-nodes (nodes)
   (let ((len (length nodes)))

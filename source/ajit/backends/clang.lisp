@@ -5,10 +5,9 @@
      #:dtype/cast))
 (in-package :caten/ajit.backends.clang)
 ;; ~~~ CLANG ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Clang (Device)
-  nil)
+(defclass Clang (Device) nil)
 (defmethod default-device ((id (eql :clang))) (make-instance 'clang))
-
+(defmethod device-parallel-depth ((id Clang)) 1)
 (defparameter *access* nil)
 (defparameter *args* nil)
 (defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))

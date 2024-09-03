@@ -13,7 +13,7 @@
 (defmethod initialize-instance :after ((metal Metal) &rest initargs &key &allow-other-keys)
   (declare (ignore initargs))
   (use-device (metal-device-id metal)))
-
+(defmethod device-parallel-depth ((id Metal)) 3)
 (defmethod default-device ((lang (eql :metal)))
   (make-instance 'Metal :id 0))
 

@@ -750,12 +750,12 @@ Options:
     (debug-print "Reschedule")
     polyhedral))
 
-(declaim (ftype (function (Group) graph) finalize-and-retrive-graph))
-(defun finalize-and-retrive-render-graph (group)
+(declaim (ftype (function (Group keyword) graph) finalize-and-retrive-graph))
+(defun finalize-and-retrive-render-graph (group backend)
   "Step4, Extract the schedule from ISL."
   (declare (type group group))
   (multiple-value-bind (ast bands) (finalize-schedule (group-polyhedron group))
-    (create-rendering-graph ast bands)))
+    (create-rendering-graph ast bands backend)))
 
 (defstruct (Compiled-Kernel
 	    (:conc-name ck-)
@@ -834,7 +834,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (when (group-polyhedron x)
 	     (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
-	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x))))
+	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x backend))))
        groups)
       (let* ((refcount (create-reference-counter groups))
 	     (kernels (map

@@ -30,7 +30,7 @@ for (...) {
   T2(...)
   T3(...)
 }
-T0 T1 are scalar-nodes, T2, T3 are vector-parts.
+T0 T1 are scalar-nodes, T2, T3 are vector-nodes.
 "
   (let ((nodes (kernel-renderer-nodes a))
 	(scalars)
@@ -161,7 +161,7 @@ This may reduce the number of extra allocation for tmpvar.
 	       (setf last-visited blueprint))))
    :key #'kernel-renderer-nth))
 
-(defmethod collapse-loop ((kr kernel-renderer))
+(defmethod collapse-loop ((kr kernel-renderer) (poly polyhedral))
   "Collapses the loop in the kernel to get more parallelization/vectorization opportunities, e.g.:
 for(int i=0; i<10; i++) {
   for(int j=0; j<10; j++) {
@@ -173,7 +173,79 @@ for(int i=0; i<10*10; i++) {
   T0(i);
 }
 "
-  )
+  kr)
+
+(defmethod unroll-loop ((kr kernel-renderer) (poly polyhedral) (unroll-by fixnum))
+  "TODO:
+外側から(device.config.parallelize_outermost_n)はParallelize
+それ以外はUnroll, Tilingをする
+;; Unrollを考えてから，float Accumを考えた方がいいと思う。(float _acc_0は難しいこと考えなくて良くて，最初のwriteと最後のwriteをTrackすればいい)
+"
+  ;; UnrollしてReminderが発生したらもう一度分割する必要がある
+  ;; Reminderが発生しない場合のみを考えてみる (GPUだと余分なカーネルが増えて律速になる)
+  ;; or UNROLL_SYMBOLIC=1 ?
+  ;; [Memo] apply-memory-plannerに影響しないの？
+  ;; TODO: Metal float4を使いたい
+  (labels ((unroll-size (node &aux (idx (getattr node :idx)))
+	     (and
+	      (eql (node-type node) :FOR)
+	      (eql (getattr node :scope) :LOCAL)
+	      (getattr node :coincident)
+	      (trivia:match (getattr node :upfrom)
+		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
+	      (trivia:match (getattr node :by)
+		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 1)))) t))
+	      (trivia:match (getattr node :below)
+		((Expr :op :<= :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x (trivia:guard x (numberp x))))
+		 (and (= 0 (mod (1+ x) unroll-by))
+		      (/ (1+ x) unroll-by)))
+		((Expr :op :< :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x (trivia:guard x (numberp x))))
+		 (and (= 0 (mod x unroll-by))
+		      (/ x unroll-by))))))
+	   (subseq-loops (nodes idx)
+	     (loop with flag = t
+		   for n in nodes
+		   if (and flag (eql (node-type n) :ENDFOR) (equal (getattr n :idx) idx))
+		     collect n and do (setf flag nil)
+		   else if flag
+			  collect n))
+	   (unroll-valid-p (nodes)
+	     (every #'(lambda (x) (find (node-type x) `(:FOR :ENDFOR :FUNCALL))) nodes))
+	   (make-unroll (idx n-unroll nodes)
+	     (loop for node in nodes
+		   append
+		   (loop for nth upfrom 0 below n-unroll
+			 collect
+			 (flet ((mapper (x)
+				  (if (and (or (symbolp x) (stringp x)) (string= x idx))
+				      (format nil "(~a+~a)" x nth)
+				      x)))
+			   (r/funcall
+			    (getattr node :name)
+			    (map
+			     'list
+			     #'(lambda (x &aux (x (copy-expr x))) (expr-recursive-replace x #'mapper) x)
+			     (getattr node :args))))))))
+    (let ((replacements (make-hash-table :test #'equal)))
+      (loop for node in (kernel-renderer-nodes kr)
+	    for nth upfrom 0
+	    for unroll-size = (unroll-size node)
+	    for loop-body = (when unroll-size (subseq-loops (nthcdr nth (kernel-renderer-nodes kr)) (getattr node :idx)))
+	    for unroll-valid-p = (unroll-valid-p loop-body)
+	    for idx = (getattr node :idx)
+	    if (and unroll-valid-p unroll-size) do
+	      (setf (getattr node :by) (make-expr :const unroll-by))
+	      (dolist (node loop-body)
+		(when (eql (node-type node) :FUNCALL)
+		  (setf (gethash (getattr node :name) replacements)
+			(make-unroll idx unroll-by (or (gethash (getattr node :name) replacements) (list node)))))))
+      (setf (kernel-renderer-nodes kr)
+	    (loop for node in (kernel-renderer-nodes kr)
+		  if (eql (node-type node) :FUNCALL)
+		    append (or (gethash (getattr node :name) replacements) (list node))
+		  else
+		    collect node))
+      kr)))
 
 (defun render-graph-from-polyhedral (polyhedral nodes)
   "Finalizes an rendering graph to use based on nodes."
@@ -192,8 +264,12 @@ for(int i=0; i<10*10; i++) {
 	  else do
 	    (push node kernels))
     (push (nreverse kernels) outputs)
-    (fuse-outermost-loops
-     polyhedral
-     (loop for out in (reverse outputs)
-	   for nth upfrom 0
-	   collect (make-kernel-renderer :nodes out :nth nth)))))
+    (flet ((opt (x) (unroll-loop (collapse-loop x polyhedral) polyhedral 4)))
+      (map
+       'list
+       #'opt
+       (fuse-outermost-loops
+	polyhedral
+	(loop for out in (reverse outputs)
+	      for nth upfrom 0
+	      collect (make-kernel-renderer :nodes out :nth nth)))))))
