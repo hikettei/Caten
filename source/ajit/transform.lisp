@@ -211,7 +211,7 @@ packed-funcall can be transformed into: Tiling/Vectorizing/Unrolling at the rend
   (labels ((static-unroll-p (node &aux (idx (getattr node :idx)))
 	     (and
 	      (eql (node-type node) :FOR)
-	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete
+	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete (Unroll at the parallelizing level)
 	      (getattr node :coincident)
 	      (trivia:match (getattr node :upfrom)
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
