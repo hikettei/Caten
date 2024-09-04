@@ -84,7 +84,7 @@
     (set-option "ast_build_scale_strides" 1))
   (let* ((schedule (schedule-set-options schedule :separate))
 	 (bands (multiple-value-list (collect-bandnode polyhedral)))
-	 (depth (second bands))
+	 (depth (* 2 (second bands)))
 	 (bands (car bands))
 	 (ast-build (ast-build-from-context (set-from-str "{:}")))
 	 (ast-build (ast-build-set-iterators ast-build (apply #'make-id-list (map 'list #'gid (range 0 depth)))))
