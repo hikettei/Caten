@@ -16,9 +16,8 @@
 (defmethod device-parallel-depth ((id Metal)) 3)
 (defmethod default-device ((lang (eql :metal)))
   (make-instance 'Metal :id 0))
-
-(defun Metal (&key (gpu 0))
-  (make-instance 'Metal :id gpu))
+(defmethod device-packed-by ((id Metal)) 4)
+(defun Metal (&key (gpu 0)) (make-instance 'Metal :id gpu))
 
 ;; bfloat16/float16
 ;; Update this line: https://github.com/hikettei/cl-metal/blob/main/lib/Sources/CLMetal/cl-metal.swift#L333

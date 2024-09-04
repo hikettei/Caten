@@ -842,7 +842,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		       #'(lambda (x)
 			   (if (group-realize-on-vm x)
 			       (group/apply-memory-planner! x refcount)
-			       (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x))))
+			       (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x) backend)))
 		       groups))
 	     (blueprints/codes
 	       (loop for group in groups

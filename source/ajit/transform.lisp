@@ -208,6 +208,7 @@ for(int i=0; i<10*10; i++) {
   "Groups the iteration into several packed-funcall.
 packed-funcall can be transformed into: Tiling/Vectorizing/Unrolling at the renderer level"
   (when (= 0 (ctx:getenv :PACKED)) (return-from pack-loop-funcall kr))
+  (when (= 1 unroll-by) (return-from pack-loop-funcall kr))
   (labels ((static-unroll-p (node &aux (idx (getattr node :idx)))
 	     (and
 	      (eql (node-type node) :FOR)
@@ -336,14 +337,10 @@ packed-funcall can be transformed into: Tiling/Vectorizing/Unrolling at the rend
 	  else do
 	    (push node kernels))
     (push (nreverse kernels) outputs)
-    (flet ((opt (x) (pack-loop-funcall (collapse-loop x polyhedral) polyhedral 4)))
-      (map
-       'list
-       #'opt
-       (funcall (if (= 0 (ctx:getenv :SERIALIZE))
-		    #'fuse-outermost-loops
-		    #'(lambda (x y) (declare (ignore x)) y))
-		polyhedral
-		(loop for out in (reverse outputs)
-		      for nth upfrom 0
-		      collect (make-kernel-renderer :nodes out :nth nth)))))))
+    (funcall (if (= 0 (ctx:getenv :SERIALIZE))
+		 #'fuse-outermost-loops
+		 #'(lambda (x y) (declare (ignore x)) y))
+	     polyhedral
+	     (loop for out in (reverse outputs)
+		   for nth upfrom 0
+		   collect (make-kernel-renderer :nodes out :nth nth)))))

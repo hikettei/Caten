@@ -173,7 +173,7 @@ Refcount-by:
 		    if (or (find (argument-name arg) seen) (find (argument-name arg) seen-by-rendering-graph))
 		      collect arg))))))
 
-(defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards)
+(defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards device)
   (declare (type avm avm) (type group group) (type polyhedral polyhedral) (type Reference-counter refcount)
 	   (type graph render-graph) (type list save-for-backwards))
   (let* ((kernels (render-graph-from-polyhedral polyhedral (graph-nodes render-graph)))
@@ -357,7 +357,9 @@ Refcount-by:
 	(renew (avm-id2tensor avm))
 	(renew (poly-vm-io-types polyhedral))
 	(renew (avm-variables avm)))
-      (loop for k in kernels if (kernel-renderer-nodes k) collect k))))
+      
+      (loop for k in kernels if (kernel-renderer-nodes k)
+	    collect (pack-loop-funcall k polyhedral (device-packed-by device))))))
 
 (defun group/apply-memory-planner! (group refcount)
   (loop for node in (graph-nodes (group-graph group))
