@@ -133,6 +133,7 @@
    ;; MultiUnionPwAff
    #:multi-union-pw-aff
    #:multi-union-pw-aff-from-str
+   #:mupa-from-union-map
    ;; Union set
    #:union-set
    #:union-set-p
@@ -310,6 +311,7 @@
    ;; Ast build
    #:ast-build
    #:ast-build-p
+   #:ast-build-set-options
    #:create-ast-build
    #:generate-optimized-ast
    ;; Schedule
@@ -319,6 +321,7 @@
 
    #:schedule-from-domain
    #:schedule-sequence
+   #:schedule-set
    #:schedule-to-str
    ;; Schedule constraints
    #:schedule-constraints
@@ -335,6 +338,13 @@
    #:schedule-get-root
    #:schedule-node-graft-after
    #:schedule-node-graft-before
+   #:schedule-insert-partial-schedule
+   #:schedule-node-from-domain
+   #:schedule-node-get-schedule
+   #:schedule-node-get-children
+   #:schedule-node-get-type
+   #:schedule-node-insert-partial-schedule
+   #:schedule-insert-sequence
    ))
 
 (in-package :caten/isl)

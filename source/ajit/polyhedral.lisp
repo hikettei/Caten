@@ -6,7 +6,7 @@
 ;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write schedule vm-inputs vm-outputs)))
+	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs lex-table)))
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)
@@ -19,7 +19,9 @@
   (read-ptr (union-map-from-str read) :type union-map)
   (write write :type string)
   (write-ptr (union-map-from-str write) :type union-map)
-  (schedule schedule :type Schedule))
+  (initial-schedule initial-schedule :type union-map)
+  (schedule nil :type (or null Schedule))
+  (lex-table lex-table :type hash-table))
 
 (defun poly/io-scalar-p (poly x)
   (let ((type (gethash x (poly-vm-io-types poly))))
@@ -28,7 +30,8 @@
 
 (defun poly/schedule-metadata (polyhedral)
   (declare (type polyhedral polyhedral))
-  (yaml:parse (schedule-to-str (poly-schedule polyhedral))))
+  (when (poly-schedule polyhedral)
+    (yaml:parse (schedule-to-str (poly-schedule polyhedral)))))
 
 (defstruct (Band)
   (domain (error "") :type union-set)
@@ -53,7 +56,7 @@
 			(shuffle-p (eql :bool-true (isl::%isl-schedule-node-band-get-permutable schedule-node))))
 		    ;;(print (isl::%make-union-set (isl::%isl-schedule-node-band-get-ast-build-options schedule-node)))
 		    ;;(print dom)
-		    ;;(isl::%isl-schedule-node-band-set-ast-build-options schedule-node (isl::union-set-handle (union-set-from-str "{ separate[x] }")))
+		    ;;(print (isl::%make-schedule-node (isl::%isl-schedule-node-band-set-ast-build-options schedule-node (isl::union-set-handle (union-set-from-str "[_gid0, _gid1] -> { atomic[t] : 0 <= t <= 2 }")))))
 		    ;;(print (isl::%make-union-set (isl::%isl-schedule-node-band-get-ast-build-options schedule-node)))
 		    (push
 		     (make-band
@@ -83,8 +86,10 @@
     (set-option "ast_build_exploit_nested_bounds" 1)
     (set-option "ast_build_separation_bounds" 1)
     (set-option "ast_build_scale_strides" 1))
-  (let ((bands (collect-bandnode polyhedral)))
-    (values (ast-build-node-from-schedule (ast-build-from-context (set-from-str "{:}")) schedule) bands)))
+  (let* ((bands (collect-bandnode polyhedral))
+	 (ast-build (ast-build-from-context (set-from-str "{:}")))
+	 (ast-build-node (ast-build-node-from-schedule ast-build schedule)))
+    (values ast-build-node bands)))
 
 (defmethod print-polyhedral ((poly Polyhedral) stream)
   (format stream "
@@ -103,8 +108,10 @@ Expected Output (Scalar ops are temporarily excluded):
 	  (poly-domain poly)
 	  (poly-read poly)
 	  (poly-write poly)
-	  (schedule-get-root (poly-schedule poly))
-	  (debug/render-c poly)))
+	  (when (poly-schedule poly)
+	    (schedule-get-root (poly-schedule poly)))
+	  (when (poly-schedule poly)
+	    (debug/render-c poly))))
 
 (defun debug/render-c (polyhedral &aux (schedule (poly-schedule polyhedral)))
   (let* ((build (ast-build-from-context (set-from-str "{:}")))
@@ -116,27 +123,20 @@ Expected Output (Scalar ops are temporarily excluded):
     str))
 
 (defun create-dependency-graph (polyhedral)
-  (declare (type polyhedral polyhedral))
-  (with-slots ((schedule schedule) (may-read read-ptr) (must-write write-ptr)) polyhedral
-    (let* (;; 1. RAW (Read After Write), a=1 then b=a
-	   (access (union-access-info-from-sink (copy may-read)))
-	   (access (union-access-info-set-must-source access must-write))
-	   (access (union-access-info-set-schedule access schedule))
-	   (flow (union-access-info-compute-flow access))
-	   (raw-deps (union-flow-get-must-dependence flow))
-	   ;; 2. WAR (Write After Read) deps
-	   (access (union-access-info-from-sink must-write))
-	   (access (union-access-info-set-must-source access must-write))
-	   (access (union-access-info-set-may-source access may-read))
-	   (access (union-access-info-set-schedule access schedule))
-	   (flow (union-access-info-compute-flow access))
-	   (waw-deps (union-flow-get-must-dependence flow))
-	   (war-deps (union-flow-get-may-dependence flow)))
-      ;;(print "DEPENDENCIES")
-      ;;(print raw-deps)
-      ;;(print war-deps)
-      ;;(print war-deps)
-      (values raw-deps waw-deps war-deps))))
+  (with-slots ((domain domain-ptr) (initial-schedule initial-schedule) (read-access read-ptr) (write-access write-ptr)) polyhedral
+    (let* ((before-map (union-map-lex-lt-union-map initial-schedule initial-schedule))
+           (read-access (union-map-intersect-domain read-access domain))
+           (write-access (union-map-intersect-domain write-access domain))
+           (RaW (union-map-intersect
+		 (union-map-apply-range write-access (union-map-reverse read-access))
+		 before-map))
+           (WaW (union-map-intersect
+		 (union-map-apply-range write-access (union-map-reverse write-access))
+		 before-map))
+           (WaR (union-map-intersect
+		 (union-map-apply-range read-access (union-map-reverse write-access))
+		 before-map)))
+      (values raw waw war))))
 
 (defun poly/make-constraints (polyhedral)
   "(2) Validty/Legality Constraints"
@@ -191,7 +191,6 @@ for (int c0 = 0; c0 < a; c0 += 1)
 	    do (incf n (length (graph-nodes g))))
       (set-option "schedule_outer_coincidence" 1)
       (set-option "schedule_maximize_band_depth" 1)
-      ;; (when (<= n ...)
       ;;(set-option "schedule_whole_component" 1)
       (set-option "schedule_treat_coalescing" 1)
       ))
@@ -200,40 +199,3 @@ for (int c0 = 0; c0 < a; c0 += 1)
 	   (schedule (schedule-constraints-compute-schedule constraints)))
       (setf (poly-schedule polyhedral) schedule)
       polyhedral)))
-;; Work in progress ...
-(defun poly/loop-collapse (polyhedral)
-  "
-[Scheduler]
-Try to apply the affine transformation is the iteration is contiguous in the polyhedral space.
-- Refernece: https://www.researchgate.net/publication/320992060_Consecutivity_in_the_isl_Polyhedral_Scheduler
-"
-  (declare (type polyhedral polyhedral))
-  
-  )
-
-(defun poly/vectorize (polyhedral)
-  ""
-  (declare (type polyhedral polyhedral))
-  (poly/loop-collapse polyhedral)
-  )
-
-(defun poly/parallel (polyhedral)
-  "[Scheduler]
-Reading the RAW/WAW/WAR dependencies, determines the parallelizable axis.
-If possible, attempts to reorder the iteration to enable outer-loop parallelism
-"
-  (declare (type polyhedral polyhedral))
-
-  )
-
-(defun poly/locality (polyhedral)
-  ""
-  (declare (type polyhedral polyhedral))
-
-  )
-
-(defun poly/tile (polyhedral)
-  ""
-  (declare (type polyhedral polyhedral))
-
-  )

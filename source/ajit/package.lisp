@@ -24,7 +24,9 @@
   ;; from device.lisp
   (:export
    #:Device
-   #:default-device)
+   #:default-device
+   #:device-parallel-depth
+   #:device-packed-by)
   ;; from scheduler.lisp
   (:export
    #:create-polyhedral-model

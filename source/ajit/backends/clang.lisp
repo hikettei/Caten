@@ -5,10 +5,10 @@
      #:dtype/cast))
 (in-package :caten/ajit.backends.clang)
 ;; ~~~ CLANG ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Clang (Device)
-  nil)
+(defclass Clang (Device) nil)
 (defmethod default-device ((id (eql :clang))) (make-instance 'clang))
-
+(defmethod device-parallel-depth ((id Clang)) 0)
+(defmethod device-packed-by ((id Clang)) 4)
 (defparameter *access* nil)
 (defparameter *args* nil)
 (defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))
@@ -251,9 +251,12 @@ Compiled with: ~a"
 		   (decf indent)
 		   (line "}"))
 		  (:FUNCALL
-		   (let ((idx (getattr node :idx))
-			 (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
-		     (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out)))))))))
+		   (dolist (node (if (getattr node :_packed)
+				     (getattr node :_unrolled)
+				     (list node)))
+		     (let ((idx (getattr node :idx))
+			   (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
+		     (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out))))))))))
 
 (defun ->cdtype (dtype)
   (ecase dtype

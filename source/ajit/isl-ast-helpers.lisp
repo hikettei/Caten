@@ -13,6 +13,15 @@
 (defstruct (Expr (:constructor make-expr (op x &optional (y nil) (z nil))))
   (op op) (x x) (y y) (z z))
 
+(defmethod expr-eq ((x expr) (y expr))
+  (and
+   (eql (expr-op x) (expr-op y))
+   (expr-eq (expr-x x) (expr-x y))
+   (expr-eq (expr-y x) (expr-y y))
+   (expr-eq (expr-z x) (expr-z y))))
+
+(defmethod expr-eq ((x t) (y t)) (equal x y))
+
 (defmethod print-object ((expr Expr) stream)
   (if (eql (expr-op expr) :Aref)
       (format stream "{~(~a~):~(~a~)}" (expr-x expr) (buffer-dtype (expr-y expr)))
