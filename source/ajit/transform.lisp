@@ -205,29 +205,8 @@ for(int i=0; i<10*10; i++) {
 	 (make-expr :<= (make-expr :+ idx (make-expr :const unroll-by)) (make-expr :const x))))))
 
 (defmethod pack-loop-funcall ((kr kernel-renderer) (poly polyhedral) (unroll-by fixnum))
-  "TODO:
-外側から(device.config.parallelize_outermost_n)はParallelize
-それ以外はUnroll, Tilingをする
-;; Unrollを考えてから，float Accumを考えた方がいいと思う。(float _acc_0は難しいこと考えなくて良くて，最初のwriteと最後のwriteをTrackすればいい)
-Applying tiling
-"
-  ;; [TODO] The Goal
-  ;; - Symbolic Unrolling
-  ;; - Support Loop Reminder
-  ;; - Optimize Gemm
-  ;; - float acc_0 temporary var
-  ;; - index computation simplification
-  ;; UnrollしてReminderが発生したらもう一度分割する必要がある
-  ;; Reminderが発生しない場合のみを考えてみる (GPUだと余分なカーネルが増えて律速になる)
-  ;; or UNROLL_SYMBOLIC=1 ?
-  ;; [Memo] apply-memory-plannerに影響しない? -> しない
-  ;; TODO: Metal float4を使いたい (OK)
-  ;; TODO: UnrolledFuncall         (OK)
-  ;; TODO: VectorizedFuncall       (OK)
-  ;;  - attributeとして実装する PackedFuncall
-  ;; 一番深いところより一個下はReminderを生成してもいい
-  ;; Index Computation Simplification is required!
-  ;; TODO: これする前にIndex ComputationをSimplifyする
+  "Groups the iteration into several packed-funcall.
+packed-funcall can be transformed into: Tiling/Vectorizing/Unrolling at the renderer level"
   (when (= 0 (ctx:getenv :PACKED)) (return-from pack-loop-funcall kr))
   (labels ((static-unroll-p (node &aux (idx (getattr node :idx)))
 	     (and
