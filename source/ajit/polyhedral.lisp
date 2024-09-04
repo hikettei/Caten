@@ -38,7 +38,7 @@
   (permutable nil :type boolean)
   (coincident nil :type list))
 
-(defun collect-bandnode (top &aux (out))
+(defun collect-bandnode (top &aux (out) (depth 0))
   (declare (type polyhedral top))
   (labels ((explore (schedule-node)
 	     (let ((c (isl::%isl-schedule-node-has-children schedule-node)))
@@ -54,6 +54,7 @@
 		  (let ((dom (isl::%make-union-set (isl::%isl-schedule-node-get-domain schedule-node)))
 			(n (isl::%isl-schedule-node-band-n-member schedule-node))
 			(shuffle-p (eql :bool-true (isl::%isl-schedule-node-band-get-permutable schedule-node))))
+		    (incf depth)
 		    (push
 		     (make-band
 		      :domain dom
@@ -70,7 +71,7 @@
 		 (:Schedule-Node-Context)
 		 (:Schedule-Node-Guard)))))
     (explore (isl::%isl-schedule-get-root (isl::schedule-handle (poly-schedule top))))
-    out))
+    (values out depth)))
 
 (defun finalize-polyhedral (polyhedral &aux (schedule (poly-schedule polyhedral)))
   (declare (type polyhedral polyhedral))
@@ -82,8 +83,11 @@
     (set-option "ast_build_exploit_nested_bounds" 1)
     (set-option "ast_build_scale_strides" 1))
   (let* ((schedule (schedule-set-options schedule :separate))
-	 (bands (collect-bandnode polyhedral))
+	 (bands (multiple-value-list (collect-bandnode polyhedral)))
+	 (depth (second bands))
+	 (bands (car bands))
 	 (ast-build (ast-build-from-context (set-from-str "{:}")))
+	 (ast-build (ast-build-set-iterators ast-build (apply #'make-id-list (map 'list #'gid (range 0 depth)))))
 	 (ast-build-node (ast-build-node-from-schedule ast-build schedule)))
     (values ast-build-node bands)))
 

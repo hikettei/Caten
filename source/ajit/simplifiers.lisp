@@ -31,7 +31,7 @@
 	    (loop for n in (graph-nodes (avm-graph avm))
 		  unless (eql (node-type n) :View)
 		    collect
-		    (progn		      
+		    (progn
 		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n))
 			    (node-reads n) (loop for r in (node-reads n)
 						 for val = (id->value (avm-graph avm) r)
