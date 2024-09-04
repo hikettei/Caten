@@ -209,6 +209,7 @@ for(int i=0; i<10*10; i++) {
 外側から(device.config.parallelize_outermost_n)はParallelize
 それ以外はUnroll, Tilingをする
 ;; Unrollを考えてから，float Accumを考えた方がいいと思う。(float _acc_0は難しいこと考えなくて良くて，最初のwriteと最後のwriteをTrackすればいい)
+Applying tiling
 "
   ;; [TODO] The Goal
   ;; - Symbolic Unrolling
@@ -228,10 +229,7 @@ for(int i=0; i<10*10; i++) {
   ;; Index Computation Simplification is required!
   ;; TODO: これする前にIndex ComputationをSimplifyする
   (when (= 0 (ctx:getenv :PACKED)) (return-from pack-loop-funcall kr))
-  (when (some #'(lambda (x) (null (find (node-type x) `(:FOR :ENDFOR :FUNCALL)))) (kernel-renderer-nodes kr))
-    ;; Failed: Constains IF
-    (return-from pack-loop-funcall kr))
-  (labels ((unroll-size (node &aux (idx (getattr node :idx)))
+  (labels ((static-unroll-p (node &aux (idx (getattr node :idx)))
 	     (and
 	      (eql (node-type node) :FOR)
 	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete
@@ -242,13 +240,11 @@ for(int i=0; i<10*10; i++) {
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 1)))) t))
 	      (trivia:match (getattr node :below)
 		((Expr :op :<= :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x (trivia:guard x (numberp x))))
-		 (and (= 0 (mod (1+ x) unroll-by))
-		      (/ (1+ x) unroll-by)))
+		 (= 0 (mod (1+ x) unroll-by)))
 		((Expr :op :< :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x (trivia:guard x (numberp x))))
-		 (and (= 0 (mod x unroll-by))
-		      (/ x unroll-by))))))
-	   (unroll-p-allow-reminder (node &aux (idx (getattr node :idx)))
-	     ;; Returning new :upfrom
+		 (= 0 (mod x unroll-by))))))
+	   (unroll-reminder-upfrom (node &aux (idx (getattr node :idx)))
+	     ;; Return -> new :upfrom
 	     (and
 	      (eql (node-type node) :FOR)
 	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete
@@ -270,40 +266,6 @@ for(int i=0; i<10*10; i++) {
 		      (>= x unroll-by)
 		      t)
 		  (unroll-upfrom x unroll-by :1p t))))))
-	   (extract-reminders (rem-table nodes &key (seen))
-	     (let ((out
-		     (loop with stacked-reminders = (make-hash-table :test #'equal)
-			   for node in nodes
-			   if (eql (node-type node) :FUNCALL)
-			     collect node
-			   else if (eql (node-type node) :FOR)
-				  collect
-				  (let ((rem (gethash (node-id node) rem-table)))
-				    (when (null (find (node-id node) seen))
-				      (push (node-id node) seen)
-				      (when rem (setf (gethash (getattr node :idx) stacked-reminders) rem)))
-				    node)
-			   else if (eql (node-type node) :ENDFOR)
-				  append (append
-					  (list node)
-					  (prog1
-					      (gethash (getattr node :idx) stacked-reminders)
-					    (remhash (getattr node :idx) stacked-reminders)))
-			   else
-			     collect node)))
-	       (if (= (length out) (length nodes))
-		   out
-		   (extract-reminders rem-table out :seen seen))))
-	   (subseq-loops (nodes idx)
-	     ;; TODO: Consider loop reminders and update them
-	     ;; :_val_suffix = _0_0
-	     (loop with flag = t
-		   for n in nodes
-		   if (and flag (eql (node-type n) :ENDFOR) (equal (getattr n :idx) idx))
-		     collect (copy-node n) and do (setf flag nil)
-		   else if flag collect (copy-node n)))
-	   (unroll-valid-p (nodes)
-	     (every #'(lambda (x) (find (node-type x) `(:FOR :ENDFOR :FUNCALL))) nodes))
 	   (make-unroll (idx n-unroll base-funcall)
 	     (r/packed-funcall
 	      base-funcall
@@ -322,49 +284,61 @@ for(int i=0; i<10*10; i++) {
 			      #'(lambda (x &aux (x (copy-expr x))) (expr-recursive-replace x #'mapper) x)
 			      (getattr node :args))))))
 	      idx
-	      n-unroll)))
-    (let ((replacements (make-hash-table :test #'equal))
-	  (reminders (make-hash-table :test #'equal)))
-      (loop for node in (kernel-renderer-nodes kr)
-	    for nth upfrom 0
-	    for unroll-size = (unroll-size node)
-	    for unroll-with-reminder = (unroll-p-allow-reminder node)
-	    for loop-body = (when (or unroll-with-reminder unroll-size)
-			      (subseq-loops (nthcdr nth (kernel-renderer-nodes kr)) (getattr node :idx)))
-	    for unroll-valid-p = (unroll-valid-p loop-body)
-	    for idx = (getattr node :idx)
-	    if (and unroll-valid-p unroll-size) do
-	      (setf (getattr node :by) (make-expr :const unroll-by))
-	      (dolist (node loop-body)
-		(when (eql (node-type node) :FUNCALL)
-		  (setf (gethash (getattr node :name) replacements)
-			(make-unroll idx unroll-by (or (gethash (getattr node :name) replacements) node)))))
-	    else if unroll-with-reminder do
-	      ;; can be unrolled by introducing a reminder just after the loop
-	      ;; 並列化の次元に注意 (global-sizeと干渉すると新たなIterationが増える)
-	      (let ((base-loop (copy-node node)))
-		(setf (getattr node :by) (make-expr :const unroll-by)
-		      (getattr node :below) (decf-below (getattr node :below) idx unroll-by))
-		(dolist (node loop-body)
-		  (when (eql (node-type node) :FUNCALL)
-		    (setf (gethash (getattr node :name) replacements)
-			  (make-unroll idx unroll-by (or (gethash (getattr node :name) replacements) node)))))
-		;; Generating Loop Reminder
-		(setf (getattr base-loop :by) (make-expr :const 1)
-		      (getattr base-loop :upfrom) unroll-with-reminder 
-		      (car loop-body) base-loop
-		      (gethash (node-id node) reminders) (append loop-body))))
-      (setf (kernel-renderer-nodes kr)
-	    (extract-reminders
-	     reminders
-	     (loop
-	       for node in (kernel-renderer-nodes kr)
-	       if (eql (node-type node) :FUNCALL)
-		 collect (or (gethash (getattr node :name) replacements) node)
-	       else
-		 collect node)))
-      ;; [TODO] Vectorize the generated loop-reminder.
-      kr)))
+	      n-unroll))
+ 	   (unroll-valid-p (nodes)
+	     (every #'(lambda (x) (find (node-type x) `(:FOR :ENDFOR :FUNCALL))) nodes))
+  	   (subseq-loops (nodes start-id idx
+			  &aux (nodes (nthcdr (or (position start-id nodes :key #'node-id) (error "~a is not found" idx)) nodes)))
+	     (loop with flag = t
+		   for n in nodes
+		   if (and flag (eql (node-type n) :ENDFOR) (equal (getattr n :idx) idx))
+		     collect (copy-node n) and do (setf flag nil)
+		   else if flag collect (copy-node n)))
+	   (replace-body (nodes replace-with start end)
+	     (loop with replace-mode = nil
+		   for n in nodes
+		   if (eql (node-id n) start)
+		     append (progn (setf replace-mode t) replace-with)
+		   else if (eql (node-id n) end)
+			  do (setf replace-mode nil)
+		   else if (not replace-mode) collect n))		   
+	   (unroll (nodes tgt-for)
+	     (let* ((base-for (copy-node tgt-for))
+		    (body (or
+			   (subseq-loops nodes (node-id tgt-for) (getattr tgt-for :idx))
+			   (return-from unroll nodes)))
+		    (reminder-body (copy-list body))
+		    (start-id (node-id (car body)))
+		    (end-id   (node-id (car (last body))))
+		    (reminder)
+		    (static-p (static-unroll-p tgt-for))
+		    (reminder-upfrom (unroll-reminder-upfrom tgt-for)))
+	       (when (null (unroll-valid-p body)) (return-from unroll nodes))
+	       (when (and (null static-p) (null reminder-upfrom)) (return-from unroll nodes))
+	       (setf (getattr tgt-for :by) (make-expr :const unroll-by)
+		     (car body) tgt-for)
+	       (loop for nth upfrom 0
+		     for node in body
+		     if (eql (node-type node) :FUNCALL)
+		       do (setf (nth nth body) (make-unroll (getattr tgt-for :idx) unroll-by node)))
+	       (when (null static-p)
+		 (setf (getattr base-for :by) (make-expr :const 1)
+		       (getattr base-for :upfrom) reminder-upfrom
+		       (getattr tgt-for :below) (decf-below (getattr tgt-for :below) (getattr tgt-for :idx) unroll-by)
+		       (car reminder-body) base-for
+		       reminder reminder-body))
+	       (replace-body nodes (append body reminder) start-id end-id))))
+    (let ((iterations
+	    (loop with depth = 0
+		  for node in (kernel-renderer-nodes kr)
+		  if (eql (node-type node) :FOR)
+		    collect
+		    (cons depth node) and do (incf depth)
+		  else if (eql (node-type node) :ENDFOR) do
+		    (decf depth))))
+      (dolist (iter (sort iterations #'> :key #'car))
+	(setf (kernel-renderer-nodes kr) (unroll (kernel-renderer-nodes kr) (cdr iter)))))
+    kr))
 
 (defun render-graph-from-polyhedral (polyhedral nodes)
   "Finalizes an rendering graph to use based on nodes."
