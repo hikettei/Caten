@@ -52,19 +52,16 @@
   ;; When I try to link isl on macOS (especially, apple silicon with rosetta2 installed), I have to rm -rf /usr/local/include.
   ;; This is due to arm64/x64 environments are mixed in a single computer.
   ;; This can be avoided by using pkg-config and giving the appropriate LDCONFIG when linking, but cffi-grovel does not allow this.
-  (defun cffi-grovel::process-grovel-file (input-file &optional (output-defaults input-file))
+  (defun cffi-grovel::process-wrapper-file (input-file
+                               &key
+				 (output-defaults (make-pathname :defaults input-file :type "processed"))
+				 lib-soname)
     (with-standard-io-syntax
-      (let* ((c-file (cffi-grovel::generate-c-file input-file output-defaults))
-             (o-file (cffi-grovel::make-o-file-name c-file))
-             (exe-file (cffi-grovel::make-exe-file-name c-file))
-             (lisp-file (cffi-grovel::tmp-lisp-file-name c-file))
-             (inputs (list (cffi-grovel::cc-include-grovel-argument) c-file)))
-	(handler-case
-            (progn
-              ;; at least MKCL wants to separate compile and link
-              (cffi-grovel::cc-compile o-file inputs)
-              (cffi-grovel::link-executable exe-file `(,o-file ,@(pkg-config-isl))))
-          (error (e)
-            (cffi-grovel::grovel-error "~a" e)))
-	(cffi-grovel::invoke exe-file lisp-file)
-	lisp-file))))
+      (multiple-value-bind (c-file lisp-forms)
+          (cffi-grovel::generate-c-lib-file input-file output-defaults)
+	(let ((lib-file (cffi-grovel::make-so-file-name (cffi-grovel::make-soname lib-soname output-defaults)))
+              (o-file (cffi-grovel::make-o-file-name output-defaults "__wrapper")))
+          (cffi-grovel::cc-compile o-file (list (cffi-grovel::cc-include-grovel-argument) c-file))
+          (cffi-grovel::link-shared-library lib-file `(,o-file ,@(pkg-config-isl)))
+          ;; FIXME: hardcoded library path.
+          (values (cffi-grovel::generate-bindings-file lib-file lib-soname lisp-forms output-defaults) lib-file))))))

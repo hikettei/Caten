@@ -1,8 +1,6 @@
 (in-package :caten/isl)
 ;; Common Lisp version of https://github.com/inducer/isl/blob/master/codegen.c
 
-(pkg-config-cflags "isl" :optional t)
-
 (include "stdlib.h")
 (include "isl/ast.h")
 (include "isl/ast_build.h")

@@ -8,7 +8,7 @@
   ((:file "package")
    (:file "helpers")
    (:cffi-grovel-file "grovel")
-   (:cffi-grovel-file "codegen")
+   (:cffi-wrapper-file "codegen" :soname "caten_isl_codegen_helper")
    (:file "isl-binding")
    (:file "isl-object")
    (:file "isl-function")
