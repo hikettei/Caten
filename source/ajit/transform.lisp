@@ -228,6 +228,9 @@ for(int i=0; i<10*10; i++) {
   ;; Index Computation Simplification is required!
   ;; TODO: これする前にIndex ComputationをSimplifyする
   (when (= 0 (ctx:getenv :PACKED)) (return-from pack-loop-funcall kr))
+  (when (some #'(lambda (x) (null (find (node-type x) `(:FOR :ENDFOR :FUNCALL)))) (kernel-renderer-nodes kr))
+    ;; Failed: Constains IF
+    (return-from pack-loop-funcall kr))
   (labels ((unroll-size (node &aux (idx (getattr node :idx)))
 	     (and
 	      (eql (node-type node) :FOR)
