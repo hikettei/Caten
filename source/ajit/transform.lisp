@@ -196,13 +196,13 @@ for(int i=0; i<10*10; i++) {
 (defun decf-below (expr idx unroll-by)
   (trivia:ematch expr
     ((Expr :op :<= :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x x))
-     (make-expr :<= idx (if (and (numberp x) (numberp unroll-by))
-			    (- x unroll-by)
-			    (make-expr :- x unroll-by))))
+     (if (and (numberp x) (numberp unroll-by))
+	 (make-expr :<= idx (- x unroll-by))
+	 (make-expr :<= (make-expr :+ idx (make-expr :const unroll-by)) (make-expr :const x))))
     ((Expr :op :< :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x x))
-     (make-expr :<= idx (if (and (numberp x) (numberp unroll-by))
-			    (- x unroll-by)
-			    (make-expr :- x unroll-by))))))
+     (if (and (numberp x) (numberp unroll-by))
+	 (make-expr :<= idx (- x unroll-by))
+	 (make-expr :<= (make-expr :+ idx (make-expr :const unroll-by)) (make-expr :const x))))))
 
 (defmethod pack-loop-funcall ((kr kernel-renderer) (poly polyhedral) (unroll-by fixnum))
   "TODO:
