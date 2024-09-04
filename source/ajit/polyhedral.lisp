@@ -54,10 +54,6 @@
 		  (let ((dom (isl::%make-union-set (isl::%isl-schedule-node-get-domain schedule-node)))
 			(n (isl::%isl-schedule-node-band-n-member schedule-node))
 			(shuffle-p (eql :bool-true (isl::%isl-schedule-node-band-get-permutable schedule-node))))
-		    ;;(print (isl::%make-union-set (isl::%isl-schedule-node-band-get-ast-build-options schedule-node)))
-		    ;;(print dom)
-		    ;;(print (isl::%make-schedule-node (isl::%isl-schedule-node-band-set-ast-build-options schedule-node (isl::union-set-handle (union-set-from-str "[_gid0, _gid1] -> { atomic[t] : 0 <= t <= 2 }")))))
-		    ;;(print (isl::%make-union-set (isl::%isl-schedule-node-band-get-ast-build-options schedule-node)))
 		    (push
 		     (make-band
 		      :domain dom
@@ -195,7 +191,7 @@ for (int c0 = 0; c0 < a; c0 += 1)
       ;;(set-option "schedule_whole_component" 1)
       (set-option "schedule_treat_coalescing" 1)
       ))
-  (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr) (schedule schedule)) polyhedral
+  (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr)) polyhedral
     (let* ((constraints (poly/make-constraints polyhedral))
 	   (schedule (schedule-constraints-compute-schedule constraints)))
       (setf (poly-schedule polyhedral) schedule)
