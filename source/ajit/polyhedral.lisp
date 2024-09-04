@@ -84,6 +84,7 @@
     (set-option "ast_build_scale_strides" 1))
   (let* ((schedule (schedule-set-options schedule :separate))
 	 (bands (multiple-value-list (collect-bandnode polyhedral)))
+	 ;; [TODO] Better way to determine the depth (currently, 2 x {band_count})
 	 (depth (* 2 (second bands)))
 	 (bands (car bands))
 	 (ast-build (ast-build-from-context (set-from-str "{:}")))
