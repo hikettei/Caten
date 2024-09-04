@@ -65,7 +65,8 @@ We consider shuffling these nodes which never violates lexiographical order.
 	(a-outermost (find-outermost-for a))
 	(b-outermost (find-outermost-for b)))
     (when (and a-outermost b-outermost)
-      (assert (equal (getattr a-outermost :idx) (getattr b-outermost :idx))))
+      (unless (equal (getattr a-outermost :idx) (getattr b-outermost :idx))
+	(return-from merge-two-loops)))
     (labels ((nodes->lex (nodes)
 	       (loop for node in nodes
 		     if (eql (node-type node) :FUNCALL)
