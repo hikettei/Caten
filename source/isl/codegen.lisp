@@ -1,5 +1,9 @@
 (in-package :caten/isl)
 ;; Common Lisp version of https://github.com/inducer/isl/blob/master/codegen.c
+
+(pkg-config-cflags "isl" :optional t)
+
+(include "stdlib.h")
 (include "isl/ast.h")
 (include "isl/ast_build.h")
 (include "isl/options.h")
@@ -10,7 +14,6 @@
 (include "isl/stream.h")
 (include "isl/schedule.h")
 (include "isl/schedule_node.h")
-
 
 (c "
 isl_schedule_node *node_set_options(isl_schedule_node *node, void *user);
