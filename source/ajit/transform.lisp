@@ -200,7 +200,7 @@ for(int i=0; i<10*10; i++) {
 			    (- x unroll-by)
 			    (make-expr :- x unroll-by))))
     ((Expr :op :< :x (Expr :op :const :x (trivia:guard id (equal id idx))) :y (Expr :op :const :x x))
-     (make-expr :< idx (if (and (numberp x) (numberp unroll-by))
+     (make-expr :<= idx (if (and (numberp x) (numberp unroll-by))
 			    (- x unroll-by)
 			    (make-expr :- x unroll-by))))))
 
@@ -266,7 +266,7 @@ for(int i=0; i<10*10; i++) {
 		  (if (numberp x)
 		      (>= x unroll-by)
 		      t)
-		  (unroll-upfrom x unroll-by :1p nil))))))
+		  (unroll-upfrom x unroll-by :1p t))))))
 	   (extract-reminders (rem-table nodes &key (seen))
 	     (let ((out
 		     (loop with stacked-reminders = (make-hash-table :test #'equal)
