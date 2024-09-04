@@ -80,7 +80,6 @@
 				 :int ,level
 				 :void)))
     (set-option "ast_build_exploit_nested_bounds" 1)
-    (set-option "ast_build_separation_bounds" 1)
     (set-option "ast_build_scale_strides" 1))
   (let* ((schedule (schedule-set-options schedule :separate))
 	 (bands (collect-bandnode polyhedral))
