@@ -116,9 +116,9 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	       (list scheduled-items)
 	       (loop for n in (map 'list #'explore new-groups) if n collect n))))))))
 ;; ~~ JIT-Specific IRs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %for (gid size)
+(defun %for (gid size &key (scalar-p nil))
   (declare (type (or number symbol) size))
-  (emit (make-node :IR :for (list gid) (list 0 size 1))))
+  (emit (make-node :IR :for (list gid) (list 0 size 1) :_scalar_p (and scalar-p (eql size 1)))))
 (defun %endfor (gid) (emit (make-node :IR :endfor nil (list gid))))
 ;; ~~~~~ subgraph helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun buffer->loop-size (dim nrank &rest buffers)
@@ -138,6 +138,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
       (when (every #'(lambda (x) (eql x 1)) shapes) 1)
       (when (some #'(lambda (x) (eql x 1)) shapes) (find 1 shapes :test-not #'eql))
       (car shapes)))))
+
+(defun no-offsets-p (buffers dim) (every #'(lambda (x) (null (nth dim (buffer-views x)))) buffers))
 ;; TODO: Flatten the loop if the access pattern is contiguous
 (defun schedule->submodule (sched &aux (nrank 0) (args nil) (deps (schedule-depends-on sched)))
   "Lowers the grouped scheduled-items into the graph."
@@ -155,7 +157,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	 (loopsizes (map 'list #'(lambda (x) (apply #'buffer->loop-size x nrank args)) (range 0 nrank))))
     (let ((g
 	    (with-context
-	      (start-loop (loop for i in index-components for s in loopsizes do (%for i s)))
+	      (start-loop (loop for i in index-components for s in loopsizes
+				for dim upfrom 0 do (%for i s :scalar-p (no-offsets-p args dim))))
 	      (_ (dolist (node (si-nodes sched)) (emit node)))
 	      (end-loop (dolist (i index-components) (%endfor i))))))
       (setf (graph-seen g) (schedule-depends-on sched))
@@ -166,12 +169,19 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (declare (type scheduled-items sched))
   (nodes-depends-on (si-nodes sched)))
 
-(defun graph->loop-factors (graph)
+(defun graph->loop-factors (graph &key (scalar-mutation nil))
   (declare (type graph graph))
-  (remove-duplicates
-   (loop for node in (graph-nodes graph)
-	 if (eql (node-type node) :FOR)
-	   collect (car (node-writes node)))))
+  ;; Applies if only rank is one.
+  (let ((scalar-mutation (when scalar-mutation (= 1 (length (graph->loop-factors graph :scalar-mutation nil))))))
+    (remove-duplicates
+     (loop for node in (graph-nodes graph)
+	   if (and (eql (node-type node) :FOR) (or (null scalar-mutation) (null (getattr node :_scalar_p))))
+	     collect (car (node-writes node))))))
+;; [Fix] is it necessary?
+(defun graph-loop-scalar-mutated-p (graph)
+  (not
+   (= (length (graph->loop-factors graph :scalar-mutation nil))
+      (length (graph->loop-factors graph :scalar-mutation t)))))
 
 (defun graph->loop-size (graph)
   (remove-duplicates
@@ -267,10 +277,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
     (maphash1
      #'(lambda (timestamp subgraph)
-	 (let* ((loop-factors (graph->loop-factors subgraph))
+	 (let* ((loop-factors (graph->loop-factors subgraph :scalar-mutation t))
+		(mutated-p (graph-loop-scalar-mutated-p subgraph))
 		(constraints
 		  (loop for node in (graph-nodes subgraph)
-			if (eql (node-type node) :FOR)
+			if (and (eql (node-type node) :FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
 			  collect
 			  (progn
 			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
@@ -302,10 +313,11 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
     (maphash1
      #'(lambda (timestamp subgraph)
-	 (let* ((lf (graph->loop-factors subgraph))
+	 (let* ((lf (graph->loop-factors subgraph :scalar-mutation t))
+		(mutated-p (graph-loop-scalar-mutated-p subgraph))
 		(constraints
 		  (loop for node in (graph-nodes subgraph)
-			if (eql (node-type node) :FOR)
+			if (and (eql (node-type node) :FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
 			  collect
 			  (progn
 			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
@@ -317,6 +329,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			  timestamp (render-list lf)))
 		(scalar
 		  (apply #'concatenate 'string (butlast (loop repeat kernel-rank append (list "0" ", "))))))
+	   (when (string= constraints "")
+	     (setf constraints "true"))
 	   (dolist (node (graph-nodes subgraph))
 	     (when (not (eql (node-class node) :IR))
 	       ;; When reduction is T, the first argument becomes the dependency
@@ -413,7 +427,7 @@ Optional order fusing softmax in a single kernel is:
 	(maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
 	 #'(lambda (ts graph)
 	     ;;(format t "T~a -> ~a~%" ts (gethash ts lex))
-	     (let* ((loop-factors (graph->loop-factors graph))
+	     (let* ((loop-factors (graph->loop-factors graph :scalar-mutation t))
 		    (dom (format nil
 				 "  T~a[~(~a~)] -> [~(~a~)]"
 				 ts
@@ -444,6 +458,18 @@ Optional order fusing softmax in a single kernel is:
   (shapes shapes :type list)
   (writes (when (null no-writes) (nodes-output-ids nodes)) :type list)
   (id (gensym)))
+
+(defmethod max-dimension-in-group ((group group))
+  (apply
+   #'max
+   (or
+    (loop for node in (graph-nodes (group-graph group))
+	  append
+	  (loop for var in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
+		if var
+		  collect
+		  (buffer-nrank var)))
+    (list 0))))
 
 (defun relocate-independent-allocations! (graph)
   "
@@ -756,7 +782,7 @@ Options:
   "Step4, Extract the schedule from ISL."
   (declare (type group group))
   (multiple-value-bind (ast bands) (finalize-schedule (group-polyhedron group))
-    (create-rendering-graph ast bands backend)))
+    (create-rendering-graph ast bands backend (max-dimension-in-group group))))
 
 (defstruct (Compiled-Kernel
 	    (:conc-name ck-)
