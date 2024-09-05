@@ -1,11 +1,11 @@
 (in-package :caten/ajit)
 
 (deftype integer-t () `(or number symbol))
-(defun gid (n) (intern (format nil "_GID~a" n)))
-(defun symb (&rest args) (intern (with-output-to-string (out) (dolist (n args) (princ n out)))))
-
-(defmacro range (from below &optional (by 1))
-  `(loop for i from ,from below ,below by ,by collect i))
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (defun gid (n) (intern (format nil "_GID~a" n)))
+  (defun symb (&rest args) (intern (with-output-to-string (out) (dolist (n args) (princ n out)))))
+  (defmacro range (from below &optional (by 1))
+    `(loop for i from ,from below ,below by ,by collect i)))
 
 (defun maphash1 (function hash-table)
   "Equivalent to the maphash, but the order in which keys are called is sorted.

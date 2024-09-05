@@ -31,7 +31,7 @@
 	    (loop for n in (graph-nodes (avm-graph avm))
 		  unless (eql (node-type n) :View)
 		    collect
-		    (progn		      
+		    (progn
 		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n))
 			    (node-reads n) (loop for r in (node-reads n)
 						 for val = (id->value (avm-graph avm) r)
@@ -76,13 +76,105 @@
 (defsimplifier
     (contiguous-after-wmma :speed 0)
     ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3) -> (:WMMA (c a b) :reduction reduction :_type_relay (wmma-relay-from-contiguous t1 t2 t3))))
+;; ~~ Load Pointer Simplification ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmethod create-scalar-replace-pattern ((graph graph))
+  "
+Enumerates the following pattern:
+```
+*val_1 = 1.0;
+val_2[0+0+...+0] = *val_1;
+out[...] = f(val_2[0+0...+0]);
+```
+Storing to the dict in a format of:
+```
+Key:   val_2
+Value: 1.0
+```
+val_2 is broadcasted, but equivalent to using a scalar number, Simplifying the scheduling process.
+"
+  (flet ((pattern1 (val_2)
+	   (declare (type node val_2))
+	   (let* ((val_2 (if (eql (node-type val_2) :MOVE) val_2 nil))
+		  (val_1 (when val_2 (id->value graph (second (node-reads val_2)))))
+		  (val_1 (if (and val_1 (eql (node-type val_1) :LOAD)) val_1 nil)))
+	     (when (and val_1 val_2
+			;; val_2[0+0+0+...] <- write access pattern is all broadcasted
+			(every
+			 #'(lambda (x) (eql x 1))
+			 (buffer-shape (car (relay-writes (read-type-relay val_2)))))
+			(every
+			 #'null
+			 (buffer-views (car (relay-writes (read-type-relay val_2)))))
+			(= 0 (buffer-nrank (car (relay-writes (read-type-relay val_1)))))
+			(eql (buffer-dtype (car (relay-writes (read-type-relay val_1))))
+			     (buffer-dtype (car (relay-writes (read-type-relay val_2))))))
+	       (values (car (node-writes val_2)) val_1))))
+	 (pattern2 (val_2)
+	   (declare (type node val_2))
+	   (let* ((val_2 (if (eql (node-type val_2) :MOVE) val_2 nil))
+		  (val_1 (when val_2 (id->value graph (second (node-reads val_2)))))
+		  (val_1 (if (and val_1 (not (eql (node-type val_1) :LOAD))) val_1 nil)))
+	     (when (and val_1 val_2
+			;; val_2[0+0+0+...] <- write access pattern is all broadcasted
+			(every
+			 #'(lambda (x) (eql x 1))
+			 (buffer-shape (car (relay-writes (read-type-relay val_2)))))
+			(every
+			 #'null
+			 (buffer-views (car (relay-writes (read-type-relay val_2)))))
+			(= 0 (buffer-nrank (car (relay-writes (read-type-relay val_1)))))
+			(eql (buffer-dtype (car (relay-writes (read-type-relay val_1))))
+			     (buffer-dtype (car (relay-writes (read-type-relay val_2))))))
+	       (values (car (node-writes val_2)) val_1)))))
+    (let ((output (make-hash-table)))
+      (dolist (node (graph-nodes graph))
+	(dolist (pattern (list #'pattern1 #'pattern2))
+	  (multiple-value-bind (key value) (funcall pattern node)
+	    (when (and key value)
+	      (setf (gethash key output) value)))))
+      output)))
+
+(defmethod propagate-rebundant-loadp ((graph graph))
+  "Rewrites the pattern:
+```
+*val_1 = 1.0;
+val_2[0+0+...+0] = *val_1;
+out[...] = f(val_2[0+0...+0]);
+```
+Into
+```
+*val_1 = 1.0;
+val_2[0+0+...+0] = *val_1;
+out[...] = f(*val_1);
+```
+`"
+  (let ((patterns (create-scalar-replace-pattern graph)))
+    (setf (graph-nodes graph)
+	  (loop for node in (graph-nodes graph)
+		for read-new = (map 'list #'(lambda (x) (gethash x patterns)) (node-reads node))
+		collect
+		(progn
+		  (setf (node-reads node)
+			(loop for r in (node-reads node)
+			      for n in read-new
+			      for nth upfrom 0
+			      if n
+				collect
+				(progn
+				  (setf (nth nth (relay-reads (read-type-relay node))) (car (relay-writes (read-type-relay n))))
+				  (car (node-writes n)))
+			      else
+				collect r))
+		  node)))))
 
 (defun apply-jit-specific-simplifiers (avm)
   "A toplevel for jit-specific optimizers. (WMMA Simplification, Removing Views, Contiguous Node Removals)"
   (declare (type avm avm))
   (%safely-purge-views-from-graph avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
-  (contiguous-after-wmma (avm-graph avm) :no-verify t))
+  (contiguous-after-wmma (avm-graph avm) :no-verify t)
+  ;;(propagate-rebundant-loadp (avm-graph avm))
+  )
 ;; ~~ Step2, Before Applying Polyhedral Compiler (pipeline w/ DOMAIN)  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Under the step2, some nodes have the following attributes:
 ;; - :_loop_bound_nodes      : a list of nodes used to compute the bound

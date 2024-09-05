@@ -22,6 +22,7 @@
    #:make-gensym-identifier
    #:identifier-name
    #:identifier-context
+   #:make-id-list
    ;; Value
    #:value
    #:valuep
@@ -313,7 +314,8 @@
    #:ast-build-p
    #:ast-build-set-options
    #:create-ast-build
-   #:generate-optimized-ast
+   #:generate-optimized-as
+   #:ast-build-set-iterators
    ;; Schedule
    #:schedule
    #:schedulep
@@ -323,6 +325,7 @@
    #:schedule-sequence
    #:schedule-set
    #:schedule-to-str
+   #:schedule-set-options
    ;; Schedule constraints
    #:schedule-constraints
    #:schedule-constraints-p
@@ -344,6 +347,7 @@
    #:schedule-node-get-children
    #:schedule-node-get-type
    #:schedule-node-insert-partial-schedule
+   #:schedule-node-get-schedule-depth
    #:schedule-insert-sequence
    ))
 

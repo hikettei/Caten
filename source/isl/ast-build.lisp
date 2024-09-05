@@ -16,3 +16,8 @@
   (:give ast-build)
   (:take ast-build)
   (:take union-map))
+
+(define-isl-function ast-build-set-iterators %isl-ast-build-set-iterators
+  (:give ast-build)
+  (:take ast-build)
+  (:take identifier-list))

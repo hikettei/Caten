@@ -36,7 +36,7 @@ Loop is either of :Global or :Local
 (defun r/else () (make-node :Render :ELSE nil nil))
 (defun r/endif () (make-node :Render :ENDIF nil nil))
 
-(defun create-rendering-graph (lisp-ast bands device)
+(defun create-rendering-graph (lisp-ast bands device max-dimension)
   ;; -1 is a placeholder for the tmpvar allocation.
   (let ((new-graph))
     (labels ((lower (object)
@@ -48,7 +48,7 @@ Loop is either of :Global or :Local
 		  (lower body)
 		  (push (r/endfor idx) new-graph))
 		 ((User :name name :args args)
-		  (push (r/funcall name args) new-graph))
+		  (push (r/funcall name (padding-list args max-dimension :with (make-expr :const 0))) new-graph))
 		 ((AstIf :condition cond :then-node then :else-node else)
 		  (push (r/if cond) new-graph)
 		  (lower then)
