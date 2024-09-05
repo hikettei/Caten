@@ -82,7 +82,10 @@
 				 :int ,level
 				 :void)))
     (set-option "ast_build_exploit_nested_bounds" 1)
-    (set-option "ast_build_scale_strides" 1))
+    (set-option "ast_build_detect_min_max" 1)
+    (set-option "ast_build_scale_strides" 1)
+    (set-option "ast_build_allow_else" 0)
+    (set-option "ast_build_allow_or" 0))
   (let* ((schedule (schedule-set-options schedule (poly-ast-option polyhedral)))
 	 (bands (multiple-value-list (collect-bandnode polyhedral)))
 	 ;; [TODO] Better way to determine the depth (currently, 2 x {band_count})
