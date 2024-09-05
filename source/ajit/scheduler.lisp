@@ -144,8 +144,9 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (declare (type scheduled-items sched))
   (loop for node in (si-nodes sched)
 	for reads = (relay-reads (read-type-relay node))
+	for max-rank = (apply #'max (map 'list #'buffer-nrank reads))
 	if (vm-instruction-p node) do
-	  (assert (every #'(lambda (x) (or (null x) (= 0 (buffer-nrank x)) (= (buffer-nrank x) (buffer-nrank (car reads))))) reads)
+	  (assert (every #'(lambda (x) (or (null x) (= 0 (buffer-nrank x)) (= (buffer-nrank x) max-rank))) reads)
 		  ()
 		  "Tensors are not broadcasted properly: ~a" reads)
 	  (setf nrank (max nrank (apply #'max (map 'list #'(lambda (x) (if x (buffer-nrank x) 0)) reads))))
