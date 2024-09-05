@@ -102,7 +102,12 @@ val_2 is broadcasted, but equivalent to using a scalar number, Simplifying the s
 			(every
 			 #'(lambda (x) (eql x 1))
 			 (buffer-shape (car (relay-writes (read-type-relay val_2)))))
-			(= 0 (buffer-nrank (car (relay-writes (read-type-relay val_1))))))
+			(every
+			 #'null
+			 (buffer-views (car (relay-writes (read-type-relay val_2)))))
+			(= 0 (buffer-nrank (car (relay-writes (read-type-relay val_1)))))
+			(eql (buffer-dtype (car (relay-writes (read-type-relay val_1))))
+			     (buffer-dtype (car (relay-writes (read-type-relay val_2))))))
 	       (values (car (node-writes val_2)) val_1))))
 	 (pattern2 (val_2)
 	   (declare (type node val_2))
@@ -114,7 +119,12 @@ val_2 is broadcasted, but equivalent to using a scalar number, Simplifying the s
 			(every
 			 #'(lambda (x) (eql x 1))
 			 (buffer-shape (car (relay-writes (read-type-relay val_2)))))
-			(= 0 (buffer-nrank (car (relay-writes (read-type-relay val_1))))))
+			(every
+			 #'null
+			 (buffer-views (car (relay-writes (read-type-relay val_2)))))
+			(= 0 (buffer-nrank (car (relay-writes (read-type-relay val_1)))))
+			(eql (buffer-dtype (car (relay-writes (read-type-relay val_1))))
+			     (buffer-dtype (car (relay-writes (read-type-relay val_2))))))
 	       (values (car (node-writes val_2)) val_1)))))
     (let ((output (make-hash-table)))
       (dolist (node (graph-nodes graph))
@@ -163,7 +173,8 @@ out[...] = f(*val_1);
   (%safely-purge-views-from-graph avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t)
-  (propagate-rebundant-loadp (avm-graph avm)))
+  ;;(propagate-rebundant-loadp (avm-graph avm))
+  )
 ;; ~~ Step2, Before Applying Polyhedral Compiler (pipeline w/ DOMAIN)  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Under the step2, some nodes have the following attributes:
 ;; - :_loop_bound_nodes      : a list of nodes used to compute the bound
