@@ -6,7 +6,7 @@
 ;; TODO: Symbolic Model Scheduling
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs lex-table)))
+	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs lex-table &key (ast-option :separate))))
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)
@@ -21,7 +21,8 @@
   (write-ptr (union-map-from-str write) :type union-map)
   (initial-schedule initial-schedule :type union-map)
   (schedule nil :type (or null Schedule))
-  (lex-table lex-table :type hash-table))
+  (lex-table lex-table :type hash-table)
+  (ast-option ast-option :type (member :separate :atomic)))
 
 (defun poly/io-scalar-p (poly x)
   (let ((type (gethash x (poly-vm-io-types poly))))
@@ -82,7 +83,7 @@
 				 :void)))
     (set-option "ast_build_exploit_nested_bounds" 1)
     (set-option "ast_build_scale_strides" 1))
-  (let* ((schedule (schedule-set-options schedule :separate))
+  (let* ((schedule (schedule-set-options schedule (poly-ast-option polyhedral)))
 	 (bands (multiple-value-list (collect-bandnode polyhedral)))
 	 ;; [TODO] Better way to determine the depth (currently, 2 x {band_count})
 	 (depth (* 2 (second bands)))
@@ -115,7 +116,8 @@ Expected Output (Scalar ops are temporarily excluded):
 	    (debug/render-c poly))))
 
 (defun debug/render-c (polyhedral &aux (schedule (poly-schedule polyhedral)))
-  (let* ((build (ast-build-from-context (set-from-str "{:}")))
+  (let* ((schedule (schedule-set-options schedule (poly-ast-option polyhedral)))
+	 (build (ast-build-from-context (set-from-str "{:}")))
 	 (ast   (ast-build-node-from-schedule build schedule))
 	 (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
 	 (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
