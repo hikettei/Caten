@@ -342,7 +342,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		       (rt        (car (relay-reads (read-type-relay node)))))
 		   (when (symbolp reduce-to)
 		     (if (vm-instruction-p node)
-			 (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank) constraints)
+			 (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t) constraints)
 			 (error ":reduction for the op ~a is invaild." node)))))
 	       (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
 		     for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
@@ -351,7 +351,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			 (if (null lf)
 			     (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 			     (when (vm-instruction-p node)
-			       (let ((access (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t :upper kernel-rank)))
+			       (let ((access (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t)))
 				 (if (string= access "")
 				     (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 				     (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from r access constraints)))))))
