@@ -10,16 +10,16 @@
     ;; [TODO] Fix why shape infer fails
     (when (or (null nrank) (null dtype))
       (return-from reinitialize-tensor))
-    (flet ((->find (x) (id->value graph x)))
+    (flet ((->find (x) (if (numberp x) x (id->value graph x))))
       (setf shape (map 'list #'->find shape)
 	    stride (map 'list #'->find stride)))
     (let ((viewed (every #'identity views)))
       (if (= nrank 0)
 	  (with-context-nodes (m1 (%salloc :dtype dtype :id id)))
 	  (with-context-nodes
-	    (m1 (%alloc nrank shape stride :dtype dtype :id (if viewed (gensym "TID") (node->id node))))
+	    (m1 (%alloc nrank (%shape shape) (%shape stride) :dtype dtype :id (if viewed (gensym "TID") (node->id node))))
 	    ;; [TODO] Test against viewed outputs
-	    (m2 (if viewed (%view m1 shape (nth 0 views) (nth 1 views) (nth 2 views) (nth 3 views) stride :id (node->id node)) m1)))))))
+	    (m2 (if viewed (%view m1 (%shape shape) (nth 0 views) (nth 1 views) (nth 2 views) (nth 3 views) stride :id (node->id node)) m1)))))))
 
 ;; Folds against scalar values
 (defsimplifier
@@ -41,6 +41,7 @@
     ((:< (_ (:_TmpScalarConst (x)) (:_TmpScalarConst (y)))) -> (:_TmpScalarBool () :value (< x y)))
     ((:!= (_ (:_TmpScalarConst (x)) (:_TmpScalarConst (y)))) -> (:_TmpScalarBool () :value (not (= x y))))
     ((:MAX ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((max x y)) :dtype dtype))
+    ((:MAX ((:Allocate ()) (:_TmpScalarConst (y) :dtype dtype))) -> (:_TmpScalarConst (y) :dtype dtype))
     ((:NOT ((:_TmpScalarBool () :value value))) -> (:_TmpScalarBool () :value (not value)))
     ((:AND ((:_TmpScalarBool () :value x) (:_TmpScalarBool () :value y))) -> (:_TmpScalarBool () :value (and x y)))
     ((:OR ((:_TmpScalarBool () :value x) (:_TmpScalarBool () :value y))) -> (:_TmpScalarBool () :value (or x y)))
@@ -128,8 +129,8 @@
 	  ()
  	  "_TmpScalarBool shouldn't exist!")
   (%0_fuse_load_alloc graph :no-verify t)
-  (%1_fold_zero_mul graph :no-verify t)
   (%1_fold_constant graph :no-verify t)
+  (%1_fold_zero_mul graph :no-verify t)
   (let ((purges (loop for node in (graph-nodes graph)
 		      if (eql (node-type node) :_TmpPurged)
 			collect node)))

@@ -46,6 +46,7 @@ If outputs is nil, the writes of last nodes becomes the top"
 - Nodes whose class are start with special/ cannot be purged even if they are isolated."
   (declare (type graph graph)
 	   (optimize (speed 3)))
+  ;; Removes duplicated writings
   (setf (graph-nodes graph)
 	(reverse
 	 (loop with seen = nil
