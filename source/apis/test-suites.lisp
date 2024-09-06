@@ -427,9 +427,10 @@
   (testing "where(tensor, scal1, scal2) = scal1 or scal2"
     (let ((out (caten (!where (!>= (ax+b `(40 40) 1 -40) (fconst 0)) (fconst 2.0) (fconst 3.0)))))
       (ok (= (length (elements (forward out))) (* 40 40)))
-      (let ((result (elements (forward out))))
-	(ok (every (equal-to 3.0) (map 'list #'(lambda (x) (aref x result)) (range 0 10))))
-	(ok (every (equal-to 2.0) (map 'list #'(lambda (x) (aref x result)) (range 10 (* 40 40)))))))))
+      (let ((*default-order* :row))
+	(let ((result (elements (forward out))))
+	  (ok (every (equal-to 3.0) (map 'list #'(lambda (x) (aref result x)) (range 0 40))))
+	  (ok (every (equal-to 2.0) (map 'list #'(lambda (x) (aref result x)) (range 40 (* 40 40))))))))))
 
 (deftest test-zero-grad-reduction
   (let ((a (make-tensor `(3 3) :requires-grad t)))

@@ -111,7 +111,7 @@
 			    (or
 			     (find 1 shapes :test #'(lambda (x y) (and (numberp y) (not (= x y)))))
 			     (find 1 shapes :test (compose #'not #'eql))))
-			   (T t))))))
+			   (T (nth n shapes)))))))
 	  (flet ((->subscript (tns ignore-last-k)
 		   (loop with rank = (length (tensor-shape tns))
 			 for s in (tensor-shape tns)
