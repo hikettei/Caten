@@ -26,6 +26,7 @@
     (%0_fuse_load_alloc)
     ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (number x)) -> (:_TmpScalarConst (x) :dtype dtype))
     ((:Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean x)) -> (:_TmpScalarBool () :value x))
+    ((:Neg ((:Allocate () :nrank 0 :dtype dtype))) -> (:_TmpScalarConst (0) :dtype dtype))
     ((:Cast ((:Allocate () :nrank 0 :dtype dtype-to) (:_TmpScalarConst (val) :dtype dtype-from)))
      ->
      (:_TmpScalarConst ((caten/common.dtype:dtype/cast val dtype-to)) :dtype dtype-to)))
@@ -46,11 +47,6 @@
     ((:WHERE ((:Allocate () :nrank 0) (:_TmpScalarBool () :value x) (:_TmpScalarConst (y) :dtype dtype) (:_TmpScalarConst (z))))
      ->
      (:_TmpScalarConst ((if x y z)) :dtype dtype))
-    ((:WHERE ((:_TmpScalarConst (_)) (:_TmpScalarBool () :value x) (:_TmpScalarConst (y) :dtype dtype) (:_TmpScalarConst (z))))
-     ->
-     (:_TmpScalarConst ((if x y z)) :dtype dtype))     
-    ((:Mul (_ (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))
-    ((:Mul ((:_TmpScalarConst ((= 0))) _)) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))
     ((:Mul (x (:_TmpScalarConst ((= 1))))) -> (:_TmpPurged (x)))
     ((:Mul ((:_TmpScalarConst ((= 1))) x)) -> (:_TmpPurged (x)))
     ((:Add (x (:_TmpScalarConst ((= 0))))) -> (:_TmpPurged (x)))
@@ -104,6 +100,11 @@
 	     :nrank nrank :broadcast broadcast :permute permute)))))))
 
 (defsimplifier
+    (%1_fold_zero_mul :speed 0)
+    ((:Mul (_ (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))
+    ((:Mul ((:_TmpScalarConst ((= 0))) _)) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node))))
+
+(defsimplifier
     (%2_unfold_load_alloc)
     ((:_TmpScalarConst (x) :dtype dtype)
      ->
@@ -127,6 +128,7 @@
 	  ()
  	  "_TmpScalarBool shouldn't exist!")
   (%0_fuse_load_alloc graph :no-verify t)
+  (%1_fold_zero_mul graph :no-verify t)
   (%1_fold_constant graph :no-verify t)
   (let ((purges (loop for node in (graph-nodes graph)
 		      if (eql (node-type node) :_TmpPurged)
