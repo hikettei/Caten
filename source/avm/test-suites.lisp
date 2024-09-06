@@ -151,7 +151,8 @@
      (c (%= `(3 3) :row a b))
      (m1 (%arange `(3 3) 0 1 :order :row))
      (m2 (%arange `(3 3) 0 0 :order :row))
-     (d (%where c m1 m2)))))
+     (out (%make-tensor `(3 3)))
+     (d (%where out c m1 m2)))))
 
 (deftest test-view
   (testing "Slicing tensors"

@@ -43,7 +43,10 @@
     ((:NOT ((:_TmpScalarBool () :value value))) -> (:_TmpScalarBool () :value (not value)))
     ((:AND ((:_TmpScalarBool () :value x) (:_TmpScalarBool () :value y))) -> (:_TmpScalarBool () :value (and x y)))
     ((:OR ((:_TmpScalarBool () :value x) (:_TmpScalarBool () :value y))) -> (:_TmpScalarBool () :value (or x y)))
-    ((:WHERE ((:_TmpScalarBool () :value x) (:_TmpScalarConst (y) :dtype dtype) (:_TmpScalarConst (z))))
+    ((:WHERE ((:Allocate () :nrank 0) (:_TmpScalarBool () :value x) (:_TmpScalarConst (y) :dtype dtype) (:_TmpScalarConst (z))))
+     ->
+     (:_TmpScalarConst ((if x y z)) :dtype dtype))
+    ((:WHERE ((:_TmpScalarConst (_)) (:_TmpScalarBool () :value x) (:_TmpScalarConst (y) :dtype dtype) (:_TmpScalarConst (z))))
      ->
      (:_TmpScalarConst ((if x y z)) :dtype dtype))     
     ((:Mul (_ (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))

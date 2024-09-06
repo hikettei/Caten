@@ -29,7 +29,7 @@
 	   (loop for s in shape collect (%iconst 1))
 	   (loop for s in shape collect nil)
 	   (loop for s in shape collect (%iconst 0)))))
-(defun %ceiling (shape x &aux (trunc (%trunc shape x))) (%autocast shape (%where (%> shape *default-order* x trunc) (%add trunc (%broadcast-to shape 1)) trunc) :uint32))
+(defun %ceiling (shape x base-dtype &aux (trunc (%trunc shape x))) (%autocast shape (%where (%make-tensor (%shape shape) :dtype base-dtype) (%> shape *default-order* x trunc) (%add trunc (%broadcast-to shape 1)) trunc) :uint32))
 (defun %cat (size dtype a b)
   "Conatenates two 1d tensors a and b"
   (let* ((2xsize (%add size size))
@@ -68,7 +68,7 @@
       (with-context
 	(base-shape (%shape (shape xt)))
 	(num (reduce #'%mul base-shape))
-	(size (%ceiling nil (%idiv nil num (%iconst 2))))
+	(size (%ceiling nil (%idiv nil num (%iconst 2)) (dtype-of xt)))
 	(counts1 (%make-tensor (list size) :dtype :uint32))
 	(counts1 (%add (%index-components counts1 base-shape) (%broadcast-to (list size) rng-counter :dtype :uint32 :skip-load t)))
 	(counts2 (%add counts1 size))

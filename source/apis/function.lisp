@@ -343,22 +343,26 @@ save-for-backward is determined automatically, so you do not have to consider ab
 ;; ~~ TernaryOps ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Where (Func) nil)
 (defmethod forward ((op Where) &rest tensors)
-  (assert (eql (tensor-dtype (nth 1 tensors)) (tensor-dtype (nth 2 tensors)))
+  (assert (and
+	   (eql (tensor-dtype (nth 2 tensors)) (tensor-dtype (nth 3 tensors)))
+	   (eql (tensor-dtype (nth 0 tensors)) (tensor-dtype (nth 2 tensors))))
 	  ()
-	  "Assertion Failed: A.dtype != B.dtype")
-  (st "MAP[~] A[~] B[~] -> A[~]" (tensors)))
+	  "Assertion Failed: A.dtype != B.dtype and out.dtype != A.dtype")
+  (st "OUT[~] MAP[~] A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op Where) &optional prev-grad)
-  (multiple-value-bind (c) (apply #'values (func-variables op))
+  (let ((c (nth 1 (func-variables op))))
     (values
-     nil
+     nil ;; output
+     nil ;; condition
      (!where c prev-grad (zeros-like prev-grad))
      (!where c (zeros-like prev-grad) prev-grad))))
-(defmethod lower ((op Where) &rest inputs) (with-context (out (%where (nth 0 inputs) (nth 1 inputs) (nth 2 inputs)))))
-(defun !where (condition x y)
+(defmethod lower ((op Where) &rest inputs) (with-context (out (%where (nth 0 inputs) (nth 1 inputs) (nth 2 inputs) (nth 3 inputs)))))
+(defun !where (condition x y &key (out nil))
   (declare (type Tensor condition x y))
   (multiple-value-bind (condition x y)
       (bc "C[~] X[~] Y[~] -> C[~] X[~] Y[~]" (condition x y))
-    (forward (make-instance 'Where) condition x y)))
+    (let ((out (or out (make-tensor (shape condition) :dtype (dtype-of x) :order (order x)))))
+      (forward (make-instance 'Where) out condition x y))))
 
 (declaim (ftype (function (Tensor (or number symbol)) (values Tensor &optional)) !const))
 (defun !const (tensor value)

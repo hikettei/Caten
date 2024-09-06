@@ -135,7 +135,7 @@
 		  (dtype/cast x (getattr node :dtype))))
   (impl :!= #'(lambda (_ x y) _ (not (= x y)))) ;; input is a boolean
   (impl :< #'(lambda (_ x y) _ (< x y)))
-  (impl :WHERE #'(lambda (c x y) (if c x y))))
+  (impl :WHERE #'(lambda (_ c x y) _ (if c x y))))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :view)) graph node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)
