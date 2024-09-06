@@ -173,8 +173,7 @@ out[...] = f(*val_1);
   (%safely-purge-views-from-graph avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t)
-  ;;(propagate-rebundant-loadp (avm-graph avm))
-  )
+  (propagate-rebundant-loadp (avm-graph avm)))
 ;; ~~ Step2, Before Applying Polyhedral Compiler (pipeline w/ DOMAIN)  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Under the step2, some nodes have the following attributes:
 ;; - :_loop_bound_nodes      : a list of nodes used to compute the bound
