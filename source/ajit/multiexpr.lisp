@@ -129,13 +129,23 @@
 						  (second (relay-reads (read-type-relay node)))
 						  (car (relay-reads (read-type-relay node)))))
 				    (out-to (if (eql (node-type node) :WHERE)
-						(second (node-reads node))
+						(if (symbolp (second (node-reads node)))
+						    (second (node-reads node))
+						    (or
+						     (second (getattr node :_reads_old_for_multiexpr))
+						     (error "Cannot infer the output id for ~a" expr)))
 						(let* ((arefs1 (loop for a in arefs if (eql (expr-op a) :AREF) collect a))
 						       (c (find out-type arefs1 :key #'expr-y :test #'buffer-eq)))
 						  (if c
 						      (expr-x c)
-						      (car (node-reads node)))))))
+						      (if (symbolp (car (node-reads node)))
+							  (car (node-reads node))
+							  (or
+							   (car (getattr node :_reads_old_for_multiexpr))
+							   (error "Cannot infer the output id for ~a" expr))))))))
+			       ;(print out-to)
 			       ;; EXPR (out-to aref ...)
+			       (assert (symbolp out-to))
 			       (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
 					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node))))))
 			 else

@@ -154,7 +154,8 @@ out[...] = f(*val_1);
 		for read-new = (map 'list #'(lambda (x) (gethash x patterns)) (node-reads node))
 		collect
 		(progn
-		  (setf (node-reads node)
+		  (setf (getattr node :_reads_old_for_multiexpr) (node-reads node)
+			(node-reads node)
 			(loop for r in (node-reads node)
 			      for n in read-new
 			      for nth upfrom 0
@@ -162,7 +163,10 @@ out[...] = f(*val_1);
 				collect
 				(progn
 				  (setf (nth nth (relay-reads (read-type-relay node))) (car (relay-writes (read-type-relay n))))
-				  (car (node-writes n)))
+				  (if (and (eql (node-type n) :LOAD)
+					   (numberp (getattr n :value)))
+				      (getattr n :value)
+				      (car (node-writes n))))
 			      else
 				collect r))
 		  node)))))
