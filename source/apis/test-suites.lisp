@@ -561,7 +561,23 @@
 		    (let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
 		      (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand))))))))))))
 
-(deftest threefry2x32-aot
+(deftest threefry2x32-static
+  (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
+    (let ((rand (caten (!rand `(1000)))))
+      (with-manual-seed (0)
+	(let* ((n 1000)
+	       (first-rand (elements (forward rand `(n . ,n))))
+	       (avg1 (/ (reduce #'+ first-rand) (* n)))
+	       (scnd-rand (elements (forward rand `(n . ,n))))
+	       (avg2 (/ (reduce #'+ scnd-rand) (* n)))
+	       (third-rand (elements (forward rand `(n . ,n))))
+	       (avg3 (/ (reduce #'+ third-rand) n)))
+	  (ok (< (abs (- avg1 0.5)) 0.1))
+	  (ok (< (abs (- avg2 0.5)) 0.1))
+	  (ok (< (abs (- avg3 0.5)) 0.1))
+	  (ng (some #'= first-rand scnd-rand third-rand)))))))
+
+(deftest threefry2x32-dynamic
   (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
     (let ((rand (caten (!rand `(n)))))
       (with-manual-seed (0)
