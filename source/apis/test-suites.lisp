@@ -2,6 +2,7 @@
 (defpackage :caten/apis.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
 (in-package :caten/apis.test)
 (defmacro skip-if-jit () `(when (= 1 (ctx:getenv :JIT)) (skip "Requires VM Mode!")))
+(defmacro range (from below &optional (by 1)) `(loop for i from ,from below ,below by ,by collect i))
 (deftest test-shape-tracker
   (ok
    (let ((a (make-tensor `(5 3 5)))
@@ -415,6 +416,20 @@
 
       (f (!neg (!+ a a a)) -3)
       (f (!neg (!+ (!neg a) a (!neg a))) 1))))
+
+(deftest test-where-regression-test
+  (testing "where(scalar, tensor1, tensor2) = tensor1 or tensor2"
+    (let ((out (caten
+		(!where (!>= (iconst 'a) (iconst 3)) (make-tensor `(40 40) :initial-element 1.0) (make-tensor `(40 40) :initial-element 2.0)))))
+      (ok (= (length (elements (forward out `(a . 4)))) (* 40 40)))
+      (ok (every (equal-to 1) (elements (forward out `(a . 4)))))
+      (ok (every (equal-to 2) (elements (forward out `(a . 2)))))))
+  (testing "where(tensor, scal1, scal2) = scal1 or scal2"
+    (let ((out (caten (!where (!>= (ax+b `(40 40) 1 -40) (fconst 0)) (fconst 2.0) (fconst 3.0)))))
+      (ok (= (length (elements (forward out))) (* 40 40)))
+      (let ((result (elements (forward out))))
+	(ok (every (equal-to 3.0) (map 'list #'(lambda (x) (aref x result)) (range 0 10))))
+	(ok (every (equal-to 2.0) (map 'list #'(lambda (x) (aref x result)) (range 10 (* 40 40)))))))))
 
 (deftest test-zero-grad-reduction
   (let ((a (make-tensor `(3 3) :requires-grad t)))
