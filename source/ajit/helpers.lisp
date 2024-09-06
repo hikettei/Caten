@@ -417,6 +417,10 @@ in a single timestamp otherwise recursive dependencies will occur.
 	   changed-p))
     (loop while (f))))
 
+(defmethod clean-up-attrs ((graph graph))
+  (every #'(lambda (node) (remattr node :_reads_old_for_multiexpr) node) (graph-nodes graph))
+  graph)
+
 (defun optimize-non-in-place-buffers (base-avm avm refcounter graph seen verbose)
   (declare (ignore refcounter))
   (let* ((kernel-arg-symbols

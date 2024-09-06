@@ -154,7 +154,8 @@ out[...] = f(*val_1);
 		for read-new = (map 'list #'(lambda (x) (gethash x patterns)) (node-reads node))
 		collect
 		(progn
-		  (setf (node-reads node)
+		  (setf (getattr node :_reads_old_for_multiexpr) (node-reads node)
+			(node-reads node)
 			(loop for r in (node-reads node)
 			      for n in read-new
 			      for nth upfrom 0
@@ -162,7 +163,10 @@ out[...] = f(*val_1);
 				collect
 				(progn
 				  (setf (nth nth (relay-reads (read-type-relay node))) (car (relay-writes (read-type-relay n))))
-				  (car (node-writes n)))
+				  (if (and (eql (node-type n) :LOAD)
+					   (numberp (getattr n :value)))
+				      (getattr n :value)
+				      (car (node-writes n))))
 			      else
 				collect r))
 		  node)))))
@@ -173,8 +177,7 @@ out[...] = f(*val_1);
   (%safely-purge-views-from-graph avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t)
-  ;;(propagate-rebundant-loadp (avm-graph avm))
-  )
+  (propagate-rebundant-loadp (avm-graph avm)))
 ;; ~~ Step2, Before Applying Polyhedral Compiler (pipeline w/ DOMAIN)  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Under the step2, some nodes have the following attributes:
 ;; - :_loop_bound_nodes      : a list of nodes used to compute the bound

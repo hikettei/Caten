@@ -864,12 +864,13 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x backend))))
        groups)
       (let* ((refcount (create-reference-counter groups))
+	     (id2buffer (make-hash-table)) ;; id2buffer, if the tensor was initially introduced as a scalar, subsequent kernels must use it as a scalar.
 	     (kernels (map
 		       'list
 		       #'(lambda (x)
 			   (if (group-realize-on-vm x)
 			       (group/apply-memory-planner! x refcount)
-			       (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x) backend)))
+			       (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x) backend id2buffer)))
 		       groups))
 	     (blueprints/codes
 	       (loop for group in groups
@@ -904,14 +905,15 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
       (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil)
     (declare (ignore code))
     (make-avm
-     (optimize-non-in-place-buffers
-      base-avm avm refcount
-      (remove-unused-allocs
-       (apply
-	#'make-graph
-	(apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) compiled-kernels))))
-      (nodes-gather-args (graph-nodes (avm-graph avm)))
-      (or (= debug 2) (= debug 4)))
+     (clean-up-attrs
+      (optimize-non-in-place-buffers
+       base-avm avm refcount
+       (remove-unused-allocs
+	(apply
+	 #'make-graph
+	 (apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) compiled-kernels))))
+       (nodes-gather-args (graph-nodes (avm-graph avm)))
+       (or (= debug 2) (= debug 4))))
      (avm-name avm)
      (avm-id2tensor avm)
      (avm-fw-outputs avm)

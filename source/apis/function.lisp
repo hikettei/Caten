@@ -358,7 +358,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (declare (type Tensor condition x y))
   (multiple-value-bind (condition x y)
       (bc "C[~] X[~] Y[~] -> C[~] X[~] Y[~]" (condition x y))
-    (forward (make-instance 'Where) condition x y)))
+    (forward (make-instance 'Where) condition (!contiguous x) y)))
 
 (declaim (ftype (function (Tensor (or number symbol)) (values Tensor &optional)) !const))
 (defun !const (tensor value)

@@ -173,7 +173,7 @@ Refcount-by:
 		    if (or (find (argument-name arg) seen) (find (argument-name arg) seen-by-rendering-graph))
 		      collect arg))))))
 
-(defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards device)
+(defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards device id2buffer)
   (declare (type avm avm) (type group group) (type polyhedral polyhedral) (type Reference-counter refcount)
 	   (type graph render-graph) (type list save-for-backwards))
   (let* ((kernels (render-graph-from-polyhedral polyhedral (graph-nodes render-graph)))
@@ -201,7 +201,12 @@ Refcount-by:
 		   (newid
 		    (or (find x (poly-vm-inputs polyhedral) :test #'equalp :key #'symbol-name)
 			(intern x)))
-		   (newid x))))
+		   (newid x)))
+	     (defbuffer (id buffer)
+	       (when (null (gethash id id2buffer))
+		 (setf (gethash id id2buffer) buffer)))
+	     (refbuffer (id buffer)
+	       (or (gethash id id2buffer) buffer)))
       ;; O(nlogn) * the cost of id->users ...
       (loop for time in (sort (render-graph/get-timestamps render-graph) #'<)
 	    for graph = (gethash time pipeline) do
@@ -228,7 +233,9 @@ Refcount-by:
 									     collect s
 									   else
 									     collect 1))
-					collect (make-argument :name name
+					collect (make-argument :name (progn
+								       (defbuffer name type)
+								       name)
 							       :pointer-p (if (= (buffer-nrank type) 0)
 									      (if written t nil)
 									      t)
@@ -241,7 +248,7 @@ Refcount-by:
 								       (if written
 									   :output
 									   :input))
-							       :metadata type)))
+							       :metadata (refbuffer name type))))
 		     (failed-inplace-list
 		       (loop with read-set = (map 'list #'node-reads nodes)
 			     for node in nodes
@@ -256,7 +263,7 @@ Refcount-by:
 						    :dtype (buffer-dtype type)
 						    :type :tmp
 						    :io :output
-						    :metadata type))))
+						    :metadata (refbuffer write type)))))
 		     (irs (loop for node in (kernel-renderer-nodes kernel)
 				if (find (node-type node) `(:FOR :IF))
 				  collect node))

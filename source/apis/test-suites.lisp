@@ -1,6 +1,7 @@
 (in-package :cl-user)
 (defpackage :caten/apis.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
 (in-package :caten/apis.test)
+(defmacro range (from below &optional (by 1)) `(loop for i from ,from below ,below by ,by collect i))
 (defmacro skip-if-jit () `(when (= 1 (ctx:getenv :JIT)) (skip "Requires VM Mode!")))
 (deftest test-shape-tracker
   (ok
@@ -256,6 +257,21 @@
 	(buffer-value (tensor-buffer (proceed (ax+b `(3 5 2) 1.0 1.0))))
 	#(1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0
 	  18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0))))))
+
+(deftest test-where-regression-test
+  (testing "where(scalar, tensor1, tensor2) = tensor1 or tensor2"
+    (let ((out (caten
+		(!where (!>= (iconst 'a) (iconst 3)) (make-tensor `(40 40) :initial-element 1.0) (make-tensor `(40 40) :initial-element 2.0)))))
+      (ok (= (length (elements (forward out `(a . 4)))) (* 40 40)))
+      (ok (every (equal-to 1) (elements (forward out `(a . 4)))))
+      (ok (every (equal-to 2) (elements (forward out `(a . 2)))))))
+  (testing "where(tensor, scal1, scal2) = scal1 or scal2"
+    (let ((out (caten (!where (!>= (ax+b `(40 40) 1 -40) (fconst 0)) (fconst 2.0) (fconst 3.0)))))
+      (ok (= (length (elements (forward out))) (* 40 40)))
+      (let ((*default-order* :row))
+	(let ((result (elements (forward out))))
+	  (ok (every (equal-to 3.0) (map 'list #'(lambda (x) (aref result x)) (range 0 40))))
+	  (ok (every (equal-to 2.0) (map 'list #'(lambda (x) (aref result x)) (range 40 (* 40 40))))))))))
 
 (deftest simple-view-test
   (macrolet ((okwhen (form value)
@@ -545,7 +561,23 @@
 		    (let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
 		      (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand))))))))))))
 
-(deftest threefry2x32-aot
+(deftest threefry2x32-static
+  (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
+    (let ((rand (caten (!rand `(1000)))))
+      (with-manual-seed (0)
+	(let* ((n 1000)
+	       (first-rand (elements (forward rand `(n . ,n))))
+	       (avg1 (/ (reduce #'+ first-rand) (* n)))
+	       (scnd-rand (elements (forward rand `(n . ,n))))
+	       (avg2 (/ (reduce #'+ scnd-rand) (* n)))
+	       (third-rand (elements (forward rand `(n . ,n))))
+	       (avg3 (/ (reduce #'+ third-rand) n)))
+	  (ok (< (abs (- avg1 0.5)) 0.1))
+	  (ok (< (abs (- avg2 0.5)) 0.1))
+	  (ok (< (abs (- avg3 0.5)) 0.1))
+	  (ng (some #'= first-rand scnd-rand third-rand)))))))
+
+(deftest threefry2x32-dynamic
   (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
     (let ((rand (caten (!rand `(n)))))
       (with-manual-seed (0)
