@@ -31,4 +31,6 @@
   ("rove")
   :components ((:file "test-suites"))
   :perform
-  (test-op (o s) (uiop:symbol-call (find-package :rove) :run s :style (if (uiop:getenv "DOT") :dot :spec))))
+  (test-op (o s)
+	   (let ((result (uiop:symbol-call (find-package :rove) :run s :style (if (uiop:getenv "DOT") :dot :spec))))
+	     (assert (or (null (uiop:getenv "CI")) result)))))
