@@ -54,9 +54,6 @@
 			  (update dtype dtype1)
 			  (update shape shape1)
 			  (update stride stride1)))
-		       (:Where
-			(when (complete?) (finish))
-			(dolist (r (cdr (node-reads node))) (helper r)))
 		       (otherwise
 			(when (complete?) (finish))
 			(dolist (r (node-reads node)) (helper r)))))))
