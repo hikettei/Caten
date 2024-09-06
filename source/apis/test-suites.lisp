@@ -1,6 +1,7 @@
 (in-package :cl-user)
 (defpackage :caten/apis.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
 (in-package :caten/apis.test)
+(defmacro range (from below &optional (by 1)) `(loop for i from ,from below ,below by ,by collect i))
 (defmacro skip-if-jit () `(when (= 1 (ctx:getenv :JIT)) (skip "Requires VM Mode!")))
 (deftest test-shape-tracker
   (ok
