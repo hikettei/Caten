@@ -102,6 +102,12 @@
     (if pos
 	(setf (nth (1+ pos) (node-attrs node)) value)
 	(setf (node-attrs node) (append (node-attrs node) `(,id ,value))))))
+(defun remattr (node id)
+  (declare (type node node) (type keyword id))
+  (let ((pos (position id (node-attrs node))))
+    (when pos
+      (setf (nth pos (node-attrs node)) nil
+	    (nth (1+ pos) (node-attrs node)) nil))))
 (defun node->id (node) (car (node-writes node)))
 ;; ~~ syntax sugar for make-node ~~~~~~~
 ;;(declaim (inline <>))

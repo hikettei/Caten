@@ -905,14 +905,15 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
       (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil)
     (declare (ignore code))
     (make-avm
-     (optimize-non-in-place-buffers
-      base-avm avm refcount
-      (remove-unused-allocs
-       (apply
-	#'make-graph
-	(apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) compiled-kernels))))
-      (nodes-gather-args (graph-nodes (avm-graph avm)))
-      (or (= debug 2) (= debug 4)))
+     (clean-up-attrs
+      (optimize-non-in-place-buffers
+       base-avm avm refcount
+       (remove-unused-allocs
+	(apply
+	 #'make-graph
+	 (apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) compiled-kernels))))
+       (nodes-gather-args (graph-nodes (avm-graph avm)))
+       (or (= debug 2) (= debug 4))))
      (avm-name avm)
      (avm-id2tensor avm)
      (avm-fw-outputs avm)

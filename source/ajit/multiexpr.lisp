@@ -143,7 +143,6 @@
 							  (or
 							   (car (getattr node :_reads_old_for_multiexpr))
 							   (error "Cannot infer the output id for ~a" expr))))))))
-			       ;(print out-to)
 			       ;; EXPR (out-to aref ...)
 			       (assert (symbolp out-to))
 			       (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
