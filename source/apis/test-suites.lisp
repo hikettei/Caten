@@ -257,6 +257,21 @@
 	#(1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0
 	  18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0))))))
 
+(deftest test-where-regression-test
+  (testing "where(scalar, tensor1, tensor2) = tensor1 or tensor2"
+    (let ((out (caten
+		(!where (!>= (iconst 'a) (iconst 3)) (make-tensor `(40 40) :initial-element 1.0) (make-tensor `(40 40) :initial-element 2.0)))))
+      (ok (= (length (elements (forward out `(a . 4)))) (* 40 40)))
+      (ok (every (equal-to 1) (elements (forward out `(a . 4)))))
+      (ok (every (equal-to 2) (elements (forward out `(a . 2)))))))
+  (testing "where(tensor, scal1, scal2) = scal1 or scal2"
+    (let ((out (caten (!where (!>= (ax+b `(40 40) 1 -40) (fconst 0)) (fconst 2.0) (fconst 3.0)))))
+      (ok (= (length (elements (forward out))) (* 40 40)))
+      (let ((*default-order* :row))
+	(let ((result (elements (forward out))))
+	  (ok (every (equal-to 3.0) (map 'list #'(lambda (x) (aref result x)) (range 0 40))))
+	  (ok (every (equal-to 2.0) (map 'list #'(lambda (x) (aref result x)) (range 40 (* 40 40))))))))))
+
 (deftest simple-view-test
   (macrolet ((okwhen (form value)
 	       `(if (eql *default-order* :row)
