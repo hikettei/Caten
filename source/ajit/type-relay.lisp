@@ -84,10 +84,6 @@
     (let ((out (copy-buffer tgt)))
       (setf (buffer-value out) (make-fakearray nil (buffer-dtype out) val))
       out)))
-(defmethod %impl ((device-id (eql :relay-checker)) (op (eql :WHERE)) graph node args)
-  (let ((buff (copy-buffer (second args))))
-    (setf (buffer-value buff) (make-fakearray (buffer-shape buff) (buffer-dtype buff) (car (node-writes node))))
-    buff))
 
 (declaim (ftype (function (AVM) Type-Reporter) run-type-infer))
 (defun run-type-infer (avm)

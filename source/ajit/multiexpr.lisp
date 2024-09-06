@@ -53,6 +53,7 @@
        (if (getattr node :_jit_dont_render_me)
 	   (use (car parents))
 	   (use (second parents))))
+      (:WHERE (make-expr :where (use (nth 1 parents)) (use (nth 2 parents)) (use (nth 3 parents))))
       (:STORE            (use (second parents)))
       (otherwise
        (if (and (eql (node-type node) :ADD) (>= (length parents) 3))
@@ -125,16 +126,12 @@
 			 if (listp expr)
 			   collect
 			   (multiple-value-bind (expr node arefs) (apply #'values expr)
-			     (let* ((out-type (if (eql (node-type node) :WHERE)
-						  (second (relay-reads (read-type-relay node)))
-						  (car (relay-reads (read-type-relay node)))))
-				    (out-to (if (eql (node-type node) :WHERE)
-						(second (node-reads node))
-						(let* ((arefs1 (loop for a in arefs if (eql (expr-op a) :AREF) collect a))
-						       (c (find out-type arefs1 :key #'expr-y :test #'buffer-eq)))
-						  (if c
-						      (expr-x c)
-						      (car (node-reads node)))))))
+			     (let* ((out-type (car (relay-reads (read-type-relay node))))
+				    (out-to (let* ((arefs1 (loop for a in arefs if (eql (expr-op a) :AREF) collect a))
+						   (c (find out-type arefs1 :key #'expr-y :test #'buffer-eq)))
+					      (if c
+						  (expr-x c)
+						  (car (node-reads node))))))
 			       ;; EXPR (out-to aref ...)
 			       (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
 					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node))))))

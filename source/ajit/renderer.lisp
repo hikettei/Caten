@@ -53,7 +53,7 @@ function void (args) { body };
   "A list of ops used for rendering the computation.
 When creating a MultiExpr, it is only fused if the node-type is op/expr!"
   `(member
-    :WHERE ;; x = %where(condition, x, y)
+    :WHERE ;; x = %where(out, condition, x, y)
     ;; Comparisons
     :< :<= :> :>= :== :!=
     ;; Arithmetic
