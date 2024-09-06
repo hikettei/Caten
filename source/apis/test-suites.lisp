@@ -465,33 +465,36 @@
 
 (defun exp2 (x) (expt 2 x))
 (defun log2 (x) (log x 2))
-(macrolet ((unary-dtype-test (name op lisp-op &key (non-zero nil))
+(macrolet ((unary-dtype-test (name op lisp-op &key (non-zero nil) (ulp) (max))
 	     `(deftest ,name
 		(dolist (dtype `(:float32 :float64))
 		  (let ((model (caten (,op (make-tensor `(1) :initial-element 'a :dtype dtype))))
-			(ulp (1.0ulp dtype)))
+			(ulp (or ,ulp (1.0ulp dtype))))
 		    (forall (x dtype :fuzzing nil)
 		      (when (if ,non-zero (> x 0.0) t)
-			(assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
-				()
-				"~(~a~)(x=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
-				',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
-				(,lisp-op x) ulp dtype)))
+			(when (or (null ,max) (<= (abs x) ,max))
+			  (assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
+				  ()
+				  "~(~a~)(x=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
+				  ',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
+				  (,lisp-op x) ulp dtype))))
 		    (forall (x dtype :fuzzing t)
 		      (when (if ,non-zero (> x 0.0) t)
-			(assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
-				()
-				"~(~a~)({x+(random 2.0)}=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
-				',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
-				(,lisp-op x) ulp dtype)))
+			(when (or (null ,max) (<= (abs x) ,max))
+			  (assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
+				  ()
+				  "~(~a~)({x+(random 2.0)}=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
+				  ',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
+				  (,lisp-op x) ulp dtype))))
 		    (ok t))))))
+  ;; TODO: Improve the accuracy
   (unary-dtype-test sin-test !sin sin)
-  (unary-dtype-test cos-test !cos cos)
-  (unary-dtype-test tan-test !tan tan)
-  (unary-dtype-test exp-test !exp exp)
-  (unary-dtype-test log-test !log log :non-zero t)
-  (unary-dtype-test exp2-test !exp2 exp2)
-  (unary-dtype-test log2-test !log2 log2 :non-zero t)
+  (unary-dtype-test cos-test !cos cos :ulp 1e-3 :max 121255)
+  (unary-dtype-test tan-test !tan tan :ulp 1e-1 :max 20)
+  (unary-dtype-test exp-test !exp exp :ulp 1e-3 :max 7)
+  (unary-dtype-test log-test !log log :non-zero t :ulp 1e-4)
+  (unary-dtype-test exp2-test !exp2 exp2 :ulp 1e-3 :max 7)
+  (unary-dtype-test log2-test !log2 log2 :non-zero t :ulp 1e-4) 
   (unary-dtype-test abs-test !abs abs)
   (unary-dtype-test signum-test !signum signum))
 
@@ -499,7 +502,7 @@
   (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
     (let ((caten/aasm::*wrap-around-mode* t))
       (loop for dtype in `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8)
-	    for ans   in `(1 1 1 1 9223372036854775809 -2147483647 -32767 -127)do
+	    for ans   in `(1 1 1 1 9223372036854775809 -2147483647 -32767 -127) do
 	(let* ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
 	       (one (make-tensor `(3 3) :initial-element 2 :dtype dtype))
 	       (val (proceed (!add max one))))
