@@ -106,8 +106,11 @@
   (declare (type node node) (type keyword id))
   (let ((pos (position id (node-attrs node))))
     (when pos
-      (setf (nth pos (node-attrs node)) nil
-	    (nth (1+ pos) (node-attrs node)) nil))))
+      (setf (node-attrs node)
+	    (loop for attr in (node-attrs node)
+		  for i upfrom 0
+		  unless (or (eql pos i) (eql (1+ pos) i))
+		    collect attr)))))
 (defun node->id (node) (car (node-writes node)))
 ;; ~~ syntax sugar for make-node ~~~~~~~
 ;;(declaim (inline <>))
