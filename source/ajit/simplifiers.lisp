@@ -137,12 +137,16 @@ val_2 is broadcasted, but equivalent to using a scalar number, Simplifying the s
 (defmethod propagate-rebundant-loadp ((graph graph))
   "Rewrites the pattern:
 ```
+float val_1;
+float* val_2;
 *val_1 = 1.0;
 val_2[0+0+...+0] = *val_1;
 out[...] = f(val_2[0+0...+0]);
 ```
 Into
 ```
+float val_1;
+float* val_2;
 *val_1 = 1.0;
 val_2[0+0+...+0] = *val_1;
 out[...] = f(*val_1);
@@ -173,8 +177,7 @@ out[...] = f(*val_1);
   (%safely-purge-views-from-graph avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t)
-  ;;(propagate-rebundant-loadp (avm-graph avm))
-  )
+  (propagate-rebundant-loadp (avm-graph avm)))
 ;; ~~ Step2, Before Applying Polyhedral Compiler (pipeline w/ DOMAIN)  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Under the step2, some nodes have the following attributes:
 ;; - :_loop_bound_nodes      : a list of nodes used to compute the bound
