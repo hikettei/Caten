@@ -11,8 +11,7 @@ Usage:
    #:*ctx*
    #:help
    #:getenv
-   #:with-contextvar
-   ))
+   #:with-context))
 (in-package :caten/common.contextvar)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -80,7 +79,18 @@ Usage:
 		  (format stream "ContextVar:~%~a"
 			  (with-output-to-string (out)
 			    ,@(loop for slot in slots
-				    collect `(format out "~a[~a] (default: ~a), ~a~%" ',(car slot) ,(third slot) ,(second slot) ,(fifth slot)))))))))
+				    collect `(format out "~a[~a] (default: ~a), ~a~%" ',(car slot) ,(third slot) ,(second slot) ,(fifth slot))))))
+		(defmacro with-context ((&key
+					 ,@(loop for slot in slots
+						 for accessor = (intern (format nil (string-upcase "contextvar-~a") (car slot)))
+						 collect
+						 `(,(intern (symbol-name (car slot))) (,accessor *ctx*))))
+					&body body)
+		  `(let ((*ctx* (make-contextvar
+				 ,,@(loop for slot in slots for name = (intern (symbol-name (car slot)))
+					 append
+					 (list (car slot) name)))))
+		     ,@body)))))
   (defcontext
       ;; (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
       (:SERIALIZE
@@ -153,6 +163,3 @@ Usage:
      "(For JIT) %render-compile always produce an simple-error.")))
 
 (defparameter *ctx* (make-contextvar))
-(defmacro with-contextvar ((&rest configurations) &body body)
-  `(let ((*ctx* (make-contextvar ,@configurations)))
-     ,@body))
