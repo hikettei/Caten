@@ -117,6 +117,7 @@ Policy:
   (if (= 1 (ctx:getenv :JIT))
       (ok (= n (n-args shape avm)))
       (skip "Needs JIT")))
+(defun ~= (error) #'(lambda (x y) (<= (abs (- x y)) error)))
 
 (defgeneric test/compile (op) (:documentation "Return a target compiled kernel."))
 (defgeneric test/inputs  (op) (:documentation "Generate an array for testing"))

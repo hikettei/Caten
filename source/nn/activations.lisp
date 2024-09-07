@@ -97,12 +97,150 @@
 ;; TODO: Softmin
 (in-package :caten/nn.test)
 ;; TODO: Implement Assert Close, printing atol/rtol
-(define-nn-test ReLU1
+(defun sigmoid-lisp (x) (/ (+ 1 (expt 2 (* x (/ -1 (log 2)))))))
+(define-nn-test Sigmoid
+  "Testing w/ Sigmoid([100, 100])"
+  :compile (caten (!sigmoid (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'sigmoid-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun relu-lisp (x) (max x 0.0))
+(define-nn-test ReLU
   "Testing w/ ReLU([100, 100])"
   :compile (caten (!relu (make-tensor `(100 100) :from 'x)))
   :inputs  (list (proceed (ax+b `(100 100) 1 -300)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
-  :lisp    ((model x) (elements (proceed (lazy-lisp #'(lambda (x) (max x 0.0)) x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'relu-lisp x))))
   :assert-close ((x y) (every #'= x y))
   :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun leaky-relu-lisp (x) (- (relu-lisp x) (relu-lisp (* x (- 1e-3)))))
+(define-nn-test Leaky-ReLU
+  "Testing w/ Leaky-ReLU([100, 100])"
+  :compile (caten (!leaky-relu (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'leaky-relu-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(define-nn-test Softmax
+  "Testing w/ Softmax([512, 256])"
+  :compile (caten (!softmax (make-tensor `(512 256) :from 'x)))
+  :inputs (ctx:with-contextvar (:jit 0 :avm :lisp)
+	    (list (proceed (!rand `(512 256)))))
+  :caten ((model x) (forward model `(x . ,x)))
+  :lisp  ((model x) (proceed (!softmax x)))
+  :assert-close ((x y)
+		 (let ((sum (proceed (!contiguous (!sum x :axis -1)))))
+		   (every #'(lambda (x) (<= (abs (- x 1.0)) 1e-1)) (elements sum)))
+		 (every (~= 1e-6) (elements x) (elements y)))
+  :in-place ((model) (= 1 (n-args `(512 256) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(define-nn-test LogSoftmax
+  "Testing w/ LogSoftmax([512, 256])"
+  :compile (caten (!log-softmax (make-tensor `(512 256) :from 'x)))
+  :inputs (ctx:with-contextvar (:jit 0 :avm :lisp)
+	    (list (proceed (!rand `(512 256)))))
+  :caten ((model x) (forward model `(x . ,x)))
+  :lisp  ((model x) (proceed (!log-softmax x)))
+  :assert-close ((x y)
+		 (every (~= 1e-6) (elements x) (elements y)))
+  :in-place ((model) (= 2 (n-args `(512 256) model)))
+  :kernel   ((model) (= 2 (n-kernels model))))
+
+(defun elu-lisp (x &aux (alpha 1.0)) (- (relu-lisp x) (relu-lisp (* alpha (- 1 (exp x))))))
+(define-nn-test ELU
+  "Testing w/ ELU([100, 100])"
+  :compile (caten (!elu (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'elu-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun relu6-lisp (x) (- (relu-lisp x) (relu-lisp (- x 6))))
+(define-nn-test ReLU6
+  "Testing w/ ReLU6([100, 100])"
+  :compile (caten (!relu6 (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'relu6-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun softplus-lisp (x &aux (beta 1.0))
+  (* (/ 1 beta) (log (+ 1 (exp (* x beta))))))
+(define-nn-test SoftPlus
+  "Testing w/ SoftPlus([100, 100])"
+  :compile (caten (!softplus (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'softplus-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun softsign-lisp (x) (/ x (+ 1 (abs x))))
+(define-nn-test SoftSign
+  "Testing w/ SoftSign([100, 100])"
+  :compile (caten (!softsign (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 1)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'softsign-lisp x))))
+  :assert-close ((x y) (every (~= 1e-3) x y))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun celu-lisp (x &aux (alpha 1.0)) (+ (max x 0.0) (min 0 (* alpha (- (exp (/ x alpha)) 1)))))
+(define-nn-test CeLU
+  "Testing w/ CeLU([100, 100])"
+  :compile (caten (!celu (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 1)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'celu-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun silu-lisp (x) (* x (sigmoid-lisp x)))
+(define-nn-test SiLU
+  "Testing w/ SiLU([100, 100])"
+  :compile (caten (!silu (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'silu-lisp x))))
+  :assert-close ((x y) (every (~= 1e-3) x y)) ;; Sigmoid is very unstable; needs more fusion. especially recip.
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun gelu-lisp (x) (* 0.5 x (+ 1 (tanh (* (sqrt (/ 2.0 (coerce pi (type-of x)))) (+ x (* 0.044715 (* x x x))))))))
+(define-nn-test GeLU
+  "Testing w/ GeLU([100, 100])"
+  :compile (caten (!gelu (make-tensor `(100 100) :from 'x) :approx :tanh))
+  :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'gelu-lisp x))))
+  :assert-close ((x y) (every (~= 1e-1) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun hardswish-lisp (x) (* x (relu6-lisp (+ x 3.0)) (/ 1 6)))
+(define-nn-test HardSwish
+  "Testing w/ HardSwish([100, 100])"
+  :compile (caten (!hardswish (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'hardswish-lisp x))))
+  :assert-close ((x y) (every (~= 1e-3) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
