@@ -98,7 +98,7 @@
 (in-package :caten/nn.test)
 ;; TODO: Implement Assert Close, printing atol/rtol
 (define-nn-test ReLU1
-  "Testing Static ReLU"
+  "Testing w/ ReLU([100, 100])"
   :compile (caten (!relu (make-tensor `(100 100) :from 'x)))
   :inputs  (list (proceed (ax+b `(100 100) 1 -300)))
   :caten   ((model x) (elements (forward model `(x . ,x))))

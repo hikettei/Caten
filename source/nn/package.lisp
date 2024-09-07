@@ -185,7 +185,7 @@ Policy:
 (defmethod lower ((op Func) &rest nodes)
   (with-context (_ (emit (make-node :Test/Custom :Test/Lisp-Lazy-Apply (list (gensym)) (map 'list #'node->id nodes) :f (lazyapply-f op))))))
 (defmethod %impl ((device (eql :lisp)) (op (eql :Test/Lisp-Lazy-Apply)) graph node args) (apply #'map-view nil (getattr node :f) args))
-(defun !lazy-lisp (f tensor)
+(defun lazy-lisp (f tensor)
   (declare (type function f) (type tensor tensor))
   (forward (make-instance 'Custom/LazyApply :f f) tensor))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
