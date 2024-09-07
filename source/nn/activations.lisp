@@ -109,5 +109,5 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (forward model `(x . ,x))))
   :assert-close ((x y) (every #'= x y))
-  :in-place ((model) t)
-  :kernel   ((model) t))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
