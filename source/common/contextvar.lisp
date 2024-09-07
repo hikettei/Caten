@@ -11,7 +11,7 @@ Usage:
    #:*ctx*
    #:help
    #:getenv
-   #:with-context))
+   #:with-contextvar))
 (in-package :caten/common.contextvar)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -80,7 +80,7 @@ Usage:
 			  (with-output-to-string (out)
 			    ,@(loop for slot in slots
 				    collect `(format out "~a[~a] (default: ~a), ~a~%" ',(car slot) ,(third slot) ,(second slot) ,(fifth slot))))))
-		(defmacro with-context ((&key
+		(defmacro with-contextvar ((&key
 					 ,@(loop for slot in slots
 						 for accessor = (intern (format nil (string-upcase "contextvar-~a") (car slot)))
 						 collect
