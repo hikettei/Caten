@@ -73,8 +73,7 @@ Policy:
    )
   ;; from linear.lisp
   (:export
-   #:Linear)
-  )
+   #:Linear))
 
 (in-package :caten/nn)
 
@@ -94,7 +93,7 @@ Policy:
 
 (defpackage :caten/nn.test
   (:use :cl :caten :caten/aasm :caten/nn :caten/avm :caten/air :rove :alexandria))
-
+;; ~~ Unittest ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (in-package :caten/nn.test)
 
 ;; Common Utils for caten/nn.test
@@ -120,14 +119,18 @@ Policy:
       (skip "Needs JIT")))
 
 (defgeneric test/compile (op) (:documentation "Return a target compiled kernel."))
-(defgeneric test/inputs (op)  (:documentation "Generate an array for testing"))
+(defgeneric test/inputs  (op) (:documentation "Generate an array for testing"))
 (defgeneric test/compute-in-caten (op avm &rest inputs) (:documentation "Compute the avm, and test the accuracy."))
 (defgeneric test/compute-in-lisp  (op avm &rest inputs) (:documentation ""))
-(defgeneric test/in-place        (op avm))
-(defgeneric test/kernel-count    (op avm))
+(defgeneric test/in-place         (op avm))
+(defgeneric test/kernel-count     (op avm))
 (defgeneric test/assert-close (op result1 result2))
 (defgeneric test/run (op))
-
+(defun make-copy (tensor)
+  (declare (type tensor tensor))
+  (ctx:with-contextvar (:JIT 0)
+    ;; [Note] Assuming JIT will not perform in-place mutation
+    (proceed (!add tensor (fconst 0 :dtype (dtype-of tensor))))))
 (defmacro define-nn-test (name description
 			  &key
 			    (dtypes `(:float32))
@@ -143,7 +146,10 @@ Policy:
        (defmethod test/compute-in-caten ((,op (eql ,name)) ,avm &rest ,args)
 	 (multiple-value-bind (,@(car caten)) (apply #'values ,avm ,args) ,@(cdr caten)))
        (defmethod test/compute-in-lisp ((,op (eql ,name)) ,avm &rest ,args)
-	 (multiple-value-bind (,@(car lisp)) (apply #'values ,avm ,args) ,@(cdr lisp)))
+	 (ctx:with-contextvar (:jit 0 :avm :lisp) ;; Allowed to use Custom/LazyApply if element-wise
+	   (multiple-value-bind (,@(car lisp)) (apply #'values ,avm ,args)
+	     (declare (ignorable ,@(car lisp)))
+	     ,@(cdr lisp))))
        (defmethod test/in-place     ((,op (eql ,name)) ,avm) (let ((,(caar in-place) ,avm)) ,@(cdr in-place)))
        (defmethod test/kernel-count ((,op (eql ,name)) ,avm) (let ((,(caar kernel) ,avm)) ,@(cdr kernel)))
        (defmethod test/assert-close ((,op (eql ,name)) ,result1 ,result2)
@@ -155,7 +161,7 @@ Policy:
 	     (ok model "Getting a compiled avm")
 	     (let ((inputs (testing "2. Generating the input..." (test/inputs ,name))))
 	       (ok inputs "Prepared for inputs")
-	       (let* ((caten (testing "3. Computing the kernel in Caten" (apply #'test/compute-in-caten ,name model inputs)))
+	       (let* ((caten (testing "3. Computing the kernel in Caten" (apply #'test/compute-in-caten ,name model (map 'list #'make-copy inputs))))
 		      (lisp  (testing "4. Computing the kernel in Lisp"  (apply #'test/compute-in-lisp ,name model inputs)))
 		      (accuracy (testing "5. Comparing the two results..." (test/assert-close ,name caten lisp))))
 		 (ok accuracy "Satisfying the accuracy.")
@@ -170,3 +176,16 @@ Policy:
 	   (dolist (*default-order* ',orders)
 	     (testing (format nil "Testing w/ dtype=~a, order=~a" *default-float* *default-order*)
 	       (test/run ,name))))))))
+
+;; ~~ Custom Kernel for calling element-wise lisp kernel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Custom/LazyApply (Func) ((f :initarg :f :accessor lazyapply-f))
+  (:documentation "This custom op is dedicated to testing, only supported in Lisp VM"))
+(defmethod forward ((op Func) &rest tensors) (st "A[~] -> A[~]" (tensors)))
+(defmethod backward ((op Func) &optional dout) (declare (ignore dout)) nil)
+(defmethod lower ((op Func) &rest nodes)
+  (with-context (_ (emit (make-node :Test/Custom :Test/Lisp-Lazy-Apply (list (gensym)) (map 'list #'node->id nodes) :f (lazyapply-f op))))))
+(defmethod %impl ((device (eql :lisp)) (op (eql :Test/Lisp-Lazy-Apply)) graph node args) (apply #'map-view nil (getattr node :f) args))
+(defun !lazy-lisp (f tensor)
+  (declare (type function f) (type tensor tensor))
+  (forward (make-instance 'Custom/LazyApply :f f) tensor))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

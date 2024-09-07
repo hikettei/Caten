@@ -96,7 +96,9 @@ Usage:
 		  `(let ((*ctx* (make-contextvar
 				 ,,@(loop for slot in slots for name = (intern (symbol-name (car slot)))
 					  append
-					  (list (car slot) name)))))
+					  (list (car slot) `(if (keywordp ,name)
+								(symbol-name ,name)
+								,name))))))
 		     ,@body)))))
   (defcontext
       ;; (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
