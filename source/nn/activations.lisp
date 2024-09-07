@@ -97,6 +97,17 @@
 ;; TODO: Softmin
 (in-package :caten/nn.test)
 
-;; TODO: TestOps
-(deftest test-relu
-  (ok (every #'(lambda (x) (>= x 0)) (elements (proceed (!relu (ax+b `(10 10) 1 -5)))))))
+;; テストを記述する
+;; 1. Numcl or Lispで同じ計算をする
+;; 2. Symbolic, Static
+;; 3. Fuse and n-alloc test
+;; 4. Kernel Count
+(define-nn-test ReLU1
+  "Testing Static ReLU"
+  :compile (caten (!relu (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) 1 -300)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (forward model `(x . ,x))))
+  :assert-close ((x y) (every #'= x y))
+  :in-place ((model) t)
+  :kernel   ((model) t))

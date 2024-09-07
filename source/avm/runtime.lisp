@@ -103,7 +103,7 @@
   (loop for (k . v) in params
 	do (assert (and (symbolp k) (or (buffer-p v) (numberp v)))
 		   ()
-		   "vm/set-params: Invaild params (~a . ~a)~%Params should be a cons of (symbol . number)." k v)
+		   "vm/set-params: Invaild params (~a . ~a)~%Params should be a cons of (symbol . number) or (symbol . buffer)." k v)
 	   (setf (gethash k (avm-variables avm)) v)))
 
 (defun %realize (graph)
