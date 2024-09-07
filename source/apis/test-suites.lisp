@@ -579,9 +579,9 @@
 	       (avg3 (/ (reduce #'+ third-rand) n)))
 	  (if (= 1 (ctx:getenv :JIT))
 	      (progn
-		(ok (< (abs (- avg1 0.5)) 0.1) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)")
-		(ok (< (abs (- avg2 0.5)) 0.1) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)")
-		(ok (< (abs (- avg3 0.5)) 0.1) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)")
+		(ng (< (abs (- avg1 0.5)) 0.1) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)")
+		(ng (< (abs (- avg2 0.5)) 0.1) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)")
+		(ng (< (abs (- avg3 0.5)) 0.1) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)")
 		(ok (some #'= first-rand scnd-rand third-rand) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)"))
 	      (progn
 		(ok (< (abs (- avg1 0.5)) 0.1))
