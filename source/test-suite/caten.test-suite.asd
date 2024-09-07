@@ -2,8 +2,7 @@
   :description "This is where unittest occur for Caten"
   :author      "hikettei <ichndm@gmail.com>"
   :depends-on
-  ("rove" "trivia" "cl-ppcre"
-   "caten.common" "caten.air" "caten.aasm" "caten.avm" "caten.ajit" "caten" "caten.nn")
+  ("rove" "trivia" "cl-ppcre")
   :serial t
   :components ((:file "package"))
   :perform
