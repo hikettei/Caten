@@ -24,46 +24,53 @@
   (if (= 1 (ctx:getenv :JIT))
       (ok (= n (n-args avm)))
       (skip "Needs JIT")))
+(defmacro with-jit-only-mode (&body body)
+  `(if (= 1 (ctx:getenv :JIT))
+       (progn ,@body)
+       (skip "Requires JIT")))
 
 (deftest check-kernel-counts
   (with-no-grad
-    (check-kernels 1 (caten (!matmul (make-tensor `(10 20)) (make-tensor `(20 10)))))
-    (check-kernels 1 (caten (caten/nn:!softmax (ax+b `(10 10) 1 1))))
-    (check-kernels 1 (caten (caten/nn:!softmax (ax+b `(a b) 1 1))))
-    (check-kernels 1 (caten (!softmax (!softmax (!softmax (ax+b `(10 10) 1 1))))))
-    (check-kernels 1 (caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0)))))
-    (check-kernels 1 (caten (!sin (!matmul (make-tensor `(10 20)) (make-tensor `(20 30))))))
-    (check-kernels 2 (caten (!matmul (make-tensor `(128 32)) (!matmul (make-tensor `(32 64)) (make-tensor `(64 128))))))
-    ;; TODO (!sin (!matmul a b b c))
-    ;;(check-kernels 1 (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))
-    (check-kernels 1 (caten (!tan (make-tensor `(10 10)))))
-    (check-kernels 1 (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))
-    (check-kernels 2 (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25))))))
-    (check-kernels 2 (caten (!mean (make-tensor `(a b c)))))))
+    (with-jit-only-mode
+	(check-kernels 1 (caten (!matmul (make-tensor `(10 20)) (make-tensor `(20 10)))))
+      (check-kernels 1 (caten (caten/nn:!softmax (ax+b `(10 10) 1 1))))
+      (check-kernels 1 (caten (caten/nn:!softmax (ax+b `(a b) 1 1))))
+      (check-kernels 1 (caten (!softmax (!softmax (!softmax (ax+b `(10 10) 1 1))))))
+      (check-kernels 1 (caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0)))))
+      (check-kernels 1 (caten (!sin (!matmul (make-tensor `(10 20)) (make-tensor `(20 30))))))
+      (check-kernels 2 (caten (!matmul (make-tensor `(128 32)) (!matmul (make-tensor `(32 64)) (make-tensor `(64 128))))))
+      ;; TODO (!sin (!matmul a b b c))
+      ;;(check-kernels 1 (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))
+      (check-kernels 1 (caten (!tan (make-tensor `(10 10)))))
+      (check-kernels 1 (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))
+      (check-kernels 2 (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25))))))
+      (check-kernels 2 (caten (!mean (make-tensor `(a b c)))))
+      )))
 
 (deftest check-in-place-mutation
   (with-no-grad
-    (check-args 3 (caten (!tan (make-tensor `(3 3)))))
-    (check-args 9 (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
-    ;; [TODO] Fuse softmax  <= 1 args
-    (check-args 3 (caten (!softmax (make-tensor `(3 3)))))
-    (check-args 3 (caten (!softmax (ax+b `(3 3) 1 1))))
-    ))
+    (with-jit-only-mode
+	(check-args 3 (caten (!tan (make-tensor `(3 3)))))
+      (check-args 9 (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
+      ;; [TODO] Fuse softmax  <= 1 args
+      (check-args 3 (caten (!softmax (make-tensor `(3 3)))))
+      (check-args 3 (caten (!softmax (ax+b `(3 3) 1 1))))
+      )))
 
 (deftest matmul-is-small
   (with-no-grad
-    (unless (= 1 (ctx:getenv :JIT)) (skip "Needs JIT"))
-    (let* ((m (caten (!matmul (make-tensor `(3 10)) (make-tensor `(10 20)))))
-	   (allocs (loop for node in (graph-nodes (avm-graph m))
-			 if (eql (node-type node) :Allocate) collect node)))
-      (ok (= (length allocs) 3) "gemm(a, b, c)")
-      (ok (every #'(lambda (x) (if (= (getattr x :nrank) 2)
-				   t
-				   (if (= (getattr x :nrank) 3)
-				       (some #'(lambda (x) (= x 1)) (subseq (node-reads x) 0 3))
-				       nil)))
-		 allocs)
-	  "Contiguous array creations are not allowed"))))
+    (with-jit-only-mode
+	(let* ((m (caten (!matmul (make-tensor `(3 10)) (make-tensor `(10 20)))))
+	       (allocs (loop for node in (graph-nodes (avm-graph m))
+			     if (eql (node-type node) :Allocate) collect node)))
+	  (ok (= (length allocs) 3) "gemm(a, b, c)")
+	  (ok (every #'(lambda (x) (if (= (getattr x :nrank) 2)
+				       t
+				       (if (= (getattr x :nrank) 3)
+					   (some #'(lambda (x) (= x 1)) (subseq (node-reads x) 0 3))
+					   nil)))
+		     allocs)
+	      "Contiguous array creations are not allowed")))))
 
 ;;(deftest symbolic-function-args-test
 ;;  (with-no-grad
