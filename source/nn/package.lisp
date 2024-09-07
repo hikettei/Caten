@@ -190,3 +190,5 @@ Policy:
   (declare (type function f) (type tensor tensor))
   (forward (make-instance 'Custom/LazyApply :f f) tensor))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+;; TODO: Implement assert-close like numpy's one.
