@@ -587,7 +587,7 @@
 		(ok (< (abs (- avg1 0.5)) 0.1))
 		(ok (< (abs (- avg2 0.5)) 0.1))
 		(ok (< (abs (- avg3 0.5)) 0.1))
-		(ok (some #'= first-rand scnd-rand third-rand)))))))))
+		(ng (some #'= first-rand scnd-rand third-rand)))))))))
 
 (deftest threefry2x32-dynamic
   (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
