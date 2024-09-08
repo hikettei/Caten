@@ -36,7 +36,7 @@
 	x))))
 
 (defmodel (RMSNorm (dims &key (eps 1e-5)))
-    ((weight (make-tensor `(,dims) :requires-grad t))
+    ((weight (make-tensor `(,@dims) :requires-grad t))
      (eps eps)))
 (defmethod call ((op RMSNorm) &rest inputs)
   (st "A[~] -> A[~]" (inputs))

@@ -11,8 +11,7 @@ Usage:
    #:*ctx*
    #:help
    #:getenv
-   #:with-contextvar
-   ))
+   #:with-contextvar))
 (in-package :caten/common.contextvar)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -52,35 +51,55 @@ Usage:
 			  for slot-name = (intern (symbol-name (car slot)))
 			  for default   = (second slot)
 			  for dtype = (ecase (third slot) (:int 'fixnum) (:string 'string))
-			  collect `(,slot-name ,default :type ,dtype)))
-		;; (setf getenv)
+			  collect `(,slot-name (if (uiop:getenv ,(symbol-name (car slot)))
+						   (ecase ,(third slot)
+						     (:int
+						      (let ((val (read-from-string (uiop:getenv ,(symbol-name (car slot))))))
+							(if (integerp val)
+							    val
+							    (progn
+							      (warn "Caten/common.contextvar: ~a should be an integer but got ~a, setting the default value." ',(car slot) val)
+							      ,default))))
+						     (:string (uiop:getenv ,(symbol-name (car slot)))))
+						   ,default)
+					       :type ,dtype)))
 		,@(loop for slot in slots
 			collect
 			`(defmethod getenv ((id (eql ,(car slot))))
 			   (assert (contextvar-p *ctx*) () "Caten/common.contextvar: *ctx* is not initialized, or recompiled after changing the slots, getting ~a." *ctx*)
-			   (let ((val (uiop:getenv ,(symbol-name (car slot)))))
-			     (funcall
-			      #',(fourth slot)
-			      (if val
-				  ,(ecase (third slot)
-				     (:int
-				      `(let ((val (read-from-string val)))
-					 (if (integerp val)
-					     val
-					     (progn
-					       (warn "Caten/common.contextvar: ~a should be an integer but got ~a, setting the default value." ',(car slot) val)
-					       nil))))
-				     (:string `(progn val)))
-				  (slot-value *ctx* ',(intern (symbol-name (car slot)))))))))
+			   (let ((val (slot-value *ctx* ',(intern (symbol-name (car slot))))))
+			     (funcall #',(fourth slot) val))))
 		,@(loop for slot in slots
 			collect
 			`(defmethod (setf getenv) (value (id (eql ,(car slot))))
-			   (setf (uiop:getenv ,(symbol-name (car slot))) (format nil "~a" value))))
+			   (setf (slot-value *ctx* ',(intern (symbol-name (car slot))))
+				 (ecase ,(third slot)
+				   (:int
+				    (let ((val (read-from-string (format nil "~a" value))))
+				      (if (integerp val)
+					  val
+					  (error "Caten/common.contextvar: ~a should be an integer but got ~a" ',(car slot) value))))
+				   (:string
+				    (assert (stringp value) () "Caten/common.contextvar: ~a should be a string but got ~a" ',(car slot) value)
+				    value)))))
 		(defun help (&optional (stream t))
 		  (format stream "ContextVar:~%~a"
 			  (with-output-to-string (out)
 			    ,@(loop for slot in slots
-				    collect `(format out "~a[~a] (default: ~a), ~a~%" ',(car slot) ,(third slot) ,(second slot) ,(fifth slot)))))))))
+				    collect `(format out "~a[~a] (default: ~a), ~a~%" ',(car slot) ,(third slot) ,(second slot) ,(fifth slot))))))
+		(defmacro with-contextvar ((&key
+					      ,@(loop for slot in slots
+						      for accessor = (intern (format nil (string-upcase "contextvar-~a") (car slot)))
+						      collect
+						      `(,(intern (symbol-name (car slot))) (,accessor *ctx*))))
+					   &body body)
+		  `(let ((*ctx* (make-contextvar
+				 ,,@(loop for slot in slots for name = (intern (symbol-name (car slot)))
+					  append
+					  (list (car slot) `(if (keywordp ,name)
+								(symbol-name ,name)
+								,name))))))
+		     ,@body)))))
   (defcontext
       ;; (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
       (:SERIALIZE
@@ -153,6 +172,3 @@ Usage:
      "(For JIT) %render-compile always produce an simple-error.")))
 
 (defparameter *ctx* (make-contextvar))
-(defmacro with-contextvar ((&rest configurations) &body body)
-  `(let ((*ctx* (make-contextvar ,@configurations)))
-     ,@body))

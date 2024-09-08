@@ -40,4 +40,7 @@
    #:vm/set-params)
   ;; from conditions.lisp
   (:export
-   #:avm-runtime-error))
+   #:avm-runtime-error)
+  ;; from lisp-backend.lisp
+  (:export
+   #:map-view))

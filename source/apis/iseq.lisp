@@ -351,7 +351,9 @@
    (avm-id2tensor avm)))
 
 (defmethod forward ((avm caten/avm:AVM) &rest params)
-  (let ((*device* (ctx:getenv :AVM)))
+  (let ((*device* (ctx:getenv :AVM))
+	(params (loop for (key . val) in params
+		      collect (cons key (if (tensor-p val) (tensor-buffer val) val)))))
     (vm/set-params avm params)
     (vm/forward avm)
     (avm/sync-tensors avm)

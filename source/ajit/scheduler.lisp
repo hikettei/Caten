@@ -39,7 +39,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
     (when (and
 	   (every #'null (buffer-views a))
 	   (every #'null (buffer-views b))
-           (equal (buffer-shape a) (buffer-shape b)))
+           (equal (map 'list #'reveal-buffer (buffer-shape a)) (map 'list #'reveal-buffer (buffer-shape b))))
       ->ok)
     ;; They still have a chance to be merged by the polyhedral compiler.
     ->ng))
