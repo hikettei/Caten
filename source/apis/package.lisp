@@ -126,6 +126,7 @@
    ;; more
    #:!const
    #:!index-components
+   #:!xor #:!or #:!and
    )
   ;; from initializers.lisp
   (:export

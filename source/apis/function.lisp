@@ -391,3 +391,17 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defun !index-components (tensor)
   (declare (type tensor tensor))
   (forward (make-instance 'IndexComponents) tensor))
+
+;; ~~~ Bitwise ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(macrolet ((def (name op lisp)
+	     `(progn
+		(defclass ,name (Func) nil)
+		(defmethod forward ((op ,name) &rest inputs) (st "A[~] B[~] -> A[~]" (inputs)))
+		(defmethod backward ((op ,name) &optional prev-dout) (declare (ignore prev-dout)) nil)
+		(defmethod lower ((op ,name) &rest inputs) (with-context (_ (,op (car inputs) (second inputs)))))
+		(defun ,lisp (x y)
+		  (declare (type tensor x y))
+		  (forward (make-instance ',name) x y)))))
+  (def OrNode %or !or)
+  (def XorNode %xor !xor)
+  (def AndNode %and !and))
