@@ -36,23 +36,27 @@
 		  append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
 
 (defmethod memory-plan ((mp MemoryPlanner) (graph graph))
-  "Plans the memory-schedule.
-Reference:
+  "Applies memory-optimization for the graph.
+Resourses:
 - https://arxiv.org/pdf/2203.00448
 - https://arxiv.org/abs/1804.10001
+Goal: overlapping the lifespan, e.g.:
 Lifespan:
- |
- |  a----b
+ |    T1
+ |  a----b   T2
+ |       c----d
  |
 -------------------
-T| |     |
-(Figure: Tensor a exists from t=a to t=b)
+- T1 exists from t=a to t=b.
+- T2 exists from t=c to t=d.
+- T1 and T2 are orthogonal.
 
+We resort to MIP.
 First, nodes are eager to make themselve in-place
 If making in-place strategy will corrupt the result of kernel, tries:
 - Using cached and realized buffer. (out of lifespan)
 - Allocating a new tensor, involving them into a stage.
-- Try to solve MIP...
+
 "
   
   )
