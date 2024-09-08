@@ -27,9 +27,9 @@ jobs:
           ros install ${{ matrix.lisp }}
           ros use ${{ matrix.lisp }}
           ros install rove
-      - name: Installing libisl23
+      - name: Installing libisl-dev
         run: |
-          sudo apt-get install -y libisl23
+          sudo apt-get install -y libisl-dev
       - name: Update $PATH
         run: |
           echo $PATH
