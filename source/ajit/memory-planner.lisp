@@ -15,6 +15,48 @@
 (defmethod node/in-place-mutation ((id (eql :WMMA)) node) (car (node-reads node)))
   
 ;; ~~ reference-counter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass MemoryPlanner ()
+  ((realized :initform (make-hash-table))
+   (on-stage :initform nil)
+   (alias :initform (make-hash-table))))
+
+(defmethod compute-size ((mp MemoryPlanner))
+  ;; xxx MiB
+  )
+
+(defun memory-plan-from-groups (mp groups)
+  (memory-plan
+   mp
+   (apply
+    #'make-graph
+    (loop for group in groups
+	  unless (group-realize-on-vm group)
+	    append
+	    (loop for idx in (render-graph/get-timestamps (group-render-graph group))
+		  append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
+
+(defmethod memory-plan ((mp MemoryPlanner) (graph graph))
+  "Plans the memory-schedule.
+Reference:
+- https://arxiv.org/pdf/2203.00448
+- https://arxiv.org/abs/1804.10001
+Lifespan:
+ |
+ |  a----b
+ |
+-------------------
+T| |     |
+(Figure: Tensor a exists from t=a to t=b)
+
+First, nodes are eager to make themselve in-place
+If making in-place strategy will corrupt the result of kernel, tries:
+- Using cached and realized buffer. (out of lifespan)
+- Allocating a new tensor, involving them into a stage.
+- Try to solve MIP...
+"
+  
+  )
+
 (defstruct (Reference-Counter
 	    (:conc-name refcount-))
   (alias (make-hash-table) :type hash-table)
@@ -41,9 +83,9 @@ Refcount-by:
   (declare (type graph graph) (symbol self) (type symbol id))
   (let ((count 0) (nodes))
     (loop for node in (graph-nodes graph)
-	  unless (eql self(node-id node)) do
-	    (loop for r in (remove-duplicates (node-reads node)) ;; x = sin(y + y + y); y is an single access.
-		  if (eql r id) do (incf count) (push node nodes)))
+	  for position = (node/in-place-mutation (node-type node) node)
+	  if (and position (eql position id))
+	    do (incf count) (push node nodes))
     (values count (remove-duplicates nodes :key #'node-id))))
 (defun create-reference-counter (groups)
   (declare (type list groups))
@@ -192,20 +234,18 @@ Refcount-by:
 	 (meta-ids))
     (labels ((inplace-p (node time)
 	       ;; Return: (in-place-p . intersects-with-current-pipeline?)
-	       (dolist (r (remove-duplicates (node-reads node)))
-		 (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
-		   (decf (gethash r (refcount-refcount refcount)))))
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
 	       ;;(when (find (car (node-writes node)) save-for-backwards) (return-from inplace-p (cons nil nil)))
-	       (let* ((id (or (refcount/refalias refcount (node/in-place-mutation (node-type node) node))
+	       (let* ((id (or (car (node-writes node));;(node/in-place-mutation (node-type node) node)
 			      (return-from inplace-p (cons nil nil))))
 		      (refcount-n (gethash id (refcount-refcount refcount)))
 		      (refdom     (gethash id (refcount-refcount-by refcount))))
 		 (when (numberp refcount-n)
-		   (assert (>= refcount-n 0) () "refcount-n should not be a negative! ~a" refcount-n))
+	  	   (assert (>= refcount-n 0) () "refcount-n should not be a negative! ~a" refcount-n))
+		 ;;(format t "~%_____~%~a -> ~a;~%~a~%" id (car (node-reads node)) refcount-n)
 		 (if refcount-n
 		     (cons
-		      (<= refcount-n 0)
+		      (<= refcount-n 1)
 		      (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))
 		     (cons t t))))
 	     (newid (x) (refcount/refalias refcount x))

@@ -1,6 +1,6 @@
 (in-package :cl-user)
 (defpackage :caten/ajit
-  (:use :cl :alexandria :caten/aasm :caten/air :caten/avm :caten/isl :cffi)
+  (:use :cl :alexandria :caten/aasm :caten/air :caten/avm :caten/isl :cffi :linear-programming)
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:import-from

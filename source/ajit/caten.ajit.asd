@@ -2,7 +2,7 @@
   :description "Abstract JIT System"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("caten.isl" "trivia" "alexandria" "cffi" "trivial-garbage" "cl-yaml")
+  :depends-on ("caten.isl" "trivia" "alexandria" "cffi" "trivial-garbage" "cl-yaml" "linear-programming")
   :serial t
   :components
   ((:file "package")
