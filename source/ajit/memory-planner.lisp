@@ -36,38 +36,49 @@ Refcount-by:
 	    (print-hash (refcount-alias r))
 	    (print-hash (refcount-refcount r))
 	    (print-hash (refcount-refcount-by r)))))
-(defun id->memwrites (graph id)
+(defun id->memwrites (graph self id)
   "Counts how many times id was read in the graph, and by who?"
-  (declare (type graph graph) (type symbol id))
-  (let ((count 0)
-	(nodes))
+  (declare (type graph graph) (symbol self) (type symbol id))
+  (let ((count 0) (nodes))
     (loop for node in (graph-nodes graph)
-	  for reads = (node-reads node) do
-	    (loop for r in reads
+	  unless (eql self(node-id node)) do
+	    (loop for r in (remove-duplicates (node-reads node)) ;; x = sin(y + y + y); y is an single access.
 		  if (eql r id) do (incf count) (push node nodes)))
     (values count (remove-duplicates nodes :key #'node-id))))
 (defun create-reference-counter (groups)
   (declare (type list groups))
-  (let ((refcount (make-hash-table))
-	(refby (make-hash-table))
-	(graph
-	  (apply
-	   #'make-graph
-	   (loop for group in groups
-		 unless (group-realize-on-vm group)
-		   append
-		   (loop for idx in (render-graph/get-timestamps (group-render-graph group))
-			 append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
-    (labels ((relevant-graph (pos) (apply #'make-graph (subseq (graph-nodes graph) pos)))
-	     (inplace (node pos)
+  (let* ((refcount (make-hash-table))
+	 (refby (make-hash-table))
+	 (graph
+	   (apply
+	    #'make-graph
+	    (loop for group in groups
+		  unless (group-realize-on-vm group)
+		    append
+		    (loop for idx in (render-graph/get-timestamps (group-render-graph group))
+			  append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group))))))))
+	 (seen)
+	 (all-ids (loop for x in (remove-duplicates
+				  (nconc
+				   (apply #'append (map 'list #'node-reads (graph-nodes graph)))
+				   (apply #'append (map 'list #'node-writes (graph-nodes graph)))))
+			if (symbolp x) collect x)))
+    (labels ((inplace (node-id id)
 	       ;; (in-place-p . users)
-	       (multiple-value-bind (count users) (id->memwrites (relevant-graph pos) (car (node-writes node)))
+	       (multiple-value-bind (count users) (id->memwrites graph node-id id)
 		 (cons count users))))
-      (loop for node in (graph-nodes graph)
-	    for pos upfrom 0
-	    for (refc . refb) = (inplace node pos)
-	    do (setf (gethash (car (node-writes node)) refcount) refc
-		     (gethash (car (node-writes node)) refby) refb)))
+      (loop for node in (graph-nodes graph) do
+	(loop for id in (node-writes node)
+	      for (refc . refb) = (inplace (node-id node) id)
+	      do (setf (gethash id refcount) refc
+		       (gethash id refby) refb)
+		 (push id seen)))
+      ;; If the top is Allocation, never appeared in the graph.
+      (loop for id in all-ids
+	    if (null (find id seen))
+	      do (let ((out (inplace nil id)))
+		   (setf (gethash id refcount) (car out)
+			 (gethash id refby) (cdr out)))))
     (make-reference-counter :refcount refcount :refcount-by refby)))
 
 (defun refcount/refalias (count id)
@@ -181,18 +192,20 @@ Refcount-by:
 	 (meta-ids))
     (labels ((inplace-p (node time)
 	       ;; Return: (in-place-p . intersects-with-current-pipeline?)
-	       (dolist (r (node-reads node))
+	       (dolist (r (remove-duplicates (node-reads node)))
 		 (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
 		   (decf (gethash r (refcount-refcount refcount)))))
 	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
 	       ;;(when (find (car (node-writes node)) save-for-backwards) (return-from inplace-p (cons nil nil)))
-	       (let* ((id (or (node/in-place-mutation (node-type node) node)
+	       (let* ((id (or (refcount/refalias refcount (node/in-place-mutation (node-type node) node))
 			      (return-from inplace-p (cons nil nil))))
 		      (refcount-n (gethash id (refcount-refcount refcount)))
 		      (refdom     (gethash id (refcount-refcount-by refcount))))
+		 (when (numberp refcount-n)
+		   (assert (>= refcount-n 0) () "refcount-n should not be a negative! ~a" refcount-n))
 		 (if refcount-n
 		     (cons
-		      (<= refcount-n 0) ;; <= refcount-n 1 is ng?
+		      (<= refcount-n 0)
 		      (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))
 		     (cons t t))))
 	     (newid (x) (refcount/refalias refcount x))
