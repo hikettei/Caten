@@ -543,28 +543,26 @@
 
 (deftest threefry2x32
   (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
-    (if (= (ctx:getenv :JIT) 1)
-	(skip "Skipped because threefry2x32 is unstable on JIT")
-	(with-manual-seed (0)
-	  (let* ((n 100)
-		 (first-rand (elements (proceed (!rand `(,n ,n)))))
-		 (avg1 (/ (reduce #'+ first-rand) (* n n)))
-		 (scnd-rand (elements (proceed (!rand `(,n ,n)))))
-		 (avg2 (/ (reduce #'+ scnd-rand) (* n n)))
-		 (third-rand (elements (proceed (!rand `(,n ,n)))))
-		 (avg3 (/ (reduce #'+ third-rand) (* n n))))
-	    (ok (< (abs (- avg1 0.5)) 0.01))
-	    (ok (< (abs (- avg2 0.5)) 0.01))
-	    (ok (< (abs (- avg3 0.5)) 0.01))
-	    (ng (some #'= first-rand scnd-rand third-rand))
-	    (testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
-	      (with-manual-seed (0)
-		(let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
-		  (testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
-		    (ok (every #'= first-rand first-rand1)))
-		  (testing "Then, reproduce second/third randomness in a single call of proceed."
-		    (let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
-		      (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand))))))))))))
+    (with-manual-seed (0)
+      (let* ((n 100)
+	     (first-rand (elements (proceed (!rand `(,n ,n)))))
+	     (avg1 (/ (reduce #'+ first-rand) (* n n)))
+	     (scnd-rand (elements (proceed (!rand `(,n ,n)))))
+	     (avg2 (/ (reduce #'+ scnd-rand) (* n n)))
+	     (third-rand (elements (proceed (!rand `(,n ,n)))))
+	     (avg3 (/ (reduce #'+ third-rand) (* n n))))
+	(ok (< (abs (- avg1 0.5)) 0.01))
+	(ok (< (abs (- avg2 0.5)) 0.01))
+	(ok (< (abs (- avg3 0.5)) 0.01))
+	(ng (some #'= first-rand scnd-rand third-rand))
+	(testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
+	  (with-manual-seed (0)
+	    (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
+	      (testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
+		(ok (every #'= first-rand first-rand1)))
+	      (testing "Then, reproduce second/third randomness in a single call of proceed."
+		(let* ((second-and-third-rand (elements (proceed (!add (!rand `(,n ,n)) (!rand `(,n ,n)))))))
+		  (ok (every #'= (map 'list #'+ scnd-rand third-rand) second-and-third-rand)))))))))))
 
 (deftest threefry2x32-static
   (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
@@ -577,17 +575,11 @@
 	       (avg2 (/ (reduce #'+ scnd-rand) (* n)))
 	       (third-rand (elements (forward rand `(n . ,n))))
 	       (avg3 (/ (reduce #'+ third-rand) n)))
-	  (if (= 1 (ctx:getenv :JIT))
-	      (progn
-		(ng (< (abs (- avg1 0.5)) 0.1) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)")
-		(ng (< (abs (- avg2 0.5)) 0.1) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)")
-		(ng (< (abs (- avg3 0.5)) 0.1) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)")
-		(ok (some #'= first-rand scnd-rand third-rand) "ExpectFailture on JIT (TODO: Fix ISL Scheduler)"))
-	      (progn
-		(ok (< (abs (- avg1 0.5)) 0.1))
-		(ok (< (abs (- avg2 0.5)) 0.1))
-		(ok (< (abs (- avg3 0.5)) 0.1))
-		(ng (some #'= first-rand scnd-rand third-rand)))))))))
+	  (progn
+	    (ok (< (abs (- avg1 0.5)) 0.1))
+	    (ok (< (abs (- avg2 0.5)) 0.1))
+	    (ok (< (abs (- avg3 0.5)) 0.1))
+	    (ng (some #'= first-rand scnd-rand third-rand))))))))
 
 (deftest threefry2x32-dynamic
   (testing "Sampling from [0, 1) with setting seed=0, *rng-counter*=0"
