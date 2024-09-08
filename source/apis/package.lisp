@@ -77,6 +77,7 @@
 
    ;; composed mathematical functions
    #:!sinh #:!cosh #:!tanh
+   #:!truncate #:!ceiling #:!floor
    )
   ;; from helpers.lisp
   (:export
@@ -124,6 +125,7 @@
    #:!where
    ;; more
    #:!const
+   #:!index-components
    )
   ;; from initializers.lisp
   (:export

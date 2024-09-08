@@ -382,3 +382,12 @@ save-for-backward is determined automatically, so you do not have to consider ab
     (let ((output (forward (make-instance 'ProceedNode) detached-tensor)))
       (setf (tensor-buffer output) (tensor-buffer detached-tensor))
       output)))
+
+(defclass IndexComponents (Func) nil)
+(defmethod forward ((op IndexComponents) &rest inputs) (st "A[~] -> A[~]" (inputs)))
+(defmethod backward ((op IndexComponents) &optional prev-grad))
+(defmethod lower ((op IndexComponents) &rest inputs)
+  (with-context (_ (%index-components (car inputs) (%shape (shape (car (func-variables op))))))))
+(defun !index-components (tensor)
+  (declare (type tensor tensor))
+  (forward (make-instance 'IndexComponents) tensor))

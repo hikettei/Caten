@@ -269,3 +269,25 @@ The provided form does not match any of them:~%~a" method method method method f
 
 (defun !log2 (x) (forward (Log2Node) x))
 (defun !exp2 (x) (forward (Exp2Node) x))
+
+;; ~~ Trunc/Ceil/Floor ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmodule (TruncateNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Truncate(x)"
+    :impl ((trunc x) (!cast (!cast x :uint32) (dtype-of x))))
+
+(defun !truncate (x) (forward (TruncateNode) x))
+
+(defmodule (CeilingNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Ceiling(x)"
+    :impl ((ceil x) (let ((b (!truncate x))) (!where (!> x b) (!add b (!const b 1)) b))))
+
+(defun !ceiling (x) (forward (CeilingNode) x))
+
+(defmodule (FloorNode (()) :where "A[~] -> A[~]")
+    ()
+    :documentation "Floor(x)"
+    :impl ((ceil x) (let ((b (!truncate x))) (!where (!< x b) (!sub b (!const b 1)) b))))
+
+(defun !floor (x) (forward (FloorNode) x))
