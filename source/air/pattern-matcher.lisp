@@ -119,7 +119,7 @@ TODO: Docs"
 		      ;; this may not be required but reduce the number of nodes as many as possible
 		      (dolist (r matched)
 			;; the top node of matched patten is always replaced.
-			(when (not (eql r (node-id ,node-top)))
+			(when (and (not (eql r (node-id ,node-top))) (id->node ,graph r))
 			  ;; Subsequent nodes are removed if they are not used.
 			  (let ((writes (node-writes (id->node ,graph r))))
 			    (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
