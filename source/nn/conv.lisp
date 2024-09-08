@@ -84,3 +84,6 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 		x)))))))
 ;; TODO: (defmethod export-to-onnx ((conv ConvND) x) ...)
 (in-package :caten/nn.test)
+
+;;(define-nn-test ConvND)
+;;(define-nn-test ConvND+ReLU)
