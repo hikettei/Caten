@@ -30,6 +30,9 @@ jobs:
       - name: Installing libisl-dev
         run: |
           sudo apt-get install -y libisl-dev
+      - name: pkg-config isl --modversion
+        run: |
+	  pkg-config isl --modversion
       - name: Update $PATH
         run: |
           echo $PATH
