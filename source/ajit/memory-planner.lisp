@@ -53,7 +53,8 @@ X <- f(x, y, reduction=t)"
    (debug :initarg :debug :initform 0 :accessor mp-debug)
    (realized :initform (make-hash-table))
    (on-stage :initform nil)
-   (alias :initform (make-hash-table)))
+   (alias :initform (make-hash-table))
+   (id2buffer :initform (make-hash-table) :accessor mp-id2buffer))
   (:documentation "
 # [class] MemoryPlanner
 Schedules given groups allocation and index computation.
@@ -78,6 +79,127 @@ Slots:
 		 append
 		 (loop for idx in (render-graph/get-timestamps (group-render-graph group))
 		       append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
+
+(defmethod renderer-get-nodes ((group group) (kr kernel-renderer))
+  (map
+   'list
+   #'(lambda (time) (gethash time (poly-pipeline (group-polyhedron group))))
+   (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kr)))))
+
+(defmethod renderer-get-irs ((kr kernel-renderer))
+  (loop for node in (kernel-renderer-nodes kr)
+	if (find (node-type node) `(:FOR :IF))
+	  collect node))
+
+(defmethod is-sv4bw ((group group) (id symbol)) (not (null (find id (group-across-time-deps group)))))
+
+;; ID2Buffer: Pointers loaded as x* can be loaded as x[0+0] in other kenels.
+(defmethod mp-reg-buffer-type ((mp MemoryPlanner) id buffer)
+  (when (null (gethash id (mp-id2buffer mp)))
+    (setf (gethash id (mp-id2buffer mp)) buffer)))
+(defmethod mp-get-buffer-type ((mp MemoryPlanner) id) (gethash id (mp-id2buffer mp)))
+
+(defun newid-from-str (obj) (if (stringp obj) (intern obj) obj))
+(defmethod apply-current-plan ((mp MemoryPlanner) (group group) (kernel kernel-renderer))
+  "Applying the current memory-plan, returning a list of arguments for the given group/kernel"
+  (let* ((nodes (renderer-get-nodes group kernel))
+	 (irs   (renderer-get-irs kernel))
+	 (index-components
+	   (loop for ir in irs
+		 if (eql (node-type ir) :FOR)
+		   collect (newid-from-str (getattr ir :idx))))
+	 (meta-ids)
+	 (out))
+    ;; Tensors firstly appeared in the read
+    (loop
+      for (name . type) in (nodes-depends-on/buffers nodes)
+      for sv4bw-p = (is-sv4bw group name)
+      for written-deps = (find name nodes :key #'node-writes :test #'find)
+      for read-deps    = (find name nodes :key #'node-reads  :test #'find)
+      do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type))
+	       (buffer-shape type) (loop for s in (buffer-shape type)
+					 for nth upfrom 0
+					 for view = (nth nth (buffer-views type))
+					 if (or (null view) (null (fourth view)))
+					   collect s
+					 else
+					   collect 1))
+      do (push
+	  (make-argument :name (progn
+				 (mp-reg-buffer-type mp name type)
+				 name)
+			 :pointer-p (if (= (buffer-nrank type) 0)
+					(if written-deps t nil)
+					t)
+			 :dtype (buffer-dtype type)
+			 :type (if sv4bw-p :user :tmp)
+			 :io (if (and written-deps read-deps)
+				 :io
+				 (if written-deps :output :input))
+			 :metadata (or (mp-get-buffer-type mp name) type))
+	  out))
+    ;; Tensors firstly appeared in the write. (a.k.a: failed-in-place-tensors)
+    (loop
+      with read-set = (map 'list #'node-reads nodes)
+      for node in nodes
+      for nth upfrom 0 do
+	(loop for write in (node-writes node)
+	      for type in (relay-writes (read-type-relay node))
+	      if (null (find write (apply #'append (subseq read-set 0 nth)))) do
+		(push
+		 (make-argument :name write
+				:pointer-p t
+				:dtype (buffer-dtype type)
+				:type :tmp
+				:io :output
+				:metadata (or (mp-get-buffer-type mp write) type))
+		 out)))
+    ;; Tensor firstly appeared in the IRs (For, IF)
+    (loop for ir in irs do
+      (ecase (node-type ir)
+	(:FOR
+	 (let ((deps
+		 (remove-duplicates
+		  (append
+		   (expr-recursive-deps (getattr ir :upfrom))
+		   (expr-recursive-deps (getattr ir :below))
+		   (expr-recursive-deps (getattr ir :by))))))
+	   (loop for dep in deps
+		 for name = (newid-from-str dep)
+		 unless (find name index-components)
+		   ;; Indices are created as default-uint
+		   do (push name meta-ids)
+		      (push
+		       (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
+				      :metadata (make-buffer 0 nil nil *default-uint* nil))
+		       out))))
+	(:IF
+	 (let ((deps
+		 (remove-duplicates
+		  (expr-recursive-deps (getattr ir :condition)))))
+	   (loop for dep in deps
+		 for name = (newid-from-str dep)
+		 unless (find name index-components)
+		   do (push name meta-ids)
+		      (push
+		       (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
+				      :metadata (make-buffer 0 nil nil *default-uint* nil))
+		       out))))))
+
+    ;; Gathering args from view
+    ;; [TODO] 用事が入ったのでここで一旦中断
+    ;; Index Computation Simplfiicationと一緒に色々考える
+    (dolist (node nodes)
+      (dolist (r (relay-reads (read-type-relay node)))
+	(dolist (s (buffer-reconstruct-view-args r :except-for-shape t))
+	  (when (symbolp s)
+	    (push
+	     (make-argument :name s :pointer-p nil :dtype *default-uint* :type :shape :io :input
+			    :metadata (make-uconst-buffer))
+	     out)
+	    (push s meta-ids)))))
+    ;; (remove-duplicates out :
+    outs))
 
 (defmethod ->argument ((mp MemoryPlanner) (group Group) (found-at (eql :node)) name (meta Buffer))
 
@@ -117,7 +239,9 @@ If making in-place strategy will corrupt the result of kernel, tries:
 
 "
   ;; - [ ] 最初にIndexのIN/OUTをはっきりさせる
+  ;;  - Reference_Countが尽きたIDを持って来たら自然とそうなる？
   ;; - [ ] それ以外はScalarにして良い
+  ;;  - どのタイミングでやるか・・・
   ;; - [ ] ScalarもIn-place mutationのアルゴリズムで，重複を減らす
   ;; - [ ] IDを変更しないメリット: 時系列がはっきりする: expr-eqで重複する計算はLOADに書き換えることが可能
   )
