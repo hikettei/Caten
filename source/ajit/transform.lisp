@@ -132,12 +132,33 @@ We consider shuffling these nodes which never violates lexiographical order.
 	       ((lex-dep-ok b-scal a-vec)
 		(apply-merge b-scal a-vec b-vec))
 	       ((lex-dep-ok a-vec b-scal)
-		(apply-merge b-scal b-vec a-vec))))
+		(apply-merge b-scal a-vec b-vec))))
 	    ((and a-scal b-scal a-vec b-vec)
 	     (when (and
 		    (lex-dep-ok b-scal a-vec)
 		    (lex-dep-ok a-scal b-scal))
 	       (apply-merge a-scal b-scal a-vec b-vec)))))))))
+
+(defmethod sort-two-loops ((a kernel-renderer) (b kernel-renderer) (poly Polyhedral))
+  "Sorts two iteration by lexiographical order dependencies."
+  (let ((lex (poly-lex-table poly)))
+    (labels ((nodes->lex (nodes)
+	       (loop for node in nodes
+		     if (eql (node-type node) :FUNCALL)
+		       collect (gethash (getattr node :idx) lex)))
+	     (lex-dep-ok (a b)
+	       "for all: (a1, a2, ...) > (b1, b1, ...)"
+	       (<= (apply #'max (nodes->lex a)) (apply #'min (nodes->lex b)))))
+      ;; [TODO] There are more fusable (or relocation) iteration patterns.
+      (or
+       (null (kernel-renderer-nodes a))
+       (null (kernel-renderer-nodes b))
+       (lex-dep-ok (kernel-renderer-nodes a) (kernel-renderer-nodes b))))))
+
+;; TODO: Test
+(defun sort-kernel-renderers (kernel-renderers polyhedral)
+  (flet ((s (x y) (sort-two-loops x y polyhedral)))
+    (sort kernel-renderers #'s)))
   
 (defun fuse-outermost-loops (polyhedral blueprints)
   "Fuses two rendering groups whose outermost loops are the completely equivalent.
@@ -159,22 +180,24 @@ This may reduce the number of extra allocation for tmpvar.
 "
   (declare (type polyhedral polyhedral)
 	   (type list blueprints))
-  (remove-duplicates
-   (loop with last-visited = (car blueprints)
-	 for blueprint in `(,@(cdr blueprints) nil)
-	 for merged = (when blueprint (merge-two-loops last-visited blueprint polyhedral))
-	 collect
-	 (if (and blueprint merged (kernel-renderer-outermost-loop-eq last-visited blueprint))
-	     (progn
-	       (setf last-visited
-		     (make-kernel-renderer
-		      :nodes merged
-		      :nth (kernel-renderer-nth last-visited)))
-	       last-visited)
-	     (prog1
-		 last-visited
-	       (setf last-visited blueprint))))
-   :key #'kernel-renderer-nth))
+  (sort-kernel-renderers
+   (remove-duplicates
+    (loop with last-visited = (car blueprints)
+	  for blueprint in `(,@(cdr blueprints) nil)
+	  for merged = (when blueprint (merge-two-loops last-visited blueprint polyhedral))
+	  collect
+	  (if (and blueprint merged (kernel-renderer-outermost-loop-eq last-visited blueprint))
+	      (progn
+		(setf last-visited
+		      (make-kernel-renderer
+		       :nodes merged
+		       :nth (kernel-renderer-nth last-visited)))
+		last-visited)
+	      (prog1
+		  last-visited
+		(setf last-visited blueprint))))
+    :key #'kernel-renderer-nth)
+   polyhedral))
 
 (defmethod collapse-loop ((kr kernel-renderer) (poly polyhedral))
   "Collapses the loop in the kernel to get more parallelization/vectorization opportunities, e.g.:
