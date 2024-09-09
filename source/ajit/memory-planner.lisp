@@ -7,6 +7,9 @@
 ;; - 3. Index Computation Scheduling
 ;; - 4. Duplicated computation elimination
 ;; - 5. Dead Code Elimination
+;; reading: (TODO: Githubから持ってくる)
+;; - https://discuss.tvm.apache.org/t/discussion-alignment-memory-planning/9730
+;; - https://dl.acm.org/doi/pdf/10.5555/314500.315082
 (defun render-graph/get-timestamps (graph)
   (declare (type graph graph))
   (loop for node in (graph-nodes graph) if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
@@ -47,6 +50,7 @@ X <- f(x, y, reduction=t)"
 ;; ~~ MemoryPlanner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass MemoryPlanner ()
   ((groups :initarg :groups :initform nil :accessor mp-groups)
+   (global-heap :initform nil :accessor mp-global-heap)
    (device :initarg :device :accessor mp-device)
    (graph  :initform nil :accessor mp-graph)
    (kernels :initform nil :accessor mp-kernels)
@@ -91,7 +95,9 @@ Slots:
 	if (find (node-type node) `(:FOR :IF))
 	  collect node))
 
-(defmethod is-sv4bw ((group group) (id symbol)) (not (null (find id (group-across-time-deps group)))))
+(defmethod is-sv4bw ((group group) (id symbol))
+  "AcrossTimeDep: a list of ids which lifetime won't finish in the current nodes."
+  (not (null (find id (group-across-time-deps group)))))
 
 ;; ID2Buffer: Pointers loaded as x* can be loaded as x[0+0] in other kenels.
 (defmethod mp-reg-buffer-type ((mp MemoryPlanner) id buffer)
@@ -185,10 +191,7 @@ Slots:
 		       (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
 				      :metadata (make-buffer 0 nil nil *default-uint* nil))
 		       out))))))
-
-    ;; Gathering args from view
-    ;; [TODO] 用事が入ったのでここで一旦中断
-    ;; Index Computation Simplfiicationと一緒に色々考える
+    ;; Gathering symbols used in the view computation
     (dolist (node nodes)
       (dolist (r (relay-reads (read-type-relay node)))
 	(dolist (s (buffer-reconstruct-view-args r :except-for-shape t))
@@ -198,12 +201,149 @@ Slots:
 			    :metadata (make-uconst-buffer))
 	     out)
 	    (push s meta-ids)))))
-    ;; (remove-duplicates out :
-    outs))
+    (setf out (remove-duplicates out :key #'argument-name))
+    (when (>= (mp-debug mp) 1)
+      ;; TODO: Display memory-size
+      )
+    out))
 
-(defmethod ->argument ((mp MemoryPlanner) (group Group) (found-at (eql :node)) name (meta Buffer))
+;; [TODO]
+;; - env: MEMORY_PLANNER=MIP, HEURISTIC
+;; Formulation
+;; Implementation for https://arxiv.org/pdf/2210.12924
+(defstruct (MemoryBlock
+	    (:constructor make-memoryblock (time e)))
+  "An abstraction for memory_block
+    |
+ i  |   (from)      (to)
+ d  |     |----------| 
+    |
+-------------------------
+   t i m e
+MemoryBlock(id) exists from `from` to `to` with `size` allocated buffer.
+"
+  (time time :type fixnum)
+  (e e :type fixnum))
 
+(defun V (mp &key (as "C") (time (memoryblock-time mp)) (e (memoryblock-e mp)))
+  (intern (format nil "~a_~a_~a" as time e)))
+  
+(defstruct (Action
+	    (:constructor make-action (time node-id writes reads)))
+  (time time :type fixnum)
+  (node-id node-id :type symbol)
+  (writes writes :type list)
+  (reads reads :type list))
+
+(defmethod print-object ((state MemoryBlock) stream)
+  (format stream "MemoryBlock : (~a, ~a)~%" (memoryblock-time state) (memoryblock-e state)))
+
+(defmethod encode ((act action) total-time)
+  `(,@(apply #'append (map 'list #'(lambda (x) (encode x total-time)) (action-writes act)))
+    ,@(apply #'append (map 'list #'(lambda (x) (encode x total-time)) (action-reads act)))
+    ;; Equation 4
+    ,@(loop for write in (action-writes act)
+	    append
+	    (loop for read in (action-reads act)
+		  collect
+		  `(<= ,(V write :as "C") ,(V read :as "P"))))
+    ;; [TODO] Equation 5
+    ,@(equation-6 act)
+    ,@(equation-7 act (expt 2 10))))
+
+(defmethod encode ((mp memoryblock) total-time)
+  ;; created_p(t) + preseved_p(t) <= 1
+  ;; preserved_p(t) <= created_p(t-1) + preserved_p(t-1)
+  ;;   The before action of preserve is either of create_p or preserve_p
+  ;; (from t=0~max) sum(created_p(t)) = 1
+  ;; For all sib(e): C_st = C_et
+  ;; Ae is in the range of [0, M) where M is the total buffer size of the worst case,
+  ;; a_ij = {0, 1}
+  ;; b_ij = {0, 1}
+  (flet ((V (&key (as "C") (time (memoryblock-time mp)) (e (memoryblock-e mp)))
+	   (V mp :as as :time time :e e)))
+    `(;; Equation1
+      (<= (+ ,(V :as "C") ,(V :as "P")) 1)
+      ;; Equation 2 (The previous preserved_p(t) is either of preserve or creation)
+      (<= ,(V :as "P") (+ ,(V :as "P" :time (1- (memoryblock-time mp)))
+			  ,(V :as "C" :time (1- (memoryblock-time mp)))))
+      ;; Equation 3 (Tensors are allocated once)
+      (= 1 (+ ,@(loop for time upfrom 0 below total-time
+		      collect (V :as "C" :time time)))))))
+
+(defun equation-6 (action &aux (time (action-time action)))
+  (loop
+    for i in (action-writes action)
+    for ip = (memoryblock-e i)
+    for ith upfrom 0
+    append
+    (loop
+      for j in (action-reads action)
+      for jp = (memoryblock-e j)
+      for jth upfrom 0
+      for liveit = `(+ ,(V i :as "C" :time ip :e time) ,(V i :as "P" :time ip :e time))
+      for livejt = `(+ ,(V j :as "C" :time jp :e time) ,(V j :as "P" :time jp :e time))
+      if (not (= ith jth))
+	append
+      `((<= (+ ,(V i :as "A" :time ip :e jp) ,(V j :as "B" :time ip :e jp)) 1)
+	(>= (+ ,(V i :as "A" :time ip :e jp) ,(V j :as "B" :time ip :e jp)) (+ ,liveit ,livejt -1))))))
+
+(defun equation-7 (action M)
+  (flet ((A (id) (intern (format nil "A_~a" id)))
+	 (S (id) (intern (format nil "S_~a" id))))
+    (loop
+      for i in (action-writes action)
+      for ip = (memoryblock-e i)
+      for ith upfrom 0
+      append
+      (loop
+	for j in (action-reads action)
+	for jp = (memoryblock-e j)
+	for jth upfrom 0
+	if (not (= ith jth))
+	  append
+	`((integer ,(A ip))
+	  (integer ,(S ip))
+	  (integer ,(A jp))
+	  (integer ,(S jp))
+	  (<= (+ ,(A ip) ,(S ip) (- ,(A jp))) (* ,M (- 1 ,(V i :as "A" :time ip :e jp))))
+	  (<= (+ ,(A ip) (- ,(A jp)) (- ,(S jp))) (* ,M (- ,(V j :as "B" :time ip :e jp) 1))))))))
+
+(defun equation-8 (vars)
+  (flet ((A (id) (intern (format nil "A_~a" id)))
+	 (S (id) (intern (format nil "S_~a" id))))
+    (loop for v in vars
+	  for e = (memoryblock-e v)
+	  collect
+	  `(<= (+ ,(A e) ,(S e)) peak-mem))))
+
+(defun SolveILP (I)
+  "
+An solver for statement.
+I = {(s1, r1, c1), ..., (sn, rn, cn)}
+
+s = length
+projection(r1, c1) r1 -> c1
+i.e.: I_n is associated with a node that requires s_n buffers, used from t=rn to t=cn.
+
+objective: min Σ(area(r, c))
+
+https://arxiv.org/pdf/1804.10001
+https://arxiv.org/pdf/2210.12924
+Section 3.2, Best-fit heuristic
+
+Statement:
+           T
+     ┏━━━━━┓
+   O ┃           ┃
+     ┗━━━━━┛
+   where O = offset, T = time
+
+"
+  (declare (type list I))
+  ;; argmin peak_min with regard to C, P, A
   )
+    
 
 (defmethod evaluate ((mp MemoryPlanner))
   ;; xxx MiB
@@ -238,13 +378,49 @@ If making in-place strategy will corrupt the result of kernel, tries:
 - Allocating a new tensor, involving them into a stage.
 
 "
+  (let* ((var2id (make-hash-table))
+	 (vars)
+	 (actions
+	   (loop for node in (graph-nodes (mp-graph mp))
+		 for time upfrom 0
+		 collect
+		 (make-action
+		  time
+		  (node-id node)
+		  (loop for val in (node-writes node)
+			for id = (ensure-gethash val var2id (1+ (length (hash-table-keys var2id))))
+			for var = (make-memoryblock time id)
+			do (setf (gethash val var2id) id)
+			   (push var vars)
+			collect var)
+		  (loop for val in (node-reads node)
+			for id = (ensure-gethash val var2id (1+ (length (hash-table-keys var2id))))
+			for var = (make-memoryblock time id)
+			do (setf (gethash val var2id) id)
+			   (push var vars)
+			collect var))))
+	 (constraints
+	   (remove-duplicates
+	    (nconc
+	     (apply #'append (map 'list #'(lambda (x) (encode x (length actions))) actions))
+	     (equation-8 vars))
+	    :test
+	    #'equal))
+	 (_ (print (length constraints)))
+	 (object `(min peak-mam))
+	 (problem (parse-linear-problem object constraints))
+	 (solved  (time (solve-problem problem))))
+    (loop for v across (problem-vars (solution-problem solved))
+	  do (format t "~a -> ~a~%" v (solution-variable solved v)))
+    
+    (error "STOP")
+    ))
   ;; - [ ] 最初にIndexのIN/OUTをはっきりさせる
   ;;  - Reference_Countが尽きたIDを持って来たら自然とそうなる？
   ;; - [ ] それ以外はScalarにして良い
   ;;  - どのタイミングでやるか・・・
   ;; - [ ] ScalarもIn-place mutationのアルゴリズムで，重複を減らす
   ;; - [ ] IDを変更しないメリット: 時系列がはっきりする: expr-eqで重複する計算はLOADに書き換えることが可能
-  )
 
 (defmethod retrive-kernels ((mp MemoryPlanner))
   ;; - Index計算のSimplify
