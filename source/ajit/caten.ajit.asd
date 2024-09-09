@@ -14,7 +14,7 @@
    (:file "isl-objects")
    (:file "isl-ast-helpers")
    (:file "transform")
-   (:file "graph")   
+   (:file "render-graph")   
    (:file "kernel-info")
    (:file "multiexpr")
    (:file "memory-planner")

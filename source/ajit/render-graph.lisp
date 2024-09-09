@@ -1,5 +1,9 @@
 (in-package :caten/ajit)
 
+;; render-graph.lisp
+;; Lispfied AST of the ISL AST.
+;; Optimizations are in `transform.lisp`
+
 (defun apply-bands (bands nodes &key (global-rank 2))
   "A special graph dedicated to the rendering process
 Loop is either of :Global or :Local
