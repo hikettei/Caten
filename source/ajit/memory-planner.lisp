@@ -1,4 +1,9 @@
 (in-package :caten/ajit)
+;; [Group -> Kernel]
+;; Allocation Overlapping
+;; - Schedules overlapped allocation
+;; - Simplifies the index computation
+;; 
 
 (defun render-graph/get-timestamps (graph)
   (declare (type graph graph))
@@ -13,29 +18,78 @@
 	nil)))
 (defmethod node/in-place-mutation ((id (eql :EXPR)) node) (car (node-reads node)))
 (defmethod node/in-place-mutation ((id (eql :WMMA)) node) (car (node-reads node)))
-  
-;; ~~ reference-counter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass MemoryPlanner ()
-  ((realized :initform (make-hash-table))
-   (on-stage :initform nil)
-   (alias :initform (make-hash-table))))
+;; ~~ Simplifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun simplify-groups (groups)
+  "Simplifies the given groups"
+  (declare (type list groups))
+  (mapc
+   (compose
+    ;#'group-apply-reduction
+    #'group-apply-load-simplification)
+   groups)
+  groups)
 
-(defmethod compute-size ((mp MemoryPlanner))
-  ;; xxx MiB
+(defmethod group-apply-reduction ((group Group))
+  "Rewriting:
+OUT <- f(x, y, reduction=t)
+as
+X <- f(x, y, reduction=t)"
+  (loop for node in (graph-nodes (group-graph group))
+	if (getattr node :reduction)
+	  do (setf (car (node-writes node)) (car (node-reads node))))
+  group)
+
+(defmethod group-apply-load-simplification ((group Group))
+  "Removing: val_1 <- val_1"
+  group)
+;; ~~ MemoryPlanner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass MemoryPlanner ()
+  ((groups :initarg :groups :initform nil :accessor mp-groups)
+   (device :initarg :device :accessor mp-device)
+   (graph  :initform nil :accessor mp-graph)
+   (kernels :initform nil :accessor mp-kernels)
+   (debug :initarg :debug :initform 0 :accessor mp-debug)
+   (realized :initform (make-hash-table))
+   (on-stage :initform nil)
+   (alias :initform (make-hash-table)))
+  (:documentation "
+# [class] MemoryPlanner
+Schedules given groups allocation and index computation.
+Slots:
+- groups[list] groups to schedule
+- debug[fixnum] debug level
+
+"))
+
+(defmethod debug-log ((mp MemoryPlanner) stream str &rest more)
+  (when (>= (mp-debug mp) 1)
+    (format stream "MemoryPlanner : ~a~%" (apply #'format nil str more))))  
+
+(defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups groups)))
+  (setf (mp-groups mp) groups
+	(mp-kernels mp) (map 'list #'->render-graph groups)
+	(mp-graph mp)
+	(apply
+	 #'make-graph
+	 (loop for group in groups
+	       unless (group-realize-on-vm group)
+		 append
+		 (loop for idx in (render-graph/get-timestamps (group-render-graph group))
+		       append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
+
+(defmethod ->argument ((mp MemoryPlanner) (group Group) (found-at (eql :node)) name (meta Buffer))
+
   )
 
-(defun memory-plan-from-groups (mp groups)
-  (memory-plan
-   mp
-   (apply
-    #'make-graph
-    (loop for group in groups
-	  unless (group-realize-on-vm group)
-	    append
-	    (loop for idx in (render-graph/get-timestamps (group-render-graph group))
-		  append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
-
-(defmethod memory-plan ((mp MemoryPlanner) (graph graph))
+(defmethod evaluate ((mp MemoryPlanner))
+  ;; xxx MiB
+  )
+;; やること
+;; - [x] :reductionがTrueの時，out_toは絶対にmyself
+;; - [ ] scalarにpropagateする
+;; -
+;; - Allocationの最適化
+(defmethod memory-plan ((mp MemoryPlanner))
   "Applies memory-optimization for the graph.
 Resourses:
 - https://arxiv.org/pdf/2203.00448
@@ -52,14 +106,40 @@ Lifespan:
 - T1 and T2 are orthogonal.
 
 We resort to MIP.
+Formulation:
+
 First, nodes are eager to make themselve in-place
 If making in-place strategy will corrupt the result of kernel, tries:
 - Using cached and realized buffer. (out of lifespan)
 - Allocating a new tensor, involving them into a stage.
 
 "
-  
+  ;; - [ ] 最初にIndexのIN/OUTをはっきりさせる
+  ;; - [ ] それ以外はScalarにして良い
+  ;; - [ ] ScalarもIn-place mutationのアルゴリズムで，重複を減らす
+  ;; - [ ] IDを変更しないメリット: 時系列がはっきりする: expr-eqで重複する計算はLOADに書き換えることが可能
   )
+
+(defmethod retrive-kernels ((mp MemoryPlanner))
+  ;; - Index計算のSimplify
+  ;; - Index計算が変わる要素は以下に絞れる
+  ;;   - 同じGroupのIndexはStrideが同じなら等しい (int32 idx0 = xxx;)を生成する
+  ;;   - UnrollしたGroupのIndexはidx0+1を生成すればOK
+  ;;   - Offset加算などはPattern Matcherでうまく対応
+  ;;   - 重複したINdex計算を根絶できる
+  ;; [TODO] 計算したIndexをHash-Tableに保存+文字列ベースでCache+Minimize
+  ;; Unrollingしたときは？
+
+  ;; 最終的なArgsと，Kernelのリストを生成する
+  (loop for group in (mp-groups mp)
+	for kernels in (mp-kernels mp)
+	if (group-realize-on-vm group)
+	  collect group
+	else	  
+	  collect
+	  (loop for k in kernels
+		if (kernel-renderer-nodes k)
+		  collect (pack-loop-funcall (print k) (group-polyhedron group) (device-packed-by (mp-device mp))))))
 
 (defstruct (Reference-Counter
 	    (:conc-name refcount-))
@@ -249,7 +329,7 @@ Refcount-by:
 		 ;;(format t "~%_____~%~a -> ~a;~%~a~%" id (car (node-reads node)) refcount-n)
 		 (if refcount-n
 		     (cons
-		      (<= refcount-n 1)
+		      nil;(<= refcount-n 1)
 		      (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))
 		     (cons t t))))
 	     (newid (x) (refcount/refalias refcount x))

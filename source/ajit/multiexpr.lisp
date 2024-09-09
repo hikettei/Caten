@@ -146,7 +146,8 @@
 			       ;; EXPR (out-to aref ...)
 			       (assert (symbolp out-to))
 			       (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
-					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node))))))
+					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
+					  :reduction (getattr node :reduction))))
 			 else
 			   collect expr)))
 	    ;; :expr nil is removed

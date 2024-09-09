@@ -863,15 +863,10 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
 	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x backend))))
        groups)
-      (let* ((refcount (create-reference-counter groups))
-	     (id2buffer (make-hash-table)) ;; id2buffer, if the tensor was initially introduced as a scalar, subsequent kernels must use it as a scalar.
-	     (kernels (map
-		       'list
-		       #'(lambda (x)
-			   (if (group-realize-on-vm x)
-			       (group/apply-memory-planner! x refcount)
-			       (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x) backend id2buffer)))
-		       groups))
+      (let* ((mp (make-instance 'MemoryPlanner :groups groups :debug debug :device backend))
+	     (_ (memory-plan mp))
+	     (refcount (create-reference-counter groups))
+	     (kernels  (retrive-kernels mp))
 	     (blueprints/codes
 	       (loop for group in groups
 		     for kernel in kernels
@@ -879,6 +874,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		     collect
 		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
+	(declare (ignore _))
 	(unless compile-later (%render-compile backend avm final-code))
 	(values
 	 (map 'list #'car blueprints/codes)

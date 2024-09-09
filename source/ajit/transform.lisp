@@ -117,7 +117,10 @@ We consider shuffling these nodes which never violates lexiographical order.
 	       (apply-merge a-scal a-vec b-vec)))
 	    ((and (null a-scal) a-vec b-scal b-vec)
 	     ;; T=0 is null, try relocate T2 into T0, (if it fails, they cannot be fused)
-	     (when (lex-dep-ok b-scal a-vec)
+	     ;; a-vec     b-scal
+	     ;; b-scal -> a-vec
+	     ;; b-vec     b-vec
+	     (when (lex-dep-ok a-vec b-scal)
 	       (apply-merge b-scal a-vec b-vec)))
 	    ((and a-scal b-scal a-vec b-vec)
 	     (when (and
@@ -207,7 +210,22 @@ for(int i=0; i<10*10; i++) {
 
 (defmethod pack-loop-funcall ((kr kernel-renderer) (poly polyhedral) (unroll-by fixnum))
   "Groups the iteration into several packed-funcall.
-packed-funcall can be transformed into: Tiling/Vectorizing/Unrolling at the renderer level"
+packed-funcall can be transformed into: Tiling/Vectorizing/Unrolling at the renderer level.
+for (int i=0; i<a; i++) {
+  T0(c0);
+}
+Is transformed into:
+for (int i=0; i<(a-UNROLL_BY); i+=UNROLL_BY) {
+        [packed_funcall]
+                 { T0(c0+0)
+  T0'(c0, 0~4) = { T0(c0+1)
+                 { T0(c0+2)
+                 { T0(c0+3)
+}
+for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
+ T0(c0) // Loop Reminder (TODO: Optimize Index Computation)
+}
+"
   (when (= 0 (ctx:getenv :PACKED)) (return-from pack-loop-funcall kr))
   (when (= 1 unroll-by) (return-from pack-loop-funcall kr))
   (labels ((static-unroll-p (node &aux (idx (getattr node :idx)))
@@ -345,3 +363,7 @@ packed-funcall can be transformed into: Tiling/Vectorizing/Unrolling at the rend
 	     (loop for out in (reverse outputs)
 		   for nth upfrom 0
 		   collect (make-kernel-renderer :nodes out :nth nth)))))
+
+(defmethod ->render-graph ((group Group))
+  (when (group-polyhedron group)
+    (render-graph-from-polyhedral (group-polyhedron group) (graph-nodes (group-render-graph group)))))
