@@ -1,4 +1,11 @@
 (in-package :caten/ajit)
+;; kernel-info.lisp
+;; A lisp-dumpable object for the compiled kernel, which is handled by AJIT.
+;; Compiled kernels are finally represented as a node ":JIT_KERNEL"
+;; Node[JIT_KERNEL] out1 out2 out3 <- jit_caller(out1 out2 out3)
+;;   where fname = function_name
+;;         jit-info = jit-info
+;;             ...
 ;; ~~ Fused Kernel Objects ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (JIT-Info)
   (fname :nil :type keyword)

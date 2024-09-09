@@ -1,7 +1,7 @@
 (in-package :caten/ajit)
 ;; First, Nodes determined to be necessarily Fused (e.g.: non-viewed and same shaped tensors)
 ;; are combined into a single SubGraph and converted into an ISL AST.
-;; Refenreces:
+;; Refenreces: (Good to read first)
 ;; - https://pliss2019.github.io/albert_cohen_slides.pdf
 ;; - https://www.slideshare.net/slideshow/introduction-to-polyhedral-compilation/70482946
 ;; - https://www.researchgate.net/publication/273651704_Schedule_Trees

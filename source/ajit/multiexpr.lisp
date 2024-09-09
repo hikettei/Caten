@@ -1,4 +1,6 @@
 (in-package :caten/ajit)
+;; multiexpr.lisp
+;; Groups the nested structure in the node into a Expr, making more chances to eliminate extra buffers and in-place mutation
 
 (defun expr-recursive-replace (expr map)
   (declare (type expr) (type function map))
