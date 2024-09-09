@@ -1,10 +1,12 @@
 (in-package :caten/ajit)
-;; [Group -> Kernel]
-;; Allocation Overlapping
-;; - Schedules overlapped allocation
-;; - Simplifies the index computation
-;; 
-
+;; memory-planner.lisp:
+;; Lowers Group into Kernel-Renderer-Graph
+;; Also, it has following optimizations:
+;; - 1. Allocation Overlapping
+;; - 2. Schedules overlapped allocation
+;; - 3. Index Computation Scheduling
+;; - 4. Duplicated computation elimination
+;; - 5. Dead Code Elimination
 (defun render-graph/get-timestamps (graph)
   (declare (type graph graph))
   (loop for node in (graph-nodes graph) if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
@@ -24,7 +26,7 @@
   (declare (type list groups))
   (mapc
    (compose
-    ;#'group-apply-reduction
+    #'group-apply-reduction
     #'group-apply-load-simplification)
    groups)
   groups)

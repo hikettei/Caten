@@ -128,8 +128,11 @@ We consider shuffling these nodes which never violates lexiographical order.
 	     ;; a-vec     b-scal
 	     ;; b-scal -> a-vec
 	     ;; b-vec     b-vec
-	     (when (lex-dep-ok a-vec b-scal)
-	       (apply-merge b-scal a-vec b-vec)))
+	     (cond
+	       ((lex-dep-ok b-scal a-vec)
+		(apply-merge b-scal a-vec b-vec))
+	       ((lex-dep-ok a-vec b-scal)
+		(apply-merge b-scal b-vec a-vec))))
 	    ((and a-scal b-scal a-vec b-vec)
 	     (when (and
 		    (lex-dep-ok b-scal a-vec)
