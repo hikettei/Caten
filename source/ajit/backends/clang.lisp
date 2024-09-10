@@ -258,7 +258,6 @@ Compiled with: ~a"
 		     (let ((idx (getattr node :idx))
 			   (args (map 'list #'(lambda (x) (r x)) (getattr node :args)))
 			   (*suffix* (getattr node :unroll-offsets)))
-		       (print *suffix*)
 		       (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out))))))))))
 
 (defun ->cdtype (dtype)
@@ -325,7 +324,15 @@ Compiled with: ~a"
 		  (:WMMA
 		   (multiple-value-bind (c a b) (apply #'values (node-reads node))
 		     (multiple-value-bind (ct at bt) (apply #'values (relay-reads type))
-		       (line "~(~a~) += ~(~a~) * ~(~a~);" (render-aref c ct) (render-aref a at) (render-aref b bt)))))
+		       (line "~(~a~)~(~a~) += ~(~a~) * ~(~a~);"
+			     (if (car (getattr node :declare-type))
+				 (format nil "~a " (->cdtype (buffer-dtype ct)))
+				 "")
+			     (render-aref c ct) (render-aref a at) (render-aref b bt)))))
 		  (:EXPR
 		   (multiple-value-bind (at) (apply #'values (relay-writes type))
-		     (line "~(~a~) = ~(~a~);" (render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))))))))
+		     (line "~(~a~)~(~a~) = ~(~a~);"
+			   (if (car (getattr node :declare-type))
+			       (format nil "~a " (->cdtype (buffer-dtype at)))
+			       "")
+			   (render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))))))))

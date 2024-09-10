@@ -411,6 +411,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	   (if (= (buffer-nrank buffer) 0)
 	       buffer
 	       (let ((new (make-const-buffer (buffer-dtype buffer))))
+		 ;; depend-idx-list: required to compute the position of unrollment. e.g.: val_5 -> val_5_0, val_5_1, val_5_2, ...
 		 (setf (buffer-depend-idx-list new)
 		       (loop for shape in (buffer-shape buffer)
 			     for nth upfrom 0
@@ -426,37 +427,63 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 			for type in (,types (read-type-relay node))
 			for nth upfrom 0
 			if (find val mutated-list) do
-			  (setf (nth nth (,types (read-type-relay node))) (mutate-scalar-buffer val type (when (eql (node-type node) :EXPR) (getattr node :EXPR)))))))
+			  (setf (nth nth (,types (read-type-relay node)))
+				(mutate-scalar-buffer val type (when (eql (node-type node) :EXPR) (getattr node :EXPR)))))))
       (f node-reads relay-reads)
       (f node-writes relay-writes))))
 
 (defmethod output->scalar-mutation ((group group) (kernel kernel-renderer) dependency-list)
   "
 Rewrites the graph:
+for (...) {
+  out[...] = f(...)
+}
+->
+for (...) {
+  out = f(...)
+}
+If the tensor `out` is labelled as :output by the memory-planner, and not appeared in the `dependency-list`.
 "
   (let ((scalars) (related-nodes (renderer-get-nodes group kernel)))
     (flet ((->scalar-p (id)
 	     (and
 	      (let ((out (find id (kernel-renderer-args kernel) :key #'argument-name)))
 		(and out (eql :output (argument-io out))))
-	      (null (find id dependency-list)))))
+	      (null (find id dependency-list))
+	      (let ((search-key
+		      (loop for key in (sort (hash-table-keys (poly-pipeline (group-polyhedron group))) #'<)
+			    for graph = (gethash key (poly-pipeline (group-polyhedron group)))
+			    if (find id (graph-nodes graph) :key #'(lambda (x) (append (node-reads x) (node-writes x))) :test #'find)
+			      collect key)))
+		(loop with depth = 0
+		      with nodes = (kernel-renderer-nodes kernel)
+		      with start = (position (apply #'min search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx))))
+		      with end   = (position (apply #'max search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx))))
+		      for nth upfrom start to end
+		      for ir = (nth nth nodes)
+		      if (eql (node-type ir) :FOR)
+			do (incf depth)
+		      else if (eql (node-type ir) :ENDFOR)
+			 do (decf depth)
+		      end
+		      if (< depth 0) do
+			 (return-from ->scalar-p nil))
+		t))))
       (dolist (node related-nodes)
 	(dolist (w (node-writes node))
 	  (when (->scalar-p w)
 	    (push w scalars))))
       ;; mutate all read dependencies
-      (let ((seen) (allocs))
+      (let ((seen))
 	(dolist (node related-nodes)
 	  (update-buffer-as-scalar node scalars)
-	  (loop for w in (node-writes node)
-		for typ in (relay-writes (read-type-relay node))
-		if (and (null (find w seen)) (find w scalars))
-		  do (push
-		      (make-node :Buffer :Allocate (list w) nil :nrank 0 :dtype (buffer-dtype typ)
-				 :_type_relay (make-inferred-type nil (list typ)))
-		      allocs)))
-	(print allocs)
-	)
+	  (setf (getattr node :declare-type)
+		(loop for w in (node-writes node)
+		      for typ in (relay-writes (read-type-relay node))
+		      collect
+		      (prog1
+			  (and (null (find w seen)) (find w scalars))
+			(push w seen))))))
       ;; Remove from args
       (setf (kernel-renderer-args kernel)
 	    (loop for arg in (kernel-renderer-args kernel)
