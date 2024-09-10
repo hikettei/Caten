@@ -11,7 +11,7 @@
 ;; - https://discuss.tvm.apache.org/t/discussion-alignment-memory-planning/9730
 ;; - https://dl.acm.org/doi/pdf/10.5555/314500.315082
 
-;; TODO: Improve Memory_Planner (Support Statement and Symbolic)
+;; TODO: Improve Memory_Planner (Support Statement and Symbolic) (OK)
 ;; TODO: 必要ないカーネルはCompileしない
 ;; TODO: out deps -> float mutation (カーネル間の依存を考えればOK)
 ;;     - カーネル間に依存がないOUTPUTはscalarにする
@@ -95,6 +95,7 @@ X <- f(x, y, reduction=t)"
 		  collect (list (new (nth 0 v)) (new (nth 1 v)) (new (nth 2 v)) (nth 3 v))
 		else
 		  collect v))))
+
 (defmethod mp-update-node ((mp MemoryPlanner) node)
   (flet ((ref (x) (mp-newid mp x)))
     (when (eql (node-type node) :EXPR)
@@ -179,97 +180,100 @@ X <- f(x, y, reduction=t)"
 		   collect (newid-from-str (getattr ir :idx))))
 	 (meta-ids)
 	 (out))
-    ;; Tensors firstly appeared in the read
-    (loop
-      for (name . type) in (nodes-depends-on/buffers nodes)
-      for sv4bw-p = (is-sv4bw group name)
-      for written-deps = (find name nodes :key #'node-writes :test #'find)
-      for read-deps    = (find name nodes :key #'node-reads1  :test #'find)
-      do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type))
-	       (buffer-shape type) (loop for s in (buffer-shape type)
-					 for nth upfrom 0
-					 for view = (nth nth (buffer-views type))
-					 if (or (null view) (null (fourth view)))
-					   collect s
-					 else
-					   collect 1))
-      do (push
-	  (make-argument :name (progn
-				 (mp-reg-buffer-type mp name type)
-				 name)
-			 :pointer-p (if (= (buffer-nrank type) 0)
-					(if written-deps t nil)
-					t)
-			 :dtype (buffer-dtype type)
-			 :type (if sv4bw-p :user :tmp)
-			 :io (if (and written-deps read-deps)
-				 :io
-				 (if written-deps :output :input))
-			 :metadata (or (mp-get-buffer-type mp name) type))
-	  out))
-    ;; Tensors firstly appeared in the write. (a.k.a: failed-in-place-tensors)
-    (loop
-      with read-set = (map 'list #'node-reads1 nodes)
-      for node in nodes
-      for nth upfrom 0 do
-	(loop for write in (node-writes node)
-	      for type in (relay-writes (read-type-relay node))
-	      if (null (find write (apply #'append (subseq read-set 0 nth)))) do
-		(push
-		 (make-argument :name write
-				:pointer-p t
-				:dtype (buffer-dtype type)
-				:type :tmp
-				:io :output
-				:metadata (or (mp-get-buffer-type mp write) type))
-		 out)))
-    ;; Tensor firstly appeared in the IRs (For, IF)
-    (loop for ir in irs do
-      (ecase (node-type ir)
-	(:FOR
-	 (let ((deps
-		 (remove-duplicates
-		  (append
-		   (expr-recursive-deps (getattr ir :upfrom))
-		   (expr-recursive-deps (getattr ir :below))
-		   (expr-recursive-deps (getattr ir :by))))))
-	   (loop for dep in deps
-		 for name = (newid-from-str dep)
-		 unless (find name index-components)
-		   ;; Indices are created as default-uint
-		   do (push name meta-ids)
-		      (push
-		       (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
-				      :metadata (make-buffer 0 nil nil *default-uint* nil))
-		       out))))
-	(:IF
-	 (let ((deps
-		 (remove-duplicates
-		  (expr-recursive-deps (getattr ir :condition)))))
-	   (loop for dep in deps
-		 for name = (newid-from-str dep)
-		 unless (find name index-components)
-		   do (push name meta-ids)
-		      (push
-		       (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
-				      :metadata (make-buffer 0 nil nil *default-uint* nil))
-		       out))))))
-    ;; Gathering symbols used in the view computation
-    (dolist (node nodes)
-      (dolist (r (relay-reads (read-type-relay node)))
-	(dolist (s (buffer-reconstruct-view-args r :except-for-shape t))
-	  (when (symbolp s)
-	    (push
-	     (make-argument :name s :pointer-p nil :dtype *default-uint* :type :shape :io :input
-			    :metadata (make-uconst-buffer))
-	     out)
-	    (push s meta-ids)))))
-    (setf out (remove-duplicates out :key #'argument-name))
-    (when (>= (mp-debug mp) 1)
-      ;; TODO: Display memory-size
-      )
-    (setf (kernel-renderer-args kernel) out)
-    out))
+    (flet ((cleanup-buffer (buffer)
+	     (setf (buffer-shape buffer) (map 'list #'reveal-buffer (buffer-shape buffer))
+		   (buffer-shape buffer) (loop for s in (buffer-shape buffer)
+					       for nth upfrom 0
+					       for view = (nth nth (buffer-views buffer))
+					       if (or (null view) (null (fourth view)))
+						 collect s
+					       else
+						 collect 1))))
+      ;; Tensors firstly appeared in the read
+      (loop
+	for (name . type) in (nodes-depends-on/buffers nodes)
+	for sv4bw-p = (is-sv4bw group name)
+	for written-deps = (find name nodes :key #'node-writes :test #'find)
+	for read-deps    = (find name nodes :key #'node-reads1  :test #'find)
+	do (cleanup-buffer type)
+	   (push
+	    (make-argument :name (progn
+				   (mp-reg-buffer-type mp name type)
+				   name)
+			   :pointer-p (if (= (buffer-nrank type) 0)
+					  (if written-deps t nil)
+					  t)
+			   :dtype (buffer-dtype type)
+			   :type (if sv4bw-p :user :tmp)
+			   :io (if (and written-deps read-deps)
+				   :io
+				   (if written-deps :output :input))
+			   :metadata (or (mp-get-buffer-type mp name) type))
+	    out))
+      ;; Tensors firstly appeared in the write. (a.k.a: failed-in-place-tensors)
+      (loop
+	with read-set = (map 'list #'node-reads1 nodes)
+	for node in nodes
+	for nth upfrom 0 do
+	  (loop for write in (node-writes node)
+		for type in (relay-writes (read-type-relay node))
+		if (null (find write (apply #'append (subseq read-set 0 nth)))) do
+		  (cleanup-buffer type)
+		  (push
+		   (make-argument :name write
+				  :pointer-p t
+				  :dtype (buffer-dtype type)
+				  :type :tmp
+				  :io :output
+				  :metadata (or (mp-get-buffer-type mp write) type))
+		   out)))
+      ;; Tensor firstly appeared in the IRs (For, IF)
+      (loop for ir in irs do
+	(ecase (node-type ir)
+	  (:FOR
+	   (let ((deps
+		   (remove-duplicates
+		    (append
+		     (expr-recursive-deps (getattr ir :upfrom))
+		     (expr-recursive-deps (getattr ir :below))
+		     (expr-recursive-deps (getattr ir :by))))))
+	     (loop for dep in deps
+		   for name = (newid-from-str dep)
+		   unless (find name index-components)
+		     ;; Indices are created as default-uint
+		     do (push name meta-ids)
+			(push
+			 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
+					:metadata (make-buffer 0 nil nil *default-uint* nil))
+			 out))))
+	  (:IF
+	   (let ((deps
+		   (remove-duplicates
+		    (expr-recursive-deps (getattr ir :condition)))))
+	     (loop for dep in deps
+		   for name = (newid-from-str dep)
+		   unless (find name index-components)
+		     do (push name meta-ids)
+			(push
+			 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
+					:metadata (make-buffer 0 nil nil *default-uint* nil))
+			 out))))))
+      ;; Gathering symbols used in the view computation
+      (dolist (node nodes)
+	(dolist (r (relay-reads (read-type-relay node)))
+	  (dolist (s (buffer-reconstruct-view-args r :except-for-shape t))
+	    (when (symbolp s)
+	      (push
+	       (make-argument :name s :pointer-p nil :dtype *default-uint* :type :shape :io :input
+			      :metadata (make-uconst-buffer))
+	       out)
+	      (push s meta-ids)))))
+      (setf out (remove-duplicates out :key #'argument-name))
+      (when (>= (mp-debug mp) 1)
+	;; TODO: Display memory-size
+	)
+      (setf (kernel-renderer-args kernel) out)
+      out)))
 
 (defstruct (MemoryBlock
 	    (:constructor make-memoryblock (id type create release)))
