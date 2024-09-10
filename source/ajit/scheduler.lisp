@@ -896,13 +896,13 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type (integer 0 4) debug)
 	   (type boolean serialize)
 	   (ignore  _))
-  (multiple-value-bind (compiled-kernels code)
+  (multiple-value-bind (compiled-kernels code mp)
       (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil)
     (declare (ignore code))
     (make-avm
      (clean-up-attrs
       (optimize-non-in-place-buffers
-       base-avm avm
+       base-avm avm mp
        (remove-unused-allocs
 	(apply
 	 #'make-graph

@@ -433,7 +433,7 @@ in a single timestamp otherwise recursive dependencies will occur.
   (every #'(lambda (node) (remattr node :_reads_old_for_multiexpr) node) (graph-nodes graph))
   graph)
 
-(defun optimize-non-in-place-buffers (base-avm avm graph seen verbose)
+(defun optimize-non-in-place-buffers (base-avm avm mp graph seen verbose)
   (let* ((kernel-arg-symbols
 	   (loop for node in (graph-nodes graph)
 		 if (eql (node-type node) :JIT_KERNEL)
