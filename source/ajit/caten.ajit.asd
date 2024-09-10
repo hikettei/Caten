@@ -3,6 +3,7 @@
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
   :depends-on ("caten.isl" "trivia" "alexandria" "cffi" "trivial-garbage" "cl-yaml")
+  :serial t
   :components
   ((:file "package")
    (:file "helpers")
