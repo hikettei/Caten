@@ -12,15 +12,51 @@
 ;; - https://dl.acm.org/doi/pdf/10.5555/314500.315082
 
 ;; TODO: Improve Memory_Planner (Support Statement and Symbolic)
+;; TODO: 必要ないカーネルはCompileしない
+;; TODO: out deps -> float mutation (カーネル間の依存を考えればOK)
+;;     - カーネル間に依存がないOUTPUTはscalarにする
 ;; TODO: Index Computation Simplification
-;; TODO: out deps -> float mutation
-;; TODO: Remove unused argument
-
+;;     - Latency Optimization
+;;     - Minimize the load
 (defun render-graph/get-timestamps (graph)
   (declare (type graph graph))
   (loop for node in (graph-nodes graph) if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
+;; ~~ MemoryPlanner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass MemoryPlanner ()
+  ((groups :initarg :groups :initform nil :accessor mp-groups)
+   (avm :initarg :avm :accessor mp-avm)
+   (device :initarg :device :accessor mp-device)
+   (graph  :initform nil :accessor mp-graph)
+   (kernels :initform nil :accessor mp-kernels)
+   (debug :initarg :debug :initform 0 :accessor mp-debug)
+   (alias :initform (make-hash-table) :accessor mp-alias)
+   (id2buffer :initform (make-hash-table) :accessor mp-id2buffer))
+  (:documentation "
+# [class] MemoryPlanner
+Schedules given groups allocation and index computation.
+Slots:
+- groups[list] groups to schedule
+- debug[fixnum] debug level
+"))
 
-;; ~~ Simplifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmethod debug-log ((mp MemoryPlanner) stream str &rest more)
+  (when (>= (mp-debug mp) 1)
+    (format stream "MemoryPlanner : ~a~%" (apply #'format nil str more))))  
+
+(defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups mp groups)))
+  (setf (mp-groups mp) groups
+	(mp-kernels mp) (map 'list #'->render-graph groups)
+	(mp-graph mp)
+	(apply
+	 #'make-graph
+	 (loop for group in groups
+	       if (group-realize-on-vm group)
+		 append (graph-nodes (group-graph group))
+	       else
+		 append
+		 (loop for idx in (render-graph/get-timestamps (group-render-graph group))
+		       append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
+
 (defun simplify-groups (mp groups)
   "Simplifies the given groups"
   (declare (type list groups))
@@ -47,42 +83,6 @@ X <- f(x, y, reduction=t)"
 (defmethod group-apply-load-simplification ((group Group))
   "Removing: val_1 <- val_1"
   group)
-;; ~~ MemoryPlanner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass MemoryPlanner ()
-  ((groups :initarg :groups :initform nil :accessor mp-groups)
-   (avm :initarg :avm :accessor mp-avm)
-   (device :initarg :device :accessor mp-device)
-   (graph  :initform nil :accessor mp-graph)
-   (kernels :initform nil :accessor mp-kernels)
-   (debug :initarg :debug :initform 0 :accessor mp-debug)
-   (alias :initform (make-hash-table) :accessor mp-alias)
-   (id2buffer :initform (make-hash-table) :accessor mp-id2buffer))
-  (:documentation "
-# [class] MemoryPlanner
-Schedules given groups allocation and index computation.
-Slots:
-- groups[list] groups to schedule
-- debug[fixnum] debug level
-
-"))
-
-(defmethod debug-log ((mp MemoryPlanner) stream str &rest more)
-  (when (>= (mp-debug mp) 1)
-    (format stream "MemoryPlanner : ~a~%" (apply #'format nil str more))))  
-
-(defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups mp groups)))
-  (setf (mp-groups mp) groups
-	(mp-kernels mp) (map 'list #'->render-graph groups)
-	(mp-graph mp)
-	(apply
-	 #'make-graph
-	 (loop for group in groups
-	       if (group-realize-on-vm group)
-		 append (graph-nodes (group-graph group))
-	       else
-		 append
-		 (loop for idx in (render-graph/get-timestamps (group-render-graph group))
-		       append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
 
 (defmethod mp-newid ((mp MemoryPlanner) id) (or (gethash id (mp-alias mp)) id))
 (defmethod mp-update-buffer ((mp MemoryPlanner) buffer)
@@ -168,7 +168,7 @@ Slots:
     (setf (gethash id (mp-id2buffer mp)) buffer)))
 (defmethod mp-get-buffer-type ((mp MemoryPlanner) id) (gethash id (mp-id2buffer mp)))
 
-(defun newid-from-str (obj) (if (stringp obj) (intern obj) obj))
+(defun newid-from-str (obj) (if (stringp obj) (intern (string-upcase obj)) obj))
 (defmethod apply-current-plan ((mp MemoryPlanner) (group group) (kernel kernel-renderer))
   "Applying the current memory-plan, returning a list of arguments for the given group/kernel"
   (let* ((nodes (renderer-get-nodes group kernel))
@@ -271,10 +271,6 @@ Slots:
     (setf (kernel-renderer-args kernel) out)
     out))
 
-;; [TODO]
-;; - env: MEMORY_PLANNER=MIP, HEURISTIC
-;; Formulation
-;; Implementation for https://arxiv.org/pdf/2210.12924
 (defstruct (MemoryBlock
 	    (:constructor make-memoryblock (id type create release)))
   "An abstraction for memory_block
@@ -284,8 +280,7 @@ Slots:
     |
 -------------------------
    t i m e
-MemoryBlock(id) is allocated when t=create, preserved until t become `release`.
-"
+MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (id id :type symbol)
   (answer nil :type symbol)
   (type type :type buffer)
@@ -310,52 +305,28 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`.
 
 (defmethod freed-p ((mb MemoryBlock) time)
   (and (created-p mb time) (not (preserved-p mb time))))
-  
-(defun SolveDSA (I total-time)
-  "
-An solver for statement.
-I = {(s1, r1, c1), ..., (sn, rn, cn)}
 
-s = length
-projection(r1, c1) r1 -> c1
-i.e.: I_n is associated with a node that requires s_n buffers, used from t=rn to t=cn.
-
-objective: min Σ(area(r, c))
-
-https://arxiv.org/pdf/1804.10001
-https://arxiv.org/pdf/2210.12924
-Section 3.2, Best-fit heuristic
-
-Statement:
-           T
-     ┏━━━━━┓
-   O ┃           ┃
-     ┗━━━━━┛
-   where O = offset, T = time
-
-"
+;; [TODO] Assuming the entire graph is "static", applying the `best-fit` schedule
+;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY
+;; Env: GREEDY=1 to alywas use greedy solver.
+;; Paper: Best Heuristic https://arxiv.org/pdf/1804.10001
+(defun GreedySolveDSA (I total-time)
+  "A greedy solver for minimizing peak_mem"
   (declare (type list I))
-  ;; StatementのOffsetが低くなるようにi.e.: peak_mem_usageがなるべく低くなるように配置
-  ;; Total_Size <= mo ok
-  ;; argmin peak_mem
-  (let ((statement (make-array total-time :element-type 'fixnum :initial-element 0))
-	(locked))
+  (let ((locked))
     (labels ((choose-from-fragments (mb time &aux (candidates))
-	       ;; Without colliding
-	       ;; With the longest lifetime
-	       ;; With the lowest offset
-	       ;; If there's nothing, allocate the new one.
 	       (loop for candidate of-type MemoryBlock in I
 		     if (and (null (find (memoryblock-id candidate) locked)) (freed-p mb time)
+			     ;; [TODO] Is the shape computed from Viewed or Original?
 			     (equal (buffer-shape (memoryblock-type candidate))
-				    (buffer-shape (memoryblock-type mb))))
+				    (buffer-shape (memoryblock-type mb)))
+			     (equal (buffer-dtype (memoryblock-type candidate))
+				    (buffer-dtype (memoryblock-type mb))))
 		       do (push candidate candidates))
 	       (flet ((use (x)
 			(push (memoryblock-id x) locked)
 			(return-from choose-from-fragments x)))
-		 ;; Use
-		 (when candidates
-		   (use (car (sort candidates #'> :key #'memoryblock-lifetime))))))
+		 (when candidates (use (car (sort candidates #'> :key #'memoryblock-lifetime))))))
 	     (apply-creation (time)
 	       (loop for mb of-type MemoryBlock in I
 		     if (allocate-p mb time) do
@@ -365,7 +336,7 @@ Statement:
 			     (setf (memoryblock-answer mb) (memoryblock-id mb))))))
 	     (apply-release (time)
 	       (loop for mb of-type MemoryBlock in I
-		     if (and (release-p mb time) (memoryblock-answer mb))  do
+		     if (and (release-p mb time) (memoryblock-answer mb)) do
 		       (setf locked (remove (memoryblock-answer mb) locked)))))
       (dotimes (time total-time)
 	(apply-creation time)
@@ -396,14 +367,13 @@ Lifespan:
 - T2 exists from t=c to t=d.
 - T1 and T2 are orthogonal.
 
-We resort to MIP.3
+(TODO: Update the description)
 Formulation:
 
 First, nodes are eager to make themselve in-place
 If making in-place strategy will corrupt the result of kernel, tries:
 - Using cached and realized buffer. (out of lifespan)
 - Allocating a new tensor, involving them into a stage.
-
 "
   (flet ((sync ()
 	   (dolist (node (graph-nodes (mp-graph mp))) (mp-update-node mp node))
@@ -431,7 +401,7 @@ If making in-place strategy will corrupt the result of kernel, tries:
 		      (if (find key outputs)
 			  total-time
 			  (apply #'max (Gethash key trace-table))))))
-	     (solved (solveDSA memory-blocks total-time))
+	     (solved (GreedySolveDSA memory-blocks total-time))
 	     (alias-map (mp-alias mp)))
 	(loop for mb in solved
 	      do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
@@ -441,12 +411,6 @@ If making in-place strategy will corrupt the result of kernel, tries:
 	  for kernel in (mp-kernels mp)
 	  if kernel do (dolist (k kernel) (apply-current-plan mp group k)))))
 
-;; - [ ] 最初にIndexのIN/OUTをはっきりさせる
-;;  - Reference_Countが尽きたIDを持って来たら自然とそうなる？
-;; - [ ] それ以外はScalarにして良い
-;;  - どのタイミングでやるか・・・
-;; - [ ] ScalarもIn-place mutationのアルゴリズムで，重複を減らす
-;; - [ ] IDを変更しないメリット: 時系列がはっきりする: expr-eqで重複する計算はLOADに書き換えることが可能
 (defmethod retrive-kernels ((mp MemoryPlanner))
   ;; - Index計算のSimplify
   ;; - Index計算が変わる要素は以下に絞れる

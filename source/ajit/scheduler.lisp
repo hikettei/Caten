@@ -865,7 +865,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
        groups)
       (let* ((mp (make-instance 'MemoryPlanner :avm avm :groups groups :debug debug :device backend))
 	     (_ (memory-plan mp))
-	     (kernels  (retrive-kernels mp))
+	     (kernels (retrive-kernels mp))
 	     (blueprints/codes
 	       (loop for group in groups
 		     for kernel in kernels
