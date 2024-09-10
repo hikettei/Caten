@@ -470,9 +470,10 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 			 (return-from ->scalar-p nil))
 		t))))
       (dolist (node related-nodes)
-	(dolist (w (node-writes node))
-	  (when (->scalar-p w)
-	    (push w scalars))))
+	(loop for w in (node-writes node)
+	      for typ in (relay-writes (read-type-relay node))
+	      if (and (not (= 0 (buffer-nrank typ))) (->scalar-p w)) do
+		(push w scalars)))
       ;; mutate all read dependencies
       (let ((seen))
 	(dolist (node related-nodes)
