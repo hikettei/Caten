@@ -432,7 +432,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
       (f node-reads relay-reads)
       (f node-writes relay-writes))))
 
-(defmethod output->scalar-mutation ((group group) (kernel kernel-renderer) dependency-list)
+(defmethod output->scalar-mutation ((mp MemoryPlanner) (group group) (kernel kernel-renderer) dependency-list)
   "
 Rewrites the graph:
 for (...) {
@@ -491,27 +491,30 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 		  if (null (find (argument-name arg) scalars))
 		    collect arg)))))
 
-(defmethod optimize-memory-load ((avm AVM) groups kernels)
+(defmethod optimize-memory-load ((mp MemoryPlanner))
   "Optimizes the memory latency by caching LOAD/STORE, and removes LOAD for unnecessary Variables"
-  (declare (type list groups kernels))
-  (assert (= (length groups) (length kernels)))
-  (let ((args-by-time
-	  (loop for g in groups
-		for k in kernels
-		if k
-		  collect (map 'list #'(lambda (x) (map 'list #'argument-name x)) (map 'list #'kernel-renderer-args k))
-		else
-		  collect (list (group-args g))))
-	(const-dependencies (append (avm-fw-outputs avm) (avm-bw-outputs avm))))
-    ;; 1. Remove outputs if unnecessary
-    (loop for g in groups
-	  for k in kernels
-	  for nth upfrom 0
-	  if k do
-	    (loop for kernel-renderer in k
-		  for ith upfrom 1
-		  for deps = (append
-			      const-dependencies
-			      (apply #'append (nthcdr (1+ nth) args-by-time))
-			      (apply #'append (nthcdr ith (nth nth args-by-time))))
-		  do (output->scalar-mutation g kernel-renderer deps)))))
+  (with-slots ((groups groups) (kernels kernels) (avm avm)) mp
+    (assert (= (length groups) (length kernels)))
+    (let ((args-by-time
+	    (loop for g in groups
+		  for k in kernels
+		  if k
+		    collect (map 'list #'(lambda (x) (map 'list #'argument-name x)) (map 'list #'kernel-renderer-args k))
+		  else
+		    collect (list (group-args g))))
+	  (const-dependencies (append (avm-fw-outputs avm) (avm-bw-outputs avm))))
+      ;; 1. Remove outputs if unnecessary
+      (loop for g in groups
+	    for k in kernels
+	    for nth upfrom 0
+	    if k do
+	      (loop for kernel-renderer in k
+		    for ith upfrom 1
+		    for deps = (flatten
+				(append
+				 const-dependencies
+				 (apply #'append (nthcdr (1+ nth) args-by-time))
+				 (apply #'append (nthcdr ith (nth nth args-by-time)))))
+		    do (output->scalar-mutation mp g kernel-renderer deps)))
+      ;; 2. TODO: Simplify Index Computation
+      )))

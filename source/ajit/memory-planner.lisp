@@ -459,7 +459,7 @@ If making in-place strategy will corrupt the result of kernel, tries:
   ;; [TODO] 計算したIndexをHash-Tableに保存+文字列ベースでCache+Minimize
   ;; Unrollingしたときは？
   (setf (mp-kernels mp) (remove-unused-kernels (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))
-  (optimize-memory-load (mp-avm mp) (mp-groups mp) (mp-kernels mp))
+  (optimize-memory-load mp)
   (loop for group in (mp-groups mp)
 	for kernels in (mp-kernels mp)
 	if (group-realize-on-vm group)
