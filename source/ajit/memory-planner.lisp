@@ -133,8 +133,9 @@ X <- f(x, y, reduction=t)"
 	  (avm-bw-outputs avm) (map 'list #'replacer (avm-bw-outputs avm))
 	  ;; vm-inputs are fixed (they are dynamic shapes)
 	  ;;(poly-vm-outputs polyhedral) (map 'list #'replacer (poly-vm-outputs polyhedral))
-	  ;;(group-args group) (map 'list #'newid (group-args group))
 	  )
+    (dolist (g (mp-groups mp))
+      (setf (group-args g) (map 'list #'replacer (group-args g))))
     (macrolet ((renew (accessor)
 		 `(let ((new-table (make-hash-table)))
 		    (maphash
@@ -415,6 +416,34 @@ If making in-place strategy will corrupt the result of kernel, tries:
 	  for kernel in (mp-kernels mp)
 	  if kernel do (dolist (k kernel) (apply-current-plan mp group k)))))
 
+(defun remove-unused-kernels (groups kernels meta-id
+			      &aux (static-read
+				    (append
+				     meta-id
+				     (loop for g in groups if (group-realize-on-vm g) append (group-args g)))))
+  (labels ((f (ks nth
+	       &aux
+		 (subsequent-reads
+		  (map 'list #'argument-name
+		       (apply #'append
+			      (map 'list #'kernel-renderer-args (apply #'append (nthcdr (1+ nth) kernels))))))
+		 (fix `(,@static-read ,@subsequent-reads)))
+	     (loop for kernel in ks
+		   for pos upfrom 1
+		   for deps = (append fix (map 'list #'argument-name (apply #'append (map 'list #'kernel-renderer-args (nthcdr pos ks)))))
+		   unless (every #'(lambda (x) (null (find (argument-name x) deps))) (kernel-renderer-args kernel))
+		     collect kernel))
+	   (r (&aux (changed-p nil))
+	     (loop for k in kernels
+		   for nth upfrom 0
+		   if k do
+		     (let ((new (f k nth)))
+		       (when (not (= (length new) (length k))) (setf changed-p t))
+		       (setf (nth nth kernels) new)))
+	     changed-p))
+    (loop while (r))
+    kernels))
+
 (defmethod retrive-kernels ((mp MemoryPlanner))
   ;; - Index計算のSimplify
   ;; - Index計算が変わる要素は以下に絞れる
@@ -424,8 +453,7 @@ If making in-place strategy will corrupt the result of kernel, tries:
   ;;   - 重複したINdex計算を根絶できる
   ;; [TODO] 計算したIndexをHash-Tableに保存+文字列ベースでCache+Minimize
   ;; Unrollingしたときは？
-
-  ;; 最終的なArgsと，Kernelのリストを生成する
+  (setf (mp-kernels mp) (remove-unused-kernels (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))
   (loop for group in (mp-groups mp)
 	for kernels in (mp-kernels mp)
 	if (group-realize-on-vm group)
@@ -435,4 +463,3 @@ If making in-place strategy will corrupt the result of kernel, tries:
 	  (loop for k in kernels
 		if (kernel-renderer-nodes k)
 		  collect (pack-loop-funcall k (group-polyhedron group) (device-packed-by (mp-device mp))))))
-
