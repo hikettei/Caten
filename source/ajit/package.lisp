@@ -10,7 +10,8 @@
    #:dtype/cast)
   ;; from helpers.lisp
   (:export
-   #:apply-static-gensym)
+   #:apply-static-gensym
+   #:unroll-suffix)
   ;; from isl-objects.lisp
   (:export
    #:form

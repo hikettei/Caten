@@ -511,3 +511,14 @@ in a single timestamp otherwise recursive dependencies will occur.
 
 (defun padding-list (list rank &key (with 0))
   (append list (loop for i in (range 0 (- rank (length list))) collect with)))
+
+(defun unroll-suffix (buffer unroll-offsets)
+  "Renders a suffix for a given number"
+  (flet ((f (idx) (find idx unroll-offsets :key #'car :test #'equalp)))
+    (apply
+     #'concatenate
+     'string
+     (loop for idx in (buffer-depend-idx-list buffer)
+	   for unroll = (and idx (f idx))
+	   if unroll
+	     append (list "_" (format nil "~a" (cdr unroll)))))))

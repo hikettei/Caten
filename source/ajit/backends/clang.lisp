@@ -11,6 +11,7 @@
 (defmethod device-packed-by ((id Clang)) 4)
 (defparameter *access* nil)
 (defparameter *args* nil)
+(defparameter *suffix* nil)
 (defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))
 
 (defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags))
@@ -177,8 +178,8 @@ Compiled with: ~a"
   (let ((ref (render-isl-aref rhs :genid #'(lambda (x) (nth x *access*)))))
     (if (string= ref "")
 	(if (args-p lhs)
-	    (format nil "(*~(~a~))" lhs)
-	    (format nil "~(~a~)" lhs))
+	    (format nil "(*~(~a~)~a)" lhs (unroll-suffix rhs *suffix*))
+	    (format nil "~(~a~)~a" lhs (unroll-suffix rhs *suffix*)))
 	(format nil "~(~a~)[~(~a~)]" lhs ref))))
 
 (defmethod %render-expr ((lang Clang) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
@@ -255,8 +256,10 @@ Compiled with: ~a"
 				     (getattr node :_unrolled)
 				     (list node)))
 		     (let ((idx (getattr node :idx))
-			   (args (map 'list #'(lambda (x) (r x)) (getattr node :args))))
-		     (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out))))))))))
+			   (args (map 'list #'(lambda (x) (r x)) (getattr node :args)))
+			   (*suffix* (getattr node :unroll-offsets)))
+		       (print *suffix*)
+		       (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out))))))))))
 
 (defun ->cdtype (dtype)
   (ecase dtype
@@ -297,8 +300,8 @@ Compiled with: ~a"
 		 (let ((ref (render-isl-aref type :genid #'(lambda (x) (nth x access)))))
 		   (if (string= ref "")
 		       (if (args-p id)
-			   (format nil "(*~(~a~))" id)
-			   (format nil "~(~a~)" id))
+			   (format nil "(*~(~a~)~a)" id (unroll-suffix type *suffix*))
+			   (format nil "~(~a~)~a" id (unroll-suffix type *suffix*)))
 		       (format nil "~(~a~)[~(~a~)]" id ref)))))
 	(loop with *access* = access
 	      for node in (graph-nodes graph)

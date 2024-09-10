@@ -315,7 +315,8 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 			     (map
 			      'list
 			      #'(lambda (x &aux (x (copy-expr x))) (expr-recursive-replace x #'mapper) x)
-			      (getattr node :args))))))
+			      (getattr node :args))
+			     :unroll-offsets (append (getattr node :unroll-offsets) (list (cons idx nth)))))))
 	      idx
 	      n-unroll))
  	   (unroll-valid-p (nodes)
@@ -410,6 +411,14 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	   (if (= (buffer-nrank buffer) 0)
 	       buffer
 	       (let ((new (make-const-buffer (buffer-dtype buffer))))
+		 (setf (buffer-depend-idx-list new)
+		       (loop for shape in (buffer-shape buffer)
+			     for nth upfrom 0
+			     for view = (nth nth (buffer-views buffer))
+			     if (or (null view) (null (fourth view)))
+			       collect (string-downcase (symbol-name (gid nth)))
+			     else
+			       collect nil))
 		 (when expr (expr-recursive-settype expr id new))
 		 new))))
     (macrolet ((f (ids types)
@@ -446,7 +455,6 @@ Rewrites the graph:
 		      (make-node :Buffer :Allocate (list w) nil :nrank 0 :dtype (buffer-dtype typ)
 				 :_type_relay (make-inferred-type nil (list typ)))
 		      allocs)))
-	(print (kernel-renderer-nodes kernel))
 	(print allocs)
 	)
       ;; Remove from args

@@ -14,7 +14,8 @@
   (stride stride :type list)
   (dtype dtype :type dtype-t)
   (views views :type list)
-  (inferred-permute nil :type list))
+  (inferred-permute nil :type list)
+  (depend-idx-list nil :type list))
 
 ;; methods start with % = users need to override it to implement new backends.
 (defgeneric %vm/allocate-buffer (device-id buffer)

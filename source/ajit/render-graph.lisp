@@ -33,9 +33,9 @@ Loop is either of :Global or :Local
 
 (defun r/for (idx upfrom below by) (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by))
 (defun r/endfor (idx) (make-node :Render :ENDFOR nil nil :idx idx))
-(defun r/funcall (name args)
+(defun r/funcall (name args &key (unroll-offsets))
   ;; :idx = (T12 -> 12)
-  (make-node :Render :FUNCALL nil nil :name name :args args :idx (parse-integer (subseq name 1))))
+  (make-node :Render :FUNCALL nil nil :name name :args args :idx (parse-integer (subseq name 1)) :unroll-offsets unroll-offsets))
 (defun r/if (condition) (make-node :Render :IF nil nil :condition condition))
 (defun r/else () (make-node :Render :ELSE nil nil))
 (defun r/endif () (make-node :Render :ENDIF nil nil))
