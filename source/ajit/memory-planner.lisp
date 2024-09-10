@@ -309,7 +309,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (= time (memoryblock-release mb)))
 
 (defmethod freed-p ((mb MemoryBlock) time)
-  (and (created-p mb time) (not (preserved-p mb time))))
+  (and (created-p mb time) (>= time (memoryblock-release mb))))
 
 ;; [TODO] Assuming the entire graph is "static", applying the `best-fit` schedule
 ;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY
@@ -319,9 +319,10 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   "A greedy solver for minimizing peak_mem"
   (declare (type list I))
   (let ((locked))
-    (labels ((choose-from-fragments (mb time &aux (candidates))
+    (labels ((choose-from-fragments (mb time &aux (candidates nil))
 	       (loop for candidate of-type MemoryBlock in I
-		     if (and (null (find (memoryblock-id candidate) locked)) (freed-p mb time)
+		     if (and (null (find (memoryblock-id candidate) locked))
+			     (freed-p candidate time)
 			     ;; [TODO] Is the shape computed from Viewed or Original?
 			     (equal (buffer-shape (memoryblock-type candidate))
 				    (buffer-shape (memoryblock-type mb)))
@@ -344,18 +345,14 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 		     if (and (release-p mb time) (memoryblock-answer mb)) do
 		       (setf locked (remove (memoryblock-answer mb) locked)))))
       (dotimes (time total-time)
-	(apply-creation time)
-	(apply-release time))
+	(apply-release time)
+	(apply-creation time))
       I)))
 
 (defmethod evaluate ((mp MemoryPlanner))
   ;; xxx MiB
   )
 
-;; やること
-;; - [ ] scalarにpropagateする
-;; -
-;; - Allocationの最適化
 (defmethod memory-plan ((mp MemoryPlanner) &aux (avm (mp-avm mp)))
   "Applies memory-optimization for the graph.
 Resourses:
@@ -389,12 +386,16 @@ If making in-place strategy will corrupt the result of kernel, tries:
 	   (total-time (length (graph-nodes (mp-graph mp))))
 	   (outputs (avm-bw-outputs avm)))
       (loop for node in (graph-nodes (mp-graph mp))
-	    for nth upfrom 0 do	    
-	      (loop for val in `(,@(node-reads1 node) ,@(node-writes node))
-		    for typ in `(,@(relay-reads1 node) ,@(relay-writes (read-type-relay node)))
+	    for nth upfrom 0 do
+	      (loop for val in (node-reads1 node)
+		    for typ in (relay-reads1 node)
 		    for time = `(,nth ,@(gethash val trace-table))
 		    if (symbolp val)
-		      do (setf (gethash val id2type) typ (gethash val trace-table) time)))
+		      do (setf (gethash val id2type) typ (gethash val trace-table) time))
+	      (loop for val in (node-writes node)
+		    for typ in (relay-writes (read-type-relay node))
+		    if (and (symbolp val) (null (gethash val trace-table)))
+		      do (setf (gethash val id2type) typ (gethash val trace-table) (list nth))))
       (let* ((memory-blocks
 	       (loop for key in (hash-table-keys trace-table)
 		     for typ = (gethash key id2type)
@@ -405,7 +406,7 @@ If making in-place strategy will corrupt the result of kernel, tries:
 		      ;; Set the longest time for gradients
 		      (if (find key outputs)
 			  total-time
-			  (apply #'max (Gethash key trace-table))))))
+			  (apply #'max (gethash key trace-table))))))
 	     (solved (GreedySolveDSA memory-blocks total-time))
 	     (alias-map (mp-alias mp)))
 	(loop for mb in solved
