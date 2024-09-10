@@ -864,8 +864,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x backend))))
        groups)
       (let* ((mp (make-instance 'MemoryPlanner :groups groups :debug debug :device backend))
-	     (_ (memory-plan mp))
-	     (refcount (create-reference-counter groups))
+	     (_ (memory-plan mp avm))
 	     (kernels  (retrive-kernels mp))
 	     (blueprints/codes
 	       (loop for group in groups
@@ -879,7 +878,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	(values
 	 (map 'list #'car blueprints/codes)
 	 final-code
-	 refcount)))))
+	 mp)))))
 
 (defun jit (base-avm
 	    &key
@@ -897,13 +896,13 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type (integer 0 4) debug)
 	   (type boolean serialize)
 	   (ignore  _))
-  (multiple-value-bind (compiled-kernels code refcount)
+  (multiple-value-bind (compiled-kernels code)
       (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil)
     (declare (ignore code))
     (make-avm
      (clean-up-attrs
       (optimize-non-in-place-buffers
-       base-avm avm refcount
+       base-avm avm
        (remove-unused-allocs
 	(apply
 	 #'make-graph

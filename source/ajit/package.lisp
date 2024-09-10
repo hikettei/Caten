@@ -1,6 +1,6 @@
 (in-package :cl-user)
 (defpackage :caten/ajit
-  (:use :cl :alexandria :caten/aasm :caten/air :caten/avm :caten/isl :cffi :linear-programming)
+  (:use :cl :alexandria :caten/aasm :caten/air :caten/avm :caten/isl :cffi)
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:import-from
@@ -55,9 +55,6 @@
    #:poly-avm
    #:poly-pipeline
    )
-  ;; from memory-planner.lisp
-  (:export
-   #:node/in-place-mutation)
   ;; from renderer.lisp
   (:export
    #:%render-function-caller
