@@ -3,14 +3,12 @@
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
   :depends-on ("caten.isl" "trivia" "alexandria" "cffi" "trivial-garbage" "cl-yaml")
-  :serial t
   :components
   ((:file "package")
    (:file "helpers")
    (:file "simplifiers")
    (:file "type-relay")
    (:file "polyhedral")
-   (:file "memory-planner")
    (:file "scheduler")
    (:file "isl-objects")
    (:file "isl-ast-helpers")
@@ -18,6 +16,7 @@
    (:file "render-graph")   
    (:file "kernel-info")
    (:file "multiexpr")
+   (:file "memory-planner")
    (:file "device")
    (:file "renderer")
    (:file "backends/clang"))
