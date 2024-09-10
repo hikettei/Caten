@@ -12,7 +12,7 @@
 ;; - https://dl.acm.org/doi/pdf/10.5555/314500.315082
 
 ;; TODO: Improve Memory_Planner (Support Statement and Symbolic) (OK)
-;; TODO: 必要ないカーネルはCompileしない
+;; TODO: 必要ないカーネルはCompileしない (OK)
 ;; TODO: out deps -> float mutation (カーネル間の依存を考えればOK)
 ;;     - カーネル間に依存がないOUTPUTはscalarにする
 ;; TODO: Index Computation Simplification
@@ -454,6 +454,7 @@ If making in-place strategy will corrupt the result of kernel, tries:
   ;; [TODO] 計算したIndexをHash-Tableに保存+文字列ベースでCache+Minimize
   ;; Unrollingしたときは？
   (setf (mp-kernels mp) (remove-unused-kernels (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))
+  (optimize-memory-load (mp-avm mp) (mp-groups mp) (mp-kernels mp))
   (loop for group in (mp-groups mp)
 	for kernels in (mp-kernels mp)
 	if (group-realize-on-vm group)

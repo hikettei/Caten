@@ -28,6 +28,17 @@
 		      (when (expr-p (expr-y expr)) (expr-recursive-deps (expr-y expr)))
 		      (when (expr-p (expr-z expr)) (expr-recursive-deps (expr-z expr)))))
     out))
+
+(defun expr-recursive-settype (expr id buffer)
+  (declare (type expr expr) (type symbol id) (type buffer buffer))
+  (when (and
+	 (eql (expr-op expr) :AREF)
+	 (eql (expr-x expr) id))
+    (setf (expr-y expr) buffer))
+  (when (expr-p (expr-x expr)) (expr-recursive-settype (expr-x expr) id buffer))
+  (when (expr-p (expr-y expr)) (expr-recursive-settype (expr-y expr) id buffer))
+  (when (expr-p (expr-z expr)) (expr-recursive-settype (expr-z expr) id buffer)))
+
 ;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((expr (name (&rest args) (&rest types))
 	     `(defun ,(symb 'make- name) (,@args)

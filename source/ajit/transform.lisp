@@ -401,3 +401,76 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 (defmethod ->render-graph ((group Group))
   (when (group-polyhedron group)
     (render-graph-from-polyhedral (group-polyhedron group) (graph-nodes (group-render-graph group)))))
+
+;; ~~ Memory Latency Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; TODO: Optimize matmul loading
+;; TODO: Support Unrolling (create suffix and rename all scalars if unrolled e.g.: val_8_0)
+(defmethod update-buffer-as-scalar ((node Node) mutated-list)
+  (flet ((mutate-scalar-buffer (id buffer expr)
+	   (if (= (buffer-nrank buffer) 0)
+	       buffer
+	       (let ((new (make-const-buffer (buffer-dtype buffer))))
+		 (when expr (expr-recursive-settype expr id new))
+		 new))))
+    (macrolet ((f (ids types)
+		 `(loop for val in (,ids node)
+			for type in (,types (read-type-relay node))
+			for nth upfrom 0
+			if (find val mutated-list) do
+			  (setf (nth nth (,types (read-type-relay node))) (mutate-scalar-buffer val type (when (eql (node-type node) :EXPR) (getattr node :EXPR)))))))
+      (f node-reads relay-reads)
+      (f node-writes relay-writes))))
+
+(defmethod output->scalar-mutation ((group group) (kernel kernel-renderer) dependency-list)
+  "
+Rewrites the graph:
+"
+  (let ((scalars) (related-nodes (renderer-get-nodes group kernel)))
+    (flet ((->scalar-p (id)
+	     (and
+	      (let ((out (find id (kernel-renderer-args kernel) :key #'argument-name)))
+		(and out (eql :output (argument-io out))))
+	      (null (find id dependency-list)))))
+      (dolist (node related-nodes)
+	(dolist (w (node-writes node))
+	  (when (->scalar-p w)
+	    (push w scalars))))
+      ;; mutate all read dependencies
+      (let ((seen))
+	(dolist (node related-nodes)
+	  (update-buffer-as-scalar node scalars)
+	  (setf (getattr node :declare-type)
+		(loop for w in (node-writes node)
+		      if (and (null (find w seen)) (find w scalars))
+			collect w))))      
+      ;; Remove from args
+      (setf (kernel-renderer-args kernel)
+	    (loop for arg in (kernel-renderer-args kernel)
+		  if (null (find (argument-name arg) scalars))
+		    collect arg)))))
+
+(defmethod optimize-memory-load ((avm AVM) groups kernels)
+  "Optimizes the memory latency by caching LOAD/STORE, and removes LOAD for unnecessary Variables"
+  (declare (type list groups kernels))
+  (assert (= (length groups) (length kernels)))
+  (let ((args-by-time
+	  (loop for g in groups
+		for k in kernels
+		if k
+		  collect (map 'list #'(lambda (x) (map 'list #'argument-name x)) (map 'list #'kernel-renderer-args k))
+		else
+		  collect (list (group-args g))))
+	(const-dependencies (append (avm-fw-outputs avm) (avm-bw-outputs avm))))
+    ;; 1. Remove outputs if unnecessary
+    (loop for g in groups
+	  for k in kernels
+	  for nth upfrom 0
+	  if k do
+	    (loop for kernel-renderer in k
+		  for ith upfrom 1
+		  for deps = (append
+			      const-dependencies
+			      (apply #'append (nthcdr (1+ nth) args-by-time))
+			      (apply #'append (nthcdr ith (nth nth args-by-time))))
+		  do (output->scalar-mutation g kernel-renderer deps)))
+    ))
