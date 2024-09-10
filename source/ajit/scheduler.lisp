@@ -863,8 +863,8 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
 	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x backend))))
        groups)
-      (let* ((mp (make-instance 'MemoryPlanner :groups groups :debug debug :device backend))
-	     (_ (memory-plan mp avm))
+      (let* ((mp (make-instance 'MemoryPlanner :avm avm :groups groups :debug debug :device backend))
+	     (_ (memory-plan mp))
 	     (kernels  (retrive-kernels mp))
 	     (blueprints/codes
 	       (loop for group in groups

@@ -56,17 +56,29 @@ should be used instead"
 	(push w seen)))
     (reverse depends-on)))
 
+(defun node-reads1 (node)
+  "Ignores the first read var of :EXPR"
+  (if (eql :EXPR (node-type node))
+      (cdr (node-reads node))
+      (node-reads node)))
+
+(defun relay-reads1 (node)
+  "Ignores the first read var of :EXPR"
+  (if (eql :EXPR (node-type node))
+      (cdr (relay-reads (read-type-relay node)))
+      (relay-reads (read-type-relay node))))
+
 (defun nodes-depends-on/buffers (nodes)
   "Enumerates the unsolved buffer ids from the sched graph."
   (declare (type list nodes))
   (let ((seen `(t nil)) (depends-on))
     (loop for node in nodes do
-      (loop for r in `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))
-	    for typ in `(,@(relay-reads (read-type-relay node)) ,@(getattr node :_loop_bound_nodes_type))
+      (loop for r in `(,@(node-reads1 node) ,@(getattr node :_loop_bound_nodes))
+	    for typ in `(,@(relay-reads1 node) ,@(getattr node :_loop_bound_nodes_type))
 	    if (null (find r seen)) do
 	      (when (symbolp r) (push (cons r typ) depends-on))
 	      (push r seen))
-      (loop for read in (node-reads node) do
+      (loop for read in (node-reads1 node) do
 	(loop for shape in (buffer-reconstruct-view-args read)
 	      if (null (find shape seen)) do
 		(push (cons shape (make-uconst-buffer)) depends-on)

@@ -21,24 +21,27 @@
   (loop for node in (graph-nodes graph) if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
 
 ;; ~~ Simplifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun simplify-groups (groups)
+(defun simplify-groups (mp groups)
   "Simplifies the given groups"
   (declare (type list groups))
   (mapc
    (compose
-    #'group-apply-reduction
+    #'(lambda (x) (group-apply-reduction mp x))
     #'group-apply-load-simplification)
    groups)
   groups)
 
-(defmethod group-apply-reduction ((group Group))
+(defmethod group-apply-reduction ((mp MemoryPlanner) (group Group))
   "Rewriting:
 OUT <- f(x, y, reduction=t)
 as
 X <- f(x, y, reduction=t)"
   (loop for node in (graph-nodes (group-graph group))
-	if (getattr node :reduction)
-	  do (setf (car (node-writes node)) (car (node-reads node))))
+	if (getattr node :reduction) do
+	  (let ((from (car (node-writes node)))
+		(to   (car (node-reads1 node))))
+	    (setf (gethash from (mp-alias mp)) to
+		  (car (node-writes node)) to)))
   group)
 
 (defmethod group-apply-load-simplification ((group Group))
@@ -47,6 +50,7 @@ X <- f(x, y, reduction=t)"
 ;; ~~ MemoryPlanner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass MemoryPlanner ()
   ((groups :initarg :groups :initform nil :accessor mp-groups)
+   (avm :initarg :avm :accessor mp-avm)
    (device :initarg :device :accessor mp-device)
    (graph  :initform nil :accessor mp-graph)
    (kernels :initform nil :accessor mp-kernels)
@@ -66,7 +70,7 @@ Slots:
   (when (>= (mp-debug mp) 1)
     (format stream "MemoryPlanner : ~a~%" (apply #'format nil str more))))  
 
-(defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups groups)))
+(defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups mp groups)))
   (setf (mp-groups mp) groups
 	(mp-kernels mp) (map 'list #'->render-graph groups)
 	(mp-graph mp)
@@ -180,7 +184,7 @@ Slots:
       for (name . type) in (nodes-depends-on/buffers nodes)
       for sv4bw-p = (is-sv4bw group name)
       for written-deps = (find name nodes :key #'node-writes :test #'find)
-      for read-deps    = (find name nodes :key #'node-reads  :test #'find)
+      for read-deps    = (find name nodes :key #'node-reads1  :test #'find)
       do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type))
 	       (buffer-shape type) (loop for s in (buffer-shape type)
 					 for nth upfrom 0
@@ -205,7 +209,7 @@ Slots:
 	  out))
     ;; Tensors firstly appeared in the write. (a.k.a: failed-in-place-tensors)
     (loop
-      with read-set = (map 'list #'node-reads nodes)
+      with read-set = (map 'list #'node-reads1 nodes)
       for node in nodes
       for nth upfrom 0 do
 	(loop for write in (node-writes node)
@@ -333,6 +337,7 @@ Statement:
   (declare (type list I))
   ;; StatementのOffsetが低くなるようにi.e.: peak_mem_usageがなるべく低くなるように配置
   ;; Total_Size <= mo ok
+  ;; argmin peak_mem
   (let ((statement (make-array total-time :element-type 'fixnum :initial-element 0))
 	(locked))
     (labels ((choose-from-fragments (mb time &aux (candidates))
@@ -375,7 +380,7 @@ Statement:
 ;; - [ ] scalarにpropagateする
 ;; -
 ;; - Allocationの最適化
-(defmethod memory-plan ((mp MemoryPlanner) avm)
+(defmethod memory-plan ((mp MemoryPlanner) &aux (avm (mp-avm mp)))
   "Applies memory-optimization for the graph.
 Resourses:
 - https://arxiv.org/pdf/2203.00448
@@ -400,31 +405,41 @@ If making in-place strategy will corrupt the result of kernel, tries:
 - Allocating a new tensor, involving them into a stage.
 
 "
-  (let* ((trace-table (make-hash-table))
-	 (id2type (make-hash-table)))
-    (loop for node in (graph-nodes (mp-graph mp))
-	  for nth upfrom 0 do
-	    (loop for val in `(,@(node-reads node) ,@(node-writes node))
-		  for typ in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
-		  for time = `(,nth ,@(gethash val trace-table))
-		  if (symbolp val)
-		    do (setf (gethash val id2type) typ (gethash val trace-table) time)))
-    (let* ((memory-blocks
-	    (loop for key in (hash-table-keys trace-table)
-		  for typ = (gethash key id2type)
-		  collect
-		  (make-memoryblock key typ (apply #'min (gethash key trace-table)) (apply #'max (Gethash key trace-table)))))
-	   (solved (solveDSA memory-blocks (length (graph-nodes (mp-graph mp)))))
-	   (alias-map (make-hash-table)))
-      (loop for mb in solved
-	    do (setf (gethash (memoryblock-id mb) alias-map) (memoryblock-answer mb)))
-      (setf (mp-alias mp) alias-map)))
-  
-  (dolist (node (graph-nodes (mp-graph mp))) (mp-update-node mp node))
-  (mp-update-avm mp avm)
-  (loop for group in (mp-groups mp)
-	for kernel in (mp-kernels mp)
-	if kernel do (dolist (k kernel) (apply-current-plan mp group k))))
+  (flet ((sync ()
+	   (dolist (node (graph-nodes (mp-graph mp))) (mp-update-node mp node))
+	   (mp-update-avm mp avm)))
+    (sync)
+    (let* ((trace-table (make-hash-table))
+	   (id2type (make-hash-table))
+	   (total-time (length (graph-nodes (mp-graph mp))))
+	   (outputs (avm-bw-outputs avm)))
+      (loop for node in (graph-nodes (mp-graph mp))
+	    for nth upfrom 0 do	    
+	      (loop for val in `(,@(node-reads1 node) ,@(node-writes node))
+		    for typ in `(,@(relay-reads1 node) ,@(relay-writes (read-type-relay node)))
+		    for time = `(,nth ,@(gethash val trace-table))
+		    if (symbolp val)
+		      do (setf (gethash val id2type) typ (gethash val trace-table) time)))
+      (let* ((memory-blocks
+	       (loop for key in (hash-table-keys trace-table)
+		     for typ = (gethash key id2type)
+		     collect
+		     (make-memoryblock
+		      key typ
+		      (apply #'min (gethash key trace-table))
+		      ;; Set the longest time for gradients
+		      (if (find key outputs)
+			  total-time
+			  (apply #'max (Gethash key trace-table))))))
+	     (solved (solveDSA memory-blocks total-time))
+	     (alias-map (mp-alias mp)))
+	(loop for mb in solved
+	      do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
+	(setf (mp-alias mp) alias-map)))
+    (sync)
+    (loop for group in (mp-groups mp)
+	  for kernel in (mp-kernels mp)
+	  if kernel do (dolist (k kernel) (apply-current-plan mp group k)))))
 
 ;; - [ ] 最初にIndexのIN/OUTをはっきりさせる
 ;;  - Reference_Countが尽きたIDを持って来たら自然とそうなる？
