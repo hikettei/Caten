@@ -436,13 +436,19 @@ Rewrites the graph:
 	  (when (->scalar-p w)
 	    (push w scalars))))
       ;; mutate all read dependencies
-      (let ((seen))
+      (let ((seen) (allocs))
 	(dolist (node related-nodes)
 	  (update-buffer-as-scalar node scalars)
-	  (setf (getattr node :declare-type)
-		(loop for w in (node-writes node)
-		      if (and (null (find w seen)) (find w scalars))
-			collect w))))      
+	  (loop for w in (node-writes node)
+		for typ in (relay-writes (read-type-relay node))
+		if (and (null (find w seen)) (find w scalars))
+		  do (push
+		      (make-node :Buffer :Allocate (list w) nil :nrank 0 :dtype (buffer-dtype typ)
+				 :_type_relay (make-inferred-type nil (list typ)))
+		      allocs)))
+	(print (kernel-renderer-nodes kernel))
+	(print allocs)
+	)
       ;; Remove from args
       (setf (kernel-renderer-args kernel)
 	    (loop for arg in (kernel-renderer-args kernel)
@@ -472,5 +478,4 @@ Rewrites the graph:
 			      const-dependencies
 			      (apply #'append (nthcdr (1+ nth) args-by-time))
 			      (apply #'append (nthcdr ith (nth nth args-by-time))))
-		  do (output->scalar-mutation g kernel-renderer deps)))
-    ))
+		  do (output->scalar-mutation g kernel-renderer deps)))))
