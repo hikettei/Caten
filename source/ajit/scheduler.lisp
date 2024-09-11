@@ -394,12 +394,14 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		   (if (gethash key lex)
 		       (push time (gethash key lex))
 		       (setf (gethash key lex) (list time)))))))
-      ;; [TODO] 
-      ;; 2  2    2
-      ;; \  /   /
-      ;;   1   1
-      ;;    \ / 
-      ;;     0         1
+      ;; Labelling the schedule dependency w/ lexicographical order
+      ;; [TODO] that should look like below, not starting with `time`?
+      ;; wanna consider this when optimizing backward process; it usually has multiple outputs.
+      ;; 2  2    2    ...
+      ;; \  /   /      |
+      ;;   1   1       4
+      ;;    \ /        |
+      ;;     0         3
       ;; 
       (loop for time upfrom 0
 	    for id in (nodes-output-ids (graph-nodes graph))
