@@ -599,11 +599,9 @@
 	  (ok (< (abs (- avg3 0.5)) 0.1))
 	  (ng (some #'= first-rand scnd-rand third-rand)))))))
 
-(caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
-  (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
+(caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa fromb tob)
+  (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob))))
 
 (deftest call-aot
-  (if (= (ctx:getenv :JIT) 1) (skip "Skipped for a JIT"))
-  (when (= (ctx:getenv :JIT) 0)
-    (let ((a (with-device :lisp (proceed (ax+b `(3 3) 1 1)))) (b (with-device :lisp (proceed (ax+b `(3 3) 1 1)))))
-      (ok (every #'= #(2 4 6 8 10 12 14 16 18) (elements (axpy :float32 a b 9 0 9 1 0 9 1)))))))
+  (let ((a (with-device :lisp (proceed (ax+b `(3 3) 1 1)))) (b (with-device :lisp (proceed (ax+b `(3 3) 1 1)))))
+    (ok (every #'= #(2 4 6 8 10 12 14 16 18) (elements (axpy :float32 a b 9 0 9 0 9))))))

@@ -18,7 +18,7 @@
   (load-p t :type boolean)) ;; the count of outermost loops
 (defmethod make-load-form ((jit Jit-Info) &optional env)
   (declare (ignore env))
-  `(make-jit-info :argtypes ,(jit-info-argtypes jit) :fname ,(jit-info-fname jit) :caller ,(jit-info-caller-body jit) :caller-body nil :lang ,(jit-info-lang jit) :code ,(jit-info-code jit) :n-kernels ,(jit-info-n-kernels jit) :load-p nil))
+  `(make-jit-info :argtypes ',(jit-info-argtypes jit) :fname ,(jit-info-fname jit) :caller ,(jit-info-caller-body jit) :caller-body nil :lang ,(jit-info-lang jit) :code ,(jit-info-code jit) :n-kernels ,(jit-info-n-kernels jit) :load-p nil))
 (defmethod print-object ((s jit-info) stream) (format stream "<~a[~a] Code [~a kernels]>" (jit-info-lang s) (jit-info-fname s) (jit-info-n-kernels s)))
 (defun make-fused-kernel-caller (fname args lambda fcaller-body code lang n-kernels)
   (declare (type device lang))
