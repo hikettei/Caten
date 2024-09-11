@@ -325,6 +325,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 		     if (and (null (find (memoryblock-id candidate) locked))
 			     (freed-p candidate time)
 			     ;; [TODO] Is the shape computed from Viewed or Original?
+			     (buffer-shape (memoryblock-type candidate)) ;; Dont mutate scalars	     
 			     (equal (buffer-shape (memoryblock-type candidate))
 				    (buffer-shape (memoryblock-type mb)))
 			     (equal (buffer-dtype (memoryblock-type candidate))
