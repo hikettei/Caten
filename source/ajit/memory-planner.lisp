@@ -325,7 +325,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 		     if (and (null (find (memoryblock-id candidate) locked))
 			     (freed-p candidate time)
 			     ;; [TODO] Is the shape computed from Viewed or Original?
-			     (buffer-shape (memoryblock-type candidate)) ;; Dont mutate scalars	     
+			     (buffer-shape (memoryblock-type mb)) ;; Dont mutate scalars
 			     (equal (buffer-shape (memoryblock-type candidate))
 				    (buffer-shape (memoryblock-type mb)))
 			     (equal (buffer-dtype (memoryblock-type candidate))
@@ -494,10 +494,10 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 		      with end   = (position (apply #'max search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx))))
 		      for nth upfrom start to end
 		      for ir = (nth nth nodes)
-		      if (eql (node-type ir) :FOR)
+		      if (find (node-type ir) `(:IF :FOR))
 			do (incf depth)
-		      else if (eql (node-type ir) :ENDFOR)
-			     do (decf depth)
+		      else if (find (node-type ir) `(:ENDIF :ENDFOR))
+		        do (decf depth)
 		      end
 		      if (< depth 0) do
 			(return-from ->scalar-p nil))
