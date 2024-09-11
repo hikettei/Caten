@@ -17,9 +17,9 @@
   ;; Metadata for JIT
   (inferred-permute nil :type list)
   (depend-idx-list nil :type list)
-  (shape-base (copy-list shape) :type list)
-  (stride-base (copy-list stride) :type list)
-  (views-base (copy-list views) :type list))
+  (shape-base nil :type list)
+  (stride-base nil :type list)
+  (views-base nil :type list))
 
 ;; methods start with % = users need to override it to implement new backends.
 (defgeneric %vm/allocate-buffer (device-id buffer)

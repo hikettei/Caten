@@ -80,6 +80,11 @@ X <- f(x, y, reduction=t)"
 
 (defmethod mp-update-buffer ((mp MemoryPlanner) buffer)
   (flet ((new (x) (mp-newid mp (reveal-buffer x))))
+    (when (null (buffer-shape-base buffer))
+      ;; Avoid applying duplicated mp-newid
+      (setf (buffer-shape-base buffer) (copy-list (buffer-shape buffer))
+	    (buffer-stride-base buffer) (copy-list (buffer-stride buffer))
+	    (buffer-views-base buffer) (copy-list (buffer-views buffer))))	    
     (setf (buffer-shape buffer) (map 'list #'new (buffer-shape-base buffer))
 	  (buffer-stride buffer) (map 'list #'new (buffer-stride-base buffer))
 	  (buffer-views buffer)
@@ -178,15 +183,7 @@ X <- f(x, y, reduction=t)"
 					       if (or (null view) (null (nth 3 view)))
 						 collect s
 					       else
-						 collect 1)
-		   (buffer-shape-base buffer) (map 'list #'reveal-buffer (buffer-shape-base buffer))
-		   (buffer-shape-base buffer) (loop for s in (buffer-shape-base buffer)
-						    for nth upfrom 0
-						    for view = (nth nth (buffer-views buffer))
-						    if (or (null view) (null (nth 3 view)))
-						      collect s
-						    else
-						      collect 1))))
+						 collect 1))))
       ;; Tensors firstly appeared in the read
       (loop
 	for (name . type) in (nodes-depends-on/buffers nodes)

@@ -451,7 +451,7 @@
 	(b (ax+b `(4 3) 0 1)))
     (ok (equal-to 4) (elements (proceed (!matmul a b)))))
   (let ((m (proceed (!matmul (ax+b `(3 4) 1 1) (ax+b `(4 3) 1 1)))))
-    (ok (every #'= (elements m) #(70 80 90 158 184 210 246 288 330)) "TODO: Update")))
+    (ok (every #'= (elements m) #(70 80 90 158 184 210 246 288 330)))))
 ;; TODO: 1024x1024x1024 gemm
 (deftest broadcast-regression-test
   (ok (every #'= (elements (proceed (!mul (ax+b `(1 10) 1 0) (ax+b `(10 1) 1 0))))
