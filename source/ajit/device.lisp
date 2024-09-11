@@ -1,4 +1,8 @@
 (in-package :caten/ajit)
+;;
+;; Device. An abstraction class for the renderer.
+;;
+;;
 
 (defclass Device () nil)
 ;; Configurations

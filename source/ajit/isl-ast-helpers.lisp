@@ -1,6 +1,15 @@
 (in-package :caten/ajit)
-;; Translates From ISL_AST -> Lisp_AST
-;; ~~ Lisp AST ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [isl-ast-helper.lisp]
+;; Translator from ISL-AST to Lisp Object.
+;; `Expr` is a slightly special, because the renderer also uses it.
+;; other ASTs use it for ajit and eliminated in the compiling process
+;; Expr is a lisp structure having following format:
+;;
+;;    Expr(op, x, y, z)
+;; op is a keyword indicating the object.
+;; Expr is a very useful data structure, used for nested calculations, FOR and IF conditions, etc.
+;; Identity can be verified by using expr-eq.
+;; ~~ Lisp AST ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (ASTBlock
 	    (:constructor make-block (body)))
   (body body :type list))

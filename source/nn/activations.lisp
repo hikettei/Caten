@@ -13,14 +13,14 @@
 (defmodel (ReLU () :where "A[~] -> A[~]") ())
 (defmethod call ((op ReLU) &rest inputs)
   (!maximum (car inputs) (!const (car inputs) 0)))
-(defun !relu (x) (call (ReLU) x))
+(defun !relu (x) (forward (ReLU) x))
 
 (defmodel (LeakyReLU (&key (neg-slope 1e-3)) :where "A[~] -> A[~]") ((neg-slope neg-slope)))
 (defmethod call ((op LeakyReLU) &rest inputs)
   (multiple-value-bind (x) (apply #'values inputs)
     (with-slots ((neg-slope neg-slope)) op
       (!sub (!relu x) (!relu (!mul x (!neg (fconst neg-slope :dtype (dtype-of x)))))))))
-(defun !leaky-relu (x &key (neg-slope 1e-3)) (call (LeakyReLU :neg-slope neg-slope) x))
+(defun !leaky-relu (x &key (neg-slope 1e-3)) (forward (LeakyReLU :neg-slope neg-slope) x))
 
 (defun _softmax (x &key (axis -1))
   (let* ((m (!sub x (!max x :axis axis :keepdims t)))
@@ -34,14 +34,14 @@
       (multiple-value-bind (m e ss) (_softmax x :axis axis)
 	(declare (ignore e))
 	(!sub m (!log ss))))))
-(defun !log-softmax (x &key (axis -1)) (call (LogSoftmax :axis axis) x))
+(defun !log-softmax (x &key (axis -1)) (forward (LogSoftmax :axis axis) x))
 
 (defmodel (ELU (&key (alpha 1.0)) :where "A[~] -> A[~]") ((alpha alpha)))
 (defmethod call ((op ELU) &rest inputs)
   (multiple-value-bind (x) (apply #'values inputs)
     (with-slots ((alpha alpha)) op
       (!sub (!relu x) (!relu (!mul (!const x alpha) (!sub (!const x 1) (!exp x))))))))
-(defun !elu (x &key (alpha 1.0)) (call (ELU :alpha alpha) x))
+(defun !elu (x &key (alpha 1.0)) (forward (ELU :alpha alpha) x))
 
 (defmodel (ReLU6 () :where "A[~] -> A[~]") ())
 (defmethod call ((op ReLU6) &rest inputs)
@@ -54,19 +54,19 @@
   (multiple-value-bind (m e ss) (_softmax (car inputs) :axis (softmax-axis op))
     (declare (ignore m))
     (!div e ss)))
-(defun !softmax (x &key (axis -1)) (call (Softmax :axis axis) x))
+(defun !softmax (x &key (axis -1)) (forward (Softmax :axis axis) x))
 
 (defmodel (Softplus (&key (beta 1.0)) :where "A[~] -> A[~]") ((beta beta)))
 (defmethod call ((op Softplus) &rest inputs)
   (with-slots ((beta beta)) op
     (!mul (!const (car inputs) (/ 1 beta)) (!log (!add (!const (car inputs) 1) (!exp (!mul (car inputs) (!const (car inputs) beta))))))))
-(defun !softplus (x &key (beta 1.0)) (call (SoftPlus :beta beta) x))
+(defun !softplus (x &key (beta 1.0)) (forward (SoftPlus :beta beta) x))
 
 (defmodel (Softsign () :where "A[~] -> A[~]") ())
 (defmethod call ((op Softsign) &rest inputs)
   (let ((x (car inputs)))
     (!div x (!+ (!const x 1) (!abs x)))))
-(defun !softsign (x) (call (Softsign) x))
+(defun !softsign (x) (forward (Softsign) x))
 ;; TODO: SoftShrink
 (defmodel (CeLU (&key (alpha 1.0)) :where "A[~] -> A[~]") ((alpha alpha)))
 (defmethod call ((op CeLU) &rest inputs)
@@ -78,7 +78,7 @@
 
 (defmodel (SiLU () :where "A[~] -> A[~]") ())
 (defmethod call ((op SiLU) &rest inputs &aux (x (car inputs))) (!mul x (!sigmoid x)))
-(defun !silu (x) (call (SiLU) x))
+(defun !silu (x) (forward (SiLU) x))
 ;; TODO: LogSigmoid
 (defmodel (GeLU (&key (approx :tanh)) :where "A[~] -> A[~]") ((approx approx)))
 (defmethod gelu/call ((op GeLU) (approx (eql :tanh)) x)
@@ -86,13 +86,13 @@
 (defmethod gelu/call ((op GeLU) (approx (eql :sigmoid)) x)
   (!mul x (!sigmoid (!* (!const x 1.702) x))))
 (defmethod call ((op GeLU) &rest inputs) (gelu/call op (slot-value op 'approx) (car inputs)))
-(defun !gelu (x &key (approx :tanh)) (call (GeLU :approx approx) x))
+(defun !gelu (x &key (approx :tanh)) (forward (GeLU :approx approx) x))
 ;; TODO: SeLU
 ;; TODO: Mish (needs tanh)
 (defmodel (HardSwish () :where "A[~] -> A[~]") ())
 (defmethod call ((op HardSwish) &rest inputs &aux (x (car inputs)))
   (!* x (!relu6 (!add x (!const x 3))) (!const x (/ 1 6))))
-(defun !hardswish (x) (call (HardSwish) x))
+(defun !hardswish (x) (forward (HardSwish) x))
 ;; TODO: Hard_Tanh
 ;; TODO: Softmin
 (in-package :caten/nn.test)
@@ -141,7 +141,9 @@
 		 (let ((sum (proceed (!contiguous (!sum x :axis -1)))))
 		   (every #'(lambda (x) (<= (abs (- x 1.0)) 1e-1)) (elements sum)))
 		 (every (~= 1e-6) (elements x) (elements y)))
-  :in-place ((model) (= 1 (n-args `(512 256) model)))
+  :in-place ((model) (and
+		      (= 1 (n-args `(512 256) model))
+		      (= 0 (n-args `(512 1) model))))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (define-nn-test LogSoftmax
@@ -153,8 +155,8 @@
   :lisp  ((model x) (proceed (!log-softmax x)))
   :assert-close ((x y)
 		 (every (~= 1e-6) (elements x) (elements y)))
-  :in-place ((model) (= 2 (n-args `(512 256) model)))
-  :kernel   ((model) (= 2 (n-kernels model))))
+  :in-place ((model) (= 1 (n-args `(512 256) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun elu-lisp (x &aux (alpha 1.0)) (- (relu-lisp x) (relu-lisp (* alpha (- 1 (exp x))))))
 (define-nn-test ELU
@@ -194,10 +196,10 @@
 (define-nn-test SoftSign
   "Testing w/ SoftSign([100, 100])"
   :compile (caten (!softsign (make-tensor `(100 100) :from 'x)))
-  :inputs  (list (proceed (ax+b `(100 100) -0.001 1)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.01 1.0)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'softsign-lisp x))))
-  :assert-close ((x y) (every (~= 1e-3) x y))
+  :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 1 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
@@ -219,7 +221,7 @@
   :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'silu-lisp x))))
-  :assert-close ((x y) (every (~= 1e-3) x y)) ;; Sigmoid is very unstable; needs more fusion. especially recip.
+  :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 1 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
@@ -230,8 +232,8 @@
   :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'gelu-lisp x))))
-  :assert-close ((x y) (every (~= 1e-1) x y))
-  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun hardswish-lisp (x) (* x (relu6-lisp (+ x 3.0)) (/ 1 6)))
@@ -241,6 +243,6 @@
   :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'hardswish-lisp x))))
-  :assert-close ((x y) (every (~= 1e-3) x y))
-  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 1 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))

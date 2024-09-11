@@ -55,7 +55,8 @@
       (call-next-method)
       (let ((buff (make-buffer (buffer-nrank (car args)) (buffer-shape (car args)) (buffer-stride (car args)) (buffer-dtype (car args)) (buffer-views (car args)))))
 	(setf (buffer-value buff) (make-fakearray (buffer-shape buff) (buffer-dtype buff) (car (node-writes node)))
-	      (buffer-inferred-permute buff) (buffer-inferred-permute buff))
+	      (buffer-inferred-permute buff) (buffer-inferred-permute (car args)) ;; (buffer-inferred-permute buff)
+	      (buffer-orig-buffer-shape buff) (buffer-orig-buffer-shape (car args)))
 	buff)))
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :Allocate)) graph node args)
   (multiple-value-bind (shape stride) (parse-allocate-node node args)
@@ -76,14 +77,17 @@
 						 (permute-list (getattr node :permute) (buffer-inferred-permute buffer))
 						 (or
 						  (buffer-inferred-permute buffer)
-						  (getattr node :permute))))
+						  (getattr node :permute)))
+	    (buffer-orig-buffer-shape buffer) (map 'list #'reveal-buffer (or (buffer-orig-buffer-shape (car args)) (buffer-shape (car args)))))
       buffer)))
+
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :Load)) graph node args)
   (let* ((tgt (car args))
 	 (val (getattr node :value)))
     (let ((out (copy-buffer tgt)))
       (setf (buffer-value out) (make-fakearray nil (buffer-dtype out) val))
       out)))
+
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :WHERE)) graph node args)
   (let ((buff (copy-buffer (second args))))
     (setf (buffer-value buff) (make-fakearray (buffer-shape buff) (buffer-dtype buff) (car (node-writes node))))

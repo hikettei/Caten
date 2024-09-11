@@ -1,7 +1,7 @@
 (in-package :caten/ajit)
 ;; First, Nodes determined to be necessarily Fused (e.g.: non-viewed and same shaped tensors)
 ;; are combined into a single SubGraph and converted into an ISL AST.
-;; Refenreces:
+;; Refenreces: (Good to read first)
 ;; - https://pliss2019.github.io/albert_cohen_slides.pdf
 ;; - https://www.slideshare.net/slideshow/introduction-to-polyhedral-compilation/70482946
 ;; - https://www.researchgate.net/publication/273651704_Schedule_Trees
@@ -394,7 +394,18 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		   (if (gethash key lex)
 		       (push time (gethash key lex))
 		       (setf (gethash key lex) (list time)))))))
-      (mapc #'explore (nodes-output-ids (graph-nodes graph)))
+      ;; Labelling the schedule dependency w/ lexicographical order
+      ;; [TODO] that should look like below, not starting with `time`?
+      ;; wanna consider this when optimizing backward process; it usually has multiple outputs.
+      ;; 2  2    2    ...
+      ;; \  /   /      |
+      ;;   1   1       4
+      ;;    \ /        |
+      ;;     0         3
+      ;; 
+      (loop for time upfrom 0
+	    for id in (nodes-output-ids (graph-nodes graph))
+	    do (explore id :time time))
       (assert (every #'(lambda (x) (find x seen :key #'second)) (map 'list #'node-id (graph-nodes graph))))
       (let ((tree-max-depth (apply #'max (apply #'append (hash-table-values lex)))))
 	(maphash
@@ -863,15 +874,9 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
 	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x backend))))
        groups)
-      (let* ((refcount (create-reference-counter groups))
-	     (id2buffer (make-hash-table)) ;; id2buffer, if the tensor was initially introduced as a scalar, subsequent kernels must use it as a scalar.
-	     (kernels (map
-		       'list
-		       #'(lambda (x)
-			   (if (group-realize-on-vm x)
-			       (group/apply-memory-planner! x refcount)
-			       (apply-memory-planner! x avm (group-polyhedron x) refcount (group-render-graph x) (group-across-time-deps x) backend id2buffer)))
-		       groups))
+      (let* ((mp (make-instance 'MemoryPlanner :avm avm :groups groups :debug debug :device backend))
+	     (_ (memory-plan mp))
+	     (kernels (retrive-kernels mp))
 	     (blueprints/codes
 	       (loop for group in groups
 		     for kernel in kernels
@@ -879,11 +884,14 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		     collect
 		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
+	(declare (ignore _))
 	(unless compile-later (%render-compile backend avm final-code))
-	(values
-	 (map 'list #'car blueprints/codes)
-	 final-code
-	 refcount)))))
+	(list
+	 (map 'list #'car blueprints/codes) final-code mp
+	 (loop for kr in kernels
+	       if (listp kr)
+		 append
+		 (loop for k in kr append (kernel-renderer-args k))))))))
 
 (defun jit (base-avm
 	    &key
@@ -901,19 +909,20 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type (integer 0 4) debug)
 	   (type boolean serialize)
 	   (ignore  _))
-  (multiple-value-bind (compiled-kernels code refcount)
-      (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil)
+  (multiple-value-bind (compiled-kernels code mp kernel-args)
+      (apply #'values (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil))
     (declare (ignore code))
     (make-avm
      (clean-up-attrs
       (optimize-non-in-place-buffers
-       base-avm avm refcount
+       base-avm avm mp
        (remove-unused-allocs
 	(apply
 	 #'make-graph
 	 (apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) compiled-kernels))))
        (nodes-gather-args (graph-nodes (avm-graph avm)))
-       (or (= debug 2) (= debug 4))))
+       (or (= debug 2) (= debug 4))
+       kernel-args))
      (avm-name avm)
      (avm-id2tensor avm)
      (avm-fw-outputs avm)

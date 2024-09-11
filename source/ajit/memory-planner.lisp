@@ -1,374 +1,578 @@
 (in-package :caten/ajit)
-
+;; memory-planner.lisp:
+;; Lowers Group into Kernel-Renderer-Graph
+;; Also, it has following optimizations:
+;; - 1. Allocation Overlapping
+;; - 2. Schedules overlapped allocation
+;; - 3. Index Computation Scheduling
+;; - 4. Duplicated computation elimination
+;; - 5. Dead Code Elimination
 (defun render-graph/get-timestamps (graph)
   (declare (type graph graph))
   (loop for node in (graph-nodes graph) if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
+;; ~~ MemoryPlanner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass MemoryPlanner ()
+  ((groups :initarg :groups :initform nil :accessor mp-groups)
+   (avm :initarg :avm :accessor mp-avm)
+   (device :initarg :device :accessor mp-device)
+   (graph  :initform nil :accessor mp-graph)
+   (kernels :initform nil :accessor mp-kernels)
+   (debug :initarg :debug :initform 0 :accessor mp-debug)
+   (alias :initform (make-hash-table) :accessor mp-alias)
+   (id2buffer :initform (make-hash-table) :accessor mp-id2buffer))
+  (:documentation "
+# [class] MemoryPlanner
+Schedules given groups allocation and index computation.
+Slots:
+- groups[list] groups to schedule
+- debug[fixnum] debug level
+"))
 
-(defgeneric node/in-place-mutation (id node) (:documentation "Return a symbol indicating the position of output (chosen from node-reads)"))
-(defmethod node/in-place-mutation :around (id node)
-  (if (next-method-p)
-      (call-next-method)
-      (progn
-	(warn "node/in-place-mutation for ~a is not defined, ignoring in-place-mutation opt." id)
-	nil)))
-(defmethod node/in-place-mutation ((id (eql :EXPR)) node) (car (node-reads node)))
-(defmethod node/in-place-mutation ((id (eql :WMMA)) node) (car (node-reads node)))
-  
-;; ~~ reference-counter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defstruct (Reference-Counter
-	    (:conc-name refcount-))
-  (alias (make-hash-table) :type hash-table)
-  (refcount (make-hash-table) :type hash-table)
-  (refcount-by (make-hash-table) :type hash-table)
-  (tmpvars nil :type list))
-(defmethod print-object ((r reference-counter) stream)
-  (flet ((print-hash (obj)
-	   (with-output-to-string (out)
-	     (maphash #'(lambda (k v) (format out "~a -> ~a~%" k v)) obj))))
-    (format stream "<Reference-Counter
-Alias:
-~a
-Refcount:
-~a
-Refcount-by:
-~a
->"
-	    (print-hash (refcount-alias r))
-	    (print-hash (refcount-refcount r))
-	    (print-hash (refcount-refcount-by r)))))
-(defun id->memwrites (graph id)
-  "Counts how many times id was read in the graph, and by who?"
-  (declare (type graph graph) (type symbol id))
-  (let ((count 0)
-	(nodes))
-    (loop for node in (graph-nodes graph)
-	  for reads = (node-reads node) do
-	    (loop for r in reads
-		  if (eql r id) do (incf count) (push node nodes)))
-    (values count (remove-duplicates nodes :key #'node-id))))
-(defun create-reference-counter (groups)
+(defmethod debug-log ((mp MemoryPlanner) stream str &rest more)
+  (when (>= (mp-debug mp) 1)
+    (format stream "MemoryPlanner : ~a~%" (apply #'format nil str more))))
+
+(defun apply-group-attr (nodes)
+  (dolist (n nodes)
+    ;; Set :_no_group_realize_on_vm=t not to involve VM variables MemoryPlanner
+    (setf (getattr n :_no_group_realize_on_vm) t))
+  nodes)
+
+(defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups mp groups)))
+  (setf (mp-groups mp) groups
+	(mp-kernels mp) (map 'list #'->render-graph groups)
+	(mp-graph mp)
+	(apply
+	 #'make-graph
+	 (loop for group in groups
+	       if (group-realize-on-vm group)
+		 append (apply-group-attr (graph-nodes (group-graph group)))
+	       else
+		 append
+		 (loop for idx in (render-graph/get-timestamps (group-render-graph group))
+		       append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
+
+(defun simplify-groups (mp groups)
+  "Simplifies the given groups"
   (declare (type list groups))
-  (let ((refcount (make-hash-table))
-	(refby (make-hash-table))
-	(graph
-	  (apply
-	   #'make-graph
-	   (loop for group in groups
-		 unless (group-realize-on-vm group)
-		   append
-		   (loop for idx in (render-graph/get-timestamps (group-render-graph group))
-			 append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
-    (labels ((relevant-graph (pos) (apply #'make-graph (subseq (graph-nodes graph) pos)))
-	     (inplace (node pos)
-	       ;; (in-place-p . users)
-	       (multiple-value-bind (count users) (id->memwrites (relevant-graph pos) (car (node-writes node)))
-		 (cons count users))))
-      (loop for node in (graph-nodes graph)
-	    for pos upfrom 0
-	    for (refc . refb) = (inplace node pos)
-	    do (setf (gethash (car (node-writes node)) refcount) refc
-		     (gethash (car (node-writes node)) refby) refb)))
-    (make-reference-counter :refcount refcount :refcount-by refby)))
+  (mapc
+   (compose
+    #'(lambda (x) (group-apply-reduction mp x))
+    #'group-apply-load-simplification)
+   groups)
+  groups)
 
-(defun refcount/refalias (count id)
-  (let ((val (gethash id (refcount-alias count))))
-    (if val
-	(if (eql id val)
-	    val
-	    (refcount/refalias count val))
-	id)))
+(defmethod group-apply-reduction ((mp MemoryPlanner) (group Group))
+  "Rewriting:
+OUT <- f(x, y, reduction=t)
+as
+X <- f(x, y, reduction=t)"
+  (loop for node in (graph-nodes (group-graph group))
+	if (getattr node :reduction) do
+	  (let ((from (car (node-writes node)))
+		(to   (car (node-reads1 node))))
+	    (setf (gethash from (mp-alias mp)) to
+		  (car (node-writes node)) to)))
+  group)
 
-(defun refcount/make-alias (count node in-place save-for-backwards)
-  (if (eql (node-type node) :Allocate)
-      (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node)))
-      (if in-place
-	  (let ((id (node/in-place-mutation (node-type node) node)))
-	    (if (find id save-for-backwards)
-		nil
-		(when id (setf (gethash (car (node-writes node)) (refcount-alias count)) id))))
-	  (setf (gethash (car (node-writes node)) (refcount-alias count)) (car (node-writes node))))))
+(defmethod group-apply-load-simplification ((group Group))
+  "Removing: val_1 <- val_1"
+  group)
 
-(defun refcount/update-buffer (count buffer)
-  (flet ((new (x) (refcount/refalias count (reveal-buffer x))))
-    (setf (buffer-shape buffer) (map 'list #'new (buffer-shape buffer))
-	  (buffer-stride buffer) (map 'list #'new (buffer-stride buffer))
+(defmethod mp-newid ((mp MemoryPlanner) id)
+  (assert (or (numberp id) (symbolp id)) () "mp-newid: id should be a number or symbol.")
+  (or (gethash id (mp-alias mp)) id))
+
+(defmethod mp-update-buffer ((mp MemoryPlanner) buffer)
+  (flet ((new (x) (mp-newid mp (reveal-buffer x))))
+    (when (null (buffer-shape-base buffer))
+      ;; Avoid applying duplicated mp-newid
+      (setf (buffer-shape-base buffer) (copy-list (buffer-shape buffer))
+	    (buffer-stride-base buffer) (copy-list (buffer-stride buffer))
+	    (buffer-views-base buffer) (copy-list (buffer-views buffer))))	    
+    (setf (buffer-shape buffer) (map 'list #'new (buffer-shape-base buffer))
+	  (buffer-stride buffer) (map 'list #'new (buffer-stride-base buffer))
 	  (buffer-views buffer)
-	  (loop for v in (buffer-views buffer)
+	  (loop for v in (buffer-views-base buffer)
 		if v
 		  collect (list (new (nth 0 v)) (new (nth 1 v)) (new (nth 2 v)) (nth 3 v))
 		else
 		  collect v))))
 
-(defun refcount/update-node (node refcount)
-  (declare (type node node))
-  (flet ((ref (x) (refcount/refalias refcount x)))
+(defmethod mp-update-node ((mp MemoryPlanner) node)
+  (flet ((ref (x) (mp-newid mp x)))
     (when (eql (node-type node) :EXPR)
-      (flet ((replacer (x) (refcount/refalias refcount x)))
+      (flet ((replacer (x) (mp-newid mp x)))
 	(expr-recursive-replace (getattr node :expr) #'replacer)))
-    ;;(assert (null (getattr node :_reads)))
-    ;;(assert (null (getattr node :_writes)))
     (when (getattr node :_type_relay)
-      (map 'list #'(lambda (x) (when x (refcount/update-buffer refcount x))) `(,@(relay-writes (read-type-relay node)) ,@(relay-reads (read-type-relay node)))))
+      (map
+       'list
+       #'(lambda (x) (when x (mp-update-buffer mp x)))
+       `(,@(relay-writes (read-type-relay node)) ,@(relay-reads (read-type-relay node)))))
     (setf (getattr node :_loop_bound_nodes) (map 'list #'ref (getattr node :_loop_bound_nodes))
 	  (getattr node :_reads)  (node-reads node)
 	  (getattr node :_writes) (node-writes node)
 	  (node-reads node) (map 'list #'ref (node-reads node))
 	  (node-writes node) (map 'list #'ref (node-writes node)))))
 
-(defun remove-unused-kernels! (kernels pipeline save-for-backwards seen-by-rendering-graph)
-  (declare (type list kernels save-for-backwards)
-	   (type hash-table pipeline))
-  (let ((seen (loop for kernel in kernels
-		    collect
-		    (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
-			  append
-			  (loop for node in (graph-nodes (gethash time pipeline))
-				append
-				(node-reads node))))))
-    (labels ((not-used-p (val nth)
-	       (declare (type (or symbol number) val))
-	       (if (numberp val)
-		   nil
-		   (if (or (find val save-for-backwards) (find val seen-by-rendering-graph))
-		       nil
-		       (<= (count val (the list (apply #'append (nthcdr nth seen)))) 1))))
-	     (timestamp-not-used-p (graph nth)
-	       (every #'(lambda (x) (not-used-p x nth))
-		      (apply #'append (map 'list #'(lambda (x) (append (node-writes x) (node-reads x))) (graph-nodes graph)))))
-	     (kernel-not-used-p (kernel nth)
-	       (every
-		#'identity
-		(loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
-		      if (timestamp-not-used-p (gethash time pipeline) nth)
-			collect
-			(progn
-			  ;; 1. Remove the unused pipeline
-			  ;; 2. Calls simplifier
-			  (setf (kernel-renderer-nodes kernel)
-				(remove time (kernel-renderer-nodes kernel) :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx))))
-				(kernel-renderer-nodes kernel)
-				(simplify-rendering-nodes (kernel-renderer-nodes kernel)))
-			  t)
-		      else
-			collect nil))))
-      (setf kernels
-	    (loop for kernel in kernels
-		  for nth upfrom 0
-		  unless (kernel-not-used-p kernel nth)
-		    collect kernel)))
-    (let ((seen
-	    (remove-duplicates
-	     (append
-	      seen-by-rendering-graph
-	      (loop for kernel in kernels
-		    append
-		    (loop for time in (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel)))
-			  append
-			  (loop for node in (graph-nodes (gethash time pipeline))
-				append (node-writes node)
-				append (node-reads node))))))))
-      (loop for k in kernels do
-	(setf (kernel-renderer-args k)
-	      (loop for arg in (kernel-renderer-args k)
-		    if (or (find (argument-name arg) seen) (find (argument-name arg) seen-by-rendering-graph))
-		      collect arg))))))
+(defmethod mp-update-avm ((mp MemoryPlanner) avm)
+  (flet ((replacer (x) (mp-newid mp x)))
+    (loop for kernels in (mp-kernels mp)
+	  if kernels do
+	    (dolist (k kernels)
+	      (dolist (g (kernel-renderer-nodes k))
+		(case (node-type g)
+		  (:FOR
+		   (expr-recursive-replace (getattr g :below) #'replacer)
+		   (expr-recursive-replace (getattr g :upfrom) #'replacer)
+		   (expr-recursive-replace (getattr g :by) #'replacer))
+		  (:IF
+		   (expr-recursive-replace (getattr g :condition) #'replacer))
+		  (:FUNCALL
+		   (when (getattr g :args)
+		     (dolist (x (getattr g :args))
+		       (expr-recursive-replace x #'replacer))))))))
+    (setf (avm-fw-outputs avm) (map 'list #'replacer (avm-fw-outputs avm))
+	  (avm-bw-outputs avm) (map 'list #'replacer (avm-bw-outputs avm)))
+    (dolist (g (mp-groups mp))
+      (setf (group-args g) (map 'list #'replacer (group-args g))))
+    (macrolet ((renew (accessor)
+		 `(let ((new-table (make-hash-table)))
+		    (maphash
+		     #'(lambda (k v)
+			 (setf (gethash (replacer k) new-table) v))
+		     ,accessor)
+		    (setf ,accessor new-table))))
+      (renew (avm-id2tensor avm))
+      (renew (avm-variables avm)))))
 
-(defun apply-memory-planner! (group avm polyhedral refcount render-graph save-for-backwards device id2buffer)
-  (declare (type avm avm) (type group group) (type polyhedral polyhedral) (type Reference-counter refcount)
-	   (type graph render-graph) (type list save-for-backwards))
-  (let* ((kernels (render-graph-from-polyhedral polyhedral (graph-nodes render-graph)))
-	 (pipeline (poly-pipeline polyhedral))
-	 (meta-ids))
-    (labels ((inplace-p (node time)
-	       ;; Return: (in-place-p . intersects-with-current-pipeline?)
-	       (dolist (r (node-reads node))
-		 (when (and (symbolp r) (gethash r (refcount-refcount refcount)))
-		   (decf (gethash r (refcount-refcount refcount)))))
-	       (when (eql (node-type node) :Allocate) (return-from inplace-p (cons t t)))
-	       ;;(when (find (car (node-writes node)) save-for-backwards) (return-from inplace-p (cons nil nil)))
-	       (let* ((id (or (node/in-place-mutation (node-type node) node)
-			      (return-from inplace-p (cons nil nil))))
-		      (refcount-n (gethash id (refcount-refcount refcount)))
-		      (refdom     (gethash id (refcount-refcount-by refcount))))
-		 (if refcount-n
-		     (cons
-		      (<= refcount-n 0) ;; <= refcount-n 1 is ng?
-		      (every #'(lambda (node) (find (node-id node) (graph-nodes (gethash time pipeline)) :key #'node-id)) refdom))
-		     (cons t t))))
-	     (newid (x) (refcount/refalias refcount x))
-	     (newid-from-str (x)
-	       (if (stringp x)
-		   (newid
-		    (or (find x (poly-vm-inputs polyhedral) :test #'equalp :key #'symbol-name)
-			(intern x)))
-		   (newid x)))
-	     (defbuffer (id buffer)
-	       (when (null (gethash id id2buffer))
-		 (setf (gethash id id2buffer) buffer)))
-	     (refbuffer (id buffer)
-	       (or (gethash id id2buffer) buffer)))
-      ;; O(nlogn) * the cost of id->users ...
-      (loop for time in (sort (render-graph/get-timestamps render-graph) #'<)
-	    for graph = (gethash time pipeline) do
-	      (loop
-		for node in (graph-nodes graph)
-		for (inplace-p . all-exists-in-the-same-pipeline) = (inplace-p node time) do
-		  (assert (= 1 (length (node-writes node))) ())
-		  (refcount/make-alias refcount node inplace-p save-for-backwards)
-		  (setf save-for-backwards (map 'list #'newid save-for-backwards))
-		  ;; If write-to area is not going to be used by any other ops, let's make it in-place
-		  (refcount/update-node node refcount)))
-      (loop for kernel in kernels
-	    for timestamps = (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kernel))) do
-	      (let* ((nodes (apply #'append (map 'list #'(lambda (x) (graph-nodes (gethash x pipeline))) timestamps)))
-		     (buffer-args (loop for (name . type) in (nodes-depends-on/buffers nodes)
-					for only-used-in-this-kernel-p = (find name save-for-backwards)
-					for written = (find name nodes :key #'node-writes :test #'find)
-					for read    = (find name nodes :key #'node-reads  :test #'find)
-					do (setf (buffer-shape type) (map 'list #'reveal-buffer (buffer-shape type))
-						 (buffer-shape type) (loop for s in (buffer-shape type)
-									   for nth upfrom 0
-									   for view = (nth nth (buffer-views type))
-									   if (or (null view) (null (fourth view)))
-									     collect s
-									   else
-									     collect 1))
-					collect (make-argument :name (progn
-								       (defbuffer name type)
-								       name)
-							       :pointer-p (if (= (buffer-nrank type) 0)
-									      (if written t nil)
-									      t)
-							       :dtype (buffer-dtype type)
-							       :type (if (null (find name save-for-backwards))
-									 :tmp ;; potentially can be rewritten as a float _tmp_xxx
-									 :user)
-							       :io (if (and written read)
-								       :io
-								       (if written
-									   :output
-									   :input))
-							       :metadata (refbuffer name type))))
-		     (failed-inplace-list
-		       (loop with read-set = (map 'list #'node-reads nodes)
-			     for node in nodes
-			     for nth upfrom 0
-			     append
-			     (loop for write in (node-writes node)
-				   for type in (relay-writes (read-type-relay node))
-				   if (null (find write (apply #'append (subseq read-set 0 nth))))
-				     collect
-				     (make-argument :name write
-						    :pointer-p t
-						    :dtype (buffer-dtype type)
-						    :type :tmp
-						    :io :output
-						    :metadata (refbuffer write type)))))
-		     (irs (loop for node in (kernel-renderer-nodes kernel)
-				if (find (node-type node) `(:FOR :IF))
-				  collect node))
-		     (index-components
-		       (loop for node in (kernel-renderer-nodes kernel)
-			     if (eql (node-type node) :FOR)
-			       collect (newid-from-str (getattr node :idx))))
-		     (loop-args
-		       (loop for ir in irs
-			     append
-			     (ecase (node-type ir)
-			       (:FOR
-				(let ((deps
-					(remove-duplicates
-					 (append
-					  (expr-recursive-deps (getattr ir :upfrom))
-					  (expr-recursive-deps (getattr ir :below))
-					  (expr-recursive-deps (getattr ir :by))))))
-				  (loop for dep in deps
-					for name = (newid-from-str dep)
-				    unless (find name index-components)
-				      ;; Indices are created as default-uint
-				      do (push name meta-ids) and collect
-					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
-							:metadata (make-buffer 0 nil nil *default-uint* nil)))))
-			   (:IF
-			    (let ((deps
-				    (remove-duplicates
-				     (expr-recursive-deps (getattr ir :condition)))))
-			      (loop for dep in deps
-				    for name = (newid-from-str dep)
-				    unless (find name index-components)
-				      do (push name meta-ids) and collect
-					 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
-							:metadata (make-buffer 0 nil nil *default-uint* nil))))))))
-		 (kernel-args `(,@loop-args ,@(reverse buffer-args) ,@failed-inplace-list)))
-	    (dolist (node nodes)
-	      (dolist (r (relay-reads (read-type-relay node)))
-		(dolist (s (buffer-reconstruct-view-args r :except-for-shape t))
-		  (when (and (symbolp s) (null (find s buffer-args :key #'argument-name)))
-		    (push
-		     (make-argument :name s :pointer-p nil :dtype *default-uint* :type :shape :io :input
-				    :metadata (make-uconst-buffer))
-		     kernel-args)
-		    (push s meta-ids)))))
-	    (setf (kernel-renderer-args kernel) (remove-duplicates kernel-args :key #'argument-name))
-	    ;;(assert (equal (map 'list #'argument-name (kernel-renderer-args kernel))
-	    ;;		   (map 'list (compose #'newid #'argument-name) (kernel-renderer-args kernel)))
-	    ;;	    ()
-	    ;;	    "There are inconsistencies in the time-series dependencies. ~a" (map 'list #'argument-name (kernel-renderer-args kernel)))
-	    ))
-      (remove-unused-kernels! kernels pipeline save-for-backwards meta-ids)
-      ;; Reduction
-      ;;   Reduce  [1, 2, 3] -> [1]
-      ;;   Scatter [1] -> [1 2 3]
-      ;; TODO: tmpvar optimization
-      ;; [TODO]
-      ;; Minimizing the number of allocations by following the rule:
-      ;; 1. (car reads) becomes write, (except for %WHERE)
-      ;;  | -   A <- f(B, C, D)
-      ;;  | ->  B <- f(B, C, D)
-      ;; 2. If (car reads) is duplicated in the graph, allocates tmpvar e.g.:
-      ;;  | -   A1 <- f(A, B)
-      ;;  | -   A2 <- f(A, C)
-      ;;  | -   O1 <- f(A1, A2)
-      ;;   ->
-      ;;  | -   At1 <- f(A, B)
-      ;;  | -   At2 <- f(A, C)
-      ;;  | -   O1 <-  f(At1, At2)
-      ;;  Where At1, At2 is a scalar value, being rendered `float _val_0_0` in clang.
-      (flet ((replacer (x) (refcount/refalias refcount x)))
-	(loop for g in (graph-nodes render-graph) do
-	  (case (node-type g)
-	    (:FOR
-	     (expr-recursive-replace (getattr g :below) #'replacer)
-	     (expr-recursive-replace (getattr g :upfrom) #'replacer)
-	     (expr-recursive-replace (getattr g :by) #'replacer))
-	    (:IF
-	     (expr-recursive-replace (getattr g :condition) #'replacer))
-	    (:FUNCALL
-	     (when (getattr g :args)
-	       (dolist (x (getattr g :args))
-		 (expr-recursive-replace x #'replacer)))))))
-      
-      (setf (avm-fw-outputs avm) (map 'list #'newid (avm-fw-outputs avm))
-	    (avm-bw-outputs avm) (map 'list #'newid (avm-bw-outputs avm))
-	    ;; vm-inputs are fixed (they are dynamic shapes)
-	    (poly-vm-outputs polyhedral) (map 'list #'newid (poly-vm-outputs polyhedral))
-	    (group-args group) (map 'list #'newid (group-args group)))
+(defmethod renderer-get-nodes ((group group) (kr kernel-renderer))
+  (apply
+   #'append
+   (map
+    'list
+    #'(lambda (time) (graph-nodes (gethash time (poly-pipeline (group-polyhedron group)))))
+    (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kr))))))
 
-      (macrolet ((renew (accessor)
-		   `(let ((new-table (make-hash-table)))
-		      (maphash
-		       #'(lambda (k v)
-			   (setf (gethash (newid k) new-table) v))
-		       ,accessor)
-		      (setf ,accessor new-table))))
-	(renew (avm-id2tensor avm))
-	(renew (poly-vm-io-types polyhedral))
-	(renew (avm-variables avm)))
-      
-      (loop for k in kernels if (kernel-renderer-nodes k)
-	    collect (pack-loop-funcall k polyhedral (device-packed-by device))))))
+(defmethod renderer-get-irs ((kr kernel-renderer))
+  (loop for node in (kernel-renderer-nodes kr)
+	if (find (node-type node) `(:FOR :IF))
+	  collect node))
 
-(defun group/apply-memory-planner! (group refcount)
-  (loop for node in (graph-nodes (group-graph group))
-	do (refcount/update-node node refcount))
-  group)
+(defmethod is-sv4bw ((group group) (id symbol))
+  "AcrossTimeDep: a list of ids which lifetime won't finish in the current nodes."
+  (not (null (find id (group-across-time-deps group)))))
+
+;; ID2Buffer: Pointers loaded as x* can be loaded as x[0+0] in other kenels.
+(defmethod mp-reg-buffer-type ((mp MemoryPlanner) id buffer)
+  (when (null (gethash id (mp-id2buffer mp)))
+    (setf (gethash id (mp-id2buffer mp)) buffer)))
+(defmethod mp-get-buffer-type ((mp MemoryPlanner) id) (gethash id (mp-id2buffer mp)))
+
+(defmethod newid-from-str ((group group) obj)
+  (if (stringp obj)
+      (or
+       (find obj (poly-vm-inputs (group-polyhedron group)) :test #'equalp :key #'symbol-name)
+       (intern obj))
+      obj))
+
+(defmethod apply-current-plan ((mp MemoryPlanner) (group group) (kernel kernel-renderer))
+  "Applying the current memory-plan, returning a list of arguments for the given group/kernel"
+  (let* ((nodes (renderer-get-nodes group kernel))
+	 (irs   (renderer-get-irs kernel))
+	 (index-components
+	   (loop for ir in irs
+		 if (eql (node-type ir) :FOR)
+		   collect (newid-from-str group (getattr ir :idx))))
+	 (meta-ids)
+	 (out))
+    (flet ((cleanup-buffer (buffer)
+	     (setf (buffer-shape buffer) (map 'list #'reveal-buffer (buffer-shape buffer))
+		   (buffer-shape buffer) (loop for s in (buffer-shape buffer)
+					       for nth upfrom 0
+					       for view = (nth nth (buffer-views buffer))
+					       if (or (null view) (null (nth 3 view)))
+						 collect s
+					       else
+						 collect 1))))
+      ;; Tensors firstly appeared in the read
+      (loop
+	for (name . type) in (nodes-depends-on/buffers nodes)
+	for sv4bw-p = (is-sv4bw group name)
+	for written-deps = (find name nodes :key #'node-writes :test #'find)
+	for read-deps    = (find name nodes :key #'node-reads1  :test #'find)
+	do (cleanup-buffer type)
+	   (push
+	    (make-argument :name (progn
+				   (mp-reg-buffer-type mp name type)
+				   name)
+			   :pointer-p (if (= (buffer-nrank type) 0)
+					  (if written-deps t nil)
+					  t)
+			   :dtype (buffer-dtype type)
+			   :type (if sv4bw-p :user :tmp)
+			   :io (if (and written-deps read-deps)
+				   :io
+				   (if written-deps :output :input))
+			   :metadata (or (mp-get-buffer-type mp name) type))
+	    out))
+      ;; Tensors firstly appeared in the write. (a.k.a: failed-in-place-tensors)
+      (loop
+	with read-set = (map 'list #'node-reads1 nodes)
+	for node in nodes
+	for nth upfrom 0 do
+	  (loop for write in (node-writes node)
+		for type in (relay-writes (read-type-relay node))
+		if (null (find write (apply #'append (subseq read-set 0 nth)))) do
+		  (cleanup-buffer type)
+		  (push
+		   (make-argument :name write
+				  :pointer-p t
+				  :dtype (buffer-dtype type)
+				  :type :tmp
+				  :io :output
+				  :metadata (or (mp-get-buffer-type mp write) type))
+		   out)))
+      ;; Tensor firstly appeared in the IRs (For, IF)
+      (loop for ir in irs do
+	(ecase (node-type ir)
+	  (:FOR
+	   (let ((deps
+		   (remove-duplicates
+		    (append
+		     (expr-recursive-deps (getattr ir :upfrom))
+		     (expr-recursive-deps (getattr ir :below))
+		     (expr-recursive-deps (getattr ir :by))))))
+	     (loop for dep in deps
+		   for name = (newid-from-str group dep)
+		   unless (find name index-components)
+		     ;; Indices are created as default-uint
+		     do (push name meta-ids)
+			(push
+			 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
+					:metadata (make-buffer 0 nil nil *default-uint* nil))
+			 out))))
+	  (:IF
+	   (let ((deps
+		   (remove-duplicates
+		    (expr-recursive-deps (getattr ir :condition)))))
+	     (loop for dep in deps
+		   for name = (newid-from-str group dep)
+		   unless (find name index-components)
+		     do (push name meta-ids)
+			(push
+			 (make-argument :name name :pointer-p nil :dtype *default-uint* :type :shape :io :input
+					:metadata (make-buffer 0 nil nil *default-uint* nil))
+			 out))))))
+      ;; Gathering symbols used in the view computation
+      (dolist (node nodes)
+	(dolist (r (relay-reads (read-type-relay node)))
+	  (dolist (s (buffer-reconstruct-view-args r :except-for-shape t))
+	    (when (symbolp s)
+	      (push
+	       (make-argument :name s :pointer-p nil :dtype *default-uint* :type :shape :io :input
+			      :metadata (make-uconst-buffer))
+	       out)
+	      (push s meta-ids)))))
+      (setf out (remove-duplicates out :key #'argument-name))
+      (when (>= (mp-debug mp) 1)
+	;; TODO: Display memory-size
+	)
+      (setf (kernel-renderer-args kernel) out)
+      out)))
+
+(defstruct (MemoryBlock
+	    (:constructor make-memoryblock (id type create release &key (lock nil))))
+  "An abstraction for memory_block
+    |
+ i  |  (create)  (release)
+ d  |     |----------| 
+    |
+-------------------------
+   t i m e
+MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
+  (id id :type symbol)
+  (answer nil :type symbol)
+  (type type :type buffer)
+  (create create :type fixnum)
+  (release release :type fixnum)
+  (lifetime (- release create) :type (integer 0))
+  (lock lock :type boolean))
+
+(defmethod print-object ((mb MemoryBlock) stream)
+  (format stream "MemoryBlock(~(~a~) -> ~(~a~)) : (~a, ~a, ~a, lock=~a)~%" (memoryblock-id mb) (memoryblock-answer mb) (buffer-shape (memoryblock-type mb)) (memoryblock-create mb) (memoryblock-release mb) (memoryblock-lock mb)))
+
+(defmethod allocate-p ((mb MemoryBlock) time)
+  (= time (memoryblock-create mb)))
+
+(defmethod created-p ((mb MemoryBlock) time)
+  (>= time (memoryblock-create mb)))
+
+(defmethod preserved-p ((mb MemoryBlock) time)
+  (< time (memoryblock-release mb)))
+
+(defmethod release-p ((mb MemoryBlock) time)
+  (= time (memoryblock-release mb)))
+
+(defmethod freed-p ((mb MemoryBlock) time)
+  (and (created-p mb time) (>= time (memoryblock-release mb))))
+
+(defun buffer-orig-shape (buffer)
+  (declare (type buffer buffer))
+  (or
+   (buffer-orig-buffer-shape buffer)
+   (loop for s in (buffer-shape buffer)
+	 for nth upfrom 0
+	 for v = (nth nth (buffer-views buffer))
+	 if (and v (fourth v))
+	   collect 1
+	 else
+	   ;; If Viewed: Orig-Shape, View-Upfrom, View-Below, View-By must correspond to reuse the buffer.
+	   collect `(,s ,@v))))
+;; [TODO] Assuming the entire graph is "static", applying the `best-fit` schedule
+;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY
+;; Env: GREEDY=1 to alywas use greedy solver.
+;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
+(defun GreedySolveDSA (I total-time)
+  "A greedy solver for minimizing `peak_mem`"
+  (declare (type list I))
+  (let ((locked))
+    (labels ((choose-from-fragments (mb time &aux (candidates nil))
+	       (loop for candidate in I
+		     if (and (null (find (memoryblock-id candidate) locked))
+			     (freed-p candidate time)
+			     (buffer-shape (memoryblock-type mb)) ;; Dont mutate scalars
+			     (equal (buffer-orig-shape (memoryblock-type candidate))
+				    (buffer-orig-shape (memoryblock-type mb)))
+			     (equal (buffer-dtype (memoryblock-type candidate))
+				    (buffer-dtype (memoryblock-type mb))))
+		       do (push candidate candidates))
+	       (flet ((use (x)
+			(push (memoryblock-id x) locked)
+			(return-from choose-from-fragments x)))
+		 (when candidates (use (car (sort candidates #'> :key #'memoryblock-lifetime))))))
+	     (apply-creation (time)
+	       (loop for mb in I
+		     if (allocate-p mb time) do
+		       (let ((buffer (and (null (memoryblock-lock mb)) (choose-from-fragments mb time))))
+			 (if buffer
+			     (setf (memoryblock-answer mb) (memoryblock-id buffer))
+			     (setf (memoryblock-answer mb) (memoryblock-id mb))))))
+	     (apply-release (time)
+	       (loop for mb in I
+		     if (and (release-p mb time) (memoryblock-answer mb)) do
+		       (setf locked (remove (memoryblock-answer mb) locked)))))
+      (dotimes (time total-time)
+	(apply-release time)
+	(apply-creation time))
+      I)))
+
+(defmethod evaluate ((mp MemoryPlanner))
+  ;; xxx MiB
+  )
+
+(defmethod memory-plan ((mp MemoryPlanner) &aux (avm (mp-avm mp)))
+  "Applies memory-optimization for the graph.
+Resourses:
+- https://arxiv.org/pdf/2203.00448
+- https://arxiv.org/abs/1804.10001
+Goal: overlapping the lifespan, e.g.:
+Lifespan:
+ |    T1
+ |  a----b   T2
+ |       c----d
+ |
+-------------------
+- T1 exists from t=a to t=b.
+- T2 exists from t=c to t=d.
+- T1 and T2 are orthogonal, and can be overlapped.
+"
+  (flet ((sync ()
+	   (dolist (node (graph-nodes (mp-graph mp))) (mp-update-node mp node))
+	   (dolist (g (mp-groups mp))
+	     (when (group-realize-on-vm g)
+	       (dolist (node (graph-nodes (group-graph g)))
+		 (mp-update-node mp node))))
+	   (mp-update-avm mp avm)))
+    (sync)
+    (let* ((trace-table (make-hash-table))
+	   (id2type (make-hash-table))
+	   (lock-table (make-hash-table))
+	   (total-time (length (graph-nodes (mp-graph mp))))
+	   (outputs (avm-bw-outputs avm))
+	   (constants))
+      (loop for node in (graph-nodes (mp-graph mp))
+	    for nth upfrom 0
+	    for lock-p = (getattr node :_no_group_realize_on_vm) do
+	      ;; Not going to make the dynamic shape in-place.
+	      (when (and (eql (node-type node) :Load) (symbolp (getattr node :value)))
+		(push (getattr node :value) constants))
+	      (loop for val in (node-reads1 node)
+		    for typ in (relay-reads1 node)
+		    for time = `(,nth ,@(gethash val trace-table))
+		    if (and (symbolp val) (null (find val constants)))
+		      do (setf (gethash val id2type) typ (gethash val trace-table) time))
+	      (loop for val in (node-writes node)
+		    for typ in (relay-writes (read-type-relay node))
+		    if (and (symbolp val) (null (gethash val trace-table)))
+		      do (setf (gethash val id2type) typ
+			       (gethash val trace-table) (list nth)
+			       (gethash val lock-table) lock-p)))
+      (let* ((memory-blocks
+	       (loop for key in (hash-table-keys trace-table)
+		     for typ = (gethash key id2type)
+		     collect
+		     (make-memoryblock
+		      key typ
+		      (apply #'min (gethash key trace-table))
+		      ;; Set the longest time for gradients
+		      (if (find key outputs)
+			  total-time
+			  (apply #'max (gethash key trace-table)))
+		      :lock (gethash key lock-table))))
+	     (solved (GreedySolveDSA memory-blocks total-time))
+	     (alias-map (mp-alias mp)))
+	(loop for mb in solved
+	      do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
+	(setf (mp-alias mp) alias-map)))
+    (sync)
+    (loop for group in (mp-groups mp)
+	  for kernel in (mp-kernels mp)
+	  if kernel do (dolist (k kernel) (apply-current-plan mp group k)))))
+
+(defun remove-unused-kernels (groups kernels meta-id
+			      &aux (static-read
+				    (append
+				     meta-id
+				     (loop for g in groups if (group-realize-on-vm g) append (group-args g)))))
+  (labels ((f (ks nth
+	       &aux
+		 (subsequent-reads
+		  (map 'list #'argument-name
+		       (apply #'append
+			      (map 'list #'kernel-renderer-args (apply #'append (nthcdr (1+ nth) kernels))))))
+		 (fix `(,@static-read ,@subsequent-reads)))
+	     (loop for kernel in ks
+		   for pos upfrom 1
+		   for deps = (append fix (map 'list #'argument-name (apply #'append (map 'list #'kernel-renderer-args (nthcdr pos ks)))))
+		   unless (every #'(lambda (x) (null (find (argument-name x) deps))) (kernel-renderer-args kernel))
+		     collect kernel))
+	   (r (&aux (changed-p nil))
+	     (loop for k in kernels
+		   for nth upfrom 0
+		   if k do
+		     (let ((new (f k nth)))
+		       (when (not (= (length new) (length k))) (setf changed-p t))
+		       (setf (nth nth kernels) new)))
+	     changed-p))
+    (loop while (r))
+    kernels))
+
+(defmethod retrive-kernels ((mp MemoryPlanner))
+  (setf (mp-kernels mp) (remove-unused-kernels (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))
+  (optimize-memory-load mp)
+  (loop for group in (mp-groups mp)
+	for kernels in (mp-kernels mp)
+	if (group-realize-on-vm group)
+	  collect group
+	else	  
+	  collect
+	  (loop for k in kernels
+		if (kernel-renderer-nodes k)
+		  collect (pack-loop-funcall k (group-polyhedron group) (device-packed-by (mp-device mp))))))
+
+(defmethod output->scalar-mutation ((mp MemoryPlanner) (group group) (kernel kernel-renderer) dependency-list)
+  "
+Rewrites the graph:
+for (...) {
+  out[...] = f(...)
+}
+->
+for (...) {
+  out = f(...)
+}
+If the tensor `out` is labelled as :output by the memory-planner, and not appeared in the `dependency-list`.
+"
+  (let ((scalars) (related-nodes (renderer-get-nodes group kernel)))
+    (flet ((->scalar-p (id)
+	     (and
+	      (let ((out (find id (kernel-renderer-args kernel) :key #'argument-name)))
+		(and out (eql :output (argument-io out))))
+	      (null (find id dependency-list))
+	      (let ((search-key
+		      (loop for key in (sort (hash-table-keys (poly-pipeline (group-polyhedron group))) #'<)
+			    for graph = (gethash key (poly-pipeline (group-polyhedron group)))
+			    if (find id (graph-nodes graph) :key #'(lambda (x) (append (node-reads x) (node-writes x))) :test #'find)
+			      collect key)))
+		(loop with depth = 0
+		      with nodes = (kernel-renderer-nodes kernel)
+		      with start = (or (position (apply #'min search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from ->scalar-p nil))
+		      with end   = (or (position (apply #'max search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from ->scalar-p nil))
+		      for nth upfrom (min start end) to (max start end)
+		      for ir = (nth nth nodes)
+		      if (find (node-type ir) `(:IF :FOR))
+			do (incf depth)
+		      else if (find (node-type ir) `(:ENDIF :ENDFOR))
+		        do (decf depth)
+		      end
+		      if (< depth 0) do
+			(return-from ->scalar-p nil))
+		t))))
+      (dolist (node related-nodes)
+	(loop for w in (node-writes node)
+	      for typ in (relay-writes (read-type-relay node))
+	      if (and (not (= 0 (buffer-nrank typ))) (->scalar-p w)) do
+		(push w scalars)))
+      ;; mutate all read dependencie
+      (let ((seen) (suffix))
+	(loop for node in (kernel-renderer-nodes kernel)
+	      if (eql (node-type node) :FOR)
+		do (push (cons (getattr node :idx) 1) suffix)
+	      else
+		if (eql (node-type node) :ENDFOR)
+		  do (setf suffix (remove (getattr node :idx) suffix :key #'car :test #'equalp))
+	      end
+	      if (eql (node-type node) :FUNCALL)
+		do (dolist (node (graph-nodes (gethash (getattr node :idx) (poly-pipeline (group-polyhedron group)))))
+		     (update-buffer-as-scalar node scalars)
+		     (setf (getattr node :declare-type)
+			   (loop for w in (node-writes node)
+				 for typ in (relay-writes (read-type-relay node))
+				 for w-as-unrolled = (intern (format nil "~a~a" w (unroll-suffix typ suffix)))
+				 collect
+				 (prog1
+				     (and (null (find w-as-unrolled seen)) (find w scalars))
+				   (push w-as-unrolled seen)))))))
+      ;; Remove from args
+      (setf (kernel-renderer-args kernel)
+	    (loop for arg in (kernel-renderer-args kernel)
+		  if (null (find (argument-name arg) scalars))
+		    collect arg)))))
+
+(defmethod optimize-memory-load ((mp MemoryPlanner))
+  "Optimizes the memory latency by caching LOAD/STORE, and removes LOAD for unnecessary Variables"
+  (with-slots ((groups groups) (kernels kernels) (avm avm)) mp
+    (assert (= (length groups) (length kernels)))
+    (let ((args-by-time
+	    (loop for g in groups
+		  for k in kernels
+		  if k
+		    collect (map 'list #'(lambda (x) (map 'list #'argument-name x)) (map 'list #'kernel-renderer-args k))
+		  else
+		    collect (list (group-args g))))
+	  (const-dependencies (append (avm-fw-outputs avm) (avm-bw-outputs avm))))
+      ;; 1. Remove outputs if unnecessary
+      (loop for g in groups
+	    for k in kernels
+	    for nth upfrom 0
+	    if k do
+	      (loop for kernel-renderer in k
+		    for ith upfrom 1
+		    for deps = (flatten
+				(append
+				 const-dependencies
+				 (apply #'append (nthcdr (1+ nth) args-by-time))
+				 (apply #'append (nthcdr ith (nth nth args-by-time)))))
+		    do (output->scalar-mutation mp g kernel-renderer deps)))
+      ;; 2. TODO: Simplify Index Computation
+      )))

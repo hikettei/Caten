@@ -14,14 +14,20 @@
   (declare (type avm avm))
   (count :JIT_KERNEL (graph-nodes (avm-graph avm)) :key #'node-type))
 (defun n-args (shape avm)
+  ;; shape ... (t t) specify t to match w/ anything
   (declare (type avm avm))
   (count :Allocate (graph-nodes (avm-graph avm))
 	 :test
 	 #'(lambda (id node)
 	     (and (eql id (node-type node))
-		  (let ((rank (getattr node :nrank)))
-		    (equal shape (subseq (node-reads node) 0 rank)))))))
-		  
+		  (let* ((rank (getattr node :nrank))
+		 	 (s1 (subseq (node-reads node) 0 rank)))
+		    (and
+		     (= (length shape) (length s1))
+		     (every
+		      #'(lambda (x y) (or (eql x t) (equal x y)))
+		      shape s1)))))))
+
 (defun check-kernels (n avm)
   (if (= 1 (ctx:getenv :JIT))
       (ok (= n (n-kernels avm)))
@@ -55,12 +61,13 @@
 (deftest check-in-place-mutation
   (with-no-grad
     (with-jit-only-mode
+      ;; TODO: More!
       (check-args 1 `(3 3) (caten (!tan (make-tensor `(3 3)))))
-      (check-args 3 `(3 3) (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
-      ;; [TODO] Fuse softmax  <= 1 args
+      (check-args 1 `(3 3) (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
       (check-args 1 `(3 3) (caten (!softmax (make-tensor `(3 3)))))
       (check-args 1 `(3 3) (caten (!softmax (ax+b `(3 3) 1 1))))
-      )))
+      (check-args 1 `(3 3) (caten (!softmax (!softmax (ax+b `(3 3) 1 1)))))
+      (check-args 1 `(t t) (caten (!softmax (!softmax (ax+b `(a b) 1 1))))))))
 
 (deftest matmul-is-small
   (with-no-grad

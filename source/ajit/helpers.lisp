@@ -56,17 +56,29 @@ should be used instead"
 	(push w seen)))
     (reverse depends-on)))
 
+(defun node-reads1 (node)
+  "Ignores the first read var of :EXPR"
+  (if (eql :EXPR (node-type node))
+      (cdr (node-reads node))
+      (node-reads node)))
+
+(defun relay-reads1 (node)
+  "Ignores the first read var of :EXPR"
+  (if (eql :EXPR (node-type node))
+      (cdr (relay-reads (read-type-relay node)))
+      (relay-reads (read-type-relay node))))
+
 (defun nodes-depends-on/buffers (nodes)
   "Enumerates the unsolved buffer ids from the sched graph."
   (declare (type list nodes))
   (let ((seen `(t nil)) (depends-on))
     (loop for node in nodes do
-      (loop for r in `(,@(node-reads node) ,@(getattr node :_loop_bound_nodes))
-	    for typ in `(,@(relay-reads (read-type-relay node)) ,@(getattr node :_loop_bound_nodes_type))
+      (loop for r in `(,@(node-reads1 node) ,@(getattr node :_loop_bound_nodes))
+	    for typ in `(,@(relay-reads1 node) ,@(getattr node :_loop_bound_nodes_type))
 	    if (null (find r seen)) do
 	      (when (symbolp r) (push (cons r typ) depends-on))
 	      (push r seen))
-      (loop for read in (node-reads node) do
+      (loop for read in (node-reads1 node) do
 	(loop for shape in (buffer-reconstruct-view-args read)
 	      if (null (find shape seen)) do
 		(push (cons shape (make-uconst-buffer)) depends-on)
@@ -421,8 +433,8 @@ in a single timestamp otherwise recursive dependencies will occur.
   (every #'(lambda (node) (remattr node :_reads_old_for_multiexpr) node) (graph-nodes graph))
   graph)
 
-(defun optimize-non-in-place-buffers (base-avm avm refcounter graph seen verbose)
-  (declare (ignore refcounter))
+(defun optimize-non-in-place-buffers (base-avm avm mp graph seen verbose kernel-args)
+  (declare (ignore mp))
   (let* ((kernel-arg-symbols
 	   (loop for node in (graph-nodes graph)
 		 if (eql (node-type node) :JIT_KERNEL)
@@ -439,16 +451,30 @@ in a single timestamp otherwise recursive dependencies will occur.
 		   collect k))
 	 (extra-allocs
 	   (loop for name in non-in-place-list
-		 for node = (find name (graph-nodes (avm-graph avm)) :test #'find :key #'node-writes)
-		 if node
+		 for args = (loop for arg in kernel-args
+				 if (eql (argument-name arg) name)
+				   collect (argument-metadata arg))
+		 if args
 		   collect
-		   (let* ((pos  (position name (node-writes node)))
-			  (typ  (nth pos (relay-writes (read-type-relay node)))))
+		   (let* ((typ
+			    (if (= (length args) 1)
+				(car args)
+				(progn
+				  ;;(assert (every #'(lambda (x) (equal (buffer-orig-buffer-shape x) (buffer-orig-buffer-shape (car args)))) args))
+				  (let ((s (find-if #'identity args :key #'buffer-orig-buffer-shape)))
+				    (if (null s) ;; all tensors are contiguous
+					(car args)
+					(or
+					 ;; If there are multiple tensors, one is viewed, one is not viewed
+					 ;; Find out the original one and allocate it with the original shape.
+					 (find (buffer-orig-buffer-shape s) args :key #'buffer-shape :test #'equal)
+					 (error "Cannot determine the size of nested buffer! (It is a bug of Caten.)"))))))))
 		     (make-node :Buffer :Allocate
 				(list name) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
 				:nrank (buffer-nrank typ)
 				:dtype (buffer-dtype typ)
 				:_type_relay (make-inferred-type nil (list typ)))))))
+    
     (when verbose (format t "~%A number of buffers that failed to mutate in-place: ~a" (length extra-allocs)))
     ;; [TODO] Schedule to reuse the allocated buffer in non-in-place-list
     ;; Relocate to the most nearest
@@ -500,3 +526,14 @@ in a single timestamp otherwise recursive dependencies will occur.
 
 (defun padding-list (list rank &key (with 0))
   (append list (loop for i in (range 0 (- rank (length list))) collect with)))
+
+(defun unroll-suffix (buffer unroll-offsets)
+  "Renders a suffix for a given number"
+  (flet ((f (idx) (find idx unroll-offsets :key #'car :test #'equalp)))
+    (apply
+     #'concatenate
+     'string
+     (loop for idx in (buffer-depend-idx-list buffer)
+	   for unroll = (and idx (f idx))
+	   if unroll
+	     append (list "_" (format nil "~a" (cdr unroll)))))))

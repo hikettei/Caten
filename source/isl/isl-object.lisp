@@ -37,8 +37,9 @@ of type OBJECT-NAME."
      (prog1
 	 (let ((*isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value)))
 	   ,@body)
-       (remhash (cffi:pointer-address (context-handle *context*)) *isl-object-table*)
-       (%isl-ctx-free (context-handle *context*)))))
+       ;;(remhash (cffi:pointer-address (context-handle *context*)) *isl-object-table*)
+       ;;(%isl-ctx-free (context-handle *context*))
+       )))
 
 (defmacro define-isl-object
     (name &key (abstract nil)

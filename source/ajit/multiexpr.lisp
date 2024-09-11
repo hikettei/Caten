@@ -1,4 +1,6 @@
 (in-package :caten/ajit)
+;; multiexpr.lisp
+;; Groups the nested structure in the node into a Expr, making more chances to eliminate extra buffers and in-place mutation
 
 (defun expr-recursive-replace (expr map)
   (declare (type expr) (type function map))
@@ -26,6 +28,17 @@
 		      (when (expr-p (expr-y expr)) (expr-recursive-deps (expr-y expr)))
 		      (when (expr-p (expr-z expr)) (expr-recursive-deps (expr-z expr)))))
     out))
+
+(defun expr-recursive-settype (expr id buffer)
+  (declare (type expr expr) (type symbol id) (type buffer buffer))
+  (when (and
+	 (eql (expr-op expr) :AREF)
+	 (eql (expr-x expr) id))
+    (setf (expr-y expr) buffer))
+  (when (expr-p (expr-x expr)) (expr-recursive-settype (expr-x expr) id buffer))
+  (when (expr-p (expr-y expr)) (expr-recursive-settype (expr-y expr) id buffer))
+  (when (expr-p (expr-z expr)) (expr-recursive-settype (expr-z expr) id buffer)))
+
 ;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((expr (name (&rest args) (&rest types))
 	     `(defun ,(symb 'make- name) (,@args)
@@ -146,7 +159,8 @@
 			       ;; EXPR (out-to aref ...)
 			       (assert (symbolp out-to))
 			       (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
-					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node))))))
+					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
+					  :reduction (getattr node :reduction))))
 			 else
 			   collect expr)))
 	    ;; :expr nil is removed

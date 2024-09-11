@@ -13,6 +13,7 @@
    #:dtype/min
    #:dtype/min
    #:dtype/smallest
+   #:dtype/size-of
 
    #:encode-float64
    #:decode-float64
@@ -119,6 +120,23 @@
     (:bfloat16 6.104e-05)    
     (:bool nil)
     (otherwise 0)))
+
+(defun dtype/size-of (dtype)
+  "Return: bit"
+  (ecase dtype
+    (:float64 64)
+    (:float32 32)
+    (:float16 16)
+    (:bfloat16 16)
+    (:uint64 64)
+    (:int64  64)
+    (:uint32 32)
+    (:int32 32)
+    (:int16 16)
+    (:uint16 16)
+    (:uint8 8)
+    (:int8 8)
+    (:bool 1)))
 
 (ieee-floats:make-float-converters encode-float64 decode-float64 11 52 t)
 (ieee-floats:make-float-converters encode-float32 decode-float32 8 23 t)

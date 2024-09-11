@@ -1,5 +1,7 @@
 (in-package :caten/ajit)
-
+;; isl-object.lisp
+;; A helper to render ISL format from Lisp.
+;; TODO: [Refactor] Replace this by caten/isl and delete this file.
 (defmacro define-isl-object (print-name docstring ((&rest args) &rest slots) &body body)
   (declare (type string print-name))
   (let* ((name (intern (string-upcase print-name)))
