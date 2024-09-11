@@ -139,7 +139,7 @@ We consider shuffling these nodes which never violates lexiographical order.
 		    (lex-dep-ok a-scal b-scal))
 	       (apply-merge a-scal b-scal a-vec b-vec)))))))))
 
-(defmethod sort-two-loops ((a kernel-renderer) (b kernel-renderer) (poly Polyhedral))
+(defmethod swap-two-loops ((a kernel-renderer) (b kernel-renderer) (poly Polyhedral))
   "Sorts two iteration by lexiographical order dependencies."
   (let ((lex (poly-lex-table poly)))
     (labels ((nodes->lex (nodes)
@@ -157,7 +157,7 @@ We consider shuffling these nodes which never violates lexiographical order.
 
 ;; TODO: Test
 (defun sort-kernel-renderers (kernel-renderers polyhedral)
-  (flet ((s (x y) (sort-two-loops x y polyhedral)))
+  (flet ((s (x y) (swap-two-loops x y polyhedral)))
     (sort kernel-renderers #'s)))
   
 (defun fuse-outermost-loops (polyhedral blueprints)
