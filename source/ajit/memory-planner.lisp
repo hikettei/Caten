@@ -7,7 +7,6 @@
 ;; - 3. Index Computation Scheduling
 ;; - 4. Duplicated computation elimination
 ;; - 5. Dead Code Elimination
-
 (defun render-graph/get-timestamps (graph)
   (declare (type graph graph))
   (loop for node in (graph-nodes graph) if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
@@ -335,7 +334,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 ;; Env: GREEDY=1 to alywas use greedy solver.
 ;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
 (defun GreedySolveDSA (I total-time)
-  "A greedy solver for minimizing peak_mem"
+  "A greedy solver for minimizing `peak_mem`"
   (declare (type list I))
   (let ((locked))
     (labels ((choose-from-fragments (mb time &aux (candidates nil))

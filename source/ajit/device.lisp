@@ -1,6 +1,6 @@
 (in-package :caten/ajit)
 ;;
-;; Device. An abstraction class for each renderer
+;; Device. An abstraction class for the renderer.
 ;;
 ;;
 
