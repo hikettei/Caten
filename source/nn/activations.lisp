@@ -197,7 +197,7 @@
   :inputs  (list (proceed (ax+b `(100 100) -0.01 1.0)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'softsign-lisp x))))
-  :assert-close ((x y) (every (~= 1e-4) x y))
+  :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 1 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
@@ -219,7 +219,7 @@
   :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'silu-lisp x))))
-  :assert-close ((x y) (every (~= 1e-3) x y)) ;; Sigmoid is very unstable; needs more fusion. especially recip.
+  :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 1 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
@@ -230,7 +230,7 @@
   :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'gelu-lisp x))))
-  :assert-close ((x y) (every (~= 1e-3) x y))
+  :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 1 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
@@ -241,6 +241,6 @@
   :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'hardswish-lisp x))))
-  :assert-close ((x y) (every (~= 1e-3) x y))
+  :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 1 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
