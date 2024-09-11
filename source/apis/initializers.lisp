@@ -134,3 +134,4 @@
 ;; TODO: (parameter x :requires-grad t :id xx)
 ;; TODO: Pre-compile the function (symbolic!)
 ;; (export-avm :clang avm)
+(caten/defun[float] ($random "random") (n) (!rand `(,n)))

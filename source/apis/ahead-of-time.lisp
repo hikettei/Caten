@@ -58,7 +58,3 @@
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:int64 :uint32 :int32 :uint16 :int16 :uint8 :int8)) (,@lambda-list) ,@body))
   (defmacro caten/defun[uint] ((name cffi-prefix) lambda-list &body body)
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:uint64 :uint32 :uint16 :uint8)) (,@lambda-list) ,@body)))
-
-;; [TODO] Fix for AOT
-;; - Create ./.caten_aot/xxx
-;; - Implement Xavier-Uniform
