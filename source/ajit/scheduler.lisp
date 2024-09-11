@@ -394,7 +394,16 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		   (if (gethash key lex)
 		       (push time (gethash key lex))
 		       (setf (gethash key lex) (list time)))))))
-      (mapc #'explore (nodes-output-ids (graph-nodes graph)))
+      ;; [TODO] 
+      ;; 2  2    2
+      ;; \  /   /
+      ;;   1   1
+      ;;    \ / 
+      ;;     0         1
+      ;; 
+      (loop for time upfrom 0
+	    for id in (nodes-output-ids (graph-nodes graph))
+	    do (explore id :time time))
       (assert (every #'(lambda (x) (find x seen :key #'second)) (map 'list #'node-id (graph-nodes graph))))
       (let ((tree-max-depth (apply #'max (apply #'append (hash-table-values lex)))))
 	(maphash
