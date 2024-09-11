@@ -55,12 +55,13 @@
 (deftest check-in-place-mutation
   (with-no-grad
     (with-jit-only-mode
+      ;; TODO: More!
       (check-args 1 `(3 3) (caten (!tan (make-tensor `(3 3)))))
-      (check-args 3 `(3 3) (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
-      ;; [TODO] Fuse softmax  <= 1 args
+      (check-args 1 `(3 3) (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
       (check-args 1 `(3 3) (caten (!softmax (make-tensor `(3 3)))))
       (check-args 1 `(3 3) (caten (!softmax (ax+b `(3 3) 1 1))))
-      )))
+      (check-args 1 `(3 3) (caten (!softmax (!softmax (ax+b `(3 3) 1 1)))))
+      (check-args 1 `(a b) (caten (!softmax (!softmax (ax+b `(a b) 1 1))))))))
 
 (deftest matmul-is-small
   (with-no-grad
