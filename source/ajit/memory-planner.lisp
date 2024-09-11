@@ -36,9 +36,7 @@ Slots:
 (defun apply-group-attr (nodes)
   (dolist (n nodes)
     ;; Set :_no_group_realize_on_vm=t not to involve VM variables MemoryPlanner
-    (when (not (eql (node-type n) :Allocate))
-      ;(setf (getattr n :_no_group_realize_on_vm) t)
-      )))
+    (setf (getattr n :_no_group_realize_on_vm) t)))
 
 (defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups mp groups)))
   (setf (mp-groups mp) groups

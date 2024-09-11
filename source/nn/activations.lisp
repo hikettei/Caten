@@ -141,7 +141,9 @@
 		 (let ((sum (proceed (!contiguous (!sum x :axis -1)))))
 		   (every #'(lambda (x) (<= (abs (- x 1.0)) 1e-1)) (elements sum)))
 		 (every (~= 1e-6) (elements x) (elements y)))
-  :in-place ((model) (= 1 (n-args `(512 256) model)))
+  :in-place ((model) (and
+		      (= 1 (n-args `(512 256) model))
+		      (= 0 (n-args `(512 1) model))))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (define-nn-test LogSoftmax
