@@ -509,7 +509,7 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 		      with nodes = (kernel-renderer-nodes kernel)
 		      with start = (or (position (apply #'min search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from ->scalar-p nil))
 		      with end   = (or (position (apply #'max search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from ->scalar-p nil))
-		      for nth upfrom start to end
+		      for nth upfrom (min start end) to (max start end)
 		      for ir = (nth nth nodes)
 		      if (find (node-type ir) `(:IF :FOR))
 			do (incf depth)
