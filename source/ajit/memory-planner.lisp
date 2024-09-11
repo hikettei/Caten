@@ -502,27 +502,36 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 		      if (eql (node-type ir) :FOR)
 			do (incf depth)
 		      else if (eql (node-type ir) :ENDFOR)
-			 do (decf depth)
+			     do (decf depth)
 		      end
 		      if (< depth 0) do
-			 (return-from ->scalar-p nil))
+			(return-from ->scalar-p nil))
 		t))))
       (dolist (node related-nodes)
 	(loop for w in (node-writes node)
 	      for typ in (relay-writes (read-type-relay node))
 	      if (and (not (= 0 (buffer-nrank typ))) (->scalar-p w)) do
 		(push w scalars)))
-      ;; mutate all read dependencies
-      (let ((seen))
-	(dolist (node related-nodes)
-	  (update-buffer-as-scalar node scalars)
-	  (setf (getattr node :declare-type)
-		(loop for w in (node-writes node)
-		      for typ in (relay-writes (read-type-relay node))
-		      collect
-		      (prog1
-			  (and (null (find w seen)) (find w scalars))
-			(push w seen))))))
+      ;; mutate all read dependencie
+      (let ((seen) (suffix))
+	(loop for node in (kernel-renderer-nodes kernel)
+	      if (eql (node-type node) :FOR)
+		do (push (cons (getattr node :idx) 1) suffix)
+	      else
+		if (eql (node-type node) :ENDFOR)
+		  do (setf suffix (remove (getattr node :idx) suffix :key #'car :test #'equalp))
+	      end
+	      if (eql (node-type node) :FUNCALL)
+		do (dolist (node (graph-nodes (gethash (getattr node :idx) (poly-pipeline (group-polyhedron group)))))
+		     (update-buffer-as-scalar node scalars)
+		     (setf (getattr node :declare-type)
+			   (loop for w in (node-writes node)
+				 for typ in (relay-writes (read-type-relay node))
+				 for w-as-unrolled = (intern (format nil "~a~a" w (unroll-suffix typ suffix)))
+				 collect
+				 (prog1
+				     (and (null (find w-as-unrolled seen)) (find w scalars))
+				   (push w-as-unrolled seen)))))))
       ;; Remove from args
       (setf (kernel-renderer-args kernel)
 	    (loop for arg in (kernel-renderer-args kernel)
