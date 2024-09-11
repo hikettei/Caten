@@ -170,7 +170,13 @@ X <- f(x, y, reduction=t)"
     (setf (gethash id (mp-id2buffer mp)) buffer)))
 (defmethod mp-get-buffer-type ((mp MemoryPlanner) id) (gethash id (mp-id2buffer mp)))
 
-(defun newid-from-str (obj) (if (stringp obj) (intern (string-upcase obj)) obj))
+(defmethod newid-from-str ((group group) obj)
+  (if (stringp obj)
+      (or
+       (find obj (poly-vm-inputs (group-polyhedron group)) :test #'equalp :key #'symbol-name)
+       (intern obj))
+      obj))
+
 (defmethod apply-current-plan ((mp MemoryPlanner) (group group) (kernel kernel-renderer))
   "Applying the current memory-plan, returning a list of arguments for the given group/kernel"
   (let* ((nodes (renderer-get-nodes group kernel))
@@ -178,7 +184,7 @@ X <- f(x, y, reduction=t)"
 	 (index-components
 	   (loop for ir in irs
 		 if (eql (node-type ir) :FOR)
-		   collect (newid-from-str (getattr ir :idx))))
+		   collect (newid-from-str group (getattr ir :idx))))
 	 (meta-ids)
 	 (out))
     (flet ((cleanup-buffer (buffer)
@@ -239,7 +245,7 @@ X <- f(x, y, reduction=t)"
 		     (expr-recursive-deps (getattr ir :below))
 		     (expr-recursive-deps (getattr ir :by))))))
 	     (loop for dep in deps
-		   for name = (newid-from-str dep)
+		   for name = (newid-from-str group dep)
 		   unless (find name index-components)
 		     ;; Indices are created as default-uint
 		     do (push name meta-ids)
@@ -252,7 +258,7 @@ X <- f(x, y, reduction=t)"
 		   (remove-duplicates
 		    (expr-recursive-deps (getattr ir :condition)))))
 	     (loop for dep in deps
-		   for name = (newid-from-str dep)
+		   for name = (newid-from-str group dep)
 		   unless (find name index-components)
 		     do (push name meta-ids)
 			(push
