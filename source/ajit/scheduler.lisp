@@ -875,10 +875,12 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
 	(declare (ignore _))
 	(unless compile-later (%render-compile backend avm final-code))
-	(values
-	 (map 'list #'car blueprints/codes)
-	 final-code
-	 mp)))))
+	(list
+	 (map 'list #'car blueprints/codes) final-code mp
+	 (loop for kr in kernels
+	       if (listp kr)
+		 append
+		 (loop for k in kr append (kernel-renderer-args k))))))))
 
 (defun jit (base-avm
 	    &key
@@ -896,8 +898,8 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type (integer 0 4) debug)
 	   (type boolean serialize)
 	   (ignore  _))
-  (multiple-value-bind (compiled-kernels code mp)
-      (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil)
+  (multiple-value-bind (compiled-kernels code mp kernel-args)
+      (apply #'values (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil))
     (declare (ignore code))
     (make-avm
      (clean-up-attrs
@@ -908,7 +910,8 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	 #'make-graph
 	 (apply #'append (map 'list #'(lambda (x) (jit->vm backend x)) compiled-kernels))))
        (nodes-gather-args (graph-nodes (avm-graph avm)))
-       (or (= debug 2) (= debug 4))))
+       (or (= debug 2) (= debug 4))
+       kernel-args))
      (avm-name avm)
      (avm-id2tensor avm)
      (avm-fw-outputs avm)

@@ -433,7 +433,7 @@ in a single timestamp otherwise recursive dependencies will occur.
   (every #'(lambda (node) (remattr node :_reads_old_for_multiexpr) node) (graph-nodes graph))
   graph)
 
-(defun optimize-non-in-place-buffers (base-avm avm mp graph seen verbose)
+(defun optimize-non-in-place-buffers (base-avm avm mp graph seen verbose kernel-args)
   (let* ((kernel-arg-symbols
 	   (loop for node in (graph-nodes graph)
 		 if (eql (node-type node) :JIT_KERNEL)
@@ -450,11 +450,10 @@ in a single timestamp otherwise recursive dependencies will occur.
 		   collect k))
 	 (extra-allocs
 	   (loop for name in non-in-place-list
-		 for node = (find name (graph-nodes (avm-graph avm)) :test #'find :key #'node-writes)
-		 if node
+		 for arg = (find name kernel-args :key #'argument-name)
+		 if arg
 		   collect
-		   (let* ((pos (position name (node-writes node)))
-			  (typ (nth pos (relay-writes (read-type-relay node)))))
+		   (let* ((typ (argument-metadata arg)))
 		     (make-node :Buffer :Allocate
 				(list name) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
 				:nrank (buffer-nrank typ)
