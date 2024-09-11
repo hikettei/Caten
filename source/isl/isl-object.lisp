@@ -33,9 +33,9 @@ of type OBJECT-NAME."
 (defvar *isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value))
 (defmacro with-isl-context (&body body)
   "Assumes under the body is a thread-safe"
-  `(let ((*context* (make-context)))
+  `(progn;let ((*context* (make-context)))
      (prog1
-	 (let ((*isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value)))
+	 (progn;let ((*isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value)))
 	   ,@body)
        ;;(remhash (cffi:pointer-address (context-handle *context*)) *isl-object-table*)
        ;;(%isl-ctx-free (context-handle *context*))
