@@ -31,7 +31,14 @@ Slots:
 
 (defmethod debug-log ((mp MemoryPlanner) stream str &rest more)
   (when (>= (mp-debug mp) 1)
-    (format stream "MemoryPlanner : ~a~%" (apply #'format nil str more))))  
+    (format stream "MemoryPlanner : ~a~%" (apply #'format nil str more))))
+
+(defun apply-group-attr (nodes)
+  (dolist (n nodes)
+    ;; Set :_no_group_realize_on_vm=t not to involve VM variables MemoryPlanner
+    (when (not (eql (node-type n) :Allocate))
+      ;(setf (getattr n :_no_group_realize_on_vm) t)
+      )))
 
 (defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups mp groups)))
   (setf (mp-groups mp) groups
@@ -41,7 +48,7 @@ Slots:
 	 #'make-graph
 	 (loop for group in groups
 	       if (group-realize-on-vm group)
-		 append (graph-nodes (group-graph group))
+		 append (apply-group-attr (graph-nodes (group-graph group)))
 	       else
 		 append
 		 (loop for idx in (render-graph/get-timestamps (group-render-graph group))
@@ -271,7 +278,7 @@ X <- f(x, y, reduction=t)"
       out)))
 
 (defstruct (MemoryBlock
-	    (:constructor make-memoryblock (id type create release)))
+	    (:constructor make-memoryblock (id type create release &key (lock nil))))
   "An abstraction for memory_block
     |
  i  |  (create)  (release)
@@ -285,10 +292,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (type type :type buffer)
   (create create :type fixnum)
   (release release :type fixnum)
-  (lifetime (- release create) :type (integer 0)))
+  (lifetime (- release create) :type (integer 0))
+  (lock lock :type boolean))
 
 (defmethod print-object ((mb MemoryBlock) stream)
-  (format stream "MemoryBlock(~(~a~) -> ~(~a~)) : (~a, ~a, ~a)~%" (memoryblock-id mb) (memoryblock-answer mb) (buffer-shape (memoryblock-type mb)) (memoryblock-create mb) (memoryblock-release mb)))
+  (format stream "MemoryBlock(~(~a~) -> ~(~a~)) : (~a, ~a, ~a, lock=~a)~%" (memoryblock-id mb) (memoryblock-answer mb) (buffer-shape (memoryblock-type mb)) (memoryblock-create mb) (memoryblock-release mb) (memoryblock-lock mb)))
 
 (defmethod allocate-p ((mb MemoryBlock) time)
   (= time (memoryblock-create mb)))
@@ -330,7 +338,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	     (apply-creation (time)
 	       (loop for mb of-type MemoryBlock in I
 		     if (allocate-p mb time) do
-		       (let ((buffer (choose-from-fragments mb time)))
+		       (let ((buffer (and (null (memoryblock-lock mb)) (choose-from-fragments mb time))))
 			 (if buffer
 			     (setf (memoryblock-answer mb) (memoryblock-id buffer))
 			     (setf (memoryblock-answer mb) (memoryblock-id mb))))))
@@ -373,11 +381,13 @@ Lifespan:
     (sync)
     (let* ((trace-table (make-hash-table))
 	   (id2type (make-hash-table))
+	   (lock-table (make-hash-table))
 	   (total-time (length (graph-nodes (mp-graph mp))))
 	   (outputs (avm-bw-outputs avm))
 	   (constants))
       (loop for node in (graph-nodes (mp-graph mp))
-	    for nth upfrom 0 do
+	    for nth upfrom 0
+	    for lock-p = (getattr node :_no_group_realize_on_vm) do
 	      ;; Not going to make the dynamic shape in-place.
 	      (when (and (eql (node-type node) :Load) (symbolp (getattr node :value)))
 		(push (getattr node :value) constants))
@@ -389,7 +399,9 @@ Lifespan:
 	      (loop for val in (node-writes node)
 		    for typ in (relay-writes (read-type-relay node))
 		    if (and (symbolp val) (null (gethash val trace-table)))
-		      do (setf (gethash val id2type) typ (gethash val trace-table) (list nth))))
+		      do (setf (gethash val id2type) typ
+			       (gethash val trace-table) (list nth)
+			       (gethash val lock-table) lock-p)))
       (let* ((memory-blocks
 	       (loop for key in (hash-table-keys trace-table)
 		     for typ = (gethash key id2type)
@@ -400,7 +412,8 @@ Lifespan:
 		      ;; Set the longest time for gradients
 		      (if (find key outputs)
 			  total-time
-			  (apply #'max (gethash key trace-table))))))
+			  (apply #'max (gethash key trace-table)))
+		      :lock (gethash key lock-table))))
 	     (solved (GreedySolveDSA memory-blocks total-time))
 	     (alias-map (mp-alias mp)))
 	(loop for mb in solved

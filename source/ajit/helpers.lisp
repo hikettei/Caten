@@ -433,6 +433,7 @@ in a single timestamp otherwise recursive dependencies will occur.
   (every #'(lambda (node) (remattr node :_reads_old_for_multiexpr) node) (graph-nodes graph))
   graph)
 
+;; [TODO] 追加したWriteのやついらないかも
 (defun optimize-non-in-place-buffers (base-avm avm mp graph seen verbose)
   (let* ((kernel-arg-symbols
 	   (loop for node in (graph-nodes graph)
