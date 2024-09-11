@@ -331,7 +331,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (declare (type list I))
   (let ((locked))
     (labels ((choose-from-fragments (mb time &aux (candidates nil))
-	       (loop for candidate of-type MemoryBlock in I
+	       (loop for candidate in I
 		     if (and (null (find (memoryblock-id candidate) locked))
 			     (freed-p candidate time)
 			     (buffer-shape (memoryblock-type mb)) ;; Dont mutate scalars
@@ -345,14 +345,14 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 			(return-from choose-from-fragments x)))
 		 (when candidates (use (car (sort candidates #'> :key #'memoryblock-lifetime))))))
 	     (apply-creation (time)
-	       (loop for mb of-type MemoryBlock in I
+	       (loop for mb in I
 		     if (allocate-p mb time) do
 		       (let ((buffer (and (null (memoryblock-lock mb)) (choose-from-fragments mb time))))
 			 (if buffer
 			     (setf (memoryblock-answer mb) (memoryblock-id buffer))
 			     (setf (memoryblock-answer mb) (memoryblock-id mb))))))
 	     (apply-release (time)
-	       (loop for mb of-type MemoryBlock in I
+	       (loop for mb in I
 		     if (and (release-p mb time) (memoryblock-answer mb)) do
 		       (setf locked (remove (memoryblock-answer mb) locked)))))
       (dotimes (time total-time)
