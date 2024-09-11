@@ -434,6 +434,7 @@ in a single timestamp otherwise recursive dependencies will occur.
   graph)
 
 (defun optimize-non-in-place-buffers (base-avm avm mp graph seen verbose kernel-args)
+  (declare (ignore mp))
   (let* ((kernel-arg-symbols
 	   (loop for node in (graph-nodes graph)
 		 if (eql (node-type node) :JIT_KERNEL)
@@ -459,6 +460,7 @@ in a single timestamp otherwise recursive dependencies will occur.
 				:nrank (buffer-nrank typ)
 				:dtype (buffer-dtype typ)
 				:_type_relay (make-inferred-type nil (list typ)))))))
+    
     (when verbose (format t "~%A number of buffers that failed to mutate in-place: ~a" (length extra-allocs)))
     ;; [TODO] Schedule to reuse the allocated buffer in non-in-place-list
     ;; Relocate to the most nearest

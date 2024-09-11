@@ -312,6 +312,16 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 (defmethod freed-p ((mb MemoryBlock) time)
   (and (created-p mb time) (>= time (memoryblock-release mb))))
 
+(defun buffer-orig-shape (buffer)
+  (declare (type buffer buffer))
+  (loop for s in (buffer-shape buffer)
+	for nth upfrom 0
+	for v = (nth nth (buffer-views buffer))
+	if (and v (fourth v))
+	  collect 1
+	else
+	  ;; If Viewed: Orig-Shape, View-Upfrom, View-Below, View-By must correspond to reuse the buffer.
+	  collect `(,s ,@v)))
 ;; [TODO] Assuming the entire graph is "static", applying the `best-fit` schedule
 ;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY
 ;; Env: GREEDY=1 to alywas use greedy solver.
@@ -324,10 +334,9 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	       (loop for candidate of-type MemoryBlock in I
 		     if (and (null (find (memoryblock-id candidate) locked))
 			     (freed-p candidate time)
-			     ;; [TODO] Is the shape computed from Viewed or Original?
 			     (buffer-shape (memoryblock-type mb)) ;; Dont mutate scalars
-			     (equal (buffer-shape (memoryblock-type candidate))
-				    (buffer-shape (memoryblock-type mb)))
+			     (equal (buffer-orig-shape (memoryblock-type candidate))
+				    (buffer-orig-shape (memoryblock-type mb)))
 			     (equal (buffer-dtype (memoryblock-type candidate))
 				    (buffer-dtype (memoryblock-type mb))))
 		       do (push candidate candidates))
