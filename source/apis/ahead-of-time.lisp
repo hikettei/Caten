@@ -4,6 +4,8 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *aot-jit* (ctx:getenv :AOT))
   (defparameter *aot-vm* (ctx:getenv :AOT_VM))
+  (defun cache-dir (function-name dtype order device)
+    (merge-pathnames (pathname (format nil "./.caten_aot/~(~a~)_~(~a~)_~(~a~)_~(~a~)/" function-name dtype order device))))
   (defgeneric invoke-aot-function (device-id default-dtype default-order op &rest args))
   (defun create-blueprint-from-body (name dtype order lambda-list body &key (aot-mode t) &aux (*default-order* order))
     (let* ((*default-float* (if (caten/common.dtype:dtype/floatp dtype)    dtype *default-float*))
@@ -29,7 +31,7 @@
 		 for *device* in `(,@*aot-vm* ,@*aot-jit*)
 		 for jit-p = (find *device* *aot-jit*)
 		 for blueprint = (create-blueprint-from-body cffi-prefix dtype order lambda-list body)
-		 for avm = (if jit-p (caten/ajit:jit blueprint :backend *device*) blueprint)
+		 for avm = (if jit-p (caten/ajit:jit blueprint :backend *device* :dir (cache-dir name dtype order *device*)) blueprint)
 		 append
 		 `((defmethod invoke-aot-function ((device-id (eql ,*device*)) (default-dtype (eql ,dtype))
 						   (order (eql ,order)) (op (eql ,op-dispatcher)) &rest args)
@@ -57,12 +59,6 @@
   (defmacro caten/defun[uint] ((name cffi-prefix) lambda-list &body body)
     `(caten/defun[T] (,name ,cffi-prefix :dtypes (:uint64 :uint32 :uint16 :uint8)) (,@lambda-list) ,@body)))
 
-;; [TODO] Unbind all methods when redefining the method.
-;;(caten/defun[T] (axpy "axpy" :dtypes (:float32)) (x y n froma toa bya fromb tob byb)
-;;  (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa ,bya)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob ,byb)))) 
-
-;;(caten/defun[T] (%rand "rand" :dtypes (:float32)) (size)
-;;  (!rand `(,size) :dtype :float32))
-
-;;(caten/defun[T] (gemm! "gemm" :dtypes (:float32)) (x y m n k)
-;;  (!matmul (make-tensor `(,m ,n) :from x) (make-tensor `(,n ,k) :from y)))
+;; [TODO] Fix for AOT
+;; - Create ./.caten_aot/xxx
+;; - Implement Xavier-Uniform

@@ -58,7 +58,7 @@
   (if (buffer-p x)
       (buffer-value x)
       x))
-(defmethod %render-compile ((lang Metal) avm function) (eval (read-from-string function)))
+(defmethod %render-compile ((lang Metal) avm function dir) (eval (read-from-string function)))
 (defmethod %render-function-caller ((lang Metal) avm args)
   `(lambda (&rest args)
      (%funcall-metal

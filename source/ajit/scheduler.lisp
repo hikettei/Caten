@@ -845,6 +845,7 @@ Options:
 	       (serialize (= 1 (ctx:getenv :SERIALIZE)))
 	       (backend (or (ctx:getenv :JIT_BACKEND) :clang))
 	       (compile-later nil)
+	       (dir nil)
 	     &aux
 	       (backend (if (keywordp backend)
 			    (default-device backend)
@@ -885,7 +886,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
 	(declare (ignore _))
-	(unless compile-later (%render-compile backend avm final-code))
+	(unless compile-later (%render-compile backend avm final-code dir))
 	(list
 	 (map 'list #'car blueprints/codes) final-code mp
 	 (loop for kr in kernels
@@ -898,6 +899,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	      (debug (ctx:getenv :JIT_DEBUG))
 	      (serialize (= 1 (ctx:getenv :SERIALIZE)))
 	      (backend (or (ctx:getenv :JIT_BACKEND) :clang))
+	      (dir nil)
 	    &aux
 	      (_ (apply-static-gensym base-avm))
 	      (backend (if (keywordp backend)
@@ -910,7 +912,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type boolean serialize)
 	   (ignore  _))
   (multiple-value-bind (compiled-kernels code mp kernel-args)
-      (apply #'values (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil))
+      (apply #'values (%jit avm :debug debug :serialize serialize :backend backend :compile-later nil :dir dir))
     (declare (ignore code))
     (make-avm
      (clean-up-attrs

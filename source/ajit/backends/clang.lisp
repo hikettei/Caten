@@ -14,9 +14,9 @@
 (defparameter *suffix* nil)
 (defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))
 
-(defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags))
+(defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags) (dir nil))
   (declare (type string source compiler))
-  (uiop:with-temporary-file (:pathname sharedlib :type "so" :keep t)
+  (uiop:with-temporary-file (:pathname sharedlib :type "so" :keep t :directory dir)
     nil
     :close-stream
     (let* ((cmd
@@ -44,8 +44,8 @@ Compiled with: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
-(defmethod %render-compile ((lang Clang) avm function)
-  (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3")))
+(defmethod %render-compile ((lang Clang) avm function dir)
+  (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir))
 
 (defun bool->bit (x)
   (declare (type buffer x))
