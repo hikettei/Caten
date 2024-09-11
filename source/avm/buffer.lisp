@@ -17,6 +17,7 @@
   ;; Metadata for JIT
   (inferred-permute nil :type list)
   (depend-idx-list nil :type list)
+  (orig-buffer-shape nil :type list)
   (shape-base nil :type list)
   (stride-base nil :type list)
   (views-base nil :type list))

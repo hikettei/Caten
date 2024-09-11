@@ -451,10 +451,24 @@ in a single timestamp otherwise recursive dependencies will occur.
 		   collect k))
 	 (extra-allocs
 	   (loop for name in non-in-place-list
-		 for arg = (find name kernel-args :key #'argument-name)
-		 if arg
+		 for args = (loop for arg in kernel-args
+				 if (eql (argument-name arg) name)
+				   collect (argument-metadata arg))
+		 if args
 		   collect
-		   (let* ((typ (argument-metadata arg)))
+		   (let* ((typ
+			    (if (= (length args) 1)
+				(car args)
+				(progn
+				  ;;(assert (every #'(lambda (x) (equal (buffer-orig-buffer-shape x) (buffer-orig-buffer-shape (car args)))) args))
+				  (let ((s (find-if #'identity args :key #'buffer-orig-buffer-shape)))
+				    (if (null s) ;; all tensors are contiguous
+					(car args)
+					(or
+					 ;; If there are multiple tensors, one is viewed, one is not viewed
+					 ;; Find out the original one and allocate it with the original shape.
+					 (find (buffer-orig-buffer-shape s) args :key #'buffer-shape :test #'equal)
+					 (error "Cannot determine the size of nested buffer! (It is a bug of Caten.)"))))))))
 		     (make-node :Buffer :Allocate
 				(list name) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
 				:nrank (buffer-nrank typ)
