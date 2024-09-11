@@ -429,4 +429,4 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 			  (setf (nth nth (,types (read-type-relay node)))
 				(mutate-scalar-buffer val type (when (eql (node-type node) :EXPR) (getattr node :EXPR)) ,read-p)))))
       (f node-reads relay-reads t)
-      (f node-writes relay-writes nil))))
+      (f node-writes relay-writes t))))

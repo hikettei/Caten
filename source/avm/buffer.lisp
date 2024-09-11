@@ -14,8 +14,12 @@
   (stride stride :type list)
   (dtype dtype :type dtype-t)
   (views views :type list)
+  ;; Metadata for JIT
   (inferred-permute nil :type list)
-  (depend-idx-list nil :type list))
+  (depend-idx-list nil :type list)
+  (shape-base (copy-list shape) :type list)
+  (stride-base (copy-list stride) :type list)
+  (views-base (copy-list views) :type list))
 
 ;; methods start with % = users need to override it to implement new backends.
 (defgeneric %vm/allocate-buffer (device-id buffer)

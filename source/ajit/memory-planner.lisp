@@ -7,17 +7,7 @@
 ;; - 3. Index Computation Scheduling
 ;; - 4. Duplicated computation elimination
 ;; - 5. Dead Code Elimination
-;; reading: (TODO: Githubから持ってくる)
-;; - https://discuss.tvm.apache.org/t/discussion-alignment-memory-planning/9730
-;; - https://dl.acm.org/doi/pdf/10.5555/314500.315082
 
-;; TODO: Improve Memory_Planner (Support Statement and Symbolic) (OK)
-;; TODO: 必要ないカーネルはCompileしない (OK)
-;; TODO: out deps -> float mutation (カーネル間の依存を考えればOK)
-;;     - カーネル間に依存がないOUTPUTはscalarにする
-;; TODO: Index Computation Simplification
-;;     - Latency Optimization
-;;     - Minimize the load
 (defun render-graph/get-timestamps (graph)
   (declare (type graph graph))
   (loop for node in (graph-nodes graph) if (eql (node-type node) :FUNCALL) collect (getattr node :idx)))
@@ -84,13 +74,16 @@ X <- f(x, y, reduction=t)"
   "Removing: val_1 <- val_1"
   group)
 
-(defmethod mp-newid ((mp MemoryPlanner) id) (or (gethash id (mp-alias mp)) id))
+(defmethod mp-newid ((mp MemoryPlanner) id)
+  (assert (or (numberp id) (symbolp id)) () "mp-newid: id should be a number or symbol.")
+  (or (gethash id (mp-alias mp)) id))
+
 (defmethod mp-update-buffer ((mp MemoryPlanner) buffer)
-  (flet ((new (x) (mp-newid mp x)))
-    (setf (buffer-shape buffer) (map 'list #'new (buffer-shape buffer))
-	  (buffer-stride buffer) (map 'list #'new (buffer-stride buffer))
+  (flet ((new (x) (mp-newid mp (reveal-buffer x))))
+    (setf (buffer-shape buffer) (map 'list #'new (buffer-shape-base buffer))
+	  (buffer-stride buffer) (map 'list #'new (buffer-stride-base buffer))
 	  (buffer-views buffer)
-	  (loop for v in (buffer-views buffer)
+	  (loop for v in (buffer-views-base buffer)
 		if v
 		  collect (list (new (nth 0 v)) (new (nth 1 v)) (new (nth 2 v)) (nth 3 v))
 		else
@@ -185,7 +178,15 @@ X <- f(x, y, reduction=t)"
 					       if (or (null view) (null (nth 3 view)))
 						 collect s
 					       else
-						 collect 1))))
+						 collect 1)
+		   (buffer-shape-base buffer) (map 'list #'reveal-buffer (buffer-shape-base buffer))
+		   (buffer-shape-base buffer) (loop for s in (buffer-shape-base buffer)
+						    for nth upfrom 0
+						    for view = (nth nth (buffer-views buffer))
+						    if (or (null view) (null (nth 3 view)))
+						      collect s
+						    else
+						      collect 1))))
       ;; Tensors firstly appeared in the read
       (loop
 	for (name . type) in (nodes-depends-on/buffers nodes)
@@ -310,7 +311,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 ;; [TODO] Assuming the entire graph is "static", applying the `best-fit` schedule
 ;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY
 ;; Env: GREEDY=1 to alywas use greedy solver.
-;; Paper: Best Heuristic https://arxiv.org/pdf/1804.10001
+;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
 (defun GreedySolveDSA (I total-time)
   "A greedy solver for minimizing peak_mem"
   (declare (type list I))
@@ -363,15 +364,7 @@ Lifespan:
 -------------------
 - T1 exists from t=a to t=b.
 - T2 exists from t=c to t=d.
-- T1 and T2 are orthogonal.
-
-(TODO: Update the description)
-Formulation:
-
-First, nodes are eager to make themselve in-place
-If making in-place strategy will corrupt the result of kernel, tries:
-- Using cached and realized buffer. (out of lifespan)
-- Allocating a new tensor, involving them into a stage.
+- T1 and T2 are orthogonal, and can be overlapped.
 "
   (flet ((sync ()
 	   (dolist (node (graph-nodes (mp-graph mp))) (mp-update-node mp node))
@@ -450,14 +443,6 @@ If making in-place strategy will corrupt the result of kernel, tries:
     kernels))
 
 (defmethod retrive-kernels ((mp MemoryPlanner))
-  ;; - Index計算のSimplify
-  ;; - Index計算が変わる要素は以下に絞れる
-  ;;   - 同じGroupのIndexはStrideが同じなら等しい (int32 idx0 = xxx;)を生成する
-  ;;   - UnrollしたGroupのIndexはidx0+1を生成すればOK
-  ;;   - Offset加算などはPattern Matcherでうまく対応
-  ;;   - 重複したINdex計算を根絶できる
-  ;; [TODO] 計算したIndexをHash-Tableに保存+文字列ベースでCache+Minimize
-  ;; Unrollingしたときは？
   (setf (mp-kernels mp) (remove-unused-kernels (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))
   (optimize-memory-load mp)
   (loop for group in (mp-groups mp)
