@@ -405,9 +405,8 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 
 ;; ~~ Memory Latency Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; TODO: Optimize matmul loading
-;; TODO: Support Unrolling (create suffix and rename all scalars if unrolled e.g.: val_8_0)
 (defmethod update-buffer-as-scalar ((node Node) mutated-list)
-  (flet ((mutate-scalar-buffer (id buffer expr)
+  (flet ((mutate-scalar-buffer (id buffer expr read-p)
 	   (if (= (buffer-nrank buffer) 0)
 	       buffer
 	       (let ((new (make-const-buffer (buffer-dtype buffer))))
@@ -416,18 +415,18 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 		       (loop for shape in (buffer-shape buffer)
 			     for nth upfrom 0
 			     for view = (nth nth (buffer-views buffer))
-			     if (or (null view) (null (fourth view)))
-			       collect (string-downcase (symbol-name (gid nth)))
+			     if (and view (nth 3 view))
+			       collect nil
 			     else
-			       collect nil))
-		 (when expr (expr-recursive-settype expr id new))
+			       collect (string-downcase (symbol-name (gid nth)))))
+		 (when (and expr read-p) (expr-recursive-settype expr id new))
 		 new))))
-    (macrolet ((f (ids types)
+    (macrolet ((f (ids types read-p)
 		 `(loop for val in (,ids node)
 			for type in (,types (read-type-relay node))
 			for nth upfrom 0
 			if (find val mutated-list) do
 			  (setf (nth nth (,types (read-type-relay node)))
-				(mutate-scalar-buffer val type (when (eql (node-type node) :EXPR) (getattr node :EXPR)))))))
-      (f node-reads relay-reads)
-      (f node-writes relay-writes))))
+				(mutate-scalar-buffer val type (when (eql (node-type node) :EXPR) (getattr node :EXPR)) ,read-p)))))
+      (f node-reads relay-reads t)
+      (f node-writes relay-writes nil))))

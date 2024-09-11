@@ -182,7 +182,7 @@ X <- f(x, y, reduction=t)"
 		   (buffer-shape buffer) (loop for s in (buffer-shape buffer)
 					       for nth upfrom 0
 					       for view = (nth nth (buffer-views buffer))
-					       if (or (null view) (null (fourth view)))
+					       if (or (null view) (null (nth 3 view)))
 						 collect s
 					       else
 						 collect 1))))
