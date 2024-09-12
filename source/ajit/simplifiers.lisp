@@ -5,41 +5,34 @@
 ;; TODO: Refactor around typing relay (esp: memory-write dependencies are messing)
 ;; ~~ Step1, Before Grouping Process ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %safely-purge-views-from-graph (avm)
-  "(1.) Removes :VIEW from avm graph, (2.) Updates the read/write graph relations"
   (declare (type avm avm))
-  (let ((rewrite-map
-	  (loop for node in (graph-nodes (avm-graph avm))
-		if (eql (node-type node) :View)
-		  collect (cons (car (node-reads node)) (car (node-writes node))))))
-    (labels ((->find (id) (find id rewrite-map :key #'car :test #'eql))
-	     (view-composed? (id &aux (node (id->value (avm-graph avm) id)))
-	       (and node (eql (node-type node) :View)))
-	     (->aft (id &aux (last id))
-	       (if (symbolp id)
-		   (labels ((f (x &aux (next (->find x)))
-			      (if next
-				  (progn
-				    (setf last (cdr next))
-				    (if (view-composed? (cdr next))
-					(f (cdr next))
-					last))
-				  nil)))
-		     (f last)
-		     last)
+  (let ((rewrite-map (make-hash-table)))
+    (loop for node in (graph-nodes (avm-graph avm))
+	  if (eql (node-type node) :View) do
+	    (setf (gethash (car (node-writes node)) rewrite-map) (car (node-reads node))))
+    (labels ((r (id)
+	       (if (and (gethash id rewrite-map) (not (eql (gethash id rewrite-map) id)))
+		   (r (gethash id rewrite-map))
 		   id)))
       (setf (graph-nodes (avm-graph avm))
 	    (loop for n in (graph-nodes (avm-graph avm))
 		  unless (eql (node-type n) :View)
 		    collect
 		    (progn
-		      (setf (node-writes n) (map 'list #'(lambda (x) (or (->aft x) x)) (node-writes n))
-			    (node-reads n) (loop for r in (node-reads n)
-						 for val = (id->value (avm-graph avm) r)
-						 if (and (symbolp r) (eql (node-type val) :View))
-						   collect (->aft (car (node-writes val)))
-						 else
-						   collect r))
-		      n))))))
+		      (setf (node-reads n) (map 'list #'r (node-reads n))
+			    (node-writes n) (map 'list #'r (node-writes n)))
+		      n)))
+      (setf (avm-fw-outputs avm) (map 'list #'r (avm-fw-outputs avm))
+	    (avm-bw-outputs avm) (map 'list #'r (avm-bw-outputs avm)))
+      (macrolet ((renew (accessor)
+		   `(let ((new-table (make-hash-table)))
+		      (maphash
+		       #'(lambda (k v)
+			   (setf (gethash (r k) new-table) v))
+		       ,accessor)
+		      (setf ,accessor new-table))))
+	(renew (avm-id2tensor avm))
+	(renew (avm-variables avm))))))
 
 (defun wmma-relay-from (t1 tc nth)
   (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))
