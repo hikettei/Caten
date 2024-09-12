@@ -126,25 +126,18 @@
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
     (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-;; TODO: Xavier/He/Orthogonal etc ...
-;; [TODO]
-;;  - AOT Compilation for following things:
-;;  - Xavier He Orthogonal
-;;  - Init weights w/ it for ConvND/Linear etc...
-;;  - Adding Embedding/Conv/Norm Testing
 (caten/defun[float] ($random "random") (n) (!rand `(,n)))
 (caten/defun[all] ($uniform "uniform") (n a b) (!uniform `(,n) :upfrom a :below b))
 (caten/defun[float] ($randn "randn") (n) (!randn `(,n)))
 (caten/defun[float] ($normal "normal") (n mean std) (!normal `(,n) :mean mean :std std))
 (caten/defun[int] ($randint "randint") (n low high) (!randint `(,n) :low low :high high))
 
-(caten/defun[float] ($xavier-uniform "xavier_uniform") (n in-features out-features)
-  (let ((coeff (sqrt (/ 6 (+ in-features out-features)))))
-    (!mul (fconst coeff) (!uniform `(,n) :low -1.0 :high 1.0))))
+(caten/defun[float] ($xavier-uniform "xavier_uniform") (n infeatures outfeatures)
+  (let ((coeff (!sqrt (!cast (!idiv (iconst 6) (!+ (iconst infeatures) (iconst outfeatures))) *default-float*))))
+    (!mul (fconst coeff) (!uniform `(,n) :low 0.0 :high 1.0))))
 
-(caten/defun[float] ($xavier-gaussian "xavier_gaussian") (n in-features out-features)
-  (let ((stddev (sqrt (/ 2 (+ in-features out-features)))))
+(caten/defun[float] ($xavier-gaussian "xavier_gaussian") (n infeatures outfeatures)
+  (let ((stddev (!sqrt (!cast (!idiv (iconst 2) (!+ (iconst infeatures) (iconst outfeatures))) *default-float*))))
     (!normal `(,n) :mean 0.0 :std stddev)))
 
 (defun make-input (from shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil))

@@ -10,6 +10,7 @@
    (:file "simplifiers")
    (:file "type-relay")
    (:file "polyhedral")
+   (:file "renderer")
    (:file "scheduler")
    (:file "isl-objects")
    (:file "isl-ast-helpers")
@@ -19,7 +20,6 @@
    (:file "transform")
    (:file "memory-planner")
    (:file "device")
-   (:file "renderer")
    (:file "backends/clang"))
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))
 
