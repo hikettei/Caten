@@ -125,15 +125,12 @@
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
     (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 
-(defun !randint (shape &key (upfrom 0) (below 1) (dtype *default-int*) (order *default-order*) (out nil))
+(defun !randint (shape &key (low 0) (high 1) (dtype *default-int*) (order *default-order*) (out nil))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
+    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ;; TODO: Xavier/He/Orthogonal etc ...
-;; TODO: (parameter x :requires-grad t :id xx)
-;; TODO: Pre-compile the function (symbolic!)
-;; (export-avm :clang avm)
 ;; [TODO]
 ;;  - AOT Compilation for following things:
 ;;  - Xavier He Orthogonal
@@ -144,6 +141,7 @@
 (caten/defun[all] ($uniform "uniform") (n a b) (!uniform `(,n) :upfrom a :below b))
 (caten/defun[float] ($randn "randn") (n) (!randn `(,n)))
 (caten/defun[float] ($normal "normal") (n mean std) (!normal `(,n) :mean mean :std std))
+(caten/defun[int] ($randint "randint") (n low high) (!randint `(,n) :low low :high high))
 
 (defun make-input (from shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil))
   "TODO: Docs. Creates a placeholder named `from`."
@@ -173,4 +171,5 @@
   (def rand (lambda (n) ($random dtype n)))
   (def uniform (lambda (n) ($uniform dtype n low high)) :keys ((low 0) (high 1)))
   (def randn (lambda (n) ($randn dtype n)))
-  (def normal (lambda (n) ($normal dtype n mean std)) :keys ((mean 0) (std 1))))
+  (def normal (lambda (n) ($normal dtype n mean std)) :keys ((mean 0) (std 1)))
+  (def randint (lambda (n) ($randint dtype n low high)) :keys ((low 0) (high 1)) :dtype *default-int*))

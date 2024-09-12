@@ -130,6 +130,9 @@
    )
   ;; from initializers.lisp
   (:export
+   #:make-input
+   #:make-param
+   
    #:set-manual-seed
    #:with-manual-seed
    #:ax+b
@@ -144,4 +147,5 @@
    #:uniform
    #:randn
    #:normal
+   #:randint
    ))
