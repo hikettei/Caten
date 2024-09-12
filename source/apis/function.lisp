@@ -296,7 +296,9 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod lower ((op Cast) &rest inputs) (with-context (a (%cast (first inputs) (second inputs) (cast-dtype-to op)))))
 (defun !cast (x dtype &key (out (make-tensor (tensor-shape x) :dtype dtype :order (tensor-order x))))
   (declare (type tensor x out) (type dtype-t dtype))
-  (forward (make-instance 'Cast :dtype-frm (tensor-dtype x) :dtype-to dtype) out x))
+  (if (eql (tensor-dtype x) dtype)
+      x
+      (forward (make-instance 'Cast :dtype-frm (tensor-dtype x) :dtype-to dtype) out x)))
 ;; ~~ wrappers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (declaim (ftype (function (Tensor Tensor &key (:reduce boolean) (:id t)) (values Tensor &optional)) !add))
 (declaim (ftype (function (Tensor Tensor &key (:reduce boolean)) (values Tensor &optional)) !sub !mul !div !maximum !minimum))
