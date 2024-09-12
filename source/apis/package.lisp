@@ -149,4 +149,5 @@
    #:randn
    #:normal
    #:randint
+   #:xavier-uniform
    ))
