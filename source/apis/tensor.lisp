@@ -62,7 +62,7 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	   (type (member :column :row) order)
 	   (type symbol id)
 	   (type (or null number symbol) initial-element)
-	   (type (or null symbol) from))
+	   (type (or null symbol Buffer) from))
   (dolist (s shape)
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()

@@ -138,5 +138,10 @@
    #:!normal
    #:!uniform
    #:!randint
-   )
-  )
+
+   ;; static
+   #:rand
+   #:uniform
+   #:randn
+   #:normal
+   ))

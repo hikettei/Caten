@@ -121,9 +121,9 @@
 (defun !randn (shape &key (dtype *default-float*) (order *default-order*) (out nil))
   (call (make-instance 'Gaussian-Distribution-Node) (or out (make-tensor shape :dtype dtype :order order))))
 
-(defun !uniform (shape &key (upfrom 0.0) (below 1.0) (dtype *default-float*) (order *default-order*) (out nil))
+(defun !uniform (shape &key (low 0.0) (high 1.0) (dtype *default-float*) (order *default-order*) (out nil))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
+    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 
 (defun !randint (shape &key (upfrom 0) (below 1) (dtype *default-int*) (order *default-order*) (out nil))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
@@ -134,4 +134,43 @@
 ;; TODO: (parameter x :requires-grad t :id xx)
 ;; TODO: Pre-compile the function (symbolic!)
 ;; (export-avm :clang avm)
-;;(caten/defun[float] ($random "random") (n) (!rand `(,n)))
+;; [TODO]
+;;  - AOT Compilation for following things:
+;;  - Xavier He Orthogonal
+;;  - Init weights w/ it for ConvND/Linear etc...
+;;  - Adding Embedding/Conv/Norm Testing
+;; AoT Compilation
+(caten/defun[float] ($random "random") (n) (!rand `(,n)))
+(caten/defun[all] ($uniform "uniform") (n a b) (!uniform `(,n) :upfrom a :below b))
+(caten/defun[float] ($randn "randn") (n) (!randn `(,n)))
+(caten/defun[float] ($normal "normal") (n mean std) (!normal `(,n) :mean mean :std std))
+
+(defun make-input (from shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil))
+  "TODO: Docs. Creates a placeholder named `from`."
+  (make-tensor shape :dtype dtype :order order :id id :requires-grad requires-grad :initial-element initial-element :views views :from from))
+
+(defun make-param (initializer shape &key (dtype *default-float*) (order *default-order*) (requires-grad nil) (id (gensym "TID")))
+  "Initializes a new tensor obtained from initializer."
+  (declare (type function initializer))
+  (assert (every #'numberp shape) () "Shape should be a static.")
+  (let* ((tensor (funcall initializer (apply #'* shape)))
+	 (place  (make-tensor shape :dtype dtype :order order :requires-grad requires-grad :id id :from (tensor-buffer tensor))))
+    (assert (tensor-p tensor) () "make-param: initializer should return a single tensor!")
+    (setf
+     (buffer-shape (tensor-buffer tensor)) shape
+     (buffer-stride (tensor-buffer tensor)) (static-compute-strides order shape)
+     (buffer-nrank (tensor-buffer tensor)) (length shape)
+     (buffer-views (tensor-buffer tensor)) nil
+     (tensor-buffer place) (tensor-buffer tensor))
+    place))
+
+(macrolet ((def (name initializer &key (keys nil) (dtype *default-float*) (documentation "No description provided"))
+	     `(defun ,name (shape &key ,@keys (dtype ,dtype) (order *default-order*) (id (gensym "TID")) (requires-grad nil))
+		,documentation
+		(declare (type list shape))
+		(assert (every #'numberp shape) () ,(format nil "~a: Shape should be a static!" name))
+		(make-param #',initializer shape :dtype dtype :order order :requires-grad requires-grad :id id))))
+  (def rand (lambda (n) ($random dtype n)))
+  (def uniform (lambda (n) ($uniform dtype n low high)) :keys ((low 0) (high 1)))
+  (def randn (lambda (n) ($randn dtype n)))
+  (def normal (lambda (n) ($normal dtype n mean std)) :keys ((mean 0) (std 1))))

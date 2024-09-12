@@ -613,3 +613,6 @@
 ;; [TODO] Precision Test
 (deftest randn-compile-test
   (ok (proceed (!randn `(10 10)))))
+
+(deftest static-make-tensor-test
+  (ok (every #'(lambda (x) (> x 0)) (elements (proceed (!add (rand `(10 10)) (rand `(10 10))))))))
