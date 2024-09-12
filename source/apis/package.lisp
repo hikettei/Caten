@@ -107,6 +107,7 @@
    #:!sub #:!-
    #:!mul #:!*
    #:!div #:!/
+   #:!idiv
    #:!move
    #:!maximum #:!minimum
    #:!max #:!min

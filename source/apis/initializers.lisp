@@ -13,8 +13,6 @@
   (setf *manual-seed* seed *rng-counter* (make-rng-counter)))
 (defmacro with-manual-seed ((seed) &body body) `(let ((*manual-seed* ,seed) (*rng-counter* (make-rng-counter))) ,@body))
 ;; ~~~~ threefry2x32 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Introduce IDIV
-(defun !idiv (x y)  (!cast (!div (!cast x :float32) (!cast y :float32)) (dtype-of x)))
 (defun !idiv1 (x divisor) (!mul (!cast x :float32) (fconst (/ divisor))))
 (defun !shr (x shift dtype) (!cast (!idiv1 x (expt 2 shift)) dtype))
 (defun !threefry2x32 (x seed &aux (rotations `((13 15 26 6) (17 29 16 24))) (*wrap-around-mode* t))
@@ -35,7 +33,6 @@
 	        (nth 1 xr) (!xor x0 (!add (!mul (nth 1 xr) (uconst (expt 2 r) :dtype :uint32)) (!cast (!idiv1 (nth 1 xr) (expt 2 (- 32 r))) :uint32)))))
 	(setf xr (list (!add (first xr) (nth (mod i 3) ks)) (!add (second xr) (!add (nth (mod (1+ i) 3) ks) (uconst (1+ i) :dtype :uint32))))))
       (!or (!mul (!cast (second xr) :uint64) (uconst (expt 2 32) :dtype :uint64)) (!cast (car xr) :uint64)))))
-
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodel (Threefry2x32-Random () :where "A[~] -> A[~]"
 				  :documentation "Generates a random array sampled from a uniform distribution in the range of [0.0, 1.0)")
@@ -136,12 +133,19 @@
 ;;  - Xavier He Orthogonal
 ;;  - Init weights w/ it for ConvND/Linear etc...
 ;;  - Adding Embedding/Conv/Norm Testing
-;; AoT Compilation
 (caten/defun[float] ($random "random") (n) (!rand `(,n)))
 (caten/defun[all] ($uniform "uniform") (n a b) (!uniform `(,n) :upfrom a :below b))
 (caten/defun[float] ($randn "randn") (n) (!randn `(,n)))
 (caten/defun[float] ($normal "normal") (n mean std) (!normal `(,n) :mean mean :std std))
 (caten/defun[int] ($randint "randint") (n low high) (!randint `(,n) :low low :high high))
+
+(caten/defun[float] ($xavier-uniform "xavier_uniform") (n in-features out-features)
+  (let ((coeff (sqrt (/ 6 (+ in-features out-features)))))
+    (!mul (fconst coeff) (!uniform `(,n) :low -1.0 :high 1.0))))
+
+(caten/defun[float] ($xavier-gaussian "xavier_gaussian") (n in-features out-features)
+  (let ((stddev (sqrt (/ 2 (+ in-features out-features)))))
+    (!normal `(,n) :mean 0.0 :std stddev)))
 
 (defun make-input (from shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil))
   "TODO: Docs. Creates a placeholder named `from`."
