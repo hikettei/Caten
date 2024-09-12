@@ -67,7 +67,7 @@ Loop is either of :Global or :Local
 
 (defun simplify-rendering-nodes (nodes)
   (let ((len (length nodes)))
-    (let ((new (funcall (compose #'simplifier/remove-empty-for #'simplifier/remove-empty-if) nodes)))
+    (let ((new (funcall (compose #'simplifier/relocate-guard-node #'simplifier/remove-empty-for #'simplifier/remove-empty-if) nodes)))
       (if (= (length new) len)
 	  new
 	  (simplify-rendering-nodes new)))))
@@ -91,3 +91,110 @@ Loop is either of :Global or :Local
 	  do (push (node-id (nth (1+ nth) nodes)) removed)
 	else unless (find (node-id node) removed)
 	       collect node))
+
+(defun simplifier/relocate-guard-node (nodes)
+  "Tries to relocated the body under the guard node.
+For example, consider the following schedule:
+```
+{
+  for (int c0 = 0; c0 <= 9; c0 += 1)
+    for (int c1 = 0; c1 <= 9; c1 += 1)
+      // T0, T3, T4, T5 can be moved here
+      for (int c2 = 0; c2 <= 19; c2 += 1)
+        TN(XXXX)
+        for (int c3 = 0; c3 <= 9; c3 += 1) {
+          if (c2 == 0) {
+            T0(c0, c1, c3, 0);
+            T3(c0, c1, c3, 0);
+            T4(c0, c1, c3, 0);
+            T5(c0, c1, c3, 0);
+          }
+          T6(c0, c1, c3, c2);
+          if (c3 == 0)
+            T7(c0, c1, 0, c2);
+          T8(c0, c1, c3, c2);
+        }
+  for (int c0 = 0; c0 <= 9; c0 += 1) {
+    T1(c0);
+    T2(c0);
+  }
+}
+```
+Here, T0, T3, T4, and T5 are independent of c3 but located in the body of `c3`. If they are also independent from TN(XXXX).
+"
+  (let ((if-statements
+	  (loop with count = 0
+		while (and (nth count nodes) (<= count (length nodes)))
+		for ir = (nth count nodes)
+		for body = (when (eql (node-type ir) :IF)
+			     (let* ((body (subseq nodes (1+ count)))
+				    (endif (position :ENDIF body :key #'node-type))
+				    (body (subseq body 0 endif)))
+			       ;; No deeper nests here?
+			       (and
+				(every #'(lambda (x) (null (find (node-type x) `(:FOR :IF :ELSE)))) body)
+				(every #'(lambda (x) (eql (node-type x) :FUNCALL)) (cdr body))
+				body)))    
+		if (and (eql (node-type ir) :IF) body)
+		  collect (prog1 `(,ir ,@body ,(nth (+ 1 count (length body)) nodes)) (incf count (length body)))
+		else
+		  do (incf count)))
+	(index-components
+	  (loop for node in nodes
+		if (eql (node-type node) :FOR)
+		  collect (getattr node :idx))))
+    (labels ((guard-p (condition)
+	       ;; Currently supports for a single expr, but (_gid0==0&&_gid3==0) should be relocated as well.
+	       (trivia:match condition
+		 ((Expr :op :equal :x (Expr :op :const :x (trivia:guard x (stringp x))) :y (Expr :op :const :x 0))
+		  ;; Check x is a index-component
+		  (when (find x index-components :test #'equalp)
+		    (list x)))))
+	     (try-relocate (if-state)
+	       "if-state: a list of nodes starting with IF, ending with corresponding ENDIF."
+	       (assert (eql :IF (node-type (car if-state))))
+	       (assert (eql :ENDIF (node-type (car (last if-state)))))
+	       (multiple-value-bind (start-if body end-if)
+		   (values (car if-state) (cdr (butlast if-state)) (car (last if-state)))
+		 (let ((indices (guard-p (getattr start-if :condition)))
+		       (related-nodes)
+		       (determined-ids)
+		       (start-position (1- (position (node-id start-if) nodes :key #'node-id))))
+		   (when (null indices) (return-from try-relocate))
+		   ;; Reading the node in backward until discovering all indices
+		   ;; for  _gid0 in ...      }
+		   ;;   for ...              } related-nodes
+		   ;;    T_n                 }
+		   ;;    if (_gid0==0) { <- current position is here
+		   ;;       ..
+		   ;;    }
+		   (when (< start-position 0) (return-from try-relocate)) ;; No outermost loops to relocate
+		   (loop named tape
+			 with position = start-position
+			 for i downfrom position to 0
+			 for node = (nth i nodes)
+			 if (eql (node-type node) :FOR) do
+			   (push (getattr node :idx) determined-ids)
+			   (push node related-nodes)
+			   (when (every #'(lambda (x) (find x determined-ids :test #'equalp)) indices)
+			     (return-from tape))
+			 else if (or (eql (node-type node) :ENDIF) (eql (node-type node) :FOR)) do
+			   ;; If the nest is complicated, it is beyond this function: giving up
+			   (return-from try-relocate)
+			 else
+			   do (push node related-nodes))
+		   ;; Checking the validity of relocating
+		   ;; <Place_To_Relocate>
+		   ;; for _gid0 in ...
+		   ;;   <NodeSet1>
+		   ;;   for _gid1 in ...
+		   ;;;    <NodeSet2>
+		   ;;     if (_gid0==0) {
+		   ;;         <Body>
+		   ;;     }
+		   ;; If <Body> is independent from <NodeSet1> <NodeSet2> ..., they can be relocated.
+		   ;; Hmmmm
+		   (print related-nodes)))))
+      (dolist (if-state if-statements)
+	(try-relocate if-state))
+      nodes)))
