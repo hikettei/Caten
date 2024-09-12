@@ -605,3 +605,11 @@
 (deftest call-aot
   (let ((a (with-device :lisp (proceed (ax+b `(3 3) 1 1)))) (b (with-device :lisp (proceed (ax+b `(3 3) 1 1)))))
     (ok (every #'= #(2 4 6 8 10 12 14 16 18) (elements (axpy :float32 a b 9 0 9 0 9))))))
+
+(deftest shape-infer-failing-case
+  (let ((a (make-tensor `(5 5) :dtype :uint32)))
+    (ok (every (equal-to 2) (elements (proceed (!add (!add (iconst 1) (!view a `(0 2) `(0 2))) (!add (iconst 1) (!view a `(2 4) `(2 4))))))))))
+
+;; [TODO] Precision Test
+(deftest randn-compile-test
+  (ok (proceed (!randn `(10 10)))))

@@ -109,28 +109,29 @@
 (defun !rand (shape &key (dtype *default-float*) (order *default-order*) (out nil))
   "Initializes a tensor with randomly sampled from [0, 1)"
   (forward (Threefry2x32-Random) (or out (make-tensor shape :dtype dtype :order order))))
-
+;; TODO: Reaplce call -> forward
 (defun !normal (shape &key (mean 0.0) (std 1.0) (dtype *default-float*) (order *default-order*) (out nil))
   "Initializes a tensor, filled with random value sampled from a normal distribution."
   (declare (type (or Tensor symbol number) mean std) (type list shape))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (forward (make-instance 'Random-Normal)
-	     (or out (make-tensor shape :dtype dtype :order order))
-	     (->cast std) (->cast mean))))
+    (call (make-instance 'Random-Normal)
+	  (or out (make-tensor shape :dtype dtype :order order))
+	  (->cast std) (->cast mean))))
 
 (defun !randn (shape &key (dtype *default-float*) (order *default-order*) (out nil))
-  (forward (make-instance 'Gaussian-Distribution-Node) (or out (make-tensor shape :dtype dtype :order order))))
+  (call (make-instance 'Gaussian-Distribution-Node) (or out (make-tensor shape :dtype dtype :order order))))
 
 (defun !uniform (shape &key (upfrom 0.0) (below 1.0) (dtype *default-float*) (order *default-order*) (out nil))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (forward (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
+    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
 
 (defun !randint (shape &key (upfrom 0) (below 1) (dtype *default-int*) (order *default-order*) (out nil))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (forward (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
+    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ;; TODO: Xavier/He/Orthogonal etc ...
 ;; TODO: (parameter x :requires-grad t :id xx)
 ;; TODO: Pre-compile the function (symbolic!)
 ;; (export-avm :clang avm)
+;;(caten/defun[float] ($random "random") (n) (!rand `(,n)))
