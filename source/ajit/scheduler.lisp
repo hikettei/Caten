@@ -225,14 +225,16 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (declare (ignore stride))
   (assert (numberp by) () "by is expected to be a constant to create an affine schedule! (TODO: Fix)")
   ;;(when (symbolp by) (setf by 2))
-  (format nil "~a~a~a"
-	  (if (eql by 1)
-	      ""
-	      (format nil "~a*" by))
-	  gid
-	  (if (eql upfrom 0)
-	      ""
-	      (format nil "+~a" upfrom))))
+  (if broadcast-p
+      "0"
+      (format nil "~a~a~a"
+	      (if (eql by 1)
+		  ""
+		  (format nil "~a*" by))
+	      gid
+	      (if (eql upfrom 0)
+		  ""
+		  (format nil "+~a" upfrom)))))
 
 (defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil) &aux (c 0))
   "Renders the stride computation for ISL:
@@ -716,6 +718,10 @@ Optional order fusing softmax in a single kernel is:
 		do (setf seen (append seen (group-writes group)))
 	      else
 		collect (setf (group-sched group) (schedule group (make-top-schedule group))))
+;	(dolist (g groups)
+;	  (when (equal (length (group-args g)) (length `(|val_36| |val_3| |val_2| |val_1| |val_8| |val_14| |val_0| |val_31|)))
+;	    (print "Issue Graph")
+;	    (print g)))
 	(loop with write-deps = (map 'list #'seen-in-groups groups)
 	      with read-deps = (map 'list #'read-in-groups groups)
 	      for nth upfrom 1
