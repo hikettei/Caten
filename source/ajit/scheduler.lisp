@@ -49,7 +49,10 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   "Return -> (list scheduled-items ...)"
   (declare (type graph graph) (type scheduled-items scheduled-items))
   (flet ((explore (x) (when x (recursive-find-group graph x)))
-	 (mergeable-p (x latest x-type) (or (numberp x) (and (id->value graph x) (not (eql (node-type (id->value graph x)) :Allocate)) (buffer-intersect-p latest x-type)))))
+	 (mergeable-p (x latest x-type)
+	   (or
+	    (numberp x)
+	    (and (id->value graph x) (not (eql (node-type (id->value graph x)) :Allocate)) (buffer-intersect-p latest x-type)))))
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
       (let* ((node (or (id->value graph latest-id) (return-from recursive-find-group)))
 	     ;; Allocation is done at the (Exported) VM Level
@@ -111,7 +114,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 			   (let ((node (id->value graph x)))
 			     (when (and node (null (find (node-id node) *recursive-find-seen*)))
 			       (make-scheduled-items (list node x-type x))))))
-		     children children-type)))	      
+		     children children-type)))
 	      (append
 	       (list scheduled-items)
 	       (loop for n in (map 'list #'explore new-groups) if n collect n))))))))
