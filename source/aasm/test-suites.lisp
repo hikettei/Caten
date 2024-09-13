@@ -101,7 +101,7 @@
     (c  (%store m t2))))
 
 (deftest test-arange-kernel-count
-  (ok (check-schedule (%arange `(3 3) 3 3) 9))
+  (ok (check-schedule (%arange `(3 3) 3 3) 7))
   (ok (check-schedule (%arange `(3 3) 0 3) 6))
   (ok (check-schedule (%arange `(3 3) 3 0) 6))
   (ok (check-schedule (%arange `(3 3) 0 0) 1)))
