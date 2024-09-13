@@ -37,8 +37,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
     (when (or (= (buffer-nrank a) 0) (= 0 (buffer-nrank b)))->ok)
     ;; Contiguous and the same-shaped buffer -> merge them
     (when (and
-	   (every #'null (buffer-views a))
-	   (every #'null (buffer-views b))
+           (every #'null (buffer-views a))
+           (every #'null (buffer-views b))
            (equal (map 'list #'reveal-buffer (buffer-shape a)) (map 'list #'reveal-buffer (buffer-shape b))))
       ->ok)
     ;; They still have a chance to be merged by the polyhedral compiler.
@@ -50,6 +50,9 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (declare (type graph graph) (type scheduled-items scheduled-items))
   (flet ((explore (x) (when x (recursive-find-group graph x)))
 	 (mergeable-p (x latest x-type)
+	   ;;(print "+++")
+	   ;;(print x)
+	   ;;(print (id->value graph x))
 	   (or
 	    (numberp x)
 	    (and (id->value graph x) (not (eql (node-type (id->value graph x)) :Allocate)) (buffer-intersect-p latest x-type)))))
@@ -222,16 +225,14 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (declare (ignore stride))
   (assert (numberp by) () "by is expected to be a constant to create an affine schedule! (TODO: Fix)")
   ;;(when (symbolp by) (setf by 2))
-  (if broadcast-p
-      (format nil "0")
-      (format nil "~a~a~a"
-	      (if (eql by 1)
-		  ""
-		  (format nil "~a*" by))
-	      gid
-	      (if (eql upfrom 0)
-		  ""
-		  (format nil "+~a" upfrom)))))
+  (format nil "~a~a~a"
+	  (if (eql by 1)
+	      ""
+	      (format nil "~a*" by))
+	  gid
+	  (if (eql upfrom 0)
+	      ""
+	      (format nil "+~a" upfrom))))
 
 (defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil) &aux (c 0))
   "Renders the stride computation for ISL:
