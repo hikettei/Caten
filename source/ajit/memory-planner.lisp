@@ -321,14 +321,8 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (declare (type buffer buffer))
   (or
    (buffer-orig-buffer-shape buffer)
-   (loop for s in (buffer-shape buffer)
-	 for nth upfrom 0
-	 for v = (nth nth (buffer-views buffer))
-	 if (and v (fourth v))
-	   collect 1
-	 else
-	   ;; If Viewed: Orig-Shape, View-Upfrom, View-Below, View-By must correspond to reuse the buffer.
-	   collect `(,s ,@v))))
+   (buffer-shape buffer)))
+
 ;; [TODO] Assuming the entire graph is "static", applying the `best-fit` schedule
 ;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY
 ;; Env: GREEDY=1 to alywas use greedy solver.
