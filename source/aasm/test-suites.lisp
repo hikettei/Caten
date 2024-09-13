@@ -48,7 +48,7 @@
 		      (b (%view a ',frm ',frm ',to ',by ',bc (%stride ',frm :column))))
 		    ,count))))
       (check (5 5 5) (0 0 0) (5 5 5) (1 1 1) (nil nil nil) 2)
-      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 42)))
+      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 32)))
   (testing "Reshape Creation"
     (macrolet ((check (s1 s2 count)
 		 `(ok
