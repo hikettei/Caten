@@ -46,22 +46,6 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
 		   prev
 		   (eql (node-type prev) :Allocate)
 		   (= (getattr prev :nrank) 0))))))
-    #|
-    (let ((cache (make-hash-table :test #'equal))) ;; Cached by (symbol . dtype)
-      (flet ((read-cache (sym)
-	       (when (not (symbolp sym)) (return-from read-cache sym))
-	       (let ((val (id->value graph sym)))
-		 (when (null val) (return-from read-cache sym))
-		 (when (not (tmp-dynamic-shape-p val)) (return-from read-cache sym))
-		 (when (not (= (length (node-writes val)) 1)) (return-from read-cache sym))
-		 (let* ((key `(,(getattr val :value) ,(getattr val :dtype)))
-			(cached-val (ensure-gethash key cache (car (node-writes val)))))
-		   ;(setf (gethash key cache) cached-val)
-		   cached-val))))
-	;;(loop for node in (graph-nodes graph)
-	;;      do (setf (node-reads node) (map 'list #'read-cache (node-reads node))))
-    ))
-    |#
     (let ((cache (make-hash-table :test #'equal))
 	  (alias (make-hash-table)))
       (flet ((read-cache (node)
@@ -90,7 +74,8 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
 		    if new collect new))
 	(dolist (n (graph-nodes graph))
 	  (setf (node-reads n) (map 'list #'r (node-reads n))))))
-    ;; Apply recursively
+    ;; [TODO] Apply recursively?
+    ;; [TODO] If the EXPR was nested? a * b + c
     (verify-graph graph)
     graph))
 
