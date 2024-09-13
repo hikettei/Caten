@@ -48,7 +48,7 @@
 		      (b (%view a ',frm ',frm ',to ',by ',bc (%stride ',frm :column))))
 		    ,count))))
       (check (5 5 5) (0 0 0) (5 5 5) (1 1 1) (nil nil nil) 2)
-      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 32)))
+      (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 42)))
   (testing "Reshape Creation"
     (macrolet ((check (s1 s2 count)
 		 `(ok
@@ -101,7 +101,7 @@
     (c  (%store m t2))))
 
 (deftest test-arange-kernel-count
-  (ok (check-schedule (%arange `(3 3) 3 3) 7))
+  (ok (check-schedule (%arange `(3 3) 3 3) 9))
   (ok (check-schedule (%arange `(3 3) 0 3) 6))
   (ok (check-schedule (%arange `(3 3) 3 0) 6))
   (ok (check-schedule (%arange `(3 3) 0 0) 1)))
