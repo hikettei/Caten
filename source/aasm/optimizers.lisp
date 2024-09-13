@@ -10,7 +10,7 @@
 
 (defsimplifier
     (%replace-dynamic-shape :speed 0)
-    ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (guard x (symbolp x))) -> (:_TmpDynamicShape (x) :dtype dtype)))
+    ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (guard x (or (numberp x) (symbolp x)))) -> (:_TmpDynamicShape (x) :dtype dtype)))
 
 (defsimplifier
     (%unfold-dynamic-shape :speed 0)
@@ -19,7 +19,7 @@
      ((node graph)
       (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node)))))))
 
-(defun simplify-dynamic-arithmetic (graph)
+(defun simplify-dynamic-arithmetic (graph &aux (arithmetic `(:ADD :NEG :MUL :RECIP :IDIV)))
   "Consider the following graph structure:
 ```
 val_1 = a * b
@@ -47,14 +47,42 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
 	     (let ((val (id->value graph sym)))
 	       (when (null val) (return-from read-cache sym))
 	       (when (not (eql (node-type val) :_TmpDynamicShape)) (return-from read-cache sym))
+	       (when (not (= (length (node-writes val)) 1)) (return-from read-cache sym))
 	       (let* ((key `(,(car (node-reads val)) ,(getattr val :dtype)))
 		      (cached-val (ensure-gethash key cache (car (node-writes val)))))
 		 (setf (gethash key cache) cached-val)
 		 cached-val))))
       (loop for node in (graph-nodes graph)
 	    do (setf (node-reads node) (map 'list #'read-cache (node-reads node))))))
-  ;; [TODO] The previous step will produce a duplicated comptuation process e.g.: val_1 = a * b and val_2 = a * b
-  ;; Likewise previous impl remove such patterns.
+  (let ((cache (make-hash-table :test #'equal))
+	(alias (make-hash-table)))
+    (flet ((read-cache (node)
+	     (when (some #'(lambda (x) (find x (graph-outputs graph))) (node-writes node))
+	       (return-from read-cache node))
+	     (when (null (find (node-type node) arithmetic))
+	       (return-from read-cache node))
+	     (let ((reads (map 'list #'(lambda (x) (id->value graph x)) (node-reads node))))
+	       (when (some #'(lambda (x) (or (null x) (not (eql (node-type x) :_TmpDynamicShape)))) reads)
+		 (return-from read-cache node))
+	       (when (null reads) (return-from read-cache node))
+	       (when (not (= (length (node-writes node)) 1)) (return-from read-cache node))
+	       (let* ((key `(,(node-type node) ,@(map 'list (compose #'car #'node-reads) reads)))
+		      (del-p (not (null (gethash key cache))))
+		      (cache-result (ensure-gethash key cache (car (node-writes node)))))
+		 (setf (gethash key cache) cache-result)
+		 (if del-p
+		     (progn
+		       (setf (gethash (car (node-writes node)) alias) cache-result)
+		       nil)
+		     node))))
+	   (r (sym) (ensure-gethash sym alias sym)))
+      (setf (graph-nodes graph)
+	    (loop for node in (graph-nodes graph)
+		  for new = (read-cache node)
+		  if new collect new))
+      (dolist (n (graph-nodes graph))
+	(setf (node-reads n) (map 'list #'r (node-reads n))))))
+  ;; Apply recursively
   (%unfold-dynamic-shape graph :no-verify t)
   (verify-graph graph)
   graph)
