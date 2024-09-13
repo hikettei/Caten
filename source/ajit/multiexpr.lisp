@@ -66,7 +66,7 @@
        (if (getattr node :_jit_dont_render_me)
 	   (use (car parents))
 	   (use (second parents))))
-      (:STORE            (use (second parents)))
+      (:STORE (use (second parents)))
       (otherwise
        (if (and (eql (node-type node) :ADD) (>= (length parents) 3))
 	   (flet ((add (x y) (make-expr :ADD x y)))
@@ -79,7 +79,7 @@
 
 ;; ~~ MULTIEXPR CREATION ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *aref-list* nil)
-(defun recursively-group-expr (across-group graph outputs read-by-time  &key (no-multi-expr nil) (seen))
+(defun recursively-group-expr (across-group graph outputs read-by-time &key (no-multi-expr nil) (seen))
   (declare (type graph graph) (type list outputs))
   (let* ((stash) (read-by-time (apply #'append read-by-time)) (buffers))
     (flet ((pause? (x) (declare (type node x))
