@@ -136,10 +136,9 @@
   (let ((coeff (!sqrt (!div (fconst 6) (!+ (fconst infeatures) (fconst outfeatures))))))
     (!mul (!uniform `(,n) :low 0.0 :high 1.0) coeff)))
 
-;; Unstable
-;;(caten/defun[float] ($xavier-gaussian "xavier_gaussian") (n infeatures outfeatures)
-;;  (let ((stddev (!sqrt (!cast (!idiv (iconst 2) (!+ (iconst infeatures) (iconst outfeatures))) *default-float*))))
-;;    (!normal `(,n) :mean 0.0 :std stddev)))
+(caten/defun[float] ($xavier-gaussian "xavier_gaussian") (n infeatures outfeatures)
+  (let ((stddev (!sqrt (!div (fconst 2) (!+ (fconst infeatures) (fconst outfeatures))))))
+    (!normal `(,n) :mean 0.0 :std stddev)))
 
 (defun make-input (from shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil))
   "TODO: Docs. Creates a placeholder named `from`."
@@ -171,4 +170,5 @@
   (def randn (lambda (n) ($randn dtype n)))
   (def normal (lambda (n) ($normal dtype n mean std)) :keys ((mean 0) (std 1)))
   (def randint (lambda (n) ($randint dtype n low high)) :keys ((low 0) (high 1)) :dtype *default-int*)
-  (def xavier-uniform (lambda (n) ($xavier-uniform dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2)))))))
+  (def xavier-uniform (lambda (n) ($xavier-uniform dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2))))))
+  (def xavier-gaussian (lambda (n) ($xavier-gaussian dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2)))))))

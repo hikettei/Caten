@@ -150,4 +150,5 @@
    #:normal
    #:randint
    #:xavier-uniform
+   #:xavier-gaussian
    ))
