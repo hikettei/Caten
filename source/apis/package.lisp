@@ -149,6 +149,7 @@
    #:randn
    #:normal
    #:randint
+   #:linspace
    #:xavier-uniform
    #:xavier-gaussian
    ))

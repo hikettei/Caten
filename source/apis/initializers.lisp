@@ -131,7 +131,7 @@
 (caten/defun[float] ($randn "randn") (n) (!randn `(,n)))
 (caten/defun[float] ($normal "normal") (n mean std) (!normal `(,n) :mean mean :std std))
 (caten/defun[int] ($randint "randint") (n low high) (!randint `(,n) :low low :high high))
-
+(caten/defun[int] ($ax+b "linspace") (n a b) (ax+b `(,n) a b))
 (caten/defun[float] ($xavier-uniform "xavier_uniform") (n infeatures outfeatures)
   (let ((coeff (!sqrt (!div (fconst 6) (!+ (fconst infeatures) (fconst outfeatures))))))
     (!mul (!uniform `(,n) :low 0.0 :high 1.0) coeff)))
@@ -159,8 +159,8 @@
      (tensor-buffer place) (tensor-buffer tensor))
     place))
 
-(macrolet ((def (name initializer &key (keys nil) (dtype *default-float*) (documentation "No description provided"))
-	     `(defun ,name (shape &key ,@keys (dtype ,dtype) (order *default-order*) (id (gensym "TID")) (requires-grad nil))
+(macrolet ((def (name initializer &key (args nil) (keys nil) (dtype *default-float*) (documentation "No description provided"))
+	     `(defun ,name (shape ,@args &key ,@keys (dtype ,dtype) (order *default-order*) (id (gensym "TID")) (requires-grad nil))
 		,documentation
 		(declare (type list shape))
 		(assert (every #'numberp shape) () ,(format nil "~a: Shape should be a static!" name))
@@ -171,4 +171,5 @@
   (def normal (lambda (n) ($normal dtype n mean std)) :keys ((mean 0) (std 1)))
   (def randint (lambda (n) ($randint dtype n low high)) :keys ((low 0) (high 1)) :dtype *default-int*)
   (def xavier-uniform (lambda (n) ($xavier-uniform dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2))))))
-  (def xavier-gaussian (lambda (n) ($xavier-gaussian dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2)))))))
+  (def xavier-gaussian (lambda (n) ($xavier-gaussian dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2))))))
+  (def linspace (lambda (n) ($ax+b dtype n a b)) :args (a b)))
