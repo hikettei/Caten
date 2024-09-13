@@ -35,6 +35,7 @@
 		(emit (make-node :BinaryOps ,opname (list id) (list (node->id x) (node->id y)) :reduction reduction :wrap-around wrap-around)))))
   (def %add :ADD t)
   (def %mul :MUL t)
+  (def %idiv :IDIV nil)
   (def %and :AND)
   (def %or :OR)
   (def %xor :XOR)

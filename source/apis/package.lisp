@@ -107,6 +107,7 @@
    #:!sub #:!-
    #:!mul #:!*
    #:!div #:!/
+   #:!idiv
    #:!move
    #:!maximum #:!minimum
    #:!max #:!min
@@ -130,6 +131,9 @@
    )
   ;; from initializers.lisp
   (:export
+   #:make-input
+   #:make-param
+   
    #:set-manual-seed
    #:with-manual-seed
    #:ax+b
@@ -138,5 +142,14 @@
    #:!normal
    #:!uniform
    #:!randint
-   )
-  )
+
+   ;; static
+   #:rand
+   #:uniform
+   #:randn
+   #:normal
+   #:randint
+   #:linspace
+   #:xavier-uniform
+   #:xavier-gaussian
+   ))

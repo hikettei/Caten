@@ -3,8 +3,8 @@
 ;; Batch Layer Group Norm
 ;; RMSNorm
 (defmodel (BatchNorm (dims &key (eps 1e-5) (affine t) (bias t)))
-    ((affine (when affine (make-tensor `(,dims) :requires-grad t)))
-     (bias   (when bias (make-tensor `(,dims) :requires-grad t)))
+    ((affine (when affine (linspace `(,dims) 0 1 :requires-grad t)))
+     (bias   (when bias (linspace `(,dims) 0 0 :requires-grad t)))
      (eps eps)))
 (defmethod call ((op BatchNorm) &rest inputs)
   (st "A[~] -> A[~]" (inputs))
@@ -20,8 +20,8 @@
 	x))))
 
 (defmodel (LayerNorm (dims &key (eps 1e-5) (affine t) (bias t)))
-    ((affine (when affine (make-tensor `(,dims) :requires-grad t)))
-     (bias   (when bias (make-tensor `(,dims) :requires-grad t)))
+    ((affine (when affine (linspace `(,dims) 0 1 :requires-grad t)))
+     (bias   (when bias (linspace `(,dims) 0 0 :requires-grad t)))
      (eps eps)))
 (defmethod call ((op LayerNorm) &rest inputs)
   (st "A[~] -> A[~]" (inputs))
@@ -36,7 +36,7 @@
 	x))))
 
 (defmodel (RMSNorm (dims &key (eps 1e-5)))
-    ((weight (make-tensor `(,@dims) :requires-grad t))
+    ((weight (linspace `(,@dims) 0 1 :requires-grad t))
      (eps eps)))
 (defmethod call ((op RMSNorm) &rest inputs)
   (st "A[~] -> A[~]" (inputs))

@@ -63,7 +63,7 @@ When creating a MultiExpr, it is only fused if the node-type is op/expr!"
     :Aref
     :CAST
     
-    :ADD :MUL
+    :ADD :MUL :IDIV
     :AND :OR :XOR
     :MAX :MIN
     ;; Unary

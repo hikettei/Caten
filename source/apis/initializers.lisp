@@ -13,8 +13,6 @@
   (setf *manual-seed* seed *rng-counter* (make-rng-counter)))
 (defmacro with-manual-seed ((seed) &body body) `(let ((*manual-seed* ,seed) (*rng-counter* (make-rng-counter))) ,@body))
 ;; ~~~~ threefry2x32 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Introduce IDIV
-(defun !idiv (x y)  (!cast (!div (!cast x :float32) (!cast y :float32)) (dtype-of x)))
 (defun !idiv1 (x divisor) (!mul (!cast x :float32) (fconst (/ divisor))))
 (defun !shr (x shift dtype) (!cast (!idiv1 x (expt 2 shift)) dtype))
 (defun !threefry2x32 (x seed &aux (rotations `((13 15 26 6) (17 29 16 24))) (*wrap-around-mode* t))
@@ -35,7 +33,6 @@
 	        (nth 1 xr) (!xor x0 (!add (!mul (nth 1 xr) (uconst (expt 2 r) :dtype :uint32)) (!cast (!idiv1 (nth 1 xr) (expt 2 (- 32 r))) :uint32)))))
 	(setf xr (list (!add (first xr) (nth (mod i 3) ks)) (!add (second xr) (!add (nth (mod (1+ i) 3) ks) (uconst (1+ i) :dtype :uint32))))))
       (!or (!mul (!cast (second xr) :uint64) (uconst (expt 2 32) :dtype :uint64)) (!cast (car xr) :uint64)))))
-
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodel (Threefry2x32-Random () :where "A[~] -> A[~]"
 				  :documentation "Generates a random array sampled from a uniform distribution in the range of [0.0, 1.0)")
@@ -121,17 +118,58 @@
 (defun !randn (shape &key (dtype *default-float*) (order *default-order*) (out nil))
   (call (make-instance 'Gaussian-Distribution-Node) (or out (make-tensor shape :dtype dtype :order order))))
 
-(defun !uniform (shape &key (upfrom 0.0) (below 1.0) (dtype *default-float*) (order *default-order*) (out nil))
+(defun !uniform (shape &key (low 0.0) (high 1.0) (dtype *default-float*) (order *default-order*) (out nil))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
+    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 
-(defun !randint (shape &key (upfrom 0) (below 1) (dtype *default-int*) (order *default-order*) (out nil))
+(defun !randint (shape &key (low 0) (high 1) (dtype *default-int*) (order *default-order*) (out nil))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast upfrom) (->cast below))))
+    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(caten/defun[float] ($random "random") (n) (!rand `(,n)))
+(caten/defun[all] ($uniform "uniform") (n a b) (!uniform `(,n) :low a :high b))
+(caten/defun[float] ($randn "randn") (n) (!randn `(,n)))
+(caten/defun[float] ($normal "normal") (n mean std) (!normal `(,n) :mean mean :std std))
+(caten/defun[int] ($randint "randint") (n low high) (!randint `(,n) :low low :high high))
+(caten/defun[int] ($ax+b "linspace") (n a b) (ax+b `(,n) a b))
+(caten/defun[float] ($xavier-uniform "xavier_uniform") (n infeatures outfeatures)
+  (let ((coeff (!sqrt (!div (fconst 6) (!+ (fconst infeatures) (fconst outfeatures))))))
+    (!mul (!uniform `(,n) :low 0.0 :high 1.0) coeff)))
 
-;; TODO: Xavier/He/Orthogonal etc ...
-;; TODO: (parameter x :requires-grad t :id xx)
-;; TODO: Pre-compile the function (symbolic!)
-;; (export-avm :clang avm)
-;;(caten/defun[float] ($random "random") (n) (!rand `(,n)))
+(caten/defun[float] ($xavier-gaussian "xavier_gaussian") (n infeatures outfeatures)
+  (let ((stddev (!sqrt (!div (fconst 2) (!+ (fconst infeatures) (fconst outfeatures))))))
+    (!normal `(,n) :mean 0.0 :std stddev)))
+
+(defun make-input (from shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil))
+  "TODO: Docs. Creates a placeholder named `from`."
+  (make-tensor shape :dtype dtype :order order :id id :requires-grad requires-grad :initial-element initial-element :views views :from from))
+
+(defun make-param (initializer shape &key (dtype *default-float*) (order *default-order*) (requires-grad nil) (id (gensym "TID")))
+  "Initializes a new tensor obtained from initializer."
+  (declare (type function initializer))
+  (assert (every #'numberp shape) () "Shape should be a static.")
+  (let* ((tensor (funcall initializer (apply #'* shape)))
+	 (place  (make-tensor shape :dtype dtype :order order :requires-grad requires-grad :id id :from (tensor-buffer tensor))))
+    (assert (tensor-p tensor) () "make-param: initializer should return a single tensor!")
+    (setf
+     (buffer-shape (tensor-buffer tensor)) shape
+     (buffer-stride (tensor-buffer tensor)) (static-compute-strides order shape)
+     (buffer-nrank (tensor-buffer tensor)) (length shape)
+     (buffer-views (tensor-buffer tensor)) nil
+     (tensor-buffer place) (tensor-buffer tensor))
+    place))
+
+(macrolet ((def (name initializer &key (args nil) (keys nil) (dtype *default-float*) (documentation "No description provided"))
+	     `(defun ,name (shape ,@args &key ,@keys (dtype ,dtype) (order *default-order*) (id (gensym "TID")) (requires-grad nil))
+		,documentation
+		(declare (type list shape))
+		(assert (every #'numberp shape) () ,(format nil "~a: Shape should be a static!" name))
+		(make-param #',initializer shape :dtype dtype :order order :requires-grad requires-grad :id id))))
+  (def rand (lambda (n) ($random dtype n)))
+  (def uniform (lambda (n) ($uniform dtype n low high)) :keys ((low 0) (high 1)))
+  (def randn (lambda (n) ($randn dtype n)))
+  (def normal (lambda (n) ($normal dtype n mean std)) :keys ((mean 0) (std 1)))
+  (def randint (lambda (n) ($randint dtype n low high)) :keys ((low 0) (high 1)) :dtype *default-int*)
+  (def xavier-uniform (lambda (n) ($xavier-uniform dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2))))))
+  (def xavier-gaussian (lambda (n) ($xavier-gaussian dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2))))))
+  (def linspace (lambda (n) ($ax+b dtype n a b)) :args (a b)))

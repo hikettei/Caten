@@ -199,7 +199,7 @@ Compiled with: ~a"
 	  (render-expr lang lhs)
 	  (ecase op
 	    (:+ :+) (:- :-) (:* :*) (:/ :/)
-	    (:ADD :+) (:MUL :*)
+	    (:ADD :+) (:MUL :*) (:IDIV "/")
 	    (:AND :&) (:OR "|") (:!= :!=) (:EQ :=)
 	    (:XOR "^")
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))

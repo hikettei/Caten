@@ -1,8 +1,8 @@
 (in-package :caten/nn)
 
 (defmodel (Linear (in-features out-features &key (bias t)))
-  ((weight (make-tensor `(,out-features ,in-features)))
-   (bias   (when bias (make-tensor `(,out-features))))))
+    ((weight (xavier-uniform `(,out-features ,in-features) :requires-grad t))
+     (bias   (when bias (uniform `(,out-features) :low (- (sqrt (/ out-features))) :high (sqrt (/ out-features)) :requires-grad t)))))
 
 (defmethod call ((model Linear) &rest inputs)
   (multiple-value-bind (x) (apply #'values inputs)

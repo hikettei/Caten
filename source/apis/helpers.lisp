@@ -182,3 +182,24 @@ Reads and binds attributes from module.
 (defun pad-left (&rest shape)
   (let ((max-dim (apply #'max (map 'list #'length shape))))
     (mapcar #'(lambda (s) (append (make-list (- max-dim (length s)) :initial-element 1) s)) shape)))
+
+(defun column-major-calc-strides (shape)
+  (declare (type list shape))
+  (let* ((num-dims (length shape))
+         (strides (make-list num-dims :initial-element 1)))
+    (loop for i from 1 to (- num-dims 1) do
+      (setf (nth i strides) (* (nth (- i 1) strides) (nth (- i 1) shape))))
+    strides))
+
+(defun row-major-calc-strides (shape)
+  (declare (type list shape))
+  (let* ((num-dims (length shape))
+         (strides (make-list num-dims :initial-element 1)))
+    (loop for i downfrom (- num-dims 2) to 0 do
+      (setf (nth i strides) (* (nth (+ i 1) strides) (nth (+ i 1) shape))))
+    strides))
+
+(defun static-compute-strides (order shape)
+  (ecase order
+    (:row (row-major-calc-strides shape))
+    (:column (column-major-calc-strides shape))))
