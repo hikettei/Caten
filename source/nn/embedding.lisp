@@ -15,7 +15,7 @@
 	     (arange (!expand arange big-shp))
 	     (idx (!expand (!reshape x (append (shape x) `(1 1))) big-shp))
 	     (vals (!expand (!reshape weight weight-shp) big-shp)))
-	(let* ((out (!sum (!mul (!where (!eq arange idx) (!const x 1) (!const x 0)) vals) :axis 2))
+	(let* ((out (!sum (!where (!eq arange idx) vals (!const x 0)) :axis 2))
 	       (shp (append (shape x) (list embedding-dim))))
 	  (!reshape out shp))))))
 
