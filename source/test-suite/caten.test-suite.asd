@@ -4,7 +4,8 @@
   :depends-on
   ("rove" "trivia" "cl-ppcre")
   :serial t
-  :components ((:file "package"))
+  :components ((:file "package")
+	       (:file "helpers"))
   :perform
   (asdf:test-op
    (o s)
