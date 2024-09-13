@@ -3,7 +3,7 @@
 (defmodel (Embedding (vocab-size embedding-dim))
     ((vocab-size vocab-size)
      (embedding-dim embedding-dim)
-     (weight (make-tensor `(,vocab-size ,embedding-dim)))
+     (weight (normal `(,vocab-size ,embedding-dim) :mean 0 :std 1 :requires-grad t))
      (arange (!reshape (ax+b `(,vocab-size) 1 0) `(1 1 ,vocab-size 1)))))
 
 (defmethod call ((op Embedding) &rest inputs)
