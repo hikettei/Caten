@@ -4,7 +4,7 @@
     ((vocab-size vocab-size)
      (embedding-dim embedding-dim)
      (weight (normal `(,vocab-size ,embedding-dim) :mean 0 :std 1 :requires-grad t))
-     (arange (!reshape (ax+b `(,vocab-size) 1 0) `(1 1 ,vocab-size 1)))))
+     (arange (linspace `(1 1 ,vocab-size 1) 1 0))))
 
 (defmethod call ((op Embedding) &rest inputs)
   (st "A[~] -> A[~]" (inputs))
@@ -18,3 +18,6 @@
 	(let* ((out (!sum (!mul (!where (!eq arange idx) (!const x 1) (!const x 0)) vals) :axis 2))
 	       (shp (append (shape x) (list embedding-dim))))
 	  (!reshape out shp))))))
+
+(in-package :caten/nn.test)
+
