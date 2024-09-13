@@ -42,11 +42,11 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
   (with-slots ((weight weight) (bias bias)) conv
     (with-attrs ((groups :groups) (kernel-size :kernel-size) (in-channels :in-channels) (out-channels :out-channels) (requires-bias :bias)) conv
       (when (null weight)
-	;; TODO: Initialize the xaviar distribution
-	;; -> How can we deal w/ dense random module in the portable way?
-	(setf (convnd-weight conv) (make-tensor `(,out-channels ,(/ in-channels groups) ,@kernel-size) :requires-grad t))
-	(when (and requires-bias (null bias))
-	    (setf (convnd-bias conv) (make-tensor `(,out-channels) :requires-grad t)))))))
+	(let ((k (/ groups (* in-channels (apply #'* kernel-size)))))
+	  (setf (convnd-weight conv)
+		(uniform `(,out-channels ,(/ in-channels groups) ,@kernel-size) :low (- (sqrt k)) :high (sqrt k) :requires-grad t))
+	  (when (and requires-bias (null bias))
+	    (setf (convnd-bias conv) (uniform`(,out-channels) :low (- (sqrt k)) :high (sqrt k) :requires-grad t))))))))
 
 (defmethod impl/conv ((conv ConvND) x)
   (let* ((weight (convnd-weight conv))

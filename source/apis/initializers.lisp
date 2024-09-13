@@ -127,7 +127,7 @@
     (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (caten/defun[float] ($random "random") (n) (!rand `(,n)))
-(caten/defun[all] ($uniform "uniform") (n a b) (!uniform `(,n) :upfrom a :below b))
+(caten/defun[all] ($uniform "uniform") (n a b) (!uniform `(,n) :low a :high b))
 (caten/defun[float] ($randn "randn") (n) (!randn `(,n)))
 (caten/defun[float] ($normal "normal") (n mean std) (!normal `(,n) :mean mean :std std))
 (caten/defun[int] ($randint "randint") (n low high) (!randint `(,n) :low low :high high))
