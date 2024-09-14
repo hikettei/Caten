@@ -102,6 +102,9 @@ Usage:
 		     ,@body)))))
   (defcontext
       ;; (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
+      (:DEBUG
+       0 :int #.(oneof "DEBUG" 0 `(-1 0))
+       "Set -1 to disable logger")	 
       (:SERIALIZE
        0 :int
        (lambda (x)
