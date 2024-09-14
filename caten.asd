@@ -1,6 +1,7 @@
 (asdf:defsystem "caten"
   :description "Programmable Deep Learning Framework"
   :author      "hikettei <ichndm@gmail.com>"
+  :version "0.0"
   :licence     "MIT"
   :depends-on
   ("caten.apis" "caten.nn" "caten.test-suite")
@@ -31,4 +32,7 @@
   :pathname "external/gguf"
   :components
   ((:file "package")
+   (:file "helpers")
+   (:file "metadata")
+   (:file "tensor-info")
    (:file "gguf-file")))
