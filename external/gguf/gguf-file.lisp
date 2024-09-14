@@ -9,6 +9,15 @@
    (metadata :initarg :metadata :accessor gguf-metadata)
    (tensor-info :initarg :tensor-info :accessor gguf-tensor-info)))
 
+(defmethod print-object ((gguf gguf) stream)
+  (with-slots ((version version) (tensor-info tensor-info) (metadata metadata)) gguf
+    (format stream "<GGUF
+  version=~a
+  metadata: ~a datum
+  tensor-info: ~a tensors
+>"
+	    version (length metadata) (length tensor-info))))
+
 (defun parse-header (buffer)
   (declare (type input-buffer buffer))
   (multiple-value-bind (g1 g2 u f)
