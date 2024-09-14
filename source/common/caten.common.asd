@@ -7,4 +7,5 @@
   :components
   ((:file "contextvar")
    (:file "tqdm")
-   (:file "dtype")))
+   (:file "dtype")
+   (:file "logger")))

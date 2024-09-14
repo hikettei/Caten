@@ -12,7 +12,6 @@
     (asdf:test-op "caten.apis")
     (asdf:test-op "caten.nn")
     (asdf:test-op "caten.test-suite"))))
-
 ;; External system for Caten.
 ;; Systems including non-portable dependencies (e.g.: CUDA, Metal) or systems cannot be guaranteed to be maintained, are separated from caten.
 (asdf:defsystem "caten/metal"

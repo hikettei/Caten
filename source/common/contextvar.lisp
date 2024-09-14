@@ -169,6 +169,9 @@ Usage:
      "Set 1 to allow jit to generate packed-funcall")
     (:CALL_ZENITY
      0 :int #.(oneof "CALL_ZENITY" 0 `(0 1))
-     "(For JIT) %render-compile always produce an simple-error.")))
+     "(For JIT) %render-compile always produce an simple-error.")
+    (:COLOR
+     1 :int #.(oneof "COLOR" 1 `(0 1))
+     "Use cl-ansi-color if set to 1")))
 
 (defparameter *ctx* (make-contextvar))
