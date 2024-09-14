@@ -1,4 +1,4 @@
-(defpackage :caten/external.backends.metal
+(defpackage :caten/metal
   (:use :cl :caten/ajit :caten/air :caten/avm :cffi :cl-metal)
   (:import-from
    :caten/common.dtype
@@ -6,7 +6,7 @@
   (:export
    #:Metal))
 
-(in-package :caten/external.backends.metal)
+(in-package :caten/metal)
 
 (defclass Metal (Device)
   ((device-id :initform 0 :initarg :id :accessor metal-device-id)))
