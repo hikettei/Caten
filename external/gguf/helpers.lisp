@@ -9,6 +9,7 @@
 			      (loop repeat len collect (fast-read-byte buffer)))))
     (values (the string (babel:octets-to-string str :encoding :utf-8)) len)))
 
-(declaim (inline readf32-le readf64-le))
+(declaim (inline readf16-le readf32-le readf64-le caten/common.dtype:decode-float32 caten/common.dtype:decode-float64))
+(defun readf16-le (buffer) (caten/common.dtype:decode-float16 (readu16-le buffer)))
 (defun readf32-le (buffer) (caten/common.dtype:decode-float32 (readu32-le buffer)))
 (defun readf64-le (buffer) (caten/common.dtype:decode-float64 (readu64-le buffer)))

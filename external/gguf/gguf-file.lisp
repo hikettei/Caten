@@ -36,7 +36,7 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
       (let* ((metadata (parse-metadata-kv buffer metadata-kv-count))
 	     (alignment (find "general.alignment" metadata :key #'metadata-key :test #'equal))
 	     (alignment (if alignment (metadata-value alignment) 32))
-	     (tensors (parse-tensor-info buffer tensor-count alignment))
+	     (tensors (parse-tensor-info buffer tensor-count alignment stream))
 	     (gguf (make-instance 'gguf :version version :tensor-count tensor-count :metadata-kv-count metadata-kv-count
 					:metadata metadata :tensor-info tensors)))
 	(assert (= metadata-kv-count (length metadata)) () "The number of parsed metadatas is invaild. Parsed ~a, but expected ~a" (length metadata) metadata-kv-count)
@@ -46,7 +46,7 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
 	;; [tensor_info] | [rest_of_the_file]
 	gguf))))
 
-(defun make-gguf-from-pathname (pathname)
+(defun load-gguf (pathname)
   "Creates GGUF from pahtname"
   (with-open-file (stream pathname :element-type '(unsigned-byte 8))
     (make-gguf stream)))

@@ -46,13 +46,13 @@
      (let* ((value-type (gguf-metadata-value-type (readu32-le buffer)))
 	    (len (readu64-le buffer))
 	    (array (loop repeat len collect len collect (gguf-metadata-value buffer value-type))))
-       (make-array (length array) :element-type (value-type->lisp-type value-type) :initial-contents array)))))
+       (make-array (length array) :initial-contents array)))))
 
 (defstruct (Metadata
 	    (:constructor make-metadata (key value-type value)))
   (key key :type string)
   (value-type value-type :type keyword)
-  (value value :type (or number simple-array)))
+  (value value :type (or number boolean simple-array)))
 
 (defmethod print-object ((metadata Metadata) stream)
   (let* ((obj (format nil "~a" (metadata-value metadata)))

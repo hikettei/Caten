@@ -35,4 +35,5 @@
    (:file "helpers")
    (:file "metadata")
    (:file "tensor-info")
-   (:file "gguf-file")))
+   (:file "gguf-file")
+   (:file "dequantize")))
