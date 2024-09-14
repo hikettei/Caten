@@ -36,3 +36,11 @@
    (:file "tensor-info")
    (:file "gguf-file")
    (:file "dequantize")))
+
+(asdf:defsystem "caten/llm"
+  :description "Various Generative Language Model Implementation in Caten"
+  :author "hikettei <ichndm@gmail.com>"
+  :depends-on ("caten")
+  :pathname "external/llm"
+  :components
+  ((:file "package")))
