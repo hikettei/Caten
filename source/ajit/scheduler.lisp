@@ -37,8 +37,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
     (when (or (= (buffer-nrank a) 0) (= 0 (buffer-nrank b)))->ok)
     ;; Contiguous and the same-shaped buffer -> merge them
     (when (and
-	   (every #'null (buffer-views a))
-	   (every #'null (buffer-views b))
+           (every #'null (buffer-views a))
+           (every #'null (buffer-views b))
            (equal (map 'list #'reveal-buffer (buffer-shape a)) (map 'list #'reveal-buffer (buffer-shape b))))
       ->ok)
     ;; They still have a chance to be merged by the polyhedral compiler.
@@ -49,7 +49,10 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   "Return -> (list scheduled-items ...)"
   (declare (type graph graph) (type scheduled-items scheduled-items))
   (flet ((explore (x) (when x (recursive-find-group graph x)))
-	 (mergeable-p (x latest x-type) (or (numberp x) (and (id->value graph x) (not (eql (node-type (id->value graph x)) :Allocate)) (buffer-intersect-p latest x-type)))))
+	 (mergeable-p (x latest x-type)
+	   (or
+	    (numberp x)
+	    (and (id->value graph x) (not (eql (node-type (id->value graph x)) :Allocate)) (buffer-intersect-p latest x-type)))))
     (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
       (let* ((node (or (id->value graph latest-id) (return-from recursive-find-group)))
 	     ;; Allocation is done at the (Exported) VM Level
@@ -111,7 +114,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 			   (let ((node (id->value graph x)))
 			     (when (and node (null (find (node-id node) *recursive-find-seen*)))
 			       (make-scheduled-items (list node x-type x))))))
-		     children children-type)))	      
+		     children children-type)))
 	      (append
 	       (list scheduled-items)
 	       (loop for n in (map 'list #'explore new-groups) if n collect n))))))))
@@ -220,7 +223,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (assert (numberp by) () "by is expected to be a constant to create an affine schedule! (TODO: Fix)")
   ;;(when (symbolp by) (setf by 2))
   (if broadcast-p
-      (format nil "0")
+      "0"
       (format nil "~a~a~a"
 	      (if (eql by 1)
 		  ""

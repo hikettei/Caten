@@ -90,7 +90,7 @@
 	 (depth (* 2 (second bands)))
 	 (bands (car bands))
 	 (ast-build (ast-build-from-context (set-from-str "{:}")))
-	 (ast-build (ast-build-set-iterators ast-build (apply #'make-id-list (map 'list #'gid (range 0 depth)))))
+	 (ast-build (ast-build-set-iterators ast-build (apply #'make-id-list (map 'list #'gid (range 0 (1+ depth))))))
 	 (ast-build-node (ast-build-node-from-schedule ast-build schedule)))
     (values ast-build-node bands)))
 

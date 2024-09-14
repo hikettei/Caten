@@ -407,9 +407,10 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod backward ((op IndexComponents) &optional prev-grad))
 (defmethod lower ((op IndexComponents) &rest inputs)
   (with-context (_ (%index-components (car inputs) (%shape (shape (car (func-variables op))))))))
-(defun !index-components (tensor)
-  (declare (type tensor tensor))
+(defmethod !index-components ((tensor Tensor))
   (forward (make-instance 'IndexComponents) tensor))
+(defmethod !index-components ((shape list))
+  (forward (make-instance 'IndexComponents) (make-tensor shape)))
 
 ;; ~~~ Bitwise ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((def (name op lisp)
