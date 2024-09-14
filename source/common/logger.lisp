@@ -8,6 +8,7 @@
    #:print-info
    #:with-progress
    #:print-progress
+   #:print-error
    #:maybe-ansi
    #:white-bright))
 
@@ -50,7 +51,10 @@
   (defun print-info (content &rest args)
     (when (>= (getenv :DEBUG) 0)
       (format *default-stream* "~a : ~a~%" (timestamp) (apply #'format nil content args))))
-
+  
+  (defun print-error (content &rest args)
+    (format *default-stream* "~a ~a~%" (maybe-ansi red "[ERROR]") (apply #'format nil content args)))
+  
   ;; (1/n) ... (xxx ms)
   ;; (2/n) ... (yyy ms)
   (defparameter *progress* nil)
@@ -78,5 +82,5 @@
 		(maybe-ansi blue (format nil "(~a/~a)" (progress-n *progress*) (progress-total *progress*)))
 		(maybe-ansi white-bright (apply #'format nil content args))
 		(if (or (= 0 ms) (>= ms 1000))
-		    (maybe-ansi gray (format nil "(~a sec)" (/ ms 1000)))
+		    (maybe-ansi gray (format nil "(~a sec)" (float (/ ms (* 1000 1000)))))
 		    (maybe-ansi gray (format nil "(~a ms)" ms))))))))
