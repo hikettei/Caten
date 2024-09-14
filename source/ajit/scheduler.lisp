@@ -715,10 +715,6 @@ Optional order fusing softmax in a single kernel is:
 		do (setf seen (append seen (group-writes group)))
 	      else
 		collect (setf (group-sched group) (schedule group (make-top-schedule group))))
-;	(dolist (g groups)
-;	  (when (equal (length (group-args g)) (length `(|val_36| |val_3| |val_2| |val_1| |val_8| |val_14| |val_0| |val_31|)))
-;	    (print "Issue Graph")
-;	    (print g)))
 	(loop with write-deps = (map 'list #'seen-in-groups groups)
 	      with read-deps = (map 'list #'read-in-groups groups)
 	      for nth upfrom 1
