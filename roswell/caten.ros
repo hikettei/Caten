@@ -1,0 +1,50 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+   #+quicklisp(cl:push (cl:pathname "./") ql:*local-project-directories*)
+   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text) :silent t))
+
+(defpackage :caten/cli
+  (:use :cl :log :cl-ansi-text))
+
+(in-package :caten/cli)
+
+(defun version () (asdf:component-version (asdf:find-system "caten")))
+
+(defun caten/llm/handler (cmd)
+
+  )
+
+(defun caten/llm ()
+  (clingon:make-command
+   :name "llm"
+   :description (maybe-ansi white-bright "Compiles LLM")
+   :handler #'caten/llm/handler))
+
+(defun caten/options ()
+  (list
+   
+   ))
+
+(defun caten/command ()
+  ;; Usage (WIP)
+  ;; ./caten -i gemm.toml --disassemble --benchmark i=1,j=1,k=1
+  (clingon:make-command
+   :name (maybe-ansi cyan "caten")
+   :description (maybe-ansi white-bright "Compile + AbstracTENsor, Command Line Deep Learning Compiler")
+   :version (version)
+   :options (caten/options)
+   :usage (maybe-ansi white (format nil "[COMMAND] [OPTIONS]~%~a" (ctx:help nil)))
+   :handler #'identity
+   :sub-commands (list (caten/llm))))
+
+(defun main (&rest argv)
+  (let ((app (caten/command)))
+    (if (= (length argv) 0)
+	(clingon:print-usage app t)
+	(clingon:run app argv))))
+;;; vim: set ft=lisp lisp:
