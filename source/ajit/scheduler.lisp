@@ -50,9 +50,6 @@ Further op-fusion optimization are done by the polyhedral-compiler."
   (declare (type graph graph) (type scheduled-items scheduled-items))
   (flet ((explore (x) (when x (recursive-find-group graph x)))
 	 (mergeable-p (x latest x-type)
-	   ;;(print "+++")
-	   ;;(print x)
-	   ;;(print (id->value graph x))
 	   (or
 	    (numberp x)
 	    (and (id->value graph x) (not (eql (node-type (id->value graph x)) :Allocate)) (buffer-intersect-p latest x-type)))))
