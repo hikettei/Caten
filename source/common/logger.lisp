@@ -78,9 +78,16 @@
 	     (ms (- now last-time)))
 	(setf (progress-last-time *progress*) now)
 	(incf (progress-n *progress*))
-	(format *default-stream* "* ~a ~a ~a~%"
-		(maybe-ansi blue (format nil "(~a/~a)" (progress-n *progress*) (progress-total *progress*)))
-		(maybe-ansi white-bright (apply #'format nil content args))
-		(if (or (= 0 ms) (>= ms 1000))
-		    (maybe-ansi gray (format nil "(~a sec)" (float (/ ms (* 1000 1000)))))
-		    (maybe-ansi gray (format nil "(~a ms)" ms))))))))
+	(flet ((render-time ()
+		 (if (or (= 0 ms) (>= ms 1000))
+		     (maybe-ansi gray (format nil "(~a sec)" (float (/ ms (* 1000 1000)))))
+		     (maybe-ansi gray (format nil "(~a ms)" ms)))))
+	  (format *default-stream* "~a~%* ~a ~a~a~%"
+		  (if (= 1 (progress-n *progress*))
+		      ""
+		      (render-time))
+		  (maybe-ansi blue (format nil "(~a/~a)" (progress-n *progress*) (progress-total *progress*)))
+		  (maybe-ansi white-bright (apply #'format nil content args))
+		  (if (= (progress-n *progress*) (progress-total *progress*))
+		      (format nil " ~a~%" (render-time))
+		      "")))))))

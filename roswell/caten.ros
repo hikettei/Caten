@@ -22,11 +22,13 @@ exec ros -Q -- $0 "$@"
 (defun caten/llm/handler (cmd)
   (let ((target-file (or (nth 1 *argv*)
 			 (log:print-error "Specify the input file.~%Usage: caten llm [input_file] [options]"))))
-    (with-progress (4 :title (format nil "Compiling ~a..." target-file))
-      (print-progress "Loading the gguf model.")
+    (with-progress (3 :title (format nil "Compiling ~a..." target-file))
+      (print-progress "Loading the gguf model...")
       (let ((gguf-model (caten/gguf:load-gguf target-file)))
 	(print-progress "Confirmed the validity of the input. version=~a" (caten/gguf:gguf-version gguf-model))
-	))))
+	(let ((caten-model)) ;; gguf->caten
+	  (print-progress "OK")
+	  )))))
 
 (defun caten/llm ()
   (clingon:make-command
