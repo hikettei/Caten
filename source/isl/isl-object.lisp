@@ -35,7 +35,7 @@ of type OBJECT-NAME."
   "Assumes under the body is a thread-safe"
   `(let ((*context* (make-context)))
      (prog1
-	 (let ((*isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value)))
+	 (progn;;let ((*isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value)))
 	   ,@body)
        ;;(remhash (cffi:pointer-address (context-handle *context*)) *isl-object-table*)
        ;;(%isl-ctx-free (context-handle *context*))
