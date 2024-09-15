@@ -110,7 +110,7 @@ To sort the graph properly, resolve the following isolated graph dependencies.
 				       (if stop
 					   (format out "~a<Omitting ~a>~%" (indent indent) id)
 					   (mapc #'(lambda (x) (explore x (+ 2 indent) :stop seen-p :parent (cdr deps))) (car deps))))
-				     (if (null (find id initial-write-set))
+				     (if (and (symbolp id) (null (find id initial-write-set)))
 					 (progn
 					   (format out "~a[**FIXME**: ~a is not defined in the original graph.]~%" (indent indent) id)
 					   (when parent
