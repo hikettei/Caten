@@ -203,3 +203,16 @@ Reads and binds attributes from module.
   (ecase order
     (:row (row-major-calc-strides shape))
     (:column (column-major-calc-strides shape))))
+
+(defun nth1 (nth list)
+  "Just nth but supports -1, -2... accessing"
+  (let ((idx (if (>= nth 0)
+		 nth
+		 (+ (length list) nth))))
+    (nth idx list)))
+
+(defun (setf nth1) (value nth list)
+  (let ((idx (if (>= nth 0)
+		 nth
+		 (+ (length list) nth))))
+    (setf (nth idx list) value)))

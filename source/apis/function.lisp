@@ -150,9 +150,9 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defun !transpose (tensor &optional (dim0 1) (dim1 0))
   (declare (type tensor tensor))
   (let* ((range (range 0 (ndim tensor)))
-	 (tmp (nth dim0 range)))
-    (setf (nth dim0 range) (nth dim1 range)
-	  (nth dim1 range) tmp)
+	 (tmp (nth1 dim0 range)))
+    (setf (nth1 dim0 range) (nth1 dim1 range)
+	  (nth1 dim1 range) tmp)
     (!permute tensor range)))
 
 (defun !contiguous (x &key (force nil))

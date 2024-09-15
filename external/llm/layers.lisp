@@ -1,5 +1,9 @@
 (in-package :caten/llm)
 
+(defun scale-dot-product-attention (query key value &optional mask)
+  (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
+    (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
+
 (defmodel (Attention (dim n-heads max-len))
     ((c-attn (Linear dim (* 3 dim) :bias nil))
      (c-proj (Linear dim dim :bias nil))
@@ -39,7 +43,13 @@
 		 (!transpose xq 1 2)
 		 (!transpose keys 1 2)
 		 (!transpose vals 1 2))
-	      xq)))))))
+	      (call
+	       c-proj
+	       (!reshape
+		(!transpose
+		 (scale-dot-product-attention xq keys vals mask)
+		 1 2)
+		`(,batch-size ,seq-len ,dim))))))))))
 
 (defmodel (FeedForward (dim hidden-dim))
     ((c-fc   (Linear dim hidden-dim))
