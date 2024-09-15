@@ -4,7 +4,8 @@
 Codes are from https://github.com/hikettei/cl-tqdm/blob/main/cl-tqdm.lisp
 Usage:
 ```
-(tqdm:with (x 10 :description 
+(tqdm:with (x 10 :description ...)
+  (tqdm:update x))
 ```")
   (:nicknames #:tqdm)
   (:use :cl)
@@ -92,8 +93,8 @@ Usage:
           (write-string " " bar))
       (write-string (write-to-string n) bar)
       (write-string "% |" bar)
-      (dotimes (_ r) (write-string *indent* bar))
-      (dotimes (_ (- 10 r)) (write-string *indent* bar)))
+      (dotimes (_ r) (write-string *bar-string* bar))
+      (dotimes (_ (- 10 r)) (write-string *space-string* bar)))
     (write-string "| " bar)
     (write-string (write-to-string (tqdm-count-idx status)) bar)
     (write-string "/" bar)
@@ -117,9 +118,9 @@ Usage:
 
 (defun render-progress-bar (stream tqdm &key (animate nil))
   (declare (type TqdmBar tqdm))
-  (if (and animate (tqdm-animate tqdm))
-      ;; delete the current progress-bar
-      (backward-lines)
-      (fresh-line))
-  (format stream (render tqdm))
-  nil)
+  (when (>= (ctx:getenv :DEBUG) 0)
+    (if (and animate (tqdm-animate tqdm))
+	(backward-lines)
+	(fresh-line))
+    (format stream (render tqdm))
+    nil))

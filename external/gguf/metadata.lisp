@@ -78,5 +78,6 @@
 
 (defun parse-metadata-kv (buffer metadata-kv-count)
   (declare (type input-buffer buffer) (type fixnum metadata-kv-count))
-  (loop repeat metadata-kv-count
-	collect (make-gguf-metadata buffer)))
+  (tqdm:with (tqdm metadata-kv-count :description "Extracting metadata...")
+    (loop repeat metadata-kv-count
+	  collect (make-gguf-metadata buffer) do (tqdm:update tqdm))))
