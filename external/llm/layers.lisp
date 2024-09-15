@@ -1,5 +1,8 @@
 (in-package :caten/llm)
 ;; [TODO] Slot-name: is it possible to reconstruct from gguf in a meta-programming way?
+;; Some of subgraph are purged?
+;; call still has an issue?
+;; Cannot be compiled with the dynamic shaped?
 (defun scale-dot-product-attention (query key value &optional mask)
   (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
     (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
@@ -78,5 +81,21 @@
      (wpe (Embedding max-seq-len dim))
      (h (loop repeat n-layers collect (TransformerBlock dim n-heads :norm-eps norm-eps :max-seq-len max-seq-len)))
      (ln-f (LayerNorm `(,dim) :eps norm-eps))
-     (ln-head (Linear dim vocab-size :bias nil))))
+     (lm-head (Linear dim vocab-size :bias nil))))
 
+(defmethod call ((model Transformer) &rest inputs)
+  (multiple-value-bind (tokens start-pos temperature) (apply #'values inputs)
+    (assert (and tokens start-pos))
+    (with-slots ((wte wte) (wpe wpe) (h h) (lm-head lm-head)) model
+      (let* ((token-emb (call wte tokens))
+	     (pos-emb (call wpe (!cast (!add start-pos (!index-components `(1 ,(second (shape tokens))))) (dtype-of tokens))))
+	     (hi (!add token-emb pos-emb))
+	     ;; TODO: triu
+	     (mask nil)
+	     (_ (loop for hn in h do
+	       (setf hi (call hn hi start-pos mask))))
+	     (logits (call lm-head hi)))
+	(declare (ignore _))
+	logits))))
+
+#+(or)(with-no-grad (caten (call (Transformer 64 4 4 1e-5 512) (make-tensor `(10 10)) (iconst 0))))
