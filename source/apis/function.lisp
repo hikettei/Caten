@@ -200,13 +200,13 @@ save-for-backward is determined automatically, so you do not have to consider ab
     (let ((x (if (= (ndim x) (length shape)) x (!reshape x reshape-to))))	  
       (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t `(:~ ,x))) view-index reshape-to)))))
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Move (Func) nil)
+(defclass Move (Func) ((reduction :initarg :reduction :accessor move-reduction)))
 (defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op Move) &optional dout) (values dout dout))
 (defmethod lower ((op Move) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
-    (with-context (out (%move a b)))))
-(defun !move (a b) (declare (type tensor a b)) (forward (make-instance 'Move) a b))
+    (with-context (out (%move a b :reduction (move-reduction op))))))
+(defun !move (a b &key (reduce nil)) (declare (type tensor a b)) (apply #'forward (make-instance 'Move :reduction reduce) (broadcast-elwise a b)))
 
 (defclass Add (Func)
   ((reduce :initarg :reduce :initform nil :accessor func-reduce)
