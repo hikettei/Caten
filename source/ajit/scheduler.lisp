@@ -153,7 +153,15 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	if (vm-instruction-p node) do
 	  (assert (every #'(lambda (x) (or (null x) (= 0 (buffer-nrank x)) (= (buffer-nrank x) max-rank))) reads)
 		  ()
-		  "Tensors are not broadcasted properly: ~a" reads)
+		  "Inconsistency in the inferred tensor shape. (This is a bug of Caten, not users as long as ShapeTracker is enabled.)
+All tensors appeared in `node-reads`, must have the same ranks or be scalars.~%
+Node: ~a
+Butgot: ~a
+Buffers: ~a
+"
+		  node
+		  (map 'list #'buffer-shape reads)
+		  reads)
 	  (setf nrank (max nrank (apply #'max (map 'list #'(lambda (x) (if x (buffer-nrank x) 0)) reads))))
 	  (mapc #'(lambda (r type) (when (find r deps) (push type args))) (node-reads node) reads))
   (let* ((index-components (map 'list #'gid (range 0 nrank)))
