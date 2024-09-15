@@ -99,7 +99,7 @@
    #:func-variables
    #:lower
    ;; shaping
-   #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!permute #:!t
+   #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!permute #:!t #:!transpose
    #:!expand
    #:!uprank
    ;; Binary

@@ -1,4 +1,3 @@
-
 (defpackage :caten/llm
   (:use :cl :caten/apis :caten/nn))
 
