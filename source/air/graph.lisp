@@ -60,8 +60,7 @@ If outputs is nil, the writes of last nodes becomes the top"
 (defun special-p (kw) (declare (optimize (speed 3))) (search "SPECIAL/" (format nil "~a" kw)))
 
 (defun resolve-isolated-nodes (graph)
-  (declare (type graph graph)
-	   (optimize (speed 3)))
+  (declare (type graph graph))
   (let ((new-nodes) (seen (graph-seen graph)) (stashed))
     (declare (type list new-nodes seen stashed))
     (flet ((seen-p (reads) (every #'(lambda (x) (or (numberp x) (find x seen :test #'eql))) reads)))
@@ -86,13 +85,32 @@ If outputs is nil, the writes of last nodes becomes the top"
 				(dolist (w (node-writes node-old)) (push w seen))
 				(setf stashed (remove node-old stashed :key #'cdr :test #'equal)))
 			(setf finish-p (not changed-p)))))
-    ;;(assert (null stashed) () "verify-graph: these nodes are isolated: ~a" stashed)
     (let ((initial-write-set (apply #'append (map 'list #'node-writes (graph-nodes graph))))
           (write-set (apply #'append (map 'list #'node-writes new-nodes))))
-      (declare (type list write-set))
-      (assert (every #'(lambda (x) (or (find x write-set) (null (find x initial-write-set)))) (graph-outputs graph))
+      (declare (type list write-set initial-write-set))
+      (assert (every #'(lambda (x) (or (find (the symbol x) write-set) (null (find (the symbol x) initial-write-set)))) (graph-outputs graph))
               ()
-              "graph-outputs ~a was removed during verification process." (graph-outputs graph)))
+              "graph-outputs ~a was removed during verification process.
+To sort the graph properly, resolve the following isolated graph dependencies.
+~a"
+	      (graph-outputs graph)
+	      (with-output-to-string (out)
+		(dolist (id (graph-outputs graph))
+		  (let ((seen nil))
+		    (format out "~%== [Report: backtrace on ~a] ===============~%" id)
+		    (labels ((find-stashed (id) (find id stashed :key (compose #'node-writes #'cdr) :test #'find))
+			     (indent (indent) (with-output-to-string (out) (dotimes (i indent) (princ " " out))))
+			     (explore (id indent)
+			       (if (null (find id seen))
+				   (let ((deps (find-stashed id)))
+				     (push id seen)
+				     (if deps
+					 (progn
+					   (format out "~a~a was stashed because ~a is not defined:~%" (indent indent) id (car deps))
+					   (mapc #'(lambda (x) (explore x (+ 2 indent))) (car deps)))
+					 (format out "~a[Leaf: ~a has no dependnecies.]~%" (indent indent) id)))
+				   (format out "~a<<Omitting ~a>>~%" (indent indent) id))))
+		      (explore id 0)))))))
     (setf (graph-nodes graph) (reverse new-nodes))
     graph))
 
