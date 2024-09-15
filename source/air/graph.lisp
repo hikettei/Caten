@@ -100,16 +100,22 @@ To sort the graph properly, resolve the following isolated graph dependencies.
 		    (format out "~%== [Report: backtrace on ~a] ===============~%" id)
 		    (labels ((find-stashed (id) (find id stashed :key (compose #'node-writes #'cdr) :test #'find))
 			     (indent (indent) (with-output-to-string (out) (dotimes (i indent) (princ " " out))))
-			     (explore (id indent)
-			       (if (null (find id seen))
-				   (let ((deps (find-stashed id)))
-				     (push id seen)
-				     (if deps
+			     (explore (id indent &key (stop nil) (parent nil))
+			       (let ((seen-p (find id seen))
+				     (deps (find-stashed id)))
+				 (push id seen)
+				 (if deps
+				     (progn
+				       (format out "~a[*NG*: ~a was stashed because ~a is not defined]~%" (indent indent) id (car deps))
+				       (if stop
+					   (format out "~a<Omitting ~a>~%" (indent indent) id)
+					   (mapc #'(lambda (x) (explore x (+ 2 indent) :stop seen-p :parent (cdr deps))) (car deps))))
+				     (if (null (find id initial-write-set))
 					 (progn
-					   (format out "~a~a was stashed because ~a is not defined:~%" (indent indent) id (car deps))
-					   (mapc #'(lambda (x) (explore x (+ 2 indent))) (car deps)))
-					 (format out "~a[Leaf: ~a has no dependnecies.]~%" (indent indent) id)))
-				   (format out "~a<<Omitting ~a>>~%" (indent indent) id))))
+					   (format out "~a[**FIXME**: ~a is not defined in the original graph.]~%" (indent indent) id)
+					   (when parent
+					     (format out "~a-> In ~a~%" (indent (+ 2 indent)) parent)))
+					 (format out "~a[OK: ~a satisfies all requirements]~%" (indent indent) id))))))
 		      (explore id 0)))))))
     (setf (graph-nodes graph) (reverse new-nodes))
     graph))
