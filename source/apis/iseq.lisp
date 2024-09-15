@@ -184,7 +184,7 @@
 	(append
 	 (session-bw-out-ids session)
 	 (loop for tensor in iseq
-	       if (tensor-requires-grad tensor)
+	       if (and (null no-grad) (tensor-requires-grad tensor))
 		 collect (tensor-grad-id tensor))))
   (let* ((forward-graph
 	   (prog1
