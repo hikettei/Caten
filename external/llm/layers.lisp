@@ -1,28 +1,28 @@
 (in-package :caten/llm)
-
+;; [TODO] Slot-name: is it possible to reconstruct from gguf in a meta-programming way?
 (defun scale-dot-product-attention (query key value &optional mask)
   (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
     (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
 
-(defmodel (Attention (dim n-heads max-len))
+(defmodel (Attention (dim n-heads max-seq-len))
     ((c-attn (Linear dim (* 3 dim) :bias t))
      (c-proj (Linear dim dim :bias t))
      (n-heads n-heads)
      (dim dim)
-     (max-len max-len)
+     (max-seq-len max-seq-len)
      (head-dim (floor (/ dim n-heads)))
      (k-cache nil :accessor attn-k-cache)
      (v-cache nil :accessor attn-v-cache)))
 ;; (defmethod reset-kv-cache ())
 (defmethod call ((model Attention) &rest inputs)
-  (with-slots ((c-attn c-attn) (c-proj c-proj) (n-heads n-heads) (dim dim) (head-dim head-dim) (max-len max-len)) model
+  (with-slots ((c-attn c-attn) (c-proj c-proj) (n-heads n-heads) (dim dim) (head-dim head-dim) (max-seq-len max-seq-len)) model
     (multiple-value-bind (x n mask) (apply #'values inputs)
       (let* ((xqkv       (call c-attn x))
 	     (batch-size (car (shape x)))
 	     (seq-len    (iconst (second (shape x))))
 	     ;; [TODO] The allocation should be lazy; use make-tensor to compile into c code.
-	     (k-cache (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0))
-	     (v-cache (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0)))
+	     (k-cache (linspace `(,batch-size ,max-seq-len ,n-heads ,head-dim) 0 0))
+	     (v-cache (linspace `(,batch-size ,max-seq-len ,n-heads ,head-dim) 0 0)))
 	(setf (attn-k-cache model) k-cache (attn-v-cache model) v-cache)
 	(multiple-value-bind (xq xk xv)
 	    (apply #'values (loop for i upfrom 0 below 3
@@ -59,4 +59,24 @@
   (multiple-value-bind (x) (apply #'values inputs)
     (with-slots ((c-fc c-fc) (c-proj c-proj)) model
       (call c-proj (!gelu (call c-fc x))))))
+
+(defmodel (TransformerBlock (dim n-heads &key (norm-eps 1e-5) (max-seq-len 1024)))
+    ((attn (Attention dim n-heads max-seq-len))
+     (mlp (FeedForward dim (* 4 dim)))
+     (ln_1 (LayerNorm `(,dim) :eps norm-eps))
+     (ln_2 (LayerNorm `(,dim) :eps norm-eps))))
+
+(defmethod call ((model TransformerBlock) &rest inputs)
+  (multiple-value-bind (x start-pos mask) (apply #'values inputs)
+    (with-slots ((attn attn) (mlp mlp) (ln_1 ln_1) (ln_2 ln_2)) model
+      (let ((h (call attn (call ln_1 x) start-pos mask)))
+	(!add h (call mlp (call ln_2 h)))))))
+
+(defmodel (Transformer (dim n-heads n-layers norm-eps vocab-size &key (max-seq-len 1024)))
+    ((vocab-size vocab-size)
+     (wte (Embedding vocab-size dim))
+     (wpe (Embedding max-seq-len dim))
+     (h (loop repeat n-layers collect (TransformerBlock dim n-heads :norm-eps norm-eps :max-seq-len max-seq-len)))
+     (ln-f (LayerNorm `(,dim) :eps norm-eps))
+     (ln-head (Linear dim vocab-size :bias nil))))
 
