@@ -150,7 +150,6 @@
   (assert (null (find :_TmpPurged (graph-nodes graph) :key #'node-type))
 	  ()
 	  "_TmpPurged shouldn't exist! (it is a simplifier's bug)")
-  ;;(print n)
   (if (not (= (length (graph-nodes graph)) n))
       (progn
 	(verify-graph graph)

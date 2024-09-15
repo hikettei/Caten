@@ -85,4 +85,6 @@
 	    (incf offset (mod (- alignment (mod offset alignment)) alignment))
 	    (setf (tensor-info-absolute-offset tensor) offset))
     (flet ((r (tensor-info) (tensor-info-realize tensor-info buffer stream)))
-      (map 'list #'r tensors))))
+      (tqdm:with (tqdm (length tensors) :description "Extracting tensors...")
+	(loop for tensor in tensors
+	      collect (r tensor) do (tqdm:update tqdm))))))

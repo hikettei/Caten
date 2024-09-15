@@ -82,11 +82,26 @@ Usage:
 				   (:string
 				    (assert (stringp value) () "Caten/common.contextvar: ~a should be a string but got ~a" ',(car slot) value)
 				    value)))))
-		(defun help (&optional (stream t))
-		  (format stream "ContextVar:~%~a"
+		(defun help (&optional
+			       (stream t)
+			     &aux (max
+				   ,(apply
+				     #'max
+				     (map
+				      'list
+				      #'(lambda (x)
+					  (length (format nil "  ~a[~a] (default: ~a):" (car x) (second x) (third x))))
+				      slots))))
+		  (format stream "~%CONTEXTVAR:~%~a"
 			  (with-output-to-string (out)
 			    ,@(loop for slot in slots
-				    collect `(format out "~a[~a] (default: ~a), ~a~%" ',(car slot) ,(third slot) ,(second slot) ,(fifth slot))))))
+				    for size = (length (format nil "  ~a[~a] (default: ~a):" (car slot) (second slot) (third slot)))
+				    collect `(format out "  ~a[~(~a~)] (default: ~a)~a ~a~%"
+						     (log:maybe-ansi log::cyan (format nil "~a" ',(car slot)))
+						     (log:maybe-ansi log::gray (format nil "~a" ,(third slot)))
+						     ,(second slot)
+						     (with-output-to-string (out) (dotimes (i (+ 2 (- max ,size))) (princ " " out)))
+						     (log:maybe-ansi log::white (format nil "~a" ,(fifth slot))))))))
 		(defmacro with-contextvar ((&key
 					      ,@(loop for slot in slots
 						      for accessor = (intern (format nil (string-upcase "contextvar-~a") (car slot)))
@@ -102,6 +117,9 @@ Usage:
 		     ,@body)))))
   (defcontext
       ;; (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
+      (:DEBUG
+       0 :int #.(oneof "DEBUG" 0 `(-1 0))
+       "Set -1 to disable logger")	 
       (:SERIALIZE
        0 :int
        (lambda (x)
@@ -159,8 +177,7 @@ Usage:
      "When this option is set to 1, it prints all the information that AIR deletes during AOT compilation.")
     (:AOT
      "" :string parse-list->kw
-     "For AOT, please set the list of devices that will execute AOT compilation. The devices specified here must have all Renderers implemented.
-(e.g.: AOT=CLANG,METAL)")
+     "For AOT, please set the list of devices that will execute AOT compilation. The devices specified here must have all Renderers implemented. (e.g.: AOT=CLANG,METAL)")
     (:AOT_VM
      "" :string parse-list->kw
      "For AOT_VM, please set the list of devices that will execute AOT compilation. The devices configured here are implemented through a VM, not a Renderer (i.e., devices without JIT implementation).")
@@ -169,6 +186,9 @@ Usage:
      "Set 1 to allow jit to generate packed-funcall")
     (:CALL_ZENITY
      0 :int #.(oneof "CALL_ZENITY" 0 `(0 1))
-     "(For JIT) %render-compile always produce an simple-error.")))
+     "(For JIT) %render-compile always produce an simple-error.")
+    (:COLOR
+     1 :int #.(oneof "COLOR" 1 `(0 1))
+     "Use cl-ansi-color if set to 1")))
 
 (defparameter *ctx* (make-contextvar))

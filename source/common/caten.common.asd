@@ -2,9 +2,9 @@
   :description "Helpers for Caten"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("uiop" "ieee-floats" "cl-ppcre")
-  :serial t
+  :depends-on ("uiop" "ieee-floats" "cl-ppcre" "cl-ansi-text")
   :components
-  ((:file "contextvar")
+  ((:file "logger")
+   (:file "contextvar")
    (:file "tqdm")
    (:file "dtype")))

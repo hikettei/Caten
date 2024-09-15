@@ -12,7 +12,6 @@
     (asdf:test-op "caten.apis")
     (asdf:test-op "caten.nn")
     (asdf:test-op "caten.test-suite"))))
-
 ;; External system for Caten.
 ;; Systems including non-portable dependencies (e.g.: CUDA, Metal) or systems cannot be guaranteed to be maintained, are separated from caten.
 (asdf:defsystem "caten/metal"
@@ -37,3 +36,13 @@
    (:file "tensor-info")
    (:file "gguf-file")
    (:file "dequantize")))
+
+(asdf:defsystem "caten/llm"
+  :description "Various Generative Language Model Implementation in Caten"
+  :author "hikettei <ichndm@gmail.com>"
+  :depends-on ("caten")
+  :pathname "external/llm"
+  :components
+  ((:file "package")
+   (:file "bpe")
+   (:file "layers")))

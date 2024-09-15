@@ -1,0 +1,63 @@
+#!/bin/sh
+#|-*- mode:lisp -*-|#
+#|
+exec ros -Q -- $0 "$@"
+|#
+(progn ;;init forms
+  (ros:ensure-asdf)
+   #+quicklisp(cl:push (cl:pathname "./") ql:*local-project-directories*)
+   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf) :silent t)
+   (when (and (uiop:getenv "JIT_BACKEND")
+	      (equalp (uiop:getenv "JIT_BACKEND") "METAL"))
+     #+quicklisp(ql:quickload '(:caten/metal) :silent nil)))
+
+(defpackage :caten/cli
+  (:use :cl :log :cl-ansi-text))
+
+(in-package :caten/cli)
+
+(defparameter *argv* nil)
+(defun version () (asdf:component-version (asdf:find-system "caten")))
+
+(defun caten/llm/handler (cmd)
+  (let ((target-file (or (nth 1 *argv*)
+			 (log:print-error "Specify the input file.~%Usage: caten llm [input_file] [options]"))))
+    (with-progress (3 :title (format nil "Compiling ~a..." target-file))
+      (print-progress "Loading the gguf model...")
+      (let ((gguf-model (caten/gguf:load-gguf target-file)))
+	(print-progress "Confirmed the validity of the input. version=~a" (caten/gguf:gguf-version gguf-model))
+	(let ((caten-model)) ;; gguf->caten
+	  (print-progress "OK")
+	  )))))
+
+(defun caten/llm ()
+  (clingon:make-command
+   :name "llm"
+   :description (maybe-ansi white-bright "Compiles LLM")
+   :handler #'caten/llm/handler))
+
+(defun caten/test ()
+  (clingon:make-command
+   :name "test"
+   :description (maybe-ansi white-bright "Runs test harness w/ (asdf:test-system :caten)")
+   :handler #'(lambda (cmd) (declare (ignore cmd)) (asdf:test-system "caten"))))
+
+(defun caten/options ()
+  (list))
+
+(defun caten/command ()
+  (clingon:make-command
+   :name (maybe-ansi cyan "caten")
+   :description (maybe-ansi white-bright "Compile + AbstracTENsor, Command Line Deep Learning Compiler")
+   :version (version)
+   :options (caten/options)
+   :usage (maybe-ansi white (format nil "[COMMAND] [OPTIONS]~%~a" (ctx:help nil)))
+   :handler #'identity
+   :sub-commands (list (caten/llm) (caten/test))))
+
+(defun main (&rest argv &aux (*argv* argv))
+  (let ((app (caten/command)))
+    (if (= (length argv) 0)
+	(clingon:print-usage app t)
+	(clingon:run app argv))))
+;;; vim: set ft=lisp lisp:
