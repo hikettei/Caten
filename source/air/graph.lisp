@@ -60,7 +60,7 @@ If outputs is nil, the writes of last nodes becomes the top"
 (defun special-p (kw) (declare (optimize (speed 3))) (search "SPECIAL/" (format nil "~a" kw)))
 
 (defun resolve-isolated-nodes (graph)
-  (declare (type graph graph))
+  (declare (type graph graph) (optimize (speed 3)))
   (let ((new-nodes) (seen (graph-seen graph)) (stashed))
     (declare (type list new-nodes seen stashed))
     (flet ((seen-p (reads) (every #'(lambda (x) (or (numberp x) (find x seen :test #'eql))) reads)))
