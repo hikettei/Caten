@@ -222,8 +222,8 @@ The provided form does not match any of them:~%~a" method method method method f
 	       (let ((z (!mul x (!contiguous (!t y) :force t))))
 		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
 (defun !matmul (a b)
-  (multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
-    (forward (make-instance 'Matmul) a b)))
+  ;;(multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
+    (forward (make-instance 'Matmul) a b))
 ;; ~~ math ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (SinHNode (()) :where "A[~] -> A[~]")
     ()
