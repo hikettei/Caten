@@ -43,4 +43,6 @@
   :depends-on ("caten")
   :pathname "external/llm"
   :components
-  ((:file "package")))
+  ((:file "package")
+   (:file "bpe")
+   (:file "layers")))
