@@ -5,8 +5,8 @@
     (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
 
 (defmodel (Attention (dim n-heads max-len))
-    ((c-attn (Linear dim (* 3 dim) :bias nil))
-     (c-proj (Linear dim dim :bias nil))
+    ((c-attn (Linear dim (* 3 dim) :bias t))
+     (c-proj (Linear dim dim :bias t))
      (n-heads n-heads)
      (dim dim)
      (max-len max-len)
@@ -49,7 +49,7 @@
 		(!transpose
 		 (scale-dot-product-attention xq keys vals mask)
 		 1 2)
-		`(,batch-size ,seq-len ,dim))))))))))
+		`(,batch-size ,(second (shape x)) ,dim))))))))))
 
 (defmodel (FeedForward (dim hidden-dim))
     ((c-fc   (Linear dim hidden-dim))
