@@ -74,7 +74,7 @@
 	       for slot-key = (intern (symbol-name slot-name) "KEYWORD")
 	       collect
 	       `(defmethod %getattr ((attr ,class-name) (id (eql ,slot-key)))
-		  (slot-value attr ',slot-name))
+		  (and (slot-boundp attr ',slot-name) (slot-value attr ',slot-name)))
 	       collect
 	       `(defmethod %boundp ((attr ,class-name) (id (eql ,slot-key))) (slot-boundp attr ',slot-name))
 	       collect
