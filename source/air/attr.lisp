@@ -47,6 +47,10 @@
   (declare (type keyword module type)
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
+    (dolist (superclass direct-superclasses)
+      (let ((superclasses (c2mop:class-direct-superclasses (class-of superclass))))
+	(assert (= (length superclasses) 1) () "defnode[~a]: Multiple inheritance of superclass[~a] is not allowed because it is not dumped."
+		type superclass)))
     `(eval-when (:compile-toplevel :load-toplevel :execute)
        (setf (gethash ,type *attribute->instance*) (cons ,module ',class-name))
        (defmethod attribute->instance ((id (eql ,type))) (values ,module ',class-name))
@@ -69,15 +73,25 @@
        (defmethod dump-into-list ((attr ,class-name))
 	 (list
 	  ,@(loop for slot in slots
-		  for slot-name = (car slot)
-		  for slot-key = (intern (symbol-name slot-name) "KEYWORD")
-		  append (list slot-key `(slot-value attr ',slot-name)))))
+                  for slot-name = (car slot)
+                  for slot-key = (intern (symbol-name slot-name) "KEYWORD")
+                  append (list slot-key `(slot-value attr ',slot-name)))
+	  ,@(loop for class in `(,@direct-superclasses)
+		  for class-of = (find-class class)
+		  append
+		  (loop
+		    for slot in (c2mop:class-direct-slots class-of)
+		    for slot-initargs = (c2mop:slot-definition-initargs slot)
+		    for initarg = (when (and (= 1 (length slot-initargs)) (keywordp (car slot-initargs))) (car slot-initargs))
+		    for slotname = (c2mop:slot-definition-name slot)
+		    if initarg
+		      append (list initarg `(slot-value attr ',slotname))))))
        (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,placeholder reads)))))
 
 (defun make-attr (type &rest args)
   (multiple-value-bind (module instance-key) (attribute->instance type)
     (assert (and module instance-key) () "make-attr: The node ~a/~a is not defined by `defnode`." module instance-key)
-    (apply #'make-instance instance-key args :attr-module-key module :attr-type-key type)))
+    (apply #'make-instance instance-key :attr-module-key module :attr-type-key type args)))
 
 (defun debug/attrs-by-module ()
   (let ((module->val (make-hash-table)))

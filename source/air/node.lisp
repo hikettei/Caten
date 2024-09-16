@@ -33,7 +33,7 @@
   (type type :type keyword)
   (writes writes :type list)
   (reads  reads :type list)
-  (attrs  attrs :type list))
+  (attrs  attrs :type list));; rename attrs -> attr
 
 (defun make-node (class type writes reads &rest attrs)
   (apply #'%make-node class type writes reads attrs))
