@@ -6,11 +6,50 @@
 		 (jit-info :type JIT-Info)))
 
 (defnode (:Render :FOR) () "
-
+RenderGraph:
+```
+for(int idx=upfrom, below, by)
+```
 "
-	 :slots ((_scalar_p))) ;; _scalar_p ;; scope
-(defnode (:Render :ENDFOR) () "")
-(defnode (:Render :FUNCALL) () "")
-(defnode (:Render :IF) () "")
-(defnode (:Render :ELSE) () "")
-(defnode (:Render :ENDIF) () "")
+	 :slots ((idx)
+		 (upfrom)
+		 (below)
+		 (by)))
+
+(defnode (:Render :ENDFOR) () "
+RenderGraph:
+```
+} / idx
+```"
+	 :slots ((idx)))
+
+(defnode (:Render :FUNCALL) () "
+RenderGraph:
+```
+FUNCALL(...)
+```"
+	 :slots ((name) (args) (idx) (unroll-offsets)
+		 (_packed) (_unrolled) (_metadata) (scope :type (member :global :Local))
+		 (coincident) (permutable)))
+
+(defnode (:Render :IF) () "
+RenderGraph:
+```
+IF (condition) {
+```"
+	 :slots ((condition)))
+
+(defnode (:Render :ELSE) () "
+RenderGraph:
+```
+} ELSE {
+```")
+(defnode (:Render :ENDIF) () "
+RenderGraph:
+```
+} // endif
+```")
+
+;; Temporary Nodes
+(defnode (:IR :IR/FOR) () "" :slots ((_scalar_p)))
+(defnode (:IR :IR/ENDFOR) () "")
