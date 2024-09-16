@@ -100,8 +100,8 @@ The nodes defined at compile time are as follows:
 
 (defun getattrs (node)
   (declare (type node node))
-  (let ((attrs (dump-into-list node :allow-unbound nil)))
-    (loop for attr in attrs if attr collect (getattr node attr))))
+  (let ((attrs (dump-into-list (node-attr node) :allow-unbound nil)))
+    (loop for attr in attrs if attr collect attr)))
 
 (defun getattr (node id)
   (declare (type node node) (type keyword id))
