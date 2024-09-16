@@ -38,7 +38,7 @@
     (format out "~a" document)
     (format out "~%When optimizing ~(~a~) in-place, the ~ath read is consumed.~%" name nth)
     (when direct-superclasses
-      (format out "~%### superclasses~%~%")
+      (format out "~%### Superclasses~%~%")
       (dolist (superclass direct-superclasses)
 	(format out "- ~a~%" superclass)))))
 
@@ -115,5 +115,6 @@
 		 (format out "~%## [Node] :~a~%~%" id)
 		 (format out (documentation (find-class class) t))))))
        module->val))))
+
 ) ;; eval-when
 
