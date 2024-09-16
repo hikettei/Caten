@@ -9,10 +9,12 @@
 (defun <node> (type writes reads &rest attrs) (apply #'make-node :node type writes reads attrs))
 (defun compare (graph expected
 		&key
-		  (slots `(caten/air::writes caten/air::reads caten/air::attrs caten/air::type caten/air::class))
+		  (slots `(caten/air::writes caten/air::reads caten/air::type caten/air::class))
 		  (shuffle-order t))
   (flet ((eq-node (n1 n2)
-	   (every #'(lambda (slot) (equal (slot-value n1 slot) (slot-value n2 slot))) slots)))
+	   (and
+	    (equal (dump-into-list (node-attr n1)) (dump-into-list (node-attr n2)))
+	    (every #'(lambda (slot) (equal (slot-value n1 slot) (slot-value n2 slot))) slots))))
     (if shuffle-order
 	(loop for node in (graph-nodes graph)
 	      for x = (find node expected :test #'eq-node)
