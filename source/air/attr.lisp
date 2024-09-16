@@ -6,7 +6,7 @@
 (defmethod attribute->instance :around (attr)
   (if (next-method-p)
       (call-next-method)
-      (error "Undefined Attribute: ~a Defined attributes are ..." attr)))
+      (error "Undefined Attribute: ~a Defined attributes are ..." attr))) ;; <- Ignore :Testing, Sort by :Module
 
 (defclass Attribute () nil)
 ;; (defmethod make-load-form ((attr Attribute)))
@@ -30,7 +30,7 @@
 	(format out "### [Attribute] ~(~a~)~%" superclass)
 	(format out "~a~%~%" (documentation (find-class superclass) t))))))
 
-(defmacro defnode ((module type) (&rest direct-superclasses) description &key (write-to 0) (verify 'identity) (slots))
+(defmacro defnode ((module type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
   "Defines a new attribute."
   (declare (type keyword module type)
 	   (type string description))
@@ -41,7 +41,7 @@
 	 ,(loop for slot in slots
 		for slot-new = (rewrite-slot slot)
 		collect slot-new)
-	 (:documentation ,(apply #'build-documentation type description write-to direct-superclasses)))
+	 (:documentation ,(apply #'build-documentation type description placeholder direct-superclasses)))
        (defmethod get-verifier ((attr ,class-name)) #',verify)
        ,@(loop for slot in slots
 	       for slot-name = (car slot)
@@ -53,8 +53,11 @@
 	       `(defmethod %setattr ((attr ,class-name) (id (eql ,slot-key)) value)
 		  (declare (optimize (safety 3)))
 		  (setf (slot-value attr ',slot-name) value)))
-       (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,write-to reads)))))
+       (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,placeholder reads)))))
 
 (defun make-attr (type &rest args)
   (let ((instance-key (attribute->instance type)))
     (apply #'make-instance instance-key args)))
+
+;; [TODO] Compiler Macro
+;; [TODO] build-documentation on node

@@ -2,17 +2,23 @@
 ;; = [Summary of ops in caten/aasm] ===================================
 ;; UnaryOps   | {NEG, RECIP, SIN, EXP2, SQRT, NOT}             | 6 Ops
 ;; BinaryOps  | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
-;; TernaryOps | {!=, <, WHERE}                                 | 3 Ops
+;; TernaryOps | {!=, <, WHERE, WMMA}                           | 4 Ops
 ;; Buffer     | {ALLOCATE, LOAD, STORE, VIEW}                  | 4 Ops
 ;; Indexing   | {INDEX-COMPONENTS}                             | 1 Op(s)
 ;; +)__________________________________________________________________
-;;                                                             | 23 Ops
+;;                                                             | 24 Ops
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   
 (defclass JITAble ()
-  nil ;; :_reads
+  ((_type_relay :initarg :_type_relay)
+   (_loop_bound_nodes :initarg :_loop_bound_nodes)
+   (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type)
+   (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm)
+   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr)
+   )
   (:documentation "Notes w/ this attribute can "))
+
 (defclass UnaryOps ()
   nil
   (:documentation "
@@ -21,42 +27,42 @@ UnaryOps applies an operaton to the first given read value and overwrites the re
 out <- f(x)
 ```"))
 
-(defnode (:UnaryOps :NEG) (UnaryOps)
+(defnode (:UnaryOps :NEG) (UnaryOps JITAble)
 	 "The node :NEG flips the sign of the first read tensor, writing the result to the first write.
 ```
 out = (-x);
 ```
 ")
 
-(defnode (:UnaryOps :RECIP) (UnaryOps)
+(defnode (:UnaryOps :RECIP) (UnaryOps JITAble)
 	 "The node :RECIP computes the reciprocal of the first read tensor, writing the result to the first write.
 ```
 out = (1/x);
 ```
 ")
 
-(defnode (:UnaryOps :SIN) (UnaryOps)
+(defnode (:UnaryOps :SIN) (UnaryOps JITAble)
 	 "The node :SIN computes sine of the first read tensor, writing the result to the first write.
 ```
 out = sin(x);
 ```
 ")
 
-(defnode (:UnaryOps :EXP2) (UnaryOps)
+(defnode (:UnaryOps :EXP2) (UnaryOps JITAble)
 	 "The node :EXP2 computes `exp2` of the first read tensor, writing the result to the first write.
 ```
 out = exp2(x);
 ```
 ")
 
-(defnode (:UnaryOps :SQRT) (UnaryOps)
+(defnode (:UnaryOps :SQRT) (UnaryOps JITAble)
 	 "The node :SQRT computes square-root of the first read tensor, writing the result to the first write.
 ```
 out = sqrt(x);
 ```
 ")
 
-(defnode (:UnaryOps :NOT) (UnaryOps)
+(defnode (:UnaryOps :NOT) (UnaryOps JITAble)
 	 "The node :NOT computes the logical-not of the given tensor if the input is a boolean, otherwise (integer) computes a bitwise-not.
 
 ```
@@ -64,7 +70,7 @@ out = not(x) (if boolean)
 out = lognot(x) (if integer) 
 ")
 
-(defnode (:UnaryOps :CAST) (UnaryOps)
+(defnode (:UnaryOps :CAST) (UnaryOps JITAble)
 	 "The node :CAST casts the first read tensor into `:dtype`, writing the result into the first write."
 	 :slots ((dtype :type dtype-t)))
 
@@ -83,7 +89,7 @@ x <- f(x, y)
 - wrap-around[boolean] When this option is set to T, it suggests that overflow may occur as a result of the computation. If the backend in use does not exhibit the behavior of wrapping around to the minimum value of the data type when the maximum value is exceeded, this needs to be implemented intentionally. (This behaviour is assumed by threefry2x32 as of this writing: 2024/9/16) Only the :ADD and :MUL requires this behaviour.
 "))
 
-(defnode (:BinaryOps :Add) (BinaryOps)
+(defnode (:BinaryOps :Add) (BinaryOps JITAble)
 	 "The node :ADD adds the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
@@ -93,41 +99,41 @@ Unlike other BinaryOps, :ADD is allowed to have more than two values in Read. Th
 out <- x + y + z + ...
 ```")	
 
-(defnode (:BinaryOps :MUL) (BinaryOps)
+(defnode (:BinaryOps :MUL) (BinaryOps JITAble)
 	 "The node :MUL multiplies the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
 ```")
 
-(defnode (:BinaryOps :IDIV) (BinaryOps)
+(defnode (:BinaryOps :IDIV) (BinaryOps JITAble)
 	 "The node :IDIV divides the first tensor in `read` by the second tensor in `read`, writing the result to the first `write`.
 Unlike other BinaryOps, :IDIV assumes two tensors to be an integer typed tensor.
 ```
 out <- x / y
 ```")
 
-(defnode (:BinaryOps :AND) (BinaryOps)
+(defnode (:BinaryOps :AND) (BinaryOps JITAble)
 	 "The node :AND computes the bit-wise and of two tensors in `read` if they are integer, otherwise (boolean) computes the logical-and.
 ```
 out <- x && y (if boolean)
 out <- x & y (if integer)
 ```")
 
-(defnode (:BinaryOps :OR) (BinaryOps)
+(defnode (:BinaryOps :OR) (BinaryOps JITAble)
 	 "The node :OR computes the bit-wise or of two tensors in `read` if they are integer, otherwise (boolean) computes the logical-or.
 ```
 out <- x || y (if boolean)
 out <- x | y (if integer)
 ```")
 
-(defnode (:BinaryOps :XOR) (BinaryOps)
+(defnode (:BinaryOps :XOR) (BinaryOps JITAble)
 	 "The node :XOR computes the bit-wise xor of two tensors in `read` if they are integer, otherwise (boolean) computes the logical-xor.
 ```
 out <- x ^ y (if boolean)
 out <- x ^ y (if integer)
 ```")
 
-(defnode (:BinaryOps :MOVE) (BinaryOps)
+(defnode (:BinaryOps :MOVE) (BinaryOps JITAble)
 	 "Moves the second read into the first read, setting the result to first write.
 ```
 out <- move(x, y)
@@ -137,13 +143,13 @@ where move(x, y) is x = y
 "
 	 :slots ((_jit_dont_render_me)))
 
-(defnode (:BinaryOps :MAX) (BinaryOps)
+(defnode (:BinaryOps :MAX) (BinaryOps JITAble)
 	 "Computes the maximum value of two tensors in read, writing the result to the first write.
 ```
 out <- max(x, y)
 ```")
 
-(defnode (:BinaryOps :GCD) (BinaryOps)
+(defnode (:BinaryOps :GCD) (BinaryOps JITAble)
 	 "Computes the greatest common divisor of two integer tensors in read, writing the result to the first write.
 
 (Note: This computation should only applied to scalar tensors, and used for only computing the dynamic shaped tensor indexing.)
@@ -162,7 +168,7 @@ out <- f(x, y, z)
 ```
 "))
 
-(defnode (:TernaryOps :!=) (TernaryOps)
+(defnode (:TernaryOps :!=) (TernaryOps JITAble)
 	 "Compares the second and third tensors in read with `not-equal`, writing the result to the first write. The first read tensor is an placeholder for the first write tensor and is always boolean.
 ```
 x = y != z;
@@ -170,7 +176,7 @@ out = x;
 ```
 ")
 
-(defnode (:TernaryOps :<) (TernaryOps)
+(defnode (:TernaryOps :<) (TernaryOps JITAble)
 	 "Compares the second and third tensors in read with `<`, writing the result to the first write. The first read tensor is an placeholder for the first write tensor and is always boolean.
 ```
 x = y < z;
@@ -178,19 +184,31 @@ out = x;
 ```
 ")
 
-(defnode (:TernaryOps :WHERE) (TernaryOps)
+(defnode (:TernaryOps :WHERE) (TernaryOps JITAble)
 	 "If the result of the first read (boolean) is true, the second read is selected, and if false, the third read is selected and written to the first write. When optimizing in-place, note that the value of the second read is used as a placeholder since choosing the first read would result in a data type mismatch with write.
 ```
 in_dtype = dtype_of(y);
 out[in_dtype] = x[boolean] ? y[in_dtype] : z[in_dtype];
 ```
-")
+"
+	 :placeholder 1)
+
+(defnode (:TernaryOps :WMMA) (TernaryOps JITAble)
+	 "The node :WMMA is generated during optimization (simplifiers.lisp) by AJIT and represents a fused computation of :ADD and :MUL. WMMA is not generated during VM execution.
+
+WMMA is used to optimize the gemm computation:
+```
+WMMA(c, a, b) is the equivalent to:
+c += a * b      (if reduction = t)
+out = c + a * b (if reduction = nil)
+```"
+	 :slots ((reduction)))
 
 (defclass BufferOps ()
   nil
   (:documentation "BufferOps performs an operaton related to the buffer."))
 
-(defnode (:Buffer :Allocate) (BufferOps)
+(defnode (:Buffer :Allocate) (BufferOps JITAble)
 	 "Allocates a new matrix of scalar value in the VM.
 ```
 out = allocate(*shape, *stride)
@@ -206,7 +224,7 @@ out = allocate(*shape, *stride)
 		 (dtype :type dtype-t)
 		 (from)))
 
-(defnode (:Buffer :LOAD) (BufferOps)
+(defnode (:Buffer :LOAD) (BufferOps JITAble)
 	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
 ```
 x[...] = value;
@@ -217,12 +235,12 @@ out = x;
 "
 	 :slots ((value)))
 
-(defnode (:Buffer :STORE) (BufferOps BinaryOps)
+(defnode (:Buffer :STORE) (BufferOps BinaryOps JITAble)
 	 "Just like a :MOVE, moves the second tensor in read into the first tensor in read, writing the result to the first write.
 (Note: :STORE can be removed in the future refactoring)
 ")
 
-(defnode (:Buffer :VIEW) (BufferOps)
+(defnode (:Buffer :VIEW) (BufferOps JITAble)
 	 "Creates a view object of the tensor in a first read.
 `View object` can modify the multi-dimensional offset of tensors, strides, shapes, and strides without copying.
 ```
@@ -240,7 +258,7 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
 		 (permute :type list :initform nil)))
 
 (defclass Indexing () nil)
-(defnode (:Indexing :Index-Components) (Indexing)
+(defnode (:Indexing :Index-Components) (Indexing JITAble)
 	 "The node :INDEX-COMPONENTS Indicates which element-wise computation of the Tensor is being performed. Typically, it should return the argument used when performing Aref on the Tensor with the corresponding `strides`.
 
 ```
