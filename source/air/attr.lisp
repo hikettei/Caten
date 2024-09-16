@@ -1,5 +1,5 @@
 (in-package :caten/air)
-;; Pattern Matcher: Update (not to use list)
+
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defparameter *attribute->instance* (make-hash-table))

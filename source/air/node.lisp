@@ -38,7 +38,7 @@
 
 (defun make-node (class type writes reads &rest attrs)
   (apply #'%make-node class type writes reads attrs))
-;; [TODO] Improve the error msg, document, inline.
+
 (define-compiler-macro make-node (class type writes reads &rest attrs)
   (if (keywordp type)
       (let ((instance-key (cdr (gethash type *attribute->instance*))))
