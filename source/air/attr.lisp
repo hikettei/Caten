@@ -84,6 +84,29 @@
     (assert (and module instance-key) () "make-attr: The node ~a/~a is not defined by `defnode`." module instance-key)
     (apply #'make-instance instance-key args :attr-module-key module :attr-type-key type)))
 
+(defun debug/attrs-by-module ()
+  (let ((module->val (make-hash-table)))
+    (maphash
+     #'(lambda (key val)
+	 (if (null (gethash (car val) module->val))
+	     (setf (gethash (car val) module->val) (list (cons key (cdr val))))
+	     (push (cons key (cdr val)) (gethash (car val) module->val))))
+     *attribute->instance*)
+    module->val))
+
+(defun debug/render-defined-nodes (&key (ignore `(:Testing :TMP)))
+  (with-output-to-string (out)
+    (let ((module->val (debug/attrs-by-module)))
+      (maphash
+       #'(lambda (module nodes)
+	   (when (null (find module ignore))
+	     (format out "  class[:~a]:~%" module)
+	     (dolist (node nodes)
+	       (format out "    - :~a~%" (car node)))))
+       module->val)
+      (dolist (ign ignore)
+	(format out "  class[:~a]:~%    - <Ignored>~%" ign)))))
+
 ) ;; eval-when
 
 ;; [TODO] Compiler Macro

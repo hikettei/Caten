@@ -39,10 +39,13 @@
   (apply #'%make-node class type writes reads attrs))
 ;; [TODO] Improve the error msg, document, inline.
 (define-compiler-macro make-node (class type writes reads &rest attrs)
+  ;; [TODO] This should work on CCL.
   (if (and (keywordp type) #-sbcl(identity nil))
       (let ((instance-key (cdr (gethash type *attribute->instance*))))
 	(when (null instance-key)
-	  (error "~a/~a is not defined." class type))
+	  (error "The node :~a is not defined. It needs to be defined by `defnode` before being used in make-node.
+The nodes defined at compile time are as follows:
+~a" type (debug/render-defined-nodes :ignore (if (find class `(:Testing :TMP)) nil `(:Testing :TMP)))))
 	`(%make-node ,class ,type ,writes ,reads ,@attrs))
       `(%make-node ,class ,type ,writes ,reads ,@attrs)))
 
