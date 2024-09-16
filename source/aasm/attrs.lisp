@@ -229,7 +229,7 @@ out = allocate(*shape, *stride)
 "
 	 :slots ((nrank :type (unsigned-byte 32))
 		 (dtype :type dtype-t)
-		 (from)))
+		 (from :initform nil)))
 
 (defnode (:Buffer :LOAD) (BufferOps JITAble)
 	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
