@@ -6,6 +6,7 @@
    "caten.common" "caten.air" "caten.aasm" "caten.avm" "caten.ajit")
   :serial t
   :components ((:file "package")
+	       (:file "attrs")
 	       (:file "conditions")
 	       (:file "tensor")
 	       (:file "iseq")
