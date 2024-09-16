@@ -68,7 +68,7 @@ OUT <- f(x, y, reduction=t)
 as
 X <- f(x, y, reduction=t)"
   (loop for node in (graph-nodes (group-graph group))
-	if (getattr node :reduction) do
+	if (getattr node :reduction :allow-undefined t) do
 	  (let ((from (car (node-writes node)))
 		(to   (car (node-reads1 node))))
 	    (setf (gethash from (mp-alias mp)) to

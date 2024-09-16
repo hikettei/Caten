@@ -14,7 +14,9 @@ for(int idx=upfrom, below, by)
 	 :slots ((idx)
 		 (upfrom)
 		 (below)
-		 (by)))
+		 (by)
+		 (scope :type (member :global :local))
+		 (coincident) (permutable)))
 
 (defnode (:Render :ENDFOR) () "
 RenderGraph:
@@ -29,8 +31,7 @@ RenderGraph:
 FUNCALL(...)
 ```"
 	 :slots ((name) (args) (idx) (unroll-offsets)
-		 (_packed) (_unrolled) (_metadata) (scope :type (member :global :Local))
-		 (coincident) (permutable)))
+		 (_packed) (_unrolled) (_metadata)))
 
 (defnode (:Render :IF) () "
 RenderGraph:

@@ -14,9 +14,20 @@
   ((_type_relay :initarg :_type_relay)
    (_loop_bound_nodes :initarg :_loop_bound_nodes :initform nil)
    (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type :initform nil)
-   (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm)
-   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr))
-  (:documentation "This node is jitable."))
+   (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm :initform nil)
+   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr)
+   (_reads :initarg :_reads)
+   (_writes :initarg :_writes)
+   (declare-type))
+  (:documentation "This node is jitable.
+- declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:
+```
+x = a + b;
+->
+float x = a + b;
+when :declare-type = [x]
+```
+"))
 
 (defclass UnaryOps ()
   nil
@@ -283,6 +294,7 @@ for i=0..N
 	 "The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes. The list of composable nodes is defined in `op/expr` in `ajit/renderer.lisp.`
 
 - Expr[Caten/AJIT:EXPR] a tree structure comprised of `CATEN/AJIT:EXPR`. Each node are comprised of `op/expr`.
+- reduction[boolean]
 "
 	 :slots ((expr)
 		 (reduction :initform nil)))
