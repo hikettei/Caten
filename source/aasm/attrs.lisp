@@ -3,8 +3,12 @@
 ;; UnaryOps   | {NEG, RECIP, SIN, EXP2, SQRT, NOT}             | 6 Ops
 ;; BinaryOps  | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
 ;; TernaryOps | {!=, <, WHERE}                                 | 3 Ops
-;; 
+;; Buffer     | {ALLOCATE, LOAD, STORE, VIEW}                  | 4 Ops
+;; Indexing   | {INDEX-COMPONENTS}                             |
+;; +)__________________________________________________________________
+;;                                                             | 22 Ops
 
+;; (defclass JITAble) (_reads_old) ...)
 (defclass UnaryOps ()
   nil
   (:documentation "
@@ -172,5 +176,73 @@ out = x;
 ```
 in_dtype = dtype_of(y);
 out[in_dtype] = x[boolean] ? y[in_dtype] : z[in_dtype];
+```
+")
+
+(defclass BufferOps ()
+  nil
+  (:documentation "BufferOps performs an operaton related to the buffer."))
+
+(defattr (:Buffer :Allocate) (BufferOps)
+	 "Allocates a new matrix of scalar value in the VM.
+```
+out = allocate(*shape, *stride)
+```
+
+:Allocate is defined as described above. The first through `nrank`-th read scalar tensors represent the size of the Tensor, and from the `nrank`-th read to the last, they represent the stride of the allocated Tensor. (they can be sliced using `subseq`)
+
+- dtype[dtype-t] dtype to allocate.
+- nrank[(unsigned-byte 32)] a rank of tensor. If set to 0, allocates a scalar.
+- from[symbol or buffer or null] If specified, instead of allocating, an already allocated Buffer is used. If a symbol is specified, a buffer is already defined in the variable table of AVM. If buffer is specified, use the buffer directly.
+"
+	 :slots ((nrank :type (unsigned-byte 32))
+		 (dtype :type dtype-t)
+		 (from)))
+
+(defattr (:Buffer :LOAD) (BufferOps)
+	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
+```
+x[...] = value;
+out = x;
+```
+
+- value[symbol or number] initial value.
+"
+	 :slots ((value)))
+
+(defattr (:Buffer :STORE) (BufferOps BinaryOps)
+	 "Just like a :MOVE, moves the second tensor in read into the first tensor in read, writing the result to the first write.
+(Note: :STORE can be removed in the future refactoring)
+")
+
+(defattr (:Buffer :VIEW) (BufferOps)
+	 "Creates a view object of the tensor in a first read.
+`View object` can modify the multi-dimensional offset of tensors, strides, shapes, and strides without copying.
+```
+out = view(x, *upfrom, *below, *by, *shape-new, *stride-new)
+```
+upfrom and below describes the multi-dimensional offset of the tensor. Caten applies an operation to out in the range of `[upfrom, below)`. by indicates the step of stride. the out tensor is reinitialized with `shape-new` and stride-new`.
+View has an attribute `broadcast[list]`, this indicates the stride of thecorresponding axis is recognised as 0 if set to T.
+
+- nrank[(unsigned-byte 32)] the rank of viewed tensor.
+- broadcast[list] broadcasting order.
+- permute[list] is an optional parameter and does nothing in VM, but requires to apply Polyhedral Compiler. If the view was created in `caten/apis:!permute`, set the argument to this attribute.
+"
+	 :slots ((nrank :type (unsigned-byte 32))
+		 (broadcast :type list)
+		 (permute :type list :initform nil)))
+
+(defclass Indexing () nil)
+(defattr (:Indexing :Index-Components) (Indexing)
+	 "The node :INDEX-COMPONENTS Indicates which element-wise computation of the Tensor is being performed. Typically, it should return the argument used when performing Aref on the Tensor with the corresponding `strides`.
+
+```
+out <- index_components(x, *strides)
+```
+is compiled as:
+```
+for i=0..N
+  for j=0..M
+    out[i, j] = stride[0] * i + j;
 ```
 ")

@@ -152,5 +152,3 @@ broadcast=~a"
 		(if (getattr node :permute)
 		    (format nil ", permute=~a" (getattr node :permute))
 		    ""))))))
-;; WIP: will be moved to frontend
-(defun %bitcast ())
