@@ -116,12 +116,13 @@ Reads and binds attributes from module.
 
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
 (defun render-attrs (node)
-  (if (node-attrs node)	      
-      (with-output-to-string (out)
-	(dolist (k (getattrs node))
-	  (when k
-	    (format out ", ~(~a~)=~a" k (getattr node k)))))
-      ""))
+  (let ((attr (dump-into-list (node-attr node) :allow-unbound nil)))
+    (if attr
+	(with-output-to-string (out)
+	  (dolist (k (getattrs node))
+	    (when k
+	      (format out ", ~(~a~)=~a" k (getattr node k)))))
+	"")))
 
 (defun avm-gather-args (avm)
   (declare (type avm avm))

@@ -83,9 +83,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	    (assert (or (null already-defined) equal?)
 		    ()
 		    ""))
-	  (setf (node-attrs node)
-		(append (node-attrs node)
-			`(:_loop_bound_nodes ,loop-bound-reads :_loop_bound_nodes_type ,loop-bound-types))))
+	  (setf (getattr node :_loop_bound_nodes) loop-bound-reads
+		(getattr node :_loop_bound_nodes_type) loop-bound-types))
 	(push (node-id node) *recursive-find-seen*)
 	;; node_id <- F(Children[0], Children[1], ...)
 	;;              mergeable[0] mergeable[1], ...

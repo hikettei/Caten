@@ -125,4 +125,4 @@
 	(when (null allow-overwrite)
 	  (assert (null (getattr n :_type_relay)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
 	(when (null (getattr n :_type_relay))
-	  (setf (node-attrs n) (append (node-attrs n) `(:_type_relay ,type))))))))
+	  (setf (getattr n :_type_relay) type))))))
