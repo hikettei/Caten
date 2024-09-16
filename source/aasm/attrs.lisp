@@ -9,7 +9,7 @@
 ;;                                                             | 24 Ops
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
-  
+
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
    (_loop_bound_nodes :initarg :_loop_bound_nodes)
@@ -272,4 +272,4 @@ for i=0..N
 ```
 ")
 
-)
+) ;; eval-when

@@ -1,6 +1,8 @@
 (in-package :caten/air)
 ;; [TODO]
-;; out-toの統一
+;; compile-macro
+(eval-when (:compile-toplevel :load-toplevel :execute)
+
 (defgeneric attribute->instance (attr))
 
 (defmethod attribute->instance :around (attr)
@@ -8,9 +10,9 @@
       (call-next-method)
       (error "Undefined Attribute: ~a Defined attributes are ..." attr))) ;; <- Ignore :Testing, Sort by :Module
 
-(defclass Attribute () nil)
+(defclass Attribute ()
+  ((attr-module-key :initarg :attr-module-key :type keyword)))
 ;; (defmethod make-load-form ((attr Attribute)))
-
 (defun rewrite-slot (slot)
   (assert (null (find :initarg slot)) () "defattr: do not specify :initarg")
   (assert (listp slot) () "defattr: ~a is not a list." slot)
@@ -36,7 +38,7 @@
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
     `(progn
-       (defmethod attribute->instance ((id (eql ,type))) ',class-name)
+       (defmethod attribute->instance ((id (eql ,type))) (values ,module ',class-name))
        (defclass ,class-name (Attribute ,@direct-superclasses)
 	 ,(loop for slot in slots
 		for slot-new = (rewrite-slot slot)
@@ -56,8 +58,10 @@
        (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,placeholder reads)))))
 
 (defun make-attr (type &rest args)
-  (let ((instance-key (attribute->instance type)))
-    (apply #'make-instance instance-key args)))
+  (multiple-value-bind (module instance-key) (attribute->instance type)
+    (apply #'make-instance instance-key args :attr-module-key module)))
+
+) ;; eval-when
 
 ;; [TODO] Compiler Macro
 ;; [TODO] build-documentation on node
