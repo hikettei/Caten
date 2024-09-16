@@ -1,8 +1,9 @@
 (in-package :caten/aasm)
 ;; [Summary of ops in caten/aasm]
-;; UnaryOps  | {NEG, RECIP, SIN, EXP2, SQRT, NOT}             | 6 Ops
-;; BinaryOps | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
-;;
+;; UnaryOps   | {NEG, RECIP, SIN, EXP2, SQRT, NOT}             | 6 Ops
+;; BinaryOps  | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
+;; TernaryOps | {!=, <, WHERE}                                 | 3 Ops
+;; 
 
 (defclass UnaryOps ()
   nil
@@ -163,5 +164,13 @@ out = x;
 ```
 x = y < z;
 out = x;
+```
+")
+
+(defattr (:TernaryOps :WHERE) (TernaryOps)
+	 "If the result of the first read (boolean) is true, the second read is selected, and if false, the third read is selected and written to the first write. When optimizing in-place, note that the value of the second read is used as a placeholder since choosing the first read would result in a data type mismatch with write.
+```
+in_dtype = dtype_of(y);
+out[in_dtype] = x[boolean] ? y[in_dtype] : z[in_dtype];
 ```
 ")

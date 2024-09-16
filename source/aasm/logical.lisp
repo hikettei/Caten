@@ -1,6 +1,5 @@
 (in-package :caten/aasm)
 
-;; [TODO] %where ... fuse the index access when doing lowerer
 (defun %where (condition x y &key (id (gensym "WID")))
   "id = where(condition, x{true-then}, y{false-then})"
   (declare (type node condition x y))
