@@ -40,7 +40,7 @@
   (multiple-value-bind (module instance-key) (attribute->instance attr-key)
     (declare (ignore module))
     (assert instance-key () "The node :~a is not defined by `defnode`." attr-key)
-    instance-key)))
+    instance-key))
 
 (defun build-documentation (name document nth &rest direct-superclasses)
   (with-output-to-string (out)
