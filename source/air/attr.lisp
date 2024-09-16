@@ -13,7 +13,7 @@
       (call-next-method)
       nil))
 
-(defgeneric dump-into-list (attr))
+(defgeneric dump-into-list (attr &key (allow-unbound)))
 
 (defclass Attribute ()
   ((attr-module-key :initarg :attr-module-key :type keyword :reader attr-module-key)
@@ -31,7 +31,16 @@
 
 (defgeneric %getattr (attr id))
 (defgeneric %setattr (attr id value))
+(defgeneric %boundp (attr id))
 (defgeneric get-output-to (attr &rest reads))
+(defgeneric verify-args (attr writes reads))
+
+(defun find-attr (attr-key)
+  (declare (type keyword attr-key))
+  (multiple-value-bind (module instance-key) (attribute->instance attr-key)
+    (declare (ignore module))
+    (assert instance-key () "The node :~a is not defined by `defnode`." attr-key)
+    instance-key)))
 
 (defun build-documentation (name document nth &rest direct-superclasses)
   (with-output-to-string (out)
@@ -59,7 +68,7 @@
 		for slot-new = (rewrite-slot slot)
 		collect slot-new)
 	 (:documentation ,(apply #'build-documentation type description placeholder direct-superclasses)))
-       (defmethod get-verifier ((attr ,class-name)) #',verify)
+       (defmethod verify-args ((attr ,class-name) writes reads) (funcall #',verify (list attr writes reads)))
        ,@(loop for slot in slots
 	       for slot-name = (car slot)
 	       for slot-key = (intern (symbol-name slot-name) "KEYWORD")
@@ -67,15 +76,37 @@
 	       `(defmethod %getattr ((attr ,class-name) (id (eql ,slot-key)))
 		  (slot-value attr ',slot-name))
 	       collect
+	       `(defmethod %boundp ((attr ,class-name) (id (eql ,slot-key))) (slot-boundp attr ',slot-name))
+	       collect
 	       `(defmethod %setattr ((attr ,class-name) (id (eql ,slot-key)) value)
 		  (declare (optimize (safety 3)))
 		  (setf (slot-value attr ',slot-name) value)))
-       (defmethod dump-into-list ((attr ,class-name))
+       ,@(loop for class in direct-superclasses
+	       for class-of = (find-class class)
+	       append
+	       (loop
+		    for slot in (c2mop:class-direct-slots class-of)
+		    for slot-initargs = (c2mop:slot-definition-initargs slot)
+		    for initarg = (when (and (= 1 (length slot-initargs)) (keywordp (car slot-initargs))) (car slot-initargs))
+		    for slotname = (c2mop:slot-definition-name slot)
+		    if initarg
+		      collect
+		    `(defmethod %boundp ((attr ,class-name) (id (eql ,initarg))) (slot-boundp attr ',slotname))
+		    if initarg
+		      collect
+		    `(defmethod %getattr ((attr ,class-name) (id (eql ,initarg))) (slot-value attr ',slotname))
+		    if initarg
+		      collect
+		    `(defmethod %setattr ((attr ,class-name) (id (eql ,initarg)) value)
+		       (declare (optimize (safety 3)))
+		       (setf (slot-value attr ',slotname) value))))
+       (defmethod dump-into-list ((attr ,class-name) &key (allow-unbound t))
+	 (declare (ignore allow-unbound))
 	 (list
 	  ,@(loop for slot in slots
                   for slot-name = (car slot)
                   for slot-key = (intern (symbol-name slot-name) "KEYWORD")
-                  append (list slot-key `(slot-value attr ',slot-name)))
+                  append (list slot-key `(and (slot-boundp attr ',slot-name) (slot-value attr ',slot-name))))
 	  ,@(loop for class in `(,@direct-superclasses)
 		  for class-of = (find-class class)
 		  append
@@ -85,8 +116,16 @@
 		    for initarg = (when (and (= 1 (length slot-initargs)) (keywordp (car slot-initargs))) (car slot-initargs))
 		    for slotname = (c2mop:slot-definition-name slot)
 		    if initarg
-		      append (list initarg `(slot-value attr ',slotname))))))
+		      append (list initarg `(and (slot-boundp attr ',slotname) (slot-value attr ',slotname)))))))
        (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,placeholder reads)))))
+
+(defmethod dump-into-list :around ((attr Attribute) &key (allow-unbound t))
+  (let ((attrs (call-next-method)))
+    (if allow-unbound
+	attrs
+	(loop for i upfrom 0 to (1+ (/ (length attrs) 2)) by 2
+	      if (%boundp attr (nth i attrs))
+		collect (nth i attrs)))))
 
 (defun make-attr (type &rest args)
   (multiple-value-bind (module instance-key) (attribute->instance type)
