@@ -430,7 +430,7 @@ in a single timestamp otherwise recursive dependencies will occur.
     (loop while (f))))
 
 (defmethod clean-up-attrs ((graph graph))
-  (every #'(lambda (node) (remattr node :_reads_old_for_multiexpr) node) (graph-nodes graph))
+  (every #'(lambda (node) (remattr node :_reads_old_for_multiexpr :allow-undefined t) node) (graph-nodes graph))
   graph)
 
 (defun optimize-non-in-place-buffers (base-avm avm mp graph seen verbose kernel-args)

@@ -15,7 +15,7 @@
    (_loop_bound_nodes :initarg :_loop_bound_nodes :initform nil)
    (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type :initform nil)
    (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm :initform nil)
-   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr)
+   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr :initform nil)
    (_reads :initarg :_reads)
    (_writes :initarg :_writes)
    (declare-type))

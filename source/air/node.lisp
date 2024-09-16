@@ -108,11 +108,14 @@ The nodes defined at compile time are as follows:
   (if (and allow-undefined (null (find id (getattrs node))))
       nil
       (%getattr (node-attr node) id)))
-(defun (setf getattr) (new-value node id) (%setattr (node-attr node) id new-value))
+(defun (setf getattr) (new-value node id &key (allow-undefined nil))
+  (if (and allow-undefined (null (find id (getattrs node))))
+      nil
+      (%setattr (node-attr node) id new-value)))
 (defun setattr (node id value)
   (declare (type node node) (type keyword id))
   (%setattr (node-attr node) id value))
-(defun remattr (node id)
+(defun remattr (node id &key (allow-undefined))
   (declare (type node node) (type keyword id))
-  (setf (getattr node id) nil)) 
+  (setf (getattr node id :allow-undefined allow-undefined) nil)) 
 (defun node->id (node) (car (node-writes node)))
