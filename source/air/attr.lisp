@@ -38,9 +38,9 @@
     (format out "~a" document)
     (format out "~%When optimizing ~(~a~) in-place, the ~ath read is consumed.~%" name nth)
     (when direct-superclasses
+      (format out "~%### superclasses~%~%")
       (dolist (superclass direct-superclasses)
-	(format out "### [Attribute] ~(~a~)~%" superclass)
-	(format out "~a~%~%" (documentation (find-class superclass) t))))))
+	(format out "- ~a~%" superclass)))))
 
 (defmacro defnode ((module type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
   "Defines a new attribute."
@@ -102,9 +102,18 @@
       (dolist (ign ignore)
 	(format out "  class[:~a]:~%    - <Ignored>~%" ign)))))
 
+(defun node-build-documentation-by-class (title class-id)
+  (declare (type string title) (type keyword class-id))
+  (with-output-to-string (out)
+    (format out "# ~a~%~%" title)
+    (let ((module->val (debug/attrs-by-module)))
+      (maphash
+       #'(lambda (module vals)
+	   (when (eql module class-id)
+	     (dolist (val vals)
+	       (multiple-value-bind (id class) (values (car val) (cdr val))
+		 (format out "~%## [Node] :~a~%~%" id)
+		 (format out (documentation (find-class class) t))))))
+       module->val))))
 ) ;; eval-when
 
-;; [TODO] Compiler Macro
-;; [TODO] build-documentation on node
-;; [TODO] caten/common.documentation
-;; defmethod usage

@@ -16,7 +16,7 @@
    (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type)
    (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm)
    (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr))
-  (:documentation "Notes w/ this attribute can "))
+  (:documentation "This node is jitable."))
 
 (defclass UnaryOps ()
   nil
@@ -73,7 +73,8 @@ out = sqrt(x);
 
 ```
 out = not(x) (if boolean)
-out = lognot(x) (if integer) 
+out = lognot(x) (if integer)
+```
 ")
 
 (defnode (:UnaryOps :CAST) (UnaryOps JITAble)
