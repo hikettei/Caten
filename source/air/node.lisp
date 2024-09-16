@@ -103,9 +103,11 @@ The nodes defined at compile time are as follows:
   (let ((attrs (dump-into-list (node-attr node) :allow-unbound nil)))
     (loop for attr in attrs if attr collect attr)))
 
-(defun getattr (node id)
+(defun getattr (node id &key (allow-undefined nil))
   (declare (type node node) (type keyword id))
-  (%getattr (node-attr node) id))
+  (if (and allow-undefined (null (find id (getattrs node))))
+      nil
+      (%getattr (node-attr node) id)))
 (defun (setf getattr) (new-value node id) (%setattr (node-attr node) id new-value))
 (defun setattr (node id value)
   (declare (type node node) (type keyword id))
