@@ -196,7 +196,7 @@ out[...] = f(*val_1);
 		   (ref (gethash x table))
 		   x)))
       (loop for node in nodes
-	    if (getattr node :reduction)
+	    if (getattr node :reduction :allow-undefined t)
 	      do (setf (gethash (car (node-writes node)) table) (car (node-reads node)))
 	    else
 	      do (setf (node-reads node) (map 'list #'ref (node-reads node))))

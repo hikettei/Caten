@@ -12,8 +12,8 @@
 
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
-   (_loop_bound_nodes :initarg :_loop_bound_nodes)
-   (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type)
+   (_loop_bound_nodes :initarg :_loop_bound_nodes :initform nil)
+   (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type :initform nil)
    (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm)
    (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr))
   (:documentation "This node is jitable."))
@@ -148,7 +148,7 @@ where move(x, y) is x = y
 ```
 - _jit_dont_render_me[boolean] (TODO)
 "
-	 :slots ((_jit_dont_render_me)))
+	 :slots ((_jit_dont_render_me :initform nil)))
 
 (defnode (:BinaryOps :MAX) (BinaryOps JITAble)
 	 "Computes the maximum value of two tensors in read, writing the result to the first write.
@@ -285,6 +285,6 @@ for i=0..N
 - Expr[Caten/AJIT:EXPR] a tree structure comprised of `CATEN/AJIT:EXPR`. Each node are comprised of `op/expr`.
 "
 	 :slots ((expr)
-		 (reduction)))
+		 (reduction :initform nil)))
 
 ) ;; eval-when
