@@ -10,9 +10,16 @@
       (call-next-method)
       (error "Undefined Attribute: ~a Defined attributes are ..." attr))) ;; <- Ignore :Testing, Sort by :Module
 
+(defgeneric dump-into-list (attr))
+
 (defclass Attribute ()
-  ((attr-module-key :initarg :attr-module-key :type keyword)))
-;; (defmethod make-load-form ((attr Attribute)))
+  ((attr-module-key :initarg :attr-module-key :type keyword :reader attr-module-key)
+   (attr-type-key :initarg :attr-type-key :type keyword :reader attr-type-key)))
+
+(defmethod make-load-form ((attr Attribute) &optional (env))
+  (declare (ignore env))
+  `(make-attr ,(attr-type-key attr) ,@(dump-into-list attr)))
+
 (defun rewrite-slot (slot)
   (assert (null (find :initarg slot)) () "defattr: do not specify :initarg")
   (assert (listp slot) () "defattr: ~a is not a list." slot)
@@ -55,11 +62,17 @@
 	       `(defmethod %setattr ((attr ,class-name) (id (eql ,slot-key)) value)
 		  (declare (optimize (safety 3)))
 		  (setf (slot-value attr ',slot-name) value)))
+       (defmethod dump-into-list ((attr ,class-name))
+	 (list
+	  ,@(loop for slot in slots
+		  for slot-name = (car slot)
+		  for slot-key = (intern (symbol-name slot-name) "KEYWORD")
+		  append (list slot-key `(slot-value attr ',slot-name)))))
        (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,placeholder reads)))))
 
 (defun make-attr (type &rest args)
   (multiple-value-bind (module instance-key) (attribute->instance type)
-    (apply #'make-instance instance-key args :attr-module-key module)))
+    (apply #'make-instance instance-key args :attr-module-key module :attr-type-key type)))
 
 ) ;; eval-when
 
