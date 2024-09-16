@@ -1,12 +1,12 @@
 (in-package :caten/aasm)
 ;; = [Summary of ops in caten/aasm] ===================================
-;; UnaryOps   | {NEG, RECIP, SIN, EXP2, SQRT, NOT}             | 6 Ops
+;; UnaryOps   | {NEG, RECIP, SIN, EXP2, LOG2, SQRT, NOT}       | 7 Ops
 ;; BinaryOps  | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
 ;; TernaryOps | {!=, <, WHERE, WMMA}                           | 4 Ops
 ;; Buffer     | {ALLOCATE, LOAD, STORE, VIEW}                  | 4 Ops
 ;; Indexing   | {INDEX-COMPONENTS}                             | 1 Op(s)
 ;; +)__________________________________________________________________
-;;                                                             | 24 Ops
+;;                                                             | 25 Ops
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
@@ -51,6 +51,13 @@ out = sin(x);
 	 "The node :EXP2 computes `exp2` of the first read tensor, writing the result to the first write.
 ```
 out = exp2(x);
+```
+")
+
+(defnode (:UnaryOps :LOG2) (UnaryOps JITAble)
+	 "The node :LOG2 computes `log2` of the first read tensor, writing the result to the first write.
+```
+out = log2(x);
 ```
 ")
 

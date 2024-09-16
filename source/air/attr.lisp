@@ -1,10 +1,5 @@
 (in-package :caten/air)
-;; [TODO]
-;; compile-macro: make-node
 ;; Pattern Matcher: Update (not to use list)
-;; Use a structure instead of class (in term of performance) slotの継承ができれば十分なはず
-;; Attribute -> Nodeを直接作る (node-reads ...)
-
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defparameter *attribute->instance* (make-hash-table))
@@ -111,3 +106,5 @@
 
 ;; [TODO] Compiler Macro
 ;; [TODO] build-documentation on node
+;; [TODO] caten/common.documentation
+;; defmethod usage
