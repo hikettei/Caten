@@ -12,7 +12,7 @@
 (defmethod attribute->instance :around (attr)
   (if (next-method-p)
       (call-next-method)
-      (error "Undefined Attribute: ~a Defined attributes are ..." attr))) ;; <- Ignore :Testing, Sort by :Module
+      nil))
 
 (defgeneric dump-into-list (attr))
 
@@ -76,6 +76,7 @@
 
 (defun make-attr (type &rest args)
   (multiple-value-bind (module instance-key) (attribute->instance type)
+     ;; <- Ignore :Testing, Sort by :Module
     (apply #'make-instance instance-key args :attr-module-key module :attr-type-key type)))
 
 ) ;; eval-when

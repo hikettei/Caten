@@ -35,6 +35,7 @@
   (reads  reads :type list)
   (attrs  attrs :type list))
 
+;; (define-compiler-macro make-node (class type writes reads &rest attrs))
 (defun copy-node (node)
   (declare (type node node))
   (let ((copied-node (%copy-node node)))
@@ -83,8 +84,6 @@
 			  (when k
 			    (format out " :~(~a~)=~a" k (getattr node k)))))
 		      ""))))))
-;;(defgeneric lower ())
-;;(defgeneric mutate ())
 ;; NOTE: attrs must be updated via simplifier (as much as possible!), not (setf getattr)
 (defun getattrs (node)
   (declare (type node node))
@@ -112,6 +111,3 @@
 		  unless (or (eql pos i) (eql (1+ pos) i))
 		    collect attr)))))
 (defun node->id (node) (car (node-writes node)))
-;; ~~ syntax sugar for make-node ~~~~~~~
-;;(declaim (inline <>))
-;;(defun <> (type writes reads &rest attrs) (apply #'make-node :node type writes reads attrs))
