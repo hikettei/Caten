@@ -39,7 +39,7 @@
   (apply #'%make-node class type writes reads attrs))
 ;; [TODO] Improve the error msg, document, inline.
 (define-compiler-macro make-node (class type writes reads &rest attrs)
-  (if (and (keywordp type) #-sbcl(nil))
+  (if (and (keywordp type) #-sbcl(identity nil))
       (let ((instance-key (cdr (gethash type *attribute->instance*))))
 	(when (null instance-key)
 	  (error "~a/~a is not defined." class type))
