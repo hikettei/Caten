@@ -151,6 +151,12 @@ The provided form does not match any of them:~%~a" method method method method f
 	    (impl-form 'backward backward t)
 	    `(defmethod backward ((op ,name) &optional prev-grad) (declare (ignore prev-grad)) :module/skip-bw))
        ,(impl-form 'impl impl nil)
+       (defnode (:Module ,(intern (symbol-name (symb 'graph/ name)) "KEYWORD")) () ""
+		:slots (,@(loop for attr in attrs
+				for nth upfrom 0
+				if (and (= 0 (mod nth 2)) (keywordp attr))
+				  collect (list (intern (symbol-name attr))))
+			(metadata :type ,name)))
        (defmethod lower ((op ,name) &rest inputs)
 	 (make-graph
 	  (apply #'make-node :Module (intern (symbol-name (symb 'graph/ ',name)) "KEYWORD")
@@ -171,7 +177,7 @@ The provided form does not match any of them:~%~a" method method method method f
 	out))))
 
 (macrolet ((defreduce (model description op)
-	     `(defmodule (, model((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
+	     `(defmodule (,model ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
 		  ()
 		  :documentation ,description
 		  :forward st/reduction
