@@ -1,19 +1,15 @@
 (in-package :caten/air)
 ;; [TODO]
 ;; out-toの統一
-;; ↓のParameter=NIL
-(defparameter *allow-undefined-attribute* t)
-
 (defgeneric attribute->instance (attr))
 
 (defmethod attribute->instance :around (attr)
   (if (next-method-p)
       (call-next-method)
-      (if *allow-undefined-attribute*
-	  :default
-	  (error "Undefined Attribute: ~a" attr))))
+      (error "Undefined Attribute: ~a Defined attributes are ..." attr)))
 
 (defclass Attribute () nil)
+;; (defmethod make-load-form ((attr Attribute)))
 
 (defun rewrite-slot (slot)
   (assert (null (find :initarg slot)) () "defattr: do not specify :initarg")
@@ -21,11 +17,10 @@
   (let ((name (intern (symbol-name (car slot)) "KEYWORD")))
     (append slot `(:initarg ,name))))
 
-;; (defmethod make-load-form ((attr Attribute)))
-
 (defgeneric %getattr (attr id))
 (defgeneric %setattr (attr id value))
 (defgeneric get-output-to (attr &rest reads))
+
 (defun build-documentation (name document nth &rest direct-superclasses)
   (with-output-to-string (out)
     (format out "~a" document)
@@ -60,8 +55,6 @@
 		  (setf (slot-value attr ',slot-name) value)))
        (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,write-to reads)))))
 
-(defun make-attr (module type &rest args)
-  (let ((instance-key (attribute->instance module type)))
-    (if (eql instance-key :default)
-	(error "not ready")
-	(apply #'make-instance instance-key args))))
+(defun make-attr (type &rest args)
+  (let ((instance-key (attribute->instance type)))
+    (apply #'make-instance instance-key args)))

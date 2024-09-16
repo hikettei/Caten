@@ -30,90 +30,99 @@
      (apply #'make-graph ,before))
     ,after
     :shuffle-order ,shuffle-order))
+
+(defnode (:Testing :Test-F) () "" :slots ((mode)))
+(defnode (:Testing :Test-Mul) () "" :slots ((mode) (mutated)))
+(defnode (:Testing :Test-Add) () "")
+(defnode (:Testing :Test-Const) () "")
+(defnode (:Testing :Test-Sub) () "")
+(defnode (:Testing :Test-Sub1) () "")
+(defnode (:Testing :Test-X) () "")
+(defnode (:Testing :Test-L) () "")
 ;; ~~ tests ~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defsimplifier
     (dummy-simplifier-1 :speed 0)
     ;; Attrs
-    ((:F ((number x)) :mode m) -> (:Mul (x) :mode m :mutated 1))
+    ((:Test-F ((number x)) :mode m) -> (:Test-Mul (x) :mode m :mutated 1))
     ;; Simple rewrite
-    ((:Add ((number x) (number y))) -> (:Const ((+ x y))))
+    ((:Test-Add ((number x) (number y))) -> (:Test-Const ((+ x y))))
     ;; Nested
-    ((:Add ((:Add (x y)) z)) -> (:Add (x y z)))
+    ((:Test-Add ((:Test-Add (x y)) z)) -> (:Test-Add (x y z)))
     ;; ((Node Graph) ...) Notation
-    ((:Sub ((number x) (number y))) -> ((node graph) (<node> :Const (node-writes node) (list (- x y)))))
-    ((:Sub1 ((number x) (number y))) -> ((node graph) (list (<node> :Const (node-writes node) (list (- x y)))))))
+    ((:Test-Sub ((number x) (number y))) -> ((node graph) (<node> :Test-Const (node-writes node) (list (- x y)))))
+    ((:Test-Sub1 ((number x) (number y))) -> ((node graph) (list (<node> :Test-Const (node-writes node) (list (- x y)))))))
 
 (deftest simplify-test-1
   (ok
    (check-simplify
     dummy-simplifier-1
     (list
-     (<node> :Add (list 'a 'b) (list 2 3)))
+     (<node> :Test-Add (list 'a 'b) (list 2 3)))
     (list
-     (<node> :Const (list 'a 'b) (list 5)))))
+     (<node> :Test-Const (list 'a 'b) (list 5)))))
   (ok
    (check-simplify
     dummy-simplifier-1
     (list
-     (<node> :Add (list 'a 'b) (list 2 3))
-     (<node> :Add (list 'c 'd) (list 2 3))
-     (<node> :X   (list 'k) (list 'a 'b 'c 'd)))
+     (<node> :Test-Add (list 'a 'b) (list 2 3))
+     (<node> :Test-Add (list 'c 'd) (list 2 3))
+     (<node> :Test-X   (list 'k) (list 'a 'b 'c 'd)))
     (list
-     (<node> :Const (list 'c 'd) (list 5))
-     (<node> :Const (list 'a 'b) (list 5))
-     (<node> :X   (list 'k) (list 'a 'b 'c 'd)))))
+     (<node> :Test-Const (list 'c 'd) (list 5))
+     (<node> :Test-Const (list 'a 'b) (list 5))
+     (<node> :Test-X   (list 'k) (list 'a 'b 'c 'd)))))
   (ok
    (check-simplify
     dummy-simplifier-1
     (list
-     (<node> :F (list 'k) (list 1) :mode 1)
-     (<node> :Add (list 'm) (list 1 1))
-     (<node> :Add (list 'n) (list 1 1))
-     (<node> :X (list 'o) (list 'k 'm 'n)))
+     (<node> :Test-F (list 'k) (list 1) :mode 1)
+     (<node> :Test-Add (list 'm) (list 1 1))
+     (<node> :Test-Add (list 'n) (list 1 1))
+     (<node> :Test-X (list 'o) (list 'k 'm 'n)))
     (list
-     (<node> :const (list 'n) (list 2))
-     (<node> :const (list 'm) (list 2))
-     (<node> :mul (list 'k) (list 1) :mode 1 :mutated 1)
-     (<node> :X (list 'o) (list 'k 'm 'n)))))
+     (<node> :Test-Const (list 'n) (list 2))
+     (<node> :Test-Const (list 'm) (list 2))
+     (<node> :Test-Mul (list 'k) (list 1) :mode 1 :mutated 1)
+     (<node> :Test-X (list 'o) (list 'k 'm 'n)))))
   (ok
    (check-simplify
     dummy-simplifier-1
     (list
-     (<node> :Add (list 'm) (list 1 1))
-     (<node> :Add (list 'n) (list 1 1))
-     (<node> :Add (list 'a) (list 'm 'n))
-     (<node> :Add (list 'c) (list 'a 'm))
-     (<node> :Add (list 'output) (list 'a 'c)))
+     (<node> :Test-Add (list 'm) (list 1 1))
+     (<node> :Test-Add (list 'n) (list 1 1))
+     (<node> :Test-Add (list 'a) (list 'm 'n))
+     (<node> :Test-Add (list 'c) (list 'a 'm))
+     (<node> :Test-Add (list 'output) (list 'a 'c)))
     (list
-     (<node> :add (list 'c) (list 'm 'n 'm))
-     (<node> :add (list 'output) (list 'm 'n 'c))
-     (<node> :const (list 'n) (list 2))
-     (<node> :const (list 'm) (list 2)))))
+     (<node> :Test-Add (list 'c) (list 'm 'n 'm))
+     (<node> :Test-Add (list 'output) (list 'm 'n 'c))
+     (<node> :Test-Const (list 'n) (list 2))
+     (<node> :Test-Const (list 'm) (list 2)))))
   (ok
    (check-simplify
     dummy-simplifier-1
     (list
-     (<node> :Sub (list 'x 'y) (list 3 5)))
+     (<node> :Test-Sub (list 'x 'y) (list 3 5)))
     (list
-     (<node> :const (list 'x 'y) (list -2)))))
+     (<node> :Test-Const (list 'x 'y) (list -2)))))
   (ok
    (check-simplify
     dummy-simplifier-1
     (list
-     (<node> :Sub1 (list 'x 'y) (list 3 5)))
+     (<node> :Test-Sub1 (list 'x 'y) (list 3 5)))
     (list
-     (<node> :const (list 'x 'y) (list -2))))))
+     (<node> :Test-Const (list 'x 'y) (list -2))))))
 
 (defsimplifier
     (match-empty-reads :speed 0)
-    ((:F ()) -> (:L ())))
+    ((:Test-F ()) -> (:Test-L ())))
 
 (deftest simplify-test-2
   (ok
    (check-simplify
     match-empty-reads
     (list
-     (<node> :F (list 'a) nil))
+     (<node> :Test-F (list 'a) nil))
     (list
-     (<node> :L (list 'a) nil)))))
+     (<node> :Test-L (list 'a) nil)))))
