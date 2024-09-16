@@ -53,3 +53,4 @@ RenderGraph:
 ;; Temporary Nodes
 (defnode (:IR :IR/FOR) () "" :slots ((_scalar_p)))
 (defnode (:IR :IR/ENDFOR) () "")
+(defnode (:TIME :GRAPH) () "" :slots ((id)))
