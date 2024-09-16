@@ -124,7 +124,7 @@
     (if allow-unbound
 	attrs
 	(loop for i upfrom 0 to (1+ (/ (length attrs) 2)) by 2
-	      if (%boundp attr (nth i attrs))
+	      if (and (keywordp (nth i attrs)) (%boundp attr (nth i attrs)))
 		collect (nth i attrs)))))
 
 (defun make-attr (type &rest args)
