@@ -142,7 +142,7 @@ should be used instead"
 	  using (hash-value graph)
 	do (setf (graph-nodes graph)
 		 (loop for node in (graph-nodes graph)
-		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
+		       unless (or (eql (node-type node) :IR/FOR) (eql (node-type node) :IR/ENDFOR))
 			 collect node))))
 
 (defun get-subgraph-recursively (node graph dynamic-shapes dtype &aux (seen nil))

@@ -121,8 +121,8 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 ;; ~~ JIT-Specific IRs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %for (gid size &key (scalar-p nil))
   (declare (type (or number symbol) size))
-  (emit (make-node :IR :for (list gid) (list 0 size 1) :_scalar_p (and scalar-p (eql size 1)))))
-(defun %endfor (gid) (emit (make-node :IR :endfor nil (list gid))))
+  (emit (make-node :IR :IR/FOR (list gid) (list 0 size 1) :_scalar_p (and scalar-p (eql size 1)))))
+(defun %endfor (gid) (emit (make-node :IR :IR/ENDFOR nil (list gid))))
 ;; ~~~~~ subgraph helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun buffer->loop-size (dim nrank &rest buffers)
   (declare (type fixnum dim))
@@ -186,7 +186,7 @@ Buffers: ~a
   (let ((scalar-mutation (when scalar-mutation (= 1 (length (graph->loop-factors graph :scalar-mutation nil))))))
     (remove-duplicates
      (loop for node in (graph-nodes graph)
-	   if (and (eql (node-type node) :FOR) (or (null scalar-mutation) (null (getattr node :_scalar_p))))
+	   if (and (eql (node-type node) :IR/FOR) (or (null scalar-mutation) (null (getattr node :_scalar_p))))
 	     collect (car (node-writes node))))))
 ;; [Fix] is it necessary?
 (defun graph-loop-scalar-mutated-p (graph)
@@ -197,7 +197,7 @@ Buffers: ~a
 (defun graph->loop-size (graph)
   (remove-duplicates
    (loop for node in (graph-nodes graph)
-	 if (and (eql (node-type node) :FOR)
+	 if (and (eql (node-type node) :IR/FOR)
 		 (symbolp (second (node-reads node))))
 	   collect (second (node-reads node)))))
 ;; ~~ ISL Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -292,7 +292,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		(mutated-p (graph-loop-scalar-mutated-p subgraph))
 		(constraints
 		  (loop for node in (graph-nodes subgraph)
-			if (and (eql (node-type node) :FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
+			if (and (eql (node-type node) :IR/FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
 			  collect
 			  (progn
 			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
@@ -328,7 +328,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		(mutated-p (graph-loop-scalar-mutated-p subgraph))
 		(constraints
 		  (loop for node in (graph-nodes subgraph)
-			if (and (eql (node-type node) :FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
+			if (and (eql (node-type node) :IR/FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
 			  collect
 			  (progn
 			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")

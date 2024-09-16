@@ -1,13 +1,14 @@
 (in-package :caten/ajit)
 
-;; [TODO] Rename :IR -> JIT
-(defnode (:JIT :JIT_KERNEL) () "Loads a jit kernel (TODO: Docs)"
-	 :slots ()) ;; TODO
+(defnode (:JIT :JIT_KERNEL) ()
+	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
+	 :slots ((fname :type string)
+		 (jit-info :type JIT-Info)))
 
-;; [TODO] Reanem :EXPR -> :JIT
-(defnode (:JIT :EXPR) () "TODO")
-(defnode (:Render :FOR) () "TODO"
-	 :slots ((_scalar_p))) ;; _scalar_p
+(defnode (:Render :FOR) () "
+
+"
+	 :slots ((_scalar_p))) ;; _scalar_p ;; scope
 (defnode (:Render :ENDFOR) () "")
 (defnode (:Render :FUNCALL) () "")
 (defnode (:Render :IF) () "")

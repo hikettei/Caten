@@ -15,8 +15,7 @@
    (_loop_bound_nodes :initarg :_loop_bound_nodes)
    (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type)
    (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm)
-   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr)
-   )
+   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr))
   (:documentation "Notes w/ this attribute can "))
 
 (defclass UnaryOps ()
@@ -271,5 +270,13 @@ for i=0..N
     out[i, j] = stride[0] * i + j;
 ```
 ")
+
+(defnode (:JIT :EXPR) (JITAble)
+	 "The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes. The list of composable nodes is defined in `op/expr` in `ajit/renderer.lisp.`
+
+- Expr[Caten/AJIT:EXPR] a tree structure comprised of `CATEN/AJIT:EXPR`. Each node are comprised of `op/expr`.
+"
+	 :slots ((expr)
+		 (reduction)))
 
 ) ;; eval-when
