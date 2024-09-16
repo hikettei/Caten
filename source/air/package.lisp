@@ -10,4 +10,4 @@
   (:export #:Graph #:make-graph #:copy-graph #:graph-p #:graph-seen #:graph-outputs #:Graph-nodes #:id->value #:id->users #:remnode #:verify-graph)
   (:export #:getattrs #:getattr #:remattr)
   (:export #:defsimplifier)
-  (:export #:Attribute #:defattr))
+  (:export #:Attribute #:defnode))

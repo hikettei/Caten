@@ -35,7 +35,7 @@
 	(format out "### [Attribute] ~(~a~)~%" superclass)
 	(format out "~a~%~%" (documentation (find-class superclass) t))))))
 
-(defmacro defattr ((module type) (&rest direct-superclasses) description &key (write-to 0) (verify 'identity) (slots))
+(defmacro defnode ((module type) (&rest direct-superclasses) description &key (write-to 0) (verify 'identity) (slots))
   "Defines a new attribute."
   (declare (type keyword module type)
 	   (type string description))
@@ -63,9 +63,5 @@
 (defun make-attr (module type &rest args)
   (let ((instance-key (attribute->instance module type)))
     (if (eql instance-key :default)
-	(make-instance 'AnyAttribute-ATTR :list args)
+	(error "not ready")
 	(apply #'make-instance instance-key args))))
-
-(defattr (:Any :AnyAttribute) ()
-	 ""
-	 :slots ((list)))
