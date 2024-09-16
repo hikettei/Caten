@@ -1,5 +1,60 @@
 (in-package :caten/aasm)
 
+(defclass UnaryOps ()
+  nil
+  (:documentation "
+UnaryOps applies an operaton to the first given read value and overwrites the result to write.
+```
+out <- f(x)
+```"))
+
+(defattr (:UnaryOps :NEG) (UnaryOps)
+	 "The node :NEG flips the sign of the first read tensor, writing the result to the first write.
+```
+out = (-x);
+```
+")
+
+(defattr (:UnaryOps :RECIP) (UnaryOps)
+	 "The node :RECIP computes the reciprocal of the first read tensor, writing the result to the first write.
+```
+out = (1/x);
+```
+")
+
+(defattr (:UnaryOps :SIN) (UnaryOps)
+	 "The node :SIN computes sine of the first read tensor, writing the result to the first write.
+```
+out = sin(x);
+```
+")
+
+(defattr (:UnaryOps :EXP2) (UnaryOps)
+	 "The node :EXP2 computes `exp2` of the first read tensor, writing the result to the first write.
+```
+out = exp2(x);
+```
+")
+
+(defattr (:UnaryOps :SQRT) (UnaryOps)
+	 "The node :SQRT computes square-root of the first read tensor, writing the result to the first write.
+```
+out = sqrt(x);
+```
+")
+
+(defattr (:UnaryOps :NOT) (UnaryOps)
+	 "The node :NOT computes the logical-not of the given tensor if the input is a boolean, otherwise (integer) computes a bitwise-not.
+
+```
+out = not(x) (if boolean)
+out = lognot(x) (if integer) 
+")
+
+(defattr (:UnaryOps :CAST) (UnaryOps)
+	 "The node :CAST casts the first read tensor into `:dtype`, writing the result into the first write."
+	 :slots ((dtype :type dtype-t)))
+
 (defclass BinaryOps ()
   ((reduction :initarg :reduction :initform nil :type boolean)
    (wrap-around :initarg :wrap-around :initform nil :type boolean))
