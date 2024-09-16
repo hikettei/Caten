@@ -7,9 +7,13 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
+(defparameter *attribute->instance* (make-hash-table))
 (defgeneric attribute->instance (attr))
-
-(defmethod attribute->instance :around (attr)
+(defmethod attribute->instance ((attr symbol))
+  (if (next-method-p)
+      (call-next-method)
+      nil))
+(defmethod attribute->instance :around ((attr symbol))
   (if (next-method-p)
       (call-next-method)
       nil))
@@ -49,6 +53,7 @@
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
     `(eval-when (:compile-toplevel :load-toplevel :execute)
+       (setf (gethash ,type *attribute->instance*) (cons ,module ',class-name))
        (defmethod attribute->instance ((id (eql ,type))) (values ,module ',class-name))
        (defclass ,class-name (Attribute ,@direct-superclasses)
 	 ,(loop for slot in slots
@@ -76,7 +81,7 @@
 
 (defun make-attr (type &rest args)
   (multiple-value-bind (module instance-key) (attribute->instance type)
-     ;; <- Ignore :Testing, Sort by :Module
+    (assert (and module instance-key) () "make-attr: The node ~a/~a is not defined by `defnode`." module instance-key)
     (apply #'make-instance instance-key args :attr-module-key module :attr-type-key type)))
 
 ) ;; eval-when

@@ -22,11 +22,11 @@
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Node
 	    (:copier %copy-node)
-	    (:constructor make-node (class type writes reads &rest attrs
-				     &aux
-				       (writes (verify-buffers writes))
-				       (reads  (verify-buffers reads))
-				       (attrs (verify-attrs attrs)))))
+	    (:constructor %make-node (class type writes reads &rest attrs
+				      &aux
+					(writes (verify-buffers writes))
+					(reads  (verify-buffers reads))
+					(attrs (verify-attrs attrs)))))
   "y1 y2 y3 ... <- f(x1 ... xn)"
   (class class :type keyword)
   (id (gensym "NID") :type symbol)
@@ -35,7 +35,17 @@
   (reads  reads :type list)
   (attrs  attrs :type list))
 
-;; (define-compiler-macro make-node (class type writes reads &rest attrs))
+(defun make-node (class type writes reads &rest attrs)
+  (apply #'%make-node class type writes reads attrs))
+
+(define-compiler-macro make-node (class type writes reads &rest attrs)
+  (if (keywordp type)
+      (let ((instance-key (cdr (gethash type *attribute->instance*))))
+	(when (null instance-key)
+	  (error "~a/~a is not defined." class type))
+	`(%make-node ,class ,type ,writes ,reads ,@attrs))
+      `(%make-node ,class ,type ,writes ,reads ,@attrs)))
+
 (defun copy-node (node)
   (declare (type node node))
   (let ((copied-node (%copy-node node)))
