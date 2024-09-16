@@ -6,6 +6,7 @@
   :serial t
   :components
   ((:file "package")
+   (:file "attr")
    (:file "node")
    (:file "graph")
    (:file "pattern-matcher"))
