@@ -7,8 +7,6 @@
 
 ;; [TODO] simplify-logical-ops
 ;; e.g.: (not (not x)) -> x
-;; WIP: arefに対する論理式を合成できるようにする + whereを合成
-;; a[f(i)]が並列化できるか確かめるように書きたい
 ;;(defsimplifier
 ;;    (simplify-logical :speed 3)
 ;;    ((:Not ((:Not (x)))) -> ((node graph) (id->value graph x))))

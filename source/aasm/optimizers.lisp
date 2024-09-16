@@ -1,5 +1,6 @@
 (in-package :caten/aasm)
 
+(defnode (:Tmp :TmpDynamicShape) () "" :slots ((dtype)))
 (defsimplifier
     (fuse-duplicated-store :speed 0)
     ((:Store ((:Allocate (~ s1) :nrank nrank :dtype dtype1) (:Allocate (~ s2) :dtype dtype2)))
@@ -10,11 +11,11 @@
 
 (defsimplifier
     (%replace-dynamic-shape :speed 0)
-    ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (guard x (or (numberp x) (symbolp x)))) -> (:_TmpDynamicShape (x) :dtype dtype)))
+    ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (guard x (or (numberp x) (symbolp x)))) -> (:TmpDynamicShape (x) :dtype dtype)))
 
 (defsimplifier
     (%unfold-dynamic-shape :speed 0)
-    ((:_TmpDynamicShape (x) :dtype dtype)
+    ((:TmpDynamicShape (x) :dtype dtype)
      ->
      ((node graph)
       (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node)))))))

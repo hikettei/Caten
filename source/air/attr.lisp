@@ -4,14 +4,14 @@
 ;; ↓のParameter=NIL
 (defparameter *allow-undefined-attribute* t)
 
-(defgeneric attribute->instance (module attr))
+(defgeneric attribute->instance (attr))
 
-(defmethod attribute->instance :around (module attr)
+(defmethod attribute->instance :around (attr)
   (if (next-method-p)
       (call-next-method)
       (if *allow-undefined-attribute*
 	  :default
-	  (error "Undefined Attribute: ~a/~a" module attr))))
+	  (error "Undefined Attribute: ~a" attr))))
 
 (defclass Attribute () nil)
 
@@ -41,7 +41,7 @@
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
     `(progn
-       (defmethod attribute->instance ((module (eql ,module)) (id (eql ,type))) ',class-name)
+       (defmethod attribute->instance ((id (eql ,type))) ',class-name)
        (defclass ,class-name (Attribute ,@direct-superclasses)
 	 ,(loop for slot in slots
 		for slot-new = (rewrite-slot slot)
