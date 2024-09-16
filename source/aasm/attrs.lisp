@@ -1,4 +1,8 @@
 (in-package :caten/aasm)
+;; [Summary of ops in caten/aasm]
+;; UnaryOps  | {NEG, RECIP, SIN, EXP2, SQRT, NOT}             | 6 Ops
+;; BinaryOps | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
+;;
 
 (defclass UnaryOps ()
   nil
@@ -134,5 +138,30 @@ out <- max(x, y)
 
 ```
 out <- gcd(x, y)
+```
+")
+
+(defclass TernaryOps ()
+  nil
+  (:documentation "
+TernaryOps applies an operation to the first three read tensor, writing the result to the first write.
+```
+out <- f(x, y, z)
+```
+"))
+
+(defattr (:TernaryOps :!=) (TernaryOps)
+	 "Compares the second and third tensors in read with `not-equal`, writing the result to the first write. The first read tensor is an placeholder for the first write tensor and is always boolean.
+```
+x = y != z;
+out = x;
+```
+")
+
+(defattr (:TernaryOps :<) (TernaryOps)
+	 "Compares the second and third tensors in read with `<`, writing the result to the first write. The first read tensor is an placeholder for the first write tensor and is always boolean.
+```
+x = y < z;
+out = x;
 ```
 ")

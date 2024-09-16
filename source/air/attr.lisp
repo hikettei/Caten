@@ -58,12 +58,13 @@
 	       `(defmethod %setattr ((attr ,class-name) (id (eql ,slot-key)) value)
 		  (declare (optimize (safety 3)))
 		  (setf (slot-value attr ',slot-name) value)))
-       (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,write-to reads))
-       (defun make-attr (module type &rest args)
-	 (let ((instance-key (attribute->instance module type)))
-	   (if (eql instance-key :default)
-	       (make-instance 'AnyAttribute-ATTR :list args)
-	       (apply #'make-instance instance-key args)))))))
+       (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,write-to reads)))))
+
+(defun make-attr (module type &rest args)
+  (let ((instance-key (attribute->instance module type)))
+    (if (eql instance-key :default)
+	(make-instance 'AnyAttribute-ATTR :list args)
+	(apply #'make-instance instance-key args))))
 
 (defattr (:Any :AnyAttribute) ()
 	 ""
