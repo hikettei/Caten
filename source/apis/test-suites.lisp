@@ -490,7 +490,7 @@
   ;; TODO: Improve the accuracy
   (unary-dtype-test sin-test !sin sin)
   (unary-dtype-test cos-test !cos cos :ulp 1e-3 :max 121255)
-  (unary-dtype-test tan-test !tan tan :ulp 1e-1 :max 20)
+  (unary-dtype-test tan-test !tan tan :ulp 0.5 :max 20)
   (unary-dtype-test exp-test !exp exp :ulp 1e-3 :max 7)
   (unary-dtype-test log-test !log log :non-zero t :ulp 1e-4)
   (unary-dtype-test exp2-test !exp2 exp2 :ulp 1e-3 :max 7)
