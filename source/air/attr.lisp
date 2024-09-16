@@ -1,6 +1,7 @@
 (in-package :caten/air)
 ;; [TODO]
-;; compile-macro
+;; compile-macro: make-node
+;; Pattern Matcher: Update (not to use list)
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defgeneric attribute->instance (attr))
@@ -44,7 +45,7 @@
   (declare (type keyword module type)
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
-    `(progn
+    `(eval-when (:compile-toplevel :load-toplevel :execute)
        (defmethod attribute->instance ((id (eql ,type))) (values ,module ',class-name))
        (defclass ,class-name (Attribute ,@direct-superclasses)
 	 ,(loop for slot in slots
