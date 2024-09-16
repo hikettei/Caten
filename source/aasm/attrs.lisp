@@ -8,6 +8,8 @@
 ;; +)__________________________________________________________________
 ;;                                                             | 23 Ops
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  
 (defclass JITAble ()
   nil ;; :_reads
   (:documentation "Notes w/ this attribute can "))
@@ -248,3 +250,5 @@ for i=0..N
     out[i, j] = stride[0] * i + j;
 ```
 ")
+
+)
