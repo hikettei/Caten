@@ -72,8 +72,8 @@ Defines graph simplification rule
 Tips: return nil to skip the simplification process.
 Tips: (~ x) to accept n-args.
 TODO: Docs"
-  (with-gensyms (graph simplifier-bind apply-bind1 apply-bind2 node-top count-bind fast-graph-p)
-    `(defun ,name (,graph &key (no-verify nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)))
+  (with-gensyms (graph simplifier-bind apply-bind1 apply-bind2 node-top count-bind fast-graph-p seen)
+    `(defun ,name (,graph &key (no-verify nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil))
        (declare (type graph ,graph)
 		(type boolean no-verify)
 		(optimize (speed ,speed)))
@@ -128,9 +128,11 @@ TODO: Docs"
 		(,apply-bind2 (id &key (changed-p nil))
 		  (let ((node (gethash id (%graph-nodes-table ,graph))))
 		    (when node
-		      (when (,simplifier-bind node -1)
-			(setf changed-p t))
-		      (or changed-p (some #'identity (map 'list #',apply-bind2 (node-reads node))))))))
+		      (when (null (find (the symbol id) (the list ,seen) :test #'eq))
+			(push id ,seen)
+			(when (,simplifier-bind node -1)
+			  (setf changed-p t))
+			(or changed-p (some #'identity (map 'list #',apply-bind2 (node-reads node)))))))))
 	 (if ,fast-graph-p
 	     (loop while (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph))))
 	     (loop while (,apply-bind1 ,graph)))
