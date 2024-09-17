@@ -90,11 +90,13 @@ The nodes defined at compile time are as follows:
 		  (node-id node)
 		  (render-list (node-writes node))
 		  (render-list (node-reads node))
-		  (if (dump-into-list (node-attr node) :allow-unbound nil)
+		  (if (and
+		       (dump-into-list (node-attr node) :allow-unbound nil)
+		       (some #'identity (map 'list #'(lambda (x) (getattr node x)) (getattrs node))))
 		      (with-output-to-string (out)
 			(format out " where")
 			(dolist (k (getattrs node))
-			  (when k
+			  (when (and k (getattr node k))
 			    (format out " :~(~a~)=~a" k (getattr node k)))))
 		      ""))))))
 
