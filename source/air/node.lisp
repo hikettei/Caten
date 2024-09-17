@@ -29,12 +29,12 @@
 					(attr   (apply #'make-attr type (verify-attrs attrs)))
 					(id (progn (verify-args attr writes reads) (gensym "NID"))))))
   "y1 y2 y3 ... <- f(x1 ... xn)"
-  (class class :type keyword)
-  (id id :type symbol)
-  (type type :type keyword)
+  (class  class  :type keyword)
+  (id     id     :type symbol)
+  (type   type   :type keyword)
   (writes writes :type list)
-  (reads  reads :type list)
-  (attr attr :type Attribute))
+  (reads  reads  :type list)
+  (attr   attr   :type Attribute))
 
 (defun make-node (class type writes reads &rest attrs)
   (apply #'%make-node class type writes reads attrs))
