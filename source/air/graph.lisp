@@ -104,7 +104,7 @@ FastGraph[seen=~a, outputs=~a] {
 		 (push id seen)
 		 (let ((node (id->value fast-graph id)))
 		   (when node
-		     (nconc (list node) result)
+		     (setf result (nconc (list node) result))
 		     (dolist (r (node-reads node))
 		       (when (symbolp r)
 			 (explore r))))))))
