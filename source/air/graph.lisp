@@ -1,46 +1,75 @@
 (in-package :caten/air)
 
 (defclass Graph ()
-  ((nodes :initarg :nodes :type list :accessor graph-nodes)
+  ((nodes :initarg :nodes :type list :accessor %graph-nodes)
    (seen :initarg :seen :initform nil :type list :accessor graph-seen)
    (outputs :initarg :output :initform nil :type list :accessor graph-outputs))
-  (:documentation ""))
+  (:documentation "Graph for general purpose."))
 
-(defun make-graph (&rest nodes)
-  (make-instance 'Graph :nodes nodes))
+(defmethod print-object ((graph Graph) stream)
+  (format stream "
+Graph[seen=~a, outputs=~a] {
+~a}
+"
+	  (graph-seen graph)
+	  (graph-outputs graph)
+	  (with-output-to-string (out)
+	    (dolist (node (graph-nodes graph))
+	      (format out "    ~a~%" node)))))
 
+(defclass FastGraph (Graph)
+  ((node-table :initform (make-hash-table :test 'eq) :type hash-table :accessor %graph-nodes-table))
+  (:documentation "Graph for a larger magnitude. Assuming the nodes has a DAG.
+イメージ: FastGraphの状態でSimplifyする -> Graphを手に入れてコンパイルする"))
+
+(defmethod print-object ((graph FastGraph) stream)
+  (format stream "
+FastGraph[seen=~a, outputs=~a] {
+~a}
+"
+	  (graph-seen graph)
+	  (graph-outputs graph)
+	  (with-output-to-string (out)
+	    (dolist (node (graph-nodes (->graph graph)))
+	      (format out "    ~a~%" node)))))
+
+(defun make-graph (&rest nodes) (make-instance 'Graph :nodes nodes))
 (defmethod copy-graph ((graph Graph))
   (let ((g (apply #'make-graph (graph-nodes graph))))
     (setf (graph-seen graph) (copy-list (graph-seen graph))
 	  (graph-outputs graph) (copy-list (graph-outputs graph)))
     g))
-
 (defun graph-p (graph) (typep graph 'Graph))
+(defmethod graph-nodes ((graph Graph)) (%graph-nodes graph))
+(defmethod graph-nodes ((graph FastGraph)) (hash-table-values (%graph-nodes-table graph)))
+(defmethod (setf graph-nodes) (nodes (graph Graph)) (setf (%graph-nodes graph) nodes))
+(defmethod (setf graph-nodes) (nodes (graph FastGraph)) (error "graph-nodes for FastGraph is immutable!"))
 
-(defclass FastGraph (Graph) ((buffer :initform nil)))
-;; Making id->users method, w/ inlining using compiler-macro.
-
-;; TODO: inline id->users/id->values after improving the root alogirhtm
-(declaim (ftype (function (graph (or symbol number)) (or null node list)) id->users id->value))
-(defun id->users (graph id)
-  (declare (type graph graph)
-	   (optimize (speed 3)))
+;; [TODO] Compiler-Macro
+(defmethod id->users ((graph Graph) id)
+  (declare (optimize (speed 3)))
   (if (not (symbolp id))
       nil
       (loop for node in (graph-nodes graph)
 	    if (find id (node-reads node) :test #'eql)
 	      collect node)))
-(defun id->value (graph id)
+
+(defmethod id->value ((graph Graph) id)
   (declare (type graph graph) (optimize (speed 3)))
   (if (not (symbolp id))
       nil
       (loop for node in (graph-nodes graph)
 	    if (find id (node-writes node) :test #'eql)
 	      do (return-from id->value node))))
-(defun id->node (graph id)
+
+(defmethod id->value ((graph FastGraph) id)
+  (gethash id (%graph-nodes-table graph)))
+
+(defmethod id->node ((graph Graph) id)
   (declare (type graph graph) (optimize (speed 3)))
   (find id (graph-nodes graph) :test #'eql :key #'node-id))
-(defun remnode (graph id)
+
+(defmethod remnode ((graph Graph) id)
   (declare (type graph graph)
 	   (type symbol id)
 	   (optimize (speed 3)))
@@ -48,7 +77,41 @@
 	(loop for node in (graph-nodes graph)
 	      unless (eql id (node-id node)) collect node)))
 
-(defun verify-graph (graph &key (no-purge nil))
+(defmethod remnode ((graph FastGraph) id) (remhash id (%graph-nodes-table graph)))
+
+(defmethod insert-nodes ((graph Graph) nodes) (nconc (graph-nodes graph) nodes))
+
+(defmethod insert-nodes ((graph FastGraph) nodes)
+  (dolist (node nodes)
+    (dolist (w (node-writes node))
+      (setf (gethash w (%graph-nodes-table graph)) node))))
+
+(defun ->fast-graph (graph)
+  (declare (type graph graph))
+  (assert (graph-outputs graph) () "Cannot create a fast graph because the graph does not have a `outputs`.")
+  (let ((fast-graph (make-instance 'FastGraph :output (graph-outputs graph) :seen (graph-seen graph))))
+    (insert-nodes fast-graph (graph-nodes graph))
+    fast-graph))
+
+(defun ->graph (fast-graph)
+  (declare (type FastGraph fast-graph) (optimize (speed 3)))
+  (assert (graph-outputs fast-graph) () "Cannot create a graph from the given fast graph because it does not provide a `outputs`.")
+  (let ((result) (seen nil))
+    (declare (type list result seen))
+    (labels ((explore (id)
+	       (declare (type symbol id))
+	       (when (null (find id seen))
+		 (push id seen)
+		 (let ((node (id->value fast-graph id)))
+		   (when node
+		     (nconc (list node) result)
+		     (dolist (r (node-reads node))
+		       (when (symbolp r)
+			 (explore r))))))))
+      (mapc #'explore (graph-outputs fast-graph)))
+    (make-instance 'Graph :output (graph-outputs fast-graph) :seen (graph-seen fast-graph) :nodes result)))
+
+(defmethod verify-graph ((graph Graph) &key (no-purge nil))
   "Verify the consistency of the graphs and simplify them by operating following:
 - Checks if all variables are immutable
 - All read dependencies are appearedin writes.
@@ -69,10 +132,13 @@
   (unless no-purge (purge-isolated-graph graph))
   t)
 
+(defmethod verify-graph ((graph FastGraph) &key (no-purge nil))
+  (declare (ignore no-purge))
+  t)
+
 (defun special-p (kw) (declare (optimize (speed 3))) (search "SPECIAL/" (format nil "~a" kw)))
 
-(defun resolve-isolated-nodes (graph)
-  (declare (type graph graph))
+(defmethod resolve-isolated-nodes ((graph graph))
   (let ((new-nodes) (seen (graph-seen graph)) (stashed))
     (declare (type list new-nodes seen stashed))
     (flet ((seen-p (reads) (every #'(lambda (x) (or (numberp x) (find x seen :test #'eql))) reads)))
@@ -132,7 +198,7 @@ To sort the graph properly, resolve the following isolated graph dependencies.
     (setf (graph-nodes graph) (reverse new-nodes))
     graph))
 
-(defun purge-isolated-graph (graph)
+(defmethod purge-isolated-graph ((Graph graph))
   (declare (type graph graph) (optimize (speed 3)))
   (when (graph-nodes graph)
     (let* ((output (or (graph-outputs graph) (node-writes (car (last (graph-nodes graph))))))

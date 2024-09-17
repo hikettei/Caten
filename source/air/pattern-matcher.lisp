@@ -73,7 +73,7 @@ Tips: return nil to skip the simplification process.
 Tips: (~ x) to accept n-args.
 TODO: Docs"
   (with-gensyms (graph simplifier-bind apply-bind node-top count-bind)
-    `(defun ,name (,graph &key (no-verify nil))
+    `(defmethod ,name ((,graph Graph) &key (no-verify nil))
        (declare (type graph ,graph)
 		(type boolean no-verify)
 		(optimize (speed ,speed)))
@@ -104,7 +104,7 @@ TODO: Docs"
 		      ;;    (when (some #'(lambda (x) (null (find x out))) fixed-writes-to)
 		      ;;      (return-from ,simplifier-bind))))		      
 		      (setf (graph-nodes ,graph)
-			    (append
+			    (nconc
 			     (subseq (graph-nodes ,graph) 0 ,count-bind)
 			     replace-rule
 			     (subseq (graph-nodes ,graph) (1+ ,count-bind))))
