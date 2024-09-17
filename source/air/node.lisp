@@ -46,6 +46,12 @@
 	  (error "The node :~a is not defined. It needs to be defined by `defnode` before being used in make-node.
 The nodes defined at compile time are as follows:
 ~a" type (debug/render-defined-nodes :ignore (if (find class `(:Testing :TMP)) nil `(:Testing :TMP)))))
+	(let ((initargs (%attr-initargs type))
+	      (input-keys (loop for i upfrom 0 below (length attrs) by 2
+			        if (keywordp (nth i attrs)) collect (nth i attrs))))
+	  (dolist (key input-keys)
+	    (assert (find key initargs) () "make-node: The attr :~a is not defined in the definition of ~a.
+Possible keywords are following: ~a" key type initargs)))
 	`(%make-node ,class ,type ,writes ,reads ,@attrs))
       `(%make-node ,class ,type ,writes ,reads ,@attrs)))
 
