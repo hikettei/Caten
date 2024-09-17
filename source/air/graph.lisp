@@ -1,13 +1,25 @@
 (in-package :caten/air)
 
-(defstruct (Graph
-	    (:constructor make-graph (&rest nodes)))
-  "nodes: t=0 ... t=n-1
-outputs: a list of ids where sorting is starting from.
-If outputs is nil, the writes of last nodes becomes the top"
-  (nodes nodes :type list)
-  (seen nil :type list)
-  (outputs nil :type list))
+(defclass Graph ()
+  ((nodes :initarg :nodes :type list :accessor graph-nodes)
+   (seen :initarg :seen :initform nil :type list :accessor graph-seen)
+   (outputs :initarg :output :initform nil :type list :accessor graph-outputs))
+  (:documentation ""))
+
+(defun make-graph (&rest nodes)
+  (make-instance 'Graph :nodes nodes))
+
+(defmethod copy-graph ((graph Graph))
+  (let ((g (apply #'make-graph (graph-nodes graph))))
+    (setf (graph-seen graph) (copy-list (graph-seen graph))
+	  (graph-outputs graph) (copy-list (graph-outputs graph)))
+    g))
+
+(defun graph-p (graph) (typep graph 'Graph))
+
+(defclass FastGraph (Graph) ((buffer :initform nil)))
+;; Making id->users method, w/ inlining using compiler-macro.
+
 ;; TODO: inline id->users/id->values after improving the root alogirhtm
 (declaim (ftype (function (graph (or symbol number)) (or null node list)) id->users id->value))
 (defun id->users (graph id)
