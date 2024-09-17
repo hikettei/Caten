@@ -66,7 +66,7 @@ If i is a tensor, %load fills the visible area of i with value."
 			(format nil ", from=<~a, Realized Array>" buffer)
 			(format nil ", from=<~a Realized Array>" (uiop:symbol-call :caten/avm :buffer-shape buffer))))
 		  "")
-	      (render-attrs node :except-for `(:from))))))
+	      (render-attrs node :except-for `(:from :_loop_bound_Nodes :_loop_bound_nodes_type :_no_group_realize_on_vm))))))
 
 (defun %store (x y &key (id (gensym "LID")) (reduction nil))
   "Equivalent to x = y;"
