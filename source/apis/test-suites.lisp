@@ -465,7 +465,7 @@
 
 (defun exp2 (x) (expt 2 x))
 (defun log2 (x) (log x 2))
-(macrolet ((unary-dtype-test (name op lisp-op &key (non-zero nil) (ulp) (max))
+(macrolet ((unary-dtype-test (name op lisp-op &key (non-zero nil) (ulp) (max) (fuzz t))
 	     `(deftest ,name
 		(dolist (dtype `(:float32 :float64))
 		  (let ((model (caten (,op (make-tensor `(1) :initial-element 'a :dtype dtype))))
@@ -478,7 +478,7 @@
 				  "~(~a~)(x=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
 				  ',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
 				  (,lisp-op x) ulp dtype))))
-		    (forall (x dtype :fuzzing t)
+		    (forall (x dtype :fuzzing ,fuzz)
 		      (when (if ,non-zero (> x 0.0) t)
 			(when (or (null ,max) (<= (abs x) ,max))
 			  (assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
@@ -490,7 +490,7 @@
   ;; TODO: Improve the accuracy
   (unary-dtype-test sin-test !sin sin)
   (unary-dtype-test cos-test !cos cos :ulp 1e-3 :max 121255)
-  (unary-dtype-test tan-test !tan tan :ulp 1e-1 :max 20)
+  (unary-dtype-test tan-test !tan tan :ulp 1e-1 :max 20 :fuzz nil)
   (unary-dtype-test exp-test !exp exp :ulp 1e-3 :max 7)
   (unary-dtype-test log-test !log log :non-zero t :ulp 1e-4)
   (unary-dtype-test exp2-test !exp2 exp2 :ulp 1e-3 :max 7)

@@ -3,6 +3,10 @@
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defpattern boolean (x) `(guard ,x (typep ,x 'boolean)))
 
+(defnode (:Tmp :_TmpScalarConst) () "" :slots ((dtype)))
+(defnode (:Tmp :_TmpScalarBool) () "" :slots ((value)))
+(defnode (:Tmp :_TmpPurged) () "")
+
 (defun reinitialize-tensor (graph id node)
   (declare (type graph graph))
   (multiple-value-bind (nrank shape stride dtype views)

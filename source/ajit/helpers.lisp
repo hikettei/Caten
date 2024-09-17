@@ -142,7 +142,7 @@ should be used instead"
 	  using (hash-value graph)
 	do (setf (graph-nodes graph)
 		 (loop for node in (graph-nodes graph)
-		       unless (or (eql (node-type node) :FOR) (eql (node-type node) :ENDFOR))
+		       unless (or (eql (node-type node) :IR/FOR) (eql (node-type node) :IR/ENDFOR))
 			 collect node))))
 
 (defun get-subgraph-recursively (node graph dynamic-shapes dtype &aux (seen nil))
@@ -430,7 +430,7 @@ in a single timestamp otherwise recursive dependencies will occur.
     (loop while (f))))
 
 (defmethod clean-up-attrs ((graph graph))
-  (every #'(lambda (node) (remattr node :_reads_old_for_multiexpr) node) (graph-nodes graph))
+  (every #'(lambda (node) (remattr node :_reads_old_for_multiexpr :allow-undefined t) node) (graph-nodes graph))
   graph)
 
 (defun optimize-non-in-place-buffers (base-avm avm mp graph seen verbose kernel-args)

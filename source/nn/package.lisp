@@ -179,12 +179,13 @@ Policy:
 	       (test/run ,name))))))))
 
 ;; ~~ Custom Kernel for calling element-wise lisp kernel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defnode (:Testing :Test/Lisp-Lazy-Apply) () "" :slots ((f)))
 (defclass Custom/LazyApply (Func) ((f :initarg :f :accessor lazyapply-f))
   (:documentation "This custom op is dedicated to testing, only supported in Lisp VM"))
 (defmethod forward ((op Func) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op Func) &optional dout) (declare (ignore dout)) nil)
 (defmethod lower ((op Func) &rest nodes)
-  (with-context (_ (emit (make-node :Test/Custom :Test/Lisp-Lazy-Apply (list (gensym)) (map 'list #'node->id nodes) :f (lazyapply-f op))))))
+  (with-context (_ (emit (make-node :Testing :Test/Lisp-Lazy-Apply (list (gensym)) (map 'list #'node->id nodes) :f (lazyapply-f op))))))
 (defmethod %impl ((device (eql :lisp)) (op (eql :Test/Lisp-Lazy-Apply)) graph node args) (apply #'map-view nil (getattr node :f) args))
 (defun lazy-lisp (f tensor)
   (declare (type function f) (type tensor tensor))

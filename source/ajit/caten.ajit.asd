@@ -6,6 +6,7 @@
   :serial t
   :components
   ((:file "package")
+   (:file "attrs")
    (:file "helpers")
    (:file "simplifiers")
    (:file "type-relay")

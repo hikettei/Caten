@@ -23,7 +23,7 @@
 (defun make-fused-kernel-caller (fname args lambda fcaller-body code lang n-kernels)
   (declare (type device lang))
   (let ((lang (intern (symbol-name (class-name (class-of lang))) "KEYWORD")))
-    (make-node :IR :JIT_KERNEL
+    (make-node :JIT :JIT_KERNEL
 	       (map 'list #'argument-name args)
 	       (map 'list #'argument-name args)
 	       :fname fname :jit-info (make-jit-info :caller lambda :caller-body fcaller-body :lang lang :code code :n-kernels n-kernels

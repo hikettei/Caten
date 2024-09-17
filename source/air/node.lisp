@@ -22,25 +22,39 @@
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Node
 	    (:copier %copy-node)
-	    (:constructor make-node (class type writes reads &rest attrs
-				     &aux
-				       (writes (verify-buffers writes))
-				       (reads  (verify-buffers reads))
-				       (attrs (verify-attrs attrs)))))
+	    (:constructor %make-node (class type writes reads &rest attrs
+				      &aux
+					(writes (verify-buffers writes))
+					(reads  (verify-buffers reads))
+					(attr   (apply #'make-attr type (verify-attrs attrs)))
+					(id (progn (verify-args attr writes reads) (gensym "NID"))))))
   "y1 y2 y3 ... <- f(x1 ... xn)"
   (class class :type keyword)
-  (id (gensym "NID") :type symbol)
+  (id id :type symbol)
   (type type :type keyword)
   (writes writes :type list)
   (reads  reads :type list)
-  (attrs  attrs :type list))
+  (attr attr :type Attribute))
+
+(defun make-node (class type writes reads &rest attrs)
+  (apply #'%make-node class type writes reads attrs))
+
+(define-compiler-macro make-node (class type writes reads &rest attrs)
+  (if (keywordp type)
+      (let ((instance-key (cdr (gethash type *attribute->instance*))))
+	(when (null instance-key)
+	  (error "The node :~a is not defined. It needs to be defined by `defnode` before being used in make-node.
+The nodes defined at compile time are as follows:
+~a" type (debug/render-defined-nodes :ignore (if (find class `(:Testing :TMP)) nil `(:Testing :TMP)))))
+	`(%make-node ,class ,type ,writes ,reads ,@attrs))
+      `(%make-node ,class ,type ,writes ,reads ,@attrs)))
 
 (defun copy-node (node)
   (declare (type node node))
   (let ((copied-node (%copy-node node)))
     (setf (node-reads copied-node) (copy-list (node-reads node))
 	  (node-writes copied-node) (copy-list (node-writes node))
-	  (node-attrs copied-node) (copy-list (node-attrs node)))
+	  (node-attr copied-node) (apply #'make-attr (node-type node) (dump-into-list (node-attr node))))
     copied-node))
 
 (deftype dumpable-type () `(or symbol number keyword))
@@ -76,42 +90,32 @@
 		  (node-id node)
 		  (render-list (node-writes node))
 		  (render-list (node-reads node))
-		  (if (node-attrs node)	      
+		  (if (dump-into-list (node-attr node) :allow-unbound nil)
 		      (with-output-to-string (out)
 			(format out " where")
 			(dolist (k (getattrs node))
 			  (when k
 			    (format out " :~(~a~)=~a" k (getattr node k)))))
 		      ""))))))
-;;(defgeneric lower ())
-;;(defgeneric mutate ())
-;; NOTE: attrs must be updated via simplifier (as much as possible!), not (setf getattr)
+
 (defun getattrs (node)
   (declare (type node node))
-  (verify-attrs (node-attrs node))
-  (loop for i upfrom 0 to (1+ (/ (length (node-attrs node)) 2)) by 2
-	if (keywordp (nth i (node-attrs node)))
-	  collect (nth i (node-attrs node))))
-(defun getattr (node id)
+  (let ((attrs (dump-into-list (node-attr node) :allow-unbound nil)))
+    (loop for attr in attrs if attr collect attr)))
+
+(defun getattr (node id &key (allow-undefined nil))
   (declare (type node node) (type keyword id))
-  (ematch (node-attrs node) ((property id value) value)))
-(defun (setf getattr) (new-value node id) (setattr node id new-value))
+  (if (and allow-undefined (null (find id (getattrs node))))
+      nil
+      (%getattr (node-attr node) id)))
+(defun (setf getattr) (new-value node id &key (allow-undefined nil))
+  (if (and allow-undefined (null (find id (getattrs node))))
+      nil
+      (%setattr (node-attr node) id new-value)))
 (defun setattr (node id value)
   (declare (type node node) (type keyword id))
-  (let ((pos (position id (node-attrs node))))
-    (if pos
-	(setf (nth (1+ pos) (node-attrs node)) value)
-	(setf (node-attrs node) (append (node-attrs node) `(,id ,value))))))
-(defun remattr (node id)
+  (%setattr (node-attr node) id value))
+(defun remattr (node id &key (allow-undefined))
   (declare (type node node) (type keyword id))
-  (let ((pos (position id (node-attrs node))))
-    (when pos
-      (setf (node-attrs node)
-	    (loop for attr in (node-attrs node)
-		  for i upfrom 0
-		  unless (or (eql pos i) (eql (1+ pos) i))
-		    collect attr)))))
+  (setf (getattr node id :allow-undefined allow-undefined) nil)) 
 (defun node->id (node) (car (node-writes node)))
-;; ~~ syntax sugar for make-node ~~~~~~~
-;;(declaim (inline <>))
-;;(defun <> (type writes reads &rest attrs) (apply #'make-node :node type writes reads attrs))

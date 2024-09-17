@@ -112,9 +112,9 @@
       ;; TODO
       (mod x (1+ max))))
 (macrolet ((impl (kw op)
-	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args &aux (min (caten/common.dtype:dtype/min (buffer-dtype (car args)))) (max (caten/common.dtype:dtype/max (buffer-dtype (car args)))) (wrap-around (getattr node :wrap-around)))
+	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args &aux (min (caten/common.dtype:dtype/min (buffer-dtype (car args)))) (max (caten/common.dtype:dtype/max (buffer-dtype (car args)))) (wrap-around (getattr node :wrap-around :allow-undefined t)))
 		(declare (ignorable max min wrap-around))
-		(apply #'map-view (getattr node :reduction) ,op args))))
+		(apply #'map-view (getattr node :reduction :allow-undefined t) ,op args))))
   (impl :add #'(lambda (&rest args &aux (out (apply #'+ args))) (if wrap-around (wrap-around out max min) out)))
   (impl :mul #'(lambda (&rest args &aux (out (apply #'* args))) (if wrap-around (wrap-around out max min) out)))
   (impl :idiv #'(lambda (x y) (floor (/ x y))))

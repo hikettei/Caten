@@ -6,6 +6,9 @@
    #:dtype-t
    #:dtype->lisp
    #:dtype/cast)
+  ;; from attrs.lisp
+  (:export
+   #:JITAble)
   ;; from tensor-ir.lisp
   (:export
    #:*default-order*

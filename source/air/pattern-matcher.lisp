@@ -3,7 +3,8 @@
 
 ;; ~~ utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern symbol-eq (to-what)
-    `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
+  `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
+
 (defpattern <>Node
     (type args attrs)
     `(list*
@@ -11,29 +12,20 @@
       (and (list* _) (place ,args))
       (place ,attrs)))
 
-(defun ->property (attrs)
-  (verify-attrs attrs)
-  `(and
-    ,@(loop for nth upfrom 0 to (1+ (/ (length attrs) 2)) by 2
-	    for x = (nth nth attrs)
-	    for y = (nth (1+ nth) attrs)
-	    if (and x y)
-	      collect `(property ,x ,y))))
-
 (defpattern %Node
     (type args attrs)
-    (with-gensyms (id)
-      `(and
-	(Node
-	 :type ,type
-	 :reads ,args
-	 :attrs ,(->property attrs))
-	(Node :id ,id)
-	(satisfies
-	 (lambda (x)
-	   (declare (ignore x))
-	   (push ,id *matched-bind*)
-	   t)))))
+  (with-gensyms (id)
+    `(and
+      (Node
+       :type ,type
+       :reads ,args
+       :attr (,(find-attr type) ,@attrs))
+      (Node :id ,id)
+      (satisfies
+       (lambda (x)
+	 (declare (ignore x))
+	 (push ,id *matched-bind*)
+	 t)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun find/replace-rules (rules graph-bind &optional (recursive nil))
   (flet ((replace-form (r) (find/replace-rules r graph-bind t)))

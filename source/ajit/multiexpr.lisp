@@ -158,9 +158,9 @@
 							   (error "Cannot infer the output id for ~a" expr))))))))
 			       ;; EXPR (out-to aref ...)
 			       (assert (symbolp out-to))
-			       (make-node :EXPR :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
+			       (make-node :JIT :EXPR (node-writes node) `(,out-to ,@(map 'list #'expr-x arefs))
 					  :expr expr :_type_relay (make-inferred-type `(,out-type ,@(map 'list #'expr-y arefs)) (relay-writes (read-type-relay node)))
-					  :reduction (getattr node :reduction))))
+					  :reduction (getattr node :reduction :allow-undefined t))))
 			 else
 			   collect expr)))
 	    ;; :expr nil is removed

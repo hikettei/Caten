@@ -43,12 +43,12 @@ jobs:
         run: echo $PATH
       - name: (Lisp) JIT=0 AVM=LISP rove caten.asd
         run: |
-          ros config set dynamic-space-size 4gb
+          ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
           CI=1 JIT=0 AVM=LISP rove caten.asd
       - name: (Clang JIT) JIT=1 JIT_BACKEND=CLANG rove caten.asd
         run: |
           ulimit -n 8192
-          ros config set dynamic-space-size 4gb
+          ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
           CI=1 JIT=1 JIT_BACKEND=CLANG AVM=LISP rove caten.asd
