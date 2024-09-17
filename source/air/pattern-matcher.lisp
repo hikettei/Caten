@@ -72,12 +72,12 @@ Defines graph simplification rule
 Tips: return nil to skip the simplification process.
 Tips: (~ x) to accept n-args.
 TODO: Docs"
-  (with-gensyms (graph simplifier-bind apply-bind node-top count-bind)
-    `(defmethod ,name ((,graph Graph) &key (no-verify nil))
+  (with-gensyms (graph simplifier-bind apply-bind1 apply-bind2 node-top count-bind fast-graph-p)
+    `(defun ,name (,graph &key (no-verify nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)))
        (declare (type graph ,graph)
 		(type boolean no-verify)
 		(optimize (speed ,speed)))
-       (when (null (graph-nodes ,graph)) (return-from ,name))
+       (unless ,fast-graph-p (when (null (graph-nodes ,graph)) (return-from ,name)))
        (unless no-verify (verify-graph ,graph))
        (labels ((,simplifier-bind (,node-top ,count-bind
 				   &aux
@@ -102,26 +102,37 @@ TODO: Docs"
 		      ;;(when fixed-writes-to
 		      ;;  (let ((out (apply #'append (map 'list #'node-writes replace-rule))))
 		      ;;    (when (some #'(lambda (x) (null (find x out))) fixed-writes-to)
-		      ;;      (return-from ,simplifier-bind))))		      
-		      (setf (graph-nodes ,graph)
-			    (nconc
-			     (subseq (graph-nodes ,graph) 0 ,count-bind)
-			     replace-rule
-			     (subseq (graph-nodes ,graph) (1+ ,count-bind))))
-		      ;; this may not be required but reduce the number of nodes as many as possible
-		      (dolist (r matched)
-			;; the top node of matched patten is always replaced.
-			(when (and (not (eql r (node-id ,node-top))) (id->node ,graph r))
-			  ;; Subsequent nodes are removed if they are not used.
-			  (let ((writes (node-writes (id->node ,graph r))))
-			    (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
-			      (remnode ,graph r)))))
+		      ;;      (return-from ,simplifier-bind))))
+		      (if ,fast-graph-p
+			  (insert-nodes ,graph replace-rule)
+			  (setf (graph-nodes ,graph)
+				(nconc
+				 (subseq (graph-nodes ,graph) 0 ,count-bind)
+				 replace-rule
+				 (subseq (graph-nodes ,graph) (1+ ,count-bind)))))
+		      (when (not ,fast-graph-p)
+			;; this may not be required but reduce the number of nodes as many as possible
+			(dolist (r matched)
+			  ;; the top node of matched patten is always replaced.
+			  (when (and (not (eql r (node-id ,node-top))) (id->node ,graph r))
+			    ;; Subsequent nodes are removed if they are not used.
+			    (let ((writes (node-writes (id->node ,graph r))))
+			      (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
+				(remnode ,graph r))))))
 		      t)))
-		(,apply-bind (graph &aux (changed-p nil))
+		(,apply-bind1 (graph &aux (changed-p nil))
 		  (dotimes (nth (length (graph-nodes graph)))
 		    (when (,simplifier-bind (nth nth (graph-nodes graph)) nth)
 		      (setf changed-p t)))
-		  changed-p))
-	 (loop while (,apply-bind ,graph))
+		  changed-p)
+		(,apply-bind2 (id &key (changed-p nil))
+		  (let ((node (gethash id (%graph-nodes-table ,graph))))
+		    (when node
+		      (when (,simplifier-bind node -1)
+			(setf changed-p t))
+		      (or changed-p (some #'identity (map 'list #',apply-bind2 (node-reads node))))))))
+	 (if ,fast-graph-p
+	     (loop while (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph))))
+	     (loop while (,apply-bind1 ,graph)))
 	 (unless no-verify (verify-graph ,graph))
 	 ,graph))))
