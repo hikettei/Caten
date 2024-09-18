@@ -137,6 +137,9 @@ FastGraph[seen=~a, outputs=~a] {
 (defmethod verify-graph ((graph FastGraph) &key (no-purge nil))
   (declare (ignore no-purge))
   (setf (%graph-nodes-table graph) (%graph-nodes-table (->fast-graph (->graph graph))))
+  (let ((keys (hash-table-keys (%graph-nodes-table graph))))
+    (dolist (out (graph-outputs graph))
+      (assert (find out keys :test #'eq) () "verify-graph: Detected ~a was removed during verification process." out)))
   t)
 
 (defun special-p (kw) (declare (optimize (speed 3))) (search "SPECIAL/" (format nil "~a" kw)))
