@@ -142,12 +142,14 @@ FastGraph[seen=~a, outputs=~a] {
   t)
 
 (defmethod verify-graph ((graph FastGraph) &key (no-purge nil))
-  (declare (ignore no-purge))
+  (declare (ignore no-purge) (optimize (speed 3)))
   (let ((keys-initial (hash-table-keys (%graph-nodes-table graph))))
+    (declare (type list keys-initial))
     (setf (%graph-nodes-table graph) (%graph-nodes-table (->fast-graph (->graph graph))))
     (let ((keys (hash-table-keys (%graph-nodes-table graph))))
+      (declare (type list keys))
       (dolist (out (graph-outputs graph))
-	(when (and (null (find out keys :test #'eq)) (find out keys-initial))
+	(when (and (null (find (the symbol out) keys :test #'eq)) (find (the symbol out) keys-initial :test #'eq))
 	  (error "verify-graph: Detected ~a was removed during verification process." out))))
     t))
 

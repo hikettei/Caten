@@ -53,7 +53,7 @@ The nodes defined at compile time are as follows:
 	  (dolist (key input-keys)
 	    (assert (find key initargs) () "make-node: The attr :~a is not defined in the definition of ~a.
 Possible keywords are following: ~a" key type initargs)))
-	`(%make-node-inlined ,class ,type ,writes ,reads (make-instance ',instance-key ,@attrs)))
+	`(%make-node-inlined ,class ,type ,writes ,reads (make-instance ',instance-key :attr-module-key ,class :attr-type-key ,type ,@attrs)))
       `(%make-node ,class ,type ,writes ,reads ,@attrs)))
 
 (defun copy-node (node)
