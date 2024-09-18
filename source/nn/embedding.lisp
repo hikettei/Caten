@@ -28,8 +28,8 @@
 	(let* ((*default-order* :row)
 	       (model (Embedding 10 10)))
 	  (setf (slot-value model 'caten/nn::weight) (linspace `(10 10) 0.1 0.0))
-	  (let ((r1 (elements (proceed (call model (linspace `(2 10) 0 1)))))
-		(r2 (elements (proceed (call model (linspace `(2 10) 0 2))))))
+	  (let ((r1 (elements (proceed (forward model (linspace `(2 10) 0 1)))))
+		(r2 (elements (proceed (forward model (linspace `(2 10) 0 2))))))
 	    (ok (every (~= 1e-6) r1 #(1.0 1.1 1.2 1.3000001 1.4 1.5 1.6 1.7 1.8000001 1.9 1.0 1.1 1.2 1.3000001 1.4
 				      1.5 1.6 1.7 1.8000001 1.9 1.0 1.1 1.2 1.3000001 1.4 1.5 1.6 1.7 1.8000001 1.9
 				      1.0 1.1 1.2 1.3000001 1.4 1.5 1.6 1.7 1.8000001 1.9 1.0 1.1 1.2 1.3000001 1.4
