@@ -367,6 +367,8 @@
 			     for sid = (std->lid tid)
 			     for tensor = (tid->tensor tid)
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
+	;; If the graph was created from FastGraph, the time-series order should be broken.
+	;; call verify-graph to sort them.
 	(verify-graph graph)
 	(make-avm graph (session-name session)
 		  (session-tid->tensor session)
