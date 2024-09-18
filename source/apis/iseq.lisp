@@ -141,7 +141,8 @@
 
 (defun %make-graph-backward (session iseq &key (iseq-bw))
   (declare (type compiler-session session)
-	   (type list iseq))
+	   (type list iseq)
+	   (optimize (speed 3)))
   (labels ((%bwgraph (nodes)
 	     (declare (type list nodes))
 	     (assert (every #'tensor-p nodes) ())
@@ -183,12 +184,14 @@
   "Constructs a forward/backward graph based on iseq"
   (declare (type Compiler-Session session)
 	   (type list iseq toplevel-ids)
-	   (type tensor prev-grad))
+	   (type tensor prev-grad)
+	   (type fixnum maximum-recursion)
+	   (optimize (speed 3)))
   ;; Inserts toplevel_ids = pause_backward(toplevels)
   (setf (session-fw-out-ids session)
-	(append (session-fw-out-ids session) (map 'list #'tensor-id toplevels))
+	(nconc (session-fw-out-ids session) (map 'list #'tensor-id toplevels))
 	(session-bw-out-ids session)
-	(append
+	(nconc
 	 (session-bw-out-ids session)
 	 (loop for tensor in iseq
 	       if (and (null no-grad) (tensor-requires-grad tensor))
@@ -236,15 +239,15 @@
 		  for newti in toplevel-ids
 		  do (setf (gethash ti map) newti))
 	    (loop for out in (graph-outputs merged-graph)
-		  for nth upfrom 0 do
+		  for nth fixnum upfrom 0 do
 		    (setf (nth nth (graph-outputs merged-graph)) (or (gethash out map) out)))))
 	(let ((merged-graph (->fast-graph merged-graph)))
 	  ;; Function-level whole optimization
 	  (dolist (f external-simplifiers) (funcall f merged-graph))
 	  ;; Lower the :module if remained.
 	  ;; [TODO] Optimize: ->graph is slow.
-	  (flet ((ok () (null (find :Module (graph-nodes (->graph merged-graph)) :key #'node-class))))
-	    (loop until (ok) for n upfrom 0 do
+	  (flet ((ok () (null (find :Module (the list (graph-nodes (->graph merged-graph))) :key #'node-class))))
+	    (loop until (ok) for n fixnum upfrom 0 do
 	      (when (>= n maximum-recursion)
 		(error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
 	      (%lower-modules session merged-graph)
@@ -262,11 +265,12 @@
 
 (defun %module-obj->iseqfw (session module)
   (declare (type compiler-session session)
-	   (type module module))
+	   (type module module)
+	   (optimize (speed 3)))
   (let* ((lowered (multiple-value-list (apply #'impl module (func-variables module)))))
     (setf (module-impl-iseq module) (apply #'%tpsort-tensors session lowered))
     (let ((nodes (graph-nodes (%lower-iseq session (module-impl-iseq module) :no-verify t))))
-      (assert (= (length (module-lower-outputs module)) (length (module-outputs module))) ())
+      (assert (= (length (the list (module-lower-outputs module))) (length (the list (module-outputs module)))) ())
       (loop with tgt = (map
 			'list
 			#'(lambda (x)
@@ -276,12 +280,12 @@
 	    for n in nodes
 	    collect
 	    (progn
-	      (setf (node-writes n) (map 'list #'(lambda (x &aux (p (position x tgt :test #'eql))) (if p (nth p src) x)) (node-writes n)))
+	      (setf (node-writes n) (map 'list #'(lambda (x &aux (p (position (the symbol x) (the list tgt) :test #'eql))) (if p (nth p src) x)) (node-writes n)))
 	      n)))))
 
 (defun %module->iseqbw (session module prev-grad)
   "Module.backward(dout) -> Module.args[0].grad, Module.args[1].grad, ..."
-  (declare (type compiler-session session) (type Module module) (type tensor prev-grad))
+  (declare (type compiler-session session) (type Module module) (type tensor prev-grad) (optimize (speed 3)))
   ;; [TODO] Support multiple outputs of module
   ;; determine whichth output is it
   (when (null (module-impl-iseq module))
@@ -305,6 +309,7 @@
     graph))
 
 (defmethod %lower-modules ((session Compiler-Session) (graph FastGraph))
+  (declare (optimize (speed 3)))
   (maphash
    #'(lambda (write node)
        (declare (ignore write))
