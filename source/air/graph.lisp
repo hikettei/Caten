@@ -82,6 +82,7 @@ FastGraph[seen=~a, outputs=~a] {
 (defmethod remnode ((graph FastGraph) id) (remhash id (%graph-nodes-table graph)))
 (defmethod insert-nodes ((graph Graph) nodes) (nconc (graph-nodes graph) nodes))
 (defmethod insert-nodes ((graph FastGraph) nodes)
+  (declare (optimize (speed 3)))
   (dolist (node nodes)
     (dolist (w (node-writes node))
       (setf (gethash w (%graph-nodes-table graph)) node))))
