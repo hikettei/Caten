@@ -4,7 +4,13 @@
   ((nodes :initarg :nodes :type list :accessor %graph-nodes)
    (seen :initarg :seen :initform nil :type list :accessor graph-seen)
    (outputs :initarg :output :initform nil :type list :accessor graph-outputs))
-  (:documentation "Graph for general purpose."))
+  (:documentation "A Graph is a data structure used to handle a collection of nodes.
+
+Graph has a list of nodes (nodes), node inputs (seen), and node outputs (outputs).
+
+Unlike `FastGraph`, Graph does not assume that the nodes form a DAG. Additionally, it guarantees that the nodes will not be sorted during each process of the Pattern Matcher. Graph structures, such as Let-Binding, are represented using Graph.
+
+Note: Using Graph may lead to performance degradation if the graph is a DAG. Please use FastGraph instead."))
 
 (defmethod print-object ((graph Graph) stream)
   (format stream "
@@ -19,8 +25,9 @@ Graph[seen=~a, outputs=~a] {
 
 (defclass FastGraph (Graph)
   ((node-table :initform (make-hash-table :test 'eq) :type hash-table :accessor %graph-nodes-table))
-  (:documentation "Graph for a larger magnitude. Assuming the nodes has a DAG.
-イメージ: FastGraphの状態でSimplifyする -> Graphを手に入れてコンパイルする"))
+  (:documentation "
+FastGraph is a subclass of Graph that implements faster node searches based on the assumption that the nodes form a DAG. (It is approximately 20 times faster than Graph, in the larger scale.)
+Since FastGraph stores nodes as a hash-table, there are some constraints on node operations. If necessary, converting between ->fast-graph and ->graph can be done frequently with minimal impact on performance."))
 
 (defmethod print-object ((graph FastGraph) stream)
   (format stream "
