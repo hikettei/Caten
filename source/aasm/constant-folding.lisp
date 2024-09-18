@@ -30,7 +30,7 @@
     (%0_fuse_load_alloc)
     ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (number x)) -> (:_TmpScalarConst (x) :dtype dtype))
     ((:Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean x)) -> (:_TmpScalarBool () :value x))
-    ((:Cast ((:Allocate () :nrank 0 :dtype dtype-to) (:_TmpScalarConst (val) :dtype dtype-from)))
+    ((:Cast ((:Allocate () :nrank 0 :dtype dtype-to) (:_TmpScalarConst (val) :dtype _)))
      ->
      (:_TmpScalarConst ((caten/common.dtype:dtype/cast val dtype-to)) :dtype dtype-to)))
 
