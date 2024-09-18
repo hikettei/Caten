@@ -201,7 +201,7 @@ To sort the graph properly, resolve the following isolated graph dependencies.
 		(dolist (id (graph-outputs graph))
 		  (let ((seen nil))
 		    (format out "~%== [Report: backtrace on ~a] ===============~%" id)
-		    (labels ((find-stashed (id) (find (the symbol id) stashed :key #'(lambda (x) (node-writes (cdr x))) :test #'find))
+		    (labels ((find-stashed (id) (find id stashed :key #'(lambda (x) (node-writes (cdr x))) :test #'find))
 			     (indent (indent) (with-output-to-string (out) (dotimes (i (the fixnum indent)) (princ " " out))))
 			     (explore (id indent &key (stop nil) (parent nil))
 			       (declare (type fixnum indent))
