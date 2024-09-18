@@ -137,7 +137,7 @@ FastGraph[seen=~a, outputs=~a] {
   (declare (type graph graph)
 	   (optimize (speed 3)))
   (setf (graph-nodes graph)
-	(reverse
+	(nreverse
 	 (loop with seen = nil
 	       for node in (reverse (graph-nodes graph))
 	       if (null (find (the symbol (car (node-writes node))) seen))
@@ -162,6 +162,7 @@ FastGraph[seen=~a, outputs=~a] {
 (defun special-p (kw) (declare (optimize (speed 3))) (search "SPECIAL/" (format nil "~a" kw)))
 
 (defmethod resolve-isolated-nodes ((graph graph))
+  (declare (optimize (speed 3)))
   (let ((new-nodes) (seen (graph-seen graph)) (stashed))
     (declare (type list new-nodes seen stashed))
     (flet ((seen-p (reads) (every #'(lambda (x) (or (numberp x) (find x seen :test #'eql))) reads)))
@@ -189,7 +190,8 @@ FastGraph[seen=~a, outputs=~a] {
     (let ((initial-write-set (apply #'append (map 'list #'node-writes (graph-nodes graph))))
           (write-set (apply #'append (map 'list #'node-writes new-nodes))))
       (declare (type list write-set initial-write-set))
-      (assert (every #'(lambda (x) (or (find x write-set) (null (find x initial-write-set)))) (graph-outputs graph))
+      (declare (type list write-set initial-write-set))
+      (assert (every #'(lambda (x) (or (find (the symbol x) write-set) (null (find x initial-write-set)))) (graph-outputs graph))
               ()
               "graph-outputs ~a was removed during verification process.
 To sort the graph properly, resolve the following isolated graph dependencies.
@@ -199,10 +201,11 @@ To sort the graph properly, resolve the following isolated graph dependencies.
 		(dolist (id (graph-outputs graph))
 		  (let ((seen nil))
 		    (format out "~%== [Report: backtrace on ~a] ===============~%" id)
-		    (labels ((find-stashed (id) (find id stashed :key (compose #'node-writes #'cdr) :test #'find))
-			     (indent (indent) (with-output-to-string (out) (dotimes (i indent) (princ " " out))))
+		    (labels ((find-stashed (id) (find (the symbol id) stashed :key #'(lambda (x) (node-writes (cdr x))) :test #'find))
+			     (indent (indent) (with-output-to-string (out) (dotimes (i (the fixnum indent)) (princ " " out))))
 			     (explore (id indent &key (stop nil) (parent nil))
-			       (let ((seen-p (find id seen))
+			       (declare (type fixnum indent))
+			       (let ((seen-p (find (the (or number symbol) id) seen))
 				     (deps (find-stashed id)))
 				 (push id seen)
 				 (if deps
