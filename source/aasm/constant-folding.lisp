@@ -35,7 +35,7 @@
      (:_TmpScalarConst ((caten/common.dtype:dtype/cast val dtype-to)) :dtype dtype-to)))
 
 (defsimplifier
-    (%1_fold_constant :speed 0)
+    (%1_fold_constant)
     ((:Add ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((+ x y)) :dtype dtype))
     ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((* x y)) :dtype dtype))
     ((:Neg ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((- x)) :dtype dtype))
@@ -118,7 +118,8 @@
      ->
      ((node graph)
       (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))))
-
+;; [TODO] Recursiveを排除する
+;; [TODO] Optimize (speed 3)
 (defun fold-constant (graph &aux (n (length (graph-nodes graph))))
   (declare (type Graph graph))
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
@@ -144,7 +145,6 @@
 	      do (setf (node-reads node) (map 'list #'->new (node-reads node))))
 	(assert (equal (graph-outputs graph) (map 'list #'->new (graph-outputs graph))) ()))))
   (%2_unfold_load_alloc graph :no-verify t)
-  ;;(setf (graph-nodes graph) (loop for n in (graph-nodes graph) if (not (eql (node-type n) :_TmpPurged)) collect n))
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
 	  ()
 	  "_TmpScalarConst shouldn't exist! (but it is a simplifier's bug)")

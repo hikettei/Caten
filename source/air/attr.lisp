@@ -33,7 +33,7 @@
 (defgeneric %setattr (attr id value))
 (defgeneric %boundp (attr id))
 (defgeneric %attr-initargs (attr-id))
-(defgeneric get-output-to (attr &rest reads))
+(defgeneric %get-output-to (attr &rest reads))
 (defgeneric verify-args (attr writes reads))
 
 (defun find-attr (attr-key)
@@ -53,7 +53,8 @@
 	(format out "- ~a~%" superclass)))))
 
 (defmacro defnode ((module type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
-  "Defines a new attribute."
+  "Defines a new attribute.
+- placeholder[(unsigned-byte 32) or -1] -1 to ignore"
   (declare (type keyword module type)
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
@@ -134,7 +135,11 @@
 		    for slotname = (c2mop:slot-definition-name slot)
 		    if initarg
 		      append (list initarg `(and (slot-boundp attr ',slotname) (slot-value attr ',slotname)))))))
-       (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,placeholder reads)))))
+       (defmethod %get-output-to ((attr ,class-name) &rest reads) (if (= ,placeholder -1) nil (nth ,placeholder reads))))))
+
+(defun get-output-to (node)
+  (declare (type node node))
+  (apply #'%get-output-to (node-attr node) (node-reads node)))
 
 (defmethod dump-into-list :around ((attr Attribute) &key (allow-unbound t))
   (let ((attrs (call-next-method)))

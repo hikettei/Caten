@@ -383,10 +383,6 @@ Lifespan:
 "
   (flet ((sync ()
 	   (dolist (node (graph-nodes (mp-graph mp))) (mp-update-node mp node))
-	   (dolist (g (mp-groups mp))
-	     (when (group-realize-on-vm g)
-	       (dolist (node (graph-nodes (group-graph g)))
-		 (mp-update-node mp node))))
 	   (mp-update-avm mp avm)))
     (sync)
     (let* ((trace-table (make-hash-table))
@@ -399,6 +395,7 @@ Lifespan:
 	    for nth upfrom 0
 	    for lock-p = (getattr node :_no_group_realize_on_vm) do
 	      ;; Not going to make the dynamic shape in-place.
+	      ;; beucase they are constant (e.g.: const uint_32 a)
 	      (when (and (eql (node-type node) :Load) (symbolp (getattr node :value)))
 		(push (getattr node :value) constants))
 	      (loop for val in (node-reads1 node)
@@ -431,7 +428,7 @@ Lifespan:
 	(setf (mp-alias mp) alias-map)))
     (sync)
     (loop for group in (mp-groups mp)
-	  for kernel in (mp-kernels mp)
+	  for kernel in (mp-kernels mp) ;; update arguments
 	  if kernel do (dolist (k kernel) (apply-current-plan mp group k)))))
 
 (defun remove-unused-kernels (groups kernels meta-id
