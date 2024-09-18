@@ -31,13 +31,14 @@
 (defun session/update-outputs (session graph)
   "This should occur just after make-graph was happened."
   (declare (type compiler-session session)
-	   (type graph graph))
+	   (type graph graph)
+	   (optimize (speed 3)))
   (setf (graph-outputs graph)
 	(loop for id in `(,@(session-fw-out-ids session))
 	      append
 	      (let ((res (session/read session id t)))
 		(and (not (eql res t)) (node-writes res))))
-	(graph-outputs graph) (append (graph-outputs graph) (session-bw-out-ids session))))
+	(graph-outputs graph) (nconc (graph-outputs graph) (session-bw-out-ids session))))
 
 (defun session/assign (session tid node)
   (declare (type Compiler-Session session)
@@ -69,7 +70,8 @@
 
 (defun session/set-multi-grad (session grad-id tid alloc)
   (declare (type Compiler-Session session)
-	   (type symbol grad-id tid))
+	   (type symbol grad-id tid)
+	   (optimize (speed 3)))
   ;; cons (top-id, rest-grads)
   (if (gethash grad-id (session-grad->grads session))
       (let ((form (gethash grad-id (session-grad->grads session))))
@@ -81,16 +83,18 @@
 
 (defun session/sync-multi-grads (session graph)
   (declare (type Compiler-session session)
-	   (type graph graph))
+	   (type graph graph)
+	   (optimize (speed 3)))
   (maphash
    #'(lambda (grad-id leaves)
        (multiple-value-bind (final-grad-id rest-grads) (apply #'values leaves)
+	 (declare (type list rest-grads))
 	 ;; [TODO] Since we intentionally detached the gradient accumlation
 	 ;; we got a lot of additional change here to optimize/inline zero_grad/accum_grad
 	 ;; e.g.: rewriting ADD -> MOVE
 	 (if (= (length rest-grads) 0)
 	     (loop for node in (graph-nodes graph)
-		   if (and (= (length (node-writes node)) 1) (eql final-grad-id (car (node-writes node))))
+		   if (and (= (length (node-writes node)) 1) (eql final-grad-id (the symbol (car (node-writes node)))))
 		     do (setf (node-writes node) (list grad-id))
 			(session/assign session grad-id node))
 	     (if (>= (length rest-grads) 2)
@@ -112,7 +116,8 @@
 (defun %lower-iseq (session iseq &key (no-verify nil))
   "Lowers iseq (a list of topologically sorted tensors) into caten/air graph."
   (declare (type compiler-session session)
-	   (type list iseq))
+	   (type list iseq)
+	   (optimize (speed 3)))
   (let ((nodes))
     (flet ((t->id (x) (session/read session (tensor-id x))))
       (dolist (tensor iseq)
@@ -124,10 +129,10 @@
 	(let ((low-graph (apply #'lower (tensor-op tensor) (map 'list #'t->id (func-variables (tensor-op tensor))))))
 	  (assert (graph-p low-graph) () "%tensor->asm: lower(~a, ...) should return a graph, butgot ~a" (tensor-op tensor) low-graph)
 	  (assert (every #'node-p (graph-nodes low-graph)) () "%tensor->asm: received invaild nodes. all elements should be a node. ~a" low-graph)
-	  (assert (>= (length (graph-nodes low-graph)) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
+	  (assert (>= (length (the list (graph-nodes low-graph))) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
 	  (let ((final (car (last (graph-nodes low-graph)))))
 	    (session/assign session (tensor-id tensor) final))
-	  (setf nodes (append nodes (graph-nodes low-graph))))))
+	  (setf nodes (nconc nodes (graph-nodes low-graph))))))
     (let ((graph (apply #'make-graph nodes)))
       (unless no-verify (session/update-outputs session graph))
       ;; [TODO] ↓ unnecessary
