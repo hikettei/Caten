@@ -28,16 +28,19 @@
   (declare (type Compiler-Session session) (type symbol tid) (type tensor tensor))
   (setf (gethash tid (session-tid->tensor session)) tensor))
 
-(defun session/update-outputs (session graph)
+(defun session/update-outputs (session graph &key (alias))
   "This should occur just after make-graph was happened."
   (declare (type compiler-session session)
 	   (type graph graph)
 	   (optimize (speed 3)))
   (setf (graph-outputs graph)
 	(loop for id in `(,@(session-fw-out-ids session))
-	      append
-	      (let ((res (session/read session id t)))
-		(and (not (eql res t)) (node-writes res))))
+	      if (and alias (gethash id alias))
+		collect (gethash id alias)
+	      else
+		append
+		(let ((res (session/read session id t)))
+		  (and (not (eql res t)) (node-writes res))))
 	(graph-outputs graph) (nconc (graph-outputs graph) (session-bw-out-ids session))))
 
 (defun session/assign (session tid node)
@@ -232,15 +235,13 @@
 	(when (null no-grad) (session/sync-multi-grads session merged-graph))
 	;; If Pause/Backward was generated, use toplevel-ids instead of toplevels because
 	;; val_1_1 val_2_1 <- pause/backward(val_1, val_2) was generated.
-	(session/update-outputs session merged-graph)
-	(when pause-backward-p
-	  (let ((map (make-hash-table)))
-	    (loop for ti in (map 'list #'tensor-id toplevels)
-		  for newti in toplevel-ids
-		  do (setf (gethash ti map) newti))
-	    (loop for out in (graph-outputs merged-graph)
-		  for nth fixnum upfrom 0 do
-		    (setf (nth nth (graph-outputs merged-graph)) (or (gethash out map) out)))))
+	(if pause-backward-p
+	    (let ((map (make-hash-table)))
+	      (loop for ti in (map 'list #'tensor-id toplevels)
+		    for newti in toplevel-ids
+		    do (setf (gethash ti map) newti))
+	      (session/update-outputs session merged-graph :alias map))
+	    (session/update-outputs session merged-graph))
 	(let ((merged-graph (->fast-graph merged-graph)))
 	  ;; Function-level whole optimization
 	  (dolist (f external-simplifiers) (funcall f merged-graph))
@@ -366,6 +367,7 @@
 			     for sid = (std->lid tid)
 			     for tensor = (tid->tensor tid)
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
+	(verify-graph graph)
 	(make-avm graph (session-name session)
 		  (session-tid->tensor session)
 		  (if pause-backward-p
