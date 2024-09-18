@@ -18,6 +18,9 @@
 (defparameter *default-int*   (ctx:getenv :DEFAULT_INT))
 (defparameter *default-uint*  (ctx:getenv :DEFAULT_UINT))
 
+(defun size-p (x) (or (integerp x) (node-p x)))
+(defun node->id1 (x) (if (integerp x) x (node->id x)))
+
 (defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")) (from nil))
   "Equivalent to `dtype i[shape];`
 From can be either of nil or Buffer, if buffer is specified, it loads the content of buffer instead of allocating it."
@@ -25,16 +28,16 @@ From can be either of nil or Buffer, if buffer is specified, it loads the conten
 	   (type list shape stride)
 	   (type dtype-t dtype)
 	   (type symbol id))
-  (assert (every #'node-p shape) () "Assertion Failed: Shapes must be a list of Node.")
-  (assert (every #'node-p stride) () "Assertion Failed: Strides must be a list of Node.")
+  (assert (every #'size-p shape) () "Assertion Failed: Shapes must be a list of Node or integer.")
+  (assert (every #'size-p stride) () "Assertion Failed: Strides must be a list of Node or integer.")
   (assert (= nrank (length shape) (length stride)) () "Assertion Failed: the rank must be determined before the compilation.
 nrank=~a
 shape=~a
 stride=~a" nrank shape stride)
   (multiple-value-bind (shape stride)
       (values
-       (map 'list #'node->id shape)
-       (map 'list #'node->id stride))
+       (map 'list #'node->id1 shape)
+       (map 'list #'node->id1 stride))
     (emit (make-node :Buffer :Allocate (list id) (append shape stride) :nrank nrank :dtype dtype :from from))))
 
 (defun %salloc (&key (dtype *default-float*) (id (gensym "SID")))

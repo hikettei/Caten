@@ -14,7 +14,7 @@
     ;; [TODO] Fix why shape infer fails
     (when (or (null nrank) (null dtype))
       (return-from reinitialize-tensor))
-    (flet ((->find (x) (id->value graph x)))
+    (flet ((->find (x) (or (id->value graph x) x)))
       (setf shape (map 'list #'->find shape)
 	    stride (map 'list #'->find stride)))
     (let ((viewed (every #'identity views)))
