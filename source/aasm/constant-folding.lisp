@@ -118,8 +118,7 @@
      ->
      ((node graph)
       (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))))
-;; [TODO] Recursiveを排除する
-;; [TODO] Optimize (speed 3)
+
 (defmethod fold-constant ((graph Graph) &aux (n (length (graph-nodes graph))))
   (declare (type Graph graph))
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
