@@ -20,6 +20,7 @@
 	  "verify-buffers: Buffers are number or symbol. ~a" buffers)
   buffers)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(declaim (inline %make-node-inlined))
 (defstruct (Node
 	    (:copier %copy-node)
 	    (:constructor %make-node-inlined (class type writes reads attr &aux (id (gensym "NID"))))
