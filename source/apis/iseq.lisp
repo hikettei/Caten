@@ -138,7 +138,6 @@
 	  (setf nodes (nconc nodes (graph-nodes low-graph))))))
     (let ((graph (apply #'make-graph nodes)))
       (unless no-verify (session/update-outputs session graph))
-      ;; [TODO] ↓ unnecessary
       (unless no-verify (verify-graph graph))
       graph)))
 
@@ -199,64 +198,65 @@
 	 (loop for tensor in iseq
 	       if (and (null no-grad) (tensor-requires-grad tensor))
 		 collect (tensor-grad-id tensor))))
-  (let* ((forward-graph
-	   (prog1
-	       (->fast-graph (%lower-iseq session iseq))
-	     (session/setgrad session (tensor-id (car (last iseq))) prev-grad)))
-	 (iseq-bw (when (null no-grad) (%tpsort-tensors session prev-grad)))
-	 (pause-backward-p))
-    ;; (Forward Mode) First, simplify the forward graph in :Module/:Func level
-    (dolist (f external-simplifiers) (funcall f forward-graph))
-    ;; Second, lower an :module into a list of :func
-    (%lower-modules session forward-graph)
-    ;; Finally, simplifying all the lowered :func. (ir-level optimization is all with regard to forward)
-    (dolist (f external-simplifiers) (funcall f forward-graph))
-    ;; (Backward Mode) First, create a reverse-mode backward tape from the sorted forward graph.
-    ;; the tapes consequent after the allocation of prev-grad.
-    (when (null no-grad) (setf iseq-bw (%make-graph-backward session iseq :iseq-bw iseq-bw)))
-    ;; the backward graph depends on the forward graph (save-for-backward)
-    ;; do not simplify or verify them until merging
-    ;; fold :module from backward graph
-    (let ((backward-graph (when (null no-grad) (%lower-iseq session iseq-bw :no-verify t))))
-      ;; backward-graph depends on forward-graph, they should not simplified/verified until merged
-      (let* ((forward-graph (->graph forward-graph))
-	     (merged-graph
-	       (apply
-		#'make-graph
-		(nconc
-		 (graph-nodes forward-graph)
-		 (and
-		  (graph-nodes forward-graph)
-		  (null no-grad)
-		  (setf pause-backward-p t)
-		  (list (make-node :Special/VM :Pause/Backward toplevel-ids (list (node->id (car (last (graph-nodes forward-graph))))))))
-		 (and backward-graph (graph-nodes backward-graph))))))
-	;; Rewrite/Optimize f(A) + f(A) grad accumlation
-	(when (null no-grad) (session/sync-multi-grads session merged-graph))
-	;; If Pause/Backward was generated, use toplevel-ids instead of toplevels because
-	;; val_1_1 val_2_1 <- pause/backward(val_1, val_2) was generated.
-	(if pause-backward-p
-	    (let ((map (make-hash-table)))
-	      (loop for ti in (map 'list #'tensor-id toplevels)
-		    for newti in toplevel-ids
-		    do (setf (gethash ti map) newti))
-	      (session/update-outputs session merged-graph :alias map))
-	    (session/update-outputs session merged-graph))
-	(let ((merged-graph (->fast-graph merged-graph)))
-	  ;; Function-level whole optimization
-	  (dolist (f external-simplifiers) (funcall f merged-graph))
-	  ;; Lower the :module if remained.
-	  ;; [TODO] Optimize: ->graph is slow.
-	  (flet ((ok () (null (find :Module (the list (graph-nodes (->graph merged-graph))) :key #'node-class))))
-	    (loop until (ok) for n fixnum upfrom 0 do
-	      (when (>= n maximum-recursion)
-		(error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
-	      (%lower-modules session merged-graph)
-	      ;; Func level whole optimization
-	      (dolist (f external-simplifiers) (funcall f merged-graph))))
-	  ;; verify and complete
-	  (verify-graph merged-graph)
-	  (values (->graph merged-graph) pause-backward-p))))))
+  (flet ((lower-all (graph)
+	   (flet ((ok () (null (find :Module (the list (graph-nodes (->graph graph))) :key #'node-class))))
+	     (loop until (ok) for n fixnum upfrom 0 do
+	       (when (>= n maximum-recursion)
+		 (error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
+	       (%lower-modules session graph)
+	       ;; Func level whole optimization
+	       (dolist (f external-simplifiers) (funcall f graph))))))
+    (let* ((forward-graph
+	     (prog1
+		 (->fast-graph (%lower-iseq session iseq))
+	       (session/setgrad session (tensor-id (car (last iseq))) prev-grad)))
+	   (iseq-bw (when (null no-grad) (%tpsort-tensors session prev-grad)))
+	   (pause-backward-p))
+      ;; (Forward Mode) First, simplify the forward graph in :Module/:Func level
+      (dolist (f external-simplifiers) (funcall f forward-graph))
+      ;; Second, lower an :module into a list of :func
+      (lower-all forward-graph)
+      ;; Finally, simplifying all the lowered :func. (ir-level optimization is all with regard to forward)
+      (dolist (f external-simplifiers) (funcall f forward-graph))
+      ;; (Backward Mode) First, create a reverse-mode backward tape from the sorted forward graph.
+      ;; the tapes consequent after the allocation of prev-grad.
+      (when (null no-grad) (setf iseq-bw (%make-graph-backward session iseq :iseq-bw iseq-bw)))
+      ;; the backward graph depends on the forward graph (save-for-backward)
+      ;; do not simplify or verify them until merging
+      ;; fold :module from backward graph
+      (let ((backward-graph (when (null no-grad) (%lower-iseq session iseq-bw :no-verify t))))
+	;; backward-graph depends on forward-graph, they should not simplified/verified until merged
+	(let* ((forward-graph (->graph forward-graph))
+	       (merged-graph
+		 (apply
+		  #'make-graph
+		  (nconc
+		   (graph-nodes forward-graph)
+		   (and
+		    (graph-nodes forward-graph)
+		    (null no-grad)
+		    (setf pause-backward-p t)
+		    (list (make-node :Special/VM :Pause/Backward toplevel-ids (list (node->id (car (last (graph-nodes forward-graph))))))))
+		   (and backward-graph (graph-nodes backward-graph))))))
+	  ;; Rewrite/Optimize f(A) + f(A) grad accumlation
+	  (when (null no-grad) (session/sync-multi-grads session merged-graph))
+	  ;; If Pause/Backward was generated, use toplevel-ids instead of toplevels because
+	  ;; val_1_1 val_2_1 <- pause/backward(val_1, val_2) was generated.
+	  (if pause-backward-p
+	      (let ((map (make-hash-table)))
+		(loop for ti in (map 'list #'tensor-id toplevels)
+		      for newti in toplevel-ids
+		      do (setf (gethash ti map) newti))
+		(session/update-outputs session merged-graph :alias map))
+	      (session/update-outputs session merged-graph))
+	  (let ((merged-graph (->fast-graph merged-graph)))
+	    ;; Function-level whole optimization
+	    (dolist (f external-simplifiers) (funcall f merged-graph))
+	    ;; Lower the :module if remained.
+	    (lower-all merged-graph)
+	    ;; verify and complete
+	    (verify-graph merged-graph)
+	    (values (->graph merged-graph) pause-backward-p)))))))
 ;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %module->iseqfw (session module)
   (declare (type compiler-session session) (type node module))
