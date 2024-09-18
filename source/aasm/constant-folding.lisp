@@ -160,10 +160,10 @@
       (verify-graph graph))
   graph)
 
-(defmethod fold-constant ((graph FastGraph) &aux (n (length (graph-nodes graph))))
+(defmethod fold-constant ((graph FastGraph))
   (%0_fuse_load_alloc graph :no-verify t)
-  (%1_fold_constant graph :no-verify t)
-  (let ((purges (loop for node in (graph-nodes graph)
+  (let ((matched-p (%1_fold_constant graph :no-verify t :return-changed-p t))
+	(purges (loop for node in (graph-nodes graph)
 		      if (eql (node-type node) :_TmpPurged)
 			collect node)))
     ;; If y <- _TmpPurge(x), rewrite all y with x
@@ -176,9 +176,9 @@
 	(loop for node in (graph-nodes graph)
 	      for n upfrom 0
 	      do (setf (node-reads node) (map 'list #'->new (node-reads node))))
-	(assert (equal (graph-outputs graph) (map 'list #'->new (graph-outputs graph))) ()))))
-  (%2_unfold_load_alloc graph :no-verify t)
-  (verify-graph graph)
-  (if (= (length (graph-nodes graph)) n)
-      graph
-      (fold-constant graph)))
+	(assert (equal (graph-outputs graph) (map 'list #'->new (graph-outputs graph))) ())))
+    (%2_unfold_load_alloc graph :no-verify t)
+    (verify-graph graph)
+    (if matched-p
+	(fold-constant graph)
+	graph)))
