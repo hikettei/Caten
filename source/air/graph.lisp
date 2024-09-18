@@ -63,7 +63,9 @@ FastGraph[seen=~a, outputs=~a] {
 	      do (return-from id->value node))))
 
 (defmethod id->value ((graph FastGraph) id)
-  (gethash id (%graph-nodes-table graph)))
+  (if (symbolp id)
+      (gethash id (%graph-nodes-table graph))
+      nil))
 
 (defmethod id->node ((graph Graph) id)
   (declare (type graph graph) (optimize (speed 3)))
@@ -78,9 +80,7 @@ FastGraph[seen=~a, outputs=~a] {
 	      unless (eql id (node-id node)) collect node)))
 
 (defmethod remnode ((graph FastGraph) id) (remhash id (%graph-nodes-table graph)))
-
 (defmethod insert-nodes ((graph Graph) nodes) (nconc (graph-nodes graph) nodes))
-
 (defmethod insert-nodes ((graph FastGraph) nodes)
   (dolist (node nodes)
     (dolist (w (node-writes node))
@@ -88,12 +88,14 @@ FastGraph[seen=~a, outputs=~a] {
 
 (defun ->fast-graph (graph)
   (declare (type graph graph))
+  (return-from ->fast-graph graph)
   (assert (graph-outputs graph) () "Cannot create a fast graph because the graph does not have a `outputs`.")
   (let ((fast-graph (make-instance 'FastGraph :output (graph-outputs graph) :seen (graph-seen graph))))
     (insert-nodes fast-graph (graph-nodes graph))
     fast-graph))
 
-(defun ->graph (fast-graph)
+(defmethod ->graph ((graph Graph)) graph)
+(defmethod ->graph ((fast-graph FastGraph))
   (declare (type FastGraph fast-graph) (optimize (speed 3)))
   (assert (graph-outputs fast-graph) () "Cannot create a graph from the given fast graph because it does not provide a `outputs`.")
   (let ((result) (seen nil))
@@ -134,6 +136,7 @@ FastGraph[seen=~a, outputs=~a] {
 
 (defmethod verify-graph ((graph FastGraph) &key (no-purge nil))
   (declare (ignore no-purge))
+  (setf (%graph-nodes-table graph) (%graph-nodes-table (->fast-graph (->graph graph))))
   t)
 
 (defun special-p (kw) (declare (optimize (speed 3))) (search "SPECIAL/" (format nil "~a" kw)))

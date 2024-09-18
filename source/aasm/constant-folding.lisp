@@ -120,7 +120,7 @@
       (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))))
 ;; [TODO] Recursiveを排除する
 ;; [TODO] Optimize (speed 3)
-(defun fold-constant (graph &aux (n (length (graph-nodes graph))))
+(defmethod fold-constant ((graph Graph) &aux (n (length (graph-nodes graph))))
   (declare (type Graph graph))
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
 	  ()
@@ -160,3 +160,26 @@
 	(fold-constant graph))
       (verify-graph graph))
   graph)
+
+(defmethod fold-constant ((graph FastGraph) &aux (n (length (graph-nodes graph))))
+  (%0_fuse_load_alloc graph :no-verify t)
+  (%1_fold_constant graph :no-verify t)
+  (let ((purges (loop for node in (graph-nodes graph)
+		      if (eql (node-type node) :_TmpPurged)
+			collect node)))
+    ;; If y <- _TmpPurge(x), rewrite all y with x
+    (dolist (pnode purges)
+      (assert (symbolp (car (node-reads pnode))))
+      (flet ((->new (x)
+	       (if (eql (car (node-writes pnode)) x)
+		   (car (node-reads pnode))
+		   x)))
+	(loop for node in (graph-nodes graph)
+	      for n upfrom 0
+	      do (setf (node-reads node) (map 'list #'->new (node-reads node))))
+	(assert (equal (graph-outputs graph) (map 'list #'->new (graph-outputs graph))) ()))))
+  (%2_unfold_load_alloc graph :no-verify t)
+  (verify-graph graph)
+  (if (= (length (graph-nodes graph)) n)
+      graph
+      (fold-constant graph)))

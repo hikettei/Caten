@@ -35,7 +35,7 @@ for (int _gid=0;_gid<val_2;_gid++) { ... }
 When determining the validity of fusing the two outermost loops, the ISL scheduler may need to know `val_1==val_2`.
 In this simplification, we enumerate all of such dynamic computation arithmetic and remove all but the first one, updating read dependencies to keep the graph structure.
 This may reduce the compilation time of the dynamic kernel dramatically, also simplifies the generated kernel. (duplicated computation are eliminated)"
-  (declare (type graph graph))
+  (declare (type (or FastGraph Graph) graph))
   ;; 2. (First step) Remove duplicated dynamic shape loading path. e.g.: the following pattern can be considered in the caten/apis design:
   ;; val_1 = _TmpDynamicShape(a)
   ;; val_2 = _TmpDynamicShape(a)
@@ -69,19 +69,22 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
 			 node)
 		       node))))
 	     (r (sym) (ensure-gethash sym alias sym)))
-	(setf (graph-nodes graph)
-	      (loop for node in (graph-nodes graph)
-		    for new = (read-cache node)
-		    if new collect new))
+	(etypecase graph
+	  (FastGraph
+	   (insert-nodes graph
+			 (loop for node in (graph-nodes graph)
+			       for new = (read-cache node) if new collect new)))
+	  (Graph
+	   (setf (graph-nodes graph)
+		 (loop for node in (graph-nodes graph)
+		       for new = (read-cache node)
+		       if new collect new))))
 	(dolist (n (graph-nodes graph))
 	  (setf (node-reads n) (map 'list #'r (node-reads n))))))
-    ;; [TODO] Apply recursively?
-    ;; [TODO] If the EXPR was nested? a * b + c
     (verify-graph graph)
     graph))
 
 (defun optimize-aasm (graph)
-  (declare (type graph graph))
   (fold-constant graph)
   (simplify-dynamic-arithmetic graph)
   (fuse-duplicated-store graph))
