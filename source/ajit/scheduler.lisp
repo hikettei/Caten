@@ -575,8 +575,6 @@ Optional order fusing softmax in a single kernel is:
   (let ((graph (group-graph group))
 	(stashed-path)
 	(seen))
-    (when (eql (node-type (car (graph-nodes (group-graph group)))) :pause/backward)
-      (return-from recursive-split-into-subgroups (list group)))
     (labels ((finalize-group (group)
 	       ;; Infers group-writes
 	       (make-group (graph-nodes (group-graph group)) (group-realize-on-vm group)))
@@ -596,7 +594,7 @@ Optional order fusing softmax in a single kernel is:
 		   (if (force-realize-on-vm node)
 		       (progn
 			 (push node stashed-path)
-			 nil)			 
+			 nil)
 		       (make-group
 			(append
 			 (loop for read in (node-reads node)
@@ -649,16 +647,11 @@ Optional order fusing softmax in a single kernel is:
 	  ,(make-group (nreverse groups) nil)))))))
 
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list)) create-schedules-from-avm))
-(defun create-schedules-from-avm (avm &key (verbose nil) &aux (backward-mode-p (not (null (avm-bw-outputs avm)))))
+(defun create-schedules-from-avm (avm &key (verbose nil))
   "Step1, Creates an initial schedule"
   (declare (type avm avm) (type boolean verbose))
   ;; Trace the view and dtype information.
   (let* ((type-map (run-type-infer avm)) (*recursive-find-seen* nil) (seen nil))
-    (when (and (not backward-mode-p)
-	       (graph-nodes (avm-graph avm))
-	       (eql :PAUSE/BACKWARD (node-type (car (last (graph-nodes (avm-graph avm)))))))
-      ;; When no backward graph are compiled, remove :PAUSE/BACKWARD to make more chances of in-place computation.
-      (setf (graph-nodes (avm-graph avm)) (butlast (graph-nodes (avm-graph avm)))))
     (when verbose
       (format t "Verbose: Initial Computation Graph[Forward/Backward]~%")
       (uiop:symbol-call (find-package :caten) :print-avm avm))

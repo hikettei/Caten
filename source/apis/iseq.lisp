@@ -28,16 +28,20 @@
   (declare (type Compiler-Session session) (type symbol tid) (type tensor tensor))
   (setf (gethash tid (session-tid->tensor session)) tensor))
 
-(defun session/update-outputs (session graph)
+(defun session/update-outputs (session graph &key (alias))
   "This should occur just after make-graph was happened."
   (declare (type compiler-session session)
-	   (type graph graph))
+	   (type graph graph)
+	   (optimize (speed 3)))
   (setf (graph-outputs graph)
 	(loop for id in `(,@(session-fw-out-ids session))
-	      append
-	      (let ((res (session/read session id t)))
-		(and (not (eql res t)) (node-writes res))))
-	(graph-outputs graph) (append (graph-outputs graph) (session-bw-out-ids session))))
+	      if (and alias (gethash id alias))
+		collect (gethash id alias)
+	      else
+		append
+		(let ((res (session/read session id t)))
+		  (and (not (eql res t)) (node-writes res))))
+	(graph-outputs graph) (nconc (graph-outputs graph) (session-bw-out-ids session))))
 
 (defun session/assign (session tid node)
   (declare (type Compiler-Session session)
@@ -69,28 +73,31 @@
 
 (defun session/set-multi-grad (session grad-id tid alloc)
   (declare (type Compiler-Session session)
-	   (type symbol grad-id tid))
+	   (type symbol grad-id tid)
+	   (optimize (speed 3)))
   ;; cons (top-id, rest-grads)
   (if (gethash grad-id (session-grad->grads session))
       (let ((form (gethash grad-id (session-grad->grads session))))
 	(setf (gethash grad-id (session-grad->grads session))
 	      (if alloc
 		  (list tid (second form))
-		  (list (first form) (append (list tid) (second form))))))
+		  (list (first form) (nconc (list tid) (second form))))))
       (setf (gethash grad-id (session-grad->grads session)) (if alloc (list tid nil) (list nil (list tid))))))
 
 (defun session/sync-multi-grads (session graph)
   (declare (type Compiler-session session)
-	   (type graph graph))
+	   (type graph graph)
+	   (optimize (speed 3)))
   (maphash
    #'(lambda (grad-id leaves)
        (multiple-value-bind (final-grad-id rest-grads) (apply #'values leaves)
+	 (declare (type list rest-grads))
 	 ;; [TODO] Since we intentionally detached the gradient accumlation
 	 ;; we got a lot of additional change here to optimize/inline zero_grad/accum_grad
 	 ;; e.g.: rewriting ADD -> MOVE
 	 (if (= (length rest-grads) 0)
 	     (loop for node in (graph-nodes graph)
-		   if (and (= (length (node-writes node)) 1) (eql final-grad-id (car (node-writes node))))
+		   if (and (= (length (node-writes node)) 1) (eql final-grad-id (the symbol (car (node-writes node)))))
 		     do (setf (node-writes node) (list grad-id))
 			(session/assign session grad-id node))
 	     (if (>= (length rest-grads) 2)
@@ -112,7 +119,8 @@
 (defun %lower-iseq (session iseq &key (no-verify nil))
   "Lowers iseq (a list of topologically sorted tensors) into caten/air graph."
   (declare (type compiler-session session)
-	   (type list iseq))
+	   (type list iseq)
+	   (optimize (speed 3)))
   (let ((nodes))
     (flet ((t->id (x) (session/read session (tensor-id x))))
       (dolist (tensor iseq)
@@ -124,18 +132,20 @@
 	(let ((low-graph (apply #'lower (tensor-op tensor) (map 'list #'t->id (func-variables (tensor-op tensor))))))
 	  (assert (graph-p low-graph) () "%tensor->asm: lower(~a, ...) should return a graph, butgot ~a" (tensor-op tensor) low-graph)
 	  (assert (every #'node-p (graph-nodes low-graph)) () "%tensor->asm: received invaild nodes. all elements should be a node. ~a" low-graph)
-	  (assert (>= (length (graph-nodes low-graph)) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
+	  (assert (>= (length (the list (graph-nodes low-graph))) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
 	  (let ((final (car (last (graph-nodes low-graph)))))
 	    (session/assign session (tensor-id tensor) final))
-	  (setf nodes (append nodes (graph-nodes low-graph))))))
+	  (setf nodes (nconc nodes (graph-nodes low-graph))))))
     (let ((graph (apply #'make-graph nodes)))
       (unless no-verify (session/update-outputs session graph))
+      ;; [TODO] ↓ unnecessary
       (unless no-verify (verify-graph graph))
       graph)))
 
 (defun %make-graph-backward (session iseq &key (iseq-bw))
   (declare (type compiler-session session)
-	   (type list iseq))
+	   (type list iseq)
+	   (optimize (speed 3)))
   (labels ((%bwgraph (nodes)
 	     (declare (type list nodes))
 	     (assert (every #'tensor-p nodes) ())
@@ -173,24 +183,28 @@
     (mapc #'backward-helper (reverse iseq))
     iseq-bw))
 
-(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels) (maximum-recursion 100))
+(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels) (toplevel-ids) (maximum-recursion 100))
   "Constructs a forward/backward graph based on iseq"
   (declare (type Compiler-Session session)
-	   (type list iseq)
-	   (type tensor prev-grad))
+	   (type list iseq toplevel-ids)
+	   (type tensor prev-grad)
+	   (type fixnum maximum-recursion)
+	   (optimize (speed 3)))
+  ;; Inserts toplevel_ids = pause_backward(toplevels)
   (setf (session-fw-out-ids session)
-	(append (session-fw-out-ids session) (map 'list #'tensor-id toplevels))
+	(nconc (session-fw-out-ids session) (map 'list #'tensor-id toplevels))
 	(session-bw-out-ids session)
-	(append
+	(nconc
 	 (session-bw-out-ids session)
 	 (loop for tensor in iseq
 	       if (and (null no-grad) (tensor-requires-grad tensor))
 		 collect (tensor-grad-id tensor))))
   (let* ((forward-graph
 	   (prog1
-	       (%lower-iseq session iseq)
+	       (->fast-graph (%lower-iseq session iseq))
 	     (session/setgrad session (tensor-id (car (last iseq))) prev-grad)))
-	 (iseq-bw (when (null no-grad) (%tpsort-tensors session prev-grad))))
+	 (iseq-bw (when (null no-grad) (%tpsort-tensors session prev-grad)))
+	 (pause-backward-p))
     ;; (Forward Mode) First, simplify the forward graph in :Module/:Func level
     (dolist (f external-simplifiers) (funcall f forward-graph))
     ;; Second, lower an :module into a list of :func
@@ -205,32 +219,44 @@
     ;; fold :module from backward graph
     (let ((backward-graph (when (null no-grad) (%lower-iseq session iseq-bw :no-verify t))))
       ;; backward-graph depends on forward-graph, they should not simplified/verified until merged
-      (let ((merged-graph
-	      (apply
-	       #'make-graph
-	       (append
-		(graph-nodes forward-graph)
-		(and
+      (let* ((forward-graph (->graph forward-graph))
+	     (merged-graph
+	       (apply
+		#'make-graph
+		(nconc
 		 (graph-nodes forward-graph)
-		 (null no-grad)
-		 (list (make-node :Special/VM :Pause/Backward nil (list (node->id (car (last (graph-nodes forward-graph))))))))
-		(and backward-graph (graph-nodes backward-graph))))))
+		 (and
+		  (graph-nodes forward-graph)
+		  (null no-grad)
+		  (setf pause-backward-p t)
+		  (list (make-node :Special/VM :Pause/Backward toplevel-ids (list (node->id (car (last (graph-nodes forward-graph))))))))
+		 (and backward-graph (graph-nodes backward-graph))))))
 	;; Rewrite/Optimize f(A) + f(A) grad accumlation
 	(when (null no-grad) (session/sync-multi-grads session merged-graph))
-	(session/update-outputs session merged-graph)
-	;; Function-level whole optimization
-	(dolist (f external-simplifiers) (funcall f merged-graph))
-	;; Lower the :module if remained.
-	(flet ((ok () (null (find :Module (graph-nodes merged-graph) :key #'node-class))))
-	  (loop until (ok) for n upfrom 0 do
-	    (when (>= n maximum-recursion)
-	      (error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
-	    (%lower-modules session merged-graph)
-	    ;; Func level whole optimization
-	    (dolist (f external-simplifiers) (funcall f merged-graph))))
-	;; verify and complete
-	(verify-graph merged-graph)
-	merged-graph))))
+	;; If Pause/Backward was generated, use toplevel-ids instead of toplevels because
+	;; val_1_1 val_2_1 <- pause/backward(val_1, val_2) was generated.
+	(if pause-backward-p
+	    (let ((map (make-hash-table)))
+	      (loop for ti in (map 'list #'tensor-id toplevels)
+		    for newti in toplevel-ids
+		    do (setf (gethash ti map) newti))
+	      (session/update-outputs session merged-graph :alias map))
+	    (session/update-outputs session merged-graph))
+	(let ((merged-graph (->fast-graph merged-graph)))
+	  ;; Function-level whole optimization
+	  (dolist (f external-simplifiers) (funcall f merged-graph))
+	  ;; Lower the :module if remained.
+	  ;; [TODO] Optimize: ->graph is slow.
+	  (flet ((ok () (null (find :Module (the list (graph-nodes (->graph merged-graph))) :key #'node-class))))
+	    (loop until (ok) for n fixnum upfrom 0 do
+	      (when (>= n maximum-recursion)
+		(error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
+	      (%lower-modules session merged-graph)
+	      ;; Func level whole optimization
+	      (dolist (f external-simplifiers) (funcall f merged-graph))))
+	  ;; verify and complete
+	  (verify-graph merged-graph)
+	  (values (->graph merged-graph) pause-backward-p))))))
 ;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %module->iseqfw (session module)
   (declare (type compiler-session session) (type node module))
@@ -240,11 +266,12 @@
 
 (defun %module-obj->iseqfw (session module)
   (declare (type compiler-session session)
-	   (type module module))
+	   (type module module)
+	   (optimize (speed 3)))
   (let* ((lowered (multiple-value-list (apply #'impl module (func-variables module)))))
     (setf (module-impl-iseq module) (apply #'%tpsort-tensors session lowered))
     (let ((nodes (graph-nodes (%lower-iseq session (module-impl-iseq module) :no-verify t))))
-      (assert (= (length (module-lower-outputs module)) (length (module-outputs module))) ())
+      (assert (= (length (the list (module-lower-outputs module))) (length (the list (module-outputs module)))) ())
       (loop with tgt = (map
 			'list
 			#'(lambda (x)
@@ -254,12 +281,12 @@
 	    for n in nodes
 	    collect
 	    (progn
-	      (setf (node-writes n) (map 'list #'(lambda (x &aux (p (position x tgt :test #'eql))) (if p (nth p src) x)) (node-writes n)))
+	      (setf (node-writes n) (map 'list #'(lambda (x &aux (p (position (the symbol x) (the list tgt) :test #'eql))) (if p (nth p src) x)) (node-writes n)))
 	      n)))))
 
 (defun %module->iseqbw (session module prev-grad)
   "Module.backward(dout) -> Module.args[0].grad, Module.args[1].grad, ..."
-  (declare (type compiler-session session) (type Module module) (type tensor prev-grad))
+  (declare (type compiler-session session) (type Module module) (type tensor prev-grad) (optimize (speed 3)))
   ;; [TODO] Support multiple outputs of module
   ;; determine whichth output is it
   (when (null (module-impl-iseq module))
@@ -267,7 +294,7 @@
   (dolist (out (module-lower-outputs module)) (session/setgrad session (tensor-id out) prev-grad))
   (%make-graph-backward session (module-impl-iseq module)))
 
-(defun %lower-modules (session graph)
+(defmethod %lower-modules ((session Compiler-Session) (graph Graph))
   "Lowers all modules existing in the graph until they are disappeared."
   (declare (type graph graph)
 	   (type compiler-session session))
@@ -281,6 +308,18 @@
     (setf (graph-nodes graph) (flatten new-graph))
     (verify-graph graph)
     graph))
+
+(defmethod %lower-modules ((session Compiler-Session) (graph FastGraph))
+  (declare (optimize (speed 3)))
+  (maphash
+   #'(lambda (write node)
+       (declare (ignore write))
+       (when (node-p node)
+	 (when (eql :module (node-class node))
+	   (insert-nodes graph (%module->iseqfw session node)))))
+   (%graph-nodes-table graph))
+  graph)
+
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *external-simplifiers* `(optimize-aasm))
 (defparameter *no-grad* nil)
@@ -289,45 +328,54 @@
   (let* ((session (make-compiler-session :name name))
 	 (iseq (apply #'%tpsort-tensors session tensors))
 	 (prev-grad
-	   (make-tensor (tensor-shape (car tensors))
-			:dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))
-			:id 'prev-grad :initial-element 1))
-	 (graph (%make-graph-from-iseq
-		 session iseq prev-grad
-		 :no-grad no-grad :external-simplifiers external-simplifiers
-		 :toplevels tensors)))
-    (when (null no-grad)
-      (loop for id in (session-bw-out-ids session)
-	    do (assert (some #'(lambda (x) (find id (node-writes x))) (graph-nodes graph))
-		       ()
-		       "%compile-toplevel: The tensor ~a where :requires-grad=t could not be differentiated because backward was broken." id)))
-    (flet ((std->lid (x) (car (node-writes (session/read session x))))
-	   (tid->tensor (x) (find x iseq :key #'tensor-id :test #'eql))
-	   (tid->tensor-grad (x) (find x iseq :key #'tensor-grad-id :test #'eql)))
-      ;; creating a pair of vm_var -> tensor
-      (loop for tid in (session-fw-out-ids session)
-	    for sid = (std->lid tid)
-	    for tensor = (tid->tensor tid)
-	    ;; A pair of {ID in AVM} {Actual Tensor}
-	    if tensor do (session/set-tid session sid tensor))
-      ;; as well as backward
+	   (make-tensor
+	    (tensor-shape (car tensors))
+	    :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))
+	    :id 'prev-grad :initial-element 1))
+	 (toplevel-ids (map 'list #'(lambda (x) (intern (format nil "~a_1" (tensor-id x)))) tensors)))
+    (multiple-value-bind (graph pause-backward-p)
+	(%make-graph-from-iseq
+	 session iseq prev-grad
+	 :no-grad no-grad :external-simplifiers external-simplifiers
+	 :toplevels tensors :toplevel-ids toplevel-ids)
       (when (null no-grad)
-	(loop for tid in (session-bw-out-ids session)
+	(loop for id in (session-bw-out-ids session)
+	      do (assert (some #'(lambda (x) (find id (node-writes x))) (graph-nodes graph))
+			 ()
+			 "%compile-toplevel: The tensor ~a where :requires-grad=t could not be differentiated because backward was broken." id)))
+      (flet ((std->lid (x) (car (node-writes (session/read session x))))
+	     (tid->tensor (x) (find x iseq :key #'tensor-id :test #'eql))
+	     (tid->tensor-grad (x) (find x iseq :key #'tensor-grad-id :test #'eql)))
+	;; creating a pair of vm_var -> tensor
+	(loop for tid in (session-fw-out-ids session)
+	      for toplevel-id in toplevel-ids
 	      for sid = (std->lid tid)
-	      for tensor = (tid->tensor-grad tid)
-	      if tensor do (session/set-tid session sid (tensor-grad tensor))))
-      ;; nothing to compute? -> alloc
-      (when (null (graph-nodes graph))
-	(setf (graph-nodes graph)
-	      (with-context-nodes
-		  (_ (loop for tid in (session-fw-out-ids session)
-			   for sid = (std->lid tid)
-			   for tensor = (tid->tensor tid)
-			   do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
-      (make-avm graph (session-name session)
-		(session-tid->tensor session)
-		(map 'list #'std->lid (session-fw-out-ids session))
-		(when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session)))))))
+	      for tensor = (tid->tensor tid)
+	      ;; A pair of {ID in AVM} {Actual Tensor}
+	      if tensor do (session/set-tid session (if pause-backward-p toplevel-id sid) tensor))
+	;; as well as backward
+	(when (null no-grad)
+	  (loop for tid in (session-bw-out-ids session)
+		for sid = (std->lid tid)
+		for tensor = (tid->tensor-grad tid)
+		if tensor do (session/set-tid session sid (tensor-grad tensor))))
+	;; nothing to compute? -> alloc
+	(when (null (graph-nodes graph))
+	  (setf (graph-nodes graph)
+		(with-context-nodes
+		    (_ (loop for tid in (session-fw-out-ids session)
+			     for sid = (std->lid tid)
+			     for tensor = (tid->tensor tid)
+			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
+	;; If the graph was created from FastGraph, the time-series order should be broken.
+	;; call verify-graph to sort them.
+	(verify-graph graph)
+	(make-avm graph (session-name session)
+		  (session-tid->tensor session)
+		  (if pause-backward-p
+		      toplevel-ids
+		      (map 'list #'std->lid (session-fw-out-ids session)))
+		  (when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session))))))))
 
 (defun caten (tensors
 	      &key
@@ -357,7 +405,11 @@
     (vm/set-params avm params)
     (vm/forward avm)
     (avm/sync-tensors avm)
-    (apply #'values (map 'list #'(lambda (x) (%apply-proceed (gethash x (avm-id2tensor avm)))) (avm-fw-outputs avm)))))
+    (flet ((ap (x &aux (tensor (gethash x (avm-id2tensor avm))))
+	     (assert (tensor-p tensor) () "Forward: Attempted to reference the output variable ~a, but it is not defined in the avm id2tensor table: ~a~%~a"
+		     x (hash-table-keys (avm-id2tensor avm)) avm)
+	     (%apply-proceed tensor)))
+      (apply #'values (map 'list #'ap (avm-fw-outputs avm))))))
 
 (defmethod backward ((avm caten/avm:AVM) &optional prev-dout)
   (declare (ignore prev-dout))

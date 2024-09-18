@@ -32,7 +32,8 @@
 (defgeneric %getattr (attr id))
 (defgeneric %setattr (attr id value))
 (defgeneric %boundp (attr id))
-(defgeneric get-output-to (attr &rest reads))
+(defgeneric %attr-initargs (attr-id))
+(defgeneric %get-output-to (attr &rest reads))
 (defgeneric verify-args (attr writes reads))
 
 (defun find-attr (attr-key)
@@ -52,7 +53,8 @@
 	(format out "- ~a~%" superclass)))))
 
 (defmacro defnode ((module type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
-  "Defines a new attribute."
+  "Defines a new attribute.
+- placeholder[(unsigned-byte 32) or -1] -1 to ignore"
   (declare (type keyword module type)
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
@@ -68,6 +70,22 @@
 		for slot-new = (rewrite-slot slot)
 		collect slot-new)
 	 (:documentation ,(apply #'build-documentation type description placeholder direct-superclasses)))
+       (defmethod %attr-initargs ((attr-id (eql ,type)))
+	 "Returns a list of possible :attrs argument keywords."
+	 (list
+	  ,@(loop for slot in slots
+                  for slot-name = (car slot)
+                  for slot-key = (intern (symbol-name slot-name) "KEYWORD")
+                  collect slot-key)
+	  ,@(loop for class in `(,@direct-superclasses)
+		  for class-of = (find-class class)
+		  append
+		  (loop
+		    for slot in (c2mop:class-direct-slots class-of)
+		    for slot-initargs = (c2mop:slot-definition-initargs slot)
+		    for initarg = (when (and (= 1 (length slot-initargs)) (keywordp (car slot-initargs))) (car slot-initargs))
+		    if initarg
+		      collect initarg))))
        (defmethod verify-args ((attr ,class-name) writes reads) (funcall #',verify (list attr writes reads)))
        ,@(loop for slot in slots
 	       for slot-name = (car slot)
@@ -117,7 +135,11 @@
 		    for slotname = (c2mop:slot-definition-name slot)
 		    if initarg
 		      append (list initarg `(and (slot-boundp attr ',slotname) (slot-value attr ',slotname)))))))
-       (defmethod get-output-to ((attr ,class-name) &rest reads) (nth ,placeholder reads)))))
+       (defmethod %get-output-to ((attr ,class-name) &rest reads) (if (= ,placeholder -1) nil (nth ,placeholder reads))))))
+
+(defun get-output-to (node)
+  (declare (type node node))
+  (apply #'%get-output-to (node-attr node) (node-reads node)))
 
 (defmethod dump-into-list :around ((attr Attribute) &key (allow-unbound t))
   (let ((attrs (call-next-method)))

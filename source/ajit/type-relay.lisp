@@ -99,7 +99,14 @@
   (declare (type avm avm))
   (let ((*device* :relay-checker) (*type-reporter* (make-type-reporter)))
     (setf (avm-tape-length avm) (length (graph-nodes (avm-graph avm))))
-    (vm/forward avm) (vm/backward avm)
+    (vm/forward avm)
+    ;; Infer type for PAUSE/BACKWARD
+    (let ((pause/bw (nth (avm-pc avm) (graph-nodes (avm-graph avm)))))
+      (when (and pause/bw (eql (node-type pause/bw) :PAUSE/BACKWARD))
+	(loop for r in (node-reads pause/bw)
+	      for w in (node-writes pause/bw)
+	      do (setf (gethash w (rp-id2buffer *type-reporter*)) (vm/readvar avm r)))))
+    (vm/backward avm)
     *type-reporter*))
 
 (defstruct (Inferred-Type

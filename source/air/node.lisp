@@ -20,8 +20,10 @@
 	  "verify-buffers: Buffers are number or symbol. ~a" buffers)
   buffers)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(declaim (inline %make-node-inlined))
 (defstruct (Node
 	    (:copier %copy-node)
+	    (:constructor %make-node-inlined (class type writes reads attr &aux (id (gensym "NID"))))
 	    (:constructor %make-node (class type writes reads &rest attrs
 				      &aux
 					(writes (verify-buffers writes))
@@ -29,12 +31,12 @@
 					(attr   (apply #'make-attr type (verify-attrs attrs)))
 					(id (progn (verify-args attr writes reads) (gensym "NID"))))))
   "y1 y2 y3 ... <- f(x1 ... xn)"
-  (class class :type keyword)
-  (id id :type symbol)
-  (type type :type keyword)
+  (class  class  :type keyword)
+  (id     id     :type symbol)
+  (type   type   :type keyword)
   (writes writes :type list)
-  (reads  reads :type list)
-  (attr attr :type Attribute))
+  (reads  reads  :type list)
+  (attr   attr   :type Attribute))
 
 (defun make-node (class type writes reads &rest attrs)
   (apply #'%make-node class type writes reads attrs))
@@ -46,7 +48,13 @@
 	  (error "The node :~a is not defined. It needs to be defined by `defnode` before being used in make-node.
 The nodes defined at compile time are as follows:
 ~a" type (debug/render-defined-nodes :ignore (if (find class `(:Testing :TMP)) nil `(:Testing :TMP)))))
-	`(%make-node ,class ,type ,writes ,reads ,@attrs))
+	(let ((initargs (%attr-initargs type))
+	      (input-keys (loop for i upfrom 0 below (length attrs) by 2
+			        if (keywordp (nth i attrs)) collect (nth i attrs))))
+	  (dolist (key input-keys)
+	    (assert (find key initargs) () "make-node: The attr :~a is not defined in the definition of ~a.
+Possible keywords are following: ~a" key type initargs)))
+	`(%make-node-inlined ,class ,type ,writes ,reads (make-instance ',instance-key :attr-module-key ,class :attr-type-key ,type ,@attrs)))
       `(%make-node ,class ,type ,writes ,reads ,@attrs)))
 
 (defun copy-node (node)
@@ -90,11 +98,13 @@ The nodes defined at compile time are as follows:
 		  (node-id node)
 		  (render-list (node-writes node))
 		  (render-list (node-reads node))
-		  (if (dump-into-list (node-attr node) :allow-unbound nil)
+		  (if (and
+		       (dump-into-list (node-attr node) :allow-unbound nil)
+		       (some #'identity (map 'list #'(lambda (x) (getattr node x)) (getattrs node))))
 		      (with-output-to-string (out)
 			(format out " where")
 			(dolist (k (getattrs node))
-			  (when k
+			  (when (and k (getattr node k))
 			    (format out " :~(~a~)=~a" k (getattr node k)))))
 		      ""))))))
 

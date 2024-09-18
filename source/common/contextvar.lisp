@@ -189,6 +189,9 @@ Usage:
      "(For JIT) %render-compile always produce an simple-error.")
     (:COLOR
      1 :int #.(oneof "COLOR" 1 `(0 1))
-     "Use cl-ansi-color if set to 1")))
+     "Use cl-ansi-color if set to 1")
+    (:SAFETY
+     0 :int #.(oneof "SAFETY" 0 `(0 1))
+     "When this parameter is set to 1, caten/air checks that all dependencies are satisfied during each process of Graph Rewriting. (i.e.: FastGraph becomes Graph) This directly impacts the compilation speed.")))
 
 (defparameter *ctx* (make-contextvar))

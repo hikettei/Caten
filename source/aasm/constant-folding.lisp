@@ -14,7 +14,7 @@
     ;; [TODO] Fix why shape infer fails
     (when (or (null nrank) (null dtype))
       (return-from reinitialize-tensor))
-    (flet ((->find (x) (id->value graph x)))
+    (flet ((->find (x) (or (id->value graph x) x)))
       (setf shape (map 'list #'->find shape)
 	    stride (map 'list #'->find stride)))
     (let ((viewed (every #'identity views)))
@@ -30,12 +30,12 @@
     (%0_fuse_load_alloc)
     ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (number x)) -> (:_TmpScalarConst (x) :dtype dtype))
     ((:Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean x)) -> (:_TmpScalarBool () :value x))
-    ((:Cast ((:Allocate () :nrank 0 :dtype dtype-to) (:_TmpScalarConst (val) :dtype dtype-from)))
+    ((:Cast ((:Allocate () :nrank 0 :dtype dtype-to) (:_TmpScalarConst (val) :dtype _)))
      ->
      (:_TmpScalarConst ((caten/common.dtype:dtype/cast val dtype-to)) :dtype dtype-to)))
 
 (defsimplifier
-    (%1_fold_constant :speed 0)
+    (%1_fold_constant)
     ((:Add ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((+ x y)) :dtype dtype))
     ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((* x y)) :dtype dtype))
     ((:Neg ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((- x)) :dtype dtype))
@@ -119,7 +119,7 @@
      ((node graph)
       (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))))
 
-(defun fold-constant (graph &aux (n (length (graph-nodes graph))))
+(defmethod fold-constant ((graph Graph) &aux (n (length (graph-nodes graph))))
   (declare (type Graph graph))
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
 	  ()
@@ -144,7 +144,6 @@
 	      do (setf (node-reads node) (map 'list #'->new (node-reads node))))
 	(assert (equal (graph-outputs graph) (map 'list #'->new (graph-outputs graph))) ()))))
   (%2_unfold_load_alloc graph :no-verify t)
-  ;;(setf (graph-nodes graph) (loop for n in (graph-nodes graph) if (not (eql (node-type n) :_TmpPurged)) collect n))
   (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
 	  ()
 	  "_TmpScalarConst shouldn't exist! (but it is a simplifier's bug)")
@@ -160,3 +159,26 @@
 	(fold-constant graph))
       (verify-graph graph))
   graph)
+
+(defmethod fold-constant ((graph FastGraph))
+  (%0_fuse_load_alloc graph :no-verify t)
+  (let ((matched-p (%1_fold_constant graph :no-verify t :return-changed-p t))
+	(purges (loop for node in (graph-nodes graph)
+		      if (eql (node-type node) :_TmpPurged)
+			collect node)))
+    ;; If y <- _TmpPurge(x), rewrite all y with x
+    (dolist (pnode purges)
+      (assert (symbolp (car (node-reads pnode))))
+      (flet ((->new (x)
+	       (if (eql (car (node-writes pnode)) x)
+		   (car (node-reads pnode))
+		   x)))
+	(loop for node in (graph-nodes graph)
+	      for n upfrom 0
+	      do (setf (node-reads node) (map 'list #'->new (node-reads node))))
+	(assert (equal (graph-outputs graph) (map 'list #'->new (graph-outputs graph))) ())))
+    (%2_unfold_load_alloc graph :no-verify t)
+    (verify-graph graph)
+    (if matched-p
+	(fold-constant graph)
+	graph)))
