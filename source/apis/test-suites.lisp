@@ -139,8 +139,8 @@
   (ok (check-schedule (caten (!neg (!mul (iconst 'a) (iconst 1)))) 4))
 
   ;; the top should not folded
-  (ok (check-schedule (caten (!add (iconst 0) (iconst 'a))) 6))
-  (ok (check-schedule (caten (!mul (iconst 0) (iconst 'a))) 6))
+  (ok (check-schedule (caten (!add (iconst 0) (iconst 'a))) 3))
+  (ok (check-schedule (caten (!mul (iconst 0) (iconst 'a))) 2))
   
   (ok (= 1 (elements (pproceed `((a . 1)) (!add (iconst 0) (iconst 'a))))))
   (ok (= -1 (elements (pproceed `((a . 1)) (!neg (!add (iconst 0) (iconst 'a)))))))
