@@ -52,7 +52,6 @@ FastGraph[seen=~a, outputs=~a] {
 (defmethod (setf graph-nodes) (nodes (graph Graph)) (setf (%graph-nodes graph) nodes))
 (defmethod (setf graph-nodes) (nodes (graph FastGraph)) (error "graph-nodes for FastGraph is immutable!"))
 
-;; [TODO] Optimize them by compiler-macro
 (defmethod id->users ((graph Graph) id)
   (declare (optimize (speed 3)))
   (if (not (symbolp id))
