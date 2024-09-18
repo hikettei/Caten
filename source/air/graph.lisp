@@ -88,13 +88,14 @@ FastGraph[seen=~a, outputs=~a] {
 
 (defun ->fast-graph (graph)
   (declare (type graph graph))
-  ;; (return-from ->fast-graph graph)
+  (when (= 1 (ctx:getenv :SAFETY)) (return-from ->fast-graph graph))
   (assert (graph-outputs graph) () "Cannot create a fast graph because the graph does not have a `outputs`.")
   (let ((fast-graph (make-instance 'FastGraph :output (graph-outputs graph) :seen (graph-seen graph))))
     (insert-nodes fast-graph (graph-nodes graph))
     fast-graph))
 
 (defmethod ->graph ((graph Graph)) graph)
+
 (defmethod ->graph ((fast-graph FastGraph))
   (declare (type FastGraph fast-graph) (optimize (speed 3)))
   (assert (graph-outputs fast-graph) () "Cannot create a graph from the given fast graph because it does not provide a `outputs`.")
