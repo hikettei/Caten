@@ -302,14 +302,14 @@ The iseq obtained by lowering the Module must match the output destination speci
 		(map
 		 'list
 		 #'(lambda (x &aux (node (session/read session (tensor-id x))))
-		     (assert node () "The tensor ~a is not found when lowering")
+		     (assert node () "The tensor ~a is not found when lowering ~a." module-node)
 		     (node-writes node))
 		 (module-lower-outputs module)))))
 	    (alias-map (make-hash-table)))
 	;; Multiple Outputs:
 	;; Consider lowering a module A: A -> A B
 	;; A is defind as K(X) -> A B
-	(assert (= (length lowered-output-ids) (length (module-lower-outputs module))) () "The number of outputs does not match.")
+	(assert (= (length lowered-output-ids) (length (module-lower-outputs module))) () "The number of outputs does not match when lowering ~a" module-node)
 	(loop for output-id-in-final-graph in (node-writes module-node)
 	      for output-id-in-lower-graph in lowered-output-ids
 	      do (setf (gethash output-id-in-lower-graph alias-map) output-id-in-final-graph))
