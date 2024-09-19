@@ -8,7 +8,8 @@ Tests that are not related to the core functionality of Caten or are time-consum
   :components ((:file "package")
 	       (:file "helpers")
 	       (:file "test-randomness")
-	       (:file "test-iseq-lowerer"))
+	       (:file "test-iseq-lowerer")
+	       (:file "test-llm"))
   :perform
   (asdf:test-op
    (o s)

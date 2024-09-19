@@ -3,7 +3,7 @@
 ;; Some of subgraph are purged?
 ;; call still has an issue?
 ;; Cannot be compiled with the dynamic shaped?
-(defun scale-dot-product-attention (query key value &optional mask)
+(defun scaled-dot-product-attention (query key value &optional mask)
   (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
     (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
 
@@ -50,7 +50,7 @@
 	       c-proj
 	       (!reshape
 		(!transpose
-		 (scale-dot-product-attention xq keys vals mask)
+		 (scaled-dot-product-attention xq keys vals mask)
 		 1 2)
 		`(,batch-size ,(second (shape x)) ,dim))))))))))
 
