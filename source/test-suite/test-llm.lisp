@@ -1,10 +1,12 @@
 (in-package :caten/test-suite)
 
+;; Neural Ops used in implementing LLM
+
 (deftest test-scaled-dot-product-attention
   (with-given-dtype ((:float32 . "float32"))
-    (let ((q (randn `(2 8 128 64)))
-	  (k (randn `(2 8 128 64)))
-	  (v (randn `(2 8 128 64))))
+    (let ((q (randn `(2 8 8 8)))
+	  (k (randn `(2 8 8 8)))
+	  (v (randn `(2 8 8 8))))
       (assert-equal
 	  ()
 	  (with-torch (q k v)
