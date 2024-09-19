@@ -28,6 +28,10 @@ jobs:
           ros install ${{ matrix.lisp }}
           ros use ${{ matrix.lisp }}
           ros install rove
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
       - name: Installing libisl-dev
         run: |
           sudo apt-get install -y libisl-dev
@@ -39,6 +43,8 @@ jobs:
           echo $PATH
           export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+      - name: Installing Extra Dependency for testing
+        run: make install_extra
       - name: Check $PATH
         run: echo $PATH
       - name: (Lisp) JIT=0 AVM=LISP rove caten.asd

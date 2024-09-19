@@ -14,17 +14,17 @@
 (import-function "torch.from_numpy")
 (import-function "list" :as "py.list")
 
-(defun ->numpy (tensor)
+(defun ->numpy (tensor &key (dtype "float32"))
   (declare (type tensor tensor))
   (assert (buffer-value (tensor-buffer tensor)) () "The tensor ~a is not realized yet!." tensor)
   (np:reshape
    (np:array
     (buffer-value (tensor-buffer tensor))
     :dtype
-    (format nil "~(~a~)" (tensor-dtype tensor)))
+    dtype)
    (buffer-shape (tensor-buffer tensor))))
 
-(defun ->torch (tensor) (remote-objects (torch.from_numpy (->numpy tensor))))
+(defun ->torch (tensor &key (dtype "float32")) (remote-objects (torch.from_numpy (->numpy tensor :dtype dtype))))
 
 (defun torch-shape (tensor) (remote-objects* (py.list (chain tensor (size)))))
 
