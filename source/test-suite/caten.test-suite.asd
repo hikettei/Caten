@@ -9,7 +9,8 @@ Tests that are not related to the core functionality of Caten or are time-consum
 	       (:file "helpers")
 	       (:file "test-randomness")
 	       (:file "test-iseq-lowerer")
-	       (:file "test-llm"))
+	       (:file "test-llm")
+	       (:file "test-gemm"))
   :perform
   (asdf:test-op
    (o s)

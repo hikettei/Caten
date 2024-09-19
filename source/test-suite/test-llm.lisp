@@ -10,13 +10,3 @@
 	  (with-torch (q k v)
 	    (->caten (f:scaled_dot_product_attention q k v)))
 	  (proceed (scaled-dot-product-attention q k v))))))
-
-(deftest test-large-matmul
-  (with-given-dtype ((:float32 . "float32"))
-    (let ((x (randn `(1024 1024)))
-	  (y (randn `(1024 1024))))
-      (assert-equal
-	  ()
-	  (with-torch (x y)
-	    (->caten (torch.matmul x y)))
-	  (proceed (!matmul x y))))))
