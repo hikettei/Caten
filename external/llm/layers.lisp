@@ -97,5 +97,5 @@
 	     (logits (forward lm-head hi)))
 	(declare (ignore _))
 	logits))))
-
+;;
 #+(or)(with-no-grad (caten (forward (Transformer 64 4 4 1e-5 512) (make-tensor `(10 10)) (iconst 0))))
