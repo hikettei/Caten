@@ -170,7 +170,8 @@
 		  (assert (subtypep (type-of (tensor-op tensor)) 'Module) () "Only modules are allowed to return :module/skip-bw option in backward.
 ~a is not a module." (tensor-op tensor))
 		  ;; Module.backward(prev-grad) -> Module.args_0.grad, Module.args_1.grad, ...
-		  (%bwgraph (%module->iseqbw session (tensor-op tensor) prev-grad)))
+		  (let ((bw (%module->iseqbw session (tensor-op tensor) prev-grad)))
+		    (and bw (%bwgraph bw))))
 		 (T
 		  (loop for next-var in (func-variables (tensor-op tensor))
 			for next-grad in next-grads
@@ -203,6 +204,12 @@
 	     (loop until (ok) for n fixnum upfrom 0 do
 	       (when (>= n maximum-recursion)
 		 (error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
+	       ;; e.g.:
+	       ;; n=1 Quantize (Matmul) Dequantize -> QMatmul
+	       ;; n=1 (Simplify)
+	       ;; n=2 QMatmul -> QAdd + SHR + ...
+	       ;; n=2 (Simplify)
+	       ;;      ...
 	       (%lower-modules session graph)
 	       ;; Func level whole optimization
 	       (dolist (f external-simplifiers) (funcall f graph))))))
@@ -212,12 +219,10 @@
 	       (session/setgrad session (tensor-id (car (last iseq))) prev-grad)))
 	   (iseq-bw (when (null no-grad) (%tpsort-tensors session prev-grad)))
 	   (pause-backward-p))
-      ;; (Forward Mode) First, simplify the forward graph in :Module/:Func level
+      ;; (Forward Mode) First, Simplify the forward graph in :Module/:Func level
       (dolist (f external-simplifiers) (funcall f forward-graph))
       ;; Second, lower an :module into a list of :func
       (lower-all forward-graph)
-      ;; Finally, simplifying all the lowered :func. (ir-level optimization is all with regard to forward)
-      (dolist (f external-simplifiers) (funcall f forward-graph))
       ;; (Backward Mode) First, create a reverse-mode backward tape from the sorted forward graph.
       ;; the tapes consequent after the allocation of prev-grad.
       (when (null no-grad) (setf iseq-bw (%make-graph-backward session iseq :iseq-bw iseq-bw)))
@@ -259,9 +264,28 @@
 	    (values (->graph merged-graph) pause-backward-p)))))))
 ;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %module->iseqfw (session module)
+  "Lowers the given module.
+e.g.:
+```
+FastGraph[seen=NIL, outputs=(STC23957099)] {
+    <ALLOCATE : TID23956501 <- (shape=(30, 10), stride=(10, 1)) where :nrank=2 :dtype=FLOAT32>
+    <Node[MODULE] GRAPH/FEEDFORWARD(NID2395222) : STC23957099 <- (TID23956501) where :in-features=10 :out-features=20 :bias=T>
+}
+```
+-> is transformed into:
+```
+FastGraph[seen=NIL, outputs=(STC23957099)] {
+    <ALLOCATE : TID23956501 <- (shape=(30, 10), stride=(10, 1)) where :nrank=2 :dtype=FLOAT32>
+    <Node[MODULE] GRAPH/LINEAR(NID23957737) : STC23957437 <- (TID23956501) where :in-features=10 :out-features=20 :bias=T>
+    <Node[MODULE] GRAPH/GELU(NID23957738) : STC23957438 <- (STC23957437) where :approx=TANH :metadata=#<GELU {7119B17C43}>>
+    <Node[MODULE] GRAPH/LINEAR(NID23957739) : STC23957099 <- (STC23957438) where :in-features=20 :out-features=10 :bias=T>
+}
+```
+The iseq obtained by lowering the Module must match the output destination specified in the (module-outputs :metadata).
+"
   (declare (type compiler-session session) (type node module))
   (assert (eql :Module (node-class module)) ())
-  (assert (getattr module :metadata) () "~a has lost its metadata. (-> check simplifier)" module)
+  (assert (getattr module :metadata) () "~a has lost its metadata. Check simplifier processes." module)
   (%module-obj->iseqfw session (getattr module :metadata)))
 
 (defun %module-obj->iseqfw (session module)
@@ -289,10 +313,9 @@
   (declare (type compiler-session session) (type Module module) (type tensor prev-grad) (optimize (speed 3)))
   ;; [TODO] Support multiple outputs of module
   ;; determine whichth output is it
-  (when (null (module-impl-iseq module))
-    (%module-obj->iseqfw session module))
-  (dolist (out (module-lower-outputs module)) (session/setgrad session (tensor-id out) prev-grad))
-  (%make-graph-backward session (module-impl-iseq module)))
+  (when (module-impl-iseq module)
+    (dolist (out (module-lower-outputs module)) (session/setgrad session (tensor-id out) prev-grad))
+    (%make-graph-backward session (module-impl-iseq module))))
 
 (defmethod %lower-modules ((session Compiler-Session) (graph Graph))
   "Lowers all modules existing in the graph until they are disappeared."
