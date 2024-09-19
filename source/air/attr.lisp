@@ -151,7 +151,7 @@
 
 (defun make-attr (type &rest args)
   (multiple-value-bind (module instance-key) (attribute->instance type)
-    (assert (and module instance-key) () "make-attr: The node ~a/~a is not defined by `defnode`." module instance-key)
+    (assert (and module instance-key) () "make-attr: The node :~a is not defined by `defnode`." type)
     (apply #'make-instance instance-key :attr-module-key module :attr-type-key type args)))
 
 (defun debug/attrs-by-module ()

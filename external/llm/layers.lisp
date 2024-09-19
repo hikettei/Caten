@@ -20,7 +20,7 @@
 (defmethod call ((model Attention) &rest inputs)
   (with-slots ((c-attn c-attn) (c-proj c-proj) (n-heads n-heads) (dim dim) (head-dim head-dim) (max-seq-len max-seq-len)) model
     (multiple-value-bind (x n mask) (apply #'values inputs)
-      (let* ((xqkv       (call c-attn x))
+      (let* ((xqkv       (forward c-attn x))
 	     (batch-size (car (shape x)))
 	     (seq-len    (iconst (second (shape x))))
 	     ;; [TODO] The allocation should be lazy; use make-tensor to compile into c code.
@@ -46,7 +46,7 @@
 		 (!transpose xq 1 2)
 		 (!transpose keys 1 2)
 		 (!transpose vals 1 2))
-	      (call
+	      (forward
 	       c-proj
 	       (!reshape
 		(!transpose
@@ -61,7 +61,7 @@
 (defmethod call ((model FeedForward) &rest inputs)
   (multiple-value-bind (x) (apply #'values inputs)
     (with-slots ((c-fc c-fc) (c-proj c-proj)) model
-      (call c-proj (!gelu (call c-fc x))))))
+      (forward c-proj (!gelu (forward c-fc x))))))
 
 (defmodel (TransformerBlock (dim n-heads &key (norm-eps 1e-5) (max-seq-len 1024)))
     ((attn (Attention dim n-heads max-seq-len))
@@ -72,8 +72,8 @@
 (defmethod call ((model TransformerBlock) &rest inputs)
   (multiple-value-bind (x start-pos mask) (apply #'values inputs)
     (with-slots ((attn attn) (mlp mlp) (ln_1 ln_1) (ln_2 ln_2)) model
-      (let ((h (call attn (call ln_1 x) start-pos mask)))
-	(!add h (call mlp (call ln_2 h)))))))
+      (let ((h (forward attn (forward ln_1 x) start-pos mask)))
+	(!add h (forward mlp (forward ln_2 h)))))))
 
 (defmodel (Transformer (dim n-heads n-layers norm-eps vocab-size &key (max-seq-len 1024)))
     ((vocab-size vocab-size)
@@ -87,15 +87,15 @@
   (multiple-value-bind (tokens start-pos temperature) (apply #'values inputs)
     (assert (and tokens start-pos))
     (with-slots ((wte wte) (wpe wpe) (h h) (lm-head lm-head)) model
-      (let* ((token-emb (call wte tokens))
-	     (pos-emb (call wpe (!cast (!add start-pos (!index-components `(1 ,(second (shape tokens))))) (dtype-of tokens))))
+      (let* ((token-emb (forward wte tokens))
+	     (pos-emb (forward wpe (!cast (!add start-pos (!index-components `(1 ,(second (shape tokens))))) (dtype-of tokens))))
 	     (hi (!add token-emb pos-emb))
 	     ;; TODO: triu
 	     (mask nil)
 	     (_ (loop for hn in h do
-	       (setf hi (call hn hi start-pos mask))))
-	     (logits (call lm-head hi)))
+	       (setf hi (forward hn hi start-pos mask))))
+	     (logits (forward lm-head hi)))
 	(declare (ignore _))
 	logits))))
 
-#+(or)(with-no-grad (caten (call (Transformer 64 4 4 1e-5 512) (make-tensor `(10 10)) (iconst 0))))
+#+(or)(with-no-grad (caten (forward (Transformer 64 4 4 1e-5 512) (make-tensor `(10 10)) (iconst 0))))

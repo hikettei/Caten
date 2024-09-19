@@ -111,20 +111,20 @@
   "Initializes a tensor, filled with random value sampled from a normal distribution."
   (declare (type (or Tensor symbol number) mean std) (type list shape))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (call (make-instance 'Random-Normal)
-	  (or out (make-tensor shape :dtype dtype :order order))
-	  (->cast std) (->cast mean))))
+    (forward (make-instance 'Random-Normal)
+	     (or out (make-tensor shape :dtype dtype :order order))
+	     (->cast std) (->cast mean))))
 
 (defun !randn (shape &key (dtype *default-float*) (order *default-order*) (out nil))
-  (call (make-instance 'Gaussian-Distribution-Node) (or out (make-tensor shape :dtype dtype :order order))))
+  (forward (make-instance 'Gaussian-Distribution-Node) (or out (make-tensor shape :dtype dtype :order order))))
 
 (defun !uniform (shape &key (low 0.0) (high 1.0) (dtype *default-float*) (order *default-order*) (out nil))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
+    (forward (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 
 (defun !randint (shape &key (low 0) (high 1) (dtype *default-int*) (order *default-order*) (out nil))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
-    (call (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
+    (forward (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (caten/defun[float] ($random "random") (n) (!rand `(,n)))
 (caten/defun[all] ($uniform "uniform") (n a b) (!uniform `(,n) :low a :high b))

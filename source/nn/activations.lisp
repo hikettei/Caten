@@ -8,7 +8,7 @@
 (defmethod backward ((op Sigmoid) &optional prev-dout)
   (let ((ret (slot-value op 'ret)))
     (!mul (!mul ret (!add (fconst 1 :dtype (dtype-of ret)) (!neg ret))) prev-dout)))
-(defun !sigmoid (x) (call (Sigmoid) x))
+(defun !sigmoid (x) (forward (Sigmoid) x))
 
 (defmodel (ReLU () :where "A[~] -> A[~]") ())
 (defmethod call ((op ReLU) &rest inputs)
@@ -47,7 +47,7 @@
 (defmethod call ((op ReLU6) &rest inputs)
   (multiple-value-bind (x) (apply #'values inputs)
     (!sub (!relu x) (!relu (!sub x (!const x 6))))))
-(defun !relu6 (x) (call (ReLU6) x))
+(defun !relu6 (x) (forward (ReLU6) x))
 
 (defmodel (Softmax (&key (axis -1)) :where "A[~] -> A[~]") ((axis axis :accessor softmax-axis)))
 (defmethod call ((op Softmax) &rest inputs)
@@ -74,7 +74,7 @@
 	(alpha (slot-value op 'alpha)))
     (declare (type tensor x))
     (!add (!maximum x (!const x 0)) (!minimum (!const x 0) (!mul (!const x alpha) (!sub (!exp (!/ x (!const x alpha))) (!const x 1)))))))
-(defun !celu (x &key (alpha 1.0)) (call (CeLU :alpha alpha) x))
+(defun !celu (x &key (alpha 1.0)) (forward (CeLU :alpha alpha) x))
 
 (defmodel (SiLU () :where "A[~] -> A[~]") ())
 (defmethod call ((op SiLU) &rest inputs &aux (x (car inputs))) (!mul x (!sigmoid x)))
