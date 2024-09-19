@@ -1,12 +1,18 @@
 (asdf:defsystem "caten"
   :description "Programmable Deep Learning Framework"
   :author      "hikettei <ichndm@gmail.com>"
-  :version "0.0"
+  :version     "0.0"
   :licence     "MIT"
   :depends-on
   ("caten.apis" "caten.nn" "caten.test-suite")
   :serial t
   :components ((:file "source/caten-user"))
+  :in-order-to
+  ((test-op (test-op "caten/test"))))
+
+(asdf:defsystem "caten/test"
+  :description "Test suites for Caten"
+  :depends-on ("caten" "caten/llm" "caten.test-suite")
   :in-order-to
   ((test-op
     (asdf:test-op "caten.apis")
