@@ -4,7 +4,7 @@
   :version     "0.0"
   :licence     "MIT"
   :depends-on
-  ("caten.apis" "caten.nn" "caten.test-suite")
+  ("caten.apis" "caten.nn")
   :serial t
   :components ((:file "source/caten-user"))
   :in-order-to
