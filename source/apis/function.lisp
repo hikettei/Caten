@@ -15,7 +15,8 @@ save-for-backward is determined automatically, so you do not have to consider ab
   (let ((outs (handler-bind
 		  ((error
 		     #'(lambda (c) (error 'caten-forward-error :op op :inputs tensors :c c))))
-		(multiple-value-list (call-next-method)))))
+		(multiple-value-list (call-next-method))))
+	(tensors (loop for tensor in tensors if (tensor-p tensor) collect tensor)))
     (setf (func-variables op) tensors)
     (dolist (o outs)
       (assert (tensor-p o) ())
