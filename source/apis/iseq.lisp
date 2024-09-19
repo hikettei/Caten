@@ -286,40 +286,38 @@ The iseq obtained by lowering the Module must match the output destination speci
   (declare (type compiler-session session) (type node module-node))
   (assert (eql :Module (node-class module-node)) ())
   (assert (getattr module-node :metadata) () "~a has lost its metadata. Check simplifier processes." module-node)
-  (let ((module (getattr module-node :metadata)))
-    ;; First, get the lowered tensor graph. (blueprint of FastGraph)
-    (assert (null (module-impl-iseq module)) () "The module ~a was already lowered." module-node)
-    (let ((lowered (multiple-value-list (apply #'impl module (func-variables module)))))
-      (setf (module-impl-iseq module) (apply #'%tpsort-tensors session lowered))
-      ;; Lower the blueprint into iseq. (seen is global during compiling, no duplications here)
-      (let ((lowered-graph (%lower-iseq session (module-impl-iseq module) :no-verify t)))
-	(assert (= (length (the list (module-lower-outputs module))) (length (the list (module-outputs module)))) ())
-	(assert (= (length (node-writes module-node)) (length (module-outputs module))) ())
-	;; module-outputs: a list of tensors at "FORWARD"    }
-	;; module-lower-outputs: a list of tensors at "IMPL" } they are both used to confirm the validity of shape inference.
-	;; Rewrite output tensor ids in `lowered-graph` to `(node-writes module-node)`
-	(let ((lowered-output-ids
-		(remove-duplicates ;; (A A B B) -> (A B)
-		 (flatten
-		  (map
-		   'list
-		   #'(lambda (x &aux (node (session/read session (tensor-id x))))
-		       (assert node () "The tensor ~a is not found when lowering")
-		       (node-writes node))
-		   (module-lower-outputs module)))))
-	      (alias-map (make-hash-table)))
-	  ;; Multiple Outputs:
-	  ;; Consider lowering a module A: A -> A B
-	  ;; A is defind as K(X) -> A B
-	  (assert (= (length lowered-output-ids) (length (module-lower-outputs module))) () "The number of outputs does not match.")
-	  (loop for output-id-in-final-graph in (node-writes module-node)
-		for output-id-in-lower-graph in lowered-output-ids
-		do (setf (gethash output-id-in-lower-graph alias-map) output-id-in-final-graph))
-	  (dolist (node (graph-nodes lowered-graph))
-	    (flet ((r (x) (if (symbolp x) (or (gethash x alias-map) x) x)))
-	      (setf (node-reads node) (map 'list #'r (node-reads node))
-		    (node-writes node) (map 'list #'r (node-writes node)))))
-	  (graph-nodes lowered-graph))))))
+  (let* ((module (getattr module-node :metadata))
+	 (lowered (multiple-value-list (apply #'impl module (func-variables module)))))
+    (setf (module-impl-iseq module) (apply #'%tpsort-tensors session lowered))
+    ;; Lower the blueprint into iseq. (seen is global during compiling, no duplications here)
+    (let ((lowered-graph (%lower-iseq session (module-impl-iseq module) :no-verify t)))
+      (assert (= (length (the list (module-lower-outputs module))) (length (the list (module-outputs module)))) ())
+      (assert (= (length (node-writes module-node)) (length (module-outputs module))) ())
+      ;; module-outputs: a list of tensors at "FORWARD"    }
+      ;; module-lower-outputs: a list of tensors at "IMPL" } they are both used to confirm the validity of shape inference.
+      ;; Rewrite output tensor ids in `lowered-graph` to `(node-writes module-node)`
+      (let ((lowered-output-ids
+	      (remove-duplicates ;; (A A B B) -> (A B)
+	       (flatten
+		(map
+		 'list
+		 #'(lambda (x &aux (node (session/read session (tensor-id x))))
+		     (assert node () "The tensor ~a is not found when lowering")
+		     (node-writes node))
+		 (module-lower-outputs module)))))
+	    (alias-map (make-hash-table)))
+	;; Multiple Outputs:
+	;; Consider lowering a module A: A -> A B
+	;; A is defind as K(X) -> A B
+	(assert (= (length lowered-output-ids) (length (module-lower-outputs module))) () "The number of outputs does not match.")
+	(loop for output-id-in-final-graph in (node-writes module-node)
+	      for output-id-in-lower-graph in lowered-output-ids
+	      do (setf (gethash output-id-in-lower-graph alias-map) output-id-in-final-graph))
+	(dolist (node (graph-nodes lowered-graph))
+	  (flet ((r (x) (if (symbolp x) (or (gethash x alias-map) x) x)))
+	    (setf (node-reads node) (map 'list #'r (node-reads node))
+		  (node-writes node) (map 'list #'r (node-writes node)))))
+	(graph-nodes lowered-graph)))))
 
 (defun %module->iseqbw (session module prev-grad)
   "Module.backward(dout) -> Module.args[0].grad, Module.args[1].grad, ..."
