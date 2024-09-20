@@ -431,11 +431,11 @@ Lifespan:
 	  for kernel in (mp-kernels mp) ;; update arguments
 	  if kernel do (dolist (k kernel) (apply-current-plan mp group k)))))
 
-(defun remove-unused-kernels (groups kernels meta-id
-			      &aux (static-read
-				    (append
-				     meta-id
-				     (loop for g in groups if (group-realize-on-vm g) append (group-args g)))))
+(defun dead-kernel-elimination (groups kernels meta-id
+				&aux (static-read
+				      (append
+				       meta-id
+				       (loop for g in groups if (group-realize-on-vm g) append (group-args g)))))
   (labels ((f (ks nth
 	       &aux
 		 (subsequent-reads
@@ -460,7 +460,7 @@ Lifespan:
     kernels))
 
 (defmethod retrive-kernels ((mp MemoryPlanner))
-  (setf (mp-kernels mp) (remove-unused-kernels (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))
+  (setf (mp-kernels mp) (dead-kernel-elimination (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))
   (optimize-memory-load mp)
   (loop for group in (mp-groups mp)
 	for kernels in (mp-kernels mp)
