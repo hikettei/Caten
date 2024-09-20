@@ -18,4 +18,41 @@
   (def test-4d-matmul (16 16 16 16) (16 16 16 16))
   (def test-5d-matmul (5 5 5 5 5) (5 5 5 5 5))
   (def test-6d-matmul (5 5 5 5 5 5) (5 5 5 5 5 5)))
-  
+
+(macrolet ((def (name shape1 shape2)
+	     `(deftest ,name
+		(with-given-dtype ((:float32 . "float32"))
+		  (let ((x (rand ',shape1))
+			(y (rand ',shape2)))
+		    (assert-equal
+			(:atol 1e-6 :rtol 1e-5)
+			(with-torch (x y)
+			  (->caten (torch.matmul x (torch.transpose y -1 -2))))
+			(proceed (!matmul x (!transpose y -1 -2)))))))))
+  (def test-squared-2d-matmul-t1 (64 64) (64 64))
+  (def test-2d-matmul-t1 (32 64) (128 64))
+  (def test-broadcast-matmul-left-t1 (2 10 30) (20 10))
+  (def test-broadcast-matmul-right-t1 (10 20) (2 30 20))
+  (def test-3d-matmul-t1 (16 16 16) (16 16 16))
+  (def test-4d-matmul-t1 (16 16 16 16) (16 16 16 16))
+  (def test-5d-matmul-t1 (5 5 5 5 5) (5 5 5 5 5))
+  (def test-6d-matmul-t1 (5 5 5 5 5 5) (5 5 5 5 5 5)))
+
+(macrolet ((def (name shape1 shape2)
+	     `(deftest ,name
+		(with-given-dtype ((:float32 . "float32"))
+		  (let ((x (rand ',shape1))
+			(y (rand ',shape2)))
+		    (assert-equal
+			(:atol 1e-6 :rtol 1e-5)
+			(with-torch (x y)
+			  (->caten (torch.matmul (torch.transpose x -1 -2) y)))
+			(proceed (!matmul (!transpose x -1 -2) y))))))))
+  (def test-squared-2d-matmul-t2 (64 64) (64 64))
+  (def test-2d-matmul-t2 (64 32) (64 128))
+  (def test-broadcast-matmul-left-t2 (2 10 30) (10 20))
+  (def test-broadcast-matmul-right-t2 (10 20) (2 30 20))
+  (def test-3d-matmul-t2 (16 16 16) (16 16 16))
+  (def test-4d-matmul-t2 (16 16 16 16) (16 16 16 16))
+  (def test-5d-matmul-t2 (5 5 5 5 5) (5 5 5 5 5))
+  (def test-6d-matmul-t2 (5 5 5 5 5 5) (5 5 5 5 5 5)))

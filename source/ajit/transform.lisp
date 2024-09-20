@@ -36,8 +36,9 @@
   "Compares two outermost loops in the a and b"
   (and
    ;; [TODO] Fuse Nested Loops that ISL failed to fuse.
-   (<= (kernel-renderer-loop-depth a) 3)
-   (<= (kernel-renderer-loop-depth b) 3)
+   ;; There should be much better way to determine this.
+   (<= (kernel-renderer-loop-depth a) 2)
+   (<= (kernel-renderer-loop-depth b) 2)
    (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
      (and a b
 	  (equal (getattr a :idx) (getattr b :idx))
