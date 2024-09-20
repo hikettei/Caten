@@ -257,7 +257,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 			    (range 0 (buffer-nrank buffer)))
 	   for nth in order
 	   for stride-nth in (or strides (buffer-stride buffer))
-	   for view in (buffer-views buffer)
+	   for view   = (nth nth (buffer-views buffer))
 	   for stride = (reveal-buffer stride-nth)
 	   for upfrom = (reveal-buffer (or (nth 0 view) 0))
 	   for by     = (reveal-buffer (or (nth 2 view) 1))
@@ -316,7 +316,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-(defun render-access (alias-f mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
+(defun render-access (mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
   "Render the read/write accessing relation ship in the following notation:
 ```
 [depends-on] -> {
@@ -324,35 +324,20 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
         ...
 }
 ```
-;; [TODO] Remove constraints and alias-f
 "
-  (declare (type function alias-f)
-	   (type list depends-on)
+  (declare (type list depends-on)
 	   (type (member :read :write) mode)
 	   (type hash-table pipeline))
   (with-output-to-string (out)
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
-    (setf alias-f #'identity)
     (maphash1
      #'(lambda (timestamp subgraph)
 	 (let* ((lf (graph->loop-factors subgraph :scalar-mutation t))
-		(mutated-p (graph-loop-scalar-mutated-p subgraph))
-		(constraints
-		  (loop for node in (graph-nodes subgraph)
-			if (and (eql (node-type node) :IR/FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
-			  collect
-			  (progn
-			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
-			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node))))))
-		(constraints
-		  (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
 		(occur-from
 		  (format nil "T~a[~(~a~)]" ;; = 0
 			  timestamp (render-list lf)))
 		(scalar
 		  (apply #'concatenate 'string (butlast (loop repeat kernel-rank append (list "0" ", "))))))
-	   (when (string= constraints "")
-	     (setf constraints "true"))
 	   (flet ((pad ()
 		    (if (= kernel-rank (length lf))
 			""
@@ -373,7 +358,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		       (if (vm-instruction-p node)
 			   (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t) (pad))
 			   (error ":reduction for the op ~a is invaild." node)))))
-		 (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
+		 (loop for r in (funcall (if (eql mode :read) #'node-reads #'node-writes) node)
 		       for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
 			 ;; When node has a :reduction
 			 (when (symbolp r)
@@ -758,8 +743,8 @@ Optional order fusing softmax in a single kernel is:
 		      (print-schedules (group-sched group)))))
 	groups))))
 
-(declaim (ftype (function (AVM group function &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
-(defun create-polyhedron-from-group (avm group alias &key (verbose nil) (verbose-auto nil))
+(declaim (ftype (function (AVM group &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
+(defun create-polyhedron-from-group (avm group &key (verbose nil) (verbose-auto nil))
   "Step2, create a polyhedron from the scheduled items."
   (declare (type group group) (type boolean verbose))
   (let* ((submodule (map 'list #'schedule->submodule (group-sched group))) ;; Rendering :FOR and :ENDFOR
@@ -778,8 +763,8 @@ Optional order fusing softmax in a single kernel is:
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
 	   (domain         (render-domain pipeline :depends-on dynamic-shapes))
 	   ;;(dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
-	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes))
-	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes)))
+	   (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
+	   (write-access (render-access :write pipeline :depends-on dynamic-shapes)))
       (multiple-value-bind (schedule lex-table) (isl-initial-schedule pipeline :depends-on dynamic-shapes)
 	(when verbose-auto
 	  (format t "== [Domain] ===========")
@@ -885,11 +870,10 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type boolean serialize))
   (with-isl-context
     (let* ((groups (create-schedules-from-avm avm :verbose verbose-schedule))
-	   (alias #'identity);(create-reduction-alias-f (graph-nodes (avm-graph avm))))
 	   (groups (loop for group in groups
 			 if (group-realize-on-vm group) collect group
 			   else if (group-sched group) do
-			     (setf (group-polyhedron group) (create-polyhedron-from-group avm group alias :verbose verbose-schedule :verbose-auto verbose-auto))
+			     (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule :verbose-auto verbose-auto))
 				and collect group)))
       (mapc
        #'(lambda (x)
@@ -1079,3 +1063,29 @@ T6[_gid0, _gid1] -> [_gid0, 18, _gid1, 18];
 T7[_gid0, _gid1] -> [_gid0, 21, _gid1, 21];
 }
 ")
+
+(compile-isl
+ :domain "
+[] -> {
+  T0[_gid0, _gid1, _gid2, _gid3, _gid4 = 0] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4 and 0 <= _gid2 < 4 and 0 <= _gid3 < 4;
+  T1[_gid0, _gid1, _gid2, _gid3, _gid4] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4 and 0 <= _gid2 < 4 and 0 <= _gid3 < 4 and 0 <= _gid4 < 4;
+}
+"
+ :read "
+[] -> {
+  T0[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_12[_gid0, _gid1, _gid2, _gid3];
+  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_15[_gid0, _gid1, _gid2, _gid3, 0];
+  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_13[_gid0, _gid1, _gid2, _gid3, 0];
+  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_6[_gid0, _gid1, _gid2, 0, _gid4];
+  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_0[_gid0, _gid1, 0, _gid4, _gid3];
+}
+"
+ :write
+ "
+[] -> {
+  T0[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_13[_gid0, _gid1, _gid2, _gid3, 0];
+  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_15[_gid0, _gid1, _gid2, _gid3, 0];
+}
+"
+ :schedule "{ T0[_gid0, _gid1, _gid2, _gid3, _gid4] -> [_gid0, 0, _gid1, 0, _gid2, 0, _gid3, 0];
+T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> [_gid0, 4, _gid1, 4, _gid2, 4, _gid3, _gid4] }")
