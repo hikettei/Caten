@@ -6,7 +6,7 @@
 		  (let ((x (rand ',shape1))
 			(y (rand ',shape2)))
 		    (assert-equal
-			()
+			(:atol 1e-6 :rtol 1e-5)
 			(with-torch (x y)
 			  (->caten (torch.matmul x y)))
 			(proceed (!matmul x y))))))))

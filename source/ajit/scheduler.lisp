@@ -889,6 +889,15 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
 	(declare (ignore _))
+	(when (>= (ctx:getenv :JIT_DEBUG) 2)
+	  (format t "Final JIT Schedule:~%")
+	  (loop for nth upfrom 0
+		for kr in kernels do
+		  (format t "~%=== nth=~a ======" nth)
+		  (if (group-p kr)
+		      ;;(print (group-graph kr))
+		      nil
+		      (dolist (k kr) (print (kernel-renderer-nodes k))))))
 	(unless compile-later (%render-compile backend avm final-code dir))
 	(list
 	 (map 'list #'car blueprints/codes) final-code mp
