@@ -9,7 +9,7 @@ on:
 
 jobs:
   UnitTest:
-    name: Unittests on (${{ matrix.lisp }})
+    name: (${{ matrix.backend }}) Unittests on (${{ matrix.lisp }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
