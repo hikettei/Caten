@@ -15,6 +15,7 @@ jobs:
     strategy:
       matrix:
         lisp: [sbcl-bin/2.4.0, ccl-bin/1.12.2] # Caten should work on the latest sbcl; but (ql:quickload :dissect) which rove depends on, fails with > sbcl-bin/2.4.2
+        backend: [lisp, clang]
         os: [ubuntu-latest]
         target:
         - normal
@@ -47,13 +48,14 @@ jobs:
         run: make install_extra
       - name: Check $PATH
         run: echo $PATH
-      - name: (Lisp) JIT=0 AVM=LISP rove caten.asd
+      - name: (Lisp) rove caten.asd
+        if: ${{ matrix.backend == 'lisp' }}
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
           CI=1 JIT=0 AVM=LISP rove caten.asd
-      - name: (Clang JIT) JIT=1 JIT_BACKEND=CLANG rove caten.asd
-        if: ${{ matrix.lisp != 'ccl-bin/1.12.2' }}
+      - name: (Clang) rove caten.asd
+        if: ${{ matrix.backend == 'clang' }} & ${{ matrix.lisp != 'ccl-bin/1.12.2' }}
         run: |
           ulimit -n 8192
           ros config set dynamic-space-size 8gb
