@@ -468,7 +468,9 @@ in a single timestamp otherwise recursive dependencies will occur.
 					 ;; If there are multiple tensors, one is viewed, one is not viewed
 					 ;; Find out the original one and allocate it with the original shape.
 					 (find (buffer-orig-buffer-shape s) args :key #'buffer-shape :test #'equal)
-					 (error "Cannot determine the size of nested buffer! (It is a bug of Caten.)"))))))))
+					 s
+					 ;;(error "Cannot determine the size of nested buffer! (It is a bug of Caten.)")
+					 )))))))
 		     (make-node :Buffer :Allocate
 				(list name) (map 'list #'reveal-buffer `(,@(buffer-shape typ) ,@(buffer-stride typ)))
 				:nrank (buffer-nrank typ)

@@ -15,4 +15,7 @@
   (def test-broadcast-matmul-left (2 10 30) (30 20))
   (def test-broadcast-matmul-right (10 20) (2 20 30))
   (def test-3d-matmul (16 16 16) (16 16 16))
-  (def test-4d-matmul (16 16 16 16) (16 16 16 16)))
+  (def test-4d-matmul (16 16 16 16) (16 16 16 16))
+  (def test-5d-matmul (5 5 5 5 5) (5 5 5 5 5))
+  (def test-6d-matmul (5 5 5 5 5 5) (5 5 5 5 5 5)))
+  

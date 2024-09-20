@@ -14,6 +14,18 @@
   (nth 0 :type fixnum)
   (args nil))
 
+(defmethod kernel-renderer-loop-depth ((k kernel-renderer))
+  (let ((nest 0) (depth 0))
+    (loop for node in (kernel-renderer-nodes k)
+	  for type = (node-type node)
+	  if (eql type :FOR)
+	    do (incf depth)
+	  if (eql type :ENDFOR)
+	    do (decf depth)
+	  end
+	  do (setf nest (max nest depth)))
+    nest))
+
 (defmethod find-outermost-for ((r kernel-renderer))
   (let ((nodes (kernel-renderer-nodes r)))
     (loop for node in nodes
@@ -22,13 +34,16 @@
 
 (defmethod kernel-renderer-outermost-loop-eq ((a kernel-renderer) (b kernel-renderer))
   "Compares two outermost loops in the a and b"
-  (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
-    (and a b
-	 (equal (getattr a :idx) (getattr b :idx))
-	 (expr-eq (getattr a :upfrom) (getattr b :upfrom))
-	 (expr-eq (getattr a :below) (getattr b :below))
-	 (expr-eq (getattr a :by) (getattr b :by))
-	 (eql (getattr a :scope) (getattr b :scope)))))
+  (and
+   ;; [TODO] Fuse Nested Loops that ISL failed to fuse.
+   (= (kernel-renderer-loop-depth a) (kernel-renderer-loop-depth b))
+   (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
+     (and a b
+	  (equal (getattr a :idx) (getattr b :idx))
+	  (expr-eq (getattr a :upfrom) (getattr b :upfrom))
+	  (expr-eq (getattr a :below) (getattr b :below))
+	  (expr-eq (getattr a :by) (getattr b :by))
+	  (eql (getattr a :scope) (getattr b :scope))))))
 
 (defmethod separate-scalar-and-vector-parts ((a kernel-renderer))
   "Return: (values scalar-nodes vector-nodes) if nodes are:
