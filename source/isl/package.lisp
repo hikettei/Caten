@@ -349,7 +349,9 @@
    #:schedule-node-get-type
    #:schedule-node-insert-partial-schedule
    #:schedule-node-get-schedule-depth
+   #:schedule-node-get-child
    #:schedule-insert-sequence
+   #:schedule-node-get-domain
    ))
 
 (in-package :caten/isl)

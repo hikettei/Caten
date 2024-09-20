@@ -40,19 +40,19 @@
 (defun collect-bandnode (top &aux (out) (depth 0))
   (declare (type polyhedral top))
   (labels ((explore (schedule-node)
-	     (let ((c (isl::%isl-schedule-node-has-children schedule-node)))
+	     (let ((c (isl::%isl-schedule-node-has-children (isl::schedule-node-handle schedule-node))))
 	       (when (eql c :bool-true)
-		 (loop for n upfrom 0 below (isl::%isl-schedule-node-n-children schedule-node)
-		       for node = (isl::%isl-schedule-node-get-child schedule-node n)
+		 (loop for n upfrom 0 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle schedule-node))
+		       for node = (schedule-node-get-child schedule-node n)
 		       do (explore node)))
-	       (ecase (isl::%isl-schedule-node-get-type schedule-node)
+	       (ecase (isl::%isl-schedule-node-get-type (isl::schedule-node-handle schedule-node))
 		 (:Schedule-Node-Leaf)
 		 (:Schedule-Node-Filter)
 		 (:Schedule-Node-Sequence)
 		 (:Schedule-Node-Band
-		  (let ((dom (isl::%make-union-set (isl::%isl-schedule-node-get-domain schedule-node)))
-			(n (isl::%isl-schedule-node-band-n-member schedule-node))
-			(shuffle-p (eql :bool-true (isl::%isl-schedule-node-band-get-permutable schedule-node))))
+		  (let ((dom (schedule-node-get-domain schedule-node))
+			(n (isl::%isl-schedule-node-band-n-member (isl::schedule-node-handle schedule-node)))
+			(shuffle-p (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle schedule-node)))))
 		    (incf depth)
 		    (push
 		     (make-band
@@ -60,7 +60,7 @@
 		      :permutable shuffle-p
 		      :coincident
 		      (loop for i upfrom 0 below n
-			    collect (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident schedule-node i))))
+			    collect (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident (isl::schedule-node-handle schedule-node) i))))
 		     out)))
 		 (:Schedule-Node-Domain)
 		 (:Schedule-Node-Expansion)
@@ -69,7 +69,7 @@
 		 (:Schedule-Node-Set)
 		 (:Schedule-Node-Context)
 		 (:Schedule-Node-Guard)))))
-    (explore (isl::%isl-schedule-get-root (isl::schedule-handle (poly-schedule top))))
+    (explore (schedule-get-root (poly-schedule top)))
     (values out depth)))
 
 (defun finalize-polyhedral (polyhedral &aux (schedule (poly-schedule polyhedral)))
