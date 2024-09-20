@@ -10,6 +10,7 @@
   (:export
    #:*device*
    #:*max-display-len*
+   #:*max-display-matrix*
    #:with-device
    #:Buffer #:make-buffer #:copy-buffer #:buffer-p #:buffer-nrank #:buffer-value #:buffer-dtype #:buffer-shape #:buffer-stride #:buffer-views #:buffer-depend-idx-list
    #:buffer-orig-buffer-shape

@@ -1,6 +1,7 @@
 (in-package :caten/avm)
 
 (defparameter *device* :lisp "a keyword to indicate the device (being dispatched)")
+(defparameter *max-display-matrix* 2)
 (defparameter *max-display-len* 10)
 (defmacro with-device (device &body body)
   "declares the device to use"
@@ -84,7 +85,7 @@
 		maximize (length (format nil "~a" (%vm/read-index *device* buffer i))))))
     (with-output-to-string (stream)
       (format stream " ~a" (indent indent-with))
-      (labels ((pprint-helper (dim subscripts lastp indent)
+      (labels ((pprint-helper (dim subscripts lastp indent &aux (max (if (<= dim 2) *max-display-matrix* max)))
 		 (let ((size (nth dim (buffer-shape buffer))))
 		   (if (null size)
 		       (let* ((content (format nil "~a" (apply #'buffer-ref buffer subscripts)))
