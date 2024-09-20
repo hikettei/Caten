@@ -14,5 +14,5 @@ Tests that are not related to the core functionality of Caten or are time-consum
   :perform
   (asdf:test-op
    (o s)
-   (let ((result (uiop:symbol-call (find-package :rove) :run s :style :dot)))
+   (let ((result (uiop:symbol-call (find-package :rove) :run s :style :spec)))
      (assert (or (null (uiop:getenv "CI")) result)))))
