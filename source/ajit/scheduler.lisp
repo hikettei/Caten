@@ -404,7 +404,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (when (and val (null (find `(,time ,(node-id val)) seen :test #'equal)))
 		 (push (list time (node-id val)) seen)
 		 (let* ((key (getattr val :id)))
-		   (mapc #'(lambda (x) (explore x :time time)) (remove-duplicates (node-reads val)))
+		   (mapc #'(lambda (x) (explore x :time (1+ time))) (remove-duplicates (node-reads val)))
 		   (if (gethash key lex)
 		       (push time (gethash key lex))
 		       (setf (gethash key lex) (list time)))))))
@@ -443,7 +443,7 @@ Optional order fusing softmax in a single kernel is:
 }
 "
   (let ((lex (pipeline->timestamp pipeline))
-	(max-rank  (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline)))))
+	(max-rank (1+ (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline))))))
     (values
      (union-map-from-str
       (with-output-to-string (out)
@@ -457,7 +457,7 @@ Optional order fusing softmax in a single kernel is:
 				 "  T~a[~(~a~)] -> [~(~a~)]"
 				 ts
 				 (render-list loop-factors)
-				 (render-list (padding-list `(,@loop-factors) max-rank)))))
+				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank)))))
 	       (format out "~a;~%" dom)))
 	 pipeline)
 	(format out "}")))
@@ -1089,3 +1089,35 @@ T7[_gid0, _gid1] -> [_gid0, 21, _gid1, 21];
 "
  :schedule "{ T0[_gid0, _gid1, _gid2, _gid3, _gid4] -> [_gid0, 0, _gid1, 0, _gid2, 0, _gid3, 0];
 T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> [_gid0, 4, _gid1, 4, _gid2, 4, _gid3, _gid4] }")
+
+(compile-isl
+ :domain "
+[] -> {
+  T0[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4;
+  T1[_gid0, _gid1, _gid2] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4 and 0 <= _gid2 < 4;
+  T2[_gid0, _gid1] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4;
+}
+"
+ :read "
+[] -> {
+  T0[_gid0, _gid1, _gid2] -> val_12[_gid0, _gid1, _gid2];
+  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
+  T1[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, 0];
+  T1[_gid0, _gid1, _gid2] -> val_6[_gid0, 0, _gid2];
+  T1[_gid0, _gid1, _gid2] -> val_0[0, _gid2, _gid1];
+  T2[_gid0, _gid1] -> val_15[_gid0, _gid1, 0];
+  T2[_gid0, _gid1] -> val_15[_gid0, _gid1, 0];
+}
+"
+ :write "
+[] -> {
+  T0[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, _gid2];
+  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
+  T2[_gid0, _gid1] -> val_18[_gid0, _gid1, 0];
+}
+"
+ :schedule "
+{
+T2[_gid0, _gid1] -> [2, _gid0, _gid1, 0];
+T0[_gid0, _gid1, _gid2] -> [0, _gid0, _gid1, _gid2];
+T1[_gid0, _gid1, _gid2] -> [1, _gid0, _gid1, _gid2] }")
