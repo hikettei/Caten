@@ -340,7 +340,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (flet ((pad ()
 		    (if (= kernel-rank (length lf))
 			""
-			(format nil ",~a"
+			(format nil " ,~a"
 				(apply #'concatenate 'string
 				       (butlast
 					(loop repeat (- kernel-rank (length lf)) append (list "0" ", "))))))))
@@ -442,7 +442,7 @@ Optional order fusing softmax in a single kernel is:
 }
 "
   (let ((lex (pipeline->timestamp pipeline))
-	(max-rank (1+ (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline))))))
+	(max-rank (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline)))))
     (values
      (union-map-from-str
       (with-output-to-string (out)
@@ -456,7 +456,7 @@ Optional order fusing softmax in a single kernel is:
 				 "  T~a[~(~a~)] -> [~(~a~)]"
 				 ts
 				 (render-list loop-factors)
-				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank)))))
+				 (render-list `(,(gethash ts lex) ,@(padding-list loop-factors max-rank))))))
 	       (format out "~a;~%" dom)))
 	 pipeline)
 	(format out "}")))
