@@ -128,6 +128,7 @@ Expected Output (Scalar ops are temporarily excluded):
 
 (defun create-dependency-graph (polyhedral)
   (with-slots ((domain domain-ptr) (initial-schedule initial-schedule) (read-access read-ptr) (write-access write-ptr)) polyhedral
+    ;; References https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
     (let* ((raw (union-map-intersect
 		 (union-map-apply-range
 		  write-access
@@ -154,6 +155,7 @@ Expected Output (Scalar ops are temporarily excluded):
       (let* ((all-deps (union-map-union waw-deps war-deps))
 	     (all-deps (union-map-union all-deps raw-deps))
 	     (schedule-constraints (schedule-constraints-on-domain domain))
+	     (schedule-constraints (schedule-constraints-set-coincidence schedule-constraints all-deps))
 	     (schedule-constraints (schedule-constraints-set-validity schedule-constraints all-deps))
 	     ;; proximity constraints (keeps loops nested based on dependencies)
 	     (schedule-constraints (schedule-constraints-set-proximity schedule-constraints all-deps)))
@@ -196,7 +198,7 @@ for (int c0 = 0; c0 < a; c0 += 1)
     (let ((n 0))
       (loop for g in (hash-table-values (poly-pipeline polyhedral))
 	    do (incf n (length (graph-nodes g))))
-      (set-option "schedule_outer_coincidence" 0)
+      (set-option "schedule_outer_coincidence" 1)
       (set-option "schedule_maximize_band_depth" 1)
       (set-option "schedule_max_constant_term" 1)
       ;;(set-option "schedule_whole_component" 1)

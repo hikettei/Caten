@@ -974,8 +974,11 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			       (make-hash-table)
 			       :ast-option ast-option)))
     (auto-schedule! poly)
+    (print (schedule-get-root (poly-schedule poly)))
     (print (debug/render-c poly))))
 
+;; Loop Collapse https://github.com/zhen8838/isl_learn/blob/main/10_loop_transformation.ipynb
+;; (union-set-apply domain xxx)
 (compile-isl
  :domain
  "
@@ -1007,9 +1010,72 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
  :schedule
  "
 {
-T0[_gid0, _gid1, _gid2] -> [_gid0, _gid1, _gid2];
-T1[_gid0, _gid1, _gid2] -> [_gid0, _gid1, _gid2];
-T2[_gid0, _gid1] -> [_gid0, _gid1, 20];
+T0[_gid0, _gid1, _gid2] -> [_gid0, 0, _gid1, 0, _gid2];
+T1[_gid0, _gid1, _gid2] -> [_gid0, 10, _gid1, 30, _gid2];
+T2[_gid0, _gid1] -> [_gid0, 20, _gid1, 60, 20];
 }
 "
  :ast-option :atomic)
+
+(compile-isl
+ :domain "
+[] -> {
+  T0[_gid0, _gid1 = 0] : 0 <= _gid0 < 3;
+  T1[_gid0, _gid1 = 0] : 0 <= _gid0 < 3;
+  T2[_gid0, _gid1] : 0 <= _gid0 < 3 and 0 <= _gid1 < 3;
+  T3[_gid0, _gid1 = 0] : 0 <= _gid0 < 3;
+  T4[_gid0, _gid1] : 0 <= _gid0 < 3 and 0 <= _gid1 < 3;
+  T5[_gid0, _gid1] : 0 <= _gid0 < 3 and 0 <= _gid1 < 3;
+  T6[_gid0, _gid1 = 0] : 0 <= _gid0 < 3;
+  T7[_gid0, _gid1] : 0 <= _gid0 < 3 and 0 <= _gid1 < 3;
+}
+"
+ :read "
+[] -> {
+  T0[_gid0, _gid1] -> val_0[_gid0, _gid1];
+  T1[_gid0, _gid1] -> val_5[_gid0, _gid1];
+  T2[_gid0, _gid1] -> val_9[_gid0, 0];
+  T2[_gid0, _gid1] -> val_6[_gid0, 0];
+  T2[_gid0, _gid1] -> val_8[_gid0, _gid1];
+  T2[_gid0, _gid1] -> val_6[_gid0, 0];
+  T3[_gid0, _gid1] -> val_9[_gid0, 0];
+  T3[_gid0, _gid1] -> val_9[_gid0, 0];
+  T4[_gid0, _gid1] -> val_8[_gid0, _gid1];
+  T4[_gid0, _gid1] -> val_10[_gid0, 0];
+  T4[_gid0, _gid1] -> val_8[_gid0, _gid1];
+  T5[_gid0, _gid1] -> val_14[_gid0, 0];
+  T5[_gid0, _gid1] -> val_1[_gid0, 0];
+  T5[_gid0, _gid1] -> val_13[_gid0, _gid1];
+  T5[_gid0, _gid1] -> val_1[_gid0, 0];
+  T6[_gid0, _gid1] -> val_14[_gid0, 0];
+  T6[_gid0, _gid1] -> val_14[_gid0, 0];
+  T7[_gid0, _gid1] -> val_13[_gid0, _gid1];
+  T7[_gid0, _gid1] -> val_15[_gid0, 0];
+  T7[_gid0, _gid1] -> val_13[_gid0, _gid1];
+}
+"
+ :write "
+[] -> {
+  T0[_gid0, _gid1] -> val_1[_gid0, _gid1];
+  T1[_gid0, _gid1] -> val_6[_gid0, _gid1];
+  T2[_gid0, _gid1] -> val_9[_gid0, 0];
+  T3[_gid0, _gid1] -> val_10[_gid0, 0];
+  T4[_gid0, _gid1] -> val_13[_gid0, _gid1];
+  T5[_gid0, _gid1] -> val_14[_gid0, 0];
+  T6[_gid0, _gid1] -> val_15[_gid0, 0];
+  T7[_gid0, _gid1] -> val_16[_gid0, _gid1];
+}
+"
+ :schedule
+ "
+{
+T0[_gid0, _gid1] -> [_gid0, 0, _gid1, 0];
+T1[_gid0, _gid1] -> [_gid0, 3, _gid1, 3];
+T2[_gid0, _gid1] -> [_gid0, 6, _gid1, 6];
+T3[_gid0, _gid1] -> [_gid0, 9, _gid1, 9];
+T4[_gid0, _gid1] -> [_gid0, 12, _gid1, 12];
+T5[_gid0, _gid1] -> [_gid0, 15, _gid1, 15];
+T6[_gid0, _gid1] -> [_gid0, 18, _gid1, 18];
+T7[_gid0, _gid1] -> [_gid0, 21, _gid1, 21];
+}
+")
