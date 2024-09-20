@@ -85,7 +85,7 @@
 		maximize (length (format nil "~a" (%vm/read-index *device* buffer i))))))
     (with-output-to-string (stream)
       (format stream " ~a" (indent indent-with))
-      (labels ((pprint-helper (dim subscripts lastp indent &aux (max (if (<= dim 2) *max-display-matrix* max)))
+      (labels ((pprint-helper (dim subscripts lastp indent &aux (max (if (and (>= (buffer-nrank buffer) 3) (<= dim (- (buffer-nrank buffer) 3))) *max-display-matrix* max)))
 		 (let ((size (nth dim (buffer-shape buffer))))
 		   (if (null size)
 		       (let* ((content (format nil "~a" (apply #'buffer-ref buffer subscripts)))
