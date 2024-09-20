@@ -17,10 +17,15 @@
   (:take union-access-info)
   (:take union-map))
 
-(define-isl-function union-access-info-set-schedule %isl-union-access-info-set-schedule
+;(define-isl-function union-access-info-set-schedule %isl-union-access-info-set-schedule
+;  (:give union-access-info)
+ ; (:take union-access-info)
+;  (:take schedule))
+
+(define-isl-function union-access-info-set-schedule-map %isl-union-access-info-set-schedule-map
   (:give union-access-info)
   (:take union-access-info)
-  (:take schedule))
+  (:take union-map))
 
 (define-isl-function union-access-info-compute-flow %isl-union-access-info-compute-flow
   (:give union-flow)

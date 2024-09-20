@@ -962,28 +962,30 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
      (avm-fw-outputs avm)
      (avm-bw-outputs avm))))
 
-
-(defun compile-isl (dom read write schedule)
+(defun compile-isl (&key domain read write schedule (ast-option :separate))
   (let ((poly (make-polyhedral (make-avm (make-graph) :x (make-hash-table) nil nil)
 			       (make-hash-table)
-			       dom
+			       domain
 			       read
 			       write
 			       (union-map-from-str schedule)
 			       nil
 			       nil
-			       (make-hash-table))))
+			       (make-hash-table)
+			       :ast-option ast-option)))
     (auto-schedule! poly)
     (print (debug/render-c poly))))
 
 (compile-isl
+ :domain
  "
 [] -> {
-  T0[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 20 and 0 <= _gid1 < 20;
-  T1[_gid0, _gid1, _gid2] : 0 <= _gid0 < 20 and 0 <= _gid1 < 20 and 0 <= _gid2 < 20;
-  T2[_gid0, _gid1] : 0 <= _gid0 < 20 and 0 <= _gid1 < 20;
+  T0[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30;
+  T1[_gid0, _gid1, _gid2] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 20;
+  T2[_gid0, _gid1] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30;
 }
 "
+ :read
  "
 [] -> {
   T0[_gid0, _gid1, _gid2] -> val_12[_gid0, _gid1, _gid2];
@@ -992,9 +994,9 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
   T1[_gid0, _gid1, _gid2] -> val_6[_gid0, 0, _gid2];
   T1[_gid0, _gid1, _gid2] -> val_0[0, _gid2, _gid1];
   T2[_gid0, _gid1] -> val_15[_gid0, _gid1, 0];
-  T2[_gid0, _gid1] -> val_15[_gid0, _gid1, 0];
 }
 "
+ :write
 "
 [] -> {
   T0[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, _gid2];
@@ -1002,10 +1004,12 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
   T2[_gid0, _gid1] -> val_18[_gid0, _gid1, 0];
 }
 "
+ :schedule
  "
- {
+{
 T0[_gid0, _gid1, _gid2] -> [_gid0, _gid1, _gid2];
 T1[_gid0, _gid1, _gid2] -> [_gid0, _gid1, _gid2];
-T2[_gid0, _gid1] -> [_gid0, _gid1, 4];
- }
-")
+T2[_gid0, _gid1] -> [_gid0, _gid1, 20];
+}
+"
+ :ast-option :atomic)

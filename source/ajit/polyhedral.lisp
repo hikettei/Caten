@@ -128,18 +128,21 @@ Expected Output (Scalar ops are temporarily excluded):
 
 (defun create-dependency-graph (polyhedral)
   (with-slots ((domain domain-ptr) (initial-schedule initial-schedule) (read-access read-ptr) (write-access write-ptr)) polyhedral
-    (let* ((before-map (union-map-lex-lt-union-map initial-schedule initial-schedule))
-           (read-access (union-map-intersect-domain read-access domain))
-           (write-access (union-map-intersect-domain write-access domain))
-           (RaW (union-map-intersect
-		 (union-map-apply-range write-access (union-map-reverse read-access))
-		 before-map))
-           (WaW (union-map-intersect
-		 (union-map-apply-range write-access (union-map-reverse write-access))
-		 before-map))
-           (WaR (union-map-intersect
-		 (union-map-apply-range read-access (union-map-reverse write-access))
-		 before-map)))
+    (let* ((raw (union-map-intersect
+		 (union-map-apply-range
+		  write-access
+		  (union-map-reverse read-access))
+		 (union-map-lex-lt-union-map initial-schedule initial-schedule)))
+	   (war (union-map-intersect
+		 (union-map-apply-range
+		  read-access
+		  (union-map-reverse write-access))
+		 (union-map-lex-lt-union-map initial-schedule initial-schedule)))
+	   (waw (union-map-intersect
+		 (union-map-apply-range
+		  write-access
+		  (union-map-reverse write-access))
+		 (union-map-lex-lt-union-map initial-schedule initial-schedule))))
       (values raw waw war))))
 
 (defun poly/make-constraints (polyhedral)
@@ -193,7 +196,7 @@ for (int c0 = 0; c0 < a; c0 += 1)
     (let ((n 0))
       (loop for g in (hash-table-values (poly-pipeline polyhedral))
 	    do (incf n (length (graph-nodes g))))
-      (set-option "schedule_outer_coincidence" 1)
+      (set-option "schedule_outer_coincidence" 0)
       (set-option "schedule_maximize_band_depth" 1)
       (set-option "schedule_max_constant_term" 1)
       ;;(set-option "schedule_whole_component" 1)

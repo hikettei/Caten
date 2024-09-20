@@ -115,6 +115,7 @@
    #:union-access-info-compute-flow
    #:union-flow-get-must-dependence
    #:union-flow-get-may-dependence
+   #:union-access-info-set-schedule-map
    ;; Set
    #:set
    ;;#:setp
