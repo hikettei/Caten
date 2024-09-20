@@ -1,4 +1,31 @@
 (in-package :caten/test-suite)
+
+(defparameter *torch-dtype* "float32")
+(defparameter *caten-dtype* :float32)
+
+(defun ->numpy (tensor &key (dtype *torch-dtype*))
+  (declare (type tensor tensor))
+  (assert (buffer-value (tensor-buffer tensor)) () "The tensor ~a is not realized yet!." tensor)
+  (np:reshape
+   (np:array
+    (buffer-value (tensor-buffer tensor))
+    :dtype
+    dtype)
+   (buffer-shape (tensor-buffer tensor))))
+
+(defun ->torch (tensor &key (dtype *torch-dtype*)) (remote-objects (torch.from_numpy (->numpy tensor :dtype dtype))))
+
+(defun torch-shape (tensor) (remote-objects* (py.list (chain tensor (size)))))
+
+(defun ->caten (tensor &key (dtype *caten-dtype*))
+  (let* ((size (coerce (torch-shape tensor) 'list))
+ 	 (buffer (remote-objects* (chain tensor (detach) (cpu) (flatten) (numpy))))
+	 (buffer-out (make-buffer (length size) size (caten/apis::row-major-calc-strides size) dtype nil)))
+    (setf (buffer-value buffer-out) buffer)
+    (let ((new (make-tensor (coerce size 'list) :dtype dtype :order :row)))
+      (setf (tensor-buffer new) buffer-out)
+      (make-param #'(lambda (_) _ new) size :dtype dtype :order :row))))
+
 ;; Common Utils for caten/nn.test
 (defun elements (tensor) (buffer-value (tensor-buffer tensor)))
 (defun n-kernels (avm)
@@ -80,3 +107,43 @@
 	   (dolist (*default-order* ',orders)
 	     (testing (format nil "Testing w/ dtype=~a, order=~a" *default-float* *default-order*)
 	       (test/run ,name))))))))
+
+(defmacro with-torch ((&rest tensors) &body body)
+  `(let (,@(loop for tensor in tensors
+		 collect `(,tensor (->torch ,tensor))))
+     ,@body))
+
+(defmacro with-dtype ((caten-dtype torch-dtype) &body body)
+  `(let ((*caten-dtype* ,caten-dtype)
+	 (*torch-dtype* ,torch-dtype))
+     ,@body))
+
+(defun compute-rtol-atol (array1 array2)
+  (declare (type simple-array array1 array2))
+  (assert (= (array-total-size array1) (array-total-size array2))
+	  ()
+	  "The length of two arrays does not match: ~a vs ~a"
+	  (array-total-size array1) (array-total-size array2))
+  (let ((max-abs-diff 0.0)
+        (max-rel-diff 0.0))
+    (dotimes (i (array-total-size array1))
+      (let* ((val1 (aref array1 i))
+             (val2 (aref array2 i))
+             (abs-diff (abs (- val1 val2)))
+             (denominator (max (abs val1) (abs val2) 1e-8))
+             (rel-diff (/ abs-diff denominator)))
+        (when (> abs-diff max-abs-diff)
+          (setf max-abs-diff abs-diff))
+        (when (> rel-diff max-rel-diff)
+          (setf max-rel-diff rel-diff))))
+    (values max-rel-diff max-abs-diff)))
+
+(defmacro assert-equal ((&key (rtol 1e-7) (atol 0.0)) torch-form lisp-form)
+`(let ((torch ,torch-form) (lisp ,lisp-form))
+   (ok (equal (shape torch) (shape lisp)) "Shapes match")
+   (multiple-value-bind (atol1 rtol1) (compute-rtol-atol (buffer-value (tensor-buffer torch)) (buffer-value (tensor-buffer lisp)))
+     (ok (<= atol1 ,atol) (format nil "Satisfying (atol=~a) <= ~a" atol1 ,atol))
+     (ok (<= rtol1 ,rtol) (format nil "Satisfying (rtol=~a) <= ~a" rtol1 ,rtol)))))
+
+(defmacro with-given-dtype ((&rest dtypes) &body body)
+  `(loop for (*caten-dtype* . *torch-dtype*) in ',dtypes do (testing (format nil "dtype=~a" *caten-dtype*) ,@body)))

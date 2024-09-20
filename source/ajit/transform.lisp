@@ -14,6 +14,18 @@
   (nth 0 :type fixnum)
   (args nil))
 
+(defmethod kernel-renderer-loop-depth ((k kernel-renderer))
+  (let ((nest 0) (depth 0))
+    (loop for node in (kernel-renderer-nodes k)
+	  for type = (node-type node)
+	  if (eql type :FOR)
+	    do (incf depth)
+	  if (eql type :ENDFOR)
+	    do (decf depth)
+	  end
+	  do (setf nest (max nest depth)))
+    nest))
+
 (defmethod find-outermost-for ((r kernel-renderer))
   (let ((nodes (kernel-renderer-nodes r)))
     (loop for node in nodes
@@ -22,13 +34,18 @@
 
 (defmethod kernel-renderer-outermost-loop-eq ((a kernel-renderer) (b kernel-renderer))
   "Compares two outermost loops in the a and b"
-  (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
-    (and a b
-	 (equal (getattr a :idx) (getattr b :idx))
-	 (expr-eq (getattr a :upfrom) (getattr b :upfrom))
-	 (expr-eq (getattr a :below) (getattr b :below))
-	 (expr-eq (getattr a :by) (getattr b :by))
-	 (eql (getattr a :scope) (getattr b :scope)))))
+  (and
+   ;; [TODO] Fuse Nested Loops that ISL failed to fuse.
+   ;; There should be much better way to determine this.
+   (<= (kernel-renderer-loop-depth a) 2)
+   (<= (kernel-renderer-loop-depth b) 2)
+   (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
+     (and a b
+	  (equal (getattr a :idx) (getattr b :idx))
+	  (expr-eq (getattr a :upfrom) (getattr b :upfrom))
+	  (expr-eq (getattr a :below) (getattr b :below))
+	  (expr-eq (getattr a :by) (getattr b :by))
+	  (eql (getattr a :scope) (getattr b :scope))))))
 
 (defmethod separate-scalar-and-vector-parts ((a kernel-renderer))
   "Return: (values scalar-nodes vector-nodes) if nodes are:
@@ -155,11 +172,10 @@ We consider shuffling these nodes which never violates lexiographical order.
        (null (kernel-renderer-nodes b))
        (lex-dep-ok (kernel-renderer-nodes a) (kernel-renderer-nodes b))))))
 
-;; TODO: Test
 (defun sort-kernel-renderers (kernel-renderers polyhedral)
   (flet ((s (x y) (swap-two-loops x y polyhedral)))
     (sort kernel-renderers #'s)))
-  
+
 (defun fuse-outermost-loops (polyhedral blueprints)
   "Fuses two rendering groups whose outermost loops are the completely equivalent.
 This fusion is only applied in the original polyhedral group, (which is assumed to no circular deps, and time series deps are in straight)
@@ -180,24 +196,23 @@ This may reduce the number of extra allocation for tmpvar.
 "
   (declare (type polyhedral polyhedral)
 	   (type list blueprints))
-  (sort-kernel-renderers
-   (remove-duplicates
-    (loop with last-visited = (car blueprints)
-	  for blueprint in `(,@(cdr blueprints) nil)
-	  for merged = (when blueprint (merge-two-loops last-visited blueprint polyhedral))
-	  collect
-	  (if (and blueprint merged (kernel-renderer-outermost-loop-eq last-visited blueprint))
-	      (progn
-		(setf last-visited
-		      (make-kernel-renderer
-		       :nodes merged
-		       :nth (kernel-renderer-nth last-visited)))
-		last-visited)
-	      (prog1
-		  last-visited
-		(setf last-visited blueprint))))
-    :key #'kernel-renderer-nth)
-   polyhedral))
+  (let ((blueprints (sort-kernel-renderers blueprints polyhedral)))
+    (remove-duplicates
+     (loop with last-visited = (car blueprints)
+	   for blueprint in `(,@(cdr blueprints) nil)
+	   for merged = (when blueprint (merge-two-loops last-visited blueprint polyhedral))
+	   collect
+	   (if (and blueprint merged (kernel-renderer-outermost-loop-eq last-visited blueprint))
+	       (progn
+		 (setf last-visited
+		       (make-kernel-renderer
+			:nodes merged
+			:nth (kernel-renderer-nth last-visited)))
+		 last-visited)
+	       (prog1
+		   last-visited
+		 (setf last-visited blueprint))))
+     :key #'kernel-renderer-nth)))
 
 (defmethod collapse-loop ((kr kernel-renderer) (poly polyhedral))
   "Collapses the loop in the kernel to get more parallelization/vectorization opportunities, e.g.:

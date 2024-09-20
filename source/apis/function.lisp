@@ -103,7 +103,8 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod forward :around ((op Permute) &rest inputs)
   (let* ((x (call-next-method))
 	 (views (tensor-views x)))
-    (setf (tensor-variables x)
+    (setf (tensor-views x) (or (tensor-views x) (loop repeat (ndim x) collect nil))
+          (tensor-variables x)
 	  (append
 	   (tensor-variables x)
 	   (if views

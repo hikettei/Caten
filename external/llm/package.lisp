@@ -5,6 +5,6 @@
    #:TransformerBlock
    #:FeedForward
    #:Attention
-   #:Scale-Dot-Product-Attention))
+   #:Scaled-Dot-Product-Attention))
 
 (in-package :caten/llm)
