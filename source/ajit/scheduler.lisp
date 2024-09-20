@@ -306,7 +306,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-(defun render-access (alias-f mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
+(defun render-access (alias-f mode pipeline &key (depends-on nil) (pad nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
   "Render the read/write accessing relation ship in the following notation:
 ```
 [depends-on] -> {
@@ -753,13 +753,15 @@ Optional order fusing softmax in a single kernel is:
       (print-pipeline pipeline))
     (let* ((vm-inputs (avm-gather-args avm))
 	   ;;(vm-input-tensors (nodes-depends-on (graph-nodes (group-graph group))))
-	   (loop-size (loop for value being the hash-values of pipeline
-			    append (graph->loop-size value)))
+	   (loop-sizes (loop for value being the hash-values of pipeline
+			     collect (graph->loop-size value)))
+	   (loop-size (apply #'append loop-sizes))
+	   (loop-max-depth (apply #'max (or (map 'list #'length loop-sizes) (list 0))))
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
 	   (domain         (render-domain pipeline :depends-on dynamic-shapes))
 	   ;;(dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
-	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes))
-	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes)))
+	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes :pad loop-max-depth))
+	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes :pad loop-max-depth)))
       (multiple-value-bind (schedule lex-table) (isl-initial-schedule pipeline :depends-on dynamic-shapes)
 	(when verbose-auto
 	  (format t "== [Domain] ===========")
