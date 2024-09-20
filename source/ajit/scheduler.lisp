@@ -308,9 +308,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 				else
 				  collect lf)))
 		 (format out " : ")
-		 (format out "~a"
-			 (apply #'concatenate 'string
-				(butlast (loop for c in constraints unless (iconstraint-scalar-p c) append (list (form c) " and ")))))
+		 (let ((c (apply #'concatenate 'string (butlast (loop for c in constraints unless (iconstraint-scalar-p c) append (list (form c) " and "))))))
+		   (format out "~a" (if (string= c "") "true" c)))
 		 (format out ";~%"))
 	       (format out "  T~a[];~%" timestamp))))
      pipeline)
@@ -1173,13 +1172,13 @@ T1[_gid0, _gid1, _gid2] -> [1, _gid0, _gid1, _gid2] }")
 "
  :schedule "
 {
-T0[_gid0, _gid1, _gid2, _gid3] -> [0, _gid0, _gid1, _gid2, _gid3];
-T3[_gid0, _gid1, _gid2, _gid3] -> [3, _gid0, _gid1, _gid2, _gid3];
-T2[_gid0, _gid1, _gid2, _gid3] -> [2, _gid0, _gid1, _gid2, _gid3];
-T1[_gid0, _gid1, _gid2, _gid3] -> [1, _gid0, _gid1, _gid2, _gid3];
-T6[_gid0, _gid1, _gid2, _gid3] -> [5, _gid0, _gid1, _gid2, _gid3];
-T4[_gid0, _gid1, _gid2, _gid3] -> [4, _gid0, _gid1, _gid2, _gid3];
-T5[_gid0, _gid1, _gid2, _gid3] -> [4, _gid0, _gid1, _gid2, _gid3];
+T0[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,0];
+T3[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,3];
+T2[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,2];
+T1[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,1];
+T6[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,5];
+T4[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,4];
+T5[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,4];
 }")
 
   )
