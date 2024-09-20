@@ -26,6 +26,9 @@
 	  (iconstraint-var c)
 	  (iconstraint-below c)))
 
+(defun iconstraint-scalar-p (c)
+  (and (eql 0 (iconstraint-upfrom c)) (eql 1 (iconstraint-below c))))
+
 (define-isl-object "IUnion"
     "Union: [m] where m = alpha * index + beta"
     ((indices &optional (alphas '(1)) (betas '(0)))

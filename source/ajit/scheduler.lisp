@@ -206,7 +206,7 @@ Buffers: ~a
   (and
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
-
+;; TODO: generate Expr
 (defun one-dimensional-renderer (gid stride upfrom by broadcast-p)
   (if broadcast-p
       (format nil "0")
@@ -298,15 +298,25 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node)))))))
 	   (if loop-factors
 	       (progn
-		 (format out "  T~a[~(~a~)]" timestamp (render-list loop-factors))
+		 (format out "  T~a[~(~a~)]" timestamp
+			 (render-list
+			  (loop for lf in loop-factors
+			       for c in constraints
+			       for scal-p = (iconstraint-scalar-p c)
+				if scal-p
+				  collect (format nil "~a = 0" lf)
+				else
+				  collect lf)))
 		 (format out " : ")
-		 (format out "~a" (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
+		 (format out "~a"
+			 (apply #'concatenate 'string
+				(butlast (loop for c in constraints unless (iconstraint-scalar-p c) append (list (form c) " and ")))))
 		 (format out ";~%"))
 	       (format out "  T~a[];~%" timestamp))))
      pipeline)
     (format out "}")))
 
-(defun render-access (alias-f mode pipeline &key (depends-on nil) (pad nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
+(defun render-access (alias-f mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
   "Render the read/write accessing relation ship in the following notation:
 ```
 [depends-on] -> {
@@ -314,6 +324,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
         ...
 }
 ```
+;; [TODO] Remove constraints and alias-f
 "
   (declare (type function alias-f)
 	   (type list depends-on)
@@ -321,6 +332,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (type hash-table pipeline))
   (with-output-to-string (out)
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
+    (setf alias-f #'identity)
     (maphash1
      #'(lambda (timestamp subgraph)
 	 (let* ((lf (graph->loop-factors subgraph :scalar-mutation t))
@@ -335,48 +347,55 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		(constraints
 		  (apply #'concatenate 'string (butlast (loop for c in constraints append (list (form c) " and ")))))
 		(occur-from
-		  (format nil "T~a[~(~a~)]"
+		  (format nil "T~a[~(~a~)]" ;; = 0
 			  timestamp (render-list lf)))
 		(scalar
 		  (apply #'concatenate 'string (butlast (loop repeat kernel-rank append (list "0" ", "))))))
 	   (when (string= constraints "")
 	     (setf constraints "true"))
-	   (dolist (node (graph-nodes subgraph))
-	     (when (not (eql (node-class node) :IR))
-	       ;; When reduction is T, the first argument becomes the dependency
-	       ;; e.g.: Tn[...]: A <- ADD(X, Y, reduction=t) is the equivalent to
-	       ;; Tn[...]: A = (X += Y),  i.e.: Tn[...]: A = (X = X + Y)
-	       ;; Here, X depends on X.
-	       (when (getattr node :reduction)
-		 (let ((reduce-to (funcall alias-f (car (node-reads node))))
-		       (rt        (car (relay-reads (read-type-relay node)))))
-		   (when (symbolp reduce-to)
-		     (if (vm-instruction-p node)
-			 (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t) constraints)
-			 (error ":reduction for the op ~a is invaild." node)))))
-	       (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
-		     for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
-		       ;; When node has a :reduction
-		       (when (symbolp r)
-			 (if (null lf)
-			     (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
-			     (when (vm-instruction-p node)
-			       (let ((access (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t)))
-				 (if (string= access "")
-				     (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
-				     (format out "  ~a -> ~(~a~)[~(~a~)] : ~a;~%" occur-from r access constraints)))))))
-	       ;; Symbols for computing the stride
-	       (when (and node (eql mode :read))
-		 (let* ((symbols
-			  (loop for buff in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
-				if buff
-				  append (append (buffer-shape buff) (buffer-stride buff) (apply #'append (buffer-views buff)))))
-			(symbols
-			  (loop for s1 in symbols
-				for s = (reveal-buffer s1)
-				if (and (symbolp s) (not (eql s t)) (not (eql s nil)))
-				  collect s)))
-		   (dolist (s symbols) (format out "  ~a -> ~(~a~)[~a];~%" occur-from s scalar))))))))
+	   (flet ((pad ()
+		    (if (= kernel-rank (length lf))
+			""
+			(format nil ", ~a"
+				(apply #'concatenate 'string
+				       (butlast
+					(loop repeat (- kernel-rank (length lf)) append (list "0" ","))))))))
+	     (dolist (node (graph-nodes subgraph))
+	       (when (not (eql (node-class node) :IR))
+		 ;; When reduction is T, the first argument becomes the dependency
+		 ;; e.g.: Tn[...]: A <- ADD(X, Y, reduction=t) is the equivalent to
+		 ;; Tn[...]: A = (X += Y),  i.e.: Tn[...]: A = (X = X + Y)
+		 ;; Here, X depends on X.
+		 (when (and (eql mode :read) (getattr node :reduction))
+		   (let ((reduce-to (car (node-writes node)))
+			 (rt        (car (relay-writes (read-type-relay node)))))
+		     (when (symbolp reduce-to)
+		       (if (vm-instruction-p node)
+			   (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t) (pad))
+			   (error ":reduction for the op ~a is invaild." node)))))
+		 (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
+		       for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
+			 ;; When node has a :reduction
+			 (when (symbolp r)
+			   (if (null lf)
+			       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
+			       (when (vm-instruction-p node)
+				 (let ((access (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t)))
+				   (if (string= access "")
+				       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
+				       (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from r access (pad))))))))
+		 ;; Symbols for computing the stride
+		 (when (and node (eql mode :read))
+		   (let* ((symbols
+			    (loop for buff in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
+				  if buff
+				    append (append (buffer-shape buff) (buffer-stride buff) (apply #'append (buffer-views buff)))))
+			  (symbols
+			    (loop for s1 in symbols
+				  for s = (reveal-buffer s1)
+				  if (and (symbolp s) (not (eql s t)) (not (eql s nil)))
+				    collect s)))
+		     (dolist (s symbols) (format out "  ~a -> ~(~a~)[~a];~%" occur-from s scalar)))))))))
      pipeline)
     (format out "}")))
 
@@ -400,7 +419,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (when (and val (null (find `(,time ,(node-id val)) seen :test #'equal)))
 		 (push (list time (node-id val)) seen)
 		 (let* ((key (getattr val :id)))
-		   (mapc #'(lambda (x) (explore x :time (1+ time))) (remove-duplicates (node-reads val)))
+		   (mapc #'(lambda (x) (explore x :time time)) (remove-duplicates (node-reads val)))
 		   (if (gethash key lex)
 		       (push time (gethash key lex))
 		       (setf (gethash key lex) (list time)))))))
@@ -439,7 +458,7 @@ Optional order fusing softmax in a single kernel is:
 }
 "
   (let ((lex (pipeline->timestamp pipeline))
-	(max-rank (1+ (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline))))))
+	(max-rank  (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline)))))
     (values
      (union-map-from-str
       (with-output-to-string (out)
@@ -453,7 +472,7 @@ Optional order fusing softmax in a single kernel is:
 				 "  T~a[~(~a~)] -> [~(~a~)]"
 				 ts
 				 (render-list loop-factors)
-				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank)))))
+				 (render-list (padding-list `(,@loop-factors) max-rank)))))
 	       (format out "~a;~%" dom)))
 	 pipeline)
 	(format out "}")))
@@ -756,12 +775,11 @@ Optional order fusing softmax in a single kernel is:
 	   (loop-sizes (loop for value being the hash-values of pipeline
 			     collect (graph->loop-size value)))
 	   (loop-size (apply #'append loop-sizes))
-	   (loop-max-depth (apply #'max (or (map 'list #'length loop-sizes) (list 0))))
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
 	   (domain         (render-domain pipeline :depends-on dynamic-shapes))
 	   ;;(dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
-	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes :pad loop-max-depth))
-	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes :pad loop-max-depth)))
+	   (read-access  (render-access alias :read pipeline :depends-on dynamic-shapes))
+	   (write-access (render-access alias :write pipeline :depends-on dynamic-shapes)))
       (multiple-value-bind (schedule lex-table) (isl-initial-schedule pipeline :depends-on dynamic-shapes)
 	(when verbose-auto
 	  (format t "== [Domain] ===========")
@@ -867,7 +885,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type boolean serialize))
   (with-isl-context
     (let* ((groups (create-schedules-from-avm avm :verbose verbose-schedule))
-	   (alias (create-reduction-alias-f (graph-nodes (avm-graph avm))))
+	   (alias #'identity);(create-reduction-alias-f (graph-nodes (avm-graph avm))))
 	   (groups (loop for group in groups
 			 if (group-realize-on-vm group) collect group
 			   else if (group-sched group) do
@@ -943,3 +961,51 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
      (avm-id2tensor avm)
      (avm-fw-outputs avm)
      (avm-bw-outputs avm))))
+
+
+(defun compile-isl (dom read write schedule)
+  (let ((poly (make-polyhedral (make-avm (make-graph) :x (make-hash-table) nil nil)
+			       (make-hash-table)
+			       dom
+			       read
+			       write
+			       (union-map-from-str schedule)
+			       nil
+			       nil
+			       (make-hash-table))))
+    (auto-schedule! poly)
+    (print (debug/render-c poly))))
+
+(compile-isl
+ "
+[] -> {
+  T0[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 20 and 0 <= _gid1 < 20;
+  T1[_gid0, _gid1, _gid2] : 0 <= _gid0 < 20 and 0 <= _gid1 < 20 and 0 <= _gid2 < 20;
+  T2[_gid0, _gid1] : 0 <= _gid0 < 20 and 0 <= _gid1 < 20;
+}
+"
+ "
+[] -> {
+  T0[_gid0, _gid1, _gid2] -> val_12[_gid0, _gid1, _gid2];
+  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
+  T1[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, 0];
+  T1[_gid0, _gid1, _gid2] -> val_6[_gid0, 0, _gid2];
+  T1[_gid0, _gid1, _gid2] -> val_0[0, _gid2, _gid1];
+  T2[_gid0, _gid1] -> val_15[_gid0, _gid1, 0];
+  T2[_gid0, _gid1] -> val_15[_gid0, _gid1, 0];
+}
+"
+"
+[] -> {
+  T0[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, _gid2];
+  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
+  T2[_gid0, _gid1] -> val_18[_gid0, _gid1, 0];
+}
+"
+ "
+ {
+T0[_gid0, _gid1, _gid2] -> [_gid0, _gid1, _gid2];
+T1[_gid0, _gid1, _gid2] -> [_gid0, _gid1, _gid2];
+T2[_gid0, _gid1] -> [_gid0, _gid1, 4];
+ }
+")

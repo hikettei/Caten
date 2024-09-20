@@ -14,7 +14,7 @@ should be used instead"
   (declare (type function function) (type hash-table hash-table))
   (let ((keys (hash-table-keys hash-table)))
     (assert (every #'numberp keys))
-    (loop for key in (sort keys #'>)
+    (loop for key in (sort keys #'<)
 	  do (funcall function key (gethash key hash-table)))))
 
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
