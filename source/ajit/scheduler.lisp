@@ -340,10 +340,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (flet ((pad ()
 		    (if (= kernel-rank (length lf))
 			""
-			(format nil ", ~a"
+			(format nil ",~a"
 				(apply #'concatenate 'string
 				       (butlast
-					(loop repeat (- kernel-rank (length lf)) append (list "0" ","))))))))
+					(loop repeat (- kernel-rank (length lf)) append (list "0" ", "))))))))
 	     (dolist (node (graph-nodes subgraph))
 	       (when (not (eql (node-class node) :IR))
 		 ;; When reduction is T, the first argument becomes the dependency
