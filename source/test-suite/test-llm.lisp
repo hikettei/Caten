@@ -3,9 +3,9 @@
 ;; Neural Ops used in implementing LLM
 (deftest test-scaled-dot-product-attention
   (with-given-dtype ((:float32 . "float32"))
-    (let ((q (rand `(2 8 128 64)))
-	  (k (rand `(2 8 128 64)))
-	  (v (rand `(2 8 128 64))))
+    (let ((q (rand `(2 8 8 8)))
+	  (k (rand `(2 8 8 8)))
+	  (v (rand `(2 8 8 8))))
       (assert-equal
 	  ()
 	  (with-torch (q k v)

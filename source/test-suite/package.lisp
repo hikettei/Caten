@@ -10,6 +10,7 @@
 
 (import-module "numpy" :as "np")
 (python-exec "import torch
+import torch.nn.functional as f
 import numpy as np")
 (import-module "torch.nn.functional" :as "f")
 (import-function "torch.from_numpy")
