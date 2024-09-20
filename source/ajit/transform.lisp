@@ -155,11 +155,10 @@ We consider shuffling these nodes which never violates lexiographical order.
        (null (kernel-renderer-nodes b))
        (lex-dep-ok (kernel-renderer-nodes a) (kernel-renderer-nodes b))))))
 
-;; TODO: Test
 (defun sort-kernel-renderers (kernel-renderers polyhedral)
   (flet ((s (x y) (swap-two-loops x y polyhedral)))
     (sort kernel-renderers #'s)))
-  
+
 (defun fuse-outermost-loops (polyhedral blueprints)
   "Fuses two rendering groups whose outermost loops are the completely equivalent.
 This fusion is only applied in the original polyhedral group, (which is assumed to no circular deps, and time series deps are in straight)
@@ -180,24 +179,23 @@ This may reduce the number of extra allocation for tmpvar.
 "
   (declare (type polyhedral polyhedral)
 	   (type list blueprints))
-  (sort-kernel-renderers
-   (remove-duplicates
-    (loop with last-visited = (car blueprints)
-	  for blueprint in `(,@(cdr blueprints) nil)
-	  for merged = (when blueprint (merge-two-loops last-visited blueprint polyhedral))
-	  collect
-	  (if (and blueprint merged (kernel-renderer-outermost-loop-eq last-visited blueprint))
-	      (progn
-		(setf last-visited
-		      (make-kernel-renderer
-		       :nodes merged
-		       :nth (kernel-renderer-nth last-visited)))
-		last-visited)
-	      (prog1
-		  last-visited
-		(setf last-visited blueprint))))
-    :key #'kernel-renderer-nth)
-   polyhedral))
+  (let ((blueprints (sort-kernel-renderers blueprints polyhedral)))
+    (remove-duplicates
+     (loop with last-visited = (car blueprints)
+	   for blueprint in `(,@(cdr blueprints) nil)
+	   for merged = (when blueprint (merge-two-loops last-visited blueprint polyhedral))
+	   collect
+	   (if (and blueprint merged (kernel-renderer-outermost-loop-eq last-visited blueprint))
+	       (progn
+		 (setf last-visited
+		       (make-kernel-renderer
+			:nodes merged
+			:nth (kernel-renderer-nth last-visited)))
+		 last-visited)
+	       (prog1
+		   last-visited
+		 (setf last-visited blueprint))))
+     :key #'kernel-renderer-nth)))
 
 (defmethod collapse-loop ((kr kernel-renderer) (poly polyhedral))
   "Collapses the loop in the kernel to get more parallelization/vectorization opportunities, e.g.:
