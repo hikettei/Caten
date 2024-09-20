@@ -225,7 +225,7 @@ The provided form does not match any of them:~%~a" method method method method f
 	     (let* ((mid (loop for i upfrom 0 below (min (- n1 1) (- n2 1) 1) collect 1))
 		    (x (!reshape x `(,@(butlast (shape x) 1) ,@mid ,(car (last (shape x))))))
 		    (y (!reshape y `(,@(butlast (shape y) 2) ,@mid ,@(last (shape y) (min n2 2))))))
-	       (let ((z (!mul x (!contiguous (!t y) :force t))))
+	       (let ((z (!mul x (!contiguous (!transpose y -1 (- (min n2 2))) :force t))))
 		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
 (defun !matmul (a b)
   (multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
