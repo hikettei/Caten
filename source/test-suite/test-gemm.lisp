@@ -3,8 +3,8 @@
 (macrolet ((def (name shape1 shape2)
 	     `(deftest ,name
 		(with-given-dtype ((:float32 . "float32"))
-		  (let ((x (randn ',shape1))
-			(y (randn ',shape2)))
+		  (let ((x (rand ',shape1))
+			(y (rand ',shape2)))
 		    (assert-equal
 			()
 			(with-torch (x y)
