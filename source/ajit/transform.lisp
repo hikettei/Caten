@@ -37,15 +37,18 @@
   (and
    ;; [TODO] Fuse Nested Loops that ISL failed to fuse.
    ;; There should be much better way to determine this.
-   (<= (kernel-renderer-loop-depth a) 2)
-   (<= (kernel-renderer-loop-depth b) 2)
-   (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
-     (and a b
-	  (equal (getattr a :idx) (getattr b :idx))
-	  (expr-eq (getattr a :upfrom) (getattr b :upfrom))
-	  (expr-eq (getattr a :below) (getattr b :below))
-	  (expr-eq (getattr a :by) (getattr b :by))
-	  (eql (getattr a :scope) (getattr b :scope))))))
+   (or
+    (and
+     (<= (kernel-renderer-loop-depth a) 2)
+     (<= (kernel-renderer-loop-depth b) 2))
+    (or (= (kernel-renderer-loop-depth a) 1) (= (kernel-renderer-loop-depth b) 1))
+    (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
+      (and a b
+	   (equal (getattr a :idx) (getattr b :idx))
+	   (expr-eq (getattr a :upfrom) (getattr b :upfrom))
+	   (expr-eq (getattr a :below) (getattr b :below))
+	   (expr-eq (getattr a :by) (getattr b :by))
+	   (eql (getattr a :scope) (getattr b :scope)))))))
 
 (defmethod separate-scalar-and-vector-parts ((a kernel-renderer))
   "Return: (values scalar-nodes vector-nodes) if nodes are:

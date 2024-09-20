@@ -1123,4 +1123,63 @@ T2[_gid0, _gid1] -> [2, _gid0, _gid1, 0];
 T0[_gid0, _gid1, _gid2] -> [0, _gid0, _gid1, _gid2];
 T1[_gid0, _gid1, _gid2] -> [1, _gid0, _gid1, _gid2] }")
 
+ 
+;; Embedding
+(compile-isl
+ :domain "
+[] -> {
+  T0[_gid0 = 0, _gid1 = 0, _gid2, _gid3 = 0] : 0 <= _gid2 < 10;
+  T1[_gid0, _gid1, _gid2, _gid3 = 0] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10;
+  T2[_gid0, _gid1, _gid2, _gid3 = 0] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10;
+  T3[_gid0, _gid1, _gid2, _gid3 = 0] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10;
+  T4[_gid0, _gid1, _gid2, _gid3] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10;
+  T5[_gid0, _gid1, _gid2 = 0, _gid3] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid3 < 10;
+  T6[_gid0, _gid1, _gid2, _gid3] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10;
+}
+"
+ :read "
+[] -> {
+  T0[_gid0, _gid1, _gid2, _gid3] -> val_41[_gid0, _gid1, _gid2, _gid3];
+  T0[_gid0, _gid1, _gid2, _gid3] -> val_41[_gid0, _gid1, _gid2, _gid3];
+  T1[_gid0, _gid1, _gid2, _gid3] -> val_45[_gid0, _gid1, _gid2, _gid3];
+  T1[_gid0, _gid1, _gid2, _gid3] -> val_42[0, 0, _gid2, _gid3];
+  T2[_gid0, _gid1, _gid2, _gid3] -> val_47[_gid0, _gid1, _gid2, _gid3];
+  T2[_gid0, _gid1, _gid2, _gid3] -> val_37[_gid0, _gid1, 0, _gid3];
+  T2[_gid0, _gid1, _gid2, _gid3] -> val_46[_gid0, _gid1, _gid2, _gid3];
+  T3[_gid0, _gid1, _gid2, _gid3] -> val_48[_gid0, _gid1, _gid2, _gid3];
+  T3[_gid0, _gid1, _gid2, _gid3] -> val_48[_gid0, _gid1, _gid2, _gid3];
+  T4[_gid0, _gid1, _gid2, _gid3] -> val_36[_gid0, _gid1, _gid2, _gid3];
+  T4[_gid0, _gid1, _gid2, _gid3] -> val_31[0, 0, _gid2, _gid3];
+  T4[_gid0, _gid1, _gid2, _gid3] -> val_49[_gid0, _gid1, _gid2, 0];
+  T4[_gid0, _gid1, _gid2, _gid3] -> val_31[0, 0, _gid2, _gid3];
+  T4[_gid0, _gid1, _gid2, _gid3] -> val_49[_gid0, _gid1, _gid2, 0];
+  T5[_gid0, _gid1, _gid2, _gid3] -> val_54[_gid0, _gid1, _gid2, _gid3];
+  T6[_gid0, _gid1, _gid2, _gid3] -> val_57[_gid0, _gid1, 0, _gid3];
+  T6[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
+  T6[_gid0, _gid1, _gid2, _gid3] -> val_53[_gid0, _gid1, _gid2, _gid3];
+  T6[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
+}
+"
+ :write "
+[] -> {
+  T0[_gid0, _gid1, _gid2, _gid3] -> val_42[_gid0, _gid1, _gid2, _gid3];
+  T1[_gid0, _gid1, _gid2, _gid3] -> val_46[_gid0, _gid1, _gid2, _gid3];
+  T2[_gid0, _gid1, _gid2, _gid3] -> val_48[_gid0, _gid1, _gid2, _gid3];
+  T3[_gid0, _gid1, _gid2, _gid3] -> val_49[_gid0, _gid1, _gid2, _gid3];
+  T4[_gid0, _gid1, _gid2, _gid3] -> val_53[_gid0, _gid1, _gid2, _gid3];
+  T5[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, _gid2, _gid3];
+  T6[_gid0, _gid1, _gid2, _gid3] -> val_57[_gid0, _gid1, 0, _gid3];
+}
+"
+ :schedule "
+{
+T0[_gid0, _gid1, _gid2, _gid3] -> [0, _gid0, _gid1, _gid2, _gid3];
+T3[_gid0, _gid1, _gid2, _gid3] -> [3, _gid0, _gid1, _gid2, _gid3];
+T2[_gid0, _gid1, _gid2, _gid3] -> [2, _gid0, _gid1, _gid2, _gid3];
+T1[_gid0, _gid1, _gid2, _gid3] -> [1, _gid0, _gid1, _gid2, _gid3];
+T6[_gid0, _gid1, _gid2, _gid3] -> [5, _gid0, _gid1, _gid2, _gid3];
+T4[_gid0, _gid1, _gid2, _gid3] -> [4, _gid0, _gid1, _gid2, _gid3];
+T5[_gid0, _gid1, _gid2, _gid3] -> [4, _gid0, _gid1, _gid2, _gid3];
+}")
+
   )
