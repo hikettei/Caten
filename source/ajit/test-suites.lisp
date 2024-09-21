@@ -49,7 +49,7 @@
       (check-kernels 1 (caten (caten/nn:!softmax (ax+b `(a b) 1 1))))
       (check-kernels 1 (caten (!softmax (!softmax (!softmax (ax+b `(10 10) 1 1))))))
       (check-kernels 1 (caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0)))))
-      (check-kernels 2 (caten (!sin (!matmul (make-tensor `(10 20)) (make-tensor `(20 30)))))) ;; [TODO] make 1 kernels.
+      (check-kernels 1 (caten (!sin (!matmul (make-tensor `(10 20)) (make-tensor `(20 30)))))) ;; [TODO] make 1 kernels.
       (check-kernels 2 (caten (!matmul (make-tensor `(128 32)) (!matmul (make-tensor `(32 64)) (make-tensor `(64 128))))))
       ;; TODO (!sin (!matmul a b b c))
       ;;(check-kernels 1 (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))

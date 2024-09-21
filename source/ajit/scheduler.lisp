@@ -240,7 +240,7 @@ Buffers: ~a
 		  ""
 		  (format nil "+~a" upfrom)))))
 
-(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil) &aux (c 0))
+(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -257,6 +257,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 			    (range 0 (buffer-nrank buffer)))
 	   for nth in order
 	   for stride-nth in (or strides (buffer-stride buffer))
+	   for size   = (nth nth (buffer-shape buffer))
 	   for view   = (nth nth (buffer-views buffer))
 	   for stride = (reveal-buffer stride-nth)
 	   for upfrom = (reveal-buffer (or (nth 0 view) 0))
@@ -264,7 +265,10 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	   for broadcast-p = (nth 3 view)
 	   for gid = (funcall genid nth)
 	   do (incf c)
-	   append
+	   if (and mutate-scalar (eql size 1))
+	     append (list (format nil "~a" upfrom) split)
+	   else
+	     append
 	   (list
 	    (funcall indexing gid stride upfrom by broadcast-p)
 	    split))
@@ -301,8 +305,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		 (format out "  T~a[~(~a~)]" timestamp
 			 (render-list
 			  (loop for lf in loop-factors
-			       for c in constraints
-			       for scal-p = (iconstraint-scalar-p c)
+				for c in constraints
+				for scal-p = (iconstraint-scalar-p c)
 				if scal-p
 				  collect (format nil "~a = 0" lf)
 				else
@@ -332,18 +336,19 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (maphash1
      #'(lambda (timestamp subgraph)
 	 (let* ((lf (graph->loop-factors subgraph :scalar-mutation t))
+		(lf-orig (graph->loop-factors subgraph))
 		(occur-from
 		  (format nil "T~a[~(~a~)]" ;; = 0
 			  timestamp (render-list lf)))
 		(scalar
 		  (apply #'concatenate 'string (butlast (loop repeat kernel-rank append (list "0" ", "))))))
 	   (flet ((pad ()
-		    (if (= kernel-rank (length lf))
+		    (if (= kernel-rank (length lf-orig))
 			""
 			(format nil ", ~a"
 				(apply #'concatenate 'string
 				       (butlast
-					(loop repeat (- kernel-rank (length lf)) append (list "0" ", "))))))))
+					(loop repeat (- kernel-rank (length lf-orig)) append (list "0" ", "))))))))
 	     (dolist (node (graph-nodes subgraph))
 	       (when (not (eql (node-class node) :IR))
 		 ;; When reduction is T, the first argument becomes the dependency
@@ -355,7 +360,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			 (rt        (car (relay-writes (read-type-relay node)))))
 		     (when (symbolp reduce-to)
 		       (if (vm-instruction-p node)
-			   (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from reduce-to (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t) (pad))
+			   (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from reduce-to (render-isl-aref rt :mutate-scalar t :indexing #'isl-access-renderer :split ", " :use-permute t) (pad))
 			   (error ":reduction for the op ~a is invaild." node)))))
 		 (loop for r in (funcall (if (eql mode :read) #'node-reads #'node-writes) node)
 		       for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
@@ -364,7 +369,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			   (if (null lf)
 			       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 			       (when (vm-instruction-p node)
-				 (let ((access (render-isl-aref rt :indexing #'isl-access-renderer :split ", " :use-permute t)))
+				 (let ((access (render-isl-aref rt :mutate-scalar t :indexing #'isl-access-renderer :split ", " :use-permute t)))
 				   (if (string= access "")
 				       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 				       (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from r access (pad))))))))
@@ -442,7 +447,7 @@ Optional order fusing softmax in a single kernel is:
 }
 "
   (let ((lex (pipeline->timestamp pipeline))
-	(max-rank (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline)))))
+	(max-rank (apply #'max (map 'list #'(lambda (x) (length (graph->loop-factors x :scalar-mutation t))) (hash-table-values pipeline)))))
     (values
      (union-map-from-str
       (with-output-to-string (out)
