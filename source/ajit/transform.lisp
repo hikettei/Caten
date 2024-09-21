@@ -35,6 +35,7 @@
 (defmethod kernel-renderer-outermost-loop-eq ((a kernel-renderer) (b kernel-renderer))
   "Compares two outermost loops in the a and b"
   (and
+   nil
    ;; [TODO] Fuse Nested Loops that ISL failed to fuse.
    ;; There should be much better way to determine this.
    (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
