@@ -447,7 +447,8 @@ Optional order fusing softmax in a single kernel is:
 }
 "
   (let ((lex (pipeline->timestamp pipeline))
-	(max-rank (apply #'max (map 'list #'(lambda (x) (length (graph->loop-factors x :scalar-mutation t))) (hash-table-values pipeline)))))
+	(max-rank (1+ (apply #'max (map 'list #'(lambda (x) (length (graph->loop-factors x :scalar-mutation t))) (hash-table-values pipeline)))))
+	)
     (values
      (union-map-from-str
       (with-output-to-string (out)
@@ -461,7 +462,7 @@ Optional order fusing softmax in a single kernel is:
 				 "  T~a[~(~a~)] -> [~(~a~)]"
 				 ts
 				 (render-list loop-factors)
-				 (render-list `(,(gethash ts lex) ,@(padding-list loop-factors max-rank))))))
+				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank :with 0)))))
 	       (format out "~a;~%" dom)))
 	 pipeline)
 	(format out "}")))
@@ -967,223 +968,9 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 
 ;; Loop Collapse https://github.com/zhen8838/isl_learn/blob/main/10_loop_transformation.ipynb
 ;; (union-set-apply domain xxx)
-(defun test ()  
-  (compile-isl
-   :domain
-   "
-[] -> {
-  T0[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30;
-  T1[_gid0, _gid1, _gid2] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 20;
-  T2[_gid0, _gid1] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30;
-}
-"
-   :read
-   "
-[] -> {
-  T0[_gid0, _gid1, _gid2] -> val_12[_gid0, _gid1, _gid2];
-  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
-  T1[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, 0];
-  T1[_gid0, _gid1, _gid2] -> val_6[_gid0, 0, _gid2];
-  T1[_gid0, _gid1, _gid2] -> val_0[0, _gid2, _gid1];
-  T2[_gid0, _gid1] -> val_15[_gid0, _gid1, 0];
-}
-"
-   :write
-   "
-[] -> {
-  T0[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, _gid2];
-  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
-  T2[_gid0, _gid1] -> val_18[_gid0, _gid1, 0];
-}
-"
-   :schedule
-   "
-{
-T0[_gid0, _gid1, _gid2] -> [_gid0, 0, _gid1, 0, _gid2];
-T1[_gid0, _gid1, _gid2] -> [_gid0, 10, _gid1, 30, _gid2];
-T2[_gid0, _gid1] -> [_gid0, 20, _gid1, 60, 20];
-}
-"
-   :ast-option :atomic)
-
-  (compile-isl
-   :domain "
-[] -> {
-  T0[_gid0, _gid1 = 0] : 0 <= _gid0 < 3;
-  T1[_gid0, _gid1 = 0] : 0 <= _gid0 < 3;
-  T2[_gid0, _gid1] : 0 <= _gid0 < 3 and 0 <= _gid1 < 3;
-  T3[_gid0, _gid1 = 0] : 0 <= _gid0 < 3;
-  T4[_gid0, _gid1] : 0 <= _gid0 < 3 and 0 <= _gid1 < 3;
-  T5[_gid0, _gid1] : 0 <= _gid0 < 3 and 0 <= _gid1 < 3;
-  T6[_gid0, _gid1 = 0] : 0 <= _gid0 < 3;
-  T7[_gid0, _gid1] : 0 <= _gid0 < 3 and 0 <= _gid1 < 3;
-}
-"
-   :read "
-[] -> {
-  T0[_gid0, _gid1] -> val_0[_gid0, _gid1];
-  T1[_gid0, _gid1] -> val_5[_gid0, _gid1];
-  T2[_gid0, _gid1] -> val_9[_gid0, 0];
-  T2[_gid0, _gid1] -> val_6[_gid0, 0];
-  T2[_gid0, _gid1] -> val_8[_gid0, _gid1];
-  T2[_gid0, _gid1] -> val_6[_gid0, 0];
-  T3[_gid0, _gid1] -> val_9[_gid0, 0];
-  T3[_gid0, _gid1] -> val_9[_gid0, 0];
-  T4[_gid0, _gid1] -> val_8[_gid0, _gid1];
-  T4[_gid0, _gid1] -> val_10[_gid0, 0];
-  T4[_gid0, _gid1] -> val_8[_gid0, _gid1];
-  T5[_gid0, _gid1] -> val_14[_gid0, 0];
-  T5[_gid0, _gid1] -> val_1[_gid0, 0];
-  T5[_gid0, _gid1] -> val_13[_gid0, _gid1];
-  T5[_gid0, _gid1] -> val_1[_gid0, 0];
-  T6[_gid0, _gid1] -> val_14[_gid0, 0];
-  T6[_gid0, _gid1] -> val_14[_gid0, 0];
-  T7[_gid0, _gid1] -> val_13[_gid0, _gid1];
-  T7[_gid0, _gid1] -> val_15[_gid0, 0];
-  T7[_gid0, _gid1] -> val_13[_gid0, _gid1];
-}
-"
-   :write "
-[] -> {
-  T0[_gid0, _gid1] -> val_1[_gid0, _gid1];
-  T1[_gid0, _gid1] -> val_6[_gid0, _gid1];
-  T2[_gid0, _gid1] -> val_9[_gid0, 0];
-  T3[_gid0, _gid1] -> val_10[_gid0, 0];
-  T4[_gid0, _gid1] -> val_13[_gid0, _gid1];
-  T5[_gid0, _gid1] -> val_14[_gid0, 0];
-  T6[_gid0, _gid1] -> val_15[_gid0, 0];
-  T7[_gid0, _gid1] -> val_16[_gid0, _gid1];
-}
-"
-   :schedule
-   "
-{
-T0[_gid0, _gid1] -> [_gid0, 0, _gid1, 0];
-T1[_gid0, _gid1] -> [_gid0, 3, _gid1, 3];
-T2[_gid0, _gid1] -> [_gid0, 6, _gid1, 6];
-T3[_gid0, _gid1] -> [_gid0, 9, _gid1, 9];
-T4[_gid0, _gid1] -> [_gid0, 12, _gid1, 12];
-T5[_gid0, _gid1] -> [_gid0, 15, _gid1, 15];
-T6[_gid0, _gid1] -> [_gid0, 18, _gid1, 18];
-T7[_gid0, _gid1] -> [_gid0, 21, _gid1, 21];
-}
-")
-
-  (compile-isl
-   :domain "
-[] -> {
-  T0[_gid0, _gid1, _gid2, _gid3, _gid4 = 0] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4 and 0 <= _gid2 < 4 and 0 <= _gid3 < 4;
-  T1[_gid0, _gid1, _gid2, _gid3, _gid4] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4 and 0 <= _gid2 < 4 and 0 <= _gid3 < 4 and 0 <= _gid4 < 4;
-}
-"
-   :read "
-[] -> {
-  T0[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_12[_gid0, _gid1, _gid2, _gid3];
-  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_15[_gid0, _gid1, _gid2, _gid3, 0];
-  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_13[_gid0, _gid1, _gid2, _gid3, 0];
-  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_6[_gid0, _gid1, _gid2, 0, _gid4];
-  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_0[_gid0, _gid1, 0, _gid4, _gid3];
-}
-"
-   :write
-   "
-[] -> {
-  T0[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_13[_gid0, _gid1, _gid2, _gid3, 0];
-  T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> val_15[_gid0, _gid1, _gid2, _gid3, 0];
-}
-"
-   :schedule "{ T0[_gid0, _gid1, _gid2, _gid3, _gid4] -> [_gid0, 0, _gid1, 0, _gid2, 0, _gid3, 0];
-T1[_gid0, _gid1, _gid2, _gid3, _gid4] -> [_gid0, 4, _gid1, 4, _gid2, 4, _gid3, _gid4] }")
-
-  (compile-isl
-   :domain "
-[] -> {
-  T0[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4;
-  T1[_gid0, _gid1, _gid2] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4 and 0 <= _gid2 < 4;
-  T2[_gid0, _gid1] : 0 <= _gid0 < 4 and 0 <= _gid1 < 4;
-}
-"
-   :read "
-[] -> {
-  T0[_gid0, _gid1, _gid2] -> val_12[_gid0, _gid1, _gid2];
-  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
-  T1[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, 0];
-  T1[_gid0, _gid1, _gid2] -> val_6[_gid0, 0, _gid2];
-  T1[_gid0, _gid1, _gid2] -> val_0[0, _gid2, _gid1];
-  T2[_gid0, _gid1] -> val_15[_gid0, _gid1, 0];
-  T2[_gid0, _gid1] -> val_15[_gid0, _gid1, 0];
-}
-"
-   :write "
-[] -> {
-  T0[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, _gid2];
-  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
-  T2[_gid0, _gid1] -> val_18[_gid0, _gid1, 0];
-}
-"
-   :schedule "
-{
-T2[_gid0, _gid1] -> [2, _gid0, _gid1, 0];
-T0[_gid0, _gid1, _gid2] -> [0, _gid0, _gid1, _gid2];
-T1[_gid0, _gid1, _gid2] -> [1, _gid0, _gid1, _gid2] }")
-
- 
+;; [TODO] Test w/
+;; !softmax
+;; !matmul !matmul
+;; !sin (!matmul)
 ;; Embedding
-(compile-isl
- :domain "
-[] -> {
-  T0[_gid0 = 0, _gid1 = 0, _gid2, _gid3 = 0] : 0 <= _gid2 < 10;
-  T1[_gid0, _gid1, _gid2, _gid3 = 0] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10;
-  T2[_gid0, _gid1, _gid2, _gid3 = 0] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10;
-  T3[_gid0, _gid1, _gid2, _gid3 = 0] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10;
-  T4[_gid0, _gid1, _gid2, _gid3] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10;
-  T5[_gid0, _gid1, _gid2 = 0, _gid3] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid3 < 10;
-  T6[_gid0, _gid1, _gid2, _gid3] : 0 <= _gid0 < 30 and 0 <= _gid1 < 10 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10;
-}
-"
- :read "
-[] -> {
-  T0[_gid0, _gid1, _gid2, _gid3] -> val_41[_gid0, _gid1, _gid2, _gid3];
-  T0[_gid0, _gid1, _gid2, _gid3] -> val_41[_gid0, _gid1, _gid2, _gid3];
-  T1[_gid0, _gid1, _gid2, _gid3] -> val_45[_gid0, _gid1, _gid2, _gid3];
-  T1[_gid0, _gid1, _gid2, _gid3] -> val_42[0, 0, _gid2, _gid3];
-  T2[_gid0, _gid1, _gid2, _gid3] -> val_47[_gid0, _gid1, _gid2, _gid3];
-  T2[_gid0, _gid1, _gid2, _gid3] -> val_37[_gid0, _gid1, 0, _gid3];
-  T2[_gid0, _gid1, _gid2, _gid3] -> val_46[_gid0, _gid1, _gid2, _gid3];
-  T3[_gid0, _gid1, _gid2, _gid3] -> val_48[_gid0, _gid1, _gid2, _gid3];
-  T3[_gid0, _gid1, _gid2, _gid3] -> val_48[_gid0, _gid1, _gid2, _gid3];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_36[_gid0, _gid1, _gid2, _gid3];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_31[0, 0, _gid2, _gid3];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_49[_gid0, _gid1, _gid2, 0];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_31[0, 0, _gid2, _gid3];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_49[_gid0, _gid1, _gid2, 0];
-  T5[_gid0, _gid1, _gid2, _gid3] -> val_54[_gid0, _gid1, _gid2, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_57[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_53[_gid0, _gid1, _gid2, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
-}
-"
- :write "
-[] -> {
-  T0[_gid0, _gid1, _gid2, _gid3] -> val_42[_gid0, _gid1, _gid2, _gid3];
-  T1[_gid0, _gid1, _gid2, _gid3] -> val_46[_gid0, _gid1, _gid2, _gid3];
-  T2[_gid0, _gid1, _gid2, _gid3] -> val_48[_gid0, _gid1, _gid2, _gid3];
-  T3[_gid0, _gid1, _gid2, _gid3] -> val_49[_gid0, _gid1, _gid2, _gid3];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_53[_gid0, _gid1, _gid2, _gid3];
-  T5[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, _gid2, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_57[_gid0, _gid1, 0, _gid3];
-}
-"
- :schedule "
-{
-T0[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,0];
-T3[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,3];
-T2[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,2];
-T1[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,1];
-T6[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,5];
-T4[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,4];
-T5[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3,4];
-}")
-
-  )
+;; !randn
