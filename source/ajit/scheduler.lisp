@@ -187,6 +187,18 @@ Buffers: ~a
      (loop for node in (graph-nodes graph)
 	   if (and (eql (node-type node) :IR/FOR) (or (null scalar-mutation) (null (getattr node :_scalar_p))))
 	     collect (car (node-writes node))))))
+
+(defun graph->loop-factors1 (graph)
+  (declare (type graph graph))
+  ;; Applies if only rank is one.
+  (remove-duplicates
+   (loop for node in (graph-nodes graph)
+	 if (and (eql (node-type node) :IR/FOR) (null (getattr node :_scalar_p)))
+	   collect (car (node-writes node))
+	 else if (and (eql (node-type node) :IR/FOR) (getattr node :_scalar_p))
+		collect (car (node-writes node)))
+   :test #'(lambda (x y) (and (symbolp x) (symbolp y) (eql x y)))))
+
 ;; [Fix] is it necessary?
 (defun graph-loop-scalar-mutated-p (graph)
   (not
@@ -266,12 +278,12 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	   for gid = (funcall genid nth)
 	   do (incf c)
 	   if (and mutate-scalar (eql size 1))
-	     append (list (format nil "~a" upfrom) split)
+	     append (list "0" split)
 	   else
 	     append
-	   (list
-	    (funcall indexing gid stride upfrom by broadcast-p)
-	    split))
+	     (list
+	      (funcall indexing gid stride upfrom by broadcast-p)
+	      split))
      (when upper (loop repeat (- upper c) append (list "0" split)))))))
 
 (defun render-domain (pipeline &key (depends-on nil))
@@ -340,8 +352,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		(occur-from
 		  (format nil "T~a[~(~a~)]" ;; = 0
 			  timestamp (render-list lf)))
-		(scalar
-		  (apply #'concatenate 'string (butlast (loop repeat kernel-rank append (list "0" ", "))))))
+		(scalar (apply #'concatenate 'string (butlast (loop repeat kernel-rank append (list "0" ", "))))))
 	   (flet ((pad ()
 		    (if (= kernel-rank (length lf-orig))
 			""
@@ -447,8 +458,7 @@ Optional order fusing softmax in a single kernel is:
 }
 "
   (let ((lex (pipeline->timestamp pipeline))
-	(max-rank (1+ (apply #'max (map 'list #'(lambda (x) (length (graph->loop-factors x :scalar-mutation t))) (hash-table-values pipeline)))))
-	)
+	(prev-rank 0))
     (values
      (union-map-from-str
       (with-output-to-string (out)
@@ -456,13 +466,13 @@ Optional order fusing softmax in a single kernel is:
 	(format out "{~%")
 	(maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
 	 #'(lambda (ts graph)
-	     ;;(format t "T~a -> ~a~%" ts (gethash ts lex))
-	     (let* ((loop-factors (graph->loop-factors graph :scalar-mutation t))
+	     (let* ((loop-factors (graph->loop-factors1 graph))
 		    (dom (format nil
 				 "  T~a[~(~a~)] -> [~(~a~)]"
 				 ts
 				 (render-list loop-factors)
-				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank :with 0)))))
+				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) (1+ prev-rank))))))
+	       (setf prev-rank (length loop-factors))
 	       (format out "~a;~%" dom)))
 	 pipeline)
 	(format out "}")))
@@ -797,8 +807,8 @@ Options:
   (macrolet ((debug-print (step-name) `(when verbose (format t "~%[~a]~%~a~%" ,step-name (print-polyhedral polyhedral nil)))))
     (debug-print "Initial")
     ;; Loop Fusion
-    (poly/reschedule polyhedral :serialize serialize)
-    (debug-print "Reschedule")
+    (poly/schedule polyhedral :serialize serialize)
+    (debug-print "Scheduled")
     polyhedral))
 
 (declaim (ftype (function (Group keyword) graph) finalize-and-retrive-graph))
@@ -969,8 +979,8 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; Loop Collapse https://github.com/zhen8838/isl_learn/blob/main/10_loop_transformation.ipynb
 ;; (union-set-apply domain xxx)
 ;; [TODO] Test w/
+;; Including Test
 ;; !softmax
 ;; !matmul !matmul
 ;; !sin (!matmul)
 ;; Embedding
-;; !randn

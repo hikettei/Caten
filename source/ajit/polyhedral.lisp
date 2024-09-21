@@ -161,7 +161,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	     (schedule-constraints (schedule-constraints-set-proximity schedule-constraints all-deps)))
 	schedule-constraints))))
 
-(defun poly/reschedule (polyhedral &key (serialize nil))
+(defun poly/schedule (polyhedral &key (serialize nil))
   "
 [Scheduler]
 This function analyzes the read/write dependencies on the polyhedron space,
@@ -189,19 +189,16 @@ for (int c0 = 0; c0 < a; c0 += 1)
   (declare (type polyhedral polyhedral))
   (macrolet ((set-option (name level)
 	       `(progn
-		  ;;(format t "~a = ~a~%" ,name (foreign-funcall ,(format nil "isl_options_get_~(~a~)" name) :pointer (isl-ctx-ptr *isl-context*) :int))
 		  (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
-				 :pointer (isl::context-handle isl::*context*)
-				 :int ,level
-				 :void))))
+				   :pointer (isl::context-handle isl::*context*)
+				   :int ,level
+				   :void))))
     (when serialize (set-option "schedule_serialize_sccs" 1))
     (let ((n 0))
       (loop for g in (hash-table-values (poly-pipeline polyhedral))
 	    do (incf n (length (graph-nodes g))))
       (set-option "schedule_outer_coincidence" 1)
-      ;;(set-option "schedule_maximize_band_depth" 1)
-      ;;(set-option "schedule_max_constant_term" 1)
-      ;;(set-option "schedule_whole_component" 1)
+      ;; (set-option "schedule_maximize_band_depth" 1)
       (set-option "schedule_treat_coalescing" 1)
       ))
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr)) polyhedral

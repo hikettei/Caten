@@ -37,11 +37,6 @@
   (and
    ;; [TODO] Fuse Nested Loops that ISL failed to fuse.
    ;; There should be much better way to determine this.
-   (or
-    (and
-     (<= (kernel-renderer-loop-depth a) 2)
-     (<= (kernel-renderer-loop-depth b) 2))
-    (or (= (kernel-renderer-loop-depth a) 1) (= (kernel-renderer-loop-depth b) 1)))
    (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
      (and a b
 	  (equal (getattr a :idx) (getattr b :idx))
