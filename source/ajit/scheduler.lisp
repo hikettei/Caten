@@ -11,14 +11,16 @@
 ;; - https://libisl.sourceforge.io/manual.pdf
 ;; - https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
 ;; - https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
-
-
-;; = [Overview] =
+;; = [Overview] ========================================================================================
 ;; [aIR Graph (Differentiable + Graph Level IR)]
 ;;                     | (lower)
+;;                [Pre-Fusion]
+;;                     |
 ;;   [Polyhedral IR (Describes the dependence between *groups)] 
 ;;                     |
-;;        [Render Graph] + [EXPR] ( output )
+;;       [Tiling/MemoryLocality/Vectorizing]
+;;                     |
+;;       { [Render Graph] + [EXPR] ( output ) }
 ;; *Group = A set of aIR graph whose access are the equivalent
 ;; ~~~~ Subgraph initializers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Scheduled-Items
@@ -151,7 +153,7 @@ Further op-fusion optimization are done by the polyhedral-compiler."
       (car shapes)))))
 
 (defun no-offsets-p (buffers dim) (every #'(lambda (x) (null (nth dim (buffer-views x)))) buffers))
-;; TODO: Flatten the loop if the access pattern is contiguous
+
 (defun schedule->submodule (sched &aux (nrank 0) (args nil) (deps (schedule-depends-on sched)))
   "Lowers the grouped scheduled-items into the graph."
   (declare (type scheduled-items sched))
@@ -197,12 +199,6 @@ Buffers: ~a
 	   if (and (eql (node-type node) :IR/FOR) (or (null scalar-mutation) (null (getattr node :_scalar_p))))
 	     collect (car (node-writes node))))))
 
-(defun graph->loop-factors1 (graph)
-  (remove-duplicates
-   (loop for node in (graph-nodes graph)
-	 if (and (eql (node-type node) :IR/FOR) (null (getattr node :_scalar_p)))
-	   collect (car (node-writes node)))))
-;; [Fix] is it necessary?
 (defun graph-loop-scalar-mutated-p (graph)
   (not
    (= (length (graph->loop-factors graph :scalar-mutation nil))
@@ -221,7 +217,7 @@ Buffers: ~a
   (and
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
-;; TODO: generate Expr
+
 (defun one-dimensional-renderer (gid stride upfrom by broadcast-p)
   (if broadcast-p
       (format nil "0")
@@ -254,6 +250,18 @@ Buffers: ~a
 	      (if (eql upfrom 0)
 		  ""
 		  (format nil "+~a" upfrom)))))
+
+(defun isl-access-expr (gid stride upfrom by broadcast-p)
+  (if broadcast-p
+      (make-const 0 nil)
+      (simplify-expr
+       (make-expr
+	:ADD
+	(make-expr
+	 :MUL
+	 (make-expr :MUL (make-const gid nil) (make-const by nil))
+	 (make-const stride nil))
+	(make-expr :MUL (make-const upfrom nil) (make-const stride nil))))))
 
 (defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
   "Renders the stride computation for ISL:
@@ -334,7 +342,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
-(defun render-access (mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
+(defun render-access (alias-f mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
   "Render the read/write accessing relation ship in the following notation:
 ```
 [depends-on] -> {
@@ -365,18 +373,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 					(loop repeat (- kernel-rank (length lf-orig)) append (list "0" ", "))))))))
 	     (dolist (node (graph-nodes subgraph))
 	       (when (not (eql (node-class node) :IR))
-		 ;; When reduction is T, the first argument becomes the dependency
-		 ;; e.g.: Tn[...]: A <- ADD(X, Y, reduction=t) is the equivalent to
-		 ;; Tn[...]: A = (X += Y),  i.e.: Tn[...]: A = (X = X + Y)
-		 ;; Here, X depends on X.
-		 (when (and (eql mode :read) (getattr node :reduction))
-		   (let ((reduce-to (car (node-writes node)))
-			 (rt        (car (relay-writes (read-type-relay node)))))
-		     (when (symbolp reduce-to)
-		       (if (vm-instruction-p node)
-			   (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from reduce-to (render-isl-aref rt :mutate-scalar t :indexing #'isl-access-renderer :split ", " :use-permute t) (pad))
-			   (error ":reduction for the op ~a is invaild." node)))))
-		 (loop for r in (funcall (if (eql mode :read) #'node-reads #'node-writes) node)
+		 (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
 		       for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
 			 ;; When node has a :reduction
 			 (when (symbolp r)
@@ -461,7 +458,7 @@ Optional order fusing softmax in a single kernel is:
 }
 "
   (let ((lex (pipeline->timestamp pipeline))
-	(max-rank (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline)))))
+	(max-rank (1+ (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline))))))
     (values
      (union-map-from-str
       (with-output-to-string (out)
@@ -760,8 +757,8 @@ Optional order fusing softmax in a single kernel is:
 		      (print-schedules (group-sched group)))))
 	groups))))
 
-(declaim (ftype (function (AVM group &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
-(defun create-polyhedron-from-group (avm group &key (verbose nil) (verbose-auto nil))
+(declaim (ftype (function (function AVM group &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
+(defun create-polyhedron-from-group (alias-f avm group &key (verbose nil) (verbose-auto nil))
   "Step2, create a polyhedron from the scheduled items."
   (declare (type group group) (type boolean verbose))
   ;; [TODO]
@@ -784,8 +781,8 @@ Optional order fusing softmax in a single kernel is:
 	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
 	   (domain         (render-domain pipeline :depends-on dynamic-shapes))
 	   ;;(dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
-	   (read-access  (render-access :read pipeline :depends-on dynamic-shapes))
-	   (write-access (render-access :write pipeline :depends-on dynamic-shapes)))
+	   (read-access  (render-access alias-f :read pipeline :depends-on dynamic-shapes))
+	   (write-access (render-access alias-f :write pipeline :depends-on dynamic-shapes)))
       (multiple-value-bind (schedule lex-table) (isl-initial-schedule pipeline :depends-on dynamic-shapes)
 	(when verbose-auto
 	  (format t "== [Domain] ===========")
@@ -891,10 +888,11 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (type boolean serialize))
   (with-isl-context
     (let* ((groups (create-schedules-from-avm avm :verbose verbose-schedule))
+	   (alias (create-reduction-alias-f (graph-nodes (avm-graph avm))))
 	   (groups (loop for group in groups
 			 if (group-realize-on-vm group) collect group
 			   else if (group-sched group) do
-			     (setf (group-polyhedron group) (create-polyhedron-from-group avm group :verbose verbose-schedule :verbose-auto verbose-auto))
+			     (setf (group-polyhedron group) (create-polyhedron-from-group alias avm group :verbose verbose-schedule :verbose-auto verbose-auto))
 				and collect group)))
       (mapc
        #'(lambda (x)
@@ -981,6 +979,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
     (auto-schedule! poly)
     (print (schedule-get-root (poly-schedule poly)))
     (print (debug/render-c poly))))
+
 ;; Loop Collapse https://github.com/zhen8838/isl_learn/blob/main/10_loop_transformation.ipynb
 ;; (union-set-apply domain xxx)
 ;; [TODO] Test w/
@@ -990,3 +989,38 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; !sin (!matmul)
 ;; Embedding
 ;; Better Visualization ...
+
+;; [TODO]
+;; Hand updated Embedding Schedule
+;; 1. Fixed the domain of T5 (10, 30, 10, 10)
+;; なんか色々おかしい ~...
+;; Polyhedralは全部書き直そう。。。
+;; SERIALIZE=1なループを持つPolyhedralをどうにかする
+;; 1 vs 1 でFuseするのを繰り返す？
+;; https://github.com/Tiramisu-Compiler/tiramisu/blob/master/src/auto_scheduler/tiramisu_auto_scheduler.cpp
+;; これを作るイメージ
+;; https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
+;; あ〜あとConvNDのカーネル修正も必要。。。
+;; make-node suru
+;; LoopCollapse, Strideが1になればAffine
+;; loop-fusion (Poly1, Poly2)
+;; [TODO]
+;; 1, Fuse Manually
+;; 2, better visualization
+;; 3, post-fusion
+;; Implement Post Fusion
+;; ISL is a tool to analyze tiling/parallelizing
+
+;; - Prep refactor: ISL Renderer: Rendering Graphに対して実装する
+;; Submodule -> Fused Graph
+;; IR:FOR IR/ENDFOR -> 不要なので削除する
+
+;; Loop-Collapseは最後に判定する
+;; DomainのAccess RepとNRankでFlattenしたMapが同じならFlattenn
+(defmethod loop-interchange ())
+(defmethod try-insert-loop ((loop1 Graph) (loop2 Graph))
+  ;; fusion bottom-up or top-down? which is better
+  ;; 上から下に読んでいく，Dependenceが見たされるLoopの場所に ggg
+  ;; Loops w/ directly dependence
+  ;; lex depのやつ
+  )

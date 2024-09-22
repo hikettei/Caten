@@ -39,6 +39,37 @@
   (when (expr-p (expr-y expr)) (expr-recursive-settype (expr-y expr) id buffer))
   (when (expr-p (expr-z expr)) (expr-recursive-settype (expr-z expr) id buffer)))
 
+(defun simplify-expr (expr &aux (changed-p nil))
+  (labels ((changed () (setf changed-p t))
+	   (%simplify-expr (expr)
+	     (trivia:ematch expr
+	       ((Expr :op :ADD :x (Expr :op :Const :x (= 0)) :y y :z (trivia:guard z (null z)))
+		(changed)
+		(%simplify-expr y))
+	       ((Expr :op :ADD :x x :y (Expr :op :Const :x (= 0)) :z (trivia:guard z (null z)))
+		(changed)
+		(%simplify-expr x))
+	       ((Expr :op :MUL :x (Expr :op :Const :x (= 1)) :y y :z (trivia:guard z (null z)))
+		(changed)
+		(%simplify-expr y))
+	       ((Expr :op :MUL :x x :y (Expr :op :Const :x (= 1)) :z (trivia:guard z (null z)))
+		(changed)
+		(%simplify-expr x))
+	       ((Expr :op :MUL :x (Expr :op :Const :x (= 0) :y dtype) :y _ :z (trivia:guard z (null z)))
+		(changed)
+		(make-const 0 dtype))
+	       ((Expr :op :MUL :x _ :y (Expr :op :Const :x (= 0) :y dtype) :z (trivia:guard z (null z)))
+		(changed)
+		(make-const 0 dtype))
+	       (_
+		(if (expr-p expr)
+		    (make-expr (expr-op expr) (simplify-expr (expr-x expr)) (simplify-expr (expr-y expr)) (%simplify-expr (expr-z expr)))
+		    expr)))))
+    (setf expr (%simplify-expr expr))
+    (if changed-p
+	(simplify-expr expr)
+	expr)))
+
 ;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((expr (name (&rest args) (&rest types))
 	     `(defun ,(symb 'make- name) (,@args)
