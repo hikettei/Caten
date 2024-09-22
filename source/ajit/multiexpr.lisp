@@ -61,6 +61,12 @@
 	       ((Expr :op :MUL :x _ :y (Expr :op :Const :x (= 0) :y dtype) :z (trivia:guard z (null z)))
 		(changed)
 		(make-const 0 dtype))
+	       ((Expr :op :ADD :x (Expr :op :const :x (trivia:guard x (numberp x))) :y (Expr :op :const :x (trivia:guard y (numberp y))) :z (trivia:guard z (null z)))
+		(changed)
+		(make-const (+ x y) nil))
+	       ((Expr :op :MUL :x (Expr :op :const :x (trivia:guard x (numberp x))) :y (Expr :op :const :x (trivia:guard y (numberp y))) :z (trivia:guard z (null z)))
+		(changed)
+		(make-const (* x y) nil))
 	       (_
 		(if (expr-p expr)
 		    (make-expr (expr-op expr) (%simplify-expr (expr-x expr)) (%simplify-expr (expr-y expr)) (%simplify-expr (expr-z expr)))
