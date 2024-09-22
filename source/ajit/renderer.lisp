@@ -84,16 +84,15 @@ op/expr
   `(member :ALLOC :WMMA :EXPR))
 
 (defgeneric %render-nodes (lang graph args indent)
-  (:documentation "
-Render the ops in ./source/aasm/ops.lisp.
-:ALLOC
-:EXPR
-"))
+  (:documentation ""))
 
-;; TODO: verify-node
 (defun render-expr (lang expr)
   "Recursively render the expr"
   (declare (type device lang))
   (if (expr-p expr)
       (%render-expr lang (expr-op expr) (expr-x expr) (expr-y expr) (expr-z expr))
       (%render-expr lang :Const expr nil nil)))
+
+(defun render-aref (lang buffer &key (genid #'gid) (strides))
+  (render-expr lang (render-isl-aref buffer :genid genid :flatten nil :strides strides)))
+

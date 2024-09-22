@@ -218,39 +218,6 @@ Buffers: ~a
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
 
-(defun one-dimensional-renderer (gid stride upfrom by broadcast-p)
-  (if broadcast-p
-      (format nil "0")
-      (format nil "~a~a~a"
-	      (if (eql by 1)
-		  (if (and (numberp stride) (= stride 1))
-		      ""
-		      (format nil "~a*" stride))
-		  (if (and (numberp stride) (= stride 1))
-		      (format nil "~a*" by)
-		      (if (and (numberp stride) (numberp by))
-			  (format nil "~a*" (* stride by))
-			  (format nil "~a*~a*" by stride))))
-	      gid
-	      (if (eql upfrom 0)
-		  ""
-		  (format nil "+(~a*~a)" upfrom stride)))))
-
-(defun isl-access-renderer (gid stride upfrom by broadcast-p)
-  (declare (ignore stride))
-  (assert (numberp by) () "by is expected to be a constant to create an affine schedule! (TODO: Fix)")
-  ;;(when (symbolp by) (setf by 2))
-  (if broadcast-p
-      "0"
-      (format nil "~a~a~a"
-	      (if (eql by 1)
-		  ""
-		  (format nil "~a*" by))
-	      gid
-	      (if (eql upfrom 0)
-		  ""
-		  (format nil "+~a" upfrom)))))
-
 (defun isl-access-expr (gid stride upfrom by broadcast-p)
   (if broadcast-p
       (make-const 0 nil)
@@ -263,39 +230,41 @@ Buffers: ~a
 	 (make-const stride nil))
 	(make-expr :MUL (make-const upfrom nil) (make-const stride nil))))))
 
-(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'one-dimensional-renderer) (split "+") (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
+(defun render-isl-aref (buffer &key (genid #'gid) (flatten nil) (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
 ```
 "
   (declare (type buffer buffer))
-  (apply
-   #'concatenate
-   'string
-   (butlast
-    (append
-     (loop with order = (if (and use-permute (buffer-inferred-permute buffer))
-			    (buffer-inferred-permute buffer)
-			    (range 0 (buffer-nrank buffer)))
-	   for nth in order
-	   for stride-nth in (or strides (buffer-stride buffer))
-	   for size   = (nth nth (buffer-shape buffer))
-	   for view   = (nth nth (buffer-views buffer))
-	   for stride = (reveal-buffer stride-nth)
-	   for upfrom = (reveal-buffer (or (nth 0 view) 0))
-	   for by     = (reveal-buffer (or (nth 2 view) 1))
-	   for broadcast-p = (nth 3 view)
-	   for gid = (funcall genid nth)
-	   do (incf c)
-	   if (and mutate-scalar (eql size 1))
-	     append (list "0" split)
-	   else
-	     append
-	     (list
-	      (funcall indexing gid stride upfrom by broadcast-p)
-	      split))
-     (when upper (loop repeat (- upper c) append (list "0" split)))))))
+  (let ((indices
+	  (loop with order = (if (and use-permute (buffer-inferred-permute buffer))
+				 (buffer-inferred-permute buffer)
+				 (range 0 (buffer-nrank buffer)))
+		for nth in order
+		for stride-nth in (or strides (buffer-stride buffer))
+		for size   = (nth nth (buffer-shape buffer))
+		for view   = (nth nth (buffer-views buffer))
+		for stride = (reveal-buffer stride-nth)
+		for upfrom = (reveal-buffer (or (nth 0 view) 0))
+		for by     = (reveal-buffer (or (nth 2 view) 1))
+		for broadcast-p = (nth 3 view)
+		for gid = (funcall genid nth)
+		do (incf c)
+		if (and mutate-scalar (eql size 1))
+		  collect (make-const 0 nil)
+		else
+		  collect (isl-access-expr gid stride upfrom by broadcast-p))))
+    (if flatten
+	(apply
+	 #'concatenate 'string
+	 (butlast
+          (loop for idx in (nconc indices (when upper (loop repeat (- upper c) collect (make-expr 0 nil))))
+		append (list (render-expr (default-device :clang) idx) ", "))))
+	(flet ((add (x y) (make-expr :ADD x y)))
+	  (if (null indices)
+	      nil
+	      (simplify-expr (reduce #'add indices)))))))
 
 (defun render-domain (pipeline &key (depends-on nil))
   "Render the domain notation from the scheduled subgraphs
@@ -380,7 +349,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			   (if (null lf)
 			       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 			       (when (vm-instruction-p node)
-				 (let ((access (render-isl-aref rt :mutate-scalar t :indexing #'isl-access-renderer :split ", " :use-permute t)))
+				 (let ((access (render-isl-aref rt :mutate-scalar t :flatten t :use-permute t)))
 				   (if (string= access "")
 				       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 				       (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from r access (pad))))))))

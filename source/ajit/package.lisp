@@ -34,6 +34,7 @@
    #:auto-schedule
    #:jit
    #:render-isl-aref
+   #:isl-access-expr
    #:JIT-Info
    #:jit-info-p
    #:jit-info-n-kernels
@@ -66,6 +67,7 @@
    #:%render-expr
    #:%render-nodes
    #:render-expr
+   #:render-aref
    #:Argument
    #:argument-name
    #:argument-p

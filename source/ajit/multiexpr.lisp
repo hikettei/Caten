@@ -74,7 +74,10 @@
 (macrolet ((expr (name (&rest args) (&rest types))
 	     `(defun ,(symb 'make- name) (,@args)
 		(declare ,@(loop for arg in args for typ in types collect `(type ,typ ,arg)))
-		(make-expr ,(intern (symbol-name name) "KEYWORD") ,@args))))
+		(let ((,(car args) (if (and (stringp ,(car args)) (numberp (read-from-string ,(car args) nil)))
+				       (read-from-string ,(car args))
+				       ,(car args))))
+		  (make-expr ,(intern (symbol-name name) "KEYWORD") ,@args)))))
   ;; Buffer Ops
   (expr Const (obj type) (t (or null Buffer)))
   (expr Cast  (obj dtype) (Expr Keyword))
