@@ -40,7 +40,7 @@ Loop is either of :Global or :Local
 (defun r/else () (make-node :Render :ELSE nil nil))
 (defun r/endif () (make-node :Render :ENDIF nil nil))
 
-(defun create-rendering-graph (lisp-ast bands device max-dimension)
+(defun %create-rendering-graph-nodes (lisp-ast max-dimension)
   ;; -1 is a placeholder for the tmpvar allocation.
   (let ((new-graph))
     (labels ((lower (object)
@@ -63,7 +63,16 @@ Loop is either of :Global or :Local
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (apply #'make-graph (apply-bands bands (simplify-rendering-nodes (reverse new-graph)) :global-rank (device-parallel-depth device)))))
+    (nreverse new-graph)))
+
+(defun create-rendering-graph (lisp-ast bands device max-dimension)
+  ;; -1 is a placeholder for the tmpvar allocation.
+  (apply
+   #'make-graph
+   (apply-bands
+    bands
+    (simplify-rendering-nodes (%create-rendering-graph-nodes lisp-ast max-dimension))
+    :global-rank (device-parallel-depth device))))
 
 (defun simplify-rendering-nodes (nodes)
   (let ((len (length nodes)))
@@ -91,3 +100,43 @@ Loop is either of :Global or :Local
 	  do (push (node-id (nth (1+ nth) nodes)) removed)
 	else unless (find (node-id node) removed)
 	       collect node))
+
+(defun merge-adjacent-loops (nodes)
+  "Transforms the two adjacent loops:
+```
+for (int i = 0; i < 10; i++) {
+  ... // Assume (...) has no reduce_ops.
+}
+for (int i = 0; i < 10; i++) {
+  ...
+}
+```
+=>
+```
+for (int i = 0; i < 10; i++) {
+  ...
+  ...
+}
+"
+  (loop with depth = 0
+	with last-seen = nil
+	with ignores = nil
+	for nth upfrom 0 below (length nodes)
+	for node = (nth nth nodes)
+	for next-node = (nth (1+ nth) nodes)
+	if (and node next-node
+		(>= depth 2)
+		(eql (node-type node) :ENDFOR)
+		(eql (Node-type next-node) :FOR)	
+		(expr-eq (getattr next-node :upfrom) (getattr last-seen :upfrom))
+		(expr-eq (getattr next-node :below) (getattr last-seen :below))
+		(expr-eq (getattr next-node :by) (getattr last-seen :by))
+		(equal (getattr next-node :idx) (getattr last-seen :idx)))
+	  do (push (node-id next-node) ignores)
+	     (push (node-id node) ignores)
+        if (eql (node-type node) :FOR)
+	  do (setf last-seen node) (incf depth)
+	if (eql (node-type node) :ENDFOR)
+	  do (decf depth)
+	unless (find (node-id node) ignores)
+	  collect node))

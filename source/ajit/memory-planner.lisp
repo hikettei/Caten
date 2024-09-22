@@ -361,10 +361,6 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	(apply-creation time))
       I)))
 
-(defmethod evaluate ((mp MemoryPlanner))
-  ;; xxx MiB
-  )
-
 (defmethod memory-plan ((mp MemoryPlanner) &aux (avm (mp-avm mp)))
   "Applies memory-optimization for the graph.
 Resourses:
@@ -472,6 +468,27 @@ Lifespan:
 		if (kernel-renderer-nodes k)
 		  collect (pack-loop-funcall k (group-polyhedron group) (device-packed-by (mp-device mp))))))
 
+(defun memory-access-local-p (render-nodes id pipeline)
+  (let ((search-key
+	  (loop for key in (sort (hash-table-keys pipeline) #'<)
+		for graph = (gethash key pipeline)
+		if (find id (graph-nodes graph) :key #'(lambda (x) (append (node-reads x) (node-writes x))) :test #'find)
+		  collect key)))
+    (loop with depth = 0
+	  with nodes = render-nodes
+	  with start = (or (position (apply #'min search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from memory-access-local-p nil))
+	  with end   = (or (position (apply #'max search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from memory-access-local-p nil))
+	  for nth upfrom (min start end) to (max start end)
+	  for ir = (nth nth nodes)
+	  if (find (node-type ir) `(:IF :FOR))
+	    do (incf depth)
+	  else if (find (node-type ir) `(:ENDIF :ENDFOR))
+	    do (decf depth)
+	  end
+	  if (< depth 0) do
+	    (return-from memory-access-local-p nil)))
+  t)
+
 (defmethod output->scalar-mutation ((mp MemoryPlanner) (group group) (kernel kernel-renderer) dependency-list)
   "
 Rewrites the graph:
@@ -490,31 +507,13 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 	      (let ((out (find id (kernel-renderer-args kernel) :key #'argument-name)))
 		(and out (eql :output (argument-io out))))
 	      (null (find id dependency-list))
-	      (let ((search-key
-		      (loop for key in (sort (hash-table-keys (poly-pipeline (group-polyhedron group))) #'<)
-			    for graph = (gethash key (poly-pipeline (group-polyhedron group)))
-			    if (find id (graph-nodes graph) :key #'(lambda (x) (append (node-reads x) (node-writes x))) :test #'find)
-			      collect key)))
-		(loop with depth = 0
-		      with nodes = (kernel-renderer-nodes kernel)
-		      with start = (or (position (apply #'min search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from ->scalar-p nil))
-		      with end   = (or (position (apply #'max search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from ->scalar-p nil))
-		      for nth upfrom (min start end) to (max start end)
-		      for ir = (nth nth nodes)
-		      if (find (node-type ir) `(:IF :FOR))
-			do (incf depth)
-		      else if (find (node-type ir) `(:ENDIF :ENDFOR))
-		        do (decf depth)
-		      end
-		      if (< depth 0) do
-			(return-from ->scalar-p nil))
-		t))))
+	      (memory-access-local-p (kernel-renderer-nodes kernel) id (poly-pipeline (group-polyhedron group))))))
       (dolist (node related-nodes)
 	(loop for w in (node-writes node)
 	      for typ in (relay-writes (read-type-relay node))
 	      if (and (not (= 0 (buffer-nrank typ))) (->scalar-p w)) do
 		(push w scalars)))
-      ;; mutate all read dependencie
+      ;; mutate all read dependencies
       (let ((seen) (suffix))
 	(loop for node in (kernel-renderer-nodes kernel)
 	      if (eql (node-type node) :FOR)
