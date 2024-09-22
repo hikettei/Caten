@@ -2,22 +2,6 @@
 ;; This paper is good to read first:
 ;; - https://arxiv.org/pdf/2401.06665
 ;; - https://www.researchgate.net/publication/320992060_Consecutivity_in_the_isl_Polyhedral_Scheduler
-
-;; [TODO]
-;; Hand updated Embedding Schedule
-;; 1. Fixed the domain of T5 (10, 30, 10, 10)
-;; なんか色々おかしい ~...
-;; Polyhedralは全部書き直そう。。。
-;; SERIALIZE=1なループを持つPolyhedralをどうにかする
-;; 1 vs 1 でFuseするのを繰り返す？
-;; https://github.com/Tiramisu-Compiler/tiramisu/blob/master/src/auto_scheduler/tiramisu_auto_scheduler.cpp
-;; これを作るイメージ
-;; https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
-;; あ〜あとConvNDのカーネル修正も必要。。。
-;; make-node suru
-;; LoopCollapse, Strideが1になればAffine
-
-;; loop-fusion (Poly1, Poly2)
 (defstruct (Polyhedral
 	    (:conc-name poly-)
 	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs lex-table &key (ast-option :atomic))))
@@ -141,27 +125,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	 (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
 	 (str   (isl::%isl-printer-get-str q)))
     str))
-
-(defun %create-dependency-graph (read-access write-access initial-schedule)
-  ;; References https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
-  (let* ((raw (union-map-intersect
-	       (union-map-apply-range
-		write-access
-		(union-map-reverse read-access))
-	       (union-map-lex-lt-union-map initial-schedule initial-schedule)))
-	 (war (union-map-intersect
-	       (union-map-apply-range
-		read-access
-		(union-map-reverse write-access))
-	       (union-map-lex-lt-union-map initial-schedule initial-schedule)))
-	 (waw (union-map-intersect
-	       (union-map-apply-range
-		write-access
-		(union-map-reverse write-access))
-	       (union-map-lex-lt-union-map initial-schedule initial-schedule))))
-    (values raw waw war)))
-
-;; [todo] delete
+3
 (defun create-dependency-graph (polyhedral)
   (with-slots ((domain domain-ptr) (initial-schedule initial-schedule) (read-access read-ptr) (write-access write-ptr)) polyhedral
     ;; References https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
@@ -242,15 +206,3 @@ for (int c0 = 0; c0 < a; c0 += 1)
 	   (schedule (schedule-constraints-compute-schedule constraints)))
       (setf (poly-schedule polyhedral) schedule)
       polyhedral)))
-
-(defun set-schedule-options (&key (serialize nil))
-  (macrolet ((set-option (name level)
-	       `(progn
-		  (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
-				   :pointer (isl::context-handle isl::*context*)
-				   :int ,level
-				   :void))))
-    (when serialize (set-option "schedule_serialize_sccs" 1))
-    (set-option "schedule_outer_coincidence" 1)
-    ;; (set-option "schedule_maximize_band_depth" 1)
-    (set-option "schedule_treat_coalescing" 1)))
