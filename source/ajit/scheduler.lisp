@@ -461,7 +461,7 @@ Optional order fusing softmax in a single kernel is:
 }
 "
   (let ((lex (pipeline->timestamp pipeline))
-	(prev-rank 0))
+	(max-rank (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline)))))
     (values
      (union-map-from-str
       (with-output-to-string (out)
@@ -474,8 +474,7 @@ Optional order fusing softmax in a single kernel is:
 				 "  T~a[~(~a~)] -> [~(~a~)]"
 				 ts
 				 (render-list loop-factors)
-				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) (1+ prev-rank))))))
-	       (setf prev-rank (length loop-factors))
+				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank)))))
 	       (format out "~a;~%" dom)))
 	 pipeline)
 	(format out "}")))
