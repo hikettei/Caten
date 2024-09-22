@@ -47,7 +47,7 @@
   (sc sc :type schedule-constraints)
   (sched sched :type schedule)
   (graph graph :type Graph)
-  (cost (compute-memref-costs ast pipeline) :type Cost))
+  (cost (compute-memref-costs graph pipeline) :type Cost))
 
 (defmethod print-object ((pir PolyIR) stream)
   (format stream "<PolyIR[t=~a]
@@ -63,17 +63,17 @@
 (defmethod initialize-instance :after ((pir PolyIR) &key body)
   (assert body)
   (let ((input (make-hash-table)))
-    (setf (gethash (polyir-time input) input) (polyir-body pir))
+    (setf (gethash (polyir-time pir) input) (polyir-body pir))
     (multiple-value-bind (domain read write)
 	(values
 	 (render-domain input :depends-on (polyir-quasiaffine pir))
 	 (render-access :read input :depends-on (polyir-quasiaffine pir))
 	 (render-access :write input :depends-on (polyir-quasiaffine pir)))
-      (setf (polyir-domain pir) domain
-	    (polyir-read pir) read
-	    (polyir-write pir) write))))
+      (setf (polyir-domain pir) (union-set-from-str domain)
+	    (polyir-read pir)   (union-map-from-str read)
+	    (polyir-write pir)  (union-map-from-str  write)))))
 
-(defmethod compute-memref-costs ((ast Scheduled-AST) pipeline)
+(defmethod compute-memref-costs ((graph Graph) pipeline)
   "Compute the cost of memory references in the AST to maximize the locality of data accesses.
 ```
 cost_n = (memory_access_total_n) + (penalty_n)
@@ -81,38 +81,45 @@ cost_n = (memory_access_total_n) + (penalty_n)
 where penalty_n = Σmax(cost) if scheduled_ast has the conditional branch.
 memory_access_total_n[fixnum] is a count of memory_accesses across different loops (i.e.: DRAM Accesses)
 "
-  (let ((penalty-p (if (find :IF (graph-nodes (scheduled-ast-graph ast)) :key #'node-type) t nil))
+  (let ((penalty-p (if (find :IF (graph-nodes graph) :key #'node-type) t nil))
 	(memory-access-total 0))
     (flet ((enumerate-access (node)
 	     (assert (eql (node-type node) :FUNCALL))
-	     (if (memory-access-local-p (graph-nodes (scheduled-ast-graph ast)) (getattr node :idx) pipeline)
-		 1
-		 0)))
-      (loop for node in (graph-nodes (scheduled-ast-graph ast))
+	     (let ((funcall-nodes (graph-nodes (gethash (getattr node :idx) pipeline))))
+	       (loop for id in (loop for node in funcall-nodes if (vm-instruction-p node) append (node-writes node))
+		     sum
+		     (if (memory-access-local-p (graph-nodes graph) id pipeline)
+			 1 0)))))
+      (loop for node in (graph-nodes graph)
 	    if (eql (node-type node) :FUNCALL)
 	      do (incf memory-access-total (enumerate-access node))))
     ;; memory-access-total = memory-access during different loops
     (make-cost memory-access-total penalty-p)))
 
-(defmethod compute-schedule ((pir1 PolyIR) (pir2 PolyIR) (schedule Union-Set))
+(defmethod compute-schedule ((pir1 PolyIR) (pir2 PolyIR) (schedule Union-Map))
   (with-slots ((read1 read) (write1 write) (domain1 domain)) pir1
     (with-slots ((read2 read) (write2 write) (domain2 domain)) pir2
       (let* ((read (union-map-union read1 read2))
 	     (write (union-map-union write1 write2))
-	     (domain (union-set-union domain1 domain2))
+	     (domain (union-set-union domain1 domain2)) ;; TODO: Cache union read/write/domain
 	     (all-deps (reduce #'union-map-union (multiple-value-list (%create-dependency-graph read write schedule))))
 	     (sc (schedule-constraints-on-domain domain))
 	     (sc (schedule-constraints-set-coincidence sc all-deps))
 	     (sc (schedule-constraints-set-validity sc all-deps))
 	     ;; proximity constraints (keeps loops nested based on dependencies)
 	     (sc (schedule-constraints-set-proximity sc all-deps)))
+	(print "++++++")
+	(print read)
+	(print write)
+	(print domain)
 	;; we set kernel-rank as zero because the rendererd graph is not directly used to create the actual kernel.
 	;; just only used to evaluate the cost.
 	;; [TODO] the current implementation should be turtle slow because there is a lot of type conversations
 	;; refactor to keep using isl ast objects.
+	;; make-scheduled-ast is slow.
 	(make-scheduled-ast sc (polyir-ast-option pir1) 0 (polyir-pipeline pir1))))))
 
-(defmethod compute-schedule ((pir1 PolyIR) (pir2 PolyIR) schedule) :failed)
+(defmethod compute-schedule ((pir1 PolyIR) (pir2 PolyIR) (schedule (eql nil))) :failed)
 
 (defmethod initial-schedule ((pir1 PolyIR) (pir2 PolyIR) (fuse-dim fixnum) (padding-pos fixnum))
   "Creates an initial schedule between two loops, assuming pir1 comes first, pir2 comes second.
@@ -138,28 +145,29 @@ Inputs:
      (format out "{~%")
      (with-slots ((time1 time) (graph1 body)) pir1
        (with-slots ((time2 time) (graph2 body)) pir2
-	 (let ((lf1 (graph->loop-factors graph1))
-	       (lf2 (graph->loop-factors graph2)))
-	   ;; Check the dimension size of loops. (merged only if the size is equivalent)
-	   (let ((for1 (id->value graph1 (nth fuse-dim lf1)))
-		 (for2 (id->value graph2 (nth fuse-dim lf2))))
-	     (symbol-macrolet ((->failed (return-from initial-schedule nil)))
-	       (unless (eql (node-type for1) :IR/FOR) ->failed)
-	       (unless (eql (node-type for2) :IR/FOR) ->failed)
-	       ;; [TODO] Dim check
-	       ;; [TODO] How to fuse [fused_polyir] and [polyir]?
-	       ))
-	   (flet ((fs (ls time)
-		    (nconc
-		     (subseq ls 0 fuse-dim)
-		     (list time)
-		     (subseq ls fuse-dim)))
-		  (pd (ls another)
-		    (nconc
-		     (subseq ls 0 padding-pos)
-		     (loop repeat (- (length another) (length ls)) collect 0)
-		     (subseq ls padding-pos))))
-	     (multiple-value-bind (fs1 fs2) (values (fs lf1 time1) (fs lf2 time2))
+	 (flet ((fs (ls time)
+		  (nconc
+		   (subseq ls 0 fuse-dim)
+		   (list time)
+		   (subseq ls fuse-dim)))
+		(pd (ls another)
+		  (nconc
+		   (subseq ls 0 padding-pos)
+		   (loop repeat (- (length another) (length ls)) collect 0)
+		   (subseq ls padding-pos))))
+	   (let ((lf1 (graph->loop-factors graph1))
+		 (lf2 (graph->loop-factors graph2)))
+	     ;; Check the dimension size of loops. (merged only if the size is equivalent)
+	     (let ((for1 (id->value graph1 (nth fuse-dim lf1)))
+		   (for2 (id->value graph2 (nth fuse-dim lf2))))
+	       (symbol-macrolet ((->failed (return-from initial-schedule nil)))
+		 (unless (eql (node-type for1) :IR/FOR) ->failed)
+		 (unless (eql (node-type for2) :IR/FOR) ->failed)
+		 ;; [TODO] Dim check
+		 ;; [TODO] How to fuse [fused_polyir] and [polyir]?
+		 ))
+
+	     (multiple-value-bind (fs1 fs2) (values lf1 (fs lf1 time1) (fs lf2 time2))
 	       (format out "  S~a[~(~a~)] -> [~a];" time1 (render-list lf1) (render-list (pd fs1 fs2)))
 	       (format out "  S~a[~(~a~)] -> [~a];" time2 (render-list lf2) (render-list (pd fs2 fs1))))))))
      (format out "}"))))
@@ -167,15 +175,18 @@ Inputs:
 (defmethod candidate-patterns ((pir1 PolyIR) (pir2 PolyIR))
   (let* ((lf1 (graph->loop-factors (polyir-body pir1)))
 	 (lf2 (graph->loop-factors (polyir-body pir2)))
-	 (kernel-size (max (length lf1) (length lf2))))
+	 (kernel-size (max (length lf1) (length lf2)))
+	 (pad-p (not (= (length lf1) (length lf2)))))
     (flet ((ptn (padding-dim)
 	     (loop for i upfrom 0 below kernel-size
 		   collect (list i padding-dim))))
       ;; padding_dim!=0, max is not always the best solution.
       (nconc
        (ptn 0)
-       (ptn kernel-size)
-       (loop for i upfrom 1 below (1- kernel-size) append (ptn i))))))
+       (when pad-p
+	 (ptn kernel-size))
+       (when pad-p
+	 (loop for i upfrom 1 below (1- kernel-size) append (ptn i)))))))
 
 (defmethod maybe-fuse-two-loops ((pir1 PolyIR) (pir2 PolyIR))
   ""
@@ -188,10 +199,17 @@ Inputs:
     (let* ((patterns (candidate-patterns pir1 pir2))
 	   (scheduled-asts
 	     (loop for p in patterns
-		   for sast = (compute-schedule pir1 pir2 (initial-schedule pir1 pir2 (first p) (second p)))
+		   for sast = (compute-schedule pir1 pir2 (print (initial-schedule pir1 pir2 (first p) (second p))))
 		   unless (eql sast :failed)
-		     collect (maybe-early-return sast))))
-      scheduled-asts)))
+		     collect (maybe-early-return sast)))
+	   (penalty (apply #'max (map 'list #'cost-metric (map 'list #'scheduled-ast-cost scheduled-asts)))))
+      (dolist (c scheduled-asts)
+	(when (cost-penalty-p (scheduled-ast-cost c))
+	  (incf (cost-metric (scheduled-ast-cost c)) penalty)))
+      (let ((sort-by-metric (sort scheduled-asts #'< :key (compose #'cost-metric #'scheduled-ast-cost))))
+	;; penalty-p is selected only after all candidates has penaltiy-p
+	(car sort-by-metric)
+	))))
 
 ;; loop-fusion (Poly1, Poly2)
 (defstruct (Polyhedral

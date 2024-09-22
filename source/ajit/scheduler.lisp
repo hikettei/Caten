@@ -189,16 +189,10 @@ Buffers: ~a
 	     collect (car (node-writes node))))))
 
 (defun graph->loop-factors1 (graph)
-  (declare (type graph graph))
-  ;; Applies if only rank is one.
   (remove-duplicates
    (loop for node in (graph-nodes graph)
 	 if (and (eql (node-type node) :IR/FOR) (null (getattr node :_scalar_p)))
-	   collect (car (node-writes node))
-	 else if (and (eql (node-type node) :IR/FOR) (getattr node :_scalar_p))
-		collect (car (node-writes node)))
-   :test #'(lambda (x y) (and (symbolp x) (symbolp y) (eql x y)))))
-
+	   collect (car (node-writes node)))))
 ;; [Fix] is it necessary?
 (defun graph-loop-scalar-mutated-p (graph)
   (not
@@ -466,7 +460,7 @@ Optional order fusing softmax in a single kernel is:
 	(format out "{~%")
 	(maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
 	 #'(lambda (ts graph)
-	     (let* ((loop-factors (graph->loop-factors1 graph))
+	     (let* ((loop-factors (graph->loop-factors graph))
 		    (dom (format nil
 				 "  T~a[~(~a~)] -> [~(~a~)]"
 				 ts
@@ -776,13 +770,17 @@ Optional order fusing softmax in a single kernel is:
 
     (let ((pirs (loop for time being the hash-keys of pipeline
 		      for value = (gethash time pipeline)
+		      do (print value)
 		      collect
-		      (make-instance 'PolyIR
-				     :time time :graph value
-				     :quasiaffine (remove-duplicates (nconc (avm-gather-args avm) (graph->loop-size value)))))))
-      (print pirs)
-      (error "STOP")
-      )
+		      (make-instance
+		       'PolyIR
+		       :time time :body value
+		       :pipeline pipeline
+		       :quasiaffine (remove-duplicates (nconc (avm-gather-args avm) (graph->loop-size value)))))))
+      (when (>= (length pirs) 3)
+	(print (time (maybe-fuse-two-loops (car (last pirs)) (car (last pirs 2)))))
+	;;(error "STOP")
+	))
     
     (let* ((vm-inputs (avm-gather-args avm))
 	   ;;(vm-input-tensors (nodes-depends-on (graph-nodes (group-graph group))))
@@ -998,122 +996,3 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; !matmul !matmul
 ;; !sin (!matmul)
 ;; Embedding
-(compile-isl :domain "
-[] -> {
-  T0[_gid0 = 0, _gid1 = 0, _gid2, _gid3 = 0] : 0 <= _gid2 < 10;
-  T1[_gid0, _gid1, _gid2, _gid3 = 0] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 10;
-  T2[_gid0, _gid1, _gid2, _gid3 = 0] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 10;
-  T3[_gid0, _gid1, _gid2, _gid3 = 0] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 10;
-  T4[_gid0, _gid1, _gid2, _gid3] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10;
-  T5[_gid0, _gid1, _gid2 = 0, _gid3] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid3 < 10;
-  T6[_gid0, _gid1, _gid2, _gid3] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10;
-}
-"
-	     :read "
-[] -> {
-  T0[_gid0, _gid1, _gid2, _gid3] -> val_41[0, 0, _gid2, 0];
-  T0[_gid0, _gid1, _gid2, _gid3] -> val_41[0, 0, _gid2, 0];
-  T1[_gid0, _gid1, _gid2, _gid3] -> val_45[_gid0, _gid1, _gid2, 0];
-  T1[_gid0, _gid1, _gid2, _gid3] -> val_42[0, 0, _gid2, 0];
-  T2[_gid0, _gid1, _gid2, _gid3] -> val_47[_gid0, _gid1, _gid2, 0];
-  T2[_gid0, _gid1, _gid2, _gid3] -> val_37[_gid0, _gid1, 0, 0];
-  T2[_gid0, _gid1, _gid2, _gid3] -> val_46[_gid0, _gid1, _gid2, 0];
-  T3[_gid0, _gid1, _gid2, _gid3] -> val_48[_gid0, _gid1, _gid2, 0];
-  T3[_gid0, _gid1, _gid2, _gid3] -> val_48[_gid0, _gid1, _gid2, 0];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_36[_gid0, _gid1, _gid2, _gid3];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_31[0, 0, _gid2, _gid3];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_49[_gid0, _gid1, _gid2, 0];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_31[0, 0, _gid2, _gid3];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_49[_gid0, _gid1, _gid2, 0];
-  T5[_gid0, _gid1, _gid2, _gid3] -> val_54[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_57[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_53[_gid0, _gid1, _gid2, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
-}
-"
-	     :write "
-[] -> {
-  T0[_gid0, _gid1, _gid2, _gid3] -> val_42[0, 0, _gid2, 0];
-  T1[_gid0, _gid1, _gid2, _gid3] -> val_46[_gid0, _gid1, _gid2, 0];
-  T2[_gid0, _gid1, _gid2, _gid3] -> val_48[_gid0, _gid1, _gid2, 0];
-  T3[_gid0, _gid1, _gid2, _gid3] -> val_49[_gid0, _gid1, _gid2, 0];
-  T4[_gid0, _gid1, _gid2, _gid3] -> val_53[_gid0, _gid1, _gid2, _gid3];
-  T5[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_57[_gid0, _gid1, 0, _gid3];
-}
-"
-	     :schedule "
-{
-T0[_gid0, _gid1, _gid2, _gid3] -> [0, _gid0, _gid1, _gid2, _gid3];
-T3[_gid0, _gid1, _gid2, _gid3] -> [3, _gid0, _gid1, _gid2, _gid3];
-T2[_gid0, _gid1, _gid2, _gid3] -> [2, _gid0, _gid1, _gid2, _gid3];
-T1[_gid0, _gid1, _gid2, _gid3] -> [1, _gid0, _gid1, _gid2, _gid3];
-T6[_gid0, _gid1, _gid2, _gid3] -> [5, _gid0, _gid1, _gid2, _gid3];
-T4[_gid0, _gid1, _gid2, _gid3] -> [4, _gid0, _gid1, _gid2, _gid3];
-T5[_gid0, _gid1, _gid2, _gid3] -> [4, _gid0, _gid1, _gid2, _gid3]
-}
-"
-	     )
-
-
-;; Hand updated Embedding Schedule
-;; 1. Fixed the domain of T5 (10, 30, 10, 10)
-;; なんか色々おかしい ~...
-;; Polyhedralは全部書き直そう。。。
-;; SERIALIZE=1なループを持つPolyhedralをどうにかする
-;; 1 vs 1 でFuseするのを繰り返す？
-;; https://github.com/Tiramisu-Compiler/tiramisu/blob/master/src/auto_scheduler/tiramisu_auto_scheduler.cpp
-;; これを作るイメージ
-;; https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
-;; あ〜あとConvNDのカーネル修正も必要。。。
-(compile-isl :domain "
-[] -> {
-  T5[_gid0, _gid1, _gid2, _gid3] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10;
-  T6[_gid0, _gid1, _gid2, _gid3] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10;
-}
-"
-	     :read "
-[] -> {
-  T5[_gid0, _gid1, _gid2, _gid3] -> val_54[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_57[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_53[_gid0, _gid1, _gid2, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
-}
-"
-	     :write "
-[] -> {
-  T5[_gid0, _gid1, _gid2, _gid3] -> val_55[_gid0, _gid1, 0, _gid3];
-  T6[_gid0, _gid1, _gid2, _gid3] -> val_57[_gid0, _gid1, 0, _gid3];
-}
-"
-	     :schedule "
-{
-T5[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3];
-T6[_gid0, _gid1, _gid2, _gid3] -> [_gid0, _gid1, _gid2, _gid3];
-}
-"
-	     )
-
-
-(compile-isl :domain "
-[] -> {
-  T5[_gid0, _gid1, _gid2, _gid3] : 0 <= _gid0 < 10 and 0 <= _gid1 < 30 and 0 <= _gid2 < 10 and 0 <= _gid3 < 10;
-}
-"
-	     :read "
-[] -> {
-}
-"
-	     :write "
-[] -> {
-}
-"
-	     :schedule "
-{
-T5[_gid0, _gid1, _gid2, _gid3] -> [_gid0 + _gid1 + _gid2 + _gid3];
-}
-"
-	     )
-
