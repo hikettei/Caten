@@ -11,6 +11,15 @@
 ;; - https://libisl.sourceforge.io/manual.pdf
 ;; - https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
 ;; - https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
+
+
+;; = [Overview] =
+;; [aIR Graph (Differentiable + Graph Level IR)]
+;;                     | (lower)
+;;   [Polyhedral IR (Describes the dependence between *groups)] 
+;;                     |
+;;        [Render Graph] + [EXPR] ( output )
+;; *Group = A set of aIR graph whose access are the equivalent
 ;; ~~~~ Subgraph initializers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Scheduled-Items
 	    (:conc-name si-)
@@ -767,20 +776,6 @@ Optional order fusing softmax in a single kernel is:
     (when verbose
       (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
       (print-pipeline pipeline))
-
-    (let ((pirs (loop for time being the hash-keys of pipeline
-		      for value = (gethash time pipeline)
-		      do (print value)
-		      collect
-		      (make-instance
-		       'PolyIR
-		       :time time :body value
-		       :pipeline pipeline
-		       :quasiaffine (remove-duplicates (nconc (avm-gather-args avm) (graph->loop-size value)))))))
-      (when (>= (length pirs) 3)
-	(print (time (maybe-fuse-two-loops (car (last pirs)) (car (last pirs 2)))))
-	;;(error "STOP")
-	))
     
     (let* ((vm-inputs (avm-gather-args avm))
 	   ;;(vm-input-tensors (nodes-depends-on (graph-nodes (group-graph group))))
@@ -987,7 +982,6 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
     (auto-schedule! poly)
     (print (schedule-get-root (poly-schedule poly)))
     (print (debug/render-c poly))))
-
 ;; Loop Collapse https://github.com/zhen8838/isl_learn/blob/main/10_loop_transformation.ipynb
 ;; (union-set-apply domain xxx)
 ;; [TODO] Test w/
@@ -996,3 +990,4 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; !matmul !matmul
 ;; !sin (!matmul)
 ;; Embedding
+;; Better Visualization ...
