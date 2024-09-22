@@ -218,6 +218,17 @@ Buffers: ~a
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
 
+(defun isl-access-expr-no-stride (gid stride upfrom by broadcast-p)
+  (declare (ignore stride))
+  (assert (numberp by) () "`By` should be a constant otherwise Caten cannot create a quasiaffine constraint.")
+  (if broadcast-p
+      (make-const 0 nil)
+      (simplify-expr
+       (make-expr
+	:ADD
+	(make-expr :MUL (make-const gid nil) (make-const by nil))
+	(make-const upfrom nil)))))
+
 (defun isl-access-expr (gid stride upfrom by broadcast-p)
   (if broadcast-p
       (make-const 0 nil)
@@ -230,7 +241,7 @@ Buffers: ~a
 	 (make-const stride nil))
 	(make-expr :MUL (make-const upfrom nil) (make-const stride nil))))))
 
-(defun render-isl-aref (buffer &key (genid #'gid) (flatten nil) (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
+(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'isl-access-expr) (flatten nil) (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -254,7 +265,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 		if (and mutate-scalar (eql size 1))
 		  collect (make-const 0 nil)
 		else
-		  collect (isl-access-expr gid stride upfrom by broadcast-p))))
+		  collect (funcall indexing gid stride upfrom by broadcast-p))))
     (if flatten
 	(apply
 	 #'concatenate 'string
@@ -276,8 +287,7 @@ Domain [depends-on] -> {
 }
 ```
 Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Subgrpah[Graph]}"
-  (declare (type list depends-on)
-	   (type hash-table pipeline))
+  (declare (type list depends-on) (type hash-table pipeline))
   (with-output-to-string (out)
     ;; renders depends-on
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
@@ -349,7 +359,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			   (if (null lf)
 			       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 			       (when (vm-instruction-p node)
-				 (let ((access (render-isl-aref rt :mutate-scalar t :flatten t :use-permute t)))
+				 (let ((access (render-isl-aref rt :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute t)))
 				   (if (string= access "")
 				       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 				       (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from r access (pad))))))))

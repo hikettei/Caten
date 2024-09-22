@@ -176,7 +176,7 @@ Compiled with: ~a"
   (assert (null z))
   (assert (and lhs rhs))
   (let ((ref (render-aref lang rhs :genid #'(lambda (x) (nth x *access*)))))
-    (if (null ref)
+    (if (string= "0" ref)
 	(if (args-p lhs)
 	    (format nil "(*~(~a~)~a)" lhs (unroll-suffix rhs *suffix*))
 	    (format nil "~(~a~)~a" lhs (unroll-suffix rhs *suffix*)))
@@ -297,14 +297,14 @@ Compiled with: ~a"
 		    (format out "~%"))))
       (labels ((%render-aref (id type)
 		 (let ((ref (render-aref lang type :genid #'(lambda (x) (nth x access)))))
-		   (if (null ref)
+		   (if (string= ref "0")
 		       (if (args-p id)
 			   (format nil "(*~(~a~)~a)" id (unroll-suffix type *suffix*))
 			   (format nil "~(~a~)~a" id (unroll-suffix type *suffix*)))
 		       (format nil "~(~a~)[~(~a~)]" id ref)))))
 	(loop with *access* = access
 	      for node in (graph-nodes graph)
-	      for type = (read-type-relay node) do		
+	      for type = (read-type-relay node) do
 		(ecase (node-type node)
 		  (:ALLOCATE
 		   (line "~(~a~) ~(~a~)~a;"

@@ -63,7 +63,7 @@
 		(make-const 0 dtype))
 	       (_
 		(if (expr-p expr)
-		    (make-expr (expr-op expr) (simplify-expr (expr-x expr)) (simplify-expr (expr-y expr)) (%simplify-expr (expr-z expr)))
+		    (make-expr (expr-op expr) (%simplify-expr (expr-x expr)) (%simplify-expr (expr-y expr)) (%simplify-expr (expr-z expr)))
 		    expr)))))
     (setf expr (%simplify-expr expr))
     (if changed-p
@@ -71,17 +71,19 @@
 	expr)))
 
 ;; ~~ [From aIR -> Expr] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(macrolet ((expr (name (&rest args) (&rest types))
+(macrolet ((expr (name (&rest args) (&rest types) guard-const)
 	     `(defun ,(symb 'make- name) (,@args)
 		(declare ,@(loop for arg in args for typ in types collect `(type ,typ ,arg)))
 		(let ((,(car args) (if (and (stringp ,(car args)) (numberp (read-from-string ,(car args) nil)))
 				       (read-from-string ,(car args))
-				       ,(car args))))
+				       (if (and ,guard-const (expr-p ,(car args)) (eql :Const (expr-op ,(car args))))
+					   (expr-x ,(car args))
+					   ,(car args)))))
 		  (make-expr ,(intern (symbol-name name) "KEYWORD") ,@args)))))
   ;; Buffer Ops
-  (expr Const (obj type) (t (or null Buffer)))
-  (expr Cast  (obj dtype) (Expr Keyword))
-  (expr Aref  (id  buffer) (Symbol Buffer)))
+  (expr Const (obj type) (t (or null Buffer)) t)
+  (expr Cast  (obj dtype) (Expr Keyword) nil)
+  (expr Aref  (id  buffer) (Symbol Buffer) nil))
 
 (declaim (ftype (function (Node &rest t) (values Expr &optional)) air->expr))
 (defun air->expr (node &rest parents)
