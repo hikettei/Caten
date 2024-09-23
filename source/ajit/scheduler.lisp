@@ -553,10 +553,12 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; - [ ] 1. EmbeddingのINDEX-COMPONENTSをFuseする
 ;; - [ ] 2. Sumのload 0.0 (softmax, composed matmul, matmul sin)をFuseする
 ;; - [ ] 3. ISLにDumpしてSchedulingをする，
-;; - [ ] 4. ISLがInner LoopのFusionをうまくやってくれる場合
+;; - [ ] 4. ISLがInner LoopのFusionをうまくやってくれる場合 (NO)
 ;;    -> そのままテストを通す
-;;    -> otherwise, submodule-sequenceのTODOを試す
+;;    -> ** otherwise, submodule-sequenceのTODOを試す
 ;;
+;; Using metadata like views
+;; graph-connected-p
 (defmethod submodule-sequence ((older Graph) (younger Graph) (offset fixnum))
   "Fuses the strongly connected two components: Loop1 and Loop2.
 [older]
@@ -586,7 +588,11 @@ younger is always plain
 						     (let ((oi (older-instructions)))
 						       (and
 							(= (length oi) 1)
-							(expr-is-index-component-p (car oi))))))    
+							(expr-is-index-component-p (car oi))))))
+						   (weakly-connected-ops
+						    (loop for old-inst in (older-instructions)
+							  if (graph-weakly-connected-p older inst old-inst)
+							    collect (node-id old-inst)))
 						   (bands (make-hash-table))
 						   (ops nil)
 						   (changed-p nil))
@@ -594,7 +600,7 @@ younger is always plain
 	       ;; Finds a suitable place to locate inst
 	       ;; we refer a suitable place as:
 	       ;; - Satisfies band requirement              (required _gid is defined)
-	       ;; - Satisfies instruction-order requirement (inst is placed after all older-instruction)
+	       ;; - Satisfies instruction-order requirement (inst is placed after all older-instruction)		
 	       (labels ((satisfy-1 ()
 			  ;; Satisfies band-requirement?
 			  (and
@@ -609,13 +615,11 @@ younger is always plain
 				     (let ((lp (gethash id bands)))
 				       ;; Band sizes are the equivalent?
 				       (or
-					(getattr x :_scalar_p)
-					(getattr lp :_scalar_p)
 					(equal (node-reads lp) (node-reads x))))))
 				younger-deps))))
 			(satisfy-2 ()
 			  ;; Satisfies instruction requirement?
-			  (= (length ops) (length (older-instructions))))
+			  (every #'(lambda (x) (find x ops :key #'node-id)) weakly-connected-ops))
 			(satisfy-3 ()
 			  (and
 			   (satisfy-2)
@@ -626,12 +630,10 @@ younger is always plain
 				(and
 				 (gethash id bands)
 				 (or
-				  (getattr x :_scalar_p)
-				  (getattr (gethash id bands) :_scalar_p)
 				  (equal (node-reads (gethash id bands)) (node-reads x)))))
 			    (butlast younger-deps))))
 			(update-size (bs &aux (tgt (gethash (car (node-writes bs)) bands)))
-			  (when (and tgt (getattr tgt :_scalar_p))
+			  (when nil;(and tgt (getattr tgt :_scalar_p))
 			    (setf (node-reads tgt) (node-reads bs)
 				  (getattr tgt :_scalar_p) (getattr bs :_scalar_p)))))
 		 (values
@@ -676,6 +678,7 @@ younger is always plain
       (dolist (inst younger-instructions)
 	(multiple-value-bind (new-graph changed-p)
 	    (find-and-insert-at-suitable-place inst)
+	  (setf changed-p nil)
 	  (if changed-p
 	      (setf older (apply #'make-graph new-graph))
 	      (setf older (create-and-merge-new-domain inst)))))
