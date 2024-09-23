@@ -532,9 +532,13 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
        (loop with indent = 2
 	     for node in (graph-nodes graph)
 	     if (eql (node-type node) :IR/FOR)
-	       do (format out "~afor ~(~a~)=0..~a {~%" (indent indent) (car (node-writes node)) (nth 1 (node-reads node))) (incf indent 2)
+	       do (format out "~afor ~(~a~)=0..~a ~a{~%" (indent indent) (car (node-writes node)) (nth 1 (node-reads node))
+			  (if (getattr node :_scalar_p)
+			      "scalar_p=t "
+			      ""))
+		  (incf indent 2)
 	     else if (eql (node-type node) :IR/ENDFOR)
-	       do (decf indent 2) (format out "~a}~%" (indent indent))
+	       do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (car (node-reads node)))
 	     else
 	       do (format out "~aop[~a];~%" (indent indent) (if (eql :EXPR (node-type node)) (getattr node :expr) (node-type node))))))))
 ;; submodule-sequence
@@ -605,7 +609,9 @@ younger is always plain
 				     (let ((lp (gethash id bands)))
 				       ;; Band sizes are the equivalent?
 				       (or
-				       (equal (node-reads lp) (node-reads x))))))
+					(getattr x :_scalar_p)
+					(getattr lp :_scalar_p)
+					(equal (node-reads lp) (node-reads x))))))
 				younger-deps))))
 			(satisfy-2 ()
 			  ;; Satisfies instruction requirement?
@@ -639,7 +645,12 @@ younger is always plain
 			 else
 			   do (push node ops)
 			 end
-			 collect node
+			 collect
+			 (if (eql (node-type node) :IR/FOR)
+			     (let ((cp (copy-node node)))
+			       (setf (gethash (car (node-writes node)) bands) cp)
+			       cp)
+			     node)
 			 ;; 一旦SerializeしてISLに投げてFusionしてくれるかを確認する
 			 ;; 無理だったら手動でILPを解く: ReductionとViewによってdependenceが壊れるのを防ぐのが目的
 			 if (and (null changed-p) (satisfy-1) (satisfy-2))
