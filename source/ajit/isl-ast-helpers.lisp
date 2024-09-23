@@ -37,7 +37,7 @@
       (if (expr-z expr)
 	  (format stream "~(~a~)(~(~a~), ~(~a~), ~(~a~))" (expr-op expr) (expr-x expr) (expr-y expr) (expr-z expr))
 	  (if (expr-y expr)
-	      (format stream "~(~a~)(~(~a~), ~(~a~))" (expr-op expr) (expr-x expr) (expr-y expr))
+	      (format stream "~(~a~)(~(~a~), ~(~a~))" (expr-op expr) (expr-x expr) (and (not (buffer-p (expr-y expr))) (expr-y expr)))
 	      (format stream "~(~a~)(~(~a~)~a)" (expr-op expr) (expr-x expr) (if (and (eql (expr-op expr) :Const) (numberp (expr-x expr))) ":num" ""))))))
 
 (defstruct (ASTFor

@@ -561,7 +561,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     else if (eql (node-type node) :IR/ENDFOR)
 	       do (decf indent 2) (format out "~a}~%" (indent indent))
 	     else
-	       do (format out "~aop[~a]~%" (indent indent) (node-type node)))))))
+	       do (format out "~aop[~a];~%" (indent indent) (if (eql :EXPR (node-type node)) (getattr node :expr) (node-type node))))))))
 
 (defmethod submodule-sequence ((older Graph) (younger Graph) (offset fixnum))
   "Fuses the strongly connected two components: Loop1 and Loop2.
