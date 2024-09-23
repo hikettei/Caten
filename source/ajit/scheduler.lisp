@@ -446,41 +446,26 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 (compile-isl
  :domain
  "[] -> {
-  T0[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 32 and 0 <= _gid1 < 128;
-  T1[_gid0, _gid1, _gid2] : 0 <= _gid0 < 32 and 0 <= _gid1 < 128 and 0 <= _gid2 < 64;
-  T2[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 128 and 0 <= _gid1 < 128;
-  T3[_gid0, _gid1, _gid2] : 0 <= _gid0 < 128 and 0 <= _gid1 < 128 and 0 <= _gid2 < 32;
+  T0[_gid0, _gid1] : 0 <= _gid0 <= 10 and 0 <= _gid1 <= 10;
+  T1[_gid0, _gid1] : 0 <= _gid0 <= 10 and 0 <= _gid1 <= 10;
 }"
  :read
  "
 [] -> {
-  T0[_gid0, _gid1, _gid2] -> val_12[_gid0, _gid1, 0];
-  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
-  T1[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, 0];
-  T1[_gid0, _gid1, _gid2] -> val_6[_gid0, 0, _gid2];
-  T1[_gid0, _gid1, _gid2] -> val_0[0, _gid2, _gid1];
-  T2[_gid0, _gid1, _gid2] -> val_29[_gid0, _gid1, 0];
-  T3[_gid0, _gid1, _gid2] -> val_32[_gid0, _gid1, 0];
-  T3[_gid0, _gid1, _gid2] -> val_30[_gid0, _gid1, 0];
-  T3[_gid0, _gid1, _gid2] -> val_23[_gid0, 0, _gid2];
-  T3[_gid0, _gid1, _gid2] -> val_15[0, _gid2, _gid1];
+  T1[_gid0, _gid1] -> a[-1 * _gid0 + 10, -1 * _gid1 + 10]
 }
 "
  :write
  "
 [] -> {
-  T0[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, 0];
-  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
-  T2[_gid0, _gid1, _gid2] -> val_30[_gid0, _gid1, 0];
-  T3[_gid0, _gid1, _gid2] -> val_32[_gid0, _gid1, 0];
+  T0[_gid0, _gid1] -> a[_gid0, _gid1];
 }
 "
  :schedule
- "{
-  T0[_gid0, _gid1, _gid2] -> [0, _gid0, _gid1, _gid2];
-  T1[_gid0, _gid1, _gid2] -> [0, _gid0, _gid1, _gid2];
-  T2[_gid0, _gid1, _gid2] -> [1, _gid1, _gid0, _gid2];
-  T3[_gid0, _gid1, _gid2] -> [1, _gid1, _gid0, _gid2];
+ "
+{
+  T0[_gid0, _gid1] -> [0, _gid0, 0, _gid1];
+  T1[_gid0, _gid1] -> [1, _gid0, 1, _gid1];
 }"
  :ast-option :atomic)
 
@@ -562,7 +547,13 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	       do (decf indent 2) (format out "~a}~%" (indent indent))
 	     else
 	       do (format out "~aop[~a];~%" (indent indent) (if (eql :EXPR (node-type node)) (getattr node :expr) (node-type node))))))))
-
+;; submodule-sequence
+;;
+;; for (int i 0..0) {
+;;   T1 0 -> 10 affine ax+b
+;; }
+;;   T2 10 -> 1
+;; TODO: 1 Loop 1 Reduction, and confrim the validyf ot view
 (defmethod submodule-sequence ((older Graph) (younger Graph) (offset fixnum))
   "Fuses the strongly connected two components: Loop1 and Loop2.
 [older]
@@ -571,22 +562,20 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
    |
 younger is always plain
 "
-  (let ((younger-deps
-	  (loop for node in (graph-nodes younger)
-		if (eql (node-type node) :IR/FOR)
-		  collect node))
-	(younger-instructions
-	  (loop for node in (graph-nodes younger)
-		if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
-		  collect node))
-	(older-instructions
-	  (loop for node in (nthcdr offset (graph-nodes older))
-		if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
-		  collect node)))
+  (let* ((younger-deps
+	   (loop for node in (graph-nodes younger)
+		 if (eql (node-type node) :IR/FOR)
+		   collect node))
+	 (younger-instructions
+	   (loop for node in (graph-nodes younger)
+		 if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
+		   collect node))
+	 (older-instructions
+	   (loop for node in (nthcdr offset (graph-nodes older))
+		 if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
+		   collect node)))
     ;; younger-instructions must be placed after older-instruction
     (flet ((find-and-insert-at-suitable-place (inst
-					       &key
-						 (allow-partial-insert nil)
 					       &aux
 						 (index-component-p (expr-is-index-component-p inst))
 						 (bands (make-hash-table))
@@ -597,10 +586,10 @@ younger is always plain
 	     ;; we refer a suitable place as:
 	     ;; - Satisfies band requirement              (required _gid is defined)
 	     ;; - Satisfies instruction-order requirement (inst is placed after all older-instruction)
-	     (labels ((satisfy-1 (&key (partially-satisfying?))
+	     (labels ((satisfy-1 ()
 			;; Satisfies band-requirement?
 			(and
-			 (or partially-satisfying? (= (length (hash-table-keys bands)) (length younger-deps)))
+			 (= (length (hash-table-keys bands)) (length younger-deps))
 			 (if index-component-p
 			     ;; INDEX-COMPONENT can be located regardless of size. (consider this as just an alias for loop index, its just a scalar)
 			     (every #'(lambda (x) (gethash x bands)) (map 'list (compose #'car #'node-writes) younger-deps))
@@ -616,7 +605,18 @@ younger is always plain
 			;; Satisfies instruction requirement?
 			(= (length ops) (length older-instructions)))
 		      (satisfy-3 ()
-			(and (satisfy-2) (satisfy-1 :partially-satisfying? t))))
+			(and
+			 (satisfy-2)
+			 ;; Satisfies the satisfies-1 except for the last dimension.
+			 (= (length (hash-table-keys bands)) (1- (length younger-deps)))
+			 (every
+			  #'(lambda (x &key (id (car (node-writes x))))
+			      (or
+			       (getattr x :_scalar_p)
+			       (and
+				(gethash id bands)
+				(equal (node-reads (gethash id bands)) (node-reads x)))))
+			  (butlast younger-deps)))))
 	       (values
 		(nconc
 		 (subseq (graph-nodes older) 0 offset)
@@ -629,8 +629,12 @@ younger is always plain
 			 do (push node ops)
 		       end
 		       collect node
-		       if (and (null changed-p) (satisfy-1) (satisfy-2))
-			 do (setf changed-p t) and collect inst))
+		       ;; 一旦SerializeしてISLに投げてFusionしてくれるかを確認する
+		       ;; 無理だったら手動でILPを解く: ReductionとViewによってdependenceが壊れるのを防ぐのが目的
+		       if nil;;(and (null changed-p) (satisfy-1) (satisfy-2))
+			 do (setf changed-p t) and collect inst
+		       if (and (null changed-p) (satisfy-3))
+			 do (setf changed-p t) and append `(,@(last younger-deps) ,inst ,(%endfor (car (node-writes (car (last younger-deps))))))))
 		changed-p)))
 	   (create-and-merge-new-domain (inst)
 	     (setf offset (length (graph-nodes older))
@@ -651,12 +655,7 @@ younger is always plain
 	    (find-and-insert-at-suitable-place inst)
 	  (if changed-p
 	      (setf older (apply #'make-graph new-graph))
-	      ;; Try inserting a new partial loop by extending the rank.
-	      (multiple-value-bind (new-graph changed-p)
-		  (find-and-insert-at-suitable-place inst :allow-partial-insert t)
-		(if changed-p
-		    (setf older (apply #'make-graph new-graph))
-		    (setf older (create-and-merge-new-domain inst)))))))
+	      (setf older (create-and-merge-new-domain inst)))))
       (values older offset))))
 ;; node_id -> pipeline?
 (defmethod apply-pre-fusion ((pipeline hash-table))
