@@ -137,7 +137,7 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	      nil
 	      (simplify-expr (reduce #'add indices)))))))
 ;; ~~ DOMAIN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun render-domain (pipeline &key (depends-on nil))
+(defun render-domain (pipeline target-keys &key (depends-on nil))
   "Render the domain notation from the scheduled subgraphs
 ```
 Domain [depends-on] -> {
@@ -151,8 +151,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
   (with-output-to-string (out)
     ;; renders depends-on
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
-    (maphash1
-     #'(lambda (timestamp subgraph)
+    (mapc
+     #'(lambda (timestamp &aux (subgraph (gethash timestamp pipeline)))
 	 (let* ((loop-factors (graph->loop-factors subgraph :scalar-mutation t))
 		(mutated-p (graph-loop-scalar-mutated-p subgraph))
 		(constraints
@@ -178,10 +178,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		   (format out "~a" (if (string= c "") "true" c)))
 		 (format out ";~%"))
 	       (format out "  T~a[];~%" timestamp))))
-     pipeline)
+     target-keys)
     (format out "}")))
 ;; ~~ Access relation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun render-access (alias-f mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
+(defun render-access (alias-f keys mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
   "Render the read/write accessing relation ship in the following notation:
 ```
 [depends-on] -> {
@@ -195,8 +195,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	   (type hash-table pipeline))
   (with-output-to-string (out)
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
-    (maphash1
-     #'(lambda (timestamp subgraph)
+    (mapc
+     #'(lambda (timestamp &aux (subgraph (gethash timestamp pipeline)))
 	 (let* ((lf (graph->loop-factors subgraph :scalar-mutation t))
 		(lf-orig (graph->loop-factors subgraph))
 		(occur-from
@@ -235,43 +235,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 				  if (and (symbolp s) (not (eql s t)) (not (eql s nil)))
 				    collect s)))
 		     (dolist (s symbols) (format out "  ~a -> ~(~a~)[~a];~%" occur-from s scalar)))))))))
-     pipeline)
+     keys)
     (format out "}")))
-
-;; [TODO] Delete
-(defun isl-initial-schedule (pipeline &key (depends-on nil))
-  "
-Optional order fusing softmax in a single kernel is:
-[val_1, val_0, val_7, val_11] -> {
-  T0[_gid0, _gid1] -> [3, _gid0, _gid1];
-  T1[_gid0, _gid1] -> [1, _gid0, _gid1];
-  T2[_gid0, _gid1] -> [2, _gid0, _gid1];
-  T3[_gid0, _gid1] -> [3, _gid0, _gid1];
-  T4[_gid0, _gid1] -> [4, _gid0, _gid1];
-  T5[_gid0, _gid1] -> [4, _gid0, _gid1];
-  T6[_gid0, _gid1] -> [5, _gid0, _gid1];
-  T7[_gid0, _gid1] -> [6, _gid0, _gid1];
-}
-"
-  (let ((lex (pipeline->timestamp pipeline))
-	(max-rank (1+ (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline))))))
-    (values
-     (union-map-from-str
-      (with-output-to-string (out)
-	(format out "[~(~a~)] -> " (render-list depends-on))
-	(format out "{~%")
-	(maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
-	 #'(lambda (ts graph)
-	     (let* ((loop-factors (graph->loop-factors graph))
-		    (dom (format nil
-				 "  T~a[~(~a~)] -> [~(~a~)]"
-				 ts
-				 (render-list loop-factors)
-				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank)))))
-	       (format out "~a;~%" dom)))
-	 pipeline)
-	(format out "}")))
-     lex)))
 
 (defmethod render-isl-initial-schedule ((blueprint Graph) (pipeline hash-table) (node->id hash-table) (depends-on list))
   (let ((lex (make-hash-table)) (seen-timestamps) (vars-global))
@@ -286,26 +251,23 @@ Optional order fusing softmax in a single kernel is:
 		     for time = (if decl-p time1 (1+ time1))
 		     for v = (if decl-p v1 0)
 		     append (list time v))))
-      (union-map-from-str
-       (print
-       (with-output-to-string (out)
-	 (format out "[~(~a~)] -> " (render-list depends-on))
-	 (format out "{~%")
-	 (loop with vars = nil
-	       for node in (graph-nodes blueprint)
-	       do (print node)
-	       if (eql (node-type node) :IR/FOR)
-		 do (steps (car (node-writes node)))
-		    (push (car (node-writes node)) vars)
-		    (when (null (find (car (node-writes node)) vars-global))
-		      (push (car (node-writes node)) vars-global))
-	       else if (eql (node-type node) :IR/ENDFOR)
-		 do (setf vars (remove (car (node-reads node)) vars))
-	       else
-		 if (null (find (node->time node) seen-timestamps))
-		   do (push (node->time node) seen-timestamps)
-		      (format out "  T~a[~(~a~)] -> [~(~a~)];~%"
-			      (node->time node)
-			      (render-list (reverse vars))
-			      (render-list (->schedule (reverse vars)))))
-	 (format out "}")))))))
+      (with-output-to-string (out)
+	(format out "[~(~a~)] -> " (render-list depends-on))
+	(format out "{~%")
+	(loop with vars = nil
+	      for node in (graph-nodes blueprint)
+	      if (eql (node-type node) :IR/FOR)
+		do (steps (car (node-writes node)))
+		   (push (car (node-writes node)) vars)
+		   (when (null (find (car (node-writes node)) vars-global))
+		     (push (car (node-writes node)) vars-global))
+	      else if (eql (node-type node) :IR/ENDFOR)
+		     do (setf vars (remove (car (node-reads node)) vars))
+	      else
+		if (null (find (node->time node) seen-timestamps))
+		  do (push (node->time node) seen-timestamps)
+		     (format out "  T~a[~(~a~)] -> [~(~a~)];~%"
+			     (node->time node)
+			     (render-list (reverse vars))
+			     (render-list (->schedule (reverse vars)))))
+	(format out "}")))))

@@ -55,23 +55,6 @@
 ;;                  in this group
 ;; etc ...
 ;; ============================================================================================================================
-(defun pipeline->submodule-tree (pipeline)
-  "Creates a tree structure of submodules based on the strongly connected components."
-  (declare (type hash-table pipeline))
-  (maphash
-   #'(lambda (ts graph)
-       (declare (ignore ts))
-       (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph))))
-   pipeline)
-  (let ((graph
-	  (apply
-	   #'make-graph
-	   (loop for time in (hash-table-keys pipeline)
-		 for graph = (gethash time pipeline)
-		 collect (make-node :TIME :GRAPH (graph-outputs graph) (graph-seen graph) :id time)))))
-    (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph)))
-    (->fast-graph graph)))
-;; [TODO] Delete
 (defun pipeline->timestamp (pipeline)
   (declare (type hash-table pipeline))
   (maphash
@@ -211,8 +194,14 @@ Output: Groups"
 		      (print-schedules (group-sched group)))))
 	groups))))
 
-(declaim (ftype (function (function AVM group &key (:verbose boolean) (:verbose-auto boolean)) (values Polyhedral)) create-polyhedron-from-group))
-(defun create-polyhedron-from-group (alias-f avm group &key (verbose nil) (verbose-auto nil))
+(defmethod gather-keys ((submodule Graph) table)
+  (remove-duplicates
+   (loop for node in (graph-nodes submodule)
+	 if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
+	   collect (gethash (node-id node) table))))
+
+(declaim (ftype (function (function AVM group &key (:verbose boolean) (:verbose-auto boolean)) (values list)) create-polyhedrons-from-group))
+(defun create-polyhedrons-from-group (alias-f avm group &key (verbose nil) (verbose-auto nil))
   "Step2, create a polyhedron from the scheduled items."
   (declare (type group group) (type boolean verbose))
   (let* ((submodule (map 'list #'schedule->submodule (group-sched group))) ;; Rendering :FOR and :ENDFOR
@@ -225,36 +214,35 @@ Output: Groups"
 	  do (setf (gethash nth pipeline) s)
 	     (dolist (n (graph-nodes s))
 	       (setf (gethash (node-id n) node->pipeline) nth)))
-    (when verbose
-      (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
-      (print-pipeline pipeline))
-    (let* ((vm-inputs (avm-gather-args avm))
-	   ;;(vm-input-tensors (nodes-depends-on (graph-nodes (group-graph group))))
-	   (loop-sizes (loop for value being the hash-values of pipeline
-			     collect (graph->loop-size value)))
-	   (loop-size (apply #'append loop-sizes))
-	   (dynamic-shapes (remove-duplicates `(,@vm-inputs ,@loop-size)))
-	   (domain         (render-domain pipeline :depends-on dynamic-shapes))
-	   ;;(dynamic-shapes (remove-duplicates `(,@dynamic-shapes ,@vm-input-tensors)))
-	   (read-access  (render-access alias-f :read pipeline :depends-on dynamic-shapes))
-	   (write-access (render-access alias-f :write pipeline :depends-on dynamic-shapes)))
-      (multiple-value-bind (schedule lex-table) (isl-initial-schedule pipeline :depends-on dynamic-shapes)
-	;; [TODO] Refactor the code here.
-	;; Pre-FuseされたIRは，ISLのInitialScheduleを作成するためだけに用いる
-	;; + PreFused IR -> ISL AST -> Rendering-Graphなのを頭に入れておく
-	(let ((fused-graph (apply-pre-fusion pipeline)))
-	  (print-submodule fused-graph t)
-	  (setf schedule (render-isl-initial-schedule fused-graph pipeline node->pipeline dynamic-shapes)))
-	(when verbose-auto
-	  (format t "== [Domain] ===========")
-	  (format t "~%~a~%" domain)
-	  (format t "== [Read Accesses] =======")
-	  (format t "~%~a~%" read-access)
-	  (format t "== [Write Accesses] ======")
-	  (format t "~%~a~%" write-access)
-	  (format t "== [Initial Scheduling domain (=domain)] ======")
-	  (format t "~%~a~%" schedule))
-	(make-polyhedral avm pipeline domain read-access write-access schedule vm-inputs (group-writes group) lex-table)))))
+    (loop with lex-table = (pipeline->timestamp pipeline)
+	  for poly-group in (apply-pre-grouping pipeline)
+	  for target-keys = (gather-keys poly-group node->pipeline)
+	  for vm-inputs = (avm-gather-args avm)
+	  for loop-sizes = (loop for key in target-keys append (graph->loop-size (gethash key pipeline)))
+	  for dynamic-shapes = (remove-duplicates (nconc loop-sizes vm-inputs))
+	  for domain       = (render-domain pipeline target-keys :depends-on dynamic-shapes)
+	  for read-access  = (render-access alias-f target-keys :read pipeline  :depends-on dynamic-shapes)
+	  for write-access = (render-access alias-f target-keys :write pipeline :depends-on dynamic-shapes)
+	  for schedule     = (render-isl-initial-schedule poly-group pipeline node->pipeline dynamic-shapes)
+	  for schedule-isl = (union-map-from-str schedule)
+	  if verbose do (print-submodule poly-group t)
+	  if verbose-auto do
+	    (format t "Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read`%\"~a\"~%:write \"~a\"~%:schedule \"~a\""
+		    domain read-access write-access schedule)
+	  collect
+	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group) lex-table))))
+
+(defun schedule-polyhedrons (backend group polyhedrons &key (verbose 0) (serialize))
+  (declare (type list polyhedrons))
+  (dolist (p polyhedrons)
+    (auto-schedule! p :verbose verbose :serialize serialize))
+  ;; Return -> Rendering Graph
+  (apply
+   #'make-graph
+   (loop for p in polyhedrons
+	 append
+	 (multiple-value-bind (ast bands) (finalize-schedule p)
+	   (graph-nodes (create-rendering-graph ast bands backend (max-dimension-in-group group)))))))
 
 (declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
 (defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
@@ -354,14 +342,14 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (groups (loop for group in groups
 			 if (group-realize-on-vm group) collect group
 			   else if (group-sched group) do
-			     (setf (group-polyhedron group) (create-polyhedron-from-group alias avm group :verbose verbose-schedule :verbose-auto verbose-auto))
-				and collect group)))
+			     (let ((polyhedrons (create-polyhedrons-from-group alias avm group :verbose verbose-schedule :verbose-auto verbose-auto)))
+			       (setf (group-polyhedron group) (car polyhedrons)
+				     (group-render-graph group) (schedule-polyhedrons backend group polyhedrons :verbose verbose-auto :serialize serialize)))
+			   and collect group)))
       (mapc
        #'(lambda (x)
 	   (when (group-polyhedron x)
-	     (auto-schedule! (group-polyhedron x) :verbose verbose-auto :serialize serialize)
-	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)
-	     (setf (group-render-graph x) (finalize-and-retrive-render-graph x backend))))
+	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)))
        groups)
       (let* ((mp (make-instance 'MemoryPlanner :avm avm :groups groups :debug debug :device backend))
 	     (_ (memory-plan mp))
@@ -515,14 +503,6 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; - [ ] Refactor
 ;; - [ ] View関連のテストを追加する必要がある
 
-(defmethod expr-is-index-component-p ((node node))
-  (or
-   (eql (node-type node) :INDEX-COMPONENTS)
-   (and
-    (eql (node-type node) :EXPR)
-    (let ((expr (getattr node :EXPR)))
-      (eql (expr-op expr) :INDEX-COMPONENTS)))))
-
 (defmethod print-submodule ((graph Graph) stream)
   (format
    stream
@@ -559,136 +539,31 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;;
 ;; Using metadata like views
 ;; graph-connected-p
-(defmethod submodule-sequence ((older Graph) (younger Graph) (offset fixnum))
-  "Fuses the strongly connected two components: Loop1 and Loop2.
-[older]
-   |
-[younger]
-   |
-younger is always plain
-"
-  (let* ((younger-deps
-	   (loop for node in (graph-nodes younger)
-		 if (eql (node-type node) :IR/FOR)
-		   collect node))
-	 (younger-instructions
-	   (loop for node in (graph-nodes younger)
-		 if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
-		   collect node)))
-    ;; younger-instructions must be placed after older-instruction
-    (labels ((older-instructions ()
-	       (loop for node in (nthcdr offset (graph-nodes older))
-		     if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
-		       collect node))
-	     (find-and-insert-at-suitable-place (inst
-						 &aux
-						   (index-component-p
-						    (or
-						     (expr-is-index-component-p inst)
-						     (let ((oi (older-instructions)))
-						       (and
-							(= (length oi) 1)
-							(expr-is-index-component-p (car oi))))))
-						   (weakly-connected-ops
-						    (loop for old-inst in (older-instructions)
-							  if (graph-weakly-connected-p older inst old-inst)
-							    collect (node-id old-inst)))
-						   (bands (make-hash-table))
-						   (ops nil)
-						   (changed-p nil))
-	       ;; Reading the older graph from offset to an end
-	       ;; Finds a suitable place to locate inst
-	       ;; we refer a suitable place as:
-	       ;; - Satisfies band requirement              (required _gid is defined)
-	       ;; - Satisfies instruction-order requirement (inst is placed after all older-instruction)		
-	       (labels ((satisfy-1 ()
-			  ;; Satisfies band-requirement?
-			  (and
-			   (= (length (hash-table-keys bands)) (length younger-deps))
-			   (if index-component-p
-			       ;; INDEX-COMPONENT can be located regardless of size. (consider this as just an alias for loop index, its just a scalar)
-			       (every #'(lambda (x) (gethash x bands)) (map 'list (compose #'car #'node-writes) younger-deps))
-			       (every
-				#'(lambda (x &key (id (car (node-writes x))))
-				    (and
-				     (gethash id bands)
-				     (let ((lp (gethash id bands)))
-				       ;; Band sizes are the equivalent?
-				       (or
-					(equal (node-reads lp) (node-reads x))))))
-				younger-deps))))
-			(satisfy-2 ()
-			  ;; Satisfies instruction requirement?
-			  (every #'(lambda (x) (find x ops :key #'node-id)) weakly-connected-ops))
-			(satisfy-3 ()
-			  (and
-			   (satisfy-2)
-			   ;; Satisfies the satisfies-1 except for the last dimension.
-			   (= (length (hash-table-keys bands)) (1- (length younger-deps)))
-			   (every
-			    #'(lambda (x &key (id (car (node-writes x))))
-				(and
-				 (gethash id bands)
-				 (or
-				  (equal (node-reads (gethash id bands)) (node-reads x)))))
-			    (butlast younger-deps))))
-			(update-size (bs &aux (tgt (gethash (car (node-writes bs)) bands)))
-			  (when nil;(and tgt (getattr tgt :_scalar_p))
-			    (setf (node-reads tgt) (node-reads bs)
-				  (getattr tgt :_scalar_p) (getattr bs :_scalar_p)))))
-		 (values
-		  (nconc
-		   (subseq (graph-nodes older) 0 offset)
-		   (loop for node in (nthcdr offset (graph-nodes older))
-			 if (eql (node-type node) :IR/FOR)
-			   do (setf (gethash (car (node-writes node)) bands) node)
-			 else if (eql (node-type node) :IR/ENDFOR)
-				do (remhash (car (node-reads node)) bands)
-			 else
-			   do (push node ops)
-			 end
-			 collect
-			 (if (eql (node-type node) :IR/FOR)
-			     (let ((cp (copy-node node)))
-			       (setf (gethash (car (node-writes node)) bands) cp)
-			       cp)
-			     node)
-			 ;; 一旦SerializeしてISLに投げてFusionしてくれるかを確認する
-			 ;; 無理だったら手動でILPを解く: ReductionとViewによってdependenceが壊れるのを防ぐのが目的
-			 if (and (null changed-p) (satisfy-1) (satisfy-2))
-			   do (setf changed-p t) (mapc #'update-size younger-deps) and collect inst
-			 if (and (null changed-p) (satisfy-3))
-			   do (setf changed-p t) (mapc #'update-size younger-deps)
-			   and append `(,@(last younger-deps) ,inst ,(%endfor (car (node-writes (car (last younger-deps))))))))
-		  changed-p)))
-	     (create-and-merge-new-domain (inst)
-	       (setf offset (length (graph-nodes older))
-		     (graph-nodes older)
-		     (nconc
-		      (graph-nodes older)
-		      `(,@younger-deps
-			,inst
-			,@(nreverse
-			   (loop for node in younger-deps
-				 collect (%endfor (car (node-writes node))))))))
-	     older))
-      ;; younger-instructions: each ops depends on younger-deps
-      ;; INDEX-COMPONENTS can be relocated anywhere.
-      ;; Find insertable location from older and insert if not found create a new loop
-      (dolist (inst younger-instructions)
-	(multiple-value-bind (new-graph changed-p)
-	    (find-and-insert-at-suitable-place inst)
-	  (setf changed-p nil)
-	  (if changed-p
-	      (setf older (apply #'make-graph new-graph))
-	      (setf older (create-and-merge-new-domain inst)))))
-      (values older offset))))
-;; node_id -> pipeline?
-(defmethod apply-pre-fusion ((pipeline hash-table))
+;; Embeddingは，MULTIEXPR周りの最適化をした方が早い？
+;; older/youngerのFuseできる組み合わせには三つがある:
+
+;; 1. それか，OuterMostのサイズが一致しないLoopは別々のGroupとしてPolyhedral IRにする。
+;; 2. ISL Polyhedralを適用した後にMULTIEXPRを適用する。
+;;    - outputとlabelされたTensorは
+;;    - Immutableなら，WriteToをPropageteしてOK
+(defmethod get-outermost-loop ((graph Graph))
+  (loop for node in (graph-nodes graph)
+	if (eql (node-type node) :IR/FOR)
+	  do (return-from get-outermost-loop node)))
+
+(defmethod apply-pre-grouping ((pipeline hash-table))
   (let* ((order (sort (hash-table-keys pipeline) #'<))
-	 (out   (apply #'make-graph (graph-nodes (gethash (car order) pipeline))))
-	 (offset 0))
-    (dolist (id (cdr order))
-      (multiple-value-bind (out-new offset-new) (submodule-sequence out (gethash id pipeline) offset)
-	(setf out out-new offset offset-new)))
-    out))
+	 (out   (apply #'make-graph (graph-nodes (gethash (car order) pipeline)))))
+    (flet ((fusable-p (prev new)
+	     (let ((loop1 (get-outermost-loop prev))
+		   (loop2 (get-outermost-loop new)))
+	       (or
+		;; Broadcast or same bands
+		(null loop1) (null loop2)
+		(getattr loop1 :_scalar_p) (getattr loop2 :_scalar_p)
+		(equal (node-reads loop1) (node-reads loop2))))))
+      `(,@(loop for idx in (cdr order)
+		for fuse-p = (fusable-p out (gethash idx pipeline))
+		if fuse-p do (setf (graph-nodes out) (append (graph-nodes out) (graph-nodes (gethash idx pipeline))))
+	        else collect out and do (setf out (apply #'make-graph (graph-nodes (gethash idx pipeline)))))
+	,out))))
