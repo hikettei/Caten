@@ -238,6 +238,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
      pipeline)
     (format out "}")))
 
+;; [TODO] Delete
 (defun isl-initial-schedule (pipeline &key (depends-on nil))
   "
 Optional order fusing softmax in a single kernel is:
@@ -271,3 +272,40 @@ Optional order fusing softmax in a single kernel is:
 	 pipeline)
 	(format out "}")))
      lex)))
+
+(defmethod render-isl-initial-schedule ((blueprint Graph) (pipeline hash-table) (node->id hash-table) (depends-on list))
+  (let ((lex (make-hash-table)) (seen-timestamps) (vars-global))
+    (labels ((steps (id)
+	       (setf (gethash id lex) (1+ (ensure-gethash id lex 0))))
+	     (node->time (node)
+	       (gethash (node-id node) node->id))
+	     (->schedule (vars)
+	       (loop for v1 in (reverse vars-global)
+		     for time1 = (ensure-gethash v1 lex 0)
+		     for decl-p = (find v1 vars)
+		     for time = (if decl-p time1 (1+ time1))
+		     for v = (if decl-p v1 0)
+		     append (list time v))))
+      (union-map-from-str
+       (print
+       (with-output-to-string (out)
+	 (format out "[~(~a~)] -> " (render-list depends-on))
+	 (format out "{~%")
+	 (loop with vars = nil
+	       for node in (graph-nodes blueprint)
+	       do (print node)
+	       if (eql (node-type node) :IR/FOR)
+		 do (steps (car (node-writes node)))
+		    (push (car (node-writes node)) vars)
+		    (when (null (find (car (node-writes node)) vars-global))
+		      (push (car (node-writes node)) vars-global))
+	       else if (eql (node-type node) :IR/ENDFOR)
+		 do (setf vars (remove (car (node-reads node)) vars))
+	       else
+		 if (null (find (node->time node) seen-timestamps))
+		   do (push (node->time node) seen-timestamps)
+		      (format out "  T~a[~(~a~)] -> [~(~a~)];~%"
+			      (node->time node)
+			      (render-list (reverse vars))
+			      (render-list (->schedule (reverse vars)))))
+	 (format out "}")))))))

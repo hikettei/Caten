@@ -196,7 +196,7 @@ for (int c0 = 0; c0 < a; c0 += 1)
       (loop for g in (hash-table-values (poly-pipeline polyhedral))
 	    do (incf n (length (graph-nodes g))))
       (set-option "schedule_outer_coincidence" 1)
-      ;; (set-option "schedule_maximize_band_depth" 1)
+      ;;(set-option "schedule_maximize_band_depth" 1)
       (set-option "schedule_treat_coalescing" 1)
       ))
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr)) polyhedral

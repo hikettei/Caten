@@ -216,24 +216,18 @@ Output: Groups"
   "Step2, create a polyhedron from the scheduled items."
   (declare (type group group) (type boolean verbose))
   (let* ((submodule (map 'list #'schedule->submodule (group-sched group))) ;; Rendering :FOR and :ENDFOR
-	 (pipeline (make-hash-table)))
+	 (pipeline (make-hash-table))
+	 (node->pipeline (make-hash-table)))
     ;; Pipeline: Task_Idx -> FUNCALL_{IDX}(depending_args)
     ;; Task_Idx -> Submodule Graph
     (loop for nth upfrom 0
 	  for s in submodule
-	  do (setf (gethash nth pipeline) s))
+	  do (setf (gethash nth pipeline) s)
+	     (dolist (n (graph-nodes s))
+	       (setf (gethash (node-id n) node->pipeline) nth)))
     (when verbose
       (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
       (print-pipeline pipeline))
-    (let ((fused-blueprints (apply-pre-fusion pipeline)))
-      ;; Pre-FuseされたIRは，ISLのInitialScheduleを作成するためだけに用いる
-      ;; + PreFused IR -> ISL AST -> Rendering-Graphなのを頭に入れておく
-      (print "FUSED")
-      (print-submodule fused-blueprints t)
-      )
-    
-    ;; ここでPre-Fusionを挟む
-    ;; とりあえずここをリファクタする方針
     (let* ((vm-inputs (avm-gather-args avm))
 	   ;;(vm-input-tensors (nodes-depends-on (graph-nodes (group-graph group))))
 	   (loop-sizes (loop for value being the hash-values of pipeline
@@ -245,6 +239,12 @@ Output: Groups"
 	   (read-access  (render-access alias-f :read pipeline :depends-on dynamic-shapes))
 	   (write-access (render-access alias-f :write pipeline :depends-on dynamic-shapes)))
       (multiple-value-bind (schedule lex-table) (isl-initial-schedule pipeline :depends-on dynamic-shapes)
+	;; [TODO] Refactor the code here.
+	;; Pre-FuseされたIRは，ISLのInitialScheduleを作成するためだけに用いる
+	;; + PreFused IR -> ISL AST -> Rendering-Graphなのを頭に入れておく
+	(let ((fused-graph (apply-pre-fusion pipeline)))
+	  (print-submodule fused-graph t)
+	  (setf schedule (render-isl-initial-schedule fused-graph pipeline node->pipeline dynamic-shapes)))
 	(when verbose-auto
 	  (format t "== [Domain] ===========")
 	  (format t "~%~a~%" domain)
@@ -513,17 +513,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; - [ ] MultiExpr (Fuseされたらacross-timeの時間依存が変わるはず)
 ;; - [ ] CMP Ops MultiExpr?
 ;; - [ ] Refactor
-
-(defmethod loop-depth ((lp Graph))
-  "Returns a count of the maximum depth in the rendering graph lp."
-  (loop with depth = 0
-	for node in (graph-nodes lp)
-	if (find (node-type node) `(:IR/FOR))
-	  do (incf depth)
-	else if (find (node-type node) `(:IR/ENDFOR))
-	       do (decf depth)
-	end
-	maximize depth))
+;; - [ ] View関連のテストを追加する必要がある
 
 (defmethod expr-is-index-component-p ((node node))
   (or
@@ -536,10 +526,10 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 (defmethod print-submodule ((graph Graph) stream)
   (format
    stream
-   "Graph{Submodule}<~%~a>"
+   "Graph{Submodule}{~%~a}"
    (with-output-to-string (out)
      (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
-       (loop with indent = 0
+       (loop with indent = 2
 	     for node in (graph-nodes graph)
 	     if (eql (node-type node) :IR/FOR)
 	       do (format out "~afor ~(~a~)=0..~a {~%" (indent indent) (car (node-writes node)) (nth 1 (node-reads node))) (incf indent 2)
@@ -608,15 +598,15 @@ younger is always plain
 			   (if index-component-p
 			       ;; INDEX-COMPONENT can be located regardless of size. (consider this as just an alias for loop index, its just a scalar)
 			       (every #'(lambda (x) (gethash x bands)) (map 'list (compose #'car #'node-writes) younger-deps))
-			       nil)))
-;;			       (every
-;;				#'(lambda (x &key (id (car (node-writes x))))
-;;				    (and
-;;				     (gethash id bands)
-;;				     (let ((lp (gethash id bands)))
-;;				       ;; Band sizes are the equivalent?
-;;				       (equal (node-reads lp) (node-reads x)))))
-;;				younger-deps))))
+			       (every
+				#'(lambda (x &key (id (car (node-writes x))))
+				    (and
+				     (gethash id bands)
+				     (let ((lp (gethash id bands)))
+				       ;; Band sizes are the equivalent?
+				       (or
+				       (equal (node-reads lp) (node-reads x))))))
+				younger-deps))))
 			(satisfy-2 ()
 			  ;; Satisfies instruction requirement?
 			  (= (length ops) (length (older-instructions))))
