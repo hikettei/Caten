@@ -35,7 +35,7 @@
 ;; Rendering-Graph  |         [Rendering-Graph + EXPR + Pipeline]
 ;;                  |                        | (Post-tiling optimization) (-> transform.lisp)
 ;; Rendering-Graph  |         [Rendering-Graph + EXPR + Pipeline] (but funcall is mutated into packed-funcall)
-;;                  |                        |
+;;                  |                        | (Completed the process in caten/ajit)
 ;; Rendering-Graph  |                   [Rendering] (-> backends/clang.lisp, user-defined backends, device.lisp)
 ;;                  |                        |      (Users will use only two IRs: EXPR and Rendering-Graph)
 ;; AVM (Compiled)   |             [Output: :JIT_KERNEL] (-> kernel-info.lisp)
@@ -55,6 +55,23 @@
 ;;                  in this group
 ;; etc ...
 ;; ============================================================================================================================
+(defun pipeline->submodule-tree (pipeline)
+  "Creates a tree structure of submodules based on the strongly connected components."
+  (declare (type hash-table pipeline))
+  (maphash
+   #'(lambda (ts graph)
+       (declare (ignore ts))
+       (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph))))
+   pipeline)
+  (let ((graph
+	  (apply
+	   #'make-graph
+	   (loop for time in (hash-table-keys pipeline)
+		 for graph = (gethash time pipeline)
+		 collect (make-node :TIME :GRAPH (graph-outputs graph) (graph-seen graph) :id time)))))
+    (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph)))
+    (->fast-graph graph)))
+;; [TODO] Delete
 (defun pipeline->timestamp (pipeline)
   (declare (type hash-table pipeline))
   (maphash
@@ -101,7 +118,9 @@
 
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list)) create-schedules-from-avm))
 (defun create-schedules-from-avm (avm &key (verbose nil))
-  "Step1, Creates an initial schedule"
+  "Step1, Creates an initial schedule.
+Input: AVM
+Output: Groups"
   (declare (type avm avm) (type boolean verbose))
   ;; Trace the view and dtype information.
   (let* ((type-map (run-type-infer avm)) (*recursive-find-seen* nil) (seen nil))
@@ -199,12 +218,21 @@
   (let* ((submodule (map 'list #'schedule->submodule (group-sched group))) ;; Rendering :FOR and :ENDFOR
 	 (pipeline (make-hash-table)))
     ;; Pipeline: Task_Idx -> FUNCALL_{IDX}(depending_args)
+    ;; Task_Idx -> Submodule Graph
     (loop for nth upfrom 0
 	  for s in submodule
 	  do (setf (gethash nth pipeline) s))
     (when verbose
       (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
       (print-pipeline pipeline))
+    (let ((fused-blueprints (apply-pre-fusion pipeline)))
+      ;; Pre-FuseされたIRは，ISLのInitialScheduleを作成するためだけに用いる
+      ;; + PreFused IR -> ISL AST -> Rendering-Graphなのを頭に入れておく
+      (print "FUSED")
+      (print-submodule fused-blueprints t)
+      )
+    
+    ;; ここでPre-Fusionを挟む
     ;; とりあえずここをリファクタする方針
     (let* ((vm-inputs (avm-gather-args avm))
 	   ;;(vm-input-tensors (nodes-depends-on (graph-nodes (group-graph group))))
@@ -311,7 +339,8 @@ Options:
 			    backend))
 	       (verbose-schedule (or (= debug 2) (= debug 4)))
 	       (verbose-auto (or (= debug 4) (= debug 3))))
-  "Applies the jit, returning the compiled code.
+  "An entry point for JIT
+Applies the jit, returning the compiled code.
 DEBUG=1 to see the compiled code
 DEBUG=2 to debug the scheduling process
 DEBUG=3 to debug the ISL process
@@ -327,7 +356,6 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			   else if (group-sched group) do
 			     (setf (group-polyhedron group) (create-polyhedron-from-group alias avm group :verbose verbose-schedule :verbose-auto verbose-auto))
 				and collect group)))
-      ;; Polyhedronを作る前にここでPre-Fusionをして，ISLに投げる
       (mapc
        #'(lambda (x)
 	   (when (group-polyhedron x)
@@ -375,7 +403,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			   (default-device backend)
 			   backend))
 	      (avm (deepcopy-avm base-avm)))
-  "Applies the jit"
+  "Apply the jit compilation to the given avm."
   (declare (type avm avm)
 	   (type (integer 0 4) debug)
 	   (type boolean serialize)
@@ -413,6 +441,49 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
     (auto-schedule! poly)
     (print (schedule-get-root (poly-schedule poly)))
     (print (debug/render-c poly))))
+
+#+(or)
+(compile-isl
+ :domain
+ "[] -> {
+  T0[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 32 and 0 <= _gid1 < 128;
+  T1[_gid0, _gid1, _gid2] : 0 <= _gid0 < 32 and 0 <= _gid1 < 128 and 0 <= _gid2 < 64;
+  T2[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 128 and 0 <= _gid1 < 128;
+  T3[_gid0, _gid1, _gid2] : 0 <= _gid0 < 128 and 0 <= _gid1 < 128 and 0 <= _gid2 < 32;
+}"
+ :read
+ "
+[] -> {
+  T0[_gid0, _gid1, _gid2] -> val_12[_gid0, _gid1, 0];
+  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
+  T1[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, 0];
+  T1[_gid0, _gid1, _gid2] -> val_6[_gid0, 0, _gid2];
+  T1[_gid0, _gid1, _gid2] -> val_0[0, _gid2, _gid1];
+  T2[_gid0, _gid1, _gid2] -> val_29[_gid0, _gid1, 0];
+  T3[_gid0, _gid1, _gid2] -> val_32[_gid0, _gid1, 0];
+  T3[_gid0, _gid1, _gid2] -> val_30[_gid0, _gid1, 0];
+  T3[_gid0, _gid1, _gid2] -> val_23[_gid0, 0, _gid2];
+  T3[_gid0, _gid1, _gid2] -> val_15[0, _gid2, _gid1];
+}
+"
+ :write
+ "
+[] -> {
+  T0[_gid0, _gid1, _gid2] -> val_13[_gid0, _gid1, 0];
+  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
+  T2[_gid0, _gid1, _gid2] -> val_30[_gid0, _gid1, 0];
+  T3[_gid0, _gid1, _gid2] -> val_32[_gid0, _gid1, 0];
+}
+"
+ :schedule
+ "{
+  T0[_gid0, _gid1, _gid2] -> [0, _gid0, _gid1, _gid2];
+  T1[_gid0, _gid1, _gid2] -> [0, _gid0, _gid1, _gid2];
+  T2[_gid0, _gid1, _gid2] -> [1, _gid1, _gid0, _gid2];
+  T3[_gid0, _gid1, _gid2] -> [1, _gid1, _gid0, _gid2];
+}"
+ :ast-option :atomic)
+
 
 ;; Loop Collapse https://github.com/zhen8838/isl_learn/blob/main/10_loop_transformation.ipynb
 ;; (union-set-apply domain xxx)
@@ -458,56 +529,141 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; - [ ] CMP Ops MultiExpr?
 ;; - [ ] Refactor
 
-(defmethod assert-insertable ((sched Graph))
-  "We refer to assertable as: Rendering-Graph is consisted of FUNCALL or FOR/ENDFOR"
-  (flet ((ok (x)
-	   (find (node-type x) `(:FUNCALL :FOR :ENDFOR))))
-    (assert (every #'ok (graph-nodes sched)) () "The graph is not insertable!~%~a" sched)))
-
-(defmethod assert-vanilla ((sched Graph))
-  "Assert that sched[rendering-graph] is an unoptimized loop just generated by Scheduled-Item."
-  (assert-insertable sched)
-  (assert (= 1 (count :FUNCALL (graph-nodes sched) :key #'node-type))))
-
 (defmethod loop-depth ((lp Graph))
   "Returns a count of the maximum depth in the rendering graph lp."
   (loop with depth = 0
 	for node in (graph-nodes lp)
-	if (find (node-type node) `(:FOR :IF))
+	if (find (node-type node) `(:IR/FOR))
 	  do (incf depth)
-	else if (find (node-type node) `(:ENDFOR :ENDIF))
+	else if (find (node-type node) `(:IR/ENDFOR))
 	       do (decf depth)
 	end
 	maximize depth))
 
-(defmethod try-loop-fusion ((loop1 Graph) (loop2 Graph))
+(defmethod expr-is-index-component-p ((node node))
+  (or
+   (eql (node-type node) :INDEX-COMPONENTS)
+   (and
+    (eql (node-type node) :EXPR)
+    (let ((expr (getattr node :EXPR)))
+      (eql (expr-op expr) :INDEX-COMPONENTS)))))
+
+(defmethod print-submodule ((graph Graph) stream)
+  (format
+   stream
+   "Graph{Submodule}<~%~a>"
+   (with-output-to-string (out)
+     (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
+       (loop with indent = 0
+	     for node in (graph-nodes graph)
+	     if (eql (node-type node) :IR/FOR)
+	       do (format out "~afor ~(~a~)=0..~a {~%" (indent indent) (car (node-writes node)) (nth 1 (node-reads node))) (incf indent 2)
+	     else if (eql (node-type node) :IR/ENDFOR)
+	       do (decf indent 2) (format out "~a}~%" (indent indent))
+	     else
+	       do (format out "~aop[~a]~%" (indent indent) (node-type node)))))))
+
+(defmethod submodule-sequence ((older Graph) (younger Graph) (offset fixnum))
   "Fuses the strongly connected two components: Loop1 and Loop2.
-Loop1 is already fused
-Loop2 is simple rendering-graph, has only a single funcall."
-  ;; ALgorithm:
-  ;; Loop1のFORにloop2の各自FUNCALLを依存を満たす範囲で挿入していく
-  ;; Loopが足りなくなったら，ループを追加する
-  ;; 依存の理由で入らなくなったら分割する
-  ;; LoopのFuseの要素間の並列性はISLで検証する。 -> TryLoopFusion and ISL Parallelize
-  
-  ;; Loop1 has a compicated nest, multiple funcalls.
-  ;; Loop2 is a plan loop, just generated by lowering Scheduled-Item or Group.
-  (assert-insertable loop1) (assert-insertable loop2) (assert-vanilla loop2)
-  ;; 高い方のループで
-  ;; IDXが定義されてる場所 (Loop Interchangeを適用 + サイズが同じPermutatonが見つかる場合)
-  ;; Read/Writeが既に書かれてる場所
-  ;; にFUNCALLを設置しようとする
-
-  ;; strategy: loop1 << loop2
-  ;; loop1 = t6, loop2 = t1
-  ;; Assume: Loop1 は複雑(既に何度もFuseされてる)
-  ;;         Loop2はいつも単一のFUNCALLしかない
-  ;; Loop1はLoop2のまえ
-  ;; T1
-  ;;  |
-  ;; T2
-  ;; FUNCALL depends onがあると便利
-  ;; FUNCALL.STRONGLY CONNECTED COMPONENTS
-  ;; FUNCALL.WEAKLY_DEPENDS_ON
-
-  )
+[older]
+   |
+[younger]
+   |
+younger is always plain
+"
+  (let ((younger-deps
+	  (loop for node in (graph-nodes younger)
+		if (eql (node-type node) :IR/FOR)
+		  collect node))
+	(younger-instructions
+	  (loop for node in (graph-nodes younger)
+		if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
+		  collect node))
+	(older-instructions
+	  (loop for node in (nthcdr offset (graph-nodes older))
+		if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
+		  collect node)))
+    ;; younger-instructions must be placed after older-instruction
+    (flet ((find-and-insert-at-suitable-place (inst
+					       &key
+						 (allow-partial-insert nil)
+					       &aux
+						 (index-component-p (expr-is-index-component-p inst))
+						 (bands (make-hash-table))
+						 (ops nil)
+						 (changed-p nil))
+	     ;; Reading the older graph from offset to an end
+	     ;; Finds a suitable place to locate inst
+	     ;; we refer a suitable place as:
+	     ;; - Satisfies band requirement              (required _gid is defined)
+	     ;; - Satisfies instruction-order requirement (inst is placed after all older-instruction)
+	     (labels ((satisfy-1 (&key (partially-satisfying?))
+			;; Satisfies band-requirement?
+			(and
+			 (or partially-satisfying? (= (length (hash-table-keys bands)) (length younger-deps)))
+			 (if index-component-p
+			     ;; INDEX-COMPONENT can be located regardless of size. (consider this as just an alias for loop index, its just a scalar)
+			     (every #'(lambda (x) (gethash x bands)) (map 'list (compose #'car #'node-writes) younger-deps))
+			     (every
+			      #'(lambda (x &key (id (car (node-writes x))))
+				  (and
+				   (gethash id bands)
+				   (let ((lp (gethash id bands)))
+				     ;; Band sizes are the equivalent?
+				     (equal (node-reads lp) (node-reads x)))))
+			      younger-deps))))
+		      (satisfy-2 ()
+			;; Satisfies instruction requirement?
+			(= (length ops) (length older-instructions)))
+		      (satisfy-3 ()
+			(and (satisfy-2) (satisfy-1 :partially-satisfying? t))))
+	       (values
+		(nconc
+		 (subseq (graph-nodes older) 0 offset)
+		 (loop for node in (nthcdr offset (graph-nodes older))
+		       if (eql (node-type node) :IR/FOR)
+			 do (setf (gethash (car (node-writes node)) bands) node)
+		       else if (eql (node-type node) :IR/ENDFOR)
+			 do (remhash (car (node-reads node)) bands)
+		       else
+			 do (push node ops)
+		       end
+		       collect node
+		       if (and (null changed-p) (satisfy-1) (satisfy-2))
+			 do (setf changed-p t) and collect inst))
+		changed-p)))
+	   (create-and-merge-new-domain (inst)
+	     (setf offset (length (graph-nodes older))
+		   (graph-nodes older)
+		   (nconc
+		    (graph-nodes older)
+		    `(,@younger-deps
+		      ,inst
+		      ,@(nreverse
+			 (loop for node in younger-deps
+			       collect (%endfor (car (node-writes node))))))))
+	     older))
+      ;; younger-instructions: each ops depends on younger-deps
+      ;; INDEX-COMPONENTS can be relocated anywhere.
+      ;; Find insertable location from older and insert if not found create a new loop
+      (dolist (inst younger-instructions)
+	(multiple-value-bind (new-graph changed-p)
+	    (find-and-insert-at-suitable-place inst)
+	  (if changed-p
+	      (setf older (apply #'make-graph new-graph))
+	      ;; Try inserting a new partial loop by extending the rank.
+	      (multiple-value-bind (new-graph changed-p)
+		  (find-and-insert-at-suitable-place inst :allow-partial-insert t)
+		(if changed-p
+		    (setf older (apply #'make-graph new-graph))
+		    (setf older (create-and-merge-new-domain inst)))))))
+      (values older offset))))
+;; node_id -> pipeline?
+(defmethod apply-pre-fusion ((pipeline hash-table))
+  (let* ((order (sort (hash-table-keys pipeline) #'<))
+	 (out   (apply #'make-graph (graph-nodes (gethash (car order) pipeline))))
+	 (offset 0))
+    (dolist (id (cdr order))
+      (multiple-value-bind (out-new offset-new) (submodule-sequence out (gethash id pipeline) offset)
+	(setf out out-new offset offset-new)))
+    out))
