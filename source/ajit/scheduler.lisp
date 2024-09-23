@@ -1,139 +1,58 @@
 (in-package :caten/ajit)
-;; First, Nodes determined to be necessarily Fused (e.g.: non-viewed and same shaped tensors)
-;; are combined into a single SubGraph and converted into an ISL AST.
-;; Refenreces: (Good to read first)
+;; scheduler.lisp: An entry point for JIT and Polyhedral Compiler.
+;; = Refenreces: (good to read first before start coding) ====================================================================
 ;; - https://pliss2019.github.io/albert_cohen_slides.pdf
 ;; - https://www.slideshare.net/slideshow/introduction-to-polyhedral-compilation/70482946
 ;; - https://www.researchgate.net/publication/273651704_Schedule_Trees
 ;; - https://www.researchgate.net/publication/317826152_Scheduling_for_PPCG
 ;; - https://groups-google-com.translate.goog/g/isl-development/c/2bgepkLQBhY/m/BmiDq1nDAAAJ?_x_tr_sl=en&_x_tr_tl=ja&_x_tr_hl=ja&_x_tr_pto=sc
-;; - https://libisl.sourceforge.io/tutorial.pdf
-;; - https://libisl.sourceforge.io/manual.pdf
-;; - https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
-;; - https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
-;; = [Overview] ========================================================================================
-;; [aIR Graph (Differentiable + Graph Level IR)]
-;;                     | (lower)
-;;                [Pre-Fusion]
-;;                     |
-;;   [Polyhedral IR (Describes the dependence between *groups)] 
-;;                     |
-;;       [Tiling/MemoryLocality/Vectorizing]
-;;                     |
-;;       { [Render Graph] + [EXPR] ( output ) }
+;; - (*) https://libisl.sourceforge.io/tutorial.pdf
+;; - (*) https://libisl.sourceforge.io/manual.pdf
+;; - (*) https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
+;; - (*) https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
+;; - https://arxiv.org/pdf/2401.06665
+;; - https://www.researchgate.net/publication/320992060_Consecutivity_in_the_isl_Polyhedral_Scheduler
+;; (*) = recommended
+;; = [Overview] ==============================================================================================================
+;;  Data Type       |                    Process
+;;  AVM (Graph)     |               [Input (%jit)] ( scheduler.lisp is an entry point )
+;;                  |                     | (lowering)    (-> scheduled-items.lisp)
+;;  Scheduled-Items |              [Scheduled-Items]
+;;                  |                      | (group)      (-> group.lisp)
+;; Group{Submodule} |                   [Group]
+;;                  |                      | (pre-fusion) (-> here)
+;;                  |              [Group (blueprint)] (A blueprint of kernel, consisted of VM Instruction and %for %endfor)
+;;                  |        | (extracting polyhedron) (-> scheduler.lisp)
+;;               |[Polyhedral IR (Describes the dependence between *groups)] 
+;;               |        | (ISL Based Polyhedral Compiler) (-> polyhedral.lisp)
+;;               |        []
+;;               |        |
+;;               | [Tiling/MemoryLocality/Vectorizing]
+;;               |        |
+;;               | [Memory-Planner] (-> memory-planner.lisp) (Minimize the dram accesses)
+;;               |        |
+;;               |  [Pre-Tiling] (-> transform.lisp) (mutates FUNCALL into PACKED-FUNCALL)
+;;               |        |
+;;               |
+;;               |      { [Render Graph] + [EXPR] ( output ) }
 ;; *Group = A set of aIR graph whose access are the equivalent
-;; ~~~~ Subgraph initializers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defstruct (Scheduled-Items
-	    (:conc-name si-)
-	    (:constructor make-scheduled-items (top)))
-  "Top ... (top-node, top-buffer, top-id-in-nodes)"
-  (nodes (list (first top)) :type list)
-  (latest (second top) :type Buffer)
-  (latest-id (third top) :type symbol)
-  (name (intern (symbol-name (gensym "S")) "KEYWORD") :type keyword))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Input: aIR Graph (AVM)
+;; Scheduled-Items = A set of the lowest-level instruction (e.g.: :EXPR, :ADD)  (-> scheduled-items.lisp)
+;; Group           = A set of Scheduled-Items (that potentially can be fused in the single kernel)
+;; Polyhedral      = A polyhedral structure of Group
+;; i.e.: { [Group1, Polyhedral1], {Group2, Polyhedral2}, ...}
+;;          ^ Applying JIT Compilation   ^ ...
+;;                  in this group
+;; =====================================================================================================
 
-(defun si/append-item (scheduled-items node)
-  (declare (type scheduled-items scheduled-items)
-	   (type node node))
-  (when (null (find (node-id node) (si-nodes scheduled-items) :test #'eql :key #'node-id))
-    (push node (si-nodes scheduled-items))))
-
-(defun buffer-intersect-p (a b)
-  "Returns T if two buffers a and b are mergeable.
-Further op-fusion optimization are done by the polyhedral-compiler."
-  (declare (type Buffer a b))
-  ;; either of buffers are scalar -> merge them
-  (symbol-macrolet ((->ok (return-from buffer-intersect-p t))
-		    (->ng (return-from buffer-intersect-p nil)))
-    (when (or (= (buffer-nrank a) 0) (= 0 (buffer-nrank b)))->ok)
-    ;; Contiguous and the same-shaped buffer -> merge them
-    (when (and
-           (every #'null (buffer-views a))
-           (every #'null (buffer-views b))
-           (equal (map 'list #'reveal-buffer (buffer-shape a)) (map 'list #'reveal-buffer (buffer-shape b))))
-      ->ok)
-    ;; They still have a chance to be merged by the polyhedral compiler.
-    ->ng))
-
-(defparameter *recursive-find-seen* nil)
-(defun recursive-find-group (graph scheduled-items)
-  "Return -> (list scheduled-items ...)"
-  (declare (type graph graph) (type scheduled-items scheduled-items))
-  (flet ((explore (x) (when x (recursive-find-group graph x)))
-	 (mergeable-p (x latest x-type)
-	   (or
-	    (numberp x)
-	    (and (id->value graph x) (not (eql (node-type (id->value graph x)) :Allocate)) (buffer-intersect-p latest x-type)))))
-    (with-slots ((latest latest) (latest-id latest-id)) scheduled-items
-      (let* ((node (or (id->value graph latest-id) (return-from recursive-find-group)))
-	     ;; Allocation is done at the (Exported) VM Level
-	     ;; - (1.) dynamic shapes are computed under VM Level
-	     ;; - (2.) dynamic strides are computed under JIT Level
-	     ;; It is unknown whether :Allocate is moved to args or body; so it should be scheduled standalone.
-	     ;; i.e.: Allocate cannot be merged with any other nodes!
-	     (schedule-standalone-p (eql (node-type node) :Allocate))
-	     (children (node-reads node)) (children-type (relay-reads (read-type-relay node)))
-	     ;; Views are purged from the graph!
-	     ;; That is, the node will never connected to the nodes which compute stride/shape/view(upfrom, below, by)
-	     ;; (buffer-reconstruct-view-args buffer) will reconstruct the view args, lets id->writing it to connect w/ them.
-	     (loop-bound-reads (loop with type = (read-type-relay node)
-				     for s in (remove-duplicates
-					       (flatten
-						`(,@(map 'list #'buffer-reconstruct-view-args (relay-writes type))
-						  ,@(map 'list #'buffer-reconstruct-view-args (relay-reads type)))))
-				     if (and (null (find s *recursive-find-seen*)) (id->value graph s)) collect s))
-	     (loop-bound-types (map 'list #'(lambda (x) (car (relay-writes (read-type-relay (id->value graph x))))) loop-bound-reads))
-	     (children `(,@children ,@loop-bound-reads))
-	     (children-type `(,@children-type ,@loop-bound-types))
-	     (mergeable-list (map 'list #'(lambda (x x-type) (mergeable-p x latest x-type)) children children-type)))
-	(when (find (node-id node) *recursive-find-seen*) (return-from recursive-find-group))
-	(assert (eql latest-id (car (node-writes node))) () "~a" node)
-	(when loop-bound-reads
-	  (let* ((already-defined (or (getattr node :_loop_bound_nodes) (getattr node :_loop_bound_nodes_type)))
-		 (equal? (equal (getattr node :_loop_bound_nodes) loop-bound-reads)))
-	    (assert (or (null already-defined) equal?)
-		    ()
-		    ""))
-	  (setf (getattr node :_loop_bound_nodes) loop-bound-reads
-		(getattr node :_loop_bound_nodes_type) loop-bound-types))
-	(push (node-id node) *recursive-find-seen*)
-	;; node_id <- F(Children[0], Children[1], ...)
-	;;              mergeable[0] mergeable[1], ...
-	;; All mergeable -> merge them!
-	;; if the index relationships are too complicated to judge mergeablity, leave it to the polyhedron.
-	(if (and (not schedule-standalone-p) (every #'identity mergeable-list))
-	    (let ((parent-groups))
-	      (dolist (c children)
-		(when (not (numberp c))
-		  (let ((node (id->value graph c)))
-		    (when (and node (null (find (node-id node) *recursive-find-seen*)))
-		      (si/append-item scheduled-items node)))))
-	      (loop for c in children
-		    for ct in children-type do
-		      (when (not (numberp c))
-			(setf (si-latest scheduled-items) ct
-			      (si-latest-id scheduled-items) c)
-			(setf parent-groups (append parent-groups (cdr (explore scheduled-items))))))
-	      (append (list scheduled-items) parent-groups))
-	    ;; Create new and independent schedule item for each args.
-	    (let ((new-groups
-		    (map
-		     'list
-		     #'(lambda (x x-type)
-			 (when (not (numberp x))
-			   (let ((node (id->value graph x)))
-			     (when (and node (null (find (node-id node) *recursive-find-seen*)))
-			       (make-scheduled-items (list node x-type x))))))
-		     children children-type)))
-	      (append
-	       (list scheduled-items)
-	       (loop for n in (map 'list #'explore new-groups) if n collect n))))))))
-;; ~~ JIT-Specific IRs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ JIT-Specific IRs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; 
 (defun %for (gid size &key (scalar-p nil))
   (declare (type (or number symbol) size))
   (emit (make-node :IR :IR/FOR (list gid) (list 0 size 1) :_scalar_p (and scalar-p (eql size 1)))))
 (defun %endfor (gid) (emit (make-node :IR :IR/ENDFOR nil (list gid))))
-;; ~~~~~ subgraph helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~~ subgraph helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun buffer->loop-size (dim nrank &rest buffers)
   (declare (type fixnum dim))
   (let* ((buffers (loop for b in buffers
@@ -218,166 +137,6 @@ Buffers: ~a
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
 
-(defun isl-access-expr-no-stride (gid stride upfrom by broadcast-p)
-  (declare (ignore stride))
-  (assert (numberp by) () "`By` should be a constant otherwise Caten cannot create a quasiaffine constraint.")
-  (if broadcast-p
-      (make-const 0 nil)
-      (simplify-expr
-       (make-expr
-	:ADD
-	(make-expr :MUL (make-const gid nil) (make-const by nil))
-	(make-const upfrom nil)))))
-
-(defun isl-access-expr (gid stride upfrom by broadcast-p)
-  (if broadcast-p
-      (make-const 0 nil)
-      (simplify-expr
-       (make-expr
-	:ADD
-	(make-expr
-	 :MUL
-	 (make-expr :MUL (make-const gid nil) (make-const by nil))
-	 (make-const stride nil))
-	(make-expr :MUL (make-const upfrom nil) (make-const stride nil))))))
-
-(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'isl-access-expr) (flatten nil) (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
-  "Renders the stride computation for ISL:
-```
-A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
-```
-"
-  (declare (type buffer buffer))
-  (let ((indices
-	  (loop with order = (if (and use-permute (buffer-inferred-permute buffer))
-				 (buffer-inferred-permute buffer)
-				 (range 0 (buffer-nrank buffer)))
-		for nth in order
-		for stride-nth in (or strides (buffer-stride buffer))
-		for size   = (nth nth (buffer-shape buffer))
-		for view   = (nth nth (buffer-views buffer))
-		for stride = (reveal-buffer stride-nth)
-		for upfrom = (reveal-buffer (or (nth 0 view) 0))
-		for by     = (reveal-buffer (or (nth 2 view) 1))
-		for broadcast-p = (nth 3 view)
-		for gid = (funcall genid nth)
-		do (incf c)
-		if (and mutate-scalar (eql size 1))
-		  collect (make-const 0 nil)
-		else
-		  collect (funcall indexing gid stride upfrom by broadcast-p))))
-    (if flatten
-	(apply
-	 #'concatenate 'string
-	 (butlast
-          (loop for idx in (nconc indices (when upper (loop repeat (- upper c) collect (make-expr 0 nil))))
-		append (list (render-expr (default-device :clang) idx) ", "))))
-	(flet ((add (x y) (make-expr :ADD x y)))
-	  (if (null indices)
-	      nil
-	      (simplify-expr (reduce #'add indices)))))))
-
-(defun render-domain (pipeline &key (depends-on nil))
-  "Render the domain notation from the scheduled subgraphs
-```
-Domain [depends-on] -> {
-  Sched_0_ID(loop_factors_0) : IConstraint_0;
-  Sched_1_ID(loop_factors_1) : IConstraint_1;
-                 ...
-}
-```
-Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Subgrpah[Graph]}"
-  (declare (type list depends-on) (type hash-table pipeline))
-  (with-output-to-string (out)
-    ;; renders depends-on
-    (format out "[~(~a~)] -> {~%" (render-list depends-on))
-    (maphash1
-     #'(lambda (timestamp subgraph)
-	 (let* ((loop-factors (graph->loop-factors subgraph :scalar-mutation t))
-		(mutated-p (graph-loop-scalar-mutated-p subgraph))
-		(constraints
-		  (loop for node in (graph-nodes subgraph)
-			if (and (eql (node-type node) :IR/FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
-			  collect
-			  (progn
-			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
-			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node)))))))
-	   (if loop-factors
-	       (progn
-		 (format out "  T~a[~(~a~)]" timestamp
-			 (render-list
-			  (loop for lf in loop-factors
-				for c in constraints
-				for scal-p = (iconstraint-scalar-p c)
-				if scal-p
-				  collect (format nil "~a = 0" lf)
-				else
-				  collect lf)))
-		 (format out " : ")
-		 (let ((c (apply #'concatenate 'string (butlast (loop for c in constraints unless (iconstraint-scalar-p c) append (list (form c) " and "))))))
-		   (format out "~a" (if (string= c "") "true" c)))
-		 (format out ";~%"))
-	       (format out "  T~a[];~%" timestamp))))
-     pipeline)
-    (format out "}")))
-
-(defun render-access (alias-f mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
-  "Render the read/write accessing relation ship in the following notation:
-```
-[depends-on] -> {
-    Sched_0_ID[read_index] -> Tensor_ID_N[strided_access_idx];
-        ...
-}
-```
-"
-  (declare (type list depends-on)
-	   (type (member :read :write) mode)
-	   (type hash-table pipeline))
-  (with-output-to-string (out)
-    (format out "[~(~a~)] -> {~%" (render-list depends-on))
-    (maphash1
-     #'(lambda (timestamp subgraph)
-	 (let* ((lf (graph->loop-factors subgraph :scalar-mutation t))
-		(lf-orig (graph->loop-factors subgraph))
-		(occur-from
-		  (format nil "T~a[~(~a~)]" ;; = 0
-			  timestamp (render-list lf)))
-		(scalar (apply #'concatenate 'string (butlast (loop repeat kernel-rank append (list "0" ", "))))))
-	   (flet ((pad ()
-		    (if (= kernel-rank (length lf-orig))
-			""
-			(format nil ", ~a"
-				(apply #'concatenate 'string
-				       (butlast
-					(loop repeat (- kernel-rank (length lf-orig)) append (list "0" ", "))))))))
-	     (dolist (node (graph-nodes subgraph))
-	       (when (not (eql (node-class node) :IR))
-		 (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
-		       for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
-			 ;; When node has a :reduction
-			 (when (symbolp r)
-			   (if (null lf)
-			       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
-			       (when (vm-instruction-p node)
-				 (let ((access (render-isl-aref rt :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute t)))
-				   (if (string= access "")
-				       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
-				       (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from r access (pad))))))))
-		 ;; Symbols for computing the stride
-		 (when (and node (eql mode :read))
-		   (let* ((symbols
-			    (loop for buff in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
-				  if buff
-				    append (append (buffer-shape buff) (buffer-stride buff) (apply #'append (buffer-views buff)))))
-			  (symbols
-			    (loop for s1 in symbols
-				  for s = (reveal-buffer s1)
-				  if (and (symbolp s) (not (eql s t)) (not (eql s nil)))
-				    collect s)))
-		     (dolist (s symbols) (format out "  ~a -> ~(~a~)[~a];~%" occur-from s scalar)))))))))
-     pipeline)
-    (format out "}")))
-
 (defun pipeline->timestamp (pipeline)
   (declare (type hash-table pipeline))
   (maphash
@@ -421,227 +180,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	     (setf (gethash x lex) (apply #'min (map 'list #'(lambda (n) (- tree-max-depth n)) y))))
 	 lex)
 	lex))))
-
-(defun isl-initial-schedule (pipeline &key (depends-on nil))
-  "
-Optional order fusing softmax in a single kernel is:
-[val_1, val_0, val_7, val_11] -> {
-  T0[_gid0, _gid1] -> [3, _gid0, _gid1];
-  T1[_gid0, _gid1] -> [1, _gid0, _gid1];
-  T2[_gid0, _gid1] -> [2, _gid0, _gid1];
-  T3[_gid0, _gid1] -> [3, _gid0, _gid1];
-  T4[_gid0, _gid1] -> [4, _gid0, _gid1];
-  T5[_gid0, _gid1] -> [4, _gid0, _gid1];
-  T6[_gid0, _gid1] -> [5, _gid0, _gid1];
-  T7[_gid0, _gid1] -> [6, _gid0, _gid1];
-}
-"
-  (let ((lex (pipeline->timestamp pipeline))
-	(max-rank (1+ (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline))))))
-    (values
-     (union-map-from-str
-      (with-output-to-string (out)
-	(format out "[~(~a~)] -> " (render-list depends-on))
-	(format out "{~%")
-	(maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
-	 #'(lambda (ts graph)
-	     (let* ((loop-factors (graph->loop-factors graph))
-		    (dom (format nil
-				 "  T~a[~(~a~)] -> [~(~a~)]"
-				 ts
-				 (render-list loop-factors)
-				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank)))))
-	       (format out "~a;~%" dom)))
-	 pipeline)
-	(format out "}")))
-     lex)))
-
-;; ~~ From AVM Into Polyhedral Model Compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; polyhedral compilation to determine the parallelization strategy
-;; If we do; compile from avm into ISL, optimizng
-;; This is the toplevel of all optimization stuff
-;; Set no-writes=t to skip O(N) search algorithm.
-(defstruct (Group
-	    (:constructor make-group (nodes realize-on-vm &key (no-writes nil)
-				      &aux
-					(args (when (null no-writes) (nodes-depends-on nodes)))
-					(shapes (when (null no-writes) (nodes-gather-args nodes))))))
-  (graph (apply #'make-graph nodes) :type graph)
-  (sched nil :type list)
-  (realize-on-vm realize-on-vm :type boolean)
-  (polyhedron nil :type (or null Polyhedral))
-  (render-graph nil :type (or null Graph))
-  (across-time-deps nil :type list)
-  (args args :type list)
-  (shapes shapes :type list)
-  (writes (when (null no-writes) (nodes-output-ids nodes)) :type list)
-  (id (gensym)))
-
-(defmethod max-dimension-in-group ((group group))
-  (apply
-   #'max
-   (or
-    (loop for node in (graph-nodes (group-graph group))
-	  append
-	  (loop for var in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
-		if var
-		  collect
-		  (buffer-nrank var)))
-    (list 0))))
-
-(defun relocate-independent-allocations! (graph)
-  "
-  X   A+B
-  |    |
-  Y  Alloc <- If A+B is an independant operatin, Alloc and its subgraph
-   \  /       can be relocated into the top of graph.
-     Z
-"
-  (declare (type graph graph))
-  (let ((alloc-candidates
-	  (loop for node in (graph-nodes graph)
-		if (eql (node-type node) :Allocate)
-		  collect node)))
-    (labels ((subgraph (alloc)
-	       (loop for r in (node-reads alloc)
-		     if (symbolp r)
-		       append (get-subgraph r graph)))
-	     (alloc-p (node alloc subgraph)
-	       (or (find (node-id node) subgraph :key #'node-id)
-		   (and
-		    (eql (node-type node) :Allocate)
-		    (eql (node-id node) (node-id alloc)))))
-	     (relocate (alloc subgraph)
-	       (setf (graph-nodes graph)
-		     (append
-		      subgraph
-		      (list alloc)
-		      (loop for node in (graph-nodes graph)
-			    unless (alloc-p node alloc subgraph)
-			      collect node))))
-	     (isolated-p (alloc subgraph)
-	       (when subgraph
-		 (loop with writes = (apply #'append (map 'list #'node-writes subgraph))
-		       for node in (graph-nodes graph)
-		       unless (alloc-p node alloc subgraph)
-			 do (when (intersection (node-reads node) writes) (return-from isolated-p nil))))
-	       t))
-      (loop for alloc in alloc-candidates
-	    for subgraph = (subgraph alloc)
-	    if (isolated-p alloc subgraph)
-	      do (relocate alloc subgraph)))))
-
-(defun relocate-independent-loop-bound-computation! (graph)
-  "Applies the same relocation as relocate-independent-allocation! against views, simplifying the scheduling for dynamic-shaped kernels."
-  (declare (type graph graph))
-  (let ((view-candidates
-	  (loop for node in (graph-nodes graph)
-		if (eql (node-type node) :View)
-		  collect node)))
-    (labels ((subgraph (view)
-	       (loop for r in (node-reads view)
-		     if (symbolp r)
-		       append (get-subgraph r graph)))
-	     (view-p (node view subgraph)
-	       (or (find (node-id node) subgraph :key #'node-id)
-		   (and
-		    (eql (node-type node) :View)
-		    (eql (node-id node) (node-id view)))))
-	     (relocate (view subgraph)
-	       (setf (graph-nodes graph)
-		     (append
-		      subgraph
-		      (list view)
-		      (loop for node in (graph-nodes graph)
-			    unless (view-p node view subgraph)
-			      collect node))))
-	     (isolated-p (view subgraph)
-	       (when subgraph
-		 (loop with writes = (apply #'append (map 'list #'node-writes subgraph))
-		       for node in (graph-nodes graph)
-		       unless (view-p node view subgraph)
-			 do (when (intersection (node-reads node) writes) (return-from isolated-p nil))))
-	       t))
-      (loop for view in view-candidates
-	    for subgraph = (subgraph view)
-	    if (isolated-p view subgraph)
-	      do (relocate view subgraph)))))
-
-(defun recursive-split-into-subgroups (group)
-  (declare (type group group))
-  (let ((graph (group-graph group))
-	(stashed-path)
-	(seen))
-    (labels ((finalize-group (group)
-	       ;; Infers group-writes
-	       (make-group (graph-nodes (group-graph group)) (group-realize-on-vm group)))
-	     (force-realize-on-vm (node)
-	       (or
-		(eql (node-type node) :pause/backward)
-		(eql (node-type node) :Allocate)
-		(and (eql (node-type node) :LOAD)
-		     (symbolp (getattr node :value))
-		     (= 0 (buffer-nrank (car (relay-writes (read-type-relay node))))))))
-	     (explore (id)
-	       (declare (type symbol id))
-	       (let ((node (id->value graph id)))
-		 (when (and node (null (find (node-id node) seen :key #'node-id)))
-		   ;; dynamic shapes are stashed and excluded from the graph, or exists in the toplevel?
-		   (push node seen)
-		   (if (force-realize-on-vm node)
-		       (progn
-			 (push node stashed-path)
-			 nil)
-		       (make-group
-			(append
-			 (loop for read in (node-reads node)
-			       for parent = (when (symbolp read) (explore read))
-			       if parent
-				 append (graph-nodes (group-graph parent)))
-			 (list node))
-			nil
-			:no-writes t)))))
-	     (restart-from-stashed-node (node)
-	       (list
-		(make-group
-		 (list node)
-		 t
-		 :no-writes t)
-		(make-group
-		 (loop for read in (node-reads node)
-		       for parent = (when (symbolp read) (explore read))
-		       if parent
-			 append (graph-nodes (group-graph parent)))
-		 nil
-		 :no-writes t))))
-      (let ((new-groups (map 'list #'explore (group-writes group))))
-	;; TODO: Remove duplicated LOAD! they are in stashed-path
-	(loop while stashed-path
-	      do (setf new-groups (append (restart-from-stashed-node (pop stashed-path)) new-groups)))
-	(loop for g in new-groups
-	      ;; Empty group can be removed
-	      if (and g (graph-nodes (group-graph g))) collect (finalize-group g))))))
-
-(defun split-into-subgroups (graph)
-  "Graphs are first breaked into subgroups only after:
-- Tensor is shaped by a tensor
-- :PAUSE/BACKWARD"
-  (declare (type graph graph))
-  (let ((groups))
-    (labels ((force-realize-on-vm (node) (or (eql (node-type node) :pause/backward))))
-      (apply
-       #'append
-       (map
-	'list
-	#'recursive-split-into-subgroups
-	`(,@(loop for node in (graph-nodes graph)
-		  if (force-realize-on-vm node)
-		    collect (make-group (nreverse groups) nil)
-		    and collect (make-group (list node) t)
-		    and do (setf groups nil)
-		  else
-		    do (push node groups))
-	  ,(make-group (nreverse groups) nil)))))))
 
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list)) create-schedules-from-avm))
 (defun create-schedules-from-avm (avm &key (verbose nil))
@@ -740,18 +278,16 @@ Optional order fusing softmax in a single kernel is:
 (defun create-polyhedron-from-group (alias-f avm group &key (verbose nil) (verbose-auto nil))
   "Step2, create a polyhedron from the scheduled items."
   (declare (type group group) (type boolean verbose))
-  ;; [TODO]
-  ;; 1. Loop Fusion etc...をSchedulingする
-  ;; 2. MemoryPlannerを適用する
   (let* ((submodule (map 'list #'schedule->submodule (group-sched group))) ;; Rendering :FOR and :ENDFOR
 	 (pipeline (make-hash-table)))
+    ;; Pipeline: Task_Idx -> FUNCALL_{IDX}(depending_args)
     (loop for nth upfrom 0
 	  for s in submodule
 	  do (setf (gethash nth pipeline) s))
     (when verbose
       (format t "== [Final Graph Before Applying Polyhedral Compiler] ======~%")
       (print-pipeline pipeline))
-    
+    ;; とりあえずここをリファクタする方針
     (let* ((vm-inputs (avm-gather-args avm))
 	   ;;(vm-input-tensors (nodes-depends-on (graph-nodes (group-graph group))))
 	   (loop-sizes (loop for value being the hash-values of pipeline
@@ -873,6 +409,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			   else if (group-sched group) do
 			     (setf (group-polyhedron group) (create-polyhedron-from-group alias avm group :verbose verbose-schedule :verbose-auto verbose-auto))
 				and collect group)))
+      ;; Polyhedronを作る前にここでPre-Fusionをして，ISLに投げる
       (mapc
        #'(lambda (x)
 	   (when (group-polyhedron x)
@@ -996,10 +533,63 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 
 ;; Loop-Collapseは最後に判定する
 ;; DomainのAccess RepとNRankでFlattenしたMapが同じならFlattenn
-(defmethod loop-interchange ())
-(defmethod try-insert-loop ((loop1 Graph) (loop2 Graph))
-  ;; fusion bottom-up or top-down? which is better
-  ;; 上から下に読んでいく，Dependenceが見たされるLoopの場所に ggg
-  ;; Loops w/ directly dependence
-  ;; lex depのやつ
+;; TODO List
+;; - [ ] MultiExpr (Better)
+;; - [ ] Loop Fusion (Ahead of poly ir)
+;; - [ ] MultiExpr (Fuseされたらacross-timeの時間依存が変わるはず)
+;; - [ ] CMP Ops MultiExpr?
+;; - [ ] Refactor
+
+(defmethod assert-insertable ((sched Graph))
+  "We refer to assertable as: Rendering-Graph is consisted of FUNCALL or FOR/ENDFOR"
+  (flet ((ok (x)
+	   (find (node-type x) `(:FUNCALL :FOR :ENDFOR))))
+    (assert (every #'ok (graph-nodes sched)) () "The graph is not insertable!~%~a" sched)))
+
+(defmethod assert-vanilla ((sched Graph))
+  "Assert that sched[rendering-graph] is an unoptimized loop just generated by Scheduled-Item."
+  (assert-insertable sched)
+  (assert (= 1 (count :FUNCALL (graph-nodes sched) :key #'node-type))))
+
+(defmethod loop-depth ((lp Graph))
+  "Returns a count of the maximum depth in the rendering graph lp."
+  (loop with depth = 0
+	for node in (graph-nodes lp)
+	if (find (node-type node) `(:FOR :IF))
+	  do (incf depth)
+	else if (find (node-type node) `(:ENDFOR :ENDIF))
+	       do (decf depth)
+	end
+	maximize depth))
+
+(defmethod try-loop-fusion ((loop1 Graph) (loop2 Graph))
+  "Fuses the strongly connected two components: Loop1 and Loop2.
+Loop1 is already fused
+Loop2 is simple rendering-graph, has only a single funcall."
+  ;; ALgorithm:
+  ;; Loop1のFORにloop2の各自FUNCALLを依存を満たす範囲で挿入していく
+  ;; Loopが足りなくなったら，ループを追加する
+  ;; 依存の理由で入らなくなったら分割する
+  ;; LoopのFuseの要素間の並列性はISLで検証する。 -> TryLoopFusion and ISL Parallelize
+  
+  ;; Loop1 has a compicated nest, multiple funcalls.
+  ;; Loop2 is a plan loop, just generated by lowering Scheduled-Item or Group.
+  (assert-insertable loop1) (assert-insertable loop2) (assert-vanilla loop2)
+  ;; 高い方のループで
+  ;; IDXが定義されてる場所 (Loop Interchangeを適用 + サイズが同じPermutatonが見つかる場合)
+  ;; Read/Writeが既に書かれてる場所
+  ;; にFUNCALLを設置しようとする
+
+  ;; strategy: loop1 << loop2
+  ;; loop1 = t6, loop2 = t1
+  ;; Assume: Loop1 は複雑(既に何度もFuseされてる)
+  ;;         Loop2はいつも単一のFUNCALLしかない
+  ;; Loop1はLoop2のまえ
+  ;; T1
+  ;;  |
+  ;; T2
+  ;; FUNCALL depends onがあると便利
+  ;; FUNCALL.STRONGLY CONNECTED COMPONENTS
+  ;; FUNCALL.WEAKLY_DEPENDS_ON
+
   )

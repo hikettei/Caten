@@ -1,7 +1,6 @@
 (in-package :caten/ajit)
-;; isl-object.lisp
-;; A helper to render ISL format from Lisp.
-;; TODO: [Refactor] Replace this by caten/isl and delete this file.
+;; A helpers to render the isl object.
+
 (defmacro define-isl-object (print-name docstring ((&rest args) &rest slots) &body body)
   (declare (type string print-name))
   (let* ((name (intern (string-upcase print-name)))
@@ -71,3 +70,197 @@
   (with-slots ((u union) (cnst constraint)) c
     (format nil "{ ~a : ~a }" (form u) (form cnst))))
 
+;; ~~ AREF ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun isl-access-expr-no-stride (gid stride upfrom by broadcast-p)
+  (declare (ignore stride))
+  (assert (numberp by) () "`By` should be a constant otherwise Caten cannot create a quasiaffine constraint.")
+  (if broadcast-p
+      (make-const 0 nil)
+      (simplify-expr
+       (make-expr
+	:ADD
+	(make-expr :MUL (make-const gid nil) (make-const by nil))
+	(make-const upfrom nil)))))
+
+(defun isl-access-expr (gid stride upfrom by broadcast-p)
+  (if broadcast-p
+      (make-const 0 nil)
+      (simplify-expr
+       (make-expr
+	:ADD
+	(make-expr
+	 :MUL
+	 (make-expr :MUL (make-const gid nil) (make-const by nil))
+	 (make-const stride nil))
+	(make-expr :MUL (make-const upfrom nil) (make-const stride nil))))))
+
+(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'isl-access-expr) (flatten nil) (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
+  "Renders the stride computation for ISL:
+```
+A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
+```
+"
+  (declare (type buffer buffer))
+  (let ((indices
+	  (loop with order = (if (and use-permute (buffer-inferred-permute buffer))
+				 (buffer-inferred-permute buffer)
+				 (range 0 (buffer-nrank buffer)))
+		for nth in order
+		for stride-nth in (or strides (buffer-stride buffer))
+		for size   = (nth nth (buffer-shape buffer))
+		for view   = (nth nth (buffer-views buffer))
+		for stride = (reveal-buffer stride-nth)
+		for upfrom = (reveal-buffer (or (nth 0 view) 0))
+		for by     = (reveal-buffer (or (nth 2 view) 1))
+		for broadcast-p = (nth 3 view)
+		for gid = (funcall genid nth)
+		do (incf c)
+		if (and mutate-scalar (eql size 1))
+		  collect (make-const 0 nil)
+		else
+		  collect (funcall indexing gid stride upfrom by broadcast-p))))
+    (if flatten
+	(apply
+	 #'concatenate 'string
+	 (butlast
+          (loop for idx in (nconc indices (when upper (loop repeat (- upper c) collect (make-expr 0 nil))))
+		append (list (render-expr (default-device :clang) idx) ", "))))
+	(flet ((add (x y) (make-expr :ADD x y)))
+	  (if (null indices)
+	      nil
+	      (simplify-expr (reduce #'add indices)))))))
+;; ~~ DOMAIN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun render-domain (pipeline &key (depends-on nil))
+  "Render the domain notation from the scheduled subgraphs
+```
+Domain [depends-on] -> {
+  Sched_0_ID(loop_factors_0) : IConstraint_0;
+  Sched_1_ID(loop_factors_1) : IConstraint_1;
+                 ...
+}
+```
+Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Subgrpah[Graph]}"
+  (declare (type list depends-on) (type hash-table pipeline))
+  (with-output-to-string (out)
+    ;; renders depends-on
+    (format out "[~(~a~)] -> {~%" (render-list depends-on))
+    (maphash1
+     #'(lambda (timestamp subgraph)
+	 (let* ((loop-factors (graph->loop-factors subgraph :scalar-mutation t))
+		(mutated-p (graph-loop-scalar-mutated-p subgraph))
+		(constraints
+		  (loop for node in (graph-nodes subgraph)
+			if (and (eql (node-type node) :IR/FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
+			  collect
+			  (progn
+			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
+			    (make-iconstraint (car (node-writes node)) (nth 0 (node-reads node)) (nth 1 (node-reads node)))))))
+	   (if loop-factors
+	       (progn
+		 (format out "  T~a[~(~a~)]" timestamp
+			 (render-list
+			  (loop for lf in loop-factors
+				for c in constraints
+				for scal-p = (iconstraint-scalar-p c)
+				if scal-p
+				  collect (format nil "~a = 0" lf)
+				else
+				  collect lf)))
+		 (format out " : ")
+		 (let ((c (apply #'concatenate 'string (butlast (loop for c in constraints unless (iconstraint-scalar-p c) append (list (form c) " and "))))))
+		   (format out "~a" (if (string= c "") "true" c)))
+		 (format out ";~%"))
+	       (format out "  T~a[];~%" timestamp))))
+     pipeline)
+    (format out "}")))
+;; ~~ Access relation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun render-access (alias-f mode pipeline &key (depends-on nil) &aux (kernel-rank (pipeline/upper-nrank pipeline)))
+  "Render the read/write accessing relation ship in the following notation:
+```
+[depends-on] -> {
+    Sched_0_ID[read_index] -> Tensor_ID_N[strided_access_idx];
+        ...
+}
+```
+"
+  (declare (type list depends-on)
+	   (type (member :read :write) mode)
+	   (type hash-table pipeline))
+  (with-output-to-string (out)
+    (format out "[~(~a~)] -> {~%" (render-list depends-on))
+    (maphash1
+     #'(lambda (timestamp subgraph)
+	 (let* ((lf (graph->loop-factors subgraph :scalar-mutation t))
+		(lf-orig (graph->loop-factors subgraph))
+		(occur-from
+		  (format nil "T~a[~(~a~)]" ;; = 0
+			  timestamp (render-list lf)))
+		(scalar (apply #'concatenate 'string (butlast (loop repeat kernel-rank append (list "0" ", "))))))
+	   (flet ((pad ()
+		    (if (= kernel-rank (length lf-orig))
+			""
+			(format nil ", ~a"
+				(apply #'concatenate 'string
+				       (butlast
+					(loop repeat (- kernel-rank (length lf-orig)) append (list "0" ", "))))))))
+	     (dolist (node (graph-nodes subgraph))
+	       (when (not (eql (node-class node) :IR))
+		 (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
+		       for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
+			 ;; When node has a :reduction
+			 (when (symbolp r)
+			   (if (null lf)
+			       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
+			       (when (vm-instruction-p node)
+				 (let ((access (render-isl-aref rt :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute t)))
+				   (if (string= access "")
+				       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
+				       (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from r access (pad))))))))
+		 ;; Symbols for computing the stride
+		 (when (and node (eql mode :read))
+		   (let* ((symbols
+			    (loop for buff in `(,@(relay-reads (read-type-relay node)) ,@(relay-writes (read-type-relay node)))
+				  if buff
+				    append (append (buffer-shape buff) (buffer-stride buff) (apply #'append (buffer-views buff)))))
+			  (symbols
+			    (loop for s1 in symbols
+				  for s = (reveal-buffer s1)
+				  if (and (symbolp s) (not (eql s t)) (not (eql s nil)))
+				    collect s)))
+		     (dolist (s symbols) (format out "  ~a -> ~(~a~)[~a];~%" occur-from s scalar)))))))))
+     pipeline)
+    (format out "}")))
+
+(defun isl-initial-schedule (pipeline &key (depends-on nil))
+  "
+Optional order fusing softmax in a single kernel is:
+[val_1, val_0, val_7, val_11] -> {
+  T0[_gid0, _gid1] -> [3, _gid0, _gid1];
+  T1[_gid0, _gid1] -> [1, _gid0, _gid1];
+  T2[_gid0, _gid1] -> [2, _gid0, _gid1];
+  T3[_gid0, _gid1] -> [3, _gid0, _gid1];
+  T4[_gid0, _gid1] -> [4, _gid0, _gid1];
+  T5[_gid0, _gid1] -> [4, _gid0, _gid1];
+  T6[_gid0, _gid1] -> [5, _gid0, _gid1];
+  T7[_gid0, _gid1] -> [6, _gid0, _gid1];
+}
+"
+  (let ((lex (pipeline->timestamp pipeline))
+	(max-rank (1+ (apply #'max (map 'list (compose #'length #'graph->loop-factors) (hash-table-values pipeline))))))
+    (values
+     (union-map-from-str
+      (with-output-to-string (out)
+	(format out "[~(~a~)] -> " (render-list depends-on))
+	(format out "{~%")
+	(maphash1 ;; ts comes in order of 0, 1, 2, ..., max regardless of Common Lisp Implementation.
+	 #'(lambda (ts graph)
+	     (let* ((loop-factors (graph->loop-factors graph))
+		    (dom (format nil
+				 "  T~a[~(~a~)] -> [~(~a~)]"
+				 ts
+				 (render-list loop-factors)
+				 (render-list (padding-list `(,(gethash ts lex) ,@loop-factors) max-rank)))))
+	       (format out "~a;~%" dom)))
+	 pipeline)
+	(format out "}")))
+     lex)))

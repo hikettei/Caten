@@ -70,6 +70,7 @@ T0 T1 are scalar-nodes, T2, T3 are vector-nodes.
 	    do (push node scalars))
     (values (nreverse scalars) (nreverse vectors))))
 
+;; [TODO] Remove
 (defmethod merge-two-loops ((a kernel-renderer) (b kernel-renderer) (poly Polyhedral))
   "Merges two iteration. the relations between a and b can be formulated as:
 ```
@@ -444,3 +445,4 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 				(mutate-scalar-buffer val type (when (eql (node-type node) :EXPR) (getattr node :EXPR)) ,read-p)))))
       (f node-reads relay-reads t)
       (f node-writes relay-writes t))))
+  

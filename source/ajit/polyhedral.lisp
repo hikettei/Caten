@@ -1,7 +1,5 @@
 (in-package :caten/ajit)
-;; This paper is good to read first:
-;; - https://arxiv.org/pdf/2401.06665
-;; - https://www.researchgate.net/publication/320992060_Consecutivity_in_the_isl_Polyhedral_Scheduler
+
 (defstruct (Polyhedral
 	    (:conc-name poly-)
 	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs lex-table &key (ast-option :atomic))))
