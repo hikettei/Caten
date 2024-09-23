@@ -554,6 +554,15 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; }
 ;;   T2 10 -> 1
 ;; TODO: 1 Loop 1 Reduction, and confrim the validyf ot view
+;; [TODO]
+;; - !mean, LHS Expand, Viewの判定: 一つのScheduleGroupは同一のViewObjectを持っていると仮定する，(%forはその情報を保持することでFusion判定が可能)
+;; - [ ] 1. EmbeddingのINDEX-COMPONENTSをFuseする
+;; - [ ] 2. Sumのload 0.0 (softmax, composed matmul, matmul sin)をFuseする
+;; - [ ] 3. ISLにDumpしてSchedulingをする，
+;; - [ ] 4. ISLがInner LoopのFusionをうまくやってくれる場合
+;;    -> そのままテストを通す
+;;    -> otherwise, submodule-sequenceのTODOを試す
+;;
 (defmethod submodule-sequence ((older Graph) (younger Graph) (offset fixnum))
   "Fuses the strongly connected two components: Loop1 and Loop2.
 [older]
@@ -569,83 +578,96 @@ younger is always plain
 	 (younger-instructions
 	   (loop for node in (graph-nodes younger)
 		 if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
-		   collect node))
-	 (older-instructions
-	   (loop for node in (nthcdr offset (graph-nodes older))
-		 if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
 		   collect node)))
     ;; younger-instructions must be placed after older-instruction
-    (flet ((find-and-insert-at-suitable-place (inst
-					       &aux
-						 (index-component-p (expr-is-index-component-p inst))
-						 (bands (make-hash-table))
-						 (ops nil)
-						 (changed-p nil))
-	     ;; Reading the older graph from offset to an end
-	     ;; Finds a suitable place to locate inst
-	     ;; we refer a suitable place as:
-	     ;; - Satisfies band requirement              (required _gid is defined)
-	     ;; - Satisfies instruction-order requirement (inst is placed after all older-instruction)
-	     (labels ((satisfy-1 ()
-			;; Satisfies band-requirement?
-			(and
-			 (= (length (hash-table-keys bands)) (length younger-deps))
-			 (if index-component-p
-			     ;; INDEX-COMPONENT can be located regardless of size. (consider this as just an alias for loop index, its just a scalar)
-			     (every #'(lambda (x) (gethash x bands)) (map 'list (compose #'car #'node-writes) younger-deps))
-			     (every
-			      #'(lambda (x &key (id (car (node-writes x))))
-				  (and
-				   (gethash id bands)
-				   (let ((lp (gethash id bands)))
-				     ;; Band sizes are the equivalent?
-				     (equal (node-reads lp) (node-reads x)))))
-			      younger-deps))))
-		      (satisfy-2 ()
-			;; Satisfies instruction requirement?
-			(= (length ops) (length older-instructions)))
-		      (satisfy-3 ()
-			(and
-			 (satisfy-2)
-			 ;; Satisfies the satisfies-1 except for the last dimension.
-			 (= (length (hash-table-keys bands)) (1- (length younger-deps)))
-			 (every
-			  #'(lambda (x &key (id (car (node-writes x))))
-			      (or
-			       (getattr x :_scalar_p)
-			       (and
-				(gethash id bands)
-				(equal (node-reads (gethash id bands)) (node-reads x)))))
-			  (butlast younger-deps)))))
-	       (values
-		(nconc
-		 (subseq (graph-nodes older) 0 offset)
-		 (loop for node in (nthcdr offset (graph-nodes older))
-		       if (eql (node-type node) :IR/FOR)
-			 do (setf (gethash (car (node-writes node)) bands) node)
-		       else if (eql (node-type node) :IR/ENDFOR)
-			 do (remhash (car (node-reads node)) bands)
-		       else
-			 do (push node ops)
-		       end
-		       collect node
-		       ;; 一旦SerializeしてISLに投げてFusionしてくれるかを確認する
-		       ;; 無理だったら手動でILPを解く: ReductionとViewによってdependenceが壊れるのを防ぐのが目的
-		       if nil;;(and (null changed-p) (satisfy-1) (satisfy-2))
-			 do (setf changed-p t) and collect inst
-		       if (and (null changed-p) (satisfy-3))
-			 do (setf changed-p t) and append `(,@(last younger-deps) ,inst ,(%endfor (car (node-writes (car (last younger-deps))))))))
-		changed-p)))
-	   (create-and-merge-new-domain (inst)
-	     (setf offset (length (graph-nodes older))
-		   (graph-nodes older)
-		   (nconc
-		    (graph-nodes older)
-		    `(,@younger-deps
-		      ,inst
-		      ,@(nreverse
-			 (loop for node in younger-deps
-			       collect (%endfor (car (node-writes node))))))))
+    (labels ((older-instructions ()
+	       (loop for node in (nthcdr offset (graph-nodes older))
+		     if (null (find (node-type node) `(:IR/FOR :IR/ENDFOR)))
+		       collect node))
+	     (find-and-insert-at-suitable-place (inst
+						 &aux
+						   (index-component-p
+						    (or
+						     (expr-is-index-component-p inst)
+						     (let ((oi (older-instructions)))
+						       (and
+							(= (length oi) 1)
+							(expr-is-index-component-p (car oi))))))    
+						   (bands (make-hash-table))
+						   (ops nil)
+						   (changed-p nil))
+	       ;; Reading the older graph from offset to an end
+	       ;; Finds a suitable place to locate inst
+	       ;; we refer a suitable place as:
+	       ;; - Satisfies band requirement              (required _gid is defined)
+	       ;; - Satisfies instruction-order requirement (inst is placed after all older-instruction)
+	       (labels ((satisfy-1 ()
+			  ;; Satisfies band-requirement?
+			  (and
+			   (= (length (hash-table-keys bands)) (length younger-deps))
+			   (if index-component-p
+			       ;; INDEX-COMPONENT can be located regardless of size. (consider this as just an alias for loop index, its just a scalar)
+			       (every #'(lambda (x) (gethash x bands)) (map 'list (compose #'car #'node-writes) younger-deps))
+			       nil)))
+;;			       (every
+;;				#'(lambda (x &key (id (car (node-writes x))))
+;;				    (and
+;;				     (gethash id bands)
+;;				     (let ((lp (gethash id bands)))
+;;				       ;; Band sizes are the equivalent?
+;;				       (equal (node-reads lp) (node-reads x)))))
+;;				younger-deps))))
+			(satisfy-2 ()
+			  ;; Satisfies instruction requirement?
+			  (= (length ops) (length (older-instructions))))
+			(satisfy-3 ()
+			  (and
+			   (satisfy-2)
+			   ;; Satisfies the satisfies-1 except for the last dimension.
+			   (= (length (hash-table-keys bands)) (1- (length younger-deps)))
+			   (every
+			    #'(lambda (x &key (id (car (node-writes x))))
+				(and
+				 (gethash id bands)
+				 (or
+				  (getattr x :_scalar_p)
+				  (getattr (gethash id bands) :_scalar_p)
+				  (equal (node-reads (gethash id bands)) (node-reads x)))))
+			    (butlast younger-deps))))
+			(update-size (bs &aux (tgt (gethash (car (node-writes bs)) bands)))
+			  (when (and tgt (getattr tgt :_scalar_p))
+			    (setf (node-reads tgt) (node-reads bs)
+				  (getattr tgt :_scalar_p) (getattr bs :_scalar_p)))))
+		 (values
+		  (nconc
+		   (subseq (graph-nodes older) 0 offset)
+		   (loop for node in (nthcdr offset (graph-nodes older))
+			 if (eql (node-type node) :IR/FOR)
+			   do (setf (gethash (car (node-writes node)) bands) node)
+			 else if (eql (node-type node) :IR/ENDFOR)
+				do (remhash (car (node-reads node)) bands)
+			 else
+			   do (push node ops)
+			 end
+			 collect node
+			 ;; 一旦SerializeしてISLに投げてFusionしてくれるかを確認する
+			 ;; 無理だったら手動でILPを解く: ReductionとViewによってdependenceが壊れるのを防ぐのが目的
+			 if (and (null changed-p) (satisfy-1) (satisfy-2))
+			   do (setf changed-p t) (mapc #'update-size younger-deps) and collect inst
+			 if (and (null changed-p) (satisfy-3))
+			   do (setf changed-p t) (mapc #'update-size younger-deps)
+			   and append `(,@(last younger-deps) ,inst ,(%endfor (car (node-writes (car (last younger-deps))))))))
+		  changed-p)))
+	     (create-and-merge-new-domain (inst)
+	       (setf offset (length (graph-nodes older))
+		     (graph-nodes older)
+		     (nconc
+		      (graph-nodes older)
+		      `(,@younger-deps
+			,inst
+			,@(nreverse
+			   (loop for node in younger-deps
+				 collect (%endfor (car (node-writes node))))))))
 	     older))
       ;; younger-instructions: each ops depends on younger-deps
       ;; INDEX-COMPONENTS can be relocated anywhere.
