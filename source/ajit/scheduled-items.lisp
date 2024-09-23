@@ -1,5 +1,11 @@
 (in-package :caten/ajit)
-
+;; ~~ JIT Specific IRs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Group{Submodule} will use %for and %endfor to schedule `pre-fusion`.
+(defun %for (gid size &key (scalar-p nil))
+  (declare (type (or number symbol) size))
+  (emit (make-node :IR :IR/FOR (list gid) (list 0 size 1) :_scalar_p (and scalar-p (eql size 1)))))
+(defun %endfor (gid) (emit (make-node :IR :IR/ENDFOR nil (list gid))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Scheduled-Items
 	    (:conc-name si-)
 	    (:constructor make-scheduled-items (top)))
@@ -106,3 +112,99 @@ Further op-fusion optimization are done by the polyhedral-compiler."
 	      (append
 	       (list scheduled-items)
 	       (loop for n in (map 'list #'explore new-groups) if n collect n))))))))
+
+(defun buffer->loop-size (dim nrank &rest buffers)
+  "Determines the bound of loops based on buffers and dim, nrank."
+  (declare (type fixnum dim))
+  (let* ((buffers (loop for b in buffers
+			if (= (buffer-nrank b) nrank)
+			  collect b))
+	 (shapes
+	   (map 'list #'(lambda (x &aux (v (nth dim (buffer-views x))))
+			  (if (and v (fourth v))
+			      1
+			      (nth dim (buffer-shape x))))
+		buffers)))
+    (reveal-buffer
+     (or
+      (when (every #'numberp shapes) (apply #'max shapes))
+      (when (every #'(lambda (x) (eql x 1)) shapes) 1)
+      (when (some #'(lambda (x) (eql x 1)) shapes) (find 1 shapes :test-not #'eql))
+      (car shapes)))))
+
+(defun no-offsets-p (buffers dim) (every #'(lambda (x) (null (nth dim (buffer-views x)))) buffers))
+(defmethod schedule->submodule ((sched Scheduled-Items) &aux (nrank 0) (args nil) (deps (schedule-depends-on sched)))
+  "Lowers the scheduled-items into Loops based on VM Instruction.
+i.e.:
+```
+ScheduledItem{
+  <IR> [EXPR]:  a = sin(cos(x)) where x = (10, 10) Tensor
+}
+```
+=>
+```
+Graph{Submodule}<
+  %for _gid0 = 0..10
+    %for _gid1 = 0..10
+     <IR> [EXPR]:  a = sin(cos(x)) where x = (10, 10) Tensor
+    %endfor
+  %endfor
+>
+```
+"
+  (declare (type scheduled-items sched))
+  (loop for node in (si-nodes sched)
+	for reads = (relay-reads (read-type-relay node))
+	for max-rank = (apply #'max (map 'list #'buffer-nrank reads))
+	if (vm-instruction-p node) do
+	  (assert (every #'(lambda (x) (or (null x) (= 0 (buffer-nrank x)) (= (buffer-nrank x) max-rank))) reads)
+		  ()
+		  "Inconsistency in the inferred tensor shape. (This is a bug of Caten, not users as long as ShapeTracker is enabled.)
+All tensors appeared in `node-reads`, must have the same ranks or be scalars.~%
+Node: ~a
+Butgot: ~a
+Buffers: ~a
+"
+		  node
+		  (map 'list #'buffer-shape reads)
+		  reads)
+	  (setf nrank (max nrank (apply #'max (map 'list #'(lambda (x) (if x (buffer-nrank x) 0)) reads))))
+	  (mapc #'(lambda (r type) (when (find r deps) (push type args))) (node-reads node) reads))
+  (let* ((index-components (map 'list #'gid (range 0 nrank)))
+	 (loopsizes (map 'list #'(lambda (x) (apply #'buffer->loop-size x nrank args)) (range 0 nrank))))
+    (let ((g
+	    (with-context
+	      (start-loop (loop for i in index-components for s in loopsizes
+				for dim upfrom 0 do (%for i s :scalar-p (no-offsets-p args dim))))
+	      (_ (dolist (node (si-nodes sched)) (emit node)))
+	      (end-loop (dolist (i index-components) (%endfor i))))))
+      (setf (graph-seen g) (schedule-depends-on sched))
+      g)))
+
+(defmethod schedule-depends-on ((sched Scheduled-Items))
+  "Enumerates the unsolved buffer ids from the sched graph."
+  (declare (type scheduled-items sched))
+  (nodes-depends-on (si-nodes sched)))
+
+(defun graph->loop-factors (graph &key (scalar-mutation nil))
+  "Graph = Graph{Submodule}"
+  (declare (type graph graph))
+  ;; Applies if only rank is one.
+  (let ((scalar-mutation (when scalar-mutation (= 1 (length (graph->loop-factors graph :scalar-mutation nil))))))
+    (remove-duplicates
+     (loop for node in (graph-nodes graph)
+	   if (and (eql (node-type node) :IR/FOR) (or (null scalar-mutation) (null (getattr node :_scalar_p))))
+	     collect (car (node-writes node))))))
+
+(defun graph-loop-scalar-mutated-p (graph)
+  (not
+   (= (length (graph->loop-factors graph :scalar-mutation nil))
+      (length (graph->loop-factors graph :scalar-mutation t)))))
+
+(defun graph->loop-size (graph)
+  "Graph = Graph{Submodule}"
+  (remove-duplicates
+   (loop for node in (graph-nodes graph)
+	 if (and (eql (node-type node) :IR/FOR)
+		 (symbolp (second (node-reads node))))
+	   collect (second (node-reads node)))))

@@ -70,6 +70,13 @@
   (with-slots ((u union) (cnst constraint)) c
     (format nil "{ ~a : ~a }" (form u) (form cnst))))
 
+(defun vm-instruction-p (node)
+  "Add more classes here if you have a certain node that do not desired to be involved."
+  ;; :IR = :FOR :ENDFOR
+  (and
+   (not (eql (node-class node) :IR))
+   (not (eql (node-type node) :Allocate))))
+
 ;; ~~ AREF ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun isl-access-expr-no-stride (gid stride upfrom by broadcast-p)
   (declare (ignore stride))
