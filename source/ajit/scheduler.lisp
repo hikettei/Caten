@@ -1,6 +1,6 @@
 (in-package :caten/ajit)
 ;; scheduler.lisp: An entry point for JIT and Polyhedral Compiler.
-;; = Refenreces: (good to read first before start coding) ====================================================================
+;; = Refenreces: (good to read first before start coding) ======================================================================
 ;; - https://pliss2019.github.io/albert_cohen_slides.pdf
 ;; - https://www.slideshare.net/slideshow/introduction-to-polyhedral-compilation/70482946
 ;; - https://www.researchgate.net/publication/273651704_Schedule_Trees
@@ -13,41 +13,49 @@
 ;; - https://arxiv.org/pdf/2401.06665
 ;; - https://www.researchgate.net/publication/320992060_Consecutivity_in_the_isl_Polyhedral_Scheduler
 ;; (*) = recommended
-;; = [Overview] ==============================================================================================================
-;;  Data Type       |                    Process
-;;  AVM (Graph)     |               [Input (%jit)] ( scheduler.lisp is an entry point )
-;;                  |                     | (lowering)    (-> scheduled-items.lisp)
-;;  Scheduled-Items |              [Scheduled-Items]
-;;                  |                      | (group)      (-> group.lisp)
-;; Group{Submodule} |                   [Group]
-;;                  |                      | (pre-fusion) (-> here)
-;;                  |              [Group (blueprint)] (A blueprint of kernel, consisted of VM Instruction and %for %endfor)
-;;                  |        | (extracting polyhedron) (-> scheduler.lisp)
-;;               |[Polyhedral IR (Describes the dependence between *groups)] 
-;;               |        | (ISL Based Polyhedral Compiler) (-> polyhedral.lisp)
-;;               |        []
-;;               |        |
-;;               | [Tiling/MemoryLocality/Vectorizing]
-;;               |        |
-;;               | [Memory-Planner] (-> memory-planner.lisp) (Minimize the dram accesses)
-;;               |        |
-;;               |  [Pre-Tiling] (-> transform.lisp) (mutates FUNCALL into PACKED-FUNCALL)
-;;               |        |
-;;               |
-;;               |      { [Render Graph] + [EXPR] ( output ) }
-;; *Group = A set of aIR graph whose access are the equivalent
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; Input: aIR Graph (AVM)
-;; Scheduled-Items = A set of the lowest-level instruction (e.g.: :EXPR, :ADD)  (-> scheduled-items.lisp)
-;; Group           = A set of Scheduled-Items (that potentially can be fused in the single kernel)
-;; Polyhedral      = A polyhedral structure of Group
+;; = [Overview] ================================================================================================================
+;;  Data Structure  |                     Process
+;; -----------------|-----------------------------------------------------------------------------------------------------------
+;;  AVM (Graph)     |                 [Input (%jit)] ( scheduler.lisp is an entry point )
+;;                  |                        | (preprocessing, wmma detection, lowering) (-> simplifier.lisp, scheduled-items.lisp)
+;;  Scheduled-Items |                [Scheduled-Items]
+;;                  |                        | (group)      (-> group.lisp)
+;; Group{Submodule} |                     [Group]
+;;                  |                        | (pre-fusion) (-> here)
+;; Group{Submodule} |                [Group (blueprint)] (A blueprint of kernel, consisted of VM Instruction and %for %endfor)
+;;                  |                        | (fusion)     (-> multiexpr.lisp)
+;; Group{Submodule} |                [Group (blueprint)] (VM Instruction is mutated into :EXPR)
+;;                  |                        | (Extracting Polyhedral Structure) (-> scheduler.lisp, and isl-object.lisp)
+;;  Polyhedral IR   | [Polyhedral IR (Describes the dependence between *groups)]
+;;                  |                        | (Solving ILP Problem) (-> polyhedral.lisp)
+;;  Polyhedral IR   |                 [Optimized ISL AST]
+;;                  |                        | (Extracting the graph ...) (-> isl-ast-helper.lisp)
+;; Rendering-Graph  |         [Rendering-Graph + EXPR + Pipeline]
+;;                  |                        | (Optimizing the memory-locality by Solving DSA) (-> memory-planner.lisp)
+;; Rendering-Graph  |         [Rendering-Graph + EXPR + Pipeline]
+;;                  |                        | (Post-tiling optimization) (-> transform.lisp)
+;; Rendering-Graph  |         [Rendering-Graph + EXPR + Pipeline] (but funcall is mutated into packed-funcall)
+;;                  |                        |
+;; Rendering-Graph  |                   [Rendering] (-> backends/clang.lisp, user-defined backends, device.lisp)
+;;                  |                        |      (Users will use only two IRs: EXPR and Rendering-Graph)
+;; AVM (Compiled)   |             [Output: :JIT_KERNEL] (-> kernel-info.lisp)
+;; -- [Terms] -----------------------------------------------------------------------------------------------------------------
+;; *Group{Submodule} = A blueprint of Polyhedral IR, consisted of VM Instruction, %for, and %endfor.
+;; *VM Instruction   = nodes defined in `aasm/attrs.lisp`
+;; *Group            = A set of aIR graph whose access are the equivalent
+;; Polyhedral IR     = the struct Polyhedral in ./polyhedral.lisp
+;; Rendering-Graph   = Rendering-Graph + Pipeline
+;;                   - Rendering-Graph = A blueprint of the final kernel which each device handle.
+;;                   - Pipeline: a hash table where key and value are timestamp and vm instruction respectively.
+;; Scheduled-Items   = A set of the lowest-level instruction (e.g.: :EXPR, :ADD)  (-> scheduled-items.lisp)
+;; Group             = A set of Scheduled-Items (that potentially can be fused in the single kernel)
+;; Polyhedral        = A polyhedral structure of Group
 ;; i.e.: { [Group1, Polyhedral1], {Group2, Polyhedral2}, ...}
 ;;          ^ Applying JIT Compilation   ^ ...
 ;;                  in this group
-;; =====================================================================================================
-
-;; ~~ JIT-Specific IRs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; 
+;; etc ...
+;; ============================================================================================================================
+;; ~~ JIT-Specific IRs ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %for (gid size &key (scalar-p nil))
   (declare (type (or number symbol) size))
   (emit (make-node :IR :IR/FOR (list gid) (list 0 size 1) :_scalar_p (and scalar-p (eql size 1)))))
