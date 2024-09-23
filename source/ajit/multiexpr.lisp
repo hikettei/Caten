@@ -84,7 +84,9 @@
 				       (read-from-string ,(car args))
 				       (if (and ,guard-const (expr-p ,(car args)) (eql :Const (expr-op ,(car args))))
 					   (expr-x ,(car args))
-					   ,(car args)))))
+					   (if (and (symbolp ,(car args)) (numberp (read-from-string (format nil "~a" ,(car args)) nil)))
+					       (read-from-string (format nil "~a" ,(car args)))
+					       ,(car args))))))
 		  (make-expr ,(intern (symbol-name name) "KEYWORD") ,@args)))))
   ;; Buffer Ops
   (expr Const (obj type) (t (or null Buffer)) t)

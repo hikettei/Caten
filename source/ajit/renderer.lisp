@@ -94,5 +94,4 @@ op/expr
       (%render-expr lang :Const expr nil nil)))
 
 (defun render-aref (lang buffer &key (genid #'gid) (strides))
-  (render-expr lang (render-isl-aref buffer :genid genid :flatten nil :strides strides)))
-
+  (render-expr lang (simplify-expr (render-isl-aref buffer :genid genid :flatten nil :strides strides))))
