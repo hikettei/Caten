@@ -542,7 +542,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; Embeddingは，MULTIEXPR周りの最適化をした方が早い？
 ;; older/youngerのFuseできる組み合わせには三つがある:
 
-;; 1. それか，OuterMostのサイズが一致しないLoopは別々のGroupとしてPolyhedral IRにする。
+;; 1. それか，OuterMostのサイズが一致しないLoopは別々のGroupとしてPolyhedral IRにする。(OK)
 ;; 2. ISL Polyhedralを適用した後にMULTIEXPRを適用する。
 ;;    - outputとlabelされたTensorは
 ;;    - Immutableなら，WriteToをPropageteしてOK
@@ -551,16 +551,27 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	if (eql (node-type node) :IR/FOR)
 	  do (return-from get-outermost-loop node)))
 
+(defmethod get-ir-loops ((graph Graph))
+  (loop for node in (graph-nodes graph)
+	if (and (eql (node-type node) :IR/FOR) (null (getattr node :_scalar_p)))
+	  collect node))
+
 (defmethod apply-pre-grouping ((pipeline hash-table))
   (let* ((order (sort (hash-table-keys pipeline) #'<))
 	 (out   (apply #'make-graph (graph-nodes (gethash (car order) pipeline)))))
     (flet ((fusable-p (prev new)
 	     (let ((loop1 (get-outermost-loop prev))
-		   (loop2 (get-outermost-loop new)))
+		   (loop2 (get-outermost-loop new))
+		   (loops1 (get-ir-loops prev))
+		   (loops2 (get-ir-loops new)))
 	       (or
 		;; Broadcast or same bands
 		(null loop1) (null loop2)
-		(getattr loop1 :_scalar_p) (getattr loop2 :_scalar_p)
+		(when (or (getattr loop1 :_scalar_p) (getattr loop2 :_scalar_p))
+		  ;; If you merge two loops based on _scalar_p
+		  ;; there should at least one dimension that can be fused
+		  (or (or (null loops1) (null loops2)) ;; either of loop is a scalar.
+		      (intersection (map 'list #'node-reads loops1) (map 'list #'node-reads loops2) :test #'equal)))
 		(equal (node-reads loop1) (node-reads loop2))))))
       `(,@(loop for idx in (cdr order)
 		for fuse-p = (fusable-p out (gethash idx pipeline))
