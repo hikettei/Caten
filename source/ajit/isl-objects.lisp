@@ -269,5 +269,5 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 		     (format out "  T~a[~(~a~)] -> [~(~a~)];~%"
 			     (node->time node)
 			     (render-list (reverse vars))
-			     (render-list (->schedule (reverse vars)))))
+			     (render-list `(,@(->schedule (reverse vars)) ,(node->time node)))))
 	(format out "}")))))
