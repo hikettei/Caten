@@ -419,7 +419,7 @@ Lifespan:
 			  total-time
 			  (apply #'max (gethash key trace-table)))
 		      :lock (gethash key lock-table))))
-	     (solved (greedy-solve-dsa  memory-blocks total-time))
+	     (solved (greedy-solve-dsa memory-blocks total-time))
 	     (alias-map (mp-alias mp)))
 	(loop for mb in solved
 	      do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))

@@ -579,9 +579,6 @@ def main(val_35, val_54, val_48, val_31, val_37, val_41)
 ```
 Note: This is a trade-off: it minimizes the number of DRAM accesses, which generally improves performance, but it ignores the number of Domain executions, which can create Dead Loop.
 "
-  ;; graph = the whole graph
-  ;; [TODO] make it fast-graph if it works
-  ;; Group Render Graphを更新すれば後々に反映される
   (when (group-realize-on-vm group) (return-from post-simplify-multiexpr))
   (let ((graph (groups->graph (list group)))
 	(render-graph (group-render-graph group))
@@ -616,4 +613,5 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 			      ,form)))))
       ;; Globalize Index-Components (its 100% no benefits of making a cache)
       ;;(do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
-      (do-funcall (expr-apply-post-multiexpr group graph node funcall->domain nodeid->pipeline)))))
+      (do-funcall (expr-apply-post-multiexpr group graph node funcall->domain nodeid->pipeline))
+      )))
