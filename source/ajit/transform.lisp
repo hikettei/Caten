@@ -501,6 +501,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	  if (and ic (eql (node-type ic) :EXPR)) do
 	    (when (expr-index-components-p ic)
 	      (let ((ic-expr (copy-expr (getattr ic :EXPR))))
+		;; Cannot be simply applied if there is offsets etc.
 		;; [TODO] Confirm the validity combined w/ !view or !transpose?
 		(flet ((zero-p (x)
 			 (and
@@ -614,5 +615,5 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 			    (when (eql (node-type node) :EXPR)
 			      ,form)))))
       ;; Globalize Index-Components (its 100% no benefits of making a cache)
-      (do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
+      ;;(do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr group graph node funcall->domain nodeid->pipeline)))))

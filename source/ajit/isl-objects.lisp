@@ -97,8 +97,8 @@
 	:ADD
 	(make-expr
 	 :MUL
-	 (make-expr :MUL (make-const gid nil) (make-const by nil))
-	 (make-const stride nil))
+	 (make-expr :MUL (make-const stride nil) (make-const by nil))
+	 (make-const gid nil))
 	(make-expr :MUL (make-const upfrom nil) (make-const stride nil))))))
 
 (defun render-isl-aref (buffer &key (genid #'gid) (indexing #'isl-access-expr) (flatten nil) (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
