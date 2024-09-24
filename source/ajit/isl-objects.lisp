@@ -153,11 +153,10 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
     (mapc
      #'(lambda (timestamp &aux (subgraph (gethash timestamp pipeline)))
-	 (let* ((loop-factors (graph->loop-factors subgraph :scalar-mutation t))
-		(mutated-p (graph-loop-scalar-mutated-p subgraph))
+	 (let* ((loop-factors (graph->loop-factors subgraph))
 		(constraints
 		  (loop for node in (graph-nodes subgraph)
-			if (and (eql (node-type node) :IR/FOR) (or (null mutated-p) (null (getattr node :_scalar_p))))
+			if (eql (node-type node) :IR/FOR)
 			  collect
 			  (progn
 			    (assert (= 1 (nth 2 (node-reads node))) () "Loop steps should be optimized by the polyhedral compiler. Set=1.")
@@ -197,7 +196,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (format out "[~(~a~)] -> {~%" (render-list depends-on))
     (mapc
      #'(lambda (timestamp &aux (subgraph (gethash timestamp pipeline)))
-	 (let* ((lf (graph->loop-factors subgraph :scalar-mutation t))
+	 (let* ((lf (graph->loop-factors subgraph))
 		(lf-orig (graph->loop-factors subgraph))
 		(occur-from
 		  (format nil "T~a[~(~a~)]" ;; = 0
