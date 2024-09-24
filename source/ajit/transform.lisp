@@ -451,6 +451,8 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	   (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain)))
     (let ((reads (node-reads node)))
       (dolist (r (cdr reads))
+	;; Domainが完全に同じ or 部分的に同じを最適化の設定で変更可能にする
+	;; esp: Embeddingでは100*102回の余分な比較が増える
 	))))
 
 (defmethod expr-index-components-p ((node node))
@@ -498,36 +500,23 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	  for ic  = (id->value graph reads)
 	  if (and ic (eql (node-type ic) :EXPR)) do
 	    (when (expr-index-components-p ic)
-	      (let (;(ic-read-space  (%render-aref rt))
-		    ;(ic-write-space (%render-aref (car (relay-writes (read-type-relay ic)))))
-		    (ic-expr     (copy-expr (getattr ic :EXPR))))
-		;; Data Dependencies are bijective.
-		;; [TODO] Scalarとして読んでいいからここで特に条件を追加する必要はなさそうに感じる，なんかある？
-		(when t;(and (expr-eq ic-read-space ic-write-space))
-		  ;; これは_gid0 -> _gid2に自動で書き換えてくれ
-		  (flet ((zero-p (x)
-			   (and
-			    (eql (expr-op x) :Const)
-			    (eql 0 (expr-x x)))))
-		    (setf (expr-y ic-expr)
-			  (loop for index-component-space in (getattr (node->funcall ic) :args)
-				for target-component-space in (getattr (node->funcall node) :args)
-				for arg in (expr-y ic-expr)
-				for size = (if (zero-p index-component-space)
-					       index-component-space
-					       target-component-space)
-				if (zero-p size)
-				  collect size
-				else
-				  collect arg)))
-		 ; (print ic-expr)
-		 ; (print "+++++")
-		 ; (print node)
-		 ; (print ic)
-		 ; (print reads)
-		 ; (print (car (node-writes ic)))
-		  ;; Replace reads -> (car (node-writes ic))
-		 ; (print (get-domain-from-funcall ic))
+	      (let ((ic-expr (copy-expr (getattr ic :EXPR))))
+		;; [TODO] Confirm the validity combined w/ !view or !transpose?
+		(flet ((zero-p (x)
+			 (and
+			  (eql (expr-op x) :Const)
+			  (eql 0 (expr-x x)))))
+		  (setf (expr-y ic-expr)
+			(loop for index-component-space in (getattr (node->funcall ic) :args)
+			      for target-component-space in (getattr (node->funcall node) :args)
+			      for arg in (expr-y ic-expr)
+			      for size = (if (zero-p index-component-space)
+					     index-component-space
+					     target-component-space)
+			      if (zero-p size)
+				collect size
+			      else
+				collect arg))
 		  (expr-graft-after (getattr node :EXPR) (car (node-writes ic)) ic-expr)
 		  (setf (relay-reads (read-type-relay node))
 			(loop with ic-t = (car (relay-writes (read-type-relay ic)))
@@ -542,9 +531,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 			      if (eql r (car (node-reads ic)))
 				collect (car (node-reads ic))
 			      else
-				collect r))
-		 ; (print node)
-		  ))))))
+				collect r))))))))
 
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
