@@ -55,6 +55,39 @@
 ;;                  in this group
 ;; etc ...
 ;; ============================================================================================================================
+(defmethod get-outermost-loop ((graph Graph))
+  (loop for node in (graph-nodes graph)
+	if (eql (node-type node) :IR/FOR)
+	  do (return-from get-outermost-loop node)))
+
+(defmethod get-ir-loops ((graph Graph))
+  (loop for node in (graph-nodes graph)
+	if (and (eql (node-type node) :IR/FOR) (null (getattr node :_scalar_p)))
+	  collect node))
+
+(defmethod apply-pre-grouping ((pipeline hash-table))
+  (let* ((order (sort (hash-table-keys pipeline) #'<))
+	 (out   (apply #'make-graph (graph-nodes (gethash (car order) pipeline)))))
+    (flet ((fusable-p (prev new)
+	     (let ((loop1 (get-outermost-loop prev))
+		   (loop2 (get-outermost-loop new))
+		   (loops1 (get-ir-loops prev))
+		   (loops2 (get-ir-loops new)))
+	       (or
+		;; Broadcast or same bands
+		(null loop1) (null loop2)
+		(when (or (getattr loop1 :_scalar_p) (getattr loop2 :_scalar_p))
+		  ;; If you merge two loops based on _scalar_p
+		  ;; there should at least one dimension that can be fused
+		  (or (or (null loops1) (null loops2)) ;; either of loop is a scalar.
+		      (intersection (map 'list #'node-reads loops1) (map 'list #'node-reads loops2) :test #'equal)))
+		(equal (node-reads loop1) (node-reads loop2))))))
+      `(,@(loop for idx in (cdr order)
+		for fuse-p = (fusable-p out (gethash idx pipeline))
+		if fuse-p do (setf (graph-nodes out) (append (graph-nodes out) (graph-nodes (gethash idx pipeline))))
+	        else collect out and do (setf out (apply #'make-graph (graph-nodes (gethash idx pipeline)))))
+	,out))))
+
 (defun pipeline->timestamp (pipeline)
   (declare (type hash-table pipeline))
   (maphash
@@ -351,8 +384,12 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (when (group-polyhedron x)
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)))
        groups)
-      (let* ((mp (make-instance 'MemoryPlanner :avm avm :groups groups :debug debug :device backend))
-	     (_ (memory-plan mp))
+      (let* ((1_ (mapc #'post-simplify-multiexpr groups))
+	     ;; Note: (make-instance 'MemoryPlanner ... ) will rewrite the graph of :reduction, it is destructive.
+	     ;; Subsequent optimizations do not assume the `graph` is DAG.
+	     ;; Graph-Level optimization should be performed just before it.
+	     (mp (make-instance 'MemoryPlanner :avm avm :groups groups :debug debug :device backend))
+	     (2_ (memory-plan mp))
 	     (kernels (retrive-kernels mp))
 	     (blueprints/codes
 	       (loop for group in groups
@@ -361,7 +398,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		     collect
 		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
-	(declare (ignore _))
+	(declare (ignore 1_ 2_))
 	(when (>= (ctx:getenv :JIT_DEBUG) 2)
 	  (format t "Final JIT Schedule:~%")
 	  (loop for nth upfrom 0
@@ -467,114 +504,9 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 ;; !sin (!matmul)
 ;; Embedding
 ;; Better Visualization ...
-
-;; [TODO]
-;; Hand updated Embedding Schedule
-;; 1. Fixed the domain of T5 (10, 30, 10, 10)
-;; なんか色々おかしい ~...
-;; Polyhedralは全部書き直そう。。。
-;; SERIALIZE=1なループを持つPolyhedralをどうにかする
-;; 1 vs 1 でFuseするのを繰り返す？
-;; https://github.com/Tiramisu-Compiler/tiramisu/blob/master/src/auto_scheduler/tiramisu_auto_scheduler.cpp
-;; これを作るイメージ
-;; https://medium.com/@zhen8838/hands-on-polyherdal-affine-loop-fusion-ffb398b0ae60
-;; あ〜あとConvNDのカーネル修正も必要。。。
-;; make-node suru
-;; LoopCollapse, Strideが1になればAffine
-;; loop-fusion (Poly1, Poly2)
-;; [TODO]
-;; 1, Fuse Manually
-;; 2, better visualization
-;; 3, post-fusion
-;; Implement Post Fusion
-;; ISL is a tool to analyze tiling/parallelizing
-
-;; - Prep refactor: ISL Renderer: Rendering Graphに対して実装する
-;; Submodule -> Fused Graph
-;; IR:FOR IR/ENDFOR -> 不要なので削除する
-
-;; Loop-Collapseは最後に判定する
-;; DomainのAccess RepとNRankでFlattenしたMapが同じならFlattenn
-;; TODO List
 ;; - [ ] MultiExpr (Better)
-;; - [ ] Loop Fusion (Ahead of poly ir)
+;; - [x] Loop Fusion (Ahead of poly ir)
 ;; - [ ] MultiExpr (Fuseされたらacross-timeの時間依存が変わるはず)
 ;; - [ ] CMP Ops MultiExpr?
 ;; - [ ] Refactor
 ;; - [ ] View関連のテストを追加する必要がある
-
-(defmethod print-submodule ((graph Graph) stream)
-  (format
-   stream
-   "Graph{Submodule}{~%~a}"
-   (with-output-to-string (out)
-     (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
-       (loop with indent = 2
-	     for node in (graph-nodes graph)
-	     if (eql (node-type node) :IR/FOR)
-	       do (format out "~afor ~(~a~)=0..~a ~a{~%" (indent indent) (car (node-writes node)) (nth 1 (node-reads node))
-			  (if (getattr node :_scalar_p)
-			      "scalar_p=t "
-			      ""))
-		  (incf indent 2)
-	     else if (eql (node-type node) :IR/ENDFOR)
-	       do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (car (node-reads node)))
-	     else
-	       do (format out "~aop[~a];~%" (indent indent) (if (eql :EXPR (node-type node)) (getattr node :expr) (node-type node))))))))
-;; submodule-sequence
-;;
-;; for (int i 0..0) {
-;;   T1 0 -> 10 affine ax+b
-;; }
-;;   T2 10 -> 1
-;; TODO: 1 Loop 1 Reduction, and confrim the validyf ot view
-;; [TODO]
-;; - !mean, LHS Expand, Viewの判定: 一つのScheduleGroupは同一のViewObjectを持っていると仮定する，(%forはその情報を保持することでFusion判定が可能)
-;; - [ ] 1. EmbeddingのINDEX-COMPONENTSをFuseする
-;; - [ ] 2. Sumのload 0.0 (softmax, composed matmul, matmul sin)をFuseする
-;; - [ ] 3. ISLにDumpしてSchedulingをする，
-;; - [ ] 4. ISLがInner LoopのFusionをうまくやってくれる場合 (NO)
-;;    -> そのままテストを通す
-;;    -> ** otherwise, submodule-sequenceのTODOを試す
-;;
-;; Using metadata like views
-;; graph-connected-p
-;; Embeddingは，MULTIEXPR周りの最適化をした方が早い？
-;; older/youngerのFuseできる組み合わせには三つがある:
-
-;; 1. それか，OuterMostのサイズが一致しないLoopは別々のGroupとしてPolyhedral IRにする。(OK)
-;; 2. ISL Polyhedralを適用した後にMULTIEXPRを適用する。
-;;    - outputとlabelされたTensorは
-;;    - Immutableなら，WriteToをPropageteしてOK
-(defmethod get-outermost-loop ((graph Graph))
-  (loop for node in (graph-nodes graph)
-	if (eql (node-type node) :IR/FOR)
-	  do (return-from get-outermost-loop node)))
-
-(defmethod get-ir-loops ((graph Graph))
-  (loop for node in (graph-nodes graph)
-	if (and (eql (node-type node) :IR/FOR) (null (getattr node :_scalar_p)))
-	  collect node))
-
-(defmethod apply-pre-grouping ((pipeline hash-table))
-  (let* ((order (sort (hash-table-keys pipeline) #'<))
-	 (out   (apply #'make-graph (graph-nodes (gethash (car order) pipeline)))))
-    (flet ((fusable-p (prev new)
-	     (let ((loop1 (get-outermost-loop prev))
-		   (loop2 (get-outermost-loop new))
-		   (loops1 (get-ir-loops prev))
-		   (loops2 (get-ir-loops new)))
-	       (or
-		;; Broadcast or same bands
-		(null loop1) (null loop2)
-		(when (or (getattr loop1 :_scalar_p) (getattr loop2 :_scalar_p))
-		  ;; If you merge two loops based on _scalar_p
-		  ;; there should at least one dimension that can be fused
-		  (or (or (null loops1) (null loops2)) ;; either of loop is a scalar.
-		      (intersection (map 'list #'node-reads loops1) (map 'list #'node-reads loops2) :test #'equal)))
-		(equal (node-reads loop1) (node-reads loop2))))))
-      `(,@(loop for idx in (cdr order)
-		for fuse-p = (fusable-p out (gethash idx pipeline))
-		if fuse-p do (setf (graph-nodes out) (append (graph-nodes out) (graph-nodes (gethash idx pipeline))))
-	        else collect out and do (setf out (apply #'make-graph (graph-nodes (gethash idx pipeline)))))
-	,out))))

@@ -181,6 +181,25 @@ Buffers: ~a
       (setf (graph-seen g) (schedule-depends-on sched))
       g)))
 
+(defmethod print-submodule ((graph Graph) stream)
+  (format
+   stream
+   "Graph{Submodule}{~%~a}"
+   (with-output-to-string (out)
+     (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
+       (loop with indent = 2
+	     for node in (graph-nodes graph)
+	     if (eql (node-type node) :IR/FOR)
+	       do (format out "~afor ~(~a~)=0..~a ~a{~%" (indent indent) (car (node-writes node)) (nth 1 (node-reads node))
+			  (if (getattr node :_scalar_p)
+			      "scalar_p=t "
+			      ""))
+		  (incf indent 2)
+	     else if (eql (node-type node) :IR/ENDFOR)
+	       do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (car (node-reads node)))
+	     else
+	       do (format out "~aop[~a];~%" (indent indent) (if (eql :EXPR (node-type node)) (getattr node :expr) (node-type node))))))))
+
 (defmethod schedule-depends-on ((sched Scheduled-Items))
   "Enumerates the unsolved buffer ids from the sched graph."
   (declare (type scheduled-items sched))

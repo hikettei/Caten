@@ -38,19 +38,21 @@ Slots:
     (setf (getattr n :_no_group_realize_on_vm) t))
   nodes)
 
+(defun groups->graph (groups)
+  (apply
+   #'make-graph
+   (loop for group in groups
+	 if (group-realize-on-vm group)
+	   append (apply-group-attr (graph-nodes (group-graph group)))
+	 else
+	   append
+	   (loop for idx in (render-graph/get-timestamps (group-render-graph group))
+		 append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group))))))))
+
 (defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups mp groups)))
   (setf (mp-groups mp) groups
 	(mp-kernels mp) (map 'list #'->render-graph groups)
-	(mp-graph mp)
-	(apply
-	 #'make-graph
-	 (loop for group in groups
-	       if (group-realize-on-vm group)
-		 append (apply-group-attr (graph-nodes (group-graph group)))
-	       else
-		 append
-		 (loop for idx in (render-graph/get-timestamps (group-render-graph group))
-		       append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
+	(mp-graph mp) (groups->graph groups)))
 
 (defun simplify-groups (mp groups)
   "Simplifies the given groups"
@@ -80,7 +82,7 @@ X <- f(x, y, reduction=t)"
   group)
 
 (defmethod mp-newid ((mp MemoryPlanner) id)
-  (assert (or (numberp id) (symbolp id)) () "mp-newid: id should be a number or symbol.")
+  (assert (or (numberp id) (symbolp id)) () "mp-newid: id should be a number or symbol. but got ~a(~a)" id (type-of id))
   (or (gethash id (mp-alias mp)) id))
 
 (defmethod mp-update-buffer ((mp MemoryPlanner) buffer)
@@ -327,7 +329,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 ;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY
 ;; Env: GREEDY=1 to alywas use greedy solver.
 ;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
-(defun GreedySolveDSA (I total-time)
+(defun greedy-solve-dsa (I total-time)
   "A greedy solver for minimizing `peak_mem`"
   (declare (type list I))
   (let ((locked))
@@ -417,7 +419,7 @@ Lifespan:
 			  total-time
 			  (apply #'max (gethash key trace-table)))
 		      :lock (gethash key lock-table))))
-	     (solved (GreedySolveDSA memory-blocks total-time))
+	     (solved (greedy-solve-dsa  memory-blocks total-time))
 	     (alias-map (mp-alias mp)))
 	(loop for mb in solved
 	      do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
@@ -456,17 +458,26 @@ Lifespan:
     kernels))
 
 (defmethod retrive-kernels ((mp MemoryPlanner))
-  (setf (mp-kernels mp) (dead-kernel-elimination (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))
-  (optimize-memory-load mp)
-  (loop for group in (mp-groups mp)
-	for kernels in (mp-kernels mp)
-	if (group-realize-on-vm group)
-	  collect group
-	else	  
-	  collect
-	  (loop for k in kernels
-		if (kernel-renderer-nodes k)
-		  collect (pack-loop-funcall k (group-polyhedron group) (device-packed-by (mp-device mp))))))
+  (flet ((prune ()
+	   (setf (mp-kernels mp) (dead-kernel-elimination (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))))
+    (prune)
+    ;; 1. Mutate output buffers as scalar
+    (optimize-memory-load mp)
+    ;; TODO: ^ may produce an unused kernel
+    ;; 2. Hide Latency Optimization (入力出力でLOADを追加して，それ以降はわざとScalarLoadにする)
+    ;;    Accumlationはfloat _acc_0に書き換える
+    ;; (prune)
+    (loop for group in (mp-groups mp)
+	  for kernels in (mp-kernels mp)
+	  if (group-realize-on-vm group)
+	    collect group
+	  else	  
+	    collect
+	    (loop for k in kernels
+		  if (kernel-renderer-nodes k)
+		    collect (pack-loop-funcall k (group-polyhedron group) (device-packed-by (mp-device mp)))))
+    ;; TODO: Simplify the index load for unrolled buffer above^
+    ))
 
 (defun memory-access-local-p (render-nodes id pipeline)
   (let ((search-key
@@ -563,6 +574,4 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 				 const-dependencies
 				 (apply #'append (nthcdr (1+ nth) args-by-time))
 				 (apply #'append (nthcdr ith (nth nth args-by-time)))))
-		    do (output->scalar-mutation mp g kernel-renderer deps)))
-      ;; 2. TODO: Simplify Index Computation
-      )))
+		    do (output->scalar-mutation mp g kernel-renderer deps))))))
