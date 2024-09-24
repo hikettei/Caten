@@ -238,7 +238,8 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
     (format out "}")))
 
 (defmethod render-isl-initial-schedule ((blueprint Graph) (pipeline hash-table) (node->id hash-table) (depends-on list))
-  (let ((lex (make-hash-table)) (seen-timestamps) (vars-global) (rank (pipeline/upper-nrank pipeline)))
+  (let ((lex (make-hash-table)) (seen-timestamps) (vars-global) (rank (pipeline/upper-nrank pipeline))
+	(scalar-p (null (find-if #'(lambda (x) (and (eql (node-type x) :IR/FOR) (null (getattr x :_scalar_p)))) (graph-nodes blueprint)))))
     (labels ((steps (id)
 	       (setf (gethash id lex) (1+ (ensure-gethash id lex 0))))
 	     (node->time (node)
@@ -257,6 +258,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
       (with-output-to-string (out)
 	(format out "[~(~a~)] -> " (render-list depends-on))
 	(format out "{~%")
+	;; Everything is a scalar
 	(loop with vars = nil
 	      for node in (graph-nodes blueprint)
 	      if (eql (node-type node) :IR/FOR)
@@ -269,8 +271,13 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	      else
 		if (null (find (node->time node) seen-timestamps))
 		  do (push (node->time node) seen-timestamps)
-		     (format out "  T~a[~(~a~)] -> [~(~a~)];~%"
-			     (node->time node)
-			     (render-list (reverse vars))
-			     (render-list (->schedule (reverse vars) node))))
+		     (if scalar-p
+			 (format out "  T~a[~(~a~)] -> [~a];~%"
+				 (node->time node)
+				 (render-list (reverse vars))
+				 (node->time node))
+			 (format out "  T~a[~(~a~)] -> [~(~a~)];~%"
+				 (node->time node)
+				 (render-list (reverse vars))
+				 (render-list (->schedule (reverse vars) node)))))
 	(format out "}")))))

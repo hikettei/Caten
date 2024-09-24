@@ -28,7 +28,7 @@ Loop is either of :Global or :Local
 	  else if (eql (node-type node) :FOR)
 		 do (push node stacked-loops)
 	  else if (eql (node-type node) :ENDFOR)
-		 do (setf stacked-loops (remove (getattr node :idx) stacked-loops :test #'string= :key #'(lambda (x) (getattr x :idx)))))
+		 do (setf stacked-loops (remove (getattr node :idx) stacked-loops :test #'equalp :key #'(lambda (x) (getattr x :idx)))))
     nodes))
 
 (defun r/for (idx upfrom below by) (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by))

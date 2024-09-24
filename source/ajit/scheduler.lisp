@@ -260,7 +260,7 @@ Output: Groups"
 	  for schedule-isl = (union-map-from-str schedule)
 	  if verbose do (print-submodule poly-group t)
 	  if verbose-auto do
-	    (format t "Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read`%\"~a\"~%:write \"~a\"~%:schedule \"~a\""
+	    (format t "Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read~%\"~a\"~%:write \"~a\"~%:schedule \"~a\""
 		    domain read-access write-access schedule)
 	  collect
 	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group) lex-table))))
