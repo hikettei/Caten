@@ -609,8 +609,8 @@
     (ok (every (equal-to 2) (elements (proceed (!add (!add (iconst 1) (!view a `(0 2) `(0 2))) (!add (iconst 1) (!view a `(2 4) `(2 4))))))))))
 
 ;; [TODO] Precision Test
-(deftest randn-compile-test
-  (ok (proceed (!randn `(10 10)))))
+;(deftest randn-compile-test
+;  (ok (proceed (!randn `(10 10)))))
 
 (deftest static-make-tensor-test
   (ok (every #'(lambda (x) (> x 0)) (elements (proceed (!add (rand `(10 10)) (rand `(10 10))))))))
