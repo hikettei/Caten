@@ -279,7 +279,6 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
   (labels ((static-unroll-p (node &aux (idx (getattr node :idx)))
 	     (and
 	      (eql (node-type node) :FOR)
-	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete (Unroll at the parallelizing level)
 	      (getattr node :coincident)
 	      (trivia:match (getattr node :upfrom)
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
@@ -294,7 +293,6 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	     ;; Return -> new :upfrom
 	     (and
 	      (eql (node-type node) :FOR)
-	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete
 	      (getattr node :coincident)
 	      (trivia:match (getattr node :upfrom)
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
