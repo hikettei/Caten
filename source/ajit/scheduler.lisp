@@ -79,7 +79,7 @@
 		(when (or (getattr loop1 :_scalar_p) (getattr loop2 :_scalar_p))
 		  ;; If you merge two loops based on _scalar_p
 		  ;; there should at least one dimension that can be fused
-		  (or (or (null loops1) (null loops2)) ;; either of loop is a scalar.
+		  (or (and (or (null loops1) (null loops2)) (= (length loops1) (length loops2))) ;; either of loop is a scalar.
 		      (intersection (map 'list #'node-reads loops1) (map 'list #'node-reads loops2) :test #'equal)))
 		(equal (node-reads loop1) (node-reads loop2))))))
       `(,@(loop for idx in (cdr order)
