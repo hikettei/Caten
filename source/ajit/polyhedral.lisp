@@ -38,8 +38,10 @@
 (defun collect-bandnode (top &aux (out) (depth 0))
   (declare (type polyhedral top))
   (labels ((explore (schedule-node)
+	     ;; isl_bool isl_schedule_node_has_children(__isl_keep isl_schedule_node *node);
 	     (let ((c (isl::%isl-schedule-node-has-children (isl::schedule-node-handle schedule-node))))
 	       (when (eql c :bool-true)
+		 ;;isl_size isl_schedule_node_n_children(__isl_keep isl_schedule_node *node);
 		 (loop for n upfrom 0 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle schedule-node))
 		       for node = (schedule-node-get-child schedule-node n)
 		       do (explore node)))

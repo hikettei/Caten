@@ -78,7 +78,7 @@
 
 (defun schedule-node-get-child (schedule-node n)
   (let ((x (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
-    (%make-schedule-node x)))
+    (%make-schedule-node (%isl-schedule-node-copy x))))
 
 (defun schedule-node-get-children (schedule-node)
   (declare (type schedule-node schedule-node))
