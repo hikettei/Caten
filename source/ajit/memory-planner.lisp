@@ -537,16 +537,17 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 		  do (setf suffix (remove (getattr node :idx) suffix :key #'car :test #'equalp))
 	      end
 	      if (eql (node-type node) :FUNCALL)
-		do (dolist (node (graph-nodes (gethash (getattr node :idx) (poly-pipeline (group-polyhedron group)))))
-		     (update-buffer-as-scalar node scalars)
-		     (setf (getattr node :declare-type)
-			   (loop for w in (node-writes node)
-				 for typ in (relay-writes (read-type-relay node))
-				 for w-as-unrolled = (intern (format nil "~a~a" w (unroll-suffix typ suffix)))
-				 collect
-				 (prog1
-				     (and (null (find w-as-unrolled seen)) (find w scalars))
-				   (push w-as-unrolled seen)))))))
+		do (let ((domain-space (getattr node :args)))
+		     (dolist (node (graph-nodes (gethash (getattr node :idx) (poly-pipeline (group-polyhedron group)))))
+		       (update-buffer-as-scalar node scalars domain-space)
+		       (setf (getattr node :declare-type)
+			     (loop for w in (node-writes node)
+				   for typ in (relay-writes (read-type-relay node))
+				   for w-as-unrolled = (intern (format nil "~a~a" w (unroll-suffix typ suffix)))
+				   collect
+				   (prog1
+				       (and (null (find w-as-unrolled seen)) (find w scalars))
+				     (push w-as-unrolled seen))))))))
       ;; Remove from args
       (setf (kernel-renderer-args kernel)
 	    (loop for arg in (kernel-renderer-args kernel)

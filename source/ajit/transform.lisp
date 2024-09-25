@@ -421,7 +421,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
     (render-graph-from-polyhedral (group-polyhedron group) (graph-nodes (group-render-graph group)))))
 
 ;; ~~ Memory Latency Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmethod update-buffer-as-scalar ((node Node) mutated-list)
+(defmethod update-buffer-as-scalar ((node Node) mutated-list domain-space)
   (flet ((mutate-scalar-buffer (id buffer expr read-p)
 	   (if (= (buffer-nrank buffer) 0)
 	       buffer
@@ -431,10 +431,12 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 		       (loop for shape in (buffer-shape buffer)
 			     for nth upfrom 0
 			     for view = (nth nth (buffer-views buffer))
-			     if (and view (nth 3 view))
+			     for dom = (nth nth domain-space)
+			     do (assert (eql (expr-op dom) :Const))
+			     if (or (eql 0 (expr-x dom)) (and view (nth 3 view)))
 			       collect nil
 			     else
-			       collect (string-downcase (symbol-name (gid nth)))))
+			       collect (expr-x dom)))
 		 (when (and expr read-p) (expr-recursive-settype expr id new))
 		 new))))
     (macrolet ((f (ids types read-p)
