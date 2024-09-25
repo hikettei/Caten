@@ -511,21 +511,30 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
   T105[_gid0, _gid1] -> [_gid0, _gid1];
 }"
 )
-
-
-
-;; Loop Collapse https://github.com/zhen8838/isl_learn/blob/main/10_loop_transformation.ipynb
-;; (union-set-apply domain xxx)
-;; [TODO] Test w/
-;; Including Test
-;; !softmax
-;; !matmul !matmul
-;; !sin (!matmul)
-;; Embedding
-;; Better Visualization ...
-;; - [ ] MultiExpr (Better)
-;; - [x] Loop Fusion (Ahead of poly ir)
-;; - [ ] MultiExpr (Fuseされたらacross-timeの時間依存が変わるはず)
-;; - [ ] CMP Ops MultiExpr?
-;; - [ ] Refactor
-;; - [ ] View関連のテストを追加する必要がある
+(compile-isl
+:domain
+"[] -> {
+  T0[_gid0, _gid1] : 0 <= _gid0 < 64 and 0 <= _gid1 < 64;
+  T1[_gid0, _gid1, _gid2 = 0] : 0 <= _gid0 < 64 and 0 <= _gid1 < 64;
+  T2[_gid0, _gid1, _gid2] : 0 <= _gid0 < 64 and 0 <= _gid1 < 64 and 0 <= _gid2 < 64;
+}"
+:read
+"[] -> {
+  T0[_gid0, _gid1] -> val_3[_gid0, _gid1, 0];
+  T0[_gid0, _gid1] -> val_0[_gid1, _gid0, 0];
+  T1[_gid0, _gid1, _gid2] -> val_15[_gid0, _gid1, 0];
+  T2[_gid0, _gid1, _gid2] -> val_16[_gid0, _gid1, 0];
+  T2[_gid0, _gid1, _gid2] -> val_9[_gid0, 0, _gid2];
+  T2[_gid0, _gid1, _gid2] -> val_3[0, _gid2, _gid1];
+}"
+:write "[] -> {
+  T0[_gid0, _gid1] -> val_3[0, _gid2, _gid1];
+  T1[_gid0, _gid1, _gid2] -> val_16[_gid0, _gid1, 0];
+  T2[_gid0, _gid1, _gid2] -> val_16[_gid0, _gid1, 0];
+}"
+:schedule "[] -> {
+  T0[_gid0, _gid1] -> [1, _gid0, 1, _gid1, 0, 0, 0];
+  T1[_gid0, _gid1, _gid2] -> [2, _gid0, 2, _gid1, 1, _gid2, 1];
+  T2[_gid0, _gid1, _gid2] -> [3, _gid0, 3, _gid1, 2, _gid2, 2];
+}"
+)

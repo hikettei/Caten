@@ -218,7 +218,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 			   (if (null lf)
 			       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 			       (when (vm-instruction-p node)
-				 (let ((access (render-isl-aref rt :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute t)))
+				 (let ((access (render-isl-aref rt :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute nil)))
 				   (if (string= access "")
 				       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)
 				       (format out "  ~a -> ~(~a~)[~(~a~)~a];~%" occur-from r access (pad))))))))

@@ -125,7 +125,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	 (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
 	 (str   (isl::%isl-printer-get-str q)))
     str))
-3
+
 (defun create-dependency-graph (polyhedral)
   (with-slots ((domain domain-ptr) (initial-schedule initial-schedule) (read-access read-ptr) (write-access write-ptr)) polyhedral
     ;; References https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
