@@ -1,9 +1,7 @@
 (in-package :caten/ajit)
-
 ;; render-graph.lisp
 ;; Lispfied AST of the ISL AST.
 ;; Optimizations are in `transform.lisp`
-
 (defun apply-bands (bands nodes &key (global-rank 2))
   "A special graph dedicated to the rendering process
 Loop is either of :Global or :Local
@@ -17,9 +15,9 @@ Loop is either of :Global or :Local
 	    do (let ((band (find-band (getattr node :name))))
 		 (when band
 		   (loop with last-dim = (1- (length stacked-loops))
-			 for lp in (reverse stacked-loops)
+			 for lp in stacked-loops
 			 for c in (band-coincident band)
-			 for rank upfrom 0
+			 for rank downfrom (1- (length stacked-loops)) to 0
 			 do (setf (getattr lp :scope) (if (= (length stacked-loops) 1)
 							  :global
 							  (if (and (<= rank global-rank) (not (= last-dim rank))) (if c :global :local) :local))

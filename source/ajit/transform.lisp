@@ -279,7 +279,8 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
   (labels ((static-unroll-p (node &aux (idx (getattr node :idx)))
 	     (and
 	      (eql (node-type node) :FOR)
-	      (eql (getattr node :scope) :LOCAL) ;; TODO: Delete this
+	      ;; If the shape is static (it is known whether reminder part occurs before compilation)
+	      ;; If mod(loop_size, unroll_by) = 0, :GLOBAL loops can be packed.
 	      (getattr node :coincident)
 	      (trivia:match (getattr node :upfrom)
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
@@ -294,7 +295,9 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	     ;; Return -> new :upfrom
 	     (and
 	      (eql (node-type node) :FOR)
-	      (eql (getattr node :scope) :LOCAL) ;; TODO: Delete this
+	      ;; If the shape is symbolic, reminder part is computed at runtime.
+	      ;; thus cannot vectorize the outermost loop. (TODO: Fix)
+	      (eql (getattr node :scope) :LOCAL)
 	      (getattr node :coincident)
 	      (trivia:match (getattr node :upfrom)
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
