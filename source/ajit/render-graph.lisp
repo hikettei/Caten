@@ -1,7 +1,9 @@
 (in-package :caten/ajit)
+
 ;; render-graph.lisp
 ;; Lispfied AST of the ISL AST.
 ;; Optimizations are in `transform.lisp`
+
 (defun apply-bands (bands nodes &key (global-rank 2))
   "A special graph dedicated to the rendering process
 Loop is either of :Global or :Local
@@ -15,9 +17,9 @@ Loop is either of :Global or :Local
 	    do (let ((band (find-band (getattr node :name))))
 		 (when band
 		   (loop with last-dim = (1- (length stacked-loops))
-			 for lp in stacked-loops
+			 for lp in (reverse stacked-loops)
 			 for c in (band-coincident band)
-			 for rank downfrom (1- (length stacked-loops)) to 0
+			 for rank upfrom 0
 			 do (setf (getattr lp :scope) (if (= (length stacked-loops) 1)
 							  :global
 							  (if (and (<= rank global-rank) (not (= last-dim rank))) (if c :global :local) :local))
@@ -26,7 +28,7 @@ Loop is either of :Global or :Local
 	  else if (eql (node-type node) :FOR)
 		 do (push node stacked-loops)
 	  else if (eql (node-type node) :ENDFOR)
-		 do (setf stacked-loops (remove (getattr node :idx) stacked-loops :test #'equalp :key #'(lambda (x) (getattr x :idx)))))
+		 do (setf stacked-loops (remove (getattr node :idx) stacked-loops :test #'string= :key #'(lambda (x) (getattr x :idx)))))
     nodes))
 
 (defun r/for (idx upfrom below by) (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by))
@@ -38,7 +40,7 @@ Loop is either of :Global or :Local
 (defun r/else () (make-node :Render :ELSE nil nil))
 (defun r/endif () (make-node :Render :ENDIF nil nil))
 
-(defun %create-rendering-graph-nodes (lisp-ast max-dimension)
+(defun create-rendering-graph (lisp-ast bands device max-dimension)
   ;; -1 is a placeholder for the tmpvar allocation.
   (let ((new-graph))
     (labels ((lower (object)
@@ -61,16 +63,7 @@ Loop is either of :Global or :Local
 		 ((Expr :op _ :x _ :y _)
 		  (error "create-rendering-graph: Expr should not occur here!")))))
       (lower lisp-ast))
-    (nreverse new-graph)))
-
-(defun create-rendering-graph (lisp-ast bands device max-dimension)
-  ;; -1 is a placeholder for the tmpvar allocation.
-  (apply
-   #'make-graph
-   (apply-bands
-    bands
-    (simplify-rendering-nodes (%create-rendering-graph-nodes lisp-ast max-dimension))
-    :global-rank (device-parallel-depth device))))
+    (apply #'make-graph (apply-bands bands (simplify-rendering-nodes (reverse new-graph)) :global-rank (device-parallel-depth device)))))
 
 (defun simplify-rendering-nodes (nodes)
   (let ((len (length nodes)))

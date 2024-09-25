@@ -1,5 +1,7 @@
 (in-package :caten/ajit)
-
+;; This paper is good to read first:
+;; - https://arxiv.org/pdf/2401.06665
+;; - https://www.researchgate.net/publication/320992060_Consecutivity_in_the_isl_Polyhedral_Scheduler
 (defstruct (Polyhedral
 	    (:conc-name poly-)
 	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs lex-table &key (ast-option :atomic))))
@@ -38,21 +40,19 @@
 (defun collect-bandnode (top &aux (out) (depth 0))
   (declare (type polyhedral top))
   (labels ((explore (schedule-node)
-	     ;; isl_bool isl_schedule_node_has_children(__isl_keep isl_schedule_node *node);
-	     (let ((c (isl::%isl-schedule-node-has-children (isl::schedule-node-handle schedule-node))))
+	     (let ((c (isl::%isl-schedule-node-has-children schedule-node)))
 	       (when (eql c :bool-true)
-		 ;;isl_size isl_schedule_node_n_children(__isl_keep isl_schedule_node *node);
-		 (loop for n upfrom 0 below (isl::%isl-schedule-node-n-children (isl::schedule-node-handle schedule-node))
-		       for node = (schedule-node-get-child schedule-node n)
+		 (loop for n upfrom 0 below (isl::%isl-schedule-node-n-children schedule-node)
+		       for node = (isl::%isl-schedule-node-get-child schedule-node n)
 		       do (explore node)))
-	       (ecase (isl::%isl-schedule-node-get-type (isl::schedule-node-handle schedule-node))
+	       (ecase (isl::%isl-schedule-node-get-type schedule-node)
 		 (:Schedule-Node-Leaf)
 		 (:Schedule-Node-Filter)
 		 (:Schedule-Node-Sequence)
 		 (:Schedule-Node-Band
-		  (let ((dom (schedule-node-get-domain schedule-node))
-			(n (isl::%isl-schedule-node-band-n-member (isl::schedule-node-handle schedule-node)))
-			(shuffle-p (eql :bool-true (isl::%isl-schedule-node-band-get-permutable (isl::schedule-node-handle schedule-node)))))
+		  (let ((dom (isl::%make-union-set (isl::%isl-schedule-node-get-domain schedule-node)))
+			(n (isl::%isl-schedule-node-band-n-member schedule-node))
+			(shuffle-p (eql :bool-true (isl::%isl-schedule-node-band-get-permutable schedule-node))))
 		    (incf depth)
 		    (push
 		     (make-band
@@ -60,7 +60,7 @@
 		      :permutable shuffle-p
 		      :coincident
 		      (loop for i upfrom 0 below n
-			    collect (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident (isl::schedule-node-handle schedule-node) i))))
+			    collect (eql :bool-true (isl::%isl-schedule-node-band-member-get-coincident schedule-node i))))
 		     out)))
 		 (:Schedule-Node-Domain)
 		 (:Schedule-Node-Expansion)
@@ -69,7 +69,7 @@
 		 (:Schedule-Node-Set)
 		 (:Schedule-Node-Context)
 		 (:Schedule-Node-Guard)))))
-    (explore (schedule-get-root (poly-schedule top)))
+    (explore (isl::%isl-schedule-get-root (isl::schedule-handle (poly-schedule top))))
     (values out depth)))
 
 (defun finalize-polyhedral (polyhedral &aux (schedule (poly-schedule polyhedral)))
@@ -128,22 +128,18 @@ Expected Output (Scalar ops are temporarily excluded):
 
 (defun create-dependency-graph (polyhedral)
   (with-slots ((domain domain-ptr) (initial-schedule initial-schedule) (read-access read-ptr) (write-access write-ptr)) polyhedral
-    ;; References https://github.com/zhen8838/isl_learn/blob/main/12_schedule_program.ipynb
-    (let* ((raw (union-map-intersect
-		 (union-map-apply-range
-		  write-access
-		  (union-map-reverse read-access))
-		 (union-map-lex-lt-union-map initial-schedule initial-schedule)))
-	   (war (union-map-intersect
-		 (union-map-apply-range
-		  read-access
-		  (union-map-reverse write-access))
-		 (union-map-lex-lt-union-map initial-schedule initial-schedule)))
-	   (waw (union-map-intersect
-		 (union-map-apply-range
-		  write-access
-		  (union-map-reverse write-access))
-		 (union-map-lex-lt-union-map initial-schedule initial-schedule))))
+    (let* ((before-map (union-map-lex-lt-union-map initial-schedule initial-schedule))
+           (read-access (union-map-intersect-domain read-access domain))
+           (write-access (union-map-intersect-domain write-access domain))
+           (RaW (union-map-intersect
+		 (union-map-apply-range write-access (union-map-reverse read-access))
+		 before-map))
+           (WaW (union-map-intersect
+		 (union-map-apply-range write-access (union-map-reverse write-access))
+		 before-map))
+           (WaR (union-map-intersect
+		 (union-map-apply-range read-access (union-map-reverse write-access))
+		 before-map)))
       (values raw waw war))))
 
 (defun poly/make-constraints (polyhedral)
@@ -155,13 +151,12 @@ Expected Output (Scalar ops are temporarily excluded):
       (let* ((all-deps (union-map-union waw-deps war-deps))
 	     (all-deps (union-map-union all-deps raw-deps))
 	     (schedule-constraints (schedule-constraints-on-domain domain))
-	     (schedule-constraints (schedule-constraints-set-coincidence schedule-constraints all-deps))
 	     (schedule-constraints (schedule-constraints-set-validity schedule-constraints all-deps))
 	     ;; proximity constraints (keeps loops nested based on dependencies)
 	     (schedule-constraints (schedule-constraints-set-proximity schedule-constraints all-deps)))
 	schedule-constraints))))
 
-(defun poly/schedule (polyhedral &key (serialize nil))
+(defun poly/reschedule (polyhedral &key (serialize nil))
   "
 [Scheduler]
 This function analyzes the read/write dependencies on the polyhedron space,
@@ -189,16 +184,19 @@ for (int c0 = 0; c0 < a; c0 += 1)
   (declare (type polyhedral polyhedral))
   (macrolet ((set-option (name level)
 	       `(progn
+		  ;;(format t "~a = ~a~%" ,name (foreign-funcall ,(format nil "isl_options_get_~(~a~)" name) :pointer (isl-ctx-ptr *isl-context*) :int))
 		  (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
-				   :pointer (isl::context-handle isl::*context*)
-				   :int ,level
-				   :void))))
+				 :pointer (isl::context-handle isl::*context*)
+				 :int ,level
+				 :void))))
     (when serialize (set-option "schedule_serialize_sccs" 1))
     (let ((n 0))
       (loop for g in (hash-table-values (poly-pipeline polyhedral))
 	    do (incf n (length (graph-nodes g))))
       (set-option "schedule_outer_coincidence" 1)
-      ;;(set-option "schedule_maximize_band_depth" 1)
+      (set-option "schedule_maximize_band_depth" 1)
+      (set-option "schedule_max_constant_term" 1)
+      ;;(set-option "schedule_whole_component" 1)
       (set-option "schedule_treat_coalescing" 1)
       ))
   (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr)) polyhedral

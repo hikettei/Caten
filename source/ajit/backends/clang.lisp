@@ -175,8 +175,8 @@ Compiled with: ~a"
 (defmethod %render-expr ((lang Clang) (op (eql :Aref)) lhs rhs z)
   (assert (null z))
   (assert (and lhs rhs))
-  (let ((ref (render-aref lang rhs :genid #'(lambda (x) (nth x *access*)))))
-    (if (string= "0" ref)
+  (let ((ref (render-isl-aref rhs :genid #'(lambda (x) (nth x *access*)))))
+    (if (string= ref "")
 	(if (args-p lhs)
 	    (format nil "(*~(~a~)~a)" lhs (unroll-suffix rhs *suffix*))
 	    (format nil "~(~a~)~a" lhs (unroll-suffix rhs *suffix*)))
@@ -186,7 +186,7 @@ Compiled with: ~a"
   (assert (buffer-p (expr-y lhs)))
   (assert (null z))
   (let ((strides (map 'list #'(lambda (x) (render-expr lang x)) rhs)))
-    (format nil "~a" (render-aref lang (expr-y lhs) :genid #'(lambda (x) (intern (or (nth x *access*) (car *access*)))) :strides strides))))
+    (format nil "(~a)" (render-isl-aref (expr-y lhs) :genid #'(lambda (x) (intern (or (nth x *access*) (car *access*)))) :strides strides))))
 
 (defmethod %render-expr ((lang Clang) (op (eql :NOT)) lhs rhs z)
   (assert (and lhs (null rhs) (null z)))
@@ -295,16 +295,16 @@ Compiled with: ~a"
 		    (dotimes (i (* 2 indent)) (princ " " out))
 		    (format out ,designator ,@args)
 		    (format out "~%"))))
-      (labels ((%render-aref (id type)
-		 (let ((ref (render-aref lang type :genid #'(lambda (x) (nth x access)))))
-		   (if (string= ref "0")
+      (labels ((render-aref (id type)
+		 (let ((ref (render-isl-aref type :genid #'(lambda (x) (nth x access)))))
+		   (if (string= ref "")
 		       (if (args-p id)
 			   (format nil "(*~(~a~)~a)" id (unroll-suffix type *suffix*))
 			   (format nil "~(~a~)~a" id (unroll-suffix type *suffix*)))
 		       (format nil "~(~a~)[~(~a~)]" id ref)))))
 	(loop with *access* = access
 	      for node in (graph-nodes graph)
-	      for type = (read-type-relay node) do
+	      for type = (read-type-relay node) do		
 		(ecase (node-type node)
 		  (:ALLOCATE
 		   (line "~(~a~) ~(~a~)~a;"
@@ -328,11 +328,11 @@ Compiled with: ~a"
 			     (if (car (getattr node :declare-type))
 				 (format nil "~a " (->cdtype (buffer-dtype ct)))
 				 "")
-			     (%render-aref c ct) (%render-aref a at) (%render-aref b bt)))))
+			     (render-aref c ct) (render-aref a at) (render-aref b bt)))))
 		  (:EXPR
 		   (multiple-value-bind (at) (apply #'values (relay-writes type))
 		     (line "~(~a~)~(~a~) = ~(~a~);"
 			   (if (car (getattr node :declare-type))
 			       (format nil "~a " (->cdtype (buffer-dtype at)))
 			       "")
-			   (%render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))))))))
+			   (render-aref (car (node-writes node)) at) (render-expr lang (getattr node :EXPR)))))))))))

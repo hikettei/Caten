@@ -4,4 +4,4 @@
 
 (define-isl-function isl-printer-to-str %isl-printer-to-str
   (:give isl-printer)
-  (:parm context *context*))
+  (:parm context (context-handle *context*)))

@@ -239,13 +239,3 @@ To sort the graph properly, resolve the following isolated graph dependencies.
 		  if (or (find (node-id node) valid-write-ids) ;; node exists in a valid path
 			 (special-p (node-class node)))
 		    collect node)))))
-
-(defmethod graph-weakly-connected-p ((Graph graph) from to &aux (seen))
-  "Returns T if exploring the graph from `from`, and `to` was found. (i.e.: from is wealky depends on to)"
-  (labels ((explore (id &aux (node (id->value graph id)))
-	     (when (and node (null (find id seen)))
-	       (push id seen)
-	       (when (find to (node-reads node)) (return-from graph-weakly-connected-p t))
-	       (mapc #'explore (node-reads node)))))
-    (explore from)
-    nil))

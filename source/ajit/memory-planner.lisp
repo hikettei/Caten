@@ -38,21 +38,19 @@ Slots:
     (setf (getattr n :_no_group_realize_on_vm) t))
   nodes)
 
-(defun groups->graph (groups)
-  (apply
-   #'make-graph
-   (loop for group in groups
-	 if (group-realize-on-vm group)
-	   append (apply-group-attr (graph-nodes (group-graph group)))
-	 else
-	   append
-	   (loop for idx in (render-graph/get-timestamps (group-render-graph group))
-		 append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group))))))))
-
 (defmethod initialize-instance :after ((mp MemoryPlanner) &key (groups nil) &aux (groups (simplify-groups mp groups)))
   (setf (mp-groups mp) groups
 	(mp-kernels mp) (map 'list #'->render-graph groups)
-	(mp-graph mp) (groups->graph groups)))
+	(mp-graph mp)
+	(apply
+	 #'make-graph
+	 (loop for group in groups
+	       if (group-realize-on-vm group)
+		 append (apply-group-attr (graph-nodes (group-graph group)))
+	       else
+		 append
+		 (loop for idx in (render-graph/get-timestamps (group-render-graph group))
+		       append (graph-nodes (gethash idx (poly-pipeline (group-polyhedron group)))))))))
 
 (defun simplify-groups (mp groups)
   "Simplifies the given groups"
@@ -82,7 +80,7 @@ X <- f(x, y, reduction=t)"
   group)
 
 (defmethod mp-newid ((mp MemoryPlanner) id)
-  (assert (or (numberp id) (symbolp id)) () "mp-newid: id should be a number or symbol. but got ~a(~a)" id (type-of id))
+  (assert (or (numberp id) (symbolp id)) () "mp-newid: id should be a number or symbol.")
   (or (gethash id (mp-alias mp)) id))
 
 (defmethod mp-update-buffer ((mp MemoryPlanner) buffer)
@@ -329,7 +327,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 ;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY
 ;; Env: GREEDY=1 to alywas use greedy solver.
 ;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
-(defun greedy-solve-dsa (I total-time)
+(defun GreedySolveDSA (I total-time)
   "A greedy solver for minimizing `peak_mem`"
   (declare (type list I))
   (let ((locked))
@@ -341,10 +339,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 			     (equal (buffer-orig-shape (memoryblock-type candidate))
 				    (buffer-orig-shape (memoryblock-type mb)))
 			     (equal (buffer-dtype (memoryblock-type candidate))
-				    (buffer-dtype (memoryblock-type mb)))
-			     ;; [TODO] This condition can be more simplified? (!randn `(100 100)) is good to test this behaviour.
-			     (equal (buffer-views (memoryblock-type candidate))
-				    (buffer-views (memoryblock-type mb))))
+				    (buffer-dtype (memoryblock-type mb))))
 		       do (push candidate candidates))
 	       (flet ((use (x)
 			(push (memoryblock-id x) locked)
@@ -365,6 +360,10 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	(apply-release time)
 	(apply-creation time))
       I)))
+
+(defmethod evaluate ((mp MemoryPlanner))
+  ;; xxx MiB
+  )
 
 (defmethod memory-plan ((mp MemoryPlanner) &aux (avm (mp-avm mp)))
   "Applies memory-optimization for the graph.
@@ -422,7 +421,7 @@ Lifespan:
 			  total-time
 			  (apply #'max (gethash key trace-table)))
 		      :lock (gethash key lock-table))))
-	     (solved (greedy-solve-dsa memory-blocks total-time))
+	     (solved (GreedySolveDSA memory-blocks total-time))
 	     (alias-map (mp-alias mp)))
 	(loop for mb in solved
 	      do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
@@ -461,49 +460,17 @@ Lifespan:
     kernels))
 
 (defmethod retrive-kernels ((mp MemoryPlanner))
-  (flet ((prune ()
-	   (setf (mp-kernels mp) (dead-kernel-elimination (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))))
-    (prune)
-    ;; 1. Mutate output buffers as scalar
-    (optimize-memory-load mp)
-    ;; 2. Hide Latency Optimization
-    ;; - The arrays should be loaded at once
-    ;; - In the last, storing the result.
-    ;; TODO: Rewrite accumlation as `float _acc_0`.
-    ;; (prune)
-    ;; [TODO] Add dead graph.nodes elimination here. ^ maybe produce unused ops.
-    (loop for group in (mp-groups mp)
-	  for kernels in (mp-kernels mp)
-	  if (group-realize-on-vm group)
-	    collect group
-	  else	  
-	    collect
-	    (loop for k in kernels
-		  if (kernel-renderer-nodes k)
-		    collect (pack-loop-funcall k (group-polyhedron group) (device-packed-by (mp-device mp)))))
-    ;; TODO: Simplify the index load for unrolled buffer produced above.
-    ))
-
-(defun memory-access-local-p (render-nodes id pipeline)
-  (let ((search-key
-	  (loop for key in (sort (hash-table-keys pipeline) #'<)
-		for graph = (gethash key pipeline)
-		if (find id (graph-nodes graph) :key #'(lambda (x) (append (node-reads x) (node-writes x))) :test #'find)
-		  collect key)))
-    (loop with depth = 0
-	  with nodes = render-nodes
-	  with start = (or (position (apply #'min search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from memory-access-local-p nil))
-	  with end   = (or (position (apply #'max search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from memory-access-local-p nil))
-	  for nth upfrom (min start end) to (max start end)
-	  for ir = (nth nth nodes)
-	  if (find (node-type ir) `(:IF :FOR))
-	    do (incf depth)
-	  else if (find (node-type ir) `(:ENDIF :ENDFOR))
-	    do (decf depth)
-	  end
-	  if (< depth 0) do
-	    (return-from memory-access-local-p nil)))
-  t)
+  (setf (mp-kernels mp) (dead-kernel-elimination (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))
+  (optimize-memory-load mp)
+  (loop for group in (mp-groups mp)
+	for kernels in (mp-kernels mp)
+	if (group-realize-on-vm group)
+	  collect group
+	else	  
+	  collect
+	  (loop for k in kernels
+		if (kernel-renderer-nodes k)
+		  collect (pack-loop-funcall k (group-polyhedron group) (device-packed-by (mp-device mp))))))
 
 (defmethod output->scalar-mutation ((mp MemoryPlanner) (group group) (kernel kernel-renderer) dependency-list)
   "
@@ -523,13 +490,31 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 	      (let ((out (find id (kernel-renderer-args kernel) :key #'argument-name)))
 		(and out (eql :output (argument-io out))))
 	      (null (find id dependency-list))
-	      (memory-access-local-p (kernel-renderer-nodes kernel) id (poly-pipeline (group-polyhedron group))))))
+	      (let ((search-key
+		      (loop for key in (sort (hash-table-keys (poly-pipeline (group-polyhedron group))) #'<)
+			    for graph = (gethash key (poly-pipeline (group-polyhedron group)))
+			    if (find id (graph-nodes graph) :key #'(lambda (x) (append (node-reads x) (node-writes x))) :test #'find)
+			      collect key)))
+		(loop with depth = 0
+		      with nodes = (kernel-renderer-nodes kernel)
+		      with start = (or (position (apply #'min search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from ->scalar-p nil))
+		      with end   = (or (position (apply #'max search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from ->scalar-p nil))
+		      for nth upfrom (min start end) to (max start end)
+		      for ir = (nth nth nodes)
+		      if (find (node-type ir) `(:IF :FOR))
+			do (incf depth)
+		      else if (find (node-type ir) `(:ENDIF :ENDFOR))
+		        do (decf depth)
+		      end
+		      if (< depth 0) do
+			(return-from ->scalar-p nil))
+		t))))
       (dolist (node related-nodes)
 	(loop for w in (node-writes node)
 	      for typ in (relay-writes (read-type-relay node))
 	      if (and (not (= 0 (buffer-nrank typ))) (->scalar-p w)) do
 		(push w scalars)))
-      ;; mutate all read dependencies
+      ;; mutate all read dependencie
       (let ((seen) (suffix))
 	(loop for node in (kernel-renderer-nodes kernel)
 	      if (eql (node-type node) :FOR)
@@ -539,17 +524,16 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 		  do (setf suffix (remove (getattr node :idx) suffix :key #'car :test #'equalp))
 	      end
 	      if (eql (node-type node) :FUNCALL)
-		do (let ((domain-space (getattr node :args)))
-		     (dolist (node (graph-nodes (gethash (getattr node :idx) (poly-pipeline (group-polyhedron group)))))
-		       (update-buffer-as-scalar node scalars domain-space)
-		       (setf (getattr node :declare-type)
-			     (loop for w in (node-writes node)
-				   for typ in (relay-writes (read-type-relay node))
-				   for w-as-unrolled = (intern (format nil "~a~a" w (unroll-suffix typ suffix)))
-				   collect
-				   (prog1
-				       (and (null (find w-as-unrolled seen)) (find w scalars))
-				     (push w-as-unrolled seen))))))))
+		do (dolist (node (graph-nodes (gethash (getattr node :idx) (poly-pipeline (group-polyhedron group)))))
+		     (update-buffer-as-scalar node scalars)
+		     (setf (getattr node :declare-type)
+			   (loop for w in (node-writes node)
+				 for typ in (relay-writes (read-type-relay node))
+				 for w-as-unrolled = (intern (format nil "~a~a" w (unroll-suffix typ suffix)))
+				 collect
+				 (prog1
+				     (and (null (find w-as-unrolled seen)) (find w scalars))
+				   (push w-as-unrolled seen)))))))
       ;; Remove from args
       (setf (kernel-renderer-args kernel)
 	    (loop for arg in (kernel-renderer-args kernel)
@@ -580,4 +564,6 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 				 const-dependencies
 				 (apply #'append (nthcdr (1+ nth) args-by-time))
 				 (apply #'append (nthcdr ith (nth nth args-by-time)))))
-		    do (output->scalar-mutation mp g kernel-renderer deps))))))
+		    do (output->scalar-mutation mp g kernel-renderer deps)))
+      ;; 2. TODO: Simplify Index Computation
+      )))

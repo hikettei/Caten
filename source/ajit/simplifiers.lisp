@@ -68,10 +68,7 @@
     ((:Add (c (:Mul (a b) :_type_relay t1)) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 0))))
 (defsimplifier
     (contiguous-after-wmma :speed 0)
-    ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3)
-     ->
-     (:WMMA (c a b) :reduction reduction :_type_relay (wmma-relay-from-contiguous t1 t2 t3))))
-
+    ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3) -> (:WMMA (c a b) :reduction reduction :_type_relay (wmma-relay-from-contiguous t1 t2 t3))))
 ;; ~~ Load Pointer Simplification ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod create-scalar-replace-pattern ((graph graph))
   "

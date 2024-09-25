@@ -115,7 +115,6 @@
    #:union-access-info-compute-flow
    #:union-flow-get-must-dependence
    #:union-flow-get-may-dependence
-   #:union-access-info-set-schedule-map
    ;; Set
    #:set
    ;;#:setp
@@ -349,9 +348,7 @@
    #:schedule-node-get-type
    #:schedule-node-insert-partial-schedule
    #:schedule-node-get-schedule-depth
-   #:schedule-node-get-child
    #:schedule-insert-sequence
-   #:schedule-node-get-domain
    ))
 
 (in-package :caten/isl)

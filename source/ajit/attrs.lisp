@@ -21,7 +21,7 @@ for(int idx=upfrom, below, by)
 (defnode (:Render :ENDFOR) () "
 RenderGraph:
 ```
-} // idx
+} / idx
 ```"
 	 :slots ((idx)))
 

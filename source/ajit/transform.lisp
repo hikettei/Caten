@@ -31,13 +31,14 @@
     (loop for node in nodes
 	  if (eql (node-type node) :FOR)
 	    do (return-from find-outermost-for node))))
-;; [TODO] Delete kernel-renderer-outermost-loop-eq
+
 (defmethod kernel-renderer-outermost-loop-eq ((a kernel-renderer) (b kernel-renderer))
   "Compares two outermost loops in the a and b"
   (and
-   nil
    ;; [TODO] Fuse Nested Loops that ISL failed to fuse.
    ;; There should be much better way to determine this.
+   (<= (kernel-renderer-loop-depth a) 2)
+   (<= (kernel-renderer-loop-depth b) 2)
    (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
      (and a b
 	  (equal (getattr a :idx) (getattr b :idx))
@@ -70,7 +71,6 @@ T0 T1 are scalar-nodes, T2, T3 are vector-nodes.
 	    do (push node scalars))
     (values (nreverse scalars) (nreverse vectors))))
 
-;; [TODO] Remove
 (defmethod merge-two-loops ((a kernel-renderer) (b kernel-renderer) (poly Polyhedral))
   "Merges two iteration. the relations between a and b can be formulated as:
 ```
@@ -85,6 +85,7 @@ for(int i=0; i<10; i++) {
 ```
 We consider shuffling these nodes which never violates lexiographical order.
 "
+  ;; [TODO] Graph will never starts with IF
   (let ((lex (poly-lex-table poly))
 	(a-outermost (find-outermost-for a))
 	(b-outermost (find-outermost-for b)))
@@ -279,8 +280,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
   (labels ((static-unroll-p (node &aux (idx (getattr node :idx)))
 	     (and
 	      (eql (node-type node) :FOR)
-	      ;; If the shape is static (it is known whether reminder part occurs before compilation)
-	      ;; If mod(loop_size, unroll_by) = 0, :GLOBAL loops can be packed.
+	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete (Unroll at the parallelizing level)
 	      (getattr node :coincident)
 	      (trivia:match (getattr node :upfrom)
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
@@ -295,9 +295,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	     ;; Return -> new :upfrom
 	     (and
 	      (eql (node-type node) :FOR)
-	      ;; If the shape is symbolic, reminder part is computed at runtime.
-	      ;; thus cannot vectorize the outermost loop. (TODO: Fix)
-	      (eql (getattr node :scope) :LOCAL)
+	      (eql (getattr node :scope) :LOCAL) ;; <- TODO: Delete
 	      (getattr node :coincident)
 	      (trivia:match (getattr node :upfrom)
 		((Expr :op :const :x (trivia:guard x (and (numberp x) (= x 0)))) t))
@@ -421,7 +419,8 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
     (render-graph-from-polyhedral (group-polyhedron group) (graph-nodes (group-render-graph group)))))
 
 ;; ~~ Memory Latency Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmethod update-buffer-as-scalar ((node Node) mutated-list domain-space)
+;; TODO: Optimize matmul loading
+(defmethod update-buffer-as-scalar ((node Node) mutated-list)
   (flet ((mutate-scalar-buffer (id buffer expr read-p)
 	   (if (= (buffer-nrank buffer) 0)
 	       buffer
@@ -431,12 +430,10 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 		       (loop for shape in (buffer-shape buffer)
 			     for nth upfrom 0
 			     for view = (nth nth (buffer-views buffer))
-			     for dom = (nth nth domain-space)
-			     do (assert (eql (expr-op dom) :Const) () "Schedule is not a constant? (TODO: Add unrolling for this case ...)")
-			     if (or (eql 0 (expr-x dom)) (and view (nth 3 view)))
+			     if (and view (nth 3 view))
 			       collect nil
 			     else
-			       collect (expr-x dom)))
+			       collect (string-downcase (symbol-name (gid nth)))))
 		 (when (and expr read-p) (expr-recursive-settype expr id new))
 		 new))))
     (macrolet ((f (ids types read-p)
@@ -448,195 +445,3 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 				(mutate-scalar-buffer val type (when (eql (node-type node) :EXPR) (getattr node :EXPR)) ,read-p)))))
       (f node-reads relay-reads t)
       (f node-writes relay-writes t))))
-;; ~~ Post-MultiExpr ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; ** Post-MultiExpr is WIP**
-(defmethod expr-apply-post-multiexpr ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
-  (assert (eql (node-type node) :EXPR))
-  (flet ((get-domain-from-funcall (node)
-	   (assert (eql (node-type node) :FUNCALL))
-	   (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain)))
-    (let ((reads (node-reads node)))
-      (dolist (r (cdr reads))
-	;; Domainが完全に同じ or 部分的に同じを最適化の設定で変更可能にする
-	;; Embeddingでは100*102回の余分なCMPを作ることになる
-	))))
-
-(defmethod expr-index-components-p ((node node))
-  (assert (eql (node-type node) :EXPR))
-  (and
-   (getattr node :EXPR)
-   (eql (expr-op (getattr node :EXPR)) :INDEX-COMPONENTS)))
-
-(defmethod domain-equal ((for1 node) (for2 node))
-  (assert (eql (node-type for1) :FOR))
-  (assert (eql (node-type for2) :FOR))
-
-  )
-
-(defmethod domain-permutation ((fc1 Node) (fc2 Node))
-  "
-```
-for (int c0 = 0; c0 <= 9; c0 += 1) {
-  T0(c0, 0); ----------------------------|
-}                                        |
-                                         | Moving
-for (int c0 = 0; c0 <= 9; c0 += 1) {     |
-  T1 (0, c0); <--------------------------|
-}
-```
-When moving a node in T0 into T1, the operation is represented as:
-`permute_all_buffers_in_funcall(T0, domain_permutation(T0, T2))`
-"
-  (assert (eql (node-type fc1) :FUNCALL))
-  (assert (eql (node-type fc2) :FUNCALL))
-  (assert (= (length (getattr fc1 :args)) (length (getattr fc2 :args))))
-  (flet ((zero-p (x)
-	   (and
-	    (eql (expr-op x) :Const)
-	    (eql 0 (expr-x x)))))
-    (let ((initial-range (range 0 (length (getattr fc1 :args)))))
-      (macrolet ((swap (a b)
-		   `(let ((tmp (nth ,a initial-range)))
-		      (setf (nth ,a initial-range) (nth ,b initial-range)
-			    (nth ,b initial-range) tmp))))
-	(loop for arg in (getattr fc1 :args)
-	      for nth upfrom 0
-	      unless (zero-p arg) do
-		(let ((pos (position arg (getattr fc2 :args) :test #'expr-eq)))
-		  (unless pos (return-from domain-permutation)) ;; Failed (fc2 is not a subset of fc1)
-		  (swap pos nth))))
-      initial-range)))
-
-(defun %permute (buffer permute &aux (buffer (copy-buffer buffer)))
-  (assert (= (length permute) (buffer-nrank buffer)))
-  (setf (buffer-shape buffer) (permute-list permute (buffer-shape buffer))
-	(buffer-stride buffer) (permute-list permute (buffer-stride buffer))
-	(buffer-views buffer) (and (buffer-views buffer) (every #'identity (buffer-views buffer)) (permute-list permute (buffer-views buffer))))
-  buffer)
-
-(defmethod expr-apply-index-component-globalize ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
-  "Propagate Index-Components"
-  ;; not working
-  (flet ((get-domain-from-funcall (node)
-	   (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
-	 (node->funcall (node)
-	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
-	     (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx))))))
-    (loop with domain = (get-domain-from-funcall node)
-          for reads in (cdr (node-reads node))
-	  for rt in (cdr (relay-reads (read-type-relay node)))
-	  for ic  = (id->value graph reads)
-	  if (and ic (eql (node-type ic) :EXPR)) do
-	    (when (expr-index-components-p ic)
-	      (let* ((ic-expr (copy-expr (getattr ic :EXPR))))
-		(when (eql *default-order* :row)
-		  ;; [aI + b][K]
-		  (flet ((zero-p (x)
-			   (and
-			    (eql (expr-op x) :Const)
-			    (eql 0 (expr-x x)))))
-		    ;; [2x+2]
-		    ;; [2, 4, 6, 8, 10][1:4]
-		    (setf (expr-y (expr-x ic-expr)) rt
-			  (expr-y ic-expr)
-			  (map 'list #'(lambda (x dom) (if (zero-p dom) (make-const 0 nil) (make-const x nil)))
-			       ;; Consider T0[0, 0, _gid2, 0] -> T1[_gid1, _gid2, _gid3, _gid4] migration.
-			       (buffer-stride rt) (getattr (node->funcall ic) :args)))
-		    (expr-graft-after (getattr node :EXPR) (car (node-writes ic)) ic-expr)
-		    (setf (relay-reads (read-type-relay node))
-			  (loop with ic-t = (car (relay-writes (read-type-relay ic)))
-				for r in (node-reads node)
-				for rt1 in (relay-reads (read-type-relay node))
-				if (eql r (car (node-reads ic)))
-				  collect rt
-				else
-				  collect rt1)
-		          (node-reads node)
-			  (loop for r in (node-reads node)
-				if (eql r (car (node-reads ic)))
-				  collect rt
-				else
-				  collect r)))))))))
-
-(defmethod post-simplify-multiexpr ((group Group))
-  "Applies further multiexpr grouping to the scheduled mp.
-Consider this fake-python kernel representing Embedding Op.
-
-(Unoptimized)
-```python
-def main(val_35, val_54, val_48, val_31, val_37, val_41) {
-  for _gid0 in range(0, 1000): # sentence_len
-    for _gid1 in range(0, 101): # batch_size
-      for _gid2 in range(0, 100): # vocab_size
-        val_48[_gid1, _gid0, _gid2] = _gid2 == val_37[_gid1, _gid0] # T0(_gid1, _gid0, _gid2)
-      for _gid2 in range(0, 102): # embedding_dim
-        val_54_acc = 0.0 # T1(_gid0, _gid1, _gid2)
-        for _gid3 in range(0, 100): # vocab_size
-          val_35[_gid1, _gid0, _gid3, _gid2] = val_31[_gid3, _gid2] if val_48[_gid1, _gid0, _gid3] else 0.0 # T2(_gid0, _gid1, _gid2, _gid3)
-        for _gid3 in range(0, 100): # vocab_size
-           val_54_acc += val_35[_gid1, _gid0, _gid3, _gid2] # T3(_gid0, _gid1, _gid2, _gid3)
-        val_54[_gid1, _gid0, _gid2] = val_54_acc
-}
-```
-
-Here, T2 and T0 are the strongly-connected components, and the domain T0 is a subset of T2. In default, ISL Scheduler (Pluto) won't fuse these two domains because this will produce a dead execution loop. However, in general, making this cache often results in lower performance especially in deep learning inference. So we will fuse them.
-
-We refer to \"fusable\" components as:
-
-- T2の各Readを読む
-- T2の他のReadとweakly-connectedがNILになるEXPRは操作を適用できる
-- Reductionには操作を適用しない
-- readはoutputとしてlabelされている
-- Graphで直接の依存があるペア
-- id->usersのカウントが1である (directly connected)
-
-(Optimized)
-```python
-def main(val_35, val_54, val_48, val_31, val_37, val_41)
-  for _gid0 in range(0, 1000): # sentence_len
-    for _gid1 in range(0, 101): # batch_size
-      for _gid2 in range(0, 102): # embedding_dim
-        val_54_acc = 0.0
-        for _gid3 in range(0, 100): # vocab_size?
-          val_54_acc += val_31[_gid3, _gid2] if _gid3 == val_37[_gid1, _gid0]) else 0.0
-        val_54[_gid1, _gid0, _gid2] = val_54_acc
-```
-Note: This is a trade-off: it minimizes the number of DRAM accesses, which generally improves performance, but it ignores the number of Domain executions, which can create Dead Loop.
-"
-  (when (group-realize-on-vm group) (return-from post-simplify-multiexpr))
-  (let ((graph (groups->graph (list group)))
-	(render-graph (group-render-graph group))
-	(funcall->domain (make-hash-table))
-	(nodeid->pipeline (make-hash-table))
-	(pipeline (poly-pipeline (group-polyhedron group))))
-    (flet ((simple-p (node) (find (node-type node) `(:FOR :ENDFOR :FUNCALL))))
-      (unless (every #'simple-p (graph-nodes render-graph)) (return-from post-simplify-multiexpr))
-      (maphash
-       #'(lambda (ts graph)
-	   (dolist (n (graph-nodes graph))
-	     (setf (gethash (node-id n) nodeid->pipeline) ts)))
-       pipeline)
-      (loop with domains = nil
-	    for node in (graph-nodes render-graph)
-	    if (eql (node-type node) :FOR)
-	      do (push node domains)
-	    if (eql (node-type node) :ENDFOR)
-	      do (setf domains (remove (getattr node :idx) domains :key #'(lambda (x) (getattr x :idx)) :test #'equalp))
-	    if (eql (node-type node) :FUNCALL)
-	      do (when (gethash (getattr node :idx) funcall->domain)
-		   (when (>= (ctx:getenv :JIT_DEBUG) 1)
-		     (warn "The node ~a appeared in the scheduled graph more than twise times and thus cannot apply post-simplify multiexpr." node))
-		   (return-from post-simplify-multiexpr))
-		 (setf (gethash (getattr node :idx) funcall->domain) (reverse domains))))
-    
-    (macrolet ((do-funcall (form)
-		 `(loop for node in (graph-nodes render-graph)
-			if (eql (node-type node) :FUNCALL) do
-			  (dolist (node (graph-nodes (gethash (getattr node :idx) pipeline)))
-			    (when (eql (node-type node) :EXPR)
-			      ,form)))))
-      ;; Globalize Index-Components (its 100% no benefits of making a cache)
-      ;; [TODO]
-      ;; (do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
-      ;; (do-funcall (expr-apply-post-multiexpr group graph node funcall->domain nodeid->pipeline))
-      )))

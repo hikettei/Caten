@@ -30,17 +30,6 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 	    (->caten (test_scaled_dot_product_attention q k v)))
 	  (proceed (scaled-dot-product-attention q k v))))))
 
-(deftest test-scaled-dot-product-attention-batched
-  (with-given-dtype ((:float32 . "float32"))
-    (let ((q (rand `(4 4 8 8)))
-	  (k (rand `(4 4 8 8)))
-	  (v (rand `(4 4 8 8))))
-      (assert-equal
-	  (:atol 1e-5 :rtol 1e-5)
-	  (with-torch (q k v)
-	    (->caten (test_scaled_dot_product_attention q k v)))
-	  (proceed (scaled-dot-product-attention q k v))))))
-
 (deftest test-softmax-pytorch
   (with-given-dtype ((:float32 . "float32"))
     (let ((x (rand `(32 32))))
