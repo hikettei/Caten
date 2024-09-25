@@ -341,7 +341,10 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 			     (equal (buffer-orig-shape (memoryblock-type candidate))
 				    (buffer-orig-shape (memoryblock-type mb)))
 			     (equal (buffer-dtype (memoryblock-type candidate))
-				    (buffer-dtype (memoryblock-type mb))))
+				    (buffer-dtype (memoryblock-type mb)))
+			     ;; [TODO] This condition can be more simplified? (!randn `(100 100)) is good to test this behaviour.
+			     (equal (buffer-views (memoryblock-type candidate))
+				    (buffer-views (memoryblock-type mb))))
 		       do (push candidate candidates))
 	       (flet ((use (x)
 			(push (memoryblock-id x) locked)

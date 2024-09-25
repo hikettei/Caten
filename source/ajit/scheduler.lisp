@@ -260,7 +260,7 @@ Output: Groups"
 	  for schedule-isl = (union-map-from-str schedule)
 	  if verbose do (print-submodule poly-group t)
 	  if verbose-auto do
-	    (format t "Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read~%\"~a\"~%:write \"~a\"~%:schedule \"~a\""
+	    (format t "Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read~%\"~a\"~%:write \"~a\"~%:schedule \"~a\"~%)"
 		    domain read-access write-access schedule)
 	  collect
 	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group) lex-table))))
@@ -469,30 +469,49 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 
 #+(or)
 (compile-isl
- :domain
- "[] -> {
-  T0[_gid0, _gid1] : 0 <= _gid0 <= 10 and 0 <= _gid1 <= 10;
-  T1[_gid0, _gid1] : 0 <= _gid0 <= 10 and 0 <= _gid1 <= 10;
+:domain
+"[] -> {
+  T100[_gid0 = 0, _gid1] : 0 <= _gid1 < 100;
+  T101[_gid0 = 0, _gid1] : 0 <= _gid1 < 100;
+  T102[_gid0 = 0, _gid1] : 0 <= _gid1 < 100;
+  T103[_gid0 = 0, _gid1] : 0 <= _gid1 < 100;
+  T104[_gid0 = 0, _gid1] : 0 <= _gid1 < 100;
+  T105[_gid0 = 0, _gid1] : 0 <= _gid1 < 100;
 }"
- :read
- "
-[] -> {
-  T1[_gid0, _gid1] -> a[-1 * _gid0 + 10, -1 * _gid1 + 10]
-}
-"
- :write
- "
-[] -> {
-  T0[_gid0, _gid1] -> a[_gid0, _gid1];
-}
-"
- :schedule
- "
-{
-  T0[_gid0, _gid1] -> [0, _gid0, 0, _gid1];
-  T1[_gid0, _gid1] -> [1, _gid0, 1, _gid1];
+:read "[] -> {
+  T100[_gid0, _gid1] -> val_625[0, _gid1];
+  T100[_gid0, _gid1] -> val_625[0, _gid1];
+  T101[_gid0, _gid1] -> val_15[0, _gid1];
+  T101[_gid0, _gid1] -> val_628[0, _gid1];
+  T101[_gid0, _gid1] -> val_15[0, _gid1];
+  T102[_gid0, _gid1] -> val_625[0, _gid1];
+  T102[_gid0, _gid1] -> val_625[0, _gid1];
+  T103[_gid0, _gid1] -> val_635[0, _gid1];
+  T103[_gid0, _gid1] -> val_635[0, _gid1];
+  T104[_gid0, _gid1] -> val_636[0, _gid1];
+  T104[_gid0, _gid1] -> val_636[0, _gid1];
+  T105[_gid0, _gid1] -> val_637[0, _gid1];
+  T105[_gid0, _gid1] -> val_633[0, _gid1];
+  T105[_gid0, _gid1] -> val_637[0, _gid1];
 }"
- :ast-option :atomic)
+:write "[] -> {
+  T100[_gid0, _gid1] -> val_628[0, _gid1];
+  T101[_gid0, _gid1] -> val_633[0, _gid1];
+  T102[_gid0, _gid1] -> val_635[0, _gid1];
+  T103[_gid0, _gid1] -> val_636[0, _gid1];
+  T104[_gid0, _gid1] -> val_637[0, _gid1];
+  T105[_gid0, _gid1] -> val_638[0, _gid1];
+}"
+:schedule "[] -> {
+  T100[_gid0, _gid1] -> [_gid0, _gid1];
+  T101[_gid0, _gid1] -> [_gid0, _gid1];
+  T102[_gid0, _gid1] -> [_gid0, _gid1];
+  T103[_gid0, _gid1] -> [_gid0, _gid1];
+  T104[_gid0, _gid1] -> [_gid0, _gid1];
+  T105[_gid0, _gid1] -> [_gid0, _gid1];
+}"
+)
+
 
 
 ;; Loop Collapse https://github.com/zhen8838/isl_learn/blob/main/10_loop_transformation.ipynb
