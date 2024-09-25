@@ -18,7 +18,7 @@
    (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr :initform nil)
    (_reads :initarg :_reads)
    (_writes :initarg :_writes)
-   (declare-type :initarg :declare-type))
+   (declare-type :initarg :declare-type :initform nil))
   (:documentation "This node is jitable.
 - declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:
 ```

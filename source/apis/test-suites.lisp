@@ -312,6 +312,7 @@
     (dolist (*default-order* `(:row :column))
       ;; Needs more case to test
       (okwhen (!view (!view (ax+b `(10) 1 0) `(0 10)) `(0 5)) #(0.0 1.0 2.0 3.0 4.0))
+      (okwhen (!view (!view (ax+b `(10) 1 0) `(1 10)) `(0 4)) #(1.0 2.0 3.0 4.0))
       (okwhen (!view (!view (ax+b `(10) 1 0) `(0 -1)) `(2 5)) #(2.0 3.0 4.0))
       (okwhen (!view (!view (ax+b `(20) 1 0) `(0 10 2)) `(2 6)) #(2.0 4.0))
       (okwhen (!view (!view (ax+b `(20) 1 0) `(18 0 -2)) `(10 2 -2)) #(8.0 10.0 12.0 14.0)))))
@@ -624,4 +625,4 @@
    (every
     #'=
     #(25.0 31.0 37.0 43.0 49.0 31.0 37.0 43.0 49.0 55.0 37.0 43.0 49.0 55.0 61.0 43.0 49.0 55.0 61.0 67.0 49.0 55.0 61.0 67.0 73.0)
-    (proceed (!add (!index-components (make-tensor `(5 5))) (!t (!view (!index-components (make-tensor `(10 5))) `(5 10) t)))))))
+    (elements (proceed (!add (!index-components (make-tensor `(5 5))) (!t (!view (!index-components (make-tensor `(10 5))) `(5 10) t))))))))

@@ -17,6 +17,9 @@
   (views views :type list)
   ;; Metadata for JIT
   (inferred-permute nil :type list)
+  ;; Original_Tensor -> {%view} -> Viewed_Tensor
+  ;;   ^
+  ;;  orig-buffer-shape ...
   (depend-idx-list nil :type list)
   (orig-buffer-shape nil :type list)
   (shape-base nil :type list)

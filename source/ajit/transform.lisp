@@ -432,7 +432,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 			     for nth upfrom 0
 			     for view = (nth nth (buffer-views buffer))
 			     for dom = (nth nth domain-space)
-			     do (assert (eql (expr-op dom) :Const))
+			     do (assert (eql (expr-op dom) :Const) () "Schedule is not a constant? (TODO: Add unrolling for this case ...)")
 			     if (or (eql 0 (expr-x dom)) (and view (nth 3 view)))
 			       collect nil
 			     else
@@ -449,6 +449,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
       (f node-reads relay-reads t)
       (f node-writes relay-writes t))))
 ;; ~~ Post-MultiExpr ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ** Post-MultiExpr is WIP**
 (defmethod expr-apply-post-multiexpr ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   (assert (eql (node-type node) :EXPR))
   (flet ((get-domain-from-funcall (node)
@@ -472,28 +473,50 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 
   )
 
-(defun expr-graft-after (expr tgt-id replace-to)
-  (check-type replace-to Expr)
-  (flet ((->new (x)
-	   (when (equalp (princ-to-string x) (princ-to-string tgt-id))
-	     (setf (expr-op expr) (expr-op replace-to)
-		   (expr-x expr) (expr-x replace-to)
-		   (expr-y expr) (expr-y replace-to)
-		   (expr-z expr) (expr-z replace-to)))))
-    (when (expr-p expr)
-      (when (expr-x expr)
-	(expr-graft-after (expr-x expr) tgt-id replace-to))
-      (when (expr-y expr)
-	(expr-graft-after (expr-y expr) tgt-id replace-to))
-      (when (expr-z expr)
-	(expr-graft-after (expr-z expr) tgt-id replace-to))
-      (when (or (eql (expr-op expr) :Const) (eql (expr-op expr) :Aref))
-	(->new (expr-x expr)))
-      (when (eql (expr-op expr) :INDEX-COMPONENTS)
-	(map 'list #'(lambda (x) (expr-graft-after x tgt-id replace-to)) (expr-y expr))))))
+(defmethod domain-permutation ((fc1 Node) (fc2 Node))
+  "
+```
+for (int c0 = 0; c0 <= 9; c0 += 1) {
+  T0(c0, 0); ----------------------------|
+}                                        |
+                                         | Moving
+for (int c0 = 0; c0 <= 9; c0 += 1) {     |
+  T1 (0, c0); <--------------------------|
+}
+```
+When moving a node in T0 into T1, the operation is represented as:
+`permute_all_buffers_in_funcall(T0, domain_permutation(T0, T2))`
+"
+  (assert (eql (node-type fc1) :FUNCALL))
+  (assert (eql (node-type fc2) :FUNCALL))
+  (assert (= (length (getattr fc1 :args)) (length (getattr fc2 :args))))
+  (flet ((zero-p (x)
+	   (and
+	    (eql (expr-op x) :Const)
+	    (eql 0 (expr-x x)))))
+    (let ((initial-range (range 0 (length (getattr fc1 :args)))))
+      (macrolet ((swap (a b)
+		   `(let ((tmp (nth ,a initial-range)))
+		      (setf (nth ,a initial-range) (nth ,b initial-range)
+			    (nth ,b initial-range) tmp))))
+	(loop for arg in (getattr fc1 :args)
+	      for nth upfrom 0
+	      unless (zero-p arg) do
+		(let ((pos (position arg (getattr fc2 :args) :test #'expr-eq)))
+		  (unless pos (return-from domain-permutation)) ;; Failed (fc2 is not a subset of fc1)
+		  (swap pos nth))))
+      initial-range)))
+
+(defun %permute (buffer permute &aux (buffer (copy-buffer buffer)))
+  (assert (= (length permute) (buffer-nrank buffer)))
+  (setf (buffer-shape buffer) (permute-list permute (buffer-shape buffer))
+	(buffer-stride buffer) (permute-list permute (buffer-stride buffer))
+	(buffer-views buffer) (and (buffer-views buffer) (every #'identity (buffer-views buffer)) (permute-list permute (buffer-views buffer))))
+  buffer)
 
 (defmethod expr-apply-index-component-globalize ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   "Propagate Index-Components"
+  ;; not working
   (flet ((get-domain-from-funcall (node)
 	   (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
 	 (node->funcall (node)
@@ -505,39 +528,35 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	  for ic  = (id->value graph reads)
 	  if (and ic (eql (node-type ic) :EXPR)) do
 	    (when (expr-index-components-p ic)
-	      (let ((ic-expr (copy-expr (getattr ic :EXPR))))
-		;; Cannot be simply applied if there is offsets etc.
-		;; [TODO] Confirm the validity combined w/ !view or !transpose?
-		(flet ((zero-p (x)
-			 (and
-			  (eql (expr-op x) :Const)
-			  (eql 0 (expr-x x)))))
-		  (setf (expr-y ic-expr)
-			(loop for index-component-space in (getattr (node->funcall ic) :args)
-			      for target-component-space in (getattr (node->funcall node) :args)
-			      for arg in (expr-y ic-expr)
-			      for size = (if (zero-p index-component-space)
-					     index-component-space
-					     target-component-space)
-			      if (zero-p size)
-				collect size
-			      else
-				collect arg))
-		  (expr-graft-after (getattr node :EXPR) (car (node-writes ic)) ic-expr)
-		  (setf (relay-reads (read-type-relay node))
-			(loop with ic-t = (car (relay-writes (read-type-relay ic)))
-			      for r in (node-reads node)
-			      for rt in (relay-reads (read-type-relay node))
-			      if (eql r (car (node-reads ic)))
-				collect ic-t
-			      else
-				collect rt)
-		        (node-reads node)
-			(loop for r in (node-reads node)
-			      if (eql r (car (node-reads ic)))
-				collect (car (node-reads ic))
-			      else
-				collect r))))))))
+	      (let* ((ic-expr (copy-expr (getattr ic :EXPR))))
+		(when (eql *default-order* :row)
+		  ;; [aI + b][K]
+		  (flet ((zero-p (x)
+			   (and
+			    (eql (expr-op x) :Const)
+			    (eql 0 (expr-x x)))))
+		    ;; [2x+2]
+		    ;; [2, 4, 6, 8, 10][1:4]
+		    (setf (expr-y (expr-x ic-expr)) rt
+			  (expr-y ic-expr)
+			  (map 'list #'(lambda (x dom) (if (zero-p dom) (make-const 0 nil) (make-const x nil)))
+			       ;; Consider T0[0, 0, _gid2, 0] -> T1[_gid1, _gid2, _gid3, _gid4] migration.
+			       (buffer-stride rt) (getattr (node->funcall ic) :args)))
+		    (expr-graft-after (getattr node :EXPR) (car (node-writes ic)) ic-expr)
+		    (setf (relay-reads (read-type-relay node))
+			  (loop with ic-t = (car (relay-writes (read-type-relay ic)))
+				for r in (node-reads node)
+				for rt1 in (relay-reads (read-type-relay node))
+				if (eql r (car (node-reads ic)))
+				  collect rt
+				else
+				  collect rt1)
+		          (node-reads node)
+			  (loop for r in (node-reads node)
+				if (eql r (car (node-reads ic)))
+				  collect rt
+				else
+				  collect r)))))))))
 
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
@@ -617,6 +636,7 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 			    (when (eql (node-type node) :EXPR)
 			      ,form)))))
       ;; Globalize Index-Components (its 100% no benefits of making a cache)
-      ;;(do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
-      (do-funcall (expr-apply-post-multiexpr group graph node funcall->domain nodeid->pipeline))
+      ;; [TODO]
+      ;; (do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
+      ;; (do-funcall (expr-apply-post-multiexpr group graph node funcall->domain nodeid->pipeline))
       )))
