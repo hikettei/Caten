@@ -614,3 +614,14 @@
 
 (deftest static-make-tensor-test
   (ok (every #'(lambda (x) (> x 0)) (elements (proceed (!add (rand `(10 10)) (rand `(10 10))))))))
+
+(deftest index-component-regression-test
+  (ok (every
+       #'=
+       #(5.0 7.0 9.0 11.0 13.0)
+       (elements (proceed (!add (!index-components (make-tensor `(5))) (!view (!index-components (make-tensor `(10))) `(5 10)))))))
+  (ok
+   (every
+    #'=
+    #(25.0 31.0 37.0 43.0 49.0 31.0 37.0 43.0 49.0 55.0 37.0 43.0 49.0 55.0 61.0 43.0 49.0 55.0 61.0 67.0 49.0 55.0 61.0 67.0 73.0)
+    (proceed (!add (!index-components (make-tensor `(5 5))) (!t (!view (!index-components (make-tensor `(10 5))) `(5 10) t)))))))
