@@ -37,8 +37,8 @@
       (if (expr-z expr)
 	  (format stream "~(~a~)(~(~a~), ~(~a~), ~(~a~))" (expr-op expr) (expr-x expr) (expr-y expr) (expr-z expr))
 	  (if (expr-y expr)
-	      (format stream "~(~a~)(~(~a~), ~(~a~))" (expr-op expr) (expr-x expr) (expr-y expr))
-	      (format stream "~(~a~)(~(~a~))" (expr-op expr) (expr-x expr))))))
+	      (format stream "~(~a~)(~(~a~), ~(~a~))" (expr-op expr) (expr-x expr) (and (not (buffer-p (expr-y expr))) (expr-y expr)))
+	      (format stream "~(~a~)(~(~a~)~a)" (expr-op expr) (expr-x expr) (if (and (eql (expr-op expr) :Const) (numberp (expr-x expr))) ":num" ""))))))
 
 (defstruct (ASTFor
 	    (:constructor make-for (idx from to by body execute-once)))
@@ -110,12 +110,12 @@
        (let* ((id (isl::%isl-ast-expr-id-get-id ast))
 	      (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id))))
 	 (declare (type string name))
-	 (make-expr :Const name)))
+	 (make-const name nil)))
       (:ast-expr-int
        (let* ((id (isl::%isl-ast-expr-int-get-val ast))
 	      (num (isl::%isl-val-get-d id)))
 	 (declare (type number num))
-	 (let ((num (round num))) (make-expr :Const num))))
+	 (let ((num (round num))) (make-const num nil))))
       (:ast-expr-op
        (let* ((n-arg (isl::%isl-ast-expr-get-op-n-arg ast))
 	      (args (loop for nth upfrom 0 below n-arg

@@ -72,6 +72,14 @@
   (:give schedule)
   (:keep schedule-node))
 
+(define-isl-function schedule-node-get-domain %isl-schedule-node-get-domain
+  (:give union-set)
+  (:keep schedule-node))
+
+(defun schedule-node-get-child (schedule-node n)
+  (let ((x (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
+    (%make-schedule-node (%isl-schedule-node-copy x))))
+
 (defun schedule-node-get-children (schedule-node)
   (declare (type schedule-node schedule-node))
   (when (eql :bool-true (isl::%isl-schedule-node-has-children (schedule-node-handle schedule-node)))
