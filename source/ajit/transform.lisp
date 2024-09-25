@@ -458,7 +458,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
     (let ((reads (node-reads node)))
       (dolist (r (cdr reads))
 	;; Domainが完全に同じ or 部分的に同じを最適化の設定で変更可能にする
-	;; esp: Embeddingでは100*102回の余分な比較が増える
+	;; Embeddingでは100*102回の余分なCMPを作ることになる
 	))))
 
 (defmethod expr-index-components-p ((node node))

@@ -466,10 +466,12 @@ Lifespan:
     (prune)
     ;; 1. Mutate output buffers as scalar
     (optimize-memory-load mp)
-    ;; TODO: ^ may produce an unused kernel
-    ;; 2. Hide Latency Optimization (入力出力でLOADを追加して，それ以降はわざとScalarLoadにする)
-    ;;    Accumlationはfloat _acc_0に書き換える
+    ;; 2. Hide Latency Optimization
+    ;; - The arrays should be loaded at once
+    ;; - In the last, storing the result.
+    ;; TODO: Rewrite accumlation as `float _acc_0`.
     ;; (prune)
+    ;; [TODO] Add dead graph.nodes elimination here. ^ maybe produce unused ops.
     (loop for group in (mp-groups mp)
 	  for kernels in (mp-kernels mp)
 	  if (group-realize-on-vm group)
@@ -479,7 +481,7 @@ Lifespan:
 	    (loop for k in kernels
 		  if (kernel-renderer-nodes k)
 		    collect (pack-loop-funcall k (group-polyhedron group) (device-packed-by (mp-device mp)))))
-    ;; TODO: Simplify the index load for unrolled buffer above^
+    ;; TODO: Simplify the index load for unrolled buffer produced above.
     ))
 
 (defun memory-access-local-p (render-nodes id pipeline)

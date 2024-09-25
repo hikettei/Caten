@@ -1,5 +1,4 @@
 (in-package :caten/ajit)
-;; A helpers to render the isl object.
 
 (defmacro define-isl-object (print-name docstring ((&rest args) &rest slots) &body body)
   (declare (type string print-name))
@@ -10,7 +9,6 @@
 		   (:constructor ,constructor (,@args)))
 	 ,docstring
 	 ,@slots)
-       ;; [TODO] Confirm no memory-leak here...
        (defmethod form ((c ,name)) ,@body)
        (defmethod print-object ((c ,name) stream) (format stream "~a: ~a" ,print-name (form c))))))
 

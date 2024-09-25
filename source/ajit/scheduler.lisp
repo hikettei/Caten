@@ -467,6 +467,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
     (print (schedule-get-root (poly-schedule poly)))
     (print (debug/render-c poly))))
 
+;; For contributors: You can use the below code to test the ISL Scheduler on REPL.
 #+(or)
 (compile-isl
 :domain
