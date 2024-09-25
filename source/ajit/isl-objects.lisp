@@ -243,8 +243,7 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	     (node->time (node)
 	       (gethash (node-id node) node->id))
 	     (pad (list node)
-	       ;;(padding-list list (+ 1 (* 2 rank)) :with (node->time node))
-	       list)
+	       (padding-list list (+ 1 (* 2 rank)) :with (node->time node)))
 	     (->schedule (vars node)
 	       (pad
 		(loop for v1 in (reverse vars-global)
