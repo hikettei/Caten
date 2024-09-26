@@ -523,8 +523,10 @@ in a single timestamp otherwise recursive dependencies will occur.
 (defun pipeline/upper-nrank (pipeline)
   (apply
    #'max
-   (loop for key in (hash-table-keys pipeline)
-	 collect (length (graph->loop-factors (gethash key pipeline))))))
+   (or
+    (loop for key in (hash-table-keys pipeline)
+	  collect (length (graph->loop-factors (gethash key pipeline))))
+    (list 0))))
 
 (defun padding-list (list rank &key (with 0))
   (append list (loop for i in (range 0 (- rank (length list))) collect with)))

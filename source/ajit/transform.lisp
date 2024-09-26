@@ -304,6 +304,7 @@ When moving a node in T0 into T1, the operation is represented as:
   buffer)
 
 ;; [TODO]
+;; - Randn < 2 Kernels (Fuse Scalar Kernels and vector parts)
 (defmethod expr-apply-index-component-globalize ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   "Propagate Index-Components"
   ;; not working
