@@ -71,7 +71,7 @@
     (explore (schedule-get-root (poly-schedule top)))
     (values out depth)))
 
-(defun finalize-polyhedral (polyhedral &aux (schedule (poly-schedule polyhedral)))
+(defun finalize-polyhedral (polyhedral &aux (schedule (copy (poly-schedule polyhedral))))
   (declare (type polyhedral polyhedral))
   (macrolet ((set-option (name level)
 	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
@@ -115,7 +115,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	  (when (poly-schedule poly)
 	    (debug/render-c poly))))
 
-(defun debug/render-c (polyhedral &aux (schedule (poly-schedule polyhedral)))
+(defun debug/render-c (polyhedral &aux (schedule (copy (poly-schedule polyhedral))))
   (let* ((schedule (schedule-set-options schedule (poly-ast-option polyhedral)))
 	 (build (ast-build-from-context (set-from-str "{:}")))
 	 (ast   (ast-build-node-from-schedule build schedule))
@@ -151,8 +151,8 @@ Expected Output (Scalar ops are temporarily excluded):
   (with-slots ((domain domain-ptr)) polyhedral
     (multiple-value-bind (raw-deps waw-deps war-deps)
 	(create-dependency-graph polyhedral)
-      (let* ((all-deps (union-map-union waw-deps war-deps))
-	     (all-deps (union-map-union all-deps raw-deps))
+      (let* ((all-deps (union-map-union war-deps raw-deps))
+	     (all-deps (union-map-union all-deps waw-deps))
 	     (schedule-constraints (schedule-constraints-on-domain domain))
 	     (schedule-constraints (schedule-constraints-set-coincidence schedule-constraints all-deps))
 	     (schedule-constraints (schedule-constraints-set-validity schedule-constraints all-deps))
@@ -160,7 +160,7 @@ Expected Output (Scalar ops are temporarily excluded):
 	     (schedule-constraints (schedule-constraints-set-proximity schedule-constraints all-deps)))
 	schedule-constraints))))
 
-(defun poly/schedule (polyhedral &key (serialize nil))
+(defun poly/schedule (polyhedral &key (serialize nil) (outer-coincidence 1) (maximize-coincidence 0) (treat-coalescing 1))
   "
 [Scheduler]
 This function analyzes the read/write dependencies on the polyhedron space,
@@ -193,15 +193,26 @@ for (int c0 = 0; c0 < a; c0 += 1)
 				   :int ,level
 				   :void))))
     (when serialize (set-option "schedule_serialize_sccs" 1))
-    (let ((n 0))
-      (loop for g in (hash-table-values (poly-pipeline polyhedral))
-	    do (incf n (length (graph-nodes g))))
-      (set-option "schedule_outer_coincidence" 1)
-      ;;(set-option "schedule_maximize_band_depth" 1)
-      (set-option "schedule_treat_coalescing" 1)
-      ))
-  (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr)) polyhedral
-    (let* ((constraints (poly/make-constraints polyhedral))
-	   (schedule (schedule-constraints-compute-schedule constraints)))
-      (setf (poly-schedule polyhedral) schedule)
-      polyhedral)))
+    (flet ((configure ()
+             (set-option "schedule_outer_coincidence" outer-coincidence)
+             (set-option "schedule_maximize_coincidence" maximize-coincidence)
+             (set-option "schedule_treat_coalescing" treat-coalescing)))
+      (configure)
+      ;; Select the one w/o IF
+      (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr)) polyhedral
+        (let* ((schedule (schedule-constraints-compute-schedule (poly/make-constraints polyhedral))))
+          (setf (poly-schedule polyhedral) schedule)
+          polyhedral)))))
+
+(defmethod find-outermost-for ((graph graph))
+  (loop for node in (graph-nodes graph)
+	if (eql (node-type node) :FOR)
+	  do (return-from find-outermost-for node)))
+
+(defun poly/reschedule-p (polyhedral device)
+  (declare (type polyhedral polyhedral))
+  (multiple-value-bind (ast bands) (finalize-schedule polyhedral)
+    (let* ((tmp-graph (create-rendering-graph ast bands device (pipeline/upper-nrank (poly-pipeline polyhedral))))
+           (outermost-for (find-outermost-for tmp-graph)))
+      (and outermost-for (not (eql (getattr outermost-for :scope) :global))))))
+           

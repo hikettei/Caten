@@ -223,7 +223,7 @@ Output: Groups"
 (defun schedule-polyhedrons (backend group polyhedrons &key (verbose 0) (serialize))
   (declare (type list polyhedrons))
   (dolist (p polyhedrons)
-    (auto-schedule! p :verbose verbose :serialize serialize))
+    (auto-schedule! p backend :verbose verbose :serialize serialize))
   ;; Return -> Rendering Graph
   (apply
    #'make-graph
@@ -232,8 +232,8 @@ Output: Groups"
 	 (multiple-value-bind (ast bands) (finalize-schedule p)
 	   (graph-nodes (create-rendering-graph ast bands backend (max-dimension-in-group group)))))))
 
-(declaim (ftype (function (Polyhedral &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
-(defun auto-schedule! (polyhedral &key (verbose nil) (serialize nil))
+(declaim (ftype (function (Polyhedral Device &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
+(defun auto-schedule! (polyhedral device &key (verbose nil) (serialize nil))
   "
 Step3, autoschedule polyhedron model.
 Options:
@@ -247,8 +247,17 @@ Options:
   (macrolet ((debug-print (step-name) `(when verbose (format t "~%[~a]~%~a~%" ,step-name (print-polyhedral polyhedral nil)))))
     (debug-print "Initial")
     ;; Loop Fusion
-    (poly/schedule polyhedral :serialize serialize)
+    (poly/schedule polyhedral
+                   :serialize serialize
+                   :outer-coincidence 1 :maximize-coincidence 0)
     (debug-print "Scheduled")
+    ;; Reschedule when oute coincidence failed.
+    (when (and (null serialize) (poly/reschedule-p polyhedral device))
+      (poly/schedule
+       polyhedral
+       :serialize serialize
+       :outer-coincidence 0 :maximize-coincidence 1)
+      (debug-print "Rescheduled"))
     polyhedral))
 
 (declaim (ftype (function (Group keyword) graph) finalize-and-retrive-graph))
@@ -417,7 +426,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			       nil
 			       nil
 			       :ast-option ast-option)))
-    (auto-schedule! poly)
+    (auto-schedule! poly (default-device :clang))
     (print (schedule-get-root (poly-schedule poly)))
     (print (debug/render-c poly))))
 

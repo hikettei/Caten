@@ -303,7 +303,8 @@ When moving a node in T0 into T1, the operation is represented as:
 	(buffer-views buffer) (and (buffer-views buffer) (every #'identity (buffer-views buffer)) (permute-list permute (buffer-views buffer))))
   buffer)
 
-;; [TODO] .
+;; [TODO]
+;; - Randn < 2 Kernels (Fuse Scalar Kernels and vector parts)
 (defmethod expr-apply-index-component-globalize ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   "Propagate Index-Components"
   ;; not working
