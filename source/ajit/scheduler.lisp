@@ -88,50 +88,6 @@
 	        else collect out and do (setf out (apply #'make-graph (graph-nodes (gethash idx pipeline)))))
 	,out))))
 
-(defun pipeline->timestamp (pipeline)
-  (declare (type hash-table pipeline))
-  (maphash
-   #'(lambda (ts graph)
-       (declare (ignore ts))
-       (setf (graph-outputs graph) (nodes-output-ids (graph-nodes graph))))
-   pipeline)
-  (let ((graph
-	  (apply
-	   #'make-graph
-	   (loop for time in (hash-table-keys pipeline)
-		 for graph = (gethash time pipeline)
-		 collect (make-node :TIME :GRAPH (graph-outputs graph) (graph-seen graph) :id time))))
-	(lex (make-hash-table))
-	(seen))
-    ;; TODO: Relocate Isolated nodes w/ the end of nodes. (when debugging, should produce a warning)
-    (labels ((explore (id &key (time 0) &aux (val (id->value graph id)))
-	       (when (and val (null (find `(,time ,(node-id val)) seen :test #'equal)))
-		 (push (list time (node-id val)) seen)
-		 (let* ((key (getattr val :id)))
-		   (mapc #'(lambda (x) (explore x :time (1+ time))) (remove-duplicates (node-reads val)))
-		   (if (gethash key lex)
-		       (push time (gethash key lex))
-		       (setf (gethash key lex) (list time)))))))
-      ;; Labelling the schedule dependency w/ lexicographical order
-      ;; [TODO] that should look like below, not starting with `time`?
-      ;; wanna consider this when optimizing backward process; it usually has multiple outputs.
-      ;; 2  2    2    ...
-      ;; \  /   /      |
-      ;;   1   1       4
-      ;;    \ /        |
-      ;;     0         3
-      ;; 
-      (loop for time upfrom 0
-	    for id in (nodes-output-ids (graph-nodes graph))
-	    do (explore id :time time))
-      (assert (every #'(lambda (x) (find x seen :key #'second)) (map 'list #'node-id (graph-nodes graph))))
-      (let ((tree-max-depth (apply #'max (apply #'append (hash-table-values lex)))))
-	(maphash
-	 #'(lambda (x y)
-	     (setf (gethash x lex) (apply #'min (map 'list #'(lambda (n) (- tree-max-depth n)) y))))
-	 lex)
-	lex))))
-
 (declaim (ftype (function (AVM &key (:verbose boolean)) (values list)) create-schedules-from-avm))
 (defun create-schedules-from-avm (avm &key (verbose nil))
   "Step1, Creates an initial schedule.
@@ -247,8 +203,7 @@ Output: Groups"
 	  do (setf (gethash nth pipeline) s)
 	     (dolist (n (graph-nodes s))
 	       (setf (gethash (node-id n) node->pipeline) nth)))
-    (loop with lex-table = (pipeline->timestamp pipeline)
-	  for poly-group in (apply-pre-grouping pipeline)
+    (loop for poly-group in (apply-pre-grouping pipeline)
 	  for target-keys = (gather-keys poly-group node->pipeline)
 	  for vm-inputs = (avm-gather-args avm)
 	  for loop-sizes = (loop for key in target-keys append (graph->loop-size (gethash key pipeline)))
@@ -263,7 +218,7 @@ Output: Groups"
 	    (format t "Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read~%\"~a\"~%:write \"~a\"~%:schedule \"~a\"~%)"
 		    domain read-access write-access schedule)
 	  collect
-	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group) lex-table))))
+	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group)))))
 
 (defun schedule-polyhedrons (backend group polyhedrons &key (verbose 0) (serialize))
   (declare (type list polyhedrons))
@@ -461,7 +416,6 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			       (union-map-from-str schedule)
 			       nil
 			       nil
-			       (make-hash-table)
 			       :ast-option ast-option)))
     (auto-schedule! poly)
     (print (schedule-get-root (poly-schedule poly)))
