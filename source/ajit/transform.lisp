@@ -26,207 +26,6 @@
 	  do (setf nest (max nest depth)))
     nest))
 
-(defmethod find-outermost-for ((r kernel-renderer))
-  (let ((nodes (kernel-renderer-nodes r)))
-    (loop for node in nodes
-	  if (eql (node-type node) :FOR)
-	    do (return-from find-outermost-for node))))
-;; [TODO] Delete kernel-renderer-outermost-loop-eq
-(defmethod kernel-renderer-outermost-loop-eq ((a kernel-renderer) (b kernel-renderer))
-  "Compares two outermost loops in the a and b"
-  (and
-   nil
-   ;; [TODO] Fuse Nested Loops that ISL failed to fuse.
-   ;; There should be much better way to determine this.
-   (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
-     (and a b
-	  (equal (getattr a :idx) (getattr b :idx))
-	  (expr-eq (getattr a :upfrom) (getattr b :upfrom))
-	  (expr-eq (getattr a :below) (getattr b :below))
-	  (expr-eq (getattr a :by) (getattr b :by))
-	  (eql (getattr a :scope) (getattr b :scope))))))
-
-(defmethod separate-scalar-and-vector-parts ((a kernel-renderer))
-  "Return: (values scalar-nodes vector-nodes) if nodes are:
-T0(...)
-T1(...)
-for (...) {
-  T2(...)
-  T3(...)
-}
-T0 T1 are scalar-nodes, T2, T3 are vector-nodes.
-"
-  (let ((nodes (kernel-renderer-nodes a))
-	(scalars)
-	(vectors))
-    (loop with loop-mode-p = nil
-	  for node in nodes
-	  if (eql (node-type node) :FOR)
-	    do (setf loop-mode-p t)
-	  end
-	  if loop-mode-p
-	    do (push node vectors)
-	  else
-	    do (push node scalars))
-    (values (nreverse scalars) (nreverse vectors))))
-
-;; [TODO] Remove
-(defmethod merge-two-loops ((a kernel-renderer) (b kernel-renderer) (poly Polyhedral))
-  "Merges two iteration. the relations between a and b can be formulated as:
-```
-T0(t=0, i)  // a-scal
-for(int i=0; i<10; i++) {
-  T1(t=1, i) // a-vec
-}
-T2(t=2, 0) // b-scal
-for(int i=0; i<10; i++) {
-  T2(t=3, i) // b-vec
-}
-```
-We consider shuffling these nodes which never violates lexiographical order.
-"
-  (let ((lex (poly-lex-table poly))
-	(a-outermost (find-outermost-for a))
-	(b-outermost (find-outermost-for b)))
-    (when (and a-outermost b-outermost)
-      (unless (equal (getattr a-outermost :idx) (getattr b-outermost :idx))
-	(return-from merge-two-loops)))
-    (labels ((nodes->lex (nodes)
-	       (loop for node in nodes
-		     if (eql (node-type node) :FUNCALL)
-		       collect (gethash (getattr node :idx) lex)))
-	     (lex-dep-ok (a b)
-	       "for all: (a1, a2, ...) > (b1, b1, ...)"
-	       (<= (apply #'max (nodes->lex a)) (apply #'min (nodes->lex b))))
-	     (scal-p (nodes) (null (find :FOR nodes :key #'node-type)))
-	     (remloop (nodes)
-	       (loop for node in nodes
-		     unless (or (find (node-id node) `(,a-outermost ,b-outermost) :key #'node-id)
-				(and (eql (node-type node) :ENDFOR)
-				     (find (getattr node :idx) `(,a-outermost ,b-outermost) :key #'(lambda (x) (getattr x :idx)))))
-		       collect node))
-	     (apply-merge (&rest timestamps &aux (insert-at (or (position-if (compose #'not #'scal-p) timestamps) -1)))
-	       (unless (= insert-at -1)
-		 (assert (every (compose #'not #'scal-p) (nthcdr insert-at timestamps))))
-	       (append
-		(loop for nodes in timestamps
-		      for nth upfrom 0
-		      if (scal-p nodes)
-			append nodes
-		      if (= nth insert-at)
-			append (list a-outermost)
-		      if (not (scal-p nodes))
-			append (remloop nodes))
-		(list (r/endfor (getattr a-outermost :idx))))))
-      ;; [TODO] There are more fusable (or relocation) iteration patterns.
-      (multiple-value-bind (a-scal a-vec) (separate-scalar-and-vector-parts a)
-	(multiple-value-bind (b-scal b-vec) (separate-scalar-and-vector-parts b)
-	  ;; For simplicity, we consider all 4 patterns:
-	  (cond
-	    ((and (null a-scal) (null b-scal) a-vec b-vec)
-	     ;; When T0, T2 is null. We can merge them as long as a-vec/b-vec are satisfying lex-dep.
-	     (cond
-	       ((lex-dep-ok a-vec b-vec) (apply-merge a-vec b-vec))
-	       ((lex-dep-ok b-vec a-vec) (apply-merge b-vec a-vec))
-	       (T nil)))
-	    ((and a-scal b-scal (null a-vec) (null b-vec))
-	     ;; As well as on the around case.
-	     (cond
-	       ((lex-dep-ok a-scal b-scal) (apply-merge a-scal b-scal))
-	       ((lex-dep-ok b-scal a-scal) (apply-merge b-scal a-scal))
-	       (T nil)))
-	    ((and a-scal (null b-scal) a-vec b-vec)
-	     ;; T2=null, there is no separating node -> fuse always
-	     (when (lex-dep-ok a-vec b-vec) ;; (lex-dep-ok a-scal a-vec) is always true since originally scheduled so.
-	       (apply-merge a-scal a-vec b-vec)))
-	    ((and (null a-scal) a-vec b-scal b-vec)
-	     ;; T=0 is null, try relocate T2 into T0, (if it fails, they cannot be fused)
-	     ;; a-vec     b-scal
-	     ;; b-scal -> a-vec
-	     ;; b-vec     b-vec
-	     (cond
-	       ((lex-dep-ok b-scal a-vec)
-		(apply-merge b-scal a-vec b-vec))
-	       ((lex-dep-ok a-vec b-scal)
-		(apply-merge b-scal a-vec b-vec))))
-	    ((and a-scal b-scal a-vec b-vec)
-	     (when (and
-		    (lex-dep-ok b-scal a-vec)
-		    (lex-dep-ok a-scal b-scal))
-	       (apply-merge a-scal b-scal a-vec b-vec)))))))))
-
-(defmethod swap-two-loops ((a kernel-renderer) (b kernel-renderer) (poly Polyhedral))
-  "Sorts two iteration by lexiographical order dependencies."
-  (let ((lex (poly-lex-table poly)))
-    (labels ((nodes->lex (nodes)
-	       (loop for node in nodes
-		     if (eql (node-type node) :FUNCALL)
-		       collect (gethash (getattr node :idx) lex)))
-	     (lex-dep-ok (a b)
-	       "for all: (a1, a2, ...) > (b1, b1, ...)"
-	       (<= (apply #'max (nodes->lex a)) (apply #'min (nodes->lex b)))))
-      ;; [TODO] There are more fusable (or relocation) iteration patterns.
-      (or
-       (null (kernel-renderer-nodes a))
-       (null (kernel-renderer-nodes b))
-       (lex-dep-ok (kernel-renderer-nodes a) (kernel-renderer-nodes b))))))
-
-(defun sort-kernel-renderers (kernel-renderers polyhedral)
-  (flet ((s (x y) (swap-two-loops x y polyhedral)))
-    (sort kernel-renderers #'s)))
-
-(defun fuse-outermost-loops (polyhedral blueprints)
-  "Fuses two rendering groups whose outermost loops are the completely equivalent.
-This fusion is only applied in the original polyhedral group, (which is assumed to no circular deps, and time series deps are in straight)
-So we asssume all pairs of loop fusion are always valid.
-e.g.:
-for(int i=0; i<10; i++) {
-  // some element-wise operations (1)
-}
-for(int i=0; i<10; i++) {
-  // some element-wise operations (2)
-}
-are fused into:
-for(int i=0; i<10; i++) {
-  // some element-wise operations (1)
-  // some element-wise-operations (2)
-}
-This may reduce the number of extra allocation for tmpvar.
-"
-  (declare (type polyhedral polyhedral)
-	   (type list blueprints))
-  (let ((blueprints (sort-kernel-renderers blueprints polyhedral)))
-    (remove-duplicates
-     (loop with last-visited = (car blueprints)
-	   for blueprint in `(,@(cdr blueprints) nil)
-	   for merged = (when blueprint (merge-two-loops last-visited blueprint polyhedral))
-	   collect
-	   (if (and blueprint merged (kernel-renderer-outermost-loop-eq last-visited blueprint))
-	       (progn
-		 (setf last-visited
-		       (make-kernel-renderer
-			:nodes merged
-			:nth (kernel-renderer-nth last-visited)))
-		 last-visited)
-	       (prog1
-		   last-visited
-		 (setf last-visited blueprint))))
-     :key #'kernel-renderer-nth)))
-
-(defmethod collapse-loop ((kr kernel-renderer) (poly polyhedral))
-  "Collapses the loop in the kernel to get more parallelization/vectorization opportunities, e.g.:
-for(int i=0; i<10; i++) {
-  for(int j=0; j<10; j++) {
-    T0(i, j);
-  }
-}
-is transformed into:
-for(int i=0; i<10*10; i++) {
-  T0(i);
-}
-"
-  kr)
-
 (defun r/packed-funcall (funcall unrolled idx size)
   ;; :_packed t
   ;; :_unrolled (a list of actually unrolled funcall)
@@ -393,7 +192,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 
 (defun render-graph-from-polyhedral (polyhedral nodes)
   "Finalizes an rendering graph to use based on nodes."
-  (declare (type list nodes) (type polyhedral))
+  (declare (type list nodes) (type polyhedral) (ignore polyhedral))
   (let ((kernels) (outputs))
     (loop with nest = 0
 	  with nest-by-loop = 0
@@ -408,13 +207,9 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	  else do
 	    (push node kernels))
     (push (nreverse kernels) outputs)
-    (funcall (if (= 0 (ctx:getenv :SERIALIZE))
-		 #'fuse-outermost-loops
-		 #'(lambda (x y) (declare (ignore x)) y))
-	     polyhedral
-	     (loop for out in (reverse outputs)
-		   for nth upfrom 0
-		   collect (make-kernel-renderer :nodes out :nth nth)))))
+    (loop for out in (reverse outputs)
+	  for nth upfrom 0
+	  collect (make-kernel-renderer :nodes out :nth nth))))
 
 (defmethod ->render-graph ((group Group))
   (when (group-polyhedron group)
@@ -566,6 +361,7 @@ When moving a node in T0 into T1, the operation is represented as:
            ;; A -> B
            ;;   -> C
            (and
+            ;; 
             (null (find id (group-across-time-deps group)))
             (= (length (id->users graph id)) 1))))
     (assert (eql :EXPR (node-type node)))
@@ -606,7 +402,6 @@ When moving a node in T0 into T1, the operation is represented as:
                              if (or (= nth 0) (and (not (eql r read)) (find r used)))
                                collect r))))))
 
-;; [TODO] Load val_9 = val_9 -> remove in the test-chain-rule
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
 Consider this fake-python kernel representing Embedding Op.
