@@ -245,7 +245,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
       (f node-writes relay-writes t))))
 ;; ~~ Post-MultiExpr ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; ** Post-MultiExpr is WIP**
-(defmethod expr-apply-post-multiexpr ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
+(defmethod expr-apply-post-multiexpr-in-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   (assert (eql (node-type node) :EXPR))
   (flet ((get-domain-from-funcall (node)
 	   (assert (eql (node-type node) :FUNCALL))
@@ -486,5 +486,5 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;;       ...
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       ;; (do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
-      ;; (do-funcall (expr-apply-post-multiexpr group graph node funcall->domain nodeid->pipeline))
+      ;; (do-funcall (expr-apply-post-multiexpr-in-subdomain group graph node funcall->domain nodeid->pipeline))
       )))
