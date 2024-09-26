@@ -565,7 +565,9 @@ When moving a node in T0 into T1, the operation is represented as:
            ;; Otherwise returns nil e.g.:
            ;; A -> B
            ;;   -> C
-           (= (length (id->users graph id)) 1)))
+           (and
+            (null (find id (group-across-time-deps group)))
+            (= (length (id->users graph id)) 1))))
     (assert (eql :EXPR (node-type node)))
     ;; FOR
     ;; T0 | node0 }
@@ -604,6 +606,7 @@ When moving a node in T0 into T1, the operation is represented as:
                              if (or (= nth 0) (and (not (eql r read)) (find r used)))
                                collect r))))))
 
+;; [TODO] Load val_9 = val_9 -> remove in the test-chain-rule
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
 Consider this fake-python kernel representing Embedding Op.
