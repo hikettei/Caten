@@ -26,7 +26,8 @@
     (setf out (append out
 		      (when (expr-p (expr-x expr)) (expr-recursive-deps (expr-x expr)))
 		      (when (expr-p (expr-y expr)) (expr-recursive-deps (expr-y expr)))
-		      (when (expr-p (expr-z expr)) (expr-recursive-deps (expr-z expr)))))
+		      (when (expr-p (expr-z expr)) (expr-recursive-deps (expr-z expr)))
+                      (when (listp (expr-y expr)) (apply #'append (map 'list #'expr-recursive-deps (expr-y expr))))))
     out))
 
 (defun expr-recursive-settype (expr id buffer)
