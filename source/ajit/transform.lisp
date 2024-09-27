@@ -515,6 +515,7 @@ If failed, the function returns a keyword :failed"
                   ;; Transform and apply? (is it possible?)
                   (null (getattr read-node :reduction))
                   (no-across-domain-dep-p read)
+                  (not (every #'eql (map 'list #'node-id node-domain) (map 'list #'node-id read-domain)))
                   (domain-eq-3 node-domain read-domain))
             ;; for (...)               }
             ;;   T0(0, 0, a, 0)
@@ -627,16 +628,17 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 		   (return-from post-simplify-multiexpr))
 		 (setf (gethash (getattr node :idx) funcall->domain) (reverse domains))))
     ;; Applying Simplifiers ...
-    (macrolet ((do-funcall (form &key (type :EXPR))
-		 `(loop for node in (graph-nodes render-graph)
-			if (eql (node-type node) :FUNCALL) do
-			  (dolist (node (graph-nodes (gethash (getattr node :idx) pipeline)))
-			    (when (eql (node-type node) ,type)
-			      ,form)
-                            ;; TODO: Special Simplifier
-                            ;; (when (eql (node-type node) :WMMA)
-                            ;; ...)
-                            ))))
+    (macrolet ((do-funcall (form &key (type :EXPR) (recursively nil))
+		 `(flet ((f (&aux (changed-p nil))
+                           (loop for node in (graph-nodes render-graph)
+			         if (eql (node-type node) :FUNCALL) do
+			           (dolist (node (graph-nodes (gethash (getattr node :idx) pipeline)))
+			             (when (eql (node-type node) ,type)
+			               (setf changed-p (or changed-p ,form)))))
+                           changed-p))
+                    ,(if recursively
+                         `(loop while (f))
+                         `(f)))))
       ;; Reading render-node by render-node
       ;; t=0 | FOR idx = ...    (skip)
       ;; t=1 | FUNCALL = ...    (apply simplifier)
@@ -645,7 +647,9 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; Applying render-graph level simplifiers, all of these are optional.
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
-      (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline))
+      (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline) :recursively t)
+      ;; TODO: Special Simplifier to :type :WMMA
+      ;; WMMA+Transpoe Fusion
 
       ;; applying subdomain multipletimes
       ;; make it valid to call in-domain after ^
@@ -657,6 +661,9 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;;          |
       ;;        Matrix
       ;; 3. In-Place Embedding, By propagating index-components and boolean parts
+
       ;; [TODO] Delete following pattern node (after applying memory-planner)
-      ;; A = A;
+      ;; A = A; (by !normal (where :mean=0.0, :std=1.0)
+      
+      ;; [TODO] Tile/Parallel/Loop Fission Scheduling to the graph applied memory-planner.
       (simplify-render-graph group))))
