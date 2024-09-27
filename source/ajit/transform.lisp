@@ -313,7 +313,7 @@ for (...)
               collect node)))
 
 (defmethod expr-apply-post-multiexpr-in-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
-  "Post MultiExpr Fusion in the same domain."
+  "Post MultiExpr Fusion Applicable Case 1, FUNCALL belongs to the same loop (compared by node-id)"
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
          (domain-eq (dom1 dom2)
@@ -352,6 +352,7 @@ for (...)
             do (extend-expr graph group node read-node read nodeid->pipeline))))
 
 (defmethod expr-apply-post-multiexpr-in-equivalent-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
+  "Post MultiExpr Fusion Applicable Case 2, FUNCALLs strongly connected, and belongs to the same loop (compared by idx, size, and order.)"
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
          (domain-eq (dom1 dom2)
@@ -458,6 +459,7 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; Applying render-graph level simplifiers, all of these are optional.
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
+      
       ;; TODO: Merge Domain and SubDomain in order to complete following thing:
       ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
       ;; 2. Randn < 2 Kernels by propagation scalar parts
