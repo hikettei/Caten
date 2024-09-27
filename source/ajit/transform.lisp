@@ -116,25 +116,28 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 		      t)
 		  (unroll-upfrom x unroll-by :1p t))))))
 	   (make-unroll (idx n-unroll base-funcall)
-	     (r/packed-funcall
-	      base-funcall
-	      (loop for node in (or (getattr base-funcall :_unrolled) (list base-funcall))
-		    append
-		    (loop for nth upfrom 0 below n-unroll
-			  collect
-			  (flet ((mapper (x)
-				   (if (and (or (symbolp x) (stringp x)) (string= x idx))
-				       (format nil "(~a+~a)" x nth)
-				       x)))
-			    (r/funcall
-			     (getattr node :name)
-			     (map
-			      'list
-			      #'(lambda (x &aux (x (copy-expr x))) (expr-recursive-replace x #'mapper) x)
-			      (getattr node :args))
-			     :unroll-offsets (append (getattr node :unroll-offsets) (list (cons idx nth)))))))
-	      idx
-	      n-unroll))
+             ;; Not related axes  (e.g.: = 0) is not unrolled.
+             (if (find idx (getattr base-funcall :args) :key #'(lambda (x) (princ-to-string (expr-x x))) :test #'equalp)
+	         (r/packed-funcall
+	          base-funcall
+	          (loop for node in (or (getattr base-funcall :_unrolled) (list base-funcall))
+		        append
+		        (loop for nth upfrom 0 below n-unroll
+			      collect
+			      (flet ((mapper (x)
+				       (if (and (or (symbolp x) (stringp x)) (string= x idx))
+				           (format nil "(~a+~a)" x nth)
+				           x)))
+			        (r/funcall
+			         (getattr node :name)
+			         (map
+			          'list
+			          #'(lambda (x &aux (x (copy-expr x))) (expr-recursive-replace x #'mapper) x)
+			          (getattr node :args))
+			         :unroll-offsets (append (getattr node :unroll-offsets) (list (cons idx nth)))))))
+	          idx
+	          n-unroll)
+                 base-funcall))
  	   (unroll-valid-p (nodes)
 	     (every #'(lambda (x) (find (node-type x) `(:FOR :ENDFOR :FUNCALL))) nodes))
   	   (subseq-loops (nodes start-id idx
