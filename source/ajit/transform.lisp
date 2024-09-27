@@ -333,7 +333,7 @@ for (...)
 for (...)
   GRAPH1
   GRAPH2"
-  (declare (type Graph graph1 graph2))
+  (declare (type Graph graph1 graph2) (ignore graph1 graph2))
 
   )
 
