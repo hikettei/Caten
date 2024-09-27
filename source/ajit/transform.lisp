@@ -309,7 +309,7 @@ When moving a node in T0 into T1, the operation is represented as:
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
          (domain-eq (dom1 dom2)
            (and (= (length dom1) (length dom2))
-                ;;(every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2))
+                ;; (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2))
                 (every #'domain-equal dom1 dom2)))
          (no-across-domain-dep-p (id)
            ;; Returns T if A and B are connected one-by-one:
