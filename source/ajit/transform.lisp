@@ -301,10 +301,26 @@ When moving a node in T0 into T1, the operation is represented as:
    (expr-eq (getattr node1 :below) (getattr node2 :below))
    (expr-eq (getattr node1 :by) (getattr node2 :by))))
 
-(defun extend-expr (target-node leaf-node)
+(defun extend-expr (graph group target-node leaf-node leaf-id nodeid->pipeline)
+  "Merges leaf-node to the target-node by grafting them"
   (declare (type Node target-node leaf-node))
-  
-  )
+  (expr-graft-after (getattr target-node :EXPR) leaf-id (getattr leaf-node :expr))
+  (remnode graph (node-id leaf-node))
+  (remnode
+   (gethash (gethash (node-id leaf-node) nodeid->pipeline) (poly-pipeline (group-polyhedron group)))
+   (node-id leaf-node))
+  (let ((used (expr-recursive-deps (getattr target-node :EXPR))))
+    (setf (relay-reads (read-type-relay target-node))
+          (loop for rt in (append (relay-reads (read-type-relay target-node)) (relay-reads (read-type-relay leaf-node)))
+                for r in (append (node-reads target-node) (node-reads leaf-node))
+                for nth upfrom 0
+                if (or (= nth 0) (and (not (eql r leaf-id)) (find r used)))
+                  collect rt)
+          (node-reads target-node)
+          (loop for r in (append (node-reads target-node) (node-reads leaf-node))
+                for nth upfrom 0
+                if (or (= nth 0) (and (not (eql r leaf-id)) (find r used)))
+                  collect r))))
 
 (defun serialize-graph (graph1 graph2)
   "
@@ -321,8 +337,6 @@ for (...)
 
   )
 
-;; [TODO]
-;; - Randn < 2 Kernels (Fuse Scalar Kernels and vector parts)
 (defmethod expr-apply-post-multiexpr-in-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   "Post MultiExpr Fusion in the same domain."
   (flet ((get-domain-from-funcall (node)
@@ -360,23 +374,7 @@ for (...)
           for read-domain = (and read-node (get-domain-from-funcall read-node))
           if (and node-domain read-domain (domain-eq node-domain read-domain)
                   (no-across-domain-dep-p read))
-            do (expr-graft-after (getattr node :EXPR) read (getattr read-node :expr))
-               (remnode graph (node-id read-node))
-               (remnode
-                (gethash (gethash (node-id read-node) nodeid->pipeline) (poly-pipeline (group-polyhedron group)))
-                (node-id read-node))
-               (let ((used (expr-recursive-deps (getattr node :EXPR))))
-                 (setf (relay-reads (read-type-relay node))
-                       (loop for rt in (append (relay-reads (read-type-relay node)) (relay-reads (read-type-relay read-node)))
-                             for r in (append (node-reads node) (node-reads read-node))
-                             for nth upfrom 0
-                             if (or (= nth 0) (and (not (eql r read)) (find r used)))
-                               collect rt)
-                       (node-reads node)
-                       (loop for r in (append (node-reads node) (node-reads read-node))
-                             for nth upfrom 0
-                             if (or (= nth 0) (and (not (eql r read)) (find r used)))
-                               collect r))))))
+            do (extend-expr graph group node read-node read nodeid->pipeline))))
 
 (defmethod expr-apply-post-multiexpr-in-equivalent-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   (flet ((get-domain-from-funcall (node)
@@ -423,23 +421,9 @@ for (...)
                   ;; Transform and apply? (is it possible?)
                   (null (getattr read-node :reduction))
                   (no-across-domain-dep-p read))
-            do (expr-graft-after (getattr node :EXPR) read (getattr read-node :expr))
-               (remnode graph (node-id read-node))
-               (remnode
-                (gethash (gethash (node-id read-node) nodeid->pipeline) (poly-pipeline (group-polyhedron group)))
-                (node-id read-node))
-               (let ((used (expr-recursive-deps (getattr node :EXPR))))
-                 (setf (relay-reads (read-type-relay node))
-                       (loop for rt in (append (relay-reads (read-type-relay node)) (relay-reads (read-type-relay read-node)))
-                             for r in (append (node-reads node) (node-reads read-node))
-                             for nth upfrom 0
-                             if (or (= nth 0) (and (not (eql r read)) (find r used)))
-                               collect rt)
-                       (node-reads node)
-                       (loop for r in (append (node-reads node) (node-reads read-node))
-                             for nth upfrom 0
-                             if (or (= nth 0) (and (not (eql r read)) (find r used)))
-                               collect r))))))
+            do ;; [TODO] If args are equivalent -> extend-expr
+               ;; otherwise: use serialize-graph
+               (extend-expr graph group node read-node read nodeid->pipeline))))
 
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
