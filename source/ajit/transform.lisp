@@ -313,13 +313,14 @@ for (...)
               end
               collect node)))
 
+(defun domain-eq-1 (dom1 dom2)
+  (and (= (length dom1) (length dom2))
+       (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2))))
+
 (defmethod expr-apply-post-multiexpr-in-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   "Post MultiExpr Fusion Applicable Case 1, FUNCALL belongs to the same loop (compared by node-id)"
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
-         (domain-eq (dom1 dom2)
-           (and (= (length dom1) (length dom2))
-                (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2))))
          (no-across-domain-dep-p (id)
            ;; Returns T if A and B are connected one-by-one:
            ;; A -> B
@@ -348,19 +349,20 @@ for (...)
           for read-node-orig = (id->value graph read)
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig) ;; Only EXPR and EXPR can be merged
           for read-domain = (and read-node (get-domain-from-funcall read-node))
-          if (and node-domain read-domain (domain-eq node-domain read-domain)
+          if (and node-domain read-domain (domain-eq-1 node-domain read-domain)
                   (no-across-domain-dep-p read))
             do (extend-expr graph group node read-node read nodeid->pipeline))))
+
+(defun domain-eq-2 (dom1 dom2)
+  (and (= (length dom1) (length dom2))
+       ;; Conflicts with expr-apply-post-multiexpr-in-equivalent-domain
+       (not (domain-eq-1 dom1 dom2))
+       (every #'domain-equal dom1 dom2)))
 
 (defmethod expr-apply-post-multiexpr-in-equivalent-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   "Post MultiExpr Fusion Applicable Case 2, FUNCALLs strongly connected, and belongs to the same loop (compared by idx, size, and order.)"
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
-         (domain-eq (dom1 dom2)
-           (and (= (length dom1) (length dom2))
-                ;; Conflicts with expr-apply-post-multiexpr-in-equivalent-domain
-                (not (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2)))
-                (every #'domain-equal dom1 dom2)))
          (node->funcall (node)
 	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
 	     (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))))
@@ -376,23 +378,24 @@ for (...)
           for read-node-orig = (id->value graph read)
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
           for read-domain = (and read-node (get-domain-from-funcall read-node))
-          if (and node-domain read-domain (domain-eq node-domain read-domain)
-                  ;; Transform and apply? (is it possible?)
+          if (and node-domain read-domain (domain-eq-2 node-domain read-domain)
                   (null (getattr read-node :reduction))
                   (no-across-domain-dep-p read))
             do (if (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
                    (extend-expr graph group node read-node read nodeid->pipeline)
                    (serialize-graph (group-render-graph group) (node->funcall read-node) node-iteration-space)))))
 
+(defun domain-eq-3 (dom1 dom2)
+  "Assumes dom2 ⊆ dom1. dom2 and dom1 are partially equal."
+  (and
+   (not (domain-eq-2 dom1 dom2))
+   nil
+   ))
+
 (defmethod expr-apply-post-multiexpr-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   "Post MultiExpr Fusion Applicable Case 3, FUNCALLs strongly connected, and belongs to the partially equivalent loop (compared by idx, size, and order.)"
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
-         (domain-eq (dom1 dom2)
-           (and (= (length dom1) (length dom2))
-                ;; Conflicts with expr-apply-post-multiexpr-in-equivalent-domain
-                (not (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2)))
-                (every #'domain-equal dom1 dom2)))
          (node->funcall (node)
 	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
 	     (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))))
@@ -408,7 +411,7 @@ for (...)
           for read-node-orig = (id->value graph read)
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
           for read-domain = (and read-node (get-domain-from-funcall read-node))
-          if (and node-domain read-domain (domain-eq node-domain read-domain)
+          if (and node-domain read-domain (domain-eq-3 node-domain read-domain)
                   ;; Transform and apply? (is it possible?)
                   (null (getattr read-node :reduction))
                   (no-across-domain-dep-p read))
@@ -493,7 +496,6 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
       ;; (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline))
-      
       ;; TODO: Merge Domain and SubDomain in order to complete following thing:
       ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
       ;; 2. Randn < 2 Kernels by propagation scalar parts
