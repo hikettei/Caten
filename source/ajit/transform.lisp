@@ -423,9 +423,7 @@ for (...)
                   ;; Transform and apply? (is it possible?)
                   (null (getattr read-node :reduction))
                   (no-across-domain-dep-p read))
-            do ;; (defun merge-exprを追加する
-               ;; merge-expr意外に，グラフのノードを移動する方法を追加しておく (when n.args >= 2)
-               (expr-graft-after (getattr node :EXPR) read (getattr read-node :expr))
+            do (expr-graft-after (getattr node :EXPR) read (getattr read-node :expr))
                (remnode graph (node-id read-node))
                (remnode
                 (gethash (gethash (node-id read-node) nodeid->pipeline) (poly-pipeline (group-polyhedron group)))
@@ -442,49 +440,6 @@ for (...)
                              for nth upfrom 0
                              if (or (= nth 0) (and (not (eql r read)) (find r used)))
                                collect r))))))
-;; Merge: Scalar
-;;          |
-;;        Matrix
-(defmethod expr-apply-post-multiexpr-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
-  (assert (eql :EXPR (node-type node)))
-  (flet ((get-domain-from-funcall (node)
-           (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
-         (no-across-domain-dep-p (id)
-           ;; Returns T if A and B are connected one-by-one:
-           ;; A -> B
-           ;; Otherwise returns nil e.g.:
-           ;; A -> B
-           ;;   -> C
-           (and
-            ;; 
-            (null (find id (group-across-time-deps group)))
-            (= (length (id->users graph id)) 1))))
-    (assert (eql :EXPR (node-type node)))
-    ;; FOR
-    ;; T0 | node0 }
-    ;;    | node1 }
-    ;; T1 | node2 }
-    ;;    | node3 } 
-    ;; ENDFOR
-    ;; node0, node1 and node2, node3 are not merged because in the initial schedule, they are assigned to the different loop.
-    ;; After ISL Scheduling, and if they are scheduled to the same loop, merge them with paying attention for the read/write deps.
-    (loop with node-domain = (get-domain-from-funcall node)
-          ;; EXPR (out-to, arg1, arg2, ...)
-          ;; node -> arg1 (if arg1 and node has a single path and belongs to the same domain, merge node and arg1)
-          ;;      -> arg2 ...
-          ;;      -> arg3 ...
-          for read in (cdr (node-reads node))
-          for read-node-orig = (id->value graph read)
-          for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig) ;; Only EXPR and EXPR can be merged
-          for read-domain = (and read-node (get-domain-from-funcall read-node))
-          if (and node-domain read-domain (no-across-domain-dep-p read))
-            do (format t "~%== [Fusion Chance] ====~%")
-               ;; FUNCALL(0, 0, _gid0, 0)
-               ;; ->
-               ;; FUNCALL(0, 0,, _gid2, 0)
-               (print node)
-               (print read)
-               (print read-node))))
 
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
@@ -561,7 +516,12 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;;       ...
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
-      ;; (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline))
-      ;; (do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
-      ;; (do-funcall (expr-apply-post-multiexpr-in-subdomain group graph node funcall->domain nodeid->pipeline))
+
+      ;; TODO: Merge Domain and SubDomain in order to complete following thing:
+      ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
+      ;; 2. Randn < 2 Kernels by propagation scalar parts
+      ;; Merge: Scalar
+      ;;          |
+      ;;        Matrix
+      ;; 3. In-Place Embedding, By propagating index-components and boolean parts
       )))
