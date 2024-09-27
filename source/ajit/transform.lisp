@@ -461,7 +461,7 @@ If failed, the function returns a keyword :failed"
                                 (find-bands-from-unseen axis))
               collect new-arg)))))
 
-(defmethod expr-apply-post-multiexpr-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
+(defmethod expr-apply-post-multiexpr-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline &aux (changed-p nil))
   "Post MultiExpr Fusion Applicable Case 3, FUNCALLs strongly connected, and belongs to the partially equivalent loop (compared by idx, size, and order.)"
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
@@ -491,10 +491,6 @@ If failed, the function returns a keyword :failed"
                   (no-across-domain-dep-p read)
                   (domain-eq-3 node-domain read-domain))
             do (let ((read-iteration-space (node->funcall read-node)))
-                 (print "CANDIDATE FOUND!")
-                 (print node)
-                 (print read-node)
-                 (print "++++++++++")
                  ;; Assumes read-iteration-space funcall was used at once in the render-graph.
                  ;; So it is ok to overwrite its attributes.
                  (assert (eql (node-type read-iteration-space) :FUNCALL))
@@ -502,11 +498,26 @@ If failed, the function returns a keyword :failed"
                  (let ((new-iteration-space (find-new-iteration-space
                                              read-iteration-space node-iteration-space
                                              read-domain node-domain)))
-                   ;; (serialize-graph (group-render-graph group) (node->funcall read-node) node-iteration-space)
-                   ;; It is required to make new FUNCALL with args are properly shuffed.
-                   ;; By finding the equivalent loop bound
-                   ;; T0(0, 0, c0, 0) -> argsで回してT1と比較
-                   )))))
+                   (when (not (eql new-iteration-space :failed))
+                     (setf changed-p t)
+                     ;; It is required to make new FUNCALL with args are properly shuffed.
+                     ;; By finding the equivalent loop bound
+                     ;; T0(0, 0, c0, 0) -> argsで回してT1と比較
+                     ;; Recursivelyに適用できるか？
+                     ;; node->idも更新するhつようがありそう？
+                     (setf (getattr read-iteration-space :args) new-iteration-space)
+                     (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space)
+                     ;;この関数は再起的に適用する必要がある (until gaining no changes)
+                     (print "CANDIDATE FOUND!")
+                     (print node)
+                     (print read-node)
+                     (print "++++++++++")
+                     (print "NEW_SPACE")
+                     (print new-iteration-space)
+                     )))))
+  ;; Recursiveを実装する時は
+  ;; _relocated_pを全てリセットする関数を適用しないといけない
+  changed-p)
 
 ;; (defmethod expr-apply-post-multiexpr-wmma-transpose
 (defmethod post-simplify-multiexpr ((group Group))
@@ -551,6 +562,7 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 	(funcall->domain (make-hash-table))
 	(nodeid->pipeline (make-hash-table))
 	(pipeline (poly-pipeline (group-polyhedron group))))
+    ;; Gathering information ...
     (flet ((simple-p (node)
              (and
               (find (node-type node) `(:FOR :ENDFOR :FUNCALL))
@@ -575,6 +587,7 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 		     (warn "The node ~a appeared in the scheduled graph more than twise times and thus cannot apply post-simplify multiexpr." node))
 		   (return-from post-simplify-multiexpr))
 		 (setf (gethash (getattr node :idx) funcall->domain) (reverse domains))))
+    ;; Applying Simplifiers ...
     (macrolet ((do-funcall (form &key (type :EXPR))
 		 `(loop for node in (graph-nodes render-graph)
 			if (eql (node-type node) :FUNCALL) do
@@ -594,6 +607,7 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline))
+      
       ;; TODO: Merge Domain and SubDomain in order to complete following thing:
       ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
       ;; 2. Randn < 2 Kernels by propagation scalar parts
