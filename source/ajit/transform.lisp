@@ -341,6 +341,11 @@ for (...)
   "Post MultiExpr Fusion Applicable Case 1, FUNCALL belongs to the same loop (compared by node-id)"
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
+         (node->funcall (node)
+	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
+	     (or
+              (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))
+              (error "~a should be found in the rendering graph.~%~a" node (group-render-graph group)))))
          (no-across-domain-dep-p (id)
            ;; Returns T if A and B are connected one-by-one:
            ;; A -> B
@@ -360,6 +365,7 @@ for (...)
     ;; node0, node1 and node2, node3 are not merged because in the initial schedule, they are assigned to the different loop.
     ;; After ISL Scheduling, and if they are scheduled to the same loop, merge them with paying attention for the read/write deps.
     (loop with node-domain = (get-domain-from-funcall node)
+          with node-iteration-space = (node->funcall node)
           ;; EXPR (out-to, arg1, arg2, ...)
           ;; node -> arg1 (if arg1 and node has a single path and belongs to the same domain, merge node and arg1)
           ;;      -> arg2 ...
@@ -369,7 +375,14 @@ for (...)
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig) ;; Only EXPR and EXPR can be merged
           for read-domain = (and read-node (get-domain-from-funcall read-node))
           if (and node-domain read-domain (domain-eq-1 node-domain read-domain)
-                  (no-across-domain-dep-p read))
+                  (no-across-domain-dep-p read)
+                  (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args)))
+            ;; for (...)   }
+            ;;  for  (...) } 1. Belongs to the same loop
+            ;;
+            ;;   T0(a, b)  }  
+            ;;   T1(a, b)  } 2. Schedule is the same
+            ;; (1. and 2.) = T0 and T1 are fusable.
             do (extend-expr graph group node read-node read nodeid->pipeline))))
 
 (defun domain-eq-2 (dom1 dom2)
@@ -399,6 +412,18 @@ for (...)
           if (and node-domain read-domain (domain-eq-2 node-domain read-domain)
                   (null (getattr read-node :reduction))
                   (no-across-domain-dep-p read))
+            ;; for (...)   }
+            ;;  for  (...) } 1. The size of iteration is the same.
+            ;;   T0(a, b)  }
+            ;; for (...)   }
+            ;;  for (...)  } 1. The size of iteration is the same.
+            ;;   T1(a, b)  }
+            ;; If the schedule of T0 and T1 is the equivalent -> they can be fused directly
+            ;; Otherwise -> T0 and T1 can be serialized e.g.:
+            ;; for (...)
+            ;;  for (...)
+            ;;   T0(a, b)
+            ;;   T1(a, b)
             do (if (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
                    (extend-expr graph group node read-node read nodeid->pipeline)
                    (serialize-graph (group-render-graph group) (node->funcall read-node) node-iteration-space)))))
