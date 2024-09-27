@@ -300,7 +300,26 @@ When moving a node in T0 into T1, the operation is represented as:
    (expr-eq (getattr node1 :upfrom) (getattr node2 :upfrom))
    (expr-eq (getattr node1 :below) (getattr node2 :below))
    (expr-eq (getattr node1 :by) (getattr node2 :by))))
+
+(defun extend-expr (target-node leaf-node)
+  (declare (type Node target-node leaf-node))
   
+  )
+
+(defun serialize-graph (graph1 graph2)
+  "
+Relocated GRAPH1 in advance of GRAPH2
+for (...)
+  GRAPH1
+for (...)
+  GRAPH2
+->
+for (...)
+  GRAPH1
+  GRAPH2"
+  (declare (type Graph graph1 graph2))
+
+  )
 
 ;; [TODO]
 ;; - Randn < 2 Kernels (Fuse Scalar Kernels and vector parts)
@@ -541,7 +560,7 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; t=2 | ENDFOR idx = ... (skip)
       ;;       ...
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
-      (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
+      ;; (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
       ;; (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline))
       ;; (do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
       ;; (do-funcall (expr-apply-post-multiexpr-in-subdomain group graph node funcall->domain nodeid->pipeline))
