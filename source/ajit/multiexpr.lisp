@@ -139,7 +139,7 @@
 	       (push obj *aref-list*)))
 	   obj))
     (case (node-type node)
-      (:INDEX-COMPONENTS (make-expr :INDEX-COMPONENTS (use (first parents)) (map 'list #'use (cdr parents))))
+      (:INDEX-COMPONENTS (make-expr :INDEX-COMPONENTS (first parents) (map 'list #'use (cdr parents))))
       (:Cast             (make-cast (use (second parents)) (getattr node :dtype)))
       (:Load             (use (make-const (getattr node :value) (make-const-buffer (buffer-dtype (car (relay-writes (read-type-relay node))))))))
       (:!=               (make-expr :!= (use (second parents)) (use (third parents))))
