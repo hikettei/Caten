@@ -649,21 +649,18 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline) :recursively t)
       ;; TODO: Special Simplifier to :type :WMMA
-      ;; WMMA+Transpoe Fusion
+      ;; - [ ] Fix: broadcast-regression-test (when packed=1, they cannot be unrolled, especially when including :INDEX_COMPONENTS)
+      ;; - [ ] WMMA+Transpoe Fusion
 
-      ;; applying subdomain multipletimes
-      ;; make it valid to call in-domain after ^
-      
       ;; TODO: Merge Domain and SubDomain in order to complete following thing:
       ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
-      ;; 2. Randn < 2 Kernels by propagation scalar parts
+      ;; 2. [ ] Randn < 2 Kernels by propagation scalar parts
       ;; Merge: Scalar
       ;;          |
       ;;        Matrix
-      ;; 3. In-Place Embedding, By propagating index-components and boolean parts
+      ;; 3. [x] In-Place Embedding, By propagating index-components and boolean parts
 
       ;; [TODO] Delete following pattern node (after applying memory-planner)
-      ;; A = A; (by !normal (where :mean=0.0, :std=1.0)
-      
+      ;; A = A; (confirmeed by calling !normal (where :mean=0.0, :std=1.0))
       ;; [TODO] Tile/Parallel/Loop Fission Scheduling to the graph applied memory-planner.
       (simplify-render-graph group))))
