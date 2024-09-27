@@ -303,7 +303,7 @@ for (...)
   GRAPH2"
   (declare (type Node graph1 graph2) (type graph render-graph))
   (assert (and (eql (node-type graph1) :FUNCALL) (eql (node-type graph2) :FUNCALL)))
-  (assert (= 1 (count (node-id graph2) (node-reads graph2) :key #'node-id)))
+  (assert (= 1 (count (node-id graph2) (graph-nodes render-graph) :key #'node-id)))
   (remnode render-graph (node-id graph1))
   (setf (graph-nodes render-graph)
         (loop for node in (graph-nodes render-graph)
@@ -380,8 +380,7 @@ for (...)
                   (no-across-domain-dep-p read))
             do (if (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
                    (extend-expr graph group node read-node read nodeid->pipeline)
-                   ;;(serialize-graph (group-render-graph group) (node->funcall read-node) node-iteration-space)
-                   ))))
+                   (serialize-graph (group-render-graph group) (node->funcall read-node) node-iteration-space)))))
 
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
@@ -459,7 +458,6 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; Applying render-graph level simplifiers, all of these are optional.
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
-
       ;; TODO: Merge Domain and SubDomain in order to complete following thing:
       ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
       ;; 2. Randn < 2 Kernels by propagation scalar parts
@@ -467,4 +465,6 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;;          |
       ;;        Matrix
       ;; 3. In-Place Embedding, By propagating index-components and boolean parts
+      ;; [TODO] Delete following pattern node (after applying memory-planner)
+      ;; A = A;
       (simplify-render-graph group))))
