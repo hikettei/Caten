@@ -560,7 +560,7 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; t=2 | ENDFOR idx = ... (skip)
       ;;       ...
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
-      ;; (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
+      (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
       ;; (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline))
       ;; (do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
       ;; (do-funcall (expr-apply-post-multiexpr-in-subdomain group graph node funcall->domain nodeid->pipeline))
