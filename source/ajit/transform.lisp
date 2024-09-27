@@ -336,6 +336,21 @@ for (...)
               end
               collect node)))
 
+(defun domain->n-kernels (graph dom)
+  "Returns a number of :FUNCALL used in the domain."
+  (declare (type graph graph) (type list dom))
+  (let ((starts (map 'list #'(lambda (x) (position (node-id x) (graph-nodes graph) :key #'node-id)) dom))
+        (count 0))
+    (when (null starts) (return-from domain->n-kernels 0))
+    (loop with start = (apply #'min starts)
+          with seen = (map 'list #'(lambda (x) (getattr x :idx)) dom)
+          for node in (nthcdr start (graph-nodes graph))
+          if (eql (node-type node) :FUNCALL) do (incf count)
+          else if (eql (node-type node) :ENDFOR) do (setf seen (remove (getattr node :idx) seen :test #'equalp))
+          else if (eql (node-type node) :FOR) do
+            (when (null seen) (return-from domain->n-kernels count)))
+    count))
+
 (defun domain-eq-1 (dom1 dom2)
   (and (= (length dom1) (length dom2))
        (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2))))
@@ -517,12 +532,13 @@ If failed, the function returns a keyword :failed"
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
           for read-domain = (and read-node (get-domain-from-funcall read-node))
           if (and (not (eql read (car (node-reads node))))
-                  ;; ↑の条件だけで足りるか？。。。ViewがNull or Broadcast Onlyの方が安心感がある
+                  ;; [TODO] Do we need extra conditions here? (e.g.: no offsets were created, views)
                   ;; EXPR(output, x, y)
                   ;; output cannot be overwritten
                   node-domain read-domain
-                  ;; Transform and apply? (is it possible?)
                   (null (getattr read-node :reduction))
+                  ;; smaller kernel (failed to fused one) is merged by larger kernels (already fused one).
+                  (<= (domain->n-kernels (group-render-graph group) read-domain) (domain->n-kernels (group-render-graph group) node-domain))
                   (no-across-domain-dep-p read)
                   (not (every #'eql (map 'list #'node-id node-domain) (map 'list #'node-id read-domain)))
                   (domain-eq-3 node-domain read-domain))
@@ -651,7 +667,6 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;;          |
       ;;        Matrix
       ;; 3. [x] In-Place Embedding, By propagating index-components and boolean parts
-
       ;; [TODO] Delete following pattern node (after applying memory-planner)
       ;; A = A; (confirmeed by calling !normal (where :mean=0.0, :std=1.0))
       ;; [TODO] Tile/Parallel/Loop Fission Scheduling to the graph applied memory-planner.
