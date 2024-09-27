@@ -456,7 +456,8 @@ If failed, the function returns a keyword :failed"
                               :broadcast))
                    do (assert (eql (expr-op sp) :Const))
                       (assert d)
-                      (setf (gethash (princ-to-string (expr-x sp)) out) d))
+                      (unless (eql d :broadcast)
+                        (setf (gethash (princ-to-string (expr-x sp)) out) d)))
              out)))
     (multiple-value-bind (space/id2dom dest/id2dom)
         (values (id->dom space space-dom) (id->dom dest-space dest-dom))
@@ -515,20 +516,28 @@ If failed, the function returns a keyword :failed"
                   (null (getattr read-node :reduction))
                   (no-across-domain-dep-p read)
                   (domain-eq-3 node-domain read-domain))
+            ;; for (...)               }
+            ;;   T0(0, 0, a, 0)
+            ;; for (...)               } If loops are partially equivalent.
+            ;;   for(...)
+            ;;     for(...)
+            ;;       for (...)
+            ;;         T1(a, b, c, d)
+            ;; The compiler can insert Permute(T0) before the execution of T1, by permuting the schedule of T0.
             do (let ((read-iteration-space (node->funcall read-node)))
                  ;; Assumes read-iteration-space funcall was used at once in the render-graph.
                  ;; So it is ok to overwrite its attributes.
                  (assert (eql (node-type read-iteration-space) :FUNCALL))
                  ;; Transforms the iteration space of funcall to fit the destination.
-                 (print "++++++++++")
-                 (print "CANDIDATE FOUND!")
-                 (print node)
-                 (print read-node)
-                 (print "NEW_SPACE")
-                 (print (getattr read-iteration-space :args))
-                 (print "->")
-                 (print (getattr node-iteration-space :args))
-                 (print read-domain) (print node-domain)
+                 ;;(print "++++++++++")
+                 ;;(print "CANDIDATE FOUND!")
+                 ;;(print node)
+                 ;;(print read-node)
+                 ;;(print "NEW_SPACE")
+                 ;;(print (getattr read-iteration-space :args))
+                 ;;(print "->")
+                 ;;(print (getattr node-iteration-space :args))
+                 ;;(print read-domain) (print node-domain)
                  (let ((new-iteration-space (find-new-iteration-space
                                              read-iteration-space node-iteration-space
                                              read-domain node-domain)))
@@ -542,8 +551,8 @@ If failed, the function returns a keyword :failed"
                      (setf (getattr read-iteration-space :args) new-iteration-space
                            (gethash (gethash (node-id read-node) nodeid->pipeline) funcall->domain) node-domain)
                      (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space)
-                     (print "Read is transformed into")
-                     (print new-iteration-space)
+                     ;;(print "Read is transformed into")
+                     ;;(print new-iteration-space)
                      )))))
   ;; Recursiveを実装する???
   ;; Otherwise Index-Component wouldn't be fused in embedding.
