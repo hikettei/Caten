@@ -5,7 +5,9 @@
 ;;   it implements PRNG Generator based on threefry2x32.
 ;;   *rng-counter* and *manual-seed* should be depended upon commonly by all graphs.
 ;; ~~ randomness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun make-rng-counter () (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter)))
+(defun make-rng-counter ()
+  (ctx:with-contextvar (:jit 0)
+    (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter))))
 (defparameter *manual-seed* 0)
 (defparameter *rng-counter* (make-rng-counter))
 (defun set-manual-seed (&key (seed 0))

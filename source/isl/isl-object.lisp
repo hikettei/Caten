@@ -33,8 +33,7 @@ of type OBJECT-NAME."
 (defvar *isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value))
 (defmacro with-isl-context (&body body)
   "Assumes under the body is a thread-safe"
-  `(let* ((*isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value))
-	  (*context* (make-context)))
+  `(let* ((*context* (make-context)))
      ,@body))
 
 (defmacro define-isl-object
@@ -74,6 +73,7 @@ of type OBJECT-NAME."
 		 *isl-object-table*
                  (trivial-garbage:finalize (,%%make handle)
                                            (lambda ()
+                                             ;; (format t "Free: [~a] ~a~%" ',name (cffi:pointer-address handle))
 					     (remhash (cffi:pointer-address handle) *isl-object-table*)
 					     (,%free handle))))))))
        ,@(when %copy

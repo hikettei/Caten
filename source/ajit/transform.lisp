@@ -245,17 +245,6 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
       (f node-writes relay-writes t))))
 ;; ~~ Post-MultiExpr ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; ** Post-MultiExpr is WIP**
-(defmethod expr-apply-post-multiexpr-in-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
-  (assert (eql (node-type node) :EXPR))
-  (flet ((get-domain-from-funcall (node)
-	   (assert (eql (node-type node) :FUNCALL))
-	   (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain)))
-    (let ((reads (node-reads node)))
-      (dolist (r (cdr reads))
-	;; Domainが完全に同じ or 部分的に同じを最適化の設定で変更可能にする
-	;; Embeddingでは100*102回の余分なCMPを作ることになる
-	))))
-
 (defmethod expr-index-components-p ((node node))
   (assert (eql (node-type node) :EXPR))
   (and
@@ -303,53 +292,53 @@ When moving a node in T0 into T1, the operation is represented as:
 	(buffer-views buffer) (and (buffer-views buffer) (every #'identity (buffer-views buffer)) (permute-list permute (buffer-views buffer))))
   buffer)
 
-;; [TODO]
-;; - Randn < 2 Kernels (Fuse Scalar Kernels and vector parts)
-(defmethod expr-apply-index-component-globalize ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
-  "Propagate Index-Components"
-  ;; not working
-  (flet ((get-domain-from-funcall (node)
-	   (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
-	 (node->funcall (node)
-	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
-	     (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx))))))
-    (loop with domain = (get-domain-from-funcall node)
-          for reads in (cdr (node-reads node))
-	  for rt in (cdr (relay-reads (read-type-relay node)))
-	  for ic  = (id->value graph reads)
-	  if (and ic (eql (node-type ic) :EXPR)) do
-	    (when (expr-index-components-p ic)
-	      (let* ((ic-expr (copy-expr (getattr ic :EXPR))))
-		(when (eql *default-order* :row)
-		  ;; [aI + b][K]
-		  (flet ((zero-p (x)
-			   (and
-			    (eql (expr-op x) :Const)
-			    (eql 0 (expr-x x)))))
-		    ;; [2x+2]
-		    ;; [2, 4, 6, 8, 10][1:4]
-		    (setf (expr-y (expr-x ic-expr)) rt
-			  (expr-y ic-expr)
-			  (map 'list #'(lambda (x dom) (if (zero-p dom) (make-const 0 nil) (make-const x nil)))
-			       ;; Consider T0[0, 0, _gid2, 0] -> T1[_gid1, _gid2, _gid3, _gid4] migration.
-			       (buffer-stride rt) (getattr (node->funcall ic) :args)))
-		    (expr-graft-after (getattr node :EXPR) (car (node-writes ic)) ic-expr)
-		    (setf (relay-reads (read-type-relay node))
-			  (loop with ic-t = (car (relay-writes (read-type-relay ic)))
-				for r in (node-reads node)
-				for rt1 in (relay-reads (read-type-relay node))
-				if (eql r (car (node-reads ic)))
-				  collect rt
-				else
-				  collect rt1)
-		          (node-reads node)
-			  (loop for r in (node-reads node)
-				if (eql r (car (node-reads ic)))
-				  collect rt
-				else
-				  collect r)))))))))
+(defmethod domain-equal ((node1 Node) (node2 Node))
+  (assert (eql (node-type node1) :FOR))
+  (assert (eql (node-type node2) :FOR))
+  (and
+   (equal (getattr node1 :idx) (getattr node2 :idx))
+   (expr-eq (getattr node1 :upfrom) (getattr node2 :upfrom))
+   (expr-eq (getattr node1 :below) (getattr node2 :below))
+   (expr-eq (getattr node1 :by) (getattr node2 :by))))
+
+(defun extend-expr (graph group target-node leaf-node leaf-id nodeid->pipeline)
+  "Merges leaf-node to the target-node by grafting them."
+  (declare (type Node target-node leaf-node))
+  (expr-graft-after (getattr target-node :EXPR) leaf-id (getattr leaf-node :expr))
+  (remnode graph (node-id leaf-node))
+  (remnode
+   (gethash (gethash (node-id leaf-node) nodeid->pipeline) (poly-pipeline (group-polyhedron group)))
+   (node-id leaf-node))
+  (let ((used (expr-recursive-deps (getattr target-node :EXPR))))
+    (setf (relay-reads (read-type-relay target-node))
+          (loop for rt in (append (relay-reads (read-type-relay target-node)) (relay-reads (read-type-relay leaf-node)))
+                for r in (append (node-reads target-node) (node-reads leaf-node))
+                for nth upfrom 0
+                if (or (= nth 0) (and (not (eql r leaf-id)) (find r used)))
+                  collect rt)
+          (node-reads target-node)
+          (loop for r in (append (node-reads target-node) (node-reads leaf-node))
+                for nth upfrom 0
+                if (or (= nth 0) (and (not (eql r leaf-id)) (find r used)))
+                  collect r))))
+
+(defun serialize-graph (graph1 graph2)
+  "
+Relocated GRAPH1 in advance of GRAPH2
+for (...)
+  GRAPH1
+for (...)
+  GRAPH2
+->
+for (...)
+  GRAPH1
+  GRAPH2"
+  (declare (type Graph graph1 graph2))
+
+  )
 
 (defmethod expr-apply-post-multiexpr-in-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
+  "Post MultiExpr Fusion in the same domain."
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
          (domain-eq (dom1 dom2)
@@ -385,23 +374,39 @@ When moving a node in T0 into T1, the operation is represented as:
           for read-domain = (and read-node (get-domain-from-funcall read-node))
           if (and node-domain read-domain (domain-eq node-domain read-domain)
                   (no-across-domain-dep-p read))
-            do (expr-graft-after (getattr node :EXPR) read (getattr read-node :expr))
-               (remnode graph (node-id read-node))
-               (remnode
-                (gethash (gethash (node-id read-node) nodeid->pipeline) (poly-pipeline (group-polyhedron group)))
-                (node-id read-node))
-               (let ((used (expr-recursive-deps (getattr node :EXPR))))
-                 (setf (relay-reads (read-type-relay node))
-                       (loop for rt in (append (relay-reads (read-type-relay node)) (relay-reads (read-type-relay read-node)))
-                             for r in (append (node-reads node) (node-reads read-node))
-                             for nth upfrom 0
-                             if (or (= nth 0) (and (not (eql r read)) (find r used)))
-                               collect rt)
-                       (node-reads node)
-                       (loop for r in (append (node-reads node) (node-reads read-node))
-                             for nth upfrom 0
-                             if (or (= nth 0) (and (not (eql r read)) (find r used)))
-                               collect r))))))
+            do (extend-expr graph group node read-node read nodeid->pipeline))))
+
+(defmethod expr-apply-post-multiexpr-in-equivalent-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
+  (flet ((get-domain-from-funcall (node)
+           (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
+         (domain-eq (dom1 dom2)
+           (and (= (length dom1) (length dom2))
+                ;; Conflicts with expr-apply-post-multiexpr-in-equivalent-domain
+                (not (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2)))
+                (every #'domain-equal dom1 dom2)))
+         (node->funcall (node)
+	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
+	     (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))))
+         (no-across-domain-dep-p (id)
+           (and
+            ;; 
+            (null (find id (group-across-time-deps group)))
+            (= (length (id->users graph id)) 1))))
+    (assert (eql :EXPR (node-type node)))
+    (loop with node-domain = (get-domain-from-funcall node)
+          with node-iteration-space = (node->funcall node)
+          for read in (cdr (node-reads node))
+          for read-node-orig = (id->value graph read)
+          for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
+          for read-domain = (and read-node (get-domain-from-funcall read-node))
+          if (and node-domain read-domain (domain-eq node-domain read-domain)
+                  (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
+                  ;; Transform and apply? (is it possible?)
+                  (null (getattr read-node :reduction))
+                  (no-across-domain-dep-p read))
+            do ;; [TODO] If args are equivalent -> extend-expr
+               ;; otherwise: use serialize-graph
+               (extend-expr graph group node read-node read nodeid->pipeline))))
 
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
@@ -425,15 +430,6 @@ def main(val_35, val_54, val_48, val_31, val_37, val_41) {
 ```
 
 Here, T2 and T0 are the strongly-connected components, and the domain T0 is a subset of T2. In default, ISL Scheduler (Pluto) won't fuse these two domains because this will produce a dead execution loop. However, in general, making this cache often results in lower performance especially in deep learning inference. So we will fuse them.
-
-We refer to \"fusable\" components as:
-
-- T2の各Readを読む
-- T2の他のReadとweakly-connectedがNILになるEXPRは操作を適用できる
-- Reductionには操作を適用しない
-- readはoutputとしてlabelされている
-- Graphで直接の依存があるペア
-- id->usersのカウントが1である (directly connected)
 
 (Optimized)
 ```python
@@ -479,13 +475,21 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 			  (dolist (node (graph-nodes (gethash (getattr node :idx) pipeline)))
 			    (when (eql (node-type node) :EXPR)
 			      ,form)))))
-      ;; Globalize Index-Components (its 100% no benefits of making a cache)
+      
       ;; Reading render-node by render-node
       ;; t=0 | FOR idx = ...    (skip)
       ;; t=1 | FUNCALL = ...    (apply simplifier)
       ;; t=2 | ENDFOR idx = ... (skip)
       ;;       ...
+      ;; Applying render-graph level simplifiers, all of these are optional.
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
-      ;; (do-funcall (expr-apply-index-component-globalize group graph node funcall->domain nodeid->pipeline))
-      ;; (do-funcall (expr-apply-post-multiexpr-in-subdomain group graph node funcall->domain nodeid->pipeline))
-      )))
+      (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
+
+      ;; TODO: Merge Domain and SubDomain in order to complete following thing:
+      ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
+      ;; 2. Randn < 2 Kernels by propagation scalar parts
+      ;; Merge: Scalar
+      ;;          |
+      ;;        Matrix
+      ;; 3. In-Place Embedding, By propagating index-components and boolean parts
+      (simplify-render-graph group))))

@@ -420,6 +420,8 @@ The iseq obtained by lowering the Module must match the output destination speci
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
   (let ((avm (%compile-toplevel tensors :name name :external-simplifiers simplifiers)))
+    ;; FIXME: Since we can't determine when garbage collection (in caten/isl) will occur during testing, we run it every time.
+    (when (and (= (ctx:getenv :JIT) 1) (= (ctx:getenv :CI) 1)) (trivial-garbage:gc))
     (if jit (caten/ajit:jit avm :backend (or *jit-device* (ctx:getenv :jit_backend))) avm)))
 
 (defun avm/sync-tensors (avm)

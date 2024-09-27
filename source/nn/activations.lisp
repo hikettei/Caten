@@ -155,7 +155,7 @@
   :lisp  ((model x) (proceed (!log-softmax x)))
   :assert-close ((x y)
 		 (every (~= 1e-6) (elements x) (elements y)))
-  :in-place ((model) (= 2 (n-args `(512 256) model))) ;; [TODO] THIS SHOULD BE IN_PLACE!!
+  :in-place ((model) (= 1 (n-args `(512 256) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun elu-lisp (x &aux (alpha 1.0)) (- (relu-lisp x) (relu-lisp (* alpha (- 1 (exp x))))))
