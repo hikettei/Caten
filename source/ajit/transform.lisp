@@ -262,7 +262,8 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 
 ;; Graph Concatenating Operations: Extend-expr and serialize-graph
 (defun extend-expr (graph group target-node leaf-node leaf-id nodeid->pipeline)
-  "Merges leaf-node to the target-node by grafting them."
+  "Merges leaf-node to the target-node by grafting them.
+Note: It assumes that before/after, the argument of funcall each node belongs to are the equivalent."
   (declare (type Node target-node leaf-node))
   (expr-graft-after (getattr target-node :EXPR) leaf-id (getattr leaf-node :expr))
   (setf (getattr target-node :EXPR) (simplify-expr (getattr target-node :EXPR)))
@@ -383,9 +384,41 @@ for (...)
                    (extend-expr graph group node read-node read nodeid->pipeline)
                    (serialize-graph (group-render-graph group) (node->funcall read-node) node-iteration-space)))))
 
+(defmethod expr-apply-post-multiexpr-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
+  "Post MultiExpr Fusion Applicable Case 3, FUNCALLs strongly connected, and belongs to the partially equivalent loop (compared by idx, size, and order.)"
+  (flet ((get-domain-from-funcall (node)
+           (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
+         (domain-eq (dom1 dom2)
+           (and (= (length dom1) (length dom2))
+                ;; Conflicts with expr-apply-post-multiexpr-in-equivalent-domain
+                (not (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2)))
+                (every #'domain-equal dom1 dom2)))
+         (node->funcall (node)
+	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
+	     (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))))
+         (no-across-domain-dep-p (id)
+           (and
+            ;; 
+            (null (find id (group-across-time-deps group)))
+            (= (length (id->users graph id)) 1))))
+    (assert (eql :EXPR (node-type node)))
+    (loop with node-domain = (get-domain-from-funcall node)
+          with node-iteration-space = (node->funcall node)
+          for read in (cdr (node-reads node))
+          for read-node-orig = (id->value graph read)
+          for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
+          for read-domain = (and read-node (get-domain-from-funcall read-node))
+          if (and node-domain read-domain (domain-eq node-domain read-domain)
+                  ;; Transform and apply? (is it possible?)
+                  (null (getattr read-node :reduction))
+                  (no-across-domain-dep-p read))
+            do (if (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
+                   (extend-expr graph group node read-node read nodeid->pipeline)
+                   (serialize-graph (group-render-graph group) (node->funcall read-node) node-iteration-space)))))
+
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
-Consider this fake-python kernel representing Embedding Op.
+Consider this pseudo-python kernel representing Embedding Op.
 
 (Unoptimized)
 ```python
@@ -459,6 +492,7 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; Applying render-graph level simplifiers, all of these are optional.
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
+      ;; (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline))
       
       ;; TODO: Merge Domain and SubDomain in order to complete following thing:
       ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
