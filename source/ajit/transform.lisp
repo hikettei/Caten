@@ -244,53 +244,12 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
       (f node-reads relay-reads t)
       (f node-writes relay-writes t))))
 ;; ~~ Post-MultiExpr ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; ** Post-MultiExpr is WIP**
+;; TODO: Delete expr-index-components-p
 (defmethod expr-index-components-p ((node node))
   (assert (eql (node-type node) :EXPR))
   (and
    (getattr node :EXPR)
    (eql (expr-op (getattr node :EXPR)) :INDEX-COMPONENTS)))
-
-(defmethod domain-permutation ((fc1 Node) (fc2 Node))
-  "
-```
-for (int c0 = 0; c0 <= 9; c0 += 1) {
-  T0(c0, 0); ----------------------------|
-}                                        |
-                                         | Moving
-for (int c0 = 0; c0 <= 9; c0 += 1) {     |
-  T1 (0, c0); <--------------------------|
-}
-```
-When moving a node in T0 into T1, the operation is represented as:
-`permute_all_buffers_in_funcall(T0, domain_permutation(T0, T2))`
-"
-  (assert (eql (node-type fc1) :FUNCALL))
-  (assert (eql (node-type fc2) :FUNCALL))
-  (assert (= (length (getattr fc1 :args)) (length (getattr fc2 :args))))
-  (flet ((zero-p (x)
-	   (and
-	    (eql (expr-op x) :Const)
-	    (eql 0 (expr-x x)))))
-    (let ((initial-range (range 0 (length (getattr fc1 :args)))))
-      (macrolet ((swap (a b)
-		   `(let ((tmp (nth ,a initial-range)))
-		      (setf (nth ,a initial-range) (nth ,b initial-range)
-			    (nth ,b initial-range) tmp))))
-	(loop for arg in (getattr fc1 :args)
-	      for nth upfrom 0
-	      unless (zero-p arg) do
-		(let ((pos (position arg (getattr fc2 :args) :test #'expr-eq)))
-		  (unless pos (return-from domain-permutation)) ;; Failed (fc2 is not a subset of fc1)
-		  (swap pos nth))))
-      initial-range)))
-
-(defun %permute (buffer permute &aux (buffer (copy-buffer buffer)))
-  (assert (= (length permute) (buffer-nrank buffer)))
-  (setf (buffer-shape buffer) (permute-list permute (buffer-shape buffer))
-	(buffer-stride buffer) (permute-list permute (buffer-stride buffer))
-	(buffer-views buffer) (and (buffer-views buffer) (every #'identity (buffer-views buffer)) (permute-list permute (buffer-views buffer))))
-  buffer)
 
 (defmethod domain-equal ((node1 Node) (node2 Node))
   (assert (eql (node-type node1) :FOR))
@@ -301,10 +260,12 @@ When moving a node in T0 into T1, the operation is represented as:
    (expr-eq (getattr node1 :below) (getattr node2 :below))
    (expr-eq (getattr node1 :by) (getattr node2 :by))))
 
+;; Graph Concatenating Operations: Extend-expr and serialize-graph
 (defun extend-expr (graph group target-node leaf-node leaf-id nodeid->pipeline)
   "Merges leaf-node to the target-node by grafting them."
   (declare (type Node target-node leaf-node))
   (expr-graft-after (getattr target-node :EXPR) leaf-id (getattr leaf-node :expr))
+  (setf (getattr target-node :EXPR) (simplify-expr (getattr target-node :EXPR)))
   (remnode graph (node-id leaf-node))
   (remnode
    (gethash (gethash (node-id leaf-node) nodeid->pipeline) (poly-pipeline (group-polyhedron group)))
@@ -322,20 +283,34 @@ When moving a node in T0 into T1, the operation is represented as:
                 if (or (= nth 0) (and (not (eql r leaf-id)) (find r used)))
                   collect r))))
 
-(defun serialize-graph (graph1 graph2)
+(defun serialize-graph (render-graph graph1 graph2)
   "
-Relocated GRAPH1 in advance of GRAPH2
+Relocate GRAPH1 to just before GRAPH2
+```
 for (...)
   GRAPH1
+...
 for (...)
   GRAPH2
-->
+```
+=>
+```
+for (...)
+  empty
+...
 for (...)
   GRAPH1
   GRAPH2"
-  (declare (type Graph graph1 graph2) (ignore graph1 graph2))
-
-  )
+  (declare (type Node graph1 graph2) (type graph render-graph))
+  (assert (and (eql (node-type graph1) :FUNCALL) (eql (node-type graph2) :FUNCALL)))
+  (assert (= 1 (count (node-id graph2) (node-reads graph2) :key #'node-id)))
+  (remnode render-graph (node-id graph1))
+  (setf (graph-nodes render-graph)
+        (loop for node in (graph-nodes render-graph)
+              if (eql (node-id node) (node-id graph2))
+                collect graph1
+              end
+              collect node)))
 
 (defmethod expr-apply-post-multiexpr-in-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
   "Post MultiExpr Fusion in the same domain."
@@ -400,13 +375,13 @@ for (...)
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
           for read-domain = (and read-node (get-domain-from-funcall read-node))
           if (and node-domain read-domain (domain-eq node-domain read-domain)
-                  (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
                   ;; Transform and apply? (is it possible?)
                   (null (getattr read-node :reduction))
                   (no-across-domain-dep-p read))
-            do ;; [TODO] If args are equivalent -> extend-expr
-               ;; otherwise: use serialize-graph
-               (extend-expr graph group node read-node read nodeid->pipeline))))
+            do (if (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
+                   (extend-expr graph group node read-node read nodeid->pipeline)
+                   ;;(serialize-graph (group-render-graph group) (node->funcall read-node) node-iteration-space)
+                   ))))
 
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
