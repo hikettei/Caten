@@ -33,7 +33,7 @@
 
 (defmethod print-object ((expr Expr) stream)
   (if (eql (expr-op expr) :Aref)
-      (format stream "aref{~(~a~):~(~a~)}" (expr-x expr) (buffer-dtype (expr-y expr)))
+      (format stream "~(~a~)[~(~a~)]" (expr-x expr) (render-aref (default-device :clang) (expr-y expr)))
       (if (expr-z expr)
 	  (format stream "~(~a~)(~(~a~), ~(~a~), ~(~a~))" (expr-op expr) (expr-x expr) (expr-y expr) (expr-z expr))
 	  (if (expr-y expr)
