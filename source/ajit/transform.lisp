@@ -302,7 +302,7 @@ When moving a node in T0 into T1, the operation is represented as:
    (expr-eq (getattr node1 :by) (getattr node2 :by))))
 
 (defun extend-expr (graph group target-node leaf-node leaf-id nodeid->pipeline)
-  "Merges leaf-node to the target-node by grafting them"
+  "Merges leaf-node to the target-node by grafting them."
   (declare (type Node target-node leaf-node))
   (expr-graft-after (getattr target-node :EXPR) leaf-id (getattr leaf-node :expr))
   (remnode graph (node-id leaf-node))
@@ -492,12 +492,13 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 			  (dolist (node (graph-nodes (gethash (getattr node :idx) pipeline)))
 			    (when (eql (node-type node) :EXPR)
 			      ,form)))))
-      ;; Globalize Index-Components (its 100% no benefits of making a cache)
+      
       ;; Reading render-node by render-node
       ;; t=0 | FOR idx = ...    (skip)
       ;; t=1 | FUNCALL = ...    (apply simplifier)
       ;; t=2 | ENDFOR idx = ... (skip)
       ;;       ...
+      ;; Applying render-graph level simplifiers, all of these are optional.
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
 
