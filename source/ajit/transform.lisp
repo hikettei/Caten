@@ -388,33 +388,16 @@ for (...)
 	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
 	     (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))))
          (no-across-domain-dep-p (id)
-           ;; Returns T if A and B are connected one-by-one:
-           ;; A -> B
-           ;; Otherwise returns nil e.g.:
-           ;; A -> B
-           ;;   -> C
            (and
             ;; 
             (null (find id (group-across-time-deps group)))
             (= (length (id->users graph id)) 1))))
     (assert (eql :EXPR (node-type node)))
-    ;; FOR
-    ;; T0 | node0 }
-    ;;    | node1 }
-    ;; T1 | node2 }
-    ;;    | node3 } 
-    ;; ENDFOR
-    ;; node0, node1 and node2, node3 are not merged because in the initial schedule, they are assigned to the different loop.
-    ;; After ISL Scheduling, and if they are scheduled to the same loop, merge them with paying attention for the read/write deps.
     (loop with node-domain = (get-domain-from-funcall node)
           with node-iteration-space = (node->funcall node)
-          ;; EXPR (out-to, arg1, arg2, ...)
-          ;; node -> arg1 (if arg1 and node has a single path and belongs to the same domain, merge node and arg1)
-          ;;      -> arg2 ...
-          ;;      -> arg3 ...
           for read in (cdr (node-reads node))
           for read-node-orig = (id->value graph read)
-          for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig) ;; Only EXPR and EXPR can be merged
+          for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
           for read-domain = (and read-node (get-domain-from-funcall read-node))
           if (and node-domain read-domain (domain-eq node-domain read-domain)
                   (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
