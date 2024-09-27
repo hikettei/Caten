@@ -465,13 +465,18 @@ If failed, the function returns a keyword :failed"
                  (or
                   (find idx-str (getattr dest-space :args) :key #'(lambda (x) (princ-to-string (expr-x x))) :test #'equalp)
                   (error "->as-expr: ~a is not found?" idx-str)))
-               (find-bands-from-unseen (idx-expr)
+               (find-bands-from-unseen (idx-expr nth-first)
                  (assert (not (expr-zero-p idx-expr)))
                  (let ((key-domain (gethash (princ-to-string (expr-x idx-expr)) space/id2dom)))
                    (assert (and key-domain (not (eql key-domain :broadcast))))
                    (let ((new-band-idx-key
-                           (find key-domain (hash-table-keys dest/id2dom)
-                                 :test #'(lambda (x y) (domain-equal-space x (gethash y dest/id2dom))))))
+                           (or
+                            ;; Innermost or the same rank iter first.
+                            (let ((key (gethash (princ-to-string (expr-x (nth nth-first (getattr dest-space :args)))) dest/id2dom)))
+                              (when (and key (domain-equal-space key-domain key))
+                                (princ-to-string (expr-x (nth nth-first (getattr dest-space :args))))))
+                            (find key-domain (hash-table-keys dest/id2dom)
+                                  :test #'(lambda (x y) (domain-equal-space x (gethash y dest/id2dom)))))))
                      (if new-band-idx-key
                          (prog1
                              (->as-expr new-band-idx-key)
@@ -482,9 +487,10 @@ If failed, the function returns a keyword :failed"
         ;; T1(a, c, b, d)
         (assert (= (length (getattr space :args)) (length (getattr dest-space :args))))
         (loop for axis in (getattr space :args)
+              for nth upfrom 0
               for new-arg = (if (expr-zero-p axis)
                                 axis
-                                (find-bands-from-unseen axis))
+                                (find-bands-from-unseen axis nth))
               collect new-arg)))))
 
 (defmethod expr-apply-post-multiexpr-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline &aux (changed-p nil))
