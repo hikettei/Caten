@@ -495,6 +495,15 @@ If failed, the function returns a keyword :failed"
                  ;; So it is ok to overwrite its attributes.
                  (assert (eql (node-type read-iteration-space) :FUNCALL))
                  ;; Transforms the iteration space of funcall to fit the destination.
+                 (print "++++++++++")
+                 (print "CANDIDATE FOUND!")
+                 (print node)
+                 (print read-node)
+                 (print "NEW_SPACE")
+                 (print (getattr read-iteration-space :args))
+                 (print "->")
+                 (print (getattr node-iteration-space :args))
+                 (print read-domain) (print node-domain)
                  (let ((new-iteration-space (find-new-iteration-space
                                              read-iteration-space node-iteration-space
                                              read-domain node-domain)))
@@ -502,21 +511,17 @@ If failed, the function returns a keyword :failed"
                      (setf changed-p t)
                      ;; It is required to make new FUNCALL with args are properly shuffed.
                      ;; By finding the equivalent loop bound
-                     ;; T0(0, 0, c0, 0) -> argsで回してT1と比較
                      ;; Recursivelyに適用できるか？
                      ;; node->idも更新するhつようがありそう？
-                     (setf (getattr read-iteration-space :args) new-iteration-space)
+                     ;; ここでSetfしてfuncall->domainを更新する必要がありそう
+                     (setf (getattr read-iteration-space :args) new-iteration-space
+                           (gethash (gethash (node-id read-node) nodeid->pipeline) funcall->domain) node-domain)
                      (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space)
-                     ;;この関数は再起的に適用する必要がある (until gaining no changes)
-                     (print "CANDIDATE FOUND!")
-                     (print node)
-                     (print read-node)
-                     (print "++++++++++")
-                     (print "NEW_SPACE")
+                     (print "Read is transformed into")
                      (print new-iteration-space)
                      )))))
-  ;; Recursiveを実装する時は
-  ;; _relocated_pを全てリセットする関数を適用しないといけない
+  ;; Recursiveを実装する???
+  ;; Otherwise Index-Component wouldn't be fused in embedding.
   changed-p)
 
 ;; (defmethod expr-apply-post-multiexpr-wmma-transpose
@@ -607,6 +612,9 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline))
+
+      ;; applying subdomain multipletimes
+      ;; make it valid to call in-domain after ^
       
       ;; TODO: Merge Domain and SubDomain in order to complete following thing:
       ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
