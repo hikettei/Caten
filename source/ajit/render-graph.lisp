@@ -79,6 +79,13 @@ Loop is either of :Global or :Local
 	  new
 	  (simplify-rendering-nodes new)))))
 
+(defmethod simplify-render-graph ((group Group))
+  (setf (graph-nodes (group-render-graph group))
+        (simplify-rendering-nodes
+         (simplifier/remove-empty-funcall
+          (graph-nodes (group-render-graph group))
+          (poly-pipeline (group-polyhedron group))))))
+
 (defun simplifier/remove-empty-if (nodes &aux (removed nil))
   (loop for node in nodes
 	for nth upfrom 0
@@ -97,4 +104,9 @@ Loop is either of :Global or :Local
 		(eql (node-type (nth (1+ nth) nodes)) :ENDFOR))
 	  do (push (node-id (nth (1+ nth) nodes)) removed)
 	else unless (find (node-id node) removed)
-	       collect node))
+               collect node))
+
+(defun simplifier/remove-empty-funcall (nodes pipeline)
+  (loop for node in nodes
+        unless (and (eql (node-type node) :FUNCALL) (null (graph-nodes (gethash (getattr node :idx) pipeline))))
+          collect node))

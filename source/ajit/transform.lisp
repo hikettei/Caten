@@ -508,4 +508,4 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;;          |
       ;;        Matrix
       ;; 3. In-Place Embedding, By propagating index-components and boolean parts
-      )))
+      (simplify-render-graph group))))
