@@ -132,6 +132,9 @@ Usage:
 	 (when (not (typep x '(integer 0 4))) (warn "JIT_DEBUG should be an integer from 0 to 3, got ~a, setting 0" x) (setf x 0))
 	 x)
        "DEBUG-Level during jit-compilation")
+    (:DOT
+     0 :int #.(oneof "DOT" 0 `(0 1))
+     "Set 1 to generate a lowered dot graph and opening in the default browser. (requirement: graphviz")
     (:CI
      0 :int identity
      "Set 1 if the test is running under Github Actions")
