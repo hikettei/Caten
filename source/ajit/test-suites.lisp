@@ -69,9 +69,9 @@
       (check-args 1 `(3 3) (caten (!tan (make-tensor `(3 3)))))
       (check-args 1 `(3 3) (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
       (check-args 1 `(3 3) (caten (!softmax (make-tensor `(3 3)))))
-      (check-args 1 `(3 3) (caten (!softmax (ax+b `(3 3) 1 1))))
-      (check-args 1 `(3 3) (caten (!softmax (!softmax (ax+b `(3 3) 1 1)))))
-      (check-args 1 `(t t) (caten (!softmax (!softmax (ax+b `(a b) 1 1))))))))
+      (check-args 2 `(3 3) (caten (!softmax (ax+b `(3 3) 1 1))))
+      (check-args 1 `(3 3) (caten (!softmax (!softmax (make-tensor `(3 3))))))
+      (check-args 1 `(t t) (caten (!softmax (!softmax (make-tensor `(a b)))))))))
 
 (deftest matmul-schedule-test
   (with-no-grad
@@ -94,8 +94,7 @@
   (testing "Embedding < 1 Kernels, < 3 Tensors."
     (with-no-grad
       (check-kernels 1 (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
-      ;; [TODO]: Remove Index-Component buffer
-      (check-args 4 t (caten (call (Embedding 100 100) (make-tensor `(100 100))))))))
+      (check-args 3 t (caten (call (Embedding 100 100) (make-tensor `(100 100))))))))
 
 ;;(deftest symbolic-function-args-test
 ;;  (with-no-grad
