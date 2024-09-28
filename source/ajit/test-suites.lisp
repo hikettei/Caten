@@ -15,26 +15,29 @@
   (count :JIT_KERNEL (graph-nodes (avm-graph avm)) :key #'node-type))
 (defun n-args (shape avm)
   ;; shape ... (t t) specify t to match w/ anything
+  ;; shape = t to any shape
   (declare (type avm avm))
   (count :Allocate (graph-nodes (avm-graph avm))
 	 :test
 	 #'(lambda (id node)
-	     (and (eql id (node-type node))
+	     (and
+              (eql id (node-type node))
+              (or (eql shape t)
 		  (let* ((rank (getattr node :nrank))
 		 	 (s1 (subseq (node-reads node) 0 rank)))
 		    (and
 		     (= (length shape) (length s1))
 		     (every
 		      #'(lambda (x y) (or (eql x t) (equal x y)))
-		      shape s1)))))))
+		      shape s1))))))))
 
 (defun check-kernels (n avm)
   (if (= 1 (ctx:getenv :JIT))
-      (ok (= n (n-kernels avm)))
+      (ok (= n (n-kernels avm)) (format nil "got nkernels=~a (expected ~a)" (n-kernels avm) n))
       (skip "Needs JIT")))
 (defun check-args (n shape avm)
   (if (= 1 (ctx:getenv :JIT))
-      (ok (= n (n-args shape avm)))
+      (ok (= n (n-args shape avm)) (format nil "got nargs=~a (expected ~a)" (n-args shape avm) n))
       (skip "Needs JIT")))
 (defmacro with-jit-only-mode (&body body)
   `(if (= 1 (ctx:getenv :JIT))
@@ -70,7 +73,7 @@
       (check-args 1 `(3 3) (caten (!softmax (!softmax (ax+b `(3 3) 1 1)))))
       (check-args 1 `(t t) (caten (!softmax (!softmax (ax+b `(a b) 1 1))))))))
 
-(deftest matmul-is-small
+(deftest matmul-schedule-test
   (with-no-grad
     (with-jit-only-mode
       (let* ((m (caten (!matmul (make-tensor `(3 10)) (make-tensor `(10 20)))))
@@ -84,6 +87,15 @@
 					 nil)))
 		   allocs)
 	    "Contiguous array creations are not allowed")))))
+
+;; [TODO] Transposed Matmul Schedule-Test
+;; Optimal Kernel Should be:
+(deftest embedding-schedule-test
+  (testing "Embedding < 1 Kernels, < 3 Tensors."
+    (with-no-grad
+      (check-kernels 1 (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
+      ;; [TODO]: Remove Index-Component buffer
+      (check-args 4 t (caten (call (Embedding 100 100) (make-tensor `(100 100))))))))
 
 ;;(deftest symbolic-function-args-test
 ;;  (with-no-grad
