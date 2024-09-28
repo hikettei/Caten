@@ -336,20 +336,33 @@ for (...)
               end
               collect node)))
 
-(defun domain->n-kernels (graph dom)
-  "Returns a number of :FUNCALL used in the domain."
+(defun domain->funcall-depth (graph dom)
+  "Counts the depth of funcall in the graph:
+```
+FOR (...)
+  FUNCALL }
+  FUNCALL } (incf 1)
+  FOR (...)
+   FUNCALL } (incf 1)
+  }
+}
+```
+Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
   (declare (type graph graph) (type list dom))
   (let ((starts (map 'list #'(lambda (x) (position (node-id x) (graph-nodes graph) :key #'node-id)) dom))
-        (count 0))
-    (when (null starts) (return-from domain->n-kernels 0))
+        (funcall-depth))
+    (when (null starts) (return-from domain->funcall-depth 0))
     (loop with start = (apply #'min starts)
           with seen = (map 'list #'(lambda (x) (getattr x :idx)) dom)
+          with idx = nil
           for node in (nthcdr start (graph-nodes graph))
-          if (eql (node-type node) :FUNCALL) do (incf count)
+          if (eql (node-type node) :FUNCALL) do (push idx funcall-depth)
           else if (eql (node-type node) :ENDFOR) do (setf seen (remove (getattr node :idx) seen :test #'equalp))
           else if (eql (node-type node) :FOR) do
-            (when (null seen) (return-from domain->n-kernels count)))
-    count))
+          (setf idx (getattr node :idx))
+          (when (null seen)
+            (return-from domain->funcall-depth (length (remove-duplicates funcall-depth :test #'equalp)))))
+    (length (remove-duplicates funcall-depth :test #'equalp))))
 
 (defun domain-eq-1 (dom1 dom2)
   (and (= (length dom1) (length dom2))
@@ -537,8 +550,12 @@ If failed, the function returns a keyword :failed"
                   ;; output cannot be overwritten
                   node-domain read-domain
                   (null (getattr read-node :reduction))
-                  ;; smaller kernel (failed to fused one) is merged by larger kernels (already fused one).
-                  (<= (domain->n-kernels (group-render-graph group) read-domain) (domain->n-kernels (group-render-graph group) node-domain))
+                  ;; All bands must be intersect with the destination domain, or
+                  ;; when merging with another kernel domain, the nest should be one.
+                  (= 1 (domain->funcall-depth (group-render-graph group)
+                                              (loop for d in read-domain
+                                                    unless (find (node-id d) node-domain :key #'node-id)
+                                                      collect d)))
                   (no-across-domain-dep-p read)
                   (not (every #'eql (map 'list #'node-id node-domain) (map 'list #'node-id read-domain)))
                   (domain-eq-3 node-domain read-domain))
