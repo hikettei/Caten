@@ -222,6 +222,7 @@ The provided form does not match any of them:~%~a" method method method method f
     :documentation "Gemm (TODO)"
     :impl ((mm x y)
 	   (multiple-value-bind (n1 n2) (values (ndim x) (ndim y))
+             (assert (= n1 n2) () "Cannot multiply matrices with different dimensions. Are they properly broadcasted?~%A: ~a~%B: ~a" x y)
 	     (let* ((mid (loop for i upfrom 0 below (min (- n1 1) (- n2 1) 1) collect 1))
 		    (x (!reshape x `(,@(butlast (shape x) 1) ,@mid ,(car (last (shape x))))))
 		    (y (!reshape y `(,@(butlast (shape y) 2) ,@mid ,@(last (shape y) (min n2 2))))))
