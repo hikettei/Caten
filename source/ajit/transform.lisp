@@ -558,11 +558,13 @@ If failed, the function returns a keyword :failed"
     (loop with node-domain = (get-domain-from-funcall node)
           with node-iteration-space = (node->funcall node)
           for read in (cdr (node-reads node))
+          for read-type in (cdr (relay-reads (read-type-relay node)))
           for read-node-orig = (id->value graph read)
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
           for read-domain = (and read-node (get-domain-from-funcall read-node))
           if (and (not (eql read (car (node-reads node))))
                   ;; [TODO] Do we need extra conditions here? (e.g.: no offsets were created, views)
+                  (null (buffer-inferred-permute read-type))
                   ;; EXPR(output, x, y)
                   ;; output cannot be overwritten
                   node-domain read-domain
