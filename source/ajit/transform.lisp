@@ -217,9 +217,25 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 (defmethod ->render-graph ((group Group))
   (when (group-polyhedron group)
     (render-graph-from-polyhedral (graph-nodes (group-render-graph group)))))
-
 ;; ~~ Memory Latency Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod update-buffer-as-scalar ((node Node) mutated-list domain-space)
+  "Mutates :output buffer to scalar w/ a certain condition.
+```
+FOR (...) {
+  val_0[_gid0] = ... // val_0 is labelled as :out, and all of subsequent operations belongs to the same body.
+  (operation)
+  ...
+}
+```
+then, val_0 is mutated to scalar.
+```
+FOR (...) {
+  float val_0 = ...
+  (operation)
+  ...
+}
+``
+"
   (flet ((mutate-scalar-buffer (id buffer expr read-p)
 	   (if (= (buffer-nrank buffer) 0)
 	       buffer
@@ -261,6 +277,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
    (expr-eq (getattr node1 :by) (getattr node2 :by))))
 
 (defun equal-but-id (id1 id2)
+  "#'equal but id1==id2 becomes true. (e.g.: use when you want expr_eq(_gid0 >= 3, _gid1 >= 3) to be true"
   (flet ((equal-but-id-p (a b)
            (cond
              ((or (equal a id1) (equal a id2))
@@ -309,7 +326,7 @@ Note: It assumes that before/after, the argument of funcall each node belongs to
 
 (defun serialize-graph (render-graph graph1 graph2)
   "
-Relocate GRAPH1 to just before GRAPH2
+Relocate GRAPH1 to just before GRAPH2 to maximize the chance to scalar mutation.
 ```
 for (...)
   GRAPH1
