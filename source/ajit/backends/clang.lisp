@@ -213,7 +213,7 @@ Compiled with: ~a"
   (declare (type graph jit-graph)
 	   (type polyhedral polyhedral)
 	   (type fixnum indent))
-  (let ((*args* (loop for arg in args if (argument-pointer-p arg) collect (caten/ajit:argument-name arg))))
+  (let ((*args* (loop for arg in args if (argument-pointer-p arg) collect (argument-name arg))))
     (with-output-to-string (out)
       (macrolet ((line (designator &rest args)
 		   `(progn

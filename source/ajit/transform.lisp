@@ -116,25 +116,28 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 		      t)
 		  (unroll-upfrom x unroll-by :1p t))))))
 	   (make-unroll (idx n-unroll base-funcall)
-	     (r/packed-funcall
-	      base-funcall
-	      (loop for node in (or (getattr base-funcall :_unrolled) (list base-funcall))
-		    append
-		    (loop for nth upfrom 0 below n-unroll
-			  collect
-			  (flet ((mapper (x)
-				   (if (and (or (symbolp x) (stringp x)) (string= x idx))
-				       (format nil "(~a+~a)" x nth)
-				       x)))
-			    (r/funcall
-			     (getattr node :name)
-			     (map
-			      'list
-			      #'(lambda (x &aux (x (copy-expr x))) (expr-recursive-replace x #'mapper) x)
-			      (getattr node :args))
-			     :unroll-offsets (append (getattr node :unroll-offsets) (list (cons idx nth)))))))
-	      idx
-	      n-unroll))
+             ;; Not related axes  (e.g.: = 0) is not unrolled.
+             (if (find idx (getattr base-funcall :args) :key #'(lambda (x) (princ-to-string (expr-x x))) :test #'equalp)
+	         (r/packed-funcall
+	          base-funcall
+	          (loop for node in (or (getattr base-funcall :_unrolled) (list base-funcall))
+		        append
+		        (loop for nth upfrom 0 below n-unroll
+			      collect
+			      (flet ((mapper (x)
+				       (if (and (or (symbolp x) (stringp x)) (string= x idx))
+				           (format nil "(~a+~a)" x nth)
+				           x)))
+			        (r/funcall
+			         (getattr node :name)
+			         (map
+			          'list
+			          #'(lambda (x &aux (x (copy-expr x))) (expr-recursive-replace x #'mapper) x)
+			          (getattr node :args))
+			         :unroll-offsets (append (getattr node :unroll-offsets) (list (cons idx nth)))))))
+	          idx
+	          n-unroll)
+                 base-funcall))
  	   (unroll-valid-p (nodes)
 	     (every #'(lambda (x) (find (node-type x) `(:FOR :ENDFOR :FUNCALL))) nodes))
   	   (subseq-loops (nodes start-id idx
@@ -214,9 +217,25 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 (defmethod ->render-graph ((group Group))
   (when (group-polyhedron group)
     (render-graph-from-polyhedral (graph-nodes (group-render-graph group)))))
-
 ;; ~~ Memory Latency Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod update-buffer-as-scalar ((node Node) mutated-list domain-space)
+  "Mutates :output buffer to scalar w/ a certain condition.
+```
+FOR (...) {
+  val_0[_gid0] = ... // val_0 is labelled as :out, and all of subsequent operations belongs to the same body.
+  (operation)
+  ...
+}
+```
+then, val_0 is mutated to scalar.
+```
+FOR (...) {
+  float val_0 = ...
+  (operation)
+  ...
+}
+``
+"
   (flet ((mutate-scalar-buffer (id buffer expr read-p)
 	   (if (= (buffer-nrank buffer) 0)
 	       buffer
@@ -244,54 +263,10 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
       (f node-reads relay-reads t)
       (f node-writes relay-writes t))))
 ;; ~~ Post-MultiExpr ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; ** Post-MultiExpr is WIP**
-(defmethod expr-index-components-p ((node node))
-  (assert (eql (node-type node) :EXPR))
-  (and
-   (getattr node :EXPR)
-   (eql (expr-op (getattr node :EXPR)) :INDEX-COMPONENTS)))
-
-(defmethod domain-permutation ((fc1 Node) (fc2 Node))
-  "
-```
-for (int c0 = 0; c0 <= 9; c0 += 1) {
-  T0(c0, 0); ----------------------------|
-}                                        |
-                                         | Moving
-for (int c0 = 0; c0 <= 9; c0 += 1) {     |
-  T1 (0, c0); <--------------------------|
-}
-```
-When moving a node in T0 into T1, the operation is represented as:
-`permute_all_buffers_in_funcall(T0, domain_permutation(T0, T2))`
-"
-  (assert (eql (node-type fc1) :FUNCALL))
-  (assert (eql (node-type fc2) :FUNCALL))
-  (assert (= (length (getattr fc1 :args)) (length (getattr fc2 :args))))
-  (flet ((zero-p (x)
-	   (and
-	    (eql (expr-op x) :Const)
-	    (eql 0 (expr-x x)))))
-    (let ((initial-range (range 0 (length (getattr fc1 :args)))))
-      (macrolet ((swap (a b)
-		   `(let ((tmp (nth ,a initial-range)))
-		      (setf (nth ,a initial-range) (nth ,b initial-range)
-			    (nth ,b initial-range) tmp))))
-	(loop for arg in (getattr fc1 :args)
-	      for nth upfrom 0
-	      unless (zero-p arg) do
-		(let ((pos (position arg (getattr fc2 :args) :test #'expr-eq)))
-		  (unless pos (return-from domain-permutation)) ;; Failed (fc2 is not a subset of fc1)
-		  (swap pos nth))))
-      initial-range)))
-
-(defun %permute (buffer permute &aux (buffer (copy-buffer buffer)))
-  (assert (= (length permute) (buffer-nrank buffer)))
-  (setf (buffer-shape buffer) (permute-list permute (buffer-shape buffer))
-	(buffer-stride buffer) (permute-list permute (buffer-stride buffer))
-	(buffer-views buffer) (and (buffer-views buffer) (every #'identity (buffer-views buffer)) (permute-list permute (buffer-views buffer))))
-  buffer)
-
+(defun expr-zero-p (expr)
+  (check-type expr Expr)
+  (and (eql :Const (expr-op expr)) (eql 0 (expr-x expr))))
+  
 (defmethod domain-equal ((node1 Node) (node2 Node))
   (assert (eql (node-type node1) :FOR))
   (assert (eql (node-type node2) :FOR))
@@ -301,10 +276,37 @@ When moving a node in T0 into T1, the operation is represented as:
    (expr-eq (getattr node1 :below) (getattr node2 :below))
    (expr-eq (getattr node1 :by) (getattr node2 :by))))
 
+(defun equal-but-id (id1 id2)
+  "#'equal but id1==id2 becomes true. (e.g.: use when you want expr_eq(_gid0 >= 3, _gid1 >= 3) to be true"
+  (flet ((equal-but-id-p (a b)
+           (cond
+             ((or (equal a id1) (equal a id2))
+              (or (equal b id2) (equal b id1)))
+             ((or (equal b id1) (equal b id2))
+              (or (equal b id1) (equal b id2)))
+             (t
+              (equal a b)))))
+    #'equal-but-id-p))
+
+(defmethod domain-equal-space ((node1 Node) (node2 Node))
+  (assert (eql (node-type node1) :FOR))
+  (assert (eql (node-type node2) :FOR))
+  (let ((id1 (getattr node1 :idx))
+        (id2 (getattr node2 :idx)))
+    (flet ((cmp (a b) (funcall (equal-but-id id1 id2) a b)))
+      (and
+       (cmp (getattr node1 :idx) (getattr node2 :idx))
+       (expr-cmp #'cmp (getattr node1 :upfrom) (getattr node2 :upfrom))
+       (expr-cmp #'cmp (getattr node1 :below) (getattr node2 :below))
+       (expr-cmp #'cmp (getattr node1 :by) (getattr node2 :by))))))
+
+;; Graph Concatenating Operations: Extend-expr and serialize-graph
 (defun extend-expr (graph group target-node leaf-node leaf-id nodeid->pipeline)
-  "Merges leaf-node to the target-node by grafting them."
+  "Merges leaf-node to the target-node by grafting them.
+Note: It assumes that before/after, the argument of funcall each node belongs to are the equivalent."
   (declare (type Node target-node leaf-node))
   (expr-graft-after (getattr target-node :EXPR) leaf-id (getattr leaf-node :expr))
+  (setf (getattr target-node :EXPR) (simplify-expr (getattr target-node :EXPR)))
   (remnode graph (node-id leaf-node))
   (remnode
    (gethash (gethash (node-id leaf-node) nodeid->pipeline) (poly-pipeline (group-polyhedron group)))
@@ -322,28 +324,76 @@ When moving a node in T0 into T1, the operation is represented as:
                 if (or (= nth 0) (and (not (eql r leaf-id)) (find r used)))
                   collect r))))
 
-(defun serialize-graph (graph1 graph2)
+(defun serialize-graph (render-graph graph1 graph2)
   "
-Relocated GRAPH1 in advance of GRAPH2
+Relocate GRAPH1 to just before GRAPH2 to maximize the chance to scalar mutation.
+```
 for (...)
   GRAPH1
+...
 for (...)
   GRAPH2
-->
+```
+=>
+```
+for (...)
+  empty
+...
 for (...)
   GRAPH1
   GRAPH2"
-  (declare (type Graph graph1 graph2))
+  (declare (type Node graph1 graph2) (type graph render-graph))
+  (assert (and (eql (node-type graph1) :FUNCALL) (eql (node-type graph2) :FUNCALL)))
+  (assert (= 1 (count (node-id graph2) (graph-nodes render-graph) :key #'node-id)))
+  (remnode render-graph (node-id graph1))
+  (setf (graph-nodes render-graph)
+        (loop for node in (graph-nodes render-graph)
+              if (eql (node-id node) (node-id graph2))
+                collect graph1
+              end
+              collect node)))
 
-  )
+(defun domain->funcall-depth (graph dom)
+  "Counts the depth of funcall in the graph:
+```
+FOR (...)
+  FUNCALL }
+  FUNCALL } (incf 1)
+  FOR (...)
+   FUNCALL } (incf 1)
+  }
+}
+```
+Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
+  (declare (type graph graph) (type list dom))
+  (let ((starts (map 'list #'(lambda (x) (position (node-id x) (graph-nodes graph) :key #'node-id)) dom))
+        (funcall-depth))
+    (when (null starts) (return-from domain->funcall-depth 0))
+    (loop with start = (apply #'min starts)
+          with seen = (map 'list #'(lambda (x) (getattr x :idx)) dom)
+          with idx = nil
+          for node in (nthcdr start (graph-nodes graph))
+          if (eql (node-type node) :FUNCALL) do (push idx funcall-depth)
+          else if (eql (node-type node) :ENDFOR) do (setf seen (remove (getattr node :idx) seen :test #'equalp))
+          else if (eql (node-type node) :FOR) do
+          (setf idx (getattr node :idx))
+          (when (null seen)
+            (return-from domain->funcall-depth (length (remove-duplicates funcall-depth :test #'equalp)))))
+    (length (remove-duplicates funcall-depth :test #'equalp))))
+
+(defun domain-eq-1 (dom1 dom2)
+  (and (= (length dom1) (length dom2))
+       (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2))))
 
 (defmethod expr-apply-post-multiexpr-in-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
-  "Post MultiExpr Fusion in the same domain."
+  "Post MultiExpr Fusion Applicable Case 1, FUNCALL belongs to the same loop (compared by node-id)"
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
-         (domain-eq (dom1 dom2)
-           (and (= (length dom1) (length dom2))
-                (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2))))
+         (node->funcall (node)
+	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
+	     (or
+              (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))
+              (error "~a should be found in the rendering graph.~%~a" node (group-render-graph group)))))
          (no-across-domain-dep-p (id)
            ;; Returns T if A and B are connected one-by-one:
            ;; A -> B
@@ -351,7 +401,6 @@ for (...)
            ;; A -> B
            ;;   -> C
            (and
-            ;; 
             (null (find id (group-across-time-deps group)))
             (= (length (id->users graph id)) 1))))
     (assert (eql :EXPR (node-type node)))
@@ -364,6 +413,7 @@ for (...)
     ;; node0, node1 and node2, node3 are not merged because in the initial schedule, they are assigned to the different loop.
     ;; After ISL Scheduling, and if they are scheduled to the same loop, merge them with paying attention for the read/write deps.
     (loop with node-domain = (get-domain-from-funcall node)
+          with node-iteration-space = (node->funcall node)
           ;; EXPR (out-to, arg1, arg2, ...)
           ;; node -> arg1 (if arg1 and node has a single path and belongs to the same domain, merge node and arg1)
           ;;      -> arg2 ...
@@ -372,24 +422,32 @@ for (...)
           for read-node-orig = (id->value graph read)
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig) ;; Only EXPR and EXPR can be merged
           for read-domain = (and read-node (get-domain-from-funcall read-node))
-          if (and node-domain read-domain (domain-eq node-domain read-domain)
-                  (no-across-domain-dep-p read))
+          if (and node-domain read-domain (domain-eq-1 node-domain read-domain)
+                  (no-across-domain-dep-p read)
+                  (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args)))
+            ;; for (...)   }
+            ;;  for  (...) } 1. Belongs to the same loop
+            ;;
+            ;;   T0(a, b)  }  
+            ;;   T1(a, b)  } 2. Schedule is the same
+            ;; (1. and 2.) = T0 and T1 are fusable.
             do (extend-expr graph group node read-node read nodeid->pipeline))))
 
+(defun domain-eq-2 (dom1 dom2)
+  (and (= (length dom1) (length dom2))
+       ;; Conflicts with expr-apply-post-multiexpr-in-equivalent-domain
+       (not (domain-eq-1 dom1 dom2))
+       (every #'domain-equal dom1 dom2)))
+
 (defmethod expr-apply-post-multiexpr-in-equivalent-domain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline)
+  "Post MultiExpr Fusion Applicable Case 2, FUNCALLs strongly connected, and belongs to the same loop (compared by idx, size, and order.)"
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
-         (domain-eq (dom1 dom2)
-           (and (= (length dom1) (length dom2))
-                ;; Conflicts with expr-apply-post-multiexpr-in-equivalent-domain
-                (not (every #'eql (map 'list #'node-id dom1) (map 'list #'node-id dom2)))
-                (every #'domain-equal dom1 dom2)))
          (node->funcall (node)
 	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
 	     (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))))
          (no-across-domain-dep-p (id)
            (and
-            ;; 
             (null (find id (group-across-time-deps group)))
             (= (length (id->users graph id)) 1))))
     (assert (eql :EXPR (node-type node)))
@@ -399,18 +457,154 @@ for (...)
           for read-node-orig = (id->value graph read)
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
           for read-domain = (and read-node (get-domain-from-funcall read-node))
-          if (and node-domain read-domain (domain-eq node-domain read-domain)
-                  (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
-                  ;; Transform and apply? (is it possible?)
+          if (and node-domain read-domain (domain-eq-2 node-domain read-domain)
                   (null (getattr read-node :reduction))
                   (no-across-domain-dep-p read))
-            do ;; [TODO] If args are equivalent -> extend-expr
-               ;; otherwise: use serialize-graph
-               (extend-expr graph group node read-node read nodeid->pipeline))))
+            ;; for (...)   }
+            ;;  for  (...) } 1. The size of iteration is the same.
+            ;;   T0(a, b)  }
+            ;; for (...)   }
+            ;;  for (...)  } 1. The size of iteration is the same.
+            ;;   T1(a, b)  }
+            ;; If the schedule of T0 and T1 is the equivalent -> they can be fused directly
+            ;; Otherwise -> T0 and T1 can be serialized e.g.:
+            ;; for (...)
+            ;;  for (...)
+            ;;   T0(a, b)
+            ;;   T1(a, b)
+            do (if (every #'expr-eq (getattr node-iteration-space :args) (getattr (node->funcall read-node) :args))
+                   (extend-expr graph group node read-node read nodeid->pipeline)
+                   (serialize-graph (group-render-graph group) (node->funcall read-node) node-iteration-space)))))
 
+(defun domain-eq-3 (dom1 dom2 &aux (unseen-dom (copy-list dom1)))
+  "Assumes dom2 ⊆ dom1. dom2 and dom1 are partially equal."
+  (and
+   (not (domain-eq-2 dom1 dom2))
+   (>= (length dom1) (length dom2))
+   (every
+    #'(lambda (x)
+        (let ((val (find x unseen-dom :test #'domain-equal-space)))
+          (when val
+            (setf unseen-dom (remove (node-id val) unseen-dom :key #'node-id))
+            t)))
+    dom2)))
+
+(defun find-new-iteration-space (space dest-space space-dom dest-dom)
+  "Creates a new funcall when moving space into dest-space.
+If failed, the function returns a keyword :failed"
+  (declare (type node space dest-space)
+           (type list space-dom dest-dom))
+  (flet ((id->dom (spc dm)
+           (let ((out (make-hash-table :test #'equal)))
+             (loop for sp in (getattr spc :args)
+                   ;; It is asserted that sp is a :Const
+                   for d = (or
+                            (find (princ-to-string (expr-x sp)) dm :key #'(lambda (x) (getattr x :idx)) :test #'equalp)
+                            (when (expr-zero-p sp)
+                              :broadcast))
+                   do (assert (eql (expr-op sp) :Const))
+                      (assert d)
+                      (unless (eql d :broadcast)
+                        (setf (gethash (princ-to-string (expr-x sp)) out) d)))
+             out)))
+    (multiple-value-bind (space/id2dom dest/id2dom)
+        (values (id->dom space space-dom) (id->dom dest-space dest-dom))
+      (labels ((->as-expr (idx-str)
+                 (or
+                  (find idx-str (getattr dest-space :args) :key #'(lambda (x) (princ-to-string (expr-x x))) :test #'equalp)
+                  (error "->as-expr: ~a is not found?" idx-str)))
+               (find-bands-from-unseen (idx-expr nth-first)
+                 (assert (not (expr-zero-p idx-expr)))
+                 (let ((key-domain (gethash (princ-to-string (expr-x idx-expr)) space/id2dom)))
+                   (assert (and key-domain (not (eql key-domain :broadcast))))
+                   (let ((new-band-idx-key
+                           (or
+                            ;; Innermost or the same rank iter first.
+                            (let ((key (gethash (princ-to-string (expr-x (nth nth-first (getattr dest-space :args)))) dest/id2dom)))
+                              (when (and key (domain-equal-space key-domain key))
+                                (princ-to-string (expr-x (nth nth-first (getattr dest-space :args))))))
+                            (find key-domain (hash-table-keys dest/id2dom)
+                                  :test #'(lambda (x y) (domain-equal-space x (gethash y dest/id2dom)))))))
+                     (if new-band-idx-key
+                         (prog1
+                             (->as-expr new-band-idx-key)
+                           (remhash new-band-idx-key dest/id2dom))
+                         (return-from find-new-iteration-space :failed))))))
+        ;; T0(0, 0, c, 0)  Transform
+        ;; ->                  =>     T0(0, 0, c, 0)
+        ;; T1(a, c, b, d)
+        (assert (= (length (getattr space :args)) (length (getattr dest-space :args))))
+        (loop for axis in (getattr space :args)
+              for nth upfrom 0
+              for new-arg = (if (expr-zero-p axis)
+                                axis
+                                (find-bands-from-unseen axis nth))
+              collect new-arg)))))
+
+(defmethod expr-apply-post-multiexpr-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline &aux (changed-p nil))
+  "Post MultiExpr Fusion Applicable Case 3, FUNCALLs strongly connected, and belongs to the partially equivalent loop (compared by idx, size, and order.)"
+  (flet ((get-domain-from-funcall (node)
+           (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
+         (node->funcall (node)
+	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
+	     (or
+              (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))
+              (error "~a should be found in the rendering graph.~%~a" node (group-render-graph group)))))
+         (no-across-domain-dep-p (id)
+           (and
+            (null (find id (group-across-time-deps group)))
+            (= (length (id->users graph id)) 1))))
+    (assert (eql :EXPR (node-type node)))
+    (loop with node-domain = (get-domain-from-funcall node)
+          with node-iteration-space = (node->funcall node)
+          for read in (cdr (node-reads node))
+          for read-node-orig = (id->value graph read)
+          for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
+          for read-domain = (and read-node (get-domain-from-funcall read-node))
+          if (and (not (eql read (car (node-reads node))))
+                  ;; [TODO] Do we need extra conditions here? (e.g.: no offsets were created, views)
+                  ;; EXPR(output, x, y)
+                  ;; output cannot be overwritten
+                  node-domain read-domain
+                  (null (getattr read-node :reduction))
+                  ;; All bands must be intersect with the destination domain, or
+                  ;; when merging with another kernel domain, the nest should be one.
+                  (= 1 (domain->funcall-depth (group-render-graph group)
+                                              (loop for d in read-domain
+                                                    unless (find (node-id d) node-domain :key #'node-id)
+                                                      collect d)))
+                  (no-across-domain-dep-p read)
+                  (not (every #'eql (map 'list #'node-id node-domain) (map 'list #'node-id read-domain)))
+                  (domain-eq-3 node-domain read-domain))
+            ;; for (...)               }
+            ;;   T0(0, 0, a, 0)
+            ;; for (...)               } If loops are partially equivalent.
+            ;;   for(...)
+            ;;     for(...)
+            ;;       for (...)
+            ;;         T1(a, b, c, d)
+            ;; The compiler can insert Permute(T0) before the execution of T1, by permuting the schedule of T0.
+            do (let ((read-iteration-space (node->funcall read-node)))
+                 ;; Assumes read-iteration-space funcall was used at once in the render-graph.
+                 ;; So it is ok to overwrite its attributes.
+                 (assert (eql (node-type read-iteration-space) :FUNCALL))
+                 ;; Transforms the iteration space of funcall to fit the destination.
+                 (let ((new-iteration-space (find-new-iteration-space
+                                             read-iteration-space node-iteration-space
+                                             read-domain node-domain)))
+                   (when (not (eql new-iteration-space :failed))
+                     (setf changed-p t)
+                     ;; It is required to make new FUNCALL with args are properly shuffed.
+                     ;; By finding the equivalent loop bound
+                     (setf (getattr read-iteration-space :args) new-iteration-space
+                           (gethash (gethash (node-id read-node) nodeid->pipeline) funcall->domain) node-domain)
+                     (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space))))))
+  changed-p)
+
+;; (defmethod expr-apply-post-multiexpr-wmma-transpose
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
-Consider this fake-python kernel representing Embedding Op.
+Consider this pseudo-python kernel representing Embedding Op.
 
 (Unoptimized)
 ```python
@@ -450,7 +644,13 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 	(funcall->domain (make-hash-table))
 	(nodeid->pipeline (make-hash-table))
 	(pipeline (poly-pipeline (group-polyhedron group))))
-    (flet ((simple-p (node) (find (node-type node) `(:FOR :ENDFOR :FUNCALL))))
+    ;; Gathering information ...
+    (flet ((simple-p (node)
+             (and
+              (find (node-type node) `(:FOR :ENDFOR :FUNCALL))
+              (if (eql (node-type node) :FUNCALL)
+                  (every #'(lambda (x) (eql (expr-op x) :Const)) (getattr node :args))
+                  t))))
       (unless (every #'simple-p (graph-nodes render-graph)) (return-from post-simplify-multiexpr))
       (maphash
        #'(lambda (ts graph)
@@ -469,13 +669,18 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
 		     (warn "The node ~a appeared in the scheduled graph more than twise times and thus cannot apply post-simplify multiexpr." node))
 		   (return-from post-simplify-multiexpr))
 		 (setf (gethash (getattr node :idx) funcall->domain) (reverse domains))))
-    (macrolet ((do-funcall (form)
-		 `(loop for node in (graph-nodes render-graph)
-			if (eql (node-type node) :FUNCALL) do
-			  (dolist (node (graph-nodes (gethash (getattr node :idx) pipeline)))
-			    (when (eql (node-type node) :EXPR)
-			      ,form)))))
-      
+    ;; Applying Simplifiers ...
+    (macrolet ((do-funcall (form &key (type :EXPR) (recursively nil))
+		 `(flet ((f (&aux (changed-p nil))
+                           (loop for node in (graph-nodes render-graph)
+			         if (eql (node-type node) :FUNCALL) do
+			           (dolist (node (graph-nodes (gethash (getattr node :idx) pipeline)))
+			             (when (eql (node-type node) ,type)
+			               (setf changed-p (or changed-p ,form)))))
+                           changed-p))
+                    ,(if recursively
+                         `(loop while (f))
+                         `(f)))))
       ;; Reading render-node by render-node
       ;; t=0 | FOR idx = ...    (skip)
       ;; t=1 | FUNCALL = ...    (apply simplifier)
@@ -484,12 +689,19 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; Applying render-graph level simplifiers, all of these are optional.
       (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
       (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
+      (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline) :recursively t)
+      ;; TODO: Special Simplifier to :type :WMMA
+      ;; - [ ] Fix: broadcast-regression-test (when packed=1, they cannot be unrolled, especially when including :INDEX_COMPONENTS)
+      ;; - [ ] WMMA+Transpoe Fusion
 
       ;; TODO: Merge Domain and SubDomain in order to complete following thing:
       ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
-      ;; 2. Randn < 2 Kernels by propagation scalar parts
+      ;; 2. [ ] Randn < 2 Kernels by propagation scalar parts
       ;; Merge: Scalar
       ;;          |
       ;;        Matrix
-      ;; 3. In-Place Embedding, By propagating index-components and boolean parts
+      ;; 3. [x] In-Place Embedding, By propagating index-components and boolean parts
+      ;; [TODO] Delete following pattern node (after applying memory-planner)
+      ;; A = A; (confirmeed by calling !normal (where :mean=0.0, :std=1.0))
+      ;; [TODO] Tile/Parallel/Loop Fission Scheduling to the graph applied memory-planner.
       (simplify-render-graph group))))

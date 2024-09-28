@@ -28,8 +28,15 @@
    (expr-eq (expr-x x) (expr-x y))
    (expr-eq (expr-y x) (expr-y y))
    (expr-eq (expr-z x) (expr-z y))))
-
 (defmethod expr-eq ((x t) (y t)) (equal x y))
+
+(defmethod expr-cmp ((f function) (x expr) (y expr))
+  (and
+   (eql (expr-op x) (expr-op y))
+   (expr-cmp f (expr-x x) (expr-x y))
+   (expr-cmp f (expr-y x) (expr-y y))
+   (expr-cmp f (expr-z x) (expr-z y))))
+(defmethod expr-cmp ((f function) (x t) (y t)) (funcall f x y))
 
 (defmethod print-object ((expr Expr) stream)
   (if (eql (expr-op expr) :Aref)
