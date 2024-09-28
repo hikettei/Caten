@@ -46,7 +46,7 @@
 	     ;; from = broadcasted and contiguous-applied buffer
 	     ;; to = before the `from` operation buffer.
 	     (let ((from (copy-buffer from)))
-	       (assert (= (buffer-nrank from) (buffer-nrank to)))
+	       (assert (= (buffer-nrank from) (buffer-nrank to)) () "(JIT+WMMA Simplifier) Cannot infer the type of buffers from different ranks.~%There's something wrong with the higher-level shape inferencing processes?~%From: ~a~%To: ~a" from to)
 	       (assert (eql (buffer-dtype from) (buffer-dtype to)))
 	       (setf (buffer-stride from) (buffer-stride to)
 		     (buffer-inferred-permute from) (buffer-inferred-permute to)
