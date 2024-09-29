@@ -308,9 +308,10 @@ The provided form does not match any of them:~%~a" method method method method f
     :impl ((tril x)
            (multiple-value-bind (n m) (apply #'values (last (shape x) 2))
              (with-attrs ((diagonal :diagonal)) tril
-               (let ((i (!index-components `(,n 1)))
-                     (j (!index-components `(1 ,m)))
-                     (k (->iconst diagonal)))
+               (let* ((~ (loop repeat (- (ndim x) 2) collect 1))
+                      (i (!index-components `(,@~ ,n 1)))
+                      (j (!index-components `(,@~ 1 ,m)))
+                      (k (->iconst diagonal)))
                  (!where (!>= i (!- j k)) x (!const x 0)))))))
 
 (defmodule (TriuNode ((&key (diagonal 0)) :diagonal diagonal) :where "A[~ n m] -> A[~ n m]")
@@ -319,9 +320,10 @@ The provided form does not match any of them:~%~a" method method method method f
     :impl ((tril x)
            (multiple-value-bind (n m) (apply #'values (last (shape x) 2))
              (with-attrs ((diagonal :diagonal)) tril
-               (let ((i (!index-components `(,n 1)))
-                     (j (!index-components `(1 ,m)))
-                     (k (->iconst diagonal)))
+               (let* ((~ (loop repeat (- (ndim x) 2) collect 1))
+                      (i (!index-components `(,@~ ,n 1)))
+                      (j (!index-components `(,@~ 1 ,m)))
+                      (k (->iconst diagonal)))
                  (!where (!<= i (!- j k)) x (!const x 0)))))))
 
 (defun !tril (x &key (diagonal 0)) (forward (TrilNode :diagonal diagonal) x))
