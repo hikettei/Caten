@@ -231,7 +231,7 @@ The provided form does not match any of them:~%~a" method method method method f
 (defun !matmul (a b)
   (multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
     ;; [TODO] Remove the !contiguous, no copies are needed!!!
-    (forward (make-instance 'Matmul) (!contiguous a) (!contiguous b))))
+    (forward (make-instance 'Matmul) a b)))
 ;; ~~ math ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (SinHNode (()) :where "A[~] -> A[~]")
     ()

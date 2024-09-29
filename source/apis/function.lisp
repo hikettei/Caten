@@ -195,7 +195,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (a (when (reshape-shape-af op) (%reshape a (cdr nodes) :order (reshape-order op)))))))
 (defun !reshape (x shape)
   (declare (type tensor x) (type list shape))
-  (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape :order (tensor-order x)) x))
+  (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape :order (tensor-order x)) (!contiguous x)))
 (defun !uprank (x n)
   (declare (type tensor x) (type (integer 0) n))
   (!reshape x (append (loop for i upfrom 0 below n collect 1) (tensor-shape x))))
