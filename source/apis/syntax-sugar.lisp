@@ -44,7 +44,7 @@ Follow the either of:
     `(make-transform :before ',before :after ',after :caller ,(if after (%->transform before after) (%->shape before)))))
 
 ;; Einsum
-(defconstant +ascii-letter+ "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+(defparameter +ascii-letter+ "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 (defun s-eq (a b)
   (declare (type symbol a b))
@@ -63,9 +63,10 @@ Follow the either of:
         (values (map 'list #'princ-to-string bf) (map 'list #'princ-to-string aft)))
       (values
        (map 'list #'princ-to-string formula)
-       (loop for char across (sort (princ-to-string formula) #'char-lessp)
-             if (alphabet-p char)
-               collect (princ-to-string char)))))
+       (list
+        (with-output-to-string (out)
+          (loop for char across (sort (princ-to-string formula) #'char-lessp)
+                if (alphabet-p char) do (princ char out)))))))
 
 (defun verify-formula (formula &rest operands)
   ;; TODO
