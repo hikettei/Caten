@@ -16,6 +16,7 @@
 (defun n-args (shape avm)
   ;; shape ... (t t) specify t to match w/ anything
   ;; shape = t to any shape
+  ;; shape = :tensor to enumerate tensors
   (declare (type avm avm))
   (count :Allocate (graph-nodes (avm-graph avm))
 	 :test
@@ -23,9 +24,12 @@
 	     (and
               (eql id (node-type node))
               (or (eql shape t)
+                  (when (eql shape :tensor)
+                    (> (getattr node :nrank) 0))
 		  (let* ((rank (getattr node :nrank))
 		 	 (s1 (subseq (node-reads node) 0 rank)))
 		    (and
+                     (listp shape)
 		     (= (length shape) (length s1))
 		     (every
 		      #'(lambda (x y) (or (eql x t) (equal x y)))
@@ -88,13 +92,29 @@
 		   allocs)
 	    "Contiguous array creations are not allowed")))))
 
-;; [TODO] Transposed Matmul Schedule-Test
-;; Optimal Kernel Should be:
 (deftest embedding-schedule-test
   (testing "Embedding < 1 Kernels, < 3 Tensors."
     (with-no-grad
-      (check-kernels 1 (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
-      (check-args 3 t (caten (call (Embedding 100 100) (make-tensor `(100 100))))))))
+      (with-jit-only-mode
+        (check-kernels 1 (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
+        (check-args 3 t (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
+        (check-kernels 2 (caten (call (Embedding 100 100) (make-tensor `(batch_size sentence_len)))))
+        ;; 3 tensors for input/output/weight, 8 tensors for scalar (computing strides)
+        (check-args 3 :tensor (caten (call (Embedding 100 100) (make-tensor `(batch_size sentence_len)))))))))
+
+(deftest matmul-schedule-test
+  (testing "Static Matmul"
+    (flet ((f () (caten (!matmul (make-tensor `(10 20)) (!matmul (make-tensor `(20 30)) (make-tensor `(30 40)))))))
+      (with-no-grad
+        (with-jit-only-mode
+          (check-kernels 2 (f))
+          (check-args 5 :tensor (f))))))
+  (testing "Symbolic Matmul"
+    (flet ((f () (caten (!matmul (make-tensor `(a b)) (!matmul (make-tensor `(b c)) (make-tensor `(c d)))))))
+      (with-no-grad
+        (with-jit-only-mode
+          (check-kernels 2 (f))
+          (check-args 5 :tensor (f)))))))
 
 ;;(deftest symbolic-function-args-test
 ;;  (with-no-grad

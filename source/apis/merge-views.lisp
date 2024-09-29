@@ -41,12 +41,23 @@ Applying a further slicing:
   (declare (type ViewRange old new))
   (with-slots ((frm1 from) (to1 to) (by1 by) (bc1 broadcast) (size size) (s1 subscript)) old
     (with-slots ((frm2 from) (to2 to) (by2 by) (bc2 broadcast) (s2 subscript)) new
-      (let* ((offset (!where (!> by1 (iconst 0)) (!minimum frm1 to1) (!maximum frm1 to1)))
-	     (from (!+ offset (!* (!signum by1) frm2)))
-	     (from (if (listp s1) from (iconst 0))) ;; A[2][3] is equivalent to A[3], do not compose them.
-	     (to   (!+ offset (!* (!signum by1) to2)))
-	     (step (!* (!signum (!* by1 by2)) (!lcm by1 by2))))
-	(make-vrange from to step bc2 (if bc1 (iconst 1) size) s2)))))
+      ;; Simplifies for the common cases
+      (trivia:match s2
+        ((guard x (eql x t)) old)
+        ((list :~ (guard x (or (symbolp x) (numberp x))))
+         (assert bc2)
+         (make-vrange frm2 to2 by2 bc2 size s2))
+        (_
+         ;; Computes from/to/step manually
+         ;; [FIXME]
+         ;; During JIT execution, Scheduler may generate guard statements due to incorrect inference of dynamic_shape in the projection from Symbol to Symbol.
+         ;; e.g. (A B) Tesnor -> View ([c, d], [e, f]) 
+         (let* ((offset (!where (!> by1 (iconst 0)) (!minimum frm1 to1) (!maximum frm1 to1)))
+	        (from (!+ offset (!* (!signum by1) frm2)))
+	        (from (if (listp s1) from (iconst 0))) ;; A[2][3] is equivalent to A[3], do not compose them.
+	        (to   (!+ offset (!* (!signum by1) to2)))
+	        (step (!* (!signum (!* by1 by2)) (!lcm by1 by2))))
+	   (make-vrange from to step bc2 (if bc1 (iconst 1) size) s2)))))))
 
 (defun merge-views (base subscripts allow-merge)
   "Composes the two mergeable views"
