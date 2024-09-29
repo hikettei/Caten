@@ -84,7 +84,15 @@
 		  below
 		  (min
 		   1000 ;; if elements are sparse ...
-		   (apply #'* (map 'list #'(lambda (x v) (if (fourth v) 1 x)) (buffer-shape buffer) (buffer-views buffer))))
+		   (apply
+                    #'*
+                    (map
+                     'list
+                     #'(lambda (x v)
+                         (if (fourth v) 1 x))
+                     (buffer-shape buffer)
+                     ;; If views are nil, repeat nil * nrank
+                     (or (buffer-views buffer) (loop for s in (buffer-shape buffer) collect nil)))))
 		maximize (length (format nil "~a" (%vm/read-index *device* buffer i))))))
     (with-output-to-string (stream)
       (format stream " ~a" (indent indent-with))
