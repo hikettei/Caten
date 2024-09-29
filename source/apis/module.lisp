@@ -323,6 +323,6 @@ The provided form does not match any of them:~%~a" method method method method f
                      (j (!index-components `(1 ,m)))
                      (k (->iconst diagonal)))
                  (!where (!<= i (!- j k)) x (!const x 0)))))))
-;; [TODO] Testing, delete val_14 (in-place)
+
 (defun !tril (x &key (diagonal 0)) (forward (TrilNode :diagonal diagonal) x))
 (defun !triu (x &key (diagonal 0)) (forward (TriuNode :diagonal diagonal) x))
