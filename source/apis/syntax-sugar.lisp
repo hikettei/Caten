@@ -72,9 +72,9 @@ Follow the either of:
   ;; TODO
   )
 
-(defun argsort (list test-key sort-key)
-  (map 'list #'(lambda (x) (position x list :test test-key)) (sort (copy-list list) sort-key)))
-
+(defun argsort (x sort)
+  (let ((indices (loop for i from 0 below (length x) collect i)))
+    (stable-sort indices sort :key (lambda (i) (elt x i)))))
 ;; [TODO]
 ;; - einsum is not as optimized as other apis, so we need to optimize it.
 ;; - Decompose several matmuls https://zenn.dev/termoshtt/articles/einsum-derive#%E5%88%86%E8%A7%A3%E9%A0%86%E5%BA%8F%E3%81%A8%E8%A8%88%E7%AE%97%E9%87%8F
@@ -84,7 +84,7 @@ Follow the either of:
   ;; [TODO] Einsum notation i s used as verify-formula?
   (multiple-value-bind (inputs outputs) (apply #'parse-formula formula operands)
     (assert (= (length inputs) (length operands)) () "einsum: The number of input operands is not matched with the formula")
-    (assert (= (length outputs) 1) () "einsum: The number of output operands is zero or one.")
+    (assert (= (length outputs) 1) () "einsumg: The number of output operands is zero or one.")
     (let ((letter-vals (make-hash-table :test #'equal)))
       (loop for tensor in operands
             for input in inputs
@@ -111,8 +111,8 @@ Follow the either of:
                                  collect 1))
                         (loop for key in letter-keys
                               collect (gethash key letter-vals)))))
-             (rhs-letter-order (argsort (coerce (car outputs) 'list) #'char= #'char-lessp))
-             (rhs-order (argsort rhs-letter-order #'= #'<))
+             (rhs-letter-order (argsort (coerce (car outputs) 'list) #'char-lessp))
+             (rhs-order (argsort rhs-letter-order #'<))
              (reduce-axes (loop for axis upfrom 0
                                 for letter in letter-keys
                                 unless (find (char letter 0) (coerce (car outputs) 'list) :test #'char=)
