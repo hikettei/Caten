@@ -78,6 +78,10 @@
    ;; composed mathematical functions
    #:!sinh #:!cosh #:!tanh
    #:!truncate #:!ceiling #:!floor
+
+   ;; linalg
+   #:!tril
+   #:!triu
    )
   ;; from helpers.lisp
   (:export
