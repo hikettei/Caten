@@ -83,6 +83,7 @@
 	  (loop for i upfrom 0
 		  below
 		  (min
+                   ;; TODO: sample from visible areas
 		   1000 ;; if elements are sparse ...
 		   (apply
                     #'*
