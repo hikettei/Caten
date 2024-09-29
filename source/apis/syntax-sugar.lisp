@@ -40,10 +40,11 @@ Follow the either of:
   "TODO: Docs
 (!reshape x (~ A B C -> (!* A B C)))
 (!view x (~ 0))"
+  (warn "The api ~~ is deprecated")
   (multiple-value-bind (before after) (%parse-tf transformation)
     `(make-transform :before ',before :after ',after :caller ,(if after (%->transform before after) (%->shape before)))))
 
-;; Einsum
+;; ~~ Einsum ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter +ascii-letter+ "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 (defun s-eq (a b)
@@ -68,13 +69,10 @@ Follow the either of:
           (loop for char across (sort (princ-to-string formula) #'char-lessp)
                 if (alphabet-p char) do (princ char out)))))))
 
-(defun verify-formula (formula &rest operands)
-  ;; TODO
-  )
-
 (defun argsort (x sort)
   (let ((indices (loop for i from 0 below (length x) collect i)))
     (stable-sort indices sort :key (lambda (i) (elt x i)))))
+
 ;; [TODO]
 ;; - einsum is not as optimized as other apis, so we need to optimize it.
 ;; - Decompose several matmuls https://zenn.dev/termoshtt/articles/einsum-derive#%E5%88%86%E8%A7%A3%E9%A0%86%E5%BA%8F%E3%81%A8%E8%A8%88%E7%AE%97%E9%87%8F
@@ -82,6 +80,8 @@ Follow the either of:
   (declare (type list formula operands))
   (apply #'verify-formula formula operands)
   ;; [TODO] Einsum notation i s used as verify-formula?
+  (warn "Einsum is deprecated")
+  ;; [TODO] Optimize+Improve
   (multiple-value-bind (inputs outputs) (apply #'parse-formula formula operands)
     (assert (= (length inputs) (length operands)) () "einsum: The number of input operands is not matched with the formula")
     (assert (= (length outputs) 1) () "einsumg: The number of output operands is zero or one.")
