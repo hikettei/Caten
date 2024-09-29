@@ -301,3 +301,30 @@ The provided form does not match any of them:~%~a" method method method method f
     :impl ((ceil x) (let ((b (!truncate x))) (!where (!< x b) (!sub b (!const b 1)) b))))
 
 (defun !floor (x) (forward (FloorNode) x))
+;; ~~ Linalg ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmodule (TrilNode ((&key (diagonal 0)) :diagonal diagonal) :where "A[~ n m] -> A[~ n m]")
+    ()
+    :documentation "Returns the lower triangular part of the tensor (>= 2D) or batch of matrices input"
+    :impl ((tril x)
+           (multiple-value-bind (n m) (apply #'values (last (shape x) 2))
+             (with-attrs ((diagonal :diagonal)) tril
+               (let* ((~ (loop repeat (- (ndim x) 2) collect 1))
+                      (i (!index-components `(,@~ ,n 1)))
+                      (j (!index-components `(,@~ 1 ,m)))
+                      (k (->iconst diagonal)))
+                 (!where (!>= i (!- j k)) x (!const x 0)))))))
+
+(defmodule (TriuNode ((&key (diagonal 0)) :diagonal diagonal) :where "A[~ n m] -> A[~ n m]")
+    ()
+    :documentation "Returns the upper triangular part of the tensor (>= 2D) or batch of matrices input"
+    :impl ((tril x)
+           (multiple-value-bind (n m) (apply #'values (last (shape x) 2))
+             (with-attrs ((diagonal :diagonal)) tril
+               (let* ((~ (loop repeat (- (ndim x) 2) collect 1))
+                      (i (!index-components `(,@~ ,n 1)))
+                      (j (!index-components `(,@~ 1 ,m)))
+                      (k (->iconst diagonal)))
+                 (!where (!<= i (!- j k)) x (!const x 0)))))))
+
+(defun !tril (x &key (diagonal 0)) (forward (TrilNode :diagonal diagonal) x))
+(defun !triu (x &key (diagonal 0)) (forward (TriuNode :diagonal diagonal) x))

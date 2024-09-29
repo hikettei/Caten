@@ -103,7 +103,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod forward :around ((op Permute) &rest inputs)
   (let* ((x (call-next-method))
 	 (views (tensor-views x)))
-    (setf (tensor-views x) (or (tensor-views x) (loop repeat (ndim x) collect nil))
+    (setf (tensor-views x) (or (tensor-views x) (loop repeat (ndim x) collect nil)) ;; (!reshape (!permute ..)) calls !contiguous
           (tensor-variables x)
 	  (append
 	   (tensor-variables x)
@@ -163,6 +163,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (let ((out (make-tensor (tensor-shape x) :dtype (tensor-dtype x) :order (tensor-order x))))
 	(!move out x))
       x))
+(defun !copy (x) (!contiguous x :force t))
 
 (defclass Reshape (Func)
   ((shape-bf :initarg :shape-bf :accessor reshape-shape-bf)

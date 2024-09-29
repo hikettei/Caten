@@ -22,7 +22,7 @@
     (assert (not (eql (buffer-dtype (car buffers)) :bool))
 	    ()
 	    "Assertion Failed: IndexComponents(x: Bool) is not supported now."))
-  (assert (every #'(lambda (x) (or (= (buffer-nrank x) 0)  (= (buffer-nrank x) (buffer-nrank result)))) buffers)
+  (assert (every #'(lambda (x) (or (= (buffer-nrank x) 0) (= (buffer-nrank x) (buffer-nrank result)))) buffers)
 	  ()
 	  "Assertion Failed: All buffers should have the same rank, getting ~a." (map 'list #'buffer-nrank buffers))
   (let* ((nrank (buffer-nrank (car buffers)))

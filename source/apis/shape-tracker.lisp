@@ -111,14 +111,18 @@
 			    (or
 			     (find 1 shapes :test #'(lambda (x y) (and (numberp y) (not (= x y)))))
 			     (find 1 shapes :test (compose #'not #'eql))))
-			   (T (nth n shapes)))))))
+			   (T
+                            ;; fixme: is it (car shapes) ?
+                            (or
+                             (nth n shapes)
+                             (car shapes))))))))
 	  (flet ((->subscript (tns ignore-last-k)
 		   (loop with rank = (length (tensor-shape tns))
 			 for s in (tensor-shape tns)
 			 for g in shape-goal
 			 for i upfrom 0
 			 if (and (>= (- rank i) ignore-last-k) (eql s 1) (not (eql g 1)))
-			   collect `(:~ ,g)
+			   collect (progn (assert g) `(:~ ,g))
 			 else collect t)))
 	    (loop for tns in aligned-tensors
 		  for k in kranks

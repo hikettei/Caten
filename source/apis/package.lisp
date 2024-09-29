@@ -78,6 +78,10 @@
    ;; composed mathematical functions
    #:!sinh #:!cosh #:!tanh
    #:!truncate #:!ceiling #:!floor
+
+   ;; linalg
+   #:!tril
+   #:!triu
    )
   ;; from helpers.lisp
   (:export
@@ -99,7 +103,7 @@
    #:func-variables
    #:lower
    ;; shaping
-   #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!permute #:!t #:!transpose
+   #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!copy #:!permute #:!t #:!transpose
    #:!expand
    #:!uprank
    ;; Binary
