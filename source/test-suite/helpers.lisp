@@ -33,12 +33,7 @@
   (count :JIT_KERNEL (graph-nodes (avm-graph avm)) :key #'node-type))
 (defun n-args (shape avm)
   (declare (type avm avm))
-  (count :Allocate (graph-nodes (avm-graph avm))
-	 :test
-	 #'(lambda (id node)
-	     (and (eql id (node-type node))
-		  (let ((rank (getattr node :nrank)))
-		    (equal shape (subseq (node-reads node) 0 rank)))))))
+  (uiop:symbol-call :caten/ajit.test :n-args shape (avm-graph avm)))
 (defun check-kernels (n avm)
   (if (= 1 (ctx:getenv :JIT))
       (ok (= n (n-kernels avm)))

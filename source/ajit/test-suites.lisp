@@ -16,6 +16,7 @@
 (defun n-args (shape avm)
   ;; shape ... (t t) specify t to match w/ anything
   ;; shape = t to any shape
+  ;; shape = :tensor to enumerate tensors
   (declare (type avm avm))
   (count :Allocate (graph-nodes (avm-graph avm))
 	 :test
@@ -106,7 +107,7 @@
     (flet ((f () (caten (!matmul (make-tensor `(10 20)) (!matmul (make-tensor `(20 30)) (make-tensor `(30 40)))))))
       (with-no-grad
         (with-jit-only-mode
-          (check-kernels 1 (f))
+          (check-kernels 2 (f))
           (check-args 5 :tensor (f))))))
   (testing "Symbolic Matmul"
     (flet ((f () (caten (!matmul (make-tensor `(a b)) (!matmul (make-tensor `(b c)) (make-tensor `(c d)))))))
