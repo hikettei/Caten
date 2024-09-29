@@ -11,4 +11,5 @@
 	   #:insert-nodes #:->graph #:->fast-graph #:%graph-nodes-table #:graph-weakly-connected-p)
   (:export #:getattrs #:getattr #:remattr)
   (:export #:defsimplifier)
-  (:export #:Attribute #:defnode #:debug/render-defined-nodes #:debug/attrs-by-module #:node-build-documentation-by-class #:verify-args #:dump-into-list))
+  (:export #:Attribute #:defnode #:debug/render-defined-nodes #:debug/attrs-by-module #:node-build-documentation-by-class #:verify-args #:dump-into-list)
+  (:export #:->dot))

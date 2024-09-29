@@ -210,9 +210,13 @@
 	       ;; n=2 QMatmul -> QAdd + SHR + ...
 	       ;; n=2 (Simplify)
 	       ;;      ...
+               (when (= 1 (ctx:getenv :DOT))
+                 (->dot graph :title (format nil "lowerer T=~a" n)))
 	       (%lower-modules session graph)
 	       ;; Func level whole optimization
-	       (dolist (f external-simplifiers) (funcall f graph))))))
+	       (dolist (f external-simplifiers) (funcall f graph))))
+           (when (= 1 (ctx:getenv :DOT))
+             (->dot graph :title "lowerer (final)"))))
     (let* ((forward-graph
 	     (prog1
 		 (->fast-graph (%lower-iseq session iseq))
