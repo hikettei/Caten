@@ -46,7 +46,8 @@
 	     ;; from = broadcasted and contiguous-applied buffer
 	     ;; to = before the `from` operation buffer.
 	     (let ((from (copy-buffer from)))
-	       (assert (= (buffer-nrank from) (buffer-nrank to)) () "(JIT+WMMA Simplifier) Cannot infer the type of buffers from different ranks.~%There's something wrong with the higher-level shape inferencing processes?~%From: ~a~%To: ~a" from to)
+	       (unless (= (buffer-nrank from) (buffer-nrank to))
+                 (return-from wmma-relay-from-contiguous nil))
 	       (assert (eql (buffer-dtype from) (buffer-dtype to)))
 	       (setf (buffer-stride from) (buffer-stride to)
 		     (buffer-inferred-permute from) (buffer-inferred-permute to)
@@ -70,7 +71,10 @@
     (contiguous-after-wmma :speed 0)
     ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3)
      ->
-     (:WMMA (c a b) :reduction reduction :_type_relay (wmma-relay-from-contiguous t1 t2 t3))))
+     ((node graph)
+      (let ((type (wmma-relay-from-contiguous t1 t2 t3)))
+        (when type
+          (make-node :TernaryOps :WMMA (node-writes node) (list c a b) :reduction reduction :_type_relay type))))))
 
 ;; ~~ Load Pointer Simplification ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod create-scalar-replace-pattern ((graph graph))
@@ -171,8 +175,11 @@ out[...] = f(*val_1);
   "A toplevel for jit-specific optimizers. (WMMA Simplification, Removing Views, Contiguous Node Removals)"
   (declare (type avm avm))
   (%safely-purge-views-from-graph avm)
+  ;(->dot (avm-graph avm))
   (wmma-rewriter (avm-graph avm) :no-verify t)
+  ;(->dot (avm-graph avm))
   (contiguous-after-wmma (avm-graph avm) :no-verify t)
+  ;(->dot (avm-graph avm))
   (propagate-rebundant-loadp (avm-graph avm)))
 ;; ~~ Step2, Before Applying Polyhedral Compiler (pipeline w/ DOMAIN)  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Under the step2, some nodes have the following attributes:
