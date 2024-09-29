@@ -263,6 +263,9 @@ FOR (...) {
       (f node-reads relay-reads t)
       (f node-writes relay-writes t))))
 ;; ~~ Post-MultiExpr ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun expr-index-components-p (expr)
+  (eql :INDEX-COMPONENTS (expr-op expr)))
+
 (defun expr-zero-p (expr)
   (check-type expr Expr)
   (and (eql :Const (expr-op expr)) (eql 0 (expr-x expr))))
@@ -600,6 +603,11 @@ If failed, the function returns a keyword :failed"
                      ;; By finding the equivalent loop bound
                      (setf (getattr read-iteration-space :args) new-iteration-space
                            (gethash (gethash (node-id read-node) nodeid->pipeline) funcall->domain) node-domain)
+                     (when (expr-index-components-p (getattr read-node :expr))
+                       ;; Serialized Index-Components are 100% mutated as scalar
+                       (when (= (length (node-reads read-node)) 2)
+                         (setf (node-reads read-node) (butlast (node-reads read-node))
+                               (relay-reads (read-type-relay read-node)) (butlast (relay-reads (read-type-relay read-node))))))
                      (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space))))))
   changed-p)
 
