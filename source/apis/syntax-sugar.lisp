@@ -1,9 +1,11 @@
 (in-package :caten/apis)
 ;;(defpackage :caten/ops)
-;; todo: define a new package which overloads cl:+ cl:- ...
-;; this may decrease the performance but the entire code should looks pretty good
-;; Experimental: ShapeTransformer (what feature is required for the comprehension of the shape operations?)
+;; TODO: Doing an operator overloading at `c::+` and `c::-` (is it a good idea?)
+;; Note that doing this in caten/apis package will decrease the performance even the generid methods are inlined.
+
 (eval-when (:compile-toplevel :load-toplevel :execute)
+  ;; Transform: Experimental Notation for manipulating the symbolic shape.
+  ;; (WIP)
   (defun %parse-tf (tf)
     "Tf: Either of (~ A B C) or (~ A B C -> A B C)"
     (declare (type list tf))
@@ -33,9 +35,15 @@ Follow the either of:
 
 (defstruct Transform (before nil :type list) (after nil :type list) (caller (error "caller should occur")))
 (defmethod apply-transform ((op transform) list) (funcall (transform-caller op) list))
+;; The code below is out-of-date and not supported. but i think the idea is really good as proven in cl-waffe2 ...
 (defmacro ~ (&rest transformation)
   "TODO: Docs
 (!reshape x (~ A B C -> (!* A B C)))
 (!view x (~ 0))"
   (multiple-value-bind (before after) (%parse-tf transformation)
     `(make-transform :before ',before :after ',after :caller ,(if after (%->transform before after) (%->shape before)))))
+
+;; Einsum
+(eval-when (:compile-toplevel :load-toplevel :execute)
+
+  )
