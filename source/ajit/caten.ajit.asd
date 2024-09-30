@@ -23,7 +23,8 @@
    (:file "transform")
    (:file "memory-planner")
    (:file "device")
-   (:file "backends/clang"))
+   (:file "backends/clang")
+   (:file "documentation"))
   :in-order-to ((test-op (asdf:test-op "caten.ajit/test"))))
 
 (asdf:defsystem "caten.ajit/test"
