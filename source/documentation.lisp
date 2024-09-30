@@ -8,7 +8,6 @@
 (define-page ("Quickstart" "quickstart.md")
   (title "QuickStart")
   (subtitle "Install")
-  (body "(ql:quickload :caten)")
   )
 
 (define-page ("Development" "development.md")
