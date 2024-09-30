@@ -48,9 +48,9 @@
     (format out "~a" document)
     (format out "~%When optimizing ~(~a~) in-place, the ~ath read is consumed.~%" name nth)
     (when direct-superclasses
-      (format out "~%### Superclasses~%~%")
+      (format out "~%superclasses = ")
       (dolist (superclass direct-superclasses)
-	(format out "- ~a~%" superclass)))))
+	(format out "`~a`, " superclass)))))
 
 (defmacro defnode ((module type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
   "Defines a new attribute.
@@ -180,14 +180,14 @@
 (defun node-build-documentation-by-class (title class-id)
   (declare (type string title) (type keyword class-id))
   (with-output-to-string (out)
-    (format out "# ~a~%~%" title)
+    (format out "## ~a~%~%" title)
     (let ((module->val (debug/attrs-by-module)))
       (maphash
        #'(lambda (module vals)
 	   (when (eql module class-id)
 	     (dolist (val vals)
 	       (multiple-value-bind (id class) (values (car val) (cdr val))
-		 (format out "~%## [Node] :~a~%~%" id)
+		 (format out "~%### :~a~%~%" id)
 		 (format out (documentation (find-class class) t))))))
        module->val))))
 

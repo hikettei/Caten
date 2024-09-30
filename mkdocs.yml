@@ -41,10 +41,10 @@ markdown_extensions:
 site_name: Caten Documentation
 
 nav:
-  - Home: home.md
+  - Home: index.md
   - Quickstart: quickstart.md
   - Development: development.md
-  - API References:
+  - API Reference:
     - caten/aasm: packages/caten.aasm.md
     - caten/air: packages/caten.air.md
     - caten/ajit: packages/caten.ajit.md
