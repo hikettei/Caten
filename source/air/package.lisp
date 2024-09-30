@@ -1,7 +1,7 @@
 (in-package :cl-user)
 
 (defpackage :caten/air
-  (:use :cl :alexandria :trivia)
+  (:use :cl :alexandria :trivia :caten/common.documentation)
   (:export #:Node #:node-class #:node-p #:node->id #:id->node
    #:node-id #:node-type #:node-writes
    #:node-reads #:node-attr #:print-node #:get-output-to)
