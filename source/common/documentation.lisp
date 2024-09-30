@@ -79,7 +79,7 @@
   (format *editing* "~%```lisp title=\"~a\"~%CATEN-USER> ~a~%```~%~%" title code)
   (let ((result (eval (read-from-string code))))
     (format *editing* "<details>
-<summary></summary>
+<summary>Result</summary>
 ```title=\"Result\"
 ~a
 ```
@@ -90,7 +90,7 @@
   (format *editing* "~%```lisp title=\"~a\"~%~a~%```~%~%" title code)
   (let ((result (eval (read-from-string code))))
     (format *editing* "<details>
-<summary></summary>
+<summary>Result</summary>
 ```title=\"Result\"
 ~a
 ```

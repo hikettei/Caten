@@ -52,10 +52,11 @@
       (dolist (superclass direct-superclasses)
 	(format out "`~a`, " superclass)))))
 
-(defmacro defnode ((module type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
-  "Defines a new attribute.
+(defmacro defnode ((class type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
+  "Defines a new node. class is a classification of the node
+
 - placeholder[(unsigned-byte 32) or -1] -1 to ignore"
-  (declare (type keyword module type)
+  (declare (type keyword class type)
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
     (dolist (superclass direct-superclasses)
@@ -63,8 +64,8 @@
 	(assert (= (length superclasses) 1) () "defnode[~a]: Multiple inheritance of superclass[~a] is not allowed because it is not dumped."
 		type superclass)))
     `(eval-when (:compile-toplevel :load-toplevel :execute)
-       (setf (gethash ,type *attribute->instance*) (cons ,module ',class-name))
-       (defmethod attribute->instance ((id (eql ,type))) (values ,module ',class-name))
+       (setf (gethash ,type *attribute->instance*) (cons ,class ',class-name))
+       (defmethod attribute->instance ((id (eql ,type))) (values ,class ',class-name))
        (defclass ,class-name (Attribute ,@direct-superclasses)
 	 ,(loop for slot in slots
 		for slot-new = (rewrite-slot slot)

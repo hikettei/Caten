@@ -45,8 +45,8 @@ nav:
   - Quickstart: quickstart.md
   - Development: development.md
   - API Reference:
-    - caten/aasm: packages/caten.aasm.md
     - caten/air: packages/caten.air.md
+    - caten/aasm: packages/caten.aasm.md
     - caten/ajit: packages/caten.ajit.md
     - caten/apis: packages/caten.apis.md
     - caten/avm: packages/caten.avm.md
