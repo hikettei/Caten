@@ -7,6 +7,7 @@
 						   (variables nil) (views nil) (requires-grad nil)
 						   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD"))))
 						   (grad-id (when requires-grad (gensym "TGRAD"))))))
+  "Tensor is a lazy tensor object. It is a core data structure of the Caten system."
   (shape shape :type list)
   (buffer nil :type (or null Buffer))
   (dtype dtype :type dtype-t)
@@ -31,11 +32,11 @@
      :views nil :requires-grad ,(tensor-requires-grad tensor)
      :grad ,(tensor-grad tensor) :grad-id ',(tensor-grad-id tensor))))
 
-(defun grad (tensor) (tensor-grad tensor))
-(defun shape (tensor) (copy-list (tensor-shape tensor)))
-(defun ndim (tensor) (length (shape tensor)))
-(defun dtype-of (tensor) (tensor-dtype tensor))
-(defun order (tensor) (tensor-order tensor))
+(defun grad (tensor) "Returns a gradient of the tensor" (tensor-grad tensor))
+(defun shape (tensor) "Returns a copy of the shape of the tensor" (copy-list (tensor-shape tensor)))
+(defun ndim (tensor) "Returns a rank of the tensor" (length (shape tensor)))
+(defun dtype-of (tensor) "Returns a dtype of the tensor" (tensor-dtype tensor))
+(defun order (tensor) "Returns a memory-layout of the tensor." (tensor-order tensor))
 
 (defmethod print-object ((tensor Tensor) stream)
   (format stream "{Tensor[~(~a~)] :shape ~a :id ~a
@@ -68,13 +69,11 @@ Shape := (Integer > 1) | Symbol | Tensor"
 	    ()
 	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  Butgot: ~a~%  Shape=~a" s shape))
   (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views)))
-    ;; Weird thing: The Top of the graph should not have variables.
-    ;; AD recognises (null (func-variables op)) as an Allocation.
-    ;; So do not modify the (tensor-variables tensor), as well as (func-variables Allocation)
     (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element :from from))
     buff))
 
 (defun make-scalar (value &key (dtype *default-float*) (order *default-order*) (id (gensym "SID")) (requires-grad nil))
+  ""
   (make-tensor nil :dtype dtype :order order :id id :requires-grad requires-grad :initial-element value))
 
 (macrolet ((def (name dtype)

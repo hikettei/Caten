@@ -33,7 +33,7 @@
    #'(lambda (pathname builder)
        (caten/common.logger:print-info "Building: ~a" pathname)
        (with-open-file (stream (format nil "docs/~a" pathname) :direction :output :if-exists :supersede :if-does-not-exist :create)
-         (format stream "~a" (funcall (cdr builder)))))
+         (format stream "~a" (let ((*package* (find-package :caten-user))) (funcall (cdr builder))))))
    *pages*)
   (caten/common.logger:print-info "Done"))
 
