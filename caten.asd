@@ -6,7 +6,7 @@
   :depends-on
   ("caten.apis" "caten.nn")
   :serial t
-  :components ((:file "source/caten-user"))
+  :components ((:file "source/caten-user") (:file "source/documentation"))
   :in-order-to
   ((test-op (test-op "caten/test"))))
 

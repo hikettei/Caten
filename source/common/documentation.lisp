@@ -18,10 +18,6 @@
    #:example-code))
 (in-package :caten/common.documentation)
 ;; TODO: Create a fork of lantana, which supports English
-
-;; Requirement
-;; Tab
-;; Running Example (With hiding by tabs)
 (defparameter *pages* (make-hash-table :test 'equal))
 (defparameter *editing* nil)
 
@@ -185,29 +181,3 @@ markdown_extensions:
              (:Example "Example")
              (:Quote "Quote"))))
   (format *editing* "  ~a~%~%" thing))
-
-(define-page ("Test" "index.md")
-  (Title "Test Page")
-  (body "= Test =")
-  (body
-   "You can compile the code with ++ctrl+alt+del++"
-   (keybind "ctrl")
-   (highlight "A")
-   (math "1+1"))
-  (subtitle "How to start")
-  (body "Ahehe")
-  (section "Tips")
-  (body
-   "You can do this like")
-  
-   (syntax-highlight
-    "lisp"
-    "(+ 1 1)")
-  (body
-   "And")
-  (body "Hehe")
-  (example-repl "(+ 1 1)")
-  (example-code "(random 1.0)")
-  (alert :tip "Tip" "You can do this")
-  
-  )
