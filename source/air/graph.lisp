@@ -26,8 +26,8 @@ Graph[seen=~a, outputs=~a] {
 (defclass FastGraph (Graph)
   ((node-table :initform (make-hash-table :test 'eq) :type hash-table :accessor %graph-nodes-table))
   (:documentation "
-FastGraph is a subclass of Graph that implements faster node searches based on the assumption that the nodes form a DAG. (It is approximately 20 times faster than Graph, in the larger scale.)
-Since FastGraph stores nodes as a hash-table, there are some constraints on node operations. If necessary, converting between ->fast-graph and ->graph can be done frequently with minimal impact on performance."))
+`FastGraph` is a subclass of `Graph` that implements faster node searches based on the assumption that the nodes form a DAG. (It is approximately 20 times faster than Graph, in the larger scale.)
+Since `FastGraph` stores nodes as a hash-table, there are some constraints on node operations. If necessary, converting between `(->fast-graph graph)` and `(->graph graph)` can be done frequently with minimal impact on performance."))
 
 (defmethod print-object ((graph FastGraph) stream)
   (format stream "
@@ -40,17 +40,50 @@ FastGraph[seen=~a, outputs=~a] {
 	    (dolist (node (graph-nodes (->graph graph)))
 	      (format out "    ~a~%" node)))))
 
-(defun make-graph (&rest nodes) (make-instance 'Graph :nodes nodes))
+(defun make-graph (&rest nodes)
+  "
+```
+(make-graph &rest nodes)
+```
+Creates a new Graph object with the given nodes.
+"
+  (make-instance 'Graph :nodes nodes))
+
+(defgeneric copy-graph (graph) (:documentation "
+```
+(copy-graph graph)
+```
+Creates a copy of the given graph.
+"))
+
 (defmethod copy-graph ((graph Graph))
+  "Creates a copy of the given graph."
   (let ((g (apply #'make-graph (graph-nodes graph))))
     (setf (graph-seen graph) (copy-list (graph-seen graph))
 	  (graph-outputs graph) (copy-list (graph-outputs graph)))
     g))
+
 (defun graph-p (graph) (typep graph 'Graph))
+
 (defmethod graph-nodes ((graph Graph)) (%graph-nodes graph))
+
 (defmethod graph-nodes ((graph FastGraph)) (hash-table-values (%graph-nodes-table graph)))
+
 (defmethod (setf graph-nodes) (nodes (graph Graph)) (setf (%graph-nodes graph) nodes))
+
 (defmethod (setf graph-nodes) (nodes (graph FastGraph)) (error "graph-nodes for FastGraph is immutable!"))
+
+(defgeneric id->value (graph id) (:documentation "
+```
+(id->value graph id)
+```
+Returns a node whose node-writes includes the given id."))
+
+(defgeneric id->users (graph id) (:documentation "
+```
+(id->users graph id)
+```
+Returns a list of nodes whose node-reads includes the given id."))
 
 (defmethod id->users ((graph Graph) id)
   (declare (optimize (speed 3)))
@@ -77,6 +110,11 @@ FastGraph[seen=~a, outputs=~a] {
   (declare (type graph graph) (optimize (speed 3)))
   (find id (graph-nodes graph) :test #'eql :key #'node-id))
 
+(defgeneric remnode (graph id) (:documentation "
+```
+(remnode graph id)
+```
+Removes all node where node-id = `id` from the given graph."))
 (defmethod remnode ((graph Graph) id)
   (declare (type graph graph)
 	   (type symbol id)
@@ -86,7 +124,16 @@ FastGraph[seen=~a, outputs=~a] {
 	      unless (eql id (node-id node)) collect node)))
 
 (defmethod remnode ((graph FastGraph) id) (remhash id (%graph-nodes-table graph)))
+
+(defgeneric insert-nodes (graph nodes) (:documentation "
+```
+(insert-nodes graph nodes)
+```
+Inserts the given nodes (list) into the graph.
+"))
+
 (defmethod insert-nodes ((graph Graph) nodes) (nconc (graph-nodes graph) nodes))
+
 (defmethod insert-nodes ((graph FastGraph) nodes)
   (declare (optimize (speed 3)))
   (dolist (node nodes)
@@ -94,12 +141,25 @@ FastGraph[seen=~a, outputs=~a] {
       (setf (gethash w (%graph-nodes-table graph)) node))))
 
 (defun ->fast-graph (graph)
+  "
+```
+(->fast-graph graph)
+```
+
+Creates a FastGraph object from the given graph."
   (declare (type graph graph))
   (when (= 1 (ctx:getenv :SAFETY)) (return-from ->fast-graph graph))
   (assert (graph-outputs graph) () "Cannot create a fast graph because the graph does not have a `outputs`.")
   (let ((fast-graph (make-instance 'FastGraph :output (graph-outputs graph) :seen (graph-seen graph))))
     (insert-nodes fast-graph (graph-nodes graph))
     fast-graph))
+
+(defgeneric ->graph (graph) (:documentation "
+```
+(->graph graph)
+```
+Converts the given graph to a fast graph.
+"))
 
 (defmethod ->graph ((graph Graph)) graph)
 
@@ -126,14 +186,19 @@ FastGraph[seen=~a, outputs=~a] {
 	(setf result (nconc result (get-parents out)))))
     (make-instance 'Graph :output (graph-outputs fast-graph) :seen (graph-seen fast-graph) :nodes result)))
 
-(defmethod verify-graph ((graph Graph) &key (no-purge nil))
-  "Verify the consistency of the graphs and simplify them by operating following:
+(defgeneric verify-graph (graph &key no-purge) (:documentation "
+```
+(verify-graph graph &key no-purge)
+```
+Verify the consistency of the graphs and simplify them by doing following things:
 - Checks if all variables are immutable
-- All read dependencies are appearedin writes.
+- All variables appeared in read, are also defined in writes.
 - Purge all isolated graph
-- Sort by the time
-- TODO: verify-graph is called multiple times during compilation, needs optimized more.
-- Nodes whose class are start with special/ cannot be purged even if they are isolated."
+- Sort nodes by time.
+- Set no-purge=T to ignore purge isolated graph step. This has no effect on FastGraph.
+"))
+
+(defmethod verify-graph ((graph Graph) &key (no-purge nil))
   (declare (type graph graph)
 	   (optimize (speed 3)))
   (setf (graph-nodes graph)

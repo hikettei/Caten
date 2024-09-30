@@ -16,7 +16,13 @@
    #:math
    #:syntax-highlight
    #:example-repl
-   #:example-code))
+   #:example-code)
+  (:export
+   #:doc/function
+   #:doc/class
+   #:doc/struct
+   #:doc/macro
+   #:doc/generic))
 (in-package :caten/common.documentation)
 ;; TODO: Create a fork of lantana, which supports English
 (defparameter *pages* (make-hash-table :test 'equal))
@@ -128,3 +134,23 @@
              (:Example "Example")
              (:Quote "Quote"))))
   (format *editing* "  ~a~%~%" thing))
+
+(defun doc/function (name func)
+  (assert *editing*)
+  (format *editing* "### [function] ~a~%~%~a~%~%" name (documentation func 'function)))
+
+(defun doc/class (name class)
+  (assert *editing*)
+  (format *editing* "### [class] ~a~%~%~a~%~%" name (documentation (find-class class) 't)))
+
+(defun doc/struct (name struct)
+  (assert *editing*)
+  (format *editing* "### [struct] ~a~%~%~a~%~%" name (documentation (find-class struct) 't)))
+
+(defun doc/macro (name macro)
+  (assert *editing*)
+  (format *editing* "### [macro] ~a~%~%~a~%~%" name (documentation (macro-function macro) 't)))
+
+(defun doc/generic (name generic)
+  (assert *editing*)
+  (format *editing* "### [generic] ~a~%~%~a~%~%" name (documentation generic 't)))

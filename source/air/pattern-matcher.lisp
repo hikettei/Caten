@@ -67,11 +67,23 @@
 (defparameter *matched-bind* nil "a temporary place to store matched nodes during simplifying")
 (defmacro defsimplifier ((name &key (speed 3)) &rest rules)
   "
-## [Macro] defsimplifier
-Defines graph simplification rule
-Tips: return nil to skip the simplification process.
-Tips: (~ x) to accept n-args.
-TODO: Docs"
+```
+(defsimplifier (name &key (speed 3)) &rest rules)
+```
+Defines a new simplifier named `name`. The defined function has a following form:
+```
+(name graph &key (no-verify nil) (return-changed-p nil))
+```
+The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verification process. The `return-changed-p` is a flag to return the result of the simplification process, or a boolean indicating that the graph was changed during simplification process.. The `speed` is an optimization level. The `rules` are a list of simplification rules. Each rule has a form:
+
+```
+(Node_Name (Read_Args) Attrs)
+```
+
+(TODO: Documentation)
+
+(See also: `./source/aasm/constant-folding.lisp`)
+"
   (with-gensyms (graph simplifier-bind apply-bind1 apply-bind2 node-top count-bind fast-graph-p seen changed-p)
     `(defun ,name (,graph &key (no-verify nil) (return-changed-p nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil) (,changed-p nil))
        (declare (type graph ,graph)

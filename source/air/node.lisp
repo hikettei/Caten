@@ -89,6 +89,12 @@ Possible keywords are following: ~a" key type initargs)))
       `(%make-node ,class ,type ,writes ,reads ,@attrs)))
 
 (defun copy-node (node)
+  "
+```
+(copy-node node)
+```
+Create a deepcopy of the given node.
+"
   (declare (type node node))
   (let ((copied-node (%copy-node node)))
     (setf (node-reads copied-node) (copy-list (node-reads node))
@@ -140,23 +146,50 @@ Possible keywords are following: ~a" key type initargs)))
 		      ""))))))
 
 (defun getattrs (node)
+  "
+```
+(getattrs node)
+```
+Return the list of attributes of the node."
   (declare (type node node))
   (let ((attrs (dump-into-list (node-attr node) :allow-unbound nil)))
     (loop for attr in attrs if attr collect attr)))
 
 (defun getattr (node id &key (allow-undefined nil))
+  "
+```
+(getattr node id &key (allow-undefined nil))
+```
+Return the value of the attribute `id` of the node. If the attribute is not defined, it will produce an error. If `allow-undefined` is t, it returns nil without error.
+
+This function is setfable."
   (declare (type node node) (type keyword id))
   (if (and allow-undefined (null (find id (getattrs node))))
       nil
       (%getattr (node-attr node) id)))
+
 (defun (setf getattr) (new-value node id &key (allow-undefined nil))
   (if (and allow-undefined (null (find id (getattrs node))))
       nil
       (%setattr (node-attr node) id new-value)))
+
 (defun setattr (node id value)
   (declare (type node node) (type keyword id))
   (%setattr (node-attr node) id value))
+
 (defun remattr (node id &key (allow-undefined))
+  "
+```
+(remattr node id &key (allow-undefined nil))
+```
+
+Equivalent to:
+
+```
+(setf (getattr node id :allow-undefined allow-undefined) nil)
+```
+"
   (declare (type node node) (type keyword id))
-  (setf (getattr node id :allow-undefined allow-undefined) nil)) 
+  (setf (getattr node id :allow-undefined allow-undefined) nil))
+
 (defun node->id (node) (car (node-writes node)))
