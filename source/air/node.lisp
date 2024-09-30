@@ -58,7 +58,7 @@ Before creating a node using `make-node`, the node must be defined using `defnod
 
 (defun make-node (class type writes reads &rest attrs)
   "
-```
+```lisp
 (make-node class type writes reads &rest attrs)
 ```
 

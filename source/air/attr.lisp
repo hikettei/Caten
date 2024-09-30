@@ -53,9 +53,23 @@
 	(format out "`~a`, " superclass)))))
 
 (defmacro defnode ((class type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
-  "Defines a new node. class is a classification of the node
+  "
+Defines a new node.
 
-- placeholder[(unsigned-byte 32) or -1] -1 to ignore"
+```lisp
+(defnode (class type) (&rest direct-superclasses)
+  description
+  &key (placeholder 0) (verify 'identity) (slots))
+```
+
+- class[keyword] an identifier of the node class.
+- type[keyword] an identifier of the node type.
+- direct-superclasses[list of keyword] a list of superclasses.
+- description[string] a description of the node.
+- placeholder[(unsigned-byte 32) or -1] when mutating the node in-place, the compiler consumes the placeholder-th read buffer.
+- verify[function] a function to verify the arguments.
+- slots[list of (symbol &rest slot-options)] a list of slot definitions.
+"
   (declare (type keyword class type)
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
