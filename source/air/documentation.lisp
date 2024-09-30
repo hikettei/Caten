@@ -1,4 +1,4 @@
 (in-package :caten/air)
 
-(define-page ("caten/air" "packages/caten.air.md" :level 101)
+(define-page ("caten/air" "packages/caten.air.md")
   (title "Caten AIR"))

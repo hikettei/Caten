@@ -1,11 +1,11 @@
 (in-package :caten-user)
 
-(define-page ("Home" "home.md" :level 0)
+(define-page ("Home" "home.md")
   (title "Overview")
   (body "Welcome to caten"))
 
-(define-page ("Quickstart" "quickstart.md" :level 1)
+(define-page ("Quickstart" "quickstart.md")
   (title "QuickStart"))
 
-(define-page ("Development" "development.md" :level 2)
+(define-page ("Development" "development.md")
   (title "Development"))

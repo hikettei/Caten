@@ -1,4 +1,4 @@
 (in-package :caten/aasm)
 
-(define-page ("caten/aasm" "packages/caten.aasm.md" :level 100)
+(define-page ("caten/aasm" "packages/caten.aasm.md")
   (title "caten/aasm"))
