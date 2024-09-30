@@ -14,3 +14,15 @@ install_extra: ## Install extra dependencies for testing
 .PHONY: test
 test: ## Runs test harness
 	$(ROSWELL) $(QUICKLOAD) --eval '(asdf:test-system "caten")'
+
+.PHONY: install_docs
+install_docs: ## Install documentation dependencies
+	$(PIP) install mkdocs markdown-katex lantana
+
+.PHONY: build_docs
+build_docs: ## Build documentation
+	./roswell/caten.ros docs
+
+.PHONY: serve_docs
+serve_docs: ## Serve documentation
+	mkdocs serve

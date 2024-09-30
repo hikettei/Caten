@@ -20,13 +20,14 @@ exec ros -Q -- $0 "$@"
 (defun version () (asdf:component-version (asdf:find-system "caten")))
 
 (defun caten/llm/handler (cmd)
+  (declare (ignore cmd))
   (let ((target-file (or (nth 1 *argv*)
 			 (log:print-error "Specify the input file.~%Usage: caten llm [input_file] [options]"))))
     (with-progress (3 :title (format nil "Compiling ~a..." target-file))
       (print-progress "Loading the gguf model...")
       (let ((gguf-model (caten/gguf:load-gguf target-file)))
 	(print-progress "Confirmed the validity of the input. version=~a" (caten/gguf:gguf-version gguf-model))
-	(let ((caten-model)) ;; gguf->caten
+	(progn;let ((caten-model)) ;; gguf->caten
 	  (print-progress "OK")
 	  )))))
 
@@ -42,6 +43,12 @@ exec ros -Q -- $0 "$@"
    :description (maybe-ansi white-bright "Runs test harness w/ (asdf:test-system :caten)")
    :handler #'(lambda (cmd) (declare (ignore cmd)) (asdf:test-system "caten"))))
 
+(defun caten/docs ()
+  (clingon:make-command
+   :name "docs"
+   :description (maybe-ansi white-bright "Builds the documentation in ./docs folder")
+   :handler #'(lambda (cmd) (declare (ignore cmd)) (caten/common.documentation:build-docs))))
+
 (defun caten/options ()
   (list))
 
@@ -53,7 +60,7 @@ exec ros -Q -- $0 "$@"
    :options (caten/options)
    :usage (maybe-ansi white (format nil "[COMMAND] [OPTIONS]~%~a" (ctx:help nil)))
    :handler #'identity
-   :sub-commands (list (caten/llm) (caten/test))))
+   :sub-commands (list (caten/llm) (caten/test) (caten/docs))))
 
 (defun main (&rest argv &aux (*argv* argv))
   (let ((app (caten/command)))
