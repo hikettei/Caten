@@ -2,10 +2,14 @@ name: Publish docs via Github Pages
 on:
   push:
     branches:
-      - master
-      - mkdocs
+      - main
+  pull_request:
+      branches:
+        - main
+
 permissions:
   contents: write
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
