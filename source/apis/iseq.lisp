@@ -359,7 +359,7 @@ The iseq obtained by lowering the Module must match the output destination speci
   graph)
 
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter *external-simplifiers* `(optimize-aasm))
+(defparameter *external-simplifiers* `(optimize-aasm) "A list of external simplifiers. (defined by defsimplifier)")
 (defparameter *no-grad* nil)
 (defun %compile-toplevel (tensors &key (no-grad *no-grad*) (external-simplifiers *external-simplifiers*) (name :main))
   (declare (type list tensors))
@@ -419,8 +419,19 @@ The iseq obtained by lowering the Module must match the output destination speci
 	      &key
 		(jit (= 1 (ctx:getenv :JIT)))
 		(name (intern (symbol-name (gensym "MAIN")) "KEYWORD"))
-		(simplifiers *external-simplifiers*)) ;; TODO disassemble options etc
-  "Compiles the (Abstract) tensor"
+		(simplifiers *external-simplifiers*))
+  "
+```lisp
+(caten tensors &key (jit (= 1 (ctx:getenv :JIT))) (name :main) (simplifiers *external-simplifiers*))
+```
+
+Compiles the given tensors, returning an AVM struct.
+
+- tensor[Tensor|List] toplevel tensors.
+- jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls `%jit` to generate the fast kernel supported by `caten/ajit`. This parameter should be specified using the `(ctx:with-contextvar)` macro.
+- name[keyword] the name of compiled avm.
+- simplifiers[list] a list of external simplifiers used in the graph-level compilation. (defined by defsimplifier) Pass the function name.
+"
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
   (let ((avm (%compile-toplevel tensors :name name :external-simplifiers simplifiers)))
@@ -459,7 +470,13 @@ The iseq obtained by lowering the Module must match the output destination speci
     t))
 
 (defun proceed (&rest tensors)
-  "Realizes the tensor"
+  "
+```
+(proceed &rest tensors)
+```
+
+Compiles the given tensors, returning an evaluated tensors.
+"
   (declare (type list tensors))
   (forward (caten tensors)))
 
