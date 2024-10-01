@@ -29,7 +29,7 @@ jobs:
       - name: Installing requirements
         run: make install_docs
       - name: Building documentations
-        run: mkdir -p docs/packages make build_docs
+        run: mkdir -p docs/packages && make build_docs && echo "markdown-katex\nlantana" > docs/requirements.txt
       - name: Deploy docs
         uses: mhausenblas/mkdocs-deploy-gh-pages@master
         env:
@@ -37,3 +37,4 @@ jobs:
           CUSTOM_DOMAIN: optionaldomain.com
           CONFIG_FILE: mkdocs.yml
           EXTRA_PACKAGES: build-base
+          REQUIREMENTS: ./docs/requirements.txt
