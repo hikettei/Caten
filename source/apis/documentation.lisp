@@ -2,8 +2,13 @@
 
 (docs:define-page ("caten/apis" "packages/caten.apis.md")
   (docs:title "caten/apis")
-  (docs:subtitle "Tensor")
-  ;; Examples
+  (docs:body "welcome to apis section")
+  ;; TODO: quick tutorial
+  ;; Brief
+  )
+
+(docs:define-page ("Tensor" "packages/caten.apis.tensor.md")
+  (docs:title "Tensor")
   (docs:doc/struct "Tensor" 'Tensor)
   (docs:doc/function "make-tensor" #'make-tensor)
   (docs:doc/function "make-scalar" #'make-scalar)
@@ -22,11 +27,35 @@
   (docs:example-repl "(!add (ax+b `(3 3) 0 1) (ax+b `(3 3) 0 1))")
   (docs:subsection "Evaluating a computational graph.")
   (docs:example-repl "(proceed (!add (ax+b `(3 3) 0 1) (ax+b `(3 3) 0 1)))")
-  
-  (docs:subtitle "Differentiable Ops")
-  (docs:subtitle "Modules")
-  (docs:subtitle "Models")
-  (docs:subtitle "Initializers")
-  (docs:subtitle "ShapeTracker")
-  
+
+  ;; ADD:
+  ;; Caten
+  ;; Forward
+  ;; Backward
+  ;; Proceed
+  )
+
+(docs:define-page ("Differentiable Ops" "packages/caten.apis.differentiable_ops.md")
+  (docs:title "Differentiable Ops")
+  )
+
+(docs:define-page ("Module" "packages/caten.apis.module.md")
+  (docs:title "Module")
+
+  )
+
+(docs:define-page ("Models" "packages/caten.apis.models.md")
+  (docs:title "Models")
+  )
+
+(docs:define-page ("AOT" "packages/caten.apis.aot.md")
+  (docs:title "AOT")
+  )
+
+(docs:define-page ("Initializers" "packages/caten.apis.initializers.md")
+  (docs:title "Initializers")
+  )
+
+(docs:define-page ("ShapeTracker" "packages/caten.apis.shapetracker.md")
+  (docs:title "ShapeTracker")
   )

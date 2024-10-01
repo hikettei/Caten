@@ -48,6 +48,14 @@ nav:
     - caten/air: packages/caten.air.md
     - caten/aasm: packages/caten.aasm.md
     - caten/ajit: packages/caten.ajit.md
-    - caten/apis: packages/caten.apis.md
+    - caten/apis:
+      - TL;DR: packages/caten.apis.md
+      - Tensor: packages/caten.apis.tensor.md
+      - Func: packages/caten.apis.differentiable_ops.md
+      - Module: packages/caten.apis.module.md
+      - Model: packages/caten.apis.models.md
+      - AOT: packages/caten.apis.aot.md
+      - Initializers: packages/caten.apis.initializers.md
+      - ShapeTracker: packages/caten.apis.shapetracker.md
     - caten/avm: packages/caten.avm.md
     - caten/nn: packages/caten.nn.md
