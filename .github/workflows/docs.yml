@@ -29,8 +29,7 @@ jobs:
       - name: Installing requirements
         run: make install_docs
       - name: Building documentations
-        run: mkdir -p docs/packages && make build_docs && echo "markdown-katex
-        lantana" > docs/requirements.txt
+        run: mkdir -p docs/packages && make build_docs && echo -e "markdown-katex\nlantana" > docs/requirements.txt
       - name: Deploy docs
         uses: mhausenblas/mkdocs-deploy-gh-pages@master
         env:
