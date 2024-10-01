@@ -28,12 +28,18 @@
 (defmacro defmodule ((name ((&rest constructor-args) &rest attrs) &key (where nil) (direct-superclasses nil))
 		     (&rest slots)
 		     &key (documentation "") (impl nil) (forward nil) (backward nil))
-  "## [macro] defmodule
+  "
+```
+(defmodule (name ((&rest constructor-args) &rest attrs) &key (where nil) (direct-superclasses nil))
+  (&rest slots)
+  &key (documentation \"\") (impl nil) (forward nil) (backward nil))
+```
+
 Define a module named `name`.
 
 In Caten, `Module` is a CLOS class that represents a set of Funcs and is defined as a subclass of `Func` itself. It is used to represent computational nodes that can be expressed through compositions of Funcs. Consequently, as a subclass of Func, Module utilizes the following three methods for manipulation:
 
-### [method] impl
+#### [method] impl
 
 `(impl (op Module) &rest tensors)`
 
@@ -44,7 +50,7 @@ The computational graph must begin with the inputs.
 If there are multiple outputs, bind them with `cl:values`.
 If you need to record Tensors for the backward process, now is the time to do so.
 
-### [method] forward
+#### [method] forward
 
 `(forward (op Module) &rest tensors)`
 
@@ -56,7 +62,7 @@ The `st` macro in ShapeTracker is quite useful for creating the Tensor after the
 If you specify ShapeTracker in `:where`, the defmodule macro will automatically generate the forward.
 Therefore, you must describe either `:where` or `:forward`.
 
-### [method] backward (optional)
+#### [method] backward (optional)
 
 `(backward (op Module) prev-grad) -> (values input_1.grad input_2.grad ...)`
 
@@ -70,7 +76,7 @@ In Caten, since save-for-backward is automatically determined, there is no need 
 
 Note that `backward` is **optional**. If it is not provided, AD will be applied based on the computational graph from `impl`.
 
-### [method] lower
+#### [method] lower
 
 The lower method is automatically written by the `defmodule`, so there is no need to consider it when describing the module.
 However, it is necessary to understand how it is lowered for when defining simplifiers for the `Module`.
@@ -80,7 +86,7 @@ However, it is necessary to understand how it is lowered for when defining simpl
 
 Nodes whose class is `:Graph` are completely eliminated during lower by `impl`.
 
-### Syntax
+#### Syntax
 
 `forward`, `backward`, `impl` are described in one of the following format.
 
@@ -90,30 +96,23 @@ forward := (lambda (&rest args) &body body)
 forward := fname
 ```
 
-### Effects
+#### Effects
 
-- 1. defines a class named `name`.
+- it defines a class named `name`.
+- it defines a function named `name`. it works as a constructor.
 
-- 2. defines a function named `name`. it works as a constructor.
-
-### Arguments
+#### Arguments
 
 - name[symbol] the name of module
-
 - constructor-args[list] arguments for the constructor
-
 - attrs[list] define attrs for the lowered graph based on the constructor-args variables using the following format: `(:key1 value1 :key1 value2 ...)`.
-
 - slots[list] slots for the defined class.
-
 - where[nil or string] ShapeTracker
-
 - documentation[string] documentation
 
-### Notes
+#### Notes
 
 - The methods are called in the order of `forward->impl->backward` during compilation
-
 - `impl` is performed recursively, so modules must not be co-dependent within the `impl` method. (e.g.: do not define a module `A` that depends on `B` that depends on `A` ...)
 "
   (assert (or (stringp where) forward) () "defmodule: Provide ShapeTracker to :where, or provide :forward.")
@@ -208,18 +207,26 @@ The provided form does not match any of them:~%~a" method method method method f
 		     if (eql new-axis 1) do (setf total (!* total (->fconst base))))
            (!div (!sum x :axis axis :keepdims keepdims) (!cast total (dtype-of x)))))))
 
-(macrolet ((defreduce (f model)
+(macrolet ((defreduce (f model doc)
 	     `(progn
 		(declaim (ftype (Function (Tensor &key (:axis t) (:keepdims boolean)) (values Tensor &optional)) ,f))
-		(defun ,f (x &key (axis t) (keepdims nil)) (forward (,model :axis axis :keepdims keepdims) x)))))
-  (defreduce !sum SumNode)
-  (defreduce !mean MeanNode)
-  (defreduce !max MaxReduce)
-  (defreduce !min MinReduce))
+		(defun ,f (x &key (axis t) (keepdims nil))
+                  ,(format nil "
+```
+(~(~a~) x &key (axis t) (keepdims nil))
+```
+
+Compute the ~a of the tensor.
+" f doc)
+                  (forward (,model :axis axis :keepdims keepdims) x)))))
+  (defreduce !sum SumNode "sum")
+  (defreduce !mean MeanNode "mean")
+  (defreduce !max MaxReduce "maximum")
+  (defreduce !min MinReduce "minimum"))
 ;; ~~~ gemm ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (Matmul (()) :where "A[~ i j] B[~ j k] -> A[~ i k]")
     ()
-    :documentation "Gemm (TODO)"
+    :documentation "Gemm"
     :impl ((mm x y)
 	   (multiple-value-bind (n1 n2) (values (ndim x) (ndim y))
              (assert (= n1 n2) () "Cannot multiply matrices with different dimensions. Are they properly broadcasted?~%A: ~a~%B: ~a" x y)
@@ -229,8 +236,14 @@ The provided form does not match any of them:~%~a" method method method method f
 	       (let ((z (!mul x (!contiguous (!transpose y -1 (- (min n2 2))) :force t))))
 		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
 (defun !matmul (a b)
+  "
+```
+(!matmul a b)
+```
+
+Performs matrix multiplication between two tensors `a` and `b`.
+"
   (multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
-    ;; [TODO] Remove the !contiguous, no copies are needed!!!
     (forward (make-instance 'Matmul) a b)))
 ;; ~~ math ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (SinHNode (()) :where "A[~] -> A[~]")
@@ -261,11 +274,41 @@ The provided form does not match any of them:~%~a" method method method method f
     :impl ((cos x) (!div (!sin x) (!cos x))))
 
 (declaim (ftype (function (Tensor) (values Tensor &optional)) !sinh !cosh !tanh !cos !tan !log2 !exp2))
-(defun !sinh (x) (forward (SinhNode) x))
-(defun !cosh (x) (forward (CoshNode) x))
-(defun !tanh (x) (forward (TanhNode) x))
-(defun !cos (x) (forward (CosNode) x))
-(defun !tan (x) (forward (TanNode) x))
+(defun !sinh (x)
+  "
+```
+(!sinh x)
+```
+"
+  (forward (SinhNode) x))
+(defun !cosh (x)
+  "
+```
+(!cosh x)
+```
+"
+  (forward (CoshNode) x))
+(defun !tanh (x)
+  "
+```
+(!tanh x)
+```
+"
+  (forward (TanhNode) x))
+(defun !cos (x)
+  "
+```
+(!cos x)
+```
+"
+  (forward (CosNode) x))
+(defun !tan (x)
+  "
+```
+(!tan x)
+```
+"
+  (forward (TanNode) x))
 
 (defmodule (Exp2Node (()) :where "A[~] -> A[~]")
     ()
@@ -277,30 +320,59 @@ The provided form does not match any of them:~%~a" method method method method f
     :documentation "Log2"
     :impl ((log2 x) (!div (!log x) (fconst (log 2) :dtype (dtype-of x)))))
 
-(defun !log2 (x) (forward (Log2Node) x))
-(defun !exp2 (x) (forward (Exp2Node) x))
+(defun !log2 (x)
+  "
+```
+(!log2 x)
+```
+"
+  (forward (Log2Node) x))
+(defun !exp2 (x)
+  "
+```
+(!exp2 x)
+```
+"
+  (forward (Exp2Node) x))
 
 ;; ~~ Trunc/Ceil/Floor ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (TruncateNode (()) :where "A[~] -> A[~]")
     ()
     :documentation "Truncate(x)"
-    :impl ((trunc x) (!cast (!cast x :uint32) (dtype-of x))))
+    :impl ((trunc x) (!cast (!cast x :int32) (dtype-of x))))
 
-(defun !truncate (x) (forward (TruncateNode) x))
+(defun !truncate (x)
+  "
+```
+(!truncate x)
+```
+"
+  (forward (TruncateNode) x))
 
 (defmodule (CeilingNode (()) :where "A[~] -> A[~]")
     ()
     :documentation "Ceiling(x)"
     :impl ((ceil x) (let ((b (!truncate x))) (!where (!> x b) (!add b (!const b 1)) b))))
 
-(defun !ceiling (x) (forward (CeilingNode) x))
+(defun !ceiling (x)
+  "
+```
+(!ceiling x)
+```"
+  (forward (CeilingNode) x))
 
 (defmodule (FloorNode (()) :where "A[~] -> A[~]")
     ()
     :documentation "Floor(x)"
     :impl ((ceil x) (let ((b (!truncate x))) (!where (!< x b) (!sub b (!const b 1)) b))))
 
-(defun !floor (x) (forward (FloorNode) x))
+(defun !floor (x)
+  "
+```
+(!floor x)
+```
+"
+  (forward (FloorNode) x))
 ;; ~~ Linalg ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (TrilNode ((&key (diagonal 0)) :diagonal diagonal) :where "A[~ n m] -> A[~ n m]")
     ()
@@ -326,5 +398,20 @@ The provided form does not match any of them:~%~a" method method method method f
                       (k (->iconst diagonal)))
                  (!where (!<= i (!- j k)) x (!const x 0)))))))
 
-(defun !tril (x &key (diagonal 0)) (forward (TrilNode :diagonal diagonal) x))
-(defun !triu (x &key (diagonal 0)) (forward (TriuNode :diagonal diagonal) x))
+(defun !tril (x &key (diagonal 0))
+  "
+```
+(!tril x &key (diagonal 0))
+```
+
+Returns the lower triangular part of the tensor (>= 2D) or batch of matrices input.
+"
+  (forward (TrilNode :diagonal diagonal) x))
+(defun !triu (x &key (diagonal 0))
+  "
+```
+(!triu x &key (diagonal 0))
+```
+
+Returns the upper triangular part of the tensor (>= 2D) or batch of matrices input."
+  (forward (TriuNode :diagonal diagonal) x))
