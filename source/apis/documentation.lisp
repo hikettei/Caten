@@ -3,16 +3,12 @@
 (docs:define-page ("caten/apis" "packages/caten.apis.md")
   (docs:title "Overview")
   (docs:body "Welcome to Caten/APIs")
-  ;; TODO: quick tutorial
-  ;; ctx:with-contextvar
-  ;; proceed
-  ;; make tensor
-  ;; How to debug?
-  ;; JIT
-  ;; JIT_DEBUG
-  ;; DOT=1
-  ;; TODO: defsimplifier docs
-  )
+  (docs:body "WIP")
+  (docs:body "proceed is a function that evaluates a computational graph.")
+  (docs:example-repl "(proceed (make-tensor `(3 3) :initial-element 1.0))")
+  (docs:body "`ctx:with-contextvar` is a macro that sets the context variable. `JIT=1` to use JIT, `JIT_DEBUG=1` to see the generated code. `DOT=1` to debug the pattern matcher on your browser. (need graphviz)")
+  (docs:example-repl "(ctx:with-contextvar (:jit 1 :jit_debug 1 :dot 0)
+  (caten (forward (Embedding 10 10) (make-tensor `(b c)))))"))
 
 (docs:define-page ("Tensor" "packages/caten.apis.tensor.md")
   (docs:title "Tensor")
@@ -151,16 +147,20 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
 
 (docs:define-page ("Models" "packages/caten.apis.models.md")
   (docs:title "Models")
+  (docs:body "TODO")
   )
 
 (docs:define-page ("AOT" "packages/caten.apis.aot.md")
   (docs:title "AOT")
+  (docs:body "TODO")
   )
 
 (docs:define-page ("Initializers" "packages/caten.apis.initializers.md")
   (docs:title "Initializers")
+  (docs:body "TODO")
   )
 
 (docs:define-page ("ShapeTracker" "packages/caten.apis.shapetracker.md")
   (docs:title "ShapeTracker")
+  (docs:body "TODO")
   )
