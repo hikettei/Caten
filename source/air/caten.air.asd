@@ -10,7 +10,8 @@
    (:file "node")
    (:file "graph")
    (:file "pattern-matcher")
-   (:file "viz"))
+   (:file "viz")
+   (:file "documentation"))
   :in-order-to ((test-op (asdf:test-op "caten.air/test"))))
 
 (asdf:defsystem "caten.air/test"

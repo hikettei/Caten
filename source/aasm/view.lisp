@@ -105,7 +105,8 @@ broadcast=~a"
 			     (map 'list #'node->id1 by)
 			     (map 'list #'node->id1 stride))
 		     :nrank nrank :broadcast broadcast :permute permute))))
-;; Not recommended; use %view instead
+;; Not recommended: use %view instead
+;; Note that x must be a contiguous array.
 (defun %reshape (x shape &key (id (gensym "RID")) (order :row))
   "In-placed reshape"
   (declare (type node x)

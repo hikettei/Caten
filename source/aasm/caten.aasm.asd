@@ -14,7 +14,8 @@
    (:file "constant-folding")
    (:file "optimizers")
    (:file "view")
-   (:file "logical"))
+   (:file "logical")
+   (:file "documentation"))
   :in-order-to ((test-op (asdf:test-op "caten.aasm/test"))))
 
 (asdf:defsystem "caten.aasm/test"

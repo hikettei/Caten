@@ -1,6 +1,6 @@
 (in-package :cl-user)
 (defpackage :caten/aasm
-  (:use :cl :trivia :caten/air :alexandria)
+  (:use :cl :trivia :caten/air :alexandria :caten/common.documentation)
   (:import-from
    :caten/common.dtype
    #:dtype-t

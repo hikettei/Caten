@@ -11,7 +11,8 @@
    (:file "buffer")
    (:file "runtime")
    (:file "conditions")
-   (:file "lisp-backend"))
+   (:file "lisp-backend")
+   (:file "documentation"))
   :in-order-to ((test-op (asdf:test-op "caten.avm/test"))))
 
 (asdf:defsystem "caten.avm/test"

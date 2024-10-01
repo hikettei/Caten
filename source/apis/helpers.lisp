@@ -63,8 +63,12 @@
 (defun symb (&rest symbols) (intern (with-output-to-string (o) (dolist (s symbols) (princ s o)))))
 
 (defmacro with-no-grad (&body body)
-  "## [macro] with-no-grad
-Set *no-grad*=t."
+  "
+```
+(with-no-grad &body body)
+```
+
+Under the scope of `with-no-grad`, the gradient computation is disabled. This parameter should be set during inference, and the compiler will generate a more efficient code."
   `(let ((*no-grad* t)) ,@body))
 
 (defun getattr-from-list (attrs id)

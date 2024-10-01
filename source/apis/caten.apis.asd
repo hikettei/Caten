@@ -18,7 +18,8 @@
 	       (:file "model")
 	       (:file "ahead-of-time")
 	       (:file "initializers")
-	       (:file "syntax-sugar"))
+	       (:file "syntax-sugar")
+               (:file "documentation"))
   :in-order-to
   ((test-op
     (asdf:test-op "caten.air")

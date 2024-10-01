@@ -61,3 +61,23 @@ jobs:
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
           CI=1 JIT=1 JIT_BACKEND=CLANG AVM=LISP rove caten.asd
+  Documentation:
+    name: Test building documentations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up SBCL via Roswell.
+        run: |
+          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install sbcl-bin/2.4.0
+          ros use sbcl-bin/2.4.0
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Installing ISL
+        run: sudo apt-get install -y libisl-dev
+      - name: Installing requirements
+        run: make install_docs
+      - name: Building documentations
+        run: mkdir -p docs/packages && make build_docs

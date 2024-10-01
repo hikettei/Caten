@@ -9,9 +9,15 @@
     (:parameter "#ff6347")
     (:module "#6495ed")))
 
+(defgeneric ->dot (graph &key pathname open title)
+  (:documentation "
+```
+(->dot graph &key (pathname \"/tmp/graph.dot\") (open t) (title \"node\"))
+```
+
+Visualizes the graph using graphviz(requirement). Set open=t to open the resulting image in the default browser. A tmp file is created at the pathname location. The graph is saved as a .png and .html file. The title is used in the html file."))
+
 (defmethod ->dot ((graph Graph) &key (pathname "/tmp/graph.dot") (open t) (title "node"))
-  "Visualizes the graph using graphviz. Set open=t to open the resulting image in the default browser.
-Requirements: DOT"
   (with-open-file (stream pathname :direction :output :if-exists :supersede :if-does-not-exist :create)
     (format stream "digraph computation_node {
   node[charset=\"UTF-8\"

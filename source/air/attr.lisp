@@ -48,14 +48,29 @@
     (format out "~a" document)
     (format out "~%When optimizing ~(~a~) in-place, the ~ath read is consumed.~%" name nth)
     (when direct-superclasses
-      (format out "~%### Superclasses~%~%")
+      (format out "~%superclasses = ")
       (dolist (superclass direct-superclasses)
-	(format out "- ~a~%" superclass)))))
+	(format out "`~a`, " superclass)))))
 
-(defmacro defnode ((module type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
-  "Defines a new attribute.
-- placeholder[(unsigned-byte 32) or -1] -1 to ignore"
-  (declare (type keyword module type)
+(defmacro defnode ((class type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
+  "
+Defines a new node.
+
+```lisp
+(defnode (class type) (&rest direct-superclasses)
+  description
+  &key (placeholder 0) (verify 'identity) (slots))
+```
+
+- class[keyword] an identifier of the node class.
+- type[keyword] an identifier of the node type.
+- direct-superclasses[list of keyword] a list of superclasses.
+- description[string] a description of the node.
+- placeholder[(unsigned-byte 32) or -1] when mutating the node in-place, the compiler consumes the placeholder-th read buffer.
+- verify[function] a function to verify the arguments.
+- slots[list of (symbol &rest slot-options)] a list of slot definitions.
+"
+  (declare (type keyword class type)
 	   (type string description))
   (let* ((class-name (intern (format nil "~a-ATTR" (symbol-name type)))))
     (dolist (superclass direct-superclasses)
@@ -63,8 +78,8 @@
 	(assert (= (length superclasses) 1) () "defnode[~a]: Multiple inheritance of superclass[~a] is not allowed because it is not dumped."
 		type superclass)))
     `(eval-when (:compile-toplevel :load-toplevel :execute)
-       (setf (gethash ,type *attribute->instance*) (cons ,module ',class-name))
-       (defmethod attribute->instance ((id (eql ,type))) (values ,module ',class-name))
+       (setf (gethash ,type *attribute->instance*) (cons ,class ',class-name))
+       (defmethod attribute->instance ((id (eql ,type))) (values ,class ',class-name))
        (defclass ,class-name (Attribute ,@direct-superclasses)
 	 ,(loop for slot in slots
 		for slot-new = (rewrite-slot slot)
@@ -180,14 +195,14 @@
 (defun node-build-documentation-by-class (title class-id)
   (declare (type string title) (type keyword class-id))
   (with-output-to-string (out)
-    (format out "# ~a~%~%" title)
+    (format out "## ~a~%~%" title)
     (let ((module->val (debug/attrs-by-module)))
       (maphash
        #'(lambda (module vals)
 	   (when (eql module class-id)
 	     (dolist (val vals)
 	       (multiple-value-bind (id class) (values (car val) (cdr val))
-		 (format out "~%## [Node] :~a~%~%" id)
+		 (format out "~%### :~a~%~%" id)
 		 (format out (documentation (find-class class) t))))))
        module->val))))
 
