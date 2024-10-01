@@ -10,7 +10,8 @@
   ;; How to debug?
   ;; JIT
   ;; JIT_DEBUG
-  ;; DOT
+  ;; DOT=1
+  ;; TODO: defsimplifier docs
   )
 
 (docs:define-page ("Tensor" "packages/caten.apis.tensor.md")
@@ -43,7 +44,7 @@ Here's an example.
   (docs:subsection "Examples")
   (docs:example-code "
 (let ((model (caten (!randn `(a b)))))
-  (print (forward model `(a . 10) `(b . 10))))"
+  (forward model `(a . 10) `(b . 10)))"
                      :title "Example of forward with dynamic shaped")
   
   (docs:body "
@@ -68,7 +69,59 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
   (docs:example-repl "(proceed (!add (ax+b `(3 3) 0 1) (ax+b `(3 3) 0 1)))"))
 
 (docs:define-page ("Differentiable Ops" "packages/caten.apis.differentiable_ops.md")
-  (docs:title "Differentiable Ops")
+  (docs:title "Func")
+  (docs:section "Func Class")
+  (docs:doc/class "Func" 'Func)
+  (docs:doc/generic "lower" #'lower)
+  (docs:doc/generic "forward" #'forward)
+  (docs:doc/generic "backward" #'backward)
+  (docs:section "Built-in Differentiable ops")
+  (macrolet ((def (name api example)
+               `(progn
+                  (docs:doc/function ,name ,api)
+                  (docs:example-repl ,example))))
+    (def "!identity" #'!identity "(proceed (!identity (make-tensor `(3 3) :initial-element 1.0)))")
+    (def "!view" #'!view "(proceed (!contiguous (!view (ax+b `(10 10) 1 0) `(3 6) `(3 6))))")
+    (def "!permute" #'!permute "(proceed (!contiguous (!permute (ax+b `(10 10) 1 0) `(1 0))))")
+    (def "!t" #'!t "(proceed (!contiguous (!t (ax+b `(10 10) 1 0))))")
+    (def "!transpose" #'!transpose "(proceed (!contiguous (!transpose (ax+b `(10 10) 1 0) 1 0)))")
+    (def "!contiguous" #'!contiguous "(proceed (!contiguous (ax+b `(10 10) 1 0)))")
+    (def "!copy" #'!copy "(proceed (!copy (ax+b `(10 10) 1 0)))")
+    (def "!reshape" #'!reshape "(proceed (!reshape (ax+b `(10 10) 1 0) `(5 20)))")
+    (def "!uprank" #'!uprank "(proceed (!uprank (ax+b `(10 10) 1 0) 2))")
+    (def "!repeat" #'!repeat "(proceed (!repeat (ax+b `(1 10) 1 0) 10 1))")
+    (def "!expand" #'!expand "(proceed (!expand (ax+b `(1 10) 1 0) `(10 10)))")
+    (def "!move" #'!move "(proceed (!move (ax+b `(10 10) 0 0) (ax+b `(10 10) 0 2)))")
+    (def "!add" #'!add "(proceed (!add (ax+b `(10 10) 1 0) (ax+b `(10 10) 1 0)))")
+    (def "!sub" #'!sub "(proceed (!sub (ax+b `(10 10) 1 0) (ax+b `(10 10) 1 0)))")
+    (def "!mul" #'!mul "(proceed (!mul (ax+b `(10 10) 1 0) (ax+b `(10 10) 1 0)))")
+    (def "!div" #'!div "(proceed (!div (ax+b `(10 10) 1 1) (ax+b `(10 10) 1 1)))")
+    (def "!idiv" #'!idiv "(proceed (!idiv (ax+b `(10 10) 3 1 :dtype :uint32) (ax+b `(10 10) 0 2 :dtype :uint32)))")
+    (def "!maximum" #'!maximum "(proceed (!maximum (rand `(3 3)) (randn `(3 3))))")
+    (def "!minimum" #'!minimum "(proceed (!minimum (rand `(3 3)) (randn `(3 3))))")
+    (def "!gcd" #'!gcd "(ctx:with-contextvar (:jit 0) (proceed (!gcd (iconst 8) (iconst 4))))")
+    (def "!lcm" #'!lcm "(ctx:with-contextvar (:jit 0) (proceed (!lcm (iconst 8) (iconst 4))))")
+    (def "!exp" #'!exp "(proceed (!exp (ax+b `(10 10) 0.01 0.0)))")
+    (def "!log" #'!log "(proceed (!log (ax+b `(10 10) 0.01 0.001)))")
+    (def "!sqrt" #'!sqrt "(proceed (!sqrt (ax+b `(10 10) 0.01 0.0)))")
+    (def "!neg" #'!neg "(proceed (!neg (ax+b `(10 10) 0.01 0.0)))")
+    (def "!recip" #'!recip "(proceed (!recip (ax+b `(10 10) 0.01 0.1)))")
+    (def "!signum" #'!signum "(proceed (!signum (ax+b `(10 10) 0.02 -0.1)))")
+    (def "!abs" #'!abs "(proceed (!abs (ax+b `(10 10) 0.02 -0.1)))")
+    (def "!>" #'!> "(proceed (!where (!> (rand `(3 3)) (randn `(3 3))) (iconst 1) (iconst 0)))")
+    (def "!<" #'!< "(proceed (!where (!< (rand `(3 3)) (randn `(3 3))) (iconst 1) (iconst 0)))")
+    (def "!>=" #'!>= "(proceed (!where (!>= (rand `(3 3)) (randn `(3 3))) (iconst 1) (iconst 0)))")
+    (def "!<=" #'!<= "(proceed (!where (!<= (rand `(3 3)) (randn `(3 3))) (iconst 1) (iconst 0)))")
+    (def "!eq" #'!eq "(proceed (!where (!eq (rand `(3 3)) (randn `(3 3))) (iconst 1) (iconst 0)))")
+    (def "!neq" #'!neq "(proceed (!where (!neq (rand `(3 3)) (randn `(3 3))) (iconst 1) (iconst 0)))")
+    (def "!and" #'!and "(proceed (!and (iconst 5) (iconst 3)))")
+    (def "!xor" #'!xor "(proceed (!xor (iconst 5) (iconst 3)))")
+    (def "!or" #'!or "(proceed (!or (iconst 5) (iconst 3)))")
+    (def "!where" #'!where "(proceed (!where (!eq (rand `(3 3)) (randn `(3 3))) (iconst 1) (iconst 0)))")
+    (def "!const" #'!const "(proceed (!const (make-tensor `(3 3)) 1.0))"))
+  (docs:doc/generic "!index-components" #'!index-components)
+  (docs:example-repl "(proceed (!index-components (make-tensor `(3 3))))")
+  (docs:example-repl "(proceed (!index-components `(1 3)))")
   )
 
 (docs:define-page ("Module" "packages/caten.apis.module.md")

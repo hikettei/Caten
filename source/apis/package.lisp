@@ -102,6 +102,7 @@
    #:Func
    #:func-variables
    #:lower
+   #:!identity
    ;; shaping
    #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!copy #:!permute #:!t #:!transpose
    #:!expand

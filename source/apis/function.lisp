@@ -1,15 +1,56 @@
 (in-package :caten/apis)
 ;; Function creating a lazy computation node, should start with the prefix !.
-;; TODO: Func is a syntax sugar for caten/air, we can reconstruct Func from Graph
-(defclass Func () ((variables :initarg :variables :initform nil :accessor func-variables)))
+
+;; [TODO] func-variables are not used?
+(defclass Func () ((variables :initarg :variables :initform nil :accessor func-variables))
+  (:documentation "A CLOS class that represents a computation.
+
+```
+[Func] -> <Lower> -> [FastGraph] -> <Simplifier> -> [Completed]
+```
+
+`Func` is a syntax-sugar for generating lowered instructions defined in the `caten/aasm` package.
+
+To properly lower the `Func`, You need to implement the following three methods:
+
+- lower: Lower the `Func` into a list of `caten/air:node`. This should return `caten/air:graph`.
+- forward: Create the type for the Tensor after computation. Be mindful of its lazy evaluation nature; do not perform the actual computation. `ShapeTracker` might help you. (use the `st` macro)
+- backward: Create the graph for backward of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`."))
 
 (defgeneric lower (op &rest nodes)
-  (:documentation "Lowers the Func into a list of `caten/air:node`. This should return caten/air:graph."))
+  (:documentation "
+```
+(lower op &rest nodes)
+```
+
+Lowers the Func into a list of `caten/air:node`. This should return caten/air:graph.
+- op[Func] Func to lower.
+- nodes[list] list of previous nodes (each position corresponds to the position of the variables in the Func).
+"))
+
 (defgeneric forward (op &rest tensors)
-  (:documentation "Create the type for the Tensor after computation. Be mindful of its lazy evaluation nature; do not perform the actual computation."))
+  (:documentation "
+```
+(forward op &rest tensors)
+```
+
+Create the type for the Tensor after computation. Be mindful of its lazy evaluation nature; do not perform the actual computation. Use the `st` macro to create a new tensor.
+
+- op[Func] Func to forward.
+- tensors[list] list of input tensors."))
+
 (defgeneric backward (op &optional prev-grad)
-  (:documentation "Create the graph for backward of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`.
-save-for-backward is determined automatically, so you do not have to consider about in-place operation."))
+  (:documentation "
+```
+(backward op &optional prev-grad)
+```
+
+Create the graph for backward of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`.
+save-for-backward is determined automatically, so you do not have to consider about in-place operation.
+
+- op[Func] Func to backward.
+- prev-grad[Tensor] previous gradient tensor.
+"))
 
 (defmethod forward :around ((op Func) &rest tensors)
   (let ((outs (handler-bind
@@ -28,14 +69,25 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod forward ((op IdentityNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op IdentityNode) &optional prev-grad) (values prev-grad))
 (defmethod lower ((op IdentityNode) &rest inputs) (with-context (_ (%store (car inputs) (car inputs) :reduction t))))
-(defun !identity (tensor) (forward (make-instance 'IdentityNode) tensor))
+
+(defun !identity (tensor)
+  "
+```
+(!identity tensor)
+```
+
+Equivalent to #'identity, but it is used to create a lazy computation node.
+"
+  (forward (make-instance 'IdentityNode) tensor))
 
 (defclass Allocate (Func)
   ((buffer :initarg :buffer :type Tensor :accessor alloc-buffer)
    (initial-element :initarg :initial-element :initform nil :accessor alloc-initial-element)
    (id :initform nil :accessor alloc-id)
    (from :initform nil :initarg :from :accessor alloc-from)))
+
 (defmethod forward ((op Allocate) &rest tensors) (declare (ignore tensors)) (alloc-buffer op))
+
 (defmethod backward ((op Allocate) &optional dout)
   (let ((buff (alloc-buffer op)))
     (when (tensor-requires-grad buff)
@@ -43,6 +95,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (let ((id (gensym "ACC")))
 	(setf (alloc-id op) id)
 	(values (!add (tensor-grad buff) dout :reduce t :id id))))))
+
 (defmethod lower ((op Allocate) &rest inputs)
   (declare (ignore inputs))
   (let ((buff (alloc-buffer op))
@@ -64,6 +117,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
    (subscripts :initarg :subscripts :accessor view-subscripts)
    (broadcast-mode :initarg :broadcast-mode :accessor view-broadcast-mode)
    (nrank :initarg :nrank :accessor view-nrank)))
+
 (defmethod backward ((op View) &optional dout)
   (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
     (let* ((base (clone-like (car (func-variables op)))))
@@ -72,6 +126,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 		 (dout (!add base (!contiguous dout) :reduce t)))
 	    (apply #'!view dout (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) subscripts)))
 	  (apply #'!view-from-base (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect `(0 ,s)))))))
+
 (defmethod lower ((op View) &rest inputs)
   (let ((nrank (view-nrank op))
 	(bs (car (func-variables op))))
@@ -84,15 +139,41 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			 (let ((base-shape (subseq1p inputs (* 4 nrank) (* 5 nrank)))
 			       (stride     (subseq1p inputs (* 5 nrank))))
 			   (or stride (%stride base-shape (tensor-order bs))))))))))
-(defun !view (base &rest subscripts) (make-view-internal base subscripts))
-(defun !view-from-base (base &rest subscripts) (make-view-internal base subscripts :allow-merge nil))
+
+(defun !view (base &rest subscripts)
+  "
+```
+(!view base &rest subscripts)
+```
+
+Create a view node from the base tensor and subscripts.
+
+We refer to `VIEW` as a node creating tensor whose buffers are shared with the `base` tensor, but shapes, strides, dtypes, offsets, or dtypes are different.
+
+Subscripts has the following notation:
+
+- `t` keep using the base view.
+- `fixnum` refers to the specified element. e.g.: `A[3]`
+- `(a b)` slices in the range of `[a, b)`
+- `(a b c)` slices in the range of `[a, b)` with step `c`. `c` can be negative. In that case, b must be larger than a. For example: `(10 0 -1)` to reverse the elements in the axis.
+- `(:~ n)` to broadcast the axis, with the size of `n`
+
+It is supported to compose mutliple views; the viewed tensors can be created from the viewed tensors.
+"
+  (make-view-internal base subscripts))
+
+(defun !view-from-base (base &rest subscripts)
+  "Equivalent to !view but it ignores the base view object."
+  (make-view-internal base subscripts :allow-merge nil))
 
 (defclass Permute (Func)
   ((nrank :initarg :nrank :accessor permute-nrank)
    (order :initarg :order :accessor permute-order)))
+
 (defmethod permute-list ((op Permute) list)
   (loop for nth in (permute-order op)
 	collect (nth nth list)))
+
 (defmethod forward ((op Permute) &rest inputs)
   (let ((x (car inputs))
 	(order (permute-order op)))
@@ -100,6 +181,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 	    ()
 	    "Permute: order is not a valid permutation, getting ~a.~%axes are chosen from ~a" order (range 0 (ndim (car inputs))))
     (make-tensor (permute-list op (shape x)) :dtype (dtype-of x) :order (order x) :views (and (tensor-views x) (permute-list op (tensor-views x))))))
+
 (defmethod forward :around ((op Permute) &rest inputs)
   (let* ((x (call-next-method))
 	 (views (tensor-views x)))
@@ -127,7 +209,9 @@ save-for-backward is determined automatically, so you do not have to consider ab
 		(map 'list (compose #'sfold #'->iconst) (shape (car inputs))))))
 	  (func-variables op) (tensor-variables x))
     x))
+
 (defmethod backward ((op Permute) &optional dout) (!permute dout (permute-order op)))
+
 (defmethod lower ((op Permute) &rest inputs)
   (let* ((bs (car (func-variables op)))
 	 (nrank (ndim bs)))
@@ -142,14 +226,38 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			 (permute-list op (%stride (subseq1p inputs (* 4 nrank) (* 5 nrank)) (tensor-order bs)))
 			 :permute (permute-order op)))))))
 
-(defun !permute (tensor order) (forward (make-instance 'Permute :order order) tensor))
+(defun !permute (tensor &rest order)
+  "
+```
+(!permute tensor &rest order)
+```
+
+Returns a tensor that is a permutation of the original tensor. The new tensor has the same data as the original tensor but with the dimensions permuted according to the `order` specified. order can be passed as a list or separated arguments. That is, both of `(!permute x 0 1)` or `(!permute x (list 0 1))` are valid.
+"
+  (forward (make-instance 'Permute :order (flatten order)) tensor))
+
 (defun !t (tensor)
+  "
+```
+(!t tensor)
+```
+
+Transposes the last two axes of the tensor
+"
   (let ((range (range 0 (ndim tensor)))
 	(n (ndim tensor)))
     (setf (nth (- n 2) range) (nth (- n 1) range)
 	  (nth (- n 1) range) (1- (nth (- n 2) range)))
     (!permute tensor range)))
+
 (defun !transpose (tensor &optional (dim0 1) (dim1 0))
+  "
+```
+(!transpose tensor &optional (dim0 1) (dim1 0))
+```
+
+Transposes the `dim0` and `dim1`.
+"
   (declare (type tensor tensor))
   (let* ((range (range 0 (ndim tensor)))
 	 (tmp (nth1 dim0 range)))
@@ -158,17 +266,33 @@ save-for-backward is determined automatically, so you do not have to consider ab
     (!permute tensor range)))
 
 (defun !contiguous (x &key (force nil))
+  "
+```
+(!contiguous x &key (force nil))
+```
+
+If the tensor is viewed, creates a copy of tensor with contiguous memory. Otherwise, returns the original tensor. If `force` is set to T, it always creates a copy.
+"
   (declare (type tensor x))
   (if (or force (tensor-views x))
       (let ((out (make-tensor (tensor-shape x) :dtype (tensor-dtype x) :order (tensor-order x))))
 	(!move out x))
       x))
-(defun !copy (x) (!contiguous x :force t))
+
+(defun !copy (x)
+  "
+```
+(!copy x)
+```
+Creates a copy of the tensor. In Caten, the in-place operations are automatically determined, so in general, you do not have to consider using it.
+"
+  (!contiguous x :force t))
 
 (defclass Reshape (Func)
   ((shape-bf :initarg :shape-bf :accessor reshape-shape-bf)
    (shape-af :initarg :shape-af :accessor reshape-shape-af)
    (order    :initarg :order    :accessor reshape-order)))
+
 (defmethod forward ((op Reshape) &rest tensors)
   (when (and (every #'numberp (reshape-shape-bf op)) (every #'numberp (reshape-shape-af op)))
     (assert (= (apply #'* (reshape-shape-bf op)) (apply #'* (reshape-shape-af op)))
@@ -176,6 +300,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
 	    "Assertion Failed: Cannot reshape from ~a to ~a. The number of total elements should correspond."
 	    (reshape-shape-bf op) (reshape-shape-af op)))
   (make-tensor (reshape-shape-af op) :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))))
+
 (defmethod forward :around ((op Reshape) &rest tensors)
   (let ((out-tensor (call-next-method)))
     (setf (tensor-variables out-tensor)
@@ -184,7 +309,9 @@ save-for-backward is determined automatically, so you do not have to consider ab
 			collect (if (tensor-p s) s (iconst s))))
 	  (func-variables (tensor-op out-tensor)) (tensor-variables out-tensor))
     out-tensor))
+
 (defmethod backward ((op Reshape) &optional prev-grad) (!reshape prev-grad (reshape-shape-bf op)))
+
 (defmethod lower ((op Reshape) &rest nodes)
   (let ((tensor (car (func-variables op))))
     (with-context
@@ -194,19 +321,56 @@ save-for-backward is determined automatically, so you do not have to consider ab
 		 (%load (%salloc :dtype (tensor-dtype tensor)) (car nodes))
 		 (car nodes))))
       (a (when (reshape-shape-af op) (%reshape a (cdr nodes) :order (reshape-order op)))))))
-(defun !reshape (x shape)
+
+(defun !reshape (x &rest shape)
+  "
+```
+(!reshape x &rest shape)
+```
+
+Returns a same tensor but `shape` is changed. shape can be passed as a list or separated arguments. That is, both of `(!reshape x '(1 2 3))` or `(!reshape x 1 2 3)` are valid.
+
+Shape is a list of integers, symbols, or tensors.
+
+If `x` is a viewed tensor, it creates a copy of the tensor with contiguous memory (but later JIT will try to eliminate this).
+"
   (declare (type tensor x) (type list shape))
-  (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape :order (tensor-order x)) (!contiguous x)))
+  (let ((shape (flatten shape)))
+    (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape :order (tensor-order x)) (!contiguous x))))
+
 (defun !uprank (x n)
+  "
+```
+(!uprank x n)
+```
+
+Returns a tensor with one is inserted at the beginning of the shape of `x` for n times.
+"
   (declare (type tensor x) (type (integer 0) n))
   (!reshape x (append (loop for i upfrom 0 below n collect 1) (tensor-shape x))))
+
 (defun !repeat (x &rest repeats)
+  "
+```
+(!repeat x &rest repeats)
+```
+
+Returns a tensor with the shape of `x` broadcasted by `repeats`.
+"
   (let* ((base-shape (append (loop repeat (- (length repeats) (ndim x)) collect 1) (shape x)))
 	 (new-shape (loop for s in (shape x) append (list 1 s)))
 	 (expand-shape (loop for r in repeats for b in base-shape append (list `(:~ ,r) t)))
 	 (final-shape (loop for s in (shape x) for r in repeats collect (!mul (->iconst s) (->iconst r)))))
     (apply #'!view (!reshape (!contiguous (apply #'!view (!reshape x new-shape) expand-shape)) final-shape) (loop for f in final-shape collect t))))
-(defun !expand (x shape)
+
+(defun !expand (x &rest shape &aux (shape (flatten shape)))
+  "
+```
+(!expand x &rest shape)
+```
+
+Returns a tensor that is expanded to the shape that is specified. Expand can also increase the number of dimensions that a tensor has.
+"
   (multiple-value-bind (view-index reshape-to) (apply #'values (pad-left (shape x) shape))
     (let ((x (if (= (ndim x) (length shape)) x (!reshape x reshape-to))))	  
       (apply #'!view x (map 'list #'(lambda (x y) (if (eql x y) t `(:~ ,x))) view-index reshape-to)))))
@@ -217,7 +381,17 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod lower ((op Move) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%move a b :reduction (move-reduction op))))))
-(defun !move (a b &key (reduce nil)) (declare (type tensor a b)) (apply #'forward (make-instance 'Move :reduction reduce) (broadcast-elwise a b)))
+
+(defun !move (a b &key (reduce nil))
+  "
+```
+(!move a b &key (reduce nil))
+```
+
+Moves the element of b into a, returning a. If `reduce` is T, it will reduce the result. (Broadcast)
+"
+  (declare (type tensor a b))
+  (apply #'forward (make-instance 'Move :reduction reduce) (broadcast-elwise a b)))
 
 (defclass Add (Func)
   ((reduce :initarg :reduce :initform nil :accessor func-reduce)
@@ -296,9 +470,32 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod backward ((op SqrtNode) &optional prev-grad) (!mul prev-grad (!recip (!mul (!sqrt (car (func-variables op))) (!const prev-grad 2)))))
 (defmethod lower ((op SqrtNode) &rest inputs) (with-context (a (%sqrt (car inputs)))))
 
-(defun !exp (x) (forward (make-instance 'ExpNode) x))
-(defun !log (x) (forward (make-instance 'LogNode) x))
-(defun !sqrt (x) (forward (make-instance 'SqrtNode) x))
+(defun !exp (x)
+  "
+```
+(!exp x)
+```
+
+Computes `(exp x)`.
+"
+  (forward (make-instance 'ExpNode) x))
+(defun !log (x)
+  "
+```
+(!log x)
+```
+
+Computes `(log x)`.
+"
+  (forward (make-instance 'LogNode) x))
+(defun !sqrt (x)
+  "
+```
+(!sqrt x)
+```
+Computes `(sqrt x)`.
+"
+  (forward (make-instance 'SqrtNode) x))
 
 (defclass Recip (Func) nil)
 (defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" (tensors)))
@@ -322,36 +519,136 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (declaim (ftype (function (Tensor Tensor &key (:reduce boolean) (:id t)) (values Tensor &optional)) !add))
 (declaim (ftype (function (Tensor Tensor &key (:reduce boolean)) (values Tensor &optional)) !sub !mul !div !maximum !minimum !idiv))
 (defun !add (a b &key (reduce nil) (id nil))
+  "
+```
+(!add a b &key (reduce nil))
+;; or
+(!+ &rest tensors)
+```
+
+Adds `a` and `b`. If `reduce` is T, it will reduce the result. (Broadcast)
+"
   (apply #'forward (make-instance 'Add :reduce reduce :id id :wrap-around *wrap-around-mode*) (broadcast-elwise a b)))
 (defun !mul (a b &key (reduce nil))
+  "
+```
+(!mul a b &key (reduce nil))
+;; or
+(!* &rest tensors)
+```
+
+Multiplies `a` and `b`. If `reduce` is T, it will reduce the result. (Broadcast)
+"
   (apply #'forward (make-instance 'Mul :reduce reduce :wrap-around *wrap-around-mode*) (broadcast-elwise a b)))
-(defun !sub (a b &key (reduce nil)) (!add a (!neg b) :reduce reduce))
-(defun !div (a b &key (reduce nil)) (!mul a (!recip b) :reduce reduce))
+(defun !sub (a b &key (reduce nil))
+  "
+```
+(!sub a b &key (reduce nil))
+;; or
+(!- &rest tensors)
+```
+
+Subtracts `b` from `a`. If `reduce` is T, it will reduce the result. (Broadcast)
+"
+  (!add a (!neg b) :reduce reduce))
+(defun !div (a b &key (reduce nil))
+  "
+```
+(!div a b &key (reduce nil))
+;; or
+(!/ &rest tensors)
+```
+
+Divides `a` by `b`. If `reduce` is T, it will reduce the result. (Broadcast)
+"
+  (!mul a (!recip b) :reduce reduce))
 (defun !idiv (a b &key (reduce nil))
+  "
+```
+(!idiv a b &key (reduce nil))
+```
+
+Assuming both of a and b are the integer, divides `a` by `b` and returns the integer part. If `reduce` is T, it will reduce the result. (Broadcast)
+"
   (assert (and (caten/common.dtype:dtype/integerp (dtype-of a)) (caten/common.dtype:dtype/integerp (dtype-of a))) ()
 	  "!idiv only supports for integer but got ~a and ~a" a b)
   (apply #'forward (make-instance 'IDiv :reduce reduce) (broadcast-elwise a b)))
-(defun !maximum (a b &key (reduce nil)) (apply #'forward (make-instance 'MaxOp :reduce reduce) (broadcast-elwise a b)))
-(defun !minimum (a b &key (reduce nil)) (!neg (!maximum (!neg a) (!neg b) :reduce reduce)))
-(defun !gcd (a b &key (reduce nil)) (apply #'forward (make-instance 'GCDOp :reduce reduce) (broadcast-elwise a b)))
-(defun !lcm (a b) (!div (!mul a b) (!gcd a b)))
+(defun !maximum (a b &key (reduce nil))
+  "
+```
+(!maximum a b &key (reduce nil))
+```
+Returns the maximum of `a` and `b`. If `reduce` is T, it will reduce the result. (Broadcast)
+"
+  (apply #'forward (make-instance 'MaxOp :reduce reduce) (broadcast-elwise a b)))
+(defun !minimum (a b &key (reduce nil))
+  "
+```
+(!minimum a b &key (reduce nil))
+```
+Returns the minimum of `a` and `b`. If `reduce` is T, it will reduce the result. (Broadcast)
+"
+  (!neg (!maximum (!neg a) (!neg b) :reduce reduce)))
+(defun !gcd (a b &key (reduce nil))
+  "
+```
+(!gcd a b &key (reduce nil))
+```
+Returns the greatest common divisor of `a` and `b`. If `reduce` is T, it will reduce the result. (Broadcast)
+
+`a`, `b` are expected to be integer scalars. (dedicated to the view computation)
+"
+  (apply #'forward (make-instance 'GCDOp :reduce reduce) (broadcast-elwise a b)))
+(defun !lcm (a b)
+  "
+```
+(!lcm a b)
+```
+Returns the least common multiple of `a` and `b`.
+
+`a`, `b` are expected to be integer scalars.
+"
+  (!div (!mul a b) (!gcd a b)))
 (macrolet ((def (name b) `(defun ,name (&rest args) (reduce ,b args))))
   (def !+ #'!add)
   (def !- #'!sub)
   (def !* #'!mul)
   (def !/ #'!div))
-(macrolet ((def (name cls)
+(macrolet ((def (name cls doc)
 	     `(progn
 		(declaim (ftype (function (Tensor) (values Tensor &optional)) ,name))
-		(defun ,name (x) (declare (type Tensor x)) (forward (make-instance ',cls) x)))))
-  (def !neg Neg)
-  (def !recip Recip))
+		(defun ,name (x)
+                  ,(format nil "
+```
+(~(~a~) tensor)
+```
+~(~a~) computes the ~a of the tensor.
+"
+                           name name doc)
+                  (declare (type Tensor x)) (forward (make-instance ',cls) x)))))
+  (def !neg Neg "negative value")
+  (def !recip Recip "reciprocal"))
 (declaim (ftype (function (Tensor) (values Tensor &optional)) !signum !abs))
 (defun !signum (x)
+  "
+```
+(!signum x)
+```
+
+Returns the sign of the tensor. If the tensor is positive, it returns 1. If the tensor is negative, it returns -1. If the tensor is zero, it returns 0.
+"
   (flet ((->const (val) (make-scalar val :dtype (tensor-dtype x))))
     (let ((zeros (!where (!eq x (->const 0)) (->const 0) (->const 1))))
       (!mul zeros (!where (!>= x (->const 0)) (->const 1) (->const -1))))))
-(defun !abs (x) (!mul (!signum x) x))
+(defun !abs (x)
+  "
+```
+(!abs x)
+```
+
+Returns the absolute value of the tensor.
+"
+  (!mul (!signum x) x))
 
 ;; ~~ Compare Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (macrolet ((def (name cls aop)
@@ -361,6 +658,13 @@ save-for-backward is determined automatically, so you do not have to consider ab
 		(defmethod lower ((op ,cls) &rest inputs)
 		  (with-context (out (,aop nil nil (nth 1 inputs) (nth 2 inputs) :out (nth 0 inputs)))))
 		(defun ,name (x y)
+                  ,(format nil "
+```
+(~a x y)
+```
+
+Compares x and y element-wise and returns the result as a boolean tensor.
+" name)
 		  (declare (type Tensor x y))
 		  (multiple-value-bind (x y)
 		      (bc "A[~] B[~] -> A[~] B[~]" (x y))
@@ -386,6 +690,13 @@ save-for-backward is determined automatically, so you do not have to consider ab
      (!where c (zeros-like prev-grad) prev-grad))))
 (defmethod lower ((op Where) &rest inputs) (with-context (out (%where (nth 0 inputs) (nth 1 inputs) (nth 2 inputs)))))
 (defun !where (condition x y)
+  "
+```
+(!where condition x y)
+```
+
+Selects elements from `x` or `y` based on the `condition`. If the condition is true, it selects the element from `x`, otherwise from `y`.
+"
   (declare (type Tensor condition x y))
   (multiple-value-bind (condition x y)
       (bc "C[~] X[~] Y[~] -> C[~] X[~] Y[~]" (condition x y))
@@ -393,7 +704,12 @@ save-for-backward is determined automatically, so you do not have to consider ab
 
 (declaim (ftype (function (Tensor (or number symbol)) (values Tensor &optional)) !const))
 (defun !const (tensor value)
-  "Creates a scalar tensor"
+  "
+```
+(!const tensor value)
+```
+Creates a constant tensor with the specified value from the tensor.
+"
   (declare (type tensor tensor) (type (or number symbol) value))
   (make-scalar value :dtype (dtype-of tensor)))
 
@@ -418,23 +734,38 @@ save-for-backward is determined automatically, so you do not have to consider ab
 (defmethod backward ((op IndexComponents) &optional prev-grad))
 (defmethod lower ((op IndexComponents) &rest inputs)
   (with-context (_ (%index-components (car inputs) (%shape (shape (car (func-variables op))))))))
+(defgeneric !index-components (tensor) (:documentation "
+```
+(!index-components object)
+```
+
+Returns the index components of the tensor. object can be either of tensor or list.
+"))
+
 (defmethod !index-components ((tensor Tensor))
   (forward (make-instance 'IndexComponents) tensor))
 (defmethod !index-components ((shape list))
   (forward (make-instance 'IndexComponents) (make-tensor shape)))
 
 ;; ~~~ Bitwise ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(macrolet ((def (name op lisp)
+(macrolet ((def (name op lisp doc)
 	     `(progn
 		(defclass ,name (Func) nil)
 		(defmethod forward ((op ,name) &rest inputs) (st "A[~] B[~] -> A[~]" (inputs)))
 		(defmethod backward ((op ,name) &optional prev-dout) (declare (ignore prev-dout)) nil)
 		(defmethod lower ((op ,name) &rest inputs) (with-context (_ (,op (car inputs) (second inputs)))))
 		(defun ,lisp (x y)
+                  ,(format nil "
+```
+(~a x y)
+```
+
+Computes the ~a of the tensor."
+                           lisp doc)
 		  (declare (type tensor x y))		
 		  (multiple-value-bind (x y)
 		      (bc "A[~] B[~] -> A[~] B[~]" (x y))
 		    (forward (make-instance ',name) x y))))))
-  (def OrNode %or !or)
-  (def XorNode %xor !xor)
-  (def AndNode %and !and))
+  (def OrNode %or !or "logical/bitwise or")
+  (def XorNode %xor !xor "logical/bitwise xor")
+  (def AndNode %and !and "logical/bitwise and"))
