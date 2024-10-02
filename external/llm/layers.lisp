@@ -16,14 +16,15 @@
      (head-dim (floor (/ dim n-heads)))
      (k-cache nil :accessor attn-k-cache)
      (v-cache nil :accessor attn-v-cache)))
-;; (defmethod reset-kv-cache ())
+
+#|
+;; [FIXME] KV Cache is not implemented due to ShapeInference and Missing Control-Flow
 (defmethod call ((model Attention) &rest inputs)
   (with-slots ((c-attn c-attn) (c-proj c-proj) (n-heads n-heads) (dim dim) (head-dim head-dim) (max-seq-len max-seq-len)) model
     (multiple-value-bind (x n mask) (apply #'values inputs)
       (let* ((xqkv       (forward c-attn x))
 	     (batch-size (car (shape x)))
 	     (seq-len    (iconst (second (shape x))))
-	     ;; [TODO] The allocation should be lazy; use make-tensor to compile into c code.
 	     (k-cache (linspace `(,batch-size ,max-seq-len ,n-heads ,head-dim) 0 0))
 	     (v-cache (linspace `(,batch-size ,max-seq-len ,n-heads ,head-dim) 0 0)))
 	(setf (attn-k-cache model) k-cache (attn-v-cache model) v-cache)
@@ -53,6 +54,32 @@
 		 (scaled-dot-product-attention xq keys vals mask)
 		 1 2)
 		`(,batch-size ,(second (shape x)) ,dim))))))))))
+|#
+
+(defmethod call ((model Attention) &rest inputs)
+  (with-slots ((c-attn c-attn) (c-proj c-proj) (n-heads n-heads) (dim dim) (head-dim head-dim) (max-seq-len max-seq-len)) model
+    (multiple-value-bind (x n mask) (apply #'values inputs)
+      (declare (ignore n))
+      (let* ((xqkv       (forward c-attn x))
+	     (batch-size (car (shape x))))
+	(multiple-value-bind (xq xk xv)
+	    (apply #'values (loop for i upfrom 0 below 3
+				  collect
+				  (!reshape
+				   (!view xqkv t t (list (* i dim) (* (1+ i) dim)))
+				   `(,batch-size ,(second (shape x)) ,n-heads ,head-dim))))
+	  (multiple-value-bind (xq keys vals)
+	      (values
+	       (!transpose xq 1 2)
+	       (!transpose xk 1 2)
+	       (!transpose xv 1 2))
+	    (forward
+	     c-proj
+	     (!reshape
+	      (!transpose
+	       (scaled-dot-product-attention xq keys vals mask)
+	       1 2)
+	      `(,batch-size ,(second (shape x)) ,dim)))))))))
 
 (defmodel (FeedForward (dim hidden-dim))
     ((c-fc   (Linear dim hidden-dim))
