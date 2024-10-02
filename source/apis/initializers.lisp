@@ -11,9 +11,21 @@
 (defparameter *manual-seed* 0)
 (defparameter *rng-counter* (make-rng-counter))
 (defun set-manual-seed (&key (seed 0))
-  "Sets the seed for random operations."
+  "
+```
+(set-manual-seed &key (seed 0))
+```
+Sets the seed for random operations.
+"
   (setf *manual-seed* seed *rng-counter* (make-rng-counter)))
-(defmacro with-manual-seed ((seed) &body body) `(let ((*manual-seed* ,seed) (*rng-counter* (make-rng-counter))) ,@body))
+(defmacro with-manual-seed ((seed) &body body)
+  "
+```
+(with-manual-seed (seed) &body body)
+```
+Sets the seed for random operations within the scope of the body.
+"
+  `(let ((*manual-seed* ,seed) (*rng-counter* (make-rng-counter))) ,@body))
 ;; ~~~~ threefry2x32 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun !idiv1 (x divisor) (!mul (!cast x :float32) (fconst (/ divisor))))
 (defun !shr (x shift dtype) (!cast (!idiv1 x (expt 2 shift)) dtype))
@@ -100,21 +112,50 @@
       (c  (%store x t2)))))
 ;; ~~ callers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ax+b (shape a b &key (out nil) (dtype *default-float*) (order *default-order*))
-  "Initializes a tensor"
+  "
+```
+(ax+b shape a b &key (out nil) (dtype *default-float*) (order *default-order*))
+```
+
+Generates an array sampled from this formula: x_i = a * index_components(i) + b.
+
+There is a `linspace` function for the same purpose, but it is not lazy.
+"
   (declare (type list shape))
   (flet ((->val (x) (->const x #'(lambda (x) (make-scalar x :dtype dtype :order order)))))
     (forward (make-instance 'Linspace) (->val a) (->val b) (or out (make-tensor shape :dtype dtype :order order)))))
 
 (defun !full (shape fill-value &key (out nil) (dtype *default-float*) (order *default-order*))
-  "Initializes a tensor filled with `fill-value`"
+  "
+```
+(!full shape fill-value &key (out nil) (dtype *default-float*) (order *default-order*))
+```
+
+Initializes a tensor filled with `fill-value`.
+"
   (ax+b shape 0 fill-value :dtype dtype :order order :out out))
 
 (defun !rand (shape &key (dtype *default-float*) (order *default-order*) (out nil))
-  "Initializes a tensor with randomly sampled from [0, 1)"
+  "
+```
+(!rand shape &key (dtype *default-float*) (order *default-order*) (out nil))
+```
+
+Creates a tensor whose elements are randomly sampled from a uniform distribution over the interval `[0, 1)`.
+
+There is a `rand` function for the same purpose, but it is not lazy.
+"
   (forward (Threefry2x32-Random) (or out (make-tensor shape :dtype dtype :order order))))
-;; TODO: Reaplce call -> forward
+
 (defun !normal (shape &key (mean 0.0) (std 1.0) (dtype *default-float*) (order *default-order*) (out nil))
-  "Initializes a tensor, filled with random value sampled from a normal distribution."
+  "
+```
+(!normal shape &key (mean 0.0) (std 1.0) (dtype *default-float*) (order *default-order*) (out nil))
+```
+
+Creates a tensor whose elements are randomly sampled from a normal distribution with the given `mean` and `std`.
+
+There is a `normal` function for the same purpose, but it is not lazy."
   (declare (type (or Tensor symbol number) mean std) (type list shape))
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
     (forward (make-instance 'Random-Normal)
@@ -122,13 +163,40 @@
 	     (->cast std) (->cast mean))))
 
 (defun !randn (shape &key (dtype *default-float*) (order *default-order*) (out nil))
+  "
+```
+(!randn shape &key (dtype *default-float*) (order *default-order*) (out nil))
+```
+
+Creates a tensor whose elements are randomly sampled from a normal distribution with a mean of 0 and a standard deviation of 1.
+
+There is a `randn` function for the same purpose, but it is not lazy.
+"
   (forward (make-instance 'Gaussian-Distribution-Node) (or out (make-tensor shape :dtype dtype :order order))))
 
 (defun !uniform (shape &key (low 0.0) (high 1.0) (dtype *default-float*) (order *default-order*) (out nil))
+  "
+```
+(!uniform shape &key (low 0.0) (high 1.0) (dtype *default-float*) (order *default-order*) (out nil))
+```
+
+Creates a tensor whose elements are randomly sampled from a uniform distribution over the interval `[low, high)`
+
+There is a `uniform` function for the same purpose, but it is not lazy.
+"
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
     (forward (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 
 (defun !randint (shape &key (low 0) (high 1) (dtype *default-int*) (order *default-order*) (out nil))
+  "
+```
+(!randint shape &key (low 0) (high 1) (dtype *default-int*) (order *default-order*) (out nil))
+```
+
+Creates a tensor whose elements are randomly sampled from a uniform distribution over the interval `[low, high)`.
+
+There is a `randint` function for the same purpose, but it is not lazy.
+"
   (flet ((->cast (x) (->const x #'(lambda (x) (fconst x :dtype dtype)))))
     (forward (make-instance 'Uniform-Random) (or out (make-tensor shape :dtype dtype :order order)) (->cast low) (->cast high))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
