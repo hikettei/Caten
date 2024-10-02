@@ -659,7 +659,7 @@
 (deftest negative-infinity-test
   (ok (every #'(lambda (x) (eql :-inf (float-type-of x))) (elements (proceed (!full `(3 3) (-inf)))))))
 
-(defun isnan (x) (not (= x x)))
+(defun isnan (x) (eql (nan) x))
 (deftest nan-test
   (ok (every #'isnan (elements (proceed (!full `(3 3) (nan)))))))
 

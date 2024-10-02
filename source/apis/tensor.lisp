@@ -254,8 +254,7 @@ This feature is supported by [float-features](https://shinmera.github.io/float-f
 (defun float-nan-p (x)
   (declare (type (or symbol number) x))
   (typecase x
-    (float
-     (not (= x x)))
+    (float (eql x (nan)))
     (t
      nil)))
 
