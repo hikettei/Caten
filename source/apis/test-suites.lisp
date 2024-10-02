@@ -662,3 +662,9 @@
 (defun isnan (x) (not (= x x)))
 (deftest nan-test
   (ok (every #'isnan (elements (proceed (!full `(3 3) (nan)))))))
+
+(deftest test-float-type-of
+  (ok (eql :inf (float-type-of (inf))))
+  (ok (eql :-inf (float-type-of (-inf))))
+  (ok (eql :nan (float-type-of (nan))))
+  (ok (eql t (float-type-of 1.0))))
