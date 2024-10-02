@@ -370,11 +370,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 	    (tensor-shape (car tensors))
 	    :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))
 	    :id 'prev-grad :initial-element 1))
-	 (toplevel-ids (map 'list #'(lambda (x) (intern (format nil "~a_1" (tensor-id x)))) tensors))
-         (no-grad
-           (or no-grad
-               ;; If no tensor requires grad, we can skip the backward process.
-               (null (find t iseq :key #'tensor-requires-grad)))))
+	 (toplevel-ids (map 'list #'(lambda (x) (intern (format nil "~a_1" (tensor-id x)))) tensors)))
     (multiple-value-bind (graph pause-backward-p)
 	(%make-graph-from-iseq
 	 session iseq prev-grad
