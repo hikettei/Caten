@@ -8,6 +8,7 @@
 - ASM Bindings
 - Graph Caller")
   (:use :cl :alexandria :trivia :cl-ppcre :caten/aasm :caten/air :caten/avm)
+  (:local-nicknames (:docs :caten/common.documentation))
   (:import-from
    :caten/common.dtype
    #:dtype-t

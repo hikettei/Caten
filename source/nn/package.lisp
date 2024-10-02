@@ -6,6 +6,7 @@ Policy:
   - You have to ensure that each files works standalone. (Use 1 file, 1 package coding rule at caten/nn)
   - Each module should be tested well (we expected to have a ton of regression tests here); 1 file 1 test-suite.
   - TODO: Add test-helpers.lisp")
+  (:local-nicknames (:docs :caten/common.documentation))
   (:use :cl :caten :caten/air :alexandria)
   ;; from activations.lisp
   (:export
