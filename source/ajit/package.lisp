@@ -1,6 +1,7 @@
 (in-package :cl-user)
 (defpackage :caten/ajit
   (:use :cl :alexandria :caten/aasm :caten/air :caten/avm :caten/isl :cffi)
+  (:local-nicknames (:docs :caten/common.documentation))
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:import-from

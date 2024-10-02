@@ -1,8 +1,8 @@
 (defpackage :caten/ajit.backends.clang
   (:use :cl :caten/ajit :caten/air :caten/avm :cffi)
-    (:import-from
-     :caten/common.dtype
-     #:dtype/cast))
+  (:import-from
+   :caten/common.dtype
+   #:dtype/cast))
 (in-package :caten/ajit.backends.clang)
 ;; ~~~ CLANG ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Clang (Device) nil)
@@ -91,20 +91,31 @@ Compiled with: ~a"
             :void))))))
 
 (defun render-to-c (obj)
+  (declare (type (or string symbol number) obj))
   (if (typep obj 'double-float)
       (cl-ppcre:regex-replace "d" (format nil "~a" obj) "e")
-      (let ((obj (format nil "~(~a~)" obj)))
-	(if (string= obj "t")
-	    "1"
-	    (if (string= obj "nil")
-		"0"
-		obj)))))
+      (ecase (if (numberp obj)
+                 (uiop:symbol-call :caten/apis :float-type-of obj)
+                 t)
+        (:inf "_INFINITY")
+        (:-inf "_NEGATIVE_INFINITY")
+        (:nan "_nan")
+        ('t
+         (let ((obj (format nil "~(~a~)" obj)))
+           (if (string= obj "t")
+	       "1"
+	       (if (string= obj "nil")
+                   "0"
+		   obj)))))))
 
 (defmethod %render-program-toplevel ((lang Clang) body)
   (format nil "~%#include <math.h>
 #include <stdint.h>
 ~a
 #define boolean _Bool
+#define _infinity INFINITY
+#define _negative_infinity -INFINITY
+#define _nan NAN
 #define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
 ~a"
 	  (if (= 1 (ctx:getenv :OMP))

@@ -652,3 +652,19 @@
                  1.0 1.0 1.0 1.0 0.0 1.0 1.0 1.0 1.0 0.0 0.0 1.0 1.0 1.0 0.0 0.0 0.0 1.0 1.0
                  0.0 0.0 0.0 0.0 1.0 1.0 1.0 1.0 1.0 1.0 0.0 1.0 1.0 1.0 1.0 0.0 0.0 1.0 1.0
                  1.0 0.0 0.0 0.0 1.0 1.0 0.0 0.0 0.0 0.0 1.0)))))
+
+(deftest infinity-test
+  (ok (every #'float-features:float-infinity-p (elements (proceed (!full `(3 3) (inf)))))))
+
+(deftest negative-infinity-test
+  (ok (every #'(lambda (x) (eql :-inf (float-type-of x))) (elements (proceed (!full `(3 3) (-inf)))))))
+
+(defun isnan (x) (eql (nan) x))
+(deftest nan-test
+  (ok (every #'isnan (elements (proceed (!full `(3 3) (nan)))))))
+
+(deftest test-float-type-of
+  (ok (eql :inf (float-type-of (inf))))
+  (ok (eql :-inf (float-type-of (-inf))))
+  (ok (eql :nan (float-type-of (nan))))
+  (ok (eql t (float-type-of 1.0))))

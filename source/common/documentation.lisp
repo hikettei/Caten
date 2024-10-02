@@ -1,6 +1,5 @@
 (defpackage :caten/common.documentation
   (:use :cl)
-  (:nicknames :docs)
   (:export
    #:build-docs
    #:define-page)

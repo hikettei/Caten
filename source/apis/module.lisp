@@ -407,6 +407,7 @@ Performs matrix multiplication between two tensors `a` and `b`.
 Returns the lower triangular part of the tensor (>= 2D) or batch of matrices input.
 "
   (forward (TrilNode :diagonal diagonal) x))
+
 (defun !triu (x &key (diagonal 0))
   "
 ```

@@ -1,6 +1,7 @@
 (cl:in-package :cl-user)
 (defpackage :caten/avm
   (:use :cl :caten/aasm :caten/air :alexandria)
+  (:local-nicknames (:docs :caten/common.documentation))
   (:import-from
    :caten/common.dtype
    #:dtype-t
