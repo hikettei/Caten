@@ -95,7 +95,7 @@ Compiled with: ~a"
   (if (typep obj 'double-float)
       (cl-ppcre:regex-replace "d" (format nil "~a" obj) "e")
       (ecase (if (numberp obj)
-                 (caten:float-type-of obj)
+                 (uiop:symbol-call :caten/apis :float-type-of obj)
                  t)
         (:inf "_INFINITY")
         (:-inf "_NEGATIVE_INFINITY")
