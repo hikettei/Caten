@@ -197,7 +197,11 @@ View is a tensor which shares the buffer from the original tensor, but having di
 
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun inf (&key (dtype *default-float*))
-  "Returns a positive infinity of the dtype for the current Common Lisp implementation.
+  "
+```
+(inf &key (dtype *default-float*))
+```
+Returns a positive infinity of the dtype for the current Common Lisp implementation.
 
 This feature is supported by [float-features](https://shinmera.github.io/float-features/)
 "
@@ -208,7 +212,12 @@ This feature is supported by [float-features](https://shinmera.github.io/float-f
     (:bfloat16 (error "Not ready (TODO)"))))
 
 (defun -inf (&key (dtype *default-float*))
-  "Returns a negative infinity of the dtype for the current Common Lisp implementation.
+  "
+```
+(-inf &key (dtype *default-float*))
+```
+
+Returns a negative infinity of the dtype for the current Common Lisp implementation.
 
 This feature is supported by [float-features](https://shinmera.github.io/float-features/)
 "
@@ -220,6 +229,10 @@ This feature is supported by [float-features](https://shinmera.github.io/float-f
 
 (defun nan (&key (dtype *default-float*))
   "
+```
+(nan &key (dtype *default-float*))
+```
+
 Returns a NaN of the dtype for the current Common Lisp implementation.
 
 This feature is supported by [float-features](https://shinmera.github.io/float-features/)
@@ -249,6 +262,10 @@ This feature is supported by [float-features](https://shinmera.github.io/float-f
 (declaim (ftype (function ((or symbol number)) (member :inf :-inf :nan t)) float-type-of))
 (defun float-type-of (x)
   "
+```
+(float-type-of x)
+```
+
 Returns `:INF` if the number is a negative infinity, `:-INF` if the number is a negative infinity, `:nan` if the number is NaN, or T otherwise.
 "
   (declare (type (or symbol number) x))
