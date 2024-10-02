@@ -154,7 +154,9 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
     (def "!ceiling" #'!ceiling "(proceed (!ceiling (randn `(3 3))))")
     (def "!floor" #'!floor "(proceed (!floor (randn `(3 3))))")
     (def "!triu" #'!triu "(proceed (!triu (rand `(3 3))))")
-    (def "!tril" #'!tril "(proceed (!tril (rand `(3 3))))")))
+    (def "!tril" #'!tril "(proceed (!tril (rand `(3 3))))")
+    (def "!argmax" #'!argmax "(proceed (!argmax (rand `(3 3))))")
+    (def "!argmin" #'!argmin "(proceed (!argmin (rand `(3 3))))")))
 
 (docs:define-page ("Models" "packages/caten.apis.models.md")
   (docs:title "Models")

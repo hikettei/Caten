@@ -416,3 +416,51 @@ Returns the lower triangular part of the tensor (>= 2D) or batch of matrices inp
 
 Returns the upper triangular part of the tensor (>= 2D) or batch of matrices input."
   (forward (TriuNode :diagonal diagonal) x))
+
+(defun st/reduction1 (op x)
+  (let ((out (st/reduction op x)))
+    (setf (tensor-dtype out) *default-int*)
+    out))
+
+(defmodule (ArgMaxNode ((&key (axis 0) (keepdims nil)) :axis axis :keepdims keepdims))
+    ()
+    :documentation ""
+    :forward st/reduction1
+    :impl ((argmax x)
+	   (with-attrs ((axis :axis) (keepdims :keepdims)) argmax
+             (let* ((axis (normalize-axis x axis))
+                    (idx (!index-components `(,@(loop for i upfrom 0 below axis collect 1)
+                                              ,(nth axis (shape x))
+                                              ,@(loop repeat (- (ndim x) axis 1) collect 1))))
+                    ;; idx = shape-1, shape-2, ..., 2, 1, 0
+                    (idx (!add (!- (!const idx (nth axis (shape x))) (!const idx 1)) (!mul idx (!const idx -1))))
+                    (map (!where (!eq x (!max x :axis axis :keepdims t)) idx (!const idx 0))))
+               (!cast (!- (!const idx (nth axis (shape x))) (!max map :axis axis :keepdims keepdims) (!const idx 1)) *default-int*)))))
+
+(defmodule (ArgMinNode ((&key (axis 0) (keepdims nil)) :axis axis :keepdims keepdims))
+    ()
+    :documentation ""
+    :forward st/reduction1
+    :impl ((argmin x)
+           (with-attrs ((axis :axis) (keepdims :keepdims)) argmin
+             (!argmax (!neg x) :axis axis :keepdims keepdims))))
+
+(defun !argmax (x &key (axis -1) (keepdims nil))
+  "
+```
+(!argmax x &key (axis -1) (keepdims nil))
+```
+
+Returns the indices of the maximum values along an axis.
+"
+  (forward (ArgMaxNode :axis axis :keepdims keepdims) x))
+
+(defun !argmin (x &key (axis -1) (keepdims nil))
+  "
+```
+(!argmin x &key (axis -1) (keepdims nil))
+```
+
+Returns the indices of the minimum values along an axis.
+"
+  (forward (ArgMinNode :axis axis :keepdims keepdims) x))
