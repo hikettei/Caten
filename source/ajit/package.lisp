@@ -67,6 +67,7 @@
    #:%render-body
    #:%render-expr
    #:%render-nodes
+   #:render-index-components
    #:render-expr
    #:render-aref
    #:Argument
