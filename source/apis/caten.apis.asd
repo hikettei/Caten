@@ -2,7 +2,7 @@
   :description "High-Level Interface for Caten Compiler, Tensor Library, and VM etc..."
   :author      "hikettei <ichndm@gmail.com>"
   :depends-on
-  ("rove" "trivia" "cl-ppcre"
+  ("rove" "trivia" "cl-ppcre" "float-features"
    "caten.common" "caten.air" "caten.aasm" "caten.avm" "caten.ajit")
   :serial t
   :components ((:file "package")

@@ -49,6 +49,9 @@
 
    #:*external-simplifiers*
    #:proceed
+
+   #:inf #:-inf #:nan
+   #:float-type-of
    )
   ;; from model.lisp
   (:export #:defmodel #:call)
@@ -143,6 +146,7 @@
    #:set-manual-seed
    #:with-manual-seed
    #:ax+b
+   #:!full
    #:!rand
    #:!randn
    #:!normal
