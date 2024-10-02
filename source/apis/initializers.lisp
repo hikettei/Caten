@@ -125,15 +125,15 @@ There is a `linspace` function for the same purpose, but it is not lazy.
   (flet ((->val (x) (->const x #'(lambda (x) (make-scalar x :dtype dtype :order order)))))
     (forward (make-instance 'Linspace) (->val a) (->val b) (or out (make-tensor shape :dtype dtype :order order)))))
 
-(defun !full (shape fill-value &key (out nil) (dtype *default-float*) (order *default-order*))
+(defun !full (shape fill-value &key (dtype *default-float*) (order *default-order*))
   "
 ```
-(!full shape fill-value &key (out nil) (dtype *default-float*) (order *default-order*))
+(!full shape fill-value &key (dtype *default-float*) (order *default-order*))
 ```
 
 Initializes a tensor filled with `fill-value`.
 "
-  (ax+b shape 0 fill-value :dtype dtype :order order :out out))
+  (make-tensor shape :dtype dtype :order order :initial-element fill-value))
 
 (defun !rand (shape &key (dtype *default-float*) (order *default-order*) (out nil))
   "
