@@ -82,10 +82,12 @@ X <- f(x, y, reduction=t)"
   group)
 
 (defmethod mp-newid ((mp MemoryPlanner) id)
+  "ID -> {UPDATED_ID}"
   (assert (or (numberp id) (symbolp id)) () "mp-newid: id should be a number or symbol. but got ~a(~a)" id (type-of id))
   (or (gethash id (mp-alias mp)) id))
 
 (defmethod mp-update-buffer ((mp MemoryPlanner) buffer)
+  "Synchornizes the buffer with the MemoryPlanner"
   (flet ((new (x) (mp-newid mp (reveal-buffer x))))
     (when (null (buffer-shape-base buffer))
       ;; Avoid applying duplicated mp-newid
@@ -102,6 +104,7 @@ X <- f(x, y, reduction=t)"
 		  collect v))))
 
 (defmethod mp-update-node ((mp MemoryPlanner) node)
+  "Synchornizes the node with the MemoryPlanner"
   (flet ((ref (x) (mp-newid mp x)))
     (when (eql (node-type node) :EXPR)
       (flet ((replacer (x) (mp-newid mp x)))
@@ -118,6 +121,7 @@ X <- f(x, y, reduction=t)"
 	  (node-writes node) (map 'list #'ref (node-writes node)))))
 
 (defmethod mp-update-avm ((mp MemoryPlanner) avm)
+  "Synchornizes the AVM with the MemoryPlanner"
   (flet ((replacer (x) (mp-newid mp x)))
     (loop for kernels in (mp-kernels mp)
 	  if kernels do
@@ -149,6 +153,19 @@ X <- f(x, y, reduction=t)"
       (renew (avm-variables avm)))))
 
 (defmethod renderer-get-nodes ((group group) (kr kernel-renderer))
+  "Returns a list of nodes in the order of the given kernel-renderer.
+e.g.:
+```
+for (...)
+  T0(i)
+  T1(i)
+T0(i+3)
+```
+=>
+```
+(append T0.nodes T1.nodes T0.nodes)
+```
+"
   (apply
    #'append
    (map
@@ -157,6 +174,7 @@ X <- f(x, y, reduction=t)"
     (render-graph/get-timestamps (apply #'make-graph (kernel-renderer-nodes kr))))))
 
 (defmethod renderer-get-irs ((kr kernel-renderer))
+  "Returns a list of nodes whose type is :FOR or :IF"
   (loop for node in (kernel-renderer-nodes kr)
 	if (find (node-type node) `(:FOR :IF))
 	  collect node))
@@ -164,7 +182,6 @@ X <- f(x, y, reduction=t)"
 (defmethod is-sv4bw ((group group) (id symbol))
   "AcrossTimeDep: a list of ids which lifetime won't finish in the current nodes."
   (not (null (find id (group-across-time-deps group)))))
-
 ;; ID2Buffer: Pointers loaded as x* can be loaded as x[0+0] in other kenels.
 (defmethod mp-reg-buffer-type ((mp MemoryPlanner) id buffer)
   (when (null (gethash id (mp-id2buffer mp)))
@@ -179,7 +196,14 @@ X <- f(x, y, reduction=t)"
       obj))
 
 (defmethod apply-current-plan ((mp MemoryPlanner) (group group) (kernel kernel-renderer))
-  "Applying the current memory-plan, returning a list of arguments for the given group/kernel"
+  "Applying the current memory-plan, returning a list of arguments for the given group/kernel.
+It finalizes the global argument of the kernel.
+In Caten IR, there is a two way to allocate a variable.
+ |   VAR TYPE    | How to declare
+-|---------------|------------------------------
+ | DEFINE_GLOBAL | Allocate nodes
+ | DEFINE_LOCAL  | Set (getattr expr :decl-type)
+"
   (let* ((nodes (renderer-get-nodes group kernel))
 	 (irs   (renderer-get-irs kernel))
 	 (index-components
@@ -320,13 +344,15 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (and (created-p mb time) (>= time (memoryblock-release mb))))
 
 (defun buffer-orig-shape (buffer)
+  "Returns a shape of the buffer, which is not VIEWED."
   (declare (type buffer buffer))
   (or
    (buffer-orig-buffer-shape buffer)
    (buffer-shape buffer)))
 
-;; [TODO] Assuming the entire graph is "static", applying the `best-fit` schedule
-;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY
+;; Currently, our memory-planner has a room for the further optimization.
+;; [TODO] Assuming the entire graph is "static", applying the `best-fit` schedule.
+;; [TODO] If the entire graph is static, use BestFitHeuristicDSA, otherwise use GREEDY.
 ;; Env: GREEDY=1 to alywas use greedy solver.
 ;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
 (defun greedy-solve-dsa (I total-time)
@@ -337,7 +363,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	       (loop for candidate in I
 		     if (and (null (find (memoryblock-id candidate) locked))
 			     (freed-p candidate time)
-			     (buffer-shape (memoryblock-type mb)) ;; Dont mutate scalars
+			     (buffer-shape (memoryblock-type mb)) ;; <=> assure the memory-block is a tensor
 			     (equal (buffer-orig-shape (memoryblock-type candidate))
 				    (buffer-orig-shape (memoryblock-type mb)))
 			     (equal (buffer-dtype (memoryblock-type candidate))
@@ -367,11 +393,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
       I)))
 
 (defmethod memory-plan ((mp MemoryPlanner) &aux (avm (mp-avm mp)))
-  "Applies memory-optimization for the graph.
+  "This is a toplevel for memory-oriented optimization techniques.
 Resourses:
 - https://arxiv.org/pdf/2203.00448
 - https://arxiv.org/abs/1804.10001
-Goal: overlapping the lifespan, e.g.:
+Goal: overlapping all the lifespan of the memory allocation, e.g.:
 Lifespan:
  |    T1
  |  a----b   T2
