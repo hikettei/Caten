@@ -11,6 +11,7 @@
    (:file "simplifiers")
    (:file "type-relay")
    (:file "polyhedral")
+   (:file "polyhedral-scheduler")
    (:file "renderer")
    (:file "scheduled-items")
    (:file "group")
