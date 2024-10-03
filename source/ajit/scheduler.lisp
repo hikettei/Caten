@@ -17,7 +17,7 @@
 ;;  Data Structure  |                     Process
 ;; -----------------|-----------------------------------------------------------------------------------------------------------
 ;;  AVM (Graph)     |                 [Input (%jit)] ( scheduler.lisp is an entry point )
-;;                  |                        | (preprocessing, wmma detection, lowering) (-> simplifier.lisp, scheduled-items.lisp)
+;;                  |                        | (preprocessing, wmma simplifier, shape inference, lowering) (-> simplifier.lisp, scheduled-items.lisp)
 ;;  Scheduled-Items |                [Scheduled-Items]
 ;;                  |                        | (group)      (-> group.lisp)
 ;; Group{Submodule} |                     [Group]
@@ -81,7 +81,7 @@
 		  ;; there should at least one dimension that can be fused
 		  (or (null loops1) (null loops2)  ;; either of loop is a scalar.
 		      (intersection (map 'list #'node-reads loops1) (map 'list #'node-reads loops2) :test #'equal)))
-		(equal (node-reads loop1) (node-reads loop2))))))
+                (equal (node-reads loop1) (node-reads loop2))))))
       `(,@(loop for idx in (cdr order)
 		for fuse-p = (fusable-p out (gethash idx pipeline))
 		if fuse-p do (setf (graph-nodes out) (append (graph-nodes out) (graph-nodes (gethash idx pipeline))))
@@ -215,7 +215,7 @@ Output: Groups"
 	  for schedule-isl = (union-map-from-str schedule)
 	  if verbose do (print-submodule poly-group t)
 	  if verbose-auto do
-	    (format t "Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read~%\"~a\"~%:write \"~a\"~%:schedule \"~a\"~%)"
+	    (format t "~%Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read~%\"~a\"~%:write \"~a\"~%:schedule \"~a\"~%)"
 		    domain read-access write-access schedule)
 	  collect
 	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group)))))
@@ -223,7 +223,7 @@ Output: Groups"
 (defun schedule-polyhedrons (backend group polyhedrons &key (verbose 0) (serialize))
   (declare (type list polyhedrons))
   (dolist (p polyhedrons)
-    (auto-schedule! p backend :verbose verbose :serialize serialize))
+    (auto-schedule! p backend :verbose (and (not (>= verbose 4)) (= verbose 3)) :verbose-all (>= verbose 4) :serialize serialize))
   ;; Return -> Rendering Graph
   (apply
    #'make-graph
@@ -232,8 +232,8 @@ Output: Groups"
 	 (multiple-value-bind (ast bands) (finalize-schedule p)
 	   (graph-nodes (create-rendering-graph ast bands backend (max-dimension-in-group group)))))))
 
-(declaim (ftype (function (Polyhedral Device &key (:verbose boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
-(defun auto-schedule! (polyhedral device &key (verbose nil) (serialize nil))
+(declaim (ftype (function (Polyhedral Device &key (:verbose boolean) (:verbose-all boolean) (:serialize boolean)) Polyhedral) auto-schedule!))
+(defun auto-schedule! (polyhedral device &key (verbose nil) (verbose-all nil) (serialize nil))
   "
 Step3, autoschedule polyhedron model.
 Options:
@@ -244,12 +244,16 @@ Options:
   the same strongly connected component at the point where the band node is constructed."
   (declare (type Polyhedral polyhedral)
 	   (type boolean verbose serialize))
-  (macrolet ((debug-print (step-name) `(when verbose (format t "~%[~a]~%~a~%" ,step-name (print-polyhedral polyhedral nil)))))
-    (debug-print "Initial")
+  (macrolet ((debug-print (step-name)
+               `(progn
+                  (when verbose-all (format t "~%[~a]~%~a~%" ,step-name (print-polyhedral polyhedral nil)))
+                  (when verbose (and (poly-schedule polyhedral) (format t "~%[~a]~%~a~%" ,step-name (debug/render-c polyhedral))))
+                  )))
     ;; Loop Fusion
     (poly/schedule polyhedral
                    :serialize serialize
-                   :outer-coincidence 1 :maximize-coincidence 0)
+                   :outer-coincidence 1 :maximize-coincidence 0
+                   :schedule-whole-component 0 :maximize-band-depth 1)
     (debug-print "Scheduled")
     ;; Reschedule when outer coincidence failed.
     (when (and (null serialize) (poly/reschedule-p polyhedral device))
@@ -341,7 +345,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			   else if (group-sched group) do
 			     (let ((polyhedrons (create-polyhedrons-from-group alias avm group :verbose verbose-schedule :verbose-auto verbose-auto)))
 			       (setf (group-polyhedron group) (car polyhedrons)
-				     (group-render-graph group) (schedule-polyhedrons backend group polyhedrons :verbose verbose-auto :serialize serialize)))
+				     (group-render-graph group) (schedule-polyhedrons backend group polyhedrons :verbose debug :serialize serialize)))
 			   and collect group)))
       (mapc
        #'(lambda (x)
