@@ -251,7 +251,7 @@ Options:
                    :serialize serialize
                    :outer-coincidence 1 :maximize-coincidence 0)
     (debug-print "Scheduled")
-    ;; Reschedule when oute coincidence failed.
+    ;; Reschedule when outer coincidence failed.
     (when (and (null serialize) (poly/reschedule-p polyhedral device))
       (poly/schedule
        polyhedral

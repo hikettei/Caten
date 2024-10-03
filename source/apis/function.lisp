@@ -185,11 +185,15 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
 (defmethod forward :around ((op Permute) &rest inputs)
   (let* ((x (call-next-method))
 	 (views (tensor-views x)))
-    (setf (tensor-views x) (or (tensor-views x) (loop repeat (ndim x) collect nil)) ;; (!reshape (!permute ..)) calls !contiguous
+    (setf (tensor-views x)
+          (or (tensor-views x)
+              ;; Let (!reshape (!permute ..)) to call !contiguous
+              (loop for size in (shape x)
+                    collect (make-vrange 0 size 1 nil size t)))
           (tensor-variables x)
 	  (append
 	   (tensor-variables x)
-	   (if views
+	   (if (and views (every #'identity (tensor-views (car inputs))))
 	       (append
 		(map 'list (compose #'sfold #'vrange-size) views)
 		(map 'list (compose #'sfold #'viewrange-from) views)

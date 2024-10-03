@@ -98,3 +98,16 @@ op/expr
 
 (defun %render-aref (buffer &key (genid #'gid) (strides))
   (simplify-expr (render-isl-aref buffer :genid genid :flatten nil :strides strides)))
+
+(defun render-index-components (lang lhs rhs access)
+  "Renders the index-component.
+Lang = Device, access = a list of _gid (the :args of parent :FUNCALL)"
+  (let ((strides (map 'list #'(lambda (x) (render-expr lang x)) rhs))
+        (buffer (copy-buffer (expr-y lhs))))
+    ;; When INDEX-COMPONENT is mutated to scalar? -> Supply the nrank.
+    (when (= (buffer-nrank buffer) 0)
+      (setf (buffer-nrank buffer) (length rhs)))
+    (render-expr
+     lang
+     (simplify-expr
+      (render-isl-aref buffer :genid #'(lambda (x) (or (intern (nth x access)) (error "render-index-components: the argument ~a is too small!" access))) :strides strides)))))

@@ -196,8 +196,7 @@ Compiled with: ~a"
 (defmethod %render-expr ((lang Clang) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
   (assert (buffer-p (expr-y lhs)))
   (assert (null z))
-  (let ((strides (map 'list #'(lambda (x) (render-expr lang x)) rhs)))
-    (format nil "~a" (render-aref lang (expr-y lhs) :genid #'(lambda (x) (intern (or (nth x *access*) (car *access*)))) :strides strides))))
+  (format nil "~a" (render-index-components lang lhs rhs *access*)))
 
 (defmethod %render-expr ((lang Clang) (op (eql :NOT)) lhs rhs z)
   (assert (and lhs (null rhs) (null z)))

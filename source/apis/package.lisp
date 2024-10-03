@@ -86,7 +86,9 @@
    ;; linalg
    #:!tril
    #:!triu
-   )
+
+   ;; argmax/min
+   #:!argmax #:!argmin)
   ;; from helpers.lisp
   (:export
    #:with-no-grad

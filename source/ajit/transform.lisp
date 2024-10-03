@@ -246,7 +246,8 @@ FOR (...) {
 			     for nth upfrom 0
 			     for view = (nth nth (buffer-views buffer))
 			     for dom = (nth nth domain-space)
-			     do (assert (eql (expr-op dom) :Const) () "Schedule is not a constant? (TODO: Add unrolling for this case ...)")
+                             ;; No need to assert this: If the body has a IF, they wont be unrolled.
+			     ;; do (assert (eql (expr-op dom) :Const) () "Schedule is not a constant? (TODO: Add unrolling for this case ...)")
 			     if (or (eql 0 (expr-x dom)) (and view (nth 3 view)))
 			       collect nil
 			     else
