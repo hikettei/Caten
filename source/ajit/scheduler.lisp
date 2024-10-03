@@ -17,7 +17,7 @@
 ;;  Data Structure  |                     Process
 ;; -----------------|-----------------------------------------------------------------------------------------------------------
 ;;  AVM (Graph)     |                 [Input (%jit)] ( scheduler.lisp is an entry point )
-;;                  |                        | (preprocessing, wmma detection, lowering) (-> simplifier.lisp, scheduled-items.lisp)
+;;                  |                        | (preprocessing, wmma simplifier, shape inference, lowering) (-> simplifier.lisp, scheduled-items.lisp)
 ;;  Scheduled-Items |                [Scheduled-Items]
 ;;                  |                        | (group)      (-> group.lisp)
 ;; Group{Submodule} |                     [Group]
@@ -81,7 +81,7 @@
 		  ;; there should at least one dimension that can be fused
 		  (or (null loops1) (null loops2)  ;; either of loop is a scalar.
 		      (intersection (map 'list #'node-reads loops1) (map 'list #'node-reads loops2) :test #'equal)))
-		(equal (node-reads loop1) (node-reads loop2))))))
+                (equal (node-reads loop1) (node-reads loop2))))))
       `(,@(loop for idx in (cdr order)
 		for fuse-p = (fusable-p out (gethash idx pipeline))
 		if fuse-p do (setf (graph-nodes out) (append (graph-nodes out) (graph-nodes (gethash idx pipeline))))
@@ -249,7 +249,8 @@ Options:
     ;; Loop Fusion
     (poly/schedule polyhedral
                    :serialize serialize
-                   :outer-coincidence 1 :maximize-coincidence 0)
+                   :outer-coincidence 1 :maximize-coincidence 0
+                   :schedule-whole-component 0 :maximize-band-depth 1)
     (debug-print "Scheduled")
     ;; Reschedule when outer coincidence failed.
     (when (and (null serialize) (poly/reschedule-p polyhedral device))

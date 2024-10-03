@@ -160,7 +160,10 @@ Expected Output (Scalar ops are temporarily excluded):
 	     (schedule-constraints (schedule-constraints-set-proximity schedule-constraints all-deps)))
 	schedule-constraints))))
 
-(defun poly/schedule (polyhedral &key (serialize nil) (outer-coincidence 1) (maximize-coincidence 0) (treat-coalescing 1))
+(defun poly/schedule (polyhedral &key
+                                   (serialize nil)
+                                   (outer-coincidence 1) (maximize-coincidence 0) (treat-coalescing 1)
+                                   (maximize-band-depth 0) (schedule-whole-component 0))
   "
 [Scheduler]
 This function analyzes the read/write dependencies on the polyhedron space,
@@ -196,7 +199,9 @@ for (int c0 = 0; c0 < a; c0 += 1)
     (flet ((configure ()
              (set-option "schedule_outer_coincidence" outer-coincidence)
              (set-option "schedule_maximize_coincidence" maximize-coincidence)
-             (set-option "schedule_treat_coalescing" treat-coalescing)))
+             (set-option "schedule_treat_coalescing" treat-coalescing)
+             (set-option "schedule_maximize_band_depth" maximize-band-depth)
+             (set-option "schedule_whole_component" schedule-whole-component)))
       (configure)
       ;; Select the one w/o IF
       (with-slots ((domain-ptr domain-ptr) (read-ptr read-ptr) (write-ptr write-ptr)) polyhedral
