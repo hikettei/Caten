@@ -321,7 +321,7 @@
    #:schedule
    #:schedulep
    #:schedule-constraints-compute-schedule
-
+   #:schedule-empty
    #:schedule-from-domain
    #:schedule-sequence
    #:schedule-set

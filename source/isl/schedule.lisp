@@ -31,6 +31,10 @@
   (:keep ast-build)
   (:take schedule))
 
+(define-isl-function schedule-empty %isl-schedule-empty
+  (:give schedule)
+  (:take space))
+
 (define-isl-function schedule-from-domain %isl-schedule-from-domain
   (:give schedule)
   (:take union-set))
