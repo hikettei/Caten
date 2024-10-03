@@ -495,22 +495,22 @@ Lifespan:
     kernels))
 
 (defmethod retrive-kernels ((mp MemoryPlanner))
+  "Finalizes the result of memory-planner, retriving the final rendering-graph"
   (flet ((prune ()
+           "Applies the dead code elimination"
 	   (setf (mp-kernels mp) (dead-kernel-elimination (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))))
     (prune)
-    ;; 1. Mutate output buffers as scalar
+    ;; 1. Mutate output buffers as a scalar
     (optimize-memory-load mp)
     ;; 2. Hide Latency Optimization
     ;; - The arrays should be loaded at once
     ;; - In the last, storing the result.
-    ;; TODO: Rewrite accumlation as `float _acc_0`.
-    ;; (prune)
     ;; [TODO] Add dead graph.nodes elimination here. ^ maybe produce unused ops.
     (loop for group in (mp-groups mp)
 	  for kernels in (mp-kernels mp)
 	  if (group-realize-on-vm group)
 	    collect group
-	  else	  
+	  else
 	    collect
 	    (loop for k in kernels
 		  if (kernel-renderer-nodes k)
@@ -519,24 +519,32 @@ Lifespan:
     ))
 
 (defun memory-access-local-p (render-nodes id pipeline)
+  "Returns T if the given id is accessed locally in the rendering-graph."
   (let ((search-key
+          ;; A subject to search is the tasks which are related to the given id.
 	  (loop for key in (sort (hash-table-keys pipeline) #'<)
 		for graph = (gethash key pipeline)
 		if (find id (graph-nodes graph) :key #'(lambda (x) (append (node-reads x) (node-writes x))) :test #'find)
 		  collect key)))
-    (loop with depth = 0
-	  with nodes = render-nodes
-	  with start = (or (position (apply #'min search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from memory-access-local-p nil))
-	  with end   = (or (position (apply #'max search-key) nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx)))) (return-from memory-access-local-p nil))
-	  for nth upfrom (min start end) to (max start end)
-	  for ir = (nth nth nodes)
-	  if (find (node-type ir) `(:IF :FOR))
-	    do (incf depth)
-	  else if (find (node-type ir) `(:ENDIF :ENDFOR))
-	    do (decf depth)
-	  end
-	  if (< depth 0) do
-	    (return-from memory-access-local-p nil)))
+    (flet ((position-of (id)
+             (or
+              (position id render-nodes :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx))))
+              (return-from memory-access-local-p nil))))
+      ;; [TODO] Is it confirmed that the schedule task is in the order of 0, 1, 2, ...?
+      ;; Potentially should produce an bug.
+      (loop with depth = 0
+	    with nodes = render-nodes
+            with start = (position-of (apply #'min search-key))
+            with end   = (position-of (apply #'max search-key))
+	    for nth upfrom (min start end) to (max start end)
+	    for ir = (nth nth nodes)
+	    if (find (node-type ir) `(:IF :FOR))
+	      do (incf depth)
+	    else if (find (node-type ir) `(:ENDIF :ENDFOR))
+	           do (decf depth)
+	    end
+	    if (< depth 0) do
+	      (return-from memory-access-local-p nil))))
   t)
 
 (defmethod output->scalar-mutation ((mp MemoryPlanner) (group group) (kernel kernel-renderer) dependency-list)
@@ -551,18 +559,24 @@ for (...) {
 }
 If the tensor `out` is labelled as :output by the memory-planner, and not appeared in the `dependency-list`.
 "
-  (let ((scalars) (related-nodes (renderer-get-nodes group kernel)))
+  (let ((scalars))
     (flet ((->scalar-p (id)
 	     (and
+              ;; Tensors labelled as a :output
 	      (let ((out (find id (kernel-renderer-args kernel) :key #'argument-name)))
 		(and out (eql :output (argument-io out))))
+              ;; Tensors not appeared in the dependency-list
 	      (null (find id dependency-list))
+              ;; Judge if the use of the tensor is local, by reading the rendering-graph.
 	      (memory-access-local-p (kernel-renderer-nodes kernel) id (poly-pipeline (group-polyhedron group))))))
-      (dolist (node related-nodes)
-	(loop for w in (node-writes node)
-	      for typ in (relay-writes (read-type-relay node))
-	      if (and (not (= 0 (buffer-nrank typ))) (->scalar-p w)) do
-		(push w scalars)))
+      ;; Create a list of buffers that can be optimized in this function.
+      (loop for node in (graph-nodes (group-render-graph group))
+            if (eql (node-type node) :FUNCALL) do
+              (loop for node in (graph-nodes (gethash (getattr node :idx) (poly-pipeline (group-polyhedron group)))) do
+                (loop for w in (node-writes node)
+                      for typ in (relay-writes (read-type-relay node))
+                      if (and (not (= 0 (buffer-nrank typ))) (->scalar-p w)) do
+                        (push w scalars))))
       ;; mutate all read dependencies
       (let ((seen) (suffix))
 	(loop for node in (kernel-renderer-nodes kernel)
@@ -580,9 +594,13 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 			     (loop for w in (node-writes node)
 				   for typ in (relay-writes (read-type-relay node))
 				   for w-as-unrolled = (intern (format nil "~a~a" w (unroll-suffix typ suffix)))
+                                   for nth upfrom 0
 				   collect
 				   (prog1
-				       (and (null (find w-as-unrolled seen)) (find w scalars))
+                                       (or
+                                        ;; If the same task was appeared more than twise times -> extend the first result.
+                                        (nth nth (getattr node :declare-type))
+				        (and (null (find w-as-unrolled seen)) (find w scalars)))
 				     (push w-as-unrolled seen))))))))
       ;; Remove from args
       (setf (kernel-renderer-args kernel)
@@ -602,7 +620,7 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 		  else
 		    collect (list (group-args g))))
 	  (const-dependencies (append (avm-fw-outputs avm) (avm-bw-outputs avm))))
-      ;; 1. Remove outputs if unnecessary
+      ;; Removes the :OUTPUT buffer (except for const-dependencies)
       (loop for g in groups
 	    for k in kernels
 	    for nth upfrom 0
@@ -612,6 +630,7 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
 		    for deps = (flatten
 				(append
 				 const-dependencies
+                                 ;; [Note] If the output buffer is used by another kernels, that should be a matrix.
 				 (apply #'append (nthcdr (1+ nth) args-by-time))
 				 (apply #'append (nthcdr ith (nth nth args-by-time)))))
 		    do (output->scalar-mutation mp g kernel-renderer deps))))))
