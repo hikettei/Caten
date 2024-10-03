@@ -138,6 +138,9 @@ Usage:
     (:CI
      0 :int identity
      "Set 1 if the test is running under Github Actions")
+    (:AUTO_SCHEDULER
+     1 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
+    "(JIT) Set 1 to use auto-schedule.")
     (:JIT
      0 :int identity
      "Set 1 to use JIT_BACKEND, 0 to use VM_BACKEND")
