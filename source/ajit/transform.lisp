@@ -120,6 +120,8 @@ for(int i=0; i<10; i++) {
       (multiple-value-bind (a-scal a-vec) (separate-scalar-and-vector-parts a)
 	(multiple-value-bind (b-scal b-vec) (separate-scalar-and-vector-parts b)
           (cond
+            ((and a-scal (null b-scal) a-vec b-vec)
+             (apply-merge a-scal a-vec b-vec))
             ((and (null a-scal) (null b-scal) a-vec b-vec)
              (apply-merge a-vec b-vec))))))))
 
