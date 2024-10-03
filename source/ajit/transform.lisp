@@ -35,6 +35,12 @@
      :key #'(lambda (x) (getattr x :idx))
      :test #'equalp)))
 
+(defmethod find-outermost-for ((r kernel-renderer))
+  (let ((nodes (kernel-renderer-nodes r)))
+    (loop for node in nodes
+	  if (eql (node-type node) :FOR)
+	    do (return-from find-outermost-for node))))
+
 (defmethod kernel-renderer-loop-eq ((a kernel-renderer) (b kernel-renderer))
   "Compares two outermost loops in the a and b"
   (and
