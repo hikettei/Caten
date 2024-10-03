@@ -26,23 +26,29 @@
 	  do (setf nest (max nest depth)))
     nest))
 
-(defmethod find-outermost-for ((r kernel-renderer))
+(defmethod collect-loop-for ((r kernel-renderer))
   (let ((nodes (kernel-renderer-nodes r)))
-    (loop for node in nodes
-	  if (eql (node-type node) :FOR)
-	    do (return-from find-outermost-for node))))
+    (remove-duplicates
+     (loop for node in nodes
+	   if (eql (node-type node) :FOR)
+             collect node)
+     :key #'(lambda (x) (getattr x :idx))
+     :test #'equalp)))
 
-(defmethod kernel-renderer-outermost-loop-eq ((a kernel-renderer) (b kernel-renderer))
+(defmethod kernel-renderer-loop-eq ((a kernel-renderer) (b kernel-renderer))
   "Compares two outermost loops in the a and b"
   (and
    (= (kernel-renderer-loop-depth a) (kernel-renderer-loop-depth b))
-   (multiple-value-bind (a b) (values (find-outermost-for a) (find-outermost-for b))
-     (and a b
-	  (equal (getattr a :idx) (getattr b :idx))
-	  (expr-eq (getattr a :upfrom) (getattr b :upfrom))
-	  (expr-eq (getattr a :below) (getattr b :below))
-	  (expr-eq (getattr a :by) (getattr b :by))
-	  (eql (getattr a :scope) (getattr b :scope))))))
+   (multiple-value-bind (a-loops b-loops) (values (collect-loop-for a) (collect-loop-for b))
+     (every
+      #'(lambda (a b)
+          (and
+	   (equal (getattr a :idx) (getattr b :idx))
+	   (expr-eq (getattr a :upfrom) (getattr b :upfrom))
+	   (expr-eq (getattr a :below) (getattr b :below))
+	   (expr-eq (getattr a :by) (getattr b :by))
+	   (eql (getattr a :scope) (getattr b :scope))))
+      a-loops b-loops))))
 
 (defmethod separate-scalar-and-vector-parts ((a kernel-renderer))
   "Return: (values scalar-nodes vector-nodes) if nodes are:
@@ -79,6 +85,7 @@ for(int i=0; i<10; i++) {
 }
 ```
 "
+  
   (let ((a-outermost (find-outermost-for a))
 	(b-outermost (find-outermost-for b)))
     (when (and a-outermost b-outermost)
@@ -106,8 +113,9 @@ for(int i=0; i<10; i++) {
 		(list (r/endfor (getattr a-outermost :idx))))))
       (multiple-value-bind (a-scal a-vec) (separate-scalar-and-vector-parts a)
 	(multiple-value-bind (b-scal b-vec) (separate-scalar-and-vector-parts b)
-          (when (and (null a-scal) (null b-scal) a-vec b-vec)
-            (apply-merge a-vec b-vec)))))))
+          (cond
+            ((and (null a-scal) (null b-scal) a-vec b-vec)
+             (apply-merge a-vec b-vec))))))))
 
 (defun fuse-outermost-loops (blueprints)
   "Fuses two rendering groups whose outermost loops are the completely equivalent.
@@ -132,7 +140,7 @@ for(int i=0; i<10; i++) {
 	 for blueprint in `(,@(cdr blueprints) nil)
 	 for merged = (when blueprint (merge-two-loops last-visited blueprint))
 	 collect
-	 (if (and blueprint merged (kernel-renderer-outermost-loop-eq last-visited blueprint))
+	 (if (and blueprint merged (kernel-renderer-loop-eq last-visited blueprint))
 	     (progn
 	       (setf last-visited
 		     (make-kernel-renderer

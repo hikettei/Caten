@@ -78,7 +78,7 @@
       (check-args 1 `(t t) (caten (!softmax (!softmax (make-tensor `(a b))))))
       (check-args 1 :tensor (caten (!tril (make-tensor `(5 5) :initial-element 1.0))))
       ;; [TODO] The !tril below should be nargs = 1 by deleting the extra buffer for index-components (val_14 is not used!!!)
-      (check-args 2 :tensor (caten (!tril (make-tensor `(5 5 5) :initial-element 1.0)))))))
+      (check-args 1 :tensor (caten (!tril (make-tensor `(5 5 5) :initial-element 1.0)))))))
 
 (deftest matmul-schedule-test
   (with-no-grad
@@ -101,7 +101,7 @@
       (with-jit-only-mode
         (check-kernels 1 (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
         (check-args 3 t (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
-        (check-kernels 2 (caten (call (Embedding 100 100) (make-tensor `(batch_size sentence_len)))))
+        (check-kernels 3 (caten (call (Embedding 100 100) (make-tensor `(batch_size sentence_len)))))
         ;; 3 tensors for input/output/weight, 8 tensors for scalar (computing strides)
         (check-args 3 :tensor (caten (call (Embedding 100 100) (make-tensor `(batch_size sentence_len)))))))))
 
@@ -177,3 +177,4 @@
            (c (!view a t t `(4 8))))
        (let ((vals (buffer-value (tensor-buffer (proceed (!add (!reshape b `(2 2 1 4)) (!reshape c `(2 2 1 4))))))))
          (ok (every #'= vals #(4.0 6.0 8.0 10.0 20.0 22.0 24.0 26.0 36.0 38.0 40.0 42.0 52.0 54.0 56.0 58.0))))))))
+
