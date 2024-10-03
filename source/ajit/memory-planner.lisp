@@ -421,9 +421,10 @@ Lifespan:
       (loop for node in (graph-nodes (mp-graph mp))
 	    for nth upfrom 0
 	    for lock-p = (getattr node :_no_group_realize_on_vm) do
-	      ;; Not going to make the dynamic shape in-place.
+	      ;; [Note] Not going to make the dynamic shape in-place.
 	      ;; beucase they are constant (e.g.: const uint_32 a)
 	      (when (and (eql (node-type node) :Load) (symbolp (getattr node :value)))
+                ;; [Note] If there's a variable that do not want to be destructed, add them to the constants.
 		(push (getattr node :value) constants))
 	      (loop for val in (node-reads1 node)
 		    for typ in (relay-reads1 node)
@@ -433,6 +434,9 @@ Lifespan:
 	      (loop for val in (node-writes node)
 		    for typ in (relay-writes (read-type-relay node))
 		    if (and (symbolp val) (null (gethash val trace-table)))
+                      ;; ID2Type    -> the variable name and its type
+                      ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
+                      ;; LockTable  -> Set T to lock (never become in-place)
 		      do (setf (gethash val id2type) typ
 			       (gethash val trace-table) (list nth)
 			       (gethash val lock-table) lock-p)))
@@ -440,15 +444,19 @@ Lifespan:
 	       (loop for key in (hash-table-keys trace-table)
 		     for typ = (gethash key id2type)
 		     collect
+                     ;; [Note] A memory block lives in the range of [min{t}, max{t})
+                     ;; Plus, If the same task (e.g.: T0(x) -> T1(x) -> T0(x+1)) is scheduled, the memory block lives from 0 to 2.
 		     (make-memoryblock
 		      key typ
 		      (apply #'min (gethash key trace-table))
-		      ;; Set the longest time for gradients
+                      ;; Set the longest time for the output variables (not to destruct it, and users can see the result)
 		      (if (find key outputs)
 			  total-time
 			  (apply #'max (gethash key trace-table)))
 		      :lock (gethash key lock-table))))
+             ;; Minimize the peak memory usage
 	     (solved (greedy-solve-dsa memory-blocks total-time))
+             ;; Retrive the solution. A hash table of OLD_MEMORY_ID -> NEW_MEMORY_ID
 	     (alias-map (mp-alias mp)))
 	(loop for mb in solved
 	      do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
