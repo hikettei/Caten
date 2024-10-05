@@ -2,7 +2,7 @@
 
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs &key (ast-option :atomic))))
+	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs dynamic-shape &key (ast-option :separate))))
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)
@@ -17,6 +17,7 @@
   (write-ptr (union-map-from-str write) :type union-map)
   (initial-schedule initial-schedule :type union-map)
   (schedule nil :type (or null Schedule))
+  (dynamic-shape dynamic-shape :type list)
   (ast-option ast-option :type (member :separate :atomic)))
 
 (defun poly/io-scalar-p (poly x)

@@ -352,6 +352,7 @@
    #:schedule-node-get-child
    #:schedule-insert-sequence
    #:schedule-node-get-domain
+   #:schedule-node-insert-filter
    ))
 
 (in-package :caten/isl)

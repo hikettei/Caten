@@ -76,6 +76,11 @@
   (:give union-set)
   (:keep schedule-node))
 
+(define-isl-function schedule-node-insert-filter %isl-schedule-node-insert-filter
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set))
+
 (defun schedule-node-get-child (schedule-node n)
   (let ((x (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
     (%make-schedule-node (%isl-schedule-node-copy x))))

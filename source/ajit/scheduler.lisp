@@ -218,7 +218,7 @@ Output: Groups"
 	    (format t "~%Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read~%\"~a\"~%:write \"~a\"~%:schedule \"~a\"~%)"
 		    domain read-access write-access schedule)
 	  collect
-	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group)))))
+	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group) dynamic-shapes))))
 
 (defun schedule-polyhedrons (backend group polyhedrons &key (verbose 0) (serialize))
   (declare (type list polyhedrons))
@@ -353,11 +353,12 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)))
        groups)
       (let* ((1_ (mapc #'post-simplify-multiexpr groups))
+             (2_ (when (= 1 (ctx:getenv :AUTO_SCHEDULER)) (mapc #'group->polyhedral-group groups)))
 	     ;; Note: (make-instance 'MemoryPlanner ... ) will rewrite the graph of :reduction, it is destructive.
 	     ;; Subsequent optimizations do not assume the `graph` is DAG.
 	     ;; Graph-Level optimization should be performed just before it.
 	     (mp (make-instance 'MemoryPlanner :avm avm :groups groups :debug debug :device backend))
-	     (2_ (memory-plan mp))
+	     (3_ (memory-plan mp))
 	     (kernels (retrive-kernels mp))
 	     (blueprints/codes
 	       (loop for group in groups
@@ -366,7 +367,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		     collect
 		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
-	(declare (ignore 1_ 2_))
+	(declare (ignore 1_ 2_ 3_))
 	(when (>= (ctx:getenv :JIT_DEBUG) 2)
 	  (format t "Final JIT Schedule:~%")
 	  (loop for nth upfrom 0
@@ -429,6 +430,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			       (union-map-from-str schedule)
 			       nil
 			       nil
+                               nil
 			       :ast-option ast-option)))
     (auto-schedule! poly (default-device :clang))
     (print (schedule-get-root (poly-schedule poly)))
