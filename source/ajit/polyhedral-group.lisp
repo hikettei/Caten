@@ -22,13 +22,31 @@ A Polyhedral form of the fused schedule group.
 
 (defclass Polyhedral-Auto-Scheduler (Polyhedral-Group)
   ((schedule :accessor pg-schedule)
-   (pipeline :accessor pg-pipeline))
+   (dependencies :accessor pg-dependencies))
   (:documentation "groups which is subject to jit"))
 
 (defmethod initialize-instance :after ((pg Polyhedral-Auto-Scheduler) &rest initargs &key &allow-other-keys)
-  (setf (pg-schedule pg) (scop (polyhedral-group-base pg)))
-  )
+  (declare (ignore initargs))
+  (multiple-value-bind (read write schedule) (scop (polyhedral-group-base pg))
+    (setf (pg-schedule pg) schedule)
+    (let* ((access (union-access-info-from-sink read))
+           (access (union-access-info-set-must-source access write))
+           (access (union-access-info-set-schedule access schedule))
+           (flow (union-access-info-compute-flow access))
+           (RaW (union-flow-get-must-dependence flow))
 
+           (access (union-access-info-from-sink write))
+           (access (union-access-info-set-must-source access write))
+           (access (union-access-info-set-may-source access read))
+           (access (union-access-info-set-schedule access schedule))
+           (flow   (union-access-info-compute-flow access))
+           (WaW    (union-flow-get-must-dependence flow))
+           (WaR    (union-flow-get-may-dependence flow))
+           (dependencies
+             (union-map-union
+              (union-map-union WaR RaW)
+              WaW)))
+      (setf (pg-dependencies pg) dependencies))))
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/scop.cc#L47
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/schedule_isl_conversion.cc
 (defmethod render-domain-body-from-group ((group Group) &aux (idx2domain (make-hash-table)))
@@ -135,14 +153,31 @@ for (i=0; i<10; i++)
                   collect node))
         (declared-ids (map 'list #'(lambda (x) (getattr x :idx)) related-domains)))
     (multi-union-pw-aff-from-str
-     (print
      (with-output-to-string (out)
        (format out "[~(~a~)] -> {~%" (render-list (poly-dynamic-shape (group-polyhedron group))))
        (loop for funcall in related-functions
              do (format out " ~a -> [~(~a~)];~%"
                         (or (gethash (getattr funcall :idx) idx2domain) (error ""))
                         (render-list declared-ids)))
-       (format out "}"))))))
+       (format out "}")))))
+
+(defun render-access-rep (reader type-reader group idx2domain)
+  (union-map-from-str
+   (with-output-to-string (out)
+     (format out "[~(~a~)] -> {~%" (render-list (poly-dynamic-shape (group-polyhedron group))))
+     (maphash
+      #'(lambda (idx dom)
+          (let ((graph-in-funcall (gethash idx (poly-pipeline (group-polyhedron group)))))
+            (assert graph-in-funcall)
+            (dolist (node (graph-nodes graph-in-funcall))
+              (loop for var in (funcall reader node)
+                    for typ in (funcall type-reader (read-type-relay node))
+                    do (format out "  ~a -> ~(~a~)[~(~a~)];~%"
+                               dom
+                               var
+                               (render-isl-aref typ :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute nil))))))
+      idx2domain)
+     (format out "}"))))
 
 (defmethod scop ((group group))
   "Formulates the Polyhedral Model from scop/
@@ -222,9 +257,11 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                         (render-band-node-in-domain group region parent-loops idx2domain)))
                  (setf schedule (schedule-insert-partial-schedule schedule partial-schedule)))
                schedule))
-      (let ((schedule-new (explore-schedule-tree 0 (length render-nodes))))
-        (print (schedule-get-root schedule-new))
-        ))))
+
+      (values
+       (render-access-rep #'node-reads #'relay-reads group idx2domain)
+       (render-access-rep #'node-writes #'relay-writes group idx2domain)
+       (explore-schedule-tree 0 (length render-nodes))))))
 ;; ~~ Creation/Conversion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod group->polyhedral-group ((group Group))
   (make-instance
@@ -262,6 +299,17 @@ for(int _gid0=0;(_gid0<=4);_gid0+=1) {
 }
 |#
 ;; yml de parse site pprint (schedule)
+
+(defun debug/render-schedule (schedule)
+  (let* ((schedule (schedule-set-options schedule :atomic))
+	 (build (ast-build-from-context (set-from-str "{:}")))
+	 (ast   (ast-build-node-from-schedule build schedule))
+	 (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+	 (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
+	 (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
+	 (str   (isl::%isl-printer-get-str q)))
+    str))
+
 (defun hoge ()
   (let* ((schedule1
            (schedule-from-domain
