@@ -62,10 +62,10 @@ A Polyhedral form of the fused schedule group.
                      (reverse (hash-table-keys (gethash key schedule)))))
                    ((string= key "schedule")
                     (let ((schedules (cl-ppcre:split
-                                      ";"
+                                      " , "
                                       (cl-ppcre:regex-replace-all
-                                       "{|}|[|]"
-                                       (gethash key schedule)
+                                       "{|}"
+                                       (subseq (gethash key schedule) 1 (1- (length (gethash key schedule))))
                                        ""))))
                       (format out "~aschedule()~%" (indent indent))
                       (format out "~a"
@@ -74,7 +74,7 @@ A Polyhedral form of the fused schedule group.
                                'string
                                (butlast
                                 (loop for s in schedules
-                                      collect (format nil "~a  ~a" (indent indent) s)
+                                      collect (format nil "~a  |~a" (indent indent) s)
                                       collect (format nil "~%")))))))
                    ((or (string= key "sequence") (string= key "set"))
                     (format out "~a~a()" (indent indent) key)
