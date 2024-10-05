@@ -74,7 +74,9 @@ A Polyhedral form of the fused schedule group.
                                'string
                                (butlast
                                 (loop for s in schedules
-                                      collect (format nil "~a  |~a" (indent indent) s)
+                                      for nth upfrom 0
+                                      for separator = (if (zerop nth) "┏" (if (= (length schedules) (1+ nth)) "┗" "┃"))
+                                      collect (format nil "~a  ~a~a" (indent indent) separator s)
                                       collect (format nil "~%")))))))
                    ((or (string= key "sequence") (string= key "set"))
                     (format out "~a~a()" (indent indent) key)
