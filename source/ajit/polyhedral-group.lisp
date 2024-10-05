@@ -144,9 +144,9 @@ A Polyhedral form of the fused schedule group.
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
   (let ((outer-coincidence 1)
-        (maximize-coincidence 0)
-        (treat-coalescing 0)
-        (maximize-band-depth 0)
+        (maximize-coincidence 1)
+        (treat-coalescing 1)
+        (maximize-band-depth 1)
         (schedule-whole-component 1))
     (macrolet ((set-option (name level)
 	         `(progn
@@ -276,25 +276,23 @@ Corresponds to the position of the subgraph in the parent schedule.
                 if (eql (node-type node) :FUNCALL)
                   collect node))
         (declared-ids (map 'list #'(lambda (x) (getattr x :idx)) related-domains)))
-    (when (null declared-ids) (return-from render-band-node-in-domain))
-    (multi-union-pw-aff-from-str
-     (print 
-     (with-output-to-string (out)
-       (format out "[~%")
-       (loop for funcall in related-functions
-             for nth upfrom 0
-             if (not (= nth 0))
-               do (format out ",~%")
-             do (format out "~% { ")
-                (loop for idx in declared-ids
-                      for nth upfrom 0
-                      if (not (= nth 0))
-                        do (format out "; ")
-                      do (format out "~a -> [(~a)]"
-                                 (or (gethash (getattr funcall :idx) idx2domain) (error ""))
-                                 idx))
-                (format out " } "))
-       (format out "~%]"))))))
+    (when (null declared-ids) (return-from render-band-node-in-domain "[]"))
+    (with-output-to-string (out)
+      (format out "[~%")
+      (loop for idx in declared-ids
+            for nth upfrom 0
+            if (not (= nth 0))
+              do (format out ",~%")
+            do (format out "~% { ")
+               (loop for funcall in related-functions
+                     for nth upfrom 0
+                     if (not (= nth 0))
+                       do (format out "; ")
+                     do (format out "~a -> [~a]"
+                                (or (gethash (getattr funcall :idx) idx2domain) (error ""))
+                                idx))
+               (format out " } "))
+      (format out "~%]"))))
 
 (defun render-access-rep (reader type-reader group idx2domain)
   (union-map-from-str
@@ -386,11 +384,11 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                                 (incf count))))))
                  (when (eql schedule :nothing) (error "nothing was scheduled?"))
                  (let* ((partial-schedule
-                          (render-band-node-in-domain group region parent-loops idx2domain)))
-                   (when partial-schedule
-                     ;; scheduleを追加したいのだが。。。
+                          (render-band-node-in-domain group region (last parent-loops) idx2domain)))
+                   (when (not (string= "[]" partial-schedule))
                      (print partial-schedule)
-                     (setf schedule (schedule-insert-partial-schedule schedule partial-schedule))))
+                     ;; scheduleを追加したいのだが。。。
+                     (setf schedule (schedule-insert-partial-schedule schedule (multi-union-pw-aff-from-str partial-schedule)))))
                  schedule))
 
         (values
