@@ -61,7 +61,21 @@ A Polyhedral form of the fused schedule group.
                          (explore (gethash key schedule) x :indent (+ indent 2)))
                      (reverse (hash-table-keys (gethash key schedule)))))
                    ((string= key "schedule")
-                    (format out "~aschedule=~a" (indent indent) (gethash key schedule)))
+                    (let ((schedules (cl-ppcre:split
+                                      ";"
+                                      (cl-ppcre:regex-replace-all
+                                       "{|}|[|]"
+                                       (gethash key schedule)
+                                       ""))))
+                      (format out "~aschedule()~%" (indent indent))
+                      (format out "~a"
+                              (apply
+                               #'concatenate
+                               'string
+                               (butlast
+                                (loop for s in schedules
+                                      collect (format nil "~a  ~a" (indent indent) s)
+                                      collect (format nil "~%")))))))
                    ((or (string= key "sequence") (string= key "set"))
                     (format out "~a~a()" (indent indent) key)
                     (mapc
@@ -83,7 +97,7 @@ A Polyhedral form of the fused schedule group.
                         (format out "~a~a~%" (indent (+ indent 2)) dom))
                       (format out "~a)" (indent indent))))
                    ((or (string= key "permutable") (string= key "coincident"))
-                    (format out "~%~a~a(~a)~%" (indent indent) key (gethash key schedule)))                 
+                    (format out "~%~a~a(~a)" (indent indent) key (gethash key schedule)))                 
                    (t (warn "pprint: the key ~a is not implemented." key)))))
         (mapc #'(lambda (x) (explore schedule x)) (reverse (hash-table-keys schedule)))))))
 
@@ -114,6 +128,7 @@ A Polyhedral form of the fused schedule group.
   (format t "~%+++++NEW+++++++~%")
   (let ((new (schedule pg)))
     (format t "~a" (pprint-schedule new))
+    (print (debug/render-schedule new))
     ))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
@@ -360,7 +375,9 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ;; ~~ Creation/Conversion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod group->polyhedral-group ((group Group))
   (make-instance
-   (if (group-realize-on-vm group)
+   (if (or
+        (group-realize-on-vm group)
+        (= 1 (length (graph-nodes (group-render-graph group)))))
        'Polyhedral-Group
        'Polyhedral-Auto-Scheduler)
    :base group))
@@ -376,6 +393,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 (defmethod unroll-bands ((polyhedral-group Polyhedral-Auto-Scheduler) unroll-factors)
 
   )
+
+;; TODO: Support :separate
 
 #|
 for(int _gid0=0;(_gid0<=4);_gid0+=1) {
