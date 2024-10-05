@@ -278,14 +278,23 @@ Corresponds to the position of the subgraph in the parent schedule.
         (declared-ids (map 'list #'(lambda (x) (getattr x :idx)) related-domains)))
     (when (null declared-ids) (return-from render-band-node-in-domain))
     (multi-union-pw-aff-from-str
-     (print
+     (print 
      (with-output-to-string (out)
-       (format out "[~(~a~)] -> {~%" (render-list (poly-dynamic-shape (group-polyhedron group))))
+       (format out "[~%")
        (loop for funcall in related-functions
-             do (format out " ~a -> [~(~a~)];~%"
-                        (or (gethash (getattr funcall :idx) idx2domain) (error ""))
-                        (render-list declared-ids)))
-       (format out "}"))))))
+             for nth upfrom 0
+             if (not (= nth 0))
+               do (format out ",~%")
+             do (format out "~% { ")
+                (loop for idx in declared-ids
+                      for nth upfrom 0
+                      if (not (= nth 0))
+                        do (format out "; ")
+                      do (format out "~a -> [(~a)]"
+                                 (or (gethash (getattr funcall :idx) idx2domain) (error ""))
+                                 idx))
+                (format out " } "))
+       (format out "~%]"))))))
 
 (defun render-access-rep (reader type-reader group idx2domain)
   (union-map-from-str
@@ -304,13 +313,13 @@ Corresponds to the position of the subgraph in the parent schedule.
                                (render-isl-aref typ :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute nil))))))
       idx2domain)
      (format out "}"))))
-
+1
 (defmethod scop ((group group))
   "Formulates the Polyhedral Model from scop/
 Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_polyhedral_front-end_for_MLIR
 
 1. Schedule Construction
-```
+```2
      [DOMAIN_NODE]
            |
       [BAND_NODE] (= corresponds to a loop in short)
@@ -379,6 +388,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                  (let* ((partial-schedule
                           (render-band-node-in-domain group region parent-loops idx2domain)))
                    (when partial-schedule
+                     ;; scheduleを追加したいのだが。。。
+                     (print partial-schedule)
                      (setf schedule (schedule-insert-partial-schedule schedule partial-schedule))))
                  schedule))
 
@@ -439,32 +450,16 @@ for(int _gid0=0;(_gid0<=4);_gid0+=1) {
 	 (str   (isl::%isl-printer-get-str q)))
     str))
 
-(defun hoge ()
-  (let* ((schedule1
-           (schedule-from-domain
-            (union-set-from-str "[] -> {
-S1[i, j] : 0 <= i, j <= 1024;
-S2[i, j, k] : 0 <= i, j, k <= 1024;
-}")))
-         (schedule2
-           (schedule-from-domain
-            (union-set-from-str "[] -> {
-S1[i, j] : 0 <= i, j <= 1024;
-S2[i, j, k] : 0 <= i, j, k <= 1024;
-}"))))
+(defun load-pet ()
+  (cffi:load-foreign-library "libpet.dylib"))
 
-    (setf schedule1
-          (schedule-insert-partial-schedule
-           schedule1
-           (multi-union-pw-aff-from-str
-            "[] -> {
-S1[i, j] -> [i, j];
-S2[i, j, k] -> [i, j];
-}")))
-    (setf schedule1
-          (schedule-node-insert-filter
-           (schedule-get-root schedule1)
-           (union-set-from-str
-            "[] -> { S1[i, j] }")))
-    (print schedule1)))
+(defun extract-from-c-source (filename func)
+  (let ((s (cffi:foreign-funcall "pet_scop_extract_from_C_source"
+                                 :pointer (isl::context-handle isl::*context*)
+                                 :string filename
+                                 :string func
+                                 :pointer)))
+    (cffi:foreign-funcall "pet_scop_get_schedule" :pointer s :pointer)
+    ))
 
+;; (print (Extract-from-c-source "./matmul.c" "foo"))
