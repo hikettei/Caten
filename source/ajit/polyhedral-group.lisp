@@ -14,6 +14,9 @@
 ;; - Fix Transformer Scheduling
 ;; - ISeq Lowring is slow
 ;; - Transpose+Matmul Fusion
+;; - Deprecate ./polyhedral.lisp and existing polyhedral compiler, replace with this!!!
+;;   - If they can fuse the Embedding < 1 w/o using old compiler, then it's a success and replace!
+
 (defclass Polyhedral-Group ()
   ((base :initarg :base :type Group :accessor polyhedral-group-base))
   (:documentation "
@@ -140,7 +143,7 @@ A Polyhedral form of the fused schedule group.
   (let ((new (schedule pg)))
     (format t "~a" (pprint-schedule new))
     (print (debug/render-schedule new))
-    ))
+    (setf (pg-schedule pg) new)))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
   (let ((outer-coincidence 0)
@@ -366,6 +369,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                                       render-nodes
                                       :key #'node-id)))
                               (declare (ignore _))
+                              (print endfor-abs-position)
                               ;; for (...) {
                               ;;  T0[]       }
                               ;;  ...        } dom-schedule = schedule of this area
@@ -387,10 +391,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                           ;; (last parent-loops) or just parent-loops?
                           (render-band-node-in-domain group region (last parent-loops) idx2domain)))
                    (when (not (string= "[]" partial-schedule))
-                     (print partial-schedule)
                      (setf schedule (schedule-insert-partial-schedule schedule (multi-union-pw-aff-from-str partial-schedule)))))
                  schedule))
-
         (values
          (union-set-from-str domain)
          (render-access-rep #'node-reads #'relay-reads group idx2domain)
