@@ -143,7 +143,7 @@ A Polyhedral form of the fused schedule group.
     ))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
-  (let ((outer-coincidence 1)
+  (let ((outer-coincidence 0)
         (maximize-coincidence 1)
         (treat-coalescing 1)
         (maximize-band-depth 1)
@@ -384,10 +384,10 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                                 (incf count))))))
                  (when (eql schedule :nothing) (error "nothing was scheduled?"))
                  (let* ((partial-schedule
+                          ;; (last parent-loops) or just parent-loops?
                           (render-band-node-in-domain group region (last parent-loops) idx2domain)))
                    (when (not (string= "[]" partial-schedule))
                      (print partial-schedule)
-                     ;; scheduleを追加したいのだが。。。
                      (setf schedule (schedule-insert-partial-schedule schedule (multi-union-pw-aff-from-str partial-schedule)))))
                  schedule))
 
