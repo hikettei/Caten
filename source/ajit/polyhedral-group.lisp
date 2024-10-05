@@ -32,7 +32,7 @@ A Polyhedral form of the fused schedule group.
       (format out "~%")
       (labels ((indent (n)
                  (make-string n :initial-element #\space))
-               (separate-screen (indent &key (n 60))
+               (separate-screen (indent &key (n 120))
                  (format out "~%~a~a~%" (indent indent) (make-string n :initial-element #\-)))
                (explore (schedule key &key (indent 0))
                  (cond
@@ -67,7 +67,8 @@ A Polyhedral form of the fused schedule group.
                                        "{|}"
                                        (subseq (gethash key schedule) 1 (1- (length (gethash key schedule))))
                                        ""))))
-                      (format out "~aschedule()~%" (indent indent))
+                      (format out "~aschedule()" (indent indent))
+                      (when schedules (format out "~%"))
                       (format out "~a"
                               (apply
                                #'concatenate
@@ -95,9 +96,17 @@ A Polyhedral form of the fused schedule group.
                                      "{|}"
                                      (gethash key schedule)
                                      ""))))
-                      (dolist (dom domains)
-                        (format out "~a~a~%" (indent (+ indent 2)) dom))
-                      (format out "~a)" (indent indent))))
+                      (format
+                       out
+                       "~a"
+                       (apply
+                        #'concatenate
+                        'string
+                        (butlast
+                         (loop for dom in domains
+                           collect (format nil "~a~a" (indent (+ indent 2)) dom)
+                           collect (format nil "~%")))))
+                      (format out ")")))
                    ((or (string= key "permutable") (string= key "coincident"))
                     (format out "~%~a~a(~a)" (indent indent) key (gethash key schedule)))                 
                    (t (warn "pprint: the key ~a is not implemented." key)))))
@@ -134,7 +143,7 @@ A Polyhedral form of the fused schedule group.
     ))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
-  (let ((outer-coincidence 0)
+  (let ((outer-coincidence 1)
         (maximize-coincidence 0)
         (treat-coalescing 0)
         (maximize-band-depth 0)
@@ -260,20 +269,23 @@ for (i=0; i<10; i++)
   S2[i, j, k] -> [i, j];
 }
 ```
+Corresponds to the position of the subgraph in the parent schedule.
 "
   (let ((related-functions
           (loop for node in area
                 if (eql (node-type node) :FUNCALL)
                   collect node))
         (declared-ids (map 'list #'(lambda (x) (getattr x :idx)) related-domains)))
+    (when (null declared-ids) (return-from render-band-node-in-domain))
     (multi-union-pw-aff-from-str
+     (print
      (with-output-to-string (out)
        (format out "[~(~a~)] -> {~%" (render-list (poly-dynamic-shape (group-polyhedron group))))
        (loop for funcall in related-functions
              do (format out " ~a -> [~(~a~)];~%"
                         (or (gethash (getattr funcall :idx) idx2domain) (error ""))
                         (render-list declared-ids)))
-       (format out "}")))))
+       (format out "}"))))))
 
 (defun render-access-rep (reader type-reader group idx2domain)
   (union-map-from-str
@@ -366,7 +378,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                  (when (eql schedule :nothing) (error "nothing was scheduled?"))
                  (let* ((partial-schedule
                           (render-band-node-in-domain group region parent-loops idx2domain)))
-                   (setf schedule (schedule-insert-partial-schedule schedule partial-schedule)))
+                   (when partial-schedule
+                     (setf schedule (schedule-insert-partial-schedule schedule partial-schedule))))
                  schedule))
 
         (values

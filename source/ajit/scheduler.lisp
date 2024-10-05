@@ -247,8 +247,7 @@ Options:
   (macrolet ((debug-print (step-name)
                `(progn
                   (when verbose-all (format t "~%[~a]~%~a~%" ,step-name (print-polyhedral polyhedral nil)))
-                  (when verbose (and (poly-schedule polyhedral) (format t "~%[~a]~%~a~%" ,step-name (debug/render-c polyhedral))))
-                  )))
+                  (when verbose (and (poly-schedule polyhedral) (format t "~%[~a]~%~a~%" ,step-name (pprint-schedule (poly-schedule polyhedral))))))))
     ;; Loop Fusion
     (poly/schedule polyhedral
                    :serialize serialize
