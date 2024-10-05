@@ -16,7 +16,7 @@
 ;; - Transpose+Matmul Fusion
 ;; - Deprecate ./polyhedral.lisp and existing polyhedral compiler, replace with this!!!
 ;;   - If they can fuse the Embedding < 1 w/o using old compiler, then it's a success and replace!
-
+;;   - delete transform.lisp (possible?) (どこまで1 Kernelにするか知りたいから消さない方がいいかも？ for now)
 (defclass Polyhedral-Group ()
   ((base :initarg :base :type Group :accessor polyhedral-group-base))
   (:documentation "
@@ -359,7 +359,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                            (:FOR
                             ;; -> Band Node
                             (let* ((endfor
-                                     (find (getattr node :idx) (nthcdr from render-nodes)
+                                     (find (getattr node :idx) (nthcdr count render-nodes)
                                            :key #'(lambda (x) (and (eql (node-type x) :ENDFOR) (getattr x :idx)))
                                            :test #'equalp))
                                    (_ (when (null endfor) (error "scop: malformed rendering graph ~a" render-nodes)))
@@ -369,7 +369,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                                       render-nodes
                                       :key #'node-id)))
                               (declare (ignore _))
-                              (print endfor-abs-position)
+                              (assert (>= endfor-abs-position count))
                               ;; for (...) {
                               ;;  T0[]       }
                               ;;  ...        } dom-schedule = schedule of this area
