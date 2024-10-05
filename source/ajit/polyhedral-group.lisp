@@ -26,6 +26,67 @@ A Polyhedral form of the fused schedule group.
    (dependencies :accessor pg-dependencies))
   (:documentation "groups which is subject to jit"))
 
+(defmethod pprint-schedule ((schedule schedule))
+  (let ((schedule (yaml:parse (schedule-to-str schedule))))
+    (with-output-to-string (out)
+      (format out "~%")
+      (labels ((indent (n)
+                 (make-string n :initial-element #\space))
+               (separate-screen (indent &key (n 60))
+                 (format out "~%~a~a~%" (indent indent) (make-string n :initial-element #\-)))
+               (explore (schedule key &key (indent 0))
+                 (cond
+                   ((string= key "domain")
+                    (format out "~adomain(~%" (indent indent))
+                    (let ((domains (cl-ppcre:split
+                                    ";"
+                                    (cl-ppcre:regex-replace-all
+                                     "{|}"
+                                     (gethash key schedule)
+                                     ""))))
+                      (format out "~a"
+                              (apply
+                               #'concatenate
+                               'string
+                               (butlast
+                                (loop for dom in domains
+                                      collect (format nil "~a~a" (indent (+ indent 2)) dom)
+                                      collect (format nil "~%"))))))
+                    (format out "~a)" (indent indent)))
+                   ((string= key "child")
+                    (format out "~%~achild()" (indent indent))
+                    (separate-screen indent)
+                    (mapc
+                     #'(lambda (x)
+                         (explore (gethash key schedule) x :indent (+ indent 2)))
+                     (reverse (hash-table-keys (gethash key schedule)))))
+                   ((string= key "schedule")
+                    (format out "~aschedule=~a" (indent indent) (gethash key schedule)))
+                   ((or (string= key "sequence") (string= key "set"))
+                    (format out "~a~a()" (indent indent) key)
+                    (mapc
+                     #'(lambda (x)
+                         (mapc
+                          #'(lambda (k)
+                              (explore x k :indent (+ 2 indent)))
+                          (hash-table-keys x)))
+                     (gethash key schedule)))
+                   ((string= key "filter")
+                    (format out "~%~afilter(~%" (indent indent))
+                    (let ((domains (cl-ppcre:split
+                                    ";"
+                                    (cl-ppcre:regex-replace-all
+                                     "{|}"
+                                     (gethash key schedule)
+                                     ""))))
+                      (dolist (dom domains)
+                        (format out "~a~a~%" (indent (+ indent 2)) dom))
+                      (format out "~a)" (indent indent))))
+                   ((or (string= key "permutable") (string= key "coincident"))
+                    (format out "~%~a~a(~a)~%" (indent indent) key (gethash key schedule)))                 
+                   (t (warn "pprint: the key ~a is not implemented." key)))))
+        (mapc #'(lambda (x) (explore schedule x)) (reverse (hash-table-keys schedule)))))))
+
 (defmethod initialize-instance :after ((pg Polyhedral-Auto-Scheduler) &rest initargs &key &allow-other-keys)
   (declare (ignore initargs))
   (multiple-value-bind (domain read write schedule) (scop (polyhedral-group-base pg))
@@ -48,12 +109,12 @@ A Polyhedral form of the fused schedule group.
               (union-map-union WaR RaW)
               WaW)))
       (setf (pg-dependencies pg) dependencies)))
-  (print "++++++BEFORE++++++")
-  (print (schedule-get-root (pg-schedule pg)))
-  (print "+++++NEW+++++++")
+  (format t "~%++++++BEFORE++++++~%")
+  (format t "~a" (pprint-schedule (pg-schedule pg)))
+  (format t "~%+++++NEW+++++++~%")
   (let ((new (schedule pg)))
-    (print (debug/render-schedule new))
-    (print (schedule-get-root new))))
+    (format t "~a" (pprint-schedule new))
+    ))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
   (let ((outer-coincidence 0)
