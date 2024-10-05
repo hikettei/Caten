@@ -22,19 +22,20 @@ A Polyhedral form of the fused schedule group.
 
 (defclass Polyhedral-Auto-Scheduler (Polyhedral-Group)
   ((schedule :accessor pg-schedule)
+   (domain   :accessor pg-domain)
    (dependencies :accessor pg-dependencies))
   (:documentation "groups which is subject to jit"))
 
 (defmethod initialize-instance :after ((pg Polyhedral-Auto-Scheduler) &rest initargs &key &allow-other-keys)
   (declare (ignore initargs))
-  (multiple-value-bind (read write schedule) (scop (polyhedral-group-base pg))
-    (setf (pg-schedule pg) schedule)
+  (multiple-value-bind (domain read write schedule) (scop (polyhedral-group-base pg))
+    (setf (pg-schedule pg) schedule
+          (pg-domain pg) domain)
     (let* ((access (union-access-info-from-sink read))
            (access (union-access-info-set-must-source access write))
            (access (union-access-info-set-schedule access schedule))
            (flow (union-access-info-compute-flow access))
            (RaW (union-flow-get-must-dependence flow))
-
            (access (union-access-info-from-sink write))
            (access (union-access-info-set-must-source access write))
            (access (union-access-info-set-may-source access read))
@@ -46,7 +47,42 @@ A Polyhedral form of the fused schedule group.
              (union-map-union
               (union-map-union WaR RaW)
               WaW)))
-      (setf (pg-dependencies pg) dependencies))))
+      (setf (pg-dependencies pg) dependencies)))
+  (print "++++++BEFORE++++++")
+  (print (schedule-get-root (pg-schedule pg)))
+  (print "+++++NEW+++++++")
+  (let ((new (schedule pg)))
+    (print (debug/render-schedule new))
+    (print (schedule-get-root new))))
+
+(defmethod schedule ((pg Polyhedral-Auto-Scheduler))
+  (let ((outer-coincidence 0)
+        (maximize-coincidence 0)
+        (treat-coalescing 0)
+        (maximize-band-depth 0)
+        (schedule-whole-component 1))
+    (macrolet ((set-option (name level)
+	         `(progn
+		    (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
+				     :pointer (isl::context-handle isl::*context*)
+				     :int ,level
+				     :void))))
+      (flet ((configure ()
+               (set-option "schedule_outer_coincidence" outer-coincidence)
+               (set-option "schedule_maximize_coincidence" maximize-coincidence)
+               (set-option "schedule_treat_coalescing" treat-coalescing)
+               (set-option "schedule_maximize_band_depth" maximize-band-depth)
+               (set-option "schedule_whole_component" schedule-whole-component)))
+        (configure))))
+  (schedule-constraints-compute-schedule
+   (schedule-constraints-set-proximity
+    (schedule-constraints-set-validity
+     (schedule-constraints-set-coincidence
+      (schedule-constraints-on-domain (pg-domain pg))
+      (pg-dependencies pg))
+     (pg-dependencies pg))
+    (pg-dependencies pg))))
+
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/scop.cc#L47
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/schedule_isl_conversion.cc
 (defmethod render-domain-body-from-group ((group Group) &aux (idx2domain (make-hash-table)))
@@ -197,71 +233,69 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ```
 "
   (let ((render-nodes (graph-nodes (group-render-graph group)))
-        (deps (render-list (poly-dynamic-shape (group-polyhedron group))))
-        (idx2domain
-          (multiple-value-bind (dom dom-table) (render-domain-body-from-group group)
-            (declare (ignore dom))
-            dom-table)))
-    (labels ((explore-schedule-tree (from to
-                                     &key
-                                       (parent-loops)
-                                     &aux
-                                       (schedule :nothing)
-                                       (region (subseq render-nodes from to)))
-               (loop with count = from while (< count to)
-                     for node = (nth count render-nodes) do
-                       (ecase (node-type node)
-                         (:FUNCALL
-                          ;; -> Filter Node
-                          (let* ((inst-schedule
-                                   (schedule-from-domain
-                                    (union-set-from-str
-                                     (format nil "[~(~a~)] -> { ~a }" deps (render-domain-from-loops node parent-loops))))))
-                            (setf
-                             schedule
-                             (if (eql schedule :nothing)
-                                 inst-schedule
-                                 (schedule-sequence schedule inst-schedule)))
-                            (incf count)))
-                         (:FOR
-                          ;; -> Band Node
-                          (let* ((endfor
-                                   (find (getattr node :idx) (nthcdr from render-nodes)
-                                         :key #'(lambda (x) (and (eql (node-type x) :ENDFOR) (getattr x :idx)))
-                                         :test #'equalp))
-                                 (_ (when (null endfor) (error "scop: malformed rendering graph ~a" render-nodes)))
-                                 (endfor-abs-position
-                                   (position
-                                    (node-id endfor)
-                                    render-nodes
-                                    :key #'node-id)))
-                            (declare (ignore _))
-                            ;; for (...) {
-                            ;;  T0[]       }
-                            ;;  ...        } dom-schedule = schedule of this area
-                            ;; }
-                            (let ((dom-schedule
-                                    (explore-schedule-tree
-                                     (1+ count) endfor-abs-position
-                                     :parent-loops `(,@parent-loops ,node))))
+        (deps (render-list (poly-dynamic-shape (group-polyhedron group)))))
+    (multiple-value-bind (domain idx2domain) (render-domain-body-from-group group)
+      (labels ((explore-schedule-tree (from to
+                                       &key
+                                         (parent-loops)
+                                       &aux
+                                         (schedule :nothing)
+                                         (region (subseq render-nodes from to)))
+                 (loop with count = from while (< count to)
+                       for node = (nth count render-nodes) do
+                         (ecase (node-type node)
+                           (:FUNCALL
+                            ;; -> Filter Node
+                            (let* ((inst-schedule
+                                     (schedule-from-domain
+                                      (union-set-from-str
+                                       (format nil "[~(~a~)] -> { ~a }" deps (render-domain-from-loops node parent-loops))))))
                               (setf
                                schedule
                                (if (eql schedule :nothing)
-                                   dom-schedule
-                                   (schedule-sequence schedule dom-schedule)))
-                              (setf count endfor-abs-position)
-                              ;; Move next to endfor
-                              (incf count))))))
-               (when (eql schedule :nothing) (error "nothing was scheduled?"))
-               (let* ((partial-schedule
-                        (render-band-node-in-domain group region parent-loops idx2domain)))
-                 (setf schedule (schedule-insert-partial-schedule schedule partial-schedule)))
-               schedule))
+                                   inst-schedule
+                                   (schedule-sequence schedule inst-schedule)))
+                              (incf count)))
+                           (:FOR
+                            ;; -> Band Node
+                            (let* ((endfor
+                                     (find (getattr node :idx) (nthcdr from render-nodes)
+                                           :key #'(lambda (x) (and (eql (node-type x) :ENDFOR) (getattr x :idx)))
+                                           :test #'equalp))
+                                   (_ (when (null endfor) (error "scop: malformed rendering graph ~a" render-nodes)))
+                                   (endfor-abs-position
+                                     (position
+                                      (node-id endfor)
+                                      render-nodes
+                                      :key #'node-id)))
+                              (declare (ignore _))
+                              ;; for (...) {
+                              ;;  T0[]       }
+                              ;;  ...        } dom-schedule = schedule of this area
+                              ;; }
+                              (let ((dom-schedule
+                                      (explore-schedule-tree
+                                       (1+ count) endfor-abs-position
+                                       :parent-loops `(,@parent-loops ,node))))
+                                (setf
+                                 schedule
+                                 (if (eql schedule :nothing)
+                                     dom-schedule
+                                     (schedule-sequence schedule dom-schedule)))
+                                (setf count endfor-abs-position)
+                                ;; Move next to endfor
+                                (incf count))))))
+                 (when (eql schedule :nothing) (error "nothing was scheduled?"))
+                 (let* ((partial-schedule
+                          (render-band-node-in-domain group region parent-loops idx2domain)))
+                   (setf schedule (schedule-insert-partial-schedule schedule partial-schedule)))
+                 schedule))
 
-      (values
-       (render-access-rep #'node-reads #'relay-reads group idx2domain)
-       (render-access-rep #'node-writes #'relay-writes group idx2domain)
-       (explore-schedule-tree 0 (length render-nodes))))))
+        (values
+         (union-set-from-str domain)
+         (render-access-rep #'node-reads #'relay-reads group idx2domain)
+         (render-access-rep #'node-writes #'relay-writes group idx2domain)
+         (explore-schedule-tree 0 (length render-nodes)))))))
 ;; ~~ Creation/Conversion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod group->polyhedral-group ((group Group))
   (make-instance
