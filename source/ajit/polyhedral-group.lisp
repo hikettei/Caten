@@ -146,7 +146,8 @@ A Polyhedral form of the fused schedule group.
     (setf (pg-schedule pg) new)))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
-  (let ((outer-coincidence 0)
+  (let ((serialize-sccs 0)
+        (outer-coincidence 0)
         (maximize-coincidence 1)
         (treat-coalescing 1)
         (maximize-band-depth 1)
@@ -158,20 +159,18 @@ A Polyhedral form of the fused schedule group.
 				     :int ,level
 				     :void))))
       (flet ((configure ()
+               (set-option "schedule_serialize_sccs" serialize-sccs)
                (set-option "schedule_outer_coincidence" outer-coincidence)
                (set-option "schedule_maximize_coincidence" maximize-coincidence)
                (set-option "schedule_treat_coalescing" treat-coalescing)
                (set-option "schedule_maximize_band_depth" maximize-band-depth)
-               (set-option "schedule_whole_component" schedule-whole-component)
-               (set-option "schedule_nonneg_var_coefficient" 1)
-               ))
+               (set-option "schedule_whole_component" schedule-whole-component)))
         (configure))))
- 
-  ;; [todo] Retry until they fit in the single kernel.
+  ;; [TODO] Create Reconfigurable Polyhedral Compiler
   (schedule-constraints-compute-schedule
-   (schedule-constraints-set-proximity
-    (schedule-constraints-set-validity
-     (schedule-constraints-set-coincidence
+   (schedule-constraints-set-coincidence
+    (schedule-constraints-set-proximity
+     (schedule-constraints-set-validity
       (schedule-constraints-on-domain (pg-domain pg))
       (pg-dependencies pg))
      (pg-dependencies pg))
@@ -411,10 +410,11 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                  schedule))
         (values
          (union-set-from-str
+          (print
           (format
            nil
            "[~(~a~)] -> ~a"
-           (render-list (poly-dynamic-shape (group-polyhedron group))) domain))
+           (render-list (poly-dynamic-shape (group-polyhedron group))) domain)))
          (render-access-rep #'node-reads #'relay-reads group idx2domain)
          (render-access-rep #'node-writes #'relay-writes group idx2domain)
          (explore-schedule-tree 0 (length render-nodes)))))))
@@ -438,7 +438,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (polyhedral-group-base polyhedral-group))
 ;; ~~ Auto Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [Design] ここの最適化は，RenderGraphとPipelineを書き換える最適化にとどめる
-
+;; ConvND < 1 Kernels
+;; Embedding/Gemm, Tile, Loop Collapse, Vectorize
 (defmethod tile-bands ((polyhedral-group Polyhedral-Auto-Scheduler) config)
   "
 For example, consider the following loop:
@@ -484,7 +485,7 @@ for(int _gid0=0;(_gid0<=4);_gid0+=1) {
 ;; yml de parse site pprint (schedule)
 
 (defun debug/render-schedule (schedule)
-  (let* ((schedule (schedule-set-options schedule :separate))
+  (let* ((schedule (schedule-set-options schedule :atomic))
 	 (build (ast-build-from-context (set-from-str "{:}")))
 	 (ast   (ast-build-node-from-schedule build schedule))
 	 (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))

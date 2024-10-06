@@ -23,7 +23,7 @@
 	    (:ADD :+) (:MUL :*) (:IDIV "/")
 	    (:AND :and) (:OR :or) (:!= :!=) (:EQ :=)
 	    (:XOR :xor)
-	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
+	    (:% :%) (:equal :=) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
 (defmethod %render-expr ((lang ISL-Expr) (op (eql :MAX)) lhs rhs z)
