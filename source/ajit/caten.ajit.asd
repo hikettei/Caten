@@ -15,6 +15,7 @@
    (:file "scheduled-items")
    (:file "group")
    (:file "polyhedral-group")
+   (:file "polytops")
    (:file "scheduler")
    (:file "isl-objects")
    (:file "isl-ast-helpers")
