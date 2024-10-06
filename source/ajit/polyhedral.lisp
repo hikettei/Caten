@@ -88,7 +88,9 @@
 	 (bands (multiple-value-list (collect-bandnode polyhedral)))
 	 (bands (car bands))
 	 (ast-build (ast-build-from-context (set-from-str "{:}")))
-         (depth (schedule-node-get-tree-depth (schedule-get-root schedule)))
+         ;; Better way to determine the depth? schedule-node-get-tree-depth won't work?
+         ;; TILE_DIM + Maximum Rank
+         (depth (+ 5 (pipeline/upper-nrank (poly-pipeline polyhedral))))
 	 (ast-build (ast-build-set-iterators ast-build (apply #'make-id-list (map 'list #'gid (range 0 depth)))))
 	 (ast-build-node (ast-build-node-from-schedule ast-build schedule)))
     (values ast-build-node bands)))
