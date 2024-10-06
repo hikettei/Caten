@@ -172,7 +172,9 @@ A Polyhedral form of the fused schedule group.
       (schedule-constraints-on-domain (pg-domain pg))
       (pg-dependencies pg))
      (pg-dependencies pg))
-    (pg-dependencies pg))))
+    (pg-dependencies pg))
+   )
+  )
 
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/scop.cc#L47
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/schedule_isl_conversion.cc
@@ -436,8 +438,35 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ;; ~~ Auto Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [Design] ここの最適化は，RenderGraphとPipelineを書き換える最適化にとどめる
 (defclass Polyhedral-Configure ()
-  nil
+  
   )
+
+(defun make-polyhedral-configure (&key)
+
+  )
+
+(defmethod create-constraints ((config Polyhedral-Configure) deps)
+     (schedule-constraints-set-proximity
+    (schedule-constraints-set-validity
+     (schedule-constraints-set-coincidence
+      (schedule-constraints-on-domain (pg-domain pg))
+      (pg-dependencies pg))
+     (pg-dependencies pg))
+    (pg-dependencies pg))
+  )
+;; https://github.com/mindspore-ai/akg/blob/master/src/poly/polytops.h
+(defmethod polytops-schedule ((pg Polyhedral-Auto-Scheduler) (config Polyhedral-Configure))
+  "
+Implements Algorithm 1: PolyTOPS Scheduler
+Paper: https://arxiv.org/pdf/2401.06665
+"
+  ;; Inputs: Deps(PG), Statements(PG), Config
+  ;; Outputs, Schedule, Tiliability, Parallelism Info
+  (let ((constraints (create-constraints config (pg-dependencies pg)))
+        (dimension 0)
+        (band 0))
+    
+    ))
 
 (defmethod tile-bands ((polyhedral-group Polyhedral-Auto-Scheduler) config)
   "
