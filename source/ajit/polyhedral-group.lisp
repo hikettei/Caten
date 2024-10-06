@@ -162,8 +162,11 @@ A Polyhedral form of the fused schedule group.
                (set-option "schedule_maximize_coincidence" maximize-coincidence)
                (set-option "schedule_treat_coalescing" treat-coalescing)
                (set-option "schedule_maximize_band_depth" maximize-band-depth)
-               (set-option "schedule_whole_component" schedule-whole-component)))
+               (set-option "schedule_whole_component" schedule-whole-component)
+               (set-option "schedule_nonneg_var_coefficient" 1)
+               ))
         (configure))))
+ 
   ;; [todo] Retry until they fit in the single kernel.
   (schedule-constraints-compute-schedule
    (schedule-constraints-set-proximity
@@ -172,9 +175,7 @@ A Polyhedral form of the fused schedule group.
       (schedule-constraints-on-domain (pg-domain pg))
       (pg-dependencies pg))
      (pg-dependencies pg))
-    (pg-dependencies pg))
-   )
-  )
+    (pg-dependencies pg))))
 
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/scop.cc#L47
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/schedule_isl_conversion.cc
@@ -437,82 +438,6 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (polyhedral-group-base polyhedral-group))
 ;; ~~ Auto Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [Design] ここの最適化は，RenderGraphとPipelineを書き換える最適化にとどめる
-(defclass Polyhedral-Configure ()
-  nil
-  ;; Local Configurations
-  ;; 1) Cost Functions Control
-  ;;   2)  New Vars
-  ;;   3)  proximity , feautrier, contiguity fig (5), bigLoopFirst
-  ;; 2) Custrom Constraints
-  ;; 3) Fusion Control (not going to implement this)
-  ;; Global Configurations
-  ;; AutoVectorize, Tiling, etc
-  ;; [TODO] Generate Vectorize Loop (Later, Transformed into packed-funcall)
-  )
-
-(defstruct (ILP-Construction-Config
-            (:constructor ILP-Construction (cost-functions &key (scheduling-dimension -1))))
-  "
-ILP-Construction-Config
-cost-functions: 
-scheduling-dimension: -1 to default.
-"
-  (scheduling-dimension scheduling-dimension :type (integer -1 512))
-  (cost-functions cost-functions :type list))
-
-(defstruct
-
-(defun %make-polyhedral-configure (&key (local-variables nil))
-
-  )
-
-(define-polyconf clang (x)
-  (:scheduling-dimension
-   :cost-functions))
-  
- 
-    
-    
-(defmacro define-polyconf (name (&rest new-variables)
-                           &keys
-                           (ilp-scheduling-dimension :default)
-                           (ilp-cost-functions nil)
-                           (custom-constraints 
-  "Creates a configuration for polyhedral compiler"
-  (assert (every #'symbolp local-variables) () "local-variables must be a list of symbols! ~a" local-variables)
-  `(defun ,name ()
-     (%make-polyhedral-configure
-      :new-variables ',new-variables
-    
-
-(defmethod create-constraints ((config Polyhedral-Configure) deps)
-
-  
-     (schedule-constraints-set-proximity
-    (schedule-constraints-set-validity
-     (schedule-constraints-set-coincidence
-      (schedule-constraints-on-domain (pg-domain pg))
-      (pg-dependencies pg))
-     (pg-dependencies pg))
-    (pg-dependencies pg))
-  )
-;; https://github.com/mindspore-ai/akg/blob/master/src/poly/polytops.h
-(defmethod polytops-schedule ((pg Polyhedral-Auto-Scheduler) (config Polyhedral-Configure))
-  "
-Implements Algorithm 1: PolyTOPS Scheduler
-Paper: https://arxiv.org/pdf/2401.06665
-
-https://ieeexplore.ieee.org/document/9188233
-"
-  ;; Inputs: Deps(PG), Statements(PG), Config
-  ;; Outputs, Schedule, Tiliability, Parallelism Info
-  (let ((constraints (create-constraints config (pg-dependencies pg)))
-        (dimension 0)
-        (band 0))
-
-
-    ;; -> Proceed to Tiling
-    ))
 
 (defmethod tile-bands ((polyhedral-group Polyhedral-Auto-Scheduler) config)
   "

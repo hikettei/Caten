@@ -41,6 +41,25 @@ scheduling-dimension: -1 to default.
   (stmts stmts)
   (iterator iterator))
 
+(defstruct (Statement
+            (:constructor Statement (stmt var-type idx-var)))
+  "S[stmt]_[var_type]_[idx_var]
+T to sum (for stmt and idx_var)"
+  (stmt stmt :type (or (member t) (unsigned-byte 32)))
+  (var-type var-type :type (member :it :par :cst))
+  (idx-var idx-var :type (or (member t) (unsigned-byte 32))))
+
+(defmethod statement-union-set ((s statement) constraint)
+  (assert constraint () "Constraint is a function")
+  (loop for stmt in (if (eql (statement-stmt s) t)
+                        (range 0 10)
+                        (list (statement-stmt s)))
+        append
+        (loop for idx-var in (if (eql (statement-idx-var s) t)
+                                 (range 0 10)
+                                 (list (statement-idx-var s)))
+              collect 0)))
+              
 (defun make-polyhedral-configure (&key
                                     (new-variables)
                                     (ilp-constructions)
@@ -52,17 +71,21 @@ scheduling-dimension: -1 to default.
                  :custom-constraints custom-constraints
                  :directives directives))
 
-(defmethod create-constraints ((config Polyhedral-Configure) deps)
+(defmethod create-constraints ((config Polyhedral-Configure) (pg Polyhedral-Auto-Scheduler))
+  (let ((sc (schedule-constraints-on-domain (pg-domain pg))))
+    (setf sc (schedule-constraints-set-coincidence sc (pg-dependencies pg)))
+    (setf sc (schedule-constraints-set-validity sc (pg-dependencies pg)))
+    (setf sc (schedule-constraints-set-proximity sc (pg-dependencies pg)))
+    sc))
 
-  
-     (schedule-constraints-set-proximity
-    (schedule-constraints-set-validity
-     (schedule-constraints-set-coincidence
-      (schedule-constraints-on-domain (pg-domain pg))
-      (pg-dependencies pg))
-     (pg-dependencies pg))
-    (pg-dependencies pg))
-  )
+(defmethod constraints-on-dimension ((sc Schedule-Constraints) (config Polyhedral-Configure) (dimension fixnum))
+  (dolist (constraint (pc-custom-constraints config))
+    (with-slots ((sd scheduling-dimension) (formula constraints)) constraint
+      (when (or (= -1 sd) (= dimension sd))
+        ;; i to sum
+        
+        )))
+  sc)
 ;; https://github.com/mindspore-ai/akg/blob/master/src/poly/polytops.h
 (defmethod polytops-schedule ((pg Polyhedral-Auto-Scheduler) (config Polyhedral-Configure))
   "
@@ -76,7 +99,13 @@ https://ieeexplore.ieee.org/document/9188233
   (let ((constraints (create-constraints config (pg-dependencies pg)))
         (dimension 0)
         (band 0))
+    ;; Loop Distribution is not implemented.
+    ;; config.Distribute(dimension) is not implemented.
+    ;; The termination criteria of the algorithm are to check if the iteration space is completely covered and if all the dependencies are fulfilled (line 42).
+    (flet ((satisfied-p ()
+             t))
+      ;; pc -> tiling
+      (loop until (satisfied-p) do
+        (let ((constraints (constraints-on-dimension constraints config dimension)))
 
-
-    ;; -> Proceed to Tiling
-    ))
+          )))))
