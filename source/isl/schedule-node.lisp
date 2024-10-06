@@ -100,3 +100,6 @@
   (:give schedule-node)
   (:take schedule-node)
   (:take union-set-list))
+
+(defun schedule-node-get-tree-depth (schedule-node)
+  (%isl-schedule-node-get-tree-depth (schedule-node-handle schedule-node)))

@@ -8432,7 +8432,7 @@
   (fn :pointer)
   (user :pointer))
 
-(cffi:defcfun ("schedule_node_get_tree_depth" #.(swig-lispify "isl_schedule_node_get_tree_depth" 'function)) :int
+(cffi:defcfun ("isl_schedule_node_get_tree_depth" #.(swig-lispify "isl_schedule_node_get_tree_depth" 'function)) :int
   (node :pointer))
 
 (cffi:defcfun ("isl_schedule_node_has_parent" #.(swig-lispify "isl_schedule_node_has_parent" 'function)) #.(swig-lispify "isl_bool" 'enumname)

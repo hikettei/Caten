@@ -352,6 +352,7 @@
    #:schedule-node-get-child
    #:schedule-insert-sequence
    #:schedule-node-get-domain
+   #:schedule-node-get-tree-depth
    #:schedule-node-insert-filter
    ))
 
