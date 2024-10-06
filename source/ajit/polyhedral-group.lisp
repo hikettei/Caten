@@ -181,8 +181,9 @@ A Polyhedral form of the fused schedule group.
    (with-output-to-string (out)
      (format out "{~%")
      (loop with domains = nil
+           with conditions = nil
            for node in (graph-nodes (group-render-graph group)) do
-             (case (node-type node)
+             (ecase (node-type node)
                (:FOR
                 (let ((by (getattr node :by)))
                   (assert (and (eql (expr-op by) :Const) (eql 1 (expr-x by)))
@@ -205,16 +206,21 @@ A Polyhedral form of the fused schedule group.
                                isl
                                (reduce
                                 #'(lambda (x y) (make-expr :AND x y))
-                                (nconc
+                                (append
                                  (loop for dom in domains
                                        collect (make-expr :>= (make-const (getattr dom :idx) nil) (getattr dom :upfrom))
                                        collect (getattr dom :below))
                                  (loop for ds in (poly-dynamic-shape (group-polyhedron group))
-                                       collect (make-expr :>= (make-const ds nil) (make-const 1 nil)))))))
+                                       collect (make-expr :>= (make-const ds nil) (make-const 1 nil)))
+                                 conditions))))
                       (format out "  T~a[];~%" (getattr node :idx)))))
-               (otherwise
-                ;; :IF :ELSE :ENDIF
-                (error "Group is not a scop. (Set :separate)"))))
+               (:IF
+                (push (getattr node :condition) conditions))
+               (:ELSE
+                (error "ELSE IS NOT IMPLEMENTED"))
+               (:ENDIF
+                (assert conditions () ":ENDIF without :IF")
+                (pop conditions))))
      (format out "}"))
    idx2domain))
 
@@ -239,6 +245,7 @@ A Polyhedral form of the fused schedule group.
                       collect (getattr dom :below)))))
       (format nil "  T~a[];~%" (getattr node :idx))))
 ;; iranai kamo?
+;; atomicにしたのでいらない
 (defmethod remove-duplicated-task ((group group))
   ""
   (let* ((pipeline-old (poly-pipeline (group-polyhedron group)))
@@ -389,7 +396,31 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                                      (schedule-sequence schedule dom-schedule)))
                                 (setf count endfor-abs-position)
                                 ;; Move next to endfor
-                                (incf count))))))
+                                (incf count))))
+                           (:IF
+                            ;; -> Conditioned body
+                            (let* ((endif (loop with if-count = 0 ;; Finding corresponding :ENDIF (pay attention for nested IF)
+                                                named search-for-id
+                                                for node in (nthcdr count render-nodes)
+                                                if (eql (node-type node) :IF) do (incf if-count)
+                                                else if (eql (node-type node) :ENDIF) do (decf if-count)
+                                                if (= if-count 0) do (return-from search-for-id node)))
+                                   (_ (when (null endif) (error "scop: malformed rendering graph when making a pair of :IF and :ENDIF:~%~a" render-nodes)))
+                                   (endif-pos-abs (position (node-id endif) render-nodes :key #'node-id)))
+                              (declare (ignore _))
+                              (assert (>= endif-pos-abs count))
+                              ;; Condition belongs to the domain, let skip it
+                              (let ((if-schedule
+                                      (explore-schedule-tree
+                                       (1+ count) endif-pos-abs
+                                       :parent-loops parent-loops)))
+                                (setf
+                                 schedule
+                                 (if (eql schedule :nothing)
+                                     if-schedule
+                                     (schedule-sequence schedule if-schedule))))
+                              (setf count endif-pos-abs)
+                              (incf count)))))
                  (when (eql schedule :nothing) (error "nothing was scheduled?"))
                  (let* ((partial-schedule
                           ;; (last parent-loops) or just parent-loops?
@@ -411,6 +442,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (make-instance
    (if (or
         (group-realize-on-vm group)
+        ;; Elseがあるとw/ warningでScheduleしない
         (null (find :FOR (graph-nodes (group-render-graph group)) :key #'node-type)))
        'Polyhedral-Group
        'Polyhedral-Auto-Scheduler)

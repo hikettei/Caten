@@ -26,5 +26,17 @@
 	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
+(defmethod %render-expr ((lang ISL-Expr) (op (eql :MAX)) lhs rhs z)
+  (assert (and lhs rhs))
+  (if z
+      (format nil "max(~a, max(~a, ~a))" (render-expr lang lhs) (render-expr lang rhs) (render-expr lang z))
+      (format nil "max(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs))))
+
+(defmethod %render-expr ((lang ISL-Expr) (op (eql :MIN)) lhs rhs z)
+  (assert (and lhs rhs))
+  (if z
+      (format nil "min(~a, min(~a, ~a))" (render-expr lang lhs) (render-expr lang rhs) (render-expr lang z))
+      (format nil "min(~a, ~a)" (render-expr lang lhs) (render-expr lang rhs))))
+
 (defmethod %render-expr ((lang ISL-Expr) (op (eql :Const)) lhs rhs z)
   (format nil "~(~a~)" lhs))

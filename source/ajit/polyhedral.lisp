@@ -2,7 +2,7 @@
 
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs dynamic-shape &key (ast-option :separate))))
+	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs dynamic-shape &key (ast-option :atomic))))
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)
