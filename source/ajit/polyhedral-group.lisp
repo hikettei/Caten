@@ -244,28 +244,6 @@ A Polyhedral form of the fused schedule group.
                       collect (make-expr :>= (make-const (getattr dom :idx) nil) (getattr dom :upfrom))
                       collect (getattr dom :below)))))
       (format nil "  T~a[];~%" (getattr node :idx))))
-;; iranai kamo?
-;; atomicにしたのでいらない
-(defmethod remove-duplicated-task ((group group))
-  ""
-  (let* ((pipeline-old (poly-pipeline (group-polyhedron group)))
-         (pipeline-new (make-hash-table))
-         (offset (length (hash-table-keys pipeline-old)))
-         (seen nil))
-    (loop for node in (graph-nodes (group-render-graph group)) do
-      (case (node-type node)
-        (:FUNCALL
-         (if (find (getattr node :idx) seen)
-             (let ((copied-graph (copy-graph (gethash (getattr node :idx) pipeline-old)))
-                   (idx-new (+ offset (getattr node :idx) (length seen))))
-               ;; DeepCopyできてない気がする，副作用あったらすまん
-               (setf (graph-nodes copied-graph) (map 'list #'copy-node (graph-nodes copied-graph))
-                     (getattr node :idx) idx-new
-                     (gethash idx-new pipeline-new) copied-graph))
-             (progn
-               (push (getattr node :idx) seen)
-               (setf (gethash (getattr node :idx) pipeline-new) (gethash (getattr node :idx) pipeline-old)))))))
-    pipeline-new))
 
 (defmethod render-band-node-in-domain ((group group) area related-domains idx2domain)
   "Creates a band node(mupa):
@@ -439,10 +417,13 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
          (explore-schedule-tree 0 (length render-nodes)))))))
 ;; ~~ Creation/Conversion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod group->polyhedral-group ((group Group))
+  (unless (group-realize-on-vm group)
+    (assert (null (find :ELSE (graph-nodes (group-render-graph group)) :key #'node-type))
+            ()
+            "ELSE is not allowed in the Polyhedral Model."))
   (make-instance
    (if (or
         (group-realize-on-vm group)
-        ;; Elseがあるとw/ warningでScheduleしない
         (null (find :FOR (graph-nodes (group-render-graph group)) :key #'node-type)))
        'Polyhedral-Group
        'Polyhedral-Auto-Scheduler)
