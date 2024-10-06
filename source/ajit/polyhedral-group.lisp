@@ -164,6 +164,7 @@ A Polyhedral form of the fused schedule group.
                (set-option "schedule_maximize_band_depth" maximize-band-depth)
                (set-option "schedule_whole_component" schedule-whole-component)))
         (configure))))
+  ;; [todo] Retry until they fit in the single kernel.
   (schedule-constraints-compute-schedule
    (schedule-constraints-set-proximity
     (schedule-constraints-set-validity
@@ -204,9 +205,12 @@ A Polyhedral form of the fused schedule group.
                                isl
                                (reduce
                                 #'(lambda (x y) (make-expr :AND x y))
-                                (loop for dom in domains
-                                      collect (make-expr :>= (make-const (getattr dom :idx) nil) (getattr dom :upfrom))
-                                      collect (getattr dom :below)))))
+                                (nconc
+                                 (loop for dom in domains
+                                       collect (make-expr :>= (make-const (getattr dom :idx) nil) (getattr dom :upfrom))
+                                       collect (getattr dom :below))
+                                 (loop for ds in (poly-dynamic-shape (group-polyhedron group))
+                                       collect (make-expr :>= (make-const ds nil) (make-const 1 nil)))))))
                       (format out "  T~a[];~%" (getattr node :idx)))))
                (otherwise
                 ;; :IF :ELSE :ENDIF
@@ -394,7 +398,11 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                      (setf schedule (schedule-insert-partial-schedule schedule (multi-union-pw-aff-from-str partial-schedule)))))
                  schedule))
         (values
-         (union-set-from-str domain)
+         (union-set-from-str
+          (format
+           nil
+           "[~(~a~)] -> ~a"
+           (render-list (poly-dynamic-shape (group-polyhedron group))) domain))
          (render-access-rep #'node-reads #'relay-reads group idx2domain)
          (render-access-rep #'node-writes #'relay-writes group idx2domain)
          (explore-schedule-tree 0 (length render-nodes)))))))
@@ -441,7 +449,7 @@ for(int _gid0=0;(_gid0<=4);_gid0+=1) {
 ;; yml de parse site pprint (schedule)
 
 (defun debug/render-schedule (schedule)
-  (let* ((schedule (schedule-set-options schedule :atomic))
+  (let* ((schedule (schedule-set-options schedule :separate))
 	 (build (ast-build-from-context (set-from-str "{:}")))
 	 (ast   (ast-build-node-from-schedule build schedule))
 	 (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
