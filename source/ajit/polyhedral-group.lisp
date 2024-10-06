@@ -215,7 +215,9 @@ A Polyhedral form of the fused schedule group.
                                  (loop for ds in (poly-dynamic-shape (group-polyhedron group))
                                        collect (make-expr :>= (make-const ds nil) (make-const 1 nil)))
                                  conditions))))
-                      (format out "  T~a[];~%" (getattr node :idx)))))
+                      (if conditions
+                          (format out "  T~a[] : ~a~%" (getattr node :idx) (render-expr isl (reduce #'(lambda (x y) (make-expr :AND x y)) conditions)))
+                          (format out "  T~a[];~%" (getattr node :idx))))))
                (:IF
                 (push (getattr node :condition) conditions))
                (:ELSE
@@ -410,11 +412,10 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                  schedule))
         (values
          (union-set-from-str
-          (print
           (format
            nil
            "[~(~a~)] -> ~a"
-           (render-list (poly-dynamic-shape (group-polyhedron group))) domain)))
+           (render-list (poly-dynamic-shape (group-polyhedron group))) domain))
          (render-access-rep #'node-reads #'relay-reads group idx2domain)
          (render-access-rep #'node-writes #'relay-writes group idx2domain)
          (explore-schedule-tree 0 (length render-nodes)))))))
@@ -433,13 +434,22 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
    :base group))
 
 (defmethod polyhedral-group->group ((polyhedral-group Polyhedral-Group))
-  ;; TODO: ElementWise, 1Dなどは無視する
-  ;; Matmul, ConvND などに対してTilingができれば十分
+  ;; [TODO] Ignores for ElementWise Kernels e.g.
+  ;; the goal is to apply the heavy and hardware-specific optimization
+  ;; like complicated kernels, (gemm, convnd)
+  ;; these parameters are reconfigurable by providing the Polyhedral-Config
   (polyhedral-group-base polyhedral-group))
 ;; ~~ Auto Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [Design] ここの最適化は，RenderGraphとPipelineを書き換える最適化にとどめる
-;; ConvND < 1 Kernels
+(defclass Polyhedral-Config ()
+  nil
+  (:documentation ""))
+;; [Design] Only effects on Render-Graph and Pipelining
+;; ConvND < 1 Kernels (Let's forget about that for now...)
 ;; Embedding/Gemm, Tile, Loop Collapse, Vectorize
+(defmethod auto-collapse ((pg Polyhedral-Auto-Scheduler))
+  
+  )
+
 (defmethod tile-bands ((polyhedral-group Polyhedral-Auto-Scheduler) config)
   "
 For example, consider the following loop:
@@ -454,7 +464,7 @@ for (int ii=0; ii<M; ii+=ITILE)
   for (int ji=0; jj<N; jj+=JTILE)
     for (int ii=0; ii<min(M, ii+ITILE); ii++)
       for (int jj=0; jj<min(N, jj+JTILE); jj++)
-        T0[i+ii, j+jj
+        T0[i+ii, j+jj];
 ```
 "
   
@@ -463,8 +473,6 @@ for (int ii=0; ii<M; ii+=ITILE)
 (defmethod unroll-bands ((polyhedral-group Polyhedral-Auto-Scheduler) unroll-factors)
   
   )
-
-;; TODO: Support :separate
 
 #|
 for(int _gid0=0;(_gid0<=4);_gid0+=1) {
