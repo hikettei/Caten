@@ -228,13 +228,6 @@ A Polyhedral form of the fused schedule group.
      (format out "}"))
    idx2domain))
 
-(defmethod render-domain-from-group ((group Group))
-  (multiple-value-bind (dom dom-table) (render-domain-body-from-group group)
-    (values
-     (union-set-from-str
-      (format nil "[~(~a~)] -> ~a" (render-list (poly-dynamic-shape (group-polyhedron group))) dom))
-     dom-table)))
-
 (defun render-domain-from-loops (node domains &aux (isl (default-device :isl-expr)))
   (if domains
       (format nil "  T~a[~(~a~)] : ~(~a~);~%"
@@ -325,8 +318,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
         ...
 ```
 "
-  (let ((render-nodes (graph-nodes (group-render-graph group)))
-        (deps (render-list (poly-dynamic-shape (group-polyhedron group)))))
+  (let* ((deps (render-list (poly-dynamic-shape (group-polyhedron group))))
+         (render-nodes (graph-nodes (group-render-graph group))))
     (multiple-value-bind (domain idx2domain) (render-domain-body-from-group group)
       (labels ((explore-schedule-tree (from to
                                        &key
@@ -447,7 +440,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ;; ConvND < 1 Kernels (Let's forget about that for now...)
 ;; Embedding/Gemm, Tile, Loop Collapse, Vectorize
 (defmethod auto-collapse ((pg Polyhedral-Auto-Scheduler))
-  
+  ;; isl_schedule_node_band_scale_down?
   )
 
 (defmethod tile-bands ((polyhedral-group Polyhedral-Auto-Scheduler) config)
@@ -468,6 +461,9 @@ for (int ii=0; ii<M; ii+=ITILE)
 ```
 "
   
+  )
+
+(defmethod loop-permute ((pg Polyhedral-Auto-Scheduler) config)
   )
 
 (defmethod unroll-bands ((polyhedral-group Polyhedral-Auto-Scheduler) unroll-factors)
