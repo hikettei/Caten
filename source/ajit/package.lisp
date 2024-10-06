@@ -78,11 +78,6 @@
    #:argument-type
    #:argument-io
    #:argument-metadata)
-  ;; from polytops.lisp
-  (:export
-   #:ILP-Construction
-   #:Custom-Constraint
-   #:Directive)
   )
 
 (in-package :caten/ajit)
