@@ -318,7 +318,7 @@ Corresponds to the position of the subgraph in the parent schedule.
                                (render-isl-aref typ :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute nil))))))
       idx2domain)
      (format out "}"))))
-1
+
 (defmethod scop ((group group))
   "Formulates the Polyhedral Model from scop/
 Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_polyhedral_front-end_for_MLIR
@@ -411,21 +411,43 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (make-instance
    (if (or
         (group-realize-on-vm group)
-        (= 1 (length (graph-nodes (group-render-graph group)))))
+        (null (find :FOR (graph-nodes (group-render-graph group)) :key #'node-type)))
        'Polyhedral-Group
        'Polyhedral-Auto-Scheduler)
    :base group))
 
 (defmethod polyhedral-group->group ((polyhedral-group Polyhedral-Group))
+  ;; TODO: ElementWise, 1Dなどは無視する
+  ;; Matmul, ConvND などに対してTilingができれば十分
   (polyhedral-group-base polyhedral-group))
 ;; ~~ Auto Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [Design] ここの最適化は，RenderGraphとPipelineを書き換える最適化にとどめる
-(defmethod tile-bands ((polyhedral-group Polyhedral-Auto-Scheduler) tile-sizes)
+(defclass Polyhedral-Configure ()
+  nil
+  )
+
+(defmethod tile-bands ((polyhedral-group Polyhedral-Auto-Scheduler) config)
+  "
+For example, consider the following loop:
+```
+for (int i=0; i<M; i++)
+  for (int j=0; j<N; j++)
+    T0[i, j]
+```
+=> After tile-bands
+```
+for (int ii=0; ii<M; ii+=ITILE)
+  for (int ji=0; jj<N; jj+=JTILE)
+    for (int ii=0; ii<min(M, ii+ITILE); ii++)
+      for (int jj=0; jj<min(N, jj+JTILE); jj++)
+        T0[i+ii, j+jj
+```
+"
   
   )
 
 (defmethod unroll-bands ((polyhedral-group Polyhedral-Auto-Scheduler) unroll-factors)
-
+  
   )
 
 ;; TODO: Support :separate
