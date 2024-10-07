@@ -244,6 +244,8 @@ Options:
   the same strongly connected component at the point where the band node is constructed."
   (declare (type Polyhedral polyhedral)
 	   (type boolean verbose serialize))
+  ;; [Refactor] SERIALIZE=1 in default. 
+  (setf serialize t)
   (macrolet ((debug-print (step-name)
                `(progn
                   (when verbose-all (format t "~%[~a]~%~a~%" ,step-name (print-polyhedral polyhedral nil)))
@@ -356,7 +358,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     ;; Subsequent optimizations do not assume the `graph` is DAG.
 	     ;; Graph-Level optimization should be performed just before it.
 	     (mp (make-instance 'MemoryPlanner :avm avm :groups groups :debug debug :device backend))
-	     (3_ (memory-plan mp))
+	     (2_ (memory-plan mp))
 	     (kernels (retrive-kernels mp))
 	     (blueprints/codes
 	       (loop for group in groups
@@ -365,7 +367,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		     collect
 		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
-	(declare (ignore 1_ 3_))
+	(declare (ignore 1_ 2_))
 	(when (>= (ctx:getenv :JIT_DEBUG) 2)
 	  (format t "Final JIT Schedule:~%")
 	  (loop for nth upfrom 0

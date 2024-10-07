@@ -140,6 +140,7 @@ A Polyhedral form of the fused schedule group.
       (setf (pg-dependencies pg) dependencies)))
   (format t "Before~%")
   (format t "~%~a~%" (build pg))
+  (print (schedule-get-root (pg-schedule pg)))
   ;; (let ((new (schedule pg)))
   ;;  (format t "After~%")
   ;;  (setf (pg-schedule pg) new)
@@ -285,21 +286,22 @@ Corresponds to the position of the subgraph in the parent schedule.
                (format out " } "))
       (format out "~%]"))))
 
-(defun render-access-rep (reader type-reader group idx2domain)
+(defun render-access-rep (reader type-reader group idx2domain kr)
   (union-map-from-str
    (with-output-to-string (out)
      (format out "[~(~a~)] -> {~%" (render-list (poly-dynamic-shape (group-polyhedron group))))
      (maphash
       #'(lambda (idx dom)
-          (let ((graph-in-funcall (gethash idx (poly-pipeline (group-polyhedron group)))))
-            (assert graph-in-funcall)
-            (dolist (node (graph-nodes graph-in-funcall))
-              (loop for var in (funcall reader node)
-                    for typ in (funcall type-reader (read-type-relay node))
-                    do (format out "  ~a -> ~(~a~)[~(~a~)];~%"
-                               dom
-                               var
-                               (render-isl-aref typ :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute nil))))))
+          (when (find idx kr :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx))))
+            (let ((graph-in-funcall (gethash idx (poly-pipeline (group-polyhedron group)))))
+              (assert graph-in-funcall)
+              (dolist (node (graph-nodes graph-in-funcall))
+                (loop for var in (funcall reader node)
+                      for typ in (funcall type-reader (read-type-relay node))
+                      do (format out "  ~a -> ~(~a~)[~(~a~)];~%"
+                                 dom
+                                 var
+                                 (render-isl-aref typ :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute nil)))))))
       idx2domain)
      (format out "}"))))
 
@@ -411,8 +413,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
            nil
            "[~(~a~)] -> ~a"
            (render-list (poly-dynamic-shape (group-polyhedron group))) domain))
-         (render-access-rep #'node-reads #'relay-reads group idx2domain)
-         (render-access-rep #'node-writes #'relay-writes group idx2domain)
+         (render-access-rep #'node-reads #'relay-reads group idx2domain (kernel-renderer-nodes kr))
+         (render-access-rep #'node-writes #'relay-writes group idx2domain (kernel-renderer-nodes kr))
          (explore-schedule-tree 0 (length render-nodes)))))))
 ;; ~~ Creation/Conversion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod group->polyhedral-group ((group Group) (kr kernel-renderer))
@@ -450,6 +452,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ;;   - Apply Loop Collapse/Tile to the final kernel
 ;; - そうすれば ConvND < 1 Kernelsができるはず
 ;; - Assume ^がPrepreq, Embedding/Gemm, Tile, Loop Collapse, Vectorize
+
+;; Deleting it?
 ;; [TODO] Not well tested...
 ;; Polyhedral GroupでFusionできると便利そう
 (defmethod loop-collapse ((pg Polyhedral-Auto-Scheduler) task transformation)
@@ -500,6 +504,27 @@ Transformation: e.g.: [] -> { T0[i, j] -> T0[10 * i + j] }
           ;; [TODO] Optimization for dynamic shape (using exist notation?)
           (setf (pg-schedule pg) (schedule-node-get-schedule new-band)))))))
 
+(defmethod loop-fusion ((src Polyhedral-Auto-Scheduler) (dst Polyhedral-Auto-Scheduler))
+  
+  )
+
+(defun affine-fusion (polyhedral-groups)
+  (declare (type list polyhedral-groups))
+  (assert (every #'(lambda (x) (typep x 'Polyhedral-Auto-Scheduler)) polyhedral-groups))
+  ;; TODO: Serialiaze=1 in defaulkt
+  ;; [REFACTOR] : Delete ./Polyhedral (First Scheduling is not necessary!)
+  ;; Embedding x 2を一回のScheduleでFuseできたら最高
+  ;; Goal:
+  ;;  - ConvND (Einsum的なNotationga必要, Contignuousが多すぎる ...)
+  ;;  - Failing Case at the issue (Embedding+Embedding+FeedForward)
+  ;;  - Embedding
+  ;;  - Softmax
+  (when (>= (length polyhedral-groups) 2)
+    (print (loop-fusion (car polyhedral-groups) (second polyhedral-groups)))
+    )
+  (print polyhedral-groups)
+  )
+
 (defmethod loop-interchange ((pg Polyhedral-Auto-Scheduler) axis)
   
   )
@@ -532,7 +557,7 @@ for (int ii=0; ii<M; ii+=ITILE)
   )
 
 (defmethod build ((pg Polyhedral-Auto-Scheduler))
-  (let* ((schedule (schedule-set-options (pg-schedule pg) :atomic))
+  (let* ((schedule (schedule-set-options (copy (pg-schedule pg)) :atomic))
          (build (ast-build-from-context (set-from-str "{:}")))
          (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
          (ast   (ast-build-node-from-schedule build schedule))

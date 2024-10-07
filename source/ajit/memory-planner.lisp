@@ -505,8 +505,9 @@ Lifespan:
     (dolist (p polyhedrons)
       ;; Final Chance to apply Loop Fusion
       ;; Kernrels with complicated memory access relations, like Matmul+Transpose, Conv are first fused here
-      (when p
-        (print p)))
+      ;; Polyhedral Group is a result of splitting a group -> multiple group?
+      (when (and p (every #'(lambda (x) (typep x 'Polyhedral-Auto-Scheduler)) p))
+        (affine-fusion p)))
     
     ;; Tiling, Vectorizing, Parallelizing(CPU/GPU), Loop Fission here
     ;; [TODO] Apply the changes to mp-kernerls, mp-groups
