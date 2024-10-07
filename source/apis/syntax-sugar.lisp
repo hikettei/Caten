@@ -10,18 +10,20 @@
    (inputs :initarg :inputs :accessor tc-inputs)
    (outputs :initarg :outputs :accessor tc-outputs)
    (where :initarg :where :accessor tc-where)))
-
+;; Infinite-Rank is not working not.
 (defmethod lower-into-lisp ((op TC))
   (with-slots ((expr expr) (inputs inputs) (outputs outputs) (iterators iterators)) op
     (let* ((infinite (find "~" iterators :key (compose #'symbol-name #'car) :test #'equalp))
-           (infinite-idx `(,@(map 'list #'gensym infinite) ,@infinite))
+           (infinite-idx
+             (loop for i in (cdr infinite)
+                   collect (cons (gensym) i)))
            (iterators (append infinite-idx (loop for idx in iterators
                                                  unless (equalp (symbol-name (car idx)) "~")
                                                    collect idx))))
       `(lambda (,@inputs)
          (with-st-bind (,(tc-where op) (map 'list #'make-tensor (map 'list #'buffer-shape (list ,@inputs))))
            ,(labels ((explore (dim)
-                       (if (= dim 0)
+                       (if (= dim -1)
                            `(setf
                              ,(read-from-string (caten/ajit:render-expr (caten/ajit:default-device :lisp) (caten/ajit:expr-x expr)))
                              ,(read-from-string (caten/ajit:render-expr (caten/ajit:default-device :lisp) expr)))
@@ -38,13 +40,12 @@
     (assert (typep iterator 'cons) () "TC: Each iterator should be a cons cell.")
     (assert (symbolp (car iterator)) () "TC: The key of the iterator should be a symbol.")
     (flet ((shape-p (x) (or (numberp x) (symbolp x) (tensor-p x))))
-      (if (eql (car iterator) :~)
-          (assert (every #'shape-p (cdr iterator)) () "TC: The shape should be a number, a symbol, or a tensor.")
-          (assert (shape-p (cdr iterator)) () "TC: The shape should be a number, a symbol, or a tensor."))))
+      (if (equalp (symbol-name (car iterator)) "~")
+          (assert (every #'shape-p (cdr iterator)) () "TC: The shape should be a number, a symbol, or a tensor. ~a" iterator)
+          (assert (shape-p (cdr iterator)) () "TC: The shape should be a number, a symbol, or a tensor. ~a" iterator))))
   (apply #'%solve-st nil (tc-st op) nil nil inputs))
 (defmethod backward ((op TC) &optional prev-grad))
 (defmethod lower ((op TC) &rest inputs &aux (body (lower-into-lisp op)))
-  (print body)
   (with-context
       (_ (emit (make-node
                 :EINOPS :TC (list (gensym)) (map 'list #'node->id inputs)
