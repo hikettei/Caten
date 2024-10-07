@@ -72,7 +72,12 @@ When creating a MultiExpr, it is only fused if the node-type is op/expr!"
     :RECIP :SQRT :NOT
     :INDEX-COMPONENTS
     
-    :LOAD :MOVE :STORE))
+    :LOAD :MOVE :STORE
+
+    ;; MetaOps for EinOps (simplified by the compiler, eliminated in the rendering step)
+    :TAKE ;; (:TAKE SYMBOL_TO_BUFFER INDEX[EXPR]) or (:TAKE SYMBOL_TO_BUFFER CONS)
+    :CONS ;; (:CONS X Y)
+    ))
 
 (defgeneric %render-expr (lang op lhs rhs z)
   (:documentation "

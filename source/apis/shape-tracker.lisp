@@ -138,7 +138,7 @@
 		  else
 		    collect tns))))))
 			 
-  (defun %solve-st (st lazy-solve allow-broadcast &rest tensors &aux (tensors (flatten tensors)))
+  (defun %solve-st (use-table-p st lazy-solve allow-broadcast &rest tensors &aux (tensors (flatten tensors)))
     "lazy-solve = (symbol . value)"
     (declare (type ShapeTracker st)
 	     (type list tensors)
@@ -214,8 +214,10 @@
 		   (if allow-broadcast
 		       base
 		       (make-tensor shp :dtype (tensor-dtype base) :order (tensor-order base) :id (gensym "STC") :views (tensor-views base)
-				    :initial-element (gethash :initial-element solved))))))
-	(apply #'values (map 'list #'make-new-tensor (st-aft st))))))
+				        :initial-element (gethash :initial-element solved))))))
+        (if use-table-p
+            solved
+	    (apply #'values (map 'list #'make-new-tensor (st-aft st)))))))
   (defun parse-where (where)
     "Verifies the where form"
     (assert (every #'consp where) () "~a: Each element of where must be cons." where)
@@ -251,7 +253,7 @@ TODO: Add LazyAssertion which applies shape check even for symbols
 "
   (declare (type string st-notation))
   (let ((st (%st->list (%parse-st st-notation))))
-    `(%solve-st ,st ,(parse-where where) nil ,@input-tensors)))
+    `(%solve-st nil ,st ,(parse-where where) nil ,@input-tensors)))
 
 (defmacro bc (st-notation (&rest input-tensors) &rest where)
   "## [macro] bc
@@ -259,6 +261,18 @@ Perform the same operation as `st`, but also doing broadcasting.
 It calls !reshape and !view inside, therefore, it must not be used inside the forward method."
   (declare (type string st-notation))
   (let ((st (%st->list (%parse-st st-notation))))
-    `(%solve-st ,st ,(parse-where where) t ,@input-tensors)))
+    `(%solve-st nil ,st ,(parse-where where) t ,@input-tensors)))
+
+(defmacro with-st-bind ((where &rest tensors) &body body)
+  (let* ((st (%parse-st where))
+         (symbols
+           (remove-duplicates
+            (loop for s in (flatten (append (map 'list #'at-shape (st-bf st)) (map 'list #'at-shape (st-aft st))))
+                  collect (intern (symbol-name s)))))
+         (solved-placeholder (gensym)))
+    `(let* ((,solved-placeholder (%solve-st t ,(%st->list st) nil nil (flatten (list ,@tensors))))
+            ,@(loop for s in symbols
+                    collect `(,s (gethash ,(intern (symbol-name s) :KEYWORD) ,solved-placeholder))))
+       ,@body)))
 
 (defun broadcast-elwise (a b) (multiple-value-list (bc "A[~] B[~] -> A[~] B[~]" (a b))))

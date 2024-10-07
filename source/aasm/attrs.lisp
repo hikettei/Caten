@@ -5,8 +5,9 @@
 ;; TernaryOps | {!=, <, WHERE, WMMA}                           | 4 Ops
 ;; Buffer     | {ALLOCATE, LOAD, STORE, VIEW}                  | 4 Ops
 ;; Indexing   | {INDEX-COMPONENTS}                             | 1 Op(s)
+;; EINOPS     | TC                                             | 1 Op(s)
 ;; +)__________________________________________________________________
-;;                                                             | 25 Ops
+;;                                                             | 26 Ops
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
@@ -298,5 +299,10 @@ for i=0..N
 "
 	 :slots ((expr)
 		 (reduction :initform nil)))
+
+(defclass EinOps () nil)
+(defnode (:EINOPS :TC) (EinOps JITAble)
+         "(TODO: Documentation)"
+         :slots ((expr) (iterators)))
 
 ) ;; eval-when

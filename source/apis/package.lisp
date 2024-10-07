@@ -61,7 +61,8 @@
    #:caten-backward-error)
   ;; from shape-tracker.lisp
   (:export #:st #:bc)
-
+  ;; from syntax-sugar.lisp
+  (:export #:tc)
   ;; from module.lisp
   (:export
    #:Module

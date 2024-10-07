@@ -3,121 +3,127 @@
 ;; TODO: Doing an operator overloading at `c::+` and `c::-` (is it a good idea?)
 ;; Note that doing this in caten/apis package will decrease the performance even the generid methods are inlined.
 
-(eval-when (:compile-toplevel :load-toplevel :execute)
-  ;; Transform: Experimental Notation for manipulating the symbolic shape.
-  ;; (WIP)
-  (defun %parse-tf (tf)
-    "Tf: Either of (~ A B C) or (~ A B C -> A B C)"
-    (declare (type list tf))
-    (let* ((pos (position "->" tf :test #'string= :key #'(lambda (x) (format nil "~a" x))))
-	   (cnt (count "->" tf :test #'string= :key #'(lambda (x) (format nil "~a" x)))))
-      (assert (<= cnt 1) () "Failed to compile the shape transformer:
-Too many arrows (->).
-Follow the either of:
-  - (~ A B C)
-  - (~ A B C -> A B C)")
-      (values (subseq tf 0 pos) (when pos (subseq tf (1+ pos))))))
+(defclass TC (Func)
+  ((iterators :initarg :iterators :accessor tc-iterators)
+   (expr :initarg :expr :accessor tc-expr)
+   (st :initarg :st :accessor tc-st)
+   (where :initarg :where :accessor tc-where)))
 
-  (defun %->transform (before after)
-    (with-gensyms (thing)
-      `(lambda (,thing)
-	 (declare (type list ,thing))
-	 (match ,thing
-	   ((list ,@before) ,@after)
-	   (_ (error "Transform"))))))
-  
-  (defun %->shape (before)
-    (with-gensyms (thing count)
-      `(lambda (,thing)
-	 (declare (type list ,thing))
-	 (loop for ,count upfrom 0 below (length ,thing)
-	       collect (or (nth ,count ',before) (nth ,count ,thing)))))))
+(defmethod forward ((op TC) &rest inputs)
+  (dolist (iterator (tc-iterators op))
+    (assert (typep iterator 'cons) () "TC: Each iterator should be a cons cell.")
+    (assert (keywordp (car iterator)) () "TC: The key of the iterator should be a keyword.")
+    (flet ((shape-p (x) (or (numberp x) (symbolp x) (tensor-p x))))
+      (if (eql (car iterator) :~)
+          (assert (every #'shape-p (cdr iterator)) () "TC: The shape should be a number, a symbol, or a tensor.")
+          (assert (shape-p (cdr iterator)) () "TC: The shape should be a number, a symbol, or a tensor."))))
+  ;; need what?
+  ;; iterators and range
+  ;; :~ = list of shape
+  ;; other args -> (keyword . shape)
+  (apply #'%solve-st nil (tc-st op) nil nil inputs))
 
-(defstruct Transform (before nil :type list) (after nil :type list) (caller (error "caller should occur")))
-(defmethod apply-transform ((op transform) list) (funcall (transform-caller op) list))
-;; The code below is out-of-date and not supported. but i think the idea is really good as proven in cl-waffe2 ...
-(defmacro ~ (&rest transformation)
-  "TODO: Docs
-(!reshape x (~ A B C -> (!* A B C)))
-(!view x (~ 0))"
-  (warn "The api ~~ is deprecated")
-  (multiple-value-bind (before after) (%parse-tf transformation)
-    `(make-transform :before ',before :after ',after :caller ,(if after (%->transform before after) (%->shape before)))))
+(defmethod backward ((op TC) &optional prev-grad))
 
-;; ~~ Einsum ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter +ascii-letter+ "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+(defmethod lower ((op TC) &rest inputs)
+  (with-context
+      (_ (make-node :EINOPS :TC (list (gensym)) inputs :expr (tc-expr op) :iterators (tc-iterators op)))))
 
-(defun s-eq (a b)
-  (declare (type symbol a b))
-  (string= (symbol-name a) (symbol-name b)))
-(defun split-list (list key)
-  (let ((pos (position key list :test #'s-eq)))
-    (assert pos () "split-list: The key ~a is not found in ~a" key list)
-    (values (subseq list 0 pos) (subseq list (1+ pos)))))
-(defun list-has (val list) (find val list :test #'s-eq))
-(defun alphabet-p (char) (and (standard-char-p char) (alpha-char-p char)))
-(defun parse-formula (formula &rest operands)
-  "Uses ~ instead of ..."
-  (declare (type list formula operands))
-  (if (list-has '-> formula)
-      (multiple-value-bind (bf aft) (split-list formula '->)
-        (values (map 'list #'princ-to-string bf) (map 'list #'princ-to-string aft)))
-      (values
-       (map 'list #'princ-to-string formula)
-       (list
-        (with-output-to-string (out)
-          (loop for char across (sort (princ-to-string formula) #'char-lessp)
-                if (alphabet-p char) do (princ char out)))))))
+(defun form->expr (form iteration-vars variables)
+  (flet ((explore (x) (form->expr x iteration-vars variables)))
+    (cond
+      ((keywordp form) form)
+      ((symbolp form)
+       (if (find form iteration-vars)
+           `(caten/ajit::make-expr :Const ',form)
+           `(caten/ajit::make-expr :Const ,form)))
+      ((numberp form) `(caten/ajit::make-expr :Const ,form))
+      ((listp form)
+       (assert (symbolp (car form)) () "form->expr: The first element of the form should be a symbol.")
+       (let ((op (intern (symbol-name (car form)) "KEYWORD")))
+         (if (eql op :~)
+             (flet ((op (x y)
+                      `(caten/ajit::make-expr :CONS ,x ,y)))
+               (let ((var (second form))
+                     (args (map 'list #'explore (cddr form))))
+                 (assert (symbolp var) () "from-expr: ~ is defined as: (~ Tensor_Name[Symbol] &rest args...) butgot: ~a" form)
+                 (assert (find (intern (symbol-name var) "KEYWORD") variables :key #'at-name) () "from-expr: The tensor ~a is not declared. form: ~a" var form)
+                 `(progn
+                    (caten/ajit::make-expr :TAKE ',var ,(reduce #'op args)))))
+             (let ((args (map 'list #'explore (cdr form))))
+               (progn
+                 (assert (typep op 'caten/ajit::op/expr) () "The function ~a is not an valid EXPR. See caten/ajit:op/expr" op)
+                 (cond
+                   ((find op `(:NEG :SIN :LOG2 :EXP2 :SQRT :NOT :RECIP))
+                    (assert (= (length args) 1) () "from->expr: ~a is defined as: (~a x), butgot: ~a " op op form)
+                    (assert (not (some #'keywordp args)) () "from->expr: keyword is not an argument for ~a. form=~a" op form)
+                    `(caten/ajit::make-expr ,op ,(car args)))
+                   ((find op `(:< :<= :> :>= :== :!= :Cast))
+                    (assert (= (length args) 2) () "from->expr: ~a is defined as: (~a x y) butgot: ~a" op op form)
+                    (when (eql op :cast)
+                      (assert (keywordp (second args)) () "from-expr: CAST is defined as: (CAST x dtype) butgot ~a" form)
+                      (assert (typep (second args) 'dtype-t) () "from-expr: CAST is defined as: (CAST x dtype) butgot ~a" form))
+                    (when (not (eql op :cast))
+                      (assert (not (some #'keywordp args)) () "from->expr: keyword is not an argument for ~a. form=~a" op form))
+                    `(caten/ajit::make-expr ,op ,@args))
+                   ((find op `(:+ :- :* :/ :MAX :MIN :AND :OR :XOR))
+                    (assert (> (length args) 1) () "from->expr: ~a is defined as: (~a x y z ...) butgot: ~a (at least the length > 1)" op op form)
+                    (assert (not (some #'keywordp args)) () "from->expr: keyword is not an argument for ~a. form=~a" op form)
+                    (flet ((op (x y)
+                             `(caten/ajit::make-expr ,op ,x ,y)))
+                      (reduce #'op args)))
+                   (T
+                    (error "The op ~a is not supported." op)))))))))))
 
-(defun argsort (x sort)
-  (let ((indices (loop for i from 0 below (length x) collect i)))
-    (stable-sort indices sort :key (lambda (i) (elt x i)))))
+(defmacro tc ((type &key (where nil)) form)
+  "
+```
+(tc (type &key (where nil)) form)
+```
 
-;; [TODO]
-;; - einsum is not as optimized as other apis, so we need to optimize it.
-;; - Decompose several matmuls https://zenn.dev/termoshtt/articles/einsum-derive#%E5%88%86%E8%A7%A3%E9%A0%86%E5%BA%8F%E3%81%A8%E8%A8%88%E7%AE%97%E9%87%8F
+[TODO] Docs
+
+### Syntax
+
+- (~ tensor_name shape...) to aref
+
+```
+(funcall
+ (tc (\"IN[B IP H W] Weight[OP IP KH KW] -> OUT[B OP H W]\") (+ (~ out b op h w) (* (~ in b ip (+ h kw) (+ w kw)) (~ weight op ip kh kw))))
+ in weight)
+```
+
+- How to support VM? -> doing (compile nil body)
+- How to implement autodiff?
+```
+"
+  (let* ((st (%parse-st type))
+         (input-vars (map 'list (compose #'intern #'symbol-name #'at-name) (st-bf st)))
+         (iteration-vars
+           (remove-duplicates
+            (loop for s in (flatten (append (map 'list #'at-shape (st-bf st)) (map 'list #'at-shape (st-aft st))))
+                  collect (intern (symbol-name s)))))
+         (variables (append (st-aft st) (st-bf st))))
+    `(lambda (,@input-vars)
+       (declare (type tensor ,@input-vars))
+       (st ,type (,@input-vars))
+       (forward
+        (make-instance
+         'TC
+         :where ,type
+         :st ,(%st->list st)
+         :iterators
+         (with-st-bind (,type ,@input-vars)
+           (append
+            ',where
+            (list
+             ,@(loop for i in iteration-vars
+                     collect `(cons ',i ,i)))))
+         :expr
+         ,(form->expr form iteration-vars variables))
+        ,@input-vars))))
+
+
 (defun einsum (formula &rest operands)
   (declare (type list formula operands))
-  (apply #'verify-formula formula operands)
-  ;; [TODO] Einsum notation i s used as verify-formula?
-  (warn "Einsum is deprecated")
-  ;; [TODO] Optimize+Improve
-  (multiple-value-bind (inputs outputs) (apply #'parse-formula formula operands)
-    (assert (= (length inputs) (length operands)) () "einsum: The number of input operands is not matched with the formula")
-    (assert (= (length outputs) 1) () "einsumg: The number of output operands is zero or one.")
-    (let ((letter-vals (make-hash-table :test #'equal)))
-      (loop for tensor in operands
-            for input in inputs
-            do (loop for axis in (map 'list #'princ-to-string input)
-                     for shape in (tensor-shape tensor)
-                     do (setf (gethash axis letter-vals) shape)))
-      (let* ((letter-keys (sort (hash-table-keys letter-vals) #'(lambda (x y) (char-lessp (char x 0) (char y 0)))))
-             (lhs (loop for s in inputs
-                        for base = (loop for c across s for nth upfrom 0 collect (cons nth c))
-                        collect (sort base #'char-lessp :key #'cdr)))
-             (xs (loop for x in operands
-                       for lh in lhs
-                       for order = (map 'list #'car lh)
-                       for chars = (map 'list (compose #'princ-to-string #'cdr) lh)
-                       collect
-                       (!expand
-                        (!reshape
-                         (!permute x order)
-                         (loop for key in letter-keys
-                               for val = (gethash key letter-vals)
-                               if (find key chars :test #'equalp)
-                                 collect val
-                               else
-                                 collect 1))
-                        (loop for key in letter-keys
-                              collect (gethash key letter-vals)))))
-             (rhs-letter-order (argsort (coerce (car outputs) 'list) #'char-lessp))
-             (rhs-order (argsort rhs-letter-order #'<))
-             (reduce-axes (loop for axis upfrom 0
-                                for letter in letter-keys
-                                unless (find (char letter 0) (coerce (car outputs) 'list) :test #'char=)
-                                  collect axis))
-             (output-shape (loop for key across (car outputs)
-                                 collect (gethash (princ-to-string key) letter-vals)))
-             (out (!reshape (!sum (apply #'!* xs) :axis reduce-axes) output-shape)))
-        (!permute out rhs-order)))))
+  (error "deprecated"))
