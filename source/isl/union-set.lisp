@@ -26,6 +26,10 @@
   (:give union-set)
   (:take basic-set))
 
+(define-isl-function union-set-from-set %isl-union-set-from-set
+  (:give union-set)
+  (:take set))
+
 (define-isl-function set-union-set %isl-set-from-basic-set
   (:give union-set)
   (:take set))
@@ -61,3 +65,16 @@
   (:give union-set)
   (:take union-set)
   (:take set params))
+
+(defun make-union-set-list (&rest union-set-list)
+  (assert (every #'union-set-p union-set-list) () "make-union-set-list: ~a is not a list of union-set" union-set-list)
+  (let* ((n (length union-set-list))
+	 (ls (%make-union-set-list (%isl-union-set-list-alloc (context-handle *context*) n))))
+    (loop for us in union-set-list
+	  for nth upfrom 0
+	  do (%isl-union-set-list-add (union-set-list-handle ls) (union-set-handle us)))
+    ls))
+
+(define-isl-function union-set-get-space %isl-union-set-get-space
+  (:give space)
+  (:take union-set))

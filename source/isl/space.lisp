@@ -30,3 +30,13 @@
   (:keep integer nparam)
   (:keep integer n_in)
   (:keep integer n_out))
+
+(define-isl-function space-universe-set %isl-space-universe-set
+  (:give set)
+  (:take space))
+
+(defun space-add-named-tuple-id-ui (space name n)
+  (declare (type space space)
+           (type identifier name)
+           (type fixnum n))
+  (%%make-space (%isl-space-add-named-tuple-id-ui (space-handle (copy space)) (identifier-handle (copy name)) n)))

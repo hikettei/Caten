@@ -76,6 +76,10 @@
   (:give union-set)
   (:keep schedule-node))
 
+(define-isl-function schedule-node-filter-get-filter %isl-schedule-node-filter-get-filter
+  (:give union-set)
+  (:keep schedule-node))
+
 (define-isl-function schedule-node-insert-filter %isl-schedule-node-insert-filter
   (:give schedule-node)
   (:take schedule-node)

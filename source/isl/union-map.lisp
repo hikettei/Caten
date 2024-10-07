@@ -123,3 +123,7 @@
   (:give union-map)
   (:take union-map)
   (:take union-map domain))
+
+(define-isl-function union-map-get-space %isl-union-map-get-space
+  (:give space)
+  (:take union-map))

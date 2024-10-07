@@ -211,7 +211,6 @@ Pipeline: A hash-table where keys and values are: {T_ID[Fixnum] -> Scheduled_Sub
 	       (when (not (eql (node-class node) :IR))
 		 (loop for r in (map 'list alias-f (funcall (if (eql mode :read) #'node-reads #'node-writes) node))
 		       for rt in (funcall (if (eql mode :read) #'relay-reads #'relay-writes) (read-type-relay node)) do
-			 ;; When node has a :reduction
 			 (when (symbolp r)
 			   (if (null lf)
 			       (format out "  ~a -> ~(~a~)[~a];~%" occur-from r scalar)

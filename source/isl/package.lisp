@@ -78,6 +78,8 @@
    #:create-space-params
    #:create-space-set
    #:create-space-map
+   #:space-add-named-tuple-id-ui
+   #:space-universe-set
    ;; Local Space
    #:local-space
    #:local-space-p
@@ -139,11 +141,15 @@
    ;; Union set
    #:union-set
    #:union-set-p
-   #:union-set-from-str
+   #:union-set-from-set
    #:union-set-empty
+   #:union-set-list
+   #:make-union-set-list
+   #:union-set-get-space
    #:union-set-universe
    #:basic-set-union-set
    #:set-union-set
+   #:union-set-from-str
    #:union-set-intersect
    #:union-set-union
    #:union-set-subtract
@@ -195,6 +201,7 @@
    #:union-map-strict-subset-p
    #:union-map-domain
    #:union-map-range
+   #:union-map-get-space
    #:union-map-from-domain-and-range
    #:union-set-identity
    #:union-map-intersect-params
@@ -340,6 +347,7 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-get-domain
    #:schedule-node-graft-after
    #:schedule-node-graft-before
    #:schedule-insert-partial-schedule
@@ -354,6 +362,7 @@
    #:schedule-node-get-domain
    #:schedule-node-get-tree-depth
    #:schedule-node-insert-filter
+   #:schedule-node-filter-get-filter
    ))
 
 (in-package :caten/isl)

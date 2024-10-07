@@ -47,3 +47,7 @@
   (declare (type (member :separate :atomic) option) (type schedule schedule))
   (let ((option (ecase option (:separate 1) (:atomic 0))))
     (%make-schedule (%schedule-set-options (schedule-handle schedule) option))))
+
+(define-isl-function schedule-get-domain %isl-schedule-get-domain
+  (:give union-set)
+  (:keep schedule))

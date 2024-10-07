@@ -143,6 +143,8 @@ A Polyhedral form of the fused schedule group.
   (let ((new (schedule pg)))
     (format t "~a" (pprint-schedule new))
     (print (debug/render-schedule new))
+    ;(print "COLLAPSE")
+    ;(loop-collapse pg "T0" (union-map-from-str "{ T0[c0, c1, c2] -> T0[9 * c0 + 3 * c1 + c2] }"))
     (setf (pg-schedule pg) new)))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
@@ -437,12 +439,64 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   nil
   (:documentation ""))
 ;; [Design] Only effects on Render-Graph and Pipelining
-;; ConvND < 1 Kernels (Let's forget about that for now...)
-;; Embedding/Gemm, Tile, Loop Collapse, Vectorize
-(defmethod auto-collapse ((pg Polyhedral-Auto-Scheduler))
-  ;; isl_schedule_node_band_scale_down?
-  )
+;; - Matmul+TransposeをFusionしないといけない
+;; - そうすれば ConvND < 1 Kernelsができるはず
+;; - Assume ^がPrepreq, Embedding/Gemm, Tile, Loop Collapse, Vectorize
+(defmethod loop-collapse ((pg Polyhedral-Auto-Scheduler) task transformation)
+  "
+Task = T0
+Transformation: e.g.: [] -> { T0[i, j] -> T0[10 * i + j] }
+"
+  (declare (type union-map transformation)
+           (type string task))
+  (let* ((domain (schedule-get-domain (pg-schedule pg)))
+         (new-domain (union-set-apply domain transformation))
+         (new-schedule (schedule-from-domain new-domain)))
+    (multiple-value-bind (old-seq new-seq)
+        (values
+         (schedule-node-get-child
+          (schedule-get-root (pg-schedule pg))
+          0)
+         (schedule-node-get-child
+          (schedule-get-root new-schedule)
+          0))
+      (let ((new-filters
+              (apply
+               #'make-union-set-list
+               (map
+                'list
+                #'union-set-from-set
+                (append
+                 (loop for old-filter in (butlast (schedule-node-get-children old-seq))
+                       collect (schedule-node-filter-get-filter (isl::%%make-schedule-node old-filter)))
+                 (list
+                  (space-universe-set
+                   (space-add-named-tuple-id-ui
+                    (union-set-get-space domain)
+                    (make-identifier (intern task) :no-intern t)
+                    1))))))))
+        (setf new-seq (schedule-insert-sequence new-seq new-filters))
+        (let ((new-band
+                (schedule-node-insert-partial-schedule
+                 (isl::%%make-schedule-node
+                  (car
+                   (schedule-node-get-children
+                    (isl::%%make-schedule-node
+                     (car (last (schedule-node-get-children new-seq)))))))
+                 (multi-union-pw-aff-from-str
+                  (format nil "L_0[{ ~a[i0] -> [(i0)] }]" task)))))
+          (schedule-node-get-schedule new-band))))))
 
+(defmethod loop-collapse ((pg Polyhedral-Auto-Scheduler) map)
+  ;; The approach taken here is
+  (let ((domain (schedule-get-domain (pg-schedule pg))
+                )
+
+
+
+(defmethod loop-interchange ((pg Polyhedral-Auto-Scheduler) axis)
+  
+  )
 (defmethod tile-bands ((polyhedral-group Polyhedral-Auto-Scheduler) config)
   "
 For example, consider the following loop:

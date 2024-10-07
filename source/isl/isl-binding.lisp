@@ -9708,6 +9708,9 @@
 (cffi:defcfun ("isl_space_unit" #.(swig-lispify "isl_space_unit" 'function)) :pointer
   (ctx :pointer))
 
+(cffi:defcfun ("isl_space_universe_set" #.(swig-lispify "isl_space_universe_set" 'function)) :pointer
+  (space :pointer))
+
 (cffi:defcfun ("isl_space_alloc" #.(swig-lispify "isl_space_alloc" 'function)) :pointer
   (ctx :pointer)
   (nparam :unsigned-int)
