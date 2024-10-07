@@ -19,6 +19,7 @@
    #:identifier
    #:identifierp
    #:make-identifier
+   #:make-id-from-str
    #:make-gensym-identifier
    #:identifier-name
    #:identifier-context

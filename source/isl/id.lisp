@@ -16,6 +16,12 @@
    (cffi:with-foreign-string (char* (if no-intern (format nil "~(~a~)" name) (string-from-symbol name)))
      (%isl-id-alloc (context-handle *context*) char* (cffi:null-pointer)))))
 
+(defun make-id-from-str (name)
+  (declare (type string name))
+  (%make-identifier
+   (cffi:with-foreign-string (char* name)
+     (%isl-id-alloc (context-handle *context*) char* (cffi:null-pointer)))))
+
 ;; Not the same result if we call this function twice
 (defun make-gensym-identifier (name)
   (declare (symbol name))

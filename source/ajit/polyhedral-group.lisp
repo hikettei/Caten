@@ -137,17 +137,11 @@ A Polyhedral form of the fused schedule group.
               (union-map-union WaR RaW)
               WaW)))
       (setf (pg-dependencies pg) dependencies)))
-  (format t "~%++++++BEFORE++++++~%")
-  (format t "~a" (build pg))
-  (format t "~%+++++NEW+++++++~%")
   (let ((new (schedule pg)))
-    (format t "~a" (pprint-schedule new))
     (setf (pg-schedule pg) new)
-    (print (build pg))
-    
-    (print "COLLAPSE")
-    (setf (pg-schedule pg) (loop-collapse pg "T0" (union-map-from-str "{ T0[c1, c2] -> T0[32 * c1 + c2] }")))
-    
+
+    (print "Collapse")
+    (setf (pg-schedule pg) (print (loop-collapse pg "T0" (union-map-from-str "{ T0[c1, c2] -> T0[32 * c1 + c2] }"))))
     (print (build pg))))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
@@ -476,8 +470,7 @@ Transformation: e.g.: [] -> { T0[i, j] -> T0[10 * i + j] }
                   (space-universe-set
                    (space-add-named-tuple-id-ui
                     (union-set-get-space domain)
-                    (make-identifier (intern task) :no-intern t) ;; [TODO] Delete this runtime intern
-                    ;; 1? 
+                    (make-id-from-str task)
                     1))))))))
         (setf new-seq (schedule-insert-sequence new-seq new-filters))
         (let ((new-band
@@ -528,7 +521,6 @@ for (int ii=0; ii<M; ii+=ITILE)
 (defmethod build ((pg Polyhedral-Auto-Scheduler))
   (let* ((schedule (schedule-set-options (pg-schedule pg) :atomic))
          (build (ast-build-from-context (set-from-str "{:}")))
-         ;; (builder set at each domain)
          (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
          (ast   (ast-build-node-from-schedule build schedule))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
