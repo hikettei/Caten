@@ -18,7 +18,8 @@
 ;;   - If they can fuse the Embedding < 1 w/o using old compiler, then it's a success and replace!
 ;;   - delete transform.lisp (possible?) (どこまで1 Kernelにするか知りたいから消さない方がいいかも？ for now)
 (defclass Polyhedral-Group ()
-  ((base :initarg :base :type Group :accessor polyhedral-group-base))
+  ((base :initarg :base :type Group :accessor polyhedral-group-base)
+   (kr   :initarg :kr :type Kernel-Renderer :accessor polyhedral-kr))
   (:documentation "
 A Polyhedral form of the fused schedule group.
 "))
@@ -117,7 +118,7 @@ A Polyhedral form of the fused schedule group.
 
 (defmethod initialize-instance :after ((pg Polyhedral-Auto-Scheduler) &rest initargs &key &allow-other-keys)
   (declare (ignore initargs))
-  (multiple-value-bind (domain read write schedule) (scop (polyhedral-group-base pg))
+  (multiple-value-bind (domain read write schedule) (scop (polyhedral-group-base pg) (polyhedral-kr pg))
     (setf (pg-schedule pg) schedule
           (pg-domain pg) domain)
     (let* ((access (union-access-info-from-sink read))
@@ -139,10 +140,11 @@ A Polyhedral form of the fused schedule group.
       (setf (pg-dependencies pg) dependencies)))
   (format t "Before~%")
   (format t "~%~a~%" (build pg))
-  (let ((new (schedule pg)))
-    (format t "After~%")
-    (setf (pg-schedule pg) new)
-    (format t "~%~a~%" (build pg))))
+  ;; (let ((new (schedule pg)))
+  ;;  (format t "After~%")
+  ;;  (setf (pg-schedule pg) new)
+  ;;  (format t "~%~a~%" (build pg)))
+  )
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
   (let ((serialize-sccs 0)
@@ -178,13 +180,13 @@ A Polyhedral form of the fused schedule group.
 
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/scop.cc#L47
 ;; https://github.com/facebookresearch/TensorComprehensions/blob/master/tc/core/polyhedral/schedule_isl_conversion.cc
-(defmethod render-domain-body-from-group ((group Group) &aux (idx2domain (make-hash-table)))
+(defmethod render-domain-body-from-group ((group Group) (kr kernel-renderer) &aux (idx2domain (make-hash-table)))
   (values
    (with-output-to-string (out)
      (format out "{~%")
      (loop with domains = nil
            with conditions = nil
-           for node in (graph-nodes (group-render-graph group)) do
+           for node in (kernel-renderer-nodes kr) do
              (ecase (node-type node)
                (:FOR
                 (let ((by (getattr node :by)))
@@ -301,7 +303,7 @@ Corresponds to the position of the subgraph in the parent schedule.
       idx2domain)
      (format out "}"))))
 
-(defmethod scop ((group group))
+(defmethod scop ((group group) (kr kernel-renderer))
   "Formulates the Polyhedral Model from scop/
 Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_polyhedral_front-end_for_MLIR
 
@@ -319,8 +321,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ```
 "
   (let* ((deps (render-list (poly-dynamic-shape (group-polyhedron group))))
-         (render-nodes (graph-nodes (group-render-graph group))))
-    (multiple-value-bind (domain idx2domain) (render-domain-body-from-group group)
+         (render-nodes (kernel-renderer-nodes kr)))
+    (multiple-value-bind (domain idx2domain) (render-domain-body-from-group group kr)
       (labels ((explore-schedule-tree (from to
                                        &key
                                          (parent-loops)
@@ -413,18 +415,19 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
          (render-access-rep #'node-writes #'relay-writes group idx2domain)
          (explore-schedule-tree 0 (length render-nodes)))))))
 ;; ~~ Creation/Conversion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmethod group->polyhedral-group ((group Group))
+(defmethod group->polyhedral-group ((group Group) (kr kernel-renderer))
   (unless (group-realize-on-vm group)
-    (assert (null (find :ELSE (graph-nodes (group-render-graph group)) :key #'node-type))
+    (assert (null (find :ELSE (kernel-renderer-nodes kr) :key #'node-type))
             ()
             "ELSE is not allowed in the Polyhedral Model."))
   (make-instance
    (if (or
         (group-realize-on-vm group)
-        (null (find :FOR (graph-nodes (group-render-graph group)) :key #'node-type)))
+        (null (find :FOR (kernel-renderer-nodes kr) :key #'node-type)))
        'Polyhedral-Group
        'Polyhedral-Auto-Scheduler)
-   :base group))
+   :base group
+   :kr kr))
 
 (defmethod polyhedral-group->group ((polyhedral-group Polyhedral-Group))
   ;; [TODO] Ignores for ElementWise Kernels e.g.
@@ -439,10 +442,16 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ;; [Design] Only effects on Render-Graph and Pipelining
 ;; - Matmul+TransposeをFusionしないといけない
 ;; - Loop Fusionと別で物事を考えた方がいい
-;; - 
+;; - Step1
+;;   - Matmul+Transpose, ConvND Fusion in transform.lisp (Supported by ISL)
+;; - Step2
+;;   - Proper Kernel Partition for larger graph like Transforer
+;; - Step3
+;;   - Apply Loop Collapse/Tile to the final kernel
 ;; - そうすれば ConvND < 1 Kernelsができるはず
 ;; - Assume ^がPrepreq, Embedding/Gemm, Tile, Loop Collapse, Vectorize
 ;; [TODO] Not well tested...
+;; Polyhedral GroupでFusionできると便利そう
 (defmethod loop-collapse ((pg Polyhedral-Auto-Scheduler) task transformation)
   "
 Task = T0

@@ -352,7 +352,6 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)))
        groups)
       (let* ((1_ (mapc #'post-simplify-multiexpr groups))
-             ;;(2_ (when (= 1 (ctx:getenv :AUTO_SCHEDULER)) (mapc #'group->polyhedral-group groups)))
 	     ;; Note: (make-instance 'MemoryPlanner ... ) will rewrite the graph of :reduction, it is destructive.
 	     ;; Subsequent optimizations do not assume the `graph` is DAG.
 	     ;; Graph-Level optimization should be performed just before it.

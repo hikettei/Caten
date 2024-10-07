@@ -494,12 +494,33 @@ Lifespan:
     (loop while (r))
     kernels))
 
+(defmethod mp-auto-schedule! ((mp MemoryPlanner))
+  (let ((polyhedrons
+          (loop for kernel in (mp-kernels mp)
+                for group  in (mp-groups mp)
+                collect
+                (loop for kr in kernel
+                      collect
+                      (group->polyhedral-group group kr)))))
+    (dolist (p polyhedrons)
+      ;; Final Chance to apply Loop Fusion
+      ;; Kernrels with complicated memory access relations, like Matmul+Transpose, Conv are first fused here
+      (when p
+        (print p)))
+    
+    ;; Tiling, Vectorizing, Parallelizing(CPU/GPU), Loop Fission here
+    ;; [TODO] Apply the changes to mp-kernerls, mp-groups
+    ))
+
 (defmethod retrive-kernels ((mp MemoryPlanner))
   "Finalizes the result of memory-planner, retriving the final rendering-graph"
   (flet ((prune ()
            "Applies the dead code elimination"
 	   (setf (mp-kernels mp) (dead-kernel-elimination (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))))
     (prune)
+    (when (= 1 (ctx:getenv :AUTO_SCHEDULER))
+      (mp-auto-schedule! mp)
+      (prune))
     ;; 1. Mutate output buffers as a scalar
     (optimize-memory-load mp)
     ;; 2. Hide Latency Optimization
