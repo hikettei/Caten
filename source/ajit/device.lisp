@@ -40,3 +40,38 @@
 
 (defmethod %render-expr ((lang ISL-Expr) (op (eql :Const)) lhs rhs z)
   (format nil "~(~a~)" lhs))
+
+(defclass Lisp-Backend (Device) nil)
+(defmethod default-device ((device-prefix (eql :lisp))) (make-instance 'Lisp-Backend))
+
+(defmethod %render-expr ((lang Lisp-Backend) op lhs rhs z)
+  (format nil "(~a ~a ~a ~a)"
+          (ecase op
+            (:ADD :+) (:MUL :*) (:IDIV :/)
+            (:AND :and) (:OR :or) (:!= :/=) (:== :=)
+            (:XOR :xor)
+            (:<= :<=) (:>= :>=) (:< :<) (:> :>)
+            (:MAX :max) (:MIN :min)
+            (:+ :+) (:- :-) (:* :*) (:/ :/)
+            (:SIN :SIN) (:LOG2 :LOG2) (:EXP2 :EXP2) (:RECIP :/) (:SQRT :SQRT) (:NOT :NOT))
+          (if lhs
+              (render-expr lang lhs)
+              "")
+          (if rhs
+              (render-expr lang rhs)
+              "")
+          (if z
+              (render-expr lang z)
+              "")))
+
+(defmethod %render-expr ((lang Lisp-Backend) (op (eql :Const)) lhs rhs z) (format nil "~(~a~)" lhs))
+;; For TC Compilation
+(defmethod %render-expr ((lang Lisp-Backend) (op (eql :Take)) lhs rhs z)
+  (labels ((explore (expr nth)
+             (if (eql (expr-op expr) :CONS)
+                 (format nil "(* (nth ~a (caten/avm:buffer-stride ~a)) ~a) ~a"
+                         nth lhs (render-expr lang (expr-y expr)) (explore (expr-x expr) (1+ nth)))
+                 (format nil "(* (nth ~a (caten/avm:buffer-stride ~a)) ~a)" nth lhs (render-expr lang expr)))))
+    (assert (symbolp lhs))
+    (assert (null z))
+    (format nil "(aref (caten/avm:buffer-value ~a) (+ ~a))" lhs (explore rhs 0))))

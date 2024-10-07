@@ -95,6 +95,14 @@
     (setf (buffer-value buff) (make-fakearray (buffer-shape buff) (buffer-dtype buff) (car (node-writes node))))
     buff))
 
+
+(defmethod %impl ((device-id (eql :relay-checker)) (op (eql :TC)) graph node args)
+  (let* ((nth-out (position (car (getattr node :outputs)) (getattr node :inputs)))
+         (out (copy-buffer (nth nth-out args))))
+    (assert nth-out)
+    (setf (buffer-value out) (make-fakearray (buffer-shape out) (buffer-dtype out) (car (node-writes node))))
+    out))
+
 (declaim (ftype (function (AVM) Type-Reporter) run-type-infer))
 (defun run-type-infer (avm)
   "Run the shape-inference given AVM, returning Type-Reporter"

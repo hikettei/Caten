@@ -7,7 +7,28 @@
   ((iterators :initarg :iterators :accessor tc-iterators)
    (expr :initarg :expr :accessor tc-expr)
    (st :initarg :st :accessor tc-st)
+   (inputs :initarg :inputs :accessor tc-inputs)
+   (outputs :initarg :outputs :accessor tc-outputs)
    (where :initarg :where :accessor tc-where)))
+
+(defmethod lower-into-lisp ((op TC))
+  (with-slots ((expr expr) (inputs inputs) (outputs outputs) (iterators iterators)) op
+    (let* ((infinite (find "~" iterators :key (compose #'symbol-name #'car) :test #'equalp))
+           (infinite-idx `(,@(map 'list #'gensym infinite) ,@infinite))
+           (iterators (append infinite-idx (loop for idx in iterators
+                                                 unless (equalp (symbol-name (car idx)) "~")
+                                                   collect idx))))
+      `(lambda (,@inputs)
+         (with-st-bind (,(tc-where op) (map 'list #'make-tensor (map 'list #'buffer-shape (list ,@inputs))))
+           ,(labels ((explore (dim)
+                       (if (= dim 0)
+                           `(setf
+                             ,(read-from-string (caten/ajit:render-expr (caten/ajit:default-device :lisp) (caten/ajit:expr-x expr)))
+                             ,(read-from-string (caten/ajit:render-expr (caten/ajit:default-device :lisp) expr)))
+                           (let ((iter (nth dim iterators)))
+                             `(dotimes (,(car iter) ,(cdr iter))
+                                ,(explore (1- dim)))))))
+              (explore (1- (length iterators)))))))))
 
 (defmethod print-object ((op TC) stream)
   (format stream "<TC: ~a>" (tc-where op)))
@@ -22,9 +43,14 @@
           (assert (shape-p (cdr iterator)) () "TC: The shape should be a number, a symbol, or a tensor."))))
   (apply #'%solve-st nil (tc-st op) nil nil inputs))
 (defmethod backward ((op TC) &optional prev-grad))
-(defmethod lower ((op TC) &rest inputs)
+(defmethod lower ((op TC) &rest inputs &aux (body (lower-into-lisp op)))
+  (print body)
   (with-context
-      (_ (emit (make-node :EINOPS :TC (list (gensym)) (map 'list #'node->id inputs) :expr (tc-expr op) :iterators (tc-iterators op))))))
+      (_ (emit (make-node
+                :EINOPS :TC (list (gensym)) (map 'list #'node->id inputs)
+                :expr (tc-expr op) :iterators (tc-iterators op)
+                :inputs (tc-inputs op) :outputs (tc-outputs op)
+                :_lisp-code body)))))
 
 (defun form->expr (form iteration-vars variables)
   (flet ((explore (x) (form->expr x iteration-vars variables)))
@@ -46,7 +72,7 @@
                  (assert (symbolp var) () "from-expr: ~ is defined as: (~ Tensor_Name[Symbol] &rest args...) butgot: ~a" form)
                  (assert (find (intern (symbol-name var) "KEYWORD") variables :key #'at-name) () "from-expr: The tensor ~a is not declared. form: ~a" var form)
                  `(progn
-                    (caten/ajit::make-expr :TAKE ',var ,(reduce #'op args)))))
+                    (caten/ajit::make-expr :TAKE ',var ,(reduce #'op (reverse args))))))
              (let ((args (map 'list #'explore (cdr form))))
                (progn
                  (assert (typep op 'caten/ajit::op/expr) () "The function ~a is not an valid EXPR. See caten/ajit:op/expr" op)
@@ -99,6 +125,7 @@
 "
   (let* ((st (%parse-st type))
          (input-vars (map 'list (compose #'intern #'symbol-name #'at-name) (st-bf st)))
+         (output-vars (map 'list (compose #'intern #'symbol-name #'at-name) (st-aft st)))
          (iteration-vars
            (remove-duplicates
             (loop for s in (flatten (append (map 'list #'at-shape (st-bf st)) (map 'list #'at-shape (st-aft st))))
@@ -107,11 +134,14 @@
     `(lambda (,@input-vars)
        (declare (type tensor ,@input-vars))
        (st ,type (,@input-vars))
-       (forward
+       (apply
+        #'forward
         (make-instance
          'TC
          :where ,type
          :st ,(%st->list st)
+         :inputs  ',input-vars
+         :outputs ',output-vars
          :iterators
          (with-st-bind (,type ,@input-vars)
            (append
@@ -121,8 +151,11 @@
                      collect `(cons ',i ,i)))))
          :expr
          ,(form->expr form (append (map 'list #'car where) iteration-vars) variables))
-        ,@input-vars))))
-
+        ;; View creations are not allowed
+        (map
+         'list
+         #'!contiguous
+         (list ,@input-vars))))))
 
 (defun einsum (formula &rest operands)
   (declare (type list formula operands))

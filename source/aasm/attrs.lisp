@@ -303,6 +303,13 @@ for i=0..N
 (defclass EinOps () nil)
 (defnode (:EINOPS :TC) (EinOps JITAble)
          "(TODO: Documentation)"
-         :slots ((expr) (iterators)))
+         :slots ((expr) (inputs) (outputs) (iterators) (_lisp-code) (_lisp-f-cache)))
 
 ) ;; eval-when
+
+(defmethod print-node ((node Node) (id (eql :TC)))
+  (format nil "<[EINOPS]TC : ~a <- ~a [~a -> ~a]>"
+          (node-writes node)
+          (node-reads node)
+          (getattr node :inputs)
+          (getattr node :outputs)))

@@ -150,3 +150,10 @@
 		    collect (list (->number (nth i v1)) (->number (nth i v2)) (->number (nth i v3)) (nth i bc)))
 	      (buffer-nrank buffer) (length shape))
 	buffer))))
+
+(defmethod %impl ((device-id (eql :lisp)) (op (eql :TC)) graph node args)
+  (when (null (getattr node :_lisp-f-cache :allow-undefined t))
+    (setf (getattr node :_lisp-f-cache)
+          (compile nil (getattr node :_lisp-code))))
+  (apply (getattr node :_lisp-f-cache) args)
+  (nth (position (car (getattr node :outputs)) (getattr node :inputs)) args))

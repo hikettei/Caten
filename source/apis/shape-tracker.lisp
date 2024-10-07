@@ -273,6 +273,7 @@ It calls !reshape and !view inside, therefore, it must not be used inside the fo
     `(let* ((,solved-placeholder (%solve-st t ,(%st->list st) nil nil (flatten (list ,@tensors))))
             ,@(loop for s in symbols
                     collect `(,s (gethash ,(intern (symbol-name s) :KEYWORD) ,solved-placeholder))))
+       (declare (ignorable ,@symbols))
        ,@body)))
 
 (defun broadcast-elwise (a b) (multiple-value-list (bc "A[~] B[~] -> A[~] B[~]" (a b))))
