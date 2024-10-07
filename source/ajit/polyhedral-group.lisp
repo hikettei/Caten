@@ -138,14 +138,17 @@ A Polyhedral form of the fused schedule group.
               WaW)))
       (setf (pg-dependencies pg) dependencies)))
   (format t "~%++++++BEFORE++++++~%")
-  (format t "~a" (pprint-schedule (pg-schedule pg)))
+  (format t "~a" (build pg))
   (format t "~%+++++NEW+++++++~%")
   (let ((new (schedule pg)))
     (format t "~a" (pprint-schedule new))
-    (print (debug/render-schedule new))
-    ;(print "COLLAPSE")
-    ;(loop-collapse pg "T0" (union-map-from-str "{ T0[c0, c1, c2] -> T0[9 * c0 + 3 * c1 + c2] }"))
-    (setf (pg-schedule pg) new)))
+    (setf (pg-schedule pg) new)
+    (print (build pg))
+    
+    (print "COLLAPSE")
+    (setf (pg-schedule pg) (loop-collapse pg "T0" (union-map-from-str "{ T0[c1, c2] -> T0[32 * c1 + c2] }")))
+    
+    (print (build pg))))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
   (let ((serialize-sccs 0)
@@ -434,7 +437,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   ;; like complicated kernels, (gemm, convnd)
   ;; these parameters are reconfigurable by providing the Polyhedral-Config
   (polyhedral-group-base polyhedral-group))
-;; ~~ Auto Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Scheduling Language ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Polyhedral-Config ()
   nil
   (:documentation ""))
@@ -473,7 +476,8 @@ Transformation: e.g.: [] -> { T0[i, j] -> T0[10 * i + j] }
                   (space-universe-set
                    (space-add-named-tuple-id-ui
                     (union-set-get-space domain)
-                    (make-identifier (intern task) :no-intern t)
+                    (make-identifier (intern task) :no-intern t) ;; [TODO] Delete this runtime intern
+                    ;; 1? 
                     1))))))))
         (setf new-seq (schedule-insert-sequence new-seq new-filters))
         (let ((new-band
@@ -485,18 +489,15 @@ Transformation: e.g.: [] -> { T0[i, j] -> T0[10 * i + j] }
                      (car (last (schedule-node-get-children new-seq)))))))
                  (multi-union-pw-aff-from-str
                   (format nil "L_0[{ ~a[i0] -> [(i0)] }]" task)))))
-          (schedule-node-get-schedule new-band))))))
-
-(defmethod loop-collapse ((pg Polyhedral-Auto-Scheduler) map)
-  ;; The approach taken here is
-  (let ((domain (schedule-get-domain (pg-schedule pg))
-                )
-
-
+          ;; [TODO] How to confirm the validity of loop collapse?
+          ;; [TODO] Why did they set 1?
+          ;; [TODO] Optimization for dynamic shape (using exist notation?)
+          (setf (pg-schedule pg) (schedule-node-get-schedule new-band)))))))
 
 (defmethod loop-interchange ((pg Polyhedral-Auto-Scheduler) axis)
   
   )
+
 (defmethod tile-bands ((polyhedral-group Polyhedral-Auto-Scheduler) config)
   "
 For example, consider the following loop:
@@ -524,44 +525,13 @@ for (int ii=0; ii<M; ii+=ITILE)
   
   )
 
-#|
-for(int _gid0=0;(_gid0<=4);_gid0+=1) {
-  for(int _gid1=0;(_gid1<=4);_gid1+=1) {
-    for(int _gid2=0;(_gid2<=9);_gid2+=1) {
-      float val_54 = 0.0; // T0[_gid0, _gid1, _gid2]
-      for(int _gid3=0;(_gid3<=9);_gid3+=1) {
-        float val_41 = _gid2; // T1[_gid0, _gid1, _gid2, _gid3]
-        boolean val_48 = !(val_41!=val_36[((5*_gid0)+_gid1)]); // T2[_gid0, _gid1, _gid2, _gid3]
-        float val_34 = (val_48 ? val_30[((10*_gid2)+_gid3)] : 0.0); // T3[_gid0, _gid1, _gid2, _gid3]
-        val_54 = (val_54+val_34); // T4[_gid0, _gid1, _gid2]
-      }
-      val_58[(((50*_gid1)+(10*_gid0))+_gid2)] = val_54; // T5[_gid0, _gid1, _gid2]
-    }
-  }
-}
-|#
-;; yml de parse site pprint (schedule)
-
-(defun debug/render-schedule (schedule)
-  (let* ((schedule (schedule-set-options schedule :atomic))
-	 (build (ast-build-from-context (set-from-str "{:}")))
-	 (ast   (ast-build-node-from-schedule build schedule))
-	 (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-	 (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
-	 (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
-	 (str   (isl::%isl-printer-get-str q)))
+(defmethod build ((pg Polyhedral-Auto-Scheduler))
+  (let* ((schedule (schedule-set-options (pg-schedule pg) :atomic))
+         (build (ast-build-from-context (set-from-str "{:}")))
+         ;; (builder set at each domain)
+         (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+         (ast   (ast-build-node-from-schedule build schedule))
+         (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
+         (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
+         (str   (isl::%isl-printer-get-str q)))
     str))
-
-(defun load-pet ()
-  (cffi:load-foreign-library "libpet.dylib"))
-
-(defun extract-from-c-source (filename func)
-  (let ((s (cffi:foreign-funcall "pet_scop_extract_from_C_source"
-                                 :pointer (isl::context-handle isl::*context*)
-                                 :string filename
-                                 :string func
-                                 :pointer)))
-    (cffi:foreign-funcall "pet_scop_get_schedule" :pointer s :pointer)
-    ))
-
-;; (print (Extract-from-c-source "./matmul.c" "foo"))
