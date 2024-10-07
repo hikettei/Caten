@@ -82,6 +82,13 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 		  (assert (tensor-p (convnd-bias conv)) () "Bias for ~a should be a Tensor, getting ~a" conv (convnd-bias conv))
 		  (!add x (!reshape (convnd-bias conv) (append (list 1) (list out-channels) (loop repeat (length hw) collect 1)))))
 		x)))))))
+
+(defun !conv2d (x weight)
+  (funcall
+   (tc ("X[B IP H W] Weight[OP IP KH KW] OUT[B OP H W] -> OUT[B OP H W]") (+ (~ OUT b op h w) (* (~ X b ip (+ h kw) (+ w kw)) (~ weight op ip kh kw))))
+   x weight
+   (st "X[B IP H W] Weight[OP IP KH KW] -> X[B OP H W]" (x weight))))
+
 ;; TODO: (defmethod export-to-onnx ((conv ConvND) x) ...)
 (in-package :caten/nn.test)
 

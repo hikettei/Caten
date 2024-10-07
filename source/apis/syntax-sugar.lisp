@@ -9,25 +9,22 @@
    (st :initarg :st :accessor tc-st)
    (where :initarg :where :accessor tc-where)))
 
+(defmethod print-object ((op TC) stream)
+  (format stream "<TC: ~a>" (tc-where op)))
+
 (defmethod forward ((op TC) &rest inputs)
   (dolist (iterator (tc-iterators op))
     (assert (typep iterator 'cons) () "TC: Each iterator should be a cons cell.")
-    (assert (keywordp (car iterator)) () "TC: The key of the iterator should be a keyword.")
+    (assert (symbolp (car iterator)) () "TC: The key of the iterator should be a symbol.")
     (flet ((shape-p (x) (or (numberp x) (symbolp x) (tensor-p x))))
       (if (eql (car iterator) :~)
           (assert (every #'shape-p (cdr iterator)) () "TC: The shape should be a number, a symbol, or a tensor.")
           (assert (shape-p (cdr iterator)) () "TC: The shape should be a number, a symbol, or a tensor."))))
-  ;; need what?
-  ;; iterators and range
-  ;; :~ = list of shape
-  ;; other args -> (keyword . shape)
   (apply #'%solve-st nil (tc-st op) nil nil inputs))
-
 (defmethod backward ((op TC) &optional prev-grad))
-
 (defmethod lower ((op TC) &rest inputs)
   (with-context
-      (_ (make-node :EINOPS :TC (list (gensym)) inputs :expr (tc-expr op) :iterators (tc-iterators op)))))
+      (_ (emit (make-node :EINOPS :TC (list (gensym)) (map 'list #'node->id inputs) :expr (tc-expr op) :iterators (tc-iterators op))))))
 
 (defun form->expr (form iteration-vars variables)
   (flet ((explore (x) (form->expr x iteration-vars variables)))
@@ -93,6 +90,9 @@
  in weight)
 ```
 
+  ;; iterators and range
+  ;; :~ = list of shape
+  ;; other args -> (keyword . shape)
 - How to support VM? -> doing (compile nil body)
 - How to implement autodiff?
 ```
@@ -120,7 +120,7 @@
              ,@(loop for i in iteration-vars
                      collect `(cons ',i ,i)))))
          :expr
-         ,(form->expr form iteration-vars variables))
+         ,(form->expr form (append (map 'list #'car where) iteration-vars) variables))
         ,@input-vars))))
 
 
