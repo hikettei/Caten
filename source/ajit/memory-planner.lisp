@@ -633,4 +633,4 @@ If the tensor `out` is labelled as :output by the memory-planner, and not appear
                                  ;; [Note] If the output buffer is used by another kernels, that should be a matrix.
 				 (apply #'append (nthcdr (1+ nth) args-by-time))
 				 (apply #'append (nthcdr ith (nth nth args-by-time)))))
-		    do (output->scalar-mutation mp g kernel-renderer deps))))))
+	            do (output->scalar-mutation mp g kernel-renderer deps))))))

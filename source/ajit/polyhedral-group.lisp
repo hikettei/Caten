@@ -137,12 +137,12 @@ A Polyhedral form of the fused schedule group.
               (union-map-union WaR RaW)
               WaW)))
       (setf (pg-dependencies pg) dependencies)))
+  (format t "Before~%")
+  (format t "~%~a~%" (build pg))
   (let ((new (schedule pg)))
+    (format t "After~%")
     (setf (pg-schedule pg) new)
-
-    (print "Collapse")
-    (setf (pg-schedule pg) (print (loop-collapse pg "T0" (union-map-from-str "{ T0[c1, c2] -> T0[32 * c1 + c2] }"))))
-    (print (build pg))))
+    (format t "~%~a~%" (build pg))))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
   (let ((serialize-sccs 0)
@@ -150,6 +150,7 @@ A Polyhedral form of the fused schedule group.
         (maximize-coincidence 1)
         (treat-coalescing 1)
         (maximize-band-depth 1)
+        ;; Only schedule the scc. (not to change the structure of kernel)
         (schedule-whole-component 1))
     (macrolet ((set-option (name level)
 	         `(progn
@@ -437,8 +438,11 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (:documentation ""))
 ;; [Design] Only effects on Render-Graph and Pipelining
 ;; - Matmul+TransposeをFusionしないといけない
+;; - Loop Fusionと別で物事を考えた方がいい
+;; - 
 ;; - そうすれば ConvND < 1 Kernelsができるはず
 ;; - Assume ^がPrepreq, Embedding/Gemm, Tile, Loop Collapse, Vectorize
+;; [TODO] Not well tested...
 (defmethod loop-collapse ((pg Polyhedral-Auto-Scheduler) task transformation)
   "
 Task = T0

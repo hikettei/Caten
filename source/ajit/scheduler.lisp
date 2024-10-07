@@ -352,7 +352,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)))
        groups)
       (let* ((1_ (mapc #'post-simplify-multiexpr groups))
-             (2_ (when (= 1 (ctx:getenv :AUTO_SCHEDULER)) (mapc #'group->polyhedral-group groups)))
+             ;;(2_ (when (= 1 (ctx:getenv :AUTO_SCHEDULER)) (mapc #'group->polyhedral-group groups)))
 	     ;; Note: (make-instance 'MemoryPlanner ... ) will rewrite the graph of :reduction, it is destructive.
 	     ;; Subsequent optimizations do not assume the `graph` is DAG.
 	     ;; Graph-Level optimization should be performed just before it.
@@ -366,7 +366,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		     collect
 		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
-	(declare (ignore 1_ 2_ 3_))
+	(declare (ignore 1_ 3_))
 	(when (>= (ctx:getenv :JIT_DEBUG) 2)
 	  (format t "Final JIT Schedule:~%")
 	  (loop for nth upfrom 0
