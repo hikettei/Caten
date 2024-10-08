@@ -245,7 +245,6 @@ Options:
   (declare (type Polyhedral polyhedral)
 	   (type boolean verbose serialize))
   ;; [Refactor] SERIALIZE=1 in default. 
-  (setf serialize t)
   (macrolet ((debug-print (step-name)
                `(progn
                   (when verbose-all (format t "~%[~a]~%~a~%" ,step-name (print-polyhedral polyhedral nil)))

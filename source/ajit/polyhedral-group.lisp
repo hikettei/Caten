@@ -141,10 +141,11 @@ A Polyhedral form of the fused schedule group.
   (format t "Before~%")
   (format t "~%~a~%" (build pg))
   (print (schedule-get-root (pg-schedule pg)))
-  ;; (let ((new (schedule pg)))
-  ;;  (format t "After~%")
-  ;;  (setf (pg-schedule pg) new)
-  ;;  (format t "~%~a~%" (build pg)))
+  ; (let ((new (schedule pg)))
+   ; (format t "After~%")
+    ;(setf (pg-schedule pg) new)
+     ;(format t "~%~a~%" (build pg)))
+  
   )
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
@@ -154,7 +155,7 @@ A Polyhedral form of the fused schedule group.
         (treat-coalescing 1)
         (maximize-band-depth 1)
         ;; Only schedule the scc. (not to change the structure of kernel)
-        (schedule-whole-component 1))
+        (schedule-whole-component 0))
     (macrolet ((set-option (name level)
 	         `(progn
 		    (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
@@ -169,6 +170,11 @@ A Polyhedral form of the fused schedule group.
                (set-option "schedule_maximize_band_depth" maximize-band-depth)
                (set-option "schedule_whole_component" schedule-whole-component)))
         (configure))))
+  ;; [TODO] Find best configuration for it
+  ;; Finding optimal solution for both
+  ;; - (!add (!add (!matmul (make-tensor `(10 20)) (make-tensor `(20 30)))
+  ;;                     (!matmul (make-tensor `(10 20)) (make-tensor `(20 30)))))
+  ;; - Embedding
   ;; [TODO] Create Reconfigurable Polyhedral Compiler
   (schedule-constraints-compute-schedule
    (schedule-constraints-set-coincidence
