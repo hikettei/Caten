@@ -2,7 +2,7 @@
 
 (defstruct (Polyhedral
 	    (:conc-name poly-)
-	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs &key (ast-option :atomic))))
+	    (:constructor make-polyhedral (avm pipeline domain read write initial-schedule vm-inputs vm-outputs dynamic-shapes &key (ast-option :atomic))))
   (avm avm :type avm)
   (vm-inputs vm-inputs :type list)
   (vm-outputs vm-outputs :type list)
@@ -17,7 +17,8 @@
   (write-ptr (union-map-from-str write) :type union-map)
   (initial-schedule initial-schedule :type union-map)
   (schedule nil :type (or null Schedule))
-  (ast-option ast-option :type (member :separate :atomic)))
+  (ast-option ast-option :type (member :separate :atomic))
+  (dynamic-shapes dynamic-shapes :type list))
 
 (defun poly/io-scalar-p (poly x)
   (let ((type (gethash x (poly-vm-io-types poly))))
@@ -86,7 +87,7 @@
   (let* ((schedule (schedule-set-options schedule (poly-ast-option polyhedral)))
 	 (bands (multiple-value-list (collect-bandnode polyhedral)))
 	 ;; [TODO] Better way to determine the depth (currently, 2 x {band_count})
-	 (depth (* 2 (second bands)))
+	 (depth (+ 5 (pipeline/upper-nrank (poly-pipeline polyhedral))))
 	 (bands (car bands))
 	 (ast-build (ast-build-from-context (set-from-str "{:}")))
 	 (ast-build (ast-build-set-iterators ast-build (apply #'make-id-list (map 'list #'gid (range 0 (1+ depth))))))

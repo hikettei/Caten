@@ -9,6 +9,11 @@
   (print-unreadable-object (identifier stream :type t)
     (write-string (%isl-id-to-str (identifier-handle identifier)) stream)))
 
+(defun make-id-from-str (name)
+  (declare (type string name))
+  (%make-identifier
+   (cffi:with-foreign-string (char* name)
+     (%isl-id-alloc (context-handle *context*) char* (cffi:null-pointer)))))
 ;; If we call this function twice with the same arguments it will create the same result
 (defun make-identifier (name &key (no-intern nil))
   (declare (symbol name))
