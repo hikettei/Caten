@@ -17,9 +17,10 @@
            (infinite-idx
              (loop for i in (cdr infinite)
                    collect (cons (gensym) i)))
-           (iterators (append infinite-idx (loop for idx in iterators
-                                                 unless (equalp (symbol-name (car idx)) "~")
-                                                   collect idx))))
+           (iterators
+             (append infinite-idx (loop for idx in iterators
+                                        unless (equalp (symbol-name (car idx)) "~")
+                                          collect idx))))
       `(lambda (,@inputs)
          (with-st-bind (,(tc-where op) (map 'list #'make-tensor (map 'list #'buffer-shape (list ,@inputs))))
            ,(labels ((explore (dim)
@@ -46,6 +47,7 @@
   (apply #'%solve-st nil (tc-st op) nil nil inputs))
 (defmethod backward ((op TC) &optional prev-grad))
 (defmethod lower ((op TC) &rest inputs &aux (body (lower-into-lisp op)))
+  (print body)
   (with-context
       (_ (emit (make-node
                 :EINOPS :TC (list (gensym)) (map 'list #'node->id inputs)
