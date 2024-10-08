@@ -703,8 +703,47 @@ If failed, the function returns a keyword :failed"
               for nth upfrom 0
               for new-arg = (if (expr-zero-p axis)
                                 axis
+                                ;; offset: Loop Fusion always occurs at the deepest band
                                 (find-bands-from-unseen axis nth))
               collect new-arg)))))
+
+(defun buffer-iteration-space (buffer)
+  (let ((aref (render-isl-aref buffer)))
+    (when aref
+      (expr-recursive-deps aref))))
+
+(defun domain-from-loops (dst-loops)
+  (union-set-from-str
+   (format
+    nil
+    "{ [~a] : ~a } "
+    (render-list (map 'list #'(lambda (x) (getattr x :idx)) dst-loops))
+    (render-expr
+     (default-device :isl-expr)
+     (reduce
+      #'(lambda (x y) (make-expr :AND x y))
+      (append
+       (loop for dom in dst-loops
+             collect (make-expr :>= (make-const (getattr dom :idx) nil) (getattr dom :upfrom))
+             collect (getattr dom :below))))))))
+
+(defun union-map-from-buffer (domain buffer)
+  (union-map-from-str
+   (format
+    nil
+    "{ [~a] -> [~a] }"
+    (render-list (map 'list #'(lambda (x) (getattr x :idx)) domain))
+    (render-isl-aref buffer :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute nil))))
+
+(defun valid-transformation-p (read-domain node-domain read-node read-type)
+  (multiple-value-bind (rd dd) (values (domain-from-loops read-domain) (domain-from-loops node-domain))
+    (multiple-value-bind (rs ds)
+        (values
+         (union-map-from-buffer read-domain (car (relay-reads (read-type-relay read-node))))
+         (union-map-from-buffer node-domain read-type))
+      (print (union-set-apply rd rs))
+      (print (union-set-apply dd ds))
+      (print (union-set-equalp (union-set-apply rd rs) (union-set-apply dd ds))))))
 
 (defmethod expr-apply-post-multiexpr-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline &aux (changed-p nil))
   "Post MultiExpr Fusion Applicable Case 3, FUNCALLs strongly connected, and belongs to the partially equivalent loop (compared by idx, size, and order.)"
@@ -718,8 +757,18 @@ If failed, the function returns a keyword :failed"
          (no-across-domain-dep-p (id)
            (and
             (null (find id (group-across-time-deps group)))
-            (= (length (id->users graph id)) 1))))
-    (assert (eql :EXPR (node-type node)))
+            (= (length (id->users graph id)) 1)))
+         (buffer-iteration-space (buffer)
+           (let ((aref (render-isl-aref buffer)))
+             (when aref
+               (remove-duplicates
+                (intersection
+                 (loop for l in (graph-nodes (group-render-graph group))
+                       if (eql (node-type l) :FOR) collect (getattr l :idx))
+                 (map 'list #'symbol-name (expr-recursive-deps aref))
+                 :test #'equalp)
+                :test #'equalp)))))
+    (assert (find (node-type node) `(:WMMA :EXPR)))
     (loop with node-domain = (get-domain-from-funcall node)
           with node-iteration-space = (node->funcall node)
           for read in (cdr (node-reads node))
@@ -727,19 +776,22 @@ If failed, the function returns a keyword :failed"
           for read-node-orig = (id->value graph read)
           for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
           for read-domain = (and read-node (get-domain-from-funcall read-node))
+          for search-space = (buffer-iteration-space read-type)
           if (and (not (eql read (car (node-reads node))))
                   ;; [TODO] Do we need extra conditions here? (e.g.: no offsets were created, views)
-                  (null (buffer-inferred-permute read-type))
+                  ;; ここは要素感の依存がcomplicatedじゃないことを前提とする
                   ;; EXPR(output, x, y)
                   ;; output cannot be overwritten
                   node-domain read-domain
                   (null (getattr read-node :reduction))
                   ;; All bands must be intersect with the destination domain, or
                   ;; when merging with another kernel domain, the nest should be one.
-                  (= 1 (domain->funcall-depth (group-render-graph group)
-                                              (loop for d in read-domain
-                                                    unless (find (node-id d) node-domain :key #'node-id)
-                                                      collect d)))
+                  (=
+                   1
+                   (domain->funcall-depth (group-render-graph group)
+                                          (loop for d in read-domain
+                                                unless (find (node-id d) node-domain :key #'node-id)
+                                                  collect d)))
                   (no-across-domain-dep-p read)
                   (not (every #'eql (map 'list #'node-id node-domain) (map 'list #'node-id read-domain)))
                   (domain-eq-3 node-domain read-domain))
@@ -756,11 +808,18 @@ If failed, the function returns a keyword :failed"
                  ;; So it is ok to overwrite its attributes.
                  (assert (eql (node-type read-iteration-space) :FUNCALL))
                  ;; Transforms the iteration space of funcall to fit the destination.
-                 (let ((new-iteration-space (find-new-iteration-space
-                                             read-iteration-space node-iteration-space
-                                             read-domain node-domain)))
+                 (let* (
+                        (new-iteration-space (find-new-iteration-space
+                                              read-iteration-space node-iteration-space
+                                              read-domain node-domain)))
+                   (print search-space)
+                   (print new-iteration-space)
+                                        ;(print (group-render-graph group))
+                   (print "+++++")
                    (when (not (eql new-iteration-space :failed))
                      (setf changed-p t)
+                     ;; 1. readのIterdomainとIntersecrする必要がある
+                     ;; 2. Shuffleのorderを求めるアルゴリズムを考え直す
                      ;; It is required to make new FUNCALL with args are properly shuffed.
                      ;; By finding the equivalent loop bound
                      (setf (getattr read-iteration-space :args) new-iteration-space
@@ -772,8 +831,105 @@ If failed, the function returns a keyword :failed"
                                (relay-reads (read-type-relay read-node)) (butlast (relay-reads (read-type-relay read-node))))))
                      (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space))))))
   changed-p)
+;; [FIX] FindNewIterationSpaceの実装が間違っている
+;; 1.  candidateはTriggerが依存しているIterから選ぶべき
 
-;; (defmethod expr-apply-post-multiexpr-wmma-transpose
+(defmethod expr-apply-loop-fusion ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline
+                                   &aux
+                                   (changed-p nil)
+                                     (iter-ids
+                                      (loop for node in (graph-nodes (group-render-graph group))
+                                            if (eql (node-type node) :FOR)
+                                              collect (getattr node :idx))))
+  (flet ((get-domain-from-funcall (node)
+           (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
+         (node->funcall (node)
+	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
+	     (or
+              (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))
+              (error "~a should be found in the rendering graph.~%~a" node (group-render-graph group)))))
+         (no-across-domain-dep-p (id)
+           (and
+            (null (find id (group-across-time-deps group)))
+            (= (length (id->users graph id)) 1)))
+         (expr-space-eq (buffer1 buffer2 funcall1 funcall2 &aux (isl (default-device :isl-expr)))
+           ;; ISL Union Set
+           ;; Union SEt eq
+           ;; で，判定
+           (let* ((space1 (render-isl-aref buffer1 :genid #'(lambda (nth) (expr-x (nth nth (getattr funcall1 :args))))))
+                  (space2 (render-isl-aref buffer2 :genid #'(lambda (nth) (expr-x (nth nth (getattr funcall2 :args)))))))
+             (print space1)
+             (print space2)
+             (expr-eq space1 space2))))
+    (assert (find (node-type node) `(:WMMA :EXPR)) () "A trigger for pre-loop fusion should be a WMMA or EXPR. butgot ~a" node)
+    (loop with node-domain = (get-domain-from-funcall node)
+          with node-iteration-space = (node->funcall node)
+          for read in (cdr (node-reads node))
+          for read-type in (cdr (relay-reads (read-type-relay node)))
+          for read-node-orig = (id->value graph read)
+          for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
+          for read-domain = (and read-node (get-domain-from-funcall read-node))
+          for read-iteration-space = (and read-node (node->funcall read-node))
+          for read-write-type = (and read-node (car (relay-writes (read-type-relay read-node))))
+          ;; [Loop Fusion]
+          ;; Here, we try to relocate the source node (T0, T1) to the destination node (T2), to maximize the locality of memory.
+          ;; Loop Fusion is performed by this function, and ISL.
+          ;;     [read1]                [read2]
+          ;; | for (...)  |         | for (...)   |
+          ;; |  for (...) |         |  for (...)  | ...
+          ;; |    T0[...] |         |    T1[...]  |
+          ;;               \       /
+          ;;               |[node]|
+          ;;             | for (...) |
+          ;;             |  T3[...]  |
+          ;; To relocate the source node into the destination node, two nodes must satisfy the following conditions:
+          ;; 1. the size of the iteration space is the partially equivalent
+          ;; 2. By permuting the schedule, there's a case that access functions are the same.
+          ;; Especially if two nodes lives in the same domain (loop) and not anymore used by other kernels, they can be fused directly using the graft-expr function.
+          ;; In that case, T0 will be merged into T1, and T0 will be eliminated from the graph (Post-Operator Fusion).
+          ;; Otherwise, the compiler will serialize the two nodes in the same domain, expecting the scalar mutation by memory-planner.
+          ;; (If two vector operations lives in the same domain, and output tensor is labelled as :out, the tensor is mutated to scalar.)
+          ;;
+          ;; How to transform the iteration space of T0/T1 into the destination space T3?
+          ;; ->
+          if read-node
+            do (print "+++++")
+             (print read-node)
+             (print node)
+             (print read-iteration-space) ;; the length of args is the same in the domain!
+             (print node-iteration-space)
+             (print read-domain)
+             (print node-domain)
+             ;; EXPR1を満たすLoop Permutationをする必要がある
+             ;; 全通り検索
+             (print (expr-space-eq read-write-type read-type read-iteration-space node-iteration-space))
+             (print "++++++")
+             ;; 1
+             ;; 1
+             ;; _gid0
+             ;; 1
+
+             ;; _gid2
+             ;; _gid0
+             ;; _gid1
+             ;; 1
+             ;; _gid0 -> _gid1
+
+             ;; _gid0
+             ;; _gid1
+             ;; 1
+
+             ;; _gid1               _gid1
+             ;; _gid0 -> Permute -> _gid0
+             ;; _gid2               _gid2
+             ;; BroadcastしてるからEmbeddingはうまくいく
+             ;; しかしWMMAのTransposeはBroadcastじゃないので，0の場所から推定する方法はうまくいかない。
+             ;; WMMA+Transpose
+             ;; val_19のループT[10*_gid0+_gid1]が一致するようにPermuteする。(render-isl-arefのEXPR＿EQがうまくいくことを優先してShuffleする)
+             ;; 条件！node-readsとwriteで，Arefが一致すること！一致しない場合は，Suffleする
+          ))
+  changed-p)
+
 (defmethod post-simplify-multiexpr ((group Group))
   "Applies further multiexpr grouping to the scheduled mp.
 Consider this pseudo-python kernel representing Embedding Op.
@@ -859,9 +1015,14 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; t=2 | ENDFOR idx = ... (skip)
       ;;       ...
       ;; Applying render-graph level simplifiers, all of these are optional.
-      (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
-      (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
-      (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline) :recursively t)
+;;      (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
+;;      (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
+;;      (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline) :recursively t :type :EXPR)
+;;      (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline) :recursively t :type :WMMA)
+
+      (do-funcall (expr-apply-loop-fusion group graph node funcall->domain nodeid->pipeline) :recursively t :type :EXPR)
+      (do-funcall (expr-apply-loop-fusion group graph node funcall->domain nodeid->pipeline) :recursively t :type :WMMA)
+      
       ;; TODO: Special Simplifier to :type :WMMA
       ;; - [ ] Fix: broadcast-regression-test (when packed=1, they cannot be unrolled, especially when including :INDEX_COMPONENTS)
       ;; - [ ] WMMA+Transpoe Fusion
