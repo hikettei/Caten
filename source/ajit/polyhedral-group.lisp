@@ -328,7 +328,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
         ...
 ```
 "
-  (let* ((deps (render-list (poly-dynamic-shape (group-polyhedron group))))
+  (let* ((deps (render-list (poly-dynamic-shapes (group-polyhedron group))))
          (render-nodes (kernel-renderer-nodes kr)))
     (multiple-value-bind (domain idx2domain) (render-domain-body-from-group group kr)
       (labels ((explore-schedule-tree (from to
