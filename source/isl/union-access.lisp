@@ -38,3 +38,8 @@
 (define-isl-function union-flow-get-may-dependence %isl-union-flow-get-may-dependence
   (:give union-map)
   (:take union-flow))
+
+(define-isl-function union-access-info-set-schedule %isl-union-access-info-set-schedule
+  (:give union-access-info)
+  (:take union-access-info)
+  (:take schedule))

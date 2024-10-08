@@ -221,7 +221,7 @@ A Polyhedral form of the fused schedule group.
                                  (loop for dom in domains
                                        collect (make-expr :>= (make-const (getattr dom :idx) nil) (getattr dom :upfrom))
                                        collect (getattr dom :below))
-                                 (loop for ds in (poly-dynamic-shape (group-polyhedron group))
+                                 (loop for ds in (poly-dynamic-shapes (group-polyhedron group))
                                        collect (make-expr :>= (make-const ds nil) (make-const 1 nil)))
                                  conditions))))
                       (if conditions
@@ -295,7 +295,7 @@ Corresponds to the position of the subgraph in the parent schedule.
 (defun render-access-rep (reader type-reader group idx2domain kr)
   (union-map-from-str
    (with-output-to-string (out)
-     (format out "[~(~a~)] -> {~%" (render-list (poly-dynamic-shape (group-polyhedron group))))
+     (format out "[~(~a~)] -> {~%" (render-list (poly-dynamic-shapes (group-polyhedron group))))
      (maphash
       #'(lambda (idx dom)
           (when (find idx kr :key #'(lambda (x) (and (eql (node-type x) :FUNCALL) (getattr x :idx))))
@@ -418,7 +418,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
           (format
            nil
            "[~(~a~)] -> ~a"
-           (render-list (poly-dynamic-shape (group-polyhedron group))) domain))
+           (render-list (poly-dynamic-shapes (group-polyhedron group))) domain))
          (render-access-rep #'node-reads #'relay-reads group idx2domain (kernel-renderer-nodes kr))
          (render-access-rep #'node-writes #'relay-writes group idx2domain (kernel-renderer-nodes kr))
          (explore-schedule-tree 0 (length render-nodes)))))))
@@ -462,53 +462,6 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ;; Deleting it?
 ;; [TODO] Not well tested...
 ;; Polyhedral GroupでFusionできると便利そう
-(defmethod loop-collapse ((pg Polyhedral-Auto-Scheduler) task transformation)
-  "
-Task = T0
-Transformation: e.g.: [] -> { T0[i, j] -> T0[10 * i + j] }
-"
-  (declare (type union-map transformation)
-           (type string task))
-  (let* ((domain (schedule-get-domain (pg-schedule pg)))
-         (new-domain (union-set-apply domain transformation))
-         (new-schedule (schedule-from-domain new-domain)))
-    (multiple-value-bind (old-seq new-seq)
-        (values
-         (schedule-node-get-child
-          (schedule-get-root (pg-schedule pg))
-          0)
-         (schedule-node-get-child
-          (schedule-get-root new-schedule)
-          0))
-      (let ((new-filters
-              (apply
-               #'make-union-set-list
-               (map
-                'list
-                #'union-set-from-set
-                (append
-                 (loop for old-filter in (butlast (schedule-node-get-children old-seq))
-                       collect (schedule-node-filter-get-filter (isl::%%make-schedule-node old-filter)))
-                 (list
-                  (space-universe-set
-                   (space-add-named-tuple-id-ui
-                    (union-set-get-space domain)
-                    (make-id-from-str task)
-                    1))))))))
-        (setf new-seq (schedule-insert-sequence new-seq new-filters))
-        (let ((new-band
-                (schedule-node-insert-partial-schedule
-                 (isl::%%make-schedule-node
-                  (car
-                   (schedule-node-get-children
-                    (isl::%%make-schedule-node
-                     (car (last (schedule-node-get-children new-seq)))))))
-                 (multi-union-pw-aff-from-str
-                  (format nil "L_0[{ ~a[i0] -> [(i0)] }]" task)))))
-          ;; [TODO] How to confirm the validity of loop collapse?
-          ;; [TODO] Why did they set 1?
-          ;; [TODO] Optimization for dynamic shape (using exist notation?)
-          (setf (pg-schedule pg) (schedule-node-get-schedule new-band)))))))
 
 (defmethod loop-fusion ((src Polyhedral-Auto-Scheduler) (dst Polyhedral-Auto-Scheduler))
   

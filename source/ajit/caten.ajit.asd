@@ -21,6 +21,7 @@
    (:file "kernel-info")
    (:file "multiexpr")
    (:file "transform")
+   (:file "polyhedral-group")
    (:file "memory-planner")
    (:file "device")
    (:file "backends/clang")
