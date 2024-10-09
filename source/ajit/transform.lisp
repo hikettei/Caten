@@ -564,7 +564,7 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
          (= (length (id->users graph read-id)) 1))
     ;; Graft the expr directly
     (extend-expr graph group dst-node read-node read-id nodeid->pipeline)
-    (return-from relocate-two-expr))
+    (return-from relocate-two-expr t))
   (setf (getattr src-iteration-space :args) new-src-iteration-space-list
         (gethash (gethash (node-id read-node) nodeid->pipeline) funcall->domain) node-domain)
   (when (expr-index-components-p (getattr read-node :expr))
@@ -587,6 +587,19 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                              (append perm (list x)))))))
       (helper lst nil)
       nil)))
+
+(defun domain-intersect-p (dom1 dom2 &aux (unseen-dom (copy-list dom1)))
+  "Assumes dom2 ⊆ dom1. dom2 and dom1 are partially equal."
+  (and
+   (>= (length dom1) (length dom2))
+   (every
+    #'(lambda (x)
+        (let ((val (find x unseen-dom :test #'domain-equal-space)))
+          (when val
+            (setf unseen-dom (remove (node-id val) unseen-dom :key #'node-id))
+            t)))
+    dom2)))
+
 ;; [TODO] Before Merge
 ;; - Refactor (current code is too complicated...)
 ;; - Fix for Embedding
@@ -689,6 +702,7 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
           if (and
               ;; read exists
               read-node
+              (domain-intersect-p node-domain read-domain)
               ;; (not (eql read (car (node-reads node))))
               ;; dimensions should match (but it is obvious because they are created from the same polyhedron)
               (= (length (getattr node-iteration-space :args)) (length (getattr read-iteration-space :args)))
@@ -727,7 +741,6 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                            permute)))
                    ;; [FixME] Is there an algorithm for finding this permutation in a one shot?
                    ;; I think doing this is ridiculous.
-                   ;; 0.312s for a singe 7D kernel
                    (let ((valid-permutation (find-permutation (range 0 rank) #'ok?)))
                      (when (and (not stop) valid-permutation)
                        (setf changed-p t)
