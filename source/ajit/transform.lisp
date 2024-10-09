@@ -707,131 +707,34 @@ If failed, the function returns a keyword :failed"
                                 (find-bands-from-unseen axis nth))
               collect new-arg)))))
 
-(defun buffer-iteration-space (buffer)
-  (let ((aref (render-isl-aref buffer)))
-    (when aref
-      (expr-recursive-deps aref))))
+(defun relocate-two-expr (group graph src-iteration-space new-src-iteration-space-list
+                          dst-iteration-space dst-node
+                          read-id read-node node-domain read-domain
+                          nodeid->pipeline funcall->domain)
+  (declare (type group group)
+           (type node src-iteration-space dst-iteration-space read-node)
+           (type list new-src-iteration-space-list node-domain read-domain)
+           (type hash-table nodeid->pipeline funcall->domain))
+  (when (and
+         ;; no permutation is required
+         (every #'expr-eq (getattr src-iteration-space :args) new-src-iteration-space-list)
+         ;; lives in the equivalent
+         (every #'eql (map 'list #'node-id node-domain) (map 'list #'node-id read-domain))
+         ;; no other kernel requires the output
+         (null (find read-id (group-across-time-deps group)))
+         (= (length (id->users graph read-id)) 1))
+    ;; Graft the expr directly
+    (extend-expr graph group dst-node read-node read-id nodeid->pipeline)
+    (return-from relocate-two-expr))
+  (setf (getattr src-iteration-space :args) new-src-iteration-space-list
+        (gethash (gethash (node-id read-node) nodeid->pipeline) funcall->domain) node-domain)
+  (when (expr-index-components-p (getattr read-node :expr))
+    ;; Serialized Index-Components are 100% mutated as scalar
+    (when (= (length (node-reads read-node)) 2)
+      (setf (node-reads read-node) (butlast (node-reads read-node))
+            (relay-reads (read-type-relay read-node)) (butlast (relay-reads (read-type-relay read-node))))))
+  (serialize-graph (group-render-graph group) src-iteration-space dst-iteration-space))
 
-(defun domain-from-loops (dst-loops)
-  (union-set-from-str
-   (format
-    nil
-    "{ [~a] : ~a } "
-    (render-list (map 'list #'(lambda (x) (getattr x :idx)) dst-loops))
-    (render-expr
-     (default-device :isl-expr)
-     (reduce
-      #'(lambda (x y) (make-expr :AND x y))
-      (append
-       (loop for dom in dst-loops
-             collect (make-expr :>= (make-const (getattr dom :idx) nil) (getattr dom :upfrom))
-             collect (getattr dom :below))))))))
-
-(defun union-map-from-buffer (domain buffer)
-  (union-map-from-str
-   (format
-    nil
-    "{ [~a] -> [~a] }"
-    (render-list (map 'list #'(lambda (x) (getattr x :idx)) domain))
-    (render-isl-aref buffer :indexing #'isl-access-expr-no-stride :mutate-scalar t :flatten t :use-permute nil))))
-
-(defun valid-transformation-p (read-domain node-domain read-node read-type)
-  (multiple-value-bind (rd dd) (values (domain-from-loops read-domain) (domain-from-loops node-domain))
-    (multiple-value-bind (rs ds)
-        (values
-         (union-map-from-buffer read-domain (car (relay-reads (read-type-relay read-node))))
-         (union-map-from-buffer node-domain read-type))
-      (print (union-set-apply rd rs))
-      (print (union-set-apply dd ds))
-      (print (union-set-equalp (union-set-apply rd rs) (union-set-apply dd ds))))))
-
-(defmethod expr-apply-post-multiexpr-subdomain ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline &aux (changed-p nil))
-  "Post MultiExpr Fusion Applicable Case 3, FUNCALLs strongly connected, and belongs to the partially equivalent loop (compared by idx, size, and order.)"
-  (flet ((get-domain-from-funcall (node)
-           (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
-         (node->funcall (node)
-	   (let ((idx (gethash (node-id node) nodeid->pipeline)))
-	     (or
-              (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))
-              (error "~a should be found in the rendering graph.~%~a" node (group-render-graph group)))))
-         (no-across-domain-dep-p (id)
-           (and
-            (null (find id (group-across-time-deps group)))
-            (= (length (id->users graph id)) 1)))
-         (buffer-iteration-space (buffer)
-           (let ((aref (render-isl-aref buffer)))
-             (when aref
-               (remove-duplicates
-                (intersection
-                 (loop for l in (graph-nodes (group-render-graph group))
-                       if (eql (node-type l) :FOR) collect (getattr l :idx))
-                 (map 'list #'symbol-name (expr-recursive-deps aref))
-                 :test #'equalp)
-                :test #'equalp)))))
-    (assert (find (node-type node) `(:WMMA :EXPR)))
-    (loop with node-domain = (get-domain-from-funcall node)
-          with node-iteration-space = (node->funcall node)
-          for read in (cdr (node-reads node))
-          for read-type in (cdr (relay-reads (read-type-relay node)))
-          for read-node-orig = (id->value graph read)
-          for read-node = (when (and read-node-orig (eql (node-type read-node-orig) :EXPR)) read-node-orig)
-          for read-domain = (and read-node (get-domain-from-funcall read-node))
-          for search-space = (buffer-iteration-space read-type)
-          if (and (not (eql read (car (node-reads node))))
-                  ;; [TODO] Do we need extra conditions here? (e.g.: no offsets were created, views)
-                  ;; ここは要素感の依存がcomplicatedじゃないことを前提とする
-                  ;; EXPR(output, x, y)
-                  ;; output cannot be overwritten
-                  node-domain read-domain
-                  (null (getattr read-node :reduction))
-                  ;; All bands must be intersect with the destination domain, or
-                  ;; when merging with another kernel domain, the nest should be one.
-                  (=
-                   1
-                   (domain->funcall-depth (group-render-graph group)
-                                          (loop for d in read-domain
-                                                unless (find (node-id d) node-domain :key #'node-id)
-                                                  collect d)))
-                  (no-across-domain-dep-p read)
-                  (not (every #'eql (map 'list #'node-id node-domain) (map 'list #'node-id read-domain)))
-                  (domain-eq-3 node-domain read-domain))
-            ;; for (...)               }
-            ;;   T0(0, 0, a, 0)
-            ;; for (...)               } If loops are partially equivalent.
-            ;;   for(...)
-            ;;     for(...)
-            ;;       for (...)
-            ;;         T1(a, b, c, d)
-            ;; The compiler can insert Permute(T0) before the execution of T1, by permuting the schedule of T0.
-            do (let ((read-iteration-space (node->funcall read-node)))
-                 ;; Assumes read-iteration-space funcall was used at once in the render-graph.
-                 ;; So it is ok to overwrite its attributes.
-                 (assert (eql (node-type read-iteration-space) :FUNCALL))
-                 ;; Transforms the iteration space of funcall to fit the destination.
-                 (let* (
-                        (new-iteration-space (find-new-iteration-space
-                                              read-iteration-space node-iteration-space
-                                              read-domain node-domain)))
-                   (print search-space)
-                   (print new-iteration-space)
-                                        ;(print (group-render-graph group))
-                   (print "+++++")
-                   (when (not (eql new-iteration-space :failed))
-                     (setf changed-p t)
-                     ;; 1. readのIterdomainとIntersecrする必要がある
-                     ;; 2. Shuffleのorderを求めるアルゴリズムを考え直す
-                     ;; It is required to make new FUNCALL with args are properly shuffed.
-                     ;; By finding the equivalent loop bound
-                     (setf (getattr read-iteration-space :args) new-iteration-space
-                           (gethash (gethash (node-id read-node) nodeid->pipeline) funcall->domain) node-domain)
-                     (when (expr-index-components-p (getattr read-node :expr))
-                       ;; Serialized Index-Components are 100% mutated as scalar
-                       (when (= (length (node-reads read-node)) 2)
-                         (setf (node-reads read-node) (butlast (node-reads read-node))
-                               (relay-reads (read-type-relay read-node)) (butlast (relay-reads (read-type-relay read-node))))))
-                     (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space)
-                     )))))
-  changed-p)
 ;; [FIX] FindNewIterationSpaceの実装が間違っている
 ;; 1.  candidateはTriggerが依存しているIterから選ぶべき
 (defun all-permutations (lst &optional (remain lst))
@@ -842,7 +745,13 @@ If failed, the function returns a keyword :failed"
                     (all-permutations (rest lst)))
             (all-permutations (append (rest lst) (list (first lst))) (rest remain))))))
 
-;; cleaen up before merge!
+;; [TODO] Before Merge
+;; - Refactor (current code is too complicated...)
+;; - Fix for Embedding
+;; - Fuse Broadcast+Transpose+Matmul in the test
+;; - Support for arbitary rank
+;; - Check the loop size.
+;; - Check !triu
 (defmethod expr-apply-loop-fusion ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline
                                    &aux
                                    (changed-p nil))
@@ -853,10 +762,6 @@ If failed, the function returns a keyword :failed"
 	     (or
               (find idx (graph-nodes (group-render-graph group)) :key #'(lambda (x) (getattr x :idx)))
               (error "~a should be found in the rendering graph.~%~a" node (group-render-graph group)))))
-         (no-across-domain-dep-p (id)
-           (and
-            (null (find id (group-across-time-deps group)))
-            (= (length (id->users graph id)) 1)))
          (buffer-iteration-space (buffer funcall)
            (let ((aref (render-isl-aref buffer :genid #'(lambda (nth) (expr-x (nth nth (getattr funcall :args)))))))
              (when aref
@@ -927,17 +832,30 @@ If failed, the function returns a keyword :failed"
           ;; How to transform the iteration space of T0/T1 into the destination space T3?
           ;; ->
           if (and
+              ;; read exists
               read-node
+              ;; read is not self
+              (not (eql read (car (node-reads node))))
+              ;; dimensions should match (but it is obvious because they are created from the same polyhedron)
               (= (length (getattr node-iteration-space :args)) (length (getattr read-iteration-space :args)))
               (= (length dst-space) (length src-space))
+              ;; Should satisfy either of:
+              ;; - All bands should be intersect with the destination domain
+              ;; - When merging with another kernel domain, the nest should be one.
+              (= 1 (domain->funcall-depth
+                    (group-render-graph group)
+                    (loop for d in read-domain
+                          unless (find (node-id d) node-domain :key #'node-id)
+                            collect d)))
+              ;; [TODO] delete this constraint!
               (<= (length dst-space) 4)
               ;; greedy algorithmis still really heavy
               ;; !!! 候補数を減らすべき
               ;;     固定していい箇所があるはず
               )
-            ;; argsort?
             do (let ((new-src-funcall (copy-node read-iteration-space))
-                     (rank (length (getattr node-iteration-space :args))))
+                     (rank (length (getattr node-iteration-space :args)))
+                     (stop nil))
                  (print src-space)
                  (print dst-space)
                  (setf (getattr new-src-funcall :args)
@@ -946,9 +864,13 @@ If failed, the function returns a keyword :failed"
                                collect arg
                              else
                                collect
-                               (let* ((dst-id
-                                        (nth (position (expr-x arg) src-space :test #'equalp) dst-space)))
-                                 (make-expr :const dst-id))))
+                               (let ((pos (position (expr-x arg) src-space :test #'equalp)))
+                                 (if pos
+                                     (make-expr :const (nth pos dst-space))
+                                     (progn
+                                       (setf stop t)
+                                       (make-expr :const 0)
+                                     )))))
                  ;; TODO: Refactor
                  (flet ((ok? (permute)
                           (expr-space-eq
@@ -958,7 +880,7 @@ If failed, the function returns a keyword :failed"
                            node-iteration-space
                            permute)))
                    (let ((valid-permutation (find-if #'ok? (all-permutations (range 0 rank)))))
-                     (when valid-permutation
+                     (when (and (not stop) valid-permutation)
                        (print "+++++")
                        (print new-src-funcall)
                        (print src-space)
@@ -975,24 +897,10 @@ If failed, the function returns a keyword :failed"
                        (print (permute-list valid-permutation (getattr new-src-funcall :args)))
                        (print "++++++")
                        ;; merging...
-
-                       ;; Permute the source funcall, Move the src into the destination
-                       (setf (getattr read-iteration-space :args) (permute-list valid-permutation (getattr new-src-funcall :args))
-                             (gethash (gethash (node-id read-node) nodeid->pipeline) funcall->domain) node-domain)
-
-                       (when (expr-index-components-p (getattr read-node :expr))
-                         ;; Serialized Index-Components are 100% mutated as scalar
-                         (when (= (length (node-reads read-node)) 2)
-                           (setf (node-reads read-node) (butlast (node-reads read-node))
-                                 (relay-reads (read-type-relay read-node)) (butlast (relay-reads (read-type-relay read-node))))))
-                       ;; Update the rendering graph
-                       (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space)))))
-               ;; BroadcastしてるからEmbeddingはうまくいく
-               ;; しかしWMMAのTransposeはBroadcastじゃないので，0の場所から推定する方法はうまくいかない。
-               ;; WMMA+Transpose
-               ;; val_19のループT[10*_gid0+_gid1]が一致するようにPermuteする。(render-isl-arefのEXPR＿EQがうまくいくことを優先してShuffleする)
-               ;; 条件！node-readsとwriteで，Arefが一致すること！一致しない場合は，Suffleする
-          ))
+                       (setf changed-p t)
+                       (relocate-two-expr group graph
+                        read-iteration-space (permute-list valid-permutation (getattr new-src-funcall :args))
+                        node-iteration-space node read read-node node-domain read-domain nodeid->pipeline funcall->domain)))))))
   changed-p)
 
 (defmethod post-simplify-multiexpr ((group Group))
@@ -1080,11 +988,6 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; t=2 | ENDFOR idx = ... (skip)
       ;;       ...
       ;; Applying render-graph level simplifiers, all of these are optional.
-;;      (do-funcall (expr-apply-post-multiexpr-in-domain group graph node funcall->domain nodeid->pipeline))
-;;      (do-funcall (expr-apply-post-multiexpr-in-equivalent-domain group graph node funcall->domain nodeid->pipeline))
-;;      (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline) :recursively t :type :EXPR)
-;;      (do-funcall (expr-apply-post-multiexpr-subdomain group graph node funcall->domain nodeid->pipeline) :recursively t :type :WMMA)
-
       (do-funcall (expr-apply-loop-fusion group graph node funcall->domain nodeid->pipeline) :recursively t :type :EXPR)
       (do-funcall (expr-apply-loop-fusion group graph node funcall->domain nodeid->pipeline) :recursively t :type :WMMA)
       
