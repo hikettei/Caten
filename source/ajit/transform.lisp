@@ -574,14 +574,19 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
             (relay-reads (read-type-relay read-node)) (butlast (relay-reads (read-type-relay read-node))))))
   (serialize-graph (group-render-graph group) src-iteration-space dst-iteration-space))
 
-(defun all-permutations (lst &optional (remain lst))
-  (cond ((null remain) nil)
-        ((null (rest lst)) (list lst))
-        (t (append
-            (mapcar (lambda (l) (cons (first lst) l))
-                    (all-permutations (rest lst)))
-            (all-permutations (append (rest lst) (list (first lst))) (rest remain))))))
-
+(defun find-permutation (lst predicate)
+  (declare (type list lst) (type function predicate)
+           (optimize (speed 3)))
+  (block find-permutation
+    (labels ((helper (remaining perm)
+               (if (null remaining)
+                   (when (funcall predicate perm)
+                     (return-from find-permutation perm))
+                   (dolist (x remaining)
+                     (helper (remove x remaining :count 1)
+                             (append perm (list x)))))))
+      (helper lst nil)
+      nil)))
 ;; [TODO] Before Merge
 ;; - Refactor (current code is too complicated...)
 ;; - Fix for Embedding
@@ -591,7 +596,6 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
 ;;   - 1. Index-ComponentがMergeされない
 ;;   - 2. Fuse Broadcast+Transpose+Matmul in the test
 ;; - PGでのSchedule -> Scalarの部分を固定する
-
 ;; [TODO] Refactor this function
 (defmethod expr-apply-loop-fusion ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline
                                    &aux
@@ -613,14 +617,21 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                  if (find (getattr dom :idx) ids :test #'equalp)
                    collect (getattr dom :idx)))
          (expr-space-eq (buffer1 buffer2 funcall1 funcall2 permute)
-           (let* ((space1 (render-isl-aref
+           (declare (type buffer buffer1 buffer2)
+                    (type node funcall1 funcall2)
+                    (type list permute)
+                    (optimize (speed 3)))
+           (let* ((args1 (permute-list permute (getattr funcall1 :args)))
+                  (args2 (getattr funcall2 :args))
+                  (space1 (render-isl-aref
                            buffer1
-                           :genid #'(lambda (nth) (expr-x (nth nth (permute-list permute (getattr funcall1 :args)))))
+                           :genid #'(lambda (nth) (expr-x (nth nth args1)))
                            :sum nil))
                   (space2 (render-isl-aref
                            buffer2
-                           :genid #'(lambda (nth) (expr-x (nth nth (getattr funcall2 :args))))
+                           :genid #'(lambda (nth) (expr-x (nth nth args2)))
                            :sum nil)))
+             (declare (type list space1 space2))
              (and
               space1 space2
               (= (length space1) (length space2))
@@ -691,10 +702,7 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                 (group-render-graph group)
                 (loop for d in read-domain
                       unless (find (node-id d) node-domain :key #'node-id)
-                        collect d)))
-              ;; [TODO] delete this constraint!
-              (<= (length dst-space) 5)
-              )
+                        collect d))))
             do (let ((new-src-funcall (copy-node read-iteration-space))
                      (rank (length (getattr node-iteration-space :args)))
                      (stop nil))
@@ -717,17 +725,18 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                            new-src-funcall
                            node-iteration-space
                            permute)))
-                   (let ((valid-permutation (find-if #'ok? (all-permutations (range 0 rank)))))
+                   ;; [FixME] Is there an algorithm for finding this permutation in a one shot?
+                   ;; I think doing this is ridiculous.
+                   ;; 0.312s for a singe 7D kernel
+                   (let ((valid-permutation (find-permutation (range 0 rank) #'ok?)))
                      (when (and (not stop) valid-permutation)
-                       (print read-iteration-space)
-                       (print new-src-funcall)
-                       (print valid-permutation)
                        (setf changed-p t)
                        (relocate-two-expr
                         group graph
                         read-iteration-space
-                        (shuffle-args-with-fixing-zero-pos (getattr read-iteration-space :args)
-                                                           (permute-list valid-permutation (getattr new-src-funcall :args)))
+                        (shuffle-args-with-fixing-zero-pos
+                         (getattr read-iteration-space :args)
+                         (permute-list valid-permutation (getattr new-src-funcall :args)))
                         node-iteration-space node read read-node node-domain read-domain nodeid->pipeline funcall->domain)))))))
   changed-p)
 
