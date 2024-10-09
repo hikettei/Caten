@@ -593,7 +593,6 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
 ;;   - 1. Index-ComponentがMergeされない
 ;;   - 2. Fuse Broadcast+Transpose+Matmul in the test
 ;; - PGでのSchedule -> Scalarの部分を固定する
-
 (defmethod expr-apply-loop-fusion ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline
                                    &aux
                                    (changed-p nil))
@@ -613,8 +612,6 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
            (loop for dom in domains
                  if (find (getattr dom :idx) ids :test #'equalp)
                    collect (getattr dom :idx)))
-         (id-getdomain (id domains)
-           (find id domains :key #'(lambda (x) (getattr x :idx)) :test #'equalp))
          (expr-space-eq (buffer1 buffer2 funcall1 funcall2 permute)
            (let* ((space1 (render-isl-aref
                            buffer1
@@ -635,7 +632,17 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                            (setf space2 (remove x space2 :test #'expr-eq))
                            t)
                          (return-from expr-space-eq))))
-               space1)))))
+               space1))))
+         (shuffle-args-with-fixing-zero-pos (src-args new-args)
+           (let ((new-args-w/o-zero
+                   (loop for arg in new-args
+                         unless (expr-zero-p arg)
+                           collect arg)))
+             (loop for arg in src-args
+                   if (expr-zero-p arg)
+                     collect arg
+                   else
+                     collect (pop new-args-w/o-zero)))))
     (assert (find (node-type node) `(:WMMA :EXPR)) () "A trigger for pre-loop fusion should be a WMMA or EXPR. butgot ~a" node)
     (loop with node-domain = (get-domain-from-funcall node)
           with node-iteration-space = (node->funcall node)
@@ -688,7 +695,6 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
               ;; [TODO] delete this constraint!
               (<= (length dst-space) 5)
               ;; まず隣接するループ同士が同じならその次元は固定する
-              ;; 
               ;; greedy algorithmis still really heavy
               ;; !!! 候補数を減らすべき
               ;;     固定していい箇所があるはず
@@ -696,11 +702,6 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
             do (let ((new-src-funcall (copy-node read-iteration-space))
                      (rank (length (getattr node-iteration-space :args)))
                      (stop nil))
-                 (print "+++++++")
-                 (print node)
-                 (print read-node)
-                 (print node-iteration-space)
-                 (print read-iteration-space)
                  (setf (getattr new-src-funcall :args)
                        (loop for arg in (getattr new-src-funcall :args)
                              if (expr-zero-p arg)
@@ -711,7 +712,7 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                                  (if pos
                                      (make-expr :const (nth pos dst-space))
                                      (progn
-                                       (setf stop t)
+                                       (setf stop t) ;; If not found -> failed
                                        (make-expr :const 0))))))
                  (flet ((ok? (permute)
                           (expr-space-eq
@@ -722,21 +723,13 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                            permute)))
                    (let ((valid-permutation (find-if #'ok? (all-permutations (range 0 rank)))))
                      (when (and (not stop) valid-permutation)
-                       ;; merging...
                        (setf changed-p t)
-                       (let ((args (loop for l in (permute-list valid-permutation (getattr new-src-funcall :args))
-                                         unless (Expr-zero-p l)
-                                           collect l)))
-                         ;; _gid2 _gid0 _gid1 0
-                         ;; 0の位置は変わるべきではない？
-                         (setf args (loop for rit in (getattr read-iteration-space :args)
-                                          if (expr-zero-p rit) collect rit
-                                            else
-                                          collect (pop args)))
-                         (relocate-two-expr
-                          group graph
-                          read-iteration-space args
-                          node-iteration-space node read read-node node-domain read-domain nodeid->pipeline funcall->domain))))))))
+                       (relocate-two-expr
+                        group graph
+                        read-iteration-space
+                        (shuffle-args-with-fixing-zero-pos (getattr read-iteration-space :args)
+                                                           (permute-list valid-permutation (getattr new-src-funcall :args)))
+                        node-iteration-space node read read-node node-domain read-domain nodeid->pipeline funcall->domain)))))))
   changed-p)
 
 (defmethod post-simplify-multiexpr ((group Group))
@@ -828,7 +821,7 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       
       ;; TODO: Special Simplifier to :type :WMMA
       ;; - [ ] Fix: broadcast-regression-test (when packed=1, they cannot be unrolled, especially when including :INDEX_COMPONENTS)
-      ;; - [ ] WMMA+Transpoe Fusion
+      ;; - [x] WMMA+Transpoe Fusion
 
       ;; TODO: Merge Domain and SubDomain in order to complete following thing:
       ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
