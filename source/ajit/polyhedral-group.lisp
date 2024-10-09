@@ -16,7 +16,6 @@
 ;; - Transpose+Matmul Fusion
 ;; - Deprecate ./polyhedral.lisp and existing polyhedral compiler, replace with this!!!
 ;;   - If they can fuse the Embedding < 1 w/o using old compiler, then it's a success and replace!
-;;   - delete transform.lisp (possible?) (どこまで1 Kernelにするか知りたいから消さない方がいいかも？ for now)
 (defclass Polyhedral-Group ()
   ((base :initarg :base :type Group :accessor polyhedral-group-base)
    (kr   :initarg :kr :type Kernel-Renderer :accessor polyhedral-kr))

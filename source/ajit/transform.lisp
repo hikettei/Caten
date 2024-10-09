@@ -694,10 +694,6 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                         collect d)))
               ;; [TODO] delete this constraint!
               (<= (length dst-space) 5)
-              ;; まず隣接するループ同士が同じならその次元は固定する
-              ;; greedy algorithmis still really heavy
-              ;; !!! 候補数を減らすべき
-              ;;     固定していい箇所があるはず
               )
             do (let ((new-src-funcall (copy-node read-iteration-space))
                      (rank (length (getattr node-iteration-space :args)))
@@ -723,6 +719,9 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
                            permute)))
                    (let ((valid-permutation (find-if #'ok? (all-permutations (range 0 rank)))))
                      (when (and (not stop) valid-permutation)
+                       (print read-iteration-space)
+                       (print new-src-funcall)
+                       (print valid-permutation)
                        (setf changed-p t)
                        (relocate-two-expr
                         group graph
@@ -817,20 +816,6 @@ Note: This is a trade-off: it minimizes the number of DRAM accesses, which gener
       ;; t=2 | ENDFOR idx = ... (skip)
       ;;       ...
       ;; Applying render-graph level simplifiers, all of these are optional.
+      ;; - [ ] Fuse Scalar Kernel + Matmul Kernel, (See (!normal) with :mean=0.0, :std=1.0)
       (do-funcall (expr-apply-loop-fusion group graph node funcall->domain nodeid->pipeline) :recursively t)
-      
-      ;; TODO: Special Simplifier to :type :WMMA
-      ;; - [ ] Fix: broadcast-regression-test (when packed=1, they cannot be unrolled, especially when including :INDEX_COMPONENTS)
-      ;; - [x] WMMA+Transpoe Fusion
-
-      ;; TODO: Merge Domain and SubDomain in order to complete following thing:
-      ;; 1. Tranpose+Matmul Fusion (< 1 Kernels by propagating transpose)
-      ;; 2. [ ] Randn < 2 Kernels by propagation scalar parts
-      ;; Merge: Scalar
-      ;;          |
-      ;;        Matrix
-      ;; 3. [x] In-Place Embedding, By propagating index-components and boolean parts
-      ;; [TODO] Delete following pattern node (after applying memory-planner)
-      ;; A = A; (confirmeed by calling !normal (where :mean=0.0, :std=1.0))
-      ;; [TODO] Tile/Parallel/Loop Fission Scheduling to the graph applied memory-planner.
       (simplify-render-graph group))))
