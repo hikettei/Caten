@@ -574,8 +574,6 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
             (relay-reads (read-type-relay read-node)) (butlast (relay-reads (read-type-relay read-node))))))
   (serialize-graph (group-render-graph group) src-iteration-space dst-iteration-space))
 
-;; [FIX] FindNewIterationSpaceの実装が間違っている
-;; 1.  candidateはTriggerが依存しているIterから選ぶべき
 (defun all-permutations (lst &optional (remain lst))
   (cond ((null remain) nil)
         ((null (rest lst)) (list lst))
@@ -593,9 +591,11 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
 ;;   - 1. Index-ComponentがMergeされない
 ;;   - 2. Fuse Broadcast+Transpose+Matmul in the test
 ;; - PGでのSchedule -> Scalarの部分を固定する
+
+;; [TODO] Refactor this function
 (defmethod expr-apply-loop-fusion ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline
                                    &aux
-                                   (changed-p nil))
+                                     (changed-p nil))
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
          (node->funcall (node)
