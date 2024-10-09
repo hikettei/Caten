@@ -829,18 +829,23 @@ If failed, the function returns a keyword :failed"
                        (when (= (length (node-reads read-node)) 2)
                          (setf (node-reads read-node) (butlast (node-reads read-node))
                                (relay-reads (read-type-relay read-node)) (butlast (relay-reads (read-type-relay read-node))))))
-                     (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space))))))
+                     (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space)
+                     )))))
   changed-p)
 ;; [FIX] FindNewIterationSpaceの実装が間違っている
 ;; 1.  candidateはTriggerが依存しているIterから選ぶべき
+(defun all-permutations (lst &optional (remain lst))
+  (cond ((null remain) nil)
+        ((null (rest lst)) (list lst))
+        (t (append
+            (mapcar (lambda (l) (cons (first lst) l))
+                    (all-permutations (rest lst)))
+            (all-permutations (append (rest lst) (list (first lst))) (rest remain))))))
 
+;; cleaen up before merge!
 (defmethod expr-apply-loop-fusion ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline
                                    &aux
-                                   (changed-p nil)
-                                     (iter-ids
-                                      (loop for node in (graph-nodes (group-render-graph group))
-                                            if (eql (node-type node) :FOR)
-                                              collect (getattr node :idx))))
+                                   (changed-p nil))
   (flet ((get-domain-from-funcall (node)
            (gethash (or (gethash (node-id node) nodeid->pipeline) (error "~a is not defined in nodeid->pipeline." node)) funcall->domain))
          (node->funcall (node)
@@ -852,15 +857,40 @@ If failed, the function returns a keyword :failed"
            (and
             (null (find id (group-across-time-deps group)))
             (= (length (id->users graph id)) 1)))
-         (expr-space-eq (buffer1 buffer2 funcall1 funcall2 &aux (isl (default-device :isl-expr)))
-           ;; ISL Union Set
-           ;; Union SEt eq
-           ;; で，判定
-           (let* ((space1 (render-isl-aref buffer1 :genid #'(lambda (nth) (expr-x (nth nth (getattr funcall1 :args))))))
-                  (space2 (render-isl-aref buffer2 :genid #'(lambda (nth) (expr-x (nth nth (getattr funcall2 :args)))))))
-             (print space1)
-             (print space2)
-             (expr-eq space1 space2))))
+         (buffer-iteration-space (buffer funcall)
+           (let ((aref (render-isl-aref buffer :genid #'(lambda (nth) (expr-x (nth nth (getattr funcall :args)))))))
+             (when aref
+               (remove-duplicates
+                (intersection
+                 (loop for l in (graph-nodes (group-render-graph group))
+                       if (eql (node-type l) :FOR) collect (getattr l :idx))
+                 (expr-recursive-deps aref)
+                 :test #'equalp)
+                :test #'equalp))))
+         (mg (ids domains)
+           (loop for dom in domains
+                 if (find (getattr dom :idx) ids :test #'equalp)
+                   collect (getattr dom :idx)))
+         (expr-space-eq (buffer1 buffer2 funcall1 funcall2 permute)
+           (let* ((space1 (render-isl-aref
+                           buffer1
+                           :genid #'(lambda (nth) (expr-x (nth nth (permute-list permute (getattr funcall1 :args)))))
+                           :sum nil))
+                  (space2 (render-isl-aref
+                           buffer2
+                           :genid #'(lambda (nth) (expr-x (nth nth (getattr funcall2 :args))))
+                           :sum nil)))
+             (and
+              (= (length space1) (length space2))
+              (every
+               #'(lambda (x)
+                   (let ((val (find x space2 :test #'expr-eq)))
+                     (if val
+                         (progn
+                           (setf space2 (remove val space2 :test #'expr-eq))
+                           t)
+                         (return-from expr-space-eq))))
+               space1)))))
     (assert (find (node-type node) `(:WMMA :EXPR)) () "A trigger for pre-loop fusion should be a WMMA or EXPR. butgot ~a" node)
     (loop with node-domain = (get-domain-from-funcall node)
           with node-iteration-space = (node->funcall node)
@@ -871,6 +901,10 @@ If failed, the function returns a keyword :failed"
           for read-domain = (and read-node (get-domain-from-funcall read-node))
           for read-iteration-space = (and read-node (node->funcall read-node))
           for read-write-type = (and read-node (car (relay-writes (read-type-relay read-node))))
+          ;; A list of symbols which destination buffer depends on
+          for dst-space = (and read-type (mg (buffer-iteration-space read-type node-iteration-space) node-domain))
+          ;; A list of symbols which source buffer depends on
+          for src-space = (and read-write-type (mg (buffer-iteration-space read-write-type read-iteration-space) read-domain))
           ;; [Loop Fusion]
           ;; Here, we try to relocate the source node (T0, T1) to the destination node (T2), to maximize the locality of memory.
           ;; Loop Fusion is performed by this function, and ISL.
@@ -892,41 +926,72 @@ If failed, the function returns a keyword :failed"
           ;;
           ;; How to transform the iteration space of T0/T1 into the destination space T3?
           ;; ->
-          if read-node
-            do (print "+++++")
-             (print read-node)
-             (print node)
-             (print read-iteration-space) ;; the length of args is the same in the domain!
-             (print node-iteration-space)
-             (print read-domain)
-             (print node-domain)
-             ;; EXPR1を満たすLoop Permutationをする必要がある
-             ;; 全通り検索
-             (print (expr-space-eq read-write-type read-type read-iteration-space node-iteration-space))
-             (print "++++++")
-             ;; 1
-             ;; 1
-             ;; _gid0
-             ;; 1
+          if (and
+              read-node
+              (= (length (getattr node-iteration-space :args)) (length (getattr read-iteration-space :args)))
+              (= (length dst-space) (length src-space))
+              (<= (length dst-space) 4)
+              ;; greedy algorithmis still really heavy
+              ;; !!! 候補数を減らすべき
+              ;;     固定していい箇所があるはず
+              )
+            ;; argsort?
+            do (let ((new-src-funcall (copy-node read-iteration-space))
+                     (rank (length (getattr node-iteration-space :args))))
+                 (print src-space)
+                 (print dst-space)
+                 (setf (getattr new-src-funcall :args)
+                       (loop for arg in (getattr new-src-funcall :args)
+                             if (expr-zero-p arg)
+                               collect arg
+                             else
+                               collect
+                               (let* ((dst-id
+                                        (nth (position (expr-x arg) src-space :test #'equalp) dst-space)))
+                                 (make-expr :const dst-id))))
+                 ;; TODO: Refactor
+                 (flet ((ok? (permute)
+                          (expr-space-eq
+                           read-write-type
+                           read-type
+                           new-src-funcall
+                           node-iteration-space
+                           permute)))
+                   (let ((valid-permutation (find-if #'ok? (all-permutations (range 0 rank)))))
+                     (when valid-permutation
+                       (print "+++++")
+                       (print new-src-funcall)
+                       (print src-space)
+                       (print dst-space)
+                       (print read-node)
+                       (print node)
+                       (print read-iteration-space) ;; the length of args is the same in the domain!
+                       (print node-iteration-space)
+                       (print read-domain)
+                       (print node-domain)
+                       (print valid-permutation)
+                       ;; dst-spaceを相対PositionベースでSortする必要がありそう.
+                       ;; LoopSizeが一致するか検証することが必要
+                       (print (permute-list valid-permutation (getattr new-src-funcall :args)))
+                       (print "++++++")
+                       ;; merging...
 
-             ;; _gid2
-             ;; _gid0
-             ;; _gid1
-             ;; 1
-             ;; _gid0 -> _gid1
+                       ;; Permute the source funcall, Move the src into the destination
+                       (setf (getattr read-iteration-space :args) (permute-list valid-permutation (getattr new-src-funcall :args))
+                             (gethash (gethash (node-id read-node) nodeid->pipeline) funcall->domain) node-domain)
 
-             ;; _gid0
-             ;; _gid1
-             ;; 1
-
-             ;; _gid1               _gid1
-             ;; _gid0 -> Permute -> _gid0
-             ;; _gid2               _gid2
-             ;; BroadcastしてるからEmbeddingはうまくいく
-             ;; しかしWMMAのTransposeはBroadcastじゃないので，0の場所から推定する方法はうまくいかない。
-             ;; WMMA+Transpose
-             ;; val_19のループT[10*_gid0+_gid1]が一致するようにPermuteする。(render-isl-arefのEXPR＿EQがうまくいくことを優先してShuffleする)
-             ;; 条件！node-readsとwriteで，Arefが一致すること！一致しない場合は，Suffleする
+                       (when (expr-index-components-p (getattr read-node :expr))
+                         ;; Serialized Index-Components are 100% mutated as scalar
+                         (when (= (length (node-reads read-node)) 2)
+                           (setf (node-reads read-node) (butlast (node-reads read-node))
+                                 (relay-reads (read-type-relay read-node)) (butlast (relay-reads (read-type-relay read-node))))))
+                       ;; Update the rendering graph
+                       (serialize-graph (group-render-graph group) read-iteration-space node-iteration-space)))))
+               ;; BroadcastしてるからEmbeddingはうまくいく
+               ;; しかしWMMAのTransposeはBroadcastじゃないので，0の場所から推定する方法はうまくいかない。
+               ;; WMMA+Transpose
+               ;; val_19のループT[10*_gid0+_gid1]が一致するようにPermuteする。(render-isl-arefのEXPR＿EQがうまくいくことを優先してShuffleする)
+               ;; 条件！node-readsとwriteで，Arefが一致すること！一致しない場合は，Suffleする
           ))
   changed-p)
 
