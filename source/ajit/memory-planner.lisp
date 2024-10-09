@@ -519,9 +519,11 @@ Lifespan:
            "Applies the dead code elimination"
 	   (setf (mp-kernels mp) (dead-kernel-elimination (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))))
     (prune)
+
+    ;; [Note] Auto_Scheduler is *work in progress*
+    ;; (mp-auto-schedule! mp)
+    ;; (prune)
     
-    ;(mp-auto-schedule! mp)
-    ;(prune)
     ;; 1. Mutate output buffers as a scalar
     (optimize-memory-load mp)
     ;; 2. Hide Latency Optimization

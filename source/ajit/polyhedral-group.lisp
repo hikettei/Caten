@@ -16,6 +16,7 @@
 ;; - Transpose+Matmul Fusion
 ;; - Deprecate ./polyhedral.lisp and existing polyhedral compiler, replace with this!!!
 ;;   - If they can fuse the Embedding < 1 w/o using old compiler, then it's a success and replace!
+;; WIP
 (defclass Polyhedral-Group ()
   ((base :initarg :base :type Group :accessor polyhedral-group-base)
    (kr   :initarg :kr :type Kernel-Renderer :accessor polyhedral-kr))
@@ -486,6 +487,7 @@ for (int ii=0; ii<M; ii+=ITILE)
   )
 
 (defmethod loop-permute ((pg Polyhedral-Auto-Scheduler) config)
+  
   )
 
 (defmethod unroll-bands ((polyhedral-group Polyhedral-Auto-Scheduler) unroll-factors)
