@@ -600,15 +600,6 @@ Sequantial FUNCALLs are counted as 1 if they belongs to the same loop body."
             t)))
     dom2)))
 
-;; [TODO] Before Merge
-;; - Refactor (current code is too complicated...)
-;; - Fix for Embedding
-;; - Support for arbitary rank
-;; - Check the loop size.
-;; - Check !triu
-;;   - 1. Index-ComponentがMergeされない
-;;   - 2. Fuse Broadcast+Transpose+Matmul in the test
-;; - PGでのSchedule -> Scalarの部分を固定する
 ;; [TODO] Refactor this function
 (defmethod expr-apply-loop-fusion ((group group) (graph graph) (node node) funcall->domain nodeid->pipeline
                                    &aux
