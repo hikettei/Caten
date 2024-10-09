@@ -403,16 +403,29 @@ FOR (...) {
 	       (let ((new (make-const-buffer (buffer-dtype buffer))))
 		 ;; depend-idx-list: required to compute the position of unrollment. e.g.: val_5 -> val_5_0, val_5_1, val_5_2, ...
 		 (setf (buffer-depend-idx-list new)
-		       (loop for shape in (buffer-shape buffer)
-			     for nth upfrom 0
-			     for view = (nth nth (buffer-views buffer))
-			     for dom = (nth nth domain-space)
-                             ;; No need to assert this: If the body has a IF, they wont be unrolled.
-			     ;; do (assert (eql (expr-op dom) :Const) () "Schedule is not a constant? (TODO: Add unrolling for this case ...)")
-			     if (or (eql 0 (expr-x dom)) (and view (nth 3 view)))
-			       collect nil
-			     else
-			       collect (expr-x dom)))
+
+
+
+
+
+
+
+
+                       
+                       (permute-list
+                        (or
+                         (buffer-inferred-permute buffer)
+                         (range 0 (buffer-nrank buffer)))
+		        (loop for shape in (buffer-shape buffer)
+			      for nth upfrom 0
+			      for view = (nth nth (buffer-views buffer))
+			      for dom = (nth nth domain-space)
+                              ;; No need to assert this: If the body has a IF, they wont be unrolled.
+			      ;; do (assert (eql (expr-op dom) :Const) () "Schedule is not a constant? (TODO: Add unrolling for this case ...)")
+			      if (or (eql 0 (expr-x dom)) (and view (nth 3 view)))
+			        collect nil
+			      else
+			        collect (expr-x dom))))
 		 (when (and expr read-p) (expr-recursive-settype expr id new))
 		 new))))
     (macrolet ((f (ids types read-p)
