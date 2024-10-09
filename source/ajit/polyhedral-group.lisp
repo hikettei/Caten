@@ -457,64 +457,6 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ;; - そうすれば ConvND < 1 Kernelsができるはず
 ;; - Assume ^がPrepreq, Embedding/Gemm, Tile, Loop Collapse, Vectorize
 
-;; Deleting it?
-;; [TODO] Not well tested...
-;; Polyhedral GroupでFusionできると便利そう
-
-(defmethod loop-fusion ((src Polyhedral-Auto-Scheduler) (dst Polyhedral-Auto-Scheduler))
-  (multiple-value-bind (domain read write schedule)
-      (scop
-       (polyhedral-group-base src)
-       (make-kernel-renderer :nodes (append (kernel-renderer-nodes (polyhedral-kr src)) (kernel-renderer-nodes (polyhedral-kr dst)))))
-    (let* ((access (union-access-info-from-sink read))
-           (access (union-access-info-set-must-source access write))
-           (access (union-access-info-set-schedule access schedule))
-           (flow (union-access-info-compute-flow access))
-           (RaW (union-flow-get-must-dependence flow))
-           (access (union-access-info-from-sink write))
-           (access (union-access-info-set-must-source access write))
-           (access (union-access-info-set-may-source access read))
-           (access (union-access-info-set-schedule access schedule))
-           (flow   (union-access-info-compute-flow access))
-           (WaW    (union-flow-get-must-dependence flow))
-           (WaR    (union-flow-get-may-dependence flow))
-           (dependencies
-             (union-map-union
-              (union-map-union WaR RaW)
-              WaW)))
-      ;; [Fix] T0 was not appeared in the graph...
-      ;; val_19[0, _gid1, _gid2]として読んでるのをval_19[_gid1, _gid2]として書いてるからダメ？
-      ;; [TODO] Loop Fusion!
-      (setf
-       (pg-schedule src)
-       (schedule-constraints-compute-schedule
-        (schedule-constraints-set-coincidence
-         (schedule-constraints-set-proximity
-          (schedule-constraints-set-validity
-           (schedule-constraints-on-domain domain)
-           dependencies)
-          dependencies)
-         dependencies)))
-      (print (build src))
-      nil)))
-
-(defun affine-fusion (polyhedral-groups)
-  (declare (type list polyhedral-groups))
-  (assert (every #'(lambda (x) (typep x 'Polyhedral-Auto-Scheduler)) polyhedral-groups))
-  ;; TODO: Serialiaze=1 in defaulkt
-  ;; [REFACTOR] : Delete ./Polyhedral (First Scheduling is not necessary!)
-  ;; Embedding x 2を一回のScheduleでFuseできたら最高
-  ;; Goal:
-  ;;  - ConvND (Einsum的なNotationga必要, Contignuousが多すぎる ...)
-  ;;  - Failing Case at the issue (Embedding+Embedding+FeedForward)
-  ;;  - Embedding
-  ;;  - Softmax
-  (when (>= (length polyhedral-groups) 2)
-    (print (loop-fusion (car polyhedral-groups) (second polyhedral-groups)))
-    )
-  (print polyhedral-groups)
-  )
-
 (defmethod loop-reorder ((pg Polyhedral-Auto-Scheduler) order)
   
   )
