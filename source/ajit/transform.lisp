@@ -41,7 +41,7 @@
 	  if (eql (node-type node) :FOR)
 	    do (return-from find-outermost-for node))))
 
-(defmethod kernel-renderer-loop-eq ((a kernel-renderer) (b kernel-renderer))
+(defmethod kernel-renderer-loop-eq ((a kernel-renderer) (b kernel-renderer) pipeline)
   "Compares two outermost loops in the a and b"
   (and
    (= (kernel-renderer-loop-depth a) (kernel-renderer-loop-depth b))
@@ -54,7 +54,24 @@
 	   (expr-eq (getattr a :below) (getattr b :below))
 	   (expr-eq (getattr a :by) (getattr b :by))
 	   (eql (getattr a :scope) (getattr b :scope))))
-      a-loops b-loops))))
+      a-loops b-loops))
+   ;; No Transposed
+   (flet ((ok? (kr)
+            (every
+             #'(lambda (x)
+                 (if (eql (node-type x) :FUNCALL)
+                     (let ((graph (gethash (getattr x :idx) pipeline)))
+                       (every
+                        #'(lambda (x)
+                            ;; No Permutation
+                            (or (null (buffer-inferred-permute x))
+                                (equal (buffer-inferred-permute x) (range 0 (buffer-nrank x)))))
+                        (loop for node in (graph-nodes graph)
+                              append (relay-reads (read-type-relay node))
+                              append (relay-writes (read-type-relay node)))))
+                     t))
+             (kernel-renderer-nodes kr))))
+     (and (ok? a) (ok? b)))))
 
 (defmethod separate-scalar-and-vector-parts ((a kernel-renderer))
   "Return: (values scalar-nodes vector-nodes) if nodes are:
@@ -125,7 +142,7 @@ for(int i=0; i<10; i++) {
             ((and (null a-scal) (null b-scal) a-vec b-vec)
              (apply-merge a-vec b-vec))))))))
 
-(defun fuse-outermost-loops (blueprints)
+(defun fuse-outermost-loops (blueprints pipeline)
   "Fuses two rendering groups whose outermost loops are the completely equivalent.
 This fusion is only applied in the original polyhedral group, (which is assumed to no circular deps, and time series deps are in straight)
 So we asssume all pairs of loop fusion are always valid.
@@ -148,7 +165,7 @@ for(int i=0; i<10; i++) {
 	 for blueprint in `(,@(cdr blueprints) nil)
 	 for merged = (when blueprint (merge-two-loops last-visited blueprint))
 	 collect
-	 (if (and blueprint merged (kernel-renderer-loop-eq last-visited blueprint))
+	 (if (and blueprint merged (kernel-renderer-loop-eq last-visited blueprint pipeline))
 	     (progn
 	       (setf last-visited
 		     (make-kernel-renderer
@@ -351,7 +368,7 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 	(setf (kernel-renderer-nodes kr) (unroll (kernel-renderer-nodes kr) (cdr iter)))))
     kr))
 
-(defun render-graph-from-polyhedral (nodes)
+(defun render-graph-from-polyhedral (nodes pipeline)
   "Finalizes an rendering graph to use based on nodes."
   (declare (type list nodes))
   (let ((kernels) (outputs))
@@ -370,14 +387,16 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
     (push (nreverse kernels) outputs)
     (funcall (if (= 1 (ctx:getenv :SERIALIZE))
                  #'identity
-                 #'fuse-outermost-loops)
+                 #'(lambda (x) (fuse-outermost-loops x pipeline)))
              (loop for out in (reverse outputs)
                    for nth upfrom 0
 	           collect (make-kernel-renderer :nodes out :nth nth)))))
 
 (defmethod ->render-graph ((group Group))
   (when (group-polyhedron group)
-    (render-graph-from-polyhedral (graph-nodes (group-render-graph group)))))
+    (render-graph-from-polyhedral
+     (graph-nodes (group-render-graph group))
+     (poly-pipeline (group-polyhedron group)))))
 ;; ~~ Memory Latency Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod update-buffer-as-scalar ((node Node) mutated-list domain-space)
   "Mutates :output buffer to scalar w/ a certain condition.
