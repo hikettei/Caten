@@ -521,8 +521,10 @@ Lifespan:
     (prune)
 
     ;; [Note] Auto_Scheduler is *work in progress*
-    ;; (mp-auto-schedule! mp)
-    ;; (prune)
+    (when (= 1 (ctx:getenv :AUTO_SCHEDULER))
+      (mp-auto-schedule! mp)
+      (prune))
+    ;; [TODO] Apply multiexpr in the final fused graph.
     
     ;; 1. Mutate output buffers as a scalar
     (optimize-memory-load mp)
