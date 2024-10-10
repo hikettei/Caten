@@ -218,7 +218,7 @@ Output: Groups"
 	    (format t "~%Extracted Polyhedron:~%(compile-isl~%:domain~%\"~a\"~%:read~%\"~a\"~%:write \"~a\"~%:schedule \"~a\"~%)"
 		    domain read-access write-access schedule)
 	  collect
-	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group)))))
+	  (make-polyhedral avm pipeline domain read-access write-access schedule-isl vm-inputs (group-writes group) dynamic-shapes))))
 
 (defun schedule-polyhedrons (backend group polyhedrons &key (verbose 0) (serialize))
   (declare (type list polyhedrons))
@@ -429,6 +429,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 			       (union-map-from-str schedule)
 			       nil
 			       nil
+                               nil
 			       :ast-option ast-option)))
     (auto-schedule! poly (default-device :clang))
     (print (schedule-get-root (poly-schedule poly)))

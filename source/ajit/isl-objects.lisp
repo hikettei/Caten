@@ -74,7 +74,6 @@
   (and
    (not (eql (node-class node) :IR))
    (not (eql (node-type node) :Allocate))))
-
 ;; ~~ AREF ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun isl-access-expr-no-stride (gid stride upfrom by broadcast-p)
   (declare (ignore stride))
@@ -99,7 +98,8 @@
 	 (make-const gid nil))
 	(make-expr :MUL (make-const upfrom nil) (make-const stride nil))))))
 
-(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'isl-access-expr) (flatten nil) (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) &aux (c 0))
+(defun render-isl-aref (buffer &key (genid #'gid) (indexing #'isl-access-expr) (flatten nil)
+                                 (strides nil) (use-permute nil) (upper nil) (mutate-scalar nil) (sum t) &aux (c 0))
   "Renders the stride computation for ISL:
 ```
 A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * index_component_1 + bias2 + ...]
@@ -129,11 +129,16 @@ A[stride1 * view_info1 * index_component_0 + bias1 + stride2 * view_info2 * inde
 	 #'concatenate 'string
 	 (butlast
           (loop for idx in (nconc indices (when upper (loop repeat (- upper c) collect (make-expr 0 nil))))
+                ;; if (not (expr-eq idx (make-const 0 nil)))
 		append (list (render-expr (default-device :clang) idx) ", "))))
 	(flet ((add (x y) (make-expr :ADD x y)))
 	  (if (null indices)
 	      nil
-	      (simplify-expr (reduce #'add indices)))))))
+              (if sum
+	          (simplify-expr (reduce #'add indices))
+                  (loop for e in (map 'list #'simplify-expr indices)
+                        unless (expr-zero-p e)
+                          collect e)))))))
 ;; ~~ DOMAIN ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun render-domain (pipeline target-keys &key (depends-on nil))
   "Render the domain notation from the scheduled subgraphs
