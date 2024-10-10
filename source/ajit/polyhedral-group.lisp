@@ -137,15 +137,7 @@ A Polyhedral form of the fused schedule group.
              (union-map-union
               (union-map-union WaR RaW)
               WaW)))
-      (setf (pg-dependencies pg) dependencies)))
-  (format t "Before~%")
-  (format t "~%~a~%" (build pg))
-  (print (pprint-schedule (pg-schedule pg)))
-  ;;(let ((new (schedule pg)))
-  ;;  (format t "After~%")
-  ;;  (setf (pg-schedule pg) new)
-  ;;  (format t "~%~a~%" (build pg)))
-  )
+      (setf (pg-dependencies pg) dependencies))))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
   (let ((serialize-sccs 0)
@@ -457,6 +449,12 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ;;   - Apply Loop Collapse/Tile to the final kernel
 ;; - そうすれば ConvND < 1 Kernelsができるはず
 ;; - Assume ^がPrepreq, Embedding/Gemm, Tile, Loop Collapse, Vectorize
+
+(defmethod polyhedral-auto-schedule ((pg Polyhedral-Auto-Scheduler))
+
+  )
+
+(defmethod polyhedral-auto-schedule ((pg Polyhedral-Group)))
 
 (defmethod loop-reorder ((pg Polyhedral-Auto-Scheduler) order)
   

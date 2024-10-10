@@ -509,8 +509,8 @@ Lifespan:
                       collect
                       (group->polyhedral-group group kr)))))
     (dolist (p polyhedrons)
-
-      )))
+      (dolist (pg p)
+        (polyhedral-auto-schedule pg)))))
 
 (defmethod retrive-kernels ((mp MemoryPlanner))
   "Finalizes the result of memory-planner, retriving the final rendering-graph"
@@ -524,10 +524,9 @@ Lifespan:
     (memory-plan mp t)
     ;; Overlap the tensor tmp allocations
     ;; [Note] Auto_Scheduler is *work in progress*
-    (when (= 1 (ctx:getenv :AUTO_SCHEDULER))
-      ;(mp-auto-schedule! mp)
-      ;(prune)
-      )
+    (when nil;(= 1 (ctx:getenv :AUTO_SCHEDULER))
+      (mp-auto-schedule! mp)
+      (prune))
     ;; [TODO] Apply multiexpr in the final fused graph.
     ;; [TODO] Add dead graph.nodes elimination here. ^ maybe produce unused ops.
     (loop for group in (mp-groups mp)
