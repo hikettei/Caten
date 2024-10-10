@@ -510,9 +510,7 @@ Lifespan:
                       (group->polyhedral-group group kr)))))
     (dolist (p polyhedrons)
 
-      )
-
-    ))
+      )))
 
 (defmethod retrive-kernels ((mp MemoryPlanner))
   "Finalizes the result of memory-planner, retriving the final rendering-graph"
@@ -523,7 +521,7 @@ Lifespan:
     (optimize-memory-load mp)
     (prune)
     (setf (mp-id2buffer mp) (make-hash-table))
-    (memory-plan mp nil)
+    (memory-plan mp t)
     ;; Overlap the tensor tmp allocations
     ;; [Note] Auto_Scheduler is *work in progress*
     (when (= 1 (ctx:getenv :AUTO_SCHEDULER))
@@ -531,11 +529,6 @@ Lifespan:
       ;(prune)
       )
     ;; [TODO] Apply multiexpr in the final fused graph.
-    ;; 1. Mutate output buffers as a scalar
-    
-    ;; 2. Hide Latency Optimization
-    ;; - The arrays should be loaded at once
-    ;; - In the last, storing the result.
     ;; [TODO] Add dead graph.nodes elimination here. ^ maybe produce unused ops.
     (loop for group in (mp-groups mp)
 	  for kernels in (mp-kernels mp)
