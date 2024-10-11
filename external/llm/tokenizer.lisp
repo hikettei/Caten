@@ -36,12 +36,20 @@
                            (subseq tokens 0 (1+ best-index))
                            (subseq tokens (+ 2 best-index)))))))
 
+;; caten/workflow
+;; - Includes a wrapper for `caten`.
+;; - Includes a class for Tokenizer.
+;; - Each workflow can be compiled into C, or any language, using caten/ajit renderer (comptible with them).
+
 ;; Workflow and Concepts
-;; TODO: Compile the entire graph. Including token sampling, 
+;; - Implement Export2C Mode
+;; - Implement Control, High-Level Interface, Including Function defining, IF/FOR
+;;   - DSL
+
+;; TODO: Compile the entire graph. Including token sampling
 ;;      Input
 ;;        |
 ;;   [Tokenizer]
-;;        |
 ;;        |
 ;;  |-------------|
 ;;  | Transformer | <-----------------------|
@@ -50,4 +58,4 @@
 ;;        |----[Logits Argmax Concatenate] -|
 ;;        |
 ;;    [Output]
-;;
+;;        |
