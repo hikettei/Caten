@@ -352,12 +352,11 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 	   (when (group-polyhedron x)
 	     (funcall (compose #'remove-iteration-ir #'poly-pipeline #'group-polyhedron) x)))
        groups)
-      (let* ((1_ (mapc #'post-simplify-multiexpr groups))
+      (let* ((_ (mapc #'post-simplify-multiexpr groups))
 	     ;; Note: (make-instance 'MemoryPlanner ... ) will rewrite the graph of :reduction, it is destructive.
 	     ;; Subsequent optimizations do not assume the `graph` is DAG.
 	     ;; Graph-Level optimization should be performed just before it.
 	     (mp (make-instance 'MemoryPlanner :avm avm :groups groups :debug debug :device backend))
-	     (2_ (memory-plan mp))
 	     (kernels (retrive-kernels mp))
 	     (blueprints/codes
 	       (loop for group in groups
@@ -366,7 +365,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		     collect
 		     (multiple-value-list (render-to-string backend group (format nil "e~a" nth) avm debug kernel))))
 	     (final-code (%render-program-toplevel backend (with-output-to-string (out) (dolist (c blueprints/codes) (princ (second c) out))))))
-	(declare (ignore 1_ 2_))
+	(declare (ignore _))
 	(when (>= (ctx:getenv :JIT_DEBUG) 2)
 	  (format t "Final JIT Schedule:~%")
 	  (loop for nth upfrom 0

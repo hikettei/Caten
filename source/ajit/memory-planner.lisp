@@ -211,7 +211,12 @@ In Caten IR, there is a two way to allocate a variable.
 		 if (eql (node-type ir) :FOR)
 		   collect (newid-from-str group (getattr ir :idx))))
 	 (meta-ids)
-	 (out))
+	 (out)
+         (candidates
+           (map
+            'list
+            #'(lambda (x) (mp-newid mp x))
+            (map 'list #'argument-name (kernel-renderer-args kernel)))))
     (flet ((cleanup-buffer (buffer)
 	     (setf (buffer-shape buffer) (map 'list #'reveal-buffer (buffer-shape buffer))
 		   (buffer-shape buffer) (loop for s in (buffer-shape buffer)
@@ -300,11 +305,12 @@ In Caten IR, there is a two way to allocate a variable.
 			      :metadata (make-uconst-buffer))
 	       out)
 	      (push s meta-ids)))))
-      (setf out (remove-duplicates out :key #'argument-name))
-      (when (>= (mp-debug mp) 1)
-	;; TODO: Display memory-size
-	)
-      (setf (kernel-renderer-args kernel) out)
+      (when candidates
+        (setf out (loop for o in out
+                        if (find (argument-name o) candidates)
+                          collect o)))
+      (setf out (remove-duplicates out :key #'argument-name)
+            (kernel-renderer-args kernel) out)
       out)))
 
 (defstruct (MemoryBlock
@@ -392,7 +398,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	(apply-creation time))
       I)))
 
-(defmethod memory-plan ((mp MemoryPlanner) &aux (avm (mp-avm mp)))
+(defmethod memory-plan ((mp MemoryPlanner) solve &aux (avm (mp-avm mp)))
   "This is a toplevel for memory-oriented optimization techniques.
 Resourses:
 - https://arxiv.org/pdf/2203.00448
@@ -455,7 +461,7 @@ Lifespan:
 			  (apply #'max (gethash key trace-table)))
 		      :lock (gethash key lock-table))))
              ;; Minimize the peak memory usage
-	     (solved (greedy-solve-dsa memory-blocks total-time))
+	     (solved (if solve (greedy-solve-dsa memory-blocks total-time) memory-blocks))
              ;; Retrive the solution. A hash table of OLD_MEMORY_ID -> NEW_MEMORY_ID
 	     (alias-map (mp-alias mp)))
 	(loop for mb in solved
@@ -503,32 +509,23 @@ Lifespan:
                       collect
                       (group->polyhedral-group group kr)))))
     (dolist (p polyhedrons)
-      ;; Final Chance to apply Loop Fusion
-      ;; Kernrels with complicated memory access relations, like Matmul+Transpose, Conv are first fused here
-      ;; Polyhedral Group is a result of splitting a group -> multiple group?
-      (when (and p (every #'(lambda (x) (typep x 'Polyhedral-Auto-Scheduler)) p))
-        (affine-fusion p)))
-
-    ;; Tiling, Vectorizing, Parallelizing(CPU/GPU), Loop Fission here
-    ;; [TODO] Apply the changes to mp-kernerls, mp-groups
-    ))
+      (dolist (pg p)
+        (polyhedral-auto-schedule pg)))))
 
 (defmethod retrive-kernels ((mp MemoryPlanner))
   "Finalizes the result of memory-planner, retriving the final rendering-graph"
   (flet ((prune ()
            "Applies the dead code elimination"
 	   (setf (mp-kernels mp) (dead-kernel-elimination (mp-groups mp) (mp-kernels mp) (append (avm-fw-outputs (mp-avm mp)) (avm-bw-outputs (mp-avm mp)))))))
-    (prune)
-
-    ;; [Note] Auto_Scheduler is *work in progress*
-    ;; (mp-auto-schedule! mp)
-    ;; (prune)
-    
-    ;; 1. Mutate output buffers as a scalar
+    (memory-plan mp nil)
     (optimize-memory-load mp)
-    ;; 2. Hide Latency Optimization
-    ;; - The arrays should be loaded at once
-    ;; - In the last, storing the result.
+    (prune)
+    (setf (mp-id2buffer mp) (make-hash-table))
+    (memory-plan mp t)
+    (when (= 1 (ctx:getenv :AUTO_SCHEDULER))
+      (mp-auto-schedule! mp)
+      (prune))
+    ;; [TODO] Apply multiexpr in the final fused graph.
     ;; [TODO] Add dead graph.nodes elimination here. ^ maybe produce unused ops.
     (loop for group in (mp-groups mp)
 	  for kernels in (mp-kernels mp)
