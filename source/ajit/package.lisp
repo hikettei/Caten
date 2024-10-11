@@ -77,7 +77,18 @@
    #:argument-dtype
    #:argument-type
    #:argument-io
-   #:argument-metadata)
+   #:argument-metadata
+
+   #:op/expr)
+  ;; from render-graph.lisp
+  (:export
+   #:r/funcall-string
+   #:r/funcall
+   #:r/if
+   #:r/else
+   #:r/endif
+   #:r/for
+   #:r/endfor)
   ;; Expr construction
   (:export
    #:make-expr))

@@ -4,6 +4,7 @@
   (:use :cl :alexandria)
   (:export
    #:dtype-t
+   #:lisp-type->dtype
    #:dtype->lisp
    #:dtype/cast
    #:dtype/floatp
@@ -56,6 +57,19 @@
     (:int8    '(signed-byte 8))
     (:bool    'boolean)
     (otherwise (error "dtype->lisp: ~a is not supported" dtype))))
+
+(defun lisp-type->dtype (dtype)
+  (case dtype
+    (integer caten/aasm:*default-int*)
+    (fixnum caten/aasm:*default-int*)
+    (bit    caten/aasm:*default-int*)
+    (single-float :float32)
+    (double-float :float64)
+    (boolean :bool)
+    (otherwise
+     (if (listp dtype)
+         (lisp-type->dtype (car dtype))
+         (error "lisp-type->dtype: caten/common.dtype does not know how to convert ~a into dtype." dtype)))))
 
 (defun dtype/floatp (dtype)
   (declare (type dtype-t dtype))

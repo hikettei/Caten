@@ -57,6 +57,10 @@
   ;; 各ActionはDSLを使って動作を定義できる
   )
 
+;; TODO
+;; - RendererのRefactorが必要
+;; - Polyhedralを使わない
+
 ;; =, Length are action
 ;; TODO: workflow configを一緒に提供する
 

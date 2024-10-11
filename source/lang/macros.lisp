@@ -1,19 +1,18 @@
 (in-package :caten/lang)
 
-(a/defmacro progn (&rest forms)
-  "`(progn &rest forms)`"
-  (let ((forms (map 'list #'a/macroexpand-all forms)))
-    `(_%progn ,@forms)))
-
-(a/defun _%progn (&rest forms)
-    "Creates a body"
-  nil)
-
-(macrolet ((def (builtin-name expr-name lisp-name &optional (unary nil))
+(macrolet ((def (builtin-name expr-name lisp-name &optional (unary nil) (logical-p nil))
+             (assert (typep expr-name 'caten/ajit:op/expr))
              `(progn
-                (a/defun ,builtin-name (a b)
+                (a/defun ,builtin-name (ctx a b)
                     ,(format nil "`(~a a b)`" builtin-name)
-                  (caten/ajit:make-expr ,expr-name a b))
+                  (multiple-value-bind (lhs-forms lhs-expr) (stash-forms ctx a)
+                    (multiple-value-bind (rhs-forms rhs-expr) (stash-forms ctx b)
+                      (make-parsed-form
+                       (append lhs-forms rhs-forms)
+                       (caten/ajit:make-expr ,expr-name lhs-expr rhs-expr)
+                       ,(if logical-p
+                            `(make-const-buffer :bool)
+                            `(parsed-form-type a))))))
                 (a/defmacro ,lisp-name (&rest forms)
                     ,(format nil "`(~a &rest forms)`" lisp-name)
                   (if (and ',unary (= (length forms) 1))
@@ -23,4 +22,22 @@
   (def _%add :+ +)
   (def _%sub :- - _%neg)
   (def _%mul :* *)
-  (def _%div :/ / _%recip))
+  (def _%div :/ / _%recip)
+  (def _%eq :== = nil t)
+  (def _%< :< < nil t)
+  (def _%<= :<= <= nil t)
+  (def _%> :> > nil t)
+  (def _%>= :>= >= nil t))
+
+(a/defmacro progn (&rest forms)
+  "`(progn &rest forms)`"
+  (let ((forms (map 'list #'a/macroexpand-all forms)))
+    `(_%progn ,@forms)))
+
+(a/defmacro if (test then &optional else)
+    "`(if test then &optional else)`"
+  `(_%if ,test ,then ,else))
+
+(a/defmacro when (test &rest forms)
+    "`(when test &body forms)`"
+  `(_%if ,test (progn ,@forms)))
