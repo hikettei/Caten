@@ -77,7 +77,9 @@
    #:argument-dtype
    #:argument-type
    #:argument-io
-   #:argument-metadata
-  ))
+   #:argument-metadata)
+  ;; Expr construction
+  (:export
+   #:make-expr))
 
 (in-package :caten/ajit)

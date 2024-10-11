@@ -2,6 +2,8 @@
   :description "A Comprehensive abstraction for Tokenizer, Model Compilation, and export to foreign language mode"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ()
+  :depends-on ("trivia" "caten.lang")
   :components
-  ((:file "package")))
+  ((:file "package")
+   
+   ))

@@ -36,16 +36,34 @@
 ;;    [Output]
 ;;        |
 
+;; Action:
+;; - Is a CLOS class
+;; - Only initialized in defworkflow macro
+;; - Workflow is a aIR graph
 
-(defmacro defaction (name &body body)
-  
+(defclass Action ()
+  nil
   )
-(defmacro defworkflow (name &body body)
+
+;; Each action can be compiled into Render-Graph first, and then each language
+
+(defmacro defaction (name (&rest args) &body body)
+  ""
 
   )
+
+(defaction Tokenizer (tokens)
+  ;; 各ActionはConfigを受け取って各自Classを初期化できる
+  ;; 各ActionはDSLを使って動作を定義できる
+  )
+
+;; =, Length are action
+;; TODO: workflow configを一緒に提供する
 
 ;; (defaction switch (condition action1 action2)
+;;
+;;
+;;
+;;
+;;
 
-(defworkflow TransformerInference
-  A -> B -> (IF X -> C)
-  )
