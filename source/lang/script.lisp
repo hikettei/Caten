@@ -1,7 +1,4 @@
 (in-package :caten/lang)
-;; RENDER GRAPh
-;; FUNCALL
-;; があればOK
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
@@ -60,8 +57,7 @@ Internally, `name` is processed as a string to simplify the management of symbol
             :form ,body
             :position ,position)))
 
-(defvar *env-pipeline*)
-(defun action-macroexpand-all (body)
+(defun a/macroexpand-all (body)
   (match body
     ((guard x (numberp x)) x)
     ((guard x (symbolp x))
@@ -82,39 +78,13 @@ Internally, `name` is processed as a string to simplify the management of symbol
          (assert (not (and macro-feature function-feature)) () "a/defun and a/defmacro are conflicted for ~a." car)
          (if macro-feature
              (handler-bind ((error #'(lambda (cond) (assert-syntax-error nil (" caught by the error when parsing the macro ~a:~% ~a" car cond) body 0))))
-               (action-macroexpand-all (apply macro-feature cdr)))
-             `(,car ,@(map 'list #'action-macroexpand-all cdr))))))
+               (a/macroexpand-all (apply macro-feature cdr)))
+             `(,car ,@(map 'list #'a/macroexpand-all cdr))))))
     (_
      (assert-syntax-error
          nil
          ("Invaild Syntax: The form is not supported.")
          body 0))))
-
-(a/defmacro progn (&rest forms)
-  "`(progn &rest forms)`"
-  (let ((forms (map 'list #'action-macroexpand-all forms)))
-    `(_%progn ,@forms)))
-
-(a/defun _%progn (&rest forms)
-    "Creates a body"
-  nil)
-
-(macrolet ((def (builtin-name expr-name lisp-name &optional (unary nil))
-             `(progn
-                (a/defun ,builtin-name (a b)
-                    ,(format nil "`(~a a b)`" builtin-name)
-                  (caten/ajit:make-expr ,expr-name a b))
-                (a/defmacro ,lisp-name (&rest forms)
-                    ,(format nil "`(~a &rest forms)`" lisp-name)
-                  (if (and ',unary (= (length forms) 1))
-                      (list ',unary (car forms))
-                      (flet ((binary (a b) (list ',builtin-name a b)))
-                        (reduce #'binary forms)))))))
-  (def _%add :+ +)
-  (def _%sub :- - _%neg)
-  (def _%mul :* *)
-  (def _%div :/ / _%recip))
-
 ;; ParseActionBody -> Return:
 ;; 
 ;;
@@ -138,7 +108,7 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
 - arguments[list] a list of symbols that is already defined in the scope
 - body[form] script
 "
-  (action-macroexpand-all `(progn ,@body)))
+  (a/macroexpand-all `(progn ,@body)))
 
 #|
 (action-body (n transformer)

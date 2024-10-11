@@ -7,4 +7,6 @@
   ((:file "package")
    (:file "conditions")
    (:file "action-script")
-   (:file "syntax")))
+   (:file "syntax")
+   (:file "macros")
+   (:file "builtin")))
