@@ -51,4 +51,6 @@
   :components
   ((:file "package")
    (:file "bpe")
+   (:file "tokenizer")
+   (:file "generate")
    (:file "layers")))
