@@ -4,7 +4,7 @@
   :version     "0.0"
   :licence     "MIT"
   :depends-on
-  ("caten.apis" "caten.nn")
+  ("caten.apis" "caten.nn" "caten.workflow")
   :serial t
   :components ((:file "source/caten-user") (:file "source/documentation"))
   :in-order-to
