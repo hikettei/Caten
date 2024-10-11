@@ -1,0 +1,683 @@
+
+<!DOCTYPE html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../css/bootstrap.min.css">
+  
+
+  
+    <meta http-equiv="content-language" content="en">
+  
+  
+
+  
+  <title>Initializers | Caten Documentation</title>
+  
+
+  
+
+  <link rel="stylesheet" href="../../css/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/default.min.css">
+  <link rel="stylesheet" href="../../css/vs.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  
+  
+  
+  <script async>var base_url = '../..';</script>
+  <script src="../../js/jquery-3.6.1.slim.min.js"></script>
+  <script src="../../js/bootstrap.bundle.min.js"></script>
+  <script async src="../../js/highlight.min.js"></script>
+
+  
+  
+</head>
+<body>
+  
+  
+    
+    <header>
+      <nav class="navbar navbar-expand-sm navbar-toggleable-sm  border-bottom box-shadow mb-3 ">
+        <div class="container">
+            <a class="navbar-brand text-body" asp-area="" href="/">
+              
+              
+                Caten Documentation
+              
+            </a>
+            <div class="print-hide">
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="d-none d-md-flex input-group mb-3">
+                
+                    <input class="form-control" type="search" id="searchbox" accesskey="/" placeholder="Caten Documentationで検索" aria-label="検索" aria-describedby="search-btn"/>
+                    <button class="btn btn-outline-secondary" type="button" id="search-btn" onclick="search(false);">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    
+                </div>
+            </div>
+            </div>
+        </div>
+    </nav>
+    <nav class="navbar border-bottom box-shadow mb-3 d-md-none print-hide">
+      <div class="container">
+          <div class="navbar-collapse d-flex">
+            <p>
+              <div class="d-flex input-group mb-3">
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_nav(this);" type="button" data-bs-toggle="collapse" data-bs-target="#nav" title="ナビゲーションを表示"><i class="bi bi-book"></i></button>
+                
+                
+                <input class="form-control" type="search" id="searchbox_mobile" accesskey="/" placeholder="Caten Documentationで検索" aria-label="検索">
+                <button class="btn btn-outline-secondary" type="button" onclick="search(true);"><i class="bi bi-search"></i></button>
+                
+                
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_toc(this);" type="button" data-bs-toggle="collapse" data-bs-target="#tol"><i class="bi bi-list-ul"></i></button>
+                
+                
+            </div>
+            </p>
+          </div>
+      </div>
+    </nav>
+  </header>
+    
+  
+  
+  
+  <div class="container">
+    <main role="main" class="pb-3">
+      <div class="row">
+        
+        
+    
+    <div class="col-12 col-md-2 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="nav"  style="overflow-x:scroll;">
+        <ul class="list-group list-group-flush">
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../..">Home</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../quickstart/">Quickstart</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../development/">Development</a></li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >API Reference</a>
+          <ul class="collapse list-group list-group-flush show ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.air/">caten/air</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.aasm/">caten/aasm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.ajit/">caten/ajit</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/apis</a>
+              <ul class="collapse list-group list-group-flush show">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.tensor/">Tensor</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.differentiable_ops/">Func</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.module/">Module</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.models/">Model</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.aot/">AOT</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-body" href="./">Initializers</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.shapetracker/">ShapeTracker</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.avm/">caten/avm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn/">caten/nn</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+      </ul>
+      </div>
+    </div>
+    
+       
+    
+    
+    
+    <div class="col-12 col-md-2 order-md-3 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="tol"  style="overflow-x:scroll;">
+        <span>目次</span>
+         <hr/>
+        <ul class="list-group list-group-flush">
+        
+        <li class="list-group-item"><a class="text-decoration-none text-muted" href="#initializers" >Initializers</a>
+          
+            <ul class="list-group list-group-flush">
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-set-manual-seed" >[function] set-manual-seed</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#macro-with-manual-seed" >[macro] with-manual-seed</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-axb" >[function] ax+b</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-rand" >[function] !rand</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-normal" >[function] !normal</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-randn" >[function] !randn</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-uniform" >[function] !uniform</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-randint" >[function] !randint</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-full" >[function] !full</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-xavier-uniform" >[function] xavier-uniform</a>
+    
+    </li>
+
+            
+              
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-xavier-gaussian" >[function] xavier-gaussian</a>
+    
+    </li>
+
+            
+      </ul>
+          
+          </li>
+        
+      </ul>
+      </div>
+    </div>
+    
+    
+    <div class="col-12 col-md-8 print-main">
+      
+      <h1>Initializers</h1>
+      
+    <nav aria-label="breadcrumb">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item active" aria-current="page">Caten Documentation</li>
+        
+        
+        
+        
+        
+        
+        
+        
+        <li class="breadcrumb-item active" aria-current="page">API Reference</li>
+        
+        
+        
+
+        
+
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">caten/apis</li>
+        
+        
+        
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">Initializers</li>
+        
+        
+        
+
+        
+
+        
+        
+
+        
+
+        
+
+        
+        
+        
+      </ol>
+    </nav>
+    
+    
+    <div class="d-flex justify-content-between">
+      
+      <div>
+        
+        <a class="btn text-primary print-hide" href="../caten.apis.aot/" title="AOT"><i class="bi bi-chevron-left"></i></a>
+        
+        
+        <a class="btn text-primary print-hide" href="../caten.apis.shapetracker/" title="ShapeTracker"><i class="bi bi-chevron-right"></i></a>
+        
+      </div>
+      
+      
+      <div>
+        <div>
+          
+          
+          <small><span class='git-page-authors git-authors'></span></small>
+          <span>|</span>
+          
+          
+          
+          
+          
+          <button class="btn print-block" title="このページを印刷" onclick="window.print();"><i class="bi bi-printer"></i></button>
+          <button class="btn print-visible d-none" onclick="print_normal();" title="新しいタブで開く"><i class="bi bi-arrow-up-right-square"></i></button>
+          
+          
+          <a class="btn disabled print-hide"><i class="bi bi-pencil"></i></a>
+          
+          
+          <span class="dropdown print-hide">
+            <button class="btn" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-share"></i></button>
+            <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
+              <li><button class="btn dropdown-item" onclick="share_to_twitter('Initializers | Caten Documentation','');"><i class="bi bi-twitter"></i>&nbsp;Twitter</button></li>
+              <li><button class="btn dropdown-item" onclick="share_to_facebook();"><i class="bi bi-facebook"></i>&nbsp;Facebook</button></li>
+              <li><button class="btn dropdown-item" onclick="share_to_line();"><i class="bi bi-line"></i>&nbsp;LINE</button></li>
+              <li><hr class="dropdown-divider"></li>
+              <li><button class="btn dropdown-item" onclick="print_view();"><i class="bi bi-file-earmark-text"></i>&nbsp;埋込モードで表示</button></li>
+              <li><button class="btn dropdown-item" id="page-url-copy-btn"><i class="bi bi-clipboard"></i>&nbsp;URLをコピー</button></li>
+            </ul>
+          </span>
+        </div>
+      </div>
+    </div>
+    <hr/>
+    
+    
+      <h1 id="initializers">Initializers</h1>
+<h3 id="function-set-manual-seed">[function] set-manual-seed</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>(set-manual-seed &amp;key (seed 0))
+</code></pre></div>
+Sets the seed for random operations.</p>
+<h3 id="macro-with-manual-seed">[macro] with-manual-seed</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>(with-manual-seed (seed) &amp;body body)
+</code></pre></div>
+Sets the seed for random operations within the scope of the body.</p>
+<h3 id="function-axb">[function] ax+b</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>(ax+b shape a b &amp;key (out nil) (dtype *default-float*) (order *default-order*))
+</code></pre></div>
+<p>Generates an array sampled from this formula: x_i = a * index_components(i) + b.</p>
+<p>There is a <code>linspace</code> function for the same purpose, but it is not lazy.</p>
+<div class="highlight"><span class="filename">Lazy</span><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="mi">1</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>{Tensor[float32] :shape (3 3) :id STC437918
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>   ((1.0  3.0  5.0)
+<a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    (7.0  9.0  11.0)
+<a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    (13.0 15.0 17.0))
+<a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>  :op #&lt;PROCEEDNODE {100469EB03}&gt;
+<a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>  :requires-grad NIL
+<a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>  :variables (STC437917)}
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">Static</span><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">linspace</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>{Tensor[float32] :shape (3 3) :id TID437919
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>   ((0.0 1.0 2.0)
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    (3.0 4.0 5.0)
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    (6.0 7.0 8.0))
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>  :op #&lt;ALLOCATE {100552A473}&gt;
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  :requires-grad NIL
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  :variables NIL}
+</code></pre></div>
+</details>
+
+<h3 id="function-rand">[function] !rand</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>(!rand shape &amp;key (dtype *default-float*) (order *default-order*) (out nil))
+</code></pre></div>
+<p>Creates a tensor whose elements are randomly sampled from a uniform distribution over the interval <code>[0, 1)</code>.</p>
+<p>There is a <code>rand</code> function for the same purpose, but it is not lazy.</p>
+<div class="highlight"><span class="filename">Lazy</span><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>{Tensor[float32] :shape (3 3) :id STC457248
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>   ((0.20409577 0.90219986 0.79199487)
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    (0.2442036  0.96463364 0.51301926)
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    (0.78693986 0.56747437 0.83507144))
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>  :op #&lt;PROCEEDNODE {100730C4F3}&gt;
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>  :requires-grad NIL
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>  :variables (STC457247)}
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">Static</span><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>{Tensor[float32] :shape (3 3) :id TID457249
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>   ((0.9249985  0.46999344 0.60219383)
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    (0.68696326 0.0976631  0.9859982)
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    (0.5878254  0.10235573 0.24177334))
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>  :op #&lt;ALLOCATE {100730CA23}&gt;
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>  :requires-grad NIL
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>  :variables NIL}
+</code></pre></div>
+</details>
+
+<h3 id="function-normal">[function] !normal</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>(!normal shape &amp;key (mean 0.0) (std 1.0) (dtype *default-float*) (order *default-order*) (out nil))
+</code></pre></div>
+<p>Creates a tensor whose elements are randomly sampled from a normal distribution with the given <code>mean</code> and <code>std</code>.</p>
+<p>There is a <code>normal</code> function for the same purpose, but it is not lazy.</p>
+<div class="highlight"><span class="filename">Lazy</span><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!normal</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="ss">:mean</span><span class="w"> </span><span class="mf">0.0</span><span class="w"> </span><span class="ss">:std</span><span class="w"> </span><span class="mf">2.0</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>{Tensor[float32] :shape (3 3) :id STC509386
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>   ((-3.5921135  -0.85469407 -0.46488842)
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>    (2.04511     -1.5669986  1.0678742)
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>    (0.21997164  -0.5478315  -3.0454564))
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a>  :op #&lt;PROCEEDNODE {1005949F63}&gt;
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a>  :requires-grad NIL
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a>  :variables (STC509385)}
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">Static</span><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">normal</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="ss">:mean</span><span class="w"> </span><span class="mf">0.0</span><span class="w"> </span><span class="ss">:std</span><span class="w"> </span><span class="mf">1.0</span><span class="p">)</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>{Tensor[float32] :shape (3 3) :id TID509387
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>   ((0.72957236  0.71980345  0.7698819)
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>    (-0.37204823 1.6982456   -0.57415146)
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a>    (0.24479401  1.3892573   -1.536829))
+<a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a>  :op #&lt;ALLOCATE {100594A903}&gt;
+<a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>  :requires-grad NIL
+<a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a>  :variables NIL}
+</code></pre></div>
+</details>
+
+<h3 id="function-randn">[function] !randn</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>(!randn shape &amp;key (dtype *default-float*) (order *default-order*) (out nil))
+</code></pre></div>
+<p>Creates a tensor whose elements are randomly sampled from a normal distribution with a mean of 0 and a standard deviation of 1.</p>
+<p>There is a <code>randn</code> function for the same purpose, but it is not lazy.</p>
+<div class="highlight"><span class="filename">Lazy</span><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>{Tensor[float32] :shape (3 3) :id STC555219
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>   ((-0.56355345 -0.40396473 0.666639)
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    (1.8203461   -0.12316344 0.8386954)
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    (-1.3675435  -0.05577714 -0.4770648))
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>  :op #&lt;PROCEEDNODE {100847C4F3}&gt;
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>  :requires-grad NIL
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>  :variables (STC555218)}
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">Static</span><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>{Tensor[float32] :shape (3 3) :id TID555220
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>   ((-1.6468598  -0.28877127 1.1164823)
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>    (0.4265208   -2.4924476  -0.6791966)
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>    (-0.4103133  0.3206808   0.34030145))
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>  :op #&lt;ALLOCATE {100847CA23}&gt;
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>  :requires-grad NIL
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>  :variables NIL}
+</code></pre></div>
+</details>
+
+<h3 id="function-uniform">[function] !uniform</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>(!uniform shape &amp;key (low 0.0) (high 1.0) (dtype *default-float*) (order *default-order*) (out nil))
+</code></pre></div>
+<p>Creates a tensor whose elements are randomly sampled from a uniform distribution over the interval <code>[low, high)</code></p>
+<p>There is a <code>uniform</code> function for the same purpose, but it is not lazy.</p>
+<div class="highlight"><span class="filename">Lazy</span><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!uniform</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="ss">:low</span><span class="w"> </span><span class="mf">1.0</span><span class="w"> </span><span class="ss">:high</span><span class="w"> </span><span class="mf">2.0</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>{Tensor[float32] :shape (3 3) :id STC585713
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>   ((1.386548  1.3390925 1.3670914)
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>    (1.8147879 1.1661164 1.1971163)
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>    (1.5403535 1.4768131 1.8832853))
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>  :op #&lt;PROCEEDNODE {1005DB44F3}&gt;
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>  :requires-grad NIL
+<a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a>  :variables (STC585712)}
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">Static</span><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">uniform</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="ss">:low</span><span class="w"> </span><span class="mf">1.0</span><span class="w"> </span><span class="ss">:high</span><span class="w"> </span><span class="mf">2.0</span><span class="p">)</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>{Tensor[float32] :shape (3 3) :id TID585714
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a>   ((1.4487232 1.5480319 1.6024172)
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a>    (1.1562546 1.5229615 1.2909594)
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a>    (1.5516578 1.7488751 1.3713456))
+<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a>  :op #&lt;ALLOCATE {100807B803}&gt;
+<a id="__codelineno-26-6" name="__codelineno-26-6" href="#__codelineno-26-6"></a>  :requires-grad NIL
+<a id="__codelineno-26-7" name="__codelineno-26-7" href="#__codelineno-26-7"></a>  :variables NIL}
+</code></pre></div>
+</details>
+
+<h3 id="function-randint">[function] !randint</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>(!randint shape &amp;key (low 0) (high 1) (dtype *default-int*) (order *default-order*) (out nil))
+</code></pre></div>
+<p>Creates a tensor whose elements are randomly sampled from a uniform distribution over the interval <code>[low, high)</code>.</p>
+<p>There is a <code>randint</code> function for the same purpose, but it is not lazy.</p>
+<div class="highlight"><span class="filename">Lazy</span><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">ctx:with-contextvar</span><span class="w"> </span><span class="p">(</span><span class="ss">:jit</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!randint</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="ss">:low</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="ss">:high</span><span class="w"> </span><span class="mi">10</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>{Tensor[int32] :shape (3 3) :id STC646923
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>   ((4 8 4)
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>    (5 4 9)
+<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a>    (8 1 8))
+<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a>  :op #&lt;PROCEEDNODE {1008064EB3}&gt;
+<a id="__codelineno-29-6" name="__codelineno-29-6" href="#__codelineno-29-6"></a>  :requires-grad NIL
+<a id="__codelineno-29-7" name="__codelineno-29-7" href="#__codelineno-29-7"></a>  :variables (STC646922)}
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">Static</span><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">ctx:with-contextvar</span><span class="w"> </span><span class="p">(</span><span class="ss">:jit</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">randint</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="ss">:low</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="ss">:high</span><span class="w"> </span><span class="mi">10</span><span class="w"> </span><span class="ss">:dtype</span><span class="w"> </span><span class="ss">:int32</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>{Tensor[int32] :shape (3 3) :id TID646924
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>   ((5 7 2)
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a>    (5 3 9)
+<a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a>    (2 2 6))
+<a id="__codelineno-31-5" name="__codelineno-31-5" href="#__codelineno-31-5"></a>  :op #&lt;ALLOCATE {10059BA893}&gt;
+<a id="__codelineno-31-6" name="__codelineno-31-6" href="#__codelineno-31-6"></a>  :requires-grad NIL
+<a id="__codelineno-31-7" name="__codelineno-31-7" href="#__codelineno-31-7"></a>  :variables NIL}
+</code></pre></div>
+</details>
+
+<h3 id="function-full">[function] !full</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>(!full shape fill-value &amp;key (dtype *default-float*) (order *default-order*))
+</code></pre></div>
+<p>Initializes a tensor filled with <code>fill-value</code>.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!full</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">inf</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>{Tensor[float32] :shape (3 3) :id STC678836
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>   ((#.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY)
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>    (#.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY)
+<a id="__codelineno-34-4" name="__codelineno-34-4" href="#__codelineno-34-4"></a>    (#.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY))
+<a id="__codelineno-34-5" name="__codelineno-34-5" href="#__codelineno-34-5"></a>  :op #&lt;PROCEEDNODE {10059BF7D3}&gt;
+<a id="__codelineno-34-6" name="__codelineno-34-6" href="#__codelineno-34-6"></a>  :requires-grad NIL
+<a id="__codelineno-34-7" name="__codelineno-34-7" href="#__codelineno-34-7"></a>  :variables (STC678835)}
+</code></pre></div>
+</details>
+
+<h3 id="function-xavier-uniform">[function] xavier-uniform</h3>
+<p>No description provided</p>
+<h3 id="function-xavier-gaussian">[function] xavier-gaussian</h3>
+<p>No description provided</p>
+    
+    
+
+      </div>
+      </div>
+      <script src="../../js/theme.js"></script>
+      
+      
+      
+    <script async src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    <script async src="../../search/main.js"></script>
+      
+      
+    </main>
+  </div>
+  
+  
+  
+  
+  
+  <footer class="border-top footer text-muted .position-absolute.bottom-0.start-50.translate-middle-x" style="padding-top:15px;">
+    <div class="container">
+      <div class="row">
+        <div class="col-md">
+          
+        </div>
+        
+      </div>
+    </div>
+  </footer>
+  
+  
+
+<div class="modal fade" id="searchModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="searchModal" aria-hidden="true">
+  <div class="modal-dialog modal-lg print-hide">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">検索</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="閉じる"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input id="mkdocs-search-query" type="text" class="form-control" aria-label="検索" aria-describedby="inputGroup-sizing-default">
+        </div>
+        <div id="mkdocs-search-results">
+          キーワードを入力して検索を始めましょう
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
