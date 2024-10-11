@@ -137,7 +137,8 @@ A Polyhedral form of the fused schedule group.
              (union-map-union
               (union-map-union WaR RaW)
               WaW)))
-      (setf (pg-dependencies pg) dependencies))))
+      (setf (pg-dependencies pg) dependencies)))
+  (setf (pg-schedule pg) (schedule pg)))
 
 (defmethod schedule ((pg Polyhedral-Auto-Scheduler))
   (let ((serialize-sccs 0)
@@ -436,7 +437,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (polyhedral-group-base polyhedral-group))
 ;; ~~ Scheduling Language ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Polyhedral-Config ()
-  nil
+  ((parallelizable-loops))
   (:documentation ""))
 ;; [Design] Only effects on Render-Graph and Pipelining
 ;; - Matmul+TransposeをFusionしないといけない
@@ -451,7 +452,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 ;; - Assume ^がPrepreq, Embedding/Gemm, Tile, Loop Collapse, Vectorize
 
 (defmethod polyhedral-auto-schedule ((pg Polyhedral-Auto-Scheduler))
-
+  ;; [TODO] TileOuterBand
+  ;; Working in progress...
   )
 
 (defmethod polyhedral-auto-schedule ((pg Polyhedral-Group)))

@@ -522,9 +522,7 @@ Lifespan:
     (prune)
     (setf (mp-id2buffer mp) (make-hash-table))
     (memory-plan mp t)
-    ;; Overlap the tensor tmp allocations
-    ;; [Note] Auto_Scheduler is *work in progress*
-    (when nil;(= 1 (ctx:getenv :AUTO_SCHEDULER))
+    (when (= 1 (ctx:getenv :AUTO_SCHEDULER))
       (mp-auto-schedule! mp)
       (prune))
     ;; [TODO] Apply multiexpr in the final fused graph.
