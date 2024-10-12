@@ -60,7 +60,7 @@ When creating a MultiExpr, it is only fused if the node-type is op/expr!"
     :+ :- :* :/ :% ;; (mod)
     ;; Constant
     :Const ;; Const (Value Nil)
-    :Aref
+    :Aref :TAKE ;; Take(Variable_Name[Expr], Postiion[EXPR])
     :CAST
     
     :ADD :MUL :IDIV

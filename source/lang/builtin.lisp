@@ -87,3 +87,16 @@
           (list (ctx-define-and-make-funcall-from-expr ctx (parsed-form-expr val) place (parsed-form-type val) (list nil))))))
    (caten/ajit:make-expr :const place (parsed-form-type val))
    (parsed-form-type val)))
+
+(a/defun _%take (ctx array position)
+         "Access an element of an array."
+  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF"))
+    (multiple-value-bind (pos-forms pos-expr) (stash-forms ctx position (gensym "_POS"))
+      (make-parsed-form
+       (append aref-forms pos-forms)
+       (caten/ajit:make-expr :Take aref-expr pos-expr)
+       (let ((type (caten/avm:copy-buffer (parsed-form-type array))))
+         (setf (caten/avm:buffer-nrank type) 0
+               (caten/avm:buffer-shape type) nil
+               (caten/avm:buffer-stride type) nil)
+         type)))))

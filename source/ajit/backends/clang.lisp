@@ -193,6 +193,11 @@ Compiled with: ~a"
 	    (format nil "~(~a~)~a" lhs (unroll-suffix rhs *suffix*)))
 	(format nil "~(~a~)[~(~a~)]" lhs ref))))
 
+(defmethod %render-expr ((lang Clang) (op (eql :Take)) lhs rhs z)
+  (assert (null z))
+  (assert (and lhs rhs))
+  (format nil "~(~a~)[~a]" (render-expr lang lhs) (render-expr lang rhs)))
+
 (defmethod %render-expr ((lang Clang) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
   (assert (buffer-p (expr-y lhs)))
   (assert (null z))

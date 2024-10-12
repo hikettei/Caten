@@ -97,12 +97,12 @@ defaction: `(:array ORDER (~a) :DTYPE)`
               (loop for decl in declare
                     append
                     (loop for form in decl
-                          when (and (listp form) (equalp (symbol-name (car form)) "ATYPE"))
+                          when (and (listp form) (equalp (symbol-name (car form)) "TYPE"))
                             collect form))))
         (values
          (loop for var in variables
                for type-form = (find var type-decl :key #'cddr :test #'find)
-               do (assert type-form () "defaction: Cannot infer the type of ~A.~%Provide (declare (atype type_name variable ...)) form to declare the type." var)
+               do (assert type-form () "defaction: Cannot infer the type of ~A.~%Provide (declare (type type_name variable ...)) form to declare the type." var)
                collect
                (multiple-value-bind (is-pointer dtype strides size additional-compute-form)
                    (parse-type-designator (second type-form) variables type-decl)
@@ -154,16 +154,17 @@ Dtype decl:
 
 ;; fix the default int! :int and use *default-int*
 (defaction TestFunc (n)
-  (declare (atype (:pointer :int64) n))
+  (declare (type (:pointer :int64) n))
   (let ((m (* 10 n)))
     (if (> m 1)
         (let ((s (* m 10)))
           s)
         n)))
 
-(defaction Test (x)
-  (declare (atype (:array :row (3 3) :float) x))
-  (+ 1 1))
+(defaction Test (x i k)
+  (declare (type (:array :row (i k) :float) x)
+           (type :int32 i k))
+  (+ 1 (_%take x 1)))
 
 ;; - [x] Let
 ;; - [x] Pointer, Array
@@ -176,6 +177,8 @@ Dtype decl:
 ;; - [ ] with-scop (Auto Scheduler is available!)
 ;; - [ ] return, return values;
 ;; - [ ] Implement MoE (That is, Module and Action interop)
+;; - [ ] Compile into foreign language
+;; - [ ] Provide a test
 ;; - [ ] Provide a full documentation!
 
 ;; =, Length are action
