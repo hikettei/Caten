@@ -297,7 +297,7 @@ Options:
 	   (progn
 	     (setf code (format nil "~a~%~a~%" code function))
 	     (make-compiled-kernel name (kernel-renderer-args kernel)
-				   function (%render-function-caller backend avm (kernel-renderer-args kernel)) group)))
+				   function (%render-function-caller backend (avm-name avm) (kernel-renderer-args kernel)) group)))
      (progn
        (when (>= debug 1) (format t "Compiled[~a]:~%~a" name-prefix code))
        (setf (avm-name avm) base-name)

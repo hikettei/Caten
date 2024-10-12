@@ -142,7 +142,9 @@ Dtype decl:
   ;; Args: (Name, Type)
   (multiple-value-bind (args1 body1 docstring1) (action-parse-lambda-list-and-body lambda-list body)
     ;; C-c C-c and the error check
-    (print (ctx-render-function (make-context-from-list name args1 body1) (caten/ajit:default-device :clang)))
+    (let ((ctx (make-context-from-list name args1 body1))
+          (dev (caten/ajit:default-device :clang)))
+      (ctx-compile ctx dev))
     `(prog1
          (defclass ,name (Action)
            nil
@@ -189,9 +191,10 @@ Dtype decl:
 ;; - [ ] String Syntax (automatically converted into a list of int8)
 ;;   - [x] Array Creation in the code.
 ;;   - [x] Allow to return a pointer
-;;   - [ ] Allow to initialize a pointer. (float* x;)
+;;   - [ ] Allow to initialize a pointer. (float* x;) (due to _%setf)
 ;; - [x] dotimes
 ;; - [ ] Free pointer
+;;   - [ ] Or, having objects as a Common Lisp Object. Dont allocate pointer inside the compiled code.
 ;; - [ ] with-scop (Auto Scheduler is available!)
 ;; - [ ] return, return values;
 ;; - [ ] Implement MoE (That is, Module and Action interop)

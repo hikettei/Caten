@@ -11,4 +11,5 @@
    #:Context
    #:ctx-render
    #:ctx-render-function
+   #:ctx-compile
    ))

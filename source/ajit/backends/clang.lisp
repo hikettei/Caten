@@ -54,7 +54,7 @@ Compiled with: ~a"
       (buffer-value x)))
 
 (defun maybe-buffer-value (x) (if (buffer-p x) (buffer-value x) x))
-(defmethod %render-function-caller ((lang Clang) avm args &aux (tmps))
+(defmethod %render-function-caller ((lang Clang) name args &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
 		 (if (= 0 (buffer-nrank (argument-metadata (car rest-forms))))
@@ -81,7 +81,7 @@ Compiled with: ~a"
        ,(expand
 	 args
 	 `((cffi:foreign-funcall
-            ,(format nil "~(~a~)" (avm-name avm))
+            ,(format nil "~(~a~)" name)
             ,@(loop for arg in args
 		    for is-pointer = (argument-pointer-p arg)
 		    if (not is-pointer)

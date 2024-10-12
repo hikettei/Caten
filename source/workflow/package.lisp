@@ -7,6 +7,7 @@
    #:Context
    #:ctx-render
    #:ctx-render-function
+   #:ctx-compile
    #:make-context-from-list
    )
   (:export

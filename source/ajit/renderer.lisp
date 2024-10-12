@@ -22,7 +22,7 @@
       :report "Proceed w/ current code."
       (when (= 1 (ctx:getenv :CALL_ZENITY)) (call-next-method)))))
 
-(defgeneric %render-function-caller (lang avm allocs)
+(defgeneric %render-function-caller (lang name allocs)
   (:documentation "Return a lambda function which calles the jit-compiled function."))
 
 (defgeneric %render-program-toplevel (lang body) (:documentation "Renders headers, pragma, etc..."))

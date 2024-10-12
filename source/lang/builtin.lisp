@@ -44,7 +44,11 @@
        (append
         condition-nodes
         ;; int _output_tmp;
-        (list (ctx-declare-local-var ctx output-bind (caten/avm:buffer-dtype (parsed-form-type then-form))))
+        ;l (list (ctx-declare-local-var ctx output-bind (caten/avm:buffer-dtype (parsed-form-type then-form))))
+        (list (ctx-define-and-make-funcall-from-expr
+               ctx
+               (caten/ajit:make-expr :Const (dtype/cast nil (caten/avm:buffer-dtype (parsed-form-type then-form))))
+               output-bind (parsed-form-type then-form) (list t)))
         (list (caten/ajit:r/if condition-expr))
         (multiple-value-bind (then-nodes) (stash-forms ctx then-form output-bind nil)
           (when (null then-nodes) (warn "_%if: then looks empty, is the form created from (_%if condition (PROGN ...)?"))
@@ -82,13 +86,10 @@
   (assert (keywordp decl))
   (assert (member decl `(:t :nil)))
   (make-parsed-form
-   (append
-    (when (eql decl :t)
-      (list (ctx-declare-local-var ctx place (caten/avm:buffer-dtype (parsed-form-type val)))))
-    (multiple-value-bind (forms) (stash-forms ctx val place nil)
-      (if forms
-          forms
-          (list (ctx-define-and-make-funcall-from-expr ctx (parsed-form-expr val) place (parsed-form-type val) (list t))))))
+   (multiple-value-bind (forms) (stash-forms ctx val place (eql decl :t))
+     (if forms
+         forms
+         (list (ctx-define-and-make-funcall-from-expr ctx (parsed-form-expr val) place (parsed-form-type val) (list (eql decl :t))))))
    (caten/ajit:make-expr :const place (parsed-form-type val))
    (parsed-form-type val)))
 
