@@ -185,6 +185,7 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
 (defmethod ctx-define-and-make-funcall-from-expr ((ctx Context) (expr caten/ajit:Expr) write type decl)
   (declare (type caten/avm:Buffer type))
   (let ((name (gensym "CALL")))
+    (ctx-register-variable ctx write type)
     (setf (gethash name (ctx-pipeline ctx))
           (make-graph
            (make-node :JIT :EXPR (list write) nil :expr expr :reduction nil
@@ -224,9 +225,9 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
 (defmethod ctx-register-variable ((ctx Context) place type)
   (declare (type symbol place)
            (type caten/avm:Buffer type))
-  (when (gethash (symbol-name place) (ctx-var2type ctx))
-    (warn "The variable ~a was already defined." place))
-  (setf (gethash (symbol-name place) (ctx-var2type ctx)) type))
+  ;;(when (gethash place (ctx-var2type ctx))
+  ;;  (warn "The variable ~a was already defined." place))
+  (setf (gethash place (ctx-var2type ctx)) type))
 
 (defmethod parsed-form-output-to ((form Parsed-Form))
   (let ((form (parsed-form-expr form)))
@@ -235,11 +236,11 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
 
 (defmethod ctx-remove-variable ((ctx Context) place)
   (declare (type symbol place))
-  (remhash (symbol-name place) (ctx-var2type ctx)))
+  (remhash place (ctx-var2type ctx)))
 
 (defmethod ctx-get-variable-type ((ctx Context) place)
   (declare (type symbol place))
-  (or (gethash (symbol-name place) (ctx-var2type ctx))
+  (or (gethash place(ctx-var2type ctx))
       (error "The variable ~a is not defined here." place)))
 
 (defmethod ctx-render ((ctx Context) (device caten/ajit:Device))
@@ -247,9 +248,10 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
    device device
    (apply #'make-graph (parsed-form-nodes (ctx-parsed-form ctx)))
    (ctx-pipeline ctx) 1
-   ;; TODO: Pass pointer info
-   nil
-   ))
+   (loop for var being the hash-keys of (ctx-var2type ctx)
+         for typ = (gethash var (ctx-var2type ctx))
+         if (> (caten/avm:buffer-nrank typ) 0)
+           collect (caten/ajit:make-argument :pointer-p t :name var :type :user :dtype (caten/avm:buffer-dtype typ) :metadata typ))))
 
 (defmethod ctx-render-function ((ctx Context) (device caten/ajit:Device))
   (let ((body (ctx-render ctx device)))

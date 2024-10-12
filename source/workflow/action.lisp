@@ -188,7 +188,8 @@ Dtype decl:
 ;; - [x] String(an array of int4)
 ;; - [ ] String Syntax (automatically converted into a list of int8)
 ;;   - [x] Array Creation in the code.
-;;   - [ ] Allow to return a pointer
+;;   - [x] Allow to return a pointer
+;;   - [ ] Allow to initialize a pointer. (float* x;)
 ;; - [x] dotimes
 ;; - [ ] Free pointer
 ;; - [ ] with-scop (Auto Scheduler is available!)

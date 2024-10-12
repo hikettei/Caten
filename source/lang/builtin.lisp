@@ -88,7 +88,7 @@
     (multiple-value-bind (forms) (stash-forms ctx val place nil)
       (if forms
           forms
-          (list (ctx-define-and-make-funcall-from-expr ctx (parsed-form-expr val) place (parsed-form-type val) (list nil))))))
+          (list (ctx-define-and-make-funcall-from-expr ctx (parsed-form-expr val) place (parsed-form-type val) (list t))))))
    (caten/ajit:make-expr :const place (parsed-form-type val))
    (parsed-form-type val)))
 
