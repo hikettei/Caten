@@ -26,6 +26,7 @@
         ;;   _tmp = 1
         ;; }
         (parsed-form-nodes form)
-        (list (write-output-to ctx form tmpvar)))
+        (when tmpvar
+          (list (write-output-to ctx form tmpvar))))
        (caten/ajit:make-expr :Const tmpvar (make-const-buffer (caten/avm:buffer-dtype (parsed-form-type form)))))
       (values nil (parsed-form-expr form))))

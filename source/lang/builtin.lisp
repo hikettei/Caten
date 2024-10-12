@@ -60,12 +60,13 @@
 
 (a/defun _%while (ctx condition body)
          "Runs the body while the condition is true."
-  (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition (gensym "_C"))
+  (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition nil)
     (make-parsed-form
      (append
       condition-nodes
       (list (caten/ajit:r/while condition-expr))
-      (multiple-value-bind (body-nodes) (stash-forms ctx body (gensym "_WHILE"))
+      (multiple-value-bind (body-nodes) (stash-forms ctx body nil)
+        (when (null body-nodes) (warn "_%while: the body is empty. Is the form created from (_%while condition (PROGN ...)?"))
         body-nodes)
       (list (caten/ajit:r/endwhile)))
      (caten/ajit:make-expr :const nil)

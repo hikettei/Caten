@@ -50,7 +50,9 @@
    #:Inferred-Types
    #:read-type-relay
    #:relay-reads
-   #:relay-writes)
+   #:relay-writes
+   #:make-inferred-type
+   )
   ;; from polyhedral.lisp
   (:export
    #:Polyhedral
