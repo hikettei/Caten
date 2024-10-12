@@ -100,10 +100,26 @@ The function will receive arguments as a `Parsed-Form` object.
       (caten/ajit:make-expr :Const x (make-const-buffer (lisp-type->dtype (type-of x))))
       (make-const-buffer (lisp-type->dtype (type-of x)))))
     ((guard x (symbolp x))
-     (make-parsed-form
-      nil
-      (caten/ajit:make-expr :Const x (ctx-get-variable-type context x))
-      (ctx-get-variable-type context x)))
+     (cond
+       ((eql x t)
+        (make-parsed-form
+         nil
+         (caten/ajit:make-expr :Const t (make-const-buffer :bool))
+         (make-const-buffer :bool)))
+       ((null x)
+        (make-parsed-form
+         nil
+         (caten/ajit:make-expr :Const nil (make-const-buffer :bool))
+         (make-const-buffer :bool)))
+       (t
+        (make-parsed-form
+         nil
+         (caten/ajit:make-expr :Const x (ctx-get-variable-type context x))
+         (ctx-get-variable-type context x)))))
+    ((list (guard x (equalp (symbol-name x) "_%SETF")) place form)
+     (let ((output (funcall (gethash (symbol-name x) *action-function-features*) context place (a/parse-form context form))))
+       (ctx-register-variable context place (parsed-form-type output))
+       output))
     ((list* _)
      (multiple-value-bind (car cdr) (values (car body) (cdr body))
        (assert-syntax-error

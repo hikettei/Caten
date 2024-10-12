@@ -85,6 +85,17 @@
                       ,(expand (cdr form))))))
     (expand clauses)))
 
+(a/defmacro let (bindings &rest body)
+    "`(let bindings &rest body)`"
+  (labels ((explore (rest-forms)
+             (if rest-forms
+                 (multiple-value-bind (var form) (values (car (car rest-forms)) (cdr (car rest-forms)))
+                   (assert (= (length form) 1) () "let: Only single expression allowed in binding")
+                   (assert (symbolp var) () "let: Variable name must be a symbol")
+                   `(when t (_%setf ,var ,@form) ,(explore (cdr rest-forms))))
+                 `(progn ,@body))))
+    (explore bindings)))
+
 (a/defmacro loop (&rest keyword-and-forms)
     "
 Implements: https://www.lispworks.com/documentation/HyperSpec/Body/m_loop.htm

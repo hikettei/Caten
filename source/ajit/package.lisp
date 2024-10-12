@@ -20,6 +20,7 @@
   ;; from isl-ast-helpers.lisp
   (:export
    #:Expr
+   #:Expr-op
    #:Expr-x
    #:Expr-y
    )

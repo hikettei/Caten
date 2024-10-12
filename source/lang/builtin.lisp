@@ -1,5 +1,6 @@
 (in-package :caten/lang)
 
+;; [TODO] Update the scope!
 (a/defun _%progn (ctx &rest forms &aux (evaluated-forms))
          "Creates a body from multiple forms."
   (let ((new-nodes
@@ -73,3 +74,16 @@
       (list (caten/ajit:r/endwhile)))
      (caten/ajit:make-expr :const nil)
      (make-const-buffer :bool))))
+
+(a/defun _%setf (ctx place val)
+         "Declare a variable and assign a value to it."
+  (assert (symbolp place))
+  (make-parsed-form
+   (append
+    (list (ctx-declare-local-var ctx place (caten/avm:buffer-dtype (parsed-form-type val))))
+    (multiple-value-bind (forms) (stash-forms ctx val place)
+      (if forms
+          forms
+          (list (ctx-define-and-make-funcall-from-expr ctx (parsed-form-expr val) place (parsed-form-type val) (list nil))))))
+   (caten/ajit:make-expr :const place (parsed-form-type val))
+   (parsed-form-type val)))
