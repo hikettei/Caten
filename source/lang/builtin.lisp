@@ -76,7 +76,7 @@
      (make-const-buffer :bool))))
 
 (a/defun _%setf (ctx decl place val)
-         "Declare a variable and assign a value to it."
+         "Assign `val` to `place`. if :decl is set to :T, then declare a new variable."
   (assert (symbolp place))
   (assert (keywordp decl))
   (assert (member decl `(:t :nil)))
@@ -90,6 +90,26 @@
           (list (ctx-define-and-make-funcall-from-expr ctx (parsed-form-expr val) place (parsed-form-type val) (list nil))))))
    (caten/ajit:make-expr :const place (parsed-form-type val))
    (parsed-form-type val)))
+
+(a/defun _%setf_aref (ctx place-id place val)
+         "Assign place[subscripts] = val."
+  (assert (symbolp place-id))
+  (assert (eql :TAKE (caten/ajit:expr-op (parsed-form-expr place))))
+  (assert (null (parsed-form-nodes place)) () "place should be an expr.")
+  (multiple-value-bind (val-form val-expr) (stash-forms ctx val (gensym "_SETFAREF") t)
+    (let ((place-type (caten/avm:copy-buffer (parsed-form-type place))))
+      (setf (caten/avm:buffer-nrank place-type) 1
+            (caten/avm:buffer-shape place-type) `(1)
+            (caten/avm:buffer-stride place-type) `(1))
+      (make-parsed-form
+       (append
+        val-form
+        (list
+         (ctx-define-and-make-funcall-from-expr-and-args
+          ctx val-expr place-id place-type (list nil)
+          (caten/ajit:expr-y (parsed-form-expr place)))))
+       val-expr
+       (parsed-form-type val)))))
 
 (a/defun take (ctx array position)
          "Access an element of an array."
@@ -133,7 +153,8 @@
          "Creates an array with a given size"
   (multiple-value-bind (size-nodes size-expr) (stash-forms ctx size (gensym "_SIZETMP") t)
     (assert (keywordp dtype) () "dtype is a keyword.")
-    (let ((type (caten/avm:make-buffer 1 (list size-place) (list 1) dtype nil)))
+    (let* ((dtype (caten/common.dtype:dtype-alias dtype))
+           (type (caten/avm:make-buffer 1 (list size-place) (list 1) dtype nil)))
       (make-parsed-form
        (append
         size-nodes

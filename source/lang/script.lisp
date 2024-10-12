@@ -68,7 +68,7 @@ The function will receive arguments as a `Parsed-Form` object.
   (match body
     ((guard x (numberp x)) x)
     ((guard x (symbolp x)) x)
-    ((guard x (stringp x)) x)
+    ((guard x (stringp x)) `(%make-and-dump-string-from ,x))
     ((list* _)
      (multiple-value-bind (car cdr) (values (car body) (cdr body))
        (assert-syntax-error
@@ -121,6 +121,10 @@ The function will receive arguments as a `Parsed-Form` object.
      (let ((output (funcall (gethash (symbol-name x) *action-function-features*) context do-decl place (a/parse-form context form))))
        (when (eql do-decl :t)
          (ctx-register-variable context place (parsed-form-type output)))
+       output))
+    ((list (guard x (equalp (symbol-name x) "_%SETF_AREF")) place place-aref form)
+     (let ((output (funcall (gethash (symbol-name x) *action-function-features*) context place (a/parse-form context place-aref) (a/parse-form context form))))
+       (assert (parsed-form-p output))
        output))
     ((list* _)
      (multiple-value-bind (car cdr) (values (car body) (cdr body))
@@ -187,6 +191,16 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
                       :_type_relay (caten/ajit:make-inferred-type nil (list type))
                       :declare-type decl)))
     (caten/ajit:r/funcall-string name)))
+
+(defmethod ctx-define-and-make-funcall-from-expr-and-args ((ctx Context) (expr caten/ajit:Expr) write type decl args)
+  (declare (type caten/avm:Buffer type))
+  (let ((name (gensym "CALL")))
+    (setf (gethash name (ctx-pipeline ctx))
+          (make-graph
+           (make-node :JIT :EXPR (list write) nil :expr expr :reduction nil
+                      :_type_relay (caten/ajit:make-inferred-type nil (list type))
+                      :declare-type decl)))
+    (caten/ajit:r/funcall-string name args)))
 
 (defmethod ctx-declare-local-var ((ctx Context) place dtype)
   (declare (type symbol place)

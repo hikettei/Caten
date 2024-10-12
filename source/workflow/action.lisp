@@ -163,10 +163,11 @@ Dtype decl:
 (defaction Test (x i k)
   (declare (type (:array :row (i k) :float) x)
            (type :int32 i k))
-  (let ((arr (_%allocate-sized-array :float32 (if (= i 1) 10 20))))
-    (dotimes (idx 10)
-      (aref arr idx))))
+  "ABC"
+  (setf (aref x 1 2) 1.0)
+  )
 
+;; - [ ] does it works for higher rank array? (serf aref)
 ;; - [ ] Compile+Runできるようにして, Test-Suiteできるようにする
 ;; - [x] Let
 ;; - [x] Pointer, Array

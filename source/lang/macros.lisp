@@ -61,6 +61,13 @@
   (let ((forms (map 'list #'a/macroexpand-all forms)))
     `(_%progn ,@forms)))
 
+(a/defmacro prog1 (result &rest forms)
+    "`(prog1 result &rest forms)`"
+  (let ((placeholder (gensym)))
+    `(let ((,placeholder ,result))
+       (progn ,@forms)
+       ,placeholder)))
+
 (a/defmacro if (test then &optional else)
     "`(if test then &optional else)`"
   (if else
@@ -110,8 +117,10 @@ Iterates the body over the range of [0, count). The form returns `result` if spe
 
 (a/defmacro setf (place value)
     "`(setf place value)`"
-  ;; [TODO] (setf (aref ...))
-  `(_%setf :nil ,place ,value))
+  ;; [TODO] More setf-able functions?
+  (if (and (listp place) (equalp "AREF" (symbol-name (car place))))
+      `(_%setf_aref ,(second place) (aref ,@(cdr place)) ,value)
+      `(_%setf :nil ,place ,value)))
 
 (a/defmacro loop (&rest keyword-and-forms)
     "
@@ -120,5 +129,12 @@ TODO: Implements: https://www.lispworks.com/documentation/HyperSpec/Body/m_loop.
   ;; Reference: https://www.lispworks.com/documentation/HyperSpec/Body/m_loop.htm
   (error "NOT READY!"))
 
-;; Return
-;; Values
+(a/defmacro %make-and-dump-string-from (string)
+    "Creates a string from a list of characters."
+  (assert (stringp string) () "Expected a string")
+  (let ((tmp (gensym))
+        (char (map 'list #'char-code string)))
+    `(let ((,tmp (_%allocate-sized-array :char ,(length char))))
+       ,@(loop for i upfrom 0 below (length char)
+               collect `(setf (aref ,tmp ,i) ,(nth i char)))
+       ,tmp)))
