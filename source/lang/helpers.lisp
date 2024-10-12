@@ -9,23 +9,23 @@
    ctx
    (parsed-form-expr form)
    place
-   (parsed-form-type form)))
+   (parsed-form-type form)
+   (list nil)))
 
-(defmethod stash-forms ((ctx Context) (form Parsed-Form))
+(defmethod stash-forms ((ctx Context) (form Parsed-Form) tmpvar)
   "Return: (values stashed render-graph, output expr)"
   (if (parsed-form-nodes form)
-      (let ((tmpvar (gensym "_TMP")))
-        (values
-         (append
-          ;; if (a > b) {
-          ;;   return 1 + 1;
-          ;; }
-          ;; =>
-          ;; int _tmp;
-          ;; if (a > b) {
-          ;;   _tmp = 1
-          ;; }
-          (parsed-form-nodes form)
-          (list (write-output-to ctx form tmpvar)))
-         (caten/ajit:make-expr :Const tmpvar (make-const-buffer (caten/avm:buffer-dtype (parsed-form-type form))))))
+      (values
+       (append
+        ;; if (a > b) {
+        ;;   return 1 + 1;
+        ;; }
+        ;; =>
+        ;; int _tmp;
+        ;; if (a > b) {
+        ;;   _tmp = 1
+        ;; }
+        (parsed-form-nodes form)
+        (list (write-output-to ctx form tmpvar)))
+       (caten/ajit:make-expr :Const tmpvar (make-const-buffer (caten/avm:buffer-dtype (parsed-form-type form)))))
       (values nil (parsed-form-expr form))))

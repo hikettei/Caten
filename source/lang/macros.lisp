@@ -5,8 +5,8 @@
              `(progn
                 (a/defun ,builtin-name (ctx a b)
                          ,(format nil "`(~a a b)`" builtin-name)
-                  (multiple-value-bind (lhs-forms lhs-expr) (stash-forms ctx a)
-                    (multiple-value-bind (rhs-forms rhs-expr) (stash-forms ctx b)
+                  (multiple-value-bind (lhs-forms lhs-expr) (stash-forms ctx a (gensym "_LHS"))
+                    (multiple-value-bind (rhs-forms rhs-expr) (stash-forms ctx b (gensym "_RHS"))
                       (make-parsed-form
                        (append lhs-forms rhs-forms)
                        (caten/ajit:make-expr ,expr-name lhs-expr rhs-expr)

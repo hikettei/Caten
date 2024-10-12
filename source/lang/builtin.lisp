@@ -15,7 +15,8 @@
                      ctx
                      (parsed-form-expr form)
                      placeholder
-                     (parsed-form-type form))))))
+                     (parsed-form-type form)
+                     (list t))))))
     (make-parsed-form
      new-nodes
      (if (typep (car evaluated-forms) 'caten/ajit:Expr)
@@ -37,24 +38,20 @@
   (when (not (eql :bool (caten/avm:buffer-dtype (parsed-form-type condition))))
     (error "The condition of an IF statement should be boolean. Inferred as ~a" (caten/avm:buffer-dtype (parsed-form-type condition))))
   (let ((output-bind (gensym "_TMP")))
-    (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition)
+    (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition (gensym "_C"))
       (make-parsed-form
        (append
         condition-nodes
+        ;; int _output_tmp;
         (list (ctx-declare-local-var ctx output-bind (caten/avm:buffer-dtype (parsed-form-type then-form))))
         (list (caten/ajit:r/if condition-expr))
-        (multiple-value-bind (then-nodes) (stash-forms ctx then-form)
-          (append
-           then-nodes
-           (list (write-output-to ctx then-form output-bind))))
-        (parsed-form-nodes then-form)
+        (multiple-value-bind (then-nodes) (stash-forms ctx then-form output-bind)
+          then-nodes)
         (when else-form
           (append
            (list (caten/ajit:r/else))
-           (multiple-value-bind (else-nodes) (stash-forms ctx else-form)
-             (append
-              else-nodes
-              (list (write-output-to ctx else-form output-bind))))))
+           (multiple-value-bind (else-nodes) (stash-forms ctx else-form output-bind)
+             else-nodes)))
         (list (caten/ajit:r/endif)))
        (caten/ajit:make-expr
         :Const output-bind
@@ -63,12 +60,12 @@
 
 (a/defun _%while (ctx condition body)
          "Runs the body while the condition is true."
-  (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition)
+  (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition (gensym "_C"))
     (make-parsed-form
      (append
       condition-nodes
       (list (caten/ajit:r/while condition-expr))
-      (multiple-value-bind (body-nodes) (stash-forms ctx body)
+      (multiple-value-bind (body-nodes) (stash-forms ctx body (gensym "_WHILE"))
         body-nodes)
       (list (caten/ajit:r/endwhile)))
      (caten/ajit:make-expr :const nil)

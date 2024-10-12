@@ -143,7 +143,7 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
 (defmethod print-object ((ctx Context) stream)
   (print-unreadable-object (ctx stream :type t :identity t)
     (format stream "~a
- :graph ~a
+ :parsed-form  ~a
  :pipeline ~a"
             (ctx-name ctx)
             (ctx-parsed-form ctx)
@@ -159,21 +159,23 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
   (expr expr :type caten/ajit:Expr)
   (type type :type caten/avm:Buffer))
 
-(defmethod ctx-define-and-make-funcall-from-expr ((ctx Context) (expr caten/ajit:Expr) write type)
+(defmethod ctx-define-and-make-funcall-from-expr ((ctx Context) (expr caten/ajit:Expr) write type decl)
   (let ((name (gensym "CALL")))
     (setf (gethash name (ctx-pipeline ctx))
           (make-graph
-           ;; TODO: make type relay
-           (make-node :JIT :EXPR (list write) nil :expr expr :reduction nil)))
+           (make-node :JIT :EXPR (list write) nil :expr expr :reduction nil
+                      :_type_relay (caten/ajit:make-inferred-type nil (list type))
+                      :declare-type decl)))
     (caten/ajit:r/funcall-string name)))
 
 (defmethod ctx-declare-local-var ((ctx Context) place dtype)
   (declare (type symbol place)
            (type keyword dtype))
   (let ((name (gensym "TMP")))
-    (setf (gethash (symbol-name name) (ctx-pipeline ctx))
+    (setf (gethash name (ctx-pipeline ctx))
           (make-graph
-           (make-node :Buffer :Allocate (list place) nil :dtype dtype)))
+           (make-node :Buffer :Allocate (list place) nil :dtype dtype :nrank 0
+                      :_type_relay (caten/ajit:make-inferred-type nil (list (make-const-buffer dtype))))))
     (caten/ajit:r/funcall-string name)))
 
 (defmethod ctx-register-variable ((ctx Context) place type)
@@ -196,6 +198,12 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
   (declare (type symbol place))
   (or (gethash (symbol-name place) (ctx-var2type ctx))
       (error "The variable ~a is not defined here." place)))
+
+(defmethod ctx-render ((ctx Context) (device caten/ajit:Device))
+  (caten/ajit:%render-body
+   device device
+   (apply #'make-graph (parsed-form-nodes (ctx-parsed-form ctx)))
+   (ctx-pipeline ctx) 1 nil))
 
 (defun make-context-from-list (&rest body)
   "
