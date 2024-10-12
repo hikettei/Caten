@@ -151,7 +151,6 @@ Dtype decl:
          (declare (ignore initargs))
          (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',lambda-list ',body)
            (setf (action-ctx self) (make-context-from-list ',name args body)))))))
-
 ;; fix the default int! :int and use *default-int*
 (defaction TestFunc (n)
   (declare (type (:pointer :int64) n))
@@ -165,8 +164,8 @@ Dtype decl:
   (declare (type (:array :row (i k) :float) x)
            (type :int32 i k))
   (let ((arr (_%allocate-sized-array :float32 (if (= i 1) 10 20))))
-    arr
-    ))
+    (dotimes (idx 10)
+      (aref arr idx))))
 
 ;; - [ ] Compile+Runできるようにして, Test-Suiteできるようにする
 ;; - [x] Let
@@ -200,7 +199,4 @@ Dtype decl:
 ;; Add Test:
 ;; - [ ] Sized :Allocate Test
 ;; - [ ] :TAKE Test ...
-;; (Unittest!)
-;;
-;;
-;;
+;; - 粒度の細かいテストが欲しい・・・

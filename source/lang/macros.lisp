@@ -92,9 +92,26 @@
                  (multiple-value-bind (var form) (values (car (car rest-forms)) (cdr (car rest-forms)))
                    (assert (= (length form) 1) () "let: Only single expression allowed in binding")
                    (assert (symbolp var) () "let: Variable name must be a symbol")
-                   `(when t (_%setf ,var ,@form) ,(explore (cdr rest-forms))))
+                   `(when t (_%setf :t ,var ,@form) ,(explore (cdr rest-forms))))
                  `(progn ,@body))))
     (explore bindings)))
+
+(a/defmacro dotimes (var-count &optional (result) &rest body)
+    "
+```
+(dotimes (var count &optional result) &rest body)
+```
+
+Iterates the body over the range of [0, count). The form returns `result` if specified. The variable `var` is bound to the current iteration index.
+"
+  (multiple-value-bind (var count) (apply #'values var-count)
+    `(let ((,var 0))
+       (_%while (< ,var ,count) (progn (setf ,var (+ 1 ,var)) ,@body ,(or result var))))))
+
+(a/defmacro setf (place value)
+    "`(setf place value)`"
+  ;; [TODO] (setf (aref ...))
+  `(_%setf :nil ,place ,value))
 
 (a/defmacro loop (&rest keyword-and-forms)
     "

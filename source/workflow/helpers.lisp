@@ -26,4 +26,4 @@
      placeholders
      (loop for stride in strides
            for place in placeholders
-           collect `(_%setf ,place ,stride)))))
+           collect `(_%setf :t ,place ,stride)))))

@@ -117,9 +117,10 @@ The function will receive arguments as a `Parsed-Form` object.
          nil
          (caten/ajit:make-expr :Const x (ctx-get-variable-type context x))
          (ctx-get-variable-type context x)))))
-    ((list (guard x (equalp (symbol-name x) "_%SETF")) place form)
-     (let ((output (funcall (gethash (symbol-name x) *action-function-features*) context place (a/parse-form context form))))
-       (ctx-register-variable context place (parsed-form-type output))
+    ((list (guard x (equalp (symbol-name x) "_%SETF")) (guard do-decl (keywordp do-decl)) place form)
+     (let ((output (funcall (gethash (symbol-name x) *action-function-features*) context do-decl place (a/parse-form context form))))
+       (when (eql do-decl :t)
+         (ctx-register-variable context place (parsed-form-type output)))
        output))
     ((list* _)
      (multiple-value-bind (car cdr) (values (car body) (cdr body))
