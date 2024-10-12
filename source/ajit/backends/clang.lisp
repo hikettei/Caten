@@ -196,7 +196,8 @@ Compiled with: ~a"
 (defmethod %render-expr ((lang Clang) (op (eql :Take)) lhs rhs z)
   (assert (null z))
   (assert (and lhs rhs))
-  (format nil "~(~a~)[~a]" (render-expr lang lhs) (render-expr lang rhs)))
+  ;; Set *args* = nil not to render lhs as a pointer.
+  (format nil "~(~a~)[~a]" (let ((*args* nil)) (render-expr lang lhs)) (render-expr lang rhs)))
 
 (defmethod %render-expr ((lang Clang) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
   (assert (buffer-p (expr-y lhs)))
@@ -330,8 +331,12 @@ Compiled with: ~a"
 	      for type = (read-type-relay node) do
 		(ecase (node-type node)
 		  (:ALLOCATE
-		   (line "~(~a~) ~(~a~)~a;"
-			 (->cdtype (getattr node :dtype)) (car (node-writes node))
+		   (line "~(~a~) ~(~a~)~(~a~)~a;"
+			 (->cdtype (getattr node :dtype))
+                         (if (and (args-p (car (node-writes node))) (= 0 (getattr node :nrank)))
+                             "*"
+                             "")
+                         (car (node-writes node))
 			 (let ((nrank (getattr node :nrank)))
 			   (if (= nrank 0)
 			       ""
