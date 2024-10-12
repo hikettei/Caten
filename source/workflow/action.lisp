@@ -42,8 +42,15 @@
 ;; - Workflow is a aIR graph
 
 (defclass Action ()
-  nil
-  )
+  ((device :type caten/ajit:device :initarg :device :reader action-device)
+   (ctx :type Context :accessor action-ctx)))
+
+(defun run-action (device action-name &rest args)
+  (declare (type caten/ajit:device device)
+           (type symbol action-name))
+  (let ((action (make-instance action-name :device device)))
+    ;; [TODO] Each action can be compiled stimultaneously
+    action))
 
 ;; Each action can be compiled into Render-Graph first, and then each language
 (defun action-parse-lambda-list-and-body (args body)
@@ -74,24 +81,24 @@
          docstring)))))
 
 (defmacro defaction (name (&rest args) &body body)
-  ""
+  "Defines an action"
   ;; Args: (Name, Type)
   (multiple-value-bind (args body docstring) (action-parse-lambda-list-and-body args body)
     ;; C-c C-c and the error check
     (make-context-from-list name args body)
-    `(let ((ctx (make-context-from-list ',name ',args ',body)))
-       (print ctx)
-       )))
+    `(prog1
+         (defclass ,name (Action)
+           nil
+           (:documentation ,(or docstring "")))
+       (defmethod initialize-instance :after ((self ,name) &rest initargs)
+         (declare (ignore initargs))
+         (setf (action-ctx self) (make-context-from-list ',name ',args ',body))
+         ;; [TODO] Add: Run-Compile
+         ))))
 
 (defaction TestFunc (n)
   (declare (atype :int32 n))
   (+ n n))
-
-(defaction Tokenizer (tokens)
-  (declare (atype string tokens))
-  ;; 各ActionはConfigを受け取って各自Classを初期化できる
-  ;; 各ActionはDSLを使って動作を定義できる
-  )
 
 ;; TODO
 ;; - RendererのRefactorが必要

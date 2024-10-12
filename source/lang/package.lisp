@@ -8,4 +8,5 @@
    #:a/defun
    #:a/defmacro
    #:make-context-from-list
+   #:Context
    ))
