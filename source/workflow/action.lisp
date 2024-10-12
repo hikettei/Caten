@@ -138,16 +138,26 @@ Dtype decl:
         n)))
 
 ;; - [x] Let
-;; - [ ] Pointer, Array
+;; - [x] Pointer, Array
+;;  - [ ] Sized Array
+;;  - [ ] Aref
+;;  - [ ] 
 ;; - [ ] String(an array of int4)
+;; - [ ] String Syntax (automatically converted into a list of int8)
 ;; - [ ] For, dotimes, dolist
-;; - [ ] with-scop
+;; - [ ] with-scop (Auto Scheduler is available!)
 ;; - [ ] return, return values;
 ;; - [ ] Implement MoE (That is, Module and Action interop)
 ;; - [ ] Provide a full documentation!
 
 ;; =, Length are action
-;; TODO: workflow configを一緒に提供する
+;; TODO: defaction: workflow configを一緒に提供する (dokode?)
+;; - defactionで想定しているもの:
+;;  - [ ] MoEのGating (なので，ModuleとのInteropを簡単にする)
+;;  - [ ] Model Weight読み込みの実装 (ConfigからPathなどを読み込める必要がある)
+;;  - [ ] Tokenizerの実装
+;;  - [ ] Tensor Allocation, Dynamic Shapeの計算
+;;  - [ ] Compiled AVMを呼び出す(例えばArgmax単体とか，このコンパイルの判定を自動でやりたい)
 ;; (defaction switch (condition action1 action2)
 ;;
 ;;
