@@ -61,15 +61,15 @@
         (parsed-form-type then-form))
        (parsed-form-type then-form)))))
 
-(a/defun _%while (ctx condition &rest body)
+(a/defun _%while (ctx condition body)
          "Runs the body while the condition is true."
-  
-  )
-
-(a/defun _%block (ctx &rest body)
-         "Creates a new scope and runs the body.
-{
-  body
-}"
-  
-  )
+  (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition)
+    (make-parsed-form
+     (append
+      condition-nodes
+      (list (caten/ajit:r/while condition-expr))
+      (multiple-value-bind (body-nodes) (stash-forms ctx body)
+        body-nodes)
+      (list (caten/ajit:r/endwhile)))
+     (caten/ajit:make-expr :const nil)
+     (make-const-buffer :bool))))

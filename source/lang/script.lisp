@@ -160,7 +160,7 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
   (type type :type caten/avm:Buffer))
 
 (defmethod ctx-define-and-make-funcall-from-expr ((ctx Context) (expr caten/ajit:Expr) write type)
-  (let ((name (gensym "FC")))
+  (let ((name (gensym "CALL")))
     (setf (gethash name (ctx-pipeline ctx))
           (make-graph
            ;; TODO: make type relay
@@ -211,11 +211,12 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
           (a/parse-form context (a/macroexpand-all `(progn ,@body))))
     context))
 
-
+;; Export to Cを実装
+;; 
 ;; let
 ;; {
 ;;   int i;みたいにすることを想定している SCOPE ENDSCOPE (Optional)
-;;
+;; }
 
 #|
 (action-body (n transformer)

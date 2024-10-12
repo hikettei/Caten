@@ -88,7 +88,9 @@
    #:r/else
    #:r/endif
    #:r/for
-   #:r/endfor)
+   #:r/endfor
+   #:r/while
+   #:r/endwhile)
   ;; Expr construction
   (:export
    #:make-expr))

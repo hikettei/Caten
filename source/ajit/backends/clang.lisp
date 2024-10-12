@@ -219,9 +219,8 @@ Compiled with: ~a"
   (assert (and x y z))
   (format nil "(~(~a~) ? ~(~a~) : ~(~a~))" (render-expr lang x) (render-expr lang y) (render-expr lang z)))
 
-(defmethod %render-body ((lang Clang) kernel-lang jit-graph polyhedral indent args)
+(defmethod %render-body ((lang Clang) kernel-lang jit-graph pipeline indent args)
   (declare (type graph jit-graph)
-	   (type polyhedral polyhedral)
 	   (type fixnum indent))
   (let ((*args* (loop for arg in args if (argument-pointer-p arg) collect (argument-name arg))))
     (with-output-to-string (out)
@@ -254,6 +253,11 @@ Compiled with: ~a"
 		     (assert c () "Missing condition")
 		     (line "if ~a {" (r c))
 		     (incf indent)))
+                  (:WHILE
+                   (let ((c (getattr node :condition)))
+                     (assert c)
+                     (line "while ~a {" (r c))
+                     (incf indent)))
 		  (:ELSE
 		   (decf indent)
 		   (line "} else {")
@@ -261,6 +265,9 @@ Compiled with: ~a"
 		  (:ENDIF
 		   (decf indent)
 		   (line "}"))
+                  (:ENDWHILE
+                   (decf indent)
+                   (line "}"))
 		  (:FUNCALL
 		   (dolist (node (if (getattr node :_packed)
 				     (getattr node :_unrolled)
@@ -268,7 +275,7 @@ Compiled with: ~a"
 		     (let ((idx (getattr node :idx))
 			   (args (map 'list #'(lambda (x) (r x)) (getattr node :args)))
 			   (*suffix* (getattr node :unroll-offsets)))
-		       (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out))))))))))
+		       (princ (%render-nodes kernel-lang (gethash idx pipeline) args indent) out))))))))))
 
 (defun ->cdtype (dtype)
   (ecase dtype

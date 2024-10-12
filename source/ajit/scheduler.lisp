@@ -291,7 +291,7 @@ Options:
 	   for nth upfrom 0
 	   for name = (setf (avm-name avm) (intern (format nil "~a_~a_k~a" base-name name-prefix (kernel-renderer-nth kernel)) "KEYWORD"))
 	   for body = (%render-body backend backend (apply #'make-graph (kernel-renderer-nodes kernel))
-				    (group-polyhedron group) 1 (kernel-renderer-args kernel))
+				    (poly-pipeline (group-polyhedron group)) 1 (kernel-renderer-args kernel))
 	   for function = (%render-function backend avm (kernel-renderer-args kernel) body)
 	   collect
 	   (progn

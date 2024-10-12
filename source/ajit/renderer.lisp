@@ -37,7 +37,7 @@ function void (args) { body };
   "A list of ops used for rendering the body."
   `(member :FOR :ENDFOR :FUNCALL :IF :ELSE :ENDIF))
 
-(defgeneric %render-body (lang kernel-lang jit-graph polyhedral indent allocs)
+(defgeneric %render-body (lang kernel-lang jit-graph pipeline indent allocs)
   (:documentation
    "IRs used in the jit-graph:
 (TODO: Docs)

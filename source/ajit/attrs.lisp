@@ -40,11 +40,25 @@ IF (condition) {
 ```"
 	 :slots ((condition)))
 
+(defnode (:Render :WHILE) () "
+RenderGraph:
+```
+WHILE (condition) {
+```"
+	 :slots ((condition)))
+
+(defnode (:Render :ENDWHILE) () "
+RenderGraph:
+```
+} // endwhile
+```")
+
 (defnode (:Render :ELSE) () "
 RenderGraph:
 ```
 } ELSE {
 ```")
+
 (defnode (:Render :ENDIF) () "
 RenderGraph:
 ```
