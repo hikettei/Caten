@@ -6,8 +6,8 @@
              `(progn
                 (a/defun ,builtin-name (ctx a b)
                          ,(format nil "`(~a a b)`" builtin-name)
-                  (multiple-value-bind (lhs-forms lhs-expr) (stash-forms ctx a (gensym "_LHS"))
-                    (multiple-value-bind (rhs-forms rhs-expr) (stash-forms ctx b (gensym "_RHS"))
+                  (multiple-value-bind (lhs-forms lhs-expr) (stash-forms ctx a (gensym "_LHS") t)
+                    (multiple-value-bind (rhs-forms rhs-expr) (stash-forms ctx b (gensym "_RHS") t)
                       (make-parsed-form
                        (append lhs-forms rhs-forms)
                        (caten/ajit:make-expr ,expr-name lhs-expr rhs-expr)
@@ -42,7 +42,7 @@
              `(progn
                 (a/defun ,builtin-name (ctx x)
                   ,(format nil "`(~a a)`" builtin-name)
-                  (multiple-value-bind (forms expr) (stash-forms ctx x (gensym "_UNARY"))
+                  (multiple-value-bind (forms expr) (stash-forms ctx x (gensym "_UNARY") t)
                     (make-parsed-form
                      forms
                      (caten/ajit:make-expr ,expr-name expr)

@@ -39,20 +39,20 @@
   (when (not (eql :bool (caten/avm:buffer-dtype (parsed-form-type condition))))
     (error "The condition of an IF statement should be boolean. Inferred as ~a" (caten/avm:buffer-dtype (parsed-form-type condition))))
   (let ((output-bind (gensym "_IF_OUT")))
-    (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition (gensym "_C"))
+    (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition (gensym "_C") t)
       (make-parsed-form
        (append
         condition-nodes
         ;; int _output_tmp;
         (list (ctx-declare-local-var ctx output-bind (caten/avm:buffer-dtype (parsed-form-type then-form))))
         (list (caten/ajit:r/if condition-expr))
-        (multiple-value-bind (then-nodes) (stash-forms ctx then-form output-bind)
+        (multiple-value-bind (then-nodes) (stash-forms ctx then-form output-bind nil)
           (when (null then-nodes) (warn "_%if: then looks empty, is the form created from (_%if condition (PROGN ...)?"))
           then-nodes)
         (when else-form
           (append
            (list (caten/ajit:r/else))
-           (multiple-value-bind (else-nodes) (stash-forms ctx else-form output-bind)
+           (multiple-value-bind (else-nodes) (stash-forms ctx else-form output-bind nil)
              (when (null else-nodes) (warn "_%if: else looks empty, is the form created from (_%if condition then (PROGN ...)?"))
              else-nodes)))
         (list (caten/ajit:r/endif)))
@@ -63,12 +63,12 @@
 
 (a/defun _%while (ctx condition body)
          "Runs the body while the condition is true."
-  (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition nil)
+  (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition nil nil)
     (make-parsed-form
      (append
       condition-nodes
       (list (caten/ajit:r/while condition-expr))
-      (multiple-value-bind (body-nodes) (stash-forms ctx body nil)
+      (multiple-value-bind (body-nodes) (stash-forms ctx body nil nil)
         (when (null body-nodes) (warn "_%while: the body is empty. Is the form created from (_%while condition (PROGN ...)?"))
         body-nodes)
       (list (caten/ajit:r/endwhile)))
@@ -81,7 +81,7 @@
   (make-parsed-form
    (append
     (list (ctx-declare-local-var ctx place (caten/avm:buffer-dtype (parsed-form-type val))))
-    (multiple-value-bind (forms) (stash-forms ctx val place)
+    (multiple-value-bind (forms) (stash-forms ctx val place nil)
       (if forms
           forms
           (list (ctx-define-and-make-funcall-from-expr ctx (parsed-form-expr val) place (parsed-form-type val) (list nil))))))
@@ -90,8 +90,8 @@
 
 (a/defun take (ctx array position)
          "Access an element of an array."
-  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF"))
-    (multiple-value-bind (pos-forms pos-expr) (stash-forms ctx position (gensym "_POS"))
+  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF") t)
+    (multiple-value-bind (pos-forms pos-expr) (stash-forms ctx position (gensym "_POS") t)
       (make-parsed-form
        (append aref-forms pos-forms)
        (caten/ajit:make-expr :Take aref-expr pos-expr)
@@ -103,10 +103,10 @@
 
 (a/defun aref (ctx array &rest subscripts)
          "Access an element of an array."
-  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF"))
+  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF") t)
     (let ((forms (loop for s in subscripts
                        collect
-                       (multiple-value-list (stash-forms ctx s (gensym "_POS"))))))
+                       (multiple-value-list (stash-forms ctx s (gensym "_POS") t)))))
       (assert (= (length subscripts) (caten/avm:buffer-nrank (parsed-form-type array)))
               ()
               "The number of subscripts should match the rank of the array. Inferred ~a and ~a"
@@ -125,3 +125,17 @@
                (caten/avm:buffer-shape type) nil
                (caten/avm:buffer-stride type) nil)
          type)))))
+
+(a/defun _%allocate-sized-array (ctx dtype size &aux (place (gensym "_ARRAY")) (size-place (gensym "_SZ")))
+         "Creates an array with a given size"
+  (multiple-value-bind (size-nodes size-expr) (stash-forms ctx size (gensym "_SIZETMP") t)
+    (assert (keywordp dtype) () "dtype is a keyword.")
+    (let ((type (caten/avm:make-buffer 1 (list size-place) (list 1) dtype nil)))
+      (make-parsed-form
+       (append
+        size-nodes
+        ;; SIZE = SIZE;
+        (list (ctx-define-and-make-funcall-from-expr ctx size-expr size-place (parsed-form-type size) (list t)))
+        (list (ctx-declare-sized-local-var ctx place size-place dtype)))
+       (caten/ajit:make-expr :const place type)
+       type))))

@@ -164,16 +164,22 @@ Dtype decl:
 (defaction Test (x i k)
   (declare (type (:array :row (i k) :float) x)
            (type :int32 i k))
-  (+ 1 (aref x 1 2) (aref x 0 3)))
+  (let ((arr (_%allocate-sized-array :float32 (if (= i 1) 10 20))))
+    arr
+    ))
 
+;; - [ ] Compile+Runできるようにして, Test-Suiteできるようにする
 ;; - [x] Let
 ;; - [x] Pointer, Array
-;;  - [ ] Sized Array
-;;  - [ ] Aref
-;;  - [ ] 
-;; - [ ] String(an array of int4)
+;;  - [x] Sized Array
+;;  - [x] Aref
+;;  - [ ] (setf aref)
+;; - [x] String(an array of int4)
 ;; - [ ] String Syntax (automatically converted into a list of int8)
+;;   - [ ] Array Creation in the code.
+;;   - [ ] Fix some type inference (array)
 ;; - [ ] For, dotimes, dolist
+;; - [ ] Free pointer
 ;; - [ ] with-scop (Auto Scheduler is available!)
 ;; - [ ] return, return values;
 ;; - [ ] Implement MoE (That is, Module and Action interop)
@@ -191,8 +197,10 @@ Dtype decl:
 ;;  - [ ] Compiled AVMを呼び出す(例えばArgmax単体とか，このコンパイルの判定を自動でやりたい)
 ;; (defaction switch (condition action1 action2)
 ;;
+;; Add Test:
+;; - [ ] Sized :Allocate Test
+;; - [ ] :TAKE Test ...
+;; (Unittest!)
 ;;
 ;;
 ;;
-;;
-

@@ -99,6 +99,7 @@ The function will receive arguments as a `Parsed-Form` object.
       nil
       (caten/ajit:make-expr :Const x (make-const-buffer (lisp-type->dtype (type-of x))))
       (make-const-buffer (lisp-type->dtype (type-of x)))))
+    ((guard x (keywordp x)) x)
     ((guard x (symbolp x))
      (cond
        ((eql x t)
@@ -135,7 +136,7 @@ The function will receive arguments as a `Parsed-Form` object.
          (handler-bind ((error #'(lambda (cond) (assert-syntax-error nil (" caught by the error when parsing the function ~a:~% ~a" car cond) body 0))))
            ;; Top-down
            (flet ((is-parsed-form? (form)
-                    (assert (parsed-form-p form))
+                    (assert (or (keywordp form) (parsed-form-p form)))
                     form))
              (let ((output (apply function-feature context (map 'list #'is-parsed-form? (map 'list #'(lambda (x) (a/parse-form context x)) cdr)))))
                (assert (typep output 'Parsed-Form) () "The function ~a should return a parsed-form." car)
@@ -177,6 +178,7 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
   (type type :type caten/avm:Buffer))
 
 (defmethod ctx-define-and-make-funcall-from-expr ((ctx Context) (expr caten/ajit:Expr) write type decl)
+  (declare (type caten/avm:Buffer type))
   (let ((name (gensym "CALL")))
     (setf (gethash name (ctx-pipeline ctx))
           (make-graph
@@ -193,6 +195,15 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
           (make-graph
            (make-node :Buffer :Allocate (list place) nil :dtype dtype :nrank 0
                       :_type_relay (caten/ajit:make-inferred-type nil (list (make-const-buffer dtype))))))
+    (caten/ajit:r/funcall-string name)))
+
+(defmethod ctx-declare-sized-local-var ((ctx Context) place size dtype)
+  (declare (type symbol place) (type (or symbol integer) size) (type keyword dtype))
+  (let ((name (gensym "ALLOC")))
+    (setf (gethash name (ctx-pipeline ctx))
+          (make-graph
+           (make-node :Buffer :Allocate (list place) (list size 1) :dtype dtype :nrank 1
+                      :_type_relay (caten/ajit:make-inferred-type nil (list (caten/avm:make-buffer 1 (list size) (list 1) dtype nil))))))
     (caten/ajit:r/funcall-string name)))
 
 (defmethod ctx-register-variable ((ctx Context) place type)
