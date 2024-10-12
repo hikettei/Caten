@@ -164,7 +164,7 @@ Dtype decl:
 (defaction Test (x i k)
   (declare (type (:array :row (i k) :float) x)
            (type :int32 i k))
-  (+ 1 (_%take x 1)))
+  (+ 1 (aref x 1 2) (aref x 0 3)))
 
 ;; - [x] Let
 ;; - [x] Pointer, Array

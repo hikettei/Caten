@@ -23,6 +23,7 @@
    #:Expr-op
    #:Expr-x
    #:Expr-y
+   #:simplify-expr
    )
   ;; from device.lisp
   (:export

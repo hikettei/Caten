@@ -173,7 +173,7 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
 - the form returns a type of `type`.
 - If you evaluate the form, it will return `expr`."
   (nodes nodes :type list)
-  (expr expr :type caten/ajit:Expr)
+  (expr (caten/ajit:simplify-expr expr) :type caten/ajit:Expr)
   (type type :type caten/avm:Buffer))
 
 (defmethod ctx-define-and-make-funcall-from-expr ((ctx Context) (expr caten/ajit:Expr) write type decl)

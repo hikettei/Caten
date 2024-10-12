@@ -88,13 +88,38 @@
    (caten/ajit:make-expr :const place (parsed-form-type val))
    (parsed-form-type val)))
 
-(a/defun _%take (ctx array position)
+(a/defun take (ctx array position)
          "Access an element of an array."
   (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF"))
     (multiple-value-bind (pos-forms pos-expr) (stash-forms ctx position (gensym "_POS"))
       (make-parsed-form
        (append aref-forms pos-forms)
        (caten/ajit:make-expr :Take aref-expr pos-expr)
+       (let ((type (caten/avm:copy-buffer (parsed-form-type array))))
+         (setf (caten/avm:buffer-nrank type) 0
+               (caten/avm:buffer-shape type) nil
+               (caten/avm:buffer-stride type) nil)
+         type)))))
+
+(a/defun aref (ctx array &rest subscripts)
+         "Access an element of an array."
+  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF"))
+    (let ((forms (loop for s in subscripts
+                       collect
+                       (multiple-value-list (stash-forms ctx s (gensym "_POS"))))))
+      (assert (= (length subscripts) (caten/avm:buffer-nrank (parsed-form-type array)))
+              ()
+              "The number of subscripts should match the rank of the array. Inferred ~a and ~a"
+              (parsed-form-type array)
+              (map 'list #'parsed-form-expr subscripts))
+      (make-parsed-form
+       (append aref-forms (apply #'append (map 'list #'car forms)))
+       (caten/ajit:make-expr
+        :TAKE aref-expr
+        (flet ((add (x y) (caten/ajit:make-expr :+ x y)))
+          (reduce #'add (loop for s in (caten/avm:buffer-stride (parsed-form-type array))
+                              for i in (map 'list #'second forms)
+                              collect (caten/ajit:make-expr :* i s)))))
        (let ((type (caten/avm:copy-buffer (parsed-form-type array))))
          (setf (caten/avm:buffer-nrank type) 0
                (caten/avm:buffer-shape type) nil
