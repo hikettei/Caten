@@ -6,7 +6,6 @@
   :components
   ((:file "package")
    (:file "conditions")
-   (:file "action-script")
-   (:file "syntax")
    (:file "macros")
-   (:file "builtin")))
+   (:file "builtin")
+   (:file "documentation")))

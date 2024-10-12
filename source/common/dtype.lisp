@@ -60,9 +60,9 @@
 
 (defun lisp-type->dtype (dtype)
   (case dtype
-    (integer caten/aasm:*default-int*)
-    (fixnum caten/aasm:*default-int*)
-    (bit    caten/aasm:*default-int*)
+    (integer :int64)
+    (fixnum  :int64)
+    (bit     :int64)
     (single-float :float32)
     (double-float :float64)
     (boolean :bool)
