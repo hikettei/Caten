@@ -98,10 +98,10 @@
 
 (a/defmacro loop (&rest keyword-and-forms)
     "
-Implements: https://www.lispworks.com/documentation/HyperSpec/Body/m_loop.htm
+TODO: Implements: https://www.lispworks.com/documentation/HyperSpec/Body/m_loop.htm
 `(loop &rest keyword-and-forms)`"
   ;; Reference: https://www.lispworks.com/documentation/HyperSpec/Body/m_loop.htm
   (error "NOT READY!"))
 
-;; How to implement List?
-;; How to implement String?
+;; Return
+;; Values

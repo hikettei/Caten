@@ -52,6 +52,13 @@
     ;; [TODO] Each action can be compiled stimultaneously
     action))
 
+(defun parse-type-designator (type-form)
+  (ematch type-form
+    ((guard x (keywordp x))
+     (values nil x))
+    ((list (guard x (eql x :pointer)) y)
+     (values t y))))
+
 ;; Each action can be compiled into Render-Graph first, and then each language
 (defun action-parse-lambda-list-and-body (args body)
   (multiple-value-bind (remaining-form declare docstring) (alexandria:parse-body body :documentation t)
@@ -77,19 +84,37 @@
                for type-form = (find var type-decl :key #'cdr :test #'find)
                do (assert type-form () "defaction: Cannot infer the type of ~A.~%Provide (declare (atype type_name variable ...)) form to declare the type." var)
                collect
-               (caten/ajit:make-argument
-                :name var
-                :pointer-p nil
-                :dtype (second type-form)
-                :type :user :io :input
-                :metadata (caten/avm:make-buffer 0 nil nil (second type-form) nil)))
+               (multiple-value-bind (is-pointer dtype) (parse-type-designator (second type-form))
+                 (let ((dtype (caten/common.dtype:dtype-alias dtype)))
+                   (caten/ajit:make-argument
+                    :name var
+                    :pointer-p is-pointer
+                    :dtype dtype
+                    :type :user :io :input
+                    :metadata (caten/avm:make-buffer 0 nil nil dtype nil)))))
          remaining-form
          docstring)))))
 
-(defmacro defaction (name (&rest args) &body body)
-  "Defines an action"
+(defmacro defaction (name lambda-list &body body)
+  "
+```
+(defaction name lambda-list &body body)
+```
+
+Define an action.
+
+- name[symbol]: The name of the action.
+- lambda-list[list]: lambda-list
+- body[list]: The body of the action. (Lisp-Like DSL, see caten/lang)
+
+Dtype decl:
+```
+- (:pointer :dtype)
+- :dtype
+```
+"
   ;; Args: (Name, Type)
-  (multiple-value-bind (args1 body1 docstring1) (action-parse-lambda-list-and-body args body)
+  (multiple-value-bind (args1 body1 docstring1) (action-parse-lambda-list-and-body lambda-list body)
     ;; C-c C-c and the error check
     (print (ctx-render-function (make-context-from-list name args1 body1) (caten/ajit:default-device :clang)))
     `(prog1
@@ -98,26 +123,28 @@
            (:documentation ,(or docstring1 "")))
        (defmethod initialize-instance :after ((self ,name) &rest initargs)
          (declare (ignore initargs))
-         (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',args ',body)
+         (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',lambda-list ',body)
            (setf (action-ctx self) (make-context-from-list ',name args body))
 
            )))))
 
+;; fix the default int! :int and use *default-int*
 (defaction TestFunc (n)
-  (declare (atype :int64 n))
+  (declare (atype (:pointer :int64) n))
   (let ((m (* 10 n)))
     (if (> m 1)
         (let ((s (* m 10)))
           s)
         n)))
-    
 
 ;; - [x] Let
 ;; - [ ] Pointer, Array
 ;; - [ ] String(an array of int4)
 ;; - [ ] For, dotimes, dolist
 ;; - [ ] with-scop
+;; - [ ] return, return values;
 ;; - [ ] Implement MoE (That is, Module and Action interop)
+;; - [ ] Provide a full documentation!
 
 ;; =, Length are action
 ;; TODO: workflow configを一緒に提供する

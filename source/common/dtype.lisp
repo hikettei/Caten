@@ -15,6 +15,7 @@
    #:dtype/min
    #:dtype/smallest
    #:dtype/size-of
+   #:dtype-alias
 
    #:encode-float64
    #:decode-float64
@@ -39,6 +40,15 @@
 	 :float64 :float32 :float16 :bfloat16
 	 :uint64 :uint32 :uint16 :uint8
 	 :int64 :int32 :int16 :int8 :bool)))
+
+(defun dtype-alias (dtype)
+  (case dtype
+    (:char :int8)
+    (:uchar :uint8)
+    (:float :float32)
+    (:double :float64)
+    ;; TODO: :int -> default-int, :uint -> default-uint
+    (otherwise dtype)))
 
 (defun dtype->lisp (dtype)
   "to which dtypes values are coerced?"
