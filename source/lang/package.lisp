@@ -7,4 +7,5 @@
    #:a/macroexpand-all
    #:a/defun
    #:a/defmacro
+   #:make-context-from-list
    ))

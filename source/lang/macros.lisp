@@ -1,5 +1,6 @@
 (in-package :caten/lang)
 
+;; Binary Primitive Operations
 (macrolet ((def (builtin-name expr-name lisp-name &optional (unary nil) (logical-p nil))
              (assert (typep expr-name 'caten/ajit:op/expr))
              `(progn
@@ -27,7 +28,33 @@
   (def _%< :< < nil t)
   (def _%<= :<= <= nil t)
   (def _%> :> > nil t)
-  (def _%>= :>= >= nil t))
+  (def _%>= :>= >= nil t)
+  (def _%and :AND and)
+  (def _%or :OR or)
+  (def _%xor :XOR xor)
+  (def _%mod :% mod)
+  (def _%max :max max)
+  (def _%min :min min))
+
+;; Unary Primitive Operations
+(macrolet ((def (builtin-name expr-name lisp-name)
+             (assert (typep expr-name 'caten/ajit:op/expr))
+             `(progn
+                (a/defun ,builtin-name (ctx x)
+                  ,(format nil "`(~a a)`" builtin-name)
+                  (multiple-value-bind (forms expr) (stash-forms ctx x (gensym "_UNARY"))
+                    (make-parsed-form
+                     forms
+                     (caten/ajit:make-expr ,expr-name expr)
+                     (parsed-form-type x))))
+                (a/defmacro ,lisp-name (x)
+                    ,(format nil "`(~a a)`" lisp-name)
+                  (list ',builtin-name x)))))
+  (def _%not :not not)
+  (def _%sin :sin sin)
+  (def _%log2 :log2 log2)
+  (def _%exp2 :exp2 exp2)
+  (def _%sqrt :sqrt sqrt))
 
 (a/defmacro progn (&rest forms)
     "`(progn &rest forms)`"
@@ -37,8 +64,8 @@
 (a/defmacro if (test then &optional else)
     "`(if test then &optional else)`"
   (if else
-      `(_%if ,test ,then ,else)
-      `(_%if ,test ,then)))
+      `(_%if ,test (progn ,then) (progn ,else))
+      `(_%if ,test (progn ,then))))
 
 (a/defmacro when (test &rest forms)
     "`(when test &body forms)`"

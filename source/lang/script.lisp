@@ -205,16 +205,18 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
    (apply #'make-graph (parsed-form-nodes (ctx-parsed-form ctx)))
    (ctx-pipeline ctx) 1 nil))
 
-(defun make-context-from-list (&rest body)
+(defun make-context-from-list (name args body)
   "
 ```
-(make-context-from-list &rest body)
+(make-context-from-list name args &rest body)
 ```
 
 - arguments[list] a list of symbols that is already defined in the scope
 - body[form] script
 "
-  (let ((context (make-instance 'Context :name (gensym "BLOCK") :pipeline (make-hash-table))))
+  (let ((context (make-instance 'Context :name name :pipeline (make-hash-table))))
+    (loop for (var-id . type) in args
+          do (ctx-register-variable context var-id (make-const-buffer type)))
     (setf (ctx-parsed-form context)
           (a/parse-form context (a/macroexpand-all `(progn ,@body))))
     context))

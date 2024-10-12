@@ -46,11 +46,13 @@
         (list (ctx-declare-local-var ctx output-bind (caten/avm:buffer-dtype (parsed-form-type then-form))))
         (list (caten/ajit:r/if condition-expr))
         (multiple-value-bind (then-nodes) (stash-forms ctx then-form output-bind)
+          (when (null then-nodes) (warn "_%if: then looks empty, is the form created from (_%if condition (PROGN ...)?"))
           then-nodes)
         (when else-form
           (append
            (list (caten/ajit:r/else))
            (multiple-value-bind (else-nodes) (stash-forms ctx else-form output-bind)
+             (when (null else-nodes) (warn "_%if: else looks empty, is the form created from (_%if condition then (PROGN ...)?"))
              else-nodes)))
         (list (caten/ajit:r/endif)))
        (caten/ajit:make-expr
