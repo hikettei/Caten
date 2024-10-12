@@ -3,6 +3,9 @@
 (defun make-const-buffer (dtype)
   (caten/avm:make-buffer 0 nil nil dtype nil))
 
+(defun as-scalar (buffer)
+  (make-const-buffer (caten/avm:buffer-dtype buffer)))
+
 (defmethod write-output-to ((ctx Context) (form Parsed-Form) place declare-p)
   "Returns a :FUNCALL that writes the result of form into the place."
   (ctx-define-and-make-funcall-from-expr

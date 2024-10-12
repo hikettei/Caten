@@ -163,22 +163,33 @@ Dtype decl:
 (defaction Test (x i k)
   (declare (type (:array :row (i k) :float) x)
            (type :int32 i k))
-  "ABC"
-  (setf (aref x 1 2) 1.0)
-  )
+  (setf (aref x 2 2) 2.0)
+  (let ((a x))
+    (setf (aref a 3 2) 1.0)
+    a))
 
-;; - [ ] does it works for higher rank array? (serf aref)
+(defaction Matmul (x y z m n k)
+  (declare (type (:array :row (m n) :float) x)
+           (type (:array :row (n k) :float) y)
+           (type (:array :row (m k) :float) z)
+           (type :int32 m n k))
+  (dotimes (mm m)
+    (dotimes (nn n)
+      (dotimes (kk k)
+        (setf (aref z mm kk) (+ (aref z mm kk) (* (aref x mm nn) (aref y nn kk))))))))
+
+;; - [x] does it works for higher rank array? (serf aref) (need tests)
 ;; - [ ] Compile+Runできるようにして, Test-Suiteできるようにする
 ;; - [x] Let
 ;; - [x] Pointer, Array
 ;;  - [x] Sized Array
 ;;  - [x] Aref
-;;  - [ ] (setf aref)
+;;  - [x] (setf aref)
 ;; - [x] String(an array of int4)
 ;; - [ ] String Syntax (automatically converted into a list of int8)
-;;   - [ ] Array Creation in the code.
-;;   - [ ] Fix some type inference (array)
-;; - [ ] For, dotimes, dolist
+;;   - [x] Array Creation in the code.
+;;   - [ ] Allow to return a pointer
+;; - [x] dotimes
 ;; - [ ] Free pointer
 ;; - [ ] with-scop (Auto Scheduler is available!)
 ;; - [ ] return, return values;

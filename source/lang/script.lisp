@@ -188,7 +188,7 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
     (setf (gethash name (ctx-pipeline ctx))
           (make-graph
            (make-node :JIT :EXPR (list write) nil :expr expr :reduction nil
-                      :_type_relay (caten/ajit:make-inferred-type nil (list type))
+                      :_type_relay (caten/ajit:make-inferred-type nil (list (as-scalar type)))
                       :declare-type decl)))
     (caten/ajit:r/funcall-string name)))
 
@@ -246,7 +246,10 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
   (caten/ajit:%render-body
    device device
    (apply #'make-graph (parsed-form-nodes (ctx-parsed-form ctx)))
-   (ctx-pipeline ctx) 1 nil))
+   (ctx-pipeline ctx) 1
+   ;; TODO: Pass pointer info
+   nil
+   ))
 
 (defmethod ctx-render-function ((ctx Context) (device caten/ajit:Device))
   (let ((body (ctx-render ctx device)))

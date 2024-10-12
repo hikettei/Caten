@@ -78,6 +78,7 @@
 (a/defun _%setf (ctx decl place val)
          "Assign `val` to `place`. if :decl is set to :T, then declare a new variable."
   (assert (symbolp place))
+  (assert place)
   (assert (keywordp decl))
   (assert (member decl `(:t :nil)))
   (make-parsed-form
@@ -107,7 +108,7 @@
         (list
          (ctx-define-and-make-funcall-from-expr-and-args
           ctx val-expr place-id place-type (list nil)
-          (caten/ajit:expr-y (parsed-form-expr place)))))
+          (caten/ajit:simplify-expr (caten/ajit:expr-y (parsed-form-expr place))))))
        val-expr
        (parsed-form-type val)))))
 
@@ -117,7 +118,7 @@
     (multiple-value-bind (pos-forms pos-expr) (stash-forms ctx position (gensym "_POS") t)
       (make-parsed-form
        (append aref-forms pos-forms)
-       (caten/ajit:make-expr :Take aref-expr pos-expr)
+       (caten/ajit:make-expr :Take aref-expr  pos-expr)
        (let ((type (caten/avm:copy-buffer (parsed-form-type array))))
          (setf (caten/avm:buffer-nrank type) 0
                (caten/avm:buffer-shape type) nil
@@ -139,10 +140,12 @@
        (append aref-forms (apply #'append (map 'list #'car forms)))
        (caten/ajit:make-expr
         :TAKE aref-expr
-        (flet ((add (x y) (caten/ajit:make-expr :+ x y)))
-          (reduce #'add (loop for s in (caten/avm:buffer-stride (parsed-form-type array))
-                              for i in (map 'list #'second forms)
-                              collect (caten/ajit:make-expr :* i s)))))
+        (caten/ajit:simplify-expr
+         (flet ((add (x y) (caten/ajit:make-expr :ADD x y)))
+           (reduce #'add (loop for stride in (caten/avm:buffer-stride (parsed-form-type array))
+                               for s = (caten/ajit:make-expr :const stride)
+                               for i in (map 'list #'second forms)
+                               collect (caten/ajit:make-expr :MUL i s))))))
        (let ((type (caten/avm:copy-buffer (parsed-form-type array))))
          (setf (caten/avm:buffer-nrank type) 0
                (caten/avm:buffer-shape type) nil
