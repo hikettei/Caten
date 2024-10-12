@@ -104,7 +104,7 @@
            )))))
 
 (defaction TestFunc (n)
-  (declare (atype :int32 n))
+  (declare (atype :int64 n))
   (let ((m (* 10 n)))
     (if (> m 1)
         (let ((s (* m 10)))
@@ -116,6 +116,8 @@
 ;; - [ ] Pointer, Array
 ;; - [ ] String(an array of int4)
 ;; - [ ] For, dotimes, dolist
+;; - [ ] with-scop
+;; - [ ] Implement MoE (That is, Module and Action interop)
 
 ;; =, Length are action
 ;; TODO: workflow configを一緒に提供する
