@@ -8,6 +8,7 @@
    #:ctx-render
    #:ctx-render-function
    #:ctx-compile
+   #:ctx-get-code
    #:make-context-from-list
    )
   (:export

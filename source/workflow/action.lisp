@@ -155,7 +155,7 @@ Dtype decl:
            (setf (action-ctx self) (make-context-from-list ',name args body)))))))
 ;; fix the default int! :int and use *default-int*
 (defaction TestFunc (n)
-  (declare (type (:pointer :int64) n))
+  (declare (type :int64 n))
   (let ((m (* 10 n)))
     (if (> m 1)
         (let ((s (* m 10)))

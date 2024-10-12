@@ -10,7 +10,7 @@
 ;; (defstruct Metadata
 ;;  *accessing* ...
 ;; ~~ Abstraction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defgeneric %render-compile (lang avm function dir)
+(defgeneric %render-compile (lang function dir)
   (:documentation "Compiles the function"))
 
 (defmethod %render-compile :around (lang avm function dir)

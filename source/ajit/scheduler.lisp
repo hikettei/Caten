@@ -375,7 +375,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		      ;;(print (group-graph kr))
 		      nil
 		      (dolist (k kr) (print (kernel-renderer-nodes k))))))
-	(unless compile-later (%render-compile backend avm final-code dir))
+	(unless compile-later (%render-compile backend final-code dir))
 	(list
 	 (map 'list #'car blueprints/codes) final-code mp
 	 (loop for kr in kernels

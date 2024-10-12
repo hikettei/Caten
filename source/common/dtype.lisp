@@ -68,11 +68,11 @@
     (:bool    'boolean)
     (otherwise (error "dtype->lisp: ~a is not supported" dtype))))
 
-(defun lisp-type->dtype (dtype)
+(defun lisp-type->dtype (dtype &key (default-int :int64))
   (case dtype
-    (integer :int64)
-    (fixnum  :int64)
-    (bit     :int64)
+    (integer default-int)
+    (fixnum  default-int)
+    (bit     default-int)
     (single-float :float32)
     (double-float :float64)
     (boolean :bool)

@@ -261,11 +261,20 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
      (ctx-args ctx)
      body)))
 
-(defmethod ctx-compile ((ctx Context) (device caten/ajit:Device))
+(defmethod ctx-get-code ((ctx Context) (device caten/ajit:Device))
   (let ((body (ctx-render-function ctx device))
         (caller (caten/ajit:%render-function-caller device (ctx-name ctx) (ctx-args ctx))))
+    (values body caller)))
+
+(defmethod ctx-compile ((ctx Context) (device caten/ajit:Device))
+  (multiple-value-bind (body caller) (ctx-get-code ctx device)
+    (print body)
     (print caller)
-    ))
+    (caten/ajit:%render-compile
+     device
+     (caten/ajit:%render-program-toplevel device body)
+     nil)
+    (compile nil caller)))
 
 (defun make-context-from-list (name args body)
   "

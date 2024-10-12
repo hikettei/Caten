@@ -11,5 +11,6 @@
    #:Context
    #:ctx-render
    #:ctx-render-function
+   #:ctx-get-code
    #:ctx-compile
    ))

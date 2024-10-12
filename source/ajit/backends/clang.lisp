@@ -44,7 +44,7 @@ Compiled with: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
-(defmethod %render-compile ((lang Clang) avm function dir)
+(defmethod %render-compile ((lang Clang) function dir)
   (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir))
 
 (defun bool->bit (x)
@@ -256,7 +256,7 @@ Compiled with: ~a"
 		  (:IF
 		   (let ((c (getattr node :condition)))
 		     (assert c () "Missing condition")
-		     (line "if ~a {" (r c))
+		     (line "if (~a) {" (r c))
 		     (incf indent)))
                   (:WHILE
                    (let ((c (getattr node :condition)))
