@@ -148,6 +148,7 @@ The function will receive arguments as a `Parsed-Form` object.
 
 (defclass Context ()
   ((name :type symbol :initarg :name :accessor ctx-name)
+   (args :type list :accessor ctx-args)
    (parsed-form :type Parsed-Form :accessor ctx-parsed-form)
    (var2type :type hash-table :reader ctx-var2type :initform (make-hash-table :test #'equal))
    (pipeline :type hash-table :reader ctx-pipeline :initarg :pipeline))
@@ -221,6 +222,14 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
    (apply #'make-graph (parsed-form-nodes (ctx-parsed-form ctx)))
    (ctx-pipeline ctx) 1 nil))
 
+(defmethod ctx-render-function ((ctx Context) (device caten/ajit:Device))
+  (let ((body (ctx-render ctx device)))
+    (caten/ajit:%render-function
+     device
+     (ctx-name ctx)
+     (ctx-args ctx)
+     body)))
+
 (defun make-context-from-list (name args body)
   "
 ```
@@ -231,19 +240,17 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
 - body[form] script
 "
   (let ((context (make-instance 'Context :name name :pipeline (make-hash-table))))
-    (loop for (var-id . type) in args
-          do (ctx-register-variable context var-id (make-const-buffer type)))
+    (setf (ctx-args context) args)
+    (loop for arg in args
+          for var-id = (caten/ajit:argument-name arg)
+          for type = (caten/ajit:argument-metadata arg)
+          do (ctx-register-variable context var-id type))
     (setf (ctx-parsed-form context)
           (a/parse-form context (a/macroexpand-all `(progn ,@body))))
     context))
 
 ;; Export to Cを実装
 ;; 
-;; let
-;; {
-;;   int i;みたいにすることを想定している SCOPE ENDSCOPE (Optional)
-;; }
-
 #|
 (action-body (n transformer)
   (if (< n 10)

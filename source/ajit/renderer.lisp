@@ -27,10 +27,10 @@
 
 (defgeneric %render-program-toplevel (lang body) (:documentation "Renders headers, pragma, etc..."))
 
-(defgeneric %render-function (lang avm allocs body)
+(defgeneric %render-function (lang name allocs body)
   (:documentation "Renders
 ```
-function void (args) { body };
+function void name (args) { body };
 ```"))
 
 (deftype op/body ()

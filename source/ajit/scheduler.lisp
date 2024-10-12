@@ -292,7 +292,7 @@ Options:
 	   for name = (setf (avm-name avm) (intern (format nil "~a_~a_k~a" base-name name-prefix (kernel-renderer-nth kernel)) "KEYWORD"))
 	   for body = (%render-body backend backend (apply #'make-graph (kernel-renderer-nodes kernel))
 				    (poly-pipeline (group-polyhedron group)) 1 (kernel-renderer-args kernel))
-	   for function = (%render-function backend avm (kernel-renderer-args kernel) body)
+	   for function = (%render-function backend (avm-name avm) (kernel-renderer-args kernel) body)
 	   collect
 	   (progn
 	     (setf code (format nil "~a~%~a~%" code function))

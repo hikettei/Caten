@@ -38,7 +38,7 @@
             (caten/avm:buffer-dtype (parsed-form-type else-form))))
   (when (not (eql :bool (caten/avm:buffer-dtype (parsed-form-type condition))))
     (error "The condition of an IF statement should be boolean. Inferred as ~a" (caten/avm:buffer-dtype (parsed-form-type condition))))
-  (let ((output-bind (gensym "_TMP")))
+  (let ((output-bind (gensym "_IF_OUT")))
     (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition (gensym "_C"))
       (make-parsed-form
        (append

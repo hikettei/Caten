@@ -74,6 +74,7 @@
    #:render-expr
    #:render-aref
    #:Argument
+   #:make-argument
    #:argument-name
    #:argument-p
    #:argument-pointer-p

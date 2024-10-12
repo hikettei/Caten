@@ -9,4 +9,6 @@
    #:a/defmacro
    #:make-context-from-list
    #:Context
+   #:ctx-render
+   #:ctx-render-function
    ))

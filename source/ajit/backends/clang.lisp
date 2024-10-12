@@ -123,10 +123,10 @@ Compiled with: ~a"
 	      "")
 	  body))
 
-(defmethod %render-function ((lang Clang) avm args body)
+(defmethod %render-function ((lang Clang) name args body)
   (let ((header
 	  (format nil "void ~(~a~)(~a)"
-		  (avm-name avm)
+                  name
 		  (apply
 		   #'concatenate
 		   'string

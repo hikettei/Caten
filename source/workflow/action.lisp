@@ -76,37 +76,49 @@
          (loop for var in variables
                for type-form = (find var type-decl :key #'cdr :test #'find)
                do (assert type-form () "defaction: Cannot infer the type of ~A.~%Provide (declare (atype type_name variable ...)) form to declare the type." var)
-               collect (cons var (second type-form)))
+               collect
+               (caten/ajit:make-argument
+                :name var
+                :pointer-p nil
+                :dtype (second type-form)
+                :type :user :io :input
+                :metadata (caten/avm:make-buffer 0 nil nil (second type-form) nil)))
          remaining-form
          docstring)))))
 
 (defmacro defaction (name (&rest args) &body body)
   "Defines an action"
   ;; Args: (Name, Type)
-  (multiple-value-bind (args body docstring) (action-parse-lambda-list-and-body args body)
+  (multiple-value-bind (args1 body1 docstring1) (action-parse-lambda-list-and-body args body)
     ;; C-c C-c and the error check
-    (make-context-from-list name args body)
+    (print (ctx-render-function (make-context-from-list name args1 body1) (caten/ajit:default-device :clang)))
     `(prog1
          (defclass ,name (Action)
            nil
-           (:documentation ,(or docstring "")))
+           (:documentation ,(or docstring1 "")))
        (defmethod initialize-instance :after ((self ,name) &rest initargs)
          (declare (ignore initargs))
-         (setf (action-ctx self) (make-context-from-list ',name ',args ',body))
-         ;; [TODO] Add: Run-Compile
-         ))))
+         (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',args ',body)
+           (setf (action-ctx self) (make-context-from-list ',name args body))
+
+           )))))
 
 (defaction TestFunc (n)
   (declare (atype :int32 n))
-  (+ n n))
+  (let ((m (* 10 n)))
+    (if (> m 1)
+        (let ((s (* m 10)))
+          s)
+        n)))
+    
 
-;; TODO
-;; - RendererのRefactorが必要
-;; - Polyhedralを使わない
+;; - [x] Let
+;; - [ ] Pointer, Array
+;; - [ ] String(an array of int4)
+;; - [ ] For, dotimes, dolist
 
 ;; =, Length are action
 ;; TODO: workflow configを一緒に提供する
-
 ;; (defaction switch (condition action1 action2)
 ;;
 ;;
