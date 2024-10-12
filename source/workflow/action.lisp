@@ -52,15 +52,35 @@
     ;; [TODO] Each action can be compiled stimultaneously
     action))
 
-(defun parse-type-designator (type-form)
-  (ematch type-form
+(defun parse-type-designator (type-form other-variables types)
+  "Return (values pointer-p dtype stride shape additional-computation-form)"
+  (match type-form
     ((guard x (keywordp x))
      (values nil x))
     ((list (guard x (eql x :pointer)) y)
-     (values t y))))
+     (values t y))
+    ((list (eql :array) order (list* size) element-dtype)
+     (dolist (s size)
+       (let ((form (find s types :key #'cddr :test #'find)))
+         (assert
+          (or
+           (integerp s)
+           (and
+            form
+            (find s other-variables)
+            (caten/common.dtype:dtype/integerp (second form))))
+          ()
+          "
+defaction: `(:array ORDER (~a) :DTYPE)`
+                            ^ the variable ~a should be defined in the args as an integer." s s)))
+     (assert (member order '(:row :column)) () "defaction: ORDER should be either :row or :column")
+     (multiple-value-bind (strides stride-compute-forms) (calc-strides-with-form order size)
+       (values t element-dtype strides size stride-compute-forms)))
+    (_
+     (error "defaction: Invalid type designator: ~A" type-form))))
 
 ;; Each action can be compiled into Render-Graph first, and then each language
-(defun action-parse-lambda-list-and-body (args body)
+(defun action-parse-lambda-list-and-body (args body &aux (additional-forms))
   (multiple-value-bind (remaining-form declare docstring) (alexandria:parse-body body :documentation t)
     (multiple-value-bind (params optional rest kw allow-other-keys-p aux key-p)
         (alexandria:parse-ordinary-lambda-list args :normalize nil)
@@ -81,18 +101,23 @@
                             collect form))))
         (values
          (loop for var in variables
-               for type-form = (find var type-decl :key #'cdr :test #'find)
+               for type-form = (find var type-decl :key #'cddr :test #'find)
                do (assert type-form () "defaction: Cannot infer the type of ~A.~%Provide (declare (atype type_name variable ...)) form to declare the type." var)
                collect
-               (multiple-value-bind (is-pointer dtype) (parse-type-designator (second type-form))
+               (multiple-value-bind (is-pointer dtype strides size additional-compute-form)
+                   (parse-type-designator (second type-form) variables type-decl)
+                 (assert (= (length strides) (length size)))
+                 (when additional-compute-form
+                   (dolist (f additional-compute-form)
+                     (push f additional-forms)))
                  (let ((dtype (caten/common.dtype:dtype-alias dtype)))
                    (caten/ajit:make-argument
                     :name var
                     :pointer-p is-pointer
                     :dtype dtype
                     :type :user :io :input
-                    :metadata (caten/avm:make-buffer 0 nil nil dtype nil)))))
-         remaining-form
+                    :metadata (caten/avm:make-buffer (length size) size strides dtype nil)))))
+         `(,@(reverse additional-forms) ,@remaining-form)
          docstring)))))
 
 (defmacro defaction (name lambda-list &body body)
@@ -111,6 +136,7 @@ Dtype decl:
 ```
 - (:pointer :dtype)
 - :dtype
+- (:array ORDER (SIZE) :dtype) (e.g.: `(:array :row (M N) :int)), note that M and N should be provided as a variable first!
 ```
 "
   ;; Args: (Name, Type)
@@ -124,9 +150,7 @@ Dtype decl:
        (defmethod initialize-instance :after ((self ,name) &rest initargs)
          (declare (ignore initargs))
          (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',lambda-list ',body)
-           (setf (action-ctx self) (make-context-from-list ',name args body))
-
-           )))))
+           (setf (action-ctx self) (make-context-from-list ',name args body)))))))
 
 ;; fix the default int! :int and use *default-int*
 (defaction TestFunc (n)
@@ -136,6 +160,10 @@ Dtype decl:
         (let ((s (* m 10)))
           s)
         n)))
+
+(defaction Test (x)
+  (declare (atype (:array :row (3 3) :float) x))
+  (+ 1 1))
 
 ;; - [x] Let
 ;; - [x] Pointer, Array
