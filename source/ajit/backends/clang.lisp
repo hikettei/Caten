@@ -82,7 +82,7 @@ Compiled with: ~a"
        ,(expand
 	 args
 	 `((cffi:foreign-funcall
-            ,(render-to-c (format nil "~(~a~)" name))
+            ,(format nil "~(~a~)" name)
             ,@(loop for arg in args
 		    for is-pointer = (argument-pointer-p arg)
 		    if (not is-pointer)
@@ -102,9 +102,7 @@ Compiled with: ~a"
         (:-inf "_NEGATIVE_INFINITY")
         (:nan "_nan")
         ('t
-         (let ((obj (if (numberp obj)
-                        (format nil "~(~a~)" obj)
-                        (cl-ppcre:regex-replace-all "-" (format nil "~(~a~)" obj) "_"))))
+         (let ((obj (format nil "~(~a~)" obj)))
            (if (string= obj "t")
 	       "1"
 	       (if (string= obj "nil")
@@ -129,7 +127,7 @@ Compiled with: ~a"
 (defmethod %render-function ((lang Clang) name args body)
   (let ((header
 	  (format nil "void ~(~a~)(~a)"
-                  (render-to-c name)
+                  name
 		  (apply
 		   #'concatenate
 		   'string
@@ -322,13 +320,13 @@ Compiled with: ~a"
 		    (dotimes (i (* 2 indent)) (princ " " out))
 		    (format out ,designator ,@args)
 		    (format out "~%"))))
-      (labels ((%render-aref (id type &aux (id1 (render-to-c id)))
+      (labels ((%render-aref (id type)
 		 (let ((ref (render-aref lang type :genid #'(lambda (x) (nth x access)))))
 		   (if (string= ref "0")
 		       (if (args-p id)
-			   (format nil "(*~(~a~)~a)" id1 (unroll-suffix type *suffix*))
-			   (format nil "~(~a~)~a" id1 (unroll-suffix type *suffix*)))
-		       (format nil "~(~a~)[~(~a~)]" id1 ref)))))
+			   (format nil "(*~(~a~)~a)" id (unroll-suffix type *suffix*))
+			   (format nil "~(~a~)~a" id (unroll-suffix type *suffix*)))
+		       (format nil "~(~a~)[~(~a~)]" id ref)))))
 	(loop with *access* = access
 	      for node in (graph-nodes graph)
 	      for type = (read-type-relay node) do
@@ -339,7 +337,7 @@ Compiled with: ~a"
                          (if (and (args-p (car (node-writes node))) (= 0 (getattr node :nrank)))
                              "*"
                              "")
-                         (render-to-c (car (node-writes node)))
+                         (car (node-writes node))
 			 (let ((nrank (getattr node :nrank)))
 			   (if (= nrank 0)
 			       ""
