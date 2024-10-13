@@ -9,8 +9,11 @@
    #:a/defmacro
    #:make-context-from-list
    #:Context
+   #:ctx-args
+   #:ctx-outputs
    #:ctx-render
    #:ctx-render-function
    #:ctx-get-code
    #:ctx-compile
+   #:ctx-run
    ))

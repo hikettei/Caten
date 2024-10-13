@@ -10,6 +10,7 @@
    #:ctx-compile
    #:ctx-get-code
    #:make-context-from-list
+   #:ctx-run
    )
   (:export
 

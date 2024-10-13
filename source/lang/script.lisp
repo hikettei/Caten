@@ -155,10 +155,11 @@ The function will receive arguments as a `Parsed-Form` object.
 (defclass Context ()
   ((name :type symbol :initarg :name :accessor ctx-name)
    (args :type list :accessor ctx-args)
-   (outputs :type list :accessor ctx-outputs)
+   (outputs :type list :initform nil :accessor ctx-outputs)
    (parsed-form :type Parsed-Form :accessor ctx-parsed-form)
    (var2type :type hash-table :reader ctx-var2type :initform (make-hash-table :test #'equal))
-   (pipeline :type hash-table :reader ctx-pipeline :initarg :pipeline))
+   (pipeline :type hash-table :reader ctx-pipeline :initarg :pipeline)
+   (caller :type (or null function) :accessor ctx-caller))
   (:documentation "Context is a class that is used to manage the state of the action-body.
 Graph is a render-graph.
 pipeline is a hash-table that maps an index of FUNCALL to a graph.
@@ -241,7 +242,7 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
 
 (defmethod ctx-get-variable-type ((ctx Context) place)
   (declare (type symbol place))
-  (or (gethash place(ctx-var2type ctx))
+  (or (gethash place (ctx-var2type ctx))
       (error "The variable ~a is not defined here." place)))
 
 (defmethod ctx-render ((ctx Context) (device caten/ajit:Device))
@@ -250,17 +251,18 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
         (out-type (parsed-form-type (ctx-parsed-form ctx))))
     ;; Finally, *return_value_placeholder = out-expr; to return a value.
     ;; [TODO] It is possible to return multiple arguments
-    (setf (parsed-form-nodes (ctx-parsed-form ctx))
-          (append
-           (parsed-form-nodes (ctx-parsed-form ctx))
-           (list
-            (ctx-define-and-make-funcall-from-expr
-             ctx out-expr return-value-placeholder out-type nil))))
-    (setf (ctx-outputs ctx)
-          (list
-           (caten/ajit:make-argument
-            :pointer-p t :name return-value-placeholder
-            :type :user :dtype (caten/avm:buffer-dtype out-type) :metadata out-type))))
+    (when (= 0 (caten/avm:buffer-nrank out-type))
+      (setf (parsed-form-nodes (ctx-parsed-form ctx))
+            (append
+             (parsed-form-nodes (ctx-parsed-form ctx))
+             (list
+              (ctx-define-and-make-funcall-from-expr
+               ctx out-expr return-value-placeholder out-type nil))))
+      (setf (ctx-outputs ctx)
+            (list
+             (caten/ajit:make-argument
+              :pointer-p t :name return-value-placeholder
+              :type :user :dtype (caten/avm:buffer-dtype out-type) :metadata out-type)))))
   (caten/ajit:%render-body
    device device
    (apply #'make-graph (parsed-form-nodes (ctx-parsed-form ctx)))
@@ -287,13 +289,25 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
 
 (defmethod ctx-compile ((ctx Context) (device caten/ajit:Device))
   (multiple-value-bind (body caller) (ctx-get-code ctx device)
-    (print body)
-    (print caller)
+    (when (> (ctx:getenv :JIT_DEBUG) 0)
+      (format t "~%Compiled [~a]:~%~a" (ctx-name ctx) body))
     (caten/ajit:%render-compile
      device
      (caten/ajit:%render-program-toplevel device body)
      nil)
-    (compile nil caller)))
+    (setf (ctx-caller ctx) (compile nil caller))
+    (values body (ctx-caller ctx))))
+
+(defmethod ctx-run ((ctx Context) &rest args)
+  (assert (ctx-caller ctx) () "The function is not compiled. ctx-compile to compile it first.")
+  (let ((outputs
+            (loop for arg in (ctx-outputs ctx)
+                  for dtype = (caten/ajit:argument-dtype arg)
+                  for place = (caten/avm:copy-buffer (caten/ajit:argument-metadata arg))
+                  do (setf (caten/avm:buffer-value place) (caten/common.dtype:dtype/cast nil dtype))
+                  collect place)))
+    (apply (ctx-caller ctx) (append args outputs))
+    (map 'list #'caten/avm:buffer-value outputs)))
 
 (defun make-context-from-list (name args body)
   "

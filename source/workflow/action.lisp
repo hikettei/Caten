@@ -51,8 +51,8 @@
   (declare (type caten/ajit:device device)
            (type symbol action-name))
   (let ((action (make-instance action-name :device device)))
-    ;; [TODO] Each action can be compiled stimultaneously
-    action))
+    (ctx-compile (action-ctx action) device)
+    (apply #'values (apply #'ctx-run (action-ctx action) args))))
 
 (defun parse-type-designator (type-form other-variables types)
   "Return (values pointer-p dtype stride shape additional-computation-form)"
@@ -147,10 +147,10 @@ Dtype decl:
     (let ((ctx (make-context-from-list name args1 body1))
           (dev (caten/ajit:default-device :clang)))
       (ctx-compile ctx dev))
-    `(prog1
-         (defclass ,name (Action)
-           nil
-           (:documentation ,(or docstring1 "")))
+    `(progn
+       (defclass ,name (Action)
+         nil
+         (:documentation ,(or docstring1 "")))
        (defmethod initialize-instance :after ((self ,name) &rest initargs)
          (declare (ignore initargs))
          (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',lambda-list ',body)
@@ -158,6 +158,23 @@ Dtype decl:
 
 ) ;; eval-when
 
+;(defaction AddTwoNumber (a b)
+;  (declare (type :int64 a b))
+;  (+ a b))
+
+;(defaction Test (x i k)
+;  (declare (type (:array :row (i k) :float) x)
+;           (type :int32 i k))
+;  (setf (aref x 2 2) 2.0)
+;  (let ((a x))
+;    (setf (aref a 3 2) 1.0)
+;    a))
+
+;; Segv しそ~...
+
+;; What value do we want to return?
+;; A single scalar value
+;; 
 ;; fix the default int! :int and use *default-int*
 #|
 (defaction TestFunc (n)
@@ -203,6 +220,8 @@ Dtype decl:
     nil
     ))
 |#
+
+;; - [ ] Allow to use under_score
 ;; - [x] does it works for higher rank array? (serf aref) (need tests)
 ;; - [x] Compile+Runできるようにして
 ;; - [ ] Test-Suiteできるようにする
