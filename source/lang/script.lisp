@@ -155,6 +155,7 @@ The function will receive arguments as a `Parsed-Form` object.
 (defclass Context ()
   ((name :type symbol :initarg :name :accessor ctx-name)
    (args :type list :accessor ctx-args)
+   (outputs :type list :accessor ctx-outputs)
    (parsed-form :type Parsed-Form :accessor ctx-parsed-form)
    (var2type :type hash-table :reader ctx-var2type :initform (make-hash-table :test #'equal))
    (pipeline :type hash-table :reader ctx-pipeline :initarg :pipeline))
@@ -244,26 +245,44 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
       (error "The variable ~a is not defined here." place)))
 
 (defmethod ctx-render ((ctx Context) (device caten/ajit:Device))
+  (let ((out-expr (parsed-form-expr (ctx-parsed-form ctx)))
+        (return-value-placeholder (gensym "_RETURNED_VALUE"))
+        (out-type (parsed-form-type (ctx-parsed-form ctx))))
+    ;; Finally, *return_value_placeholder = out-expr; to return a value.
+    ;; [TODO] It is possible to return multiple arguments
+    (setf (parsed-form-nodes (ctx-parsed-form ctx))
+          (append
+           (parsed-form-nodes (ctx-parsed-form ctx))
+           (list
+            (ctx-define-and-make-funcall-from-expr
+             ctx out-expr return-value-placeholder out-type nil))))
+    (setf (ctx-outputs ctx)
+          (list
+           (caten/ajit:make-argument
+            :pointer-p t :name return-value-placeholder
+            :type :user :dtype (caten/avm:buffer-dtype out-type) :metadata out-type))))
   (caten/ajit:%render-body
    device device
    (apply #'make-graph (parsed-form-nodes (ctx-parsed-form ctx)))
    (ctx-pipeline ctx) 1
-   (loop for var being the hash-keys of (ctx-var2type ctx)
-         for typ = (gethash var (ctx-var2type ctx))
-         if (> (caten/avm:buffer-nrank typ) 0)
-           collect (caten/ajit:make-argument :pointer-p t :name var :type :user :dtype (caten/avm:buffer-dtype typ) :metadata typ))))
+   (append
+    (loop for var being the hash-keys of (ctx-var2type ctx)
+          for typ = (gethash var (ctx-var2type ctx))
+          if (> (caten/avm:buffer-nrank typ) 0)
+            collect (caten/ajit:make-argument :pointer-p t :name var :type :user :dtype (caten/avm:buffer-dtype typ) :metadata typ))
+    (ctx-outputs ctx))))
 
 (defmethod ctx-render-function ((ctx Context) (device caten/ajit:Device))
   (let ((body (ctx-render ctx device)))
     (caten/ajit:%render-function
      device
      (ctx-name ctx)
-     (ctx-args ctx)
+     (append (ctx-args ctx) (ctx-outputs ctx))
      body)))
 
 (defmethod ctx-get-code ((ctx Context) (device caten/ajit:Device))
   (let ((body (ctx-render-function ctx device))
-        (caller (caten/ajit:%render-function-caller device (ctx-name ctx) (ctx-args ctx))))
+        (caller (caten/ajit:%render-function-caller device (ctx-name ctx) (append (ctx-args ctx) (ctx-outputs ctx)))))
     (values body caller)))
 
 (defmethod ctx-compile ((ctx Context) (device caten/ajit:Device))

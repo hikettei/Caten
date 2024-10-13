@@ -10,7 +10,7 @@
                 append (parsed-form-nodes form)
                 else
                   append
-                  (let ((placeholder (gensym "_TMP")))
+                  (let ((placeholder (gensym "_PROGN_FORM_TMP")))
                     (push placeholder evaluated-forms)
                     (list
                      (ctx-declare-local-var ctx placeholder (caten/avm:buffer-dtype (parsed-form-type form)))
@@ -40,8 +40,8 @@
             (caten/avm:buffer-dtype (parsed-form-type else-form))))
   (when (not (eql :bool (caten/avm:buffer-dtype (parsed-form-type condition))))
     (error "The condition of an IF statement should be boolean. Inferred as ~a" (caten/avm:buffer-dtype (parsed-form-type condition))))
-  (let ((output-bind (gensym "_IF_OUT")))
-    (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition (gensym "_C") t)
+  (let ((output-bind (gensym "_IF_FORM_RETURN")))
+    (multiple-value-bind (condition-nodes condition-expr) (stash-forms ctx condition (gensym "_CONDITION_TMP") t)
       (make-parsed-form
        (append
         condition-nodes
@@ -98,7 +98,7 @@
   (assert (symbolp place-id))
   (assert (eql :TAKE (caten/ajit:expr-op (parsed-form-expr place))))
   (assert (null (parsed-form-nodes place)) () "place should be an expr.")
-  (multiple-value-bind (val-form val-expr) (stash-forms ctx val (gensym "_SETFAREF") t)
+  (multiple-value-bind (val-form val-expr) (stash-forms ctx val (gensym "_SETF_AREF_VAL_TMP") t)
     (let ((place-type (caten/avm:copy-buffer (parsed-form-type place))))
       (setf (caten/avm:buffer-nrank place-type) 1
             (caten/avm:buffer-shape place-type) `(1)
@@ -115,8 +115,8 @@
 
 (a/defun take (ctx array position)
          "Access an element of an array."
-  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF") t)
-    (multiple-value-bind (pos-forms pos-expr) (stash-forms ctx position (gensym "_POS") t)
+  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_TAKE_TMP") t)
+    (multiple-value-bind (pos-forms pos-expr) (stash-forms ctx position (gensym "_POS_TMP") t)
       (make-parsed-form
        (append aref-forms pos-forms)
        (caten/ajit:make-expr :Take aref-expr  pos-expr)
@@ -128,10 +128,10 @@
 
 (a/defun aref (ctx array &rest subscripts)
          "Access an element of an array."
-  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF") t)
+  (multiple-value-bind (aref-forms aref-expr) (stash-forms ctx array (gensym "_ARF_TMP") t)
     (let ((forms (loop for s in subscripts
                        collect
-                       (multiple-value-list (stash-forms ctx s (gensym "_POS") t)))))
+                       (multiple-value-list (stash-forms ctx s (gensym "_POS_TMP") t)))))
       (assert (= (length subscripts) (caten/avm:buffer-nrank (parsed-form-type array)))
               ()
               "The number of subscripts should match the rank of the array. Inferred ~a and ~a"
@@ -153,9 +153,9 @@
                (caten/avm:buffer-stride type) nil)
          type)))))
 
-(a/defun _%allocate-sized-array (ctx dtype size &aux (place (gensym "_ARRAY")) (size-place (gensym "_SZ")))
+(a/defun _%allocate-sized-array (ctx dtype size &aux (place (gensym "_ARRAY_TMP")) (size-place (gensym "_SIZE_TMP")))
          "Creates an array with a given size"
-  (multiple-value-bind (size-nodes size-expr) (stash-forms ctx size (gensym "_SIZETMP") t)
+  (multiple-value-bind (size-nodes size-expr) (stash-forms ctx size (gensym "_SIZE_TMP") t)
     (assert (keywordp dtype) () "dtype is a keyword.")
     (let* ((dtype (caten/common.dtype:dtype-alias dtype))
            (type (caten/avm:make-buffer 1 (list size-place) (list 1) dtype nil)))
