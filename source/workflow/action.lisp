@@ -120,7 +120,9 @@ defaction: `(:array ORDER (~a) :DTYPE)`
                     :type :user :io :input
                     :metadata (caten/avm:make-buffer (length size) size strides dtype nil)))))
          `(,@(reverse additional-forms) ,@remaining-form)
-         docstring)))))
+         docstring
+         (let ((optimize-form (find "OPTIMIZE" (cdr (car declare)) :key (alexandria:compose #'symbol-name #'car) :test #'equalp)))
+           (second (find "DEBUG" (cdr optimize-form) :key (alexandria:compose #'symbol-name #'car) :test #'equalp))))))))
 
 (defmacro defaction (name lambda-list &body body)
   "
@@ -140,13 +142,21 @@ Dtype decl:
 - :dtype
 - (:array ORDER (SIZE) :dtype) (e.g.: `(:array :row (M N) :int)), note that M and N should be provided as a variable first!
 ```
+
+```
+(optimize (debug 3))
+              ^ debug here corresponds to JIT_DEBUG. JIT_DEBUG=1 to see the compiled code.
+```
 "
   ;; Args: (Name, Type)
-  (multiple-value-bind (args1 body1 docstring1) (action-parse-lambda-list-and-body lambda-list body)
+  (multiple-value-bind (args1 body1 docstring1 debug) (action-parse-lambda-list-and-body lambda-list body)
+    (print debug)
     ;; C-c C-c and the error check
     (let ((ctx (make-context-from-list name args1 body1))
-          (dev (caten/ajit:default-device :clang)))
-      (ctx-compile ctx dev))
+          (dev (caten/ajit:default-device :clang))
+          (debug (or debug 0)))
+      (ctx:with-contextvar (:jit_debug debug)
+        (ctx-compile ctx dev)))
     `(progn
        (defclass ,name (Action)
          nil
@@ -158,9 +168,10 @@ Dtype decl:
 
 ) ;; eval-when
 
-;(defaction AddTwoNumber (a b)
-;  (declare (type :int64 a b))
-;  (+ a b))
+(defaction AddTwoNumber (a b)
+  (declare (type :int64 a b)
+           (optimize (debug 0)))
+  (+ a b))
 
 ;(defaction Test (x i k)
 ;  (declare (type (:array :row (i k) :float) x)
