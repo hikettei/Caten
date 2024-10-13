@@ -12,7 +12,8 @@
 (defparameter *access* nil)
 (defparameter *args* nil)
 (defparameter *suffix* nil)
-(defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))
+(defun args-p (id)
+  (if (stringp id) (find (intern id) *args*) (find id *args*)))
 
 (defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags) (dir nil))
   (declare (type string source compiler))
@@ -321,13 +322,13 @@ Compiled with: ~a"
 		    (dotimes (i (* 2 indent)) (princ " " out))
 		    (format out ,designator ,@args)
 		    (format out "~%"))))
-      (labels ((%render-aref (id type &aux (id (render-to-c id)))
+      (labels ((%render-aref (id type &aux (id1 (render-to-c id)))
 		 (let ((ref (render-aref lang type :genid #'(lambda (x) (nth x access)))))
 		   (if (string= ref "0")
 		       (if (args-p id)
-			   (format nil "(*~(~a~)~a)" id (unroll-suffix type *suffix*))
-			   (format nil "~(~a~)~a" id (unroll-suffix type *suffix*)))
-		       (format nil "~(~a~)[~(~a~)]" id ref)))))
+			   (format nil "(*~(~a~)~a)" id1 (unroll-suffix type *suffix*))
+			   (format nil "~(~a~)~a" id1 (unroll-suffix type *suffix*)))
+		       (format nil "~(~a~)[~(~a~)]" id1 ref)))))
 	(loop with *access* = access
 	      for node in (graph-nodes graph)
 	      for type = (read-type-relay node) do
