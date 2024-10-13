@@ -159,6 +159,7 @@ The function will receive arguments as a `Parsed-Form` object.
    (parsed-form :type Parsed-Form :accessor ctx-parsed-form)
    (var2type :type hash-table :reader ctx-var2type :initform (make-hash-table :test #'equal))
    (pipeline :type hash-table :reader ctx-pipeline :initarg :pipeline)
+   (depends :type list :initform nil :accessor ctx-depends)
    (caller :type (or null function) :accessor ctx-caller))
   (:documentation "Context is a class that is used to manage the state of the action-body.
 Graph is a render-graph.
@@ -224,12 +225,21 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
                       :_type_relay (caten/ajit:make-inferred-type nil (list (caten/avm:make-buffer 1 (list size) (list 1) dtype nil))))))
     (caten/ajit:r/funcall-string name)))
 
+(defmethod ctx-make-funcall ((ctx Context) name args)
+  (declare (type symbol name)
+           (type list args))
+  (apply #'caten/ajit:r/funcall-symbol name args))
+
 (defmethod ctx-register-variable ((ctx Context) place type)
   (declare (type symbol place)
            (type caten/avm:Buffer type))
   ;;(when (gethash place (ctx-var2type ctx))
   ;;  (warn "The variable ~a was already defined." place))
   (setf (gethash place (ctx-var2type ctx)) type))
+
+(defmethod ctx-add-dependency ((ctx Context) (depend-ctx Context))
+  (when (null (find (ctx-name depend-ctx) (ctx-depends ctx) :key #'ctx-name))
+    (push depend-ctx (ctx-depends ctx))))
 
 (defmethod parsed-form-output-to ((form Parsed-Form))
   (let ((form (parsed-form-expr form)))
@@ -246,23 +256,6 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
       (error "The variable ~a is not defined here." place)))
 
 (defmethod ctx-render ((ctx Context) (device caten/ajit:Device))
-  (let ((out-expr (parsed-form-expr (ctx-parsed-form ctx)))
-        (return-value-placeholder (gensym "_RETURNED_VALUE"))
-        (out-type (parsed-form-type (ctx-parsed-form ctx))))
-    ;; Finally, *return_value_placeholder = out-expr; to return a value.
-    ;; [TODO] It is possible to return multiple arguments
-    (when (= 0 (caten/avm:buffer-nrank out-type))
-      (setf (parsed-form-nodes (ctx-parsed-form ctx))
-            (append
-             (parsed-form-nodes (ctx-parsed-form ctx))
-             (list
-              (ctx-define-and-make-funcall-from-expr
-               ctx out-expr return-value-placeholder out-type nil))))
-      (setf (ctx-outputs ctx)
-            (list
-             (caten/ajit:make-argument
-              :pointer-p t :name return-value-placeholder
-              :type :user :dtype (caten/avm:buffer-dtype out-type) :metadata out-type)))))
   (caten/ajit:%render-body
    device device
    (apply #'make-graph (parsed-form-nodes (ctx-parsed-form ctx)))
@@ -291,6 +284,8 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
   (multiple-value-bind (body caller) (ctx-get-code ctx device)
     (when (> (ctx:getenv :JIT_DEBUG) 0)
       (format t "~%Compiled [~a]:~%~a" (ctx-name ctx) body))
+    (dolist (dep (ctx-depends ctx))
+      (setf body (format nil "~a~%~a~%" (ctx-get-code dep device) body)))
     (caten/ajit:%render-compile
      device
      (caten/ajit:%render-program-toplevel device body)
@@ -326,6 +321,23 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
           do (ctx-register-variable context var-id type))
     (setf (ctx-parsed-form context)
           (a/parse-form context (a/macroexpand-all `(progn ,@body))))
+    (let ((out-expr (parsed-form-expr (ctx-parsed-form context)))
+          (return-value-placeholder (gensym "_RETURNED_VALUE"))
+          (out-type (parsed-form-type (ctx-parsed-form context))))
+      ;; Finally, *return_value_placeholder = out-expr; to return a value.
+      ;; [TODO] It is possible to return multiple arguments
+      (when (= 0 (caten/avm:buffer-nrank out-type))
+        (setf (parsed-form-nodes (ctx-parsed-form context))
+              (append
+               (parsed-form-nodes (ctx-parsed-form context))
+               (list
+                (ctx-define-and-make-funcall-from-expr
+                 context out-expr return-value-placeholder out-type nil))))
+        (setf (ctx-outputs context)
+              (list
+               (caten/ajit:make-argument
+                :pointer-p t :name return-value-placeholder
+                :type :user :dtype (caten/avm:buffer-dtype out-type) :metadata out-type)))))
     context))
 
 ;; Export to Cを実装

@@ -124,8 +124,7 @@ defaction: `(:array ORDER (~a) :DTYPE)`
          (let ((optimize-form (find "OPTIMIZE" (cdr (car declare)) :key (alexandria:compose #'symbol-name #'car) :test #'equalp)))
            (second (find "DEBUG" (cdr optimize-form) :key (alexandria:compose #'symbol-name #'car) :test #'equalp))))))))
 
-(defun cname (symbol)
-  (intern (cl-ppcre:regex-replace-all "-" (symbol-name symbol) "_")))
+(defun cname (symbol) (intern (cl-ppcre:regex-replace-all "-" (symbol-name symbol) "_")))
 
 (defmacro defaction (name lambda-list &body body)
   "
@@ -155,30 +154,111 @@ Dtype decl:
   (multiple-value-bind (args1 body1 docstring1 debug) (action-parse-lambda-list-and-body lambda-list body)
     ;; C-c C-c and the error check
     (let ((ctx (make-context-from-list (cname name) args1 body1))
-          (dev (caten/ajit:default-device :clang)) ;; [FIX] Is the device always clang
-          (debug (or debug 0)))
+          (ctx-bind (gensym "CTX"))
+          (debug (or debug 0))
+          (dev (caten/ajit:default-device :clang))) ;; [FIX] Is the device always clang
       (when (>= debug 1)
         (ctx:with-contextvar (:jit_debug debug)
-          (ctx-compile ctx dev))))
-    `(progn
-       (defclass ,name (Action)
-         nil
-         (:documentation ,(or docstring1 "")))
-       (defmethod initialize-instance :after ((self ,name) &rest initargs)
-         (declare (ignore initargs))
-         (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',lambda-list ',body)
-           (setf (action-ctx self) (make-context-from-list ',(cname name) args body)))))))
+          (ctx-compile ctx dev)))
+      `(progn
+         (defclass ,name (Action)
+           nil
+           (:documentation ,(or docstring1 "")))
+         (a/defun ,name (,ctx-bind ,@lambda-list)
+                  ,(or docstring1 "")
+           (let ((forms (loop for arg in (list ,@(map 'list #'caten/ajit:argument-name args1))
+                              collect (multiple-value-list (stash-forms ,ctx-bind arg (gensym "_FCALL") t))))
+                 (output-place-list
+                   (loop for x in (list ,@(map 'list #'caten/ajit:argument-name args1))
+                         collect (gensym "_OUTPUT_PLACEHOLDER"))))
+             (declare (ignorable output-place-list))
+             (ctx-add-dependency ,ctx-bind (action-ctx (make-instance ',name)))
+             (make-parsed-form
+              (append
+               (apply #'append (map 'list #'car forms))
+               (list
+                ,@(loop for output in (ctx-outputs ctx)
+                        for nth upfrom 0
+                        collect
+                        `(ctx-declare-local-var ,ctx-bind (nth ,nth output-place-list) ,(caten/ajit:argument-dtype output)))
+                (ctx-make-funcall
+                 ,ctx-bind ',(cname name)
+                 (append
+                  (map 'list #'second forms)
+                  (map 'list #'(lambda (x) (caten/ajit:make-expr :address-of (caten/ajit:make-expr :const x))) output-place-list)))))
+              ,(if (ctx-outputs ctx)
+                   `(caten/ajit:make-expr :Const (car output-place-list))
+                   `(caten/ajit:make-expr :Const nil))
+              ,(if (ctx-outputs ctx)
+                   `(make-const-buffer ,(caten/ajit:argument-dtype (car (ctx-outputs ctx))))
+                   `(make-const-buffer :bool)))))
+         (defmethod initialize-instance :after ((self ,name) &rest initargs)
+           (declare (ignore initargs))
+           (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',lambda-list ',body)
+             (setf (action-ctx self) (make-context-from-list ',(cname name) args body))))))))
 
 ) ;; eval-when
 
 
-;(defaction Test (x i k)
-;  (declare (type (:array :row (i k) :float) x)
-;           (type :int32 i k))
-;  (setf (aref x 2 2) 2.0)
-;  (let ((a x))
-;    (setf (aref a 3 2) 1.0)
-;    a))
+;; - [ ] Recursive Call (Implement Fib)
+;; - [ ] Call Action From Action
+;; - [ ] Separate NameSpace (keep using string will 100% cause naming confliction)
+;; - [ ] Involve the related function in the compilation.
+
+(defaction Simple-Tokenizer (text vocabulary n vocab_size)
+  (declare (type (:array :row (n) :char) text)
+           (type (:array :row (vocab_size) :char) vocabulary)
+           (type :int64 n vocab_size)
+           (optimize (debug 1)))
+  (map :int64 (lambda (c) (position c vocabulary)) text))
+
+(defaction Fib (n)
+  (declare (type :int64 n)
+           (optimize (debug 1)))
+  n)
+
+(defaction Fib1 (n)
+  (declare (type :int64 n)
+           (optimize (debug 3)))
+  (Fib n))
+
+;; (Simple-Tokenizer "Hello, World!" "HeloWrd!" 13 9)
+
+(defaction SentencePiece (text vocabulary vocab_len_table words scores len n_vocab)
+  "Implements SentencePipece
+- Paper:
+- Reference: https://github.com/karpathy/llama2.c/blob/master/run.c#L452
+
+Vocabulary:
+- vocabulary ID -> IDX to offset in words
+- vocabulary ID -> word length
+"
+  (declare (type (:array :row (len) :char) text)
+           (type (:array :row (n_vocab) :float32) vocabulary)
+           (type (:pointer :float32) scores)
+           (type :int64 m len)
+           (optimize (debug 1)))
+  (let ((best_score -1e10)
+        (best_id -1)
+        (best_index -1)
+        (str_buffer (_%allocate-sized-array :char (* len 2)))
+        (str_len 0)
+        (tokens (map :int64 (lambda (c) (position c vocabulary)) text))
+        (end_flag 0))
+    (dotimes (i (length tokens))
+      (when (= 0 end_flag)
+        
+        ))
+    ))
+
+;; - [ ] SentencePieceが実装できる程度の機能があれば十分すぎる
+;;(defaction Test (x i k)
+;;  (declare (type (:array :row (i k) :float) x)
+;;           (type :int32 i k))
+;;  (setf (aref x 2 2) 2.0)
+;;  (let ((a x))
+;;    (setf (aref a 3 2) 1.0)
+;;    a))
 
 ;; Segv しそ~...
 
@@ -215,26 +295,13 @@ Dtype decl:
 
 ;; Defstructできるようにしたくなった。
 ;; SentencePieceはCatenで実装できそう
-(defaction SentencePiece (text vocabulary scores m)
-  "Implements SentencePipece
-- Paper:
-- Reference: https://github.com/karpathy/llama2.c/blob/master/run.c#L452"
-  (declare (type (:pointer :char) text vocabulary)
-           (type (:pointer :float32) scores)
-           (type :int64 m))
-  (let ((best-score -1e10)
-        (best-id -1)
-        (best-index -1)
-        (str-buffer (_%allocate-sized-array :char (* m 2)))
-        (str-len 0))
-    nil
-    ))
+
 |#
 
 ;; - [ ] Allow to use under_score
 ;; - [x] does it works for higher rank array? (serf aref) (need tests)
 ;; - [x] Compile+Runできるようにして
-;; - [ ] Test-Suiteできるようにする
+;; - [x] Test-Suiteできるようにする
 ;; - [x] funcallする
 ;; = [x] Return Value
 ;; - [ ] Allow make-tensor inside the action.

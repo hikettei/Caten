@@ -162,6 +162,9 @@ Compiled with: ~a"
   (unary :LOG2 "log2")
   (unary :EXP2 "exp2"))
 
+(defmethod %render-expr ((clang Clang) (op (eql :Address-Of)) lhs rhs z)
+  (format nil "&~(~a~)" (render-expr clang lhs)))
+
 (defmethod %render-expr ((lang Clang) (op (eql :Const)) lhs rhs z)
   (assert (or (stringp lhs) (symbolp lhs) (numberp lhs)))
   (assert (null z))
@@ -276,14 +279,16 @@ Compiled with: ~a"
                    (decf indent)
                    (line "}"))
 		  (:FUNCALL
-		   (dolist (node (if (getattr node :_packed)
-				     (getattr node :_unrolled)
-				     (list node)))
-		     (let ((idx (getattr node :idx))
-			   (args (map 'list #'(lambda (x) (r x)) (getattr node :args)))
-			   (*suffix* (getattr node :unroll-offsets)))
-                       (assert (gethash idx pipeline) () "No idx ~a in the pipeline" idx)
-		       (princ (%render-nodes kernel-lang (gethash idx pipeline) args indent) out))))))))))
+                   (if (getattr node :fname)
+                       (line "~(~a~)(~a);" (getattr node :fname) (render-list (map 'list #'(lambda (x) (render-expr lang x)) (getattr node :args))))
+		       (dolist (node (if (getattr node :_packed)
+				         (getattr node :_unrolled)
+				         (list node)))
+		         (let ((idx (getattr node :idx))
+			       (args (map 'list #'(lambda (x) (r x)) (getattr node :args)))
+			       (*suffix* (getattr node :unroll-offsets)))
+                           (assert (gethash idx pipeline) () "No idx ~a in the pipeline" idx)
+		           (princ (%render-nodes kernel-lang (gethash idx pipeline) args indent) out)))))))))))
 
 (defun ->cdtype (dtype)
   (ecase dtype

@@ -14,13 +14,15 @@
 ;; (export )
 ;; Here, = and Length are the action
 (defworkflow LLMInference (tokens transformer)
-  (Tokenizer tokens)
+  (SentencePiece Encode tokens)
   ->
   (LoopUntil
    (= (Length tokens) max-tokens)
    (Run Transformer))
   ->
-  (GetLogits))
+  (GetLogits)
+  ->
+  (SentencePiece Decode tokens))
 
 ;; w/ kv-cache?
 (defworkflow LLMInference (tokens transformer max-tokens)
@@ -35,4 +37,7 @@
   (GetLogits))
 
 (defworkflow ImageClassifier (model image)
-  (Preprocess) -> (run model) -> (ArgmaxLabel))
+  (Preprocess) -> (Run model) -> (ArgmaxLabel))
+
+             
+             

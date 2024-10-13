@@ -167,3 +167,12 @@
         (list (ctx-declare-sized-local-var ctx place size-place dtype)))
        (caten/ajit:make-expr :const place type)
        type))))
+
+(a/defun length (ctx list)
+         "Returns a length of a `list`. list is assumed to be a id array"
+  (assert (= (caten/avm:buffer-nrank (parsed-form-type list)) 1) () "The list should be a 1D array.")
+  (multiple-value-bind (list-nodes list-expr) (stash-forms ctx list (gensym "_LIST_TMP") t)
+    (make-parsed-form
+     list-nodes
+     list-expr
+     (make-const-buffer :int64))))

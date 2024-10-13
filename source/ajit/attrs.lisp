@@ -27,10 +27,27 @@ RenderGraph:
 
 (defnode (:Render :FUNCALL) () "
 RenderGraph:
+
 ```
 FUNCALL(...)
-```"
-	 :slots ((name) (args) (idx) (unroll-offsets)
+```
+
+The Render IR :FUNCALL has two behaviour depending on the value of `fname`.
+
+If `fname` is specified, the node is a function call to the function `fname` with the arguments `args`. Other slots are ignored.
+
+That is:
+
+`FNAME(args ...)`
+
+This pattern is created by using the `r/funcall-symbol` function.
+
+Otherwise (i.e.: `fname` is nil), the node corresponds to the time(args) th computation in the graph where pipeline[idx] exists.
+
+This pattern is created by using the `r/funcall` function.
+"
+	 :slots ((fname :initform nil)
+                 (name) (args) (idx) (unroll-offsets)
 		 (_packed) (_unrolled) (_metadata)))
 
 (defnode (:Render :IF) () "

@@ -71,6 +71,7 @@ When creating a MultiExpr, it is only fused if the node-type is op/expr!"
     :SIN :LOG2 :EXP2
     :RECIP :SQRT :NOT
     :INDEX-COMPONENTS
+    :ADDRESS-OF
     
     :LOAD :MOVE :STORE))
 

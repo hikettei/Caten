@@ -138,3 +138,45 @@ TODO: Implements: https://www.lispworks.com/documentation/HyperSpec/Body/m_loop.
        ,@(loop for i upfrom 0 below (length char)
                collect `(setf (aref ,tmp ,i) ,(nth i char)))
        ,tmp)))
+
+(a/defmacro map (result-type function &rest more-sequences)
+    "(map result-type[dtype] function &rest more-sequences)"
+  (assert (keywordp result-type) () "result-type is a dtype keyword, not symbol.")
+  (let ((size (gensym))
+        (tmp (gensym))
+        (i (gensym)))
+    `(let ((,size (min ,@(map 'list #'(lambda (x) `(length ,x)) more-sequences)))
+           (,tmp (_%allocate-sized-array ,result-type ,size)))
+       (dotimes (,i ,size)
+         (setf (aref ,tmp ,i) (funcall ,function ,@(map 'list #'(lambda (x) `(aref ,x ,i)) more-sequences))))
+       ,tmp)))
+
+(a/defmacro funcall (function &rest args)
+    "`(funcall function &rest args)`"
+  (if (eql (car function) 'lambda)
+      (multiple-value-bind (lambda-list body) (values (second function) (cddr function))
+        (assert (listp lambda-list) () "funcall: Expected lambda-list to be a list")
+        (assert (= (length args) (length lambda-list)) () "funcall: Argument count mismatch")
+        `(let (,@(loop for arg in args
+                       for var in lambda-list
+                       collect `(,var ,arg)))
+           ,@body))
+      `(,function ,@args)))
+
+(a/defmacro position (item sequence &key (start 0) (end) (key) (test '=))
+    "(position item sequence &key (start 0) (end) (key) (test '=))"
+  ;; [TODO] start-end, test-not, &rest args
+  (let ((position (gensym))
+        (ii (gensym))
+        (i (gensym))
+        (found_p (gensym))
+        (end (or end `(length ,sequence))))
+    `(let ((,position 0)
+           (,found_p 0))
+       (dotimes (,ii (- ,end ,start))
+         (let ((,i (+ ,start ,ii)))
+           (when (= 0 ,found_p)
+             (when (,test ,(if key `(funcall ,key (aref ,sequence ,i)) `(aref ,sequence ,i)) ,item)
+               (setf ,position ,i)
+               (setf ,found_p 1)))))
+       ,position)))

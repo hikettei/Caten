@@ -12,7 +12,8 @@
   ;; from helpers.lisp
   (:export
    #:apply-static-gensym
-   #:unroll-suffix)
+   #:unroll-suffix
+   #:render-list)
   ;; from isl-objects.lisp
   (:export
    #:form
@@ -89,6 +90,7 @@
   (:export
    #:r/funcall-string
    #:r/funcall
+   #:r/funcall-symbol
    #:r/if
    #:r/else
    #:r/endif

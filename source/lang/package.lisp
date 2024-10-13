@@ -16,4 +16,20 @@
    #:ctx-get-code
    #:ctx-compile
    #:ctx-run
+
+   #:ctx-define-and-make-funcall-from-expr
+   #:ctx-define-and-make-funcall-from-expr-and-args
+   #:ctx-declare-sized-local-var
+   #:ctx-declare-local-var
+   #:ctx-make-funcall
+   #:ctx-register-variable
+   #:ctx-add-dependency
+   #:Parsed-Form
+   #:make-parsed-form
+   #:Parsed-Form-Nodes
+   #:Parsed-Form-Expr
+   #:Parsed-Form-Type
+
+   #:stash-forms
+   #:make-const-buffer
    ))
