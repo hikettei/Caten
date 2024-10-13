@@ -154,6 +154,7 @@ Dtype decl:
          (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',lambda-list ',body)
            (setf (action-ctx self) (make-context-from-list ',name args body)))))))
 ;; fix the default int! :int and use *default-int*
+#|
 (defaction TestFunc (n)
   (declare (type :int64 n))
   (let ((m (* 10 n)))
@@ -180,27 +181,53 @@ Dtype decl:
       (dotimes (kk k)
         (setf (aref z mm kk) (+ (aref z mm kk) (* (aref x mm nn) (aref y nn kk))))))))
 
+;; Defstructできるようにしたくなった。
+;; SentencePieceはCatenで実装できそう
+(defaction SentencePiece (text vocabulary scores m)
+  "Implements SentencePipece
+- Paper:
+- Reference: https://github.com/karpathy/llama2.c/blob/master/run.c#L452"
+  (declare (type (:pointer :char) text vocabulary)
+           (type (:pointer :float32) scores)
+           (type :int64 m))
+  (let ((best-score -1e10)
+        (best-id -1)
+        (best-index -1)
+        (str-buffer (_%allocate-sized-array :char (* m 2)))
+        (str-len 0))
+    nil
+    ))
+|#
 ;; - [x] does it works for higher rank array? (serf aref) (need tests)
-;; - [ ] Compile+Runできるようにして, Test-Suiteできるようにする
+;; - [x] Compile+Runできるようにして
+;; - [ ] Test-Suiteできるようにする
+;; - [ ] funcallする
+;; = [ ] Return Value
+;; - [ ] Allow make-tensor inside the action.
+;; - [ ] Implement, Break, Continue, Return w/o new ops
 ;; - [x] Let
 ;; - [x] Pointer, Array
 ;;  - [x] Sized Array
 ;;  - [x] Aref
 ;;  - [x] (setf aref)
 ;; - [x] String(an array of int4)
-;; - [ ] String Syntax (automatically converted into a list of int8)
+;; - [x] String Syntax (automatically converted into a list of int8)
 ;;   - [x] Array Creation in the code.
 ;;   - [x] Allow to return a pointer
-;;   - [ ] Allow to initialize a pointer. (float* x;) (due to _%setf)
+;;   - [x] Allow to initialize a pointer. (float* x;) (due to _%setf)
 ;; - [x] dotimes
 ;; - [ ] Free pointer
-;;   - [ ] Or, having objects as a Common Lisp Object. Dont allocate pointer inside the compiled code.
+;;   - [x] (NO) ~~ Or, having objects as a Common Lisp Object. Dont allocate pointer inside the compiled code.~~
+;; - [ ] Autoinfer the bound of tensor (M N K is rebundant!)
+;; - [ ] Return a value
 ;; - [ ] with-scop (Auto Scheduler is available!)
 ;; - [ ] return, return values;
 ;; - [ ] Implement MoE (That is, Module and Action interop)
 ;; - [ ] Compile into foreign language
 ;; - [ ] Provide a test
 ;; - [ ] Provide a full documentation!
+;; - [ ] (declare (optimize (debug 3)))でコードを表示する
+;; - [ ] May need new ops: :FREE :FREAD :FWRITE
 
 ;; =, Length are action
 ;; TODO: defaction: workflow configを一緒に提供する (dokode?)
@@ -209,6 +236,7 @@ Dtype decl:
 ;;  - [ ] Model Weight読み込みの実装 (ConfigからPathなどを読み込める必要がある)
 ;;  - [ ] Tokenizerの実装
 ;;  - [ ] Tensor Allocation, Dynamic Shapeの計算
+;;   - [ ] make-tensor from action
 ;;  - [ ] Compiled AVMを呼び出す(例えばArgmax単体とか，このコンパイルの判定を自動でやりたい)
 ;; (defaction switch (condition action1 action2)
 ;;
