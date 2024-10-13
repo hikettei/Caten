@@ -22,7 +22,7 @@
 	  (ecase op
 	    (:+ :+) (:- :-) (:* :*) (:/ :/)
 	    (:ADD :+) (:MUL :*) (:IDIV "/")
-	    (:AND :and) (:OR :or) (:!= :!=) (:EQ :=)
+	    (:AND :and) (:OR :or) (:!= :!=) (:== :=)
 	    (:XOR :xor)
 	    (:% :%) (:equal :=) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))

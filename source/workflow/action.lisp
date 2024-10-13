@@ -41,6 +41,8 @@
 ;; - Only initialized in defworkflow macro
 ;; - Workflow is a aIR graph
 
+(eval-when (:compile-toplevel :load-toplevel :execute)
+
 (defclass Action ()
   ((device :type caten/ajit:device :initarg :device :reader action-device)
    (ctx :type Context :accessor action-ctx)))
@@ -153,6 +155,9 @@ Dtype decl:
          (declare (ignore initargs))
          (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',lambda-list ',body)
            (setf (action-ctx self) (make-context-from-list ',name args body)))))))
+
+) ;; eval-when
+
 ;; fix the default int! :int and use *default-int*
 #|
 (defaction TestFunc (n)
