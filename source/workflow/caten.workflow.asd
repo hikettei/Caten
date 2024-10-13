@@ -6,6 +6,15 @@
   :components
   ((:file "package")
    (:file "helpers")
-   (:file "action")
-   
-   ))
+   (:file "action"))
+  :in-order-to ((test-op (asdf:test-op "caten.workflow/test"))))
+
+(asdf:defsystem "caten.workflow/test"
+  :depends-on
+  ("rove" "caten.workflow")
+  :components
+  ((:file "test-suites"))
+  :perform
+  (asdf:test-op (o s)
+           (let ((result (uiop:symbol-call (find-package :rove) :run s :style :dot)))
+	     (assert (or (null (uiop:getenv "CI")) result)))))

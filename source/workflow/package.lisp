@@ -13,5 +13,6 @@
    #:ctx-run
    )
   (:export
-
+   #:defaction
+   #:run-action
    ))

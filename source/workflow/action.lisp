@@ -124,6 +124,9 @@ defaction: `(:array ORDER (~a) :DTYPE)`
          (let ((optimize-form (find "OPTIMIZE" (cdr (car declare)) :key (alexandria:compose #'symbol-name #'car) :test #'equalp)))
            (second (find "DEBUG" (cdr optimize-form) :key (alexandria:compose #'symbol-name #'car) :test #'equalp))))))))
 
+(defun cname (symbol)
+  (intern (cl-ppcre:regex-replace-all "-" (symbol-name symbol) "_")))
+
 (defmacro defaction (name lambda-list &body body)
   "
 ```
@@ -150,13 +153,13 @@ Dtype decl:
 "
   ;; Args: (Name, Type)
   (multiple-value-bind (args1 body1 docstring1 debug) (action-parse-lambda-list-and-body lambda-list body)
-    (print debug)
     ;; C-c C-c and the error check
-    (let ((ctx (make-context-from-list name args1 body1))
-          (dev (caten/ajit:default-device :clang))
+    (let ((ctx (make-context-from-list (cname name) args1 body1))
+          (dev (caten/ajit:default-device :clang)) ;; [FIX] Is the device always clang
           (debug (or debug 0)))
-      (ctx:with-contextvar (:jit_debug debug)
-        (ctx-compile ctx dev)))
+      (when (>= debug 1)
+        (ctx:with-contextvar (:jit_debug debug)
+          (ctx-compile ctx dev))))
     `(progn
        (defclass ,name (Action)
          nil
@@ -164,14 +167,10 @@ Dtype decl:
        (defmethod initialize-instance :after ((self ,name) &rest initargs)
          (declare (ignore initargs))
          (multiple-value-bind (args body) (action-parse-lambda-list-and-body ',lambda-list ',body)
-           (setf (action-ctx self) (make-context-from-list ',name args body)))))))
+           (setf (action-ctx self) (make-context-from-list ',(cname name) args body)))))))
 
 ) ;; eval-when
 
-(defaction AddTwoNumber (a b)
-  (declare (type :int64 a b)
-           (optimize (debug 0)))
-  (+ a b))
 
 ;(defaction Test (x i k)
 ;  (declare (type (:array :row (i k) :float) x)
@@ -236,8 +235,8 @@ Dtype decl:
 ;; - [x] does it works for higher rank array? (serf aref) (need tests)
 ;; - [x] Compile+Runできるようにして
 ;; - [ ] Test-Suiteできるようにする
-;; - [ ] funcallする
-;; = [ ] Return Value
+;; - [x] funcallする
+;; = [x] Return Value
 ;; - [ ] Allow make-tensor inside the action.
 ;; - [ ] Implement, Break, Continue, Return w/o new ops
 ;; - [x] Let

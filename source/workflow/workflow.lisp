@@ -6,7 +6,6 @@
 
 (defmacro defworkflow (name (&rest args) &rest actions)
   `(progn
-     
      ))
 
 ;; Syntax ->: 次の入力のcarがoutputになる
