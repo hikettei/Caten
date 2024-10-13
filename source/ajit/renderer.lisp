@@ -13,11 +13,11 @@
 (defgeneric %render-compile (lang function dir)
   (:documentation "Compiles the function"))
 
-(defmethod %render-compile :around (lang avm function dir)
+(defmethod %render-compile :around (langn function dir)
   (restart-case (if (= 1 (ctx:getenv :CALL_ZENITY)) (error "Triggered by CALL_ZENITY=1~%~%~a" function) (call-next-method))
     (zenity/modify-code ()
       :report "Calling a GUI Editor, update the code manually. (SHOULD ONLY BE USED FOR DEBUGGING)"
-      (%render-compile lang avm (zenity/prompt-new-value function) dir))
+      (%render-compile lang (zenity/prompt-new-value function) dir))
     (zenity/proceed ()
       :report "Proceed w/ current code."
       (when (= 1 (ctx:getenv :CALL_ZENITY)) (call-next-method)))))
