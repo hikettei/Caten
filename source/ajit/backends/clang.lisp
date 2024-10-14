@@ -12,8 +12,7 @@
 (defparameter *access* nil)
 (defparameter *args* nil)
 (defparameter *suffix* nil)
-(defun args-p (id)
-  (if (stringp id) (find (intern id) *args*) (find id *args*)))
+(defun args-p (id) (if (stringp id) (find (intern id) *args*) (find id *args*)))
 
 (defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags) (dir nil))
   (declare (type string source compiler))
