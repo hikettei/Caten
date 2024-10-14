@@ -28,6 +28,12 @@
    #:Parsed-Form-Type
    #:stash-forms
    #:make-const-buffer)
+  (:import-from
+   :caten/apis
+   #:Tensor
+   #:tensor-p
+   #:tensor-buffer
+   )
   (:export
    #:defaction
    #:run-action
