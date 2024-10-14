@@ -47,7 +47,7 @@ FastGraph[seen=~a, outputs=~a] {
 ```
 Creates a new Graph object with the given nodes.
 "
-  (make-instance 'Graph :nodes nodes))
+  (make-instance 'Graph :nodes (loop for n in nodes if n collect n)))
 
 (defgeneric copy-graph (graph) (:documentation "
 ```

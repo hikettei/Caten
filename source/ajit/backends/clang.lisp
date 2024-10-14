@@ -44,7 +44,7 @@ Compiled with: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
-(defmethod %render-compile ((lang Clang) avm function dir)
+(defmethod %render-compile ((lang Clang) function dir)
   (load-foreign-function function :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir))
 
 (defun bool->bit (x)
@@ -53,8 +53,12 @@ Compiled with: ~a"
       (make-array (array-total-size (buffer-value x)) :element-type 'bit :initial-contents (map 'list #'(lambda (x) (if x 1 0)) (buffer-value x)))
       (buffer-value x)))
 
+(defun string-array-as-foreign-pointer (x)
+  (declare (type buffer x))
+  (cffi:foreign-alloc :string :initial-contents (coerce (buffer-value x) 'list)))
+
 (defun maybe-buffer-value (x) (if (buffer-p x) (buffer-value x) x))
-(defmethod %render-function-caller ((lang Clang) avm args &aux (tmps))
+(defmethod %render-function-caller ((lang Clang) name args &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
 		 (if (= 0 (buffer-nrank (argument-metadata (car rest-forms))))
@@ -67,9 +71,14 @@ Compiled with: ~a"
 			      (with-foreign-object (,(caten/ajit:argument-name node) ,(->cffi-dtype (argument-dtype node)))
 				(setf (mem-ref ,(caten/ajit:argument-name (car rest-forms)) ,(->cffi-dtype (argument-dtype node))) (buffer-value ,tmp))
 				,(expand (cdr rest-forms) body)))))
-		     `(with-pointer-to-vector-data
-			  (,(caten/ajit:argument-name (car rest-forms)) (bool->bit ,(caten/ajit:argument-name (car rest-forms))))
-			,(expand (cdr rest-forms) body)))
+                     (if (eql :string (caten/ajit:argument-dtype (car rest-forms)))
+                         `(let ((,(caten/ajit:argument-name (car rest-forms))
+                                  (string-array-as-foreign-pointer ,(caten/ajit:argument-name (car rest-forms)))))
+                            ,(expand (cdr rest-forms) body)
+                            (cffi:foreign-free ,(caten/ajit:argument-name (car rest-forms))))
+		         `(with-pointer-to-vector-data
+                              (,(caten/ajit:argument-name (car rest-forms)) (bool->bit ,(caten/ajit:argument-name (car rest-forms))))
+                            ,(expand (cdr rest-forms) body))))
 		 `(progn
 		    ,@body
 		    ,@(loop for (buffer . node) in tmps
@@ -81,7 +90,7 @@ Compiled with: ~a"
        ,(expand
 	 args
 	 `((cffi:foreign-funcall
-            ,(format nil "~(~a~)" (avm-name avm))
+            ,(format nil "~(~a~)" name)
             ,@(loop for arg in args
 		    for is-pointer = (argument-pointer-p arg)
 		    if (not is-pointer)
@@ -123,10 +132,10 @@ Compiled with: ~a"
 	      "")
 	  body))
 
-(defmethod %render-function ((lang Clang) avm args body)
+(defmethod %render-function ((lang Clang) name args body)
   (let ((header
 	  (format nil "void ~(~a~)(~a)"
-		  (avm-name avm)
+                  name
 		  (apply
 		   #'concatenate
 		   'string
@@ -161,6 +170,9 @@ Compiled with: ~a"
   (unary :LOG2 "log2")
   (unary :EXP2 "exp2"))
 
+(defmethod %render-expr ((clang Clang) (op (eql :Address-Of)) lhs rhs z)
+  (format nil "&~(~a~)" (render-expr clang lhs)))
+
 (defmethod %render-expr ((lang Clang) (op (eql :Const)) lhs rhs z)
   (assert (or (stringp lhs) (symbolp lhs) (numberp lhs)))
   (assert (null z))
@@ -193,6 +205,12 @@ Compiled with: ~a"
 	    (format nil "~(~a~)~a" lhs (unroll-suffix rhs *suffix*)))
 	(format nil "~(~a~)[~(~a~)]" lhs ref))))
 
+(defmethod %render-expr ((lang Clang) (op (eql :Take)) lhs rhs z)
+  (assert (null z))
+  (assert (and lhs rhs))
+  ;; Set *args* = nil not to render lhs as a pointer.
+  (format nil "~(~a~)[~a]" (let ((*args* nil)) (render-expr lang lhs)) (render-expr lang rhs)))
+
 (defmethod %render-expr ((lang Clang) (op (eql :INDEX-COMPONENTS)) lhs rhs z)
   (assert (buffer-p (expr-y lhs)))
   (assert (null z))
@@ -212,16 +230,15 @@ Compiled with: ~a"
 	    (:ADD :+) (:MUL :*) (:IDIV "/")
 	    (:AND :&) (:OR "|") (:!= :!=) (:EQ :=)
 	    (:XOR "^")
-	    (:% :%) (:equal :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
+	    (:% :%) (:== :==) (:<= :<=) (:>= :>=) (:< :<) (:> :>))
 	  (render-expr lang rhs)))
 
 (defmethod %render-expr ((lang Clang) (op (eql :WHERE)) x y z)
   (assert (and x y z))
   (format nil "(~(~a~) ? ~(~a~) : ~(~a~))" (render-expr lang x) (render-expr lang y) (render-expr lang z)))
 
-(defmethod %render-body ((lang Clang) kernel-lang jit-graph polyhedral indent args)
+(defmethod %render-body ((lang Clang) kernel-lang jit-graph pipeline indent args)
   (declare (type graph jit-graph)
-	   (type polyhedral polyhedral)
 	   (type fixnum indent))
   (let ((*args* (loop for arg in args if (argument-pointer-p arg) collect (argument-name arg))))
     (with-output-to-string (out)
@@ -252,8 +269,13 @@ Compiled with: ~a"
 		  (:IF
 		   (let ((c (getattr node :condition)))
 		     (assert c () "Missing condition")
-		     (line "if ~a {" (r c))
+		     (line "if (~a) {" (r c))
 		     (incf indent)))
+                  (:WHILE
+                   (let ((c (getattr node :condition)))
+                     (assert c)
+                     (line "while ~a {" (r c))
+                     (incf indent)))
 		  (:ELSE
 		   (decf indent)
 		   (line "} else {")
@@ -261,14 +283,20 @@ Compiled with: ~a"
 		  (:ENDIF
 		   (decf indent)
 		   (line "}"))
+                  (:ENDWHILE
+                   (decf indent)
+                   (line "}"))
 		  (:FUNCALL
-		   (dolist (node (if (getattr node :_packed)
-				     (getattr node :_unrolled)
-				     (list node)))
-		     (let ((idx (getattr node :idx))
-			   (args (map 'list #'(lambda (x) (r x)) (getattr node :args)))
-			   (*suffix* (getattr node :unroll-offsets)))
-		       (princ (%render-nodes kernel-lang (gethash idx (poly-pipeline polyhedral)) args indent) out))))))))))
+                   (if (getattr node :fname)
+                       (line "~(~a~)(~a);" (getattr node :fname) (render-list (map 'list #'(lambda (x) (render-expr lang x)) (getattr node :args))))
+		       (dolist (node (if (getattr node :_packed)
+				         (getattr node :_unrolled)
+				         (list node)))
+		         (let ((idx (getattr node :idx))
+			       (args (map 'list #'(lambda (x) (r x)) (getattr node :args)))
+			       (*suffix* (getattr node :unroll-offsets)))
+                           (assert (gethash idx pipeline) () "No idx ~a in the pipeline" idx)
+		           (princ (%render-nodes kernel-lang (gethash idx pipeline) args indent) out)))))))))))
 
 (defun ->cdtype (dtype)
   (ecase dtype
@@ -282,7 +310,8 @@ Compiled with: ~a"
     (:int16 "int16_t")
     (:uint16 "uint16_t")
     (:uint8 "uint8_t")
-    (:int8 "int8_t")))
+    (:int8 "int8_t")
+    (:string "char*")))
 
 (defun ->cffi-dtype (dtype)
   (ecase dtype
@@ -296,7 +325,8 @@ Compiled with: ~a"
     (:int16 :int16)
     (:uint16 :uint16)
     (:uint8 :uint8)
-    (:int8 :int8)))
+    (:int8 :int8)
+    (:string :string)))
 
 (defmethod %render-nodes ((lang Clang) graph access indent)
   (with-output-to-string (out)
@@ -317,8 +347,12 @@ Compiled with: ~a"
 	      for type = (read-type-relay node) do
 		(ecase (node-type node)
 		  (:ALLOCATE
-		   (line "~(~a~) ~(~a~)~a;"
-			 (->cdtype (getattr node :dtype)) (car (node-writes node))
+		   (line "~(~a~) ~(~a~)~(~a~)~a;"
+			 (->cdtype (getattr node :dtype))
+                         (if (and (args-p (car (node-writes node))) (= 0 (getattr node :nrank)))
+                             "*"
+                             "")
+                         (car (node-writes node))
 			 (let ((nrank (getattr node :nrank)))
 			   (if (= nrank 0)
 			       ""
