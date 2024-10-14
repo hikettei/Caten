@@ -218,9 +218,38 @@ Dtype decl:
   n)
 
 (defaction Fib1 (n)
-  (declare (type :int64 n)
-           (optimize (debug 3)))
+  (declare (type :int64 n) (optimize (debug 3)))
   (Fib n))
+
+(defaction str-lookup (word )
+  (declare (type :char word))
+  )
+
+(defstruct Dictionary
+  (word-pool )          ;; flattened word arary
+  (position->offset)    ;; idx -> offset in word-pool
+  (position->word-len)  ;; idx -> word length
+  (position->score))     ;; idx -> score in word-pool
+
+(defun make-dict-from-vocab (vocabulary scores)
+  (declare (type array vocabulary scores))
+  (let* ((n-vocab (array-total-size vocabulary))
+         (word-pool (apply #'concatenate 'string (coerce vocabulary 'list)))
+         (position->word-pos (make-array n-vocab :element-type '(unsigned-byte 32) :initial-element 0))
+         (position->word-len (make-array n-vocab :element-type '(unsigned-byte 32) :initial-element 0))
+         (position->score    (make-array n-vocab :element-type 'single-float :initial-element 0.0)))
+    (loop with cumsum = 0
+          for word across vocabulary
+          for score across scores
+          for nth upfrom 0
+          do (setf (aref position->word-pos nth) cumsum
+                   (aref position->word-len nth) (length word)
+                   (aref position->score nth) score
+                   cumsum (+ cumsum (length word))))
+    (make-dictionary :word-pool word-pool
+                     :position->offset position->word-pos
+                     :position->word-len position->word-len
+                     :position->score position->score)))
 
 ;; (Simple-Tokenizer "Hello, World!" "HeloWrd!" 13 9)
 
