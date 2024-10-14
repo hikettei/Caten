@@ -53,6 +53,10 @@ Compiled with: ~a"
       (make-array (array-total-size (buffer-value x)) :element-type 'bit :initial-contents (map 'list #'(lambda (x) (if x 1 0)) (buffer-value x)))
       (buffer-value x)))
 
+(defun string-array-as-foreign-pointer (x)
+  (declare (type buffer x))
+  (cffi:foreign-alloc :string :initial-contents (coerce (buffer-value x) 'list)))
+
 (defun maybe-buffer-value (x) (if (buffer-p x) (buffer-value x) x))
 (defmethod %render-function-caller ((lang Clang) name args &aux (tmps))
   (labels ((expand (rest-forms body)
@@ -67,9 +71,14 @@ Compiled with: ~a"
 			      (with-foreign-object (,(caten/ajit:argument-name node) ,(->cffi-dtype (argument-dtype node)))
 				(setf (mem-ref ,(caten/ajit:argument-name (car rest-forms)) ,(->cffi-dtype (argument-dtype node))) (buffer-value ,tmp))
 				,(expand (cdr rest-forms) body)))))
-		     `(with-pointer-to-vector-data
-			  (,(caten/ajit:argument-name (car rest-forms)) (bool->bit ,(caten/ajit:argument-name (car rest-forms))))
-			,(expand (cdr rest-forms) body)))
+                     (if (eql :string (caten/ajit:argument-dtype (car rest-forms)))
+                         `(let ((,(caten/ajit:argument-name (car rest-forms))
+                                  (string-array-as-foreign-pointer ,(caten/ajit:argument-name (car rest-forms)))))
+                            ,(expand (cdr rest-forms) body)
+                            (cffi:foreign-free ,(caten/ajit:argument-name (car rest-forms))))
+		         `(with-pointer-to-vector-data
+                              (,(caten/ajit:argument-name (car rest-forms)) (bool->bit ,(caten/ajit:argument-name (car rest-forms))))
+                            ,(expand (cdr rest-forms) body))))
 		 `(progn
 		    ,@body
 		    ,@(loop for (buffer . node) in tmps
