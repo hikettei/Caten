@@ -204,7 +204,7 @@ Dtype decl:
 ;; - [ ] Call Action From Action
 ;; - [ ] Separate NameSpace (keep using string will 100% cause naming confliction)
 ;; - [ ] Involve the related function in the compilation.
-
+#|
 (defaction Simple-Tokenizer (text vocabulary n vocab_size)
   (declare (type (:array :row (n) :char) text)
            (type (:array :row (vocab_size) :char) vocabulary)
@@ -279,7 +279,7 @@ Vocabulary:
         
         ))
     ))
-
+|#
 ;; - [ ] SentencePieceが実装できる程度の機能があれば十分すぎる
 ;;(defaction Test (x i k)
 ;;  (declare (type (:array :row (i k) :float) x)

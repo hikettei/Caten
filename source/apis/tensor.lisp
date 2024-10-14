@@ -123,7 +123,7 @@ Create a new lazy tensor.
 	   (type dtype-t dtype)
 	   (type (member :column :row) order)
 	   (type symbol id)
-	   (type (or null number symbol) initial-element)
+	   (type (or null number symbol string) initial-element)
 	   (type (or null symbol Buffer) from))
   (dolist (s shape)
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
@@ -131,7 +131,8 @@ Create a new lazy tensor.
 	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  Butgot: ~a~%  Shape=~a" s shape))
   (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views)))
     (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element :from from)
-          (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
+          ;; (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff))
+          )
     buff))
 
 (defun make-scalar (value &key (dtype *default-float*) (order *default-order*) (id (gensym "SID")) (requires-grad nil))
