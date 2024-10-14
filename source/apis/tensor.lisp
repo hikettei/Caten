@@ -123,7 +123,7 @@ Create a new lazy tensor.
 	   (type dtype-t dtype)
 	   (type (member :column :row) order)
 	   (type symbol id)
-	   (type (or null number symbol string) initial-element)
+	   (type (or null number symbol) initial-element)
 	   (type (or null symbol Buffer) from))
   (dolist (s shape)
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))

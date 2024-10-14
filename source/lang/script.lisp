@@ -339,35 +339,3 @@ pipeline is a hash-table that maps an index of FUNCALL to a graph.
                 :pointer-p t :name return-value-placeholder
                 :type :user :dtype (caten/avm:buffer-dtype out-type) :metadata out-type)))))
     context))
-
-;; Export to Cを実装
-;; 
-#|
-(action-body (n transformer)
-  (if (< n 10)
-      (run transformer)))
-
-(action-body ()
-  (let ((tokens (map 'vector (lambda (c) (position c vocabulary :test #'string=)) text)))
-    (loop named outer
-	  for best-score = -1e10
-	  for best-id = -1
-	  for best-index = -1
-	  do (loop for i below (1- (length tokens))
-		   for string = (concatenate
-                                 'string
-	                         (aref vocabulary (aref tokens i))
-	                         (aref vocabulary (aref tokens (1+ i))))
-		   for id = (position string vocabulary :test #'string=)
-		   if (and id (> (aref scores id) best-score)) ;This merge pair exists in vocabulary
-		     do (setf best-score (aref scores id)
-			      best-id id
-			      best-index i))
-	     (if (= best-index -1) (return-from outer tokens))
-	     (setf (aref tokens best-index) best-id
-		   tokens
-                   (concatenate 'vector
-                                (subseq tokens 0 (1+ best-index))
-(subseq tokens (+ 2 best-index)))))))
-
-|#

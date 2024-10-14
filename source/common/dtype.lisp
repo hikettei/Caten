@@ -39,8 +39,7 @@
 	(member
 	 :float64 :float32 :float16 :bfloat16
 	 :uint64 :uint32 :uint16 :uint8
-	 :int64 :int32 :int16 :int8 :bool
-         :string)))
+	 :int64 :int32 :int16 :int8 :bool)))
 
 (defun dtype-alias (dtype)
   (case dtype
@@ -67,7 +66,6 @@
     (:uint8   '(unsigned-byte 8))
     (:int8    '(signed-byte 8))
     (:bool    'boolean)
-    (:string  'simple-string)
     (otherwise (error "dtype->lisp: ~a is not supported" dtype))))
 
 (defun lisp-type->dtype (dtype &key (default-int :int64))
@@ -79,13 +77,9 @@
     (double-float :float64)
     (boolean :bool)
     (otherwise
-     (trivia:match dtype
-       ((list 'simple-array 'character (list _))
-        :string)
-       (_
-        (if (listp dtype)
-            (lisp-type->dtype (car dtype))
-            (error "lisp-type->dtype: caten/common.dtype does not know how to convert ~a into dtype." dtype)))))))
+     (if (listp dtype)
+         (lisp-type->dtype (car dtype))
+         (error "lisp-type->dtype: caten/common.dtype does not know how to convert ~a into dtype." dtype)))))
 
 (defun dtype/floatp (dtype)
   (declare (type dtype-t dtype))
@@ -95,14 +89,9 @@
 
 (defun dtype/cast (x cast-to)
   "Casts the given number x into cast-to"
-  (declare (type (or boolean number string) x)
+  (declare (type (or boolean number) x)
 	   (type dtype-t cast-to))
   (when (and (typep x 'boolean) (eql cast-to :bool)) (return-from dtype/cast x))
-  (when (eql cast-to :string)
-    (return-from dtype/cast
-      (if (stringp x)
-          x
-          (format nil "~a" x))))
   (let ((x (if (typep x 'boolean)
 	       (if x 1 0)
 	       x)))
@@ -136,9 +125,7 @@
     (:int16  (1- (expt 2 15)))
     (:uint8  (1- (expt 2 8)))
     (:int8   (1- (expt 2 7)))
-    (:bool   t)
-    ;; anything is ok for :string
-    (:string "")))
+    (:bool   t)))
 
 (defun dtype/min (dtype)
   (case dtype
@@ -147,8 +134,6 @@
     (:uint16 0)
     (:uint8  0)
     (:bool nil)
-    ;; anything is ok for :string[
-    (:string "")
     (otherwise (- (dtype/max dtype)))))
 
 (defun dtype/smallest (dtype)
