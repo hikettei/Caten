@@ -301,7 +301,8 @@ Compiled with: ~a"
     (:int16 "int16_t")
     (:uint16 "uint16_t")
     (:uint8 "uint8_t")
-    (:int8 "int8_t")))
+    (:int8 "int8_t")
+    (:string "char*")))
 
 (defun ->cffi-dtype (dtype)
   (ecase dtype
@@ -315,7 +316,8 @@ Compiled with: ~a"
     (:int16 :int16)
     (:uint16 :uint16)
     (:uint8 :uint8)
-    (:int8 :int8)))
+    (:int8 :int8)
+    (:string :string)))
 
 (defmethod %render-nodes ((lang Clang) graph access indent)
   (with-output-to-string (out)
