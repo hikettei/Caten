@@ -5,4 +5,8 @@
   :depends-on ()
   :serial t
   :components
-  ((:file "package")))
+  ((:file "package")
+   (:file "helpers")
+   (:file "shape-inference")
+   (:file "scheduler")
+   (:file "jit")))
