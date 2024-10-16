@@ -41,7 +41,8 @@
    #:avm-pc
    #:vm/readvar
    #:avm-tape-length
-   )
+   #:%impl
+   #:%vm/allocate-buffer)
   (:import-from
    :caten/air
    #:Node
@@ -52,6 +53,8 @@
    #:graph-nodes
    #:node-type)
   (:export
+   #:Inferred-Type
+   #:make-inferred-type
    #:read-type-relay
    #:run-type-infer))
 
@@ -174,6 +177,7 @@
 	      for w in (node-writes pause/bw)
 	      do (setf (gethash w (rp-id2buffer *type-reporter*)) (vm/readvar avm r)))))
     (vm/backward avm)
+    (deploy-type-infer-results avm *type-reporter*)
     *type-reporter*))
 
 (defstruct (Inferred-Type
@@ -197,6 +201,6 @@
 		   (map 'list #'->type (node-reads n))
 		   (map 'list #'->type (node-writes n)))))
 	(when (null allow-overwrite)
-	  (assert (null (getattr n :_type_relay)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
-	(when (null (getattr n :_type_relay))
+	  (assert (null (getattr n :_type_relay :allow-undefined t)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
+	(when (null (getattr n :_type_relay :allow-undefined t))
 	  (setf (getattr n :_type_relay) type))))))

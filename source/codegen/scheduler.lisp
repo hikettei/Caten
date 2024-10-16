@@ -21,26 +21,43 @@ One Schedule-item corresponds to one kernel in GPU.
          "
 name = the name of the kernel (a.k.a: the function name)
 dst <- Schedule-Item(src)
-items = a list of nodes to execute.
+items = a list of nodes to execute, sorted by the execution order.
 storage-id-src: an indicator to the variable name. created by running memory-planner
 storage-id-dst: an indicator to the variable name. created by running memory-planner
 "
          :slots
-         ((name :type string)
+         ((buffers)
+          (name :type string)
           (items :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)))
 
-(defun %schedule-item ()
+;; print scheduled item
+(defun %schedule-item (items)
 
   )
 
+(defun recursive-schedule (graph id &key (seen (make-hash-table)))
+  "
+What items are scheduled to the same loop?
+Do not consider about the access dependencies.
+"
+  (declare (type graph Graph))
+  
+  )
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
 
 (defmethod graph-schedule ((graph Graph)) (error "Cannot schedule a graph that is not FastGraph(DAG)!"))
 
+;; [TODO] Add :FUNCALL node like :FUNCALL :name=embedding, this is not JIT and independentantly schedules
+;; [TODO] Support multiple outputs
+;; Fuse Symbolic !randn < 1 kernels (and it means a success)
+;; Loop Collapse
 (defmethod graph-schedule ((graph FastGraph))
+  ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
-         (items (map 'list #'(lambda (x) (recursive-schedule x :seen seen)) (graph-outputs graph))))
+         (items (map 'list #'(lambda (x) (recursive-schedule graph x :seen seen)) (graph-outputs graph))))
+    (print graph)
+    ;; -> Returns a graph
     items))

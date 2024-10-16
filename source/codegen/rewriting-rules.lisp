@@ -28,8 +28,11 @@
    #:node-type
    #:make-node
    #:graph-nodes
+   #:graph-outputs
    #:Attr
-   #:defsimplifier)
+   #:defsimplifier
+   #:->fast-graph
+   #:->graph)
   (:import-from
    :caten/codegen/shape-inference
    #:make-inferred-type
@@ -61,7 +64,8 @@
 			    (node-writes n) (map 'list #'r (node-writes n)))
 		      n)))
       (setf (avm-fw-outputs avm) (map 'list #'r (avm-fw-outputs avm))
-	    (avm-bw-outputs avm) (map 'list #'r (avm-bw-outputs avm)))
+	    (avm-bw-outputs avm) (map 'list #'r (avm-bw-outputs avm))
+            (graph-outputs (avm-graph avm)) (map 'list #'r (graph-outputs (avm-graph avm))))
       (macrolet ((renew (accessor)
 		   `(let ((new-table (make-hash-table)))
 		      (maphash
@@ -211,10 +215,55 @@ out[...] = f(*val_1);
         (when type
           (make-node :TernaryOps :WMMA (node-writes node) (list c a b) :reduction reduction :_type_relay type))))))
 
+(defun apply-static-gensym (avm)
+  "Rewrites each read/write symbols to a unique and static symbol, improving the readability of the generated code when debugging."
+  (declare (type avm avm))
+  (let ((alias-table (make-hash-table))
+	(val-count 0))
+    (labels ((val-gensym (id)
+	       (if (symbolp id)
+		   (or
+		    (gethash id alias-table)
+		    (prog1
+			(setf (gethash id alias-table) (intern (format nil "val_~a" val-count)))
+		      (incf val-count)))
+		   id))
+             (start-with-tid-p (sym &aux (str (princ-to-string sym)))
+               (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3))))))
+      (dolist (node (graph-nodes (avm-graph avm)))
+        (when (and (eql (node-type node) :Allocate)
+                   (not (start-with-tid-p (car (node-writes node)))))
+          ;; If :Allocate is labelled with a unique ID by user, keep using it.
+          (let ((id (car (node-writes node))))
+            (setf (gethash id alias-table) id)))
+	(setf (node-writes node) (map 'list #'val-gensym (node-writes node))
+	      (node-reads node) (map 'list #'val-gensym (node-reads node))))
+      (setf (avm-fw-outputs avm) (map 'list #'val-gensym (avm-fw-outputs avm))
+	    (avm-bw-outputs avm) (map 'list #'val-gensym (avm-bw-outputs avm)))
+      (let ((new-id2tensor (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (val-gensym k) new-id2tensor) v))
+	 (avm-id2tensor avm))
+	(setf (avm-id2tensor avm) new-id2tensor))
+      (let ((new-variables (make-hash-table)))
+	(maphash
+	 #'(lambda (k v)
+	     (setf (gethash (val-gensym k) new-variables) v))
+	 (avm-variables avm))
+	(setf (avm-variables avm) new-variables
+              (graph-outputs (avm-graph avm))
+              (map 'list #'val-gensym (graph-outputs (avm-graph avm))))))))
+
 (defun apply-rewriting-rules (avm)
   (declare (type AVM avm))
   (rewrite-views-as-buffer avm)
   (wmma-rewriter (avm-graph avm) :no-verify t)
   (contiguous-after-wmma (avm-graph avm) :no-verify t)
-  (propagate-rebundant-loadp (avm-graph avm)))
-  
+  (propagate-rebundant-loadp (avm-graph avm))
+  (flet ((rebase ()
+           (setf (avm-graph avm) (->fast-graph (->graph (avm-graph avm))))))
+    (apply-static-gensym avm)
+    ;; Rebase the graph because each edge id are updated.
+    (rebase))
+  avm)

@@ -2,7 +2,6 @@
 
 (defpackage :caten/codegen
   (:use :cl)
-  (:import-from
-   )
-  (:export
-   ))
+  (:import-from :caten/codegen/jit
+   :jit)
+  (:export :jit))

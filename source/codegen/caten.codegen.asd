@@ -2,11 +2,12 @@
   :description "Caten Code Generator Engine"
   :author "hikettei <ichndm@gmail.com>"
   :licence "MIT"
-  :depends-on ()
+  :depends-on ("caten.avm" "caten.aasm" "caten.air")
   :serial t
   :components
-  ((:file "package")
-   (:file "helpers")
+  ((:file "helpers")
    (:file "shape-inference")
+   (:file "rewriting-rules")
    (:file "scheduler")
-   (:file "jit")))
+   (:file "jit")
+   (:file "package")))
