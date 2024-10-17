@@ -68,8 +68,7 @@ Do not consider about the access dependencies.
                     append (relay-reads (read-type-relay n)))))
     (dolist (b bufs)
       (when b
-        (multiple-value-bind (s stride) (buffer-merge-dims b)
-          (print b)
+        (multiple-value-bind (s stride) (buffer-merge-dims graph b)
           (print s)
           (print stride)))))
   ;; Find all binary ops whose :reduction is T, and pair them with element-wise operations
@@ -77,13 +76,11 @@ Do not consider about the access dependencies.
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
 
-(defmethod graph-schedule ((graph Graph)) (error "Cannot schedule a graph that is not FastGraph(DAG)!"))
-
 ;; [TODO] Add :FUNCALL node like :FUNCALL :name=embedding, this is not JIT and independentantly schedules
 ;; [TODO] Support multiple outputs
 ;; Fuse Symbolic !randn < 1 kernels (and it means a success)
 ;; Loop Collapse
-(defmethod graph-schedule ((graph FastGraph))
+(defmethod graph-schedule ((graph Graph))
   ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
          (items (map 'list #'(lambda (x) (recursive-schedule graph x :seen seen)) (graph-outputs graph))))

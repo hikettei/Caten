@@ -45,7 +45,9 @@
    #:%vm/allocate-buffer)
   (:import-from
    :caten/air
+   #:Graph
    #:Node
+   #:id->value
    #:node->id
    #:node-reads
    #:node-writes
@@ -216,10 +218,16 @@
 	(when (null (getattr n :_type_relay :allow-undefined t))
 	  (setf (getattr n :_type_relay) type))))))
 
-(defun merge-dims (shape strides views)
+(defun %expr-const (graph value dtype)
+  (let ((val (reveal-buffer value)))
+    (if (or (numberp val) (null (id->value graph val)))
+        (expr-const val dtype)
+        (expr-from-graph val graph))))
+
+(defun merge-dims (g shape strides views)
   (when (null shape) (return-from merge-dims))
   (assert (= (length shape) (length strides) (length views)))
-  (let ((ret (list (list (expr-const (reveal-buffer (nth 0 shape)) :int64) (expr-const (reveal-buffer (nth 0 strides)) :int64)))))
+  (let ((ret (list (list (%expr-const g (nth 0 shape) :int64) (%expr-const g (nth 0 strides) :int64)))))
     (loop for nth upfrom 1 below (length shape)
           for size = (nth nth shape)
           for stride = (nth nth strides)
@@ -228,22 +236,23 @@
               (when (not (eql size 1)) ;; always merge 1
                 (if (expr-scalar-equivalent-p
                      last-stride
-                     (expr-mul (expr-const (reveal-buffer size) :int64) (expr-const (reveal-buffer stride) :int64)))
+                     (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64)))
                     (setf (nth (1- (length ret)) ret)
-                          (list (expr-mul last-size (expr-const (reveal-buffer size) :int64)) (expr-const (reveal-buffer stride) :int64)))
+                          (list (expr-mul last-size (%expr-const g size :int64)) (%expr-const g stride :int64)))
                     (setf ret
                           (append
                            ret
-                           (list (list (expr-const (reveal-buffer size) :int64) (expr-const (reveal-buffer stride) :int64)))))))))
+                           (list (list (%expr-const g size :int64) (%expr-const g stride :int64)))))))))
     (values
      (loop for s in ret collect (first s))
      (loop for s in ret collect (second s)))))
 
-(defmethod buffer-merge-dims ((buffer Buffer))
+(defmethod buffer-merge-dims ((graph Graph) (buffer Buffer))
   (let ((viewed-shape (buffer-shape buffer))
         (strides (buffer-stride buffer))
         (views (buffer-views buffer)))
     (merge-dims
+     graph
      ;; base-shape is set to nil if views are not created.
      viewed-shape
      (loop for stride in strides
