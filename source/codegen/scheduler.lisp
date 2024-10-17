@@ -7,11 +7,19 @@ One Schedule-item corresponds to one kernel in GPU.
   (:import-from
    #:caten/air
    #:defnode
-
+   #:Node
+   #:node-type
+   
    #:FastGraph
    #:graph-outputs
    #:id->value
    #:id->users)
+  (:import-from
+   #:caten/codegen/shape-inference
+   #:read-type-relay
+   #:relay-reads
+   #:relay-writes
+   #:buffer-merge-dims)
   (:export
    #:graph-schedule))
 
@@ -21,7 +29,7 @@ One Schedule-item corresponds to one kernel in GPU.
          "
 name = the name of the kernel (a.k.a: the function name)
 dst <- Schedule-Item(src)
-items = a list of nodes to execute, sorted by the execution order.
+items = a list of nodes to execute. the execution order does not matter.
 storage-id-src: an indicator to the variable name. created by running memory-planner
 storage-id-dst: an indicator to the variable name. created by running memory-planner
 "
@@ -37,13 +45,34 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 
   )
 
+(defun si-append (si item)
+  (declare (type Node item))
+  (assert (eql (node-type si) :Schedule-Item))
+  (if (eql (node-type item) :Allocate)
+      (push item (getattr si :buffers))
+      (push item (getattr si :items))))
+
 (defun recursive-schedule (graph id &key (seen (make-hash-table)))
   "
 What items are scheduled to the same loop?
 Do not consider about the access dependencies.
+
+;; allocateから伸びるノードは分割する
+;; reshape/permuteのMergeabilityを考慮する
+;; the more fuse the better, loop fisson by ISL
+;; 
 "
   (declare (type graph Graph))
-  
+  ;; allbufs
+  (let ((bufs (loop for n in (graph-nodes graph)
+                    append (relay-reads (read-type-relay n)))))
+    (dolist (b bufs)
+      (when b
+        (multiple-value-bind (s stride) (buffer-merge-dims b)
+          (print b)
+          (print s)
+          (print stride)))))
+  ;; Find all binary ops whose :reduction is T, and pair them with element-wise operations
   )
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
@@ -59,5 +88,6 @@ Do not consider about the access dependencies.
   (let* ((seen (make-hash-table))
          (items (map 'list #'(lambda (x) (recursive-schedule graph x :seen seen)) (graph-outputs graph))))
     (print graph)
+    ;; -> Split the items to resolve circular dependencies
     ;; -> Returns a graph
     items))

@@ -6,6 +6,7 @@
   :serial t
   :components
   ((:file "helpers")
+   (:file "expr")
    (:file "shape-inference")
    (:file "rewriting-rules")
    (:file "scheduler")

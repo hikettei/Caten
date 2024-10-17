@@ -42,8 +42,8 @@
   (def %move :MOVE)
   (def %max :MAX)
   (def %gcd :GCD))
-(defun %sub (x y &key (reduction nil)) (%add x (%neg y) :reduction reduction))
-(defun %div (x y &key (reduction nil)) (%mul x (%recip y) :reduction reduction))
+(defun %sub (x y &key (reduction nil) (id (gensym "BID"))) (%add x (%neg y) :reduction reduction :id id))
+(defun %div (x y &key (reduction nil) (id (gensym "BID"))) (%mul x (%recip y) :reduction reduction :id id))
 
 ;; CompareOps: map <- [map{bool}, x, y]
 (macrolet ((def (fname opname)

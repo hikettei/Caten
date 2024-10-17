@@ -258,8 +258,9 @@ out[...] = f(*val_1);
 (defun apply-rewriting-rules (avm)
   (declare (type AVM avm))
   (rewrite-views-as-buffer avm)
-  (wmma-rewriter (avm-graph avm) :no-verify t)
-  (contiguous-after-wmma (avm-graph avm) :no-verify t)
+  ;;Try optimizing kernels without relying on them...
+  ;;(wmma-rewriter (avm-graph avm) :no-verify t)
+  ;;(contiguous-after-wmma (avm-graph avm) :no-verify t)
   (propagate-rebundant-loadp (avm-graph avm))
   (flet ((rebase ()
            (setf (avm-graph avm) (->fast-graph (->graph (avm-graph avm))))))

@@ -10,7 +10,7 @@
      - How the original shape/view/stride was shuffled to obtain the current shape/view/stride.
      - Therefore, when shuffling the shape/stride/view in the aIR level, you must to add :permute attribute in the VIEW node.
      - We have no plan for refactoring this, as permute inference is a still simple solution, and arrays are one-dimensional anyway when rendering.")
-  (:use :cl)
+  (:use :cl :caten/codegen/expr)
   (:import-from
    :caten/common.dtype
    #:dtype-t
@@ -56,7 +56,9 @@
    #:Inferred-Type
    #:make-inferred-type
    #:read-type-relay
-   #:run-type-infer))
+   #:run-type-infer
+   #:buffer-merge-dims
+   #:merge-dims))
 
 (in-package :caten/codegen/shape-inference)
 
@@ -187,7 +189,16 @@
   (writes writes :type list))
 
 (defmethod print-object ((type Inferred-type) stream)
-  (format stream "<OK>"))
+  (print-unreadable-object (type stream :type t)
+    (let ((ranks
+            (append
+             (map 'list #'buffer-shape
+                  (loop for r in (relay-reads type)
+                        if r collect r))
+             (map 'list #'buffer-shape
+                  (loop for w in (relay-writes type)
+                        if w collect w)))))
+      (format stream "~a" (map 'list #'reveal-buffer (car (sort ranks #'> :key #'length)))))))
 
 (defun read-type-relay (node)
   (declare (type node node))
@@ -204,3 +215,44 @@
 	  (assert (null (getattr n :_type_relay :allow-undefined t)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
 	(when (null (getattr n :_type_relay :allow-undefined t))
 	  (setf (getattr n :_type_relay) type))))))
+
+(defun merge-dims (shape strides views)
+  (when (null shape) (return-from merge-dims))
+  (assert (= (length shape) (length strides) (length views)))
+  (let ((ret (list (list (expr-const (reveal-buffer (nth 0 shape)) :int64) (expr-const (reveal-buffer (nth 0 strides)) :int64)))))
+    (loop for nth upfrom 1 below (length shape)
+          for size = (nth nth shape)
+          for stride = (nth nth strides)
+          for view = (nth nth views) do
+            (multiple-value-bind (last-size last-stride) (apply #'values (car (last ret)))
+              (when (not (eql size 1)) ;; always merge 1
+                (if (expr-scalar-equivalent-p
+                     last-stride
+                     (expr-mul (expr-const (reveal-buffer size) :int64) (expr-const (reveal-buffer stride) :int64)))
+                    (setf (nth (1- (length ret)) ret)
+                          (list (expr-mul last-size (expr-const (reveal-buffer size) :int64)) (expr-const (reveal-buffer stride) :int64)))
+                    (setf ret
+                          (append
+                           ret
+                           (list (list (expr-const (reveal-buffer size) :int64) (expr-const (reveal-buffer stride) :int64)))))))))
+    (values
+     (loop for s in ret collect (first s))
+     (loop for s in ret collect (second s)))))
+
+(defmethod buffer-merge-dims ((buffer Buffer))
+  (let ((viewed-shape (buffer-shape buffer))
+        (strides (buffer-stride buffer))
+        (views (buffer-views buffer)))
+    (merge-dims
+     ;; base-shape is set to nil if views are not created.
+     viewed-shape
+     (loop for stride in strides
+           for nth upfrom 0
+           for view = (nth nth views)
+           if (and (listp view) (fourth view))
+             collect 0 ;; Broadcasted -> stride is zero
+           else
+             collect stride)
+     (or
+      (when (every #'identity views) views)
+      (loop repeat (buffer-nrank buffer) collect nil)))))
