@@ -7,6 +7,7 @@
   :components
   ((:file "helpers")
    (:file "expr")
+   (:file "renderer")
    (:file "shape-inference")
    (:file "rewriting-rules")
    (:file "scheduler")

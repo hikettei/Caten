@@ -18,10 +18,6 @@
   (graph (error "graph must occur") :type Graph)
   (out (error "out must occur") :type node))
 
-(defmethod print-object ((expr expr) stream)
-  (print-unreadable-object (expr stream :type t)
-    (format stream "~a" (expr-graph expr))))
-
 (defsimplifier
     (%get-scalar)
     ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value value)

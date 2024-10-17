@@ -9,17 +9,24 @@ One Schedule-item corresponds to one kernel in GPU.
    #:defnode
    #:Node
    #:node-type
-   
    #:FastGraph
    #:graph-outputs
    #:id->value
    #:id->users)
   (:import-from
+   #:caten/avm
+   #:Buffer
+   #:buffer-views)
+  (:import-from
    #:caten/codegen/shape-inference
    #:read-type-relay
    #:relay-reads
    #:relay-writes
-   #:buffer-merge-dims)
+   #:buffer-merge-dims
+   #:iteration-space
+   #:iteration-space-shape
+   #:iteration-shape-strides
+   #:iteration-space-views)
   (:export
    #:graph-schedule))
 
@@ -72,11 +79,28 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
       ;; T=1 | x[...] = node(... A[read_type])
       ;; write_type and read_type could be merged if they are located in the same group?
       ;; Try permutation to A write (like i did in transform.lisp)
-      
-      t)))
+      ;; ^ merge dimsすれば計算量が減ることに気づいた
+      (flet ((base-p (view)
+               (or (null view) (every #'null view))))
+        (when (and (base-p (buffer-views read-type)) (buffer-views write-type))
+          (return-from group-mergeable-p t)))
+      ;; Test w/ transposed gemm and ConvND
+      ;; Let's merge
+      (let ((ri (buffer-merge-dims graph read-type))
+            (wi (buffer-merge-dims graph write-type)))
+        ;; new-inferred-permuteを追加する，inferred-permuteの範囲だけでLoop Permuteを考える
+        (print "+COMPARE")
+        (print ri)
+        (print wi))
+      nil)))
 
-(defun schedule-groups (list)
-  (remove-duplicates (loop for l in list if l collect l) :key #'group-key))
+;; (defparameter *model* (Transformer 64 4 2 1e-5 32))
+;; (caten/codegen:jit (time (caten (call *model* (make-tensor `(1 10)) (iconst 'n)))))
+
+(defun schedule-groups (parent parent-groups)
+  (flet ((f (x) (when x (when (not (eql (group-key parent) (group-key x))) x))))
+    (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
+      (remove-duplicates (loop for l in lst if l collect l) :key #'group-key))))
 
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
   "
@@ -90,6 +114,8 @@ Do not consider about the access dependencies.
 
 ;; ReduceとElemmentWiseをつくっけたデータ構造(Group)を作る, (1 group 1 reduce, no dependency breaks)
 ;; Group <-> GroupでLoop Fusionを考える
+
+- Embedding後のContiguousがくっつく場所をちゃんと考える
 "
   (declare (type graph Graph))
   (symbol-macrolet ((->failed (return-from recursive-create-group)))
@@ -108,17 +134,16 @@ Do not consider about the access dependencies.
       ;; arg3[0:10] = sin(x[...])
       ;; ID <- NODE(arg1, arg2, arg3[10:0:-1])...
       (schedule-groups
-       (append
-        (list parent)
+       parent
         ;; :Allocate should be scheduled standalone
-        (loop with buffer-p = (eql (node-type node) :Allocate)
-              for read in (node-reads node)
-              for read-type in (relay-reads (read-type-relay node))
-              for mergeable-p = (group-mergeable-p parent read graph read-type)
-              if (and (null buffer-p) mergeable-p)
-                append (recursive-create-group read graph :seen seen :parent parent)
-              else
-                append (recursive-create-group read graph :seen seen)))))))
+       (loop with buffer-p = (eql (node-type node) :Allocate)
+             for read in (node-reads node)
+             for read-type in (relay-reads (read-type-relay node))
+             for mergeable-p = (group-mergeable-p parent read graph read-type)
+             if (and (null buffer-p) mergeable-p)
+               collect (recursive-create-group read graph :seen seen :parent parent)
+             else
+               collect (recursive-create-group read graph :seen seen))))))
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
 
@@ -130,9 +155,10 @@ Do not consider about the access dependencies.
 (defmethod graph-schedule ((graph Graph))
   ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
-         (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-group x graph :seen seen)) (graph-outputs graph)))))
+         (groups (apply #'append (map 'list #'(lambda (x) (nreverse (recursive-create-group x graph :seen seen))) (graph-outputs graph)))))
     (mapc #'verify-group groups)
-
     ;; Serialize ADD (Embedding Embedding)
+    ;; Merge two independent groups
     (print groups)
+    ;; -> Loop bound Inference (イメージはTensorComprehension)
     nil))

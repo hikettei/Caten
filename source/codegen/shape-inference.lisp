@@ -60,7 +60,13 @@
    #:read-type-relay
    #:run-type-infer
    #:buffer-merge-dims
-   #:merge-dims))
+   #:merge-dims)
+  (:export
+   #:Iteration-Space
+   #:Iteration-Space-shape
+   #:Iteration-Shape-strides
+   #:Iteration-shape-view
+   ))
 
 (in-package :caten/codegen/shape-inference)
 
@@ -217,6 +223,14 @@
 	  (assert (null (getattr n :_type_relay :allow-undefined t)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
 	(when (null (getattr n :_type_relay :allow-undefined t))
 	  (setf (getattr n :_type_relay) type))))))
+;; ~~ Loop Collase ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun mergeable-view-p (view shape &aux (shape (reveal-buffer shape)))
+  "Mergeable axis = view is not created."
+  (when (null view) (return-from mergeable-view-p t))
+  (trivia:ematch view
+    ;; antyhing for broadcast, because the strides of broadcasted axes are replaced w/ 0
+    ((list (eql 0) (eql shape) (eql 1) _) t)
+    (_ nil)))
 
 (defun %expr-const (graph value dtype)
   (let ((val (reveal-buffer value)))
@@ -224,28 +238,61 @@
         (expr-const val dtype)
         (expr-from-graph val graph))))
 
+(defstruct Iteration-Space
+  (shape nil :type list)
+  (strides nil :type list)
+  (views nil :type list))
+
+;; [TODO] render-isl ((is Iteration-Space))
+
+(defmethod iteration-space-sync-broadcast ((is Iteration-Space))
+  (setf (iteration-space-views is)
+        (loop for stride in (iteration-space-strides is)
+              for view in (iteration-space-views is)
+              for size in (iteration-space-shape is)
+              if (eql stride 0)
+                collect (or view (list 0 size 1 t))
+              else
+                collect view))
+  is)
+
+;; [TODO] もうちょっと真面目に考えた方がいい。
+;; - Broadcastの扱い？
+;; - is-view?
 (defun merge-dims (g shape strides views)
   (when (null shape) (return-from merge-dims))
   (assert (= (length shape) (length strides) (length views)))
-  (let ((ret (list (list (%expr-const g (nth 0 shape) :int64) (%expr-const g (nth 0 strides) :int64)))))
+  ;; ret = (list new-shapes new-strides new-views)
+  (let ((ret (list
+              (list
+               (%expr-const g (nth 0 shape) :int64)
+               (%expr-const g (nth 0 strides) :int64)
+               (nth 0 views)))))
     (loop for nth upfrom 1 below (length shape)
           for size = (nth nth shape)
           for stride = (nth nth strides)
           for view = (nth nth views) do
             (multiple-value-bind (last-size last-stride) (apply #'values (car (last ret)))
               (when (not (eql size 1)) ;; always merge 1
-                (if (expr-scalar-equivalent-p
-                     last-stride
-                     (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64)))
+                (if (and
+                     (mergeable-view-p view size)
+                     (expr-scalar-equivalent-p
+                      last-stride
+                      (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64))))
                     (setf (nth (1- (length ret)) ret)
-                          (list (expr-mul last-size (%expr-const g size :int64)) (%expr-const g stride :int64)))
+                          (list (expr-mul last-size (%expr-const g size :int64)) (%expr-const g stride :int64) nil))
                     (setf ret
                           (append
                            ret
-                           (list (list (%expr-const g size :int64) (%expr-const g stride :int64)))))))))
-    (values
-     (loop for s in ret collect (first s))
-     (loop for s in ret collect (second s)))))
+                           (list (list (%expr-const g size :int64) (%expr-const g stride :int64) view))))))))
+    (iteration-space-sync-broadcast
+     (make-iteration-space
+      :shape
+      (loop for s in ret collect (first s))
+      :strides
+      (loop for s in ret collect (second s))
+      :views
+      (loop for s in ret collect (third s))))))
 
 (defmethod buffer-merge-dims ((graph Graph) (buffer Buffer))
   (let ((viewed-shape (buffer-shape buffer))
