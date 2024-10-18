@@ -45,9 +45,10 @@ storage-id-src: an indicator to the variable name. created by running memory-pla
 storage-id-dst: an indicator to the variable name. created by running memory-planner
 "
          :slots
-         ((buffers)
+         ((blueprint :type list)
+          (buffers)
           (allocate-p :type boolean)
-          (name :type string)
+          (name :type symbol)
           (items :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)))
@@ -61,11 +62,18 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
   (when (find :Allocate (group-items group) :key #'node-type)
     (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
 
+(defmethod make-unique-schedule-name ((group Group))
+  (gensym
+   (with-output-to-string (out)
+     (princ "FUSED" out)
+     (dolist (c (group-items group))
+       (format out "_~a" (node-type c))))))
+
 (defmethod group->schedule ((group Group))
   (let ((reads (nodes-depends-on (group-items group)))
         (writes (nodes-write-to (group-items group)))
         (allocate-p (find :Allocate (group-items group) :key #'node-type)))
-    (make-node :GRAPH :Schedule-Item writes reads :allocate-p (when allocate-p t))))
+    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group) :allocate-p (when allocate-p t))))
 
 (defmethod group-mergeable-p ((group Group) read graph read-type)
   (let ((node (id->value graph read)))
@@ -121,10 +129,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 What items are scheduled to the same loop?
 Do not consider about the access dependencies.
 
-;; allocateから伸びるノードは分割する
-;; reshape/permuteのMergeabilityを考慮する
-;; the more fuse the better, loop fisson by ISL
-;;
+The more fused kernels the better, Loop Fission by ISL Scheduler
 
 ;; ReduceとElemmentWiseをつくっけたデータ構造(Group)を作る, (1 group 1 reduce, no dependency breaks)
 ;; Group <-> GroupでLoop Fusionを考える
@@ -183,7 +188,5 @@ Do not consider about the access dependencies.
     (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
-      (print schedule)
-      ;; -> Loop bound Inference (イメージはTensorComprehension)
-      ;; Depth First Search
-      nil)))
+      ;; [TODO] (Add (Embedding[Reduce] Embedding[Reduce])) Fusion Using Pattern Matcher
+      schedule)))

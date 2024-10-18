@@ -36,6 +36,7 @@
 
 (defun wmma-relay-from (t1 tc nth)
   (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))
+
 (defun wmma-relay-from-contiguous (t1 t2 t3)
   (let ((a-base (second (relay-reads t3)))
 	(a (second (relay-reads t1)))
@@ -67,6 +68,7 @@
     (wmma-rewriter :speed 0)
     ((:Add ((:Mul (a b) :_type_relay t1) c) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 1)))
     ((:Add (c (:Mul (a b) :_type_relay t1)) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 0))))
+
 (defsimplifier
     (contiguous-after-wmma :speed 0)
     ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3)

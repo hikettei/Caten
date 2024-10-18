@@ -185,8 +185,7 @@ out[...] = f(*val_1);
 		for read-new = (map 'list #'(lambda (x) (gethash x patterns)) (node-reads node))
 		collect
 		(progn
-		  (setf (getattr node :_reads_old_for_multiexpr) (node-reads node)
-			(node-reads node)
+		  (setf (node-reads node)
 			(loop for r in (node-reads node)
 			      for n in read-new
 			      for nth upfrom 0

@@ -4,7 +4,11 @@
   (:import-from
    :caten/avm
    #:AVM
-   :avm-graph)
+   #:avm-graph)
+  (:import-from
+   :caten/air
+   #:Graph
+   #:graph-nodes)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer)
@@ -14,6 +18,9 @@
   (:import-from
    :caten/codegen/scheduler
    #:graph-schedule)
+  (:import-from
+   :caten/codegen/blueprint
+   #:lower-schedule-item)
   (:export
    #:jit))
 
@@ -27,17 +34,18 @@
   ;; 2. JIT Specific Simplifier (Loop Collapse is here)
   (apply-rewriting-rules avm)
   ;; 3. Create a schedule
-  (let ((schedules (graph-schedule (avm-graph avm))))
-    ;; 4. Loop Bound Inference
-
-    ;; (Rewrite Items belongs to the same loop are mutated into the same :EXPR)
-    ;; :EXPR is also a node.
-
-    ;; 5. (Optional) Further optimize each schedule by running polyhedral compiler
+  (let ((schedule-graph (graph-schedule (avm-graph avm))))
+    (declare (type Graph schedule-graph))
+    ;; 4. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
+    (mapc #'lower-schedule-item (graph-nodes schedule-graph)) 
+    ;; 5. (Optional) Further optimize each schedule by running polyhedral compiler.
+    
+    ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)
 
     ;; 6. Running memory-planner, update the storage-id
 
-    ;; 7. Lower them into Render-Graph, and completed!
+    ;; 7. Complete
+    
     ))
 
 ;; Test Case1
@@ -56,3 +64,4 @@
 ;; or, Loop Collapse in advance?
 ;; From Collapsed -> Complicated is wasy
 ;; From Complicated -> Collapsed is difficult
+;; -> Loop bound Inference (イメージはTensorComprehension)
