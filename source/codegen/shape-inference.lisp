@@ -58,9 +58,12 @@
    #:Inferred-Type
    #:make-inferred-type
    #:read-type-relay
+   #:relay-reads #:relay-writes
+   #:relay-read-iters #:relay-write-iters
    #:run-type-infer
    #:buffer-merge-dims
-   #:merge-dims)
+   #:merge-dims
+   #:graph-infer-iteration-space)
   (:export
    #:Iteration-Space
    #:Iteration-Space-shape
@@ -194,7 +197,9 @@
 	    (:conc-name relay-)
 	    (:constructor make-inferred-type (reads writes)))
   (reads reads :type list)
-  (writes writes :type list))
+  (read-iters nil :type list)
+  (writes writes :type list)
+  (write-iters nil :type list))
 
 (defmethod print-object ((type Inferred-type) stream)
   (print-unreadable-object (type stream :type t)
@@ -243,8 +248,17 @@
   (strides nil :type list)
   (views nil :type list))
 
-;; [TODO] render-isl ((is Iteration-Space))
+(defmethod merge-iter-space ((is1 Iteration-Space) (is2 Iteration-Space))
+  "Changes the shape of IS1 and IS2 to fit in the same iteration domain. Assumes is1 and is2 has the same total size."
+  ;; (10 10 10)
+  ;; (5 5)
+  
+  
+  
+  ;; (values new-is1 new-is2)
+  )
 
+;; [TODO] render-isl ((is Iteration-Space))
 (defmethod iteration-space-sync-broadcast ((is Iteration-Space))
   (setf (iteration-space-views is)
         (loop for stride in (iteration-space-strides is)
@@ -312,3 +326,13 @@
      (or
       (when (every #'identity views) views)
       (loop repeat (buffer-nrank buffer) collect nil)))))
+
+(defmethod graph-infer-iteration-space ((graph Graph))
+  (loop for node in (graph-nodes graph)
+        for type = (read-type-relay node) do
+          (setf (relay-read-iters type)
+                (map 'list #'(lambda (x) (when x (buffer-merge-dims graph x))) (relay-reads type))
+                (relay-write-iters type)
+                (map 'list #'(lambda (x) (when x (buffer-merge-dims graph x))) (relay-writes type))))
+  graph)
+            

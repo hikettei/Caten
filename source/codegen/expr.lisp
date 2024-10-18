@@ -10,7 +10,11 @@
    #:expr-sub
    #:expr-mul
    #:expr-div
-   ))
+   #:expr-<
+   #:expr-<=
+   #:expr->
+   #:expr->=
+   #:expr-=))
 
 (in-package :caten/codegen/expr)
 
@@ -112,10 +116,21 @@ Only supports the scalar computation because it is intended to identify the same
   (def expr-add-binary %add)
   (def expr-sub-binary %sub)
   (def expr-mul-binary %mul)
-  (def expr-div-binary %div))
+  (def expr-div-binary %div)
+  (def expr-<-binary %<)
+  (def expr-<=-binary %<=)
+  (def expr->-binary %>)
+  (def expr->=-binary %>=)
+  (def expr-=-binary %=))
 
 (defun expr-add (&rest args) (reduce #'expr-add-binary args))
 (defun expr-sub (&rest args) (reduce #'expr-sub-binary args))
 (defun expr-mul (&rest args) (reduce #'expr-mul-binary args))
 (defun expr-div (&rest args) (reduce #'expr-div-binary args))
+
+(defun expr-< (&rest args) (reduce #'expr-<-binary args))
+(defun expr-<= (&rest args) (reduce #'expr-<=-binary args))
+(defun expr-> (&rest args) (reduce #'expr->-binary args))
+(defun expr->= (&rest args) (reduce #'expr->=-binary args))
+(defun expr-= (&rest args) (reduce #'expr-= args))
 

@@ -1,6 +1,8 @@
 (defpackage :caten/codegen/helpers
   (:use :cl :caten/air)
   (:export
+   #:gid
+   #:range
    #:nodes-depends-on
    #:nodes-write-to))
 
@@ -26,3 +28,10 @@
 	  append
 	  (loop for w in (node-writes node)
 		if (not (used-p w)) collect w))))
+
+(defun gid (nth)
+  (declare (type fixnum nth))
+  (intern (format nil "_GID~d" nth)))
+
+(defmacro range (from below &optional (by 1))
+  `(loop for i from ,from below ,below by ,by collect i))

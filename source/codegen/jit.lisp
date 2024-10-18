@@ -11,7 +11,8 @@
    #:graph-nodes)
   (:import-from
    :caten/codegen/shape-inference
-   #:run-type-infer)
+   #:run-type-infer
+   #:graph-infer-iteration-space)
   (:import-from
    :caten/codegen/rewriting-rules
    #:apply-rewriting-rules)
@@ -33,18 +34,20 @@
   (run-type-infer avm)
   ;; 2. JIT Specific Simplifier (Loop Collapse is here)
   (apply-rewriting-rules avm)
-  ;; 3. Create a schedule
+  ;; 3. Merge dims (e.g. (10 10 10) Tensor -> (10x10x10) Tensor)
+  (graph-infer-iteration-space (avm-graph avm))
+  ;; 4. Schedule
   (let ((schedule-graph (graph-schedule (avm-graph avm))))
     (declare (type Graph schedule-graph))
-    ;; 4. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
+    ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
     (mapc #'lower-schedule-item (graph-nodes schedule-graph)) 
-    ;; 5. (Optional) Further optimize each schedule by running polyhedral compiler.
+    ;; 6. (Optional) Further optimize each schedule by running polyhedral compiler.
     
     ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)
 
-    ;; 6. Running memory-planner, update the storage-id
+    ;; 7. Running memory-planner, update the storage-id
 
-    ;; 7. Complete
+    ;; 8. Complete
     
     ))
 

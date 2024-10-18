@@ -22,6 +22,8 @@ One Schedule-item corresponds to one kernel in GPU.
    #:read-type-relay
    #:relay-reads
    #:relay-writes
+   #:relay-read-iters
+   #:relay-write-iters
    #:buffer-merge-dims
    #:iteration-space
    #:iteration-space-shape
@@ -45,13 +47,35 @@ storage-id-src: an indicator to the variable name. created by running memory-pla
 storage-id-dst: an indicator to the variable name. created by running memory-planner
 "
          :slots
-         ((blueprint :type list)
+         ((blueprint :type list :initform nil)
           (buffers)
           (allocate-p :type boolean)
           (name :type symbol)
           (items :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)))
+
+(defmethod print-node (node (id (eql :Schedule-Item)))
+  (flet ((r (x y)
+           (apply
+            #'concatenate
+            'string
+            (butlast
+             (loop for x1 in x
+                   for nth upfrom 0
+                   for y1 = (nth nth y)
+                   if (or (eql x1 y1) (null y1))
+                     append (list (format nil "~a" x1) ", ")
+                   else
+                     append (list (format nil "~a[~a]" x1 y1) ", "))))))
+    (format nil "<[Schedule-Item] : ~a <- ~a where lowered-p=~a ~a>"
+            (r (node-writes node) (getattr node :storage-id-dst))
+            (r (node-reads node) (getattr node :storage-id-src))
+            (if (getattr node :blueprint)
+                "t" "nil")
+            (if (getattr node :allocate-p)
+                ":allocate-p=T"
+                (format nil ":name=~a" (getattr node :name))))))
 
 (defstruct Group
   (key (gensym) :type symbol)
@@ -73,47 +97,47 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
   (let ((reads (nodes-depends-on (group-items group)))
         (writes (nodes-write-to (group-items group)))
         (allocate-p (find :Allocate (group-items group) :key #'node-type)))
-    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group) :allocate-p (when allocate-p t))))
+    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
+               :allocate-p (when allocate-p t)
+               :storage-id-dst writes
+               :storage-id-src reads
+               :items (group-items group))))
 
-(defmethod group-mergeable-p ((group Group) read graph read-type)
+(defmethod group-mergeable-p ((group Group) read graph read-type ri)
   (let ((node (id->value graph read)))
     (when (null node) (return-from group-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from group-mergeable-p nil))
     (when (and (group-reduced group) (getattr node :reduction :allow-undefined t))
       (return-from group-mergeable-p nil))
-    (let ((write-type (car (relay-writes (read-type-relay node)))))
+    (let ((write-type (car (relay-writes (read-type-relay node))))
+          (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
       ;; T=1 | x[...] = node(... A[read_type])
       ;; write_type and read_type could be merged if they are located in the same group?
-
       ;; 1. Merge element-wise and non-viewed operations
       (flet ((base-p (view) (or (null view) (every #'null view))))
         (when (and (base-p (buffer-views read-type)) (buffer-views write-type))
           (return-from group-mergeable-p t)))
       ;; [TODO]
       ;; Test w/ transposed gemm and ConvND
-      (let ((ri (buffer-merge-dims graph read-type))
-            (wi (buffer-merge-dims graph write-type)))
-        ;; T=0 |  wi  = ...
-        ;; T=1 | ...  = f(..., ri, ...)
-        ;; Consider this kernel is valid when T0 and T1 belongs to the same iteration domain.
-        ;; for (int idx = ...; ... ; ...);
-        ;;   T=0 | wi = ...
-        ;;   T=1 | ... = f(..., ri, ...)
-        ;; If valid, they should be grouped to the same Group
-        ;; Otherwise, they should be separated, and never fused.
-        ;; Note that applying the permutation to `wi` is allowed.
-        ;; For example, T0 can T1 can be grouped if you permute T0.
-        ;; T=0 | T0(c1, c2)    T0(c2, c1)
-        ;; T=1 | T1(c2, c1) => T1(c2, c1)
-
-        ;; ?
-        (flet ((elwise-p (x)
-                 (and (= (length (iteration-space-views x)) 1)
-                      (every #'null (iteration-space-views x)))))
-          (when (or (elwise-p ri) (elwise-p wi))
-            (return-from group-mergeable-p t)))
-        nil)
+      ;; T=0 |  wi  = ...
+      ;; T=1 | ...  = f(..., ri, ...)
+      ;; Consider this kernel is valid when T0 and T1 belongs to the same iteration domain.
+      ;; for (int idx = ...; ... ; ...);
+      ;;   T=0 | wi = ...
+      ;;   T=1 | ... = f(..., ri, ...)
+      ;; If valid, they should be grouped to the same Group
+      ;; Otherwise, they should be separated, and never fused.
+      ;; Note that applying the permutation to `wi` is allowed.
+      ;; For example, T0 can T1 can be grouped if you permute T0.
+      ;; T=0 | T0(c1, c2)    T0(c2, c1)
+      ;; T=1 | T1(c2, c1) => T1(c2, c1)
+      ;; ?
+      (flet ((elwise-p (x)
+               (and (= (length (iteration-space-views x)) 1)
+                    (every #'null (iteration-space-views x)))))
+        (when (or (elwise-p ri) (elwise-p wi))
+          (return-from group-mergeable-p t)))
       nil)))
 
 ;; (defparameter *model* (Transformer 64 4 2 1e-5 32))
@@ -158,7 +182,8 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
        (loop with buffer-p = (eql (node-type node) :Allocate)
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
-             for mergeable-p = (group-mergeable-p parent read graph read-type)
+             for ri in (relay-read-iters (read-type-relay node))
+             for mergeable-p = (group-mergeable-p parent read graph read-type ri)
              if (and (null buffer-p) mergeable-p)
                collect (recursive-create-group read graph :seen seen :parent parent)
              else

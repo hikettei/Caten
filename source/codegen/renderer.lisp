@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/renderer
   (:use :cl)
-  (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value)
+  (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode)
   (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out)
   (:export
    #:Renderer
@@ -8,6 +8,17 @@
    #:render-node))
 
 (in-package :caten/codegen/renderer)
+
+(defnode (:Render :FOR) ()
+         "TODO"
+         :slots ((idx :type symbol)
+                 (upfrom :type Expr)
+                 (below :type Expr)
+                 (by :type Expr)))
+
+(defnode (:Render :ENDFOR) ()
+         "TODO"
+         :slots ((idx :type symbol)))
 
 (defclass Renderer ()
   ((graph :initarg :graph :accessor renderer-graph))
