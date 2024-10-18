@@ -22,6 +22,7 @@
 (defun render-node (renderer id)
   (declare (type Renderer renderer))
   (when (numberp id)
+    ;; [TODO] Rewrite as :Const Node
     (print id))
   (assert (symbolp id) () "render-node: id must be a symbol. getting ~a" id)
   (let ((val (id->value (renderer-graph renderer) id)))

@@ -27,6 +27,10 @@ One Schedule-item corresponds to one kernel in GPU.
    #:iteration-space-shape
    #:iteration-shape-strides
    #:iteration-space-views)
+  (:import-from
+   #:caten/codegen/helpers
+   #:nodes-depends-on
+   #:nodes-write-to)
   (:export
    #:graph-schedule))
 
@@ -42,22 +46,11 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 "
          :slots
          ((buffers)
+          (allocate-p :type boolean)
           (name :type string)
           (items :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)))
-
-;; print scheduled item
-(defun %schedule-item (items)
-
-  )
-
-(defun si-append (si item)
-  (declare (type Node item))
-  (assert (eql (node-type si) :Schedule-Item))
-  (if (eql (node-type item) :Allocate)
-      (push item (getattr si :buffers))
-      (push item (getattr si :items))))
 
 (defstruct Group
   (key (gensym) :type symbol)
@@ -67,6 +60,12 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 (defmethod verify-group ((group Group))
   (when (find :Allocate (group-items group) :key #'node-type)
     (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
+
+(defmethod group->schedule ((group Group))
+  (let ((reads (nodes-depends-on (group-items group)))
+        (writes (nodes-write-to (group-items group)))
+        (allocate-p (find :Allocate (group-items group) :key #'node-type)))
+    (make-node :GRAPH :Schedule-Item writes reads :allocate-p (when allocate-p t))))
 
 (defmethod group-mergeable-p ((group Group) read graph read-type)
   (let ((node (id->value graph read)))
@@ -78,20 +77,35 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
       ;; T=0 | A[write_type] = ...
       ;; T=1 | x[...] = node(... A[read_type])
       ;; write_type and read_type could be merged if they are located in the same group?
-      ;; Try permutation to A write (like i did in transform.lisp)
-      ;; ^ merge dimsすれば計算量が減ることに気づいた
-      (flet ((base-p (view)
-               (or (null view) (every #'null view))))
+
+      ;; 1. Merge element-wise and non-viewed operations
+      (flet ((base-p (view) (or (null view) (every #'null view))))
         (when (and (base-p (buffer-views read-type)) (buffer-views write-type))
           (return-from group-mergeable-p t)))
+      ;; [TODO]
       ;; Test w/ transposed gemm and ConvND
-      ;; Let's merge
       (let ((ri (buffer-merge-dims graph read-type))
             (wi (buffer-merge-dims graph write-type)))
-        ;; new-inferred-permuteを追加する，inferred-permuteの範囲だけでLoop Permuteを考える
-        (print "+COMPARE")
-        (print ri)
-        (print wi))
+        ;; T=0 |  wi  = ...
+        ;; T=1 | ...  = f(..., ri, ...)
+        ;; Consider this kernel is valid when T0 and T1 belongs to the same iteration domain.
+        ;; for (int idx = ...; ... ; ...);
+        ;;   T=0 | wi = ...
+        ;;   T=1 | ... = f(..., ri, ...)
+        ;; If valid, they should be grouped to the same Group
+        ;; Otherwise, they should be separated, and never fused.
+        ;; Note that applying the permutation to `wi` is allowed.
+        ;; For example, T0 can T1 can be grouped if you permute T0.
+        ;; T=0 | T0(c1, c2)    T0(c2, c1)
+        ;; T=1 | T1(c2, c1) => T1(c2, c1)
+
+        ;; ?
+        (flet ((elwise-p (x)
+                 (and (= (length (iteration-space-views x)) 1)
+                      (every #'null (iteration-space-views x)))))
+          (when (or (elwise-p ri) (elwise-p wi))
+            (return-from group-mergeable-p t)))
+        nil)
       nil)))
 
 ;; (defparameter *model* (Transformer 64 4 2 1e-5 32))
@@ -152,6 +166,9 @@ Do not consider about the access dependencies.
 ;; Fuse Symbolic !randn < 1 kernels (and it means a success)
 ;; Loop Collapse
 ;; breathe first search
+
+;; (Add (Embedding Embedding))
+;; (defsimplifier serialize ...
 (defmethod graph-schedule ((graph Graph))
   ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
@@ -159,6 +176,14 @@ Do not consider about the access dependencies.
     (mapc #'verify-group groups)
     ;; Serialize ADD (Embedding Embedding)
     ;; Merge two independent groups
-    (print groups)
-    ;; -> Loop bound Inference (イメージはTensorComprehension)
-    nil))
+    (print "SCHEDULED")
+    (dolist (g groups)
+      (when (not (eql (node-type (car (group-items g))) :Allocate))
+        (print g)))
+    (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
+      (setf (graph-outputs schedule) (graph-outputs graph))
+      (setf schedule (->fast-graph schedule))
+      (print schedule)
+      ;; -> Loop bound Inference (イメージはTensorComprehension)
+      ;; Depth First Search
+      nil)))
