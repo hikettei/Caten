@@ -290,7 +290,7 @@
                       (setf ret
                             (append
                              ret
-                             (list (list (%expr-const g size :int64) (%expr-const g stride :int64) view (list nth))))))
+                             (list (list (%expr-const g size :int64) (%expr-const g stride :int64) (if (mergeable-view-p view size) nil view) (list nth))))))
                   ;; Update nth
                   (setf ret (append (butlast ret) (list (list last-size last-stride last-view (append last-pd (list nth)))))))))
     (iteration-space-sync-broadcast

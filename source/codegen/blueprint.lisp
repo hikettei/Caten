@@ -29,7 +29,7 @@
 (defun %make-for (idx size)
   (make-node :Render :FOR nil nil :idx idx
              :upfrom (expr-const 0 :int64)
-             :below (expr-< (expr-const idx :int64) size)
+             :below (print (expr-< (expr-const idx :int64) size))
              :by (expr-const 1 :int64)))
 
 (defun %make-endfor (idx)
@@ -173,6 +173,25 @@
 ;;(with-no-grad
 ;;            (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
 
+;; [TODO] ロープの操作はPolyhedral Compilerに任せる。。。
+;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
+(defmethod node-depend-idx-list ((node Node) gid
+                                 &aux
+                                 (type (read-type-relay node))
+                                 (strides (make-list (length (iteration-space-shape (car (relay-write-iters type)))))))
+  (flet ((is-zero (axis)
+           (expr-scalar-equivalent-p axis (expr-const 0 :int64))))
+    (dolist (space (append (relay-read-iters type) (relay-write-iters type)))
+      (when space
+        (loop for axis upfrom 0
+              for stride in (iteration-space-strides space)
+              do (push stride (nth axis strides)))))
+    (assert (= (length gid) (length strides)))
+    (loop for g in gid
+          for s in strides
+          if (not (every #'is-zero s))
+            collect g)))
+
 (defmethod lower-schedule-item ((node Node) (base-graph Graph))
   "Lowers the Schedule-Item into blueprint"
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
@@ -181,56 +200,62 @@
   (let* ((graph (apply #'make-graph (getattr node :items)))
          (_ (setf (graph-outputs graph) (node-writes node)))
          (iterspace (get-grouped-dims graph))
-         (gids (map 'list #'gid (range 0 (length (car iterspace)))))
-         (blueprint
-           `(,@(map 'list #'%make-for gids (car iterspace))
-             ,@(map 'list #'%make-endfor gids)))
+         (group-size (car iterspace))
+         (gids (map 'list #'gid (range 0 (length group-size))))
+         (blueprint)
          (seen nil))
     (declare (ignore _))
     (fixup-graph-iteration-space graph iterspace base-graph)
-
-    (labels ((explore (id &key (path-reduced nil) (parent nil) &aux (node (id->value graph id)))
+    (labels ((initial-bp ()
+               `(,@(map 'list #'%make-for gids group-size)
+                 ,@(map 'list #'%make-endfor (reverse gids))))
+             (try-insert-node (node &key (depend-idx) (depend-node) &aux (changed-p nil))
+               (let ((satisfied)
+                     (idx-satisfied))
+                 (values
+                  (loop for bp in blueprint
+                        if (eql (node-type bp) :FOR)
+                          do (push (getattr bp :idx) idx-satisfied)
+                        else
+                          if (eql (node-type bp) :ENDFOR)
+                            do (setf idx-satisfied (remove (getattr bp :idx) idx-satisfied))                             
+                        else
+                          do (dolist (r (node-reads bp))
+                               (when (symbolp r)
+                                 (push r satisfied)))
+                        collect bp
+                        if (and (null changed-p)
+                                (every #'(lambda (x) (find x idx-satisfied)) depend-idx)
+                                (every #'(lambda (x) (null (find x satisfied))) depend-node))
+                          do (setf changed-p t) and collect node)
+                  changed-p)))
+             (explore (id &key (path-reduced nil) (parents nil) &aux (node (id->value graph id)))
                ;; Try to insert the node ID into the above of parent
                (when (null node) (return-from explore))
                (when (find id seen) (return-from explore))
                (push id seen)
-               (if (null parent)
-                   (progn
-                     ;; Initialize an initial blueprint
-                     
-                     )
-                   (progn
-
-                     ))))
+               (multiple-value-bind (new-bp changed-p)
+                   (try-insert-node node :depend-idx (node-depend-idx-list node gids) :depend-node parents)
+                 (if changed-p
+                     (setf blueprint new-bp)
+                     (progn
+                       ;; Cannot satify the dependency, create a new loops
+                       (setf blueprint (append (initial-bp) blueprint))
+                       (multiple-value-bind (new-bp changed-p)
+                           (try-insert-node node :depend-idx (node-depend-idx-list node gids) :depend-node parents)
+                         (assert changed-p () "Cannot insert the node ~a" node)
+                         (setf blueprint new-bp))))
+                 (mapc
+                  #'(lambda (x)
+                      (explore
+                       x
+                       :path-reduced (or path-reduced (getattr node :reduction :allow-undefined t))
+                       :parents (append (node-reads node) parents)))
+                  (node-reads node)))))
+      (setf blueprint (initial-bp))
       (let ((p nil))
-        (mapc #'(lambda (x) (explore x :parent p) (setf p x)) (graph-outputs graph))))
-    (print blueprint)
-    ;; scheduleする時に一緒にLoop Boundの推論した方がいい？
-    ;; Later, inserting
-    ;; 必要なもの
-    ;; 1. ノードごとにIterationSpaceを定義する
-    ;; 2. merge iterspace and iterspace
-    ;; Lowerer
-    ;; [TODO] BigLoopFirst?
-    ;;  (dolist (i (getattr node :items))
-    ;;    (print (item->iteration-space i)))
-    ;; stride=1
-    ;; That is: AST.shape
-    ;; Algorithm
-    ;; 1. ループの初期状態を作る (TODO)
-    ;; <Insertable Point>
-    ;; for (gid0)
-    ;;  <Insetable Point>
-    ;;  for (gid1)
-    ;;   <Insertable Point>
-    ;; }
-    ;; <Insertable Point>
-    ;;}
-    ;;<Insertable Point>
-    ;; 2. (1.)の初期状態にノードを配置していく
-    ;; 3. Complete
-    ;; Each node is Node(aref(*iters))
-    ))
+        (mapc #'(lambda (x) (explore x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph))))
+    (setf (getattr node :blueprint) blueprint)))
 
 ;; merge-dims
 ;; Stride=1 -> aref(array, Index-Component(*iters))
