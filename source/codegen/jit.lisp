@@ -24,7 +24,7 @@
    #:lower-schedule-item)
   (:import-from
    :caten/codegen/scop
-   )
+   #:scop)
   (:export
    #:jit))
 
@@ -49,7 +49,8 @@
     (declare (type Graph schedule-graph))
     ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
     (mapc #'(lambda (x) (lower-schedule-item x (avm-graph avm))) (graph-nodes schedule-graph)) 
-    ;; 6. (Optional) Further optimize each schedule by running polyhedral compiler.
+    ;; 6. Lower into Polyhedral IR
+    (mapc #'scop (graph-nodes schedule-graph))
     
     ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)
 

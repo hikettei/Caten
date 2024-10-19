@@ -126,6 +126,6 @@
                    (t (warn "pprint: the key ~a is not implemented." key)))))
         (mapc #'(lambda (x) (explore schedule x)) (reverse (alexandria:hash-table-keys schedule)))))))
 
-(defmethod pprint-object ((pg Polyhedral-IR) stream)
+(defmethod print-object ((pg Polyhedral-IR) stream)
   (print-unreadable-object (pg stream :type t)
     (format stream "~a" (pprint-schedule (poly-schedule pg)))))

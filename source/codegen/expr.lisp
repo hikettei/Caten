@@ -78,7 +78,7 @@ Only supports the scalar computation because it is intended to identify the same
 
 (defmethod simplify-expr ((expr Expr))
   (let ((out (graph-outputs (expr-graph expr))))
-    (setf (graph-outputs (expr-graph expr)) nil)
+    ;; [TODO] set (graph-outputs out) = nil
     (optimize-aasm (expr-graph expr))
     (setf (graph-outputs (expr-graph expr)) out))
   expr)

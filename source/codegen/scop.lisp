@@ -6,6 +6,7 @@
    #:gid)
   (:import-from
    :caten/codegen/renderer
+   :Default-Renderer
    #:render-expr)
   (:import-from
    :caten/codegen/shape-inference
@@ -33,7 +34,7 @@
      (format out "{~%")
      (loop with domains = nil
            for node in (getattr node :blueprint) do
-             (ecase (node-type node)
+             (case (node-type node)
                (:FOR
                 (let ((by (getattr node :by)))
                   (assert (expr-scalar-equivalent-p by (expr-const 1 :int64)) () "The node ~a is not a scop." node))
@@ -48,7 +49,7 @@
                             (format nil "~a[]" (node-id node))))
                   (if domains
                       (format out "  ~a[~(~a~)] : ~(~a~);~%"
-                              (getattr node :idx)
+                              (node-id node)
                               (render-list (map 'list #'(lambda (x) (getattr x :idx)) domains))
                               (render-expr
                                device
@@ -60,13 +61,11 @@
                                        collect (getattr dom :below))
                                  ;; [TODO] Dynamic Shape are >= 1
                                  ))))
-                      (format out "  ~a[];~%" (getattr node :idx)))))))
+                      (format out "  ~a[];~%" (node-id node)))))))
      (format out "}"))
    idx2domain))
 
 (defun render-domain-from-loops (node domains &aux (device 'Default-Renderer))
-  (assert (eql (node-type node) :Schedule-Item))
-  (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (if domains
       (format nil "  ~a[~(~a~)] : ~(~a~);~%"
               (node-id node)
@@ -115,7 +114,7 @@ Corresponds to the position of the subgraph in the parent schedule.
                      for nth upfrom 0
                      if (not (= nth 0))
                        do (format out "; ")
-                     do (format out "~a -> [~a]"
+                     do (format out "~a -> [~(~a~)]"
                                 (or (gethash (node-id funcall) idx2domain) (error ""))
                                 idx))
                (format out " } "))
@@ -134,17 +133,18 @@ Corresponds to the position of the subgraph in the parent schedule.
             (when tgt-node
               (loop for var in (funcall reader tgt-node)
                     for typ in (funcall type-reader (read-type-relay tgt-node))
-                    do (format out "  ~a -> ~(~a~)[~(~a~)];~%"
-                               dom
-                               var
-                               (render-expr
-                                'Default-Renderer
-                                (reduce
-                                 #'expr-add
-                                 (loop for stride in (iteration-space-strides tgt-node)
-                                       for nth upfrom 0
-                                       for gid = (gid nth)
-                                       collect (expr-mul stride (expr-const gid :int64))))))))))
+                    if (symbolp var)
+                      do (format out "  ~a -> ~(~a~)[~(~a~)];~%"
+                                 dom
+                                 var
+                                 (render-expr
+                                  'Default-Renderer
+                                  (reduce
+                                   #'expr-add
+                                   (loop for stride in (iteration-space-strides typ)
+                                         for nth upfrom 0
+                                         for gid = (gid nth)
+                                         collect (expr-mul stride (expr-const gid :int64))))))))))
       idx2domain)
      (format out "}"))))
 
@@ -178,19 +178,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                                          (region (subseq render-nodes from to)))
                  (loop with count = from while (< count to)
                        for node = (nth count render-nodes) do
-                         (ecase (node-type node)
-                           (:FUNCALL
-                            ;; -> Filter Node
-                            (let* ((inst-schedule
-                                     (schedule-from-domain
-                                      (union-set-from-str
-                                       (format nil "[~(~a~)] -> { ~a }" deps (render-domain-from-loops node parent-loops))))))
-                              (setf
-                               schedule
-                               (if (eql schedule :nothing)
-                                   inst-schedule
-                                   (schedule-sequence schedule inst-schedule)))
-                              (incf count)))
+                         (case (node-type node)
                            (:FOR
                             ;; -> Band Node
                             (let* ((endfor
@@ -220,7 +208,19 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                                      (schedule-sequence schedule dom-schedule)))
                                 (setf count endfor-abs-position)
                                 ;; Move next to endfor
-                                (incf count))))))
+                                (incf count))))
+                           (otherwise
+                            ;; -> Filter Node
+                            (let* ((inst-schedule
+                                     (schedule-from-domain
+                                      (union-set-from-str
+                                       (format nil "[~(~a~)] -> { ~a }" deps (render-domain-from-loops node parent-loops))))))
+                              (setf
+                               schedule
+                               (if (eql schedule :nothing)
+                                   inst-schedule
+                                   (schedule-sequence schedule inst-schedule)))
+                              (incf count)))))
                  (when (eql schedule :nothing) (error "nothing was scheduled?"))
                  (let* ((partial-schedule
                           ;; (last parent-loops) or just parent-loops?
@@ -235,8 +235,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
            "[~(~a~)] -> ~a"
            "" ;; [TODO] Dynamic SHape
            domain))
-         (render-access-rep #'relay-read-iters #'relay-reads node idx2domain render-nodes)
-         (render-access-rep #'relay-write-iters #'relay-writes node idx2domain render-nodes)
+         (render-access-rep #'node-reads #'relay-read-iters node idx2domain render-nodes)
+         (render-access-rep #'node-writes #'relay-write-iters node idx2domain render-nodes)
          (explore-schedule-tree 0 (length render-nodes)))))))
 
 (defmethod scop ((node Node))

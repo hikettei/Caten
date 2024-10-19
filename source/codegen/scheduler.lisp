@@ -53,6 +53,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 "
          :slots
          ((blueprint :type list :initform nil)
+          (polyhedral)
           (iterations :type list :initform nil)
           (buffers)
           (allocate-p :type boolean)

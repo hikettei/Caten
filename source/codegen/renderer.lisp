@@ -42,7 +42,7 @@
     (print id))
   (assert (symbolp id) () "render-node: id must be a symbol. getting ~a" id)
   (let ((val (id->value (renderer-graph renderer) id)))
-    (assert val () "render-node: ~a is not found from the graph." val)
+    (assert val () "render-node: ~a is not found from the graph.~%graph:~%~a" id (renderer-graph renderer))
     (%render-node renderer (node-type val) val)))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
@@ -68,8 +68,12 @@
   (def :!= "!=")
   (def :< "<"))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :Allocate)) node) (format nil "0"))
+
 (defmethod %render-node ((renderer Default-Renderer) id node)
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))
+
+
 
 (defmethod print-object ((expr expr) stream)
   (print-unreadable-object (expr stream :type t)
