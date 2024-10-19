@@ -69,6 +69,8 @@
    #:Iteration-Space-shape
    #:Iteration-Shape-strides
    #:Iteration-shape-view
+   #:Iteration-Space-procedure
+   #:%expr-const
    ))
 
 (in-package :caten/codegen/shape-inference)
@@ -246,17 +248,8 @@
 (defstruct Iteration-Space
   (shape nil :type list)
   (strides nil :type list)
-  (views nil :type list))
-
-(defmethod merge-iter-space ((is1 Iteration-Space) (is2 Iteration-Space))
-  "Changes the shape of IS1 and IS2 to fit in the same iteration domain. Assumes is1 and is2 has the same total size."
-  ;; (10 10 10)
-  ;; (5 5)
-  
-  
-  
-  ;; (values new-is1 new-is2)
-  )
+  (views nil :type list)
+  (procedure nil :type list))
 
 ;; [TODO] render-isl ((is Iteration-Space))
 (defmethod iteration-space-sync-broadcast ((is Iteration-Space))
@@ -270,10 +263,8 @@
                 collect view))
   is)
 
-;; [TODO] もうちょっと真面目に考えた方がいい。
-;; - Broadcastの扱い？
-;; - is-view?
 (defun merge-dims (g shape strides views)
+  (declare (type list shape strides views))
   (when (null shape) (return-from merge-dims))
   (assert (= (length shape) (length strides) (length views)))
   ;; ret = (list new-shapes new-strides new-views)
@@ -281,24 +272,27 @@
               (list
                (%expr-const g (nth 0 shape) :int64)
                (%expr-const g (nth 0 strides) :int64)
-               (nth 0 views)))))
+               (nth 0 views)
+               (list 0)))))
     (loop for nth upfrom 1 below (length shape)
           for size = (nth nth shape)
           for stride = (nth nth strides)
           for view = (nth nth views) do
-            (multiple-value-bind (last-size last-stride) (apply #'values (car (last ret)))
-              (when (not (eql size 1)) ;; always merge 1
-                (if (and
-                     (mergeable-view-p view size)
-                     (expr-scalar-equivalent-p
-                      last-stride
-                      (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64))))
-                    (setf (nth (1- (length ret)) ret)
-                          (list (expr-mul last-size (%expr-const g size :int64)) (%expr-const g stride :int64) nil))
-                    (setf ret
-                          (append
-                           ret
-                           (list (list (%expr-const g size :int64) (%expr-const g stride :int64) view))))))))
+            (multiple-value-bind (last-size last-stride last-view last-pd) (apply #'values (car (last ret)))
+              (if (not (eql size 1)) ;; always merge 1
+                  (if (and
+                       (mergeable-view-p view size)
+                       (expr-scalar-equivalent-p
+                        last-stride
+                        (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64))))
+                      (setf (nth (1- (length ret)) ret)
+                            (list (expr-mul last-size (%expr-const g size :int64)) (%expr-const g stride :int64) nil (append last-pd (list nth))))
+                      (setf ret
+                            (append
+                             ret
+                             (list (list (%expr-const g size :int64) (%expr-const g stride :int64) view (list nth))))))
+                  ;; Update nth
+                  (setf ret (append (butlast ret) (list (list last-size last-stride last-view (append last-pd (list nth)))))))))
     (iteration-space-sync-broadcast
      (make-iteration-space
       :shape
@@ -306,7 +300,9 @@
       :strides
       (loop for s in ret collect (second s))
       :views
-      (loop for s in ret collect (third s))))))
+      (loop for s in ret collect (third s))
+      :procedure
+      (loop for s in ret collect (fourth s))))))
 
 (defmethod buffer-merge-dims ((graph Graph) (buffer Buffer))
   (let ((viewed-shape (buffer-shape buffer))

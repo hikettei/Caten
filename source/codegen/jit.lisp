@@ -40,7 +40,7 @@
   (let ((schedule-graph (graph-schedule (avm-graph avm))))
     (declare (type Graph schedule-graph))
     ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
-    (mapc #'lower-schedule-item (graph-nodes schedule-graph)) 
+    (mapc #'(lambda (x) (lower-schedule-item x (avm-graph avm))) (graph-nodes schedule-graph)) 
     ;; 6. (Optional) Further optimize each schedule by running polyhedral compiler.
     
     ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)

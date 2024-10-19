@@ -16,7 +16,9 @@ One Schedule-item corresponds to one kernel in GPU.
   (:import-from
    #:caten/avm
    #:Buffer
-   #:buffer-views)
+   #:buffer-shape
+   #:buffer-views
+   #:buffer-nrank)
   (:import-from
    #:caten/codegen/shape-inference
    #:read-type-relay
@@ -38,6 +40,9 @@ One Schedule-item corresponds to one kernel in GPU.
 
 (in-package #:caten/codegen/scheduler)
 
+(deftype Schedule-Type ()
+  `(and keyword (member :reduction :element-wise :permute :shrink :allocate)))
+
 (defnode (:GRAPH :Schedule-Item) ()
          "
 name = the name of the kernel (a.k.a: the function name)
@@ -48,6 +53,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 "
          :slots
          ((blueprint :type list :initform nil)
+          (iterations :type list :initform nil)
           (buffers)
           (allocate-p :type boolean)
           (name :type symbol)
@@ -79,8 +85,10 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 
 (defstruct Group
   (key (gensym) :type symbol)
+  (iterators nil :type list)
   (items nil :type list)
-  (reduced nil :type boolean))
+  (reduced nil :type boolean)
+  (view-objects nil :type list))
 
 (defmethod verify-group ((group Group))
   (when (find :Allocate (group-items group) :key #'node-type)
@@ -138,7 +146,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
                     (every #'null (iteration-space-views x)))))
         (when (or (elwise-p ri) (elwise-p wi))
           (return-from group-mergeable-p t)))
-      nil)))
+      t)))
 
 ;; (defparameter *model* (Transformer 64 4 2 1e-5 32))
 ;; (caten/codegen:jit (time (caten (call *model* (make-tensor `(1 10)) (iconst 'n)))))
@@ -147,6 +155,72 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
   (flet ((f (x) (when x (when (not (eql (group-key parent) (group-key x))) x))))
     (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
       (remove-duplicates (loop for l in lst if l collect l) :key #'group-key))))
+
+(defmethod group-update-iterators ((group Group) (is Iteration-Space))
+  (when (null (group-iterators group))
+    (setf (group-iterators group) (iteration-space-shape is))
+    (return-from group-update-iterators))
+  ;; Flattened + Flattened -> Flattened
+  (when (= 1 (length (group-iterators group)) (length (iteration-space-shape is)))
+    (return-from group-update-iterators))
+  ;; Flattened + Complicated -> Complicated
+  (when (= (length (group-iterators group)) 1)
+    (setf (group-iterators group) (iteration-space-shape is))
+    (return-from group-update-iterators))
+  ;; Complicated + Complicated - >Merge
+  ;;(print "+++MERGE+++")
+  ;; Total sizeがonazininaruyounisuru (they are broadcasted)
+  ;; (10 10)   (1 1)
+  ;; (10 10)   (1 1)
+  ;; (10 10)   (10 10) <- VIEW
+  ;;     \     /
+  ;;     (10 10)
+  ;;       |
+  ;;     [VIEW]
+  ;;       |
+  ;;     (1 1)
+  ;;       |
+  ;;     [sin]
+  ;;       |
+  ;;     (1 1)
+  ;(print (group-iterators group))
+  ;(print is)
+  )
+
+;;(with-no-grad
+;; (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
+(defmethod group-add-node ((group Group) node)
+  (push node (group-items group))
+  (dolist (r (relay-read-iters (read-type-relay node)))
+    (when r (group-update-iterators group r)))
+  (dolist (r (relay-write-iters (read-type-relay node)))
+    (when r (group-update-iterators group r))))
+
+;; BroadcastとReshapeは同時に発生しうるので無理
+(defmethod identify-view-type ((view Node))
+  (assert (eql :VIEW (node-type view)))
+  (when (some #'identity (getattr view :broadcast))
+    (return-from identify-view-type :broadcast))
+  (when (getattr view :permute)
+    (return-from identify-view-type :permute))
+  (flet ((shrink-p (size view)
+           (assert (= (length view) 4) () "not a view")
+           (multiple-value-bind (from to by broadcast) (apply #'values view)
+             (assert (null broadcast))
+             (or
+              (not (eql from 0))
+              (not (eql to size))
+              (not (eql by 1))))))
+    (let* ((base-buffer (car (relay-reads (read-type-relay view))))
+           (views (buffer-views (car (relay-writes (read-type-relay view))))))
+      (when (and
+             (= (buffer-nrank base-buffer) (getattr view :nrank))
+             (some #'shrink-p (buffer-shape base-buffer) views))
+        (return-from identify-view-type :shrink)))
+    ;; Reshape = operation that changes the stride
+    :reshape))
+
+(defun view-type-list (views) (map 'list #'identify-view-type views))
 
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
   "
@@ -169,7 +243,7 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
       (when (getattr node :reduction :allow-undefined t)
         (assert (null (group-reduced parent)) () "one group one reduction")
         (setf (group-reduced parent) t))
-      (push node (group-items parent))
+      (group-add-node parent node)
       ;; Reduce
       ;; out1 = 0.0
       ;; ID <- NODE(out1, arg1, arg2) ...
@@ -178,11 +252,18 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
       ;; ID <- NODE(arg1, arg2, arg3[10:0:-1])...
       (schedule-groups
        parent
-        ;; :Allocate should be scheduled standalone
+       ;; :Allocate should be scheduled standalone
+       ;; [IMPORTANT]
+       ;; Smaller Rank -> Higher Ranknihanaranai
+       ;; HigherRank -> SmallerRankのPathを見つけたら，Higher RankにShapeを統一する。
+       ;; その過程でPermuteを復元してもいいかもしれない・・・
        (loop with buffer-p = (eql (node-type node) :Allocate)
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
              for ri in (relay-read-iters (read-type-relay node))
+             for views in (getattr node :_read_views)
+             for view-objs = (when views (view-type-list views))
+             for view-mg-p = (mergeable-view-p parent read graph view-objs)
              for mergeable-p = (group-mergeable-p parent read graph read-type ri)
              if (and (null buffer-p) mergeable-p)
                collect (recursive-create-group read graph :seen seen :parent parent)
@@ -199,6 +280,32 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
 
 ;; (Add (Embedding Embedding))
 ;; (defsimplifier serialize ...
+;; [Note] :shrink MOVE is mergeable
+
+;; Pattern Matcher
+;; :Reduce :Reduce |
+;;   :ELemwise     |
+;; Plan:
+;; 1. Schedule-Item: :Reduce/:Permute/:Reshapeとかを一つだけ持つ
+;; 2. Pattern Matcher
+
+;; :Reduce -> :Reduce ...
+;; for ...
+;;;  ...
+;;  end
+;;; for ...
+;;   ...
+;;; end
+;; みたいにしてMerge可能
+
+;; BP Lowererはこの方針で決定，Add Embedding EmbeddingをFuseする
+(defsimplifier
+    (schedule-graph-rewriter)
+    ;; ここでLoop Forの生成をする，失敗にしたらNILになる
+    )
+
+;; Itersize >= になるAssertを作る
+
 (defmethod graph-schedule ((graph Graph))
   ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
@@ -213,5 +320,10 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
     (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
+      (print schedule)
       ;; [TODO] (Add (Embedding[Reduce] Embedding[Reduce])) Fusion Using Pattern Matcher
       schedule)))
+
+;; [TODO] 明日やる　↓をADD REDUCE REDUCEにSchedule
+;; (with-no-grad
+;  (Time (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))))

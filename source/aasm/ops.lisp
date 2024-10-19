@@ -57,7 +57,8 @@
 		  (emit (make-node :TernaryOps ,opname (list id) (list (node->id out) (node->id x) (node->id y))))))))
   (def %!= :!=)
   (def %< :<))
-(defun %= (shape order x y &key out)  (%not (%!= shape order x y :out out)))
-(defun %<= (shape order x y &key out) (%or (%< shape order x y :out out) (%= shape order x y :out out)))
-(defun %>  (shape order x y &key out) (%not (%<= shape order x y :out out)))
-(defun %>= (shape order x y &key out) (%or (%> shape order x y :out out) (%= shape order x y :out out)))
+
+(defun %= (shape order x y &key out (id (gensym "BID")))  (%not (%!= shape order x y :out out) :id id))
+(defun %<= (shape order x y &key out (id (gensym "BID"))) (%or (%< shape order x y :out out) (%= shape order x y :out out) :id id))
+(defun %>  (shape order x y &key out (id (gensym "BID"))) (%not (%<= shape order x y :out out) :id id))
+(defun %>= (shape order x y &key out (id (gensym "BID"))) (%or (%> shape order x y :out out) (%= shape order x y :out out) :id id))

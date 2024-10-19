@@ -24,6 +24,7 @@
    #:Node
    #:id->value
    #:getattr
+   #:getattrs
    #:node-writes
    #:node-reads
    #:node-type
@@ -49,22 +50,33 @@
 (defun rewrite-views-as-buffer (avm)
   "Rewrite the node :VIEW as an object in the type-relay, so that the code generator can handle view as a buffer."
   (declare (type avm avm))
-  (let ((rewrite-map (make-hash-table)))
+  (let ((rewrite-map (make-hash-table))
+        (id2view (make-hash-table)))
     (loop for node in (graph-nodes (avm-graph avm))
 	  if (eql (node-type node) :View) do
-	    (setf (gethash (car (node-writes node)) rewrite-map) (car (node-reads node))))
+	    (setf (gethash (car (node-writes node)) rewrite-map) (car (node-reads node))
+                  (gethash (car (node-writes node)) id2view) node))
     (labels ((r (id)
 	       (if (and (gethash id rewrite-map) (not (eql (gethash id rewrite-map) id)))
 		   (r (gethash id rewrite-map))
-		   id)))
+		   id))
+             (v (id)
+               (if (gethash id id2view)
+                   (append (list (gethash id id2view)) (v (car (node-reads (gethash id id2view)))))
+                   nil)))
       (setf (graph-nodes (avm-graph avm))
 	    (loop for n in (graph-nodes (avm-graph avm))
 		  unless (eql (node-type n) :View)
 		    collect
 		    (progn
-		      (setf (node-reads n) (map 'list #'r (node-reads n))
+                      (setf (getattr n :_read_views) (map 'list #'v (node-reads n))
+                            (getattr n :_write_views) (map 'list #'v (node-writes n))
+                            (node-reads n) (map 'list #'r (node-reads n))
 			    (node-writes n) (map 'list #'r (node-writes n)))
-		      n)))
+		      n)
+                  else
+                    do (setf (node-reads n) (map 'list #'r (node-reads n))
+                             (node-writes n) (map 'list #'r (node-writes n)))))
       (setf (avm-fw-outputs avm) (map 'list #'r (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'r (avm-bw-outputs avm))
             (graph-outputs (avm-graph avm)) (map 'list #'r (graph-outputs (avm-graph avm))))
@@ -280,8 +292,8 @@ out[...] = f(*val_1);
   (declare (type AVM avm))
   (rewrite-views-as-buffer avm)
   ;;Try optimizing kernels without relying on them...
-  ;;(wmma-rewriter (avm-graph avm) :no-verify t)
-  ;;(contiguous-after-wmma (avm-graph avm) :no-verify t)
+  ;(wmma-rewriter (avm-graph avm) :no-verify t)
+  ;(contiguous-after-wmma (avm-graph avm) :no-verify t)
   (propagate-rebundant-loadp (avm-graph avm))
   (apply-static-gensym avm)
   (setf (avm-graph avm) (->graph (avm-graph avm)))
