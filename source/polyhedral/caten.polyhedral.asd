@@ -5,4 +5,5 @@
   :depends-on ("caten.isl")
   :serial t
   :components
-  ((:file "package")))
+  ((:file "package")
+   (:file "polyhedral")))

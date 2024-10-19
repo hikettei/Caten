@@ -29,7 +29,7 @@
 (defun %make-for (idx size)
   (make-node :Render :FOR nil nil :idx idx
              :upfrom (expr-const 0 :int64)
-             :below (print (expr-< (expr-const idx :int64) size))
+             :below (expr-< (expr-const idx :int64) size)
              :by (expr-const 1 :int64)))
 
 (defun %make-endfor (idx)
