@@ -51,16 +51,15 @@
                       (format out "  ~a[~(~a~)] : ~(~a~);~%"
                               (node-id node)
                               (render-list (map 'list #'(lambda (x) (getattr x :idx)) domains))
-                              (render-expr
-                               device
-                               (reduce
-                                #'expr-and
-                                (append
-                                 (loop for dom in domains
-                                       collect (expr->= (expr-const (getattr dom :idx) :int64) (getattr dom :upfrom))
-                                       collect (getattr dom :below))
-                                 ;; [TODO] Dynamic Shape are >= 1
-                                 ))))
+                              (apply
+                               #'concatenate
+                               'string
+                               (butlast
+                                (loop for dom in domains
+                                      collect (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
+                                      collect " and ")))
+                              ;; [TODO] Dynamic Shape are >= 1
+                              )
                       (format out "  ~a[];~%" (node-id node)))))))
      (format out "}"))
    idx2domain))
@@ -70,13 +69,13 @@
       (format nil "  ~a[~(~a~)] : ~(~a~);~%"
               (node-id node)
               (render-list (map 'list #'(lambda (x) (getattr x :idx)) domains))
-              (render-expr
-               device
-               (reduce
-                #'expr-and
+              (apply
+               #'concatenate
+               'string
+               (butlast
                 (loop for dom in domains
-                      collect (expr->= (expr-const (getattr dom :idx) :int64) (getattr dom :upfrom))
-                      collect (getattr dom :below)))))
+                      collect (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
+                      collect " and "))))
       (format nil "  ~a[];~%" (node-id node))))
 
 (defmethod render-band-node-in-domain (area related-domains idx2domain)
@@ -124,29 +123,37 @@ Corresponds to the position of the subgraph in the parent schedule.
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (union-map-from-str
+   (print
    (with-output-to-string (out)
      ;; [TODO] Dynamic Shape
      (format out "[~(~a~)] -> {~%" "")
      (maphash
       #'(lambda (idx dom)
           (let ((tgt-node (find idx render-graph :key #'(lambda (x) (and (null (find (node-type x) `(:FOR :ENDFOR))) (node-id x))))))
-            (when tgt-node
-              (loop for var in (funcall reader tgt-node)
-                    for typ in (funcall type-reader (read-type-relay tgt-node))
-                    if (symbolp var)
-                      do (format out "  ~a -> ~(~a~)[~(~a~)];~%"
-                                 dom
-                                 var
-                                 (render-expr
-                                  'Default-Renderer
-                                  (reduce
-                                   #'expr-add
-                                   (loop for stride in (iteration-space-strides typ)
-                                         for nth upfrom 0
-                                         for gid = (gid nth)
-                                         collect (expr-mul stride (expr-const gid :int64))))))))))
+            (flet ((is-zero (axis)
+                     (expr-scalar-equivalent-p axis (expr-const 0 :int64))))
+              (when tgt-node
+                (loop for var in (funcall reader tgt-node)
+                      for typ in (funcall type-reader (read-type-relay tgt-node))
+                      if (symbolp var)
+                        do (format out "  ~a -> ~(~a~)[~(~a~)];~%"
+                                   dom
+                                   var
+                                   (apply
+                                    #'concatenate
+                                    'string
+                                    (butlast
+                                     (loop for stride in (iteration-space-strides typ)
+                                           for nth upfrom 0
+                                           for gid = (gid nth)
+                                           if (is-zero stride)
+                                             ;; [TODO] :Permute and :View (Offset, By)
+                                             collect (format nil "0")
+                                           else
+                                             collect (format nil "~(~a~)" gid)
+                                           collect ", ")))))))))
       idx2domain)
-     (format out "}"))))
+     (format out "}")))))
 
 (defmethod analyze-scop ((node Node))
   "
@@ -245,4 +252,6 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
     (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
     (multiple-value-bind (domain read write schedule) (analyze-scop node)
       (setf (getattr node :polyhedral) (make-polyhedral-ir domain read write schedule))
+      ;; Testing
+      (print (getattr node :polyhedral))
       node)))
