@@ -205,15 +205,15 @@
 
 (defmethod print-object ((type Inferred-type) stream)
   (print-unreadable-object (type stream :type t)
-    (let ((ranks
-            (append
-             (map 'list #'buffer-shape
-                  (loop for r in (relay-reads type)
-                        if r collect r))
-             (map 'list #'buffer-shape
-                  (loop for w in (relay-writes type)
-                        if w collect w)))))
-      (format stream "~a" (map 'list #'reveal-buffer (car (sort ranks #'> :key #'length)))))))
+    (let ((reads
+            (map 'list #'buffer-shape
+                 (loop for r in (relay-reads type)
+                       if r collect r)))
+          (writes
+            (map 'list #'buffer-shape
+                 (loop for w in (relay-writes type)
+                       if w collect w))))
+      (format stream "~a <- ~a" writes reads))))
 
 (defun read-type-relay (node)
   (declare (type node node))

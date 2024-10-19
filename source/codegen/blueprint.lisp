@@ -35,47 +35,6 @@
 (defun %make-endfor (idx)
   (make-node :Render :ENDFOR nil nil :idx idx))
 
-(defun get-kernel-rank (node)
-  (declare (type node node))
-  (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
-  (flet ((rank-of (x)
-           (if x
-               (length (iteration-space-shape x))
-               0)))
-    (apply
-     #'max
-     (loop for item in (getattr node :items)
-           append (map 'list #'rank-of (relay-read-iters (read-type-relay item)))
-           append (map 'list #'rank-of (relay-write-iters (read-type-relay item)))))))
-
-(defun get-iterators (node kernel-rank)
-  (declare (type node node))
-  (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
-   (loop for item in (getattr node :items)
-         append
-         (loop for w in `(,@(relay-read-iters (read-type-relay item)) ,@(relay-write-iters (read-type-relay item)))
-               if (and w (= (length (iteration-space-shape w)) kernel-rank))
-                 append (iteration-space-shape w))))
-
-(defun item->iteration-space (item)
-  (declare (type node item))
-  (flet ((rank-of (x)
-           (if x
-               (length (iteration-space-shape x))
-               0)))
-    ;; ここってcar rank-ofでも同じでは？
-    (let* ((rank
-             (apply
-              #'max
-              (append
-               (map 'list #'rank-of (relay-read-iters (read-type-relay item)))
-               (map 'list #'rank-of (relay-write-iters (read-type-relay item))))))
-           (itrs (map 'list #'gid (range 0 rank)))
-           )
-      ;; (10 1) + (1 10)がLowerできるかわからない
-      (print (relay-read-iters (read-type-relay item)))
-      itrs)))
-
 (defmethod get-grouped-dims ((graph Graph))
   (let* ((iterspace (iteration-space-shape (car (relay-write-iters (read-type-relay (id->value graph (car (graph-outputs graph))))))))
          (procedure (iteration-space-procedure (car (relay-write-iters (read-type-relay (id->value graph (car (graph-outputs graph))))))))
@@ -163,35 +122,36 @@
         (mapc #'fixup-dims (relay-read-iters (read-type-relay n)) (relay-reads (read-type-relay n)))
         (mapc #'fixup-dims (relay-write-iters (read-type-relay n)) (relay-writes (read-type-relay n)))))))
 
-(defun lower-node (node)
-  (declare (type node node))
-  
-  )
 
 ;; [TODO] (0 10 1 nil)はNILに書き換える
 ;; schedule.lispwokousin sinaito ugokanai rei:
 ;;(with-no-grad
 ;;            (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
 
-;; [TODO] ロープの操作はPolyhedral Compilerに任せる。。。
+;; [TODO] Loopの操作はPolyhedral Compilerに任せる。。。
 ;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
 (defmethod node-depend-idx-list ((node Node) gid
                                  &aux
-                                 (type (read-type-relay node))
-                                 (strides (make-list (length (iteration-space-shape (car (relay-write-iters type)))))))
-  (flet ((is-zero (axis)
-           (expr-scalar-equivalent-p axis (expr-const 0 :int64))))
+                                   (type (read-type-relay node))
+                                   (shapes (make-list (length (iteration-space-shape (car (relay-write-iters type)))))))
+  (flet ((is-one (axis)
+           (expr-scalar-equivalent-p axis (expr-const 1 :int64))))
     (dolist (space (append (relay-read-iters type) (relay-write-iters type)))
       (when space
         (loop for axis upfrom 0
-              for stride in (iteration-space-strides space)
-              do (push stride (nth axis strides)))))
-    (assert (= (length gid) (length strides)))
+              for shape in (iteration-space-shape space)
+              do (push shape (nth axis shapes)))))
+    (assert (= (length gid) (length shapes)))
     (loop for g in gid
-          for s in strides
-          if (not (every #'is-zero s))
+          for s in shapes
+          if (not (every #'is-one s))
             collect g)))
 
+;; 必要な変更
+;; Broadcasted Axes -> Depends-onから外す
+;; size=1 -> depends-onではない
+;; Paretnt-reducedを追加する
+;; from bottom to up で追加していく
 (defmethod lower-schedule-item ((node Node) (base-graph Graph))
   "Lowers the Schedule-Item into blueprint"
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
@@ -211,24 +171,34 @@
                  ,@(map 'list #'%make-endfor (reverse gids))))
              (try-insert-node (node &key (depend-idx) (depend-node) &aux (changed-p nil))
                (let ((satisfied)
-                     (idx-satisfied))
+                     (idx-satisfied)
+                     (insertable-positions))
+                 (loop for bp in blueprint
+                       for nth upfrom 0
+                       if (eql (node-type bp) :FOR)
+                         do (push (getattr bp :idx) idx-satisfied)
+                       else
+                         if (eql (node-type bp) :ENDFOR)
+                           do (setf idx-satisfied (remove (getattr bp :idx) idx-satisfied))                             
+                       else
+                         do (dolist (r (node-reads bp))
+                              (when (symbolp r)
+                                (push r satisfied)))
+                       collect bp
+                       if (and (every #'(lambda (x) (find x idx-satisfied)) depend-idx)
+                               (= (length idx-satisfied) (length depend-idx))
+                               (every #'(lambda (x) (null (find x satisfied))) depend-node))
+                         do (push nth insertable-positions))
+                 (when (null insertable-positions)
+                   (return-from try-insert-node (values blueprint nil)))
                  (values
-                  (loop for bp in blueprint
-                        if (eql (node-type bp) :FOR)
-                          do (push (getattr bp :idx) idx-satisfied)
-                        else
-                          if (eql (node-type bp) :ENDFOR)
-                            do (setf idx-satisfied (remove (getattr bp :idx) idx-satisfied))                             
-                        else
-                          do (dolist (r (node-reads bp))
-                               (when (symbolp r)
-                                 (push r satisfied)))
+                  (loop with insert-at = (apply #'max insertable-positions)
+                        for bp in blueprint
+                        for nth upfrom 0
                         collect bp
-                        if (and (null changed-p)
-                                (every #'(lambda (x) (find x idx-satisfied)) depend-idx)
-                                (every #'(lambda (x) (null (find x satisfied))) depend-node))
+                        if (and (null changed-p) (= nth insert-at))
                           do (setf changed-p t) and collect node)
-                  changed-p)))
+                  t)))
              (explore (id &key (path-reduced nil) (parents nil) &aux (node (id->value graph id)))
                ;; Try to insert the node ID into the above of parent
                (when (null node) (return-from explore))
@@ -255,6 +225,7 @@
       (setf blueprint (initial-bp))
       (let ((p nil))
         (mapc #'(lambda (x) (explore x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph))))
+    (print blueprint)
     (setf (getattr node :blueprint) blueprint)))
 
 ;; merge-dims

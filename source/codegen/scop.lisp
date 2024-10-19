@@ -123,7 +123,6 @@ Corresponds to the position of the subgraph in the parent schedule.
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (union-map-from-str
-   (print
    (with-output-to-string (out)
      ;; [TODO] Dynamic Shape
      (format out "[~(~a~)] -> {~%" "")
@@ -153,7 +152,7 @@ Corresponds to the position of the subgraph in the parent schedule.
                                              collect (format nil "~(~a~)" gid)
                                            collect ", ")))))))))
       idx2domain)
-     (format out "}")))))
+     (format out "}"))))
 
 (defmethod analyze-scop ((node Node))
   "
