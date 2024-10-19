@@ -22,10 +22,18 @@
   (:import-from
    :caten/codegen/blueprint
    #:lower-schedule-item)
+  (:import-from
+   :caten/codegen/scop
+   )
   (:export
    #:jit))
 
 (in-package :caten/codegen/jit)
+
+;; [Milestone]
+;; - [ ] schedule-graph -> Better Graph Splitting Strategy?
+;; - [ ] Fuse Permute
+;; - [ ] Scop+Polyhedral -> Can ISL find the optimal embedding kernel?
 
 (defun jit (avm)
   "Runs the JIT compilation (destructive)"

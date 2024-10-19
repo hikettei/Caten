@@ -4,7 +4,9 @@
   (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out)
   (:export
    #:Renderer
+   #:Default-Renderer
    #:renderer-graph
+   #:render-expr
    #:render-node))
 
 (in-package :caten/codegen/renderer)
@@ -30,6 +32,9 @@
 
 (defgeneric %render-node (renderer node-dispatcher node) (:documentation ""))
 
+(defun render-expr (renderer-id expr)
+  (render-node (make-instance renderer-id :graph (expr-graph expr)) (car (node-writes (expr-out expr)))))
+
 (defun render-node (renderer id)
   (declare (type Renderer renderer))
   (when (numberp id)
@@ -43,8 +48,25 @@
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
   (format nil "~a" (getattr node :value)))
 
-(defmethod %render-node ((renderer Default-Renderer) (id (eql :ADD)) node)
-  (format nil "~a+~a" (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node)))))
+(macrolet ((def (id op)
+             `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
+                (format nil "(~a~a~a)" (render-node renderer (nth 0 (node-reads node))) ,op (render-node renderer (nth 1 (node-reads node)))))))
+  (def :ADD "+")
+  (def :MUL "*")
+  (def :AND " and ")
+  (def :OR " or "))
+
+(macrolet ((def (id op)
+             `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
+                (format nil "~a(~a)" ,op (render-node renderer (nth 0 (node-reads node)))))))
+  (def :NEG "-")
+  (def :NOT "!"))
+
+(macrolet ((def (id op)
+             `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
+                (format nil "(~a~a~a)" (render-node renderer (nth 1 (node-reads node))) ,op (render-node renderer (nth 2 (node-reads node)))))))
+  (def :!= "!=")
+  (def :< "<"))
 
 (defmethod %render-node ((renderer Default-Renderer) id node)
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))

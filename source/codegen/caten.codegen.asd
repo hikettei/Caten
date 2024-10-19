@@ -12,5 +12,6 @@
    (:file "rewriting-rules")
    (:file "scheduler")
    (:file "blueprint")
+   (:file "scop")
    (:file "jit")
    (:file "package")))

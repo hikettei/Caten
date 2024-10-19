@@ -4,7 +4,8 @@
    #:gid
    #:range
    #:nodes-depends-on
-   #:nodes-write-to))
+   #:nodes-write-to
+   #:render-list))
 
 (in-package :caten/codegen/helpers)
 
@@ -35,3 +36,5 @@
 
 (defmacro range (from below &optional (by 1))
   `(loop for i from ,from below ,below by ,by collect i))
+
+(defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))

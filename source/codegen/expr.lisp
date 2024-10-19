@@ -10,6 +10,9 @@
    #:expr-sub
    #:expr-mul
    #:expr-div
+   #:expr-idiv
+   #:expr-and
+   #:expr-or
    #:expr-<
    #:expr-<=
    #:expr->
@@ -117,7 +120,11 @@ Only supports the scalar computation because it is intended to identify the same
   (def expr-add-binary %add)
   (def expr-sub-binary %sub)
   (def expr-mul-binary %mul)
-  (def expr-div-binary %div))
+  (def expr-div-binary %div)
+  (def expr-idiv-binary %idiv)
+  (def expr-and-binary %and)
+  (def expr-or-binary %or)
+  (def expr-max-binary %max))
 
 (macrolet ((def (name op)
              `(defun ,name (a b &aux (out (gensym "w")))
@@ -134,6 +141,10 @@ Only supports the scalar computation because it is intended to identify the same
 (defun expr-sub (&rest args) (reduce #'expr-sub-binary args))
 (defun expr-mul (&rest args) (reduce #'expr-mul-binary args))
 (defun expr-div (&rest args) (reduce #'expr-div-binary args))
+(defun expr-idiv (&rest args) (reduce #'expr-idiv-binary args))
+(defun expr-and (&rest args) (reduce #'expr-and-binary args))
+(defun expr-or (&rest args) (reduce #'expr-or-binary args))
+(defun expr-max (&rest args) (reduce #'expr-max-binary args))
 
 (defun expr-< (&rest args) (reduce #'expr-<-binary args))
 (defun expr-<= (&rest args) (reduce #'expr-<=-binary args))
