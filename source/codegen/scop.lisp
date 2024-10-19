@@ -15,9 +15,13 @@
    #:relay-read-iters
    #:relay-write-iters
    #:iteration-space-strides)
+  (:import-from
+   :caten/polyhedral/ir
+   #:make-polyhedral-ir)
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/air :caten/codegen/expr :caten/isl))
+  (:use :cl :caten/air :caten/codegen/expr :caten/isl)
+  (:export #:scop))
 
 (in-package :caten/codegen/scop)
 
@@ -239,5 +243,6 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (when (null (getattr node :allocate-p :allow-undefined t))
     (assert (eql (node-type node) :Schedule-Item))
     (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
-    
-    ))
+    (multiple-value-bind (domain read write schedule) (analyze-scop node)
+      (setf (getattr node :polyhedral) (make-polyhedral-ir domain read write schedule))
+      node)))

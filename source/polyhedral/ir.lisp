@@ -1,4 +1,4 @@
-(defpackage :caten/codegen/polyhedral
+(defpackage :caten/polyhedral/ir
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/isl)
@@ -9,7 +9,7 @@
    #:poly-domain
    #:poly-dependencies))
 
-(in-package :caten/codegen/polyhedral)
+(in-package :caten/polyhedral/ir)
 
 (defclass Polyhedral-IR ()
   ((schedule :accessor poly-schedule)

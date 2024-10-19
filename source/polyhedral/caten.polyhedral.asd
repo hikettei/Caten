@@ -6,4 +6,4 @@
   :serial t
   :components
   ((:file "package")
-   (:file "polyhedral")))
+   (:file "ir")))
