@@ -12,6 +12,9 @@
      - We have no plan for refactoring this, as permute inference is a still simple solution, and arrays are one-dimensional anyway when rendering.")
   (:use :cl :caten/codegen/expr)
   (:import-from
+   :caten/codegen/helpers
+   :permute-list)
+  (:import-from
    :caten/common.dtype
    #:dtype-t
    #:dtype->lisp)
@@ -142,11 +145,6 @@
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :Allocate)) graph node args)
   (multiple-value-bind (shape stride) (parse-allocate-node node args)
     (realize-buffer graph (node->id node) :shape1 shape :stride1 stride)))
-
-;; The same algorithm in function.lisp (class Permute)
-(defun permute-list (order list)
-  (assert (= (length order) (length list)) () "cannot shuffle ~a and ~a" order list)
-  (loop for nth in order collect (nth nth list)))
 
 (defmethod %impl ((device-id (eql :relay-checker)) (op (eql :view)) graph node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)

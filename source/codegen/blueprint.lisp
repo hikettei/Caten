@@ -15,7 +15,8 @@
   (:import-from
    :caten/codegen/helpers
    :gid
-   :range)
+   :range
+   :permute-list)
   (:import-from
    :caten/avm
    #:buffer-shape
@@ -61,7 +62,7 @@
                (if (> (length shape) (length iterspace))
                    ;; Found higher rank? -> merge
                    (setf iterspace shape
-                         procedure (iteration-space-procedure space)) 
+                         procedure (iteration-space-procedure space))
                    (when (= (length shape) (length iterspace))
                      (merge-broadcast shape)))))
       (labels ((explore (id &aux (node (when (symbolp id) (id->value graph id))))
@@ -147,91 +148,199 @@
           if (not (every #'is-one s))
             collect g)))
 
+(defun remove-empty-for (nodes)
+
+  )
+
+(defun node-reduced-axes (node)
+  (let ((is (car (relay-write-iters (read-type-relay node)))))
+    (flet ((is-zero (axis)
+             (expr-scalar-equivalent-p axis (expr-const 0 :int64))))
+      (loop for s in (iteration-space-strides is)
+            if (is-zero s)
+              collect t
+            else
+              collect nil))))
+
+(defun node-reduced-gids (node gids)
+  (loop for nth upfrom 0
+        for r in (node-reduced-axes node)
+        if r collect (nth nth gids)))
+
+(defun graph-reduced-axes (graph rank-size)
+  (let ((reduced-axes (make-list rank-size)))
+    (dolist (node (graph-nodes graph))
+      (loop for nth upfrom 0
+            for r in (node-reduced-axes node)
+            if r do (setf (nth nth reduced-axes) t)))
+    reduced-axes))
+
+(defun initial-loop-permutation (graph rank)
+  (let ((reduced (graph-reduced-axes graph rank))
+        (stashed))
+    ;; reduced axes should be the last
+    `(,@(loop for p in (range 0 rank)
+              for r in reduced
+              if r ;; (reduced)
+                do (push p stashed)
+              else
+                collect p)
+      ,@(nreverse stashed))))
 ;; 必要な変更
 ;; Broadcasted Axes -> Depends-onから外す
 ;; size=1 -> depends-onではない
 ;; Paretnt-reducedを追加する
 ;; from bottom to up で追加していく
+;; 一番下がReduceになるようにPermuteする
+;; - [ ] parent-reduceの条件でLoop Fusionできないケースを作成する
+;; - [x] Sort the axes, the broadcast axes comes the deeper
+(defstruct ctx graph order blueprint seen gids loop-size-list)
+;; print nothing to improve the readability of debugging with trace.
+(defmethod print-object ((ctx ctx) stream) (format stream "<CTX>"))
+
+(defmethod initial-bp ((ctx ctx))
+  (with-slots ((gids gids) (group-size loop-size-list) (order order)) ctx
+    `(,@(permute-list order (map 'list #'%make-for gids group-size))
+      ,@(permute-list order (map 'list #'%make-endfor (reverse gids))))))
+
+(defun try-insert-node (ctx node &key (depend-idx) (depend-node) (path-reduced nil) &aux (changed-p nil))
+  (with-slots ((blueprint blueprint)) ctx
+    (let ((satisfied)
+          (idx-satisfied)
+          (insertable-positions))
+      (loop for bp in blueprint
+            for nth upfrom 0
+            if (eql (node-type bp) :FOR)
+              do (push (getattr bp :idx) idx-satisfied)
+            else
+              if (eql (node-type bp) :ENDFOR)
+                do (setf idx-satisfied (remove (getattr bp :idx) idx-satisfied))
+            else
+              do (dolist (r (node-reads bp))
+                   (when (symbolp r)
+                     (push r satisfied)))
+            collect bp
+            if (and
+                (every #'(lambda (x) (find x idx-satisfied)) depend-idx)
+                ;; should not depends on reduced axes
+                (every #'(lambda (x) (null (find x idx-satisfied))) path-reduced)
+                (every #'(lambda (x) (null (find x satisfied))) depend-node))
+              do (push nth insertable-positions))
+      (when (null insertable-positions)
+        (return-from try-insert-node (values blueprint nil)))
+      (values
+       (loop with insert-at = (apply #'max insertable-positions)
+             for bp in blueprint
+             for nth upfrom 0
+             collect bp
+             if (and (null changed-p) (= nth insert-at))
+               do (setf changed-p t) and collect node)
+       t))))
+
+(defun recursive-lower-into-bp (ctx id &key (path-reduced nil) (parents nil) &aux (node (id->value (ctx-graph ctx) id)))
+  ;; Try to insert the node ID into the above of parent
+  (with-slots ((blueprint blueprint) (seen seen) (gids gids) (order order)) ctx
+    (when (null node) (return-from recursive-lower-into-bp))
+    (when (find id seen) (return-from recursive-lower-into-bp))
+    (push id seen)
+    (multiple-value-bind (new-bp changed-p)
+        (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :path-reduced path-reduced)
+      (if changed-p
+          (setf blueprint new-bp)
+          (progn
+            ;; Cannot satify the dependency, create a new loops
+            (setf blueprint (append (initial-bp ctx) blueprint))
+            (multiple-value-bind (new-bp changed-p)
+                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents)
+              (assert changed-p () "Cannot insert the node ~a ~a" (node-depend-idx-list node gids) node)
+              (setf blueprint new-bp))))
+      (mapc
+       #'(lambda (x nth)
+           (when path-reduced
+             (assert (null (getattr node :reduction :allow-undefined t)) () "Detected double-reduce!"))
+           (recursive-lower-into-bp
+            ctx
+            x
+            :parents (append (node-reads node) parents)
+            :path-reduced
+            (when (= nth 0)
+              ;; A += B
+              ;; =>
+              ;; tid_xxx = A + B :reduce=T
+              (if (getattr node :reduction :allow-undefined t)
+                  (node-reduced-gids node (permute-list order gids))
+                  ;; path-reducedの継承を止める条件(ループの新規追加)を実装する
+                  path-reduced))))
+       (node-reads node) (range 0 (length (node-reads node)))))))
+
 (defmethod lower-schedule-item ((node Node) (base-graph Graph))
   "Lowers the Schedule-Item into blueprint"
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
-  ;; nothing to schedule
+  ;; won't lower the allocation, they are the vm instruction.
   (when (getattr node :allocate-p) (return-from lower-schedule-item))
   (let* ((graph (apply #'make-graph (getattr node :items)))
          (_ (setf (graph-outputs graph) (node-writes node)))
          (iterspace (get-grouped-dims graph))
          (group-size (car iterspace))
          (gids (map 'list #'gid (range 0 (length group-size))))
-         (blueprint)
-         (seen nil))
+         (order (initial-loop-permutation graph (length group-size))))
     (declare (ignore _))
-    (fixup-graph-iteration-space graph iterspace base-graph)
-    (labels ((initial-bp ()
-               `(,@(map 'list #'%make-for gids group-size)
-                 ,@(map 'list #'%make-endfor (reverse gids))))
-             (try-insert-node (node &key (depend-idx) (depend-node) &aux (changed-p nil))
-               (let ((satisfied)
-                     (idx-satisfied)
-                     (insertable-positions))
-                 (loop for bp in blueprint
-                       for nth upfrom 0
-                       if (eql (node-type bp) :FOR)
-                         do (push (getattr bp :idx) idx-satisfied)
-                       else
-                         if (eql (node-type bp) :ENDFOR)
-                           do (setf idx-satisfied (remove (getattr bp :idx) idx-satisfied))                             
-                       else
-                         do (dolist (r (node-reads bp))
-                              (when (symbolp r)
-                                (push r satisfied)))
-                       collect bp
-                       if (and (every #'(lambda (x) (find x idx-satisfied)) depend-idx)
-                               (= (length idx-satisfied) (length depend-idx))
-                               (every #'(lambda (x) (null (find x satisfied))) depend-node))
-                         do (push nth insertable-positions))
-                 (when (null insertable-positions)
-                   (return-from try-insert-node (values blueprint nil)))
-                 (values
-                  (loop with insert-at = (apply #'max insertable-positions)
-                        for bp in blueprint
-                        for nth upfrom 0
-                        collect bp
-                        if (and (null changed-p) (= nth insert-at))
-                          do (setf changed-p t) and collect node)
-                  t)))
-             (explore (id &key (path-reduced nil) (parents nil) &aux (node (id->value graph id)))
-               ;; Try to insert the node ID into the above of parent
-               (when (null node) (return-from explore))
-               (when (find id seen) (return-from explore))
-               (push id seen)
-               (multiple-value-bind (new-bp changed-p)
-                   (try-insert-node node :depend-idx (node-depend-idx-list node gids) :depend-node parents)
-                 (if changed-p
-                     (setf blueprint new-bp)
-                     (progn
-                       ;; Cannot satify the dependency, create a new loops
-                       (setf blueprint (append (initial-bp) blueprint))
-                       (multiple-value-bind (new-bp changed-p)
-                           (try-insert-node node :depend-idx (node-depend-idx-list node gids) :depend-node parents)
-                         (assert changed-p () "Cannot insert the node ~a" node)
-                         (setf blueprint new-bp))))
-                 (mapc
-                  #'(lambda (x)
-                      (explore
-                       x
-                       :path-reduced (or path-reduced (getattr node :reduction :allow-undefined t))
-                       :parents (append (node-reads node) parents)))
-                  (node-reads node)))))
-      (setf blueprint (initial-bp))
+    ;; gids       = (gid0, gid1, gid2, ...)
+    ;; group-size = (10, 20, 30, ...)
+    ;; order      = (0 1 2 ...) (the order of gids, and group-size)
+    (fixup-graph-iteration-space graph iterspace base-graph) ; Use the same iteration space in the group
+    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil)))
+      ;; Initially the blueprint starts with plain loops
+      (setf (ctx-blueprint ctx) (initial-bp ctx))
       (let ((p nil))
-        (mapc #'(lambda (x) (explore x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph))))
-    (print blueprint)
-    (setf (getattr node :blueprint) blueprint)))
+        #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
+        #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
+        (mapc #'(lambda (x) (recursive-lower-into-bp ctx x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph)))
+      (print "BLUEPRINT")
+      (print (ctx-blueprint ctx))
+      ;; [TODO] Remove Empty For
+      (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
-;; merge-dims
-;; Stride=1 -> aref(array, Index-Component(*iters))
+;; [!] Need process replay..
+;; Involve the following things to the test
+;; - [ ] Initial Schedule
+;;   - [ ] Mean axis=0, axis=1,...
+;; - [ ] Permutation
+;;   - [ ] Matmul, and ConvND
+;; - [ ] Permute Fuse
+;;   - [ ] Matmul+Transpose
+;; - [ ] Graph Partition
+;;   - [ ] Transfomer
+;; - [ ] Dynamic Shape
 #|
-LOAD: 10000
-INDEX-COMPONENTS: 100 100 (0 1)
+for (int c0=0; c0<=2; c0+=)
+  for (int c1=0; c1 <= 3; c1++)
+     NID16190746(c0, c1);
+   for (int c1=0; c1 <= 3; c1++)
+     NID16190747(c0, c1);
+   for (int c1=0; c1 <= 3; c1++)
+     NID16190748(c0, c1);
+  }
+}
+|#
+
+#|
+T=0
+for (int c0=0; c0<=2; c0+=)
+   for (int c1=0; c1 <= 3; c1++)
+     NID16190748(c0, c1);
+  }
+}
+T=1
+for (int c0=0; c0<=2; c0+=)
+   for (int c1=0; c1 <= 3; c1++)
+     ...
+   for (int c1=0; c1 <= 3; c1++)
+     NID16190748(c0, c1);
+  }
+}
+T=2
 
 |#
+
+;; Embedding: 5600, 90, 100
