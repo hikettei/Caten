@@ -48,7 +48,7 @@
   (let ((schedule-graph (graph-schedule (avm-graph avm))))
     (declare (type Graph schedule-graph))
     ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
-    (mapc #'(lambda (x) (lower-schedule-item x (avm-graph avm))) (graph-nodes schedule-graph)) 
+    (mapc #'(lambda (x) (lower-schedule-item x (avm-graph avm))) (reverse (graph-nodes schedule-graph)))
     ;; 6. Lower into Polyhedral IR
     (mapc #'scop (graph-nodes schedule-graph))
     

@@ -253,5 +253,5 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
     (multiple-value-bind (domain read write schedule) (analyze-scop node)
       (setf (getattr node :polyhedral) (make-polyhedral-ir domain read write schedule))
       ;; Testing
-      (print (getattr node :polyhedral))
+      ;;(print (getattr node :polyhedral))
       node)))

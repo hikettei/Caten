@@ -30,7 +30,8 @@ One Schedule-item corresponds to one kernel in GPU.
    #:iteration-space
    #:iteration-space-shape
    #:iteration-space-strides
-   #:iteration-space-views)
+   #:iteration-space-views
+   #:iteration-space-procedure)
   (:import-from
    #:caten/codegen/helpers
    #:nodes-depends-on
@@ -121,7 +122,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 
 (defmethod group-mergeable-p ((group Group) graph read read-type ri read-views)
   "
-Returns T if merging the access from R to W is valid.
+Returns T if it is valid to merge the access from R to W without transforming R or W.
 ```
 T=0 | W = f1(...)
 T=1 | ... = f2(..., R(storage_id=W))
@@ -136,7 +137,8 @@ T=1 | ... = f2(..., R(storage_id=W))
           (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
       ;; T=1 | x[...] = node(... A[read_type])
-      ;; write_type and read_type could be merged if they are located in the same group?
+      (when (not (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
+        (return-from group-mergeable-p nil))
       ;; 1. Merge element-wise and non-viewed operations
       (flet ((base-p (view) (or (null view) (every #'null view))))
         (when (and (base-p (buffer-views read-type)) (base-p (buffer-views write-type)))
@@ -144,9 +146,8 @@ T=1 | ... = f2(..., R(storage_id=W))
       ;; when :read is shrink -> separate
       (when (find :shrink (view-type-list read-views))
         (return-from group-mergeable-p nil))
-      
-      ;; [TODO]
-      ;; Test w/ transposed gemm and ConvND
+      (when (find :permute (view-type-list read-views))
+        (return-from group-mergeable-p nil))
       ;; T=0 |  wi  = ...
       ;; T=1 | ...  = f(..., ri, ...)
       ;; Consider this kernel is valid when T0 and T1 belongs to the same iteration domain.
@@ -154,17 +155,44 @@ T=1 | ... = f2(..., R(storage_id=W))
       ;;   T=0 | wi = ...
       ;;   T=1 | ... = f(..., ri, ...)
       ;; If valid, they should be grouped to the same Group
-      ;; Otherwise, they should be separated, and never fused.
-      ;; Note that applying the permutation to `wi` is allowed.
-      ;; For example, T0 can T1 can be grouped if you permute T0.
-      ;; T=0 | T0(c1, c2)    T0(c2, c1)
-      ;; T=1 | T1(c2, c1) => T1(c2, c1)
+      ;; Otherwise, they should be separated, and never fused in the single kernel.
       (flet ((elwise-p (x)
                (and (= (length (iteration-space-views x)) 1)
                     (every #'null (iteration-space-views x)))))
         (when (or (elwise-p ri) (elwise-p wi))
           (return-from group-mergeable-p t)))
+      (when (and (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri)))
+                 (every #'expr-scalar-equivalent-p (iteration-space-shape wi) (iteration-space-shape ri)))
+        (return-from group-mergeable-p t))
       nil)))
+
+(defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views)
+  "
+Returns T if it is valid to merge the access from R to W with modifying R or W.
+Trying to merge X and Y in the same group connected like:
+```
+   X
+   |
+ [VIEW]
+   |
+ [VIEW]
+   |
+ [VIEW]
+   |
+   Y
+```
+"
+  (when (not (symbolp read)) (return-from transform-and-mergeable-p nil))
+  (when (find :shrink (view-type-list read-views)) (return-from transform-and-mergeable-p nil))
+  (print "+++++")
+  (print read)
+  (print (view-type-list read-views))
+  (when (equal `(:permute) (view-type-list read-views))
+    (print "Merge Permute")
+    (print read)
+    )
+  
+  nil)
 
 (defmethod group-merge-iterators ((group Group) (is Iteration-Space))
   "The group always try to keep the largest iteration domain."
@@ -211,6 +239,7 @@ T=1 | ... = f2(..., R(storage_id=W))
 
 ;; BroadcastとReshapeは同時に発生しうるので無理
 (defmethod identify-view-type ((view Node))
+  ;; [TODO] Rename Broadcast/Reshape -> Broadcast_Or_Reshape
   (assert (eql :VIEW (node-type view)))
   (when (some #'identity (getattr view :broadcast))
     (return-from identify-view-type :broadcast))
@@ -239,6 +268,25 @@ T=1 | ... = f2(..., R(storage_id=W))
   (flet ((f (x) (when x (when (not (eql (group-key parent) (group-key x))) x))))
     (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
       (remove-duplicates (loop for l in lst if l collect l) :key #'group-key))))
+
+(defmethod group-op-fusion ((group Group) graph write-id read-id ri wi)
+  "
+Serialize or loop fusion read_id.
+```
+read_id[wi]   <- F2(...,)
+write_id[...] <- F1(..., read_id[ri])
+```
+"
+  ;; If other kernels may use read_id, serialize the operation
+  (when (not (= 1 (length (id->users graph read-id))))
+    ;; [TODO] Align the shape to the highest one
+    (error "not implemented")
+    (return-from group-op-fusion))
+  ;; Otherwise, fuse into a single :EXPR node
+  (let ((item (find write-id (group-items group) :key (alexandria:compose #'car #'node-writes))))
+    (assert item)
+
+    ))
 
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
   "Breaks a big graph to small graphs by recursively exploring and creating subgraph.
@@ -274,16 +322,24 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
       (schedule-groups ;; merge+sort+cleanup
        parent
        ;; [Note] :Allocate is a vm instruction, accordingly should be scheduled standalone
+       ;; [TODO] ReadがMoveでusers=1ならMergeする
        (loop with buffer-p = (eql (node-type node) :Allocate)
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
-             if (and (null buffer-p) mergeable-p) ; node and child are mergeable?
+             if (and (null buffer-p) mergeable-p) ;; merged due to element-wise operation
+               ;; Operator Fusion Here
+              ; do (group-op-fusion parent graph id read ri (car (relay-write-iters (read-type-relay (id->value node read)))))
+            ; and
                collect (recursive-create-group read graph :seen seen :parent parent)
              else
-               collect (recursive-create-group read graph :seen seen))))))
+               collect
+               (let ((out (transform-and-mergeable-p parent graph read read-type ri views)))
+                 (if out
+                     (recursive-create-group read graph :seen seen)
+                     (recursive-create-group read graph :seen seen))))))))
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
 
@@ -344,6 +400,9 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 ;; Let's take a break:
 ;; - [ ] Insert 1 to proper position to determine the fused loop axis
 ;;   - [ ] Let ConvND, and sin(matmul(x, y)) working
+;;   - [ ] Thinking ConvND step-by-step
+;;     - [ ] Step1: Reduction w/ permuted MULADD
+;;     - [ ] Step2: Merge and purge multiple views (By permuting loops, they can be merged)
 ;; - [ ] Permutation Inference at scheduler.lisp level
 ;;   - [ ] Transposed Matmul < 1 Kernel
 ;; - [ ] Graph Partition

@@ -56,7 +56,10 @@
 	     else if (eql (node-type node) :ENDFOR)
 	            do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (getattr node :idx))
 	     else
-	       do (format out "~aop[~a];~%" (indent indent) (node-type node)))))))
+	       do (format out "~aop[~a ~a <- ~a~a];~%" (indent indent) (node-type node) (node-writes node) (node-reads node)
+                          (if (getattr node :reduction :allow-undefined t)
+                              " :reduction=t"
+                              "")))))))
 
 (defun remove-empty-loop (nodes &aux (removed nil))
   (loop for node in nodes
@@ -75,7 +78,8 @@
     (if (= (length nodes) len)
         nodes
         (simplify-blueprint nodes))))
-
+;; 10 6 (21*11) 3 (5*5)
+;; 10*3 21 11 5 5
 (defmethod get-grouped-dims ((graph Graph) (global-iterator Iteration-Space))
   "Find out the iteration space that is common in the graph"
   (let* ((iterspace (iteration-space-shape global-iterator))
@@ -84,7 +88,7 @@
     ;; <Base_Loop>.len > <Collapsed Loops>.len が存在するとScheduleできない？
     (labels ((is-one (axis)
                (expr-scalar-equivalent-p axis (expr-const 1 :int64)))
-             (merge-broadcast (space)
+             (merge-broadcast (space node name)
                (assert (= (length space) (length iterspace)))
                (setf
                 iterspace
@@ -96,23 +100,25 @@
                          new-y
                          (progn
                            (unless (is-one new-y)
-                             (assert (expr-scalar-equivalent-p common-x new-y) () "The size of adjacent loops should match (note: permuted?)~%~a~%~a" common-x new-y))
+                             (assert (expr-scalar-equivalent-p common-x new-y) () "The size of adjacent loops should match (note: permuted?)~%~a~%~a
+Cannot merge ~a and ~a
+When processing ~a of ~a" common-x new-y iterspace space node name))
                            common-x)))
                  iterspace space)))
-             (try-merge (space &aux (shape (iteration-space-shape space)))
+             (try-merge (space node name &aux (shape (iteration-space-shape space)))
                (when (null space) (return-from try-merge))
                (if (> (length shape) (length iterspace))
                    ;; Found higher rank? -> merge
                    (setf iterspace shape
                          procedure (iteration-space-procedure space))
                    (when (= (length shape) (length iterspace))
-                     (merge-broadcast shape)))))
+                     (merge-broadcast shape node name)))))
       (labels ((explore (id &aux (node (when (symbolp id) (id->value graph id))))
                  (when (and node (null (find id seen)))
                    (push id seen)
-                   (flet ((f (x) (when x (try-merge x))))
-                     (mapc #'f (relay-read-iters (read-type-relay node)))
-                     (mapc #'f (relay-write-iters (read-type-relay node))))
+                   (flet ((f (x name) (when x (try-merge x node name))))
+                     (mapc #'f (relay-read-iters (read-type-relay node)) (node-reads node))
+                     (mapc #'f (relay-write-iters (read-type-relay node)) (node-writes node)))
                    (mapc #'explore (node-reads node)))))
         (mapc #'explore (graph-outputs graph))))
     (cons iterspace procedure)))
@@ -344,7 +350,9 @@
       ;; [TODO] 同じIteration内のOPたちを一つのExprにFuseする
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
-;; multi reduce (15:00 made)
+;; - conditions to grouped the same graph
+;;   - mergeable views
+;;   - Merge Multiple Move
 ;; - Load stand alone should only depends on _gid1
 ;; kyouha permute, graph partition made iketara ok
 ;; [!] Need process replay..
