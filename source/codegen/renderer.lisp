@@ -73,8 +73,6 @@
 (defmethod %render-node ((renderer Default-Renderer) id node)
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))
 
-
-
 (defmethod print-object ((expr expr) stream)
   (print-unreadable-object (expr stream :type t)
     (format stream "~a" (render-node (make-instance 'Default-Renderer :graph (expr-graph expr)) (car (node-writes (expr-out expr)))))))

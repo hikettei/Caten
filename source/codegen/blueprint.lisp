@@ -7,6 +7,7 @@
    #:relay-write-iters
    #:relay-reads
    #:relay-writes
+   #:Iteration-Space
    #:iteration-space-shape
    #:iteration-space-strides
    #:iteration-space-views
@@ -75,11 +76,12 @@
         nodes
         (simplify-blueprint nodes))))
 
-(defmethod get-grouped-dims ((graph Graph))
+(defmethod get-grouped-dims ((graph Graph) (global-iterator Iteration-Space))
   "Find out the iteration space that is common in the graph"
-  (let* ((iterspace (iteration-space-shape (car (relay-write-iters (read-type-relay (id->value graph (car (graph-outputs graph))))))))
-         (procedure (iteration-space-procedure (car (relay-write-iters (read-type-relay (id->value graph (car (graph-outputs graph))))))))
+  (let* ((iterspace (iteration-space-shape global-iterator))
+         (procedure (iteration-space-procedure global-iterator))
          (seen))
+    ;; <Base_Loop>.len > <Collapsed Loops>.len が存在するとScheduleできない？
     (labels ((is-one (axis)
                (expr-scalar-equivalent-p axis (expr-const 1 :int64)))
              (merge-broadcast (space)
@@ -192,17 +194,20 @@
             else
               collect nil))))
 
-(defun node-reduced-gids (node gids)
+(defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
+  (assert (= (length gids) (length axes)) () "the reduction node ~a is not the highest rank tensor." node)
   (loop for nth upfrom 0
-        for r in (node-reduced-axes node)
+        for r in axes
         if r collect (nth nth gids)))
 
 (defun graph-reduced-axes (graph rank-size)
   (let ((reduced-axes (make-list rank-size)))
     (dolist (node (graph-nodes graph))
-      (loop for nth upfrom 0
-            for r in (node-reduced-axes node)
-            if r do (setf (nth nth reduced-axes) t)))
+      ;; Broadcasting information are always stored by the highest rank tensor.
+      (when (= rank-size (length (iteration-space-shape (car (relay-write-iters (read-type-relay node))))))
+        (loop for nth upfrom 0
+              for r in (node-reduced-axes node)
+              if r do (setf (nth nth reduced-axes) t))))
     reduced-axes))
 
 (defun initial-loop-permutation (graph rank)
@@ -282,7 +287,7 @@
             (setf blueprint (append bp blueprint))
             (multiple-value-bind (new-bp changed-p)
                 (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp) :path-reduced path-reduced)
-              (assert changed-p () "Cannot insert the node ~a ~a" (node-depend-idx-list node gids) node)
+              (assert changed-p () "Cannot insert the node ~a ~a~%[Ongoing blueprint]~%~a" (node-depend-idx-list node gids) node new-bp)
               (setf blueprint new-bp))))
       (mapc
        #'(lambda (x nth)
@@ -310,16 +315,18 @@
   (when (getattr node :allocate-p) (return-from lower-schedule-item))
   (let* ((graph (apply #'make-graph (getattr node :items)))
          (_ (setf (graph-outputs graph) (node-writes node)))
-         (iterspace (get-grouped-dims graph))
+         (iterspace (get-grouped-dims graph (getattr node :global-iterator)))
+         (__ (fixup-graph-iteration-space graph iterspace base-graph)) ; Use the same iteration space in the group
          (group-size (car iterspace))
          (gids (map 'list #'gid (range 0 (length group-size))))
          (order (initial-loop-permutation graph (length group-size)))) ;; relocate reduction loop deeper
-    (declare (ignore _))
+    (declare (ignore _ __))
     ;; gids       = (gid0, gid1, gid2, ...)
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
-    (fixup-graph-iteration-space graph iterspace base-graph) ; Use the same iteration space in the group
     (print (permute-list order gids))
+    (print gids)
+    (print group-size)
     (fresh-line)
     (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil)))
       ;; Initially the blueprint starts with plain loops

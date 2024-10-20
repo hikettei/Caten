@@ -3,7 +3,7 @@
 The scheduler is responsible for converting the `caten/aasm` graph into a list of Schedule-Item.
 One Schedule-item corresponds to one kernel in GPU.
 ")
-  (:use :cl :caten/air)
+  (:use :cl :caten/air :caten/codegen/expr)
   (:import-from
    #:caten/air
    #:defnode
@@ -29,7 +29,7 @@ One Schedule-item corresponds to one kernel in GPU.
    #:buffer-merge-dims
    #:iteration-space
    #:iteration-space-shape
-   #:iteration-shape-strides
+   #:iteration-space-strides
    #:iteration-space-views)
   (:import-from
    #:caten/codegen/helpers
@@ -54,7 +54,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
          :slots
          ((blueprint :type list :initform nil)
           (polyhedral)
-          (iterations :type list :initform nil)
+          (global-iterator :type Iterator)
           (buffers)
           (allocate-p :type boolean)
           (name :type symbol)
@@ -86,7 +86,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 
 (defstruct Group
   (key (gensym) :type symbol)
-  (iterators nil :type list)
+  (global-iterator nil :type (or null Iteration-Space))
   (items nil :type list)
   (reduced nil :type boolean)
   (view-objects nil :type list))
@@ -101,23 +101,38 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
      (princ "FUSED" out)
      (dolist (c (group-items group))
        (format out "_~a" (node-type c))))))
-
+;; Schedule-Item creation
 (defmethod group->schedule ((group Group))
   (let ((reads (nodes-depends-on (group-items group)))
         (writes (nodes-write-to (group-items group)))
         (allocate-p (find :Allocate (group-items group) :key #'node-type)))
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
+               :global-iterator (group-global-iterator group)
                :allocate-p (when allocate-p t)
                :storage-id-dst writes
                :storage-id-src reads
                :items (group-items group))))
 
-(defmethod group-mergeable-p ((group Group) read graph read-type ri)
+(defmethod group-clean-up-global-iterator ((group Group))
+  (when (group-global-iterator group)
+    ;; stride/view are not inferred by group-merge-iterators, so deleting this
+    (setf (iteration-space-strides (group-global-iterator group)) nil
+          (iteration-space-views (group-global-iterator group)) nil)))
+
+(defmethod group-mergeable-p ((group Group) graph read read-type ri)
+  "
+Returns T if merging the access from R to W is valid.
+```
+T=0 | W = f1(...)
+T=1 | ... = f2(..., R(storage_id=W))
+```
+"
   (let ((node (id->value graph read)))
     (when (null node) (return-from group-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from group-mergeable-p nil))
     (when (and (group-reduced group) (getattr node :reduction :allow-undefined t))
       (return-from group-mergeable-p nil))
+    ;; ?????
     (let ((write-type (car (relay-writes (read-type-relay node))))
           (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
@@ -141,7 +156,6 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
       ;; For example, T0 can T1 can be grouped if you permute T0.
       ;; T=0 | T0(c1, c2)    T0(c2, c1)
       ;; T=1 | T1(c2, c1) => T1(c2, c1)
-      ;; ?
       (flet ((elwise-p (x)
                (and (= (length (iteration-space-views x)) 1)
                     (every #'null (iteration-space-views x)))))
@@ -149,50 +163,48 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
           (return-from group-mergeable-p t)))
       t)))
 
-(defun schedule-groups (parent parent-groups)
-  (flet ((f (x) (when x (when (not (eql (group-key parent) (group-key x))) x))))
-    (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
-      (remove-duplicates (loop for l in lst if l collect l) :key #'group-key))))
+(defmethod group-merge-iterators ((group Group) (is Iteration-Space))
+  "The group always try to keep the largest iteration domain."
+  (let ((gi (group-global-iterator group)))
+    ;; Not created?
+    (when (null gi)
+      (setf (group-global-iterator group) is)
+      (return-from group-merge-iterators))
+    ;; Found a higher rank iteration space? -> merge to them
+    (when (> (length (iteration-space-shape is)) (length (iteration-space-shape gi)))
+      (setf (group-global-iterator group) is)
+      (return-from group-merge-iterators))
+    ;; Complicated + ElementWise -> skip
+    (when (< (length (iteration-space-shape is)) (length (iteration-space-shape gi)))
+      ;; [TODO] Assert that he total number of iteration is the same...
+      (return-from group-merge-iterators))
+    (assert (= (length (iteration-space-shape is)) (length (iteration-space-shape gi))))
+    (flet ((is-one (axis)
+             (expr-scalar-equivalent-p axis (expr-const 1 :int64))))
+      ;; (10 10)   (1 1)
+      ;; (10 10)   (1 1)
+      ;; (10 10)   (10 10) <- VIEW
+      ;;     \     /
+      ;;     (10 10)
+      ;;        |
+      ;;     [VIEW]
+      ;;        |
+      ;;     (1 1)
+      ;;        |
+      ;;     [sin]
+      ;;        |
+      ;;     (1 1)
 
-(defmethod group-update-iterators ((group Group) (is Iteration-Space))
-  (when (null (group-iterators group))
-    (setf (group-iterators group) (iteration-space-shape is))
-    (return-from group-update-iterators))
-  ;; Flattened + Flattened -> Flattened
-  (when (= 1 (length (group-iterators group)) (length (iteration-space-shape is)))
-    (return-from group-update-iterators))
-  ;; Flattened + Complicated -> Complicated
-  (when (= (length (group-iterators group)) 1)
-    (setf (group-iterators group) (iteration-space-shape is))
-    (return-from group-update-iterators))
-  ;; Complicated + Complicated - >Merge
-  ;;(print "+++MERGE+++")
-  ;; Total sizeがonazininaruyounisuru (they are broadcasted)
-  ;; (10 10)   (1 1)
-  ;; (10 10)   (1 1)
-  ;; (10 10)   (10 10) <- VIEW
-  ;;     \     /
-  ;;     (10 10)
-  ;;       |
-  ;;     [VIEW]
-  ;;       |
-  ;;     (1 1)
-  ;;       |
-  ;;     [sin]
-  ;;       |
-  ;;     (1 1)
-  ;(print (group-iterators group))
-  ;(print is)
-  )
+      )))
 
 ;;(with-no-grad
 ;; (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 (defmethod group-add-node ((group Group) node)
   (push node (group-items group))
   (dolist (r (relay-read-iters (read-type-relay node)))
-    (when r (group-update-iterators group r)))
+    (when r (group-merge-iterators group r)))
   (dolist (r (relay-write-iters (read-type-relay node)))
-    (when r (group-update-iterators group r))))
+    (when r (group-merge-iterators group r))))
 
 ;; BroadcastとReshapeは同時に発生しうるので無理
 (defmethod identify-view-type ((view Node))
@@ -220,15 +232,23 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 
 (defun view-type-list (views) (map 'list #'identify-view-type views))
 
+(defun schedule-groups (parent parent-groups)
+  (flet ((f (x) (when x (when (not (eql (group-key parent) (group-key x))) x))))
+    (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
+      (remove-duplicates (loop for l in lst if l collect l) :key #'group-key))))
+
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
-  "
+  "Breaks a big graph to small graphs by recursively exploring and creating subgraph.
+We refer to subgraph as:
+- Total iteration size are equivalent. (that's why we break the graph at :shrink)
+- the centroid is :reduce.
+
 What items are scheduled to the same loop?
 Do not consider about the access dependencies.
 
-The more fused kernels the better, Loop Fission by ISL Scheduler
+Generally the more fusion the better for us, loop fission by ISL Scheduler
 
-;; ReduceとElemmentWiseをつくっけたデータ構造(Group)を作る, (1 group 1 reduce, no dependency breaks)
-;; Group <-> GroupでLoop Fusionを考える
+### Note
 
 - Embedding後のContiguousがくっつく場所をちゃんと考える
 "
@@ -248,23 +268,15 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
       ;; ElementWise
       ;; arg3[0:10] = sin(x[...])
       ;; ID <- NODE(arg1, arg2, arg3[10:0:-1])...
-      (schedule-groups
+      (schedule-groups ;; merge+sort+cleanup
        parent
-       ;; :Allocate should be scheduled standalone
-       ;; [IMPORTANT]
-       ;; Smaller Rank -> Higher Ranknihanaranai
-       ;; HigherRank -> SmallerRankのPathを見つけたら，Higher RankにShapeを統一する。
-       ;; その過程でPermuteを復元してもいいかもしれない・・・
-       ;; Permute matmul: こっちをなんとかする
+       ;; [Note] :Allocate is a vm instruction, accordingly should be scheduled standalone
        (loop with buffer-p = (eql (node-type node) :Allocate)
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
              for ri in (relay-read-iters (read-type-relay node))
-             for views in (getattr node :_read_views)
-             for view-objs = (when views (view-type-list views))
-             ;;for view-mg-p = (mergeable-view-p parent read graph view-objs)
-             for mergeable-p = (group-mergeable-p parent read graph read-type ri)
-             if (and (null buffer-p) mergeable-p)
+             for mergeable-p = (group-mergeable-p parent graph read read-type ri)
+             if (and (null buffer-p) mergeable-p) ; node and child are mergeable?
                collect (recursive-create-group read graph :seen seen :parent parent)
              else
                collect (recursive-create-group read graph :seen seen))))))
@@ -290,19 +302,30 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
   (let* ((seen (make-hash-table))
          (groups (apply #'append (map 'list #'(lambda (x) (nreverse (recursive-create-group x graph :seen seen))) (graph-outputs graph)))))
     (mapc #'verify-group groups)
+    ;; iterspace stride/views are unchanged from group-merge-iterators, deleting this.
+    (mapc #'group-clean-up-global-iterator groups)
     ;; Serialize ADD (Embedding Embedding)
     ;; Merge two independent groups
-    (print "SCHEDULED")
-    (dolist (g groups)
-      (when (not (eql (node-type (car (group-items g))) :Allocate))
-        (print g)))
+    (when (>= (ctx:getenv :JIT_DEBUG) 4)
+      (format t "[graph-schedule] Prescheduled ~a groups:~%" (length groups))
+      (dolist (g groups)
+        (when (not (eql (node-type (car (group-items g))) :Allocate))
+          (print g)))
+      (fresh-line))
     (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
-      (print schedule)
+      (when (>= (ctx:getenv :JIT_DEBUG) 4)
+        (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       ;; [TODO] (Add (Embedding[Reduce] Embedding[Reduce])) Fusion Using Pattern Matcher
       schedule)))
 
+;; Let's take a break:
+;; - [ ] Permutation Inference at scheduler.lisp level?
+;; - [ ] Graph Partition
+;; - [ ] Clean up scheduler. :view-type was unnecessary?
+;; - [ ] Schedule Item IterSpace -> グループ内で最大のItersizeを保持しておく (output-itersize strategyは通用しない)
+;; [TODO] Refactor scheduler.lisp
 ;; [TODO] 明日やる　↓をADD REDUCE REDUCEにSchedule
 ;; (with-no-grad
 ;  (Time (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))))
