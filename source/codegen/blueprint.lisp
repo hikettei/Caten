@@ -295,8 +295,7 @@
             ;; Cannot satify the dependency? create a new loops
             (setf blueprint (append bp blueprint))
             (multiple-value-bind (new-bp changed-p)
-                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp) :path-reduced nil)
-              (print new-bp)
+                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp) :path-reduced path-reduced)
               (assert changed-p () "Cannot insert the node ~a ~a" (node-depend-idx-list node gids) node)
               (setf blueprint new-bp))))
       (mapc
@@ -351,7 +350,7 @@
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
 ;; multi reduce (15:00 made)
-
+;; - Load stand alone should only depends on _gid1
 ;; kyouha permute, graph partition made iketara ok
 ;; [!] Need process replay..
 ;; Involve the following things to the test

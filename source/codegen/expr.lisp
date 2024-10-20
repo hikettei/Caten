@@ -67,14 +67,12 @@ Only supports the scalar computation because it is intended to identify the same
              (+ 1 (apply #'max (or (append (enumerate expr2 #'numberp) (enumerate expr1 #'numberp)) (list 3)))))
            (realized-nums
              (loop for a in allsyms collect (incf lower)))
-           (vars (make-hash-table))
-           (ops1 (remove-duplicates (map 'list #'node-type (graph-nodes (expr-graph expr1)))))
-           (ops2 (remove-duplicates (map 'list #'node-type (graph-nodes (expr-graph expr2))))))
+           (vars (make-hash-table)))
         (loop for sym in allsyms
               do (setf (gethash sym vars) (pop realized-nums)))
       ;; a/b returns nil if failed.
       (multiple-value-bind (a b) (values (run-expr-with-vars expr1 vars) (run-expr-with-vars expr2 vars))
-        (and a b (eql a b) (= (length ops1) (length (intersection ops1 ops2))))))))
+        (and a b (eql a b))))))
 
 (defmethod simplify-expr ((expr Expr))
   (let ((out (graph-outputs (expr-graph expr))))

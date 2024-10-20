@@ -41,9 +41,8 @@
               WaW)))
       (setf (poly-dependencies pg) dependencies)
       ;; Memo: delete v
-      (schedule pg)
+      (setf (poly-schedule pg) (schedule pg))
       pg)))
-
 
 (defmethod debug-render-to-clang ((pg Polyhedral-IR))
   (let* ((schedule (schedule-set-options (copy (poly-schedule pg)) :atomic))
@@ -150,7 +149,7 @@
         (outer-coincidence 1)
         (maximize-coincidence 1)
         (treat-coalescing 1)
-        (maximize-band-depth 0)
+        (maximize-band-depth 1)
         ;; Only schedule the scc. (not to change the structure of kernel)
         (schedule-whole-component 0))
     (macrolet ((set-option (name level)
