@@ -164,13 +164,6 @@
         (mapc #'fixup-dims (relay-read-iters (read-type-relay n)) (relay-reads (read-type-relay n)))
         (mapc #'fixup-dims (relay-write-iters (read-type-relay n)) (relay-writes (read-type-relay n)))))))
 
-;; [TODO] (0 10 1 nil)はNILに書き換える
-;; schedule.lispwokousin sinaito ugokanai rei:
-;;(with-no-grad
-;;            (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
-
-;; [TODO] Loopの操作はPolyhedral Compilerに任せる。。。
-;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
 (defmethod node-depend-idx-list ((node Node) gid
                                  &aux
                                    (type (read-type-relay node))
@@ -223,14 +216,7 @@
               else
                 collect p)
       ,@(nreverse stashed))))
-;; 必要な変更
-;; Broadcasted Axes -> Depends-onから外す
-;; size=1 -> depends-onではない
-;; Paretnt-reducedを追加する
-;; from bottom to up で追加していく
-;; 一番下がReduceになるようにPermuteする
-;; - [ ] parent-reduceの条件でLoop Fusionできないケースを作成する
-;; - [x] Sort the axes, the broadcast axes comes the deeper
+
 (defstruct ctx
   "an intermidate object used to debug `recursive-lower-into-bp`"
   graph order blueprint seen gids loop-size-list)
@@ -347,6 +333,7 @@
         (mapc #'(lambda (x) (recursive-lower-into-bp ctx x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph)))
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)))
       (print-blueprint (ctx-blueprint ctx) t)
+      ;; [TODO] 同じIteration内のOPたちを一つのExprにFuseする
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
 ;; multi reduce (15:00 made)
@@ -354,8 +341,9 @@
 ;; kyouha permute, graph partition made iketara ok
 ;; [!] Need process replay..
 ;; Involve the following things to the test
-;; - [ ] Initial Schedule
-;;   - [ ] Mean axis=0, axis=1,...
+;; - [x] Initial Schedule
+;;   - [x] Mean axis=0, axis=1,...
+;;   - [x] Embedding
 ;; - [ ] Permutation
 ;;   - [ ] Matmul, and ConvND
 ;; - [ ] Permute Fuse
@@ -363,6 +351,13 @@
 ;; - [ ] Graph Partition
 ;;   - [ ] Transfomer
 ;; - [ ] Dynamic Shape
+;; [TODO] (0 10 1 nil)はNILに書き換える
+;; schedule.lispwokousin sinaito ugokanai rei:
+;;(with-no-grad
+;;            (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
+
+;; [TODO] Loopの操作はPolyhedral Compilerに任せる。。。
+;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
 #|
 for (int c0=0; c0<=2; c0+=)
   for (int c1=0; c1 <= 3; c1++)

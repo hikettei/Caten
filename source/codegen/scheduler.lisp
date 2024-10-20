@@ -264,7 +264,7 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
              for view-objs = (when views (view-type-list views))
-             for view-mg-p = (mergeable-view-p parent read graph view-objs)
+             ;;for view-mg-p = (mergeable-view-p parent read graph view-objs)
              for mergeable-p = (group-mergeable-p parent read graph read-type ri)
              if (and (null buffer-p) mergeable-p)
                collect (recursive-create-group read graph :seen seen :parent parent)
