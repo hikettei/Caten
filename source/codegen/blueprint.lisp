@@ -37,6 +37,7 @@
   (make-node :Render :ENDFOR nil nil :idx idx))
 
 (defmethod get-grouped-dims ((graph Graph))
+  "Find out the iteration space that is common in the graph"
   (let* ((iterspace (iteration-space-shape (car (relay-write-iters (read-type-relay (id->value graph (car (graph-outputs graph))))))))
          (procedure (iteration-space-procedure (car (relay-write-iters (read-type-relay (id->value graph (car (graph-outputs graph))))))))
          (seen))
@@ -76,6 +77,7 @@
     (cons iterspace procedure)))
 
 (defmethod fixup-graph-iteration-space ((graph Graph) found-pair g)
+  "Rewrite the iteration space in the graph to match the common iteration space found in the get-grouped-dim function."
   (multiple-value-bind (found-space procedure) (values (car found-pair) (cdr found-pair))
     (labels ((merge-list (proc list)
                (loop for p in proc
@@ -123,7 +125,6 @@
         (mapc #'fixup-dims (relay-read-iters (read-type-relay n)) (relay-reads (read-type-relay n)))
         (mapc #'fixup-dims (relay-write-iters (read-type-relay n)) (relay-writes (read-type-relay n)))))))
 
-
 ;; [TODO] (0 10 1 nil)はNILに書き換える
 ;; schedule.lispwokousin sinaito ugokanai rei:
 ;;(with-no-grad
@@ -135,6 +136,7 @@
                                  &aux
                                    (type (read-type-relay node))
                                    (shapes (make-list (length (iteration-space-shape (car (relay-write-iters type)))))))
+  "Enumerates a list of gid that the node depends on."
   (flet ((is-one (axis)
            (expr-scalar-equivalent-p axis (expr-const 1 :int64))))
     (dolist (space (append (relay-read-iters type) (relay-write-iters type)))
@@ -147,10 +149,6 @@
           for s in shapes
           if (not (every #'is-one s))
             collect g)))
-
-(defun remove-empty-for (nodes)
-
-  )
 
 (defun node-reduced-axes (node)
   (let ((is (car (relay-write-iters (read-type-relay node)))))
@@ -194,8 +192,10 @@
 ;; 一番下がReduceになるようにPermuteする
 ;; - [ ] parent-reduceの条件でLoop Fusionできないケースを作成する
 ;; - [x] Sort the axes, the broadcast axes comes the deeper
-(defstruct ctx graph order blueprint seen gids loop-size-list)
-;; print nothing to improve the readability of debugging with trace.
+(defstruct ctx
+  "an intermidate object used to debug `recursive-lower-into-bp`"
+  graph order blueprint seen gids loop-size-list)
+;; ctx: print-object displays nothing not to collapse the trace macro.
 (defmethod print-object ((ctx ctx) stream) (format stream "<CTX>"))
 
 (defmethod initial-bp ((ctx ctx))
@@ -248,29 +248,33 @@
       (if changed-p
           (setf blueprint new-bp)
           (progn
-            ;; Cannot satify the dependency, create a new loops
+            ;; Cannot satify the dependency? create a new loops
             (setf blueprint (append (initial-bp ctx) blueprint))
             (multiple-value-bind (new-bp changed-p)
-                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents)
+                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :path-reduced path-reduced)
               (assert changed-p () "Cannot insert the node ~a ~a" (node-depend-idx-list node gids) node)
+              ;; (setf path-reduced nil)
               (setf blueprint new-bp))))
       (mapc
        #'(lambda (x nth)
            (when path-reduced
              (assert (null (getattr node :reduction :allow-undefined t)) () "Detected double-reduce!"))
-           (recursive-lower-into-bp
-            ctx
-            x
-            :parents (append (node-reads node) parents)
-            :path-reduced
-            (when (= nth 0)
-              ;; A += B
-              ;; =>
-              ;; tid_xxx = A + B :reduce=T
-              (if (getattr node :reduction :allow-undefined t)
-                  (node-reduced-gids node (permute-list order gids))
-                  ;; path-reducedの継承を止める条件(ループの新規追加)を実装する
-                  path-reduced))))
+           (when (and (null (find x seen)) (id->value (ctx-graph ctx) x))
+             (recursive-lower-into-bp
+              ctx
+              x
+              :parents
+              (loop for x in (remove-duplicates (append (node-reads node) parents))
+                    if (symbolp x) collect x)
+              :path-reduced
+              (when (= nth 0)
+                ;; A += B
+                ;; =>
+                ;; tid_xxx = A + B :reduce=T
+                (if (getattr node :reduction :allow-undefined t)
+                    (node-reduced-gids node gids) ;; Note that not-reduce-gids requires un-permuted gids
+                    ;; When to stop path-reduce extension?
+                    path-reduced)))))
        (node-reads node) (range 0 (length (node-reads node)))))))
 
 (defmethod lower-schedule-item ((node Node) (base-graph Graph))
@@ -283,7 +287,7 @@
          (iterspace (get-grouped-dims graph))
          (group-size (car iterspace))
          (gids (map 'list #'gid (range 0 (length group-size))))
-         (order (initial-loop-permutation graph (length group-size))))
+         (order (initial-loop-permutation graph (length group-size)))) ;; relocate reduction loop deeper
     (declare (ignore _))
     ;; gids       = (gid0, gid1, gid2, ...)
     ;; group-size = (10, 20, 30, ...)
@@ -301,6 +305,8 @@
       ;; [TODO] Remove Empty For
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
+;; 2:30madeni owaraseru
+;; kyouha permute, graph partition made iketara good
 ;; [!] Need process replay..
 ;; Involve the following things to the test
 ;; - [ ] Initial Schedule
