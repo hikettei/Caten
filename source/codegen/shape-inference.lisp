@@ -329,4 +329,3 @@
                 (relay-write-iters type)
                 (map 'list #'(lambda (x) (when x (buffer-merge-dims graph x))) (relay-writes type))))
   graph)
-            

@@ -57,6 +57,24 @@
 	     else
 	       do (format out "~aop[~a];~%" (indent indent) (node-type node)))))))
 
+(defun remove-empty-loop (nodes &aux (removed nil))
+  (loop for node in nodes
+	for nth upfrom 0
+	if (and (eql (node-type node) :FOR)
+		(nth (1+ nth) nodes)
+		(eql (node-type (nth (1+ nth) nodes)) :ENDFOR))
+	  do (push (node-id (nth (1+ nth) nodes)) removed)
+	else
+          unless (find (node-id node) removed)
+            collect node))
+
+(defun simplify-blueprint (nodes)
+  (let ((len (length nodes)))
+    (setf nodes (remove-empty-loop nodes))
+    (if (= (length nodes) len)
+        nodes
+        (simplify-blueprint nodes))))
+
 (defmethod get-grouped-dims ((graph Graph))
   "Find out the iteration space that is common in the graph"
   (let* ((iterspace (iteration-space-shape (car (relay-write-iters (read-type-relay (id->value graph (car (graph-outputs graph))))))))
@@ -225,7 +243,8 @@
       ,@(reverse (permute-list order (map 'list #'%make-endfor gids))))))
 
 (defun try-insert-node (ctx node
-                        &key (depend-idx) (depend-node) (path-reduced nil)
+                        &key
+                          (depend-idx) (depend-node) (path-reduced nil) (bp-limit nil)
                         &aux
                           (changed-p nil))
   (with-slots ((blueprint blueprint)) ctx
@@ -245,6 +264,7 @@
                      (push r satisfied)))
             collect bp
             if (and
+                (or (null bp-limit) (<= nth bp-limit))
                 (every #'(lambda (x) (find x idx-satisfied)) depend-idx)
                 ;; should not depends on reduced axes
                 (every #'(lambda (x) (null (find x idx-satisfied))) path-reduced)
@@ -271,13 +291,13 @@
         (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :path-reduced path-reduced)
       (if changed-p
           (setf blueprint new-bp)
-          (progn
+          (let ((bp (initial-bp ctx)))
             ;; Cannot satify the dependency? create a new loops
-            (setf blueprint (append (initial-bp ctx) blueprint))
+            (setf blueprint (append bp blueprint))
             (multiple-value-bind (new-bp changed-p)
-                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :path-reduced path-reduced)
+                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp) :path-reduced nil)
+              (print new-bp)
               (assert changed-p () "Cannot insert the node ~a ~a" (node-depend-idx-list node gids) node)
-              ;; (setf path-reduced nil)
               (setf blueprint new-bp))))
       (mapc
        #'(lambda (x nth)
@@ -317,7 +337,8 @@
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
     (fixup-graph-iteration-space graph iterspace base-graph) ; Use the same iteration space in the group
-    ;;(print (permute-list order gids))
+    (print (permute-list order gids))
+    (fresh-line)
     (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil)))
       ;; Initially the blueprint starts with plain loops
       (setf (ctx-blueprint ctx) (initial-bp ctx))
@@ -325,9 +346,11 @@
         #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
         #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
         (mapc #'(lambda (x) (recursive-lower-into-bp ctx x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph)))
+      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)))
       (print-blueprint (ctx-blueprint ctx) t)
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
+;; multi reduce (15:00 made)
 
 ;; kyouha permute, graph partition made iketara ok
 ;; [!] Need process replay..
