@@ -153,6 +153,9 @@
                  (assert (<= (length (iteration-space-shape iterspace)) (length found-space))
                          ()
                          "The rank of the iteration space should be less than or equal to the found space~%~a~%~a" iterspace found-space)
+                 (assert (>= (length (alexandria:flatten (iteration-space-procedure iterspace))) (length found-space))
+                         ()
+                         "Cannot uprank ~a into the space ~a" iterspace found-space)
                  ;; [Assert] All buffers have the same rank.
                  (multiple-value-bind (new-shape new-stride new-view)
                      (values (merge-list procedure (buffer-shape original-buffer))
@@ -328,6 +331,7 @@
     (print gids)
     (print group-size)
     (fresh-line)
+    (print graph)
     (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil)))
       ;; Initially the blueprint starts with plain loops
       (setf (ctx-blueprint ctx) (initial-bp ctx))
@@ -369,6 +373,8 @@
 ;; (caten/codegen:jit (time (caten (call *model* (make-tensor `(1 10)) (iconst 'n)))))
 ;; [TODO] Loopの操作はPolyhedral Compilerに任せる。。。
 ;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
+;; - [ ] relu(gemm)
+;; - [ ] conv
 #|
 for (int c0=0; c0<=2; c0+=)
   for (int c1=0; c1 <= 3; c1++)
