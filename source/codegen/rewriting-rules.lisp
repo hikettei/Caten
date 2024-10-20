@@ -41,7 +41,9 @@
    #:make-inferred-type
    #:read-type-relay
    #:relay-reads
-   #:relay-writes)
+   #:relay-writes
+   #:relay-read-iters
+   #:relay-write-iters)
   (:export
    #:apply-rewriting-rules))
 
@@ -205,7 +207,7 @@ out[...] = f(*val_1);
 			      if n
 				collect
 				(progn
-				  (setf (nth nth (relay-reads (read-type-relay node))) (car (relay-writes (read-type-relay n))))
+                                  (setf (nth nth (relay-reads (read-type-relay node))) (car (relay-writes (read-type-relay n))))
 				  (if (and (eql (node-type n) :LOAD)
 					   (numberp (getattr n :value)))
 				      (getattr n :value)

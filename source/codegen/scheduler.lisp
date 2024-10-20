@@ -119,7 +119,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
     (setf (iteration-space-strides (group-global-iterator group)) nil
           (iteration-space-views (group-global-iterator group)) nil)))
 
-(defmethod group-mergeable-p ((group Group) graph read read-type ri)
+(defmethod group-mergeable-p ((group Group) graph read read-type ri read-views)
   "
 Returns T if merging the access from R to W is valid.
 ```
@@ -132,7 +132,6 @@ T=1 | ... = f2(..., R(storage_id=W))
     (when (eql (node-type node) :Allocate) (return-from group-mergeable-p nil))
     (when (and (group-reduced group) (getattr node :reduction :allow-undefined t))
       (return-from group-mergeable-p nil))
-    ;; ?????
     (let ((write-type (car (relay-writes (read-type-relay node))))
           (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
@@ -140,8 +139,12 @@ T=1 | ... = f2(..., R(storage_id=W))
       ;; write_type and read_type could be merged if they are located in the same group?
       ;; 1. Merge element-wise and non-viewed operations
       (flet ((base-p (view) (or (null view) (every #'null view))))
-        (when (and (base-p (buffer-views read-type)) (buffer-views write-type))
+        (when (and (base-p (buffer-views read-type)) (base-p (buffer-views write-type)))
           (return-from group-mergeable-p t)))
+      ;; when :read is shrink -> separate
+      (when (find :shrink (view-type-list read-views))
+        (return-from group-mergeable-p nil))
+      
       ;; [TODO]
       ;; Test w/ transposed gemm and ConvND
       ;; T=0 |  wi  = ...
@@ -161,7 +164,7 @@ T=1 | ... = f2(..., R(storage_id=W))
                     (every #'null (iteration-space-views x)))))
         (when (or (elwise-p ri) (elwise-p wi))
           (return-from group-mergeable-p t)))
-      t)))
+      nil)))
 
 (defmethod group-merge-iterators ((group Group) (is Iteration-Space))
   "The group always try to keep the largest iteration domain."
@@ -176,7 +179,7 @@ T=1 | ... = f2(..., R(storage_id=W))
       (return-from group-merge-iterators))
     ;; Complicated + ElementWise -> skip
     (when (< (length (iteration-space-shape is)) (length (iteration-space-shape gi)))
-      ;; [TODO] Assert that he total number of iteration is the same...
+      ;; [TODO] Assert that the total number of iteration is the same...
       (return-from group-merge-iterators))
     (assert (= (length (iteration-space-shape is)) (length (iteration-space-shape gi))))
     (flet ((is-one (axis)
@@ -275,7 +278,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
              for ri in (relay-read-iters (read-type-relay node))
-             for mergeable-p = (group-mergeable-p parent graph read read-type ri)
+             for views in (getattr node :_read_views)
+             for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
              if (and (null buffer-p) mergeable-p) ; node and child are mergeable?
                collect (recursive-create-group read graph :seen seen :parent parent)
              else
@@ -320,8 +324,28 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
       ;; [TODO] (Add (Embedding[Reduce] Embedding[Reduce])) Fusion Using Pattern Matcher
       schedule)))
 
+;; sin matmul
+;; - Elementwise
+;; (10 1 10) MOVE
+;;     |
+;;   [VIEW]
+;;     |
+;;  (10 10) 10 corresponds to 10, 10 corresponds to 10
+;; how about is convnd?
+;; it is equivalent to considering merging reshape
+;;  (25 25)
+;;     |
+;;   [VIEW]
+;;     |
+;; (5 5 5 5)
+;; if no offests are created, they can simplify flattend
+;; but if shrinked?
+
 ;; Let's take a break:
-;; - [ ] Permutation Inference at scheduler.lisp level?
+;; - [ ] Insert 1 to proper position to determine the fused loop axis
+;;   - [ ] Let ConvND, and sin(matmul(x, y)) working
+;; - [ ] Permutation Inference at scheduler.lisp level
+;;   - [ ] Transposed Matmul < 1 Kernel
 ;; - [ ] Graph Partition
 ;; - [ ] Clean up scheduler. :view-type was unnecessary?
 ;; - [ ] Schedule Item IterSpace -> グループ内で最大のItersizeを保持しておく (output-itersize strategyは通用しない)

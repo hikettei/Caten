@@ -153,10 +153,10 @@
                  (assert (<= (length (iteration-space-shape iterspace)) (length found-space))
                          ()
                          "The rank of the iteration space should be less than or equal to the found space~%~a~%~a" iterspace found-space)
+                 ;; Caten cannot inference where to insert one here.
                  (assert (>= (length (alexandria:flatten (iteration-space-procedure iterspace))) (length found-space))
                          ()
-                         "Cannot uprank ~a into the space ~a" iterspace found-space)
-                 ;; [Assert] All buffers have the same rank.
+                         "Cannot uprank ~a into the space ~a. The original buffer should be upranked in scheduler in advance." iterspace found-space)
                  (multiple-value-bind (new-shape new-stride new-view)
                      (values (merge-list procedure (buffer-shape original-buffer))
                              (merge-stride procedure (new-stride (buffer-stride original-buffer) (buffer-views original-buffer)))
@@ -172,7 +172,7 @@
 (defmethod node-depend-idx-list ((node Node) gid
                                  &aux
                                    (type (read-type-relay node))
-                                   (shapes (make-list (length (iteration-space-shape (car (relay-write-iters type)))))))
+                                   (shapes (make-list (length gid))))
   "Enumerates a list of gid that the node depends on."
   (flet ((is-one (axis)
            (expr-scalar-equivalent-p axis (expr-const 1 :int64))))
@@ -181,7 +181,6 @@
         (loop for axis upfrom 0
               for shape in (iteration-space-shape space)
               do (push shape (nth axis shapes)))))
-    (assert (= (length gid) (length shapes)))
     (loop for g in gid
           for s in shapes
           if (not (every #'is-one s))
@@ -207,10 +206,11 @@
   (let ((reduced-axes (make-list rank-size)))
     (dolist (node (graph-nodes graph))
       ;; Broadcasting information are always stored by the highest rank tensor.
-      (when (= rank-size (length (iteration-space-shape (car (relay-write-iters (read-type-relay node))))))
-        (loop for nth upfrom 0
-              for r in (node-reduced-axes node)
-              if r do (setf (nth nth reduced-axes) t))))
+      (when (car (relay-write-iters (read-type-relay node)))
+        (when (= rank-size (length (iteration-space-shape (car (relay-write-iters (read-type-relay node))))))
+          (loop for nth upfrom 0
+                for r in (node-reduced-axes node)
+                if r do (setf (nth nth reduced-axes) t)))))
     reduced-axes))
 
 (defun initial-loop-permutation (graph rank)

@@ -142,15 +142,16 @@ Corresponds to the position of the subgraph in the parent schedule.
                                     #'concatenate
                                     'string
                                     (butlast
-                                     (loop for stride in (iteration-space-strides typ)
-                                           for nth upfrom 0
-                                           for gid = (gid nth)
-                                           if (is-zero stride)
-                                             ;; [TODO] :Permute and :View (Offset, By)
-                                             collect (format nil "0")
-                                           else
-                                             collect (format nil "~(~a~)" gid)
-                                           collect ", ")))))))))
+                                     (when typ
+                                       (loop for stride in (iteration-space-strides typ)
+                                             for nth upfrom 0
+                                             for gid = (gid nth)
+                                             if (is-zero stride)
+                                               ;; [TODO] :Permute and :View (Offset, By)
+                                               collect (format nil "0")
+                                             else
+                                               collect (format nil "~(~a~)" gid)
+                                           collect ", "))))))))))
       idx2domain)
      (format out "}"))))
 
