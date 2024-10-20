@@ -22,8 +22,13 @@
    #:buffer-shape
    #:buffer-stride
    #:buffer-views)
+  (:import-from
+   :caten/codegen/renderer
+   #:render-expr
+   #:Default-Renderer)
   (:export
-   #:lower-schedule-item))
+   #:lower-schedule-item
+   #:print-blueprint))
 
 (in-package :caten/codegen/blueprint)
 
@@ -35,6 +40,22 @@
 
 (defun %make-endfor (idx)
   (make-node :Render :ENDFOR nil nil :idx idx))
+
+(defmethod print-blueprint (nodes stream)
+  (format
+   stream
+   "[Blueprint]{~%~a}"
+   (with-output-to-string (out)
+     (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
+       (loop with indent = 2
+	     for node in nodes
+	     if (eql (node-type node) :FOR)
+	       do (format out "~afor (int ~(~a~)=~(~a~);~(~a~);~(~a~)+=~(~a~)) {~%" (indent indent) (getattr node :idx) (render-expr 'Default-Renderer (getattr node :upfrom)) (render-expr 'Default-Renderer (getattr node :below)) (getattr node :idx) (render-expr 'Default-Renderer (getattr node :by)))
+		  (incf indent 2)
+	     else if (eql (node-type node) :ENDFOR)
+	            do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (getattr node :idx))
+	     else
+	       do (format out "~aop[~a];~%" (indent indent) (node-type node)))))))
 
 (defmethod get-grouped-dims ((graph Graph))
   "Find out the iteration space that is common in the graph"
@@ -201,9 +222,12 @@
 (defmethod initial-bp ((ctx ctx))
   (with-slots ((gids gids) (group-size loop-size-list) (order order)) ctx
     `(,@(permute-list order (map 'list #'%make-for gids group-size))
-      ,@(permute-list order (map 'list #'%make-endfor (reverse gids))))))
+      ,@(reverse (permute-list order (map 'list #'%make-endfor gids))))))
 
-(defun try-insert-node (ctx node &key (depend-idx) (depend-node) (path-reduced nil) &aux (changed-p nil))
+(defun try-insert-node (ctx node
+                        &key (depend-idx) (depend-node) (path-reduced nil)
+                        &aux
+                          (changed-p nil))
   (with-slots ((blueprint blueprint)) ctx
     (let ((satisfied)
           (idx-satisfied)
@@ -274,7 +298,7 @@
                 (if (getattr node :reduction :allow-undefined t)
                     (node-reduced-gids node gids) ;; Note that not-reduce-gids requires un-permuted gids
                     ;; When to stop path-reduce extension?
-                    path-reduced)))))
+                    nil)))))
        (node-reads node) (range 0 (length (node-reads node)))))))
 
 (defmethod lower-schedule-item ((node Node) (base-graph Graph))
@@ -293,6 +317,7 @@
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
     (fixup-graph-iteration-space graph iterspace base-graph) ; Use the same iteration space in the group
+    ;;(print (permute-list order gids))
     (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil)))
       ;; Initially the blueprint starts with plain loops
       (setf (ctx-blueprint ctx) (initial-bp ctx))
@@ -300,13 +325,11 @@
         #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
         #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
         (mapc #'(lambda (x) (recursive-lower-into-bp ctx x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph)))
-      (print "BLUEPRINT")
-      (print (ctx-blueprint ctx))
-      ;; [TODO] Remove Empty For
+      (print-blueprint (ctx-blueprint ctx) t)
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
-;; 2:30madeni owaraseru
-;; kyouha permute, graph partition made iketara good
+
+;; kyouha permute, graph partition made iketara ok
 ;; [!] Need process replay..
 ;; Involve the following things to the test
 ;; - [ ] Initial Schedule
