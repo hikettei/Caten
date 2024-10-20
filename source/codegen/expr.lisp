@@ -22,6 +22,7 @@
 (in-package :caten/codegen/expr)
 
 (defstruct Expr
+  "Expr is a graph wrapper that reprensents a computation whose node leaves are scalar (scalar number, aref from the tensor) and each computation is a scalar."
   (graph (error "graph must occur") :type Graph)
   (out (error "out must occur") :type node))
 
@@ -76,7 +77,7 @@ Only supports the scalar computation because it is intended to identify the same
 
 (defmethod simplify-expr ((expr Expr))
   (let ((out (graph-outputs (expr-graph expr))))
-    ;; [TODO] set (graph-outputs out) = nil
+    ;; [TODO] set (graph-outputs out) = nil to simplify the last expr.
     (optimize-aasm (expr-graph expr))
     (setf (graph-outputs (expr-graph expr)) out))
   expr)

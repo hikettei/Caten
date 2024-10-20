@@ -90,6 +90,7 @@
 	(renew (avm-id2tensor avm))
 	(renew (avm-variables avm))))))
 
+;; [TODO] 多分丸ごといらなくなる
 (defun wmma-relay-from (t1 tc nth)
   (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))
 

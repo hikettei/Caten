@@ -39,7 +39,6 @@
   `(loop for i from ,from below ,below by ,by collect i))
 
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
-
 ;; The same algorithm in function.lisp (class Permute)
 (defun permute-list (order list)
   (assert (= (length order) (length list)) () "cannot shuffle ~a and ~a" order list)

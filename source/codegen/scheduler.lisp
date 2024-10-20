@@ -149,9 +149,6 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
           (return-from group-mergeable-p t)))
       t)))
 
-;; (defparameter *model* (Transformer 64 4 2 1e-5 32))
-;; (caten/codegen:jit (time (caten (call *model* (make-tensor `(1 10)) (iconst 'n)))))
-
 (defun schedule-groups (parent parent-groups)
   (flet ((f (x) (when x (when (not (eql (group-key parent) (group-key x))) x))))
     (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
@@ -258,6 +255,7 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
        ;; Smaller Rank -> Higher Ranknihanaranai
        ;; HigherRank -> SmallerRankのPathを見つけたら，Higher RankにShapeを統一する。
        ;; その過程でPermuteを復元してもいいかもしれない・・・
+       ;; Permute matmul: こっちをなんとかする
        (loop with buffer-p = (eql (node-type node) :Allocate)
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
@@ -273,23 +271,8 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
 
-;; [TODO] Add :FUNCALL node like :FUNCALL :name=embedding, this is not JIT and independentantly schedules
-;; [TODO] Support multiple outputs
+;; [TODO] Refactor _read_viewsを削除する
 ;; Fuse Symbolic !randn < 1 kernels (and it means a success)
-;; Loop Collapse
-;; breathe first search
-
-;; (Add (Embedding Embedding))
-;; (defsimplifier serialize ...
-;; [Note] :shrink MOVE is mergeable
-
-;; Pattern Matcher
-;; :Reduce :Reduce |
-;;   :ELemwise     |
-;; Plan:
-;; 1. Schedule-Item: :Reduce/:Permute/:Reshapeとかを一つだけ持つ
-;; 2. Pattern Matcher
-
 ;; :Reduce -> :Reduce ...
 ;; for ...
 ;;;  ...
@@ -300,11 +283,6 @@ The more fused kernels the better, Loop Fission by ISL Scheduler
 ;; みたいにしてMerge可能
 
 ;; BP Lowererはこの方針で決定，Add Embedding EmbeddingをFuseする
-(defsimplifier
-    (schedule-graph-rewriter)
-    ;; ここでLoop Forの生成をする，失敗にしたらNILになる
-    )
-
 ;; Itersize >= になるAssertを作る
 
 (defmethod graph-schedule ((graph Graph))

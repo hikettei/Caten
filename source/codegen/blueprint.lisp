@@ -297,12 +297,9 @@
                     if (symbolp x) collect x)
               :path-reduced
               (when (= nth 0)
-                ;; A += B
-                ;; =>
-                ;; tid_xxx = A + B :reduce=T
+                ;; If node is a reduce, the first argument should be separated from this loop.
                 (if (getattr node :reduction :allow-undefined t)
-                    (node-reduced-gids node gids) ;; Note that not-reduce-gids requires un-permuted gids
-                    ;; When to stop path-reduce extension?
+                    (node-reduced-gids node gids) ;; Note that node-reduce-gids requires un-permuted gids
                     nil)))))
        (node-reads node) (range 0 (length (node-reads node)))))))
 
@@ -344,18 +341,25 @@
 ;; - [x] Initial Schedule
 ;;   - [x] Mean axis=0, axis=1,...
 ;;   - [x] Embedding
+;;   - [ ] Double Reduce (add embedding embedding), add matmul matmul
+;;   - [ ] Triple Reduce (add embedding embedding embedding)
+;;   - [ ] WPE+WTE in Transformer is a single kernel.
 ;; - [ ] Permutation
 ;;   - [ ] Matmul, and ConvND
 ;; - [ ] Permute Fuse
 ;;   - [ ] Matmul+Transpose
 ;; - [ ] Graph Partition
 ;;   - [ ] Transfomer
+;;   - [ ] Attention View will be properly scheduled?
+;;   - [ ] Split the grpah as soon as :shrink was detected to schedule !randn
 ;; - [ ] Dynamic Shape
 ;; [TODO] (0 10 1 nil)はNILに書き換える
 ;; schedule.lispwokousin sinaito ugokanai rei:
 ;;(with-no-grad
 ;;            (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
 
+;; (defparameter *model* (Transformer 64 4 2 1e-5 32))
+;; (caten/codegen:jit (time (caten (call *model* (make-tensor `(1 10)) (iconst 'n)))))
 ;; [TODO] Loopの操作はPolyhedral Compilerに任せる。。。
 ;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
 #|
