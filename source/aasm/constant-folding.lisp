@@ -87,7 +87,7 @@
 	     :Buffer :Allocate
 	     (node-writes node) new-shape
 	     :nrank nrank :dtype dtype :from from))))))
-    ((:View (~ ss) :broadcast broadcast :nrank nrank :permute permute)
+    ((:View (~ ss) :broadcast broadcast :nrank nrank :permute permute :override-stride-p os)
      ->
      ((node graph)
       (when ss
@@ -102,7 +102,7 @@
 	    (make-node
 	     :Buffer :View
 	     (node-writes node) new-views
-	     :nrank nrank :broadcast broadcast :permute permute)))))))
+	     :nrank nrank :broadcast broadcast :permute permute :override-stride-p os)))))))
 
 (defsimplifier
     (%2_unfold_load_alloc)

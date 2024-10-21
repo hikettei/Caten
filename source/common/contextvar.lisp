@@ -139,7 +139,7 @@ Usage:
      0 :int identity
      "Set 1 if the test is running under Github Actions")
     (:AUTO_SCHEDULER
-     0 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
+     1 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
      "Set 1 to enable auto-scheduler for JIT")
     (:JIT
      0 :int identity
@@ -197,7 +197,7 @@ Usage:
      0 :int #.(oneof "CALL_ZENITY" 0 `(0 1))
      "(For JIT) %render-compile always produce an simple-error.")
     (:COLOR
-     1 :int #.(oneof "COLOR" 1 `(0 1))
+     1 :int #.(oneof "COLOR" 0 `(0 1))
      "Use cl-ansi-color if set to 1")
     (:SAFETY
      0 :int #.(oneof "SAFETY" 0 `(0 1))
