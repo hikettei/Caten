@@ -135,6 +135,7 @@ Corresponds to the position of the subgraph in the parent schedule.
                 (loop for var in (funcall reader tgt-node)
                       for typ in (funcall type-reader (read-type-relay tgt-node))
                       if (symbolp var)
+                        ;; [TODO] (getattr node :reduction)
                         do (format out "  ~a -> ~(~a~)[~(~a~)];~%"
                                    dom
                                    var

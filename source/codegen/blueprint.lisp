@@ -46,7 +46,7 @@
 (defmethod print-blueprint (nodes stream)
   (format
    stream
-   "[Blueprint]{~%~a}"
+   "[Blueprint]{~%~a}~%"
    (with-output-to-string (out)
      (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
        (loop with indent = 2
@@ -144,11 +144,7 @@
                      collect
                      (if (= (length p) 1)
                          (nth (car p) view)
-                         (progn
-                           ;; (assert (every #'null (map 'list #'(lambda (x) (nth x view)) p))
-                           ;;         ()
-                           ;;         "merge-view: collapsed axes are merged. ~a" view)
-                           nil))))
+                         nil)))
              (fixup-dims (iterspace original-buffer)
                (when iterspace
                  (when (= (length (iteration-space-shape iterspace)) (length found-space))
@@ -319,15 +315,14 @@
   (let* ((graph (apply #'make-graph (getattr node :items)))
          (_ (setf (graph-outputs graph) (node-writes node)))
          (iterspace (get-grouped-dims graph))
-         (__ (fixup-graph-iteration-space graph iterspace base-graph)) ; Use the same iteration space in the group
+         (__ (fixup-graph-iteration-space graph iterspace base-graph)) ; Use the common iteration space in the group
          (group-size (car iterspace))
          (gids (map 'list #'gid (range 0 (length group-size))))
-         (order (initial-loop-permutation graph (length group-size)))) ;; relocate reduction loop deeper
+         (order (initial-loop-permutation graph (length group-size)))) ;; permute reduce axes deeper
     (declare (ignore _ __))
     ;; gids       = (gid0, gid1, gid2, ...)
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
-    (fresh-line)
     (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil)))
       ;; Initially the blueprint starts with plain loops
       (setf (ctx-blueprint ctx) (initial-bp ctx))
@@ -336,14 +331,12 @@
         #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
         (mapc #'(lambda (x) (recursive-lower-into-bp ctx x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph)))
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)))
-      (print-blueprint (ctx-blueprint ctx) t)
+      (when (>= (ctx:getenv :JIT_DEBUG) 2)
+        (print-blueprint (ctx-blueprint ctx) t))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
-;; - conditions to grouped the same graph
-;;   - mergeable views
-;;   - Merge Multiple Move
-;; - Load stand alone should only depends on _gid1
-;; kyouha permute, graph partition made iketara ok
+;; - This is the case lowerer cannot handle well
+;;   - (caten/codegen:jit (caten (!sin (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (!sin (forward (Embedding 10 10) (make-tensor `(10 10))))))))
 ;; [!] Need process replay..
 ;; Involve the following things to the test
 ;; - [x] Initial Schedule
@@ -361,8 +354,6 @@
 ;;   - [ ] Attention View will be properly scheduled?
 ;;   - [ ] Split the grpah as soon as :shrink was detected to schedule !randn
 ;; - [ ] Dynamic Shape
-;; [TODO] (0 10 1 nil)はNILに書き換える
-;; schedule.lispwokousin sinaito ugokanai rei:
 ;;(with-no-grad
 ;;            (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
 
@@ -372,35 +363,3 @@
 ;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
 ;; - [ ] relu(gemm)
 ;; - [ ] conv
-#|
-for (int c0=0; c0<=2; c0+=)
-  for (int c1=0; c1 <= 3; c1++)
-     NID16190746(c0, c1);
-   for (int c1=0; c1 <= 3; c1++)
-     NID16190747(c0, c1);
-   for (int c1=0; c1 <= 3; c1++)
-     NID16190748(c0, c1);
-  }
-}
-|#
-
-#|
-T=0
-for (int c0=0; c0<=2; c0+=)
-   for (int c1=0; c1 <= 3; c1++)
-     NID16190748(c0, c1);
-  }
-}
-T=1
-for (int c0=0; c0<=2; c0+=)
-   for (int c1=0; c1 <= 3; c1++)
-     ...
-   for (int c1=0; c1 <= 3; c1++)
-     NID16190748(c0, c1);
-  }
-}
-T=2
-
-|#
-
-;; Embedding: 5600, 90, 100

@@ -35,6 +35,12 @@
 ;; - [ ] Fuse Permute
 ;; - [ ] Scop+Polyhedral -> Can ISL find the optimal embedding kernel?
 ;; - [ ] Support Backward (Higher Order?)
+;; [TODO] Debug=1 -> easy to see the difference and transformation
+;; Kernel1.BP
+;; Kernel2.POLY
+;; Kernel1.BP
+;; Kernel2.POLY
+;;    ...
 (defun jit (avm)
   "Runs the JIT compilation (destructive)"
   (declare (type AVM avm))
@@ -50,6 +56,7 @@
     ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
     (mapc #'(lambda (x) (lower-schedule-item x (avm-graph avm))) (reverse (graph-nodes schedule-graph)))
     ;; 6. Lower into Polyhedral IR
+    ;; (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)
     (mapc #'scop (graph-nodes schedule-graph))
     
     ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)

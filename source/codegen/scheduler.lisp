@@ -384,7 +384,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 ;; - [ ] RMSNorm, Softmax, 1 Reduction 1 Group?
 ;; =====> That is
 ;; - [ ] Merge MOVE+Permutation into the same group by transform-and-mergeable-p, making ConvND, Transpose+Matmul < 1 Kernels
-;; - [ ] Redution+MOVE is a pair (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))
+;; - [x] Redution+MOVE is a pair (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))
+;;   - [ ] they are in the same group
 ;; - [ ] Softmax/RMSNorm Scheduling
 ;; - [ ] Allow double-reduce in the group
 ;;   - [ ] Proper Partition the :reduction in blueprint.lisp
