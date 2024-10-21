@@ -187,6 +187,7 @@ Trying to merge X and Y in the same group connected like:
    Y
 ```
 "
+  ;; [TODO] Merge Permute
   (when (not (symbolp read)) (return-from transform-and-mergeable-p nil))
   (when (find :shrink (view-type-list read-views)) (return-from transform-and-mergeable-p nil))
   (let ((node (id->value graph read)))
@@ -197,12 +198,12 @@ Trying to merge X and Y in the same group connected like:
       (flet ((elwise-p (x)
                (and (= (length (iteration-space-views x)) 1)
                     (every #'null (iteration-space-views x)))))
-        (print "++Mergeable?++")
-        (print node)
-        (print read-type)
-        (print wi)
-        (print write-type)
-        (print ri)
+;        (print "++Mergeable?++")
+ ;       (print node)
+  ;      (print read-type)
+   ;     (print wi)
+    ;    (print write-type)
+     ;   (print ri)
         (when (= (buffer-nrank read-type) (buffer-nrank write-type))
           (return-from transform-and-mergeable-p nil)
           )
@@ -392,7 +393,9 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
       ;; [TODO] (Add (Embedding[Reduce] Embedding[Reduce])) Fusion Using Pattern Matcher
       schedule)))
 
+;; [TODO] randn rng_counter -> _gid0=0..200のループの外側に出す
 ;; 1 kernel 1 reduction -> delete?
+;; 1 path 1 reduction instead?
 ;;(with-no-grad
 ;; (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 ;; Shape Rank MismatchによるInsertの失敗(sin+Embedding, ConvND Fusion, SinMatmulなど)を修正する

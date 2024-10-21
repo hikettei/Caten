@@ -80,67 +80,45 @@
         nodes
         (simplify-blueprint nodes))))
 
-(defmethod get-grouped-dims ((graph Graph) (global-iterator Iteration-Space))
+(defmethod get-grouped-dims ((graph Graph))
   "Find out the iteration space that is common in the graph"
-  (let* ((iterspace (iteration-space-shape global-iterator))
-         (procedure (iteration-space-procedure global-iterator))
-         (seen))
-    (labels ((is-one (axis)
-               (expr-scalar-equivalent-p axis (expr-const 1 :int64)))
-             (merge-broadcast (space node name)
-               (assert (= (length space) (length iterspace)))
-               (setf
-                iterspace
-                (map
-                 'list
-                 #'(lambda (common-x new-y)
-                     ;; Note: If Permuted?
-                     (if (is-one common-x)
-                         new-y
-                         (progn
-                           (unless (is-one new-y)
-                             (assert (expr-scalar-equivalent-p common-x new-y) () "The size of adjacent loops should match (note: permuted?)~%~a~%~a
-Cannot merge ~a and ~a
-When processing ~a of ~a" common-x new-y iterspace space node name))
-                           common-x)))
-                 iterspace space)))
-             (try-merge (space node name &aux (shape (iteration-space-shape space)))
-               (when (null space) (return-from try-merge))
-               (if (> (length shape) (length iterspace))
-                   ;; Found higher rank? -> merge
-                   (setf iterspace shape
-                         procedure (iteration-space-procedure space))
-                   (when (= (length shape) (length iterspace))
-                     (merge-broadcast shape node name)))))
-      (labels ((explore (id &aux (node (when (symbolp id) (id->value graph id))))
-                 (when (and node (null (find id seen)))
-                   (push id seen)
-                   (flet ((f (x name) (when x (try-merge x node name))))
-                     (mapc #'f (relay-read-iters (read-type-relay node)) (node-reads node))
-                     (mapc #'f (relay-write-iters (read-type-relay node)) (node-writes node)))
-                   (mapc #'explore (node-reads node)))))
-        (mapc #'explore (graph-outputs graph))))
-    (cons iterspace procedure)))
-
-;; Groupの中でBufferShapeを同じにする方が手っ取り早いのだろうか？
-(defmethod get-grouped-dims1 ((graph Graph))
-  "Find out the iteration space that is common in the graph"
-  (let* ((kernel-rank
-           (loop for node in (graph-nodes graph)
-                 for type = (read-type-relay node)
-                 maximize (apply #'max (append (map 'list #'buffer-nrank (relay-reads type)) (map 'list #'buffer-nrank (relay-writes type))))))
-         (procedure)
-         (collapsed-idx))
-    (labels ((check (buffer space)
-               (when (= (buffer-nrank buffer) kernel-rank)
-                 
-                 ))
-             (explore (node)
-               (mapc #'check (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node)))
-               (mapc #'check (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node)))))
-      (mapc #'explore (graph-nodes graph)))
-
-    ))
+  (flet ((butnil (ls) (loop for l in ls if l collect l)))
+    (let* ((kernel-rank
+             (loop for node in (graph-nodes graph)
+                   for type = (read-type-relay node)
+                   maximize (apply #'max (append (map 'list #'buffer-nrank (butnil (relay-reads type))) (map 'list #'buffer-nrank (butnil (relay-writes type)))))))
+           (pid2space (make-hash-table :test #'equal)))
+      (labels ((is-one (expr)
+                 (expr-scalar-equivalent-p expr (expr-const 1 :int64)))
+               (check (buffer space)
+                 (when (and buffer space (= (buffer-nrank buffer) kernel-rank))
+                   (loop for s in (iteration-space-shape space)
+                         for p in (iteration-space-procedure space)
+                         do (setf (gethash p pid2space)
+                                  (if (or (null (gethash p pid2space)) (is-one (gethash p pid2space)))
+                                      s
+                                      (gethash p pid2space))))))
+               (explore (node)
+                 (mapc #'check (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node)))
+                 (mapc #'check (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
+               (related-keys (rank)
+                 (loop for key being the hash-keys of pid2space
+                       if (find rank key) collect key)))
+        (mapc #'explore (graph-nodes graph))
+        (let* ((new-procedure
+                 (loop for dimension upfrom 0 below kernel-rank
+                       collect (car (sort (related-keys dimension) #'< :key #'length))))
+               (new-procedure
+                 (loop with seen = nil
+                       for p in new-procedure
+                       if (null (find p seen :test #'equal))
+                         collect p
+                         and do (push p seen))))
+          (assert (every #'identity new-procedure) () "~a" new-procedure)
+          (assert (equal (alexandria:flatten new-procedure) (range 0 kernel-rank)))
+          (cons
+           (map 'list #'(lambda (x) (gethash x pid2space)) new-procedure)
+           new-procedure))))))
 
 (defmethod fixup-graph-iteration-space ((graph Graph) found-pair g)
   "Rewrite the iteration space in the graph to match the common iteration space found in the get-grouped-dim function."
@@ -175,9 +153,6 @@ When processing ~a of ~a" common-x new-y iterspace space node name))
                (when iterspace
                  (when (= (length (iteration-space-shape iterspace)) (length found-space))
                    (return-from fixup-dims))
-                 (assert (<= (length (iteration-space-shape iterspace)) (length found-space))
-                         ()
-                         "The rank of the iteration space should be less than or equal to the found space~%~a~%~a" iterspace found-space)
                  ;; Caten cannot inference where to insert one here.
                  (assert (>= (length (buffer-shape original-buffer)) (length found-space))
                          ()
@@ -343,7 +318,7 @@ When processing ~a of ~a" common-x new-y iterspace space node name))
   (when (getattr node :allocate-p) (return-from lower-schedule-item))
   (let* ((graph (apply #'make-graph (getattr node :items)))
          (_ (setf (graph-outputs graph) (node-writes node)))
-         (iterspace (get-grouped-dims graph (getattr node :global-iterator)))
+         (iterspace (get-grouped-dims graph))
          (__ (fixup-graph-iteration-space graph iterspace base-graph)) ; Use the same iteration space in the group
          (group-size (car iterspace))
          (gids (map 'list #'gid (range 0 (length group-size))))
