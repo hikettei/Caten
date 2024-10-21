@@ -114,7 +114,7 @@
                        if (null (find p seen :test #'equal))
                          collect p
                          and do (push p seen))))
-          (assert (every #'identity new-procedure) () "~a" new-procedure)
+          (assert (every #'identity new-procedure) () "get-grouped-dim: cannot proceed to the next process because the procedure was inferred as: ~a" new-procedure)
           (assert (equal (alexandria:flatten new-procedure) (range 0 kernel-rank)))
           (cons
            (map 'list #'(lambda (x) (gethash x pid2space)) new-procedure)
@@ -354,8 +354,7 @@
 ;;   - [ ] Attention View will be properly scheduled?
 ;;   - [ ] Split the grpah as soon as :shrink was detected to schedule !randn
 ;; - [ ] Dynamic Shape
-;;(with-no-grad
-;;            (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
+;;(with-no-grad (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
 
 ;; (defparameter *model* (Transformer 64 4 2 1e-5 32))
 ;; (caten/codegen:jit (time (caten (call *model* (make-tensor `(1 10)) (iconst 'n)))))
