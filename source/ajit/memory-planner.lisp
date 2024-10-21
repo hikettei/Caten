@@ -522,7 +522,7 @@ Lifespan:
     (prune)
     (setf (mp-id2buffer mp) (make-hash-table))
     (memory-plan mp t)
-    (when (= 1 (ctx:getenv :AUTO_SCHEDULER))
+    (when nil;(= 1 (ctx:getenv :AUTO_SCHEDULER))
       (mp-auto-schedule! mp)
       (prune))
     ;; [TODO] Apply multiexpr in the final fused graph.
