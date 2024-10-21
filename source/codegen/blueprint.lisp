@@ -327,11 +327,7 @@
     ;; gids       = (gid0, gid1, gid2, ...)
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
-    (print (permute-list order gids))
-    (print gids)
-    (print group-size)
     (fresh-line)
-    (print graph)
     (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil)))
       ;; Initially the blueprint starts with plain loops
       (setf (ctx-blueprint ctx) (initial-bp ctx))
@@ -341,7 +337,6 @@
         (mapc #'(lambda (x) (recursive-lower-into-bp ctx x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph)))
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)))
       (print-blueprint (ctx-blueprint ctx) t)
-      ;; [TODO] 同じIteration内のOPたちを一つのExprにFuseする
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
 ;; - conditions to grouped the same graph

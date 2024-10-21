@@ -57,7 +57,6 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
          :slots
          ((blueprint :type list :initform nil)
           (polyhedral)
-          (global-iterator :type Iterator)
           (buffers)
           (allocate-p :type boolean)
           (name :type symbol)
@@ -91,7 +90,6 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 
 (defstruct Group
   (key (gensym) :type symbol)
-  (global-iterator nil :type (or null Iteration-Space))
   (items nil :type list)
   (reduced nil :type boolean)
   (view-objects nil :type list))
@@ -112,17 +110,10 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
         (writes (nodes-write-to (group-items group)))
         (allocate-p (find :Allocate (group-items group) :key #'node-type)))
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
-               :global-iterator (group-global-iterator group)
                :allocate-p (when allocate-p t)
                :storage-id-dst writes
                :storage-id-src reads
                :items (group-items group))))
-
-(defmethod group-clean-up-global-iterator ((group Group))
-  (when (group-global-iterator group)
-    ;; stride/view are not inferred by group-merge-iterators, so deleting this
-    (setf (iteration-space-strides (group-global-iterator group)) nil
-          (iteration-space-views (group-global-iterator group)) nil)))
 
 (defmethod group-mergeable-p ((group Group) graph read read-type ri read-views)
   "
@@ -198,12 +189,12 @@ Trying to merge X and Y in the same group connected like:
       (flet ((elwise-p (x)
                (and (= (length (iteration-space-views x)) 1)
                     (every #'null (iteration-space-views x)))))
-;        (print "++Mergeable?++")
- ;       (print node)
-  ;      (print read-type)
-   ;     (print wi)
-    ;    (print write-type)
-     ;   (print ri)
+        ;;  (print "++Mergeable?++")
+        ;;  (print node)
+        ;;  (print read-type)
+        ;;  (print wi)
+        ;;  (print write-type)
+        ;;  (print ri)
         (when (= (buffer-nrank read-type) (buffer-nrank write-type))
           (return-from transform-and-mergeable-p nil)
           )
@@ -211,36 +202,8 @@ Trying to merge X and Y in the same group connected like:
           )
         nil))))
 
-(defmethod group-merge-iterators ((group Group) (is Iteration-Space))
-  "The group always try to keep the largest iteration domain."
-  (let ((gi (group-global-iterator group)))
-    ;; Not created?
-    ;; Rank Basedじゃなくて，ちゃんとMergeを実装しないといけない・・・
-    ;; Procedureを全部読んで，全てのOPでCollapseされてなかったら，CollapseOK
-    ;; Otherwise, dont collapse
-    ;; highest rank basedで選ぶのをやめる
-    ;; (2 20 1 30) f
-    ;; [ ] Fixup iteratorの修正 => Broadcast+Transposed Matmul, ConvNDを動作
-    (when (null gi)
-      (setf (group-global-iterator group) is)
-      (return-from group-merge-iterators))
-    ;; Found a higher rank iteration space? -> merge to them
-    (when (> (length (iteration-space-shape is)) (length (iteration-space-shape gi)))
-      (setf (group-global-iterator group) is)
-      (return-from group-merge-iterators))
-    ;; Complicated + ElementWise -> skip
-    (when (< (length (iteration-space-shape is)) (length (iteration-space-shape gi)))
-      ;; [TODO] Assert that the total number of iteration is the same...
-      (return-from group-merge-iterators))
-    ;; (assert (= (length (iteration-space-shape is)) (length (iteration-space-shape gi))))
-    ))
-
 (defmethod group-add-node ((group Group) node)
-  (push node (group-items group))
-  (dolist (r (relay-read-iters (read-type-relay node)))
-    (when r (group-merge-iterators group r)))
-  (dolist (r (relay-write-iters (read-type-relay node)))
-    (when r (group-merge-iterators group r))))
+  (push node (group-items group)))
 
 (defmethod identify-view-type ((view Node))
   ;; [TODO] Rename Broadcast/Reshape -> Broadcast_Or_Reshape
@@ -364,7 +327,7 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
              else
                collect
                (let ((out (transform-and-mergeable-p parent graph read read-type ri views)))
-                 (if out
+                 (if nil;out
                      (recursive-create-group read graph :seen seen :parent parent)
                      (recursive-create-group read graph :seen seen))))))))
 
@@ -375,8 +338,6 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
   (let* ((seen (make-hash-table))
          (groups (apply #'append (map 'list #'(lambda (x) (nreverse (recursive-create-group x graph :seen seen))) (graph-outputs graph)))))
     (mapc #'verify-group groups)
-    ;; iterspace stride/views are unchanged from group-merge-iterators, deleting this.
-    (mapc #'group-clean-up-global-iterator groups)
     ;; Serialize ADD (Embedding Embedding)
     ;; Merge two independent groups
     (when (>= (ctx:getenv :JIT_DEBUG) 4)
