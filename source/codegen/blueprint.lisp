@@ -353,6 +353,7 @@
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-blueprint (ctx-blueprint ctx) t))
+      ;; [TODO] ADd more constraints to the polyhedral compiler (e.g.: multiexpr grouping)
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
 ;; - This is the case lowerer cannot handle well

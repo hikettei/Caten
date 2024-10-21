@@ -300,10 +300,6 @@ What items are scheduled to the same loop?
 Do not consider about the access dependencies.
 
 Generally the more fusion the better for us, loop fission by ISL Scheduler
-
-### Note
-
-- Embedding後のContiguousがくっつく場所をちゃんと考える
 "
   (declare (type graph Graph))
   (symbol-macrolet ((->failed (return-from recursive-create-group)))
@@ -333,7 +329,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
              if (and
                  (null buffer-p) mergeable-p ;; merged due to element-wise operation
-                 ;(group-force-move-reduce-in-the-group parent graph read)
+                 ;; -> use it
+                 ;;(group-force-move-reduce-in-the-group parent graph read)
                  )
                do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
                and collect (recursive-create-group read graph :seen seen :parent parent)
@@ -380,18 +377,34 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 ;; - [ ] Permutation Inference at scheduler.lisp level
 ;;   - [ ] Transposed Matmul < 1 Kernel
 ;; - [ ] Graph Partition
-;; - [ ] Clean up scheduler. :view-type was unnecessary?
-;; - [ ] Schedule Item IterSpace -> グループ内で最大のItersizeを保持しておく (output-itersize strategyは通用しない)
-;; - [ ] RMSNorm, Softmax, 1 Reduction 1 Group?
+;; - [ ] Group Reduce Refactor
+;; - [x] RMSNorm, Softmax, 1 Reduction 1 Group?
 ;; =====> That is
 ;; - [ ] Merge MOVE+Permutation into the same group by transform-and-mergeable-p, making ConvND, Transpose+Matmul < 1 Kernels
 ;; - [x] Redution+MOVE is a pair (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))
 ;;   - [ ] they are in the same group
 ;;   - [ ] (!gelu (!Matmul )) shape inference is still invaild
-;; - [ ] Softmax/RMSNorm Scheduling
-;; - [ ] Allow double-reduce in the group
+;; - [x] Softmax/RMSNorm Scheduling
+;;   - [ ] Softmax: eliminate _gid1 (subsequence loops removed if all axes are broadcasted)
+;; - [x] Allow double-reduce in the group
 ;;   - [ ] Proper Partition the :reduction in blueprint.lisp
 ;;   - [ ] Partitioning the entire graph w/o relying on reduction (=> Large Graph Partition)
 ;; - [ ] Symbolic
+
+;; - Scheduler Remained stuff ...
+;;  - [ ] Permute or View Fusion
+;;  - [ ] Fix !gelu (FIRST)
+;;  - [ ] Large Graph Partition (Transformer!) (looks working well?)
+
+;; -> Next ...
+;;  - [ ] Expr Multi Grouping
+;;  - [ ] Scalar Transform (backward)
+;;  - [ ] AutoDiff
+;;  - [ ] Symbolic
+;;  - [ ] Auto Tuner
+;; !gelu -> cannot repro?
+;; (caten/codegen:jit (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25))))))
+;; replacing forward -> call: failing
+
 ;; (with-no-grad
 ;  (Time (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))))
