@@ -152,7 +152,7 @@
     (let ((buffer (copy-buffer (car args))))
       (setf (buffer-shape buffer) (map 'list #'reveal-buffer shape)
 	    (buffer-stride buffer)
-            (if (getattr node :override-stride-p)
+            (if (and (= (length (buffer-stride (car args))) (length stride)) (getattr node :override-stride-p))
                 (buffer-stride (car args))
                 (map 'list #'reveal-buffer stride))
 	    (buffer-views buffer)
