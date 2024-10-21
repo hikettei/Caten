@@ -17,7 +17,8 @@
    :caten/codegen/helpers
    :gid
    :range
-   :permute-list)
+   :permute-list
+   :render-list)
   (:import-from
    :caten/avm
    #:buffer-nrank
@@ -43,24 +44,45 @@
 (defun %make-endfor (idx)
   (make-node :Render :ENDFOR nil nil :idx idx))
 
-(defmethod print-blueprint (nodes stream)
-  (format
-   stream
-   "[Blueprint]{~%~a}~%"
-   (with-output-to-string (out)
-     (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
-       (loop with indent = 2
-	     for node in nodes
-	     if (eql (node-type node) :FOR)
-	       do (format out "~afor (int ~(~a~)=~(~a~);~(~a~);~(~a~)+=~(~a~)) {~%" (indent indent) (getattr node :idx) (render-expr 'Default-Renderer (getattr node :upfrom)) (render-expr 'Default-Renderer (getattr node :below)) (getattr node :idx) (render-expr 'Default-Renderer (getattr node :by)))
-		  (incf indent 2)
-	     else if (eql (node-type node) :ENDFOR)
-	            do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (getattr node :idx))
-	     else
-	       do (format out "~aop[~a ~a <- ~a~a];~%" (indent indent) (node-type node) (node-writes node) (node-reads node)
-                          (if (getattr node :reduction :allow-undefined t)
-                              " :reduction=t"
-                              "")))))))
+(defmethod print-blueprint (nodes stream &aux (gids))
+  (flet ((print-aref (name is)
+           (if is
+               (format nil "~a[~(~a~)]" name
+                       (render-expr
+                        'Default-Renderer
+                        (apply
+                         #'expr-add
+                         (map
+                          'list
+                          #'(lambda (view stride i)
+                              (if view
+                                  (expr-mul (expr-const (third view) :int64) (expr-add (expr-const (car view) :int64) (expr-mul stride (expr-const i :int64))))
+                                  (expr-mul stride (expr-const i :int64))))
+                          (iteration-space-views is)
+                          (iteration-space-strides is) gids))))
+               (format nil "~(~a~)" name))))
+    (format
+     stream
+     "{~%~a}~%"
+     (with-output-to-string (out)
+       (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
+         (loop with indent = 2
+	       for node in nodes
+	       if (eql (node-type node) :FOR)
+	         do (format out "~afor (int ~(~a~)=~(~a~);~(~a~);~(~a~)+=~(~a~)) {~%" (indent indent) (getattr node :idx) (render-expr 'Default-Renderer (getattr node :upfrom)) (render-expr 'Default-Renderer (getattr node :below)) (getattr node :idx) (render-expr 'Default-Renderer (getattr node :by)))
+                    (push (getattr node :idx) gids)
+		    (incf indent 2)
+	       else if (eql (node-type node) :ENDFOR)
+	              do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (getattr node :idx)) (setf gids (remove (getattr node :idx) gids))
+	       else
+	         do (format out "~a~a = ~(~a~)(~a);~a~%"
+                            (indent indent)
+                            (render-list (map 'list #'print-aref (node-writes node) (relay-write-iters (read-type-relay node))))
+                            (node-type node)
+                            (render-list (map 'list #'print-aref (node-reads node) (relay-read-iters (read-type-relay node))))
+                            (if (getattr node :reduction :allow-undefined t)
+                                " // :reduction=t"
+                                ""))))))))
 
 (defun remove-empty-loop (nodes &aux (removed nil))
   (loop for node in nodes

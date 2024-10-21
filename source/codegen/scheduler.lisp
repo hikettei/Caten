@@ -43,9 +43,6 @@ One Schedule-item corresponds to one kernel in GPU.
 
 (in-package #:caten/codegen/scheduler)
 
-(deftype Schedule-Type ()
-  `(and keyword (member :reduction :element-wise :permute :shrink :allocate)))
-
 (defnode (:GRAPH :Schedule-Item) ()
          "
 name = the name of the kernel (a.k.a: the function name)
@@ -87,6 +84,32 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
             (if (getattr node :allocate-p)
                 ":allocate-p=T"
                 (format nil ":name=~a" (getattr node :name))))))
+
+(defmethod identify-view-type ((view Node))
+  ;; [TODO] Rename Broadcast/Reshape -> Broadcast_Or_Reshape
+  (assert (eql :VIEW (node-type view)))
+  (when (some #'identity (getattr view :broadcast))
+    (return-from identify-view-type :broadcast))
+  (when (getattr view :permute)
+    (return-from identify-view-type :permute))
+  (flet ((shrink-p (size view)
+           (assert (= (length view) 4) () "not a view")
+           (multiple-value-bind (from to by broadcast) (apply #'values view)
+             (assert (null broadcast))
+             (or
+              (not (eql from 0))
+              (not (eql to size))
+              (not (eql by 1))))))
+    (let* ((base-buffer (car (relay-reads (read-type-relay view))))
+           (views (buffer-views (car (relay-writes (read-type-relay view))))))
+      (when (and
+             (= (buffer-nrank base-buffer) (getattr view :nrank))
+             (some #'shrink-p (buffer-shape base-buffer) views))
+        (return-from identify-view-type :shrink)))
+    ;; Reshape = operation that changes the stride
+    :reshape))
+
+(defun view-type-list (views) (map 'list #'identify-view-type views))
 
 (defstruct Group
   (key (gensym) :type symbol)
@@ -178,7 +201,6 @@ Trying to merge X and Y in the same group connected like:
    Y
 ```
 "
-  ;; [TODO] Merge Permute
   (when (not (symbolp read)) (return-from transform-and-mergeable-p nil))
   (when (find :shrink (view-type-list read-views)) (return-from transform-and-mergeable-p nil))
   (let ((node (id->value graph read)))
@@ -186,50 +208,21 @@ Trying to merge X and Y in the same group connected like:
     (when (eql (node-type node) :Allocate) (return-from transform-and-mergeable-p nil))
     (let ((write-type (car (relay-writes (read-type-relay node))))
           (wi (car (relay-write-iters (read-type-relay node)))))
-      (flet ((elwise-p (x)
-               (and (= (length (iteration-space-views x)) 1)
-                    (every #'null (iteration-space-views x)))))
-        ;;  (print "++Mergeable?++")
-        ;;  (print node)
-        ;;  (print read-type)
-        ;;  (print wi)
-        ;;  (print write-type)
-        ;;  (print ri)
-        (when (= (buffer-nrank read-type) (buffer-nrank write-type))
-          (return-from transform-and-mergeable-p nil)
-          )
-        (when (equal `(:permute) (view-type-list read-views))
-          )
-        nil))))
+      (print "++Mergeable?++")
+      (print node)
+      (print read-type)
+      (print wi)
+      (print write-type)
+      (print ri)
+      (when (= (buffer-nrank read-type) (buffer-nrank write-type))
+        (return-from transform-and-mergeable-p nil)
+        )
+      (when (equal `(:permute) (view-type-list read-views))
+        )
+      nil)))
 
 (defmethod group-add-node ((group Group) node)
   (push node (group-items group)))
-
-(defmethod identify-view-type ((view Node))
-  ;; [TODO] Rename Broadcast/Reshape -> Broadcast_Or_Reshape
-  (assert (eql :VIEW (node-type view)))
-  (when (some #'identity (getattr view :broadcast))
-    (return-from identify-view-type :broadcast))
-  (when (getattr view :permute)
-    (return-from identify-view-type :permute))
-  (flet ((shrink-p (size view)
-           (assert (= (length view) 4) () "not a view")
-           (multiple-value-bind (from to by broadcast) (apply #'values view)
-             (assert (null broadcast))
-             (or
-              (not (eql from 0))
-              (not (eql to size))
-              (not (eql by 1))))))
-    (let* ((base-buffer (car (relay-reads (read-type-relay view))))
-           (views (buffer-views (car (relay-writes (read-type-relay view))))))
-      (when (and
-             (= (buffer-nrank base-buffer) (getattr view :nrank))
-             (some #'shrink-p (buffer-shape base-buffer) views))
-        (return-from identify-view-type :shrink)))
-    ;; Reshape = operation that changes the stride
-    :reshape))
-
-(defun view-type-list (views) (map 'list #'identify-view-type views))
 
 (defun schedule-groups (parent parent-groups)
   (flet ((f (x) (when x (when (not (eql (group-key parent) (group-key x))) x))))
@@ -329,16 +322,17 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
              if (and
                  (null buffer-p) mergeable-p ;; merged due to element-wise operation
-                 ;; -> use it
+                 ;; -> [TODO] use it
                  ;;(group-force-move-reduce-in-the-group parent graph read)
                  )
+               ;; Simple Contigous OpFusion is here
                do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
                and collect (recursive-create-group read graph :seen seen :parent parent)
              else
                collect
                (let ((out (transform-and-mergeable-p parent graph read read-type ri views)))
-                 (if nil;out
-                     (recursive-create-group read graph :seen seen :parent parent)
+                 (if out
+                     (recursive-create-group read graph :seen seen :parent parent) ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
                      (recursive-create-group read graph :seen seen))))))))
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
