@@ -46,7 +46,7 @@
 
 (defmethod print-blueprint (nodes stream &aux (gids))
   (flet ((print-aref (name is)
-           (if is
+           (if (and is (> (length (iteration-space-shape is)) 1))
                (format nil "~a[~(~a~)]" name
                        (render-expr
                         'Default-Renderer
@@ -375,7 +375,8 @@
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-blueprint (ctx-blueprint ctx) t))
-      ;; [TODO] ADd more constraints to the polyhedral compiler (e.g.: multiexpr grouping)
+      ;; [TODO] Recursively Relocate (!randn rng counter)
+      ;; [TODO] Add more constraints to the polyhedral compiler (e.g.: multiexpr grouping)
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
 ;; - This is the case lowerer cannot handle well

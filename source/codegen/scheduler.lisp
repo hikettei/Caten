@@ -111,7 +111,8 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
     ;; Reshape = operation that changes the stride
     :reshape))
 
-(defun view-type-list (views) (map 'list #'identify-view-type views))
+(defun view-type-list (views)
+  (loop for v in views if v collect (identify-view-type v)))
 
 (defstruct Group
   (key (gensym) :type symbol)
@@ -222,19 +223,33 @@ Trying to merge X and Y in the same group connected like:
   (let ((node (id->value graph read)))
     (when (null node) (return-from transform-and-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from transform-and-mergeable-p nil))
-    (let ((write-type (car (relay-writes (read-type-relay node))))
-          (wi (car (relay-write-iters (read-type-relay node)))))
-     ; (print "++Mergeable?++")
-     ; (print node)
-     ; (print read-type)
-     ; (print wi)
-     ; (print write-type)
-     ; (print ri)
-      (when (= (buffer-nrank read-type) (buffer-nrank write-type))
-        (return-from transform-and-mergeable-p nil)
-        )
-      (when (equal `(:permute) (view-type-list read-views))
-        )
+    (when (not (eql (node-type node) :MOVE)) (return-from transform-and-mergeable-p nil))
+    (let* ((write-type (car (relay-writes (read-type-relay node))))
+           (write-views (car (getattr node :_write_views)))
+           (wi (car (relay-write-iters (read-type-relay node))))
+           (tmp (id->value graph (car (node-reads node))))
+           (tgt-views (second (getattr node :_read_views)))
+           (tgt-write-views (getattr node :_write_views))
+           (tgt-rel (read-type-relay node))
+           (tgt-type (second (relay-reads tgt-rel)))
+           (tgt-is (second (relay-read-iters tgt-rel))))
+      (when (or (null tmp) (not (eql (node-type tmp) :Allocate))) (return-from transform-and-mergeable-p nil))
+      (when (not (every #'null tgt-write-views)) (return-from transform-and-mergeable-p nil))
+      ;; T=0 | write[wi] = MOVE(some_temporary_buffer, tgt[ti])
+      ;; T=1 | ...       =  f(..., read[ri], ...)
+      ;; =>
+      ;; T=0 | ... = f(..., tgt[new_iter], ...)
+      (when (and
+             (equal `(:broadcast) (view-type-list read-views))
+             (equal nil (view-type-list write-views)))
+        (cond
+          ((equal `(:permute) (view-type-list tgt-views))
+           (print "++Mergeable?++")
+           (print node)
+           (print write-type)
+           (print read-type) ;; <- what you want
+           (print tgt-type)
+           (print (view-type-list tgt-views)))))
       nil)))
 
 (defmethod group-add-node ((group Group) node)
@@ -336,11 +351,7 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
-             if (and
-                 (null buffer-p) mergeable-p ;; merged due to element-wise operation
-                 ;; -> [TODO] use it
-                 ;;(group-force-move-reduce-in-the-group parent graph read)
-                 )
+             if (and (null buffer-p) mergeable-p) ;; merged due to element-wise operation
                ;; Simple Contigous OpFusion is here
                do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
                and collect (recursive-create-group read graph :seen seen :parent parent)
