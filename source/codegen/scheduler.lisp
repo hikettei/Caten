@@ -280,6 +280,16 @@ write_id[...] <- F1(..., read_id[ri])
                    (rpl r))))
         (mapc #'explore (group-items group))))))
 
+(defmethod group-force-move-reduce-in-the-group ((group Group) graph read)
+  (symbol-macrolet ((->ok (return-from group-force-move-reduce-in-the-group t)))
+    (when (not (group-reduced group)) ->ok)
+    (let ((node (id->value graph read)))
+      (when (or (null node) (not (eql (node-type node) :MOVE))) ->ok)
+      (let ((reduction (id->value graph (second (node-reads node)))))
+        (when (null reduction)->ok)
+        (when (not (getattr reduction :reduction :allow-undefined t))->ok)
+        nil))))
+
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
   "Breaks a big graph to small graphs by recursively exploring and creating subgraph.
 We refer to subgraph as:
@@ -321,7 +331,9 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
-             if (and (null buffer-p) mergeable-p) ;; merged due to element-wise operation
+             if (and
+                 (null buffer-p) mergeable-p ;; merged due to element-wise operation
+                 (group-force-move-reduce-in-the-group parent graph read))
                do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
                and collect (recursive-create-group read graph :seen seen :parent parent)
              else
@@ -357,49 +369,26 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 ;; [TODO] randn rng_counter -> _gid0=0..200のループの外側に出す
 ;; 1 kernel 1 reduction -> delete?
 ;; 1 path 1 reduction instead?
-;;(with-no-grad
-;; (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
-;; Shape Rank MismatchによるInsertの失敗(sin+Embedding, ConvND Fusion, SinMatmulなど)を修正する
-;; - どこに1を挿入すればいいのか。。。
-;; - ast.SHAPEをどうやって求めればいいのか。。。
-;; - fixupはprocedureでMergeするというより，%reshapeを実装してどうにかするべき
-;; some reduction
-;;      |
-;;  (10 1 10) = (_gid0, _gid1, _gid2)
-;;      |
-;;    VIEW
-;;  [10 10]  = corresponds to [_gid0, _gid2]
-;; これで行けそうじゃない？
+;; (with-no-grad (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 
-;; sin matmul
-;; - Elementwise
-;; (10 1 10) MOVE
-;;     |
-;;   [VIEW]
-;;     |
-;;  (10 10) 10 corresponds to 10, 10 corresponds to 10
-;; how about is convnd?
-;; it is equivalent to considering merging reshape
-;;  (25 25)
-;;     |
-;;   [VIEW]
-;;     |
-;; (5 5 5 5)
-;; if no offests are created, they can simplify flattend
-;; but if shrinked?
-
-;; Let's take a break:
-;; - [ ] Insert 1 to proper position to determine the fused loop axis
-;;   - [ ] Let ConvND, and sin(matmul(x, y)) working
-;;   - [ ] Thinking ConvND step-by-step
-;;     - [ ] Step1: Reduction w/ permuted MULADD
+;; - [x] Insert 1 to proper position to determine the fused loop axis
+;;   - [x] Let ConvND, and sin(matmul(x, y)) working
+;;   - [x] Thinking ConvND step-by-step
+;;     - [x] Step1: Reduction w/ permuted MULADD
 ;;     - [ ] Step2: Merge and purge multiple views (By permuting loops, they can be merged)
 ;; - [ ] Permutation Inference at scheduler.lisp level
 ;;   - [ ] Transposed Matmul < 1 Kernel
 ;; - [ ] Graph Partition
 ;; - [ ] Clean up scheduler. :view-type was unnecessary?
 ;; - [ ] Schedule Item IterSpace -> グループ内で最大のItersizeを保持しておく (output-itersize strategyは通用しない)
-;; [TODO] Refactor scheduler.lisp
-;; [TODO] 明日やる　↓をADD REDUCE REDUCEにSchedule
+;; - [ ] RMSNorm, Softmax, 1 Reduction 1 Group?
+;; =====> That is
+;; - [ ] Merge MOVE+Permutation into the same group by transform-and-mergeable-p, making ConvND, Transpose+Matmul < 1 Kernels
+;; - [ ] Redution+MOVE is a pair (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))
+;; - [ ] Softmax/RMSNorm Scheduling
+;; - [ ] Allow double-reduce in the group
+;;   - [ ] Proper Partition the :reduction in blueprint.lisp
+;;   - [ ] Partitioning the entire graph w/o relying on reduction (=> Large Graph Partition)
+;; - [ ] Symbolic
 ;; (with-no-grad
 ;  (Time (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))))
