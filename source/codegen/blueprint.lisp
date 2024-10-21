@@ -232,11 +232,24 @@
     `(,@(permute-list order (map 'list #'%make-for gids group-size))
       ,@(reverse (permute-list order (map 'list #'%make-endfor gids))))))
 
+(defmethod reduce-bp ((ctx ctx) something gids)
+  (let ((sizes (loop for g in gids
+                     for p = (position g (ctx-gids ctx))
+                     collect (nth p (ctx-loop-size-list ctx)))))
+    `(,@(map 'list #'%make-for gids sizes)
+      ,@something
+      ,@(reverse (map 'list #'%make-endfor gids)))))
+
 (defun try-insert-node (ctx node
                         &key
                           (depend-idx) (depend-node) (path-reduced nil) (bp-limit nil)
+                          (reduce-p nil) (reduce-gids)
                         &aux
                           (changed-p nil))
+  (when reduce-p
+    (assert (null path-reduced))
+    (setf depend-idx (loop for d in depend-idx if (null (find d reduce-gids)) collect d)
+          path-reduced reduce-gids))
   (with-slots ((blueprint blueprint)) ctx
     (let ((satisfied)
           (idx-satisfied)
@@ -267,25 +280,31 @@
              for bp in blueprint
              for nth upfrom 0
              collect bp
-             if (and (null changed-p) (= nth insert-at))
-               do (setf changed-p t) and collect node)
+             if (and (null changed-p) (= nth insert-at) (null reduce-gids))
+               do (setf changed-p t) and collect node
+             if (and (null changed-p) (= nth insert-at) reduce-gids)
+               do (setf changed-p t) and append (reduce-bp ctx (list node) path-reduced))
        t))))
 
-(defun recursive-lower-into-bp (ctx id &key (path-reduced nil) (parents nil) &aux (node (id->value (ctx-graph ctx) id)))
+(defun recursive-lower-into-bp (ctx id &key (path-reduced nil) (parents nil)
+                                &aux
+                                  (node (id->value (ctx-graph ctx) id))
+                                  (reduce-p (and node (getattr node :reduction :allow-undefined t)))
+                                  (reduced-axes (and node reduce-p (node-reduced-gids node (ctx-gids ctx)))))
   ;; Try to insert the node ID into the above of parent
   (with-slots ((blueprint blueprint) (seen seen) (gids gids) (order order)) ctx
     (when (null node) (return-from recursive-lower-into-bp))
     (when (find id seen) (return-from recursive-lower-into-bp))
     (push id seen)
     (multiple-value-bind (new-bp changed-p)
-        (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :path-reduced path-reduced)
+        (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :path-reduced path-reduced :reduce-p reduce-p :reduce-gids reduced-axes)
       (if changed-p
           (setf blueprint new-bp)
           (let ((bp (initial-bp ctx)))
             ;; Cannot satify the dependency? create a new loops
             (setf blueprint (append bp blueprint))
             (multiple-value-bind (new-bp changed-p)
-                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp) :path-reduced path-reduced)
+                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp) :path-reduced path-reduced :reduce-p reduce-p :reduce-gids reduced-axes)
               (assert changed-p () "Cannot insert the node ~a ~a~%[Ongoing blueprint]~%~a" (node-depend-idx-list node gids) node new-bp)
               (setf blueprint new-bp))))
       (mapc
@@ -305,7 +324,8 @@
                 (if (getattr node :reduction :allow-undefined t)
                     (node-reduced-gids node gids) ;; Note that node-reduce-gids requires un-permuted gids
                     nil)))))
-       (node-reads node) (range 0 (length (node-reads node)))))))
+       (node-reads node) (range 0 (length (node-reads node)))))
+    nil))
 
 (defmethod lower-schedule-item ((node Node) (base-graph Graph))
   "Lowers the Schedule-Item into blueprint"
