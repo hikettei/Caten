@@ -160,7 +160,7 @@ When processing ~a of ~a" common-x new-y iterspace space node name))
                          ()
                          "The rank of the iteration space should be less than or equal to the found space~%~a~%~a" iterspace found-space)
                  ;; Caten cannot inference where to insert one here.
-                 (assert (>= (length (alexandria:flatten (iteration-space-procedure iterspace))) (length found-space))
+                 (assert (>= (length (buffer-shape original-buffer)) (length found-space))
                          ()
                          "Cannot uprank ~a into the space ~a. The original buffer should be upranked in scheduler in advance." iterspace found-space)
                  (multiple-value-bind (new-shape new-stride new-view)

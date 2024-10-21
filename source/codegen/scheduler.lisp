@@ -17,6 +17,7 @@ One Schedule-item corresponds to one kernel in GPU.
    #:caten/avm
    #:Buffer
    #:buffer-shape
+   #:buffer-stride
    #:buffer-views
    #:buffer-nrank)
   (:import-from
@@ -78,7 +79,9 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
                      append (list (format nil "~a[~a]" x1 y1) ", "))))))
     (format nil "<[Schedule-Item] : ~a <- ~a where lowered-p=~a ~a>"
             (r (node-writes node) (getattr node :storage-id-dst))
-            (r (node-reads node) (getattr node :storage-id-src))
+            (if (getattr node :allocate-p)
+                (subseq (node-reads (car (getattr node :items))) 0 (getattr (car (getattr node :items)) :nrank))
+                (r (node-reads node) (getattr node :storage-id-src)))
             (if (getattr node :blueprint)
                 "t" "nil")
             (if (getattr node :allocate-p)
@@ -137,8 +140,8 @@ T=1 | ... = f2(..., R(storage_id=W))
           (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
       ;; T=1 | x[...] = node(... A[read_type])
-      (when (not (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
-        (return-from group-mergeable-p nil))
+      ;(when (not (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
+       ; (return-from group-mergeable-p nil))
       ;; 1. Merge element-wise and non-viewed operations
       (flet ((base-p (view) (or (null view) (every #'null view))))
         (when (and (base-p (buffer-views read-type)) (base-p (buffer-views write-type)))
@@ -269,24 +272,50 @@ Trying to merge X and Y in the same group connected like:
     (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
       (remove-duplicates (loop for l in lst if l collect l) :key #'group-key))))
 
-(defmethod group-op-fusion ((group Group) graph write-id read-id ri wi)
+(defun merge-broadcast (shape list &key (default 1) &aux (list (copy-list list)))
+  (loop for s in shape
+        if (eql s 1)
+          collect default
+        else
+          collect (or (pop list) (error ""))))
+
+(defmethod group-fixup-uprank ((group Group) graph write-id read-id rt wt)
   "
-Serialize or loop fusion read_id.
+Rewrite all buffer in the chain of element-wise ops w/ the highest rank.
 ```
 read_id[wi]   <- F2(...,)
 write_id[...] <- F1(..., read_id[ri])
 ```
-"
-  ;; If other kernels may use read_id, serialize the operation
-  (when (not (= 1 (length (id->users graph read-id))))
-    ;; [TODO] Align the shape to the highest one
-    (error "not implemented")
-    (return-from group-op-fusion))
-  ;; Otherwise, fuse into a single :EXPR node
-  (let ((item (find write-id (group-items group) :key (alexandria:compose #'car #'node-writes))))
-    (assert item)
 
-    ))
+(10 1 10)    (10 1 10)
+    |     =>     |
+ (10 10)     (10 1 10)
+"
+  (when (> (buffer-nrank wt) (buffer-nrank rt))
+    (let ((common-shape (buffer-shape wt))
+          (seen))
+      (flet ((new (buffer)
+               (values
+                (merge-broadcast common-shape (buffer-shape buffer))
+                (merge-broadcast common-shape (buffer-stride buffer))
+                (merge-broadcast common-shape (buffer-views buffer) :default nil))))
+        (labels ((rpl (bf)
+                   (multiple-value-bind (new-shape new-stride new-views) (new bf)
+                     (setf (buffer-shape bf) new-shape
+                           (buffer-stride bf) new-stride
+                           (buffer-views bf) new-views
+                           (buffer-nrank bf) (length new-shape))))
+                 (explore (id)
+                   (when (null (find id seen))
+                     (push id seen)
+                     (let ((node (find id (group-items group) :test #'find :key #'node-writes)))
+                       (when node
+                         (dolist (r (relay-writes (read-type-relay node)))
+                           (rpl r))
+                         (dolist (r (relay-reads (read-type-relay node)))
+                           (rpl r))
+                         (mapc #'explore (node-reads node)))))))
+          (explore write-id))))))
 
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
   "Breaks a big graph to small graphs by recursively exploring and creating subgraph.
@@ -330,10 +359,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
              for views in (getattr node :_read_views)
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
              if (and (null buffer-p) mergeable-p) ;; merged due to element-wise operation
-               ;; Operator Fusion Here
-              ; do (group-op-fusion parent graph id read ri (car (relay-write-iters (read-type-relay (id->value node read)))))
-            ; and
-               collect (recursive-create-group read graph :seen seen :parent parent)
+               do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
+               and collect (recursive-create-group read graph :seen seen :parent parent)
              else
                collect
                (let ((out (transform-and-mergeable-p parent graph read read-type ri views)))
@@ -379,6 +406,18 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       ;; [TODO] (Add (Embedding[Reduce] Embedding[Reduce])) Fusion Using Pattern Matcher
       schedule)))
+
+;; Shape Rank MismatchによるInsertの失敗(sin+Embedding, ConvND Fusion, SinMatmulなど)を修正する
+;; - どこに1を挿入すればいいのか。。。
+;; - ast.SHAPEをどうやって求めればいいのか。。。
+;; - fixupはprocedureでMergeするというより，%reshapeを実装してどうにかするべき
+;; some reduction
+;;      |
+;;  (10 1 10) = (_gid0, _gid1, _gid2)
+;;      |
+;;    VIEW
+;;  [10 10]  = corresponds to [_gid0, _gid2]
+;; これで行けそうじゃない？
 
 ;; sin matmul
 ;; - Elementwise
