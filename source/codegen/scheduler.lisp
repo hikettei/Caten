@@ -265,12 +265,12 @@ Trying to merge X and Y in the same group connected like:
     (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
       (remove-duplicates (loop for l in lst if l collect l) :key #'group-key))))
 
-(defun merge-broadcast (shape list &key (default 1) &aux (list (copy-list list)))
+(defun merge-broadcast (shape list1 &key (default 1) &aux (list (copy-list list1)))
   (loop for s in shape
         if (eql s 1)
           collect default
         else
-          collect (or (pop list) (error "cannot merge broadcast ~a and ~a." shape list))))
+          collect (or (pop list) (error "merge-broadcast: cannot merge shape ~a and map ~a." shape list1))))
 
 (defmethod group-fixup-uprank ((group Group) graph write-id read-id rt wt)
   "
@@ -284,31 +284,30 @@ write_id[...] <- F1(..., read_id[ri])
     |     =>     |
  (10 10)     (10 1 10)
 "
-  (when (> (buffer-nrank wt) (buffer-nrank rt))
-    (let ((common-shape (buffer-shape wt))
-          (seen))
-      (flet ((new (buffer)
-               (values
-                (merge-broadcast common-shape (buffer-shape buffer))
-                (merge-broadcast common-shape (buffer-stride buffer))
-                (merge-broadcast common-shape (buffer-views buffer) :default nil))))
-        (labels ((rpl (bf)
-                   (when (and (> (buffer-nrank bf) 0) (< (buffer-nrank bf) (length common-shape)))
-                     (multiple-value-bind (new-shape new-stride new-views) (new bf)
-                       (setf (buffer-shape bf) new-shape
-                             (buffer-stride bf) new-stride
-                             (buffer-views bf) new-views
-                             (buffer-nrank bf) (length new-shape)))))
-                 (explore (id)
-                   (dolist (node (group-items group))
-                     (when (and (null (find (node-id node) seen)) (find id (node-reads node)))
-                       (push (node-id node) seen)
-                       (dolist (r (relay-writes (read-type-relay node)))
-                         (rpl r))
-                       (dolist (r (relay-reads (read-type-relay node)))
-                         (rpl r))
-                       (mapc #'explore (node-writes node))))))
-          (explore read-id))))))
+  (let ((common-shape (buffer-shape wt)))
+    (flet ((new (buffer)
+             (values
+              (merge-broadcast common-shape (buffer-shape buffer))
+              (merge-broadcast common-shape (buffer-stride buffer))
+              (if (not (every #'null (buffer-views buffer)))
+                  (merge-broadcast
+                   common-shape
+                   (buffer-views buffer)
+                   :default nil)
+                  (loop repeat (length common-shape) collect nil)))))
+      (labels ((rpl (bf)
+                 (when (and bf (> (buffer-nrank bf) 0) (< (buffer-nrank bf) (length common-shape)))
+                   (multiple-value-bind (new-shape new-stride new-views) (new bf)
+                     (setf (buffer-shape bf) new-shape
+                           (buffer-stride bf) new-stride
+                           (buffer-views bf) new-views
+                           (buffer-nrank bf) (length new-shape)))))
+               (explore (node)
+                 (dolist (r (relay-writes (read-type-relay node)))
+                   (rpl r))
+                 (dolist (r (relay-reads (read-type-relay node)))
+                   (rpl r))))
+        (mapc #'explore (group-items group))))))
 
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
   "Breaks a big graph to small graphs by recursively exploring and creating subgraph.
