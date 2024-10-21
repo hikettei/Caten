@@ -104,7 +104,7 @@
                                (butlast
                                 (loop for s in schedules
                                       for nth upfrom 0
-                                      for separator = (if (zerop nth) "┏" (if (= (length schedules) (1+ nth)) "┗" "┃"))
+                                      for separator = (if (= 1 (length schedules)) "-" (if (zerop nth) "┏" (if (= (length schedules) (1+ nth)) "┗" "┃")))
                                       collect (format nil "~a  ~a~a" (indent indent) separator s)
                                       collect (format nil "~%")))))))
                    ((or (string= key "sequence") (string= key "set"))
@@ -142,16 +142,16 @@
 
 (defmethod print-object ((pg Polyhedral-IR) stream)
   (print-unreadable-object (pg stream :type t)
-    (format stream "~a~%[Expected Code]:~%~a" (pprint-schedule (poly-schedule pg)) (debug-render-to-clang pg))))
+    (format stream "~a~%[Kernel]:~%~a" (pprint-schedule (poly-schedule pg)) (debug-render-to-clang pg))))
 
 (defmethod schedule ((pg Polyhedral-IR))
   (let ((serialize-sccs 0)
         (outer-coincidence 1)
-        (maximize-coincidence 1)
+        (maximize-coincidence 0)
         (treat-coalescing 1)
         (maximize-band-depth 1)
         ;; Only schedule the scc. (not to change the structure of kernel)
-        (schedule-whole-component 0))
+        (schedule-whole-component 1))
     (macrolet ((set-option (name level)
 	         `(progn
 		    (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)

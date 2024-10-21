@@ -253,6 +253,6 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
     (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
     (multiple-value-bind (domain read write schedule) (analyze-scop node)
       (setf (getattr node :polyhedral) (make-polyhedral-ir domain read write schedule))
-      ;; Testing
-      ;; (print (getattr node :polyhedral))
+      (when (>= (ctx:getenv :JIT_DEBUG) 2)
+        (format t "~a~%" (getattr node :polyhedral)))
       node)))
