@@ -276,6 +276,8 @@
     (let ((satisfied)
           (idx-satisfied)
           (insertable-positions))
+      (when (and (null depend-idx) (null path-reduced))
+        (push -1 insertable-positions))
       (loop for bp in blueprint
             for nth upfrom 0
             if (eql (node-type bp) :FOR)
@@ -297,6 +299,8 @@
               do (push nth insertable-positions))
       (when (null insertable-positions)
         (return-from try-insert-node (values blueprint nil)))
+      (when (= -1 (apply #'max insertable-positions))
+        (return-from try-insert-node (values `(,node ,@blueprint) t)))
       (values
        (loop with insert-at = (apply #'max insertable-positions)
              for bp in blueprint

@@ -81,12 +81,11 @@
                  (scop x)
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "=====> Auto Scheduler~%"))
-                 ;; TODO
+                 ;; TODO: 4 Optimization: Tiling, Parallelizing, Vectorizing, Unrolling
                  )
                (when (>= (ctx:getenv :JIT_DEBUG) 2)
                  (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
          (reverse (graph-nodes schedule-graph)))))
-    ;; 
     ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)
 
     ;; 7. Running memory-planner, update the storage-id

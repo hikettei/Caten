@@ -116,9 +116,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 
 (defstruct Group
   (key (gensym) :type symbol)
-  (items nil :type list)
-  (reduced nil :type boolean)
-  (view-objects nil :type list))
+  (items nil :type list))
 
 (defmethod verify-group ((group Group))
   (when (find :Allocate (group-items group) :key #'node-type)
@@ -144,7 +142,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
        (princ "FUSED" out)
        (dolist (n names)
          (format out "_~a" n))))))
-;; Schedule-Item creation
+
 (defmethod group->schedule ((group Group))
   (let ((reads (nodes-depends-on (group-items group)))
         (writes (nodes-write-to (group-items group)))
@@ -244,12 +242,13 @@ Trying to merge X and Y in the same group connected like:
              (equal nil (view-type-list write-views)))
         (cond
           ((equal `(:permute) (view-type-list tgt-views))
-           (print "++Mergeable?++")
-           (print node)
-           (print write-type)
-           (print read-type) ;; <- what you want
-           (print tgt-type)
-           (print (view-type-list tgt-views)))))
+           ;(print "++Mergeable?++")
+           ;(print node)
+           ;(print write-type)
+           ;(print read-type) ;; <- what you want
+           ;(print tgt-type)
+           ;(print (view-type-list tgt-views))
+           )))
       nil)))
 
 (defmethod group-add-node ((group Group) node)
@@ -331,20 +330,10 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
     (let ((node (id->value graph id)))
       (when (null node)->failed)
       (setf (gethash id seen) t)
-      (when (getattr node :reduction :allow-undefined t)
-       ; (assert (null (group-reduced parent)) () "one group one reduction")
-        (setf (group-reduced parent) t))
       (group-add-node parent node)
-      ;; Reduce
-      ;; out1 = 0.0
-      ;; ID <- NODE(out1, arg1, arg2) ...
-      ;; ElementWise
-      ;; arg3[0:10] = sin(x[...])
-      ;; ID <- NODE(arg1, arg2, arg3[10:0:-1])...
       (schedule-groups ;; merge+sort+cleanup
        parent
        ;; [Note] :Allocate is a vm instruction, accordingly should be scheduled standalone
-       ;; [TODO] ReadがMoveでusers=1ならMergeする
        (loop with buffer-p = (eql (node-type node) :Allocate)
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
@@ -380,9 +369,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
     (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
-      (when (>= (ctx:getenv :JIT_DEBUG) 4)
+      (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
-      ;; [TODO] (Add (Embedding[Reduce] Embedding[Reduce])) Fusion Using Pattern Matcher
       schedule)))
 
 ;; [TODO] randn rng_counter -> _gid0=0..200のループの外側に出す
@@ -411,6 +399,7 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 ;;   - [ ] Proper Partition the :reduction in blueprint.lisp
 ;;   - [ ] Partitioning the entire graph w/o relying on reduction (=> Large Graph Partition)
 ;; - [ ] Symbolic
+;; - [ ] Scalar
 
 ;; - Scheduler Remained stuff ...
 ;;  - [ ] Permute or View Fusion
