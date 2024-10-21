@@ -286,12 +286,11 @@
                do (setf changed-p t) and append (reduce-bp ctx (list node) path-reduced))
        t))))
 
-(defun recursive-lower-into-bp (ctx id &key (path-reduced nil) (parents nil)
+(defun recursive-lower-into-bp (ctx id &key (path-reduced nil) (parents nil) (new-reduce-loop-p nil)
                                 &aux
                                   (node (id->value (ctx-graph ctx) id))
-                                  (reduce-p (and node (getattr node :reduction :allow-undefined t)))
-                                  (reduced-axes (and node reduce-p (node-reduced-gids node (ctx-gids ctx)))))
-  ;; Try to insert the node ID into the above of parent
+                                  (reduce-p (and node new-reduce-loop-p (getattr node :reduction :allow-undefined t)))
+                                  (reduced-axes (and node new-reduce-loop-p reduce-p (node-reduced-gids node (ctx-gids ctx)))))
   (with-slots ((blueprint blueprint) (seen seen) (gids gids) (order order)) ctx
     (when (null node) (return-from recursive-lower-into-bp))
     (when (find id seen) (return-from recursive-lower-into-bp))
@@ -323,7 +322,8 @@
                 ;; If node is a reduce, the first argument should be separated from this loop.
                 (if (getattr node :reduction :allow-undefined t)
                     (node-reduced-gids node gids) ;; Note that node-reduce-gids requires un-permuted gids
-                    nil)))))
+                    nil))
+              :new-reduce-loop-p (= nth 0))))
        (node-reads node) (range 0 (length (node-reads node)))))
     nil))
 

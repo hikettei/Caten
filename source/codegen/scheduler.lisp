@@ -126,8 +126,8 @@ T=1 | ... = f2(..., R(storage_id=W))
   (let ((node (id->value graph read)))
     (when (null node) (return-from group-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from group-mergeable-p nil))
-    (when (and (group-reduced group) (getattr node :reduction :allow-undefined t))
-      (return-from group-mergeable-p nil))
+    ;(when (and (group-reduced group) (getattr node :reduction :allow-undefined t))
+    ;  (return-from group-mergeable-p nil))
     (let ((write-type (car (relay-writes (read-type-relay node))))
           (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
@@ -312,7 +312,7 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
       (when (null node)->failed)
       (setf (gethash id seen) t)
       (when (getattr node :reduction :allow-undefined t)
-        (assert (null (group-reduced parent)) () "one group one reduction")
+       ; (assert (null (group-reduced parent)) () "one group one reduction")
         (setf (group-reduced parent) t))
       (group-add-node parent node)
       ;; Reduce
@@ -333,7 +333,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
              if (and
                  (null buffer-p) mergeable-p ;; merged due to element-wise operation
-                 (group-force-move-reduce-in-the-group parent graph read))
+                 ;(group-force-move-reduce-in-the-group parent graph read)
+                 )
                do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
                and collect (recursive-create-group read graph :seen seen :parent parent)
              else
