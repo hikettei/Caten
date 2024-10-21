@@ -393,7 +393,7 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 
 ;; - Scheduler Remained stuff ...
 ;;  - [ ] Permute or View Fusion
-;;  - [ ] Fix !gelu (FIRST)
+;;  - [x] Fix !gelu (FIRST)
 ;;  - [ ] Large Graph Partition (Transformer!) (looks working well?)
 
 ;; -> Next ...
@@ -405,6 +405,13 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 ;; !gelu -> cannot repro?
 ;; (caten/codegen:jit (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25))))))
 ;; replacing forward -> call: failing
-
+;; - [ ] Identify the equivalent kernel in the recursive structure network.
+;;   - [ ] For Example: Transformer Layer is scheduled/compiled at once
+;;   - [ ] Add: COMPILE_SPEED Option
+;;   -   [ ]  Set=0 to no cache
+;;   -   [ ]  Set=1 to cache only shapes are equivalent
+;;   -   [ ]  Set=2 to aggresively cache them (force shapes to be a symbol)
+;;   - [ ] AIR: From which module are they lowered?
+;; (caten/codegen:jit (caten (!matmul (make-tensor `(10 10)) (!matmul (make-tensor `(10 10)) (make-tensor `(10 10))))))
 ;; (with-no-grad
 ;  (Time (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))))

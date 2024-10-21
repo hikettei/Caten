@@ -35,12 +35,6 @@
 ;; - [ ] Fuse Permute
 ;; - [ ] Scop+Polyhedral -> Can ISL find the optimal embedding kernel?
 ;; - [ ] Support Backward (Higher Order?)
-;; [TODO] Debug=1 -> easy to see the difference and transformation
-;; Kernel1.BP
-;; Kernel2.POLY
-;; Kernel1.BP
-;; Kernel2.POLY
-;;    ...
 (defun jit (avm)
   "Runs the JIT compilation (destructive)"
   (declare (type AVM avm))
@@ -54,11 +48,22 @@
   (let ((schedule-graph (graph-schedule (avm-graph avm))))
     (declare (type Graph schedule-graph))
     ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
-    (mapc #'(lambda (x) (lower-schedule-item x (avm-graph avm))) (reverse (graph-nodes schedule-graph)))
-    ;; 6. Lower into Polyhedral IR
-    ;; (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)
-    (mapc #'scop (graph-nodes schedule-graph))
     
+    ;; [TODO] Identified kernels are not compiled
+    ;; COMPILE_SPEED=0 ()
+    ;; COMPILE_SPEED=1 ()
+    ;; COMPILE_SOEED=2 (Full Symbolic Compilation)
+    ;; Impl: Static Gensymをもう一度適用してノード比較
+    (mapc
+     #'(lambda (x)
+         ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
+         (lower-schedule-item x (avm-graph avm))
+         ;; 6. Lower into Polyhedral IR
+         ;; (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)
+         (scop x))
+     (reverse (graph-nodes schedule-graph)))
+    ;; 6. Lower into Polyhedral IR
+    ;; 
     ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)
 
     ;; 7. Running memory-planner, update the storage-id
