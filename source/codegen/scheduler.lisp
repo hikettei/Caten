@@ -19,7 +19,8 @@ One Schedule-item corresponds to one kernel in GPU.
    #:buffer-shape
    #:buffer-stride
    #:buffer-views
-   #:buffer-nrank)
+   #:buffer-nrank
+   #:buffer-inferred-permute)
   (:import-from
    #:caten/codegen/shape-inference
    #:read-type-relay
@@ -140,8 +141,8 @@ T=1 | ... = f2(..., R(storage_id=W))
           (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
       ;; T=1 | x[...] = node(... A[read_type])
-      (when (not (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
-        (return-from group-mergeable-p nil))
+      ;;(when (not (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
+      ;;  (return-from group-mergeable-p nil))
       ;; 1. Merge element-wise and non-viewed operations
       (flet ((base-p (view) (or (null view) (every #'null view))))
         (when (and (base-p (buffer-views read-type)) (base-p (buffer-views write-type)))
@@ -187,13 +188,26 @@ Trying to merge X and Y in the same group connected like:
 "
   (when (not (symbolp read)) (return-from transform-and-mergeable-p nil))
   (when (find :shrink (view-type-list read-views)) (return-from transform-and-mergeable-p nil))
-  (print "++Mergeable?++")
-  
-  (when (equal `(:permute) (view-type-list read-views))
-    
-    )
-  
-  nil)
+  (let ((node (id->value graph read)))
+    (when (null node) (return-from transform-and-mergeable-p nil))
+    (when (eql (node-type node) :Allocate) (return-from transform-and-mergeable-p nil))
+    (let ((write-type (car (relay-writes (read-type-relay node))))
+          (wi (car (relay-write-iters (read-type-relay node)))))
+      (flet ((elwise-p (x)
+               (and (= (length (iteration-space-views x)) 1)
+                    (every #'null (iteration-space-views x)))))
+        (print "++Mergeable?++")
+        (print node)
+        (print read-type)
+        (print wi)
+        (print write-type)
+        (print ri)
+        (when (= (buffer-nrank read-type) (buffer-nrank write-type))
+          (return-from transform-and-mergeable-p nil)
+          )
+        (when (equal `(:permute) (view-type-list read-views))
+          )
+        nil))))
 
 (defmethod group-merge-iterators ((group Group) (is Iteration-Space))
   "The group always try to keep the largest iteration domain."
@@ -213,8 +227,6 @@ Trying to merge X and Y in the same group connected like:
     ;; (assert (= (length (iteration-space-shape is)) (length (iteration-space-shape gi))))
     ))
 
-;;(with-no-grad
-;; (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 (defmethod group-add-node ((group Group) node)
   (push node (group-items group))
   (dolist (r (relay-read-iters (read-type-relay node)))
@@ -222,7 +234,6 @@ Trying to merge X and Y in the same group connected like:
   (dolist (r (relay-write-iters (read-type-relay node)))
     (when r (group-merge-iterators group r))))
 
-;; BroadcastとReshapeは同時に発生しうるので無理
 (defmethod identify-view-type ((view Node))
   ;; [TODO] Rename Broadcast/Reshape -> Broadcast_Or_Reshape
   (assert (eql :VIEW (node-type view)))
@@ -282,23 +293,22 @@ write_id[...] <- F1(..., read_id[ri])
                 (merge-broadcast common-shape (buffer-stride buffer))
                 (merge-broadcast common-shape (buffer-views buffer) :default nil))))
         (labels ((rpl (bf)
-                   (when (> (buffer-nrank bf) 0)
+                   (when (and (> (buffer-nrank bf) 0) (< (buffer-nrank bf) (length common-shape)))
                      (multiple-value-bind (new-shape new-stride new-views) (new bf)
                        (setf (buffer-shape bf) new-shape
                              (buffer-stride bf) new-stride
                              (buffer-views bf) new-views
                              (buffer-nrank bf) (length new-shape)))))
                  (explore (id)
-                   (when (null (find id seen))
-                     (push id seen)
-                     (dolist (node (group-items group))
-                       (when (find id (node-reads node))
-                         (dolist (r (relay-writes (read-type-relay node)))
-                           (rpl r))
-                         (dolist (r (relay-reads (read-type-relay node)))
-                           (rpl r))
-                         (mapc #'explore (node-writes node)))))))
-          (explore write-id))))))
+                   (dolist (node (group-items group))
+                     (when (and (null (find (node-id node) seen)) (find id (node-reads node)))
+                       (push (node-id node) seen)
+                       (dolist (r (relay-writes (read-type-relay node)))
+                         (rpl r))
+                       (dolist (r (relay-reads (read-type-relay node)))
+                         (rpl r))
+                       (mapc #'explore (node-writes node))))))
+          (explore read-id))))))
 
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
   "Breaks a big graph to small graphs by recursively exploring and creating subgraph.
@@ -348,24 +358,10 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
                collect
                (let ((out (transform-and-mergeable-p parent graph read read-type ri views)))
                  (if out
-                     (recursive-create-group read graph :seen seen)
+                     (recursive-create-group read graph :seen seen :parent parent)
                      (recursive-create-group read graph :seen seen))))))))
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
-
-;; [TODO] Refactor _read_viewsを削除する
-;; Fuse Symbolic !randn < 1 kernels (and it means a success)
-;; :Reduce -> :Reduce ...
-;; for ...
-;;;  ...
-;;  end
-;;; for ...
-;;   ...
-;;; end
-;; みたいにしてMerge可能
-
-;; BP Lowererはこの方針で決定，Add Embedding EmbeddingをFuseする
-;; Itersize >= になるAssertを作る
 
 (defmethod graph-schedule ((graph Graph))
   ;; Split the graph into multiple graphs
@@ -390,6 +386,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
       ;; [TODO] (Add (Embedding[Reduce] Embedding[Reduce])) Fusion Using Pattern Matcher
       schedule)))
 
+;;(with-no-grad
+;; (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 ;; Shape Rank MismatchによるInsertの失敗(sin+Embedding, ConvND Fusion, SinMatmulなど)を修正する
 ;; - どこに1を挿入すればいいのか。。。
 ;; - ast.SHAPEをどうやって求めればいいのか。。。

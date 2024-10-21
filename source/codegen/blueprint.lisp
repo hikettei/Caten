@@ -162,7 +162,7 @@ When processing ~a of ~a" common-x new-y iterspace space node name))
                  ;; Caten cannot inference where to insert one here.
                  (assert (>= (length (buffer-shape original-buffer)) (length found-space))
                          ()
-                         "Cannot uprank ~a into the space ~a. The original buffer should be upranked in scheduler in advance." iterspace found-space)
+                         "Cannot uprank ~a into the space ~a. The original buffer should be upranked in scheduler in advance." original-buffer found-space)
                  (multiple-value-bind (new-shape new-stride new-view)
                      (values (merge-list procedure (buffer-shape original-buffer))
                              (merge-stride procedure (new-stride (buffer-stride original-buffer) (buffer-views original-buffer)))
