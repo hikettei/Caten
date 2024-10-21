@@ -130,12 +130,14 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
    ""))
 
 (defmethod make-unique-schedule-name ((group Group))
-  (let ((names))
+  (let ((names) (seen))
     (dolist (item (group-items group))
       (if (and (typep (node-attr item) 'JITAble) (car (getattr item :_lowering_history)))
-          (push (pname (car (getattr item :_lowering_history))) names)
+          (multiple-value-bind (name id) (values (caar (getattr item :_lowering_history)) (cdar (getattr item :_lowering_history)))
+            (when (null (find id seen))
+              (push id seen)
+              (push (pname name) names)))
           (push (pname (node-type item)) names)))
-    (setf names (remove-duplicates names :test #'equalp))
     (gensym
      (with-output-to-string (out)
        (princ "FUSED" out)

@@ -323,7 +323,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 		  (node-writes node) (map 'list #'r (node-writes node)))))
         (dolist (n (graph-nodes lowered-graph))
           (when (typep (node-attr n) 'JITAble)
-            (push (node-type module-node) (getattr n :_lowering_history))))
+            (push (cons (node-type module-node) (node-id module-node)) (getattr n :_lowering_history))))
 	(graph-nodes lowered-graph)))))
 
 (defun %module->iseqbw (session module prev-grad)
