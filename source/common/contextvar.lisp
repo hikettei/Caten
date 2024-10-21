@@ -139,7 +139,7 @@ Usage:
      0 :int identity
      "Set 1 if the test is running under Github Actions")
     (:AUTO_SCHEDULER
-     0 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
+     1 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
      "Set 1 to enable auto-scheduler for JIT")
     (:JIT
      0 :int identity

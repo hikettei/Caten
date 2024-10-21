@@ -4,7 +4,8 @@
   (:import-from
    :caten/avm
    #:AVM
-   #:avm-graph)
+   #:avm-graph
+   #:avm-name)
   (:import-from
    :caten/air
    #:Graph
@@ -62,18 +63,26 @@
     ;; Impl: Static Gensymをもう一度適用してノード比較
     (let ((total-kernels (count-if #'(lambda (x) (null (getattr x :allocate-p))) (graph-nodes schedule-graph))))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
-        (print-info "JIT Compilation Start: Total ~a kernels" total-kernels))
+        (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
       (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
         (mapc
          #'(lambda (x &aux (start (get-internal-real-time)))
              (when (null (getattr x :allocate-p))
+               ;; [TODO] (skipped) if cached
                (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                 (print-progress "~a" (getattr x :name)))
+                 (print-progress "~a" (getattr x :name))
+                 (format t "=====> Lowering to blueprint~%"))
                ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
                (lower-schedule-item x (avm-graph avm))
                ;; 6. Lower into Polyhedral IR
-               ;; (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)
-               (scop x)
+               (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)
+                 (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                   (format t "=====> Lowering to Polyhedral IR~%"))
+                 (scop x)
+                 (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                   (format t "=====> Auto Scheduler~%"))
+                 ;; TODO
+                 )
                (when (>= (ctx:getenv :JIT_DEBUG) 2)
                  (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
          (reverse (graph-nodes schedule-graph)))))
