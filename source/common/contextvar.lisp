@@ -197,7 +197,7 @@ Usage:
      0 :int #.(oneof "CALL_ZENITY" 0 `(0 1))
      "(For JIT) %render-compile always produce an simple-error.")
     (:COLOR
-     1 :int #.(oneof "COLOR" 1 `(0 1))
+     1 :int #.(oneof "COLOR" 0 `(0 1))
      "Use cl-ansi-color if set to 1")
     (:SAFETY
      0 :int #.(oneof "SAFETY" 0 `(0 1))

@@ -8,7 +8,8 @@
   (:import-from
    :caten/air
    #:Graph
-   #:graph-nodes)
+   #:graph-nodes
+   #:getattr)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer
@@ -25,6 +26,11 @@
   (:import-from
    :caten/codegen/scop
    #:scop)
+  (:import-from
+   :caten/common.logger
+   #:print-info
+   #:with-progress
+   #:print-progress)
   (:export
    #:jit))
 
@@ -54,14 +60,23 @@
     ;; COMPILE_SPEED=1 ()
     ;; COMPILE_SOEED=2 (Full Symbolic Compilation)
     ;; Impl: Static Gensymをもう一度適用してノード比較
-    (mapc
-     #'(lambda (x)
-         ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
-         (lower-schedule-item x (avm-graph avm))
-         ;; 6. Lower into Polyhedral IR
-         ;; (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)
-         (scop x))
-     (reverse (graph-nodes schedule-graph)))
+    (let ((total-kernels (count-if #'(lambda (x) (null (getattr x :allocate-p))) (graph-nodes schedule-graph))))
+      (when (>= (ctx:getenv :JIT_DEBUG) 2)
+        (print-info "JIT Compilation Start: Total ~a kernels" total-kernels))
+      (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
+        (mapc
+         #'(lambda (x &aux (start (get-internal-real-time)))
+             (when (null (getattr x :allocate-p))
+               (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                 (print-progress "~a" (getattr x :name)))
+               ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
+               (lower-schedule-item x (avm-graph avm))
+               ;; 6. Lower into Polyhedral IR
+               ;; (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)
+               (scop x)
+               (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                 (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
+         (reverse (graph-nodes schedule-graph)))))
     ;; 6. Lower into Polyhedral IR
     ;; 
     ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)
