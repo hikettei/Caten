@@ -148,7 +148,7 @@ Corresponds to the position of the subgraph in the parent schedule.
                                              for nth upfrom 0
                                              for gid = (gid nth)
                                              if (is-zero stride)
-                                               ;; [TODO] :Permute and :View (Offset, By)
+                                               ;; [TODO] !!!!! :Permute and :View (Offset, By)
                                                collect (format nil "0")
                                              else
                                                collect (format nil "~(~a~)" gid)

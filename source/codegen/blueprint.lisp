@@ -46,7 +46,7 @@
 
 (defmethod print-blueprint (nodes stream &aux (gids))
   (flet ((print-aref (name is)
-           (if (and is (> (length (iteration-space-shape is)) 1))
+           (if (and is (> (length (iteration-space-shape is)) 0))
                (format nil "~a[~(~a~)]" name
                        (render-expr
                         'Default-Renderer
@@ -390,8 +390,8 @@
 ;; - [x] Initial Schedule
 ;;   - [x] Mean axis=0, axis=1,...
 ;;   - [x] Embedding
-;;   - [ ] Double Reduce (add embedding embedding), add matmul matmul
-;;   - [ ] Triple Reduce (add embedding embedding embedding)
+;;   - [x] Double Reduce (add embedding embedding), add matmul matmul
+;;   - [x] Triple Reduce (add embedding embedding embedding)
 ;;   - [ ] WPE+WTE in Transformer is a single kernel.
 ;; - [ ] Permutation
 ;;   - [ ] Matmul, and ConvND
