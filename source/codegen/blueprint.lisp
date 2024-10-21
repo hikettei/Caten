@@ -59,7 +59,7 @@
                                   (expr-mul (expr-const (third view) :int64) (expr-add (expr-const (car view) :int64) (expr-mul stride (expr-const i :int64))))
                                   (expr-mul stride (expr-const i :int64))))
                           (iteration-space-views is)
-                          (iteration-space-strides is) gids))))
+                          (iteration-space-strides is) (reverse gids)))))
                (format nil "~(~a~)" name))))
     (format
      stream
