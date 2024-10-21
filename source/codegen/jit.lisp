@@ -86,7 +86,6 @@
                (when (>= (ctx:getenv :JIT_DEBUG) 2)
                  (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
          (reverse (graph-nodes schedule-graph)))))
-    ;; 6. Lower into Polyhedral IR
     ;; 
     ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)
 

@@ -4,11 +4,13 @@ The scheduler is responsible for converting the `caten/aasm` graph into a list o
 One Schedule-item corresponds to one kernel in GPU.
 ")
   (:use :cl :caten/air :caten/codegen/expr)
+  (:import-from :caten/aasm #:JITAble)
   (:import-from
    #:caten/air
    #:defnode
    #:Node
    #:node-type
+   #:node-attr
    #:FastGraph
    #:graph-outputs
    #:id->value
@@ -121,12 +123,24 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
   (when (find :Allocate (group-items group) :key #'node-type)
     (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
 
+(defun pname (name)
+  (cl-ppcre:regex-replace-all
+   "PAUSE/"
+   (cl-ppcre:regex-replace-all "-" (cl-ppcre:regex-replace-all "GRAPH/" (princ-to-string name) "") "_")
+   ""))
+
 (defmethod make-unique-schedule-name ((group Group))
-  (gensym
-   (with-output-to-string (out)
-     (princ "FUSED" out)
-     (dolist (c (group-items group))
-       (format out "_~a" (node-type c))))))
+  (let ((names))
+    (dolist (item (group-items group))
+      (if (and (typep (node-attr item) 'JITAble) (car (getattr item :_lowering_history)))
+          (push (pname (car (getattr item :_lowering_history))) names)
+          (push (pname (node-type item)) names)))
+    (setf names (remove-duplicates names :test #'equalp))
+    (gensym
+     (with-output-to-string (out)
+       (princ "FUSED" out)
+       (dolist (n names)
+         (format out "_~a" n))))))
 ;; Schedule-Item creation
 (defmethod group->schedule ((group Group))
   (let ((reads (nodes-depends-on (group-items group)))
