@@ -399,6 +399,7 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 ;;   - [ ] Proper Partition the :reduction in blueprint.lisp
 ;;   - [ ] Partitioning the entire graph w/o relying on reduction (=> Large Graph Partition)
 ;; - [ ] Symbolic
+;;   - [ ] gensym <-> EXPRなTableを作りたい (cache stride computation)
 ;; - [ ] Scalar
 
 ;; - Scheduler Remained stuff ...

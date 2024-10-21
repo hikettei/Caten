@@ -26,7 +26,7 @@
 
 (in-package :caten/codegen/scop)
 
-(defmethod render-domain-body-from-group ((node Node) &aux (idx2domain (make-hash-table)) (device 'Default-Renderer))
+(defmethod render-domain-body-from-group ((node Node) symbolics &aux (idx2domain (make-hash-table)) (device 'Default-Renderer))
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (values
@@ -58,7 +58,7 @@
                                 (loop for dom in domains
                                       collect (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
                                       collect " and ")))
-                              ;; [TODO] Dynamic Shape are >= 1
+                              ;; !!! [TODO] Dynamic Shape are >= 1
                               )
                       (format out "  ~a[];~%" (node-id node)))))))
      (format out "}"))
@@ -119,13 +119,13 @@ Corresponds to the position of the subgraph in the parent schedule.
                (format out " } "))
       (format out "~%]"))))
 
-(defun render-access-rep (reader type-reader node idx2domain render-graph)
+(defun render-access-rep (reader type-reader node idx2domain render-graph symbolics)
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (union-map-from-str
    (with-output-to-string (out)
      ;; [TODO] Dynamic Shape
-     (format out "[~(~a~)] -> {~%" "")
+     (format out "[~(~a~)] -> {~%" (render-list symbolics))
      (maphash
       #'(lambda (idx dom)
           (let ((tgt-node (find idx render-graph :key #'(lambda (x) (and (null (find (node-type x) `(:FOR :ENDFOR))) (node-id x))))))
@@ -156,7 +156,7 @@ Corresponds to the position of the subgraph in the parent schedule.
       idx2domain)
      (format out "}"))))
 
-(defmethod analyze-scop ((node Node))
+(defmethod analyze-scop ((node Node) symbolics)
   "
 Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_polyhedral_front-end_for_MLIR
 
@@ -176,8 +176,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (let* ((render-nodes (getattr node :blueprint))
-         (deps "")) ;; TODO
-    (multiple-value-bind (domain idx2domain) (render-domain-body-from-group node)
+         (deps (format nil "~(~a~)" (render-list symbolics))))
+    (multiple-value-bind (domain idx2domain) (render-domain-body-from-group node symbolics)
       (labels ((explore-schedule-tree (from to
                                        &key
                                          (parent-loops)
@@ -241,17 +241,17 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
           (format
            nil
            "[~(~a~)] -> ~a"
-           "" ;; [TODO] Dynamic SHape
+           deps
            domain))
-         (render-access-rep #'node-reads #'relay-read-iters node idx2domain render-nodes)
-         (render-access-rep #'node-writes #'relay-write-iters node idx2domain render-nodes)
+         (render-access-rep #'node-reads #'relay-read-iters node idx2domain render-nodes symbolics)
+         (render-access-rep #'node-writes #'relay-write-iters node idx2domain render-nodes symbolics)
          (explore-schedule-tree 0 (length render-nodes)))))))
 
-(defmethod scop ((node Node))
+(defmethod scop ((node Node) symbolics)
   (when (null (getattr node :allocate-p :allow-undefined t))
     (assert (eql (node-type node) :Schedule-Item))
     (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
-    (multiple-value-bind (domain read write schedule) (analyze-scop node)
+    (multiple-value-bind (domain read write schedule) (analyze-scop node symbolics)
       (setf (getattr node :polyhedral) (make-polyhedral-ir domain read write schedule))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (format t "~a~%" (getattr node :polyhedral)))

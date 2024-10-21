@@ -10,6 +10,7 @@
    :caten/air
    #:Graph
    #:graph-nodes
+   #:node-type
    #:getattr)
   (:import-from
    :caten/codegen/shape-inference
@@ -52,7 +53,12 @@
   ;; 3. Merge dims (e.g. (10 10 10) Tensor -> (10x10x10) Tensor)
   (graph-infer-iteration-space (avm-graph avm))
   ;; 4. Schedule
-  (let ((schedule-graph (graph-schedule (avm-graph avm))))
+  (let ((schedule-graph (graph-schedule (avm-graph avm)))
+        (symbolics
+          (remove-duplicates
+           (loop for node in (graph-nodes (avm-graph avm))
+                 if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
+                   collect (getattr node :value)))))
     (declare (type Graph schedule-graph))
     ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
     
@@ -78,7 +84,7 @@
                (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "=====> Lowering to Polyhedral IR~%"))
-                 (scop x)
+                 (scop x symbolics)
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "=====> Auto Scheduler~%"))
                  ;; TODO: 4 Optimization: Tiling, Parallelizing, Vectorizing, Unrolling
