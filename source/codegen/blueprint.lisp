@@ -20,6 +20,7 @@
    :permute-list)
   (:import-from
    :caten/avm
+   #:buffer-nrank
    #:buffer-shape
    #:buffer-stride
    #:buffer-views)
@@ -78,14 +79,12 @@
     (if (= (length nodes) len)
         nodes
         (simplify-blueprint nodes))))
-;; 10 6 (21*11) 3 (5*5)
-;; 10*3 21 11 5 5
+
 (defmethod get-grouped-dims ((graph Graph) (global-iterator Iteration-Space))
   "Find out the iteration space that is common in the graph"
   (let* ((iterspace (iteration-space-shape global-iterator))
          (procedure (iteration-space-procedure global-iterator))
          (seen))
-    ;; <Base_Loop>.len > <Collapsed Loops>.len が存在するとScheduleできない？
     (labels ((is-one (axis)
                (expr-scalar-equivalent-p axis (expr-const 1 :int64)))
              (merge-broadcast (space node name)
@@ -122,6 +121,26 @@ When processing ~a of ~a" common-x new-y iterspace space node name))
                    (mapc #'explore (node-reads node)))))
         (mapc #'explore (graph-outputs graph))))
     (cons iterspace procedure)))
+
+;; Groupの中でBufferShapeを同じにする方が手っ取り早いのだろうか？
+(defmethod get-grouped-dims1 ((graph Graph))
+  "Find out the iteration space that is common in the graph"
+  (let* ((kernel-rank
+           (loop for node in (graph-nodes graph)
+                 for type = (read-type-relay node)
+                 maximize (apply #'max (append (map 'list #'buffer-nrank (relay-reads type)) (map 'list #'buffer-nrank (relay-writes type))))))
+         (procedure)
+         (collapsed-idx))
+    (labels ((check (buffer space)
+               (when (= (buffer-nrank buffer) kernel-rank)
+                 
+                 ))
+             (explore (node)
+               (mapc #'check (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node)))
+               (mapc #'check (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node)))))
+      (mapc #'explore (graph-nodes graph)))
+
+    ))
 
 (defmethod fixup-graph-iteration-space ((graph Graph) found-pair g)
   "Rewrite the iteration space in the graph to match the common iteration space found in the get-grouped-dim function."

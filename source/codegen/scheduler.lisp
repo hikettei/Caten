@@ -141,8 +141,6 @@ T=1 | ... = f2(..., R(storage_id=W))
           (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
       ;; T=1 | x[...] = node(... A[read_type])
-      ;;(when (not (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
-      ;;  (return-from group-mergeable-p nil))
       ;; 1. Merge element-wise and non-viewed operations
       (flet ((base-p (view) (or (null view) (every #'null view))))
         (when (and (base-p (buffer-views read-type)) (base-p (buffer-views write-type)))
@@ -163,7 +161,10 @@ T=1 | ... = f2(..., R(storage_id=W))
       (flet ((elwise-p (x)
                (and (= (length (iteration-space-views x)) 1)
                     (every #'null (iteration-space-views x)))))
-        (when (or (elwise-p ri) (elwise-p wi))
+        (when (and
+               (or (elwise-p ri) (elwise-p wi))
+               ;; originated from the same iteration space?
+               (= (buffer-nrank write-type) (buffer-nrank read-type)))
           (return-from group-mergeable-p t)))
       (when (and (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri)))
                  (every #'expr-scalar-equivalent-p (iteration-space-shape wi) (iteration-space-shape ri)))
@@ -213,6 +214,12 @@ Trying to merge X and Y in the same group connected like:
   "The group always try to keep the largest iteration domain."
   (let ((gi (group-global-iterator group)))
     ;; Not created?
+    ;; Rank Basedじゃなくて，ちゃんとMergeを実装しないといけない・・・
+    ;; Procedureを全部読んで，全てのOPでCollapseされてなかったら，CollapseOK
+    ;; Otherwise, dont collapse
+    ;; highest rank basedで選ぶのをやめる
+    ;; (2 20 1 30) f
+    ;; [ ] Fixup iteratorの修正 => Broadcast+Transposed Matmul, ConvNDを動作
     (when (null gi)
       (setf (group-global-iterator group) is)
       (return-from group-merge-iterators))
@@ -385,6 +392,7 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
       ;; [TODO] (Add (Embedding[Reduce] Embedding[Reduce])) Fusion Using Pattern Matcher
       schedule)))
 
+;; 1 kernel 1 reduction -> delete?
 ;;(with-no-grad
 ;; (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 ;; Shape Rank MismatchによるInsertの失敗(sin+Embedding, ConvND Fusion, SinMatmulなど)を修正する
