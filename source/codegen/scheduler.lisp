@@ -140,8 +140,8 @@ T=1 | ... = f2(..., R(storage_id=W))
           (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
       ;; T=1 | x[...] = node(... A[read_type])
-      ;(when (not (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
-       ; (return-from group-mergeable-p nil))
+      (when (not (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
+        (return-from group-mergeable-p nil))
       ;; 1. Merge element-wise and non-viewed operations
       (flet ((base-p (view) (or (null view) (every #'null view))))
         (when (and (base-p (buffer-views read-type)) (base-p (buffer-views write-type)))
@@ -187,12 +187,10 @@ Trying to merge X and Y in the same group connected like:
 "
   (when (not (symbolp read)) (return-from transform-and-mergeable-p nil))
   (when (find :shrink (view-type-list read-views)) (return-from transform-and-mergeable-p nil))
-  (print "+++++")
-  (print read)
-  (print (view-type-list read-views))
+  (print "++Mergeable?++")
+  
   (when (equal `(:permute) (view-type-list read-views))
-    (print "Merge Permute")
-    (print read)
+    
     )
   
   nil)
@@ -212,24 +210,8 @@ Trying to merge X and Y in the same group connected like:
     (when (< (length (iteration-space-shape is)) (length (iteration-space-shape gi)))
       ;; [TODO] Assert that the total number of iteration is the same...
       (return-from group-merge-iterators))
-    (assert (= (length (iteration-space-shape is)) (length (iteration-space-shape gi))))
-    (flet ((is-one (axis)
-             (expr-scalar-equivalent-p axis (expr-const 1 :int64))))
-      ;; (10 10)   (1 1)
-      ;; (10 10)   (1 1)
-      ;; (10 10)   (10 10) <- VIEW
-      ;;     \     /
-      ;;     (10 10)
-      ;;        |
-      ;;     [VIEW]
-      ;;        |
-      ;;     (1 1)
-      ;;        |
-      ;;     [sin]
-      ;;        |
-      ;;     (1 1)
-
-      )))
+    ;; (assert (= (length (iteration-space-shape is)) (length (iteration-space-shape gi))))
+    ))
 
 ;;(with-no-grad
 ;; (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
@@ -277,7 +259,7 @@ Trying to merge X and Y in the same group connected like:
         if (eql s 1)
           collect default
         else
-          collect (or (pop list) (error ""))))
+          collect (or (pop list) (error "cannot merge broadcast ~a and ~a." shape list))))
 
 (defmethod group-fixup-uprank ((group Group) graph write-id read-id rt wt)
   "
@@ -300,21 +282,22 @@ write_id[...] <- F1(..., read_id[ri])
                 (merge-broadcast common-shape (buffer-stride buffer))
                 (merge-broadcast common-shape (buffer-views buffer) :default nil))))
         (labels ((rpl (bf)
-                   (multiple-value-bind (new-shape new-stride new-views) (new bf)
-                     (setf (buffer-shape bf) new-shape
-                           (buffer-stride bf) new-stride
-                           (buffer-views bf) new-views
-                           (buffer-nrank bf) (length new-shape))))
+                   (when (> (buffer-nrank bf) 0)
+                     (multiple-value-bind (new-shape new-stride new-views) (new bf)
+                       (setf (buffer-shape bf) new-shape
+                             (buffer-stride bf) new-stride
+                             (buffer-views bf) new-views
+                             (buffer-nrank bf) (length new-shape)))))
                  (explore (id)
                    (when (null (find id seen))
                      (push id seen)
-                     (let ((node (find id (group-items group) :test #'find :key #'node-writes)))
-                       (when node
+                     (dolist (node (group-items group))
+                       (when (find id (node-reads node))
                          (dolist (r (relay-writes (read-type-relay node)))
                            (rpl r))
                          (dolist (r (relay-reads (read-type-relay node)))
                            (rpl r))
-                         (mapc #'explore (node-reads node)))))))
+                         (mapc #'explore (node-writes node)))))))
           (explore write-id))))))
 
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
