@@ -1,17 +1,11 @@
 (defpackage :caten/codegen/jit
   (:documentation "This is an entry point for JIT. JIT compiles unoptimized AVM into optimized AVM.")
-  (:use :cl)
+  (:use :cl :caten/air)
   (:import-from
    :caten/avm
    #:AVM
    #:avm-graph
    #:avm-name)
-  (:import-from
-   :caten/air
-   #:Graph
-   #:graph-nodes
-   #:node-type
-   #:getattr)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer
@@ -43,6 +37,24 @@
 
 (in-package :caten/codegen/jit)
 
+(defun schedule-item-equal (items1 items2)
+  (and
+   (= (length items1) (length items2))
+   (every
+    #'(lambda (x y)
+        (and
+         (eql (node-type x) (node-type y))
+         (equal (node-writes x) (node-writes y))
+         (equal (node-reads x) (node-reads y))))
+    items1 items2)))
+
+(defun minify-equivalent-schedule (schedule-graph)
+  ;; [TODO] Identified kernels are not compiled
+  ;; CODE_SIZE=0 ()
+  ;; CODE_SIZE=1 (Eager to Full Symbolic Compilation)
+  ;; Impl: Static Gensymをもう一度適用してノード比較
+  schedule-graph)
+
 ;; [Milestone]
 ;; - [ ] schedule-graph -> Better Graph Splitting Strategy?
 ;; - [ ] Fuse Permute
@@ -68,11 +80,7 @@
     (declare (type Graph schedule-graph))
     ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
     
-    ;; [TODO] Identified kernels are not compiled
-    ;; COMPILE_SPEED=0 ()
-    ;; COMPILE_SPEED=1 ()
-    ;; COMPILE_SOEED=2 (Full Symbolic Compilation)
-    ;; Impl: Static Gensymをもう一度適用してノード比較
+    (minify-equivalent-schedule schedule-graph)
     (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))

@@ -40,6 +40,9 @@ One Schedule-item corresponds to one kernel in GPU.
    #:caten/codegen/helpers
    #:nodes-depends-on
    #:nodes-write-to)
+  (:import-from
+   #:caten/codegen/rewriting-rules
+   :nodes-apply-static-gensym)
   (:export
    #:graph-schedule))
 
@@ -61,7 +64,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
           (allocate-p :type boolean)
           (auto-schedule-p :type boolean) ;; Set T if there is no symbolic incremental
           (name :type symbol)
-          (items :type list)
+          (items :type list) (items-to-cache :type list)
           (rank :type fixnum)
           (storage-id-src :type list)
           (storage-id-dst :type list)))
@@ -173,9 +176,10 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
                :storage-id-dst writes
                :storage-id-src reads
                :rank rank
-               :items (group-items group))))
+               :items (group-items group)
+               :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
 
-(defmethod group-mergeable-p ((group Group) graph read read-type ri read-views)
+(defmethod group-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
   "
 Returns T if it is valid to merge the access from R to W without transforming R or W.
 ```
@@ -185,6 +189,7 @@ T=1 | ... = f2(..., R(storage_id=W))
 "
   (let ((node (id->value graph read)))
     (when (null node) (return-from group-mergeable-p nil))
+    (when (and path-reduced-p (getattr node :reduction :allow-undefined t)) (return-from group-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from group-mergeable-p nil))
     (when (not (jitable-p node)) (return-from group-mergeable-p nil))
     (let ((write-type (car (relay-writes (read-type-relay node))))
@@ -221,7 +226,7 @@ T=1 | ... = f2(..., R(storage_id=W))
         (return-from group-mergeable-p t))
       nil)))
 
-(defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views)
+(defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
   "
 Returns T if it is valid to merge the access from R to W with modifying R or W.
 Trying to merge X and Y in the same group connected like:
@@ -241,6 +246,7 @@ Trying to merge X and Y in the same group connected like:
   (when (find :shrink (view-type-list read-views)) (return-from transform-and-mergeable-p nil))
   (let ((node (id->value graph read)))
     (when (null node) (return-from transform-and-mergeable-p nil))
+    (when (and path-reduced-p (getattr node :reduction :allow-undefined t)) (return-from transform-and-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from transform-and-mergeable-p nil))
     (when (not (jitable-p node)) (return-from transform-and-mergeable-p nil))
     (when (not (eql (node-type node) :MOVE)) (return-from transform-and-mergeable-p nil))
@@ -339,7 +345,7 @@ write_id[...] <- F1(..., read_id[ri])
         (when (not (getattr reduction :reduction :allow-undefined t))->ok)
         nil))))
 
-(defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)))
+(defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)) (path-reduced nil))
   "Breaks a big graph to small graphs by recursively exploring and creating subgraph.
 We refer to subgraph as:
 - Total iteration size are equivalent. (that's why we break the graph at :shrink)
@@ -362,20 +368,22 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
        ;; [Note] :Allocate is a vm instruction, accordingly should be scheduled standalone
        (loop with buffer-p = (eql (node-type node) :Allocate)
              with jitable-p = (jitable-p node)
+             with reduced = (getattr node :reduction :allow-undefined t)
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
-             for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
+             for mergeable-p = (group-mergeable-p parent graph read read-type ri views path-reduced)
              if (and jitable-p (null buffer-p) mergeable-p) ;; merged due to element-wise operation
                ;; Simple Contigous OpFusion is here
                do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
-               and collect (recursive-create-group read graph :seen seen :parent parent)
+               and collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
              else
                collect
-               (let ((out (transform-and-mergeable-p parent graph read read-type ri views)))
+               (let ((out (transform-and-mergeable-p parent graph read read-type ri views path-reduced)))
                  (if (and jitable-p out)
-                     (recursive-create-group read graph :seen seen :parent parent) ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
+                     (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
+                     ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
                      (recursive-create-group read graph :seen seen))))))))
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
