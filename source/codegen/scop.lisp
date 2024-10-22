@@ -26,7 +26,7 @@
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/air :caten/codegen/expr :caten/isl)
-  (:export #:scop))
+  (:export #:scop #:auto-schedule))
 
 (in-package :caten/codegen/scop)
 
@@ -279,3 +279,6 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (format t "~a~%" (getattr node :polyhedral)))
       node)))
+
+(defmethod auto-schedule ((node Node))
+  )

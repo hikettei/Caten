@@ -24,10 +24,12 @@
    #:graph-schedule)
   (:import-from
    :caten/codegen/blueprint
-   #:lower-schedule-item)
+   #:lower-schedule-item
+   #:print-blueprint)
   (:import-from
    :caten/codegen/scop
-   #:scop)
+   #:scop
+   #:auto-schedule)
   (:import-from
    :caten/common.logger
    #:print-info
@@ -94,8 +96,13 @@
                    (scop x symbolics)
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)
                      (format t "=====> Auto Scheduler~%"))
-                   ;; TODO: 4 Optimization: Tiling, Parallelizing, Vectorizing, Unrolling
-                   )
+                   ;; Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
+                   (auto-schedule x)
+                   (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                     (print (getattr x :polyhedral))
+                     (fresh-line)
+                     (format t "=====> Optimized kernel~%")
+                     (print-blueprint (getattr x :blueprint) t)))
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
            (reverse (graph-nodes schedule-graph))))))
@@ -104,7 +111,6 @@
     ;; 7. Running memory-planner, update the storage-id
 
     ;; 8. Complete
-    
     ))
 
 ;; Test Case1
