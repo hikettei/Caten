@@ -81,7 +81,9 @@
                     (append
                      (graph-nodes (expr-graph expr))
                      (graph-nodes (renderer-graph renderer))))
-              (render-node renderer (car (node-writes (expr-out expr)))))
+              (format nil "~a[~a]"
+                      (%render-const renderer (car (node-writes node)))
+                      (render-node renderer (car (node-writes (expr-out expr))))))
             (format nil "~a[?]" (car (node-writes node)))))))
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
