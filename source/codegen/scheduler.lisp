@@ -335,9 +335,9 @@ write_id[...] <- F1(..., read_id[ri])
                    (rpl r))))
         (mapc #'explore (group-items group))))))
 
-(defmethod group-force-move-reduce-in-the-group ((group Group) graph read)
+(defmethod group-force-move-reduce-in-the-group ((group Group) graph read path-reduced)
   (symbol-macrolet ((->ok (return-from group-force-move-reduce-in-the-group t)))
-    (when (not (group-reduced group)) ->ok)
+    (when (not path-reduced) ->ok)
     (let ((node (id->value graph read)))
       (when (or (null node) (not (eql (node-type node) :MOVE))) ->ok)
       (let ((reduction (id->value graph (second (node-reads node)))))
@@ -374,7 +374,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views path-reduced)
-             if (and jitable-p (null buffer-p) mergeable-p) ;; merged due to element-wise operation
+             if (and jitable-p (null buffer-p) mergeable-p
+                     (group-force-move-reduce-in-the-group parent graph read path-reduced)) ;; merged due to element-wise operation
                ;; Simple Contigous OpFusion is here
                do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
                and collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
