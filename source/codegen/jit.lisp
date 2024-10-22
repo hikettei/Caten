@@ -1,11 +1,17 @@
 (defpackage :caten/codegen/jit
   (:documentation "This is an entry point for JIT. JIT compiles unoptimized AVM into optimized AVM.")
-  (:use :cl :caten/air)
+  (:use :cl :caten/air :caten/codegen/shape-inference)
   (:import-from
    :caten/avm
    #:AVM
+   #:Buffer
    #:avm-graph
-   #:avm-name)
+   #:avm-name
+   #:buffer-shape
+   #:buffer-views
+   #:buffer-stride
+   #:buffer-dtype
+   #:buffer-inferred-permute)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer
@@ -37,7 +43,18 @@
 
 (in-package :caten/codegen/jit)
 
-(defun schedule-item-equal (items1 items2)
+(defun buffer-equal (a b)
+  (declare (optimize (speed 3))
+           (type buffer a b))
+  (and
+   (equal (buffer-shape a) (buffer-shape b))
+   (equal (buffer-stride a) (buffer-stride b))
+   (equal (buffer-views a) (buffer-views b))
+   (equal (buffer-dtype a) (buffer-dtype b))))
+
+(deftype attr-value-type () `(or null symbol number list))
+
+(defun schedule-item-equal (si1 si2 &aux (items1 (getattr si1 :items-to-cache)) (items2 (getattr si2 :items-to-cache)))
   (and
    (= (length items1) (length items2))
    (every
@@ -45,15 +62,39 @@
         (and
          (eql (node-type x) (node-type y))
          (equal (node-writes x) (node-writes y))
-         (equal (node-reads x) (node-reads y))))
+         (equal (node-reads x) (node-reads y))
+         (let ((attrs1 (getattrs x))
+               (attrs2 (getattrs y)))
+           (and
+            (equal attrs1 attrs2)
+            (every
+             #'(lambda (k1 k2)
+                 (let ((a1 (getattr x k1))
+                       (a2 (getattr x k2)))
+                   ;; Caten/AIR has an assertion that all nodes are "dumpable"
+                   ;; i.e.: important attrs are always number/symbol/list/bool
+                   (if (and (typep a1 'attr-value-type) (typep a2 'attr-value-type))
+                       (equal a1 a2)
+                       t ;; isn't it danger?
+                       )))
+             attrs1 attrs2)))
+         (let ((xt (read-type-relay x))
+               (yt (read-type-relay y)))
+           (and
+            (every #'(lambda (a b) (buffer-equal a b)) (relay-reads xt) (relay-reads yt))
+            (every #'(lambda (a b) (buffer-equal a b)) (relay-writes xt) (relay-writes yt))))))
     items1 items2)))
 
 (defun minify-equivalent-schedule (schedule-graph)
   ;; [TODO] Identified kernels are not compiled
   ;; CODE_SIZE=0 ()
   ;; CODE_SIZE=1 (Eager to Full Symbolic Compilation)
-  ;; Impl: Static Gensymをもう一度適用してノード比較
-  schedule-graph)
+  (let ((tgts (loop for node in (graph-nodes schedule-graph)
+                    if (getattr node :jitable)
+                      collect node)))
+    (print tgts)
+    (print (remove-duplicates tgts :test #'schedule-item-equal))
+    schedule-graph))
 
 ;; [Milestone]
 ;; - [ ] schedule-graph -> Better Graph Splitting Strategy?
