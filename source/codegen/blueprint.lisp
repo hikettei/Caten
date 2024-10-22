@@ -64,7 +64,9 @@
                                   (expr-mul stride (expr-const i :int64))))
                           (iteration-space-views is)
                           (iteration-space-strides is) (reverse gids)))))
-               (format nil "~(~a~)" name))))
+               (format nil "~(~a~)" name)))
+         (make-index-space ()
+           (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids))))
     (format
      stream
      "{~%~a}~%"
@@ -82,7 +84,7 @@
                       do (format out "~a~a = ~a;~a~%"
                                  (indent indent)
                                  (render-list (map 'list #'print-aref (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
-                                 (render-expr 'Default-Renderer (getattr node :EXPR))
+                                 (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (make-index-space))
                                  (if (getattr node :reduction :allow-undefined t)
                                      " // :reduction=t"
                                      ""))

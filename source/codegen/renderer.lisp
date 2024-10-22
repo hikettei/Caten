@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/renderer
   (:use :cl :caten/codegen/shape-inference)
-  (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node)
-  (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p)
+  (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
+  (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add)
   (:import-from :caten/avm :Buffer #:buffer-nrank)
   (:export
    #:Renderer
@@ -10,6 +10,7 @@
    #:renderer-index-space
    #:make-renderer
    #:render-expr
+   #:render-aref
    #:render-node
    #:%render-node
    #:%render-const
@@ -66,6 +67,22 @@
     (assert val () "render-node: ~a is not found from the graph.~%graph:~%~a" id (renderer-graph renderer))
     (%render-node renderer (node-type val) val)))
 
+(defun render-aref (renderer node)
+  (assert (eql (node-type node) :AREF))
+  (let ((buffer (getattr node :buffer))
+        (space  (getattr node :space))
+        (index-space (renderer-index-space renderer)))
+    (when (null index-space) (warn "render-aref: Cannot render :AREF without providing :index-space, thus replaced with ?."))
+    (if (= -1 (buffer-nrank buffer))
+        (format nil "~(~a~)" (car (node-writes node)))
+        (if index-space
+            (let ((expr (apply #'expr-add (iteration-space-expr-aref space buffer (renderer-index-space renderer)))))
+              (setf (graph-nodes (renderer-graph renderer))
+                    (append
+                     (graph-nodes (expr-graph expr))
+                     (graph-nodes (renderer-graph renderer))))
+              (render-node renderer (car (node-writes (expr-out expr)))))
+            (format nil "~a[?]" (car (node-writes node)))))))
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
   nil
@@ -75,7 +92,7 @@
   (format nil "~(~a~)" obj))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
-  (format nil "~a" (getattr node :value)))
+  (format nil "~(~a~)" (getattr node :value)))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
@@ -109,12 +126,7 @@
   (def :< "<"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
-  (let ((buffer (getattr node :buffer))
-        (space  (getattr node :space)))
-    (if (= -1 (buffer-nrank buffer))
-        (format nil "~(~a~)" (car (node-writes node)))
-        ;; [TODO],pass gids w/o using global variable ...
-        (format nil "~a[...]" (car (node-writes node))))))
+  (render-aref renderer node))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
