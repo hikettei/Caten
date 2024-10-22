@@ -126,6 +126,12 @@ out <- x + y + z + ...
 out <- x + y
 ```")
 
+(defnode (:BinaryOps :MOD) (BinaryOps JITAble)
+	 "The node :MOD finds the reminder of the first tensor in `read` divided by the second tensor in `read`.
+```
+out <- x % y
+```")
+
 (defnode (:BinaryOps :IDIV) (BinaryOps JITAble)
 	 "The node :IDIV divides the first tensor in `read` by the second tensor in `read`, writing the result to the first `write`.
 Unlike other BinaryOps, :IDIV assumes two tensors to be an integer typed tensor.

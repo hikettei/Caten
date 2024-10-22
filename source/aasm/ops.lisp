@@ -41,7 +41,8 @@
   (def %xor :XOR)
   (def %move :MOVE)
   (def %max :MAX)
-  (def %gcd :GCD))
+  (def %gcd :GCD)
+  (def %mod :MOD))
 (defun %sub (x y &key (reduction nil) (id (gensym "BID"))) (%add x (%neg y) :reduction reduction :id id))
 (defun %div (x y &key (reduction nil) (id (gensym "BID"))) (%mul x (%recip y) :reduction reduction :id id))
 

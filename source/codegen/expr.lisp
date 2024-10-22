@@ -18,12 +18,17 @@
    #:expr-div
    #:expr-idiv
    #:expr-and
+   #:expr-max
+   #:expr-min
+   #:expr-mod
    #:expr-or
    #:expr-<
    #:expr-<=
    #:expr->
    #:expr->=
    #:expr-=
+   #:expr-where
+   #:expr-neg
    #:with-expr-cache))
 
 (in-package :caten/codegen/expr)
@@ -141,7 +146,8 @@ Only supports the scalar computation because it is intended to identify the same
   (def expr-idiv-binary %idiv)
   (def expr-and-binary %and)
   (def expr-or-binary %or)
-  (def expr-max-binary %max))
+  (def expr-max-binary %max)
+  (def expr-mod-binary %mod))
 
 (macrolet ((def (name op)
              `(defun ,name (a b &aux (out (gensym "w")))
@@ -154,6 +160,13 @@ Only supports the scalar computation because it is intended to identify the same
   (def expr->=-binary %>=)
   (def expr-=-binary %=))
 
+(macrolet ((def (name op)
+             `(defun ,name (x &aux (out (gensym "w")))
+                (declare (type Expr x))
+                (let ((grh (with-context (_ (,op (expr-out x) :id out)))))
+                  (%connect-expr grh (list x) out)))))
+  (def expr-neg %neg))
+
 (defun expr-add (&rest args) (reduce #'expr-add-binary args))
 (defun expr-sub (&rest args) (reduce #'expr-sub-binary args))
 (defun expr-mul (&rest args) (reduce #'expr-mul-binary args))
@@ -162,10 +175,19 @@ Only supports the scalar computation because it is intended to identify the same
 (defun expr-and (&rest args) (reduce #'expr-and-binary args))
 (defun expr-or (&rest args) (reduce #'expr-or-binary args))
 (defun expr-max (&rest args) (reduce #'expr-max-binary args))
+(defun expr-binary-min (a b)
+  (expr-neg (expr-max (expr-neg a) (expr-neg b))))
+(defun expr-min (&rest args) (apply #'expr-binary-min args))
+(defun expr-mod (&rest args) (apply #'expr-mod-binary args))
 
 (defun expr-< (&rest args) (reduce #'expr-<-binary args))
 (defun expr-<= (&rest args) (reduce #'expr-<=-binary args))
 (defun expr-> (&rest args) (reduce #'expr->-binary args))
 (defun expr->= (&rest args) (reduce #'expr->=-binary args))
 (defun expr-= (&rest args) (reduce #'expr-= args))
+(defun expr-where (condition then else &aux (out (gensym "w")))
+  (declare (type Expr condition then else))
+  (let ((grh (with-context (_ (%where (expr-out condition) (expr-out then) (expr-out else) :id out)))))
+    (%connect-expr grh (list condition then else) out)))
+  
 
