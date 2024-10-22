@@ -400,7 +400,7 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
-
+;; - [ ] Fix randn auto scheduler
 ;; (with-no-grad (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 ;; - [x] Insert 1 to proper position to determine the fused loop axis
 ;;   - [x] Let ConvND, and sin(matmul(x, y)) working

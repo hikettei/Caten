@@ -65,6 +65,7 @@
                                #'concatenate
                                'string
                                (butlast
+                                (append
                                 (loop for dom in domains
                                       collect
                                       (if (expr-affine-p (getattr dom :below))
@@ -72,9 +73,10 @@
                                           (multiple-value-bind (expr-id new-p) (stash-expr (getattr dom :below))
                                             (when new-p (push expr-id extra-symbolics))
                                             (format nil "0 <= ~(~a~) < ~(~a~)" (getattr dom :idx) expr-id)))
-                                      collect " and ")))
-                              ;; !!! [TODO] Dynamic Shape are >= 1
-                              )
+                                      collect " and ")
+                                (loop for s in (append symbolics extra-symbolics)
+                                      collect (format nil "~(~a~) > 0" s)
+                                      collect " and ")))))
                       (format out "  ~a[];~%" (node-id node)))))))
      (format out "}"))
    idx2domain
