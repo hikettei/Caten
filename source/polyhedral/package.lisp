@@ -7,8 +7,10 @@
    #:Polyhedral-IR)
   (:import-from
    :caten/polyhedral/auto-scheduler
-   #:auto-schedule)
+   #:auto-schedule
+   #:->ast)
   (:export
    #:Polyhedral-IR
-   #:auto-schedule))
+   #:auto-schedule
+   #:->ast))
   
