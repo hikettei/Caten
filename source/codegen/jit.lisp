@@ -79,7 +79,7 @@
                  (print-progress "~a" (getattr x :name))
                  (format t "=====> Lowering to blueprint~%"))
                ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
-               (lower-schedule-item x (avm-graph avm))
+               (lower-schedule-item x (avm-graph avm) schedule-graph)
                ;; 6. Lower into Polyhedral IR
                ;; [TODO] Skip if it has a symbolic `by`.
                (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)

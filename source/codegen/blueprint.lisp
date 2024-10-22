@@ -29,6 +29,10 @@
    :caten/codegen/renderer
    #:render-expr
    #:Default-Renderer)
+  (:import-from
+   :caten/codegen/exprify
+   #:graph-exprify
+   #:graph-scalarify)
   (:export
    #:lower-schedule-item
    #:print-blueprint))
@@ -45,8 +49,8 @@
   (make-node :Render :ENDFOR nil nil :idx idx))
 
 (defmethod print-blueprint (nodes stream &aux (gids))
-  (flet ((print-aref (name is)
-           (if (and is (> (length (iteration-space-shape is)) 0) (> (length gids) 0))
+  (flet ((print-aref (name b is)
+           (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length gids) 0))
                (format nil "~a[~(~a~)]" name
                        (render-expr
                         'Default-Renderer
@@ -77,9 +81,9 @@
 	       else
 	         do (format out "~a~a = ~(~a~)(~a);~a~%"
                             (indent indent)
-                            (render-list (map 'list #'print-aref (node-writes node) (relay-write-iters (read-type-relay node))))
+                            (render-list (map 'list #'print-aref (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
                             (node-type node)
-                            (render-list (map 'list #'print-aref (node-reads node) (relay-read-iters (read-type-relay node))))
+                            (render-list (map 'list #'print-aref (node-reads node) (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node))))
                             (if (getattr node :reduction :allow-undefined t)
                                 " // :reduction=t"
                                 ""))))))))
@@ -355,7 +359,7 @@
        (node-reads node) (range 0 (length (node-reads node)))))
     nil))
 
-(defmethod lower-schedule-item ((node Node) (base-graph Graph))
+(defmethod lower-schedule-item ((node Node) (base-graph Graph) (scheduled-graph Graph))
   "Lowers the Schedule-Item into blueprint"
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
   ;; won't lower the allocation, they are the vm instruction.
@@ -378,10 +382,10 @@
         #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
         #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
         (mapc #'(lambda (x) (recursive-lower-into-bp ctx x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph)))
-      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)))
+      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
+            (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
+            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-blueprint (ctx-blueprint ctx) t))
-      ;; [TODO] Recursively Relocate (!randn rng counter, softmax)
-      ;; fix view offsets (!randn )
       ;; [TODO] Add more constraints to the polyhedral compiler (e.g.: multiexpr grouping)
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))

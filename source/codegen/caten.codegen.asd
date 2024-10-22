@@ -11,6 +11,7 @@
    (:file "shape-inference")
    (:file "rewriting-rules")
    (:file "scheduler")
+   (:file "exprify")
    (:file "blueprint")
    (:file "scop")
    (:file "jit")
