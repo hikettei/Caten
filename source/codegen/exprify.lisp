@@ -17,6 +17,10 @@
   (:import-from
    :caten/codegen/renderer
    #:make-aref)
+  (:import-from
+   :caten/codegen/helpers
+   :nodes-write-to
+   :nodes-depends-on)
   (:export
    #:graph-scalarify
    #:graph-exprify
@@ -133,6 +137,14 @@
                       (list node)))
                     :out node)))
 
+(defun merge-and-graft-expr (node pairs)
+  (assert (eql (node-type node) :EXPR))
+  (loop for (id . expr-parent) in pairs
+        do (expr-graft-after (getattr node :expr) id (getattr expr-parent :expr)))
+  ;; [TODO] Update type relay, node reads, node writes
+  node
+  )
+
 (defmethod graph-exprify (blueprint (node Node) (schedule-graph Graph))
   (declare (type list blueprint))
   (let* ((ids (blueprint-tmp-buffers blueprint schedule-graph :except-for (schedule-outputs schedule-graph)))
@@ -141,11 +153,35 @@
             (loop for bp in blueprint
                   if (eql (node-class bp) :Render) collect bp
                     else collect (exprify bp))))
-      (labels ((group->expr-group (group)
-                 ;; (print "GROUP!")
-                 ;; (print group)
-                 ;; [todo] compose exprs
-                 group)
+      (labels ((replace-p (id group)
+                 (if (find id replaceable)
+                     ;; If the id was used by more than two nodes, split them. (not to introduce the extra computation)
+                     (= 1 (count-if #'(lambda (node) (find id (node-reads node))) group))
+                     nil))
+               (group->expr-group (group &aux
+                                           (tops (nodes-write-to group))
+                                           (graph (apply #'make-graph group)) (seen nil))
+                 (setf (graph-outputs graph) tops)
+                 (assert (every #'(lambda (x) (eql (node-type x) :EXPR)) group))
+                 (labels ((explore (id &aux (node (id->value graph id)))
+                            (when (and node (null (find (node-id node) seen)))
+                              (push (node-id node) seen)
+                              (let* ((parents
+                                       (loop for r in (node-reads node)
+                                             collect (explore r)))
+                                     (stashes)
+                                     (rewrite-pairs
+                                       (loop for r in (node-reads node)
+                                             for p in parents
+                                             if (and (replace-p r group) p)
+                                               collect (cons r (car (last p))) ;; The symbol r -> graft p from r.
+                                             else
+                                               do (push (car (last p)) stashes))))
+                                `(,@(apply #'append (map 'list #'butlast parents))
+                                  ,@(nreverse stashes)
+                                  ,(merge-and-graft-expr node rewrite-pairs))))))
+                   (loop for e in (apply #'append (map 'list #'explore tops))
+                         if e collect e)))
                (rewriter (from to &aux (group) (new-region :nothing))
                  (loop with count = from while (< count to)
                        for node = (nth count new-bp) do

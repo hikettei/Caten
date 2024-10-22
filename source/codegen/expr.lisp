@@ -2,6 +2,7 @@
   (:use :cl :caten/air :caten/aasm)
   (:export
    #:with-expr
+   #:expr-graft-after
    #:expr-graph
    #:Expr
    #:make-expr
@@ -33,6 +34,13 @@
     ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value value)
      ->
      (:_TmpScalarConst (value) :dtype dtype)))
+
+(defmethod expr-graft-after ((expr Expr) id new-expr)
+  (assert (not (typep (expr-graph expr) 'FastGraph)) () "remnode not tested for Graph? [todo: fix]")
+  (dolist (n (graph-nodes (expr-graph expr)))
+    (when (and (eql (node-type n) :AREF) (eql (car (node-writes n)) id))
+      (remnode (expr-graph expr) (node-id n))))
+  (setf (graph-nodes (expr-graph expr)) (append (graph-nodes (expr-graph new-expr)) (graph-nodes (expr-graph expr)))))
 
 (defmethod run-expr-with-vars ((expr Expr) vars)
   (let ((graph

@@ -89,7 +89,8 @@
   (def :SIN "sin")
   (def :log2 "log2")
   (def :exp2 "exp2")
-  (def :RECIP "1/"))
+  (def :RECIP "1/")
+  (def :SQRT "sqrt"))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
@@ -109,6 +110,9 @@
   (format nil "~a" (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Allocate)) node) (format nil "0"))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :CAST)) node)
+  (format nil "(~(~a~))~a" (getattr node :dtype) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :INDEX-COMPONENTS)) node)
   ;; [TODO]
