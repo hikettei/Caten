@@ -20,6 +20,9 @@
   (:import-from
    :caten/polyhedral/ir
    #:make-polyhedral-ir)
+  (:import-from
+   :caten/codegen/expr-cache
+   :stash-expr)
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/air :caten/codegen/expr :caten/isl)
@@ -27,7 +30,10 @@
 
 (in-package :caten/codegen/scop)
 
-(defmethod render-domain-body-from-group ((node Node) symbolics &aux (idx2domain (make-hash-table)) (device 'Default-Renderer))
+(defun expr-affine-p (expr)
+  (every #'(lambda (x) (find (node-type x) `(:< :ALLOCATE :LOAD :ADD :NEG))) (graph-nodes (expr-graph expr))))
+
+(defmethod render-domain-body-from-group ((node Node) symbolics &aux (idx2domain (make-hash-table)) (device 'Default-Renderer) (extra-symbolics nil))
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (values
@@ -57,13 +63,19 @@
                                'string
                                (butlast
                                 (loop for dom in domains
-                                      collect (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
+                                      collect
+                                      (if (expr-affine-p (getattr dom :below))
+                                          (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
+                                          (multiple-value-bind (expr-id new-p) (stash-expr (getattr dom :below))
+                                            (when new-p (push expr-id extra-symbolics))
+                                            (format nil "0 <= ~(~a~) < ~(~a~)" (getattr dom :idx) expr-id)))
                                       collect " and ")))
                               ;; !!! [TODO] Dynamic Shape are >= 1
                               )
                       (format out "  ~a[];~%" (node-id node)))))))
      (format out "}"))
-   idx2domain))
+   idx2domain
+   extra-symbolics))
 
 (defun render-domain-from-loops (node domains &aux (device 'Default-Renderer))
   (if domains
@@ -75,7 +87,12 @@
                'string
                (butlast
                 (loop for dom in domains
-                      collect (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
+                      collect
+                      (if (expr-affine-p (getattr dom :below))
+                          (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
+                          (multiple-value-bind (expr-id new-p) (stash-expr (getattr dom :below))
+                            (assert (null new-p) () "~a was not cached in the initial run of the function render-domain-body-from-group?" (getattr dom :below))
+                            (format nil "0 <= ~(~a~) < ~(~a~)" (getattr dom :idx) expr-id)))
                       collect " and "))))
       (format nil "  ~a[];~%" (node-id node))))
 
@@ -182,8 +199,9 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (let* ((render-nodes (getattr node :blueprint))
-         (deps (format nil "~(~a~)" (render-list symbolics))))
-    (multiple-value-bind (domain idx2domain) (render-domain-body-from-group node symbolics)
+         (deps ""))
+    (multiple-value-bind (domain idx2domain extra-symbolics) (render-domain-body-from-group node symbolics)
+      (setf deps (format nil "~(~a~)" (render-list (append symbolics extra-symbolics))))
       (labels ((explore-schedule-tree (from to
                                        &key
                                          (parent-loops)
