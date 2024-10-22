@@ -1,6 +1,14 @@
 (in-package :cl-user)
 
 (defpackage :caten/polyhedral
-  (:use :cl :caten/isl)
-  (:shadow #:set #:space)
-  (:shadowing-import-from :cl :map))
+  (:use :cl)
+  (:import-from
+   :caten/polyhedral/ir
+   #:Polyhedral-IR)
+  (:import-from
+   :caten/polyhedral/auto-scheduler
+   #:auto-schedule)
+  (:export
+   #:Polyhedral-IR
+   #:auto-schedule))
+  

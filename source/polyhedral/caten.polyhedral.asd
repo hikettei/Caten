@@ -6,4 +6,5 @@
   :serial t
   :components
   ((:file "package")
-   (:file "ir")))
+   (:file "ir")
+   (:file "auto-scheduler")))

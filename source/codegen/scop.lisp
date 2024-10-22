@@ -281,4 +281,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
       node)))
 
 (defmethod auto-schedule ((node Node))
+  (caten/polyhedral:auto-schedule (getattr node :polyhedral))
+  ;; load from polyhedral
   )
+

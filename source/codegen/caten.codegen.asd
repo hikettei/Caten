@@ -14,6 +14,7 @@
    (:file "scheduler")
    (:file "exprify")
    (:file "blueprint")
+   (:file "polyhedral-ast")
    (:file "scop")
    (:file "jit")
    (:file "package")))
