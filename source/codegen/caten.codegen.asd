@@ -9,6 +9,7 @@
    (:file "expr")
    (:file "shape-inference")
    (:file "renderer")
+   (:file "expr-cache")
    (:file "rewriting-rules")
    (:file "scheduler")
    (:file "exprify")

@@ -33,6 +33,9 @@
    #:print-info
    #:with-progress
    #:print-progress)
+  (:import-from
+   :caten/codegen/expr-cache
+   #:with-expr-cache)
   (:export
    #:jit))
 
@@ -71,29 +74,30 @@
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
       (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
-        (mapc
-         #'(lambda (x &aux (start (get-internal-real-time)))
-             (when (getattr x :jitable)
-               ;; [TODO] (skipped) if cached
-               (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                 (print-progress "~a" (getattr x :name))
-                 (format t "=====> Lowering to blueprint~%"))
-               ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
-               (lower-schedule-item x (avm-graph avm) schedule-graph)
-               ;; 6. Lower into Polyhedral IR
-               (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)))
-                 (format t "=====> Skipping Auto Scheduler (There is a symbolic incremental)~%"))
-               (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
+        (with-expr-cache () ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
+          (mapc
+           #'(lambda (x &aux (start (get-internal-real-time)))
+               (when (getattr x :jitable)
+                 ;; [TODO] (skipped) if cached
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                   (format t "=====> Lowering to Polyhedral IR~%"))
-                 (scop x symbolics)
+                   (print-progress "~a" (getattr x :name))
+                   (format t "=====> Lowering to blueprint~%"))
+                 ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
+                 (lower-schedule-item x (avm-graph avm) schedule-graph)
+                 ;; 6. Lower into Polyhedral IR
+                 (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)))
+                   (format t "=====> Skipping Auto Scheduler (There is a symbolic incremental)~%"))
+                 (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
+                   (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                     (format t "=====> Lowering to Polyhedral IR~%"))
+                   (scop x symbolics)
+                   (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                     (format t "=====> Auto Scheduler~%"))
+                   ;; TODO: 4 Optimization: Tiling, Parallelizing, Vectorizing, Unrolling
+                   )
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                   (format t "=====> Auto Scheduler~%"))
-                 ;; TODO: 4 Optimization: Tiling, Parallelizing, Vectorizing, Unrolling
-                 )
-               (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                 (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
-         (reverse (graph-nodes schedule-graph)))))
+                   (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
+           (reverse (graph-nodes schedule-graph))))))
     ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)
     
     ;; 7. Running memory-planner, update the storage-id
