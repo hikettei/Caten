@@ -167,7 +167,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
                :jitable (every #'jitable-p (group-items group))
                :allocate-p (when allocate-p t)
-               :auto-schedule-p (or no-symbolic-incremental-p (null full-scalar-p))
+               :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
                :storage-id-dst writes
                :storage-id-src reads
                :items (group-items group))))
