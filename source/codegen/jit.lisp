@@ -81,8 +81,9 @@
                ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
                (lower-schedule-item x (avm-graph avm) schedule-graph)
                ;; 6. Lower into Polyhedral IR
-               ;; [TODO] Skip if it has a symbolic `by`.
-               (when (>= (ctx:getenv :AUTO_SCHEDULER) 1)
+               (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)))
+                 (format t "=====> Skipping Auto Scheduler (There is a symbolic incremental)~%"))
+               (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "=====> Lowering to Polyhedral IR~%"))
                  (scop x symbolics)

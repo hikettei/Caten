@@ -59,6 +59,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
           (buffers)
           (jitable :type boolean)
           (allocate-p :type boolean)
+          (auto-schedule-p :type boolean) ;; Set T if there is no symbolic incremental
           (name :type symbol)
           (items :type list)
           (storage-id-src :type list)
@@ -152,10 +153,18 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 (defmethod group->schedule ((group Group))
   (let ((reads (nodes-depends-on (group-items group)))
         (writes (nodes-write-to (group-items group)))
-        (allocate-p (find :Allocate (group-items group) :key #'node-type)))
+        (allocate-p (find :Allocate (group-items group) :key #'node-type))
+        (no-symbolic-incremental-p t))
+    (dolist (node (group-items group))
+      (dolist (r (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node))))
+        (when r
+          (dolist (v (buffer-views r))
+            (when (and v (third v) (symbolp (third v))) ;; (upfrom below by broadcast_p)
+              (setf no-symbolic-incremental-p nil))))))
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
                :jitable (every #'jitable-p (group-items group))
                :allocate-p (when allocate-p t)
+               :auto-schedule-p no-symbolic-incremental-p
                :storage-id-dst writes
                :storage-id-src reads
                :items (group-items group))))
