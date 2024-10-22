@@ -46,7 +46,7 @@
 
 (defmethod print-blueprint (nodes stream &aux (gids))
   (flet ((print-aref (name is)
-           (if (and is (> (length (iteration-space-shape is)) 0))
+           (if (and is (> (length (iteration-space-shape is)) 0) (> (length gids) 0))
                (format nil "~a[~(~a~)]" name
                        (render-expr
                         'Default-Renderer
@@ -56,7 +56,7 @@
                           'list
                           #'(lambda (view stride i)
                               (if view
-                                  (expr-mul (expr-const (third view) :int64) (expr-add (expr-const (car view) :int64) (expr-mul stride (expr-const i :int64))))
+                                  (expr-mul (expr-const (third view) :int64) (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-const i :int64))))
                                   (expr-mul stride (expr-const i :int64))))
                           (iteration-space-views is)
                           (iteration-space-strides is) (reverse gids)))))
@@ -137,7 +137,7 @@
                          collect p
                          and do (push p seen))))
           (assert (every #'identity new-procedure) () "get-grouped-dim: cannot proceed to the next process because the procedure was inferred as: ~a" new-procedure)
-          (assert (equal (alexandria:flatten new-procedure) (range 0 kernel-rank)))
+          (assert (equal (alexandria:flatten new-procedure) (range 0 kernel-rank)))          
           (cons
            (map 'list #'(lambda (x) (gethash x pid2space)) new-procedure)
            new-procedure))))))
@@ -267,7 +267,8 @@
                           (depend-idx) (depend-node) (path-reduced nil) (bp-limit nil)
                           (reduce-p nil) (reduce-gids)
                         &aux
-                          (changed-p nil))
+                          (changed-p nil)
+                          (node-reduce-p (getattr node :reduction :allow-undefined t)))
   (when reduce-p
     (assert (null path-reduced))
     (setf depend-idx (loop for d in depend-idx if (null (find d reduce-gids)) collect d)
@@ -293,6 +294,7 @@
             if (and
                 (or (null bp-limit) (<= nth bp-limit))
                 (every #'(lambda (x) (find x idx-satisfied)) depend-idx)
+                (or (null node-reduce-p) depend-idx (null idx-satisfied)) ;; If scalar computation is a reduction: write/read has a dependency.
                 ;; should not depends on reduced axes
                 (every #'(lambda (x) (null (find x idx-satisfied))) path-reduced)
                 (every #'(lambda (x) (null (find x satisfied))) depend-node))
@@ -379,34 +381,7 @@
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-blueprint (ctx-blueprint ctx) t))
-      ;; [TODO] Recursively Relocate (!randn rng counter)
+      ;; [TODO] Recursively Relocate (!randn rng counter, softmax)
+      ;; fix view offsets (!randn )
       ;; [TODO] Add more constraints to the polyhedral compiler (e.g.: multiexpr grouping)
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
-
-;; - This is the case lowerer cannot handle well
-;;   - (caten/codegen:jit (caten (!sin (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (!sin (forward (Embedding 10 10) (make-tensor `(10 10))))))))
-;; [!] Need process replay..
-;; Involve the following things to the test
-;; - [x] Initial Schedule
-;;   - [x] Mean axis=0, axis=1,...
-;;   - [x] Embedding
-;;   - [x] Double Reduce (add embedding embedding), add matmul matmul
-;;   - [x] Triple Reduce (add embedding embedding embedding)
-;;   - [ ] WPE+WTE in Transformer is a single kernel.
-;; - [ ] Permutation
-;;   - [ ] Matmul, and ConvND
-;; - [ ] Permute Fuse
-;;   - [ ] Matmul+Transpose
-;; - [ ] Graph Partition
-;;   - [ ] Transfomer
-;;   - [ ] Attention View will be properly scheduled?
-;;   - [ ] Split the grpah as soon as :shrink was detected to schedule !randn
-;; - [ ] Dynamic Shape
-;;(with-no-grad (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
-
-;; (defparameter *model* (Transformer 64 4 2 1e-5 32))
-;; (caten/codegen:jit (time (caten (call *model* (make-tensor `(1 10)) (iconst 'n)))))
-;; [TODO] Loopの操作はPolyhedral Compilerに任せる。。。
-;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
-;; - [ ] relu(gemm)
-;; - [ ] conv

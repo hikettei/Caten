@@ -252,7 +252,6 @@
   (views nil :type list)
   (procedure nil :type list))
 
-;; [TODO] render-isl ((is Iteration-Space))
 (defmethod iteration-space-sync-broadcast ((is Iteration-Space))
   (setf (iteration-space-views is)
         (loop for stride in (iteration-space-strides is)

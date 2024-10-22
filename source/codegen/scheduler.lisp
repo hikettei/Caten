@@ -233,21 +233,25 @@ Trying to merge X and Y in the same group connected like:
            (tgt-is (second (relay-read-iters tgt-rel))))
       (when (or (null tmp) (not (eql (node-type tmp) :Allocate))) (return-from transform-and-mergeable-p nil))
       (when (not (every #'null tgt-write-views)) (return-from transform-and-mergeable-p nil))
+      (when (not (every #'null (buffer-views write-type))) (return-from transform-and-mergeable-p nil))
       ;; T=0 | write[wi] = MOVE(some_temporary_buffer, tgt[ti])
       ;; T=1 | ...       =  f(..., read[ri], ...)
       ;; =>
       ;; T=0 | ... = f(..., tgt[new_iter], ...)
+
+      ;;  val_28[((((100*_gid0)+0)+_gid2)+(10*_gid3))]
+      ;; -> val_28[0+0+gid2+10*_gid3]
+      ;(print "+Mergeable?+")
+      ;(print node)
+      ;(print read-type)
+      ;(print tgt-type)
+      ;; tgt-typeをwrite-typeの次元数と一致したViewに書き換えることが目的
       (when (and
              (equal `(:broadcast) (view-type-list read-views))
              (equal nil (view-type-list write-views)))
         (cond
           ((equal `(:permute) (view-type-list tgt-views))
-           ;(print "++Mergeable?++")
-           ;(print node)
-           ;(print write-type)
-           ;(print read-type) ;; <- what you want
-           ;(print tgt-type)
-           ;(print (view-type-list tgt-views))
+           
            )))
       nil)))
 
@@ -426,3 +430,31 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 ;; (caten/codegen:jit (caten (!matmul (make-tensor `(10 10)) (!matmul (make-tensor `(10 10)) (make-tensor `(10 10))))))
 ;; (with-no-grad
 ;  (Time (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))))
+
+;; - This is the case lowerer cannot handle well
+;;   - (caten/codegen:jit (caten (!sin (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (!sin (forward (Embedding 10 10) (make-tensor `(10 10))))))))
+;; [!] Need process replay..
+;; Involve the following things to the test
+;; - [x] Initial Schedule
+;;   - [x] Mean axis=0, axis=1,...
+;;   - [x] Embedding
+;;   - [x] Double Reduce (add embedding embedding), add matmul matmul
+;;   - [x] Triple Reduce (add embedding embedding embedding)
+;;   - [ ] WPE+WTE in Transformer is a single kernel.
+;; - [ ] Permutation
+;;   - [ ] Matmul, and ConvND
+;; - [ ] Permute Fuse
+;;   - [ ] Matmul+Transpose
+;; - [ ] Graph Partition
+;;   - [ ] Transfomer
+;;   - [ ] Attention View will be properly scheduled?
+;;   - [ ] Split the grpah as soon as :shrink was detected to schedule !randn
+;; - [ ] Dynamic Shape
+;;(with-no-grad (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
+
+;; (defparameter *model* (Transformer 64 4 2 1e-5 32))
+;; (caten/codegen:jit (time (caten (call *model* (make-tensor `(1 10)) (iconst 'n)))))
+;; [TODO] Loopの操作はPolyhedral Compilerに任せる。。。
+;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
+;; - [ ] relu(gemm)
+;; - [ ] conv
