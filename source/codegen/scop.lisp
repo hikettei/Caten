@@ -15,7 +15,8 @@
    #:relay-writes
    #:relay-read-iters
    #:relay-write-iters
-   #:iteration-space-strides)
+   #:iteration-space-strides
+   #:iteration-space-views)
   (:import-from
    :caten/polyhedral/ir
    #:make-polyhedral-ir)
@@ -124,7 +125,6 @@ Corresponds to the position of the subgraph in the parent schedule.
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (union-map-from-str
    (with-output-to-string (out)
-     ;; [TODO] Dynamic Shape
      (format out "[~(~a~)] -> {~%" (render-list symbolics))
      (maphash
       #'(lambda (idx dom)
@@ -146,10 +146,16 @@ Corresponds to the position of the subgraph in the parent schedule.
                                      (when typ
                                        (loop for stride in (iteration-space-strides typ)
                                              for nth upfrom 0
+                                             for view = (nth nth (iteration-space-views typ))
                                              for gid = (gid nth)
                                              if (is-zero stride)
-                                               ;; [TODO] !!!!! :Permute and :View (Offset, By)
                                                collect (format nil "0")
+                                             else if view
+                                                    collect
+                                                    (multiple-value-bind (upfrom below to) (apply #'values view)
+                                                      (declare (ignore below))
+                                                      (assert (numberp to) () "AUTO_SCHEDULER does not support for symbolic increments. detected=~a" view)
+                                                      (format nil "~(~a~)+~(~a~)*~(~a~)" upfrom gid to))
                                              else
                                                collect (format nil "~(~a~)" gid)
                                            collect ", "))))))))))

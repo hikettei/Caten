@@ -74,7 +74,7 @@
    #:Iteration-shape-view
    #:Iteration-Space-procedure
    #:%expr-const
-   ))
+   #:iteration-space-expr-aref))
 
 (in-package :caten/codegen/shape-inference)
 
@@ -251,6 +251,21 @@
   (strides nil :type list)
   (views nil :type list)
   (procedure nil :type list))
+
+(defmethod iteration-space-expr-aref ((is Iteration-Space) (type Buffer) gids)
+  (assert (not (= (buffer-nrank type) -1)) () "buffer-nrank = -1 means the array was mutated to scalar!")
+  (let ((size (iteration-space-shape is))
+        (stride (iteration-space-strides is))
+        (view (iteration-space-views is)))
+    (assert (= (length gids) (length size)) () "The iteration space and the buffer should have the same rank, getting gids=~a" gids)
+    (loop for s in stride
+          for nth upfrom 0
+          for i in gids
+          for v = (nth nth view)
+          if v
+            collect (expr-mul (expr-const (third v) :int64) (expr-mul s (expr-add (expr-const (car v) :int64) (expr-const i :int64))))
+          else
+            collect (expr-mul i s))))
 
 (defmethod iteration-space-sync-broadcast ((is Iteration-Space))
   (setf (iteration-space-views is)
