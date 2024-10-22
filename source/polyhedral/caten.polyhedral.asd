@@ -5,6 +5,6 @@
   :depends-on ("cffi" "caten.isl")
   :serial t
   :components
-  ((:file "package")
-   (:file "ir")
-   (:file "auto-scheduler")))
+  ((:file "ir")
+   (:file "auto-scheduler")
+   (:file "package")))

@@ -88,7 +88,7 @@
                  ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
                  (lower-schedule-item x (avm-graph avm) schedule-graph)
                  ;; 6. Lower into Polyhedral IR
-                 (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)))
+                 (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
                    (format t "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
                  (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)

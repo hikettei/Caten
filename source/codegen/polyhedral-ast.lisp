@@ -1,9 +1,10 @@
 (defpackage :caten/codegen/polyhedral-ast
   (:documentation "ISL Polyhedral IR ==> Caten Blueprint IR")
-  (:use :cl :caten/codegen/expr))
+  (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference)
+  (:export #:lower-into-bp-from-polyhedral))
 
 (in-package :caten/codegen/polyhedral-ast)
-
+;; ~~ ISL AST <-> Lisp Intermidate Object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (ASTBlock
 	    (:constructor make-block (body)))
   (body body :type list))
@@ -19,13 +20,13 @@
   (from from :type Expr)
   (to to :type Expr)
   (by by :type Expr)
-  (body body))
+  (body body :type (or ASTBlock User ASTFor ASTIF)))
 
 (defstruct (AstIf
 	    (:constructor make-if (condition then-node else-node)))
   (condition condition :type Expr)
-  (then-node then-node)
-  (else-node else-node))
+  (then-node then-node :type (or ASTBlock User ASTFOR ASTIF))
+  (else-node else-node :type (or ASTBlock User ASTFOR ASTIF)))
 
 (declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast))
 (defun parse-isl-ast (ast)
@@ -74,9 +75,12 @@
       (:ast-expr-error (isl::isl-error))
       (:ast-expr-id
        (let* ((id (isl::%isl-ast-expr-id-get-id ast))
-	      (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id))))
+	      (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
+              (cache (restore-expr name)))
 	 (declare (type string name))
-         (expr-const (intern name) :int64)))
+         (if cache
+             cache
+             (expr-const (intern name) :int64))))
       (:ast-expr-int
        (let* ((id (isl::%isl-ast-expr-int-get-val ast))
 	      (num (isl::%isl-val-get-d id)))
@@ -151,3 +155,53 @@
 	   (when (eql else-p :bool-true)
 	     (parse-isl-ast (isl::%isl-ast-node-if-get-else-node ast)))))
     (make-if condition then-node else-node)))
+;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun r/for (idx upfrom below by)
+  (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by))
+
+(defun r/endfor (idx)
+  (make-node :Render :ENDFOR nil nil :idx idx))
+
+(defun r/if (condition)
+  (make-node :Render :IF nil nil :condition condition))
+
+(defun r/endif ()
+  (make-node :Render :ENDIF nil nil))
+
+(defun create-rendering-graph-nodes (lisp-ast items)
+  (let ((new-graph))
+    (labels ((find-user (node-id args)
+               (let ((node (find (princ-to-string node-id) items
+                                 :key (alexandria:compose #'princ-to-string #'node-id)
+                                 :test #'equalp)))
+                 (assert node () "~a is not found in ~a" node-id items)
+                 (assert (eql (node-type node) :EXPR))
+                 (assert (= (length args) (length (getattr node :Iterations))) () "Polyhedral Compiler: args and Iterations should have the same length.")
+                 (setf (getattr node :Iterations) args)
+                 node))
+             (lower (object)
+	       (when (listp object) (return-from lower (map 'list #'lower object)))
+	       (trivia:ematch object
+		 ((AstBlock :body body) (map 'list #'lower body))
+		 ((AstFor :idx idx :from upfrom :to to :by by :body body)
+		  (push (r/for idx upfrom to by) new-graph)
+		  (lower body)
+		  (push (r/endfor idx) new-graph))
+		 ((User :name name :args args)
+                  (push (find-user name args) new-graph))
+		 ((AstIf :condition cond :then-node then :else-node else)
+		  (push (r/if cond) new-graph)
+		  (lower then)
+                  (assert (null else) () "else should be none")
+		  (push (r/endif) new-graph))
+		 (_
+		  (error "create-rendering-graph: ~a should not occur here!" object)))))
+      (lower lisp-ast))
+    (nreverse new-graph)))
+
+(defun lower-into-bp-from-polyhedral (ast scheduled-item)
+  (declare (type isl:ast-node ast))
+  (assert (eql (node-type scheduled-item) :Schedule-Item))
+  (create-rendering-graph-nodes
+   (parse-isl-ast (isl::ast-node-handle ast))
+   (getattr scheduled-item :blueprint)))

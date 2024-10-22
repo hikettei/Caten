@@ -21,6 +21,7 @@
    (_read_views :initform nil :initarg :_read_views)
    (_write_views :initform nil :initarg :_write_views)
    (declare-type :initarg :declare-type :initform nil)
+   (iterations :initarg :iterations :initform nil)
    (_lowering_history :initform nil :initarg :_lowering_history))
   (:documentation "This node is jitable.
 - declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:

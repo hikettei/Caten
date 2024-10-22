@@ -32,6 +32,13 @@
          "TODO"
          :slots ((idx :type symbol)))
 
+(defnode (:Render :IF) ()
+         "TODO"
+         :slots ((condition :type Expr)))
+
+(defnode (:Render :ENDIF) ()
+         "TODO")
+
 (defnode (:Render :Aref) ()
          "TODO"
          :slots ((buffer :type Buffer)

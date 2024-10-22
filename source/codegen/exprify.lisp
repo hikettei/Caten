@@ -296,4 +296,16 @@
                 do (updt bp :reader node-reads :ireader relay-read-iters :treader relay-reads)
                    (updt bp :reader node-writes :ireader relay-write-iters :treader relay-writes)
                    (rewrite-expr-aref (expr-graph (getattr bp :expr)) #'new))
-        blueprint))))
+        (expr-set-iterations blueprint)))))
+
+(defun expr-set-iterations (blueprint)
+  (loop with gids = nil
+        for bp in blueprint
+        if (eql (node-type bp) :FOR)
+          do (push (getattr bp :Idx) gids)
+        else if (eql (node-type bp) :ENDFOR)
+               do (setf gids (remove (getattr bp :Idx) gids))
+        else do
+          (assert (eql (node-type bp) :EXPR))
+          (setf (getattr bp :Iterations) (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids))))
+  blueprint)

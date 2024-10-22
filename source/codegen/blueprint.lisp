@@ -49,25 +49,25 @@
   (make-node :Render :ENDFOR nil nil :idx idx))
 
 (defmethod print-blueprint (nodes stream &aux (gids))
-  (flet ((print-aref (name b is)
-           (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length gids) 0))
-               (format nil "~a[~(~a~)]" name
-                       (render-expr
-                        'Default-Renderer
-                        (apply
-                         #'expr-add
-                         (map
-                          'list
-                          #'(lambda (view stride i)
-                              (if view
-                                  (expr-mul (expr-const (third view) :int64) (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-const i :int64))))
-                                  (expr-mul stride (expr-const i :int64))))
-                          (iteration-space-views is)
-                          (iteration-space-strides is)
-                          (reverse gids)))))
-               (format nil "~(~a~)" name)))
-         (make-index-space ()
-           (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids))))
+  (labels ((print-aref (name b is &key (iterations (make-index-space)))
+             (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
+                 (format nil "~a[~(~a~)]" name
+                         (render-expr
+                          'Default-Renderer
+                          (apply
+                           #'expr-add
+                           (map
+                            'list
+                            #'(lambda (view stride i)
+                                (if view
+                                    (expr-mul (expr-const (third view) :int64) (expr-mul stride (expr-add (expr-const (car view) :int64) i)))
+                                    (expr-mul stride i)))
+                            (iteration-space-views is)
+                            (iteration-space-strides is)
+                            iterations))))
+                 (format nil "~(~a~)" name)))
+           (make-index-space ()
+             (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids))))
     (format
      stream
      "{~%~a}~%"
@@ -81,14 +81,21 @@
 		    (incf indent 2)
 	       else if (eql (node-type node) :ENDFOR)
 	              do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (getattr node :idx)) (setf gids (remove (getattr node :idx) gids))
-               else if (eql (node-type node) :EXPR)
-                      do (format out "~a~a = ~a;~a~%"
-                                 (indent indent)
-                                 (render-list (map 'list #'print-aref (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
-                                 (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (make-index-space))
-                                 (if (getattr node :reduction :allow-undefined t)
-                                     " // :reduction=t"
-                                     ""))
+               else if (eql (node-type node) :IF)
+                      do (incf indent 2) (format out "~a if (~(~a~)) {~%" (indent indent) (render-expr 'Default-Renderer (getattr node :condition)))
+               else if (eql (node-type node) :ENDIF)
+                      do (decf indent 2) (format out "~a } // endif~%" (indent indent))
+               else if (eql (node-type node) :EXPR) do
+                 (let ((pre-iterations (getattr node :Iterations)))
+                   (format out "~a~a = ~a;~a~%"
+                           (indent indent)
+                           (render-list
+                            (map 'list #'(lambda (x y z) (print-aref x y z :iterations (or pre-iterations (make-index-space))))
+                                 (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
+                           (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (or pre-iterations (make-index-space)))
+                           (if (getattr node :reduction :allow-undefined t)
+                               " // :reduction=t"
+                               "")))
                else
 	         do (format out "~a~a = ~(~a~)(~a);~a~%"
                             (indent indent)
