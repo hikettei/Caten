@@ -139,11 +139,36 @@
 
 (defun merge-and-graft-expr (node pairs)
   (assert (eql (node-type node) :EXPR))
-  (loop for (id . expr-parent) in pairs
-        do (expr-graft-after (getattr node :expr) id (getattr expr-parent :expr)))
-  ;; [TODO] Update type relay, node reads, node writes
-  node
-  )
+  (let ((ids) (types) (iters) (writes))
+    (loop for (id . expr-parent) in pairs
+          do (expr-graft-after (getattr node :expr) id (getattr expr-parent :expr))
+             (setf writes (append writes (node-writes expr-parent)))
+             (loop for read in (node-reads expr-parent)
+                   for type in (relay-reads (read-type-relay expr-parent))
+                   for iter in (relay-read-iters (read-type-relay expr-parent))
+                   do (push read ids) (push type types) (push iter iters)))
+    (setf (node-reads node) (append (node-reads node) (reverse ids))
+          (relay-reads (read-type-relay node)) (append (relay-reads (read-type-relay node)) (reverse types))
+          (relay-read-iters (read-type-relay node)) (append (relay-read-iters (read-type-relay node)) (reverse iters)))
+    (let ((gather-map
+            (loop for r in (node-reads node)
+                  for nth upfrom 0
+                  if (find r writes)
+                    collect nil
+                  else
+                    collect t)))
+      (setf (node-reads node) (loop for r in (node-reads node)
+                                    for g in gather-map
+                                    if g collect r)
+            (relay-reads (read-type-relay node))
+            (loop for r in (relay-reads (read-type-relay node))
+                  for g in gather-map
+                  if g collect r)
+            (relay-read-iters (read-type-relay node))
+            (loop for r in (relay-read-iters (read-type-relay node))
+                  for g in gather-map
+                  if g collect r)))
+    node))
 
 (defmethod graph-exprify (blueprint (node Node) (schedule-graph Graph))
   (declare (type list blueprint))
