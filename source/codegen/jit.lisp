@@ -46,6 +46,7 @@
 ;; - [ ] Fuse Permute
 ;; - [ ] Scop+Polyhedral -> Can ISL find the optimal embedding kernel?
 ;; - [ ] Support Backward (Higher Order?)
+;; - [ ] TODO Purge unnecessary stride computation (in symbolic!)
 (defun jit (avm)
   "Runs the JIT compilation (destructive)"
   (declare (type AVM avm))

@@ -154,17 +154,20 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
   (let ((reads (nodes-depends-on (group-items group)))
         (writes (nodes-write-to (group-items group)))
         (allocate-p (find :Allocate (group-items group) :key #'node-type))
-        (no-symbolic-incremental-p t))
+        (no-symbolic-incremental-p t)
+        (full-scalar-p t))
     (dolist (node (group-items group))
       (dolist (r (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node))))
         (when r
+          (when (> (buffer-nrank r) 0)
+            (setf full-scalar-p nil))
           (dolist (v (buffer-views r))
             (when (and v (third v) (symbolp (third v))) ;; (upfrom below by broadcast_p)
               (setf no-symbolic-incremental-p nil))))))
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
                :jitable (every #'jitable-p (group-items group))
                :allocate-p (when allocate-p t)
-               :auto-schedule-p no-symbolic-incremental-p
+               :auto-schedule-p (or no-symbolic-incremental-p (null full-scalar-p))
                :storage-id-dst writes
                :storage-id-src reads
                :items (group-items group))))
