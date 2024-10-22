@@ -50,7 +50,8 @@
    (equal (buffer-shape a) (buffer-shape b))
    (equal (buffer-stride a) (buffer-stride b))
    (equal (buffer-views a) (buffer-views b))
-   (equal (buffer-dtype a) (buffer-dtype b))))
+   (equal (buffer-dtype a) (buffer-dtype b))
+   (equal (buffer-inferred-permute a) (buffer-inferred-permute b))))
 
 (deftype attr-value-type () `(or null symbol number list))
 
