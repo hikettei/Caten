@@ -57,6 +57,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
          ((blueprint :type list :initform nil)
           (polyhedral)
           (buffers)
+          (jitable :type boolean)
           (allocate-p :type boolean)
           (name :type symbol)
           (items :type list)
@@ -111,6 +112,11 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
     ;; Reshape = operation that changes the stride
     :reshape))
 
+(defun jitable-p (node)
+  (and
+   (null (find (node-type node) `(:ALLOCATE :PAUSE/BACKWARD)))
+   (typep (node-attr node) 'JITAble)))
+
 (defun view-type-list (views)
   (loop for v in views if v collect (identify-view-type v)))
 
@@ -148,6 +154,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
         (writes (nodes-write-to (group-items group)))
         (allocate-p (find :Allocate (group-items group) :key #'node-type)))
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
+               :jitable (every #'jitable-p (group-items group))
                :allocate-p (when allocate-p t)
                :storage-id-dst writes
                :storage-id-src reads
@@ -164,8 +171,7 @@ T=1 | ... = f2(..., R(storage_id=W))
   (let ((node (id->value graph read)))
     (when (null node) (return-from group-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from group-mergeable-p nil))
-    ;(when (and (group-reduced group) (getattr node :reduction :allow-undefined t))
-    ;  (return-from group-mergeable-p nil))
+    (when (not (jitable-p node)) (return-from group-mergeable-p nil))
     (let ((write-type (car (relay-writes (read-type-relay node))))
           (wi (car (relay-write-iters (read-type-relay node)))))
       ;; T=0 | A[write_type] = ...
@@ -221,6 +227,7 @@ Trying to merge X and Y in the same group connected like:
   (let ((node (id->value graph read)))
     (when (null node) (return-from transform-and-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from transform-and-mergeable-p nil))
+    (when (not (jitable-p node)) (return-from transform-and-mergeable-p nil))
     (when (not (eql (node-type node) :MOVE)) (return-from transform-and-mergeable-p nil))
     (let* ((write-type (car (relay-writes (read-type-relay node))))
            (write-views (car (getattr node :_write_views)))
@@ -339,19 +346,20 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
        parent
        ;; [Note] :Allocate is a vm instruction, accordingly should be scheduled standalone
        (loop with buffer-p = (eql (node-type node) :Allocate)
+             with jitable-p = (jitable-p node)
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
-             if (and (null buffer-p) mergeable-p) ;; merged due to element-wise operation
+             if (and jitable-p (null buffer-p) mergeable-p) ;; merged due to element-wise operation
                ;; Simple Contigous OpFusion is here
                do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
                and collect (recursive-create-group read graph :seen seen :parent parent)
              else
                collect
                (let ((out (transform-and-mergeable-p parent graph read read-type ri views)))
-                 (if out
+                 (if (and jitable-p out)
                      (recursive-create-group read graph :seen seen :parent parent) ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
                      (recursive-create-group read graph :seen seen))))))))
 

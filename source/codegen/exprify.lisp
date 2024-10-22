@@ -241,7 +241,7 @@
 ;; [TODO]
 ;; - [ ] Non JITAble standalone
 ;; - [ ] Complete Expr Grouping
-;; - [ ] Fix randn, softmax (scalar load)
+;; - [x] Fix randn, softmax (scalar load)
 ;; - [ ] Implement Renderer
 ;; - [ ] Fix poly (a*b) is not an affine
 ;; - [ ] Tiling/Parallelizing

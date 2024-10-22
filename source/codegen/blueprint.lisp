@@ -371,7 +371,7 @@
   "Lowers the Schedule-Item into blueprint"
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
   ;; won't lower the allocation, they are the vm instruction.
-  (when (getattr node :allocate-p) (return-from lower-schedule-item))
+  (when (null (getattr node :jitable)) (return-from lower-schedule-item))
   (let* ((graph (apply #'make-graph (getattr node :items)))
          (_ (setf (graph-outputs graph) (node-writes node)))
          (iterspace (get-grouped-dims graph))

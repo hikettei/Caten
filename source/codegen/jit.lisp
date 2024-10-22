@@ -67,13 +67,13 @@
     ;; COMPILE_SPEED=1 ()
     ;; COMPILE_SOEED=2 (Full Symbolic Compilation)
     ;; Impl: Static Gensymをもう一度適用してノード比較
-    (let ((total-kernels (count-if #'(lambda (x) (null (getattr x :allocate-p))) (graph-nodes schedule-graph))))
+    (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
       (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
         (mapc
          #'(lambda (x &aux (start (get-internal-real-time)))
-             (when (null (getattr x :allocate-p))
+             (when (getattr x :jitable)
                ;; [TODO] (skipped) if cached
                (when (>= (ctx:getenv :JIT_DEBUG) 2)
                  (print-progress "~a" (getattr x :name))
