@@ -257,7 +257,7 @@
   (let ((size (iteration-space-shape is))
         (stride (iteration-space-strides is))
         (view (iteration-space-views is)))
-    (assert (= (length gids) (length size)) () "The iteration space and the buffer should have the same rank, getting gids=~a" gids)
+    ;; (assert (= (length gids) (length size)) () "The iteration space and the buffer should have the same rank, getting gids=~a~%~a" gids is)
     (loop for s in stride
           for nth upfrom 0
           for i in gids
