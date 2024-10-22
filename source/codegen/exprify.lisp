@@ -169,13 +169,6 @@
                   if g collect r)))
     node))
 
-(defun index-component-p (expr)
-  (if (eql (node-type expr) :EXPR)
-      (let* ((expr (getattr expr :expr))
-             (ic (last (graph-nodes (expr-graph expr)) 3)))
-        (some #'(lambda (x) (eql (node-type x) :INDEX-COMPONENTS)) ic))
-      (eql (node-type expr) :INDEX-COMPONENTS)))
-
 (defmethod graph-exprify (blueprint (node Node) (schedule-graph Graph))
   (declare (type list blueprint))
   (let* ((ids (blueprint-tmp-buffers blueprint schedule-graph :except-for (schedule-outputs schedule-graph)))
@@ -184,12 +177,10 @@
             (loop for bp in blueprint
                   if (eql (node-class bp) :Render) collect bp
                     else collect (exprify bp))))
-      (labels ((replace-p (id group n)
+      (labels ((replace-p (id group)
                  (if (find id replaceable)
                      ;; If the id was used by more than two nodes, split them. (not to introduce the extra computation)
-                     (or
-                      (= 1 (count-if #'(lambda (node) (find id (node-reads node))) group))
-                      (and n (index-component-p n))) ;; :INDEX-COMPONENTS is a zero-cost.)
+                     (= 1 (count-if #'(lambda (node) (find id (node-reads node))) group))
                      nil))
                (group->expr-group (group &aux
                                            (tops (nodes-write-to group))
@@ -206,7 +197,7 @@
                                      (rewrite-pairs
                                        (loop for r in (node-reads node)
                                              for p in parents
-                                             if (and (replace-p r group (id->value graph r)) p)
+                                             if (and (replace-p r group) p)
                                                collect (cons r (car (last p))) ;; The symbol r -> graft p from r.
                                              else
                                                do (push (car (last p)) stashes))))
