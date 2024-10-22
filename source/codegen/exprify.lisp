@@ -239,7 +239,7 @@
         blueprint))))
 
 ;; [TODO]
-;; - [ ] Non JITAble standalone
+;; - [x] Non JITAble standalone
 ;; - [ ] Complete Expr Grouping
 ;; - [x] Fix randn, softmax (scalar load)
 ;; - [ ] Implement Renderer

@@ -73,13 +73,23 @@
   (def :ADD "+")
   (def :MUL "*")
   (def :AND " and ")
-  (def :OR " or "))
+  (def :OR " or ")
+  (def :XOR " xor "))
+
+(macrolet ((def (id op)
+             `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
+                (format nil "~a(~a, ~a)" ,op (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node)))))))
+  (def :MAX "max"))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
                 (format nil "~a(~a)" ,op (render-node renderer (nth 0 (node-reads node)))))))
   (def :NEG "-")
-  (def :NOT "!"))
+  (def :NOT "!")
+  (def :SIN "sin")
+  (def :log2 "log2")
+  (def :exp2 "exp2")
+  (def :RECIP "1/"))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
@@ -92,7 +102,7 @@
         (space  (getattr node :space)))
     (if (= -1 (buffer-nrank buffer))
         (format nil "~(~a~)" (car (node-writes node)))
-        ;; [TODO]
+        ;; [TODO],pass gids w/o using global variable ...
         (format nil "~a[...]" (car (node-writes node))))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
