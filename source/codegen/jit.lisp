@@ -106,12 +106,19 @@
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
            (reverse (graph-nodes schedule-graph))))))
-    ;; Note: (Blueprint) <-> (Polyhedral IR) <-> (Blueprint)
-    
     ;; 7. Running memory-planner, update the storage-id
-
+    (when (>= (ctx:getenv :JIT_DEBUG) 2)
+      (fresh-line)
+      (print-info "Running the memory planner..."))
+    ;; (memory-planner)
+    (when (>= (ctx:getenv :JIT_DEBUG) 2)
+      (fresh-line)
+      (print-info "Rendering ..."))
     ;; 8. Complete
-    ))
+    (when (>= (ctx:getenv :JIT_DEBUG) 2)
+      (fresh-line)
+      (print-info "Compiling ..."))
+    t))
 
 ;; Test Case1
 ;; (with-no-grad (caten/codegen:jit (caten (call (Transformer 64 4 1 1e-5 32) (make-tensor `(10 30)) (iconst 0)))))
@@ -119,14 +126,4 @@
 ;; (caten (!randn `(a b)))
 
 ;; memo: Transformer Model Initialization is slow.
-;; [IDEA} Alternatively, prepare an API to lower from loop structure directly (like TensorComprehension)
-;; (with-no-grad
-;;   (caten/codegen:jit (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25))))))
-;; TransposeやConvなど: Transpose, Move+Move+Moveなどを以下に同じループで実行するかが大事
-;; カーネル内部に登場するShapeの種類を数える
-;; 最大RankにPaddingして，1はAnythingとして，remove-duplicatesをして治るなら同一のカーネル
-;; 同一カーネル内部でLoop Collapse
-;; or, Loop Collapse in advance?
-;; From Collapsed -> Complicated is wasy
-;; From Complicated -> Collapsed is difficult
-;; -> Loop bound Inference (イメージはTensorComprehension)
+
