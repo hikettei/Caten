@@ -167,7 +167,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
             (when (and v (third v) (symbolp (third v))) ;; (upfrom below by broadcast_p)
               (setf no-symbolic-incremental-p nil))))))
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
-               :jitable (every #'jitable-p (group-items group))
+               :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
                :allocate-p (when allocate-p t)
                :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
                :storage-id-dst writes
@@ -401,6 +401,7 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
       schedule)))
 
 ;; - [ ] Fix randn auto scheduler
+;; - [ ] dont jit the scalar kernel
 ;; (with-no-grad (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 ;; - [x] Insert 1 to proper position to determine the fused loop axis
 ;;   - [x] Let ConvND, and sin(matmul(x, y)) working
