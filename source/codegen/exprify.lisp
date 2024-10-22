@@ -12,7 +12,8 @@
    :caten/avm
    #:Buffer
    #:Buffer-depend-idx-list
-   #:buffer-nrank)
+   #:buffer-nrank
+   #:buffer-dtype)
   (:import-from
    :caten/codegen/renderer
    #:make-aref)
@@ -121,7 +122,14 @@
                       (loop for r in (node-reads node)
                             for rt in (relay-reads (read-type-relay node))
                             for ri in (relay-read-iters (read-type-relay node))
-                            if (symbolp r) collect (make-aref r rt ri))
+                            if (symbolp r)
+                              append
+                              (if (= 0 (buffer-nrank rt))
+                                  (let ((nodes (graph-nodes (expr-graph (expr-const r (buffer-dtype rt))))))
+                                    (assert (eql (node-type (car (last nodes))) :LOAD))
+                                    (setf (node-writes (car (last nodes))) (list r))
+                                    nodes)
+                                  (list (make-aref r rt ri))))
                       (list node)))
                     :out node)))
 
@@ -129,17 +137,14 @@
   (declare (type list blueprint))
   (let* ((ids (blueprint-tmp-buffers blueprint schedule-graph :except-for (schedule-outputs schedule-graph)))
          (replaceable (loop for i in ids if (memory-access-local-p blueprint i) collect i)))
-    ;; 1. Rewrite all nodes as :EXPR
-    ;; 2. Merge :EXPR in the same loop
     (let ((new-bp
             (loop for bp in blueprint
                   if (eql (node-class bp) :Render) collect bp
                     else collect (exprify bp))))
       (labels ((group->expr-group (group)
-                ; (print "GROUP!")
-                ; (print group)
-                                        ; (print "+++++++")
-                 ;; compose exprs
+                 ;; (print "GROUP!")
+                 ;; (print group)
+                 ;; [todo] compose exprs
                  group)
                (rewriter (from to &aux (group) (new-region :nothing))
                  (loop with count = from while (< count to)
@@ -169,7 +174,6 @@
                            (:EXPR
                             (push node group)
                             (incf count))))
-                 ;;(assert (not (eql new-region :nothing)) () ":nothing scheduled?")
                  (when group
                    (setf new-region
                          `(,@(when (not (eql new-region :nothing))
@@ -227,10 +231,18 @@
                               (setf (nth nth (,reader ,expr)) newid
                                     (nth nth (,ireader (read-type-relay ,expr))) new-is
                                     (nth nth (,treader (read-type-relay ,expr))) new-type)))))
-        (loop with *finder* = #'new
-              for bp in blueprint
+        (loop for bp in blueprint
               if (eql (node-type bp) :EXPR)
                 do (updt bp :reader node-reads :ireader relay-read-iters :treader relay-reads)
                    (updt bp :reader node-writes :ireader relay-write-iters :treader relay-writes)
                    (rewrite-expr-aref (expr-graph (getattr bp :expr)) #'new))
         blueprint))))
+
+;; [TODO]
+;; - [ ] Non JITAble standalone
+;; - [ ] Complete Expr Grouping
+;; - [ ] Fix randn, softmax (scalar load)
+;; - [ ] Implement Renderer
+;; - [ ] Fix poly (a*b) is not an affine
+;; - [ ] Tiling/Parallelizing
+;; - [ ] Vectorize
