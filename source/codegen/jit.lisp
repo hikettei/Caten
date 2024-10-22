@@ -86,14 +86,18 @@
     items1 items2)))
 
 (defun minify-equivalent-schedule (schedule-graph)
-  ;; [TODO] Identified kernels are not compiled
   ;; CODE_SIZE=0 ()
   ;; CODE_SIZE=1 (Eager to Full Symbolic Compilation)
   (let ((tgts (loop for node in (graph-nodes schedule-graph)
                     if (getattr node :jitable)
-                      collect node)))
-    (print tgts)
-    (print (remove-duplicates tgts :test #'schedule-item-equal))
+                      collect node))
+        (seen))
+    (loop for tgt in (nreverse tgts)
+          for eql-schedule = (find tgt seen :test #'schedule-item-equal)
+          if eql-schedule
+            do (setf (getattr tgt :cache-name) (getattr eql-schedule :name))
+          else
+            do (push tgt seen))
     schedule-graph))
 
 ;; [Milestone]
@@ -120,7 +124,7 @@
                    collect (getattr node :value)))))
     (declare (type Graph schedule-graph))
     ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
-    
+    ;; Remove duplicated schedule compilation
     (minify-equivalent-schedule schedule-graph)
     (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
@@ -129,8 +133,11 @@
         (with-expr-cache () ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
           (mapc
            #'(lambda (x &aux (start (get-internal-real-time)))
-               (when (getattr x :jitable)
+               (when (and (getattr x :jitable) (getattr x :cache-name) (>= (ctx:getenv :JIT_DEBUG) 2))
                  ;; [TODO] (skipped) if cached
+                 (print-progress "~a" (getattr x :name))
+                 (format t "=====> (Skipped) redirect to ~a~%" (getattr x :cache-name)))
+               (when (and (getattr x :jitable) (null (getattr x :cache-name)))
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (print-progress "~a" (getattr x :name))
                    (format t "=====> Lowering to blueprint~%"))

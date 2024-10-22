@@ -59,11 +59,10 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
          :slots
          ((blueprint :type list :initform nil)
           (polyhedral)
-          (buffers)
           (jitable :type boolean)
           (allocate-p :type boolean)
           (auto-schedule-p :type boolean) ;; Set T if there is no symbolic incremental
-          (name :type symbol)
+          (name :type symbol) (cache-name :type symbol)
           (items :type list) (items-to-cache :type list)
           (rank :type fixnum)
           (storage-id-src :type list)
