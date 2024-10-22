@@ -1,12 +1,14 @@
 (defpackage :caten/codegen/renderer
   (:use :cl :caten/codegen/shape-inference)
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node)
-  (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out)
+  (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p)
   (:import-from :caten/avm :Buffer #:buffer-nrank)
   (:export
    #:Renderer
    #:Default-Renderer
    #:renderer-graph
+   #:renderer-index-space
+   #:make-renderer
    #:render-expr
    #:render-node
    #:%render-node
@@ -41,11 +43,19 @@
   (make-node :Render :Aref (list name) nil :buffer buffer :space space))
 
 (defclass Renderer ()
-  ((graph :initarg :graph :accessor renderer-graph))
+  ((graph :initarg :graph :accessor renderer-graph)
+   (index-space :initarg :index-space :type list :initform nil :accessor renderer-index-space))
   (:documentation "TODO"))
 
-(defun render-expr (renderer-id expr)
-  (render-node (make-instance renderer-id :graph (expr-graph expr)) (car (node-writes (expr-out expr)))))
+(defun make-renderer (renderer-name graph index-space &rest initargs)
+  (assert (every #'expr-p index-space) () "index-space is a list of exprs!")
+  (apply #'make-instance renderer-name :graph graph :index-space index-space initargs))
+
+(defun render-expr (renderer-id expr &key (index-space) (initargs))
+  (assert (every #'expr-p index-space) () "index-space is a list of exprs!")
+  (render-node
+   (apply #'make-instance renderer-id :graph (expr-graph expr) :index-space index-space initargs)
+   (car (node-writes (expr-out expr)))))
 
 (defun render-node (renderer id)
   (declare (type Renderer renderer))
@@ -117,6 +127,12 @@
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :INDEX-COMPONENTS)) node)
   ;; [TODO]
   (format nil "<INDEX-COMPONENTS>"))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :WHERE)) node)
+  (format nil "~a ? ~a : ~a"
+          (render-node renderer (car (node-reads node)))
+          (render-node renderer (second (node-reads node)))
+          (render-node renderer (third (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) id node)
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))

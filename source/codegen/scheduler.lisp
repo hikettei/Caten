@@ -385,11 +385,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
-;; [TODO] randn rng_counter -> _gid0=0..200のループの外側に出す
-;; 1 kernel 1 reduction -> delete?
-;; 1 path 1 reduction instead?
-;; (with-no-grad (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 
+;; (with-no-grad (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
 ;; - [x] Insert 1 to proper position to determine the fused loop axis
 ;;   - [x] Let ConvND, and sin(matmul(x, y)) working
 ;;   - [x] Thinking ConvND step-by-step
@@ -413,6 +410,16 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
 ;; - [ ] Symbolic
 ;;   - [ ] gensym <-> EXPRなTableを作りたい (cache stride computation)
 ;; - [ ] Scalar
+
+;; [TODO]
+;; - [x] Non JITAble standalone
+;; - [x] Complete Expr Grouping
+;; - [x] Fix randn, softmax (scalar load)
+;; - [ ] Implement Renderer
+;; - [ ] Fix poly (a*b) is not an affine
+;; - [ ] Tiling/Parallelizing
+;; - [ ] Vectorize
+
 
 ;; - Scheduler Remained stuff ...
 ;;  - [ ] Permute or View Fusion

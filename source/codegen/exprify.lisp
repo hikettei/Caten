@@ -112,8 +112,7 @@
                        (setf (getattr b :declare-type) (list t)
                              (node-reads node) (remove w (node-reads node)))))
     blueprint))
-;; [TODO] Update Polyhedral
-;; [TODO] Transform INDEX-COMPONENTS (use procedure)
+
 (defmethod exprify ((node Node))
   (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
              :reduction (getattr node :reduction :allow-undefined t)
@@ -298,12 +297,3 @@
                    (updt bp :reader node-writes :ireader relay-write-iters :treader relay-writes)
                    (rewrite-expr-aref (expr-graph (getattr bp :expr)) #'new))
         blueprint))))
-
-;; [TODO]
-;; - [x] Non JITAble standalone
-;; - [ ] Complete Expr Grouping
-;; - [x] Fix randn, softmax (scalar load)
-;; - [ ] Implement Renderer
-;; - [ ] Fix poly (a*b) is not an affine
-;; - [ ] Tiling/Parallelizing
-;; - [ ] Vectorize
