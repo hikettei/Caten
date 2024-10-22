@@ -232,12 +232,12 @@
 	(when (null (getattr n :_type_relay :allow-undefined t))
 	  (setf (getattr n :_type_relay) type))))))
 ;; ~~ Loop Collase ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun mergeable-view-p (view shape &aux (shape (reveal-buffer shape)))
+(defun mergeable-view-p (view shape &aux (shape (if (typep shape 'Expr) shape (expr-const (reveal-buffer shape) :int64))))
   "Mergeable axis = view is not created."
   (when (null view) (return-from mergeable-view-p t))
   (trivia:ematch view
     ;; antyhing for broadcast, because the strides of broadcasted axes are replaced w/ 0
-    ((list (eql 0) (eql shape) (eql 1) _) t)
+    ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (expr-const x :int64) shape)) (eql 1) _) t)
     (_ nil)))
 
 (defun %expr-const (graph value dtype)
@@ -281,6 +281,7 @@
             (multiple-value-bind (last-size last-stride last-view last-pd) (apply #'values (car (last ret)))
               (if (not (eql size 1)) ;; always merge 1
                   (if (and
+                       (mergeable-view-p last-view last-size)
                        (mergeable-view-p view size)
                        (expr-scalar-equivalent-p
                         last-stride
