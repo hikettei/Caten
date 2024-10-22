@@ -78,7 +78,15 @@
 		    (incf indent 2)
 	       else if (eql (node-type node) :ENDFOR)
 	              do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (getattr node :idx)) (setf gids (remove (getattr node :idx) gids))
-	       else
+               else if (eql (node-type node) :EXPR)
+                      do (format out "~a~a = ~a;~a~%"
+                                 (indent indent)
+                                 (render-list (map 'list #'print-aref (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
+                                 (render-expr 'Default-Renderer (getattr node :EXPR))
+                                 (if (getattr node :reduction :allow-undefined t)
+                                     " // :reduction=t"
+                                     ""))
+               else
 	         do (format out "~a~a = ~(~a~)(~a);~a~%"
                             (indent indent)
                             (render-list (map 'list #'print-aref (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))

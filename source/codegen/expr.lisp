@@ -2,7 +2,9 @@
   (:use :cl :caten/air :caten/aasm)
   (:export
    #:with-expr
+   #:expr-graph
    #:Expr
+   #:make-expr
    #:expr-from-graph
    #:expr-const
    #:expr-scalar-equivalent-p
@@ -20,7 +22,6 @@
    #:expr-=))
 
 (in-package :caten/codegen/expr)
-
 ;; [TODO] with-cached-expr
 (defstruct Expr
   "Expr is a graph wrapper that reprensents a computation whose node leaves are scalar (scalar number, aref from the tensor) and each computation is a scalar."

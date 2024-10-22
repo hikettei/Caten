@@ -191,8 +191,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
                             ;; -> Band Node
                             (let* ((endfor
                                      (find (getattr node :idx) (nthcdr count render-nodes)
-                                           :key #'(lambda (x) (and (eql (node-type x) :ENDFOR) (getattr x :idx)))
-                                           :test #'equalp))
+                                           :key #'(lambda (x) (and (eql (node-type x) :ENDFOR) (getattr x :idx)))))
                                    (_ (when (null endfor) (error "scop: malformed rendering graph ~a" render-nodes)))
                                    (endfor-abs-position
                                      (position

@@ -422,15 +422,6 @@ FOR (...) {
 	       (let ((new (make-const-buffer (buffer-dtype buffer))))
 		 ;; depend-idx-list: required to compute the position of unrollment. e.g.: val_5 -> val_5_0, val_5_1, val_5_2, ...
 		 (setf (buffer-depend-idx-list new)
-
-
-
-
-
-
-
-
-                       
                        (permute-list
                         (or
                          (buffer-inferred-permute buffer)
