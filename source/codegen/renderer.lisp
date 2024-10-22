@@ -72,7 +72,8 @@
   (let ((buffer (getattr node :buffer))
         (space  (getattr node :space))
         (index-space (renderer-index-space renderer)))
-    (when (null index-space) (warn "render-aref: Cannot render :AREF without providing :index-space, thus replaced with ?."))
+    (when (and (null index-space) (> (buffer-nrank buffer) 0))
+      (warn "render-aref: Cannot render :AREF without providing :index-space, thus replaced with ?."))
     (if (= -1 (buffer-nrank buffer))
         (format nil "~(~a~)" (car (node-writes node)))
         (if index-space
