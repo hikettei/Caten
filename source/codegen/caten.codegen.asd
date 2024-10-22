@@ -16,5 +16,6 @@
    (:file "blueprint")
    (:file "polyhedral-ast")
    (:file "scop")
+   (:file "memory-planner")
    (:file "jit")
    (:file "package")))
