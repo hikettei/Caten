@@ -31,7 +31,7 @@
         (progn
           (incf (global-counter expr-cache))
           (setf (gethash key (cache-table expr-cache)) (global-counter expr-cache)
-                (gethash key (id2expr-table expr-cache)) expr)
+                (gethash (expr-id (global-counter expr-cache)) (id2expr-table expr-cache)) expr)
           (values (expr-id (global-counter expr-cache)) t)))))
 
 (declaim (ftype (function (Expr) (values string boolean &optional)) stash-expr))
@@ -51,5 +51,4 @@
       (return-from restore-expr nil))
     (or
      (gethash key (id2expr-table *expr-cache*))
-     (warn "Undefined EXPR ID ~a" key)
-     nil)))
+     (error "Undefined EXPR ID ~a (or do not use the symbol starting with _expr_id)" key))))
