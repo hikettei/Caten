@@ -235,9 +235,13 @@ T=1 | ... = f2(..., R(storage_id=W))
                ;; originated from the same iteration space?
                (= (buffer-nrank write-type) (buffer-nrank read-type)))
           (return-from group-mergeable-p t)))
-      (when (and (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri)))
-                 (every #'expr-scalar-equivalent-p (iteration-space-shape wi) (iteration-space-shape ri)))
-        (return-from group-mergeable-p t))
+      (flet ((meq (a b)
+               (or
+                (expr-scalar-equivalent-p b (expr-const 1 :int64))
+                (expr-scalar-equivalent-p a b))))
+        (when (and (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri)))
+                   (every #'meq (iteration-space-shape wi) (iteration-space-shape ri)))
+          (return-from group-mergeable-p t)))
       nil)))
 
 (defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
@@ -421,6 +425,14 @@ write_id[...] <- F1(..., read_id[ri])
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
+
+
+;; - 細かく分けて考えて，なぜSchedulingが失敗するか考えてみる
+;;   - [ ] !mean   | (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0)))
+;;   - [ ] ConvND
+;;   - [ ] Transformer EntireGraph
+;;   - [ ] (caten/codegen:jit (caten (!contiguous (!t (!matmul (make-tensor `(10 10 10 10)) (!t (make-tensor `(10 10))))))))
+;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)
 ;; - [ ] Fix randn auto scheduler
