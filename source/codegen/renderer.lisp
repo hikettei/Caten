@@ -14,6 +14,7 @@
    #:render-node
    #:%render-node
    #:%render-const
+   #:expr-index-components
    #:make-aref))
 
 (in-package :caten/codegen/renderer)
@@ -126,7 +127,7 @@
   (def :OR " or ")
   (def :XOR " xor "))
 
-(macrolet ((def (id op)21
+(macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
                 (format nil "~a(~a, ~a)" ,op (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node)))))))
   (def :MAX "max"))
