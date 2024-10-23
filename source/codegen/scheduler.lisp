@@ -426,10 +426,9 @@ write_id[...] <- F1(..., read_id[ri])
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
-
 ;; - 細かく分けて考えて，なぜSchedulingが失敗するか考えてみる
-;;   - [ ] !mean   | (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0)))
-;;   - [ ] ConvND
+;;   - [x] !mean   | (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0)))
+;;   - [ ] ConvND  | (stride is NIL?)
 ;;   - [ ] Transformer EntireGraph
 ;;   - [ ] (caten/codegen:jit (caten (!contiguous (!t (!matmul (make-tensor `(10 10 10 10)) (!t (make-tensor `(10 10))))))))
 ;; - [ ] Running w/ tests?
