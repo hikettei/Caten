@@ -171,7 +171,6 @@
 
 (defun expr-writes (expr)
   (loop for item in (graph-nodes (expr-graph (getattr expr :expr)))
-;;        if (eql (node-type item) :AREF)
         append (node-writes item)))
 
 (defmethod graph-exprify (blueprint (node Node) (schedule-graph Graph))

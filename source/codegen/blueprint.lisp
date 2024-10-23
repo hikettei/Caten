@@ -298,6 +298,7 @@
                           (reduce-p nil) (reduce-gids)
                         &aux
                           (changed-p nil)
+                          (new-reduce-loop-p nil)
                           (node-reduce-p (getattr node :reduction :allow-undefined t)))
   (when reduce-p
     (assert (null path-reduced))
@@ -341,29 +342,33 @@
              if (and (null changed-p) (= nth insert-at) (null reduce-gids))
                do (setf changed-p t) and collect node
              if (and (null changed-p) (= nth insert-at) reduce-gids)
-               do (setf changed-p t) and append (reduce-bp ctx (list node) path-reduced))
-       t))))
+               do (setf changed-p t new-reduce-loop-p t) and append (reduce-bp ctx (list node) path-reduced))
+       t
+       new-reduce-loop-p))))
 
-(defun recursive-lower-into-bp (ctx id &key (path-reduced nil) (parents nil) (new-reduce-loop-p nil)
+(defun recursive-lower-into-bp (ctx id &key (path-reduced nil) (parent-reduced nil) (parents nil) (new-reduce-loop-p nil)
                                 &aux
                                   (node (id->value (ctx-graph ctx) id))
+                                  (new-reduce-loop-p (or new-reduce-loop-p (and parent-reduced (getattr node :reduction :allow-undefined t))))
                                   (reduce-p (and node new-reduce-loop-p (getattr node :reduction :allow-undefined t)))
                                   (reduced-axes (and node new-reduce-loop-p reduce-p (node-reduced-gids node (ctx-gids ctx)))))
   (with-slots ((blueprint blueprint) (seen seen) (gids gids) (order order)) ctx
     (when (null node) (return-from recursive-lower-into-bp))
     (when (find id seen) (return-from recursive-lower-into-bp))
     (push id seen)
-    (multiple-value-bind (new-bp changed-p)
+    (multiple-value-bind (new-bp changed-p new-reduce-loop-p)
         (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :path-reduced path-reduced :reduce-p reduce-p :reduce-gids reduced-axes)
       (if changed-p
-          (setf blueprint new-bp)
+          (setf blueprint new-bp
+                parent-reduced (if new-reduce-loop-p nil parent-reduced))
           (let ((bp (initial-bp ctx)))
             ;; Cannot satify the dependency? create a new loops
             (setf blueprint (append bp blueprint))
             (multiple-value-bind (new-bp changed-p)
                 (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp) :path-reduced path-reduced :reduce-p reduce-p :reduce-gids reduced-axes)
               (assert changed-p () "Cannot insert the node ~a ~a~%[Ongoing blueprint]~%~a" (node-depend-idx-list node gids) node new-bp)
-              (setf blueprint new-bp))))
+              (setf blueprint new-bp
+                    parent-reduced (if new-reduce-loop-p nil parent-reduced)))))
       (mapc
        #'(lambda (x nth)
            (when path-reduced
@@ -377,10 +382,10 @@
                     if (symbolp x) collect x)
               :path-reduced
               (when (= nth 0)
-                ;; If node is a reduce, the first argument should be separated from this loop.
                 (if (getattr node :reduction :allow-undefined t)
-                    (node-reduced-gids node gids) ;; Note that node-reduce-gids requires un-permuted gids
+                    (node-reduced-gids node gids)
                     nil))
+              :parent-reduced (or parent-reduced (getattr node :reduction :allow-undefined t))
               :new-reduce-loop-p (= nth 0))))
        (node-reads node) (range 0 (length (node-reads node)))))
     nil))

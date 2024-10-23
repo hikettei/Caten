@@ -467,8 +467,9 @@ write_id[...] <- F1(..., read_id[ri])
 ;;   - [x] (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis `(0 2))))
 ;;   - [ ] (serialize) (caten/codegen:jit (caten (!add (!softmax (make-tensor `(3 3))) (!softmax (make-tensor `(3 3))))))
 ;;   - [x] !randn (offsets ...)
-;;   - [x] !argmax in a single kernel
+;;   - [ ] !argmax in a single kernel
 ;;   - [x] (!matmul (!matmul ... ...))
+;;   - [ ] Propagate index-cmoponents
 ;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)
