@@ -252,6 +252,9 @@ T=1 | ... = f2(..., R(storage_id=W))
             ;; (warn "FIXUP THEM ~a ~a" write-type read-type)
             )
           (return-from group-mergeable-p t)))
+      (print "FAILED_TO_MERGE")
+      (print wi)
+      (print ri)
       nil)))
 
 (defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
@@ -414,7 +417,7 @@ write_id[...] <- F1(..., read_id[ri])
              for nth upfrom 0
              for force-group = (group-force-move-reduce-in-the-group parent graph read path-reduced)
              if (and jitable-p (null buffer-p) mergeable-p force-group) ;; Elemwise or contiguous opfusion is here.
-               collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
+               collect (recursive-create-group read graph :seen seen :parent parent :path-reduced reduced)
              else
                collect
                (multiple-value-bind (new-type new-is new-write-type new-write-is)
@@ -429,7 +432,7 @@ write_id[...] <- F1(..., read_id[ri])
                              (relay-reads (read-type-relay move)) (list new-write-type new-type)
                              (relay-read-iters (read-type-relay move)) (list new-write-is new-is))
                        (recursive-create-group read graph :seen seen :parent parent
-                                                          :path-reduced (or path-reduced reduced)))
+                                                          :path-reduced reduced))
                      ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
                      (recursive-create-group read graph :seen seen))))))))
 
@@ -463,7 +466,9 @@ write_id[...] <- F1(..., read_id[ri])
 ;;   - [x] (caten/codegen:jit (caten (!contiguous (!t (!matmul (make-tensor `(10 10 10 10)) (!t (make-tensor `(10 10))))))))
 ;;   - [x] (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis `(0 2))))
 ;;   - [ ] (serialize) (caten/codegen:jit (caten (!add (!softmax (make-tensor `(3 3))) (!softmax (make-tensor `(3 3))))))
-;;   - [ ] !randn (offsets ...)
+;;   - [x] !randn (offsets ...)
+;;   - [x] !argmax in a single kernel
+;;   - [x] (!matmul (!matmul ... ...))
 ;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)
