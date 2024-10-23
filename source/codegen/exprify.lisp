@@ -169,6 +169,11 @@
                   if g collect r)))
     node))
 
+(defun expr-writes (expr)
+  (loop for item in (graph-nodes (expr-graph (getattr expr :expr)))
+;;        if (eql (node-type item) :AREF)
+        append (node-writes item)))
+
 (defmethod graph-exprify (blueprint (node Node) (schedule-graph Graph))
   (declare (type list blueprint))
   (let* ((ids (blueprint-tmp-buffers blueprint schedule-graph :except-for (schedule-outputs schedule-graph)))
@@ -177,10 +182,13 @@
             (loop for bp in blueprint
                   if (eql (node-class bp) :Render) collect bp
                     else collect (exprify bp))))
-      (labels ((replace-p (id group)
+      (labels ((replace-p (id group other-pairs current-pair)
                  (if (find id replaceable)
                      ;; If the id was used by more than two nodes, split them. (not to introduce the extra computation)
-                     (= 1 (count-if #'(lambda (node) (find id (node-reads node))) group))
+                     (and
+                      (= 1 (count-if #'(lambda (node) (find id (node-reads node))) group))
+                      (or (null current-pair)
+                          (null (intersection (expr-writes current-pair) (apply #'append (map 'list #'expr-writes other-pairs))))))
                      nil))
                (group->expr-group (group &aux
                                            (tops (nodes-write-to group))
@@ -195,10 +203,11 @@
                                              collect (explore r)))
                                      (stashes)
                                      (rewrite-pairs
-                                       (loop for r in (node-reads node)
+                                       (loop with merging-pairs = nil
+                                             for r in (node-reads node)
                                              for p in parents
-                                             if (and (replace-p r group) p)
-                                               collect (cons r (car (last p))) ;; The symbol r -> graft p from r.
+                                             if (and (replace-p r group merging-pairs (car (last p))) p)
+                                               collect (cons r (car (last p))) and do (push (car (last p)) merging-pairs) ;; The symbol r -> graft p from r.
                                              else
                                                do (push (car (last p)) stashes))))
                                 `(,@(apply #'append (map 'list #'butlast parents))
