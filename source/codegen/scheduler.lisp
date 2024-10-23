@@ -19,6 +19,7 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
   (:import-from
    #:caten/avm
    #:Buffer
+   #:buffer-dtype
    #:buffer-shape
    #:buffer-stride
    #:buffer-views
@@ -109,6 +110,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   ;; [TODO] Rename :broadcast/:reshape as a :broadcast-or-reshape
   (assert (eql :VIEW (node-type view)))
   (when (some #'identity (getattr view :broadcast))
+    ;; Note that this is relies on the assertion that: Slice and Broadcast are not mixed in `!view`.
     (return-from identify-view-type :broadcast)) ;; [Note] Broadcast may change the shape!
   (when (getattr view :permute)
     (return-from identify-view-type :permute))
@@ -277,12 +279,23 @@ Trying to merge X and Y in the same group connected like:
       (when (or (null tmp) (not (eql (node-type tmp) :Allocate))) (return-from transform-and-mergeable-p nil))
       (when (not (every #'null tgt-write-views)) (return-from transform-and-mergeable-p nil))
       (when (not (every #'null (buffer-views write-type))) (return-from transform-and-mergeable-p nil))
+      (when (not (every #'null write-views)) (return-from transform-and-mergeable-p nil))
+      (when (not (eql (buffer-dtype read-type) (buffer-dtype write-type))) (return-from transform-and-mergeable-p nil))
+      (when (not (eql (buffer-dtype tgt-type) (buffer-dtype write-type))) (return-from transform-and-mergeable-p nil))
+      
+      
       ;; T=0 | write[wi] = MOVE(some_temporary_buffer, tgt[ti])
       ;; T=1 | ...       =  f(..., read[ri], ...)
       ;; =>
       ;; T=0 | ... = f(..., tgt[new_iter], ...)
       ;; Algorithm adopted here are a little compicated, so the implementation is separated in `fusion-rules.lisp`
-      (caten/codegen/fusion-rules:apply-fusion-rules))))
+      (caten/codegen/fusion-rules:apply-fusion-rules
+       graph
+       (view-type-list tgt-views) tgt-views
+       (view-type-list read-views) read-views
+       read-type ri
+       write-type wi
+       tgt-type tgt-is))))
 
 (defmethod group-add-node ((group Group) node)
   (push node (group-items group)))
@@ -401,6 +414,7 @@ write_id[...] <- F1(..., read_id[ri])
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
+;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)
 ;; - [ ] Fix randn auto scheduler
 ;; - [ ] dont jit the scalar kernel
 ;; (with-no-grad (time (caten/codegen:jit (caten (!sin (!view (!add (make-tensor `(1 1)) (make-tensor `(3 3) :initial-element 1.0)) `(0 2) 1))))))
