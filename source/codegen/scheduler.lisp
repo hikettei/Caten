@@ -144,6 +144,15 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (key (gensym) :type symbol)
   (items nil :type list))
 
+(defmethod node-reduce-axes ((node Node))
+  (when (getattr node :reduction :allow-undefined t)
+    (let ((write-buffer (car (relay-writes (read-type-relay node)))))
+      (loop for v in (buffer-views write-buffer)
+            if (fourth v)
+              collect t
+            else
+              collect nil))))
+
 (defmethod verify-group ((group Group))
   (when (find :Allocate (group-items group) :key #'node-type)
     (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
@@ -204,7 +213,8 @@ T=1 | ... = f2(..., R(storage_id=W))
 "
   (let ((node (id->value graph read)))
     (when (null node) (return-from group-mergeable-p nil))
-    (when (and path-reduced-p (getattr node :reduction :allow-undefined t)) (return-from group-mergeable-p nil))
+    (when (and path-reduced-p (node-reduce-axes node) (not (equal path-reduced-p (node-reduce-axes node))))
+      (return-from group-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from group-mergeable-p nil))
     (when (not (jitable-p node)) (return-from group-mergeable-p nil))
     (let ((write-type (car (relay-writes (read-type-relay node))))
@@ -247,14 +257,7 @@ T=1 | ... = f2(..., R(storage_id=W))
         (when (and (or (= (buffer-nrank write-type) (buffer-nrank read-type))
                        (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
                    (every #'meq (iteration-space-shape wi) (iteration-space-shape ri)))
-          (when (not (= (buffer-nrank write-type) (buffer-nrank read-type)))
-            ;; Fixup may not working well
-            ;; (warn "FIXUP THEM ~a ~a" write-type read-type)
-            )
           (return-from group-mergeable-p t)))
-      (print "FAILED_TO_MERGE")
-      (print wi)
-      (print ri)
       nil)))
 
 (defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
@@ -279,7 +282,8 @@ Trying to merge X and Y in the same group connected like:
   (when (find :shrink (view-type-list read-views)) (return-from transform-and-mergeable-p nil))
   (let ((node (id->value graph read)))
     (when (null node) (return-from transform-and-mergeable-p nil))
-    (when (and path-reduced-p (getattr node :reduction :allow-undefined t)) (return-from transform-and-mergeable-p nil))
+    (when (and path-reduced-p (node-reduce-axes node) (not (equal path-reduced-p (node-reduce-axes node))))
+      (return-from transform-and-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from transform-and-mergeable-p nil))
     (when (not (jitable-p node)) (return-from transform-and-mergeable-p nil))
     ;; Only targeting !contiguous
@@ -408,7 +412,6 @@ write_id[...] <- F1(..., read_id[ri])
        ;; [Note] :Allocate is a vm instruction, accordingly should be scheduled standalone
        (loop with buffer-p = (eql (node-type node) :Allocate)
              with jitable-p = (jitable-p node)
-             with reduced = (getattr node :reduction :allow-undefined t)
              for read in (node-reads node)
              for read-type in (relay-reads (read-type-relay node))
              for ri in (relay-read-iters (read-type-relay node))
@@ -417,7 +420,7 @@ write_id[...] <- F1(..., read_id[ri])
              for nth upfrom 0
              for force-group = (group-force-move-reduce-in-the-group parent graph read path-reduced)
              if (and jitable-p (null buffer-p) mergeable-p force-group) ;; Elemwise or contiguous opfusion is here.
-               collect (recursive-create-group read graph :seen seen :parent parent :path-reduced reduced)
+               collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced (node-reduce-axes node)))
              else
                collect
                (multiple-value-bind (new-type new-is new-write-type new-write-is)
@@ -432,7 +435,7 @@ write_id[...] <- F1(..., read_id[ri])
                              (relay-reads (read-type-relay move)) (list new-write-type new-type)
                              (relay-read-iters (read-type-relay move)) (list new-write-is new-is))
                        (recursive-create-group read graph :seen seen :parent parent
-                                                          :path-reduced reduced))
+                                                          :path-reduced (or path-reduced (node-reduce-axes node))))
                      ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
                      (recursive-create-group read graph :seen seen))))))))
 
@@ -470,6 +473,7 @@ write_id[...] <- F1(..., read_id[ri])
 ;;   - [ ] !argmax in a single kernel
 ;;   - [x] (!matmul (!matmul ... ...))
 ;;   - [ ] Propagate index-cmoponents
+;;   - [ ] If reduction, the position of axes must the same
 ;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)
