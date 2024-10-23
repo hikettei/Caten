@@ -12,9 +12,8 @@
 (defun apply-merge-permute (write-type write-is tgt-type tgt-is)
   "Transforms tgt-type to fir in the write-type"
   (declare (ignore write-is))
-  (assert (= (buffer-nrank write-type) (buffer-nrank tgt-type))
-          ()
-          "apply-merge-permute: Cannot merge reshape/broadcast and permute in the same time. Is the :view used correctly?")
+  (when (not (= (buffer-nrank write-type) (buffer-nrank tgt-type)))
+    (return-from apply-merge-permute nil))
   (values tgt-type tgt-is))
 
 (defun apply-merge-broadcast (g write-type write-is tgt-type tgt-is &aux (tgt-type (copy-buffer tgt-type)))
@@ -81,6 +80,9 @@ T=1 | ... = f(... read)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (warn "apply-fusion-rules: Cannot merge views ~a ~a" tgt-view-types read-view-types))
     (return-from apply-fusion-rules nil))
+
+  (when (find :shrink tgt-view-types) (return-from apply-fusion-rules nil))
+  (when (find :shrink read-view-types) (return-from apply-fusion-rules nil))
 ;;  (print "+Running+")
 ;;  (print tgt-view-types)
 ;;  (print "=>")
