@@ -31,6 +31,9 @@
    #:scop
    #:auto-schedule)
   (:import-from
+   :caten/codegen/fusion-rules
+   #:apply-fusion-rules)
+  (:import-from
    :caten/common.logger
    #:print-info
    #:with-progress
@@ -110,23 +113,26 @@
 (defun jit (avm)
   "Runs the JIT compilation (destructive)"
   (declare (type AVM avm))
-  ;; 1. Running the type inference
+  ;; 1. Running the shape/offset/type inference
   (run-type-infer avm)
-  ;; 2. JIT Specific Simplifier (Loop Collapse is here)
+  ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views, Symbol Loads, ...)
   (apply-rewriting-rules avm)
-  ;; 3. Merge dims (e.g. (10 10 10) Tensor -> (10x10x10) Tensor)
+  ;; 3. Merging dims, views, (e.g. (10 10 10) Tensor -> (10x10x10) Tensor to maximize the use of simd)
   (graph-infer-iteration-space (avm-graph avm))
-  ;; 4. Schedule
+  ;; 4. Running the scheduler
   (let ((schedule-graph (graph-schedule (avm-graph avm)))
+        ;; 5. Gathering the dynamic shapes used in the graph.
         (symbolics
           (remove-duplicates
            (loop for node in (graph-nodes (avm-graph avm))
                  if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
                    collect (getattr node :value)))))
     (declare (type Graph schedule-graph))
-    ;; 5. Loop Bound Inference (i.e.: OP -> Loop For transformation)))
-    ;; Remove duplicated schedule compilation
+    ;; 6. Scheduling
+    (apply-fusion-rules schedule-graph)
+    ;; 7. Minifying the number of schedules, (reuse kernels)
     (minify-equivalent-schedule schedule-graph)
+    ;; 8. Start JIT Compilation. (Performing by group)
     (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
@@ -142,9 +148,9 @@
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (print-progress "~a" (getattr x :name))
                    (format t "=====> Lowering to blueprint~%"))
-                 ;; [TODO] Debug Info (Compilation time, Function Name, etc...)
+                 ;; 9. Running Lowerer
                  (lower-schedule-item x (avm-graph avm) schedule-graph)
-                 ;; 6. Lower into Polyhedral IR
+                 ;; 10. Lower into Polyhedral IR
                  (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
                    (format t "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
                  (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
@@ -153,7 +159,7 @@
                    (scop x symbolics)
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)
                      (format t "=====> Auto Scheduler~%"))
-                   ;; Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
+                   ;; 11. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
                    (auto-schedule x)
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)
                      (print (getattr x :polyhedral))
@@ -163,7 +169,7 @@
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
            (reverse (graph-nodes schedule-graph))))))
-    ;; 7. Running memory-planner, update the storage-id
+    ;; 12. Running memory-planner, update the storage-id
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
@@ -171,11 +177,13 @@
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Rendering ..."))
-    ;; 8. Complete
+    ;; 13. Complete (Render by the renderer)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Compiling ..."))
     t))
+
+;; MemoryPlanner w/ Caching the duplicated kernel?
 
 ;; Test Case1
 ;; (with-no-grad (caten/codegen:jit (caten (call (Transformer 64 4 1 1e-5 32) (make-tensor `(10 30)) (iconst 0)))))
