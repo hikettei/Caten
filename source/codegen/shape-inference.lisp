@@ -74,6 +74,7 @@
    #:Iteration-shape-view
    #:Iteration-Space-procedure
    #:%expr-const
+   #:mergeable-view-p
    #:iteration-space-expr-aref))
 
 (in-package :caten/codegen/shape-inference)

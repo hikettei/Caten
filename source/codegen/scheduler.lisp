@@ -27,6 +27,7 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:buffer-inferred-permute)
   (:import-from
    #:caten/codegen/shape-inference
+   #:mergeable-view-p
    #:read-type-relay
    #:relay-reads
    #:relay-writes
@@ -208,11 +209,14 @@ T=1 | ... = f2(..., R(storage_id=W))
     (when (not (jitable-p node)) (return-from group-mergeable-p nil))
     (let ((write-type (car (relay-writes (read-type-relay node))))
           (wi (car (relay-write-iters (read-type-relay node)))))
+      (when (or (null ri) (null wi)) (return-from group-mergeable-p nil))
       ;; T=0 | A[write_type] = ...
       ;; T=1 | x[...] = node(... A[read_type])
       ;; 1. Merge element-wise and non-viewed operations
       (flet ((base-p (view) (or (null view) (every #'null view))))
         (when (and (base-p (buffer-views read-type)) (base-p (buffer-views write-type)))
+          ;; For debugging...
+          ;; (assert (= (buffer-nrank read-type) (buffer-nrank write-type)))
           (return-from group-mergeable-p t)))
       ;; when :read is shrink -> separate
       (when (find :shrink (view-type-list read-views))
@@ -229,7 +233,7 @@ T=1 | ... = f2(..., R(storage_id=W))
       ;; Otherwise, they should be separated, and never fused in the single kernel.
       (flet ((elwise-p (x)
                (and (= (length (iteration-space-views x)) 1)
-                    (every #'null (iteration-space-views x)))))
+                    (every #'mergeable-view-p (iteration-space-views x) (iteration-space-shape x)))))
         (when (and
                (or (elwise-p ri) (elwise-p wi))
                ;; originated from the same iteration space?
@@ -239,8 +243,14 @@ T=1 | ... = f2(..., R(storage_id=W))
                (or
                 (expr-scalar-equivalent-p b (expr-const 1 :int64))
                 (expr-scalar-equivalent-p a b))))
-        (when (and (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri)))
+        ;; [TODO] Fix this line, this is import for merging (!gelu (!matmul ...))
+        (when (and (or (= (buffer-nrank write-type) (buffer-nrank read-type))
+                       (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
                    (every #'meq (iteration-space-shape wi) (iteration-space-shape ri)))
+          (when (not (= (buffer-nrank write-type) (buffer-nrank read-type)))
+            ;; Fixup may not working well
+            ;; (warn "FIXUP THEM ~a ~a" write-type read-type)
+            )
           (return-from group-mergeable-p t)))
       nil)))
 
@@ -314,8 +324,8 @@ Trying to merge X and Y in the same group connected like:
         else
           collect (or (pop list) (error "merge-broadcast: cannot merge shape ~a and map ~a." shape list1))))
 
-(defmethod group-fixup-uprank ((group Group) graph write-id read-id rt wt)
-  "
+(defmethod group-fixup-rank ((group Group) graph)
+  "Buffers in the same group should have the same ranked buffers.
 Rewrite all buffer in the chain of element-wise ops to have the same rank.
 ```
 read_id[wi]   <- F2(...,)
@@ -326,7 +336,20 @@ write_id[...] <- F1(..., read_id[ri])
     |     =>     |
  (10 10)     (10 1 10)
 "
-  (let ((common-shape (buffer-shape wt)))
+  (when (find :Allocate (group-items group) :key #'node-type) (return-from group-fixup-rank))
+  (let* ((rank (loop for node in (group-items group)
+                     maximize
+                     (loop for r in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
+                           when r maximize
+                                  (buffer-nrank r))))
+         (common-shape (make-list rank)))
+    (loop for node in (group-items group) do
+      (loop for r in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
+            when r do
+              (loop for axis upfrom 0
+                    for s in (buffer-shape r)
+                    do (setf (nth axis common-shape) (if (eql s 1) s (or (nth axis common-shape) s))))))
+    (assert (every #'identity common-shape))
     (flet ((new (buffer)
              (values
               (merge-broadcast common-shape (buffer-shape buffer))
@@ -338,17 +361,23 @@ write_id[...] <- F1(..., read_id[ri])
                    :default nil)
                   (loop repeat (length common-shape) collect nil)))))
       (labels ((rpl (bf)
-                 (when (and bf (> (buffer-nrank bf) 0) (< (buffer-nrank bf) (length common-shape)))
+                 (when (and bf (> (buffer-nrank bf) 0) (not (= (buffer-nrank bf) (length common-shape))))
                    (multiple-value-bind (new-shape new-stride new-views) (new bf)
                      (setf (buffer-shape bf) new-shape
                            (buffer-stride bf) new-stride
                            (buffer-views bf) new-views
                            (buffer-nrank bf) (length new-shape)))))
                (explore (node)
-                 (dolist (r (relay-writes (read-type-relay node)))
-                   (rpl r))
-                 (dolist (r (relay-reads (read-type-relay node)))
-                   (rpl r))))
+                 (loop for buf in (relay-writes (read-type-relay node))
+                       for nth upfrom 0
+                       when buf do
+                         (rpl buf)
+                         (setf (nth nth (relay-write-iters (read-type-relay node))) (buffer-merge-dims graph buf)))
+                 (loop for buf in (relay-reads (read-type-relay node))
+                       for nth upfrom 0
+                       when buf do
+                         (rpl buf)
+                         (setf (nth nth (relay-read-iters (read-type-relay node))) (buffer-merge-dims graph buf)))))
         (mapc #'explore (group-items group))))))
 
 (defmethod group-force-move-reduce-in-the-group ((group Group) graph read path-reduced)
@@ -370,6 +399,7 @@ write_id[...] <- F1(..., read_id[ri])
       (when (null node)->failed)
       (setf (gethash id seen) t)
       (group-add-node parent node)
+      (group-fixup-rank parent graph)
       (schedule-groups ;; merge+sort+cleanup
        parent
        ;; [Note] :Allocate is a vm instruction, accordingly should be scheduled standalone
@@ -382,14 +412,13 @@ write_id[...] <- F1(..., read_id[ri])
              for views in (getattr node :_read_views)
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views path-reduced)
              for nth upfrom 0
-             if (and jitable-p (null buffer-p) mergeable-p ;; Elemwise or contiguous opfusion is here.
-                     (group-force-move-reduce-in-the-group parent graph read path-reduced)) ;; merged due to element-wise operation
-               do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
-               and collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
+             for force-group = (group-force-move-reduce-in-the-group parent graph read path-reduced)
+             if (and jitable-p (null buffer-p) mergeable-p force-group) ;; Elemwise or contiguous opfusion is here.
+               collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
              else
                collect
                (multiple-value-bind (new-type new-is new-write-type new-write-is)
-                   (and jitable-p (transform-and-mergeable-p parent graph read read-type ri views path-reduced))
+                   (and jitable-p force-group (transform-and-mergeable-p parent graph read read-type ri views path-reduced))
                  (if (and jitable-p new-type new-is new-write-type new-write-is)
                      (let ((move (id->value graph read)))
                        (assert (and move (eql (node-type move) :MOVE)))
@@ -428,9 +457,11 @@ write_id[...] <- F1(..., read_id[ri])
 
 ;; - 細かく分けて考えて，なぜSchedulingが失敗するか考えてみる
 ;;   - [x] !mean   | (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0)))
-;;   - [ ] ConvND  | (stride is NIL?)
+;;   - [x] ConvND  | (stride is NIL?) -> OK
 ;;   - [ ] Transformer EntireGraph
-;;   - [ ] (caten/codegen:jit (caten (!contiguous (!t (!matmul (make-tensor `(10 10 10 10)) (!t (make-tensor `(10 10))))))))
+;;   - [ ] Collapse (caten/codegen:jit (caten (call (Embedding 100 90) (Make-tensor `(b c)))))
+;;   - [x] (caten/codegen:jit (caten (!contiguous (!t (!matmul (make-tensor `(10 10 10 10)) (!t (make-tensor `(10 10))))))))
+;;   - [x] (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis `(0 2))))
 ;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)

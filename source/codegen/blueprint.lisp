@@ -126,43 +126,51 @@
 
 (defmethod get-grouped-dims ((graph Graph))
   "Find out the iteration space that is common in the graph"
-  (flet ((butnil (ls) (loop for l in ls if l collect l)))
-    (let* ((kernel-rank
-             (loop for node in (graph-nodes graph)
-                   for type = (read-type-relay node)
-                   maximize (apply #'max (append (map 'list #'buffer-nrank (butnil (relay-reads type))) (map 'list #'buffer-nrank (butnil (relay-writes type)))))))
-           (pid2space (make-hash-table :test #'equal)))
-      (labels ((is-one (expr)
-                 (expr-scalar-equivalent-p expr (expr-const 1 :int64)))
-               (check (buffer space)
-                 (when (and buffer space (= (buffer-nrank buffer) kernel-rank))
-                   (loop for s in (iteration-space-shape space)
-                         for p in (iteration-space-procedure space)
-                         do (setf (gethash p pid2space)
-                                  (if (or (null (gethash p pid2space)) (is-one (gethash p pid2space)))
-                                      s
-                                      (gethash p pid2space))))))
-               (explore (node)
-                 (mapc #'check (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node)))
-                 (mapc #'check (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
-               (related-keys (rank)
-                 (loop for key being the hash-keys of pid2space
-                       if (find rank key) collect key)))
-        (mapc #'explore (graph-nodes graph))
-        (let* ((new-procedure
-                 (loop for dimension upfrom 0 below kernel-rank
-                       collect (car (sort (related-keys dimension) #'< :key #'length))))
-               (new-procedure
-                 (loop with seen = nil
-                       for p in new-procedure
-                       if (null (find p seen :test #'equal))
-                         collect p
-                         and do (push p seen))))
-          (assert (every #'identity new-procedure) () "get-grouped-dim: cannot proceed to the next process because the procedure was inferred as: ~a" new-procedure)
-          (assert (equal (alexandria:flatten new-procedure) (range 0 kernel-rank)))          
-          (cons
-           (map 'list #'(lambda (x) (gethash x pid2space)) new-procedure)
-           new-procedure))))))
+  (let* ((kernel-rank
+           (loop for node in (graph-nodes graph)
+                 for type = (read-type-relay node)
+                 maximize
+                 (loop for r in (append (relay-read-iters type) (relay-write-iters type))
+                       when r maximize (apply #'max (flatten (iteration-space-procedure r))))))
+         (pid2space (make-hash-table :test #'equal)))
+    (labels ((is-one (expr)
+               (expr-scalar-equivalent-p expr (expr-const 1 :int64)))
+             (check (buffer space)
+               (when (and buffer space)
+                 (assert (= (apply #'max (flatten (iteration-space-procedure space))) kernel-rank) ()
+                         "get-grouped-dims: Graph nodes should have the common rank. rank_size=~a but got ~a" kernel-rank space)
+                 (loop for s in (iteration-space-shape space)
+                       for p in (iteration-space-procedure space)
+                       do (setf (gethash p pid2space)
+                                (if (or (null (gethash p pid2space)) (is-one (gethash p pid2space)))
+                                    s
+                                    (gethash p pid2space))))))
+             (explore (node)
+               (mapc #'check (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node)))
+               (mapc #'check (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
+             (related-keys (rank)
+               (loop for key being the hash-keys of pid2space
+                     if (find rank key) collect key)))
+      (mapc #'explore (graph-nodes graph))
+      (let* ((new-procedure
+               (loop for dimension upfrom 0 below (1+ kernel-rank)
+                     collect (car (sort (related-keys dimension) #'< :key #'length))))
+             (new-procedure
+               (loop with seen = nil
+                     for p in new-procedure
+                     if (null (find p seen :test #'equal))
+                       collect (loop for x in p if (null (find x seen)) collect x and do (push x seen))
+                       and do (push p seen))))
+        (assert (every #'identity new-procedure) () "get-grouped-dim: cannot proceed to the next process because the procedure was inferred as: ~a" new-procedure)
+        (assert (equal (alexandria:flatten new-procedure) (range 0 (1+ kernel-rank))))
+        (cons
+         (map
+          'list
+          #'(lambda (x)
+              (assert (gethash x pid2space) () "the axis ~a is not found" x)
+              (gethash x pid2space))
+          new-procedure)
+         new-procedure)))))
 
 (defmethod fixup-graph-iteration-space ((graph Graph) found-pair g)
   "Rewrite the iteration space in the graph to match the common iteration space found in the get-grouped-dim function."

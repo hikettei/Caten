@@ -22,7 +22,7 @@ Transforms tgt-type to fit in the write-type
 T=0 | ... = MOVE(..., tgt)
 T=1 | ... = f(... read)
 "
-  (assert (>= (buffer-nrank write-type) (buffer-nrank tgt-type)))
+  (when (not (>= (buffer-nrank write-type) (buffer-nrank tgt-type))) (return-from apply-merge-broadcast nil))
   (when (and (not (= (buffer-nrank write-type) (length (buffer-views write-type))))
              (every #'null (buffer-views write-type)))
     (setf (buffer-views write-type) (loop repeat (buffer-nrank write-type) collect nil)))
