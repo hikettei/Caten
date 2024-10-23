@@ -365,8 +365,19 @@
             ;; Cannot satify the dependency? create a new loops
             (setf blueprint (append bp blueprint))
             (multiple-value-bind (new-bp changed-p new-reduce-loop-p)
-                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp) :path-reduced path-reduced :reduce-p reduce-p :reduce-gids reduced-axes)
-              (assert changed-p () "Cannot insert the node ~a ~a~%[Ongoing blueprint]~%~a" (node-depend-idx-list node gids) node new-bp)
+                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp)
+                                          :path-reduced path-reduced :reduce-p reduce-p :reduce-gids reduced-axes)
+              (assert changed-p () "Cannot insert the node ~a
+depending on ~a
+depend-node=~a
+path-reduced=~a
+reduce-p=~a
+reduce-gids=~a
+[Ongoing blueprint]
+~a"
+                      node (node-depend-idx-list node gids)
+                      parents path-reduced reduce-p reduced-axes
+                      new-bp)
               (setf blueprint new-bp
                     child-reduced (if new-reduce-loop-p nil child-reduced)))))
       (mapc

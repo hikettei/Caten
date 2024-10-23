@@ -226,7 +226,7 @@ T=1 | ... = f2(..., R(storage_id=W))
       (flet ((base-p (view) (or (null view) (every #'null view))))
         (when (and (base-p (buffer-views read-type)) (base-p (buffer-views write-type)))
           ;; For debugging...
-          ;; (assert (= (buffer-nrank read-type) (buffer-nrank write-type)))
+          ;;(assert (= (buffer-nrank read-type) (buffer-nrank write-type)))
           (return-from group-mergeable-p t)))
       ;; when :read is shrink -> separate
       (when (find :shrink (view-type-list read-views))
@@ -574,3 +574,4 @@ write_id[...] <- F1(..., read_id[ri])
 ;; Optimal Embeddingが無理だったら，GIDを，Reduceが一番最後に来るようにPermuteする。
 ;; - [ ] relu(gemm)
 ;; - [ ] conv
+;; (caten/codegen:jit (caten (call (TransformerBlock 64 4) (make-tensor `(10 10 64)) (iconst 2))))
