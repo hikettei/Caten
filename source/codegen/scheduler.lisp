@@ -282,8 +282,6 @@ Trying to merge X and Y in the same group connected like:
       (when (not (every #'null write-views)) (return-from transform-and-mergeable-p nil))
       (when (not (eql (buffer-dtype read-type) (buffer-dtype write-type))) (return-from transform-and-mergeable-p nil))
       (when (not (eql (buffer-dtype tgt-type) (buffer-dtype write-type))) (return-from transform-and-mergeable-p nil))
-      
-      
       ;; T=0 | write[wi] = MOVE(some_temporary_buffer, tgt[ti])
       ;; T=1 | ...       =  f(..., read[ri], ...)
       ;; =>
@@ -379,16 +377,26 @@ write_id[...] <- F1(..., read_id[ri])
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views path-reduced)
-             if (and jitable-p (null buffer-p) mergeable-p
+             for nth upfrom 0
+             if (and jitable-p (null buffer-p) mergeable-p ;; Elemwise or contiguous opfusion is here.
                      (group-force-move-reduce-in-the-group parent graph read path-reduced)) ;; merged due to element-wise operation
-               ;; Simple Contigous OpFusion is here
                do (group-fixup-uprank parent graph id read read-type (car (relay-writes (read-type-relay (id->value graph read)))))
                and collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
              else
                collect
-               (let ((out (and jitable-p (transform-and-mergeable-p parent graph read read-type ri views path-reduced))))
-                 (if out
-                     (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
+               (multiple-value-bind (new-type new-is new-write-type new-write-is)
+                   (and jitable-p (transform-and-mergeable-p parent graph read read-type ri views path-reduced))
+                 (if (and jitable-p new-type new-is new-write-type new-write-is)
+                     (let ((move (id->value graph read)))
+                       (assert (and move (eql (node-type move) :MOVE)))
+                       ;; Forcibly merging the next MOVE, btf the type is are rewritten as:
+                       ;; write[new_write_type] = MOVE(alloc[new_write_type], tgt[new-type])
+                       (setf (relay-writes (read-type-relay move)) (list new-write-type)
+                             (relay-write-iters (read-type-relay move)) (list new-write-is)
+                             (relay-reads (read-type-relay move)) (list new-write-type new-type)
+                             (relay-read-iters (read-type-relay move)) (list new-write-is new-is))
+                       (recursive-create-group read graph :seen seen :parent parent
+                                                          :path-reduced (or path-reduced reduced)))
                      ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
                      (recursive-create-group read graph :seen seen))))))))
 
