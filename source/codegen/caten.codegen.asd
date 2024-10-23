@@ -11,6 +11,7 @@
    (:file "renderer")
    (:file "expr-cache")
    (:file "rewriting-rules")
+   (:file "fusion-rules")
    (:file "scheduler")
    (:file "exprify")
    (:file "blueprint")

@@ -1,8 +1,9 @@
 (defpackage #:caten/codegen/scheduler
   (:documentation "
-The scheduler is responsible for converting the `caten/aasm` graph into a list of Schedule-Item.
-One Schedule-item corresponds to one kernel in GPU.
-")
+`caten/codegen/scheduler` is responsible for partitioning a (huge amount of!) computation graph into several smaller subgraphs with the same iteration space.
+
+`graph-schedule` as en entry point, it receives a graph of `caten/aasm` created by running `caten/apis/iseq.lisp`, and returns a graph of `Schedule-Item`.
+One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the more computation grouped in the same group, the better, in term of the memory-locality. Loops may be distributed elsewhere, but never fused except for `recursive-create-group`.")
   (:use :cl :caten/air :caten/codegen/expr)
   (:import-from :caten/aasm #:JITAble)
   (:import-from
@@ -50,18 +51,30 @@ One Schedule-item corresponds to one kernel in GPU.
 
 (defnode (:GRAPH :Schedule-Item) ()
          "
-name = the name of the kernel (a.k.a: the function name)
-dst <- Schedule-Item(src)
-items = a list of nodes to execute. the execution order does not matter.
-storage-id-src: an indicator to the variable name. created by running memory-planner
-storage-id-dst: an indicator to the variable name. created by running memory-planner
+Schedule-Item is an intermidate object to represent a one kernel in GPU.
+
+It has a unique `name`, and `cache-name`. If `cache-name` was assigned, the compiler will fail to compile this schedule-item and reuse the kernel named `cache-
+name` instead.
+
+In order to lowering the computation graph as the foreign language, `items` must be consisted of JITAble operations (except for special irs and :allocate). If it qualifies, `jitable` is set to T.
+
+Otherwise, the scheduled items are relocated to the compiled avm directly. Specifially, if the item was :ALLOCATE, :allocated-p is set to T.
+
+- blueprint[list] is a lowered schedule-item
+- polyhedral[list] is a Polyhedral IR obtained by lowering blueprint
+- auto-schedule-p[list] is set to T if it is worth to run auto-scheduler. (If there is a symbolic incremental, loop is not an affine and cannot run isl scheduler)
+- items[list] are the scheduled items
+- items-to-cache[list] are the copies of items but having the unique read/write. It is used to determine the equivalence of the two schedule-items.
+- rank[fixnum] is the highest rank of the iteration space.
+- storage-id-src[list] is the list of the storage-id of the source buffer (optimized by running memory-planner)
+- storage-id-dst[list] is the list of the storage-id of the destination buffer (optimized by running memory-planner)
 "
          :slots
          ((blueprint :type list :initform nil)
           (polyhedral)
           (jitable :type boolean)
           (allocate-p :type boolean)
-          (auto-schedule-p :type boolean) ;; Set T if there is no symbolic incremental
+          (auto-schedule-p :type boolean)
           (name :type symbol) (cache-name :type symbol)
           (items :type list) (items-to-cache :type list)
           (rank :type fixnum)
@@ -93,10 +106,10 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
                 (format nil ":name=~a" (getattr node :name))))))
 
 (defmethod identify-view-type ((view Node))
-  ;; [TODO] Rename Broadcast/Reshape -> Broadcast_Or_Reshape
+  ;; [TODO] Rename :broadcast/:reshape as a :broadcast-or-reshape
   (assert (eql :VIEW (node-type view)))
   (when (some #'identity (getattr view :broadcast))
-    (return-from identify-view-type :broadcast))
+    (return-from identify-view-type :broadcast)) ;; [Note] Broadcast may change the shape!
   (when (getattr view :permute)
     (return-from identify-view-type :permute))
   (flet ((shrink-p (size view)
@@ -166,7 +179,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
             (setf full-scalar-p nil))
           (setf rank (max rank (buffer-nrank r)))
           (dolist (v (buffer-views r))
-            (when (and v (third v) (symbolp (third v))) ;; (upfrom below by broadcast_p)
+            (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
               (setf no-symbolic-incremental-p nil))))))
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
                :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
@@ -180,7 +193,7 @@ storage-id-dst: an indicator to the variable name. created by running memory-pla
 
 (defmethod group-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
   "
-Returns T if it is valid to merge the access from R to W without transforming R or W.
+Returns T if it is valid to merge the access from R to W without transforming the views of R or W.
 ```
 T=0 | W = f1(...)
 T=1 | ... = f2(..., R(storage_id=W))
@@ -227,18 +240,20 @@ T=1 | ... = f2(..., R(storage_id=W))
 
 (defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
   "
-Returns T if it is valid to merge the access from R to W with modifying R or W.
+Returns T if it is valid to merge the access from R to W with merging the views of R or W.
 Trying to merge X and Y in the same group connected like:
 ```
-   X
-   |
- [VIEW]
-   |
- [VIEW]
-   |
- [VIEW]
-   |
-   Y
+   X --------
+   |        |
+ [MOVE]     |
+   |        |
+ [VIEW]     |
+   |        | (Transform X and relocated to Y)
+ [VIEW]     |
+   |        |
+ [VIEW]     |
+   |        |
+   Y <-------
 ```
 "
   (when (not (symbolp read)) (return-from transform-and-mergeable-p nil))
@@ -248,6 +263,7 @@ Trying to merge X and Y in the same group connected like:
     (when (and path-reduced-p (getattr node :reduction :allow-undefined t)) (return-from transform-and-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from transform-and-mergeable-p nil))
     (when (not (jitable-p node)) (return-from transform-and-mergeable-p nil))
+    ;; Only targeting !contiguous
     (when (not (eql (node-type node) :MOVE)) (return-from transform-and-mergeable-p nil))
     (let* ((write-type (car (relay-writes (read-type-relay node))))
            (write-views (car (getattr node :_write_views)))
@@ -265,22 +281,8 @@ Trying to merge X and Y in the same group connected like:
       ;; T=1 | ...       =  f(..., read[ri], ...)
       ;; =>
       ;; T=0 | ... = f(..., tgt[new_iter], ...)
-
-      ;;  val_28[((((100*_gid0)+0)+_gid2)+(10*_gid3))]
-      ;; -> val_28[0+0+gid2+10*_gid3]
-      ;(print "+Mergeable?+")
-      ;(print node)
-      ;(print read-type)
-      ;(print tgt-type)
-      ;; tgt-typeをwrite-typeの次元数と一致したViewに書き換えることが目的
-      (when (and
-             (equal `(:broadcast) (view-type-list read-views))
-             (equal nil (view-type-list write-views)))
-        (cond
-          ((equal `(:permute) (view-type-list tgt-views))
-           
-           )))
-      nil)))
+      ;; Algorithm adopted here are a little compicated, so the implementation is separated in `fusion-rules.lisp`
+      (caten/codegen/fusion-rules:apply-fusion-rules))))
 
 (defmethod group-add-node ((group Group) node)
   (push node (group-items group)))
@@ -299,7 +301,7 @@ Trying to merge X and Y in the same group connected like:
 
 (defmethod group-fixup-uprank ((group Group) graph write-id read-id rt wt)
   "
-Rewrite all buffer in the chain of element-wise ops w/ the highest rank.
+Rewrite all buffer in the chain of element-wise ops to have the same rank.
 ```
 read_id[wi]   <- F2(...,)
 write_id[...] <- F1(..., read_id[ri])
@@ -345,16 +347,7 @@ write_id[...] <- F1(..., read_id[ri])
         nil))))
 
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)) (path-reduced nil))
-  "Breaks a big graph to small graphs by recursively exploring and creating subgraph.
-We refer to subgraph as:
-- Total iteration size are equivalent. (that's why we break the graph at :shrink)
-- the centroid is :reduce.
-
-What items are scheduled to the same loop?
-Do not consider about the access dependencies.
-
-Generally the more fusion the better for us, loop fission by ISL Scheduler
-"
+  "Breaks a big graph to small graphs by recursively exploring and creating subgraph."
   (declare (type graph Graph))
   (symbol-macrolet ((->failed (return-from recursive-create-group)))
     (when (gethash id seen)->failed)
@@ -380,8 +373,8 @@ Generally the more fusion the better for us, loop fission by ISL Scheduler
                and collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
              else
                collect
-               (let ((out (transform-and-mergeable-p parent graph read read-type ri views path-reduced)))
-                 (if (and jitable-p out)
+               (let ((out (and jitable-p (transform-and-mergeable-p parent graph read read-type ri views path-reduced))))
+                 (if out
                      (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced reduced))
                      ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
                      (recursive-create-group read graph :seen seen))))))))
