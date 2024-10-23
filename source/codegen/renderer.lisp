@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/renderer
   (:use :cl :caten/codegen/shape-inference)
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
-  (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add)
+  (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p)
   (:import-from :caten/avm :Buffer #:buffer-nrank)
   (:export
    #:Renderer
@@ -93,6 +93,19 @@
                       (%render-const renderer (car (node-writes node)))
                       (render-node renderer (car (node-writes (expr-out expr))))))
             (format nil "~a[?]" (car (node-writes node)))))))
+
+(defun expr-index-components (is index-space)
+  (reduce
+   #'expr-add
+   (map
+    'list
+    #'(lambda (shape stride gid)
+        (if (expr-scalar-equivalent-p shape (expr-const 1 :int64))
+            (expr-const 0 :int64)
+            (expr-mul stride (expr-const gid :int64))))
+    (iteration-space-shape is)
+    (iteration-space-strides is)
+    index-space)))
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
   nil
@@ -113,7 +126,7 @@
   (def :OR " or ")
   (def :XOR " xor "))
 
-(macrolet ((def (id op)
+(macrolet ((def (id op)21
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
                 (format nil "~a(~a, ~a)" ,op (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node)))))))
   (def :MAX "max"))
@@ -147,8 +160,7 @@
   (format nil "(~(~a~))~a" (getattr node :dtype) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :INDEX-COMPONENTS)) node)
-  ;; [TODO]
-  (format nil "<INDEX-COMPONENTS>"))
+  (render-expr 'Default-Renderer (expr-index-components (car (relay-read-iters (read-type-relay node))) (renderer-index-space renderer))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :WHERE)) node)
   (format nil "~a ? ~a : ~a"

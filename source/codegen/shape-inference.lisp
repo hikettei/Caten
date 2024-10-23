@@ -70,7 +70,7 @@
   (:export
    #:Iteration-Space
    #:Iteration-Space-shape
-   #:Iteration-Shape-strides
+   #:Iteration-space-strides
    #:Iteration-shape-view
    #:Iteration-Space-procedure
    #:%expr-const

@@ -258,6 +258,12 @@ T=1 | ... = f2(..., R(storage_id=W))
                        (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
                    (every #'meq (iteration-space-shape wi) (iteration-space-shape ri)))
           (return-from group-mergeable-p t)))
+      ;(print "++MERGEABLE++")
+      ;(print node)
+      ;(print wi)
+      ;(print write-type)
+      ;(print ri)
+      ;(print read-type)
       nil)))
 
 (defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
@@ -470,10 +476,12 @@ write_id[...] <- F1(..., read_id[ri])
 ;;   - [x] (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis `(0 2))))
 ;;   - [ ] (serialize) (caten/codegen:jit (caten (!add (!softmax (make-tensor `(3 3))) (!softmax (make-tensor `(3 3))))))
 ;;   - [x] !randn (offsets ...)
-;;   - [ ] !argmax in a single kernel
+;;   - [x] !argmax in a single kernel
 ;;   - [x] (!matmul (!matmul ... ...))
+;;   - [ ] (caten/codegen:jit (caten (call (Attention 64 8 32) (make-tensor `(10 32 64)) (iconst 3))))
 ;;   - [ ] Propagate index-cmoponents
 ;;   - [ ] If reduction, the position of axes must the same
+;;   - [ ] (caten/codegen:jit (caten (!sum (!matmul (make-tensor `(10 10)) (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))))
 ;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)
