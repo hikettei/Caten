@@ -190,7 +190,7 @@ The provided form does not match any of them:~%~a" method method method method f
 			      (out (if keepdims
 				       out
 				       (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view)))))
-			 out)))))))
+			 (!contiguous out))))))))
   (defreduce SumNode "Sum tensors along axis" !add)
   (defreduce MaxReduce "Max" !maximum)
   (defreduce MinReduce "Min" !minimum))
@@ -205,7 +205,7 @@ The provided form does not match any of them:~%~a" method method method method f
 	       (loop for new-axis in (parse-reduce-axes x axis)
 		     for base in (shape x)
 		     if (eql new-axis 1) do (setf total (!* total (->fconst base))))
-           (!div (!sum x :axis axis :keepdims keepdims) (!cast total (dtype-of x)))))))
+           (!contiguous (!div (!sum x :axis axis :keepdims keepdims) (!cast total (dtype-of x))))))))
 
 (macrolet ((defreduce (f model doc)
 	     `(progn
