@@ -160,8 +160,8 @@
                      for p in new-procedure
                      if (null (find p seen :test #'equal))
                        collect (loop for x in p if (null (find x seen)) collect x and do (push x seen))
-                       and do (push p seen))))
-        (assert (every #'identity new-procedure) () "get-grouped-dim: cannot proceed to the next process because the procedure was inferred as: ~a" new-procedure)
+                       and do (push p seen)))
+             (new-procedure (loop for p in new-procedure if p collect p)))
         (assert (equal (alexandria:flatten new-procedure) (range 0 (1+ kernel-rank))))
         (cons
          (map

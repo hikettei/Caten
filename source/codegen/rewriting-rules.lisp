@@ -231,7 +231,7 @@ out[...] = f(*val_1);
       (let ((type (wmma-relay-from-contiguous t1 t2 t3)))
         (when type
           (make-node :TernaryOps :WMMA (node-writes node) (list c a b) :reduction reduction :_type_relay type))))))
-
+    
 (defun sync-buffer (buffer f)
   (macrolet ((sync (name)
                `(setf (,name buffer) (map 'list (alexandria:compose f #'reveal-buffer) (,name buffer)))))
@@ -325,7 +325,7 @@ out[...] = f(*val_1);
   (declare (type AVM avm))
   (rewrite-views-as-buffer avm)
   ;;Try optimizing kernels without relying on them...
-  ;;(wmma-rewriter (avm-graph avm) :no-verify t)
+  ;; (wmma-rewriter (avm-graph avm) :no-verify t)
   ;;(contiguous-after-wmma (avm-graph avm) :no-verify t)
   (propagate-rebundant-loadp (avm-graph avm))
   (apply-static-gensym avm)

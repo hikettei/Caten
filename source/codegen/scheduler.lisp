@@ -266,12 +266,12 @@ T=1 | ... = f2(..., R(storage_id=W))
                         (broadcastable-p write-type read-type)))
                    (every #'meq (iteration-space-shape wi) (iteration-space-shape ri)))
           (return-from group-mergeable-p t)))
-      ;(print "++MERGEABLE++")
-      ;(print node)
-      ;(print wi)
-      ;(print write-type)
-      ;(print ri)
-      ;(print read-type)
+;      (print "++MERGEABLE++")
+;      (print read)
+;      (print wi)
+;      (print write-type)
+;      (print ri)
+;      (print read-type)
       nil)))
 
 (defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views)
@@ -441,7 +441,7 @@ write_id[...] <- F1(..., read_id[ri])
     (explore id)
     nil))
 
-(defmethod group-reduce-mergeable-p ((group group) graph read path-reduced)
+(defmethod group-reduce-mergeable-p ((group group) graph node read path-reduced)
   (when (null (group-reduce-dims group)) (return-from group-reduce-mergeable-p t))
   (let ((red (recursive-reduce-p read graph)))
     (when (null red) (return-from group-reduce-mergeable-p t))
@@ -469,7 +469,7 @@ write_id[...] <- F1(..., read_id[ri])
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
              for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
-             for reduce-mergeable-p = (group-reduce-mergeable-p parent graph read path-reduced)
+             for reduce-mergeable-p = (group-reduce-mergeable-p parent graph node read path-reduced)
              for nth upfrom 0
              for force-group = (group-force-move-reduce-in-the-group parent graph read path-reduced)
              for force-p = (force-merge-pattern-p graph node read)
@@ -514,6 +514,8 @@ write_id[...] <- F1(..., read_id[ri])
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
+;; (caten/codegen:jit (caten (!argmax (!matmul (make-tensor `(10 32)) (call (layerNorm `(10)) (make-tensor `(10 32 10)))))))
+;; (caten/codegen:jit (caten (!matmul (make-tensor `(10 32)) (!softmax (make-tensor `(32 10))))))
 ;; - 細かく分けて考えて，なぜSchedulingが失敗するか考えてみる
 ;;   - [x] !mean   | (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0)))
 ;;   - [x] ConvND  | (stride is NIL?) -> OK
@@ -531,6 +533,7 @@ write_id[...] <- F1(..., read_id[ri])
 ;;   - [ ] (caten/codegen:jit (caten (!sum (!matmul (make-tensor `(10 10)) (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))))
 ;;   - [x] (caten/codegen:jit (time (caten (call (LayerNorm `(10)) (call (Embedding 10 10) (make-tensor `(10 10)))))))
 ;;   - [x] randint
+;;  -  [ ] (caten/codegen:jit (caten (!argmax (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))) INDEX COMPONENTSがFuseされない・・・
 ;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)

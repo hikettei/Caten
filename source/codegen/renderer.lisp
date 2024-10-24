@@ -127,6 +127,9 @@
   (def :OR " or ")
   (def :XOR " xor "))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :WMMA)) node)
+  (format nil "~a+~a*~a" (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node))) (render-node renderer (nth 2 (node-reads node)))))
+
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
                 (format nil "~a(~a, ~a)" ,op (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node)))))))
