@@ -142,16 +142,19 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 
 (defstruct Group
   (key (gensym) :type symbol)
+  (reduce-dims nil :type list)
   (items nil :type list))
 
 (defmethod node-reduce-axes ((node Node))
   (when (getattr node :reduction :allow-undefined t)
     (let ((write-buffer (car (relay-writes (read-type-relay node)))))
-      (loop for v in (buffer-views write-buffer)
-            if (fourth v)
-              collect t
-            else
-              collect nil))))
+      (let ((out
+              (loop for v in (buffer-views write-buffer)
+                    if (fourth v)
+                      collect t
+                    else
+                      collect nil)))
+        (when (some #'identity out) out)))))
 
 (defmethod verify-group ((group Group))
   (when (find :Allocate (group-items group) :key #'node-type)
@@ -203,7 +206,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :items (group-items group)
                :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
 
-(defmethod group-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
+(defmethod group-mergeable-p ((group Group) graph read read-type ri read-views)
   "
 Returns T if it is valid to merge the access from R to W without transforming the views of R or W.
 ```
@@ -213,8 +216,6 @@ T=1 | ... = f2(..., R(storage_id=W))
 "
   (let ((node (id->value graph read)))
     (when (null node) (return-from group-mergeable-p nil))
-    (when (and path-reduced-p (node-reduce-axes node) (not (equal path-reduced-p (node-reduce-axes node))))
-      (return-from group-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from group-mergeable-p nil))
     (when (not (jitable-p node)) (return-from group-mergeable-p nil))
     (let ((write-type (car (relay-writes (read-type-relay node))))
@@ -266,7 +267,7 @@ T=1 | ... = f2(..., R(storage_id=W))
       ;(print read-type)
       nil)))
 
-(defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views path-reduced-p)
+(defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views)
   "
 Returns T if it is valid to merge the access from R to W with merging the views of R or W.
 Trying to merge X and Y in the same group connected like:
@@ -288,8 +289,6 @@ Trying to merge X and Y in the same group connected like:
   (when (find :shrink (view-type-list read-views)) (return-from transform-and-mergeable-p nil))
   (let ((node (id->value graph read)))
     (when (null node) (return-from transform-and-mergeable-p nil))
-    (when (and path-reduced-p (node-reduce-axes node) (not (equal path-reduced-p (node-reduce-axes node))))
-      (return-from transform-and-mergeable-p nil))
     (when (eql (node-type node) :Allocate) (return-from transform-and-mergeable-p nil))
     (when (not (jitable-p node)) (return-from transform-and-mergeable-p nil))
     ;; Only targeting !contiguous
@@ -394,8 +393,20 @@ write_id[...] <- F1(..., read_id[ri])
         (mapc #'explore (group-items group))))))
 
 (defmethod group-force-move-reduce-in-the-group ((group Group) graph read path-reduced)
+  "
+```
+<Cluster-Out-Fusable>
+                     Load(A, 0.0)
+                          |  
+    Reduce: C = BinaryOps(A, B) ---- <Injective>
+            |
+  MOVE(OUT, C)
+            |
+  <Complex-Out-Fusable>
+```
+"
   (symbol-macrolet ((->ok (return-from group-force-move-reduce-in-the-group t)))
-    (when (not path-reduced) ->ok)
+    (when (null path-reduced) ->ok)
     (let ((node (id->value graph read)))
       (when (or (null node) (not (eql (node-type node) :MOVE))) ->ok)
       (let ((reduction (id->value graph (second (node-reads node)))))
@@ -403,8 +414,29 @@ write_id[...] <- F1(..., read_id[ri])
         (when (not (getattr reduction :reduction :allow-undefined t))->ok)
         nil))))
 
+(defun recursive-reduce-p (id graph &aux (seen))
+  (declare (optimize (speed 3))
+           (type graph graph)
+           (type list seen))
+  (labels ((explore (x)
+             (when (and (symbolp x) (null (find x seen)))
+               (push x seen)
+               (let ((node (id->value graph x)))
+                 (when node
+                   (if (getattr node :reduction :allow-undefined t)
+                       (return-from recursive-reduce-p (node-reduce-axes node))
+                       (mapc #'explore (node-reads node))))))))
+    (explore id)
+    nil))
+
+(defmethod group-reduce-mergeable-p ((group group) graph read path-reduced)
+  (when (null (group-reduce-dims group)) (return-from group-reduce-mergeable-p t))
+  (let ((red (recursive-reduce-p read graph)))
+    (when (null red) (return-from group-reduce-mergeable-p t))
+    (equal (group-reduce-dims group) red)))
+   
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)) (path-reduced nil))
-  "Breaks a big graph to small graphs by recursively exploring and creating subgraph."
+  "Breaks a big graph into small graphs by recursively exploring and creating subgraph."
   (declare (type graph Graph))
   (symbol-macrolet ((->failed (return-from recursive-create-group)))
     (when (gethash id seen)->failed)
@@ -412,6 +444,8 @@ write_id[...] <- F1(..., read_id[ri])
       (when (null node)->failed)
       (setf (gethash id seen) t)
       (group-add-node parent node)
+      (when (and (null (group-reduce-dims parent)) (getattr node :reduction :allow-undefined t))
+        (setf (group-reduce-dims parent) (node-reduce-axes node)))
       (group-fixup-rank parent graph)
       (schedule-groups ;; merge+sort+cleanup
        parent
@@ -422,15 +456,16 @@ write_id[...] <- F1(..., read_id[ri])
              for read-type in (relay-reads (read-type-relay node))
              for ri in (relay-read-iters (read-type-relay node))
              for views in (getattr node :_read_views)
-             for mergeable-p = (group-mergeable-p parent graph read read-type ri views path-reduced)
+             for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
+             for reduce-mergeable-p = (group-reduce-mergeable-p parent graph read path-reduced)
              for nth upfrom 0
              for force-group = (group-force-move-reduce-in-the-group parent graph read path-reduced)
-             if (and jitable-p (null buffer-p) mergeable-p force-group) ;; Elemwise or contiguous opfusion is here.
-               collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced (node-reduce-axes node)))
+             if (and jitable-p reduce-mergeable-p (null buffer-p) mergeable-p force-group) ;; Elemwise or contiguous opfusion is here.
+               collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced (node-reduce-axes (id->value graph read))))
              else
                collect
                (multiple-value-bind (new-type new-is new-write-type new-write-is)
-                   (and jitable-p force-group (transform-and-mergeable-p parent graph read read-type ri views path-reduced))
+                   (and jitable-p reduce-mergeable-p force-group (transform-and-mergeable-p parent graph read read-type ri views))
                  (if (and jitable-p new-type new-is new-write-type new-write-is)
                      (let ((move (id->value graph read)))
                        (assert (and move (eql (node-type move) :MOVE)))
@@ -440,8 +475,7 @@ write_id[...] <- F1(..., read_id[ri])
                              (relay-write-iters (read-type-relay move)) (list new-write-is)
                              (relay-reads (read-type-relay move)) (list new-write-type new-type)
                              (relay-read-iters (read-type-relay move)) (list new-write-is new-is))
-                       (recursive-create-group read graph :seen seen :parent parent
-                                                          :path-reduced (or path-reduced (node-reduce-axes node))))
+                       (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced (node-reduce-axes (id->value graph read)))))
                      ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
                      (recursive-create-group read graph :seen seen))))))))
 
@@ -482,6 +516,8 @@ write_id[...] <- F1(..., read_id[ri])
 ;;   - [ ] Propagate index-cmoponents
 ;;   - [ ] If reduction, the position of axes must the same
 ;;   - [ ] (caten/codegen:jit (caten (!sum (!matmul (make-tensor `(10 10)) (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))))
+;;   - [ ] (caten/codegen:jit (time (caten (call (LayerNorm `(10)) (call (Embedding 10 10) (make-tensor `(10 10)))))))
+;;   - [ ] randint
 ;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)
