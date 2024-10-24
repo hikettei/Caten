@@ -38,6 +38,9 @@
   (:import-from
    :caten/codegen/expr-cache
    #:with-expr-cache)
+  (:import-from
+   :caten/codegen/memory-planner
+   #:run-memory-planner)
   (:export
    #:jit))
 
@@ -89,6 +92,7 @@
 (defun minify-equivalent-schedule (schedule-graph)
   ;; CODE_SIZE=0 ()
   ;; CODE_SIZE=1 (Eager to Full Symbolic Compilation)
+  (return-from minify-equivalent-schedule) ;; [TODO]
   (let ((tgts (loop for node in (graph-nodes schedule-graph)
                     if (getattr node :jitable)
                       collect node))
@@ -167,7 +171,7 @@
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
-    ;; (memory-planner)
+    (run-memory-planner schedule-graph)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Rendering ..."))

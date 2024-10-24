@@ -80,6 +80,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (name :type symbol) (cache-name :type symbol)
           (items :type list) (items-to-cache :type list)
           (rank :type fixnum)
+          (read-types :type list) (write-types :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)))
 
@@ -517,6 +518,8 @@ write_id[...] <- F1(..., read_id[ri])
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
+;; - [ ] Module Lowering is very slow
+;; - [ ] Needs more optim
 ;; (caten/codegen:jit (caten (!argmax (!matmul (make-tensor `(10 32)) (call (layerNorm `(10)) (make-tensor `(10 32 10)))))))
 ;; (caten/codegen:jit (caten (!matmul (make-tensor `(10 32)) (!softmax (make-tensor `(32 10))))))
 ;; - 細かく分けて考えて，なぜSchedulingが失敗するか考えてみる

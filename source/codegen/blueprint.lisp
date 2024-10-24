@@ -18,7 +18,9 @@
    :gid
    :range
    :permute-list
-   :render-list)
+   :render-list
+   :nodes-depends-on
+   :nodes-write-to)
   (:import-from
    :caten/avm
    #:buffer-nrank
@@ -429,4 +431,24 @@ reduce-gids=~a
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-blueprint (ctx-blueprint ctx) t))
+      (update-src-dst-ids node (ctx-blueprint ctx))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
+
+(defun update-src-dst-ids (node bp)
+  (let* ((ops (loop for b in bp
+                    if (not (eql (node-class b) :Render))
+                      collect b))
+         (reads (nodes-depends-on ops))
+         (writes (nodes-write-to ops))
+         (read-type
+           (loop for r in reads
+                 for n = (find r ops :key #'node-reads :test #'find)
+                 for p = (position r (node-reads n))
+                 collect (nth p (relay-reads (read-type-relay n)))))
+         (write-type
+           (loop for w in writes
+                 collect (car (relay-writes (read-type-relay (find w ops :key #'node-writes :test #'find)))))))
+    (setf (node-reads node) reads
+          (node-writes node) writes
+          (getattr node :read-types) read-type
+          (getattr node :write-types) write-type)))
