@@ -144,33 +144,3 @@
   (print-unreadable-object (pg stream :type t)
     (format stream "~a~%[Kernel]:~%~a" (pprint-schedule (copy (poly-schedule pg))) (debug-render-to-clang pg))))
 
-(defmethod schedule ((pg Polyhedral-IR))
-  (let ((serialize-sccs 0)
-        (outer-coincidence 1)
-        (maximize-coincidence 0)
-        (treat-coalescing 1)
-        (maximize-band-depth 1)
-        ;; Only schedule the scc. (not to change the structure of kernel)
-        (schedule-whole-component 1))
-    (macrolet ((set-option (name level)
-	         `(progn
-		    (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
-				     :pointer (isl::context-handle isl::*context*)
-				     :int ,level
-				     :void))))
-      (flet ((configure ()
-               (set-option "schedule_serialize_sccs" serialize-sccs)
-               (set-option "schedule_outer_coincidence" outer-coincidence)
-               (set-option "schedule_maximize_coincidence" maximize-coincidence)
-               (set-option "schedule_treat_coalescing" treat-coalescing)
-               (set-option "schedule_maximize_band_depth" maximize-band-depth)
-               (set-option "schedule_whole_component" schedule-whole-component)))
-        (configure))))
-  (schedule-constraints-compute-schedule
-   (schedule-constraints-set-coincidence
-    (schedule-constraints-set-proximity
-     (schedule-constraints-set-validity
-      (schedule-constraints-on-domain (poly-domain pg))
-      (poly-dependencies pg))
-     (poly-dependencies pg))
-    (poly-dependencies pg))))

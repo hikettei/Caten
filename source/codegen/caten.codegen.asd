@@ -19,4 +19,5 @@
    (:file "scop")
    (:file "memory-planner")
    (:file "jit")
+   (:file "backends/clang")
    (:file "package")))

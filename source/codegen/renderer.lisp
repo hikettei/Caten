@@ -4,8 +4,12 @@
   (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p)
   (:import-from :caten/avm :Buffer #:buffer-nrank)
   (:export
+   #:get-default-renderer
+   #:%render-kernel
+   #:%compile-kernel
    #:Renderer
    #:Default-Renderer
+   #:CStyle-Renderer
    #:renderer-graph
    #:renderer-index-space
    #:make-renderer
@@ -19,8 +23,12 @@
 
 (in-package :caten/codegen/renderer)
 
+(defgeneric get-default-renderer (id))
 (defgeneric %render-node (renderer node-dispatcher node) (:documentation ""))
 (defgeneric %render-const (renderer obj) (:documentation ""))
+
+(defgeneric %render-kernel (renderer schedule-item))
+(defgeneric %compile-kernel (renderer schedule-items))
 
 (defnode (:Render :FOR) ()
          "TODO"
@@ -178,3 +186,73 @@
 (defmethod print-object ((expr expr) stream)
   (print-unreadable-object (expr stream :type t)
     (format stream "~a" (render-node (make-instance 'Default-Renderer :graph (expr-graph expr)) (car (node-writes (expr-out expr)))))))
+
+;; ~~ CStyle Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass CStyle-Renderer (Renderer)
+  nil
+  (:documentation ""))
+
+(defmethod get-default-renderer ((id (eql :clang))) (make-instance 'CStyle-Renderer))
+
+(defmethod %render-const ((renderer CStyle-Renderer) obj)
+  (format nil "~(~a~)" obj))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :LOAD)) node)
+  (format nil "~(~a~)" (getattr node :value)))
+
+(macrolet ((def (id op)
+             `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
+                (format nil "(~a~a~a)" (render-node renderer (nth 0 (node-reads node))) ,op (render-node renderer (nth 1 (node-reads node)))))))
+  (def :ADD "+")
+  (def :MUL "*")
+  (def :AND " & ")
+  (def :OR " | ")
+  (def :XOR " ^ "))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :WMMA)) node)
+  (format nil "~a+~a*~a" (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node))) (render-node renderer (nth 2 (node-reads node)))))
+
+(macrolet ((def (id op)
+             `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
+                (format nil "~a(~a, ~a)" ,op (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node)))))))
+  (def :MAX "max"))
+
+(macrolet ((def (id op)
+             `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
+                (format nil "~a(~a)" ,op (render-node renderer (nth 0 (node-reads node)))))))
+  (def :NEG "-")
+  (def :NOT "!")
+  (def :SIN "sin")
+  (def :log2 "log2")
+  (def :exp2 "exp2")
+  (def :RECIP "1/")
+  (def :SQRT "sqrt"))
+
+(macrolet ((def (id op)
+             `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
+                (format nil "(~a~a~a)" (render-node renderer (nth 1 (node-reads node))) ,op (render-node renderer (nth 2 (node-reads node)))))))
+  (def :!= "!=")
+  (def :< "<"))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :Aref)) node)
+  (render-aref renderer node))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :MOVE)) node)
+  (format nil "~a" (render-node renderer (second (node-reads node)))))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :Allocate)) node))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :CAST)) node)
+  (format nil "(~(~a~))~a" (getattr node :dtype) (render-node renderer (second (node-reads node)))))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :INDEX-COMPONENTS)) node)
+  (render-expr 'CStyle-Renderer (expr-index-components (car (relay-read-iters (read-type-relay node))) (renderer-index-space renderer))))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :WHERE)) node)
+  (format nil "~a ? ~a : ~a"
+          (render-node renderer (car (node-reads node)))
+          (render-node renderer (second (node-reads node)))
+          (render-node renderer (third (node-reads node)))))
+
+(defmethod %render-node ((renderer CStyle-Renderer) id node)
+  (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))

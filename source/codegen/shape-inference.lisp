@@ -69,10 +69,10 @@
    #:graph-infer-iteration-space)
   (:export
    #:Iteration-Space
-   #:Iteration-Space-shape
+   #:Iteration-space-shape
    #:Iteration-space-strides
-   #:Iteration-shape-view
-   #:Iteration-Space-procedure
+   #:Iteration-space-views
+   #:Iteration-space-procedure
    #:%expr-const
    #:mergeable-view-p
    #:iteration-space-expr-aref))

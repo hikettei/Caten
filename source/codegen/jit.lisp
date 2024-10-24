@@ -41,6 +41,11 @@
   (:import-from
    :caten/codegen/memory-planner
    #:run-memory-planner)
+  (:import-from
+   :caten/codegen/renderer
+   #:get-default-renderer
+   #:%compile-kernel
+   #:%render-kernel)
   (:export
    #:jit))
 
@@ -111,7 +116,8 @@
 ;; - [ ] Scop+Polyhedral -> Can ISL find the optimal embedding kernel?
 ;; - [ ] Support Backward (Higher Order?)
 ;; - [ ] TODO Purge unnecessary stride computation (in symbolic!)
-(defun jit (avm)
+(defun jit (avm &key (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
+                &aux (renderer (if (keywordp renderer) (get-default-renderer renderer) renderer)))
   "Runs the JIT compilation (destructive)"
   (declare (type AVM avm))
   ;; 1. Running the shape/offset/type inference
@@ -171,14 +177,18 @@
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
-    (run-memory-planner schedule-graph)
+;;    (run-memory-planner schedule-graph)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
-      (print-info "Rendering ..."))
+      (print-info "Rendering ...")
+      (dolist (s (reverse (graph-nodes schedule-graph)))
+        (when (getattr s :jitable)
+          (setf (getattr s :rendered-object) (%render-kernel renderer s)))))
     ;; 12. Complete (Render by the renderer)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
-      (print-info "Compiling ..."))
+      (print-info "Compiling ...")
+      (%compile-kernel renderer (graph-nodes schedule-graph)))
     t))
 
 ;; MemoryPlanner w/ Caching the duplicated kernel?
