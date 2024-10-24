@@ -206,6 +206,11 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :items (group-items group)
                :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
 
+(defun broadcastable-p (t1 t2)
+  (flet ((butone (s)
+           (loop for x in s unless (eql x 1) collect x)))
+    (equal (butone (buffer-shape t1)) (butone (buffer-shape t2)))))
+
 (defmethod group-mergeable-p ((group Group) graph read read-type ri read-views)
   "
 Returns T if it is valid to merge the access from R to W without transforming the views of R or W.
@@ -256,7 +261,9 @@ T=1 | ... = f2(..., R(storage_id=W))
                 (expr-scalar-equivalent-p a b))))
         ;; [TODO] Fix this line, this is import for merging (!gelu (!matmul ...))
         (when (and (or (= (buffer-nrank write-type) (buffer-nrank read-type))
-                       (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri))))
+                       (and
+                        (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri)))
+                        (broadcastable-p write-type read-type)))
                    (every #'meq (iteration-space-shape wi) (iteration-space-shape ri)))
           (return-from group-mergeable-p t)))
       ;(print "++MERGEABLE++")
@@ -516,7 +523,7 @@ write_id[...] <- F1(..., read_id[ri])
 ;;   - [ ] Propagate index-cmoponents
 ;;   - [ ] If reduction, the position of axes must the same
 ;;   - [ ] (caten/codegen:jit (caten (!sum (!matmul (make-tensor `(10 10)) (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))))
-;;   - [ ] (caten/codegen:jit (time (caten (call (LayerNorm `(10)) (call (Embedding 10 10) (make-tensor `(10 10)))))))
+;;   - [x] (caten/codegen:jit (time (caten (call (LayerNorm `(10)) (call (Embedding 10 10) (make-tensor `(10 10)))))))
 ;;   - [ ] randint
 ;; - [ ] Running w/ tests?
 
