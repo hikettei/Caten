@@ -421,6 +421,11 @@ write_id[...] <- F1(..., read_id[ri])
         (when (not (getattr reduction :reduction :allow-undefined t))->ok)
         nil))))
 
+(defun force-merge-pattern-p (graph node read)
+  (when (getattr node :reduction :allow-undefined t)
+    (let* ((load (id->value graph read)))
+      (and load (eql (node-type load) :LOAD) (= (getattr load :value) 0)))))
+
 (defun recursive-reduce-p (id graph &aux (seen))
   (declare (optimize (speed 3))
            (type graph graph)
@@ -467,7 +472,8 @@ write_id[...] <- F1(..., read_id[ri])
              for reduce-mergeable-p = (group-reduce-mergeable-p parent graph read path-reduced)
              for nth upfrom 0
              for force-group = (group-force-move-reduce-in-the-group parent graph read path-reduced)
-             if (and jitable-p reduce-mergeable-p (null buffer-p) mergeable-p force-group) ;; Elemwise or contiguous opfusion is here.
+             for force-p = (force-merge-pattern-p graph node read)
+             if (or force-p (and jitable-p reduce-mergeable-p (null buffer-p) mergeable-p force-group)) ;; Elemwise or contiguous opfusion is here.
                collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced (node-reduce-axes (id->value graph read))))
              else
                collect
@@ -521,10 +527,10 @@ write_id[...] <- F1(..., read_id[ri])
 ;;   - [x] (!matmul (!matmul ... ...))
 ;;   - [ ] (caten/codegen:jit (caten (call (Attention 64 8 32) (make-tensor `(10 32 64)) (iconst 3))))
 ;;   - [ ] Propagate index-cmoponents
-;;   - [ ] If reduction, the position of axes must the same
+;;   - [x] If reduction, the position of axes must the same
 ;;   - [ ] (caten/codegen:jit (caten (!sum (!matmul (make-tensor `(10 10)) (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))))
 ;;   - [x] (caten/codegen:jit (time (caten (call (LayerNorm `(10)) (call (Embedding 10 10) (make-tensor `(10 10)))))))
-;;   - [ ] randint
+;;   - [x] randint
 ;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)
