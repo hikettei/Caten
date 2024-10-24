@@ -436,17 +436,20 @@ write_id[...] <- F1(..., read_id[ri])
                (let ((node (id->value graph x)))
                  (when node
                    (if (getattr node :reduction :allow-undefined t)
-                       (return-from recursive-reduce-p (node-reduce-axes node))
+                       (return-from recursive-reduce-p (values (node-reduce-axes node) seen))
                        (mapc #'explore (node-reads node))))))))
     (explore id)
     nil))
 
 (defmethod group-reduce-mergeable-p ((group group) graph node read path-reduced)
   (when (null (group-reduce-dims group)) (return-from group-reduce-mergeable-p t))
-  (let ((red (recursive-reduce-p read graph)))
+  (multiple-value-bind (red seen) (recursive-reduce-p read graph)
     (when (null red) (return-from group-reduce-mergeable-p t))
-    (equal (group-reduce-dims group) red)))
-   
+    (if (equal (group-reduce-dims group) red)
+        t
+        (when (getattr node :reduction :allow-undefined t)
+          (find read seen)))))
+
 (defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)) (path-reduced nil))
   "Breaks a big graph into small graphs by recursively exploring and creating subgraph."
   (declare (type graph Graph))
