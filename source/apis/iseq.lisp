@@ -183,7 +183,7 @@
     (mapc #'backward-helper (reverse iseq))
     iseq-bw))
 
-(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels) (toplevel-ids) (maximum-recursion 100))
+(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels) (toplevel-ids) (maximum-recursion 1024))
   "Constructs a forward/backward graph based on iseq"
   (declare (type Compiler-Session session)
 	   (type list iseq toplevel-ids)
@@ -202,8 +202,8 @@
   (flet ((lower-all (graph)
 	   (flet ((ok () (null (find :Module (the list (graph-nodes (->graph graph))) :key #'node-class))))
 	     (loop until (ok) for n fixnum upfrom 0 do
-	       (when (>= n maximum-recursion)
-		 (error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
+               (when (>= n maximum-recursion)
+	         (error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
 	       ;; e.g.:
 	       ;; n=1 Quantize (Matmul) Dequantize -> QMatmul
 	       ;; n=1 (Simplify)
@@ -321,6 +321,9 @@ The iseq obtained by lowering the Module must match the output destination speci
 	  (flet ((r (x) (if (symbolp x) (or (gethash x alias-map) x) x)))
 	    (setf (node-reads node) (map 'list #'r (node-reads node))
 		  (node-writes node) (map 'list #'r (node-writes node)))))
+        (dolist (n (graph-nodes lowered-graph))
+          (when (typep (node-attr n) 'JITAble)
+            (push (cons (node-type module-node) (node-id module-node)) (getattr n :_lowering_history))))
 	(graph-nodes lowered-graph)))))
 
 (defun %module->iseqbw (session module prev-grad)

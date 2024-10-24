@@ -13,12 +13,16 @@
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
    (_loop_bound_nodes :initarg :_loop_bound_nodes :initform nil)
-   (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type :initform nil)
-   (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm :initform nil)
-   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr :initform nil)
+   (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type :initform nil) ;; [TODO] Delete
+   (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm :initform nil) ;; [TODO] Delete
+   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr :initform nil) ;; [TODO] Delete
    (_reads :initarg :_reads)
    (_writes :initarg :_writes)
-   (declare-type :initarg :declare-type :initform nil))
+   (_read_views :initform nil :initarg :_read_views)
+   (_write_views :initform nil :initarg :_write_views)
+   (declare-type :initarg :declare-type :initform nil)
+   (iterations :initarg :iterations :initform nil)
+   (_lowering_history :initform nil :initarg :_lowering_history))
   (:documentation "This node is jitable.
 - declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:
 ```
@@ -121,6 +125,12 @@ out <- x + y + z + ...
 	 "The node :MUL multiplies the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
+```")
+
+(defnode (:BinaryOps :MOD) (BinaryOps JITAble)
+	 "The node :MOD finds the reminder of the first tensor in `read` divided by the second tensor in `read`.
+```
+out <- x % y
 ```")
 
 (defnode (:BinaryOps :IDIV) (BinaryOps JITAble)
@@ -270,10 +280,12 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
 - nrank[(unsigned-byte 32)] the rank of viewed tensor.
 - broadcast[list] broadcasting order.
 - permute[list] is an optional parameter and does nothing in VM, but requires to apply Polyhedral Compiler. If the view was created in `caten/apis:!permute`, set the argument to this attribute.
+- override-stride-p[boolean] If set to T, :VIEW fails to update the strides of view. (keep using the first argument tensor's one)
 "
 	 :slots ((nrank :type (unsigned-byte 32))
 		 (broadcast :type list)
-		 (permute :type list :initform nil)))
+		 (permute :type list :initform nil)
+                 (override-stride-p :type boolean :initform nil)))
 
 (defclass Indexing () nil)
 (defnode (:Indexing :Index-Components) (Indexing JITAble)
@@ -293,7 +305,7 @@ for i=0..N
 (defnode (:JIT :EXPR) (JITAble)
 	 "The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes. The list of composable nodes is defined in `op/expr` in `ajit/renderer.lisp.`
 
-- Expr[Caten/AJIT:EXPR] a tree structure comprised of `CATEN/AJIT:EXPR`. Each node are comprised of `op/expr`.
+- Expr[caten/codegen/expr:EXPR] a tree structure comprised of `caten/codegen/expr:EXPR`
 - reduction[boolean]
 "
 	 :slots ((expr)

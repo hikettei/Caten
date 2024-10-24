@@ -114,20 +114,19 @@
   (multiple-value-bind (tokens start-pos) (apply #'values inputs)
     (assert (and tokens start-pos))
     (st "Tokens[batch sentence_length] Start_Pos[] -> Tokens[batch sentence_length]" (tokens start-pos))
-    (with-slots ((wte wte) (wpe wpe) (h h) (lm-head lm-head)) model
+    (with-slots ((wte wte) (wpe wpe) (h h) (ln-f ln-f) (lm-head lm-head)) model
       (let* ((token-emb (forward wte tokens))
-	     (pos-emb (forward wpe (!cast (!add start-pos (!index-components `(1 ,(second (shape tokens))))) (dtype-of tokens))))
+	     (pos-emb   (forward wpe (!cast (!add start-pos (!index-components `(1 ,(second (shape tokens))))) (dtype-of tokens))))
 	     (hi (!add token-emb pos-emb))
              (seq-len (iconst (second (shape tokens))))
 	     (mask (!triu
                     (!full
-                     `(1 1 ,seq-len ,(!add start-pos seq-len))
+                     `(1 1 ,seq-len ,seq-len)
                      (-inf))
                     :diagonal (!+ (iconst 1) start-pos)))
 	     (_ (loop for hn in h do
 	       (setf hi (forward hn hi start-pos mask))))
-	     (logits (forward lm-head hi)))
+	     (logits (forward lm-head (forward ln-f hi))))
 	(declare (ignore _))
 	(!argmax logits)))))
-
 #+(or)(with-no-grad (caten (forward (Transformer 64 4 4 1e-5 512) (make-tensor `(10 10)) (iconst 0))))

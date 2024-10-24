@@ -41,9 +41,10 @@
   (def %xor :XOR)
   (def %move :MOVE)
   (def %max :MAX)
-  (def %gcd :GCD))
-(defun %sub (x y &key (reduction nil)) (%add x (%neg y) :reduction reduction))
-(defun %div (x y &key (reduction nil)) (%mul x (%recip y) :reduction reduction))
+  (def %gcd :GCD)
+  (def %mod :MOD))
+(defun %sub (x y &key (reduction nil) (id (gensym "BID"))) (%add x (%neg y) :reduction reduction :id id))
+(defun %div (x y &key (reduction nil) (id (gensym "BID"))) (%mul x (%recip y) :reduction reduction :id id))
 
 ;; CompareOps: map <- [map{bool}, x, y]
 (macrolet ((def (fname opname)
@@ -57,7 +58,8 @@
 		  (emit (make-node :TernaryOps ,opname (list id) (list (node->id out) (node->id x) (node->id y))))))))
   (def %!= :!=)
   (def %< :<))
-(defun %= (shape order x y &key out)  (%not (%!= shape order x y :out out)))
-(defun %<= (shape order x y &key out) (%or (%< shape order x y :out out) (%= shape order x y :out out)))
-(defun %>  (shape order x y &key out) (%not (%<= shape order x y :out out)))
-(defun %>= (shape order x y &key out) (%or (%> shape order x y :out out) (%= shape order x y :out out)))
+
+(defun %= (shape order x y &key out (id (gensym "BID")))  (%not (%!= shape order x y :out out) :id id))
+(defun %<= (shape order x y &key out (id (gensym "BID"))) (%or (%< shape order x y :out out) (%= shape order x y :out out) :id id))
+(defun %>  (shape order x y &key out (id (gensym "BID"))) (%not (%<= shape order x y :out out) :id id))
+(defun %>= (shape order x y &key out (id (gensym "BID"))) (%or (%> shape order x y :out out) (%= shape order x y :out out) :id id))

@@ -138,7 +138,8 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 			 (map 'list #'viewrange-broadcast (view-views op))
 			 (let ((base-shape (subseq1p inputs (* 4 nrank) (* 5 nrank)))
 			       (stride     (subseq1p inputs (* 5 nrank))))
-			   (or stride (%stride base-shape (tensor-order bs))))))))))
+			   (or stride (%stride base-shape (tensor-order bs))))
+                         :override-stride-p (null (subseq1p inputs (* 5 nrank)))))))))
 
 (defun !view (base &rest subscripts)
   "
