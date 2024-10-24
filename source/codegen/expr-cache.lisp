@@ -3,9 +3,11 @@
   (:use :cl :caten/codegen/expr :caten/codegen/renderer)
   (:export
    #:Expr-Cache
+   #:*expr-cache*
    #:with-expr-cache
    #:stash-expr
-   #:restore-expr))
+   #:restore-expr
+   #:expr-cache-reduce-alias))
 
 (in-package :caten/codegen/expr-cache)
 ;; [TODO] Use this to optimize expr-scalar-equivalent-p
@@ -14,7 +16,8 @@
 (defclass Expr-Cache ()
   ((cache :type hash-table :initform (make-hash-table :test 'equal) :accessor cache-table)
    (id2expr :type hash-table :initform (make-hash-table :test 'equal) :accessor id2expr-table)
-   (global-counter :initform 0 :type fixnum :accessor global-counter))
+   (global-counter :initform 0 :type fixnum :accessor global-counter)
+   (global-reduce-alias :type hash-table :initform (make-hash-table :test 'equal) :accessor expr-cache-reduce-alias))
   (:documentation "Creates a cached object for (scalar) EXPR graph."))
 
 (defmacro with-expr-cache (() &body body)

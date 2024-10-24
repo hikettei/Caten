@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/exprify
   (:documentation "Implements various transforming patterns on the AST")
-  (:use :cl :caten/air :caten/codegen/expr)
+  (:use :cl :caten/air :caten/codegen/expr :caten/codegen/expr-cache)
   (:import-from
    :caten/codegen/shape-inference
    #:read-type-relay
@@ -274,7 +274,8 @@
                (node-reads n))))))
 
 (defmethod graph-propagete-reduction (blueprint replaceable)
-  (let ((id->tgt (make-hash-table))) ;; id -> (list new_id new_type new_is)
+  (assert *expr-cache*)
+  (let ((id->tgt (expr-cache-reduce-alias *expr-cache*))) ;; id -> (list new_id new_type new_is)
     (loop for bp in blueprint
           if (and (eql (node-type bp) :EXPR) (getattr bp :reduction) (find (car (node-reads bp)) replaceable))
             do (setf (gethash (car (node-writes bp)) id->tgt)

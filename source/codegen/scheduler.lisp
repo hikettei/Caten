@@ -400,7 +400,7 @@ write_id[...] <- F1(..., read_id[ri])
         (mapc #'explore (group-items group))))))
 
 (defmethod group-force-move-reduce-in-the-group ((group Group) graph read path-reduced)
-  "
+  "Force merging MOVE(OUT, C) and Reduce
 ```
 <Cluster-Out-Fusable>
                      Load(A, 0.0)
@@ -410,8 +410,7 @@ write_id[...] <- F1(..., read_id[ri])
   MOVE(OUT, C)
             |
   <Complex-Out-Fusable>
-```
-"
+```"
   (symbol-macrolet ((->ok (return-from group-force-move-reduce-in-the-group t)))
     (when (null path-reduced) ->ok)
     (let ((node (id->value graph read)))
@@ -422,6 +421,7 @@ write_id[...] <- F1(..., read_id[ri])
         nil))))
 
 (defun force-merge-pattern-p (graph node read)
+  "Force merging Load(A, 0.0) and BinaryOps"
   (when (getattr node :reduction :allow-undefined t)
     (let* ((load (id->value graph read)))
       (and load (eql (node-type load) :LOAD) (= (getattr load :value) 0)))))
