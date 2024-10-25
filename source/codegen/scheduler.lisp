@@ -676,7 +676,7 @@ write_id[...] <- F1(..., read_id[ri])
       (when (null read-view)
         (print "FAILED TO MERGE UNIMPLEMENTED CASE")
         ;; update iteration space
-        )
+        (return-from group-merge-p nil))
       ;; when has a shrink, length=1
       (dolist (v (reverse read-view)) ;; rewriting the graph
         (apply-view-fusor v graph node read-node nth self parent-group))

@@ -88,7 +88,8 @@
 		       ,accessor)
 		      (setf ,accessor new-table))))
 	(renew (avm-id2tensor avm))
-	(renew (avm-variables avm))))))
+	(renew (avm-variables avm)))
+      id2view)))
 
 ;; [TODO] 多分丸ごといらなくなる
 (defun wmma-relay-from (t1 tc nth)
@@ -240,7 +241,7 @@ out[...] = f(*val_1);
                  (list (funcall f (nth 0 v)) (funcall f (nth 1 v)) (funcall f (nth 2 v)) (nth 3 v)))))
       (setf (buffer-views buffer) (map 'list #'sync-view (buffer-views buffer))))))
 
-(defun apply-static-gensym (avm)
+(defun apply-static-gensym (avm &optional (id2view))
   "Rewrites each read/write symbols to a unique and static symbol, improving the readability of the generated code when debugging."
   (declare (type avm avm))
   (let ((alias-table (make-hash-table))
@@ -261,7 +262,7 @@ out[...] = f(*val_1);
 		   id))
              (start-with-tid-p (sym &aux (str (princ-to-string sym)))
                (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3))))))
-      (dolist (node (graph-nodes (avm-graph avm)))
+      (dolist (node (append (graph-nodes (avm-graph avm)) (when id2view (alexandria:hash-table-values id2view))))
         (when (and (eql (node-type node) :Allocate)
                    (not (start-with-tid-p (car (node-writes node)))))
           ;; If :Allocate is labelled with a unique ID by user, keep using it.
@@ -320,11 +321,11 @@ out[...] = f(*val_1);
     
 (defun apply-rewriting-rules (avm)
   (declare (type AVM avm))
-  (rewrite-views-as-buffer avm)
-  ;;Try optimizing kernels without relying on them...
-  ;; (wmma-rewriter (avm-graph avm) :no-verify t)
-  ;;(contiguous-after-wmma (avm-graph avm) :no-verify t)
-  (propagate-rebundant-loadp (avm-graph avm))
-  (apply-static-gensym avm)
+  (let ((id2view (rewrite-views-as-buffer avm)))
+    ;;Try optimizing kernels without relying on them...
+    ;; (wmma-rewriter (avm-graph avm) :no-verify t)
+    ;;(contiguous-after-wmma (avm-graph avm) :no-verify t)
+    (propagate-rebundant-loadp (avm-graph avm))
+    (apply-static-gensym avm id2view))
   (setf (avm-graph avm) (->graph (avm-graph avm)))
   avm)
