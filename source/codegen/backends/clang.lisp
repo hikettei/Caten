@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/backends/clang
-  (:use :cl :caten/air :cffi :caten/codegen :caten/codegen/renderer :caten/codegen/helpers
+  (:use :cl :caten/air :cffi :caten/codegen/renderer :caten/codegen/helpers
         :caten/codegen/shape-inference :caten/avm :caten/codegen/expr))
 
 (in-package :caten/codegen/backends/clang)
@@ -51,8 +51,8 @@
                (render-expr 'CStyle-Renderer (getattr bp :by)))
        (incf *indent* 2))
       (:ENDFOR
-       (format stream "~a}~%" (indent))
-       (decf *indent* 2))
+       (decf *indent* 2)
+       (format stream "~a}~%" (indent)))
       (:IF
        (error "")
        )
@@ -104,7 +104,7 @@
           (apply #'concatenate 'string
                  (append
                   (list (header))
-                  (loop for item in items
+                  (loop for item in (reverse items)
                         if (getattr item :rendered-object)
                           collect (getattr item :rendered-object))))))
     (print code)

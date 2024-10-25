@@ -248,9 +248,10 @@
 
 (defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
   (assert (= (length gids) (length axes)) () "the reduction node ~a is not the highest rank tensor." node)
+  (when (getattr node :reduction :allow-undefined t)
   (loop for nth upfrom 0
         for r in axes
-        if r collect (nth nth gids)))
+        if r collect (nth nth gids))))
 
 (defun graph-reduced-axes (graph rank-size)
   (let ((reduced-axes (make-list rank-size)))
@@ -277,7 +278,7 @@
 
 (defstruct ctx
   "an intermidate object used to debug `recursive-lower-into-bp`"
-  graph order blueprint seen gids loop-size-list)
+  graph order blueprint seen gids loop-size-list band2node)
 ;; ctx: print-object displays nothing not to collapse the trace macro.
 (defmethod print-object ((ctx ctx) stream) (format stream "<CTX>"))
 
@@ -286,122 +287,121 @@
     `(,@(permute-list order (map 'list #'%make-for gids group-size))
       ,@(reverse (permute-list order (map 'list #'%make-endfor gids))))))
 
-(defmethod reduce-bp ((ctx ctx) something gids)
-  (let ((sizes (loop for g in gids
-                     for p = (position g (ctx-gids ctx))
-                     collect (nth p (ctx-loop-size-list ctx)))))
-    `(,@(map 'list #'%make-for gids sizes)
+(defmethod reduce-bp ((ctx ctx) something gids key)
+  (let* ((sizes (loop for g in gids
+                      for p = (position g (ctx-gids ctx))
+                      collect (nth p (ctx-loop-size-list ctx))))
+         (loops (map 'list #'%make-for gids sizes)))
+    (dolist (l loops)
+      (setf (gethash (node-id l) (ctx-band2node ctx)) key))
+    `(,@loops
       ,@something
       ,@(reverse (map 'list #'%make-endfor gids)))))
 
-(defun try-insert-node (ctx node
-                        &key
-                          (depend-idx) (depend-node) (path-reduced nil) (bp-limit nil)
-                          (reduce-p nil) (reduce-gids)
-                        &aux
-                          (changed-p nil)
-                          (new-reduce-loop-p nil)
-                          (node-reduce-p (getattr node :reduction :allow-undefined t)))
-  (when reduce-p
-    (assert (null path-reduced))
-    (setf depend-idx (loop for d in depend-idx if (null (find d reduce-gids)) collect d)
-          path-reduced reduce-gids))
+(defun try-insert-node (ctx node &aux (changed-p nil))
   (with-slots ((blueprint blueprint)) ctx
-    (let ((satisfied)
-          (idx-satisfied)
-          (insertable-positions))
-      (when (and (null depend-idx) (null path-reduced))
+    (let* ((node-depend-axes ;; list of gids `node` should depend on
+             (node-depend-idx-list node (ctx-gids ctx)))
+           (node-reduce-axes ;; list of gids `node` should NOT depend on
+             (node-reduced-gids node (ctx-gids ctx)))
+           (node-depend-axes
+             (loop for x in node-depend-axes
+                   if (null (find x node-reduce-axes))
+                     collect x))
+           (node-depend-users
+             ;; `node` must be located before users are located.
+             (id->users (ctx-graph ctx) (car (node-writes node))))
+           (user-depend-axes
+             (loop for user in node-depend-users
+                   if (and
+                       (eql (car (node-writes node)) (car (node-reads user)))
+                       (getattr user :reduction :allow-undefined t))
+                     append (node-reduced-gids user (ctx-gids ctx))))
+           (satisfied)
+           (idx-satisfied)
+           (insertable-positions)
+           (high-priority-positions)
+           (serialized-reduce-idx))
+      ;; If the condition is satisfied when T=0 -> insert -1
+      (when (and
+             (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes)
+             (every #'(lambda (x) (null (find x satisfied))) node-depend-users)
+             (every #'(lambda (x) (find x node-depend-axes)) node-depend-axes)
+             (every #'(lambda (x) (null (find x idx-satisfied))) node-reduce-axes)
+             (every #'(lambda (x) (null (find x idx-satisfied))) user-depend-axes))
         (push -1 insertable-positions))
       (loop for bp in blueprint
             for nth upfrom 0
-            if (eql (node-type bp) :FOR)
-              do (push (getattr bp :idx) idx-satisfied)
+            for high-priority-p = nil
+            if (eql (node-type bp) :FOR) do
+              (let ((cache (gethash (node-id bp) (ctx-band2node ctx))))
+                (when (and node-reduce-axes cache)
+                  ;; Relucant to create a new reduce loop
+                  (let ((p (or
+                            (graph-weakly-connected-p (ctx-graph ctx) (car (node-writes node)) cache)
+                            (graph-weakly-connected-p (ctx-graph ctx) cache (car (node-writes node))))))
+                    (when (null p)
+                      (push (getattr bp :idx) serialized-reduce-idx))))
+                (push (getattr bp :idx) idx-satisfied))
             else
               if (eql (node-type bp) :ENDFOR)
-                do (setf idx-satisfied (remove (getattr bp :idx) idx-satisfied))
+                do (setf idx-satisfied (remove (getattr bp :idx) idx-satisfied)
+                         serialized-reduce-idx (remove (getattr bp :idx) serialized-reduce-idx))
             else
-              do (dolist (r (node-reads bp))
-                   (when (symbolp r)
-                     (push r satisfied)))
-            collect bp
+              do (push (node-id bp) satisfied)
             if (and
-                (or (null bp-limit) (<= nth bp-limit))
-                (every #'(lambda (x) (find x idx-satisfied)) depend-idx)
-                (or (null node-reduce-p) depend-idx (null idx-satisfied)) ;; If scalar computation is a reduction: write/read has a dependency.
-                ;; should not depends on reduced axes
-                (every #'(lambda (x) (null (find x idx-satisfied))) path-reduced)
-                (every #'(lambda (x) (null (find x satisfied))) depend-node))
-              do (push nth insertable-positions))
+                (every #'(lambda (x) (null (find (node-id x) satisfied))) node-depend-users)
+                (every #'(lambda (x) (find x idx-satisfied)) node-depend-axes)
+                (or
+                 (every #'(lambda (x) (null (find x idx-satisfied))) node-reduce-axes)
+                 ;; If node-reduce-axes loops are already introduced by other independant nodes
+                 ;; => Set high-priority-positions to the current position, and forcibly insert the node there.
+                 (setf high-priority-p (every #'(lambda (x) (find x serialized-reduce-idx)) node-reduce-axes)))
+                (every #'(lambda (x) (null (find x idx-satisfied))) user-depend-axes))
+              do (if high-priority-p
+                     (push nth high-priority-positions)
+                     (push nth insertable-positions)))
       (when (null insertable-positions)
         (return-from try-insert-node (values blueprint nil)))
       (when (= -1 (apply #'max insertable-positions))
-        (return-from try-insert-node (values `(,node ,@blueprint) t)))
+        (return-from try-insert-node
+          (if node-reduce-axes
+              (values `(,@(reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))) ,@blueprint) t)
+              (values `(,node ,@blueprint) t))))
       (values
-       (loop with insert-at = (apply #'max insertable-positions)
+       (loop with insert-at = (if high-priority-positions
+                                  (apply #'max high-priority-positions)
+                                  (apply #'max insertable-positions))
              for bp in blueprint
              for nth upfrom 0
              collect bp
-             if (and (null changed-p) (= nth insert-at) (null reduce-gids))
+             if (and (null changed-p) (= nth insert-at)
+                     ;; Merging loops w/o introducing extra inner reduce loops
+                     (or high-priority-positions (null node-reduce-axes)))
                do (setf changed-p t) and collect node
-             if (and (null changed-p) (= nth insert-at) reduce-gids)
-               do (setf changed-p t new-reduce-loop-p t) and append (reduce-bp ctx (list node) path-reduced))
-       t
-       new-reduce-loop-p))))
+             if (and (null changed-p) (= nth insert-at) node-reduce-axes)
+               ;; Merging loops w/ introducing extra inner reduce loops
+               do (setf changed-p t) and append (reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))))
+       changed-p))))
 
-(defun recursive-lower-into-bp (ctx id &key (path-reduced nil) (child-reduced nil) (parents nil) (new-reduce-loop-p nil)
-                                &aux
-                                  (node (id->value (ctx-graph ctx) id))
-                                  (new-reduce-loop-p (or new-reduce-loop-p (and child-reduced (getattr node :reduction :allow-undefined t))))
-                                  (reduce-p (and node new-reduce-loop-p (getattr node :reduction :allow-undefined t)))
-                                  (reduced-axes (and node new-reduce-loop-p reduce-p (node-reduced-gids node (ctx-gids ctx)))))
+(defun recursive-lower-into-bp (ctx id &aux (node (id->value (ctx-graph ctx) id)))
   (with-slots ((blueprint blueprint) (seen seen) (gids gids) (order order)) ctx
     (when (null node) (return-from recursive-lower-into-bp))
     (when (find id seen) (return-from recursive-lower-into-bp))
     (push id seen)
-    (multiple-value-bind (new-bp changed-p new-reduce-loop-p)
-        (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :path-reduced path-reduced :reduce-p reduce-p :reduce-gids reduced-axes)
-      (if changed-p
-          (setf blueprint new-bp
-                child-reduced (if new-reduce-loop-p nil child-reduced))
-          (let ((bp (initial-bp ctx)))
-            ;; Cannot satify the dependency? create a new loops
-            (setf blueprint (append bp blueprint))
-            (multiple-value-bind (new-bp changed-p new-reduce-loop-p)
-                (try-insert-node ctx node :depend-idx (node-depend-idx-list node gids) :depend-node parents :bp-limit (length bp)
-                                          :path-reduced path-reduced :reduce-p reduce-p :reduce-gids reduced-axes)
-              (assert changed-p () "Cannot insert the node ~a
-depending on ~a
-depend-node=~a
-path-reduced=~a
-reduce-p=~a
-reduce-gids=~a
-[Ongoing blueprint]
-~a"
-                      node (node-depend-idx-list node gids)
-                      parents path-reduced reduce-p reduced-axes
-                      new-bp)
-              (setf blueprint new-bp
-                    child-reduced (if new-reduce-loop-p nil child-reduced)))))
+    (multiple-value-bind (new-bp changed-p)
+        (try-insert-node ctx node)
+      (assert changed-p () "recursive-lower-into-bp: Cannot insert the node ~a into a single kernel.
+```
+~a
+```" node (ctx-blueprint ctx))
+      (setf blueprint new-bp)
       (mapc
-       #'(lambda (x nth)
-           (when path-reduced
-             (assert (null (getattr node :reduction :allow-undefined t)) () "Detected double-reduce!"))
+       #'(lambda (x)
            (when (and (null (find x seen)) (id->value (ctx-graph ctx) x))
-             (recursive-lower-into-bp
-              ctx
-              x
-              :parents
-              (loop for x in (remove-duplicates (append (node-reads node) parents))
-                    if (symbolp x) collect x)
-              :path-reduced
-              (when (= nth 0)
-                (if (getattr node :reduction :allow-undefined t)
-                    (node-reduced-gids node gids)
-                    nil))
-              :child-reduced (or child-reduced (getattr node :reduction :allow-undefined t))
-              :new-reduce-loop-p (= nth 0))))
-       (node-reads node) (range 0 (length (node-reads node)))))
-    nil))
+             (recursive-lower-into-bp ctx x)))
+       (node-reads node))
+      nil)))
 
 (defmethod lower-schedule-item ((node Node) (base-graph Graph) (scheduled-graph Graph))
   "Lowers the Schedule-Item into blueprint"
@@ -419,13 +419,12 @@ reduce-gids=~a
     ;; gids       = (gid0, gid1, gid2, ...)
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
-    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil)))
+    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil :band2node (make-hash-table))))
       ;; Initially the blueprint starts with plain loops
       (setf (ctx-blueprint ctx) (initial-bp ctx))
-      (let ((p nil))
-        #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
-        #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
-        (mapc #'(lambda (x) (recursive-lower-into-bp ctx x :parents p) (setf p (node-reads (id->value graph x)))) (graph-outputs graph)))
+      #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
+      #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
+      (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
