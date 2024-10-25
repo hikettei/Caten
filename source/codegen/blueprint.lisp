@@ -240,13 +240,15 @@
   (let ((is (car (relay-write-iters (read-type-relay node)))))
     (flet ((is-zero (axis)
              (expr-scalar-equivalent-p axis (expr-const 0 :int64))))
-      (loop for s in (iteration-space-strides is)
-            if (is-zero s)
-              collect t
-            else
-              collect nil))))
+      (and is
+           (loop for s in (iteration-space-strides is)
+                 if (is-zero s)
+                   collect t
+                 else
+                   collect nil)))))
 
 (defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
+  (when (null axes) (setf axes (make-list (length gids))))
   (assert (= (length gids) (length axes)) () "the reduction node ~a is not the highest rank tensor." node)
   (when (getattr node :reduction :allow-undefined t)
     (loop for nth upfrom 0

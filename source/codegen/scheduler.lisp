@@ -136,18 +136,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
     ;; Reshape = operation that changes the stride
     :reshape))
 
-(defun jitable-p (node)
-  (and
-   (null (find (node-type node) `(:ALLOCATE :PAUSE/BACKWARD)))
-   (typep (node-attr node) 'JITAble)))
-
 (defun view-type-list (views)
   (loop for v in views if v collect (identify-view-type v)))
-
-(defstruct Group
-  (key (gensym) :type symbol)
-  (reduce-dims nil :type list)
-  (items nil :type list))
 
 (defmethod node-reduce-axes ((node Node))
   (when (getattr node :reduction :allow-undefined t)
@@ -499,12 +489,127 @@ write_id[...] <- F1(..., read_id[ri])
                      ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
                      (recursive-create-group read graph :seen seen))))))))
 
+;; ~~ ^ OLD CODE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct Group
+  (key (gensym) :type symbol)
+  (space nil :type (or null Iteration-Space))
+  (reduce-dims nil :type list)
+  (items nil :type list))
+
+(defun jitable-p (node)
+  (and
+   (null (find (node-type node) `(:ALLOCATE :PAUSE/BACKWARD)))
+   (typep (node-attr node) 'JITAble)))
+
+(defmethod node-reduce-axes ((node Node))
+  (when (getattr node :reduction :allow-undefined t)
+    (let ((write-buffer (car (relay-writes (read-type-relay node)))))
+      (let ((out
+              (loop for v in (buffer-views write-buffer)
+                    if (fourth v)
+                      collect t
+                    else
+                      collect nil)))
+        ;; Returns uncollapsed rank list
+        (when (some #'identity out) out)))))
+
+(defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
+  (symbol-macrolet ((->ok (return-from group-merge-p t))
+                    (->ng (return-from group-merge-p nil)))
+    (when (and (group-reduce-dims self) (group-reduce-dims parent-group))
+      ;; Both groups are reduced?
+      (when (not (equal (group-reduce-dims self) (group-reduce-dims parent-group)))
+        ;; Reduced at the same rank?
+        ->ng))
+    (let* ((read (nth nth (node-reads node)))
+           (read-node (id->value graph read)))
+      ;; Non-jitable nodes are scheduled standalone
+      (when (or (not (jitable-p node)) (not (jitable-p read-node)))->ng)
+      ;; Scalars are concatenated w/ everything (except for they are vm ops)
+      (when (or (null (group-space self)) (null (group-space parent-group)))->ok)
+      ;; Returns T for the simplest fusion case
+      (flet ((expr-eq (a b)
+               (expr-scalar-equivalent-p a b)))
+        ;; Equivalent iteration space => merge w/o modifying anything
+        (when (and (equal (iteration-space-procedure (group-space self))
+                          (iteration-space-procedure (group-space parent-group)))
+                   (every #'expr-eq
+                          (iteration-space-shape (group-space self))
+                          (iteration-space-shape (group-space parent-group))))
+          ->ok))
+      nil
+      )))
+
+(defmethod merge-groups ((self Group) parents mergeable-list)
+  (loop for m in mergeable-list
+        for p in parents
+        if m do
+          (assert (or
+                   (null (group-space self))
+                   (null (group-space p))
+                   (= (length (iteration-space-shape (group-space self))) (length (iteration-space-shape (group-space p))))))
+          (setf (group-items self) (append (group-items p) (group-items self))))
+  self)
+
+(defun recursive-create-groups (id graph &key (seen))
+  ""
+  (declare (type symbol id) (type graph graph) (type hash-table seen))
+  (when (gethash id seen) (return-from recursive-create-groups))
+  (setf (gethash id seen) t)
+  (let* ((node (id->value graph id))
+         (self
+           (make-group
+            :items (list node)
+            :reduce-dims (node-reduce-axes node)
+            :space (if (jitable-p node)
+                       (let* ((iters
+                                (append
+                                 (relay-write-iters (read-type-relay node))
+                                 (relay-read-iters (read-type-relay node))))
+                              (iters (loop for i in iters if i collect i)))
+                         ;; Use the most complicated iteration space as a representative
+                         (car (sort iters #'> :key (alexandria:compose #'length #'iteration-space-procedure))))
+                       nil)))
+         (parents
+           (map 'list #'(lambda (x) (and (symbolp x) (recursive-create-groups x graph :seen seen))) (node-reads node))))
+    (declare (type node node) (type list parents))
+    ;; Consider this structured graph:
+    ;; parents[0] parents[1] parents[2] ...
+    ;;        \      |      /
+    ;;             self
+    ;;               |
+    ;; => The function returns this flattend list
+    ;; (list               (list
+    ;;   parents[0]          parent[2]
+    ;;   parents[1]            ...
+    ;;   parents[2]    =>    group(items=self+parent[0]+parent[1]))
+    ;;     ...
+    ;;   self)
+    ;;  (No fuse)        (When parent[0] and parent[1] are fusable)
+    (let ((mergeable-p-list
+            (loop for parent in parents
+                  for parent-return = (car (last parent))
+                  for nth upfrom 0
+                  if parent-return
+                    collect (group-merge-p self graph node parent-return nth)
+                  else
+                    collect nil)))
+      (assert (= (length mergeable-p-list) (length parents)))
+      (append
+       (loop for p in parents
+             for m in mergeable-p-list
+             if m ;; mergeable
+               append (butlast p)
+             else ;; unmergeable
+             append p)
+       (list (merge-groups self (map 'list (alexandria:compose #'car #'last) parents) mergeable-p-list))))))
+
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
 
 (defmethod graph-schedule ((graph Graph))
   ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
-         (groups (apply #'append (map 'list #'(lambda (x) (nreverse (recursive-create-group x graph :seen seen))) (graph-outputs graph)))))
+         (groups (nreverse (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph))))))
     (mapc #'verify-group groups)
     ;; Serialize ADD (Embedding Embedding)
     ;; Merge two independent groups

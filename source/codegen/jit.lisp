@@ -102,7 +102,7 @@
                     if (getattr node :jitable)
                       collect node))
         (seen))
-    (loop for tgt in (nreverse tgts)
+    (loop for tgt in tgts
           for eql-schedule = (find tgt seen :test #'schedule-item-equal)
           if eql-schedule
             do (setf (getattr tgt :cache-name) (getattr eql-schedule :name))
@@ -172,7 +172,7 @@
                      (print-blueprint (getattr x :blueprint) t)))
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
-           (reverse (graph-nodes schedule-graph))))))
+           (graph-nodes schedule-graph)))))
     ;; 11. Running memory-planner, update the storage-id
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
@@ -181,7 +181,7 @@
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Rendering ...")
-      (dolist (s (reverse (graph-nodes schedule-graph)))
+      (dolist (s (graph-nodes schedule-graph))
         (when (getattr s :jitable)
           (setf (getattr s :rendered-object) (%render-kernel renderer s)))))
     ;; 12. Complete (Render by the renderer)
