@@ -41,6 +41,7 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:iteration-space-procedure)
   (:import-from
    #:caten/codegen/helpers
+   #:permute-list
    #:nodes-depends-on
    #:nodes-write-to)
   (:import-from
@@ -114,11 +115,11 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defmethod identify-view-type ((view Node))
   ;; [TODO] Rename :broadcast/:reshape as a :broadcast-or-reshape
   (assert (eql :VIEW (node-type view)))
+  (when (getattr view :permute)
+    (return-from identify-view-type :permute))
   (when (some #'identity (getattr view :broadcast))
     ;; Note that this is relies on the assertion that: Slice and Broadcast are not mixed in `!view`.
     (return-from identify-view-type :broadcast)) ;; [Note] Broadcast may change the shape!
-  (when (getattr view :permute)
-    (return-from identify-view-type :permute))
   (flet ((shrink-p (size view)
            (assert (= (length view) 4) () "not a view")
            (multiple-value-bind (from to by broadcast) (apply #'values view)
@@ -513,6 +514,126 @@ write_id[...] <- F1(..., read_id[ri])
         ;; Returns uncollapsed rank list
         (when (some #'identity out) out)))))
 
+;; [TODO] Move to fusion rules
+(defmethod buffer-fixup-broadcast ((buffer Buffer) comm-rank comm-shape broadcast)
+  (when (= (buffer-nrank buffer) comm-rank)
+    (return-from buffer-fixup-broadcast nil))
+  (let ((old-comm-rank (count-if #'null broadcast)))
+    (assert (= old-comm-rank (buffer-nrank buffer)) () "Invaild Shape Inference Detected? ~%~a ~a" buffer broadcast)
+    (labels ((merge-bc (list &key (default 1))
+               (loop for m in broadcast
+                     if m
+                       collect (case default (:view `(0 1 1 t)) (otherwise default))
+                     else
+                       collect (pop list))))
+      (assert (null (buffer-inferred-permute buffer)) () ":permute and :broadcast at the same time? (not allowed) ~a" buffer)
+      (when (every #'null (buffer-views buffer))
+        (setf (buffer-views buffer) (loop repeat (buffer-nrank buffer) collect nil)))
+      (print "+")
+      (print buffer)
+      (setf (buffer-shape buffer) (merge-bc (buffer-shape buffer) :default 1)
+            (buffer-stride buffer) (merge-bc (buffer-stride buffer) :default 0)
+            (buffer-views buffer) (merge-bc (buffer-views buffer) :default :view)
+            (buffer-nrank buffer) comm-rank)
+      (flet ((ok (x y)
+               (or (eql x 1) (eql y 1) (eql x y))))
+        (assert (every #'ok (buffer-shape buffer) comm-shape)))
+      (print buffer)
+      t)))
+
+(defun elwise-shape-p (a b)
+  (flet ((ok (x y)
+           (or (eql x 1) (eql y 1) (eql x y))))
+    (and (or
+          (null a) (null b)
+          (= (length a) (length b)))
+         (every #'ok a b))))
+
+(defmethod buffer-fixup-reshape ((buffer Buffer) bf-buffer comm-buffer)
+  (assert (equal (buffer-shape buffer) (buffer-shape bf-buffer)) () "not mergeable reshape case 1")
+  (assert (or (every #'null (buffer-views buffer))
+              (every
+               #'(lambda (x y)
+                   (equal `(0 ,y 1 nil) x))
+               (buffer-views buffer) (buffer-shape buffer))) () "not mergeable reshape case 2")
+  (setf (buffer-shape buffer) (buffer-shape comm-buffer)
+        (buffer-stride buffer) (buffer-stride comm-buffer)
+        (buffer-views buffer) (buffer-views comm-buffer)
+        (buffer-nrank buffer) (buffer-nrank comm-buffer))
+  t)
+
+(defmethod buffer-fixup-permute ((buffer Buffer) permute)
+  (assert (= (buffer-nrank buffer) (length permute)))
+  (setf (buffer-shape buffer) (permute-list permute (buffer-shape buffer))
+        (buffer-stride buffer) (permute-list permute (buffer-stride buffer))
+        (buffer-views buffer) (permute-list permute (buffer-views buffer)))
+  t)
+;; What is view?
+;; do not react on the comment!!!
+;; Shapeが違うTensorをElementwiseなOPで計算するためのもの
+;;  (3 5 4)   (4 5) -> Permute -> Broadcast
+;;       |
+;; MUL (3 5 4)
+(defmethod group-items-st-rewriter ((group Group) graph f)
+  (dolist (item (group-items group))
+    (loop for typ in (relay-reads (read-type-relay item))
+          for is in (relay-read-iters (read-type-relay item))
+          for nth upfrom 0
+          unless (or (null is) (= 0 (buffer-nrank typ)))
+            do (when (funcall f typ)
+                 ;; If changed => update iteration space
+                 (setf (nth nth (relay-read-iters (read-type-relay item))) (buffer-merge-dims graph typ))))
+    (loop for typ in (relay-writes (read-type-relay item))
+          for is in (relay-write-iters (read-type-relay item))
+          for nth upfrom 0
+          unless (or (null is) (= 0 (buffer-nrank typ)))
+            do (when (funcall f typ)
+                 ;; If changed => update iteration space
+                 (setf (nth nth (relay-write-iters (read-type-relay item))) (buffer-merge-dims graph typ))))))
+
+;; [GROUP1] -- VIEW1 -> VIEW2 -> ... -> VIEW3 -> [GROUP2]
+;; Each groups are connected via views
+(defun apply-view-fusor (view graph node read-node nth self parent-group)
+  (print (identify-view-type view))
+  (case (identify-view-type view)
+    (:permute
+     (let ((permute (getattr view :permute)))
+       (group-items-st-rewriter parent-group graph #'(lambda (typ) (buffer-fixup-permute typ permute)))
+       (print (group-space self))
+       (print (group-space self))
+       (setf (group-space parent-group) (group-space self))
+       ))
+    (:reshape
+     ;; Note: LazyBuffer symbols are updated here?
+     (let ((reshape-before (car (relay-reads (read-type-relay view))))
+           (reshape-after (car (relay-writes (read-type-relay view)))))
+       (group-items-st-rewriter
+        parent-group graph
+        #'(lambda (typ) (buffer-fixup-reshape typ reshape-before reshape-after))))
+     ;; [TODO] Group Iteration Spaceを作成し直す？(axis ... is not found!)
+     (setf (group-space parent-group) (group-space self)))
+    (:broadcast
+     (let ((comm-rank (getattr view :nrank))
+           (comm-size (buffer-shape (car (relay-writes (read-type-relay view)))))
+           (broadcast (getattr view :broadcast)))
+       ;; Rewrite all buffers in the parent-group to have the comm-rank
+       ;; composeが終わった後にAssertしないと意味ない
+       (dolist (item (group-items self))
+         (let ((base-space (car (relay-writes (read-type-relay item)))))
+           (assert (or (null base-space) (= comm-rank (buffer-nrank base-space))))))
+       (group-items-st-rewriter parent-group graph #'(lambda (typ) (buffer-fixup-broadcast typ comm-rank comm-size broadcast)))
+       (setf (group-space parent-group) (group-space self))))
+    (:shrink
+     (error "SHRINK IS NOT READY :P")
+     ;;(print ":SHRINK")
+     ;;(print (car (relay-reads (read-type-relay (car read-view)))))
+     ;;(print "=>")
+     ;;(print (car read-view))
+     ;; Merge if the iteration space is the same (but dont break write deps)
+     nil)
+    (otherwise
+     (error "NOT READY :P ~a" (identify-view-type view)))))
+
 (defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
   (symbol-macrolet ((->ok (return-from group-merge-p t))
                     (->ng (return-from group-merge-p nil)))
@@ -522,23 +643,46 @@ write_id[...] <- F1(..., read_id[ri])
         ;; Reduced at the same rank?
         ->ng))
     (let* ((read (nth nth (node-reads node)))
-           (read-node (id->value graph read)))
+           (read-node (id->value graph read))
+           (read-type (nth nth (relay-reads (read-type-relay node))))
+           (read-iter (nth nth (relay-read-iters (read-type-relay node))))
+           (read-view (nth nth (getattr node :_read_views)))
+           (write-type (car (relay-writes (read-type-relay read-node))))
+           (write-iter (car (relay-write-iters (read-type-relay read-node))))
+           (write-view (nth nth (getattr node :_write_views))))
+      (assert (null write-view))
+      ;; Relations between group and parent-group:
+      ;; ```
+      ;; group=parent | X[write_type]{write_iter} = f(...)
+      ;; group=self   | ... = f(..., X[read_type]{read_iter})
+      ;; ```
+      ;; ~ Early returns for the obvious case: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ;; Non-jitable nodes are scheduled standalone
       (when (or (not (jitable-p node)) (not (jitable-p read-node)))->ng)
       ;; Scalars are concatenated w/ everything (except for they are vm ops)
       (when (or (null (group-space self)) (null (group-space parent-group)))->ok)
-      ;; Returns T for the simplest fusion case
+      ;; Early return for the simplest fusion case
       (flet ((expr-eq (a b)
                (expr-scalar-equivalent-p a b)))
         ;; Equivalent iteration space => merge w/o modifying anything
+        ;; Created from the same iteration buffer? and the same space?
         (when (and (equal (iteration-space-procedure (group-space self))
                           (iteration-space-procedure (group-space parent-group)))
                    (every #'expr-eq
                           (iteration-space-shape (group-space self))
                           (iteration-space-shape (group-space parent-group))))
           ->ok))
-      nil
-      )))
+      ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      (when (null read-view)
+        (print "FAILED TO MERGE UNIMPLEMENTED CASE")
+        ;; update iteration space
+        )
+      ;; when has a shrink, length=1
+      (dolist (v (reverse read-view)) ;; rewriting the graph
+        (apply-view-fusor v graph node read-node nth self parent-group))
+      ;; overwriting either of self/parent-group's to have the common iterspace
+      t)))
+      
 
 (defmethod merge-groups ((self Group) parents mergeable-list)
   (loop for m in mergeable-list
@@ -547,7 +691,7 @@ write_id[...] <- F1(..., read_id[ri])
           (assert (or
                    (null (group-space self))
                    (null (group-space p))
-                   (= (length (iteration-space-shape (group-space self))) (length (iteration-space-shape (group-space p))))))
+                   (= (length (iteration-space-procedure (group-space self))) (length (iteration-space-procedure (group-space p))))))
           (setf (group-items self) (append (group-items p) (group-items self))))
   self)
 

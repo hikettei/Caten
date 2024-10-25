@@ -76,10 +76,7 @@
                             (getattr n :_write_views) (map 'list #'v (node-writes n))
                             (node-reads n) (map 'list #'r (node-reads n))
 			    (node-writes n) (map 'list #'r (node-writes n)))
-		      n)
-                  else
-                    do (setf (node-reads n) (map 'list #'r (node-reads n))
-                             (node-writes n) (map 'list #'r (node-writes n)))))
+		      n)))
       (setf (avm-fw-outputs avm) (map 'list #'r (avm-fw-outputs avm))
 	    (avm-bw-outputs avm) (map 'list #'r (avm-bw-outputs avm))
             (graph-outputs (avm-graph avm)) (map 'list #'r (graph-outputs (avm-graph avm))))
