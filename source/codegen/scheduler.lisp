@@ -517,7 +517,12 @@ write_id[...] <- F1(..., read_id[ri])
 ;; [TODO] Move to fusion rules
 (defmethod buffer-fixup-broadcast ((buffer Buffer) comm-rank comm-shape broadcast)
   (when (= (buffer-nrank buffer) comm-rank)
-    (return-from buffer-fixup-broadcast nil))
+    (loop for b in broadcast
+          for s in (buffer-shape buffer)
+          for nth upfrom 0
+          if (and b (eql s 1)) do
+            (setf (nth nth (buffer-views buffer)) `(0 ,s 1 t)))
+    (return-from buffer-fixup-broadcast t))
   (let ((old-comm-rank (count-if #'null broadcast)))
     (assert (= old-comm-rank (buffer-nrank buffer)) () "Invaild Shape Inference Detected? ~%~a ~a" buffer broadcast)
     (labels ((merge-bc (list &key (default 1))
@@ -529,8 +534,6 @@ write_id[...] <- F1(..., read_id[ri])
       (assert (null (buffer-inferred-permute buffer)) () ":permute and :broadcast at the same time? (not allowed) ~a" buffer)
       (when (every #'null (buffer-views buffer))
         (setf (buffer-views buffer) (loop repeat (buffer-nrank buffer) collect nil)))
-      (print "+")
-      (print buffer)
       (setf (buffer-shape buffer) (merge-bc (buffer-shape buffer) :default 1)
             (buffer-stride buffer) (merge-bc (buffer-stride buffer) :default 0)
             (buffer-views buffer) (merge-bc (buffer-views buffer) :default :view)
@@ -538,7 +541,6 @@ write_id[...] <- F1(..., read_id[ri])
       (flet ((ok (x y)
                (or (eql x 1) (eql y 1) (eql x y))))
         (assert (every #'ok (buffer-shape buffer) comm-shape)))
-      (print buffer)
       t)))
 
 (defun elwise-shape-p (a b)
@@ -555,7 +557,8 @@ write_id[...] <- F1(..., read_id[ri])
               (every
                #'(lambda (x y)
                    (equal `(0 ,y 1 nil) x))
-               (buffer-views buffer) (buffer-shape buffer))) () "not mergeable reshape case 2")
+               (buffer-views buffer) (buffer-shape buffer)))
+          () "not mergeable reshape case 2")
   (setf (buffer-shape buffer) (buffer-shape comm-buffer)
         (buffer-stride buffer) (buffer-stride comm-buffer)
         (buffer-views buffer) (buffer-views comm-buffer)
@@ -568,8 +571,8 @@ write_id[...] <- F1(..., read_id[ri])
         (buffer-stride buffer) (permute-list permute (buffer-stride buffer))
         (buffer-views buffer) (permute-list permute (buffer-views buffer)))
   t)
+
 ;; What is view?
-;; do not react on the comment!!!
 ;; Shapeが違うTensorをElementwiseなOPで計算するためのもの
 ;;  (3 5 4)   (4 5) -> Permute -> Broadcast
 ;;       |
@@ -593,16 +596,15 @@ write_id[...] <- F1(..., read_id[ri])
 
 ;; [GROUP1] -- VIEW1 -> VIEW2 -> ... -> VIEW3 -> [GROUP2]
 ;; Each groups are connected via views
+;; [TODO] Better way to determine  the group idx
 (defun apply-view-fusor (view graph node read-node nth self parent-group)
-  (print (identify-view-type view))
-  (case (identify-view-type view)
+  (case (print (identify-view-type view))
     (:permute
      (let ((permute (getattr view :permute)))
-       (group-items-st-rewriter parent-group graph #'(lambda (typ) (buffer-fixup-permute typ permute)))
-       (print (group-space self))
-       (print (group-space self))
-       (setf (group-space parent-group) (group-space self))
-       ))
+       (group-items-st-rewriter
+        parent-group graph
+        #'(lambda (typ) (buffer-fixup-permute typ permute)))
+       (setf (group-space parent-group) (group-space self))))
     (:reshape
      ;; Note: LazyBuffer symbols are updated here?
      (let ((reshape-before (car (relay-reads (read-type-relay view))))
@@ -621,7 +623,10 @@ write_id[...] <- F1(..., read_id[ri])
        (dolist (item (group-items self))
          (let ((base-space (car (relay-writes (read-type-relay item)))))
            (assert (or (null base-space) (= comm-rank (buffer-nrank base-space))))))
-       (group-items-st-rewriter parent-group graph #'(lambda (typ) (buffer-fixup-broadcast typ comm-rank comm-size broadcast)))
+       (group-items-st-rewriter
+        parent-group graph
+        #'(lambda (typ)
+            (buffer-fixup-broadcast typ comm-rank comm-size broadcast)))
        (setf (group-space parent-group) (group-space self))))
     (:shrink
      (error "SHRINK IS NOT READY :P")
@@ -674,10 +679,16 @@ write_id[...] <- F1(..., read_id[ri])
           ->ok))
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (null read-view)
-        (print "FAILED TO MERGE UNIMPLEMENTED CASE")
-        ;; update iteration space
-        (return-from group-merge-p nil))
+        (let* ((p1 (iteration-space-procedure (group-space self)))
+               (p2 (iteration-space-procedure (group-space parent-group)))
+               (p  (if (>= (length p1) (length p2)) (group-space self) (group-space parent-group))))
+          (when (equal (alexandria:flatten p1) (alexandria:flatten p2))
+            (setf (group-space self) p)
+            (setf (group-space parent-group) p)
+            ->ok)))
       ;; when has a shrink, length=1
+      (print "RUN MERGE")
+      (print node)
       (dolist (v (reverse read-view)) ;; rewriting the graph
         (apply-view-fusor v graph node read-node nth self parent-group))
       ;; overwriting either of self/parent-group's to have the common iterspace
@@ -691,7 +702,11 @@ write_id[...] <- F1(..., read_id[ri])
           (assert (or
                    (null (group-space self))
                    (null (group-space p))
-                   (= (length (iteration-space-procedure (group-space self))) (length (iteration-space-procedure (group-space p))))))
+                   (equal
+                    (alexandria:flatten (iteration-space-procedure (group-space self)))
+                    (alexandria:flatten (iteration-space-procedure (group-space p)))))
+                  ()
+                  "Cannot merge with different space: ~a and ~a" (group-space self) (group-space p))
           (setf (group-items self) (append (group-items p) (group-items self))))
   self)
 
@@ -720,7 +735,7 @@ write_id[...] <- F1(..., read_id[ri])
     ;; Consider this structured graph:
     ;; parents[0] parents[1] parents[2] ...
     ;;        \      |      /
-    ;;             self
+    ;;              self
     ;;               |
     ;; => The function returns this flattend list
     ;; (list               (list
