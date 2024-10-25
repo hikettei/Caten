@@ -517,16 +517,21 @@ write_id[...] <- F1(..., read_id[ri])
 ;; [TODO] Move to fusion rules
 (defmethod buffer-fixup-broadcast ((buffer Buffer) comm-rank comm-shape broadcast)
   (when (= (buffer-nrank buffer) comm-rank)
+    (when (every #'null (buffer-views buffer))
+      (setf (buffer-views buffer) (loop repeat comm-rank collect nil)))
     (loop for b in broadcast
           for s in (buffer-shape buffer)
+          for c in comm-shape
           for nth upfrom 0
           if (and b (eql s 1)) do
-            (setf (nth nth (buffer-views buffer)) `(0 ,s 1 t)))
+            (setf (nth nth (buffer-views buffer)) `(0 ,s 1 t)
+                  (nth nth (buffer-shape buffer)) s))
     (return-from buffer-fixup-broadcast t))
   (let ((old-comm-rank (count-if #'null broadcast)))
     (assert (= old-comm-rank (buffer-nrank buffer)) () "Invaild Shape Inference Detected? ~%~a ~a" buffer broadcast)
     (labels ((merge-bc (list &key (default 1))
                (loop for m in broadcast
+                     for c in comm-shape
                      if m
                        collect (case default (:view `(0 1 1 t)) (otherwise default))
                      else
@@ -552,17 +557,22 @@ write_id[...] <- F1(..., read_id[ri])
          (every #'ok a b))))
 
 (defmethod buffer-fixup-reshape ((buffer Buffer) bf-buffer comm-buffer)
-  (assert (equal (buffer-shape buffer) (buffer-shape bf-buffer)) () "not mergeable reshape case 1")
-  (assert (or (every #'null (buffer-views buffer))
-              (every
-               #'(lambda (x y)
-                   (equal `(0 ,y 1 nil) x))
-               (buffer-views buffer) (buffer-shape buffer)))
-          () "not mergeable reshape case 2")
-  (setf (buffer-shape buffer) (buffer-shape comm-buffer)
+  (if t;(equal (buffer-shape buffer) (buffer-shape bf-buffer))
+      (setf (buffer-shape buffer) (buffer-shape comm-buffer)
         (buffer-stride buffer) (buffer-stride comm-buffer)
         (buffer-views buffer) (buffer-views comm-buffer)
         (buffer-nrank buffer) (buffer-nrank comm-buffer))
+      (progn
+        (assert (= (length (buffer-shape buffer)) (length (buffer-shape buffer))) () "NOT READY!")
+        (assert (equal (buffer-shape buffer) (buffer-shape bf-buffer)) () "not mergeable reshape case 1: ~a == ~a -> ~a"
+                (buffer-shape buffer) (buffer-shape bf-buffer)
+                (buffer-shape comm-buffer))
+        (assert (or (every #'null (buffer-views buffer))
+                    (every
+                     #'(lambda (x y)
+                         (equal `(0 ,y 1 nil) x))
+                     (buffer-views buffer) (buffer-shape buffer)))
+                () "not mergeable reshape case 2 ~a == ~a" (buffer-shape buffer) (buffer-shape bf-buffer))))
   t)
 
 (defmethod buffer-fixup-permute ((buffer Buffer) permute)
@@ -629,11 +639,11 @@ write_id[...] <- F1(..., read_id[ri])
             (buffer-fixup-broadcast typ comm-rank comm-size broadcast)))
        (setf (group-space parent-group) (group-space self))))
     (:shrink
-     (error "SHRINK IS NOT READY :P")
-     ;;(print ":SHRINK")
-     ;;(print (car (relay-reads (read-type-relay (car read-view)))))
-     ;;(print "=>")
-     ;;(print (car read-view))
+     (print ":SHRINK")
+     (print (car (relay-reads (read-type-relay view))))
+     (print "=>")
+     (print view)
+     (error "NOT READY")
      ;; Merge if the iteration space is the same (but dont break write deps)
      nil)
     (otherwise
@@ -678,23 +688,38 @@ write_id[...] <- F1(..., read_id[ri])
                           (iteration-space-shape (group-space parent-group))))
           ->ok))
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      (when (find :shrink (view-type-list read-view))
+        ->ng)
       (when (null read-view)
         (let* ((p1 (iteration-space-procedure (group-space self)))
                (p2 (iteration-space-procedure (group-space parent-group)))
-               (p  (if (>= (length p1) (length p2)) (group-space self) (group-space parent-group))))
-          (when (equal (alexandria:flatten p1) (alexandria:flatten p2))
-            (setf (group-space self) p)
-            (setf (group-space parent-group) p)
-            ->ok)))
+               (c  (>= (length p1) (length p2)))
+               (p (if c (group-space self) (group-space parent-group))))
+          ;; Smaller -> Higher is OK
+          (if t
+              (progn
+                (setf (group-space self) p)
+                (setf (group-space parent-group) p)
+                ->ok)
+              ->ok)))
       ;; when has a shrink, length=1
-      (print "RUN MERGE")
-      (print node)
-      (dolist (v (reverse read-view)) ;; rewriting the graph
-        (apply-view-fusor v graph node read-node nth self parent-group))
-      ;; overwriting either of self/parent-group's to have the common iterspace
-      t)))
-      
+      (let* ((p1 (iteration-space-procedure (group-space self)))
+             (p2 (iteration-space-procedure (group-space parent-group)))
+             (c (>= (length p1) (length p2)))
+             (rewrite-to (if c self parent-group))
+             (rewrite-tgt (if (not c) self parent-group)))
+        ;; eager to expand the length of procedure
+        (if c
+            (dolist (v (reverse read-view)) ;; rewriting the graph
+              (apply-view-fusor v graph node read-node nth self parent-group))
+            (dolist (v (reverse read-view))
+              (apply-view-fusor v graph node read-node nth parent-group self)))
+        ;; overwriting either of self/parent-group's to have the common iterspace
+        t))))
 
+;; Remained two patterns:
+;; - ConvND Shrink
+;; -  elementwise after reduction
 (defmethod merge-groups ((self Group) parents mergeable-list)
   (loop for m in mergeable-list
         for p in parents
