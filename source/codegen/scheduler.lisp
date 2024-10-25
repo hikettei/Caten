@@ -557,7 +557,7 @@ Trying to merge X and Y in the same group connected like:
          (every #'ok a b))))
 
 (defmethod buffer-fixup-reshape ((buffer Buffer) bf-buffer comm-buffer)
-  (if t;(equal (buffer-shape buffer) (buffer-shape bf-buffer))
+  (if (equal (buffer-shape buffer) (buffer-shape bf-buffer))
       (setf (buffer-shape buffer) (buffer-shape comm-buffer)
         (buffer-stride buffer) (buffer-stride comm-buffer)
         (buffer-views buffer) (buffer-views comm-buffer)
@@ -586,11 +586,7 @@ Trying to merge X and Y in the same group connected like:
   (assert (equal (buffer-shape buffer) (buffer-shape view)))
   (setf (buffer-views buffer) (buffer-views view))
   t)
-;; What is view?
-;; Shapeが違うTensorをElementwiseなOPで計算するためのもの
-;;  (3 5 4)   (4 5) -> Permute -> Broadcast
-;;       |
-;; MUL (3 5 4)
+
 (defmethod group-items-st-rewriter ((group Group) graph f)
   (dolist (item (group-items group))
     (loop for typ in (relay-reads (read-type-relay item))
@@ -608,11 +604,8 @@ Trying to merge X and Y in the same group connected like:
                  ;; If changed => update iteration space
                  (setf (nth nth (relay-write-iters (read-type-relay item))) (buffer-merge-dims graph typ))))))
 
-;; [GROUP1] -- VIEW1 -> VIEW2 -> ... -> VIEW3 -> [GROUP2]
-;; Each groups are connected via views
-;; [TODO] Better way to determine  the group idx
-(defun apply-view-fusor (view graph node read-node nth self parent-group)
-  (case (print (identify-view-type view))
+(defun apply-view-fusor (view graph self parent-group)
+  (ecase (print (identify-view-type view))
     (:permute
      (let ((permute (getattr view :permute)))
        (group-items-st-rewriter
@@ -647,9 +640,7 @@ Trying to merge X and Y in the same group connected like:
       parent-group graph
       #'(lambda (typ)
           (buffer-fixup-shrink typ (car (relay-reads (read-type-relay view))))))
-     (setf (group-space parent-group) (group-space self)))
-    (otherwise
-     (error "NOT READY :P ~a" (identify-view-type view)))))
+     (setf (group-space parent-group) (group-space self)))))
 
 (defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
   (symbol-macrolet ((->ok (return-from group-merge-p t))
@@ -661,11 +652,7 @@ Trying to merge X and Y in the same group connected like:
         ->ng))
     (let* ((read (nth nth (node-reads node)))
            (read-node (id->value graph read))
-           (read-type (nth nth (relay-reads (read-type-relay node))))
-           (read-iter (nth nth (relay-read-iters (read-type-relay node))))
            (read-view (nth nth (getattr node :_read_views)))
-           (write-type (car (relay-writes (read-type-relay read-node))))
-           (write-iter (car (relay-write-iters (read-type-relay read-node))))
            (write-view (nth nth (getattr node :_write_views))))
       (assert (null write-view))
       ;; Relations between group and parent-group:
@@ -703,29 +690,38 @@ Trying to merge X and Y in the same group connected like:
                 ->ok)
               (progn
                 (print "FIXUP GRAPH IS REQUIRED")
-                (setf (group-space self) p)
-                (setf (group-space parent-group) p)
+                ;;(setf (group-space self) p)
+                ;;(setf (group-space parent-group) p)
                 ->ok))))
-      ;; when has a shrink, length=1
-      (let* ((p1 (iteration-space-procedure (group-space self)))
-             (p2 (iteration-space-procedure (group-space parent-group)))
-             (c (>= (length p1) (length p2)))
-             (rewrite-to (if c self parent-group))
-             (rewrite-tgt (if (not c) self parent-group)))
-        ;; eager to expand the length of procedure
-        (if c
+      ;; eager to expand the length of procedure
+      (if (null (group-reduce-dims parent-group))
+          (progn
+            ;(print "+++++")
             (dolist (v (reverse read-view)) ;; rewriting the graph
-              (apply-view-fusor v graph node read-node nth self parent-group))
-            (progn
-              (print "NEED GRAPH FIXUP")
-              (print self)
-              (print parent-group)
-              (print (reverse (view-type-list read-view)))
-              (dolist (v (reverse read-view))
-                (apply-view-fusor v graph node read-node nth self parent-group))))
+              (apply-view-fusor v graph self parent-group)))
+          (progn
+            ;; Complex-out-fusable
+            (when (find :shrink (view-type-list read-view))->ng)
+            (when (find :permute (view-type-list read-view))->ng)
+            (when (not (= (length read-view) 1))->ng)
+            ;(print "PATH==")
+            ;(print node)
+            ;(print (view-type-list read-view))
+            ;(print (group-reduce-dims parent-group))
+            ;(print (buffer-shape (car (relay-writes (read-type-relay node)))))
+            ;(print (buffer-shape (car (relay-writes (read-type-relay read-node)))))
+            (case (car (view-type-list read-view))
+              (:Broadcast
+               (print "BROADCASTING")
+               (apply-view-fusor (car read-view) graph self parent-group))
+              (:Reshape
+               ->ng))))
         ;; overwriting either of self/parent-group's to have the common iterspace
-        t))))
+        t)))
 
+;; for batch = 0..10
+;; output[n, k, i, j] += input[n, c, i + p, j + q] * weight[k, c, p, q]
+;;
 ;; Remained two patterns:
 ;; - ConvND Shrink
 ;; -  elementwise after reduction
@@ -743,7 +739,8 @@ Trying to merge X and Y in the same group connected like:
                     (alexandria:flatten (iteration-space-procedure (group-space p)))))
                   ()
                   "Cannot merge with different space: ~a and ~a" (group-space self) (group-space p))
-          (setf (group-items self) (append (group-items p) (group-items self))))
+          (setf (group-items self) (append (group-items p) (group-items self))
+                (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims p))))
   self)
 
 (defun recursive-create-groups (id graph &key (seen))
@@ -826,6 +823,7 @@ Trying to merge X and Y in the same group connected like:
 ;; - [ ] ConvND = 1 Kernel
 ;; - [ ] Getting a perfect tile/vectorize/parallelize
 ;; - [ ] Ez to deploy to gpu?
+;; - [ ] (caten/codegen:jit (caten (!mul (make-tensor `(10 1 6 21 21 3 5 5)) (!reshape (make-tensor `(6 3 5 5)) `(1 1 6 1 1 3 5 5)))))
 
 ;; (caten/codegen:jit (caten (!add (!sin (make-tensor `(10 10))) (call (Embedding 10 10) (make-tensor `(10 10))))))
 ;; - [ ] Module Lowering is very slow

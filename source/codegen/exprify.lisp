@@ -40,6 +40,10 @@
       (if (getattr allocate :from) t nil))))
 
 (defun blueprint-tmp-buffers (blueprints schedule-graph &key (except-for nil))
+  (setf except-for
+        (append except-for
+                (loop for s in (graph-nodes schedule-graph)
+                      append (node-writes s))))
   (let ((ids) (seen))
     (dolist (b blueprints)
       (let ((out (get-output-to b)))
