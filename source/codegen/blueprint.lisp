@@ -249,9 +249,9 @@
 (defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
   (assert (= (length gids) (length axes)) () "the reduction node ~a is not the highest rank tensor." node)
   (when (getattr node :reduction :allow-undefined t)
-  (loop for nth upfrom 0
-        for r in axes
-        if r collect (nth nth gids))))
+    (loop for nth upfrom 0
+          for r in axes
+          if r collect (nth nth gids))))
 
 (defun graph-reduced-axes (graph rank-size)
   (let ((reduced-axes (make-list rank-size)))

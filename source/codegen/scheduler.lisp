@@ -521,7 +521,13 @@ write_id[...] <- F1(..., read_id[ri])
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
-;; ;; (caten/codegen:jit (caten (!add (!sin (make-tensor `(10 10))) (call (Embedding 10 10) (make-tensor `(10 10))))))
+;; Milestone (after complete them, move to implement renderer/memory planner)
+;; - [ ] Getting a perfect schedule
+;; - [ ] ConvND = 1 Kernel
+;; - [ ] Getting a perfect tile/vectorize/parallelize
+;; - [ ] Ez to deploy to gpu?
+
+;; (caten/codegen:jit (caten (!add (!sin (make-tensor `(10 10))) (call (Embedding 10 10) (make-tensor `(10 10))))))
 ;; - [ ] Module Lowering is very slow
 ;; - [ ] Needs more optim
 ;; (caten/codegen:jit (caten (!argmax (!matmul (make-tensor `(10 32)) (call (layerNorm `(10)) (make-tensor `(10 32 10)))))))
