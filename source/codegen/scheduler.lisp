@@ -161,6 +161,69 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
    (cl-ppcre:regex-replace-all "-" (cl-ppcre:regex-replace-all "GRAPH/" (princ-to-string name) "") "_")
    ""))
 
+(defun merge-broadcast (shape list1 &key (default 1) &aux (list (copy-list list1)))
+  (loop for s in shape
+        if (eql s 1)
+          collect default
+        else
+          collect (or (pop list) (error "merge-broadcast: cannot merge shape ~a and map ~a." shape list1))))
+
+(defmethod group-fixup-rank ((group Group) graph)
+  "Buffers in the same group should have the same ranked buffers.
+Rewrite all buffer in the chain of element-wise ops to have the same rank.
+```
+read_id[wi]   <- F2(...,)
+write_id[...] <- F1(..., read_id[ri])
+```
+
+(10 1 10)    (10 1 10)
+    |     =>     |
+ (10 10)     (10 1 10)
+"
+  (when (find :Allocate (group-items group) :key #'node-type) (return-from group-fixup-rank))
+  (let* ((rank (loop for node in (group-items group)
+                     maximize
+                     (loop for r in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
+                           when r maximize
+                                  (buffer-nrank r))))
+         (common-shape (make-list rank)))
+    (loop for node in (group-items group) do
+      (loop for r in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
+            when r do
+              (loop for axis upfrom 0
+                    for s in (buffer-shape r)
+                    do (setf (nth axis common-shape) (if (eql s 1) s (or (nth axis common-shape) s))))))
+    (assert (every #'identity common-shape))
+    (flet ((new (buffer)
+             (values
+              (merge-broadcast common-shape (buffer-shape buffer))
+              (merge-broadcast common-shape (buffer-stride buffer))
+              (if (not (every #'null (buffer-views buffer)))
+                  (merge-broadcast
+                   common-shape
+                   (buffer-views buffer)
+                   :default nil)
+                  (loop repeat (length common-shape) collect nil)))))
+      (labels ((rpl (bf)
+                 (when (and bf (> (buffer-nrank bf) 0) (not (= (buffer-nrank bf) (length common-shape))))
+                   (multiple-value-bind (new-shape new-stride new-views) (new bf)
+                     (setf (buffer-shape bf) new-shape
+                           (buffer-stride bf) new-stride
+                           (buffer-views bf) new-views
+                           (buffer-nrank bf) (length new-shape)))))
+               (explore (node)
+                 (loop for buf in (relay-writes (read-type-relay node))
+                       for nth upfrom 0
+                       when buf do
+                         (rpl buf)
+                         (setf (nth nth (relay-write-iters (read-type-relay node))) (buffer-merge-dims graph buf)))
+                 (loop for buf in (relay-reads (read-type-relay node))
+                       for nth upfrom 0
+                       when buf do
+                         (rpl buf)
+                         (setf (nth nth (relay-read-iters (read-type-relay node))) (buffer-merge-dims graph buf)))))
+        (mapc #'explore (group-items group))))))
+
 (defmethod make-unique-schedule-name ((group Group))
   (let ((names) (seen))
     (dolist (item (group-items group))
@@ -330,69 +393,6 @@ Trying to merge X and Y in the same group connected like:
   (flet ((f (x) (when x (when (not (eql (group-key parent) (group-key x))) x))))
     (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
       (remove-duplicates (loop for l in lst if l collect l) :key #'group-key))))
-
-(defun merge-broadcast (shape list1 &key (default 1) &aux (list (copy-list list1)))
-  (loop for s in shape
-        if (eql s 1)
-          collect default
-        else
-          collect (or (pop list) (error "merge-broadcast: cannot merge shape ~a and map ~a." shape list1))))
-
-(defmethod group-fixup-rank ((group Group) graph)
-  "Buffers in the same group should have the same ranked buffers.
-Rewrite all buffer in the chain of element-wise ops to have the same rank.
-```
-read_id[wi]   <- F2(...,)
-write_id[...] <- F1(..., read_id[ri])
-```
-
-(10 1 10)    (10 1 10)
-    |     =>     |
- (10 10)     (10 1 10)
-"
-  (when (find :Allocate (group-items group) :key #'node-type) (return-from group-fixup-rank))
-  (let* ((rank (loop for node in (group-items group)
-                     maximize
-                     (loop for r in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
-                           when r maximize
-                                  (buffer-nrank r))))
-         (common-shape (make-list rank)))
-    (loop for node in (group-items group) do
-      (loop for r in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
-            when r do
-              (loop for axis upfrom 0
-                    for s in (buffer-shape r)
-                    do (setf (nth axis common-shape) (if (eql s 1) s (or (nth axis common-shape) s))))))
-    (assert (every #'identity common-shape))
-    (flet ((new (buffer)
-             (values
-              (merge-broadcast common-shape (buffer-shape buffer))
-              (merge-broadcast common-shape (buffer-stride buffer))
-              (if (not (every #'null (buffer-views buffer)))
-                  (merge-broadcast
-                   common-shape
-                   (buffer-views buffer)
-                   :default nil)
-                  (loop repeat (length common-shape) collect nil)))))
-      (labels ((rpl (bf)
-                 (when (and bf (> (buffer-nrank bf) 0) (not (= (buffer-nrank bf) (length common-shape))))
-                   (multiple-value-bind (new-shape new-stride new-views) (new bf)
-                     (setf (buffer-shape bf) new-shape
-                           (buffer-stride bf) new-stride
-                           (buffer-views bf) new-views
-                           (buffer-nrank bf) (length new-shape)))))
-               (explore (node)
-                 (loop for buf in (relay-writes (read-type-relay node))
-                       for nth upfrom 0
-                       when buf do
-                         (rpl buf)
-                         (setf (nth nth (relay-write-iters (read-type-relay node))) (buffer-merge-dims graph buf)))
-                 (loop for buf in (relay-reads (read-type-relay node))
-                       for nth upfrom 0
-                       when buf do
-                         (rpl buf)
-                         (setf (nth nth (relay-read-iters (read-type-relay node))) (buffer-merge-dims graph buf)))))
-        (mapc #'explore (group-items group))))))
 
 (defmethod group-force-move-reduce-in-the-group ((group Group) graph read path-reduced)
   "Force merging MOVE(OUT, C) and Reduce
@@ -582,6 +582,10 @@ write_id[...] <- F1(..., read_id[ri])
         (buffer-views buffer) (permute-list permute (buffer-views buffer)))
   t)
 
+(defmethod buffer-fixup-shrink ((buffer Buffer) view)
+  (assert (equal (buffer-shape buffer) (buffer-shape view)))
+  (setf (buffer-views buffer) (buffer-views view))
+  t)
 ;; What is view?
 ;; Shapeが違うTensorをElementwiseなOPで計算するためのもの
 ;;  (3 5 4)   (4 5) -> Permute -> Broadcast
@@ -639,13 +643,11 @@ write_id[...] <- F1(..., read_id[ri])
             (buffer-fixup-broadcast typ comm-rank comm-size broadcast)))
        (setf (group-space parent-group) (group-space self))))
     (:shrink
-     (print ":SHRINK")
-     (print (car (relay-reads (read-type-relay view))))
-     (print "=>")
-     (print view)
-     (error "NOT READY")
-     ;; Merge if the iteration space is the same (but dont break write deps)
-     nil)
+     (group-items-st-rewriter
+      parent-group graph
+      #'(lambda (typ)
+          (buffer-fixup-shrink typ (car (relay-reads (read-type-relay view))))))
+     (setf (group-space parent-group) (group-space self)))
     (otherwise
      (error "NOT READY :P ~a" (identify-view-type view)))))
 
@@ -688,20 +690,22 @@ write_id[...] <- F1(..., read_id[ri])
                           (iteration-space-shape (group-space parent-group))))
           ->ok))
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      (when (find :shrink (view-type-list read-view))
-        ->ng)
       (when (null read-view)
         (let* ((p1 (iteration-space-procedure (group-space self)))
                (p2 (iteration-space-procedure (group-space parent-group)))
                (c  (>= (length p1) (length p2)))
                (p (if c (group-space self) (group-space parent-group))))
           ;; Smaller -> Higher is OK
-          (if t
+          (if c
               (progn
                 (setf (group-space self) p)
                 (setf (group-space parent-group) p)
                 ->ok)
-              ->ok)))
+              (progn
+                (print "FIXUP GRAPH IS REQUIRED")
+                (setf (group-space self) p)
+                (setf (group-space parent-group) p)
+                ->ok))))
       ;; when has a shrink, length=1
       (let* ((p1 (iteration-space-procedure (group-space self)))
              (p2 (iteration-space-procedure (group-space parent-group)))
@@ -712,14 +716,21 @@ write_id[...] <- F1(..., read_id[ri])
         (if c
             (dolist (v (reverse read-view)) ;; rewriting the graph
               (apply-view-fusor v graph node read-node nth self parent-group))
-            (dolist (v (reverse read-view))
-              (apply-view-fusor v graph node read-node nth parent-group self)))
+            (progn
+              (print "NEED GRAPH FIXUP")
+              (print self)
+              (print parent-group)
+              (print (reverse (view-type-list read-view)))
+              (dolist (v (reverse read-view))
+                (apply-view-fusor v graph node read-node nth self parent-group))))
         ;; overwriting either of self/parent-group's to have the common iterspace
         t))))
 
 ;; Remained two patterns:
 ;; - ConvND Shrink
 ;; -  elementwise after reduction
+;; - 1. Add Fixup
+
 (defmethod merge-groups ((self Group) parents mergeable-list)
   (loop for m in mergeable-list
         for p in parents
