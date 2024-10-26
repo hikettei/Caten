@@ -77,7 +77,7 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                         (with-output-to-string (out)
                           (format
                            out
-                           "{VIEW|shape=[~a]|masks=[~a]~a}"
+                           "{VIEW|shape=[~a]|masks=[~a]~a~a}"
                            (subseq1p (node-reads node) 0 nrank)
 	                   (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
 	                         (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
@@ -87,7 +87,10 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
 		              (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
                            (if (getattr node :override-stride-p)
                                ""
-                               (format nil "|stride=~a" (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank))))))))
+                               (format nil "|stride=~a" (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank))))
+                           (if (getattr node :permute)
+                               (format nil "|permute=~a" (getattr node :permute))
+                               "")))))
                     (helper/color :node) "filled, solid"))
              (otherwise
               (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :input) "filled, solid"))))

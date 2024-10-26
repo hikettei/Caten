@@ -239,9 +239,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
       (when (every #'null (buffer-views buffer))
         (setf (buffer-views buffer) (loop repeat (buffer-nrank buffer) collect nil)))
       (setf (buffer-shape buffer) (merge-bc (buffer-shape buffer) :default 1)
-            (buffer-stride buffer) (merge-bc (buffer-stride buffer) :default 0)
             (buffer-views buffer) (merge-bc (buffer-views buffer) :default :view)
-            (buffer-nrank buffer) comm-rank)
+            (buffer-nrank buffer) comm-rank
+            (buffer-stride buffer) (merge-bc (buffer-stride buffer) :default 0))
       (flet ((ok (x y)
                (or (eql x 1) (eql y 1) (eql x y))))
         (assert (every #'ok (buffer-shape buffer) comm-shape)))
@@ -250,18 +250,19 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defmethod buffer-fixup-reshape ((buffer Buffer) bf-buffer comm-buffer)
   ;; [TODO] How to merge :shrink+:reshape?
   ;; (assert (equal (buffer-shape buffer) (buffer-shape bf-buffer)))
-  ;(print "++RESHAPE++")
-  ;(print (buffer-shape buffer))
-  ;(print "===>")
-  (print (buffer-shape comm-buffer))
+  ;;(print "++RESHAPE++")
+  ;;(print (buffer-shape buffer))
+  ;;(print "===>")
   (setf (buffer-shape buffer) (buffer-shape comm-buffer)
-        (buffer-stride buffer) (buffer-stride comm-buffer)
         (buffer-views buffer) (buffer-views comm-buffer)
-        (buffer-nrank buffer) (buffer-nrank comm-buffer))
+        (buffer-nrank buffer) (buffer-nrank comm-buffer)
+        (buffer-stride buffer) (buffer-stride comm-buffer))
   t)
 
 (defmethod buffer-fixup-permute ((buffer Buffer) permute)
   (assert (= (buffer-nrank buffer) (length permute)))
+  (when (every #'null (buffer-views buffer))
+    (setf (buffer-views buffer) (loop repeat (buffer-nrank buffer) collect nil)))
   (setf (buffer-shape buffer) (permute-list permute (buffer-shape buffer))
         (buffer-stride buffer) (permute-list permute (buffer-stride buffer))
         (buffer-views buffer) (permute-list permute (buffer-views buffer)))
@@ -286,23 +287,29 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           unless (or (null typ) (= 0 (buffer-nrank typ)))
             do (funcall f typ))))
 
+(defun group-rank (group)
+  (loop for n in (group-items group)
+        maximize
+        (loop for type in (append (relay-reads (read-type-relay n)) (relay-writes (read-type-relay n)))
+              maximize (buffer-nrank type))))
+
 (defun apply-view-fusor (view graph self parent-group)
-  (ecase (print (identify-view-type view))
+  (ecase (identify-view-type view)
     (:permute
      (let ((permute (getattr view :permute)))
        (group-items-st-rewriter
         parent-group graph
-        #'(lambda (typ) (buffer-fixup-permute typ permute)))))
+        #'(lambda (typ)
+            (buffer-fixup-permute typ permute)))))
     (:reshape
-     (print view)
      ;; Note: LazyBuffer symbols are updated here?
      (let ((reshape-before (car (relay-reads (read-type-relay view))))
            (reshape-after (car (relay-writes (read-type-relay view)))))
        (group-items-st-rewriter
         parent-group graph
-        #'(lambda (typ) (buffer-fixup-reshape typ reshape-before reshape-after)))))
+        #'(lambda (typ)
+            (buffer-fixup-reshape typ reshape-before reshape-after)))))
     (:broadcast
-     (print view)
      (let ((comm-rank (getattr view :nrank))
            (comm-size (buffer-shape (car (relay-writes (read-type-relay view)))))
            (broadcast (getattr view :broadcast)))
@@ -337,7 +344,11 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
       ;; ```
       ;; ~ Early returns for the obvious case: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ;; Non-jitable nodes are scheduled standalone
+      (let ((tgt (id->value graph 'caten/llm::|val_4|)))
+        (print (second (relay-reads (read-type-relay tgt)))))
       (when (or (not (jitable-p node)) (not (jitable-p read-node)))
+        (when (and (= nth 1) (eql (node-type read-node) :Allocate) (eql (node-type node) :MOVE))
+          )
         ->ng)
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (null read-view)
@@ -428,7 +439,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
          (groups (nreverse (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph))))))
-    (print groups)
     (mapc #'verify-group groups)
     ;; Serialize ADD (Embedding Embedding)
     ;; Merge two independent groups
@@ -444,6 +454,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
+
+;; [TODO] shape-inference.lisp => ShapeTrackerを作って回す？
+;; - TensorComprehensionみたいなLowererが結局必要なのか。。。
+;; - 全くわからない
+;; - Shape-Inferece.lispで，Tinygrad-LikeなView Simplifyをする
+;; - !contiguousを廃止する
 
 ;; Milestone (after complete them, move to implement renderer/memory planner)
 ;; - [ ] Getting a perfect schedule
