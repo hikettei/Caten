@@ -17,6 +17,11 @@
 
 Visualizes the graph using graphviz(requirement). Set open=t to open the resulting image in the default browser. A tmp file is created at the pathname location. The graph is saved as a .png and .html file. The title is used in the html file."))
 
+(defun render-list (list)
+  (apply #'concatenate 'string
+	 (butlast (loop for n in list
+			append (list (format nil "~a" n) ", ")))))
+
 (defmethod ->dot ((graph Graph) &key (pathname "/tmp/graph.dot") (open t) (title "node"))
   (with-open-file (stream pathname :direction :output :if-exists :supersede :if-does-not-exist :create)
     (format stream "digraph computation_node {
@@ -64,7 +69,28 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
           (:TernaryOps
            (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :node) "filled, curve"))
           (:Buffer
-           (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :input) "filled, solid"))
+           (case (node-type node)
+             (:VIEW
+              (node (node-id node)
+                    (let ((nrank (getattr node :nrank)))
+                      (flet ((subseq1p (x y z) (subseq x (1+ y) (1+ z))))
+                        (with-output-to-string (out)
+                          (format
+                           out
+                           "{VIEW|shape=[~a]|masks=[~a]~a}"
+                           (subseq1p (node-reads node) 0 nrank)
+	                   (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
+	                         (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
+                                 (by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
+                                 (bc (getattr node :broadcast)))
+		             (render-list
+		              (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
+                           (if (getattr node :override-stride-p)
+                               ""
+                               (format nil "|stride=~a" (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank))))))))
+                    (helper/color :node) "filled, solid"))
+             (otherwise
+              (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :input) "filled, solid"))))
           (:INDEX-COMPONENTS
            (node (node-id node) (node-name node) (helper/color :node) "filled, solid"))
           (:Module
