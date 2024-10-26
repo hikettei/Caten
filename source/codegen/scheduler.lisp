@@ -524,8 +524,8 @@ Trying to merge X and Y in the same group connected like:
           for c in comm-shape
           for nth upfrom 0
           if (and b (eql s 1)) do
-            (setf (nth nth (buffer-views buffer)) `(0 ,s 1 t)
-                  (nth nth (buffer-shape buffer)) s))
+            (setf (nth nth (buffer-views buffer)) `(0 1 1 t)
+                  (nth nth (buffer-shape buffer)) 1))
     (return-from buffer-fixup-broadcast t))
   (let ((old-comm-rank (count-if #'null broadcast)))
     (assert (= old-comm-rank (buffer-nrank buffer)) () "Invaild Shape Inference Detected? ~%~a ~a" buffer broadcast)
@@ -557,7 +557,7 @@ Trying to merge X and Y in the same group connected like:
          (every #'ok a b))))
 
 (defmethod buffer-fixup-reshape ((buffer Buffer) bf-buffer comm-buffer)
-  (if (equal (buffer-shape buffer) (buffer-shape bf-buffer))
+  (if t;(equal (buffer-shape buffer) (buffer-shape bf-buffer))
       (setf (buffer-shape buffer) (buffer-shape comm-buffer)
         (buffer-stride buffer) (buffer-stride comm-buffer)
         (buffer-views buffer) (buffer-views comm-buffer)
@@ -583,7 +583,7 @@ Trying to merge X and Y in the same group connected like:
   t)
 
 (defmethod buffer-fixup-shrink ((buffer Buffer) view)
-  (assert (equal (buffer-shape buffer) (buffer-shape view)))
+  (assert (equal (buffer-shape buffer) (buffer-shape view)) () "cannot fixup shrink:~%~a -> ~a" buffer view)
   (setf (buffer-views buffer) (buffer-views view))
   t)
 
@@ -693,6 +693,9 @@ Trying to merge X and Y in the same group connected like:
                 ;;(setf (group-space self) p)
                 ;;(setf (group-space parent-group) p)
                 ->ok))))
+     ; (print (view-type-list read-view))
+     ; (print read-view)
+     ; (print (buffer-shape (car (relay-reads (read-type-relay (car read-view))))))
       ;; eager to expand the length of procedure
       (if (null (group-reduce-dims parent-group))
           (progn
@@ -823,8 +826,15 @@ Trying to merge X and Y in the same group connected like:
 ;; - [ ] ConvND = 1 Kernel
 ;; - [ ] Getting a perfect tile/vectorize/parallelize
 ;; - [ ] Ez to deploy to gpu?
-;; - [ ] (caten/codegen:jit (caten (!mul (make-tensor `(10 1 6 21 21 3 5 5)) (!reshape (make-tensor `(6 3 5 5)) `(1 1 6 1 1 3 5 5)))))
+;; - [ ] 明日:
+;;   - [ ] MergeDimsを削除+MergeDimsはいちばん最後にやる get-grouped-dimsで，共通のViewとかを入れてMerge
+;;   - [ ] Matmul+ActivationをFuse
+;;   - [ ] fix for padding?
 
+;; ConvND Step by step:
+;;   - [ ] (caten/codegen:jit (caten (!mul (make-tensor `(10 1 6 21 21 3 5 5)) (!reshape (make-tensor `(6 3 5 5)) `(1 1 6 1 1 3 5 5)))))
+;;   - [ ] (caten/codegen:jit (caten (!contiguous (caten/nn::_pool (!padding2d (make-tensor `(10 10)) `(2 2 2 2)) `(5 5) `(1 1) `(1 1)))))
+;;   - [ ] (caten/codegen:jit (caten (caten/nn::_pool (make-tensor `(10 3 25 25)) `(5 5) `(1 1) `(1 1))))
 ;; (caten/codegen:jit (caten (!add (!sin (make-tensor `(10 10))) (call (Embedding 10 10) (make-tensor `(10 10))))))
 ;; - [ ] Module Lowering is very slow
 ;; - [ ] Needs more optim

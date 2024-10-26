@@ -297,6 +297,7 @@
             (multiple-value-bind (last-size last-stride last-view last-pd) (apply #'values (car (last ret)))
               (if (not (eql size 1)) ;; always merge 1
                   (if (and
+                       
                        (mergeable-view-p last-view last-size)
                        (mergeable-view-p view size)
                        (expr-scalar-equivalent-p
