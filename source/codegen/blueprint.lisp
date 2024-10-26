@@ -216,6 +216,9 @@
                      (values (merge-list procedure (buffer-shape original-buffer))
                              (merge-stride procedure (new-stride (buffer-stride original-buffer) (buffer-views original-buffer)))
                              (merge-view procedure (buffer-views original-buffer)))
+                   ;(print id)
+                   ;(print (buffer-stride original-buffer))
+                   ;(print new-stride)
                    (make-iteration-space
                     :shape new-shape
                     :strides new-stride

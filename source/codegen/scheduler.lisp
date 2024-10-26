@@ -150,7 +150,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defun view-type-list (views)
   (loop for v in views if v collect (identify-view-type v)))
 
-
 (defun pname (name)
   (cl-ppcre:regex-replace-all
    "PAUSE/"
@@ -248,32 +247,17 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         (assert (every #'ok (buffer-shape buffer) comm-shape)))
       t)))
 
-(defun elwise-shape-p (a b)
-  (flet ((ok (x y)
-           (or (eql x 1) (eql y 1) (eql x y))))
-    (and (or
-          (null a) (null b)
-          (= (length a) (length b)))
-         (every #'ok a b))))
-
 (defmethod buffer-fixup-reshape ((buffer Buffer) bf-buffer comm-buffer)
   ;; [TODO] How to merge :shrink+:reshape?
-  (if t;(equal (buffer-shape buffer) (buffer-shape bf-buffer))
-      (setf (buffer-shape buffer) (buffer-shape comm-buffer)
+  ;; (assert (equal (buffer-shape buffer) (buffer-shape bf-buffer)))
+  ;(print "++RESHAPE++")
+  ;(print (buffer-shape buffer))
+  ;(print "===>")
+  (print (buffer-shape comm-buffer))
+  (setf (buffer-shape buffer) (buffer-shape comm-buffer)
         (buffer-stride buffer) (buffer-stride comm-buffer)
         (buffer-views buffer) (buffer-views comm-buffer)
         (buffer-nrank buffer) (buffer-nrank comm-buffer))
-      (progn
-        (assert (= (length (buffer-shape buffer)) (length (buffer-shape buffer))) () "NOT READY!")
-        (assert (equal (buffer-shape buffer) (buffer-shape bf-buffer)) () "not mergeable reshape case 1: ~a == ~a -> ~a"
-                (buffer-shape buffer) (buffer-shape bf-buffer)
-                (buffer-shape comm-buffer))
-        (assert (or (every #'null (buffer-views buffer))
-                    (every
-                     #'(lambda (x y)
-                         (equal `(0 ,y 1 nil) x))
-                     (buffer-views buffer) (buffer-shape buffer)))
-                () "not mergeable reshape case 2 ~a == ~a" (buffer-shape buffer) (buffer-shape bf-buffer))))
   t)
 
 (defmethod buffer-fixup-permute ((buffer Buffer) permute)
@@ -285,7 +269,10 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 
 (defmethod buffer-fixup-shrink ((buffer Buffer) view)
   (assert (equal (buffer-shape buffer) (buffer-shape view)) () "cannot fixup shrink:~%~a -> ~a" buffer view)
-  (setf (buffer-views buffer) (buffer-views view))
+  (setf (buffer-shape buffer) (buffer-shape view)
+        (buffer-views buffer) (buffer-views view)
+        (buffer-stride buffer) (buffer-stride view)
+        (buffer-nrank buffer) (buffer-nrank view))
   t)
 
 (defmethod group-items-st-rewriter ((group Group) graph f)
@@ -300,13 +287,14 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
             do (funcall f typ))))
 
 (defun apply-view-fusor (view graph self parent-group)
-  (ecase (identify-view-type view)
+  (ecase (print (identify-view-type view))
     (:permute
      (let ((permute (getattr view :permute)))
        (group-items-st-rewriter
         parent-group graph
         #'(lambda (typ) (buffer-fixup-permute typ permute)))))
     (:reshape
+     (print view)
      ;; Note: LazyBuffer symbols are updated here?
      (let ((reshape-before (car (relay-reads (read-type-relay view))))
            (reshape-after (car (relay-writes (read-type-relay view)))))
@@ -314,14 +302,11 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         parent-group graph
         #'(lambda (typ) (buffer-fixup-reshape typ reshape-before reshape-after)))))
     (:broadcast
+     (print view)
      (let ((comm-rank (getattr view :nrank))
            (comm-size (buffer-shape (car (relay-writes (read-type-relay view)))))
            (broadcast (getattr view :broadcast)))
        ;; Rewrite all buffers in the parent-group to have the comm-rank
-       ;; composeが終わった後にAssertしないと意味ない
-       (dolist (item (group-items self))
-         (let ((base-space (car (relay-writes (read-type-relay item)))))
-           (assert (or (null base-space) (= comm-rank (buffer-nrank base-space))))))
        (group-items-st-rewriter
         parent-group graph
         #'(lambda (typ)
@@ -352,9 +337,11 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
       ;; ```
       ;; ~ Early returns for the obvious case: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ;; Non-jitable nodes are scheduled standalone
-      (when (or (not (jitable-p node)) (not (jitable-p read-node)))->ng)
-      ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      (when (null read-view) ->ok)
+      (when (or (not (jitable-p node)) (not (jitable-p read-node)))
+        ->ng)
+      ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      (when (null read-view)
+        ->ok)
       ;; eager to expand the length of procedure
       (if (null (group-reduce-dims parent-group))
           (progn
@@ -441,6 +428,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
          (groups (nreverse (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph))))))
+    (print groups)
     (mapc #'verify-group groups)
     ;; Serialize ADD (Embedding Embedding)
     ;; Merge two independent groups

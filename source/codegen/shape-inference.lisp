@@ -238,7 +238,7 @@
   (trivia:ematch view
     ;; antyhing for broadcast, because the strides of broadcasted axes are replaced w/ 0
     ;; [Note] _? nil? (test by ConvND)
-    ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (expr-const x :int64) shape)) (eql 1) _)
+    ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (expr-const x :int64) shape)) (eql 1) nil)
      t)
     (_ nil)))
 
