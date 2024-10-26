@@ -265,7 +265,9 @@
   (let ((reduced-axes (make-list rank-size)))
     (dolist (node (graph-nodes graph))
       ;; Broadcasting information are always stored by the highest rank tensor.
-      (when (car (relay-write-iters (read-type-relay node)))
+      (when (and
+             (getattr node :reduction :allow-undefined t)
+             (car (relay-write-iters (read-type-relay node))))
         (when (= rank-size (length (iteration-space-shape (car (relay-write-iters (read-type-relay node))))))
           (loop for nth upfrom 0
                 for r in (node-reduced-axes node)
