@@ -66,8 +66,6 @@
    #:run-type-infer
    #:buffer-merge-dims
    #:merge-dims
-   #:graph-infer-iteration-space)
-  (:export
    #:Iteration-Space
    #:Iteration-space-shape
    #:Iteration-space-strides
@@ -75,7 +73,8 @@
    #:Iteration-space-procedure
    #:%expr-const
    #:mergeable-view-p
-   #:iteration-space-expr-aref))
+   #:iteration-space-expr-aref
+   #:buffer-iteration-space))
 
 (in-package :caten/codegen/shape-inference)
 
@@ -238,7 +237,8 @@
   (when (null view) (return-from mergeable-view-p t))
   (trivia:ematch view
     ;; antyhing for broadcast, because the strides of broadcasted axes are replaced w/ 0
-    ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (expr-const x :int64) shape)) (eql 1) _) t)
+    ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (expr-const x :int64) shape)) (eql 1) NIL)
+     t)
     (_ nil)))
 
 (defun %expr-const (graph value dtype)
@@ -279,7 +279,7 @@
                 collect view))
   is)
 
-(defun merge-dims (g shape strides views)
+(defun merge-dims (g shape strides views &key (no-collapse nil))
   (declare (type list shape strides views))
   (when (null shape) (return-from merge-dims))
   (assert (= (length shape) (length strides) (length views)))
@@ -295,9 +295,9 @@
           for stride = (nth nth strides)
           for view = (nth nth views) do
             (multiple-value-bind (last-size last-stride last-view last-pd) (apply #'values (car (last ret)))
-              (if (not (eql size 1)) ;; always merge 1
+              (if (or no-collapse (not (eql size 1))) ;; always merge 1
                   (if (and
-                       
+                       (null no-collapse)
                        (mergeable-view-p last-view last-size)
                        (mergeable-view-p view size)
                        (expr-scalar-equivalent-p
@@ -338,14 +338,25 @@
            else
              collect stride)
      (or
-      (when (every #'identity views) views)
+      (when (some #'identity views) views)
       (loop repeat (buffer-nrank buffer) collect nil)))))
 
-(defmethod graph-infer-iteration-space ((graph Graph))
-  (loop for node in (graph-nodes graph)
-        for type = (read-type-relay node) do
-          (setf (relay-read-iters type)
-                (map 'list #'(lambda (x) (when x (buffer-merge-dims graph x))) (relay-reads type))
-                (relay-write-iters type)
-                (map 'list #'(lambda (x) (when x (buffer-merge-dims graph x))) (relay-writes type))))
-  graph)
+(defmethod buffer-iteration-space ((graph Graph) (buffer Buffer))
+  (let ((viewed-shape (buffer-shape buffer))
+        (strides      (buffer-stride buffer))
+        (views        (buffer-views buffer)))
+    (merge-dims
+     graph
+     ;; base-shape is set to nil if views are not created.
+     viewed-shape
+     (loop for stride in strides
+           for nth upfrom 0
+           for view = (nth nth views)
+           if (and (listp view) (fourth view))
+             collect 0 ;; Broadcasted -> stride is zero
+           else
+             collect stride)
+     (or
+      (when (some #'identity views) views)
+      (loop repeat (buffer-nrank buffer) collect nil))
+     :no-collapse t)))

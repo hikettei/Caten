@@ -112,6 +112,16 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                 ":allocate-p=T"
                 (format nil ":name=~a" (getattr node :name))))))
 
+(defstruct Group
+  (key (gensym) :type symbol)
+  (reduce-dims nil :type list)
+  (items nil :type list))
+
+(defmethod verify-group ((group Group))
+  (when (find :Allocate (group-items group) :key #'node-type)
+    (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
+
+;; [TODO] Move to helpers
 (defmethod identify-view-type ((view Node))
   ;; [TODO] Rename :broadcast/:reshape as a :broadcast-or-reshape
   (assert (eql :VIEW (node-type view)))
@@ -140,89 +150,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defun view-type-list (views)
   (loop for v in views if v collect (identify-view-type v)))
 
-(defmethod node-reduce-axes ((node Node))
-  (when (getattr node :reduction :allow-undefined t)
-    (let ((write-buffer (car (relay-writes (read-type-relay node)))))
-      (let ((out
-              (loop for v in (buffer-views write-buffer)
-                    if (fourth v)
-                      collect t
-                    else
-                      collect nil)))
-        (when (some #'identity out) out)))))
-
-(defmethod verify-group ((group Group))
-  (when (find :Allocate (group-items group) :key #'node-type)
-    (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
 
 (defun pname (name)
   (cl-ppcre:regex-replace-all
    "PAUSE/"
    (cl-ppcre:regex-replace-all "-" (cl-ppcre:regex-replace-all "GRAPH/" (princ-to-string name) "") "_")
    ""))
-
-(defun merge-broadcast (shape list1 &key (default 1) &aux (list (copy-list list1)))
-  (loop for s in shape
-        if (eql s 1)
-          collect default
-        else
-          collect (or (pop list) (error "merge-broadcast: cannot merge shape ~a and map ~a." shape list1))))
-
-(defmethod group-fixup-rank ((group Group) graph)
-  "Buffers in the same group should have the same ranked buffers.
-Rewrite all buffer in the chain of element-wise ops to have the same rank.
-```
-read_id[wi]   <- F2(...,)
-write_id[...] <- F1(..., read_id[ri])
-```
-
-(10 1 10)    (10 1 10)
-    |     =>     |
- (10 10)     (10 1 10)
-"
-  (when (find :Allocate (group-items group) :key #'node-type) (return-from group-fixup-rank))
-  (let* ((rank (loop for node in (group-items group)
-                     maximize
-                     (loop for r in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
-                           when r maximize
-                                  (buffer-nrank r))))
-         (common-shape (make-list rank)))
-    (loop for node in (group-items group) do
-      (loop for r in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
-            when r do
-              (loop for axis upfrom 0
-                    for s in (buffer-shape r)
-                    do (setf (nth axis common-shape) (if (eql s 1) s (or (nth axis common-shape) s))))))
-    (assert (every #'identity common-shape))
-    (flet ((new (buffer)
-             (values
-              (merge-broadcast common-shape (buffer-shape buffer))
-              (merge-broadcast common-shape (buffer-stride buffer))
-              (if (not (every #'null (buffer-views buffer)))
-                  (merge-broadcast
-                   common-shape
-                   (buffer-views buffer)
-                   :default nil)
-                  (loop repeat (length common-shape) collect nil)))))
-      (labels ((rpl (bf)
-                 (when (and bf (> (buffer-nrank bf) 0) (not (= (buffer-nrank bf) (length common-shape))))
-                   (multiple-value-bind (new-shape new-stride new-views) (new bf)
-                     (setf (buffer-shape bf) new-shape
-                           (buffer-stride bf) new-stride
-                           (buffer-views bf) new-views
-                           (buffer-nrank bf) (length new-shape)))))
-               (explore (node)
-                 (loop for buf in (relay-writes (read-type-relay node))
-                       for nth upfrom 0
-                       when buf do
-                         (rpl buf)
-                         (setf (nth nth (relay-write-iters (read-type-relay node))) (buffer-merge-dims graph buf)))
-                 (loop for buf in (relay-reads (read-type-relay node))
-                       for nth upfrom 0
-                       when buf do
-                         (rpl buf)
-                         (setf (nth nth (relay-read-iters (read-type-relay node))) (buffer-merge-dims graph buf)))))
-        (mapc #'explore (group-items group))))))
 
 (defmethod make-unique-schedule-name ((group Group))
   (let ((names) (seen))
@@ -263,239 +196,6 @@ write_id[...] <- F1(..., read_id[ri])
                :rank rank
                :items (group-items group)
                :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
-
-(defun broadcastable-p (t1 t2)
-  (flet ((butone (s)
-           (loop for x in s unless (eql x 1) collect x)))
-    (equal (butone (buffer-shape t1)) (butone (buffer-shape t2)))))
-
-(defmethod group-mergeable-p ((group Group) graph read read-type ri read-views)
-  "
-Returns T if it is valid to merge the access from R to W without transforming the views of R or W.
-```
-T=0 | W = f1(...)
-T=1 | ... = f2(..., R(storage_id=W))
-```
-"
-  (let ((node (id->value graph read)))
-    (when (null node) (return-from group-mergeable-p nil))
-    (when (eql (node-type node) :Allocate) (return-from group-mergeable-p nil))
-    (when (not (jitable-p node)) (return-from group-mergeable-p nil))
-    (let ((write-type (car (relay-writes (read-type-relay node))))
-          (wi (car (relay-write-iters (read-type-relay node)))))
-      (when (or (null ri) (null wi)) (return-from group-mergeable-p nil))
-      ;; T=0 | A[write_type] = ...
-      ;; T=1 | x[...] = node(... A[read_type])
-      ;; 1. Merge element-wise and non-viewed operations
-      (flet ((base-p (view) (or (null view) (every #'null view))))
-        (when (and (base-p (buffer-views read-type)) (base-p (buffer-views write-type)))
-          ;; For debugging...
-          ;;(assert (= (buffer-nrank read-type) (buffer-nrank write-type)))
-          (return-from group-mergeable-p t)))
-      ;; when :read is shrink -> separate
-      (when (find :shrink (view-type-list read-views))
-        (return-from group-mergeable-p nil))
-      (when (find :permute (view-type-list read-views))
-        (return-from group-mergeable-p nil))
-      ;; T=0 |  wi  = ...
-      ;; T=1 | ...  = f(..., ri, ...)
-      ;; Consider this kernel is valid when T0 and T1 belongs to the same iteration domain.
-      ;; for (int idx = ...; ... ; ...);
-      ;;   T=0 | wi = ...
-      ;;   T=1 | ... = f(..., ri, ...)
-      ;; If valid, they should be grouped to the same Group
-      ;; Otherwise, they should be separated, and never fused in the single kernel.
-      (flet ((elwise-p (x)
-               (and (= (length (iteration-space-views x)) 1)
-                    (every #'mergeable-view-p (iteration-space-views x) (iteration-space-shape x)))))
-        (when (and
-               (or (elwise-p ri) (elwise-p wi))
-               ;; originated from the same iteration space?
-               (= (buffer-nrank write-type) (buffer-nrank read-type)))
-          (return-from group-mergeable-p t)))
-      (flet ((meq (a b)
-               (or
-                (expr-scalar-equivalent-p b (expr-const 1 :int64))
-                (expr-scalar-equivalent-p a b))))
-        ;; [TODO] Fix this line, this is import for merging (!gelu (!matmul ...))
-        (when (and (or (= (buffer-nrank write-type) (buffer-nrank read-type))
-                       (and
-                        (= (length (iteration-space-shape wi)) (length (iteration-space-shape ri)))
-                        (broadcastable-p write-type read-type)))
-                   (every #'meq (iteration-space-shape wi) (iteration-space-shape ri)))
-          (return-from group-mergeable-p t)))
-;      (print "++MERGEABLE++")
-;      (print read)
-;      (print wi)
-;      (print write-type)
-;      (print ri)
-;      (print read-type)
-      nil)))
-
-(defmethod transform-and-mergeable-p ((group Group) graph read read-type ri read-views)
-  "
-Returns T if it is valid to merge the access from R to W with merging the views of R or W.
-Trying to merge X and Y in the same group connected like:
-```
-   X --------
-   |        |
- [MOVE]     |
-   |        |
- [VIEW]     |
-   |        | (Transform X and relocated to Y)
- [VIEW]     |
-   |        |
- [VIEW]     |
-   |        |
-   Y <-------
-```
-"
-  (when (not (symbolp read)) (return-from transform-and-mergeable-p nil))
-  (when (find :shrink (view-type-list read-views)) (return-from transform-and-mergeable-p nil))
-  (let ((node (id->value graph read)))
-    (when (null node) (return-from transform-and-mergeable-p nil))
-    (when (eql (node-type node) :Allocate) (return-from transform-and-mergeable-p nil))
-    (when (not (jitable-p node)) (return-from transform-and-mergeable-p nil))
-    ;; Only targeting !contiguous
-    (when (not (eql (node-type node) :MOVE)) (return-from transform-and-mergeable-p nil))
-    (let* ((write-type (car (relay-writes (read-type-relay node))))
-           (write-views (car (getattr node :_write_views)))
-           (wi (car (relay-write-iters (read-type-relay node))))
-           (tmp (id->value graph (car (node-reads node))))
-           (tgt-views (second (getattr node :_read_views)))
-           (tgt-write-views (getattr node :_write_views))
-           (tgt-rel (read-type-relay node))
-           (tgt-type (second (relay-reads tgt-rel)))
-           (tgt-is (second (relay-read-iters tgt-rel))))
-      (when (or (null tmp) (not (eql (node-type tmp) :Allocate))) (return-from transform-and-mergeable-p nil))
-      (when (not (every #'null tgt-write-views)) (return-from transform-and-mergeable-p nil))
-      (when (not (every #'null (buffer-views write-type))) (return-from transform-and-mergeable-p nil))
-      (when (not (every #'null write-views)) (return-from transform-and-mergeable-p nil))
-      (when (not (eql (buffer-dtype read-type) (buffer-dtype write-type))) (return-from transform-and-mergeable-p nil))
-      (when (not (eql (buffer-dtype tgt-type) (buffer-dtype write-type))) (return-from transform-and-mergeable-p nil))
-      ;; T=0 | write[wi] = MOVE(some_temporary_buffer, tgt[ti])
-      ;; T=1 | ...       =  f(..., read[ri], ...)
-      ;; =>
-      ;; T=0 | ... = f(..., tgt[new_iter], ...)
-      ;; Algorithm adopted here are a little compicated, so the implementation is separated in `fusion-rules.lisp`
-      (caten/codegen/fusion-rules:apply-fusion-rules
-       graph
-       (view-type-list tgt-views) tgt-views
-       (view-type-list read-views) read-views
-       read-type ri
-       write-type wi
-       tgt-type tgt-is))))
-
-(defmethod group-add-node ((group Group) node)
-  (push node (group-items group)))
-
-(defun schedule-groups (parent parent-groups)
-  (flet ((f (x) (when x (when (not (eql (group-key parent) (group-key x))) x))))
-    (let ((lst (append (list parent) (map 'list (alexandria:compose #'f #'car) parent-groups) (apply #'append (map 'list #'cdr parent-groups)))))
-      (remove-duplicates (loop for l in lst if l collect l) :key #'group-key))))
-
-(defmethod group-force-move-reduce-in-the-group ((group Group) graph read path-reduced)
-  "Force merging MOVE(OUT, C) and Reduce
-```
-<Cluster-Out-Fusable>
-                     Load(A, 0.0)
-                          |  
-    Reduce: C = BinaryOps(A, B) ---- <Injective>
-            |
-  MOVE(OUT, C)
-            |
-  <Complex-Out-Fusable>
-```"
-  (symbol-macrolet ((->ok (return-from group-force-move-reduce-in-the-group t)))
-    (when (null path-reduced) ->ok)
-    (let ((node (id->value graph read)))
-      (when (or (null node) (not (eql (node-type node) :MOVE))) ->ok)
-      (let ((reduction (id->value graph (second (node-reads node)))))
-        (when (null reduction)->ok)
-        (when (not (getattr reduction :reduction :allow-undefined t))->ok)
-        nil))))
-
-(defun force-merge-pattern-p (graph node read)
-  "Force merging Load(A, 0.0) and BinaryOps"
-  (when (getattr node :reduction :allow-undefined t)
-    (let* ((load (id->value graph read)))
-      (and load (eql (node-type load) :LOAD) (= (getattr load :value) 0)))))
-
-(defun recursive-reduce-p (id graph &aux (seen))
-  (declare (optimize (speed 3))
-           (type graph graph)
-           (type list seen))
-  (labels ((explore (x)
-             (when (and (symbolp x) (null (find x seen)))
-               (push x seen)
-               (let ((node (id->value graph x)))
-                 (when node
-                   (if (getattr node :reduction :allow-undefined t)
-                       (return-from recursive-reduce-p (values (node-reduce-axes node) seen))
-                       (mapc #'explore (node-reads node))))))))
-    (explore id)
-    nil))
-
-(defmethod group-reduce-mergeable-p ((group group) graph node read path-reduced)
-  (when (null (group-reduce-dims group)) (return-from group-reduce-mergeable-p t))
-  (multiple-value-bind (red seen) (recursive-reduce-p read graph)
-    (when (null red) (return-from group-reduce-mergeable-p t))
-    (if (equal (group-reduce-dims group) red)
-        t
-        (when (getattr node :reduction :allow-undefined t)
-          (find read seen)))))
-
-(defun recursive-create-group (id graph &key (seen (make-hash-table)) (parent (make-group)) (path-reduced nil))
-  "Breaks a big graph into small graphs by recursively exploring and creating subgraph."
-  (declare (type graph Graph))
-  (symbol-macrolet ((->failed (return-from recursive-create-group)))
-    (when (gethash id seen)->failed)
-    (let ((node (id->value graph id)))
-      (when (null node)->failed)
-      (setf (gethash id seen) t)
-      (group-add-node parent node)
-      (when (and (null (group-reduce-dims parent)) (getattr node :reduction :allow-undefined t))
-        (setf (group-reduce-dims parent) (node-reduce-axes node)))
-      (group-fixup-rank parent graph)
-      (schedule-groups ;; merge+sort+cleanup
-       parent
-       ;; [Note] :Allocate is a vm instruction, accordingly should be scheduled standalone
-       (loop with buffer-p = (eql (node-type node) :Allocate)
-             with jitable-p = (jitable-p node)
-             for read in (node-reads node)
-             for read-type in (relay-reads (read-type-relay node))
-             for ri in (relay-read-iters (read-type-relay node))
-             for views in (getattr node :_read_views)
-             for mergeable-p = (group-mergeable-p parent graph read read-type ri views)
-             for reduce-mergeable-p = (group-reduce-mergeable-p parent graph node read path-reduced)
-             for nth upfrom 0
-             for force-group = (group-force-move-reduce-in-the-group parent graph read path-reduced)
-             for force-p = (force-merge-pattern-p graph node read)
-             if (or force-p (and jitable-p reduce-mergeable-p (null buffer-p) mergeable-p force-group)) ;; Elemwise or contiguous opfusion is here.
-               collect (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced (node-reduce-axes (id->value graph read))))
-             else
-               collect
-               (multiple-value-bind (new-type new-is new-write-type new-write-is)
-                   (and jitable-p reduce-mergeable-p force-group (transform-and-mergeable-p parent graph read read-type ri views))
-                 (if (and jitable-p new-type new-is new-write-type new-write-is)
-                     (let ((move (id->value graph read)))
-                       (assert (and move (eql (node-type move) :MOVE)))
-                       ;; Forcibly merging the next MOVE, btf the type is are rewritten as:
-                       ;; write[new_write_type] = MOVE(alloc[new_write_type], tgt[new-type])
-                       (setf (relay-writes (read-type-relay move)) (list new-write-type)
-                             (relay-write-iters (read-type-relay move)) (list new-write-is)
-                             (relay-reads (read-type-relay move)) (list new-write-type new-type)
-                             (relay-read-iters (read-type-relay move)) (list new-write-is new-is))
-                       (recursive-create-group read graph :seen seen :parent parent :path-reduced (or path-reduced (node-reduce-axes (id->value graph read)))))
-                     ;; Complicated Fusion (e.g.: Elwise+Permute) is here.
-                     (recursive-create-group read graph :seen seen))))))))
-
-;; ~~ ^ OLD CODE ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defstruct Group
-  (key (gensym) :type symbol)
-  (space nil :type (or null Iteration-Space))
-  (reduce-dims nil :type list)
-  (items nil :type list))
 
 (defun jitable-p (node)
   (and
@@ -557,6 +257,7 @@ Trying to merge X and Y in the same group connected like:
          (every #'ok a b))))
 
 (defmethod buffer-fixup-reshape ((buffer Buffer) bf-buffer comm-buffer)
+  ;; [TODO] How to merge :shrink+:reshape?
   (if t;(equal (buffer-shape buffer) (buffer-shape bf-buffer))
       (setf (buffer-shape buffer) (buffer-shape comm-buffer)
         (buffer-stride buffer) (buffer-stride comm-buffer)
@@ -590,37 +291,28 @@ Trying to merge X and Y in the same group connected like:
 (defmethod group-items-st-rewriter ((group Group) graph f)
   (dolist (item (group-items group))
     (loop for typ in (relay-reads (read-type-relay item))
-          for is in (relay-read-iters (read-type-relay item))
           for nth upfrom 0
-          unless (or (null is) (= 0 (buffer-nrank typ)))
-            do (when (funcall f typ)
-                 ;; If changed => update iteration space
-                 (setf (nth nth (relay-read-iters (read-type-relay item))) (buffer-merge-dims graph typ))))
+          unless (or (null typ) (= 0 (buffer-nrank typ)))
+            do (funcall f typ))
     (loop for typ in (relay-writes (read-type-relay item))
-          for is in (relay-write-iters (read-type-relay item))
           for nth upfrom 0
-          unless (or (null is) (= 0 (buffer-nrank typ)))
-            do (when (funcall f typ)
-                 ;; If changed => update iteration space
-                 (setf (nth nth (relay-write-iters (read-type-relay item))) (buffer-merge-dims graph typ))))))
+          unless (or (null typ) (= 0 (buffer-nrank typ)))
+            do (funcall f typ))))
 
 (defun apply-view-fusor (view graph self parent-group)
-  (ecase (print (identify-view-type view))
+  (ecase (identify-view-type view)
     (:permute
      (let ((permute (getattr view :permute)))
        (group-items-st-rewriter
         parent-group graph
-        #'(lambda (typ) (buffer-fixup-permute typ permute)))
-       (setf (group-space parent-group) (group-space self))))
+        #'(lambda (typ) (buffer-fixup-permute typ permute)))))
     (:reshape
      ;; Note: LazyBuffer symbols are updated here?
      (let ((reshape-before (car (relay-reads (read-type-relay view))))
            (reshape-after (car (relay-writes (read-type-relay view)))))
        (group-items-st-rewriter
         parent-group graph
-        #'(lambda (typ) (buffer-fixup-reshape typ reshape-before reshape-after))))
-     ;; [TODO] Group Iteration Spaceを作成し直す？(axis ... is not found!)
-     (setf (group-space parent-group) (group-space self)))
+        #'(lambda (typ) (buffer-fixup-reshape typ reshape-before reshape-after)))))
     (:broadcast
      (let ((comm-rank (getattr view :nrank))
            (comm-size (buffer-shape (car (relay-writes (read-type-relay view)))))
@@ -633,14 +325,12 @@ Trying to merge X and Y in the same group connected like:
        (group-items-st-rewriter
         parent-group graph
         #'(lambda (typ)
-            (buffer-fixup-broadcast typ comm-rank comm-size broadcast)))
-       (setf (group-space parent-group) (group-space self))))
+            (buffer-fixup-broadcast typ comm-rank comm-size broadcast)))))
     (:shrink
      (group-items-st-rewriter
       parent-group graph
       #'(lambda (typ)
-          (buffer-fixup-shrink typ (car (relay-reads (read-type-relay view))))))
-     (setf (group-space parent-group) (group-space self)))))
+          (buffer-fixup-shrink typ (car (relay-reads (read-type-relay view)))))))))
 
 (defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
   (symbol-macrolet ((->ok (return-from group-merge-p t))
@@ -663,64 +353,27 @@ Trying to merge X and Y in the same group connected like:
       ;; ~ Early returns for the obvious case: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ;; Non-jitable nodes are scheduled standalone
       (when (or (not (jitable-p node)) (not (jitable-p read-node)))->ng)
-      ;; Scalars are concatenated w/ everything (except for they are vm ops)
-      (when (or (null (group-space self)) (null (group-space parent-group)))->ok)
-      ;; Early return for the simplest fusion case
-      (flet ((expr-eq (a b)
-               (expr-scalar-equivalent-p a b)))
-        ;; Equivalent iteration space => merge w/o modifying anything
-        ;; Created from the same iteration buffer? and the same space?
-        (when (and (equal (iteration-space-procedure (group-space self))
-                          (iteration-space-procedure (group-space parent-group)))
-                   (every #'expr-eq
-                          (iteration-space-shape (group-space self))
-                          (iteration-space-shape (group-space parent-group))))
-          ->ok))
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      (when (null read-view)
-        (let* ((p1 (iteration-space-procedure (group-space self)))
-               (p2 (iteration-space-procedure (group-space parent-group)))
-               (c  (>= (length p1) (length p2)))
-               (p (if c (group-space self) (group-space parent-group))))
-          ;; Smaller -> Higher is OK
-          (if c
-              (progn
-                (setf (group-space self) p)
-                (setf (group-space parent-group) p)
-                ->ok)
-              (progn
-                (print "FIXUP GRAPH IS REQUIRED")
-                ;;(setf (group-space self) p)
-                ;;(setf (group-space parent-group) p)
-                ->ok))))
-     ; (print (view-type-list read-view))
-     ; (print read-view)
-     ; (print (buffer-shape (car (relay-reads (read-type-relay (car read-view))))))
+      (when (null read-view) ->ok)
       ;; eager to expand the length of procedure
       (if (null (group-reduce-dims parent-group))
           (progn
-            ;(print "+++++")
             (dolist (v (reverse read-view)) ;; rewriting the graph
-              (apply-view-fusor v graph self parent-group)))
+              (apply-view-fusor v graph self parent-group))
+            ;; [TODO] Assert Mergeable
+            ->ok)
           (progn
             ;; Complex-out-fusable
             (when (find :shrink (view-type-list read-view))->ng)
             (when (find :permute (view-type-list read-view))->ng)
             (when (not (= (length read-view) 1))->ng)
-            ;(print "PATH==")
-            ;(print node)
-            ;(print (view-type-list read-view))
-            ;(print (group-reduce-dims parent-group))
-            ;(print (buffer-shape (car (relay-writes (read-type-relay node)))))
-            ;(print (buffer-shape (car (relay-writes (read-type-relay read-node)))))
             (case (car (view-type-list read-view))
               (:Broadcast
-               (print "BROADCASTING")
-               (apply-view-fusor (car read-view) graph self parent-group))
+               (apply-view-fusor (car read-view) graph self parent-group)
+               ->ok)
               (:Reshape
-               ->ng))))
-        ;; overwriting either of self/parent-group's to have the common iterspace
-        t)))
+               (print "NG")
+               ->ng)))))))
 
 ;; for batch = 0..10
 ;; output[n, k, i, j] += input[n, c, i + p, j + q] * weight[k, c, p, q]
@@ -734,14 +387,6 @@ Trying to merge X and Y in the same group connected like:
   (loop for m in mergeable-list
         for p in parents
         if m do
-          (assert (or
-                   (null (group-space self))
-                   (null (group-space p))
-                   (equal
-                    (alexandria:flatten (iteration-space-procedure (group-space self)))
-                    (alexandria:flatten (iteration-space-procedure (group-space p)))))
-                  ()
-                  "Cannot merge with different space: ~a and ~a" (group-space self) (group-space p))
           (setf (group-items self) (append (group-items p) (group-items self))
                 (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims p))))
   self)
@@ -755,16 +400,7 @@ Trying to merge X and Y in the same group connected like:
          (self
            (make-group
             :items (list node)
-            :reduce-dims (node-reduce-axes node)
-            :space (if (jitable-p node)
-                       (let* ((iters
-                                (append
-                                 (relay-write-iters (read-type-relay node))
-                                 (relay-read-iters (read-type-relay node))))
-                              (iters (loop for i in iters if i collect i)))
-                         ;; Use the most complicated iteration space as a representative
-                         (car (sort iters #'> :key (alexandria:compose #'length #'iteration-space-procedure))))
-                       nil)))
+            :reduce-dims (node-reduce-axes node)))
          (parents
            (map 'list #'(lambda (x) (and (symbolp x) (recursive-create-groups x graph :seen seen))) (node-reads node))))
     (declare (type node node) (type list parents))

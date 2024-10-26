@@ -14,8 +14,7 @@
    #:buffer-inferred-permute)
   (:import-from
    :caten/codegen/shape-inference
-   #:run-type-infer
-   #:graph-infer-iteration-space)
+   #:run-type-infer)
   (:import-from
    :caten/codegen/rewriting-rules
    #:apply-rewriting-rules)
@@ -124,20 +123,18 @@
   (run-type-infer avm)
   ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views, Symbol Loads, ...)
   (apply-rewriting-rules avm)
-  ;; 3. Merging dims, views, (e.g. (10 10 10) Tensor -> (10x10x10) Tensor to maximize the use of simd)
-  (graph-infer-iteration-space (avm-graph avm))
-  ;; 4. Running the scheduler
+  ;; 3. Running the scheduler
   (let ((schedule-graph (graph-schedule (avm-graph avm)))
-        ;; 5. Gathering the dynamic shapes used in the graph.
+        ;; 4. Gathering the dynamic shapes used in the graph.
         (symbolics
           (remove-duplicates
            (loop for node in (graph-nodes (avm-graph avm))
                  if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
                    collect (getattr node :value)))))
     (declare (type Graph schedule-graph))
-    ;; 6. Minifying the number of schedules, (reuse kernels)
+    ;; 5. Minifying the number of schedules, (reuse kernels)
     (minify-equivalent-schedule schedule-graph)
-    ;; 7. Start JIT Compilation. (Performing by group)
+    ;; 6. Start JIT Compilation. (Performing by group)
     (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
@@ -152,9 +149,9 @@
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (print-progress "~a" (getattr x :name))
                    (format t "=====> Lowering to blueprint~%"))
-                 ;; 8. Running Lowerer
+                 ;; 7. Running Lowerer
                  (lower-schedule-item x (avm-graph avm) schedule-graph)
-                 ;; 9. Lower into Polyhedral IR
+                 ;; 8. Lower into Polyhedral IR
                  (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
                    (format t "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
                  (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
@@ -163,7 +160,7 @@
                    (scop x symbolics)
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)
                      (format t "=====> Auto Scheduler~%"))
-                   ;; 10. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
+                   ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
                    (auto-schedule x)
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)
                      (print (getattr x :polyhedral))
@@ -173,7 +170,7 @@
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
            (graph-nodes schedule-graph)))))
-    ;; 11. Running memory-planner, update the storage-id
+    ;; 10. Running memory-planner, update the storage-id
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
@@ -184,7 +181,7 @@
       (dolist (s (graph-nodes schedule-graph))
         (when (getattr s :jitable)
           (setf (getattr s :rendered-object) (%render-kernel renderer s)))))
-    ;; 12. Complete (Render by the renderer)
+    ;; 11. Complete (Render by the renderer)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Compiling ...")

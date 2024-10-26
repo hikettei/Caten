@@ -12,7 +12,10 @@
    #:iteration-space-strides
    #:iteration-space-views
    #:iteration-space-procedure
-   #:%expr-const)
+   #:%expr-const
+   #:buffer-iteration-space
+   #:buffer-merge-dims
+   #:make-iteration-space)
   (:import-from
    :caten/codegen/helpers
    :gid
@@ -126,30 +129,32 @@
         nodes
         (simplify-blueprint nodes))))
 
-(defmethod get-grouped-dims ((graph Graph))
+(defmethod get-grouped-dims ((graph Graph) (base-graph Graph))
   "Find out the iteration space that is common in the graph"
   (let* ((kernel-rank
            (loop for node in (graph-nodes graph)
                  for type = (read-type-relay node)
                  maximize
-                 (loop for r in (append (relay-read-iters type) (relay-write-iters type))
-                       when r maximize (apply #'max (flatten (iteration-space-procedure r))))))
-         (pid2space (make-hash-table :test #'equal)))
+                 (loop for r in (append (relay-reads type) (relay-writes type))
+                       when r maximize (length (buffer-shape r)))))
+         (pid2space (make-hash-table :test #'equal))
+         (noopt nil))
     (labels ((is-one (expr)
                (expr-scalar-equivalent-p expr (expr-const 1 :int64)))
-             (check (buffer space)
-               (when (and buffer space)
-                 (assert (= (apply #'max (flatten (iteration-space-procedure space))) kernel-rank) ()
-                         "get-grouped-dims: Graph nodes should have the common rank. rank_size=~a but got ~a" kernel-rank space)
-                 (loop for s in (iteration-space-shape space)
-                       for p in (iteration-space-procedure space)
-                       do (setf (gethash p pid2space)
-                                (if (or (null (gethash p pid2space)) (is-one (gethash p pid2space)))
-                                    s
-                                    (gethash p pid2space))))))
+             (check (buffer)
+               (when buffer
+                 (let ((space (if noopt
+                                  (buffer-iteration-space base-graph buffer)
+                                  (buffer-merge-dims base-graph buffer))))
+                   (loop for s in (iteration-space-shape space)
+                         for p in (iteration-space-procedure space)
+                         do (setf (gethash p pid2space)
+                                  (if (or (null (gethash p pid2space)) (is-one (gethash p pid2space)))
+                                      s
+                                      (gethash p pid2space)))))))
              (explore (node)
-               (mapc #'check (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node)))
-               (mapc #'check (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
+               (mapc #'check (relay-reads (read-type-relay node)))
+               (mapc #'check (relay-writes (read-type-relay node))))
              (related-keys (rank)
                (loop for key being the hash-keys of pid2space
                      if (find rank key) collect key)))
@@ -164,7 +169,7 @@
                        collect (loop for x in p if (null (find x seen)) collect x and do (push x seen))
                        and do (push p seen)))
              (new-procedure (loop for p in new-procedure if p collect p)))
-        (assert (equal (alexandria:flatten new-procedure) (range 0 (1+ kernel-rank))))
+        (assert (equal (alexandria:flatten new-procedure) (range 0  kernel-rank)))
         (cons
          (map
           'list
@@ -174,7 +179,8 @@
           new-procedure)
          new-procedure)))))
 
-(defmethod fixup-graph-iteration-space ((graph Graph) found-pair g)
+(defmethod fixup-graph-iteration-space ((graph Graph) found-pair g
+                                        &aux (kernel-rank (apply #'max (alexandria:flatten (cdr found-pair)))))
   "Rewrite the iteration space in the graph to match the common iteration space found in the get-grouped-dim function."
   (multiple-value-bind (found-space procedure) (values (car found-pair) (cdr found-pair))
     (labels ((merge-list (proc list)
@@ -184,7 +190,8 @@
              (merge-stride (proc list)
                (loop for p in proc
                      collect
-                     (%expr-const g (nth (car (last p)) list) :int64)))
+                     (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
+                       (%expr-const g (if (find 0 strides :test #'eql) 0 (car (last strides))) :int64))))
              (new-stride (stride view)
                (loop for s in stride
                      for nth upfrom 0
@@ -199,25 +206,24 @@
                      (if (= (length p) 1)
                          (nth (car p) view)
                          nil)))
-             (fixup-dims (iterspace original-buffer)
-               (when iterspace
-                 (when (= (length (iteration-space-shape iterspace)) (length found-space))
-                   (return-from fixup-dims))
+             (fixup-dims (id original-buffer)
+               (when original-buffer
                  ;; Caten cannot inference where to insert one here.
-                 (assert (>= (length (buffer-shape original-buffer)) (length found-space))
+                 (assert (= (length (buffer-shape original-buffer)) (1+ kernel-rank))
                          ()
-                         "Cannot uprank ~a into the space ~a. The original buffer should be upranked in scheduler in advance." original-buffer found-space)
+                         "(id=~a) Cannot uprank ~a into the space ~a. The original buffer should be upranked in scheduler in advance." id original-buffer found-space)
                  (multiple-value-bind (new-shape new-stride new-view)
                      (values (merge-list procedure (buffer-shape original-buffer))
                              (merge-stride procedure (new-stride (buffer-stride original-buffer) (buffer-views original-buffer)))
                              (merge-view procedure (buffer-views original-buffer)))
-                   (setf (iteration-space-shape iterspace) new-shape
-                         (iteration-space-strides iterspace) new-stride
-                         (iteration-space-views iterspace) new-view
-                         (iteration-space-procedure iterspace) procedure)))))
+                   (make-iteration-space
+                    :shape new-shape
+                    :strides new-stride
+                    :views new-view
+                    :procedure procedure)))))
       (dolist (n (graph-nodes graph))
-        (mapc #'fixup-dims (relay-read-iters (read-type-relay n)) (relay-reads (read-type-relay n)))
-        (mapc #'fixup-dims (relay-write-iters (read-type-relay n)) (relay-writes (read-type-relay n)))))))
+        (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (relay-reads (read-type-relay n)))
+              (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
 
 (defmethod node-depend-idx-list ((node Node) gid
                                  &aux
@@ -412,7 +418,7 @@
   (when (null (getattr node :jitable)) (return-from lower-schedule-item))
   (let* ((graph (apply #'make-graph (getattr node :items)))
          (_ (setf (graph-outputs graph) (node-writes node)))
-         (iterspace (get-grouped-dims graph))
+         (iterspace (get-grouped-dims graph base-graph))
          (__ (fixup-graph-iteration-space graph iterspace base-graph)) ; Use the common iteration space in the group
          (group-size (car iterspace))
          (gids (map 'list #'gid (range 0 (length group-size))))
