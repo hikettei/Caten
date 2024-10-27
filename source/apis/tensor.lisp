@@ -6,7 +6,8 @@
 						   (dtype *default-float*) (order *default-order*) (id (gensym "TID"))
 						   (variables nil) (views nil) (requires-grad nil)
 						   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD"))))
-						   (grad-id (when requires-grad (gensym "TGRAD"))))))
+						   (grad-id (when requires-grad (gensym "TGRAD")))
+                                                   (tracker (start-tracking shape :order order)))))
   "
 A struct `tensor` is a multi-dimensional, and strided matrix (and nrank=0 to scalar value) containing elements of the single dtype.
 Also the tensor has following slots:
@@ -24,6 +25,7 @@ Also the tensor has following slots:
 - variables[list] A list of `Tensor` objects that are used in the operation of the tensor. Tensors listed here are involved in the compilation.
 "
   (shape shape :type list)
+  (tr tracker :type Tracker)
   (buffer nil :type (or null Buffer))
   (dtype dtype :type dtype-t)
   (order order :type (member :row :column))
@@ -45,6 +47,7 @@ Also the tensor has following slots:
      :dtype ,(tensor-dtype tensor) :order ',(tensor-order tensor)
      :id ',(tensor-id tensor) :variables ',(tensor-variables tensor)
      :views nil :requires-grad ,(tensor-requires-grad tensor)
+     :tracker (start-tracking ',(tensor-shape tensor) :order ',(tensor-order tensor))
      :grad ,(tensor-grad tensor) :grad-id ',(tensor-grad-id tensor))))
 
 (defun grad (tensor)
@@ -92,7 +95,8 @@ Returns a memory-layout of the tensor."
 ~a
   :op ~a
   :requires-grad ~a
-  :variables ~a}"
+  :variables ~a
+  :tracker ~a}"
 	  (tensor-dtype tensor)
 	  (loop for s in (tensor-shape tensor) collect (if (tensor-p s) (tensor-id s) s))
 	  (tensor-id tensor)
@@ -101,7 +105,8 @@ Returns a memory-layout of the tensor."
 	      "  :buffer nil")
 	  (tensor-op tensor)
 	  (tensor-requires-grad tensor)
-	  (map 'list #'tensor-id (tensor-variables tensor))))
+	  (map 'list #'tensor-id (tensor-variables tensor))
+          (tensor-tr tensor)))
 
 (defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil) (from nil))
   "

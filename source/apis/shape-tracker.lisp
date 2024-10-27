@@ -1,5 +1,143 @@
 (in-package :caten/apis)
+;; [TODO] Handle the stride by ShapeTracker
+;; AASM Based Construction
+;; Tensor Shaped Tensor Creation Support!
+;; Well tested?
+(defstruct (Tracker
+            (:conc-name tr-)
+            (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))
+  (shape shape :type list)
+  (shape-for-stride (copy-list shape) :type list)
+  (order order :type (member :row :column))
+  (permute permute :type list)
+  (broadcast broadcast :type list)
+  (mask mask :type list)
+  (contiguous contiguous :type boolean))
 
+(defmethod print-object ((tr Tracker) stream)
+  (print-unreadable-object (tr stream :type t)
+    (format stream "{~a~a} (~a) contiguous-p=~a" (tr-order tr) (tr-permute tr)
+            (apply
+             #'concatenate
+             'string
+             (butlast
+              (loop for s in (tr-shape tr)
+                    for m in (tr-mask tr)
+                    for b in (tr-broadcast tr)
+                    append
+                    (list (format nil "~a~a"
+                               (if b (format nil "~~~a" b) s)
+                               (if m
+                                   (format nil "{~a}" m)
+                                   ""))
+                          " "))))
+            (tr-contiguous tr))))
+
+(defun start-tracking (shape &key (order :row) (mask nil))
+  (declare (type (member :row :column) order)
+           (type list shape))
+  (assert (every #'(lambda (s) (or (symbolp s) (and (integerp s) (> s 0)))) shape) () "Trying to create tracker with negative dimension: ~a" shape)
+  ;; Canonicalize mask
+  (when (and mask (every #'(lambda (m s) (equal m (list 0 s))) mask shape)) (setf mask nil))
+  (let ((mask (or mask (loop repeat (length shape) collect nil)))
+        (broadcast (loop repeat (length shape) collect nil)))
+    (make-tracker shape mask order (range 0 (length shape)) broadcast :contiguous t)))
+
+(defmethod tr-apply-permute ((tracker Tracker) order)
+  (assert (= (length order) (length (tr-shape tracker))) () "Trying to permute tracker with different dimension: ~a" order)
+  (assert (equal (sort (copy-list order) #'<) (range 0 (length order))) () "Trying to permute tracker with invalid order: ~a, order are given from shuffling ~a" order (range 0 (length order)))
+  (let ((new-tracker (copy-tracker tracker)))
+    (setf (tr-shape new-tracker)     (permute-list order (tr-shape tracker))
+          (tr-mask new-tracker)      (permute-list order (tr-mask tracker))
+          (tr-permute new-tracker)   (permute-list order (tr-permute tracker))
+          (tr-broadcast new-tracker) (permute-list order (tr-broadcast tracker)))
+    new-tracker))
+
+(defmethod tr-apply-uprank ((tracker Tracker) mask)
+  (assert (= (count-if #'identity mask) (length (tr-shape tracker))) () "Trying to uprank tracker with different dimension: ~a" mask)
+  ;; T=existing dimension, NIL=new dimension sized 1
+  (let* ((new-tracker (copy-tracker tracker))
+         (new-shape (loop for m in mask
+                          if m collect (pop (tr-shape new-tracker))
+                            else collect 1))
+         (new-mask (loop for m in mask
+                         if m collect (pop (tr-mask new-tracker))
+                           else collect nil))
+         (new-broadcast (loop for m in mask
+                              if m collect (pop (tr-broadcast new-tracker))
+                                else collect nil))
+         (new-permute (loop for m in mask
+                            for nth upfrom 0
+                            for offset = (count-if #'null (subseq mask 0 nth))
+                            if m collect (+ offset (pop (tr-permute new-tracker)))
+                              else collect nth)))
+    (assert (equal (sort (copy-list new-permute) #'<) (range 0 (length new-permute))))
+    (setf (tr-shape new-tracker) new-shape
+          (tr-shape-for-stride new-tracker) (permute-list new-permute new-shape)
+          (tr-mask new-tracker) new-mask
+          (tr-permute new-tracker) new-permute
+          (tr-broadcast new-tracker) new-broadcast)
+    new-tracker))
+
+(defmethod tr-apply-reshape ((tracker Tracker) new-shape)
+  (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
+    (when (equal shape-w/o-one (tr-shape tracker))
+      (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape))))
+    ;; Masked reshape -> not contiguous?
+    (when (null (tr-contiguous tracker))
+      ;; [TODO] Implement masked reshape
+      (return-from tr-apply-reshape nil))
+    ;; Permuted -> Not contiguous
+    (when (not (equal (range 0 (length (tr-shape tracker))) (tr-permute tracker)))
+      (return-from tr-apply-reshape nil))
+    ;; Broadcasted -> Not contiguous
+    (when (some #'identity (tr-broadcast tracker))
+      (return-from tr-apply-reshape nil))
+    ;; Can reshape (reshape=chainging the stride)
+    (let* ((new-tracker (copy-tracker tracker)))
+      (setf (tr-shape new-tracker) new-shape
+            (tr-shape-for-stride new-tracker) (copy-list new-shape)
+            (tr-permute new-tracker) (range 0 (length new-shape))
+            (tr-mask new-tracker) (make-list (length new-shape))
+            (tr-broadcast new-tracker) (make-list (length new-shape))
+            (tr-contiguous new-tracker) t)
+      new-tracker)))
+
+(defmethod tr-apply-slice ((tracker Tracker) slice new-shape)
+  (assert (= (length slice) (length (tr-shape tracker))) () "Trying to slice tracker with different dimension: ~a" slice)
+  (error "TODO")
+  )
+
+(defmethod tr-apply-broadcast ((tracker Tracker) subscript)
+  "subscript = (nil 10 nil ...)"
+  (assert (= (length subscript) (length (tr-shape tracker))) () "Trying to broadcast tracker with different dimension: ~a" subscript)
+  (let ((merged
+          (loop for b in (tr-broadcast tracker)
+                for s in subscript
+                collect (if b b s))))
+    (let ((new-tracker (copy-tracker tracker)))
+      (setf (tr-broadcast new-tracker) merged)
+      new-tracker)))
+
+(defmethod %make-view-from-tracker ((tracker Tracker) write-to base)
+  (%view
+   base
+   (tr-shape tracker)
+   (loop for m in (tr-mask tracker)
+         if m collect (car m) else collect 0)
+   (loop for m in (tr-mask tracker)
+         for s in (tr-shape tracker)
+         for b in (tr-broadcast tracker)
+         if m collect (second m) else collect (if b b s))
+   (loop for m in (tr-mask tracker)
+         if m collect m else collect 1)
+   (loop for b in (tr-broadcast tracker)
+         if b collect t else collect nil)
+   (permute-list (tr-permute tracker) (%stride (tr-shape-for-stride tracker) (tr-mask tracker)))
+   :id write-to
+   :permute (tr-permute tracker)))
+
+;; ~~ ShapeTracker DSL ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defpattern sym (to-what) `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
   (defstruct (AxisTracker
@@ -262,113 +400,3 @@ It calls !reshape and !view inside, therefore, it must not be used inside the fo
     `(%solve-st ,st ,(parse-where where) t ,@input-tensors)))
 
 (defun broadcast-elwise (a b) (multiple-value-list (bc "A[~] B[~] -> A[~] B[~]" (a b))))
-;; ~~ Tracker ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Handle the stride by ShapeTracker
-;; AASM Based Construction
-;; Tensor Shaped Tensor Creation Support!
-(defstruct (Tracker
-            (:conc-name tr-)
-            (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))
-  (shape shape :type list)
-  (shape-for-stride (copy-list shape) :type list)
-  (order order :type (member :row :column))
-  (permute permute :type list)
-  (broadcast broadcast :type list)
-  (mask mask :type list)
-  (contiguous contiguous :type boolean))
-
-(defun start-tracking (shape &key (order :row) (mask nil))
-  (declare (type (member :row :column) order)
-           (type list shape))
-  (assert (every #'(lambda (s) (or (symbolp s) (and (integerp s) (> s 0)))) shape) () "Trying to create tracker with negative dimension: ~a" shape)
-  ;; Canonicalize mask
-  (when (and mask (every #'(lambda (m s) (equal m (list 0 s))) mask shape)) (setf mask nil))
-  (let ((mask (or mask (loop repeat (length shape) collect nil)))
-        (broadcast (loop repeat (length shape) collect nil)))
-    (make-tracker shape mask order (range 0 (length shape)) broadcast :contiguous t)))
-
-(defmethod tr-apply-permute ((tracker Tracker) order)
-  (assert (= (length order) (length (tr-shape tracker))) () "Trying to permute tracker with different dimension: ~a" order)
-  (assert (equal (sort (copy-list order) #'<) (range 0 (length order))) () "Trying to permute tracker with invalid order: ~a, order are given from shuffling ~a" order (range 0 (length order)))
-  (let ((new-tracker (copy-tracker tracker)))
-    (setf (tr-shape new-tracker)     (permute-list order (tr-shape tracker))
-          (tr-mask new-tracker)      (permute-list order (tr-mask tracker))
-          (tr-permute new-tracker)   (permute-list order (tr-permute tracker))
-          (tr-broadcast new-tracker) (permute-list order (tr-broadcast tracker)))
-    new-tracker))
-
-(defmethod tr-apply-uprank ((tracker Tracker) mask)
-  (assert (= (count-if #'identity mask) (length (tr-shape tracker))) () "Trying to uprank tracker with different dimension: ~a" mask)
-  ;; T=existing dimension, NIL=new dimension sized 1
-  (let* ((new-tracker (copy-tracker tracker))
-         (new-shape (loop for m in mask
-                          if m collect (pop (tr-shape new-tracker))
-                            else collect 1))
-         (new-mask (loop for m in mask
-                         if m collect (pop (tr-mask new-tracker))
-                           else collect nil))
-         (new-broadcast (loop for m in mask
-                              if m collect (pop (tr-broadcast new-tracker))
-                                else collect nil))
-         (new-permute (loop for m in mask
-                            for nth upfrom 0
-                            for offset = (count-if #'null (subseq mask 0 nth))
-                            if m collect (+ offset (pop (tr-permute new-tracker)))
-                              else collect nth)))
-    (assert (equal (sort (copy-list new-permute) #'<) (range 0 (length new-permute))))
-    (setf (tr-shape new-tracker) new-shape
-          (tr-shape-for-stride new-tracker) (permute-list new-permute new-shape)
-          (tr-mask new-tracker) new-mask
-          (tr-permute new-tracker) new-permute
-          (tr-broadcast new-tracker) new-broadcast)
-    new-tracker))
-
-(defmethod tr-apply-reshape ((tracker Tracker) new-shape)
-  (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
-    (when (equal shape-w/o-one (tr-shape tracker))
-      (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape))))
-    ;; Masked reshape -> not contiguous?
-    (when (null (tr-contiguous tracker))
-      ;; [TODO] Implement masked reshape
-      (return-from tr-apply-reshape nil))
-    ;; Permuted -> Not contiguous
-    (when (not (equal (range 0 (length (tr-shape tracker))) (tr-permute tracker)))
-      (return-from tr-apply-reshape nil))
-    ;; Broadcasted -> Not contiguous
-    (when (some #'identity (tr-broadcast tracker))
-      (return-from tr-apply-reshape nil))
-    ;; Can reshape (reshape=chainging the stride)
-    (let* ((new-tracker (copy-tracker tracker)))
-      (setf (tr-shape new-tracker) new-shape
-            (tr-shape-for-stride new-tracker) (copy-list new-shape)
-            (tr-permute new-tracker) (range 0 (length new-shape))
-            (tr-mask new-tracker) (make-list (length new-shape))
-            (tr-broadcast new-tracker) (make-list (length new-shape))
-            (tr-contiguous new-tracker) t)
-      new-tracker)))
-
-(defmethod tr-apply-slice ((tracker Tracker) slice new-shape)
-  (assert (= (length slice) (length (tr-shape tracker))) () "Trying to slice tracker with different dimension: ~a" slice)
-  
-  )
-
-(defmethod tr-apply-broadcast ((tracker Tracker) subscript)
-  "subscript = (nil 10 nil ...)"
-  (assert (= (length subscript) (length (tr-shape tracker))) () "Trying to broadcast tracker with different dimension: ~a" subscript)
-  (let ((merged
-          (loop for b in (tr-broadcast tracker)
-                for s in subscript
-                collect (if b b s))))
-    (let ((new-tracker (copy-tracker tracker)))
-      (setf (tr-broadcast new-tracker) merged)
-      new-tracker)))
-
-(defmethod contiguous-p ((tracker Tracker))
-  ;; If contiguous-p is True, you can keep the computation w/o allocating tmp buffer
-  ;; If is false, need to call contiguous
-  )
-
-
-(defmethod deploy ((tracker Tracker))
-;;  (make-node :Buffer :VIEW 
-  )
