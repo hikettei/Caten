@@ -108,7 +108,7 @@ Returns a memory-layout of the tensor."
 	  (map 'list #'tensor-id (tensor-variables tensor))
           (tensor-tr tensor)))
 
-(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil) (from nil))
+(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil) (from nil) (tr nil))
   "
 ```
 (make-tensor shape &key (dtype *default-float*) (order *default-order*) (id (gensym \"TID\")) (requires-grad nil) (initial-element nil) (views nil) (from nil))
@@ -134,7 +134,7 @@ Create a new lazy tensor.
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()
 	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  Butgot: ~a~%  Shape=~a" s shape))
-  (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views)))
+  (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views :tracker (or tr (start-tracking shape :order order)))))
     (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element :from from)
           (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
     buff))

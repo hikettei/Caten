@@ -234,7 +234,7 @@ Compute the ~a of the tensor.
 		    (x (!reshape x `(,@(butlast (shape x) 1) ,@mid ,(car (last (shape x))))))
 		    (y (!reshape y `(,@(butlast (shape y) 2) ,@mid ,@(last (shape y) (min n2 2))))))
 	       (let ((z (!mul x (!transpose y -1 (- (min n2 2))))))
-		 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
+                 (!reshape (!sum z :axis -1) (butlast (shape z))))))))
 
 (defun !matmul (a b)
   "

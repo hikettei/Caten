@@ -89,6 +89,7 @@ Applying a further slicing:
 ;; 1. Modules can inference ShapeTracker?
 ;; 2. Tensor Shaped Tensor? Stride Computation?
 ;; 3. defsimplifier (:VIEW VIEW) -> :VIEW
+;; 4. Create a cache for lowering modules
 (defstruct (Tracker
             (:conc-name tr-)
             (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))
