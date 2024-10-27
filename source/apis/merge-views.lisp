@@ -156,10 +156,7 @@ Applying a further slicing:
     new-tracker))
 
 (defun compute-new-permute (input mask)
-  "Compute the new permute list based on input permute and mask.
-   input: list of integers representing the old permute.
-   mask: list of booleans where T indicates existing axes and NIL indicates new axes.
-   Returns a list of integers representing the new permute."
+  "Compute the new permute list based on input permute and mask."
   (let* ((old-axis-count (length input))
          (new-axis-count (length mask))
          ;; Positions of existing axes in the mask
@@ -183,17 +180,16 @@ Applying a further slicing:
          ;; Indices not yet used
          (unused-indices (set-difference all-indices used-indices)))
     ;; Build the new permute list
-    (let ((new-permute (make-array new-axis-count :initial-element nil)))
+    (let ((new-permute (make-list new-axis-count)))
       ;; Fill in mapped permute indices at positions where mask is T
       (loop for i from 0 below new-axis-count
             when (nth i mask)
-            do (setf (aref new-permute i) (pop mapped-permute)))
+            do (setf (nth i new-permute) (pop mapped-permute)))
       ;; Fill in unused indices at positions where mask is NIL
       (loop for i from 0 below new-axis-count
             unless (nth i mask)
-            do (setf (aref new-permute i) (pop unused-indices)))
-      ;; Convert the array to a list and return
-      (coerce new-permute 'list))))
+              do (setf (nth i new-permute) (pop unused-indices)))
+      new-permute)))
 
 (defmethod tr-apply-uprank ((tensor Tensor) mask) (tr-apply-uprank (tensor-tr tensor) mask))
 (defmethod tr-apply-uprank ((tracker Tracker) mask)
@@ -218,9 +214,6 @@ Applying a further slicing:
           (tr-permute new-tracker) new-permute
           (tr-broadcast new-tracker) new-broadcast)
     new-tracker))
-;; (1 0)
-;; (T NIL T)
-;; (2 0 1)
 
 (defgeneric tr-reshapeable-p (obj new-shape))
 (defmethod tr-reshapeable-p ((tensor Tensor) new-shape) (tr-reshapeable-p (tensor-tr tensor) new-shape))
