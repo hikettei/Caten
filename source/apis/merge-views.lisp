@@ -219,6 +219,7 @@ Applying a further slicing:
             (tr-contiguous new-tracker) t)
       new-tracker)))
 
+;; !!! [TODO] When apply-slice is MERGEABLE??
 (defmethod tr-apply-slice ((tensor Tensor) slice new-shape) (tr-apply-slice (tensor-tr tensor) slice new-shape))
 (defmethod tr-apply-slice ((tracker Tracker) slice new-shape &aux (new-shape (canonicalize-shape new-shape)))
   (assert (= (length slice) (length (tr-shape tracker))) () "Trying to slice tracker with different dimension: ~a" slice)
@@ -243,15 +244,16 @@ Applying a further slicing:
          (merged
           (loop for b in (tr-broadcast tracker)
                 for s in subscript
-                collect (if b b s))))
+                collect (or b s))))
     (let ((new-tracker (copy-tracker tracker)))
       (setf (tr-broadcast new-tracker) merged)
       (loop for nth upfrom 0
             for b in (tr-broadcast new-tracker)
             if b
               do (setf (nth nth (tr-shape new-tracker)) b))
-      ;; [TODO] Update the shape and make broadcast+reshape invaild
       new-tracker)))
+
+;; [todo] broadcastwo hannei, shape wo hannei
 
 (defmethod %make-view-from-tracker ((tracker Tracker) write-to base)
   (flet ((->compile (obj)

@@ -202,8 +202,9 @@ View is a tensor which shares the buffer from the original tensor, but having di
         (if broadcast-mode-p
             (setf (tensor-tr buff) (tr-apply-broadcast
                                     base
-                                    (map 'list #'(lambda (x) (if (viewrange-broadcast x) (viewrange-size x) nil)) views)))
+                                    (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) (second x) nil)) subscripts)))
             (setf (tensor-tr buff) (tr-apply-slice base views (map 'list #'vrange-size views))))
+        (setf (view-tr (tensor-op buff)) (tensor-tr buff))
 	buff))))
 
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

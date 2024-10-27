@@ -115,7 +115,8 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
   ((views :initarg :views :type list :accessor view-views)
    (subscripts :initarg :subscripts :accessor view-subscripts)
    (broadcast-mode :initarg :broadcast-mode :accessor view-broadcast-mode)
-   (nrank :initarg :nrank :accessor view-nrank)))
+   (nrank :initarg :nrank :accessor view-nrank)
+   (tr :accessor view-tr)))
 
 (defmethod backward ((op View) &optional dout)
   (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
@@ -127,8 +128,7 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 	  (apply #'!view-from-base (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect `(0 ,s)))))))
 
 (defmethod lower ((op View) &rest inputs)
-  (let ((bs (car (func-variables op))))
-    (%make-view-from-tracker (tensor-tr bs) (gensym "TID") (car inputs))))
+  (%make-view-from-tracker (view-tr op) (gensym "TID") (car inputs)))
 
 (defun !view (base &rest subscripts)
   "
@@ -158,7 +158,8 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
 
 (defclass Permute (Func)
   ((nrank :initarg :nrank :accessor permute-nrank)
-   (order :initarg :order :accessor permute-order)))
+   (order :initarg :order :accessor permute-order)
+   (tr :accessor permute-tr)))
 
 (defmethod permute-list ((op Permute) list)
   (loop for nth in (permute-order op)
@@ -171,7 +172,8 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
 	    ()
 	    "Permute: order is not a valid permutation, getting ~a.~%axes are chosen from ~a" order (range 0 (ndim (car inputs))))
     (let ((out (make-tensor (permute-list op (shape x)) :dtype (dtype-of x) :order (order x) :views (and (tensor-views x) (permute-list op (tensor-views x))))))
-      (setf (tensor-tr out) (tr-apply-permute x order))
+      (setf (tensor-tr out) (tr-apply-permute x order)
+            (permute-tr op) (tensor-tr out))
       out)))
 
 (defmethod forward :around ((op Permute) &rest inputs)
@@ -204,8 +206,7 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
 (defmethod backward ((op Permute) &optional dout) (!permute dout (permute-order op)))
 
 (defmethod lower ((op Permute) &rest inputs)
-  (let* ((bs (car (func-variables op))))
-    (%make-view-from-tracker (tensor-tr bs) (gensym "PERMUTE") (car inputs))))
+  (%make-view-from-tracker (permute-tr op) (gensym "PERMUTE") (car inputs)))
 
 (defun !permute (tensor &rest order)
   "
@@ -272,7 +273,8 @@ Creates a copy of the tensor. In Caten, the in-place operations are automaticall
 (defclass Reshape (Func)
   ((shape-bf :initarg :shape-bf :accessor reshape-shape-bf)
    (shape-af :initarg :shape-af :accessor reshape-shape-af)
-   (order    :initarg :order    :accessor reshape-order)))
+   (order    :initarg :order    :accessor reshape-order)
+   (tr       :accessor reshape-tr)))
 
 (defmethod forward ((op Reshape) &rest tensors)
   (when (and (every #'numberp (reshape-shape-bf op)) (every #'numberp (reshape-shape-af op)))
@@ -281,7 +283,8 @@ Creates a copy of the tensor. In Caten, the in-place operations are automaticall
 	    "Assertion Failed: Cannot reshape from ~a to ~a. The number of total elements should correspond."
 	    (reshape-shape-bf op) (reshape-shape-af op)))
   (let ((out (make-tensor (reshape-shape-af op) :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors)))))
-    (setf (tensor-tr out) (tr-apply-reshape (car tensors) (reshape-shape-af op)))
+    (setf (tensor-tr out) (tr-apply-reshape (car tensors) (reshape-shape-af op))
+          (reshape-tr op) (tensor-tr out))
     out))
 
 (defmethod forward :around ((op Reshape) &rest tensors)
@@ -296,14 +299,7 @@ Creates a copy of the tensor. In Caten, the in-place operations are automaticall
 (defmethod backward ((op Reshape) &optional prev-grad) (!reshape prev-grad (reshape-shape-bf op)))
 
 (defmethod lower ((op Reshape) &rest nodes)
-  (let ((tensor (car (func-variables op))))
-    (with-context
-      (a (if (null (reshape-shape-bf op))
-	     (%move (%make-tensor `(1) :dtype (tensor-dtype tensor) :order (tensor-order tensor)) (car nodes))
-	     (if (null (reshape-shape-af op))
-		 (%load (%salloc :dtype (tensor-dtype tensor)) (car nodes))
-		 (car nodes))))
-      (a (when (reshape-shape-af op) (%reshape a (cdr nodes) :order (reshape-order op)))))))
+  (%make-view-from-tracker (reshape-tr op) (gensym "RESHAPE") (car nodes)))
 
 (defun !reshape (x &rest shape)
   "
@@ -320,7 +316,7 @@ If `x` is a viewed tensor, it creates a copy of the tensor with contiguous memor
   (declare (type tensor x) (type list shape))
   (let ((shape (flatten shape)))
     (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape :order (tensor-order x))
-             (if (tr-reshapeable-p x shape) x (!contiguous x)))))
+             (if (tr-reshapeable-p x shape) x (!contiguous x :force t)))))
 
 (defun !uprank (x n)
   "
