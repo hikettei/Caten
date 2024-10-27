@@ -144,7 +144,7 @@
     (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))
       (let ((buffer (copy-buffer (car args))))
         ;; Casting from scalar -> array
-        (when (and (numberp (buffer-value buffer)) (> (getattr node :nrank) 0))
+        (when (and (or (typep (buffer-value buffer) 'boolean) (numberp (buffer-value buffer))) (> (getattr node :nrank) 0))
           (setf (buffer-value buffer)
                 (make-array (apply #'* (map 'list #'->number shape))
 	                    :element-type (dtype->lisp (buffer-dtype buffer))
