@@ -187,12 +187,7 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
 (defmethod forward :around ((op Permute) &rest inputs)
   (let* ((x (call-next-method))
 	 (views (tensor-views x)))
-    (setf (tensor-views x)
-          (or (tensor-views x)
-              ;; Let (!reshape (!permute ..)) to call !contiguous
-              (loop for size in (shape x)
-                    collect (make-vrange 0 size 1 nil size t)))
-          (tensor-variables x)
+    (setf (tensor-variables x)
 	  (append
 	   (tensor-variables x)
 	   (if (and views (every #'identity (tensor-views (car inputs))))
@@ -344,7 +339,8 @@ If `x` is a viewed tensor, it creates a copy of the tensor with contiguous memor
 "
   (declare (type tensor x) (type list shape))
   (let ((shape (flatten shape)))
-    (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape :order (tensor-order x)) (!contiguous x))))
+    (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape :order (tensor-order x))
+             (if (tr-reshapeable-p x shape) x (!contiguous x)))))
 
 (defun !uprank (x n)
   "

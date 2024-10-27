@@ -81,15 +81,23 @@ Applying a further slicing:
     (map 'list #'.compose-views (tensor-views base) parsed-subscripts)))
 
 ;; ~~ Shape Tracker ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defsimplifier
+    (compose-views-from-graph :speed 0)
+    ((:VIEW (~ args) :nrank nrank :broadcast broadcast :permute permute)
+     ->
+     ((node graph)
+      (let ((val (id->value graph (car args))))
+        (when (and val (eql (node-type val) :VIEW))
+          (make-node :Buffer :VIEW (node-writes node) (append (list (car (node-reads val))) (cdr args)) :nrank nrank :broadcast broadcast :permute permute))))))
 ;; [TODO] Handle the stride by ShapeTracker
 ;; AASM Based Construction
 ;; Tensor Shaped Tensor Creation Support!
-
+;; Simplify the stride computation lowering by Tracker (create a cache)
 ;; Workload
 ;; 1. Modules can inference ShapeTracker?
 ;; 2. Tensor Shaped Tensor? Stride Computation?
 ;; 3. defsimplifier (:VIEW VIEW) -> :VIEW
-;; 4. Create a cache for lowering modules
+;; 4. Create a cache for lowering modules, remove override-p option, always generate the stride.
 (defstruct (Tracker
             (:conc-name tr-)
             (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))
