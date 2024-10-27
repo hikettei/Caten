@@ -5,5 +5,8 @@
   :depends-on ("caten.air" "caten.aasm")
   :serial t
   :components
-  ((:file "shape-tracker")
-   (:file "package")))
+  ((:file "package")
+   (:file "attrs")
+   (:file "shape")
+   (:file "shape-tracker")
+   (:file "test-suite")))
