@@ -143,6 +143,12 @@
       (parse-view-node node args)
     (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))
       (let ((buffer (copy-buffer (car args))))
+        ;; Casting from scalar -> array
+        (when (and (numberp (buffer-value buffer)) (> (getattr node :nrank) 0))
+          (setf (buffer-value buffer)
+                (make-array (apply #'* (map 'list #'->number shape))
+	                    :element-type (dtype->lisp (buffer-dtype buffer))
+	                    :initial-element (buffer-value buffer))))
 	(setf (buffer-shape buffer) (map 'list #'->number shape)
 	      (buffer-stride buffer)
               (map 'list #'->number stride)
