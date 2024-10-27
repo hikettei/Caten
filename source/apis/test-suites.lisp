@@ -233,7 +233,6 @@
       (testcase !sum (3 3) (1 1) nil 1.0 1 9.0 '(0 -1))
       (testcase !mean (3 3) (1 1) nil 1.0 1 1.0 '(0 -1))
 
-      ;; TODO: Shapes are inferenced to (a 1)
       (testcase !sum (a b) nil ((a . 3) (b . 3)) 1.0 3 3.0 1)
       (testcase !mean (a b) nil ((a . 3) (b . 3)) 1.0 3 1.0 1)))
   (let ((*default-order* :row))

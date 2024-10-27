@@ -96,7 +96,7 @@ Applying a further slicing:
 ;; Tensor Shaped Tensor Creation Support!
 ;; Simplify the stride computation lowering by Tracker (create a cache)
 ;; Workload
-;; 1. Modules can inference ShapeTracker?
+;; 1. Modules can inference ShapeTracker?;; 4. Create a cache for lowering modules, remove override-p option, always generate the stride.
 (defstruct (Tracker
             (:conc-name tr-)
             (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))
@@ -241,16 +241,15 @@ Applying a further slicing:
          (merged
           (loop for b in (tr-broadcast tracker)
                 for s in subscript
-                collect (or b s))))
+                collect (or s b))))
     (let ((new-tracker (copy-tracker tracker)))
-      (setf (tr-broadcast new-tracker) merged)
+      (setf (tr-broadcast new-tracker) merged
+            (tr-shape new-tracker) (copy-list (tr-shape new-tracker)))
       (loop for nth upfrom 0
             for b in (tr-broadcast new-tracker)
             if b
               do (setf (nth nth (tr-shape new-tracker)) b))
       new-tracker)))
-
-;; [todo] broadcastwo hannei, shape wo hannei
 
 (defmethod %make-view-from-tracker ((tracker Tracker) write-to base)
   (flet ((->compile (obj)
