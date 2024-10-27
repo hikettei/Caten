@@ -18,7 +18,6 @@
 	       (:file "model")
 	       (:file "ahead-of-time")
 	       (:file "initializers")
-	       (:file "syntax-sugar")
                (:file "documentation"))
   :in-order-to
   ((test-op
