@@ -171,10 +171,6 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
   ((nrank :initarg :nrank :accessor permute-nrank)
    (order :initarg :order :accessor permute-order)))
 
-(defmethod permute-list ((op Permute) list)
-  (loop for nth in (permute-order op)
-	collect (nth nth list)))
-
 (defmethod forward ((op Permute) &rest inputs)
   (let ((x (car inputs))
 	(order (permute-order op)))

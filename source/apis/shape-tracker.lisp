@@ -16,7 +16,7 @@
 
 (defmethod print-object ((tr Tracker) stream)
   (print-unreadable-object (tr stream :type t)
-    (format stream "{~a~a} (~a) contiguous-p=~a" (tr-order tr) (tr-permute tr)
+    (format stream ":order={~(~a~)~a} :shape=(~a) :contiguous-p=~a" (tr-order tr) (tr-permute tr)
             (apply
              #'concatenate
              'string
@@ -43,6 +43,7 @@
         (broadcast (loop repeat (length shape) collect nil)))
     (make-tracker shape mask order (range 0 (length shape)) broadcast :contiguous t)))
 
+(defmethod tr-apply-permute ((tensor Tensor) order) (tr-apply-permute (tensor-tr tensor) order))
 (defmethod tr-apply-permute ((tracker Tracker) order)
   (assert (= (length order) (length (tr-shape tracker))) () "Trying to permute tracker with different dimension: ~a" order)
   (assert (equal (sort (copy-list order) #'<) (range 0 (length order))) () "Trying to permute tracker with invalid order: ~a, order are given from shuffling ~a" order (range 0 (length order)))
@@ -53,6 +54,7 @@
           (tr-broadcast new-tracker) (permute-list order (tr-broadcast tracker)))
     new-tracker))
 
+(defmethod tr-apply-uprank ((tensor Tensor) mask) (tr-apply-uprank (tensor-tr tensor) mask))
 (defmethod tr-apply-uprank ((tracker Tracker) mask)
   (assert (= (count-if #'identity mask) (length (tr-shape tracker))) () "Trying to uprank tracker with different dimension: ~a" mask)
   ;; T=existing dimension, NIL=new dimension sized 1
@@ -79,6 +81,7 @@
           (tr-broadcast new-tracker) new-broadcast)
     new-tracker))
 
+(defmethod tr-apply-reshape ((tensor Tensor) new-shape) (tr-apply-reshape (tensor-tr tensor) new-shape))
 (defmethod tr-apply-reshape ((tracker Tracker) new-shape)
   (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
@@ -103,11 +106,13 @@
             (tr-contiguous new-tracker) t)
       new-tracker)))
 
+(defmethod tr-apply-slice ((tensor Tensor) slice new-shape) (tr-apply-slice (tensor-tr tensor) slice new-shape))
 (defmethod tr-apply-slice ((tracker Tracker) slice new-shape)
   (assert (= (length slice) (length (tr-shape tracker))) () "Trying to slice tracker with different dimension: ~a" slice)
   (error "TODO")
   )
 
+(defmethod tr-apply-broadcast ((tensor Tensor) subscript) (tr-apply-broadcast (tensor-tr tensor) subscript))
 (defmethod tr-apply-broadcast ((tracker Tracker) subscript)
   "subscript = (nil 10 nil ...)"
   (assert (= (length subscript) (length (tr-shape tracker))) () "Trying to broadcast tracker with different dimension: ~a" subscript)
