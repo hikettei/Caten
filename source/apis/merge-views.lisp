@@ -97,9 +97,6 @@ Applying a further slicing:
 ;; Simplify the stride computation lowering by Tracker (create a cache)
 ;; Workload
 ;; 1. Modules can inference ShapeTracker?
-;; 2. Tensor Shaped Tensor? Stride Computation?
-;; 3. defsimplifier (:VIEW VIEW) -> :VIEW
-;; 4. Create a cache for lowering modules, remove override-p option, always generate the stride.
 (defstruct (Tracker
             (:conc-name tr-)
             (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))

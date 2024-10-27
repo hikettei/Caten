@@ -344,8 +344,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
       ;; ```
       ;; ~ Early returns for the obvious case: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ;; Non-jitable nodes are scheduled standalone
-      (let ((tgt (id->value graph 'caten/llm::|val_4|)))
-        (print (second (relay-reads (read-type-relay tgt)))))
+      ;(let ((tgt (id->value graph 'caten/llm::|val_4|)))
+      ;  (print (second (relay-reads (read-type-relay tgt)))))
       (when (or (not (jitable-p node)) (not (jitable-p read-node)))
         (when (and (= nth 1) (eql (node-type read-node) :Allocate) (eql (node-type node) :MOVE))
           )
