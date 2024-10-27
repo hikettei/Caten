@@ -155,10 +155,50 @@ Applying a further slicing:
           (tr-broadcast new-tracker) (permute-list order (tr-broadcast tracker)))
     new-tracker))
 
+(defun compute-new-permute (input mask)
+  "Compute the new permute list based on input permute and mask.
+   input: list of integers representing the old permute.
+   mask: list of booleans where T indicates existing axes and NIL indicates new axes.
+   Returns a list of integers representing the new permute."
+  (let* ((old-axis-count (length input))
+         (new-axis-count (length mask))
+         ;; Positions of existing axes in the mask
+         (new-axis-positions (loop for m in mask
+                                   for i from 0 below new-axis-count
+                                   when m collect i))
+         ;; Build mapping from old axis indices to new axis indices
+         (axis-mapping (let ((mapping (make-hash-table)))
+                         (loop for old-axis-index from 0 below old-axis-count
+                               for new-axis-index in new-axis-positions
+                               do (setf (gethash old-axis-index mapping) new-axis-index))
+                         mapping))
+         ;; Map old permute indices to new permute indices
+         (mapped-permute (mapcar (lambda (p)
+                                   (gethash p axis-mapping))
+                                 input))
+         ;; Indices used in the new permute
+         (used-indices (copy-list mapped-permute))
+         ;; All possible indices in the new permute
+         (all-indices (loop for i from 0 below new-axis-count collect i))
+         ;; Indices not yet used
+         (unused-indices (set-difference all-indices used-indices)))
+    ;; Build the new permute list
+    (let ((new-permute (make-array new-axis-count :initial-element nil)))
+      ;; Fill in mapped permute indices at positions where mask is T
+      (loop for i from 0 below new-axis-count
+            when (nth i mask)
+            do (setf (aref new-permute i) (pop mapped-permute)))
+      ;; Fill in unused indices at positions where mask is NIL
+      (loop for i from 0 below new-axis-count
+            unless (nth i mask)
+            do (setf (aref new-permute i) (pop unused-indices)))
+      ;; Convert the array to a list and return
+      (coerce new-permute 'list))))
+
 (defmethod tr-apply-uprank ((tensor Tensor) mask) (tr-apply-uprank (tensor-tr tensor) mask))
 (defmethod tr-apply-uprank ((tracker Tracker) mask)
   (assert (= (count-if #'identity mask) (length (tr-shape tracker))) () "Trying to uprank tracker with different dimension: ~a" mask)
-  (assert (every #'(lambda (x) (typep x 'boolean))  mask) () "Trying to uprank tracker with invalid mask: ~a" mask)
+  (assert (every #'(lambda (x) (typep x 'boolean)) mask) () "Trying to uprank tracker with invalid mask: ~a" mask)
   ;; T=existing dimension, NIL=new dimension sized 1
   (let* ((new-tracker (copy-tracker tracker))
          (new-shape (loop for m in mask
@@ -170,11 +210,7 @@ Applying a further slicing:
          (new-broadcast (loop for m in mask
                               if m collect (pop (tr-broadcast new-tracker))
                                 else collect nil))
-         (new-permute (loop for m in mask
-                            for nth upfrom 0
-                            for offset = (count-if #'null (subseq mask 0 nth))
-                            if m collect (+ offset (pop (tr-permute new-tracker)))
-                              else collect nth)))
+         (new-permute (compute-new-permute (tr-permute new-tracker) mask)))
     (assert (equal (sort (copy-list new-permute) #'<) (range 0 (length new-permute))))
     (setf (tr-shape new-tracker) new-shape
           (tr-shape-for-stride new-tracker) (permute-list new-permute new-shape)
@@ -182,6 +218,9 @@ Applying a further slicing:
           (tr-permute new-tracker) new-permute
           (tr-broadcast new-tracker) new-broadcast)
     new-tracker))
+;; (1 0)
+;; (T NIL T)
+;; (2 0 1)
 
 (defgeneric tr-reshapeable-p (obj new-shape))
 (defmethod tr-reshapeable-p ((tensor Tensor) new-shape) (tr-reshapeable-p (tensor-tr tensor) new-shape))
