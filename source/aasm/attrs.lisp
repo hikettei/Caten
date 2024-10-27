@@ -280,7 +280,6 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
 - nrank[(unsigned-byte 32)] the rank of viewed tensor.
 - broadcast[list] broadcasting order.
 - permute[list] is an optional parameter and does nothing in VM, but requires to apply Polyhedral Compiler. If the view was created in `caten/apis:!permute`, set the argument to this attribute.
-- override-stride-p[boolean] If set to T, :VIEW fails to update the strides of view. (keep using the first argument tensor's one)
 "
 	 :slots ((nrank :type (unsigned-byte 32))
 		 (broadcast :type list)

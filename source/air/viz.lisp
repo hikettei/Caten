@@ -85,9 +85,7 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                                  (bc (getattr node :broadcast)))
 		             (render-list
 		              (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
-                           (if (getattr node :override-stride-p)
-                               ""
-                               (format nil "|stride=~a" (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank))))
+                           (format nil "|stride=~a" (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank)))
                            (if (getattr node :permute)
                                (format nil "|permute=~a" (getattr node :permute))
                                "")))))

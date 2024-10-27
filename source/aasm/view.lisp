@@ -138,7 +138,7 @@ broadcast=~a"
   (let ((nrank (getattr node :nrank)))
     (when (and nrank (not (= nrank 0)) (eql (node-class node) :Buffer))
       (flet ((subseq1p (x y z) (subseq x (1+ y) (1+ z))))
-	(format nil "<~a : ~a <- (~a, shape=(~a), views=(~a), stride=(~a)~a~a)>"
+	(format nil "<~a : ~a <- (~a, shape=(~a), views=(~a), stride=(~a)~a)>"
 		(node-type node)
 		(render-list (node-writes node))
 		(car (node-reads node))
@@ -152,7 +152,4 @@ broadcast=~a"
 		(render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank)))
 		(if (getattr node :permute)
 		    (format nil ", permute=~a" (getattr node :permute))
-		    "")
-                (if (getattr node :override-stride-p)
-                    ", override-stride-p=t"
-                    ""))))))
+		    ""))))))
