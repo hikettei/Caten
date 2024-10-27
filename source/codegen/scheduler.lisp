@@ -460,6 +460,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 ;; - 全くわからない
 ;; - Shape-Inferece.lispで，Tinygrad-LikeなView Simplifyをする
 ;; - !contiguousを廃止する
+;; - TODO
+;; - Update scheduler.lisp
 
 ;; Milestone (after complete them, move to implement renderer/memory planner)
 ;; - [ ] Getting a perfect schedule
