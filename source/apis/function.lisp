@@ -177,7 +177,9 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
     (assert (= (length order) (ndim (car inputs)) (length (intersection (range 0 (ndim (car inputs))) order)))
 	    ()
 	    "Permute: order is not a valid permutation, getting ~a.~%axes are chosen from ~a" order (range 0 (ndim (car inputs))))
-    (make-tensor (permute-list op (shape x)) :dtype (dtype-of x) :order (order x) :views (and (tensor-views x) (permute-list op (tensor-views x))))))
+    (let ((out (make-tensor (permute-list op (shape x)) :dtype (dtype-of x) :order (order x) :views (and (tensor-views x) (permute-list op (tensor-views x))))))
+      (setf (tensor-tr out) (tr-apply-permute x order))
+      out)))
 
 (defmethod forward :around ((op Permute) &rest inputs)
   (let* ((x (call-next-method))
@@ -300,7 +302,9 @@ Creates a copy of the tensor. In Caten, the in-place operations are automaticall
 	    ()
 	    "Assertion Failed: Cannot reshape from ~a to ~a. The number of total elements should correspond."
 	    (reshape-shape-bf op) (reshape-shape-af op)))
-  (make-tensor (reshape-shape-af op) :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))))
+  (let ((out (make-tensor (reshape-shape-af op) :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors)))))
+    (setf (tensor-tr out) (tr-apply-reshape (car tensors) (reshape-shape-af op)))
+    out))
 
 (defmethod forward :around ((op Reshape) &rest tensors)
   (let ((out-tensor (call-next-method)))

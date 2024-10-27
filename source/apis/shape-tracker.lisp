@@ -2,7 +2,11 @@
 ;; [TODO] Handle the stride by ShapeTracker
 ;; AASM Based Construction
 ;; Tensor Shaped Tensor Creation Support!
-;; Well tested?
+
+;; Workload
+;; 1. Modules can inference ShapeTracker?
+;; 2. Tensor Shaped Tensor? Stride Computation?
+;; 3. defsimplifier (:VIEW VIEW) -> :VIEW
 (defstruct (Tracker
             (:conc-name tr-)
             (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))
@@ -16,27 +20,34 @@
 
 (defmethod print-object ((tr Tracker) stream)
   (print-unreadable-object (tr stream :type t)
-    (format stream ":order={~(~a~)~a} :shape=(~a) :contiguous-p=~a" (tr-order tr) (tr-permute tr)
-            (apply
-             #'concatenate
-             'string
-             (butlast
-              (loop for s in (tr-shape tr)
-                    for m in (tr-mask tr)
-                    for b in (tr-broadcast tr)
-                    append
-                    (list (format nil "~a~a"
-                               (if b (format nil "~~~a" b) s)
-                               (if m
-                                   (format nil "{~a}" m)
-                                   ""))
-                          " "))))
-            (tr-contiguous tr))))
+    (flet ((p (obj)
+             (if (tensor-p obj)
+                 (format nil "[tensor: ~a]" (tensor-id obj))
+                 obj)))
+      (format stream ":order={~(~a~)~a} :shape=(~a) :contiguous-p=~a" (tr-order tr) (tr-permute tr)
+              (apply
+               #'concatenate
+               'string
+               (butlast
+                (loop for s in (tr-shape tr)
+                      for m in (tr-mask tr)
+                      for b in (tr-broadcast tr)
+                      append
+                      (list (format nil "~a~a"
+                                    (if b (format nil "~~~a" (p b)) (p s))
+                                    (if m
+                                        (format nil "~a" (map 'list #'p m))
+                                        ""))
+                            " "))))
+              (tr-contiguous tr)))))
 
-(defun start-tracking (shape &key (order :row) (mask nil))
+(defun canonicalize-int (int) (if (tensor-p int) (or (try-fold-constant int) int) int))
+(defun canonicalize-shape (list) (map 'list #'canonicalize-int list))
+
+(defun start-tracking (shape &key (order :row) (mask nil) &aux (shape (canonicalize-shape shape)))
   (declare (type (member :row :column) order)
            (type list shape))
-  (assert (every #'(lambda (s) (or (symbolp s) (and (integerp s) (> s 0)))) shape) () "Trying to create tracker with negative dimension: ~a" shape)
+  (assert (every #'(lambda (s) (or (tensor-p s) (symbolp s) (and (integerp s) (> s 0)))) shape) () "Trying to create tracker with negative dimension: ~a" shape)
   ;; Canonicalize mask
   (when (and mask (every #'(lambda (m s) (equal m (list 0 s))) mask shape)) (setf mask nil))
   (let ((mask (or mask (loop repeat (length shape) collect nil)))
@@ -57,6 +68,7 @@
 (defmethod tr-apply-uprank ((tensor Tensor) mask) (tr-apply-uprank (tensor-tr tensor) mask))
 (defmethod tr-apply-uprank ((tracker Tracker) mask)
   (assert (= (count-if #'identity mask) (length (tr-shape tracker))) () "Trying to uprank tracker with different dimension: ~a" mask)
+  (assert (every #'(lambda (x) (typep x 'boolean))  mask) () "Trying to uprank tracker with invalid mask: ~a" mask)
   ;; T=existing dimension, NIL=new dimension sized 1
   (let* ((new-tracker (copy-tracker tracker))
          (new-shape (loop for m in mask
@@ -81,21 +93,29 @@
           (tr-broadcast new-tracker) new-broadcast)
     new-tracker))
 
+(defgeneric tr-reshapeable-p (obj new-shape))
+(defmethod tr-reshapeable-p ((tensor Tensor) new-shape) (tr-reshapeable-p (tensor-tr tensor) new-shape))
+(defmethod tr-reshapeable-p ((tracker Tracker) new-shape &aux (new-shape (canonicalize-shape new-shape)))
+  (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
+    (when (equal shape-w/o-one (tr-shape tracker))
+      (return-from tr-reshapeable-p t)))
+  ;; Not contiguous -> Not reshapeable (todo: masked reshape)
+  (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
+  ;; Permuted -> Not contiguous
+  (when (not (equal (range 0 (length (tr-shape tracker))) (tr-permute tracker)))
+    (return-from tr-reshapeable-p nil))
+  ;; Broadcasted -> Not contiguous
+  (when (some #'identity (tr-broadcast tracker))
+    (return-from tr-reshapeable-p nil))
+  t)
+
 (defmethod tr-apply-reshape ((tensor Tensor) new-shape) (tr-apply-reshape (tensor-tr tensor) new-shape))
-(defmethod tr-apply-reshape ((tracker Tracker) new-shape)
+(defmethod tr-apply-reshape ((tracker Tracker) new-shape &aux (new-shape (canonicalize-shape new-shape)))
+  (assert (every #'(lambda (s) (or (symbolp s) (tensor-p s) (and (integerp s) (> s 0)))) new-shape) () "Trying to reshape tracker with negative or wrong typed dimension: ~a" new-shape)
+  (assert (tr-reshapeable-p tracker new-shape) () "tr-apply-reshape: ~a ~a is not reshapeable! Call !contiguous in advance." tracker new-shape)
   (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
       (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape))))
-    ;; Masked reshape -> not contiguous?
-    (when (null (tr-contiguous tracker))
-      ;; [TODO] Implement masked reshape
-      (return-from tr-apply-reshape nil))
-    ;; Permuted -> Not contiguous
-    (when (not (equal (range 0 (length (tr-shape tracker))) (tr-permute tracker)))
-      (return-from tr-apply-reshape nil))
-    ;; Broadcasted -> Not contiguous
-    (when (some #'identity (tr-broadcast tracker))
-      (return-from tr-apply-reshape nil))
     ;; Can reshape (reshape=chainging the stride)
     (let* ((new-tracker (copy-tracker tracker)))
       (setf (tr-shape new-tracker) new-shape
@@ -107,16 +127,27 @@
       new-tracker)))
 
 (defmethod tr-apply-slice ((tensor Tensor) slice new-shape) (tr-apply-slice (tensor-tr tensor) slice new-shape))
-(defmethod tr-apply-slice ((tracker Tracker) slice new-shape)
+(defmethod tr-apply-slice ((tracker Tracker) slice new-shape &aux (new-shape (canonicalize-shape new-shape)))
   (assert (= (length slice) (length (tr-shape tracker))) () "Trying to slice tracker with different dimension: ~a" slice)
-  (error "TODO")
-  )
+  (assert (every #'viewrange-p slice) () "Trying to slice tracker with invalid slice: ~a" slice)
+  (let ((new-tracker (copy-tracker tracker)))
+    (setf (tr-shape new-tracker) new-shape
+          (tr-mask new-tracker)
+          (loop for s in slice
+                collect (list (canonicalize-int (viewrange-from s)) (canonicalize-int (viewrange-to s)) (canonicalize-int (viewrange-by s))))
+          (tr-contiguous new-tracker) nil)
+    new-tracker))
 
 (defmethod tr-apply-broadcast ((tensor Tensor) subscript) (tr-apply-broadcast (tensor-tr tensor) subscript))
 (defmethod tr-apply-broadcast ((tracker Tracker) subscript)
   "subscript = (nil 10 nil ...)"
   (assert (= (length subscript) (length (tr-shape tracker))) () "Trying to broadcast tracker with different dimension: ~a" subscript)
-  (let ((merged
+  (assert (every #'(lambda (s) (or (null s) (tensor-p s) (symbolp s) (and (integerp s) (> s 0)))) subscript) () "Trying to broadcast tracker with negative or wrong typed dimension: ~a" subscript)
+  (let* ((subscript
+           (loop for s in subscript
+                 if s collect (canonicalize-int s)
+                 else collect nil))
+         (merged
           (loop for b in (tr-broadcast tracker)
                 for s in subscript
                 collect (if b b s))))

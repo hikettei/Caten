@@ -199,6 +199,11 @@ View is a tensor which shares the buffer from the original tensor, but having di
 	(assert (every #'tensor-p (tensor-variables buff)) ())
 	;; Fold Constants in Shape (detached from the graph, no side effects)
 	(setf (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
+        (if broadcast-mode-p
+            (setf (tensor-tr buff) (tr-apply-broadcast
+                                    base
+                                    (map 'list #'(lambda (x) (if (viewrange-broadcast x) (viewrange-size x) nil)) views)))
+            (setf (tensor-tr buff) (tr-apply-slice base views (map 'list #'vrange-size views))))
 	buff))))
 
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
