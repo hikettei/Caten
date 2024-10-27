@@ -146,7 +146,9 @@
         ;; Casting from scalar -> array
         (when (and (or (typep (buffer-value buffer) 'boolean) (numberp (buffer-value buffer))) (> (getattr node :nrank) 0))
           (setf (buffer-value buffer)
-                (make-array (apply #'* (map 'list #'->number shape))
+                (make-array (apply #'* (loop for b in (getattr node :broadcast)
+                                             for s in shape
+                                             if b collect 1 else collect (->number s)))
 	                    :element-type (dtype->lisp (buffer-dtype buffer))
 	                    :initial-element (buffer-value buffer))))
 	(setf (buffer-shape buffer) (map 'list #'->number shape)
