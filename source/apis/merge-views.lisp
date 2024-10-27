@@ -80,7 +80,8 @@ Applying a further slicing:
       (return-from merge-views parsed-subscripts))
     (map 'list #'.compose-views (tensor-views base) parsed-subscripts)))
 
-;; ~~ Shape Tracker ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Movement Composer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Rewrite (:VIEW (:VIEW (x ...))) -> (:VIEW (x ...))
 (defsimplifier
     (compose-views-from-graph :speed 0)
     ((:VIEW (~ args) :nrank nrank :broadcast broadcast :permute permute)
@@ -89,6 +90,7 @@ Applying a further slicing:
       (let ((val (id->value graph (car args))))
         (when (and val (eql (node-type val) :VIEW))
           (make-node :Buffer :VIEW (node-writes node) (append (list (car (node-reads val))) (cdr args)) :nrank nrank :broadcast broadcast :permute permute))))))
+
 ;; [TODO] Handle the stride by ShapeTracker
 ;; AASM Based Construction
 ;; Tensor Shaped Tensor Creation Support!
@@ -244,22 +246,51 @@ Applying a further slicing:
                 collect (if b b s))))
     (let ((new-tracker (copy-tracker tracker)))
       (setf (tr-broadcast new-tracker) merged)
+      (loop for nth upfrom 0
+            for b in (tr-broadcast new-tracker)
+            if b
+              do (setf (nth nth (tr-shape new-tracker)) b))
+      ;; [TODO] Update the shape and make broadcast+reshape invaild
       new-tracker)))
 
 (defmethod %make-view-from-tracker ((tracker Tracker) write-to base)
-  (%view
-   base
-   (tr-shape tracker)
-   (loop for m in (tr-mask tracker)
-         if m collect (car m) else collect 0)
-   (loop for m in (tr-mask tracker)
-         for s in (tr-shape tracker)
-         for b in (tr-broadcast tracker)
-         if m collect (second m) else collect (if b b s))
-   (loop for m in (tr-mask tracker)
-         if m collect m else collect 1)
-   (loop for b in (tr-broadcast tracker)
-         if b collect t else collect nil)
-   (permute-list (tr-permute tracker) (%stride (tr-shape-for-stride tracker) (tr-mask tracker)))
-   :id write-to
-   :permute (tr-permute tracker)))
+  (flet ((->compile (obj)
+           (let ((g (%tensor->aasm (if (tensor-p obj) obj (iconst obj)))))
+             (optimize-aasm g)
+             g))
+         (->id (graph) (car (last (graph-nodes graph)))))
+    (let* ((shape (map 'list #'->compile (tr-shape tracker)))
+           (shape-for-stride (map 'list #'->compile (tr-shape-for-stride tracker)))
+           (upfrom (loop for m in (tr-mask tracker)
+                         collect (->compile (if m (car m) 0))))
+           (below (loop for m in (tr-mask tracker)
+                        for s in shape
+                        if m collect (->compile (second m))
+                        else collect s))
+           (by (loop for m in (tr-mask tracker)
+                     collect (->compile (if m (third m) 1))))
+           (bc (loop for b in (tr-broadcast tracker) collect (if b t nil)))
+           (stride nil)
+           (stride-graph
+             (with-context (_ (setf stride (%stride (map 'list #'->id shape-for-stride) (tr-order tracker))))))
+           (stride (permute-list (tr-permute tracker) stride))
+           (g
+             (with-context
+                 (_ (%view base (map 'list #'->id shape) (map 'list #'->id upfrom) (map 'list #'->id below) (map 'list #'->id by) bc
+                           stride :id write-to :permute (tr-permute tracker))))))
+      (setf (graph-nodes g)
+            (append
+             (apply #'append (map 'list #'graph-nodes shape))
+             (apply #'append (map 'list #'graph-nodes shape-for-stride))
+             (apply #'append (map 'list #'graph-nodes upfrom))
+             (apply #'append (map 'list #'graph-nodes below))
+             (apply #'append (map 'list #'graph-nodes by))
+             (graph-nodes stride-graph)
+             (graph-nodes g))
+            ;; (graph-outputs g) (list write-to)
+            (graph-seen g) (node-writes base))
+      (optimize-aasm g)
+      (assert (find write-to (graph-nodes g) :key #'node-writes :test #'find)
+              ()
+              "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invaild simplifier?~%~a" write-to g)
+      g)))

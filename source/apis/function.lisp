@@ -127,18 +127,8 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 	  (apply #'!view-from-base (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect `(0 ,s)))))))
 
 (defmethod lower ((op View) &rest inputs)
-  (let ((nrank (view-nrank op))
-	(bs (car (func-variables op))))
-    (flet ((subseq1p (x frm &optional to) (subseq x (1+ frm) (if to (1+ to)))))
-      (with-context
-	  (viewed (%view (car inputs)
-			 (subseq1p inputs 0 nrank) (subseq1p inputs nrank (* 2 nrank))
-			 (subseq1p inputs (* 2 nrank) (* 3 nrank)) (subseq1p inputs (* 3 nrank) (* 4 nrank))
-			 (map 'list #'viewrange-broadcast (view-views op))
-			 (let ((base-shape (subseq1p inputs (* 4 nrank) (* 5 nrank)))
-			       (stride     (subseq1p inputs (* 5 nrank))))
-			   (or stride (%stride base-shape (tensor-order bs))))
-                         :override-stride-p (null (subseq1p inputs (* 5 nrank)))))))))
+  (let ((bs (car (func-variables op))))
+    (%make-view-from-tracker (tensor-tr bs) (gensym "TID") (car inputs))))
 
 (defun !view (base &rest subscripts)
   "
@@ -214,18 +204,8 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
 (defmethod backward ((op Permute) &optional dout) (!permute dout (permute-order op)))
 
 (defmethod lower ((op Permute) &rest inputs)
-  (let* ((bs (car (func-variables op)))
-	 (nrank (ndim bs)))
-    (flet ((subseq1p (x frm &optional to) (subseq x (1+ frm) (if to (1+ to)))))
-      (with-context
-	  (viewed (%view (car inputs)
-			 (subseq1p inputs 0 nrank)
-			 (subseq1p inputs nrank (* 2 nrank))
-			 (subseq1p inputs (* 2 nrank) (* 3 nrank))
-			 (subseq1p inputs (* 3 nrank) (* 4 nrank))
-			 (permute-list op (map 'list #'viewrange-broadcast (tensor-views bs)))
-			 (permute-list op (%stride (subseq1p inputs (* 4 nrank) (* 5 nrank)) (tensor-order bs)))
-			 :permute (permute-order op)))))))
+  (let* ((bs (car (func-variables op))))
+    (%make-view-from-tracker (tensor-tr bs) (gensym "PERMUTE") (car inputs))))
 
 (defun !permute (tensor &rest order)
   "
