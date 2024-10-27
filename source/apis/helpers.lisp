@@ -222,8 +222,4 @@ Reads and binds attributes from module.
 		 (+ (length list) nth))))
     (setf (nth idx list) value)))
 
-(defmethod permute-list ((op Permute) list)
-  (loop for nth in (permute-order op)
-	collect (nth nth list)))
-
 (defmethod permute-list ((op list) list) (loop for nth in op collect (nth nth list)))
