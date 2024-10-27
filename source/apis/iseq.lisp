@@ -411,6 +411,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
 	;; If the graph was created from FastGraph, the time-series order should be broken.
 	;; call verify-graph to sort them.
+        (compose-views-from-graph graph)
 	(verify-graph graph)
 	(make-avm graph (session-name session)
 		  (session-tid->tensor session)
