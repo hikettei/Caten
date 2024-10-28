@@ -176,33 +176,6 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
             (permute-tr op) (tensor-tr out))
       out)))
 
-(defmethod forward :around ((op Permute) &rest inputs)
-  (let* ((x (call-next-method))
-	 (views (tensor-views x)))
-    (setf (tensor-variables x)
-	  (append
-	   (tensor-variables x)
-	   (if (and views (every #'identity (tensor-views (car inputs))))
-	       (append
-		(map 'list (compose #'sfold #'vrange-size) views)
-		(map 'list (compose #'sfold #'viewrange-from) views)
-		(map 'list (compose #'sfold #'viewrange-to) views)
-		(map 'list (compose #'sfold #'viewrange-by) views)
-		(map 'list (compose #'sfold #'viewrange-size) (tensor-views (car inputs))))
-	       (append
-		;; visible shape
-		(map 'list (compose #'sfold #'->iconst) (shape x))
-		;; upfrom
-		(map 'list #'(lambda (_) _ (iconst 0)) (shape x))
-		;; below
-		(map 'list (compose #'sfold #'->iconst) (shape x))
-		;; by
-		(map 'list #'(lambda (_) _ (iconst 1)) (shape x))
-		;; original shape
-		(map 'list (compose #'sfold #'->iconst) (shape (car inputs))))))
-	  (func-variables op) (tensor-variables x))
-    x))
-
 (defmethod backward ((op Permute) &optional dout) (!permute dout (permute-order op)))
 
 (defmethod lower ((op Permute) &rest inputs)
@@ -286,15 +259,6 @@ Creates a copy of the tensor. In Caten, the in-place operations are automaticall
     (setf (tensor-tr out) (tr-apply-reshape (car tensors) (reshape-shape-af op))
           (reshape-tr op) (tensor-tr out))
     out))
-
-(defmethod forward :around ((op Reshape) &rest tensors)
-  (let ((out-tensor (call-next-method)))
-    (setf (tensor-variables out-tensor)
-	  (append (list (car tensors))
-		  (loop for s in (reshape-shape-af (tensor-op out-tensor))
-			collect (if (tensor-p s) s (iconst s))))
-	  (func-variables (tensor-op out-tensor)) (tensor-variables out-tensor))
-    out-tensor))
 
 (defmethod backward ((op Reshape) &optional prev-grad) (!reshape prev-grad (reshape-shape-bf op)))
 
