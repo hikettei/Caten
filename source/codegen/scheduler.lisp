@@ -234,6 +234,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (n (loop for n in new-shape if (not (eql n 1)) collect n)))
       (equal p n))))
 
+(defun buffer-mergeable-p (g b1 b2)
+  (flet ((lazy-eq (a b)
+           (or (eql a 1) (eql b 1) (eql a b)
+               (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g))))))
+    (every #'lazy-eq (buffer-shape b1) (buffer-shape b2))))
+
 (defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
   (symbol-macrolet ((->ok (return-from group-merge-p t))
                     (->ng (return-from group-merge-p nil)))
@@ -261,8 +267,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         ;;  |
         ;; r1
         (cond
-          ((or (= r1 0) (= r2 0))->ok)
-          ((= r1 r2)->ok)
+          ((or (= r1 0) (= r2 0))
+           ->ok)
+          ((= r1 r2)
+           (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
+               ->ok
+               ->ng))
           (T
            (let ((self-type (group-get-type self))
                  (c (< r1 r2)))
@@ -279,14 +289,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                        (apply-view-fusor (min r1 r2) (getattr read-view :broadcast) parent-group)
                        ->ok)
                      ->ng)))))))))
-;; for batch = 0..10
-;; output[n, k, i, j] += input[n, c, i + p, j + q] * weight[k, c, p, q]
-;;
-;; Remained two patterns:
-;; - ConvND Shrink
-;; -  elementwise after reduction
-;; - 1. Add Fixup
-;; (caten/codegen:jit (caten (!sin (!add (call (Embedding 10 10) (!index-components `(1 10))) (call (Embedding 10 10) (make-tensor `(10 10)))))))
+
 (defmethod merge-groups ((self Group) parents mergeable-list)
   (loop for m in mergeable-list
         for p in parents
@@ -366,6 +369,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 ;; - Shape-Inferece.lispで，Tinygrad-LikeなView Simplifyをする
 ;; - !contiguousを廃止する
 ;; - TODO
+;; - fix double reduce
 ;; - Update scheduler.lisp
 ;;   Update !contiguous
 ;;   Masked Reshape to fuse ConvND = 1 Kernel
