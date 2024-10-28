@@ -19,6 +19,7 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
   (:import-from
    #:caten/avm
    #:Buffer
+   #:copy-buffer
    #:buffer-dtype
    #:buffer-shape
    #:buffer-stride
@@ -121,35 +122,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (when (find :Allocate (group-items group) :key #'node-type)
     (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
 
-;; [TODO] Move to helpers
-(defmethod identify-view-type ((view Node))
-  ;; [TODO] Rename :broadcast/:reshape as a :broadcast-or-reshape
-  (assert (eql :VIEW (node-type view)))
-  (when (getattr view :permute)
-    (return-from identify-view-type :permute))
-  (when (some #'identity (getattr view :broadcast))
-    ;; Note that this is relies on the assertion that: Slice and Broadcast are not mixed in `!view`.
-    (return-from identify-view-type :broadcast)) ;; [Note] Broadcast may change the shape!
-  (flet ((shrink-p (size view)
-           (assert (= (length view) 4) () "not a view")
-           (multiple-value-bind (from to by broadcast) (apply #'values view)
-             (assert (null broadcast))
-             (or
-              (not (eql from 0))
-              (not (eql to size))
-              (not (eql by 1))))))
-    (let* ((base-buffer (car (relay-reads (read-type-relay view))))
-           (views (buffer-views (car (relay-writes (read-type-relay view))))))
-      (when (and
-             (= (buffer-nrank base-buffer) (getattr view :nrank))
-             (some #'shrink-p (buffer-shape base-buffer) views))
-        (return-from identify-view-type :shrink)))
-    ;; Reshape = operation that changes the stride
-    :reshape))
-
-(defun view-type-list (views)
-  (loop for v in views if v collect (identify-view-type v)))
-
 (defun pname (name)
   (cl-ppcre:regex-replace-all
    "PAUSE/"
@@ -196,6 +168,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :items (group-items group)
                :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
 
+(defmethod group-get-type ((group Group))
+  (let* ((last (nodes-write-to (group-items group)))
+         (node (when last (find (car last) (group-items group) :key #'node-writes :test #'find))))
+    (when node
+      (car (relay-writes (read-type-relay node))))))
+
 (defun jitable-p (node)
   (and
    (null (find (node-type node) `(:ALLOCATE :PAUSE/BACKWARD)))
@@ -213,116 +191,53 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         ;; Returns uncollapsed rank list
         (when (some #'identity out) out)))))
 
-;; [TODO] Move to fusion rules
-(defmethod buffer-fixup-broadcast ((buffer Buffer) comm-rank comm-shape broadcast)
-  (when (= (buffer-nrank buffer) comm-rank)
-    (when (every #'null (buffer-views buffer))
-      (setf (buffer-views buffer) (loop repeat comm-rank collect nil)))
-    (loop for b in broadcast
-          for s in (buffer-shape buffer)
-          for c in comm-shape
-          for nth upfrom 0
-          if (and b (eql s 1)) do
-            (setf (nth nth (buffer-views buffer)) `(0 1 1 t)
-                  (nth nth (buffer-shape buffer)) 1))
-    (return-from buffer-fixup-broadcast t))
-  (let ((old-comm-rank (count-if #'null broadcast)))
-    (assert (= old-comm-rank (buffer-nrank buffer)) () "Invaild Shape Inference Detected? ~%~a ~a" buffer broadcast)
-    (labels ((merge-bc (list &key (default 1))
-               (loop for m in broadcast
-                     for c in comm-shape
-                     if m
-                       collect (case default (:view `(0 1 1 t)) (otherwise default))
-                     else
-                       collect (pop list))))
-      (assert (null (buffer-inferred-permute buffer)) () ":permute and :broadcast at the same time? (not allowed) ~a" buffer)
-      (when (every #'null (buffer-views buffer))
-        (setf (buffer-views buffer) (loop repeat (buffer-nrank buffer) collect nil)))
-      (setf (buffer-shape buffer) (merge-bc (buffer-shape buffer) :default 1)
-            (buffer-views buffer) (merge-bc (buffer-views buffer) :default :view)
-            (buffer-nrank buffer) comm-rank
-            (buffer-stride buffer) (merge-bc (buffer-stride buffer) :default 0))
-      (flet ((ok (x y)
-               (or (eql x 1) (eql y 1) (eql x y))))
-        (assert (every #'ok (buffer-shape buffer) comm-shape)))
-      t)))
-
-(defmethod buffer-fixup-reshape ((buffer Buffer) bf-buffer comm-buffer)
-  ;; [TODO] How to merge :shrink+:reshape?
-  ;; (assert (equal (buffer-shape buffer) (buffer-shape bf-buffer)))
-  ;;(print "++RESHAPE++")
-  ;;(print (buffer-shape buffer))
-  ;;(print "===>")
-  (setf (buffer-shape buffer) (buffer-shape comm-buffer)
-        (buffer-views buffer) (buffer-views comm-buffer)
-        (buffer-nrank buffer) (buffer-nrank comm-buffer)
-        (buffer-stride buffer) (buffer-stride comm-buffer))
-  t)
-
-(defmethod buffer-fixup-permute ((buffer Buffer) permute)
-  (assert (= (buffer-nrank buffer) (length permute)))
-  (when (every #'null (buffer-views buffer))
-    (setf (buffer-views buffer) (loop repeat (buffer-nrank buffer) collect nil)))
-  (setf (buffer-shape buffer) (permute-list permute (buffer-shape buffer))
-        (buffer-stride buffer) (permute-list permute (buffer-stride buffer))
-        (buffer-views buffer) (permute-list permute (buffer-views buffer)))
-  t)
-
-(defmethod buffer-fixup-shrink ((buffer Buffer) view)
-  (assert (equal (buffer-shape buffer) (buffer-shape view)) () "cannot fixup shrink:~%~a -> ~a" buffer view)
-  (setf (buffer-shape buffer) (buffer-shape view)
-        (buffer-views buffer) (buffer-views view)
-        (buffer-stride buffer) (buffer-stride view)
-        (buffer-nrank buffer) (buffer-nrank view))
-  t)
-
-(defmethod group-items-st-rewriter ((group Group) graph f)
+(defmethod group-items-st-rewriter ((group Group) f)
   (dolist (item (group-items group))
     (loop for typ in (relay-reads (read-type-relay item))
           for nth upfrom 0
           unless (or (null typ) (= 0 (buffer-nrank typ)))
-            do (funcall f typ))
+            do (setf (nth nth (relay-reads (read-type-relay item))) (or (funcall f typ) typ)))
     (loop for typ in (relay-writes (read-type-relay item))
           for nth upfrom 0
           unless (or (null typ) (= 0 (buffer-nrank typ)))
-            do (funcall f typ))))
+            do (setf (nth nth (relay-writes (read-type-relay item))) (or (funcall f typ) typ)))))
 
 (defun group-rank (group)
-  (loop for n in (group-items group)
-        maximize
-        (loop for type in (append (relay-reads (read-type-relay n)) (relay-writes (read-type-relay n)))
-              maximize (buffer-nrank type))))
+  (let ((buff (group-get-type group)))
+    (when buff (buffer-nrank buff))))
 
-(defun apply-view-fusor (view graph self parent-group)
-  (ecase (identify-view-type view)
-    (:permute
-     (let ((permute (getattr view :permute)))
-       (group-items-st-rewriter
-        parent-group graph
-        #'(lambda (typ)
-            (buffer-fixup-permute typ permute)))))
-    (:reshape
-     ;; Note: LazyBuffer symbols are updated here?
-     (let ((reshape-before (car (relay-reads (read-type-relay view))))
-           (reshape-after (car (relay-writes (read-type-relay view)))))
-       (group-items-st-rewriter
-        parent-group graph
-        #'(lambda (typ)
-            (buffer-fixup-reshape typ reshape-before reshape-after)))))
-    (:broadcast
-     (let ((comm-rank (getattr view :nrank))
-           (comm-size (buffer-shape (car (relay-writes (read-type-relay view)))))
-           (broadcast (getattr view :broadcast)))
-       ;; Rewrite all buffers in the parent-group to have the comm-rank
-       (group-items-st-rewriter
-        parent-group graph
-        #'(lambda (typ)
-            (buffer-fixup-broadcast typ comm-rank comm-size broadcast)))))
-    (:shrink
-     (group-items-st-rewriter
-      parent-group graph
-      #'(lambda (typ)
-          (buffer-fixup-shrink typ (car (relay-reads (read-type-relay view)))))))))
+(defun apply-view-fusor (tgt-rank mask group)
+  (group-items-st-rewriter
+   group
+   #'(lambda (typ)
+       (when (= (buffer-nrank typ) tgt-rank)
+         (let ((typ (copy-buffer typ)))
+           (let ((shp (copy-list (buffer-shape typ)))
+                 (str (copy-list (buffer-stride typ)))
+                 (views (copy-list (buffer-views typ))))
+             (setf (buffer-shape typ)
+                   (loop for b in mask
+                         if b collect 1 else collect (pop shp))
+                   (buffer-stride typ)
+                   (loop for b in mask
+                         if b collect 0 else collect (pop str))
+                   (buffer-views typ)
+                   (loop for b in mask
+                         if b collect `(0 1 1 t) else collect (pop views))
+                   (buffer-nrank typ) (length mask)))
+           typ))))
+  (group-items-st-rewriter
+   group
+   #'(lambda (typ)
+       (assert (= (length mask) (buffer-nrank typ)))
+       nil)))
+
+(defun broadcastable-p (prev new)
+  (let ((prev-shape (copy-list (buffer-shape prev)))
+        (new-shape  (copy-list (buffer-shape new))))
+    (let ((p (loop for p in prev-shape if (not (eql p 1)) collect p))
+          (n (loop for n in new-shape if (not (eql n 1)) collect n)))
+      (equal p n))))
 
 (defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
   (symbol-macrolet ((->ok (return-from group-merge-p t))
@@ -334,44 +249,41 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         ->ng))
     (let* ((read (nth nth (node-reads node)))
            (read-node (id->value graph read))
-           (read-view (nth nth (getattr node :_read_views)))
-           (write-view (nth nth (getattr node :_write_views))))
-      (assert (null write-view))
+           (read-view (car (nth nth (getattr node :_read_views))))
+           (read-type (group-get-type parent-group))
+           (write-view (getattr node :_write_views)))
+      (assert (every #'null write-view))
       ;; Relations between group and parent-group:
       ;; ```
       ;; group=parent | X[write_type]{write_iter} = f(...)
       ;; group=self   | ... = f(..., X[read_type]{read_iter})
       ;; ```
-      ;; ~ Early returns for the obvious case: ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      ;; Non-jitable nodes are scheduled standalone
-      ;(let ((tgt (id->value graph 'caten/llm::|val_4|)))
-      ;  (print (second (relay-reads (read-type-relay tgt)))))
-      (when (or (not (jitable-p node)) (not (jitable-p read-node)))
-        (when (and (= nth 1) (eql (node-type read-node) :Allocate) (eql (node-type node) :MOVE))
-          )
-        ->ng)
+      (when (or (not (jitable-p node)) (not (jitable-p read-node)))->ng)
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-      ->ng
-      ;; eager to expand the length of procedure
-      (if (null (group-reduce-dims parent-group))
-          (progn
-            (dolist (v (reverse read-view)) ;; rewriting the graph
-              (apply-view-fusor v graph self parent-group))
-            ;; [TODO] Assert Mergeable
-            ->ok)
-          (progn
-            ;; Complex-out-fusable
-            (when (find :shrink (view-type-list read-view))->ng)
-            (when (find :permute (view-type-list read-view))->ng)
-            (when (not (= (length read-view) 1))->ng)
-            (case (car (view-type-list read-view))
-              (:Broadcast
-               (apply-view-fusor (car read-view) graph self parent-group)
-               ->ok)
-              (:Reshape
-               (print "NG")
-               ->ng)))))))
+      (let ((r1 (group-rank self))
+            (r2 (group-rank parent-group)))
+        ;; r2
+        ;;  |
+        ;; r1
+        (cond
+          ((or (= r1 0) (= r2 0))->ok)
+          ((= r1 r2)->ok)
+          (T
+           (let ((self-type (group-get-type self))
+                 (c (< r1 r2)))
+             (when (null self-type)->ng)
+             (if (broadcastable-p read-type self-type)
+                 (let ((mask (map 'list #'(lambda (x) (eql x 1)) (buffer-shape (if c read-type self-type)))))
+                   (assert (some #'identity mask))
+                   (apply-view-fusor (min r1 r2) mask self)
+                   (apply-view-fusor (min r1 r2) mask parent-group)
+                   ->ok)
+                 (if (and read-view (some #'identity (getattr read-view :broadcast)))
+                     (progn
+                       (apply-view-fusor (min r1 r2) (getattr read-view :broadcast) self)
+                       (apply-view-fusor (min r1 r2) (getattr read-view :broadcast) parent-group)
+                       ->ok)
+                     ->ng)))))))))
 
 ;; for batch = 0..10
 ;; output[n, k, i, j] += input[n, c, i + p, j + q] * weight[k, c, p, q]
@@ -380,8 +292,14 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 ;; - ConvND Shrink
 ;; -  elementwise after reduction
 ;; - 1. Add Fixup
-
+;; (caten/codegen:jit (caten (!sin (!add (call (Embedding 10 10) (!index-components `(1 10))) (call (Embedding 10 10) (make-tensor `(10 10)))))))
 (defmethod merge-groups ((self Group) parents mergeable-list)
+  (let* ((tgts (loop for m in mergeable-list for p in parents
+                     if m collect p))
+         (tgts-rank (map 'list #'group-rank tgts))
+         (self-rank (group-rank self)))
+    (when tgts-rank
+      (assert (>= self-rank (apply #'max tgts-rank)))))
   (loop for m in mergeable-list
         for p in parents
         if m do
@@ -390,7 +308,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   self)
 
 (defun recursive-create-groups (id graph &key (seen))
-  ""
   (declare (type symbol id) (type graph graph) (type hash-table seen))
   (when (gethash id seen) (return-from recursive-create-groups))
   (setf (gethash id seen) t)

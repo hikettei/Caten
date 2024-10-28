@@ -146,12 +146,13 @@
                  (let ((space (if noopt
                                   (buffer-iteration-space base-graph buffer)
                                   (buffer-merge-dims base-graph buffer))))
-                   (loop for s in (iteration-space-shape space)
-                         for p in (iteration-space-procedure space)
-                         do (setf (gethash p pid2space)
-                                  (if (or (null (gethash p pid2space)) (is-one (gethash p pid2space)))
-                                      s
-                                      (gethash p pid2space)))))))
+                   (when space
+                     (loop for s in (iteration-space-shape space)
+                           for p in (iteration-space-procedure space)
+                           do (setf (gethash p pid2space)
+                                    (if (or (null (gethash p pid2space)) (is-one (gethash p pid2space)))
+                                        s
+                                        (gethash p pid2space))))))))
              (explore (node)
                (mapc #'check (relay-reads (read-type-relay node)))
                (mapc #'check (relay-writes (read-type-relay node))))
@@ -207,7 +208,7 @@
                          (nth (car p) view)
                          nil)))
              (fixup-dims (id original-buffer)
-               (when original-buffer
+               (when (and original-buffer (> (buffer-nrank original-buffer) 0))
                  ;; Caten cannot inference where to insert one here.
                  (assert (= (length (buffer-shape original-buffer)) (1+ kernel-rank))
                          ()
@@ -216,9 +217,6 @@
                      (values (merge-list procedure (buffer-shape original-buffer))
                              (merge-stride procedure (new-stride (buffer-stride original-buffer) (buffer-views original-buffer)))
                              (merge-view procedure (buffer-views original-buffer)))
-                   ;(print id)
-                   ;(print (buffer-stride original-buffer))
-                   ;(print new-stride)
                    (make-iteration-space
                     :shape new-shape
                     :strides new-stride
