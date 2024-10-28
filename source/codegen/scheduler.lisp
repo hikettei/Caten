@@ -326,7 +326,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
     ;;  (No fuse)        (When parent[0] and parent[1] are fusable)
     (let ((mergeable-p-list
             (loop for parent in parents
-                  for parent-return = (car (last parent))
+                  for parent-return = (car parent)
                   for nth upfrom 0
                   if parent-return
                     collect (group-merge-p self graph node parent-return nth)
@@ -334,13 +334,13 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                     collect nil)))
       (assert (= (length mergeable-p-list) (length parents)))
       (append
+       (list (merge-groups self (map 'list #'car parents) mergeable-p-list))
        (loop for p in parents
              for m in mergeable-p-list
              if m ;; mergeable
-               append (butlast p)
+               append (cdr p)
              else ;; unmergeable
-             append p)
-       (list (merge-groups self (map 'list (alexandria:compose #'car #'last) parents) mergeable-p-list))))))
+             append p)))))
 
 (defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
 
