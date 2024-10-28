@@ -248,6 +248,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
       (when (not (equal (group-reduce-dims self) (group-reduce-dims parent-group)))
         ;; Reduced at the same rank?
         ->ng))
+    (setf (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims parent-group)))
     (let* ((read (nth nth (node-reads node)))
            (read-node (id->value graph read))
            (read-view (car (nth nth (getattr node :_read_views))))
@@ -263,12 +264,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (let ((r1 (group-rank self))
             (r2 (group-rank parent-group)))
-        ;; r2
-        ;;  |
-        ;; r1
+        ;; r2 -> r1
         (cond
-          ((or (= r1 0) (= r2 0))
-           ->ok)
+          ((or (= r1 0) (= r2 0))->ok)
           ((= r1 r2)
            (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
                ->ok
@@ -294,6 +292,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (loop for m in mergeable-list
         for p in parents
         if m do
+          (assert (or (null (group-reduce-dims p)) (null (group-reduce-dims self)) (equal (group-reduce-dims self) (group-reduce-dims p)))
+                  ()
+                  "Reduce dims = ~a ~a" (group-reduce-dims p) (group-reduce-dims self))
           (setf (group-items self) (append (group-items p) (group-items self))
                 (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims p))))
   self)
@@ -346,7 +347,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defmethod graph-schedule ((graph Graph))
   ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
-         (groups (nreverse (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph))))))
+         (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph)))))
     (mapc #'verify-group groups)
     ;; Serialize ADD (Embedding Embedding)
     ;; Merge two independent groups
@@ -363,6 +364,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
+;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; [TODO] shape-inference.lisp => ShapeTrackerを作って回す？
 ;; - TensorComprehensionみたいなLowererが結局必要なのか。。。
 ;; - 全くわからない

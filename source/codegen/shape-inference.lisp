@@ -146,7 +146,7 @@
   (multiple-value-bind (shape stride) (parse-allocate-node node args)
     (realize-buffer graph (node->id node) :shape1 shape :stride1 stride)))
 
-(defmethod %impl ((device-id (eql :relay-checker)) (op (eql :view)) graph node args)
+(defmethod %impl ((device-id (eql :relay-checker)) (op (eql :View)) graph node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)
       (parse-view-node node args)
     (let ((buffer (copy-buffer (car args))))
@@ -157,11 +157,7 @@
 	    (loop for i upfrom 0 below (length v1)
 		  collect (list (reveal-buffer (nth i v1)) (reveal-buffer (nth i v2)) (reveal-buffer (nth i v3)) (nth i bc)))
 	    (buffer-nrank buffer) (length shape)
-	    (buffer-inferred-permute buffer) (if (and (buffer-inferred-permute buffer) (getattr node :permute))
-						 (permute-list (getattr node :permute) (buffer-inferred-permute buffer))
-						 (or
-						  (buffer-inferred-permute buffer)
-						  (getattr node :permute)))
+	    (buffer-inferred-permute buffer) (getattr node :permute)
 	    (buffer-orig-buffer-shape buffer) (map 'list #'reveal-buffer (or (buffer-orig-buffer-shape (car args)) (buffer-shape (car args)))))
       buffer)))
 

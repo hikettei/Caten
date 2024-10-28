@@ -315,9 +315,9 @@
   (loop with gids = nil
         for bp in blueprint
         if (eql (node-type bp) :FOR)
-          do (push (getattr bp :Idx) gids)
+          do (push (getattr bp :idx) gids)
         else if (eql (node-type bp) :ENDFOR)
-               do (setf gids (remove (getattr bp :Idx) gids))
+               do (setf gids (remove (getattr bp :idx) gids))
         else do
           (assert (eql (node-type bp) :EXPR))
           (setf (getattr bp :Iterations) (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids))))
