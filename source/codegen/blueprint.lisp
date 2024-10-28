@@ -150,9 +150,11 @@
                      (loop for s in (iteration-space-shape space)
                            for p in (iteration-space-procedure space)
                            do (setf (gethash p pid2space)
-                                    (if (or (null (gethash p pid2space)) (is-one (gethash p pid2space)))
+                                    (if (null (gethash p pid2space))
                                         s
-                                        (gethash p pid2space))))))))
+                                        (if (is-one (gethash p pid2space))
+                                            s
+                                            (gethash p pid2space)))))))))
              (explore (node)
                (mapc #'check (relay-reads (read-type-relay node)))
                (mapc #'check (relay-writes (read-type-relay node))))
@@ -170,7 +172,7 @@
                        collect (loop for x in p if (null (find x seen)) collect x and do (push x seen))
                        and do (push p seen)))
              (new-procedure (loop for p in new-procedure if p collect p)))
-        (assert (equal (alexandria:flatten new-procedure) (range 0  kernel-rank)))
+        (assert (equal (alexandria:flatten new-procedure) (range 0 kernel-rank)))
         (cons
          (map
           'list

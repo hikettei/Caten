@@ -225,12 +225,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                    (loop for b in mask
                          if b collect `(0 1 1 t) else collect (pop views))
                    (buffer-nrank typ) (length mask)))
-           typ))))
-  (group-items-st-rewriter
-   group
-   #'(lambda (typ)
-       (assert (= (length mask) (buffer-nrank typ)))
-       nil)))
+           typ)))))
 
 (defun broadcastable-p (prev new)
   (let ((prev-shape (copy-list (buffer-shape prev)))
@@ -284,7 +279,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                        (apply-view-fusor (min r1 r2) (getattr read-view :broadcast) parent-group)
                        ->ok)
                      ->ng)))))))))
-
 ;; for batch = 0..10
 ;; output[n, k, i, j] += input[n, c, i + p, j + q] * weight[k, c, p, q]
 ;;
@@ -294,12 +288,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 ;; - 1. Add Fixup
 ;; (caten/codegen:jit (caten (!sin (!add (call (Embedding 10 10) (!index-components `(1 10))) (call (Embedding 10 10) (make-tensor `(10 10)))))))
 (defmethod merge-groups ((self Group) parents mergeable-list)
-  (let* ((tgts (loop for m in mergeable-list for p in parents
-                     if m collect p))
-         (tgts-rank (map 'list #'group-rank tgts))
-         (self-rank (group-rank self)))
-    (when tgts-rank
-      (assert (>= self-rank (apply #'max tgts-rank)))))
   (loop for m in mergeable-list
         for p in parents
         if m do
