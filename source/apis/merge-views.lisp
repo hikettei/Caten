@@ -92,11 +92,8 @@ Applying a further slicing:
           (make-node :Buffer :VIEW (node-writes node) (append (list (car (node-reads val))) (cdr args)) :nrank nrank :broadcast broadcast :permute permute))))))
 
 ;; [TODO] Handle the stride by ShapeTracker
-;; AASM Based Construction
-;; Tensor Shaped Tensor Creation Support!
-;; Simplify the stride computation lowering by Tracker (create a cache)
-;; Workload
-;; 1. Modules can inference ShapeTracker?;; 4. Create a cache for lowering modules, remove override-p option, always generate the stride.
+;; 1. Modules can inference ShapeTracker?
+;; 4. Create a cache for lowering modules
 (defstruct (Tracker
             (:conc-name tr-)
             (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))

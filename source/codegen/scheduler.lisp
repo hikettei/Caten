@@ -351,8 +351,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           )
         ->ng)
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      (when (null read-view)
-        ->ok)
+
+      ->ng
       ;; eager to expand the length of procedure
       (if (null (group-reduce-dims parent-group))
           (progn
@@ -462,6 +462,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 ;; - !contiguousを廃止する
 ;; - TODO
 ;; - Update scheduler.lisp
+;;   Update !contiguous
+;;   Masked Reshape to fuse ConvND = 1 Kernel
 
 ;; Milestone (after complete them, move to implement renderer/memory planner)
 ;; - [ ] Getting a perfect schedule
