@@ -184,8 +184,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
     (let ((write-buffer (car (relay-writes (read-type-relay node)))))
       (let ((out
               (loop for v in (buffer-views write-buffer)
+                    for s in (buffer-shape write-buffer)
                     if (fourth v)
-                      collect t
+                      collect s
                     else
                       collect nil)))
         ;; Returns uncollapsed rank list
@@ -240,15 +241,27 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g))))))
     (every #'lazy-eq (buffer-shape b1) (buffer-shape b2))))
 
+(defun buffer-complex-out-fusable-p (g b1 b2 mask)
+  (flet ((lazy-eq (a b a-view b-view m)
+           (if m
+               (and
+                (or (eql a 1) (fourth a-view) (eql m 1))
+                (or (eql b 1) (fourth b-view) (eql m 1)))
+               (or (eql a 1) (eql b 1) (eql a b)
+                   (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g)))))))
+    (every #'lazy-eq (buffer-shape b1) (buffer-shape b2) (buffer-views b1) (buffer-views b2) mask)))
+
 (defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
-  (symbol-macrolet ((->ok (return-from group-merge-p t))
+  (symbol-macrolet ((->ok
+                      (progn
+                        (setf (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims parent-group)))
+                        (return-from group-merge-p t)))
                     (->ng (return-from group-merge-p nil)))
     (when (and (group-reduce-dims self) (group-reduce-dims parent-group))
       ;; Both groups are reduced?
       (when (not (equal (group-reduce-dims self) (group-reduce-dims parent-group)))
         ;; Reduced at the same rank?
         ->ng))
-    (setf (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims parent-group)))
     (let* ((read (nth nth (node-reads node)))
            (read-node (id->value graph read))
            (read-view (car (nth nth (getattr node :_read_views))))
@@ -268,6 +281,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         (cond
           ((or (= r1 0) (= r2 0))->ok)
           ((= r1 r2)
+           ;; [TODO] FIX: Is there side-effect? on group-reduce-dims? when processing big graph
+           ;; [TODO]: Transformer Embedding Serialize, 多分ClusterじゃないReduceのサイズに影響を受けている 
+           (when (group-reduce-dims parent-group)
+             (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
+                 ->ok
+                 ->ng))
            (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
                ->ok
                ->ng))
@@ -331,7 +350,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                   if parent-return
                     collect (group-merge-p self graph node parent-return nth)
                   else
-                    collect nil)))
+                   collect nil)))
       (assert (= (length mergeable-p-list) (length parents)))
       (append
        (list (merge-groups self (map 'list #'car parents) mergeable-p-list))
@@ -367,7 +386,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; [TODO] shape-inference.lisp => ShapeTrackerを作って回す？
 ;; - TensorComprehensionみたいなLowererが結局必要なのか。。。
-;; - 全くわからない
 ;; - Shape-Inferece.lispで，Tinygrad-LikeなView Simplifyをする
 ;; - !contiguousを廃止する
 ;; - TODO
