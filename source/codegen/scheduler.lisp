@@ -281,8 +281,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         (cond
           ((or (= r1 0) (= r2 0))->ok)
           ((= r1 r2)
-           ;; [TODO] FIX: Is there side-effect? on group-reduce-dims? when processing big graph
-           ;; [TODO]: Transformer Embedding Serialize, 多分ClusterじゃないReduceのサイズに影響を受けている 
            (when (group-reduce-dims parent-group)
              (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
                  ->ok
@@ -328,7 +326,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
             :items (list node)
             :reduce-dims (node-reduce-axes node)))
          (parents
-           (map 'list #'(lambda (x) (and (symbolp x) (recursive-create-groups x graph :seen seen))) (node-reads node))))
+           (reverse (map 'list #'(lambda (x) (and (symbolp x) (recursive-create-groups x graph :seen seen))) (reverse (node-reads node))))))
     (declare (type node node) (type list parents))
     ;; Consider this structured graph:
     ;; parents[0] parents[1] parents[2] ...

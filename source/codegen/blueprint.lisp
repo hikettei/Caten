@@ -138,7 +138,7 @@
                  (loop for r in (append (relay-reads type) (relay-writes type))
                        when r maximize (length (buffer-shape r)))))
          (pid2space (make-hash-table :test #'equal))
-         (noopt nil))
+         (noopt (= 1 (ctx:getenv :NOOPT))))
     (labels ((is-one (expr)
                (expr-scalar-equivalent-p expr (expr-const 1 :int64)))
              (check (buffer)
