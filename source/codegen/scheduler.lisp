@@ -42,6 +42,7 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:iteration-space-procedure)
   (:import-from
    #:caten/codegen/helpers
+   #:range
    #:permute-list
    #:nodes-depends-on
    #:nodes-write-to)
@@ -242,11 +243,14 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
     (every #'lazy-eq (buffer-shape b1) (buffer-shape b2))))
 
 (defun buffer-complex-out-fusable-p (g b1 b2 mask)
+  "b1 = self, b2 = parent"
   (flet ((lazy-eq (a b a-view b-view m)
+           (declare (ignore a-view))
            (if m
-               (and
-                (or (eql a 1) (fourth a-view) (eql m 1))
-                (or (eql b 1) (fourth b-view) (eql m 1)))
+               (flet ((ok (size view)
+                        (or (eql size 1) (fourth view) (eql m 1))))
+                 (and ;; self (ok a a-view)
+                      (ok b b-view)))
                (or (eql a 1) (eql b 1) (eql a b)
                    (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g)))))))
     (every #'lazy-eq (buffer-shape b1) (buffer-shape b2) (buffer-views b1) (buffer-views b2) mask)))
@@ -382,6 +386,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
       schedule)))
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
+;; - argmax = 1 kernels
 ;; [TODO] shape-inference.lisp => ShapeTrackerを作って回す？
 ;; - TensorComprehensionみたいなLowererが結局必要なのか。。。
 ;; - Shape-Inferece.lispで，Tinygrad-LikeなView Simplifyをする
