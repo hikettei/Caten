@@ -20,7 +20,9 @@
    #:apply-rewriting-rules)
   (:import-from
    :caten/codegen/scheduler
-   #:graph-schedule)
+   #:graph-schedule
+   #:find-item2id-projection
+   #:retrieve-blueprint-from-cache)
   (:import-from
    :caten/codegen/blueprint
    #:lower-schedule-item
@@ -94,8 +96,6 @@
     items1 items2)))
 
 (defun minify-equivalent-schedule (schedule-graph)
-  ;; CODE_SIZE=0 ()
-  ;; CODE_SIZE=1 (Eager to Full Symbolic Compilation)
   (let ((tgts (loop for node in (graph-nodes schedule-graph)
                     if (getattr node :jitable)
                       collect node))
@@ -107,7 +107,6 @@
           else
             do (push tgt seen))
     schedule-graph))
-
 ;; Priority
 ;; - [ ] Auto Scheduler for Tiling/Vectorizing
 ;; - [ ] Caching the kernel+Memory Planner
@@ -130,8 +129,11 @@
           (remove-duplicates
            (loop for node in (graph-nodes (avm-graph avm))
                  if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
-                   collect (getattr node :value)))))
+                   collect (getattr node :value))))
+        (projection-table (make-hash-table)))
     (declare (type Graph schedule-graph))
+    (dolist (n (graph-nodes schedule-graph))
+      (setf (gethash (getattr n :name) projection-table) (find-item2id-projection n)))
     ;; 5. Minifying the number of schedules, (reuse kernels)
     (minify-equivalent-schedule schedule-graph)
     ;; 6. Start JIT Compilation. (Performing by group)
@@ -170,6 +172,9 @@
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
            (graph-nodes schedule-graph)))))
+    (dolist (n (graph-nodes schedule-graph))
+      (when (and (getattr n :jitable) (null (getattr n :blueprint)))
+        (retrieve-blueprint-from-cache n schedule-graph projection-table)))
     ;; 10. Running memory-planner, update the storage-id
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)

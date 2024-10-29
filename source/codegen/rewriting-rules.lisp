@@ -323,7 +323,7 @@ out[...] = f(*val_1);
   (declare (type AVM avm))
   (let ((id2view (rewrite-views-as-buffer avm)))
     ;;Try optimizing kernels without relying on them...
-    ;; (wmma-rewriter (avm-graph avm) :no-verify t)
+    ; (wmma-rewriter (avm-graph avm) :no-verify t)
     ;;(contiguous-after-wmma (avm-graph avm) :no-verify t)
     (propagate-rebundant-loadp (avm-graph avm))
     (apply-static-gensym avm id2view))

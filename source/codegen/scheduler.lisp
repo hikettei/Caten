@@ -15,7 +15,8 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:FastGraph
    #:graph-outputs
    #:id->value
-   #:id->users)
+   #:id->users
+   #:copy-node)
   (:import-from
    #:caten/avm
    #:Buffer
@@ -50,7 +51,9 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:caten/codegen/rewriting-rules
    :nodes-apply-static-gensym)
   (:export
-   #:graph-schedule))
+   #:graph-schedule
+   #:find-item2id-projection
+   #:retrieve-blueprint-from-cache))
 
 (in-package #:caten/codegen/scheduler)
 
@@ -113,6 +116,42 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
             (if (getattr node :allocate-p)
                 ":allocate-p=T"
                 (format nil ":name=~a" (getattr node :name))))))
+
+(defmethod find-item2id-projection ((node Node))
+  ;; -> List(Symbols)
+  (assert (eql (node-type node) :Schedule-Item))
+  (let ((projection))
+    (loop for item in (getattr node :items) do
+      (loop for symbol in (append (node-reads node) (node-writes node))
+            if (symbolp symbol) do (push symbol projection)))
+    projection))
+
+(defun compare-and-make-projection-table (proj1 proj2)
+  (assert (= (length proj1) (length proj2)))
+  (let ((table (make-hash-table)))
+    (loop for p1 in proj1
+          for p2 in proj2
+          do (setf (gethash p1 table) p2))
+    table))
+
+(defmethod retrieve-blueprint-from-cache ((node Node) schedule-graph projection-table)
+  (declare (type hash-table projection-table))
+  (assert (eql (node-type node) :Schedule-Item))
+  (let ((projection (gethash (getattr node :cache-name) projection-table))
+        (base-node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
+    (assert projection)
+    (assert base-node)
+    (setf (getattr node :blueprint)
+          (loop with table = (compare-and-make-projection-table (gethash (getattr base-node :name) projection-table) projection)
+                for bp in (getattr base-node :blueprint)
+                for bp1 = (copy-node bp)
+                collect
+                (progn
+                  (setf (node-id bp1) (gensym "CNID")
+                        (node-reads bp1) (map 'list #'(lambda (x) (or (gethash x table) x)) (node-reads bp1))
+                        (node-writes bp1) (map 'list #'(lambda (x) (or (gethash x table) x)) (node-writes bp1)))
+                  bp1)))
+    node))
 
 (defstruct Group
   (key (gensym) :type symbol)
