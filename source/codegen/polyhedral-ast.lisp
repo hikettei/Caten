@@ -112,10 +112,11 @@
 		    (:ast-expr-op-zdiv-r (expr-mod lhs rhs))
 		    ;; (:expr-op-cond)
 		    (:ast-expr-op-eq (expr-= lhs rhs))
-		    (:ast-expr-op-le (expr-<= lhs rhs))
-		    (:ast-expr-op-lt (expr-< lhs rhs))
-		    (:ast-expr-op-ge (expr->= lhs rhs))
-		    (:ast-expr-op-gt (expr-> lhs rhs))
+                    ;; Rewrite LE to simplify the expression
+		    (:ast-expr-op-le (expr-< lhs (expr-add rhs (expr-const 1 :int64)))) ;; <=
+		    (:ast-expr-op-lt (expr-< lhs rhs)) ;; <
+		    (:ast-expr-op-ge (expr->= lhs rhs)) ;; >=
+		    (:ast-expr-op-gt (expr-> lhs rhs)) ;; >
 		    ;; (:expr-op-call)
 		    ;; (:expr-op-access)
 		    ;; (:expr-op-member)
