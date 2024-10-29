@@ -207,8 +207,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defun group-rank (group)
   (let ((buff (group-get-type group)))
     (when buff (buffer-nrank buff))))
-
+;; (caten/codegen:jit (caten (!matmul (!tril (make-tensor `(10 1 1 10))) (!triu (make-tensor `(10 1))))))
 (defun apply-view-fusor (tgt-rank mask group)
+  ;; T = broadcasted, NIL = old axes2
   (group-items-st-rewriter
    group
    #'(lambda (typ)
@@ -219,14 +220,16 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                  (views (copy-list (buffer-views typ))))
              (setf (buffer-shape typ)
                    (loop for b in mask
-                         if b collect 1 else collect (pop shp))
+                         if b collect 1 else collect (or (pop shp) 1))
                    (buffer-stride typ)
                    (loop for b in mask
-                         if b collect 0 else collect (pop str))
+                         if b collect 0 else collect (or (pop str) 1))
                    (buffer-views typ)
                    (loop for b in mask
                          if b collect `(0 1 1 t) else collect (pop views))
-                   (buffer-nrank typ) (length mask)))
+                   (buffer-nrank typ) (length (buffer-shape typ)))
+             ;; Consumed all masks?
+             (assert (= (buffer-nrank typ) (length mask))))
            typ)))))
 
 (defun broadcastable-p (prev new)
@@ -255,6 +258,15 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                    (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g)))))))
     (every #'lazy-eq (buffer-shape b1) (buffer-shape b2) (buffer-views b1) (buffer-views b2) mask)))
 
+(defun group-assert-rank (group r1 r2 view &aux (rank (max r1 r2)))
+  (loop for item in (group-items group)
+        do (loop for typ in (append (relay-reads (read-type-relay item)) (relay-writes (read-type-relay item)))
+                 for nth upfrom 0
+                 unless (or (null typ) (= 0 (buffer-nrank typ)))
+                   do (assert (= rank (buffer-nrank typ)) ()
+                              "Rank mismatch: (expected from ~a -> ~a)~%view=~a~%buffer:~%~a~%group~%~a"
+                              (min r1 r2) rank view typ group))))
+
 (defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
   (symbol-macrolet ((->ok
                       (progn
@@ -272,6 +284,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
            (read-type (group-get-type parent-group))
            (write-view (getattr node :_write_views)))
       (assert (every #'null write-view))
+      (assert (<= (length (nth nth (getattr node :_read_views))) 1))
       ;; Relations between group and parent-group:
       ;; ```
       ;; group=parent | X[write_type]{write_iter} = f(...)
@@ -301,15 +314,36 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                    (assert (some #'identity mask))
                    (apply-view-fusor (min r1 r2) mask self)
                    (apply-view-fusor (min r1 r2) mask parent-group)
+                   (group-assert-rank self r1 r2 read-view)
+                   (group-assert-rank parent-group r1 r2 read-view)
                    ->ok)
                  (if (and read-view (some #'identity (getattr read-view :broadcast)))
-                     (progn
-                       (apply-view-fusor (min r1 r2) (getattr read-view :broadcast) self)
-                       (apply-view-fusor (min r1 r2) (getattr read-view :broadcast) parent-group)
+                     (let ((mask (getattr read-view :broadcast)))
+                       (when (not (= (length mask) (max r1 r2)))
+                         (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
+                       (when (not (= (length mask) (max r1 r2)))->ng)
+                       (apply-view-fusor (min r1 r2) mask self)
+                       (apply-view-fusor (min r1 r2) mask parent-group)
+                       (group-assert-rank self r1 r2 read-view)
+                       (group-assert-rank parent-group r1 r2 read-view)
                        ->ok)
                      ->ng)))))))))
 
 (defmethod merge-groups ((self Group) parents mergeable-list)
+  (let* ((p (loop for m in mergeable-list for p in parents
+                  if m collect p))
+         (ranks (map 'list #'group-rank p))
+         (srank  (group-rank self)))
+    (loop for r in ranks
+          for group in p
+          for eql-p = (or (eql 0 r) (eql 0 srank) (= r srank))
+          unless eql-p do
+            (assert (< r srank))
+            (let* ((typ1 (group-get-type self))
+                   (m (map 'list #'fourth (buffer-views typ1))))
+              (assert (some #'identity m))
+              (apply-view-fusor r m group)
+              (group-assert-rank group srank srank nil))))
   (loop for m in mergeable-list
         for p in parents
         if m do
