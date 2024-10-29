@@ -138,10 +138,10 @@
                  (loop for r in (append (relay-reads type) (relay-writes type))
                        when r maximize (length (buffer-shape r)))))
          (pid2space (make-hash-table :test #'equal))
-         (noopt (= 1 (ctx:getenv :NOOPT))))
+         (candidates nil))
     (labels ((is-one (expr)
                (expr-scalar-equivalent-p expr (expr-const 1 :int64)))
-             (check (buffer)
+             (check (buffer &key (noopt t))
                (when buffer
                  (let ((space (if noopt
                                   (buffer-iteration-space base-graph buffer)
@@ -155,13 +155,21 @@
                                         (if (is-one (gethash p pid2space))
                                             s
                                             (gethash p pid2space)))))))))
-             (explore (node)
-               (mapc #'check (relay-reads (read-type-relay node)))
-               (mapc #'check (relay-writes (read-type-relay node))))
+             (explore (node &key (noopt t))
+               (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
+               (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node))))
              (related-keys (rank)
-               (loop for key being the hash-keys of pid2space
+               (loop for key in candidates
                      if (find rank key) collect key)))
-      (mapc #'explore (graph-nodes graph))
+      (if (= 1 (ctx:getenv :NOOPT))
+          (progn
+            (mapc #'explore (graph-nodes graph))
+            (setf candidates (hash-table-keys pid2space)))
+          (progn
+            ;; NOOPT is not set to 1: also register the collapsed axis
+            (mapc #'(lambda (x) (explore x :noopt nil)) (graph-nodes graph))
+            (setf candidates (hash-table-keys pid2space))
+            (mapc #'explore (graph-nodes graph))))
       (let* ((new-procedure
                (loop for dimension upfrom 0 below (1+ kernel-rank)
                      collect (car (sort (related-keys dimension) #'< :key #'length))))
@@ -177,7 +185,7 @@
          (map
           'list
           #'(lambda (x)
-              (assert (gethash x pid2space) () "the axis ~a is not found" x)
+              (assert (gethash x pid2space) () "the axis ~a is not found from ~a" x (alexandria:hash-table-keys pid2space))
               (gethash x pid2space))
           new-procedure)
          new-procedure)))))
