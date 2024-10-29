@@ -222,7 +222,7 @@
                  ;; Caten cannot inference where to insert one here.
                  (assert (= (length (buffer-shape original-buffer)) (1+ kernel-rank))
                          ()
-                         "(id=~a) Cannot uprank ~a into the space ~a. A original buffer should be upranked by the scheduler in advance." id original-buffer found-space)
+                         "(id=~a) Cannot uprank ~a into the space ~a. A original buffer should be upranked by the scheduler in advance.~%~a" id original-buffer found-space graph)
                  (multiple-value-bind (new-shape new-stride new-view)
                      (values (merge-list procedure (buffer-shape original-buffer))
                              (merge-stride procedure (new-stride (buffer-stride original-buffer) (buffer-views original-buffer)))

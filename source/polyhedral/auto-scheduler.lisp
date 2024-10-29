@@ -57,5 +57,5 @@
     (poly-dependencies pg))))
 
 (defmethod auto-schedule ((poly Polyhedral-IR))
-  (schedule poly)
+  (setf (poly-schedule poly) (schedule poly))
   poly)
