@@ -96,7 +96,6 @@
 (defun minify-equivalent-schedule (schedule-graph)
   ;; CODE_SIZE=0 ()
   ;; CODE_SIZE=1 (Eager to Full Symbolic Compilation)
-  (return-from minify-equivalent-schedule) ;; [TODO]
   (let ((tgts (loop for node in (graph-nodes schedule-graph)
                     if (getattr node :jitable)
                       collect node))
@@ -109,12 +108,13 @@
             do (push tgt seen))
     schedule-graph))
 
-;; [Milestone]
-;; - [ ] schedule-graph -> Better Graph Splitting Strategy?
-;; - [ ] Fuse Permute
-;; - [ ] Scop+Polyhedral -> Can ISL find the optimal embedding kernel?
-;; - [ ] Support Backward (Higher Order?)
-;; - [ ] TODO Purge unnecessary stride computation (in symbolic!)
+;; Priority
+;; - [ ] Auto Scheduler for Tiling/Vectorizing
+;; - [ ] Caching the kernel+Memory Planner
+;; - [ ] Kernel Generation by CLANG
+;; - [ ] Running the kernel
+;; - [ ] Passing all tests
+;; - [ ] Running tinyllama
 (defun jit (avm &key (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
                 &aux (renderer (if (keywordp renderer) (get-default-renderer renderer) renderer)))
   "Runs the JIT compilation (destructive)"

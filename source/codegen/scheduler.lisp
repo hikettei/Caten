@@ -207,7 +207,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defun group-rank (group)
   (let ((buff (group-get-type group)))
     (when buff (buffer-nrank buff))))
-;; (caten/codegen:jit (caten (!matmul (!tril (make-tensor `(10 1 1 10))) (!triu (make-tensor `(10 1))))))
+
 (defun apply-view-fusor (tgt-rank mask group)
   ;; T = broadcasted, NIL = old axes2
   (group-items-st-rewriter
@@ -440,7 +440,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 ;;   - [ ] MergeDimsを削除+MergeDimsはいちばん最後にやる get-grouped-dimsで，共通のViewとかを入れてMerge
 ;;   - [ ] Matmul+ActivationをFuse
 ;;   - [ ] fix for padding?
-
+;;   - [ ] (caten/codegen:jit (caten (!matmul (!tril (make-tensor `(10 1 1 10))) (!triu (make-tensor `(10 1))))))
 ;; ConvND Step by step:
 ;;   - [ ] (caten/codegen:jit (caten (!mul (make-tensor `(10 1 6 21 21 3 5 5)) (!reshape (make-tensor `(6 3 5 5)) `(1 1 6 1 1 3 5 5)))))
 ;;   - [ ] (caten/codegen:jit (caten (!contiguous (caten/nn::_pool (!padding2d (make-tensor `(10 10)) `(2 2 2 2)) `(5 5) `(1 1) `(1 1)))))
