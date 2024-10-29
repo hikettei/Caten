@@ -21,6 +21,7 @@
 	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
          (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
          (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
+         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
 
@@ -56,8 +57,13 @@
     (poly-dependencies pg))))
 
 (defmethod auto-schedule ((poly Polyhedral-IR))
+  "An entrypoint for auto-scheduling"
   ;; Getting the initial schedule (TODO: Make configuration changeable)
   ;; but :atomic=T is must
-  (setf (poly-schedule poly) (schedule poly))
-  
+  ;; (setf (poly-schedule poly) (schedule poly))
+  ;; Tiling
+  ;; (caten/polyhedral/tiling:solve poly)
+  ;; Unrolling/Vectorizing
+  (caten/polyhedral/packing:solve poly)
+  ;; Post Fusion
   poly)

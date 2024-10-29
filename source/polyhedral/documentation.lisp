@@ -16,5 +16,4 @@
 
 To enable this, set `AUTO_SCHEDULER=1`.
 ")
-  (subtitle "Configuration")
-  )
+  (subtitle "Configuration"))

@@ -7,6 +7,8 @@
   :components
   ((:file "ir")
    (:file "config")
+   (:file "tiling")
+   (:file "packing")
    (:file "auto-scheduler")
    (:file "package")
    (:file "documentation")))
