@@ -405,9 +405,11 @@
     (multiple-value-bind (new-bp changed-p)
         (try-insert-node ctx node)
       (assert changed-p () "recursive-lower-into-bp: Cannot insert the node ~a into a single kernel.
+Depends=~a Reduce=~a Users=~a
 ```
 ~a
-```" node (ctx-blueprint ctx))
+```" node (node-depend-idx-list node (ctx-gids ctx)) (node-reduced-gids node (ctx-gids ctx))
+     (map 'list #'node-id (id->users (ctx-graph ctx) (car (node-writes node)))) (ctx-blueprint ctx))
       (setf blueprint new-bp)
       (mapc
        #'(lambda (x)
