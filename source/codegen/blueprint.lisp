@@ -25,7 +25,8 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
    :permute-list
    :render-list
    :nodes-depends-on
-   :nodes-write-to)
+   :nodes-write-to
+   :simplify-blueprint)
   (:import-from
    :caten/avm
    #:buffer-nrank
@@ -114,24 +115,6 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                             (if (getattr node :reduction :allow-undefined t)
                                 " // :reduction=t"
                                 ""))))))))
-
-(defun remove-empty-loop (nodes &aux (removed nil))
-  (loop for node in nodes
-	for nth upfrom 0
-	if (and (eql (node-type node) :FOR)
-		(nth (1+ nth) nodes)
-		(eql (node-type (nth (1+ nth) nodes)) :ENDFOR))
-	  do (push (node-id (nth (1+ nth) nodes)) removed)
-	else
-          unless (find (node-id node) removed)
-            collect node))
-
-(defun simplify-blueprint (nodes)
-  (let ((len (length nodes)))
-    (setf nodes (remove-empty-loop nodes))
-    (if (= (length nodes) len)
-        nodes
-        (simplify-blueprint nodes))))
 
 (defmethod get-grouped-dims ((graph Graph) (base-graph Graph))
   "Infers the loop boundaries of the graph by finding the common iteration space."
@@ -259,16 +242,16 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
 
 (defun node-reduced-axes (node)
   (let ((is (car (relay-write-iters (read-type-relay node)))))
-    (flet ((is-zero (axis)
-             (expr-scalar-equivalent-p axis (expr-const 0 :int64))))
+    (flet ((is-n (axis n)
+             (expr-scalar-equivalent-p axis (expr-const n :int64))))
       (and is
            (loop for s in (iteration-space-strides is)
-                 if (is-zero s)
+                 if (is-n s 0)
                    collect t
                  else
                    collect nil)))))
 
-(defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
+(defun node-reduced-gids (node gids  &aux (axes (node-reduced-axes node)))
   (when (null axes) (setf axes (make-list (length gids))))
   (assert (= (length gids) (length axes)) () "the reduction node ~a is not the highest rank tensor." node)
   (when (getattr node :reduction :allow-undefined t)
@@ -349,11 +332,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
            (serialized-reduce-idx))
       ;; If the condition is satisfied when T=0 -> insert -1
       (when (and
-             (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes)
-             (every #'(lambda (x) (null (find x satisfied))) node-depend-users)
-             (every #'(lambda (x) (find x node-depend-axes)) node-depend-axes)
-             (every #'(lambda (x) (null (find x idx-satisfied))) node-reduce-axes)
-             (every #'(lambda (x) (null (find x idx-satisfied))) user-depend-axes))
+             (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes))
         (push -1 insertable-positions))
       (loop for bp in blueprint
             for nth upfrom 0
@@ -388,7 +367,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                      (push nth insertable-positions)))
       (when (null insertable-positions)
         (return-from try-insert-node (values blueprint nil)))
-      (when (= -1 (apply #'max insertable-positions))
+      (when (find -1 insertable-positions)
         (return-from try-insert-node
           (if node-reduce-axes
               (values `(,@(reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))) ,@blueprint) t)

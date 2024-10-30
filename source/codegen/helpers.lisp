@@ -8,7 +8,8 @@
    #:render-list
    #:permute-list
    #:ensure-string-as-compilable
-   #:simplify-arithmetic-code))
+   #:simplify-arithmetic-code
+   #:simplify-blueprint))
 
 (in-package :caten/codegen/helpers)
 
@@ -71,3 +72,21 @@
     (def "\\+0\\)" ")")
     (def "\\(0\\+" "(")
     code))
+
+(defun remove-empty-loop (nodes &aux (removed nil))
+  (loop for node in nodes
+	for nth upfrom 0
+	if (and (eql (node-type node) :FOR)
+		(nth (1+ nth) nodes)
+		(eql (node-type (nth (1+ nth) nodes)) :ENDFOR))
+	  do (push (node-id (nth (1+ nth) nodes)) removed)
+	else
+          unless (find (node-id node) removed)
+            collect node))
+
+(defun simplify-blueprint (nodes)
+  (let ((len (length nodes)))
+    (setf nodes (remove-empty-loop nodes))
+    (if (= (length nodes) len)
+        nodes
+        (simplify-blueprint nodes))))

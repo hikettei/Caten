@@ -116,7 +116,7 @@
           (apply #'concatenate 'string
                  (append
                   (list (header))
-                  (loop for item in (reverse items)
+                  (loop for item in items
                         if (getattr item :rendered-object)
                           collect (getattr item :rendered-object))))))
     (print code)))

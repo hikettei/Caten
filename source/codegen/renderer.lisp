@@ -224,6 +224,7 @@
                 (simplify-arithmetic-code (format nil "(~a~a~a)" (render-node renderer (nth 0 (node-reads node))) ,op (render-node renderer (nth 1 (node-reads node))))))))
   (def :ADD "+")
   (def :MUL "*")
+  (def :IDIV "/")
   (def :AND " & ")
   (def :OR " | ")
   (def :XOR " ^ "))

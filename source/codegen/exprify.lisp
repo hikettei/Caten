@@ -92,6 +92,23 @@
             do (setf outs (append outs (node-writes n))))
     (remove-duplicates outs)))
 
+(defmethod propagate-load-const ((node Node) bp)
+  (loop for nth upfrom 0
+        for r in (node-reads node)
+        for n = (find r bp :key #'node-writes :test #'find)
+        if (and (not (eql (node-class node) :Render))
+                (and n (eql (node-type n) :LOAD)) ;; Propagate only scalars
+                (= (buffer-nrank (car (relay-writes (read-type-relay n)))) 0))
+          do (setf (nth nth (node-reads node)) (getattr n :value))))
+
+(defun remove-unused-blueprint (blueprint sched-nodes)
+  (loop for bp in blueprint
+        for us = (+
+                  (count (car (node-writes bp)) blueprint :key #'node-reads :test #'find)
+                  (count (car (node-writes bp)) sched-nodes :key #'node-reads :test #'find))
+        if (or (eql (node-class bp) :Render) (> us 0))
+          collect bp))
+
 (defmethod graph-scalarify (blueprint (node Node) (schedule-graph Graph))
   "Rewrites the buffer as scalar as many as possible"
   (declare (type list blueprint))
@@ -115,7 +132,9 @@
                     do (rewrite-as-scalar wt wi (reverse suffix))
                        (setf (getattr b :declare-type) (list t)
                              (node-reads node) (remove w (node-reads node)))))
-    blueprint))
+    (dolist (node blueprint)
+      (propagate-load-const node blueprint))
+    (remove-unused-blueprint blueprint (graph-nodes schedule-graph))))
 
 (defmethod exprify ((node Node))
   (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
