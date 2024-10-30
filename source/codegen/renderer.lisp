@@ -115,10 +115,10 @@
                     (append
                      (graph-nodes (expr-graph expr))
                      (graph-nodes (renderer-graph renderer))))
-              (format nil "~a[~a]"
+              (format nil "~(~a~)[~a]"
                       (%render-const renderer (car (node-writes node)))
                       (render-node renderer (car (node-writes (expr-out expr))))))
-            (format nil "~a[?]" (car (node-writes node)))))))
+            (format nil "~(~a~)[?]" (car (node-writes node)))))))
 
 (defun expr-index-components (is index-space)
   (reduce
