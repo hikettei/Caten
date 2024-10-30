@@ -299,6 +299,20 @@ out[...] = f(*val_1);
   (setf (avm-graph avm) (->graph (avm-graph avm)))
   avm)
 
+(defun remove-broadcasted-axis (wt)
+  (declare (type buffer wt))
+  (let ((wt1 (copy-buffer wt))
+        (mask (loop for s in (buffer-shape wt)
+                    collect (eql s 1))))
+    (setf (buffer-shape wt1) (loop for m in mask
+                                   for s in (buffer-shape wt)
+                                   if (null m) collect s)
+          (buffer-stride wt1) (loop for m in mask
+                                    for s in (buffer-stride wt)
+                                    if (null m) collect s)
+          (buffer-nrank wt1) (length (buffer-shape wt1)))
+    (if (null (buffer-shape wt1)) wt wt1)))
+
 (defmethod schedule-item-write-define-global ((schedule-item Node))
   "Inserts DEFINE_GLOBAL to the top of graph"
   (declare (type node schedule-item))
@@ -308,7 +322,9 @@ out[...] = f(*val_1);
           for rt in (getattr schedule-item :read-types) do
             (push (make-define-global read (buffer-dtype rt) t :input (buffer-nrank rt)) ops))
     (loop for write in (node-writes schedule-item)
-          for wt in (getattr schedule-item :write-types) do
+          for wt in (getattr schedule-item :write-types)
+          for nth upfrom 0 do
+            (setf (nth nth (getattr schedule-item :write-types)) (remove-broadcasted-axis wt))
             (push (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt)) ops))
     ;; [TODO] Dynamic Shape
     (setf (getattr schedule-item :blueprint)
