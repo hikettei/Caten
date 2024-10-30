@@ -31,13 +31,16 @@
                (butlast
                 (loop for arg in args
                       append (list
-                              (format nil "~a~a~a ~(~a~)"
+                              (format nil "~a~a~a~a ~(~a~)"
                                       (ecase (getattr arg :type)
-                                        (:input "const restrict ")
+                                        (:input "const ")
                                         (:output "")
                                         (:shape "const "))
                                       (->cdtype (getattr arg :dtype))
                                       (if (getattr arg :pointer-p) "*" "")
+                                      (if (eql :input (getattr arg :type))
+                                          " restrict"
+                                          "")
                                       (car (node-writes arg)))
                               ", "))))))
         (format out "void ~(~a~)(~a);~%" (getattr si :name) args)
@@ -111,6 +114,36 @@
 	      "#include <omp.h>"
 	      "")))
 
+(defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags) (dir nil))
+  (declare (type string source compiler))
+  (uiop:with-temporary-file (:pathname sharedlib :type "so" :keep t :directory dir)
+    nil
+    :close-stream
+    (let* ((cmd
+	     ;; gcc -shared -o sharedlib
+	     (append
+	      (list
+	       compiler "-shared"
+	       "-x" lang)
+	      compiler-flags
+	      (list "-o" (uiop:native-namestring sharedlib) "-")))
+	   (process-info (uiop:launch-program
+			  cmd
+			  :input :stream
+			  :error-output :stream))
+	   (input (uiop:process-info-input process-info))
+	   (error-output (uiop:process-info-error-output process-info)))
+      (unwind-protect (princ source input)
+	(close input))
+      (unless (zerop (uiop:wait-process process-info))
+	(error "Caten[Clang]: Failed to compile a shared library:~%~a~%
+
+Compiled with this command: ~a"
+	       (alexandria:read-stream-content-into-string error-output)
+	       (with-output-to-string (out)
+		 (dolist (c cmd) (princ c out) (princ " " out))))))
+    (cffi:load-foreign-library sharedlib)))
+
 (defmethod %compile-kernel ((renderer CStyle-Renderer) items)
   (let ((code
           (apply #'concatenate 'string
@@ -119,4 +152,8 @@
                   (loop for item in items
                         if (getattr item :rendered-object)
                           collect (getattr item :rendered-object))))))
-    (print code)))
+    (when (>= (ctx:getenv :JIT_DEBUG) 3)
+      (format t "[Final Code]:~%~a~%" code))
+    (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))
+    nil))
+
