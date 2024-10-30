@@ -101,11 +101,12 @@
                 (= (buffer-nrank (car (relay-writes (read-type-relay n)))) 0))
           do (setf (nth nth (node-reads node)) (getattr n :value))))
 
-(defun remove-unused-blueprint (blueprint sched-nodes)
+(defun remove-unused-blueprint (blueprint sched-graph)
   (loop for bp in blueprint
         for us = (+
                   (count (car (node-writes bp)) blueprint :key #'node-reads :test #'find)
-                  (count (car (node-writes bp)) sched-nodes :key #'node-reads :test #'find))
+                  (count (car (node-writes bp)) (graph-nodes sched-graph) :key #'node-reads :test #'find)
+                  (count (car (node-writes bp)) (graph-outputs sched-graph)))
         if (or (eql (node-class bp) :Render) (> us 0))
           collect bp))
 
@@ -136,7 +137,7 @@
                          do (setf (getattr b :declare-type) (list t))))
     (dolist (node blueprint)
       (propagate-load-const node blueprint))
-    (remove-unused-blueprint blueprint (graph-nodes schedule-graph))))
+    (remove-unused-blueprint blueprint schedule-graph)))
 
 (defmethod exprify ((node Node))
   (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
