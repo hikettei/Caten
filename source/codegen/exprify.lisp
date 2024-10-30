@@ -324,7 +324,7 @@
   (assert *expr-cache*)
   (let ((id->tgt (expr-cache-reduce-alias *expr-cache*))) ;; id -> (list new_id new_type new_is)
     (loop for bp in blueprint
-          if (and (eql (node-type bp) :EXPR) (getattr bp :reduction) (find (car (node-reads bp)) replaceable))
+          if (and (eql (node-type bp) :EXPR) (getattr bp :reduction))
             do (setf (gethash (car (node-writes bp)) id->tgt)
                      (list (car (node-reads bp)) (car (relay-reads (read-type-relay bp))) (car (relay-read-iters (read-type-relay bp))))))
     (labels ((final-new-id (id)

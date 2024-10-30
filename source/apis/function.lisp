@@ -668,7 +668,8 @@ Creates a constant tensor with the specified value from the tensor.
   "Proceed-Output[Tensor] - a realized tensor."
   (declare (type tensor proceed-output))
   (let* ((detached-tensor (st "A[~] -> A[~]" (proceed-output))))
-    (setf (tensor-buffer detached-tensor) (tensor-buffer proceed-output))
+    (setf (tensor-buffer detached-tensor) (tensor-buffer proceed-output)
+          (tensor-id detached-tensor) (tensor-id proceed-output))
     (let ((output (forward (make-instance 'ProceedNode) detached-tensor)))
       (setf (tensor-buffer output) (tensor-buffer detached-tensor))
       output)))
