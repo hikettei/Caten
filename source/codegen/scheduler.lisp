@@ -285,17 +285,26 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
     (every #'lazy-eq (buffer-shape b1) (buffer-shape b2))))
 
 (defun buffer-complex-out-fusable-p (g b1 b2 mask)
-  "b1 = self, b2 = parent"
-  (flet ((lazy-eq (a b a-view b-view m)
-           (declare (ignore a-view))
-           (if m
-               (flet ((ok (size view)
-                        (or (eql size 1) (fourth view) (eql m 1))))
-                 (and ;; self (ok a a-view)
-                      (ok b b-view)))
-               (or (eql a 1) (eql b 1) (eql a b)
-                   (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g)))))))
-    (every #'lazy-eq (buffer-shape b1) (buffer-shape b2) (buffer-views b1) (buffer-views b2) mask)))
+  "An extra mergeable condition not to introduce an extra dim after reduction is performed.
+g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask for the reduced dims."
+  (declare (type Graph g) (type buffer b1 b2) (type list mask))
+  (assert (= (buffer-nrank b1) (buffer-nrank b2)))
+  (flet ((lazy-eq (a b nth m)
+           ;; b = a buffer belongs to grouped schedule.
+           ;; a = a buffer newly introducing.
+           (let ((a-view (nth nth (buffer-views b1)))
+                 (b-view (nth nth (buffer-views b2))))
+             (if m
+                 ;; Reduced dims ->
+                 (flet ((ok (size view)
+                          (or (eql size 1) (fourth view) (eql m 1))))
+                   (and
+                    (ok a a-view)
+                    (ok b b-view)))
+                 ;; Non-reduced dims -> mergeable as long as they have the same shape, or broadcasted.
+                 (or (eql a 1) (eql b 1) (eql a b)
+                     (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g))))))))
+    (every #'lazy-eq (buffer-shape b1) (buffer-shape b2) (range 0 (buffer-nrank b1)) mask)))
 
 (defun group-assert-rank (group r1 r2 view &aux (rank (max r1 r2)))
   (loop for item in (group-items group)
@@ -338,6 +347,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           ((or (= r1 0) (= r2 0))->ok)
           ((= r1 r2)
            (when (group-reduce-dims parent-group)
+             ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
+             ;; does not introduce new axis = the total element size is the same as the reducing parent group.
              (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
                  ->ok
                  ->ng))
