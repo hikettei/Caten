@@ -20,8 +20,6 @@
 
 (defvar *indent*)
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)
-  ;; [TODO] cl-ppcre and valid name? and then keep using the module name
-  (setf (getattr si :name) (gensym "KERNEL"))
   (let ((args (loop for item in (getattr si :blueprint)
                     if (eql (node-type item) :DEFINE-GLOBAL)
                       collect item)))

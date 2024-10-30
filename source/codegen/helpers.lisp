@@ -6,7 +6,8 @@
    #:nodes-depends-on
    #:nodes-write-to
    #:render-list
-   #:permute-list))
+   #:permute-list
+   #:ensure-string-as-compilable))
 
 (in-package :caten/codegen/helpers)
 
@@ -43,3 +44,13 @@
 (defun permute-list (order list)
   (assert (= (length order) (length list)) () "cannot shuffle ~a and ~a" order list)
   (loop for nth in order collect (nth nth list)))
+
+(defun ensure-string-as-compilable (name)
+  (declare (type string name))
+  (macrolet ((def (from to)
+               `(setf name (cl-ppcre:regex-replace-all ,from name ,to))))
+    (def "!=" "NEQ")
+    (def "=" "EQ")
+    (def "<" "LT")
+    (def "[^a-zA-Z0-9_]" "_")
+    name))
