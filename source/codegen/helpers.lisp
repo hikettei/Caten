@@ -62,7 +62,11 @@
   "Removes extra brackets from the generated code (expecting C-Style)"
   (declare (type string code))
   (macrolet ((def (from to)
-               `(setf code (cl-ppcre:regex-replace-all ,from code ,to))))
-    ;; wip
-    (def "0+0" "0")
+               `(let ((tmp (cl-ppcre:regex-replace-all ,from code ,to)))
+                  (when (or (not (string= "" tmp)) (not (string= "()" tmp)))
+                    (setf code tmp)))))
+    (def "0\\+0" "0")
+    (def "\\(0\\)\\+" "")
+    (def "\\+\\(0\\)" "")
+    (def "\\+0" "")
     code))
