@@ -479,11 +479,10 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
       schedule)))
 
 ;; [TODO] Introduce SINK
-;; [todo] remove +0, remove extra bracket by regex (in helpers)
 ;; [todo] there is a still weirdness in the args determination and -1 or 1?
 ;; [todo] fix !rand scheduling espcially for rng counter
 ;; [todo] dynamic shape inference
-;; [todo] remove NIL
+;; [todo] batch_size=1 is not scheduled w/o NOOPT=0?
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; - argmax = 1 kernels
@@ -551,18 +550,18 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
 ;; - [ ] Group Reduce Refactor
 ;; - [x] RMSNorm, Softmax, 1 Reduction 1 Group?
 ;; =====> That is
-;; - [ ] Merge MOVE+Permutation into the same group by transform-and-mergeable-p, making ConvND, Transpose+Matmul < 1 Kernels
+;; - [x] Merge MOVE+Permutation into the same group by transform-and-mergeable-p, making ConvND, Transpose+Matmul < 1 Kernels
 ;; - [x] Redution+MOVE is a pair (caten/codegen:jit (caten (!add (forward (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (make-tensor `(10 10))))))
-;;   - [ ] they are in the same group
-;;   - [ ] (!gelu (!Matmul )) shape inference is still invaild
+;;   - [x] they are in the same group
+;;   - [x] (!gelu (!Matmul )) shape inference is still invaild
 ;; - [x] Softmax/RMSNorm Scheduling
-;;   - [ ] Softmax: eliminate _gid1 (subsequence loops removed if all axes are broadcasted)
+;;   - [x] Softmax: eliminate _gid1 (subsequence loops removed if all axes are broadcasted)
 ;; - [x] Allow double-reduce in the group
-;;   - [ ] Proper Partition the :reduction in blueprint.lisp
-;;   - [ ] Partitioning the entire graph w/o relying on reduction (=> Large Graph Partition)
-;; - [ ] Symbolic
-;;   - [ ] gensym <-> EXPRなTableを作りたい (cache stride computation)
-;; - [ ] Scalar
+;;   - [x] Proper Partition the :reduction in blueprint.lisp
+;;   - [x] Partitioning the entire graph w/o relying on reduction (=> Large Graph Partition)
+;; - [x] Symbolic
+;;   - [x] gensym <-> EXPRなTableを作りたい (cache stride computation)
+;; - [x] Scalar
 
 ;; [TODO]
 ;; - [x] Non JITAble standalone
