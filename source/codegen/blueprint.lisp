@@ -430,6 +430,29 @@ Depends=~a Reduce=~a Users=~a
        (node-reads node))
       nil)))
 
+(defmethod schedule-item-infer-io-buffers ((node Node) (bp-items list))
+  (assert (eql (node-type node) :Schedule-Item))
+  (let ((seen)
+        (read-items) (write-items)
+        (dynamic-shape)) ;; [TODO]
+    (loop for item in bp-items
+          if (null (find (node-type item) `(:IF :ENDIF :FOR :ENDFOR))) do
+            (loop for read in (node-reads item)
+                  for rt in (relay-reads (read-type-relay item))
+                  if (and (symbolp read) (null (find read seen)) (not (= -1 (buffer-nrank rt)))) do
+                    (push (cons read rt) read-items) (push read seen))
+            (loop for write in (node-writes item)
+                  for wt in (relay-writes (read-type-relay item))
+                  if (and (symbolp write) (null (find write seen)) (null (car (getattr item :declare-type)))
+                          (not (= (buffer-nrank wt) -1)))
+                    do (push (cons write wt) write-items)
+                  end
+                  do (push write seen)))
+    (setf (node-reads node) (map 'list #'car read-items)
+          (node-writes node) (map 'list #'car write-items)
+          (getattr node :read-types) (map 'list #'cdr read-items)
+          (getattr node :write-types) (map 'list #'cdr write-items))))
+
 (defmethod lower-schedule-item ((node Node) (base-graph Graph) (scheduled-graph Graph))
   "Lowers the Schedule-Item into blueprint"
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
@@ -452,30 +475,12 @@ Depends=~a Reduce=~a Users=~a
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
+      ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-blueprint (ctx-blueprint ctx) t))
-      ;; [TODO] Insert STORE after the reduction
-      (update-src-dst-ids node (ctx-blueprint ctx))
+      ;; Infer the input/output buffers again, they can be removed during the op fusion.
+      (schedule-item-infer-io-buffers node (ctx-blueprint ctx))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
-
-(defun update-src-dst-ids (node bp)
-  (let* ((ops (loop for b in bp
-                    if (not (eql (node-class b) :Render))
-                      collect b))
-         (reads (nodes-depends-on ops))
-         (writes (nodes-write-to ops))
-         (read-type
-           (loop for r in reads
-                 for n = (find r ops :key #'node-reads :test #'find)
-                 for p = (position r (node-reads n))
-                 collect (nth p (relay-reads (read-type-relay n)))))
-         (write-type
-           (loop for w in writes
-                 collect (car (relay-writes (read-type-relay (find w ops :key #'node-writes :test #'find)))))))
-    (setf (node-reads node) reads
-          (node-writes node) writes
-          (getattr node :read-types) read-type
-          (getattr node :write-types) write-type)))

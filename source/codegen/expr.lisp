@@ -9,6 +9,7 @@
    #:expr-graft-after
    #:expr-graph
    #:Expr
+   #:expr-out
    #:make-expr
    #:expr-from-graph
    #:expr-const

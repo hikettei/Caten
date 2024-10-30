@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/exprify
-  (:documentation "Implements various transforming patterns on the AST")
+  (:documentation "")
   (:use :cl :caten/air :caten/codegen/expr :caten/codegen/expr-cache)
   (:import-from
    :caten/codegen/shape-inference
@@ -177,6 +177,27 @@
   (loop for item in (graph-nodes (expr-graph (getattr expr :expr)))
         append (node-writes item)))
 
+(defun expr-only-leaf-are-arguments (nodes)
+  "Rewrites the expr in nodes, to have only the leaf nodes as an argument."
+  (loop for node in nodes
+        if (eql (node-type node) :EXPR) do
+          (let* ((allocated-but-not-used
+                   (loop with expr = (expr-graph (getattr node :EXPR))
+                         for node in (graph-nodes expr)
+                         if (not (eql (node-class node) :Render))
+                           collect
+                           (get-output-to node)))
+                 (reads
+                   (loop for read in (node-reads node)
+                         for rt in (relay-reads (read-type-relay node))
+                         for ri in (relay-read-iters (read-type-relay node))
+                         if (and (symbolp read) (not (find read allocated-but-not-used)))
+                           collect (list read rt ri))))
+            (setf (node-reads node) (map 'list #'first reads)
+                  (relay-reads (read-type-relay node)) (map 'list #'second reads)
+                  (relay-read-iters (read-type-relay node)) (map 'list #'third reads))))
+  nodes)
+
 (defmethod graph-exprify (blueprint (node Node) (schedule-graph Graph))
   (declare (type list blueprint))
   (let* ((ids (blueprint-tmp-buffers blueprint schedule-graph :except-for (schedule-outputs schedule-graph)))
@@ -259,7 +280,7 @@
         ;; C <- A + B
         ;; =>
         ;; A += B
-        (graph-propagete-reduction (rewriter 0 (length new-bp)) replaceable)))))
+        (expr-only-leaf-are-arguments (graph-propagete-reduction (rewriter 0 (length new-bp)) replaceable))))))
 
 (defun rewrite-expr-aref (expr replace)
   (declare (type graph expr))
