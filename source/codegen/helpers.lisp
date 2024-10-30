@@ -7,7 +7,8 @@
    #:nodes-write-to
    #:render-list
    #:permute-list
-   #:ensure-string-as-compilable))
+   #:ensure-string-as-compilable
+   #:simplify-arithmetic-code))
 
 (in-package :caten/codegen/helpers)
 
@@ -56,3 +57,12 @@
     ;; Ensuring not containing any special characters. (e.g: a-b produces an error on clang)
     (def "[^a-zA-Z0-9_]" "_")
     name))
+
+(defun simplify-arithmetic-code (code)
+  "Removes extra brackets from the generated code (expecting C-Style)"
+  (declare (type string code))
+  (macrolet ((def (from to)
+               `(setf code (cl-ppcre:regex-replace-all ,from code ,to))))
+    ;; wip
+    (def "0+0" "0")
+    code))

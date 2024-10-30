@@ -480,7 +480,10 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
 
 ;; [TODO] Introduce SINK
 ;; [todo] remove +0, remove extra bracket by regex (in helpers)
-;; [todo] giving the better kernel name for !rand
+;; [todo] there is a still weirdness in the args determination and -1 or 1?
+;; [todo] fix !rand scheduling espcially for rng counter
+;; [todo] dynamic shape inference
+;; [todo] remove NIL
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; - argmax = 1 kernels

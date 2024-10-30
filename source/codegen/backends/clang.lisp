@@ -67,7 +67,7 @@
       (:ENDIF
        (error "not ready"))
       (:EXPR
-       (let ((pre-iterations (getattr bp :Iterations)))
+       (let ((pre-iterations (getattr bp :iterations)))
          (labels ((print-aref (name b is &key iterations)
                     (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
                         (format nil "~a[~(~a~)]" name

@@ -104,8 +104,8 @@ Only supports the scalar computation because it is intended to identify the same
     (optimize-aasm (expr-graph expr))
     (assert (= (length (nodes-write-to (graph-nodes (expr-graph expr)))) 1))
     (setf (graph-outputs (expr-graph expr)) (nodes-write-to (graph-nodes (expr-graph expr)))
-          (expr-out expr) (id->value (expr-graph expr) (car (graph-outputs (expr-graph expr))))))
-  expr)
+          (expr-out expr) (id->value (expr-graph expr) (car (graph-outputs (expr-graph expr)))))
+    expr))
 
 (defun %connect-expr (grh args out)
   (declare (type graph grh))

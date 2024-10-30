@@ -3,6 +3,7 @@
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
   (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p)
   (:import-from :caten/avm :Buffer #:buffer-nrank)
+  (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code)
   (:export
    #:get-default-renderer
    #:%render-kernel
@@ -94,7 +95,10 @@
   (assert (symbolp id) () "render-node: id must be a symbol. getting ~a" id)
   (let ((val (id->value (renderer-graph renderer) id)))
     (assert val () "render-node: ~a is not found from the graph.~%graph:~%~a" id (renderer-graph renderer))
-    (%render-node renderer (node-type val) val)))
+    (or
+     (%render-node renderer (node-type val) val)
+     ;; Purged from the graph -> replace w/ 0 (TODO: Fix this)
+     (%render-const renderer 0))))
 
 (defun render-aref (renderer node)
   (assert (eql (node-type node) :AREF))
@@ -141,7 +145,9 @@
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
-                (format nil "(~a~a~a)" (render-node renderer (nth 0 (node-reads node))) ,op (render-node renderer (nth 1 (node-reads node)))))))
+                (let ((lhs (render-node renderer (nth 0 (node-reads node))))
+                      (rhs (render-node renderer (nth 1 (node-reads node)))))
+                  (simplify-arithmetic-code (format nil "(~a~a~a)" lhs ,op rhs))))))
   (def :ADD "+")
   (def :MUL "*")
   (def :AND " and ")
@@ -215,7 +221,7 @@
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
-                (format nil "(~a~a~a)" (render-node renderer (nth 0 (node-reads node))) ,op (render-node renderer (nth 1 (node-reads node)))))))
+                (simplify-arithmetic-code (format nil "(~a~a~a)" (render-node renderer (nth 0 (node-reads node))) ,op (render-node renderer (nth 1 (node-reads node))))))))
   (def :ADD "+")
   (def :MUL "*")
   (def :AND " & ")
