@@ -223,7 +223,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
     (when node
       (car (relay-writes (read-type-relay node))))))
 
-(defun jitable-p (node)
+(defmethod jitable-p ((node Node))
   (and
    (null (find (node-type node) `(:ALLOCATE :PAUSE/BACKWARD)))
    (typep (node-attr node) 'JITAble)))
@@ -252,7 +252,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           unless (or (null typ) (= 0 (buffer-nrank typ)))
             do (setf (nth nth (relay-writes (read-type-relay item))) (or (funcall f typ) typ)))))
 
-(defun group-rank (group)
+(defmethod group-rank ((group Group))
   (let ((buff (group-get-type group)))
     (when buff (buffer-nrank buff))))
 

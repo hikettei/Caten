@@ -121,6 +121,7 @@
   (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
              :reduction (getattr node :reduction :allow-undefined t)
              :_type_relay (read-type-relay node)
+             :declare-type (getattr node :declare-type)
              :expr (make-expr
                     :graph
                     (apply

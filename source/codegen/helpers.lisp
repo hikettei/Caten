@@ -46,11 +46,13 @@
   (loop for nth in order collect (nth nth list)))
 
 (defun ensure-string-as-compilable (name)
+  "Ensures that the string is a compilable to foreign library."
   (declare (type string name))
   (macrolet ((def (from to)
                `(setf name (cl-ppcre:regex-replace-all ,from name ,to))))
     (def "!=" "NEQ")
     (def "=" "EQ")
     (def "<" "LT")
+    ;; Ensuring not containing any special characters. (e.g: a-b produces an error on clang)
     (def "[^a-zA-Z0-9_]" "_")
     name))
