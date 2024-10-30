@@ -19,12 +19,17 @@
    #:buffer-orig-buffer-shape
    #:buffer-inferred-permute)
   (:import-from
+   :caten/codegen/renderer
+   #:make-define-global)
+  (:import-from
    :caten/air
    #:Graph
    #:Node
    #:id->value
+   #:id->users
    #:getattr
    #:getattrs
+   #:make-graph
    #:node-writes
    #:node-reads
    #:node-type
@@ -44,7 +49,11 @@
    #:relay-writes
    #:relay-read-iters
    #:relay-write-iters)
+  (:import-from
+   :caten/codegen/helpers
+   #:nodes-depends-on)
   (:export
+   #:schedule-item-write-define-global
    #:apply-rewriting-rules
    #:nodes-apply-static-gensym))
 
@@ -90,37 +99,6 @@
 	(renew (avm-id2tensor avm))
 	(renew (avm-variables avm)))
       id2view)))
-
-;; [TODO] 多分丸ごといらなくなる
-(defun wmma-relay-from (t1 tc nth)
-  (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))
-
-(defun wmma-relay-from-contiguous (t1 t2 t3)
-  (let ((a-base (second (relay-reads t3)))
-	(a (second (relay-reads t1)))
-	(b-base (third (relay-reads t3)))
-	(b (second (relay-reads t2)))
-	(c (car (relay-reads t3))))
-    (flet ((manual-infer (from to)
-	     ;; from = broadcasted and contiguous-applied buffer
-	     ;; to = before the `from` operation buffer.
-	     (let ((from (copy-buffer from)))
-	       (unless (= (buffer-nrank from) (buffer-nrank to))
-                 (return-from wmma-relay-from-contiguous nil))
-	       (assert (eql (buffer-dtype from) (buffer-dtype to)))
-	       (setf (buffer-stride from) (buffer-stride to)
-		     (buffer-inferred-permute from) (buffer-inferred-permute to)
-		     ;; merge views (use broadcasted one)
-		     (buffer-views from) (loop for n upfrom 0 below (buffer-nrank from)
-					       if (and (nth n (buffer-views from)) (nth n (buffer-views to)))
-						 collect (if (fourth (nth n (buffer-views from)))
-							     (nth n (buffer-views from))
-							     (nth n (buffer-views to)))
-					       else
-						 collect (or (nth n (buffer-views from))
-							     (nth n (buffer-views to)))))
-	       from)))
-      (make-inferred-type `(,c ,(manual-infer a-base a) ,(manual-infer b-base b)) (relay-writes t3)))))
 
 (defmethod create-scalar-replace-pattern ((graph graph))
   "
@@ -215,20 +193,13 @@ out[...] = f(*val_1);
 				collect r))
 		  node)))))
 
+(defun wmma-relay-from (t1 tc nth)
+  (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))
 ;; WMMA (c a b) <=> c = c + a * b (:reduction)
 (defsimplifier
     (wmma-rewriter :speed 0)
     ((:Add ((:Mul (a b) :_type_relay t1) c) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 1)))
     ((:Add (c (:Mul (a b) :_type_relay t1)) :reduction t :_type_relay t2) -> (:WMMA (c a b) :reduction t :_type_relay (wmma-relay-from t1 t2 0))))
-
-(defsimplifier
-    (contiguous-after-wmma :speed 0)
-    ((:WMMA (c (:Move (_ a) :_type_relay t1) (:Move (_ b) :_type_relay t2)) :reduction reduction :_type_relay t3)
-     ->
-     ((node graph)
-      (let ((type (wmma-relay-from-contiguous t1 t2 t3)))
-        (when type
-          (make-node :TernaryOps :WMMA (node-writes node) (list c a b) :reduction reduction :_type_relay type))))))
 
 (defun sync-buffer (buffer f)
   (macrolet ((sync (name)
@@ -322,10 +293,25 @@ out[...] = f(*val_1);
 (defun apply-rewriting-rules (avm)
   (declare (type AVM avm))
   (let ((id2view (rewrite-views-as-buffer avm)))
-    ;;Try optimizing kernels without relying on them...
-    ; (wmma-rewriter (avm-graph avm) :no-verify t)
-    ;;(contiguous-after-wmma (avm-graph avm) :no-verify t)
+    ;; (wmma-rewriter (avm-graph avm) :no-verify t)
     (propagate-rebundant-loadp (avm-graph avm))
     (apply-static-gensym avm id2view))
   (setf (avm-graph avm) (->graph (avm-graph avm)))
   avm)
+
+(defmethod schedule-item-write-define-global ((schedule-item Node))
+  "Inserts DEFINE_GLOBAL to the top of graph"
+  (declare (type node schedule-item))
+  (assert (eql (node-type schedule-item) :Schedule-Item))
+  (let ((ops))
+    (loop for read in (node-reads schedule-item)
+          for rt in (getattr schedule-item :read-types) do
+            (push (make-define-global read (buffer-dtype rt) t :input) ops))
+    (loop for write in (node-writes schedule-item)
+          for wt in (getattr schedule-item :write-types) do
+            (push (make-define-global write (buffer-dtype wt) t :output) ops))
+    ;; [TODO] Dynamic Shape
+    (setf (getattr schedule-item :blueprint)
+          (nconc
+           ops
+           (getattr schedule-item :blueprint)))))

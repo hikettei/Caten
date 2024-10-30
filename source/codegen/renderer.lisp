@@ -19,7 +19,8 @@
    #:%render-node
    #:%render-const
    #:expr-index-components
-   #:make-aref))
+   #:make-aref
+   #:make-define-global))
 
 (in-package :caten/codegen/renderer)
 
@@ -52,6 +53,18 @@
          "TODO"
          :slots ((buffer :type Buffer)
                  (space :type Iteration-Space)))
+
+(defnode (:Render :DEFINE-GLOBAL) ()
+         ""
+         :slots ((dtype :type keyword)
+                 (pointer-p :type boolean)
+                 (type :type (member :input :output :shape))))
+
+(defun make-define-global (id dtype pointer-p type)
+  (declare (type symbol id)
+           (type keyword dtype)
+           (type boolean pointer-p))
+  (make-node :Render :DEFINE-GLOBAL (list id) nil :dtype dtype :pointer-p pointer-p :type type))
 
 (defun make-aref (name buffer space)
   (declare (type symbol name)

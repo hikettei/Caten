@@ -20,23 +20,34 @@
 
 (defvar *indent*)
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)
+  ;; [TODO] cl-ppcre and valid name? and then keep using the module name
   (setf (getattr si :name) (gensym "KERNEL"))
-  (with-output-to-string (out)
-    (let ((args
-            (apply
-             #'concatenate
-             'string
-             (butlast
-              (loop for arg in (append (node-writes si) (node-reads si))
-                    for type in (append (getattr si :write-types) (getattr si :read-types))
-                    unless (= (buffer-nrank type) -1)
-                    append (list (format nil "~a ~(~a~)" (->cdtype (buffer-dtype type)) arg) ", "))))))
-      (format out "void ~(~a~)(~a);~%" (getattr si :name) args)
-      (format out "void ~(~a~)(~a) {~%" (getattr si :name) args)
-      (let ((*indent* 2))
-        (dolist (bp (getattr si :blueprint))
-          (render-bp out bp)))
-      (format out "}~%"))))
+  (let ((args (loop for item in (getattr si :blueprint)
+                    if (eql (node-type item) :DEFINE-GLOBAL)
+                      collect item)))
+    (with-output-to-string (out)
+      (let ((args
+              (apply
+               #'concatenate
+               'string
+               (butlast
+                (loop for arg in args
+                      append (list
+                              (format nil "~a~a~a ~(~a~)"
+                                      (ecase (getattr arg :type)
+                                        (:input "const restrict ")
+                                        (:output "")
+                                        (:shape "const "))
+                                      (->cdtype (getattr arg :dtype))
+                                      (if (getattr arg :pointer-p) "*" "")
+                                      (car (node-writes arg)))
+                              ", "))))))
+        (format out "void ~(~a~)(~a);~%" (getattr si :name) args)
+        (format out "void ~(~a~)(~a) {~%" (getattr si :name) args)
+        (let ((*indent* 2))
+          (dolist (bp (getattr si :blueprint))
+            (render-bp out bp)))
+        (format out "}~%")))))
 
 (defun render-bp (stream bp)
   (flet ((indent () (make-string *indent* :initial-element #\space)))
@@ -54,10 +65,9 @@
        (decf *indent* 2)
        (format stream "~a}~%" (indent)))
       (:IF
-       (error "")
-       )
+       (error "not ready"))
       (:ENDIF
-       (error ""))
+       (error "not ready"))
       (:EXPR
        (let ((pre-iterations (getattr bp :Iterations)))
          (labels ((print-aref (name b is &key iterations)
@@ -82,7 +92,8 @@
                    (render-list
                     (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
                          (node-writes bp) (relay-writes (read-type-relay bp)) (relay-write-iters (read-type-relay bp))))
-                   (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations))))))))
+                   (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
+      (:DEFINE-GLOBAL))))
 
 
 (defun header ()
@@ -107,5 +118,4 @@
                   (loop for item in (reverse items)
                         if (getattr item :rendered-object)
                           collect (getattr item :rendered-object))))))
-    (print code)
-    ))
+    (print code)))

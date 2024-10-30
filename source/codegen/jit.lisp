@@ -17,7 +17,8 @@
    #:run-type-infer)
   (:import-from
    :caten/codegen/rewriting-rules
-   #:apply-rewriting-rules)
+   #:apply-rewriting-rules
+   #:schedule-item-write-define-global)
   (:import-from
    :caten/codegen/scheduler
    #:graph-schedule
@@ -179,12 +180,14 @@
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
-;;    (run-memory-planner schedule-graph)
+    ;; (run-memory-planner schedule-graph)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Rendering ...")
       (dolist (s (graph-nodes schedule-graph))
         (when (getattr s :jitable)
+          ;; Lower the input argument buffer
+          (schedule-item-write-define-global s)
           (setf (getattr s :rendered-object) (%render-kernel renderer s)))))
     ;; 11. Complete (Render by the renderer)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
@@ -192,7 +195,6 @@
       (print-info "Compiling ...")
       (%compile-kernel renderer (graph-nodes schedule-graph)))
     t))
-
 ;; MemoryPlanner w/ Caching the duplicated kernel?
 
 ;; Test Case1

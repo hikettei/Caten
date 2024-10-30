@@ -469,6 +469,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
+;; [TODO] Introduce SINK
+;; [todo] giving the better kernel name for !rand
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; - argmax = 1 kernels
 ;; [TODO] shape-inference.lisp => ShapeTrackerを作って回す？
