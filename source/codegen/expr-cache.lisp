@@ -1,5 +1,11 @@
 (defpackage :caten/codegen/expr-cache
-  (:documentation "stash-expr to make the same expr to be the same named symbol. restore-expr to retrive the original expr.")
+  (:documentation "The `expr-cache` is a system designed to forcibly convert Non-Affine Shapes into Affine forms, allowing them to be processed by the ISL Scheduler. (e.g.,` a * b` -> `_expr_id_0`)
+
+- `with-expr-cache` to create a new expr-cache during the scope.
+- `stash-expr` to make the same expr to be the same named symbol.
+- `restore-expr` to retrive the original expr.
+[TODO] Use this to optimize expr-scalar-equivalent-p
+")
   (:use :cl :caten/codegen/expr :caten/codegen/renderer)
   (:export
    #:Expr-Cache
@@ -10,7 +16,7 @@
    #:expr-cache-reduce-alias))
 
 (in-package :caten/codegen/expr-cache)
-;; [TODO] Use this to optimize expr-scalar-equivalent-p
+
 (defvar *expr-cache*)
 
 (defclass Expr-Cache ()

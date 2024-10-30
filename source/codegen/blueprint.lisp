@@ -1,4 +1,6 @@
 (defpackage :caten/codegen/blueprint
+  (:documentation "The `Blueprint` represents a transformed computation graph format of `caten/AASM` that incorporates loop information. The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.
+The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it is used for loop optimization and by the Renderer.")
   (:use :cl :caten/air :caten/codegen/expr :alexandria)
   (:import-from
    :caten/codegen/shape-inference
@@ -45,12 +47,14 @@
 (in-package :caten/codegen/blueprint)
 
 (defun %make-for (idx size)
+  "Represents for an iteration in the range of [0, size)"
   (make-node :Render :FOR nil nil :idx idx
              :upfrom (expr-const 0 :int64)
              :below (expr-< (expr-const idx :int64) size)
              :by (expr-const 1 :int64)))
 
 (defun %make-endfor (idx)
+  "Represents the end of the iteration."
   (make-node :Render :ENDFOR nil nil :idx idx))
 
 (defmethod print-blueprint (nodes stream &aux (gids))
@@ -130,7 +134,7 @@
         (simplify-blueprint nodes))))
 
 (defmethod get-grouped-dims ((graph Graph) (base-graph Graph))
-  "Find out the iteration space that is common in the graph"
+  "Infers the loop boundaries of the graph by finding the common iteration space."
   (let* ((kernel-rank
            (loop for node in (graph-nodes graph)
                  for type = (read-type-relay node)
@@ -192,7 +196,7 @@
 
 (defmethod fixup-graph-iteration-space ((graph Graph) found-pair g
                                         &aux (kernel-rank (apply #'max (alexandria:flatten (cdr found-pair)))))
-  "Rewrite the iteration space in the graph to match the common iteration space found in the get-grouped-dim function."
+  "Rewrite the all node buffers to have the common iteration space found by the `get-grouped-dims`. All nodes must have the same ranked buffer in advance. (rewritten by scheduler.lisp)"
   (multiple-value-bind (found-space procedure) (values (car found-pair) (cdr found-pair))
     (labels ((merge-list (proc list)
                (loop for p in proc
@@ -453,6 +457,7 @@ Depends=~a Reduce=~a Users=~a
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-blueprint (ctx-blueprint ctx) t))
+      ;; [TODO] Insert STORE after the reduction
       (update-src-dst-ids node (ctx-blueprint ctx))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 

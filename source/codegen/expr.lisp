@@ -1,4 +1,5 @@
 (defpackage :caten/codegen/expr
+  (:documentation "`Expr` is a syntax sugar for the ops in `caten/aasm`")
   (:use :cl :caten/air :caten/aasm)
   (:import-from
    :caten/codegen/helpers
