@@ -144,6 +144,57 @@ Compiled with this command: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
+(defun ->cffi-dtype (dtype)
+  (ecase dtype
+    (:bool :bool)
+    (:float64 :double)
+    (:float32 :float)
+    (:uint64 :uint64)
+    (:int64 :int64)
+    (:int32 :int32)
+    (:uint32 :uint32)
+    (:int16 :int16)
+    (:uint16 :uint16)
+    (:uint8 :uint8)
+    (:int8 :int8)))
+
+(defun make-foreign-function-caller (name defglobals &aux (tmps))
+  (labels ((expand (rest-forms body)
+             (if rest-forms
+		 (if (= 0 (getattr (car rest-forms) :nrank))
+		     (if (not (getattr (car rest-forms) :pointer-p))
+			 (expand (cdr rest-forms) body)
+			 (let ((node (car rest-forms))
+			       (tmp (gensym)))
+			   (push (cons tmp node) tmps)
+			   `(let ((,tmp ,(car (node-writes (car rest-forms)))))
+			      (with-foreign-object (,(car (node-writes (car rest-forms))) ,(->cffi-dtype (getattr (car rest-forms) :dtype)))
+				(setf (mem-ref ,(car (node-writes (car rest-forms))) ,(->cffi-dtype (getattr (car rest-forms) :dtype)))
+                                      (buffer-value ,tmp))
+				,(expand (cdr rest-forms) body)))))
+		     `(with-pointer-to-vector-data
+			  (,(car (node-writes (car rest-forms))) (buffer-value ,(car (node-writes (car rest-forms)))))
+			,(expand (cdr rest-forms) body)))
+		 `(progn
+		    ,@body
+		    ,@(loop for (buffer . node) in tmps
+			    for cffi = (car (node-writes node))
+			    for type = (->cffi-dtype (getattr node :dtype))
+			    collect `(setf (buffer-value ,buffer) (mem-ref ,cffi ,type)))))))
+    `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) defglobals))
+       ,(expand
+	 defglobals
+	 `((cffi:foreign-funcall
+            ,(format nil "~(~a~)" name)
+            ,@(loop for arg in defglobals
+		    for is-pointer = (getattr arg :pointer-p)
+		    if (not is-pointer)
+		      append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg)))
+		    else
+		      append `(:pointer ,(car (node-writes arg))))
+            :void))))))
+
+
 (defmethod %compile-kernel ((renderer CStyle-Renderer) items)
   (let ((code
           (apply #'concatenate 'string
@@ -155,5 +206,12 @@ Compiled with this command: ~a"
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
     (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))
+    (dolist (item items)
+      (setf (getattr item :compiled-object)
+            (make-foreign-function-caller
+             (or (getattr item :cache-name) (getattr item :name))
+             (loop for bp in (getattr item :blueprint)
+                   if (eql :DEFINE-GLOBAL (node-type bp))
+                     collect bp))))
     nil))
 

@@ -306,10 +306,10 @@ out[...] = f(*val_1);
   (let ((ops))
     (loop for read in (node-reads schedule-item)
           for rt in (getattr schedule-item :read-types) do
-            (push (make-define-global read (buffer-dtype rt) t :input) ops))
+            (push (make-define-global read (buffer-dtype rt) t :input (buffer-nrank rt)) ops))
     (loop for write in (node-writes schedule-item)
           for wt in (getattr schedule-item :write-types) do
-            (push (make-define-global write (buffer-dtype wt) t :output) ops))
+            (push (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt)) ops))
     ;; [TODO] Dynamic Shape
     (setf (getattr schedule-item :blueprint)
           (nconc

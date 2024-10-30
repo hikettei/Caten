@@ -93,8 +93,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (storage-id-src :type list)
           (storage-id-dst :type list)
           
-          (rendered-object)
-          (compiled-object)))
+          (rendered-object :type string)
+          (compiled-object :type list)))
 
 (defmethod print-node (node (id (eql :Schedule-Item)))
   (flet ((r (x y)

@@ -430,7 +430,9 @@ Depends=~a Reduce=~a Users=~a
     (setf (node-reads node) (map 'list #'car read-items)
           (node-writes node) (map 'list #'car write-items)
           (getattr node :read-types) (map 'list #'cdr read-items)
-          (getattr node :write-types) (map 'list #'cdr write-items))))
+          (getattr node :write-types) (map 'list #'cdr write-items)
+          (getattr node :storage-id-src) (map 'list #'car read-items)
+          (getattr node :storage-id-dst) (map 'list #'car write-items))))
 
 (defmethod lower-schedule-item ((node Node) (base-graph Graph) (scheduled-graph Graph))
   "Lowers the Schedule-Item into blueprint"

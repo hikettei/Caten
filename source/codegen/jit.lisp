@@ -7,11 +7,14 @@
    #:Buffer
    #:avm-graph
    #:avm-name
+   #:avm-tape-length
+   #:buffer-nrank
    #:buffer-shape
    #:buffer-views
    #:buffer-stride
    #:buffer-dtype
-   #:buffer-inferred-permute)
+   #:buffer-inferred-permute
+   #:%impl)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer)
@@ -52,6 +55,61 @@
    #:jit))
 
 (in-package :caten/codegen/jit)
+
+;; ~~ Compiledop instruction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct (Compiled-Kernel)
+  (name (error "name must occur") :type keyword)
+  (caller (error "caller must occur") :type function)
+  (raw-caller (error "raw-caller must occur") :type list)
+  (device (error "device must occur") :type string)
+  (code (error "code must occur") :type string))
+
+(defnode (:JIT :JIT_KERNEL) ()
+	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
+	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel)))
+
+(defmethod make-load-form ((jit Compiled-Kernel) &optional env)
+  (declare (ignore env))
+  `(make-compiled-kernel
+    :name ,(compiled-kernel-name jit)
+    :caller ,(compiled-kernel-raw-caller jit)
+    :raw-caller ',(compiled-kernel-raw-caller jit)
+    :device ,(compiled-kernel-device jit)
+    :code ,(compiled-kernel-code jit)))
+
+(defmethod print-object ((s Compiled-Kernel) stream)
+  (format stream "<~a[~a]>" (compiled-kernel-device s) (compiled-kernel-name s)))
+
+(defun make-compiled-kernel-from-si (si graph)
+  (assert (eql (node-type si) :Schedule-Item))
+  (flet ((from-cache (node)
+           (or (find (getattr node :cache-name) (graph-nodes graph) :key #'(lambda (x) (getattr x :name)) :test #'equalp)
+               (error "The cache item for ~a was not found." node))))
+    (make-compiled-kernel
+     :name (intern (princ-to-string (or (getattr si :cache-name) (getattr si :name))) "KEYWORD")
+     :caller (if (getattr si :cache-name)
+                 (compile nil (getattr (from-cache si) :compiled-object))
+                 (compile nil (getattr si :compiled-object)))
+     :raw-caller (if (getattr si :cache-name)
+                     (getattr (from-cache si) :compiled-object)
+                     (getattr si :compiled-object))
+     :device (princ-to-string (or (ctx:getenv :JIT_BACKEND) :clang))
+     :code (if (getattr si :cache-name)
+               (getattr (from-cache si) :rendered-object)
+               (getattr si :rendered-object)))))
+
+(defun make-compiled-kernel-node (si graph)
+  (make-node :JIT :JIT_KERNEL (node-writes si)
+             (append (node-writes si) (node-reads si))
+             :output-buffer-n (length (node-writes si))
+             :kernel-info (make-compiled-kernel-from-si si graph)))
+
+(defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
+  (let ((info (getattr node :kernel-info))
+        (out-n (getattr node :output-buffer-n)))
+    (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
+    (apply (compiled-kernel-caller info) args)
+    (apply #'values (subseq args 0 out-n))))
 
 (defun buffer-equal (a b)
   (declare (optimize (speed 3))
@@ -108,6 +166,34 @@
           else
             do (push tgt seen))
     schedule-graph))
+
+(defun schedule-graph->vmop (graph)
+  (declare (type Graph graph))
+  (verify-graph graph)
+  (setf graph (->graph graph)) ;; Convert from FastGraph to Graph to sort the order
+  (let ((nodes) (allocated))
+    (dolist (node (graph-nodes graph))
+      (cond
+        ((getattr node :allocate-p)
+         (push (car (node-writes node)) allocated)
+         (dolist (i (getattr node :items))
+           (push i nodes)))
+        ((null (getattr node :jitable))
+         (dolist (w (node-writes node)) (push w allocated))
+         (dolist (i (getattr node :items))
+           (push i nodes)))
+        ((getattr node :jitable)
+         (loop for w in (node-writes node)
+               for wt in (getattr node :write-types)
+               if (null (find w allocated)) do
+                 (push
+                  (make-node :Buffer :Allocate (list w) (append (buffer-shape wt) (buffer-stride wt))
+                             :nrank (buffer-nrank wt) :dtype (buffer-dtype wt))
+                  nodes)
+                 (push w allocated))
+         (push (make-compiled-kernel-node node graph) nodes))
+        (T (error "schedule-graph->vmop: dont know how to merge ~a" node))))
+    (apply #'make-graph (nreverse nodes))))
 ;; Priority
 ;; - [ ] Auto Scheduler for Tiling/Vectorizing
 ;; - [ ] Caching the kernel+Memory Planner
@@ -115,6 +201,7 @@
 ;; - [ ] Running the kernel
 ;; - [ ] Passing all tests
 ;; - [ ] Running tinyllama
+;; - [ ] Support merging CUSTOM/Foreign/Pre-compiled kernel
 (defun jit (avm &key (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
                 &aux (renderer (if (keywordp renderer) (get-default-renderer renderer) renderer)))
   "Runs the JIT compilation (destructive)"
@@ -183,18 +270,23 @@
     ;; (run-memory-planner schedule-graph)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
-      (print-info "Rendering ...")
-      (dolist (s (graph-nodes schedule-graph))
-        (when (getattr s :jitable)
-          ;; Lower the input argument buffer
-          (schedule-item-write-define-global s)
-          (setf (getattr s :rendered-object) (%render-kernel renderer s)))))
+      (print-info "Rendering ..."))
+    (dolist (s (graph-nodes schedule-graph))
+      (when (getattr s :jitable)
+        ;; Lower the input argument buffer
+        (schedule-item-write-define-global s)
+        (setf (getattr s :rendered-object) (%render-kernel renderer s))))
     ;; 11. Complete (Render by the renderer)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
-      (print-info "Compiling ...")
-      (%compile-kernel renderer (graph-nodes schedule-graph)))
-    t))
+      (print-info "Compiling ..."))
+    
+    (%compile-kernel renderer (graph-nodes schedule-graph))
+    
+    (let ((new-graph (schedule-graph->vmop schedule-graph)))
+      (setf (avm-graph avm) new-graph
+            (avm-tape-length avm) (length (graph-nodes new-graph))))
+    avm))
 ;; MemoryPlanner w/ Caching the duplicated kernel?
 
 ;; Test Case1

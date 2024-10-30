@@ -59,13 +59,14 @@
          ""
          :slots ((dtype :type keyword)
                  (pointer-p :type boolean)
-                 (type :type (member :input :output :shape))))
+                 (type :type (member :input :output :shape))
+                 (nrank :type integer)))
 
-(defun make-define-global (id dtype pointer-p type)
+(defun make-define-global (id dtype pointer-p type nrank)
   (declare (type symbol id)
            (type keyword dtype)
            (type boolean pointer-p))
-  (make-node :Render :DEFINE-GLOBAL (list id) nil :dtype dtype :pointer-p pointer-p :type type))
+  (make-node :Render :DEFINE-GLOBAL (list id) nil :dtype dtype :pointer-p pointer-p :type type :nrank nrank))
 
 (defun make-aref (name buffer space)
   (declare (type symbol name)

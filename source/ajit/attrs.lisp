@@ -2,8 +2,7 @@
 
 (defnode (:JIT :JIT_KERNEL) ()
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
-	 :slots ((fname :type string)
-		 (jit-info :type JIT-Info)))
+	 :slots ((fname :type string) (jit-info :type JIT-Info)))
 
 (defnode (:Render :FOR) () "
 RenderGraph:
