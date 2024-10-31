@@ -4,20 +4,6 @@
 
 (in-package :caten/codegen/backends/clang)
 
-(defun ->cdtype (dtype)
-  (ecase dtype
-    (:bool "boolean")
-    (:float64 "double")
-    (:float32 "float")
-    (:uint64 "uint64_t")
-    (:int64 "int64_t")
-    (:int32 "int32_t")
-    (:uint32 "uint32_t")
-    (:int16 "int16_t")
-    (:uint16 "uint16_t")
-    (:uint8 "uint8_t")
-    (:int8 "int8_t")))
-
 (defvar *indent*)
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)
   (let ((args (loop for item in (getattr si :blueprint)

@@ -9,7 +9,8 @@
    #:permute-list
    #:ensure-string-as-compilable
    #:simplify-arithmetic-code
-   #:simplify-blueprint))
+   #:simplify-blueprint
+   #:->cdtype))
 
 (in-package :caten/codegen/helpers)
 
@@ -90,3 +91,17 @@
     (if (= (length nodes) len)
         nodes
         (simplify-blueprint nodes))))
+
+(defun ->cdtype (dtype)
+  (ecase dtype
+    (:bool "boolean")
+    (:float64 "double")
+    (:float32 "float")
+    (:uint64 "uint64_t")
+    (:int64 "int64_t")
+    (:int32 "int32_t")
+    (:uint32 "uint32_t")
+    (:int16 "int16_t")
+    (:uint16 "uint16_t")
+    (:uint8 "uint8_t")
+    (:int8 "int8_t")))

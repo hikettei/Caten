@@ -3,7 +3,7 @@
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
   (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p)
   (:import-from :caten/avm :Buffer #:buffer-nrank)
-  (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code)
+  (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code #:->cdtype)
   (:export
    #:get-default-renderer
    #:%render-kernel
@@ -264,7 +264,7 @@
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :Allocate)) node))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :CAST)) node)
-  (format nil "(~(~a~))~a" (getattr node :dtype) (render-node renderer (second (node-reads node)))))
+  (format nil "(~(~a~))~a" (->cdtype (getattr node :dtype)) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :INDEX-COMPONENTS)) node)
   (render-expr 'CStyle-Renderer (expr-index-components (car (relay-read-iters (read-type-relay node))) (renderer-index-space renderer))))

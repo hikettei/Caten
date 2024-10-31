@@ -478,13 +478,21 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
-;; [TODO] Introduce SINK
-;; [todo] there is a still weirdness in the args determination and -1 or 1?
-;; [todo] fix !rand scheduling espcially for rng counter
-;; [todo] dynamic shape inference
-;; [todo] batch_size=1 is not scheduled w/o NOOPT=0?
+;; [TODO] Post Loop Fusion (Softmax, ArgMax, Serialize the outermost Loop! and they are in the single kernel)
+;; [TODO] Introduce SINK, or fuse !argmax in a single kernel (do not allow the kernel ends with reduction w/o STORE)
+;; [TODO] there is a still weirdness in the args determination and -1 or 1? (batch=1 transform)
+;; [TODO] Fix !rand scheduling espcially for rng counter
+;; [TODO] Dynamic Shape Inference (graph-seen is dynamic shape?)
+;; [TODO] batch_size=1 is not scheduled w/o NOOPT=0?
+;; [TODO] memory planner just by rewriting storage id
+;; [TODO] Running the transformer first
+;; [TODO] Implementing simple Tiling/Vectorizing/Parallelizing second
+;; [TODO] METAL GPU SUPPORT
+;; [TODO] Scheduling Unittest
+;; [TODO] Tweak on ShapeTracker
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
+;; [todo] scheduling tests
 ;; - argmax = 1 kernels
 ;; [TODO] shape-inference.lisp => ShapeTrackerを作って回す？
 ;; - TensorComprehensionみたいなLowererが結局必要なのか。。。
