@@ -130,7 +130,7 @@
          (dolist (i (getattr node :items))
            (push i nodes)))
         ((getattr node :jitable)
-         (loop for w in (node-writes node)
+         (loop for w in (getattr node :storage-id-dst)
                for wt in (getattr node :write-types)
                if (null (find w allocated)) do
                  (push
@@ -172,10 +172,10 @@
                  (let ((a1 (getattr x k1))
                        (a2 (getattr x k2)))
                    ;; Caten/AIR has an assertion that all nodes are "dumpable"
-                   ;; i.e.: important attrs are always number/symbol/list/bool
+                   ;; i.e.: attrs that impacts on the computation results are always typed number/symbol/list/bool
                    (if (and (typep a1 'attr-value-type) (typep a2 'attr-value-type))
                        (equal a1 a2)
-                       t ;; isn't it danger?
+                       t ;; [fixme] isn't it danger? if attrs are not found, they ignore it!
                        )))
              attrs1 attrs2)))
          (let ((xt (read-type-relay x))
