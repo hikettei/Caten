@@ -10,7 +10,8 @@
    #:ensure-string-as-compilable
    #:simplify-arithmetic-code
    #:simplify-blueprint
-   #:->cdtype))
+   #:->cdtype
+   #:float-type-of))
 
 (in-package :caten/codegen/helpers)
 
@@ -105,3 +106,6 @@
     (:uint16 "uint16_t")
     (:uint8 "uint8_t")
     (:int8 "int8_t")))
+
+(defun float-type-of (value)
+  (uiop:symbol-call :caten/apis :float-type-of value))

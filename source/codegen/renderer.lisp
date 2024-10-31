@@ -3,7 +3,7 @@
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
   (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p)
   (:import-from :caten/avm :Buffer #:buffer-nrank)
-  (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code #:->cdtype)
+  (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code #:->cdtype #:float-type-of)
   (:export
    #:get-default-renderer
    #:%render-kernel
@@ -142,7 +142,7 @@
   (format nil "~(~a~)" obj))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
-  (format nil "~(~a~)" (getattr node :value)))
+  (%render-const renderer (getattr node :value)))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
@@ -213,12 +213,17 @@
   (:documentation ""))
 
 (defmethod get-default-renderer ((id (eql :clang))) (make-instance 'CStyle-Renderer))
-
 (defmethod %render-const ((renderer CStyle-Renderer) obj)
-  (format nil "~(~a~)" obj))
+  (case (if (numberp obj)
+             (float-type-of obj)
+             t)
+    (:inf "_infinity")
+    (:-inf "_negative_infinity")
+    (:nan "_nan")
+    (otherwise (format nil "~(~a~)" obj))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :LOAD)) node)
-  (format nil "~(~a~)" (getattr node :value)))
+  (%render-const renderer (getattr node :value)))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
