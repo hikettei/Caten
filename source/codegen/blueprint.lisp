@@ -438,26 +438,25 @@ Depends=~a Reduce=~a Users=~a
           (getattr node :storage-id-src) (map 'list #'car read-items)
           (getattr node :storage-id-dst) (map 'list #'car write-items))))
 
-(defmethod schedule-item-gather-dynamic-shapes ((node Node) blueprints base-graph)
+(defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph)
   (flet ((is-dynamic-shape-p (val)
            (and (not (null val))
                 (find val (graph-nodes base-graph) :key #'(lambda (x) (getattr x :value :allow-undefined t))))))
     (remove-duplicates
      (append
-      (loop for item in blueprints
+      (loop for item in (getattr node :items)
             if (and (eql (node-type item) :LOAD) (symbolp (getattr item :value)))
               collect (cons (getattr item :value) (buffer-dtype (car (relay-writes (read-type-relay item))))))
       ;; Loop Bounds (loaded as default-int)
       (nreverse
-       (loop for item in blueprints
-             if (not (eql (node-class item) :Render))
-               append
-               (loop for type in (append (relay-writes (read-type-relay item)) (relay-reads (read-type-relay item)))
-                     if type
-                       append
-                       (loop for s in (buffer-shape type)
-                             if (and (symbolp s) (is-dynamic-shape-p s))
-                               collect (cons s caten/aasm:*default-int*))))))
+       (loop for item in (getattr node :items)
+             append
+             (loop for type in (append (relay-writes (read-type-relay item)) (relay-reads (read-type-relay item)))
+                   if type
+                     append
+                     (loop for s in (buffer-shape type)
+                           if (and (symbolp s) (is-dynamic-shape-p s))
+                             collect (cons s caten/aasm:*default-int*))))))
      :key #'car)))
 
 (defmethod lower-schedule-item ((node Node) (base-graph Graph) (scheduled-graph Graph))
@@ -483,7 +482,7 @@ Depends=~a Reduce=~a Users=~a
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       ;; Gathering dynamic shapes used in the schedule-item
-      (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node (ctx-blueprint ctx) base-graph))
+      (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph))
       ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
@@ -491,5 +490,5 @@ Depends=~a Reduce=~a Users=~a
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-blueprint (ctx-blueprint ctx) t))
       ;; Infer the input/output buffers again, they can be removed during the op fusion.
-      (schedule-item-infer-io-buffers node (ctx-blueprint ctx))
+      (schedule-item-infer-io-buffers node (ctx-blueprint ctx)) ;; Need to ref EXPR
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
