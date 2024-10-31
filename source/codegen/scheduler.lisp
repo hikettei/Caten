@@ -65,6 +65,12 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
          "
 Schedule-Item is an intermidate object to represent a one kernel in GPU.
 
+```
+f = cache_name or name
+write_ids = f(*[storage_id_dst], *[dynamic_shape], *[inputs])
+                      ^ can be modified by the memory-planner
+```
+
 It has a unique `name`, and `cache-name`. If `cache-name` was assigned, the compiler will fail to compile this schedule-item and reuse the kernel named `cache-name` instead.
 
 In order to lowering the computation graph as the foreign language, `items` must be consisted of JITAble operations (except for special irs and :allocate). If it qualifies, `jitable` is set to T.
@@ -90,6 +96,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (items :type list) (items-to-cache :type list)
           (rank :type fixnum)
           (read-types :type list) (write-types :type list)
+          
           (storage-id-src :type list)
           (storage-id-dst :type list)
           (dynamic-shapes :type list)

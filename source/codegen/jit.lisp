@@ -101,7 +101,7 @@
 (defun make-compiled-kernel-node (si graph)
   (make-node :JIT :JIT_KERNEL (node-writes si)
              (append
-              (getattr si :storage-id-dst) ;; optimized by memory-planner [todo] as well as allocate creation!!!
+              (getattr si :storage-id-dst) ;; optimized by memory-planner
               (map 'list #'car (getattr si :dynamic-shapes))
               (node-reads si))
              :output-buffer-n (length (node-writes si))
@@ -114,6 +114,34 @@
     (apply (compiled-kernel-caller info) args)
     (apply #'values (subseq args 0 out-n))))
 
+(defun schedule-graph->vmop (graph)
+  (declare (type Graph graph))
+  (verify-graph graph)
+  (setf graph (->graph graph)) ;; Convert from FastGraph to Graph to sort the order
+  (let ((nodes) (allocated))
+    (dolist (node (graph-nodes graph))
+      (cond
+        ((getattr node :allocate-p)
+         (push (car (node-writes node)) allocated)
+         (dolist (i (getattr node :items))
+           (push i nodes)))
+        ((null (getattr node :jitable))
+         (dolist (w (node-writes node)) (push w allocated))
+         (dolist (i (getattr node :items))
+           (push i nodes)))
+        ((getattr node :jitable)
+         (loop for w in (node-writes node)
+               for wt in (getattr node :write-types)
+               if (null (find w allocated)) do
+                 (push
+                  (make-node :Buffer :Allocate (list w) (append (buffer-shape wt) (buffer-stride wt))
+                             :nrank (buffer-nrank wt) :dtype (buffer-dtype wt))
+                  nodes)
+                 (push w allocated))
+         (push (make-compiled-kernel-node node graph) nodes))
+        (T (error "schedule-graph->vmop: dont know how to merge ~a" node))))
+    (apply #'make-graph (nreverse nodes))))
+;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun buffer-equal (a b)
   (declare (optimize (speed 3))
            (type buffer a b))
@@ -169,34 +197,6 @@
           else
             do (push tgt seen))
     schedule-graph))
-
-(defun schedule-graph->vmop (graph)
-  (declare (type Graph graph))
-  (verify-graph graph)
-  (setf graph (->graph graph)) ;; Convert from FastGraph to Graph to sort the order
-  (let ((nodes) (allocated))
-    (dolist (node (graph-nodes graph))
-      (cond
-        ((getattr node :allocate-p)
-         (push (car (node-writes node)) allocated)
-         (dolist (i (getattr node :items))
-           (push i nodes)))
-        ((null (getattr node :jitable))
-         (dolist (w (node-writes node)) (push w allocated))
-         (dolist (i (getattr node :items))
-           (push i nodes)))
-        ((getattr node :jitable)
-         (loop for w in (node-writes node)
-               for wt in (getattr node :write-types)
-               if (null (find w allocated)) do
-                 (push
-                  (make-node :Buffer :Allocate (list w) (append (buffer-shape wt) (buffer-stride wt))
-                             :nrank (buffer-nrank wt) :dtype (buffer-dtype wt))
-                  nodes)
-                 (push w allocated))
-         (push (make-compiled-kernel-node node graph) nodes))
-        (T (error "schedule-graph->vmop: dont know how to merge ~a" node))))
-    (apply #'make-graph (nreverse nodes))))
 ;; Priority
 ;; - [ ] Auto Scheduler for Tiling/Vectorizing
 ;; - [ ] Caching the kernel+Memory Planner
