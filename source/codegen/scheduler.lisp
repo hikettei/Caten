@@ -568,10 +568,11 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [TODO] Running the transformer first
 ;; [TODO] Implementing simple Tiling/Vectorizing/Parallelizing second
 ;; [TODO] METAL GPU SUPPORT
-;; [TODO] Scheduling Unittest
+;; [TODO] Scheduling Unittest (as well as im doing in repl)
 ;; [TODO] Tweak on ShapeTracker
 ;; [TODO] Refactor: JITABle, create attrs.lisp
-;; [TODO] reduction -> userがいないといけない
+;; [TODO] Softmax = 1 Kernels
+;; [todo] args, node-depends-on based judgement
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; [todo] scheduling tests
@@ -608,7 +609,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; - 細かく分けて考えて，なぜSchedulingが失敗するか考えてみる
 ;;   - [x] !mean   | (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0)))
 ;;   - [x] ConvND  | (stride is NIL?) -> OK
-;;   - [ ] Transformer EntireGraph
+;;   - [x] Transformer EntireGraph
 ;;   - [ ] Collapse (caten/codegen:jit (caten (call (Embedding 100 90) (Make-tensor `(b c)))))
 ;;   - [x] (caten/codegen:jit (caten (!contiguous (!t (!matmul (make-tensor `(10 10 10 10)) (!t (make-tensor `(10 10))))))))
 ;;   - [x] (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis `(0 2))))
@@ -697,15 +698,15 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;;   - [x] Embedding
 ;;   - [x] Double Reduce (add embedding embedding), add matmul matmul
 ;;   - [x] Triple Reduce (add embedding embedding embedding)
-;;   - [ ] WPE+WTE in Transformer is a single kernel.
-;; - [ ] Permutation
-;;   - [ ] Matmul, and ConvND
-;; - [ ] Permute Fuse
-;;   - [ ] Matmul+Transpose
-;; - [ ] Graph Partition
-;;   - [ ] Transfomer
-;;   - [ ] Attention View will be properly scheduled?
-;;   - [ ] Split the grpah as soon as :shrink was detected to schedule !randn
+;;   - [x] WPE+WTE in Transformer is a single kernel.
+;; - [x] Permutation
+;;   - [x] Matmul, and ConvND
+;; - [x] Permute Fuse
+;;   - [x] Matmul+Transpose
+;; - [x] Graph Partition
+;;   - [x] Transfomer
+;;   - [x] Attention View will be properly scheduled?
+;;   - [x] Split the grpah as soon as :shrink was detected to schedule !randn
 ;; - [ ] Dynamic Shape
 ;;(with-no-grad (time (caten/codegen:jit (caten (!add (make-tensor `(3 3)) (!sin (make-tensor `(3))))))))
 
