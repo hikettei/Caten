@@ -275,7 +275,7 @@
   (render-expr 'CStyle-Renderer (expr-index-components (car (relay-read-iters (read-type-relay node))) (renderer-index-space renderer))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :WHERE)) node)
-  (format nil "~a ? ~a : ~a"
+  (format nil "(~a ? ~a : ~a)"
           (render-node renderer (car (node-reads node)))
           (render-node renderer (second (node-reads node)))
           (render-node renderer (third (node-reads node)))))
