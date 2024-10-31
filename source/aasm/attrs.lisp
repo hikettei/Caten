@@ -12,12 +12,6 @@
 
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
-   (_loop_bound_nodes :initarg :_loop_bound_nodes :initform nil)
-   (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type :initform nil) ;; [TODO] Delete
-   (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm :initform nil) ;; [TODO] Delete
-   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr :initform nil) ;; [TODO] Delete
-   (_reads :initarg :_reads)
-   (_writes :initarg :_writes)
    (_read_views :initform nil :initarg :_read_views)
    (_write_views :initform nil :initarg :_write_views)
    (declare-type :initarg :declare-type :initform nil)
