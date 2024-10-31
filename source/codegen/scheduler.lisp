@@ -225,6 +225,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :items (group-items group)
                :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
 
+(defmethod merge-schedule-items ((si1 Node) (si2 Node))
+  (assert (eql (node-type si1) :Schedule-Item))
+  (assert (eql (node-type si2) :Schedule-Item))
+  (assert (= (getattr si1 :rank) (getattr si2 :rank)))
+  (group->schedule (make-group :items (append (getattr si1 :items) (getattr si2 :items)))))
+
 (defmethod group-get-type ((group Group))
   (let* ((last (nodes-write-to (group-items group)))
          (node (when last (find (car last) (group-items group) :key #'node-writes :test #'find))))
@@ -464,13 +470,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
              else ;; unmergeable
              append p)))))
 
-(defmethod merge-schedule-items ((si1 Node) (si2 Node))
-  (assert (eql (node-type si1) :Schedule-Item))
-  (assert (eql (node-type si2) :Schedule-Item))
-  (assert (= (getattr si1 :rank) (getattr si2 :rank)))
-  (group->schedule (make-group :items (append (getattr si1 :items) (getattr si2 :items)))))
-
-(defun apply-post-loop-fusion (schedule-graph &aux (seen))
+(defun apply-reduce+move-fusion (schedule-graph &aux (seen))
   "Applies the post-loop-fusion to eliminate MOVE after the reduction.
 ```
      Group1
@@ -492,7 +492,7 @@ Consider the case where group1 and self fusion was rejected by the group-reduce-
    out[...] = f(_acc_0);
 }
 ```
-This function enumerates all such pairs and allows all reduction operations to have a `MOVE` node after the reduction by serializing the loop. (This scheduling pattern can be observed by running an operation with multiple reductions in a single kernel, such as `!softmax`, `!argmax`, or `RMSNorm`, etc.)
+This function enumerates all such pairs and allows all reduction operations to have a `MOVE` node after the reduction by serializing the loop. (This scheduling pattern can be observed by running an operation with multiple reductions in a single kernel, such as `!argmax`, or `RMSNorm`, etc.)
 
 To put it bluntly, this function explores all `reduced-but-not-stored` pairs, and merges two schedule items who shares `reduced-but-not-stored`.
 
@@ -524,7 +524,45 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                      if merge-p
                        do (let ((merged (merge-schedule-items self parent)))
                             (insert-nodes schedule-graph (list merged))
-                            ;; [TODO] so the schedule won't generate a kernel which produces multiple outputs?
+                            ;; [TODO] so the schedule won't generate a schedule item whose (length writes) > 1?
+                            (dolist (w (node-writes parent))
+                              (remnode schedule-graph w))
+                            (mapc #'explore (node-reads parent)))
+                     else
+                       do (explore (car (node-writes parent)))))))
+    (print schedule-graph)
+    (mapc #'explore (graph-outputs schedule-graph))))
+
+(defun apply-post-loop-fusion (schedule-graph &aux (seen))
+  ""
+  (declare (type FastGraph schedule-graph))
+  (labels ((parent-groups (self)
+             (assert (node-p self))
+             (loop for r in (node-reads self)
+                   for val = (and (symbolp r) (id->value schedule-graph r))
+                   ;; Only :jitable scheduleitems are merged
+                   if (and val (getattr val :jitable)) collect val))
+           (reduce-w/o-store (self)
+             (loop for id in (node-writes self) ;; only the output of the kernel matters
+                   for item = (find id (getattr self :items) :key #'node-writes :test #'find)
+                   if (getattr item :reduction :allow-undefined t)
+                     collect item))
+           (explore (id)
+             (when (find id seen) (return-from explore nil))
+             (push id seen)
+             (let* ((self (id->value schedule-graph id))
+                    (_ (when (or (null self) (null (getattr self :jitable))) (return-from explore nil)))
+                    (candidates (parent-groups self))
+                    (reduced-but-not-stored
+                      (map 'list #'reduce-w/o-store candidates)))
+               (declare (ignore _))
+               (assert (<= (count-if #'identity reduced-but-not-stored) 1))
+               (loop for parent in candidates
+                     for merge-p in reduced-but-not-stored
+                     if merge-p
+                       do (let ((merged (merge-schedule-items self parent)))
+                            (insert-nodes schedule-graph (list merged))
+                            ;; [TODO] so the schedule won't generate a schedule item whose (length writes) > 1?
                             (dolist (w (node-writes parent))
                               (remnode schedule-graph w))
                             (mapc #'explore (node-reads parent)))
@@ -549,7 +587,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
     (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
-      (apply-post-loop-fusion schedule)
+      (apply-reduce+move-fusion schedule)
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
@@ -557,6 +595,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [TODO] Post Loop Fusion (Softmax, ArgMax, Serialize the outermost Loop! and they are in the single kernel)
 ;; [TODO] Introduce SINK, or fuse !argmax in a single kernel (do not allow the kernel ends with reduction w/o STORE)
 ;; [TODO] there is a still weirdness in the args determination and -1 or 1? (batch=1 transform)
+;;  - Numpy-Semantic Broadcasting violaets pitmans two bit rules!
 ;; [TODO] Fix !rand scheduling espcially for rng counter
 ;; [TODO] Dynamic Shape Inference (graph-seen is dynamic shape?)
 ;; [TODO] batch_size=1 is not scheduled w/o NOOPT=0?
