@@ -40,11 +40,17 @@
       (assert (eql (node-type allocate) :Allocate))
       (if (getattr allocate :from) t nil))))
 
-(defun blueprint-tmp-buffers (blueprints schedule-graph &key (except-for nil))
+(defun blueprint-tmp-buffers (blueprints node schedule-graph &key (except-for nil))
   (setf except-for
         (append except-for
                 (loop for s in (graph-nodes schedule-graph)
                       append (node-writes s))))
+  (loop with pos = (position (node-id node) (graph-nodes schedule-graph) :key #'node-id)
+        for si in (subseq (graph-nodes schedule-graph) (1+ pos)) do
+          (dolist (item (getattr si :items))
+            (dolist (r (node-reads item))
+              (when (symbolp r)
+                (push r except-for)))))
   (let ((ids) (seen))
     (dolist (b blueprints)
       (let ((out (get-output-to b)))
@@ -115,7 +121,7 @@
 (defmethod graph-scalarify (blueprint (node Node) (schedule-graph Graph))
   "Rewrites the buffer as scalar as many as possible"
   (declare (type list blueprint))
-  (let* ((ids (blueprint-tmp-buffers blueprint schedule-graph :except-for (schedule-outputs schedule-graph)))
+  (let* ((ids (blueprint-tmp-buffers blueprint node schedule-graph :except-for (schedule-outputs schedule-graph)))
          (replaceable (loop for i in ids if (memory-access-local-p blueprint i) collect i))
          (suffix))
     (loop for b in blueprint
@@ -229,7 +235,7 @@
 
 (defmethod graph-exprify (blueprint (node Node) (schedule-graph Graph))
   (declare (type list blueprint))
-  (let* ((ids (blueprint-tmp-buffers blueprint schedule-graph :except-for (schedule-outputs schedule-graph)))
+  (let* ((ids (blueprint-tmp-buffers blueprint node schedule-graph :except-for (schedule-outputs schedule-graph)))
          (replaceable (loop for i in ids if (memory-access-local-p blueprint i) collect i)))
     (let ((new-bp
             (loop for bp in blueprint

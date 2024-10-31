@@ -283,9 +283,7 @@
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Compiling ..."))
-    
     (%compile-kernel renderer (graph-nodes schedule-graph))
-    
     (let ((new-graph (schedule-graph->vmop schedule-graph)))
       (setf (avm-graph avm) new-graph
             (avm-tape-length avm) (length (graph-nodes new-graph))))
