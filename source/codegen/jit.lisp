@@ -8,6 +8,7 @@
    #:avm-graph
    #:avm-name
    #:avm-tape-length
+   #:avm-pc
    #:buffer-nrank
    #:buffer-shape
    #:buffer-views
@@ -276,7 +277,6 @@
       (print-info "Rendering ..."))
     (dolist (s (graph-nodes schedule-graph))
       (when (getattr s :jitable)
-        ;; Lower the input argument buffer
         (schedule-item-write-define-global s)
         (setf (getattr s :rendered-object) (%render-kernel renderer s))))
     ;; 11. Complete (Render by the renderer)
@@ -286,7 +286,8 @@
     (%compile-kernel renderer (graph-nodes schedule-graph))
     (let ((new-graph (schedule-graph->vmop schedule-graph)))
       (setf (avm-graph avm) new-graph
-            (avm-tape-length avm) (length (graph-nodes new-graph))))
+            (avm-tape-length avm) (length (graph-nodes new-graph))
+            (avm-pc avm) 0))
     avm))
 ;; MemoryPlanner w/ Caching the duplicated kernel?
 
