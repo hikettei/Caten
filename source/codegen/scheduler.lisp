@@ -524,7 +524,10 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                      if merge-p
                        do (let ((merged (merge-schedule-items self parent)))
                             (insert-nodes schedule-graph (list merged))
-                            ;; [TODO] so the schedule won't generate a schedule item whose (length writes) > 1?
+                            ;; note: so the schedule won't generate a schedule item whose (length writes) > 1?
+                            ;; ^ this is because (node-writes schedule-item) does not take into account whether the item is read by other items or not.
+                            ;; That is, even if the val is not appeared in node-writes, there could be a dependency.
+                            ;; (TODO: This is misleading, refactor graph->schedule to have multiple outputs)
                             (dolist (w (node-writes parent))
                               (remnode schedule-graph w))
                             (mapc #'explore (node-reads parent)))
