@@ -186,6 +186,9 @@
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :STORE)) node)
+  (format nil "~a" (render-node renderer (second (node-reads node)))))
+
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Allocate)) node) (format nil "0"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :CAST)) node)
@@ -264,6 +267,9 @@
   (render-aref renderer node))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :MOVE)) node)
+  (format nil "~a" (render-node renderer (second (node-reads node)))))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :STORE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :Allocate)) node))

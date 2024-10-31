@@ -218,7 +218,7 @@
                          for node in (graph-nodes expr)
                          ;; See renderer.lisp, MOVE first argument is not rendered for example.
                          ;; [Note] Add more nodes if you found an argument which is actually rendered but not used in the rendered kernel.
-                         if (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD))
+                         if (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
                            collect (car (node-reads node))
                          if (not (eql (node-type node) :Aref))
                            collect (car (node-writes node))))
