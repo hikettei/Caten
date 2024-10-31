@@ -7,7 +7,8 @@
    #:relay-reads
    #:relay-writes
    #:relay-read-iters
-   #:relay-write-iters)
+   #:relay-write-iters
+   #:iteration-space-shape)
   (:import-from
    :caten/avm
    #:Buffer
@@ -369,5 +370,12 @@
           do (setf gids (remove (getattr bp :idx) gids))
         else do
           (assert (eql (node-type bp) :EXPR))
-          (setf (getattr bp :iterations) (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids))))
+          (let* ((is (car (relay-write-iters (read-type-relay bp))))
+                 (required-gids (and is (length (iteration-space-shape is)))))
+            (if (or (null is) (= (length gids) required-gids))
+                (setf (getattr bp :iterations) (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids)))
+                (progn
+                  ;; Set gid=0 for ops located in outside of a loop.
+                  (assert (null gids))
+                  (setf (getattr bp :iterations) (loop repeat required-gids collect (expr-const 0 :int64)))))))
   blueprint)

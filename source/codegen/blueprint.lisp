@@ -369,19 +369,11 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
       (when (null insertable-positions)
         (return-from try-insert-node (values blueprint nil)))
       (when (find -1 insertable-positions)
-        (when (> (buffer-nrank (car (relay-writes (read-type-relay node)))) 0)
-          ;; The node is located out of the loop, scalarize it.
-          (flet ((scalarize (b bi)
-                   (assert (every #'(lambda (x) (eql x 1)) (buffer-shape b)))
-                   (setf (buffer-nrank b) 0
-                         (buffer-shape b) nil
-                         (buffer-stride b) nil
-                         (buffer-views b) nil
-                         (iteration-space-shape bi) nil
-                         (iteration-space-strides bi) nil
-                         (iteration-space-views bi) nil)))
-            (mapc #'scalarize (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node)))
-            (mapc #'scalarize (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node)))))
+        (let ((nrank (buffer-nrank (car (relay-writes (read-type-relay node))))))
+          (when (and (> nrank 0) (getattr node :reduction :allow-undefined t))
+            ;; The node is located out of the loop, scalarize it.
+            (setf (iteration-space-strides (car (relay-read-iters (read-type-relay node))))
+                  (loop repeat nrank collect (expr-const 0 :int64)))))
         (return-from try-insert-node
           (if node-reduce-axes
               (values `(,@(reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))) ,@blueprint) t)
