@@ -19,7 +19,7 @@
                       append (list
                               (format nil "~a~a~a~a ~(~a~)"
                                       (ecase (getattr arg :type)
-                                        (:input "const ")
+                                        (:input "") ;; [TODO]
                                         (:output "")
                                         (:shape "const "))
                                       (->cdtype (getattr arg :dtype))
