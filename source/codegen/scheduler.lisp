@@ -92,6 +92,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (read-types :type list) (write-types :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)
+          (dynamic-shapes :type list)
           
           (rendered-object :type string)
           (compiled-object :type list)))

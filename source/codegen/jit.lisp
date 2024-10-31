@@ -100,7 +100,10 @@
 
 (defun make-compiled-kernel-node (si graph)
   (make-node :JIT :JIT_KERNEL (node-writes si)
-             (append (node-writes si) (node-reads si))
+             (append
+              (node-writes si)
+              (map 'list #'(lambda (x) (getattr x :value)) (getattr si :dynamic-shapes))
+              (node-reads si))
              :output-buffer-n (length (node-writes si))
              :kernel-info (make-compiled-kernel-from-si si graph)))
 

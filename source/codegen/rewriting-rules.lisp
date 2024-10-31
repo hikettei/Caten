@@ -321,12 +321,14 @@ out[...] = f(*val_1);
     (loop for read in (node-reads schedule-item)
           for rt in (getattr schedule-item :read-types) do
             (push (make-define-global read (buffer-dtype rt) t :input (buffer-nrank rt)) ops))
+    (loop for item in (getattr schedule-item :dynamic-shapes)
+          for it = (car (relay-writes (read-type-relay item))) do
+            (push (make-define-global (getattr item :value) (buffer-dtype it) nil :shape 0) ops))
     (loop for write in (node-writes schedule-item)
           for wt in (getattr schedule-item :write-types)
           for nth upfrom 0 do
             (setf (nth nth (getattr schedule-item :write-types)) (remove-broadcasted-axis wt))
             (push (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt)) ops))
-    ;; [TODO] Dynamic Shape
     (setf (getattr schedule-item :blueprint)
           (nconc
            ops

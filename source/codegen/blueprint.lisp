@@ -456,6 +456,11 @@ Depends=~a Reduce=~a Users=~a
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
+      ;; Gathering dynamic shapes
+      (setf (getattr node :dynamic-shapes)
+            (loop for item in (ctx-blueprint ctx)
+                  if (and (eql (node-type item) :LOAD) (symbolp (getattr item :value)))
+                    collect item))
       ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)

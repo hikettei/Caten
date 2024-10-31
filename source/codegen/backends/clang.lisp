@@ -193,11 +193,12 @@ Compiled with this command: ~a"
       (format t "[Final Code]:~%~a~%" code))
     (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))
     (dolist (item items)
-      (setf (getattr item :compiled-object)
-            (make-foreign-function-caller
-             (or (getattr item :cache-name) (getattr item :name))
-             (loop for bp in (getattr item :blueprint)
-                   if (eql :DEFINE-GLOBAL (node-type bp))
-                     collect bp))))
+      (when (getattr item :rendered-object)
+        (setf (getattr item :compiled-object)
+              (make-foreign-function-caller
+               (or (getattr item :cache-name) (getattr item :name))
+               (loop for bp in (getattr item :blueprint)
+                     if (eql :DEFINE-GLOBAL (node-type bp))
+                       collect bp)))))
     nil))
 
