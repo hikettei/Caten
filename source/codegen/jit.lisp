@@ -204,8 +204,11 @@
 ;; - [ ] Passing all tests
 ;; - [ ] Running tinyllama
 ;; - [ ] Support merging CUSTOM/Foreign/Pre-compiled kernel
-(defun jit (avm &key (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
-                &aux (renderer (if (keywordp renderer) (get-default-renderer renderer) renderer)))
+(defun jit (avm
+            &key
+              (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
+              (dir nil)
+            &aux (renderer (if (keywordp renderer) (get-default-renderer renderer) renderer)))
   "Runs the JIT compilation (destructive)"
   (declare (type AVM avm))
   ;; 1. Running the shape/offset/type inference
@@ -277,7 +280,7 @@
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Compiling ..."))
-    (%compile-kernel renderer (graph-nodes schedule-graph))
+    (%compile-kernel renderer (graph-nodes schedule-graph) dir)
     (let ((new-graph (schedule-graph->vmop schedule-graph)))
       (setf (avm-graph avm) new-graph
             (avm-tape-length avm) (length (graph-nodes new-graph))

@@ -55,7 +55,8 @@
   (:export
    #:schedule-item-write-define-global
    #:apply-rewriting-rules
-   #:nodes-apply-static-gensym))
+   #:nodes-apply-static-gensym
+   #:apply-static-gensym))
 
 (in-package :caten/codegen/rewriting-rules)
 

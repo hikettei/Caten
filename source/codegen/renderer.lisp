@@ -30,7 +30,7 @@
 (defgeneric %render-const (renderer obj) (:documentation ""))
 
 (defgeneric %render-kernel (renderer schedule-item))
-(defgeneric %compile-kernel (renderer schedule-items))
+(defgeneric %compile-kernel (renderer schedule-items dir))
 
 (defnode (:Render :FOR) ()
          "TODO"

@@ -181,7 +181,7 @@ Compiled with this command: ~a"
             :void))))))
 
 
-(defmethod %compile-kernel ((renderer CStyle-Renderer) items)
+(defmethod %compile-kernel ((renderer CStyle-Renderer) items dir)
   (let ((code
           (apply #'concatenate 'string
                  (append
@@ -191,7 +191,7 @@ Compiled with this command: ~a"
                           collect (getattr item :rendered-object))))))
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
-    (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))
+    (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir)
     (dolist (item items)
       (when (getattr item :rendered-object)
         (setf (getattr item :compiled-object)

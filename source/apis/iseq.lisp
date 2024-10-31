@@ -433,7 +433,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 Compiles the given tensors, returning an AVM struct.
 
 - tensor[Tensor|List] toplevel tensors.
-- jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls `%jit` to generate the fast kernel supported by `caten/ajit`. This parameter should be specified using the `(ctx:with-contextvar)` macro.
+- jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls `%jit` to generate the fast kernel supported by `caten/codegen`. This parameter should be specified using the `(ctx:with-contextvar)` macro.
 - name[keyword] the name of compiled avm.
 - simplifiers[list] a list of external simplifiers used in the graph-level compilation. (defined by defsimplifier) Pass the function name.
 "
@@ -442,7 +442,7 @@ Compiles the given tensors, returning an AVM struct.
   (let ((avm (%compile-toplevel tensors :name name :external-simplifiers simplifiers)))
     ;; FIXME: Since we can't determine when garbage collection (in caten/isl) will occur during testing, we run it every time.
     (when (and (= (ctx:getenv :JIT) 1) (= (ctx:getenv :CI) 1)) (trivial-garbage:gc))
-    (if jit (caten/ajit:jit avm :backend (or *jit-device* (ctx:getenv :jit_backend))) avm)))
+    (if jit (caten/codegen:jit avm :renderer (or *jit-device* (ctx:getenv :jit_backend))) avm)))
 
 (defun avm/sync-tensors (avm)
   "Synchronize buffer and tensor (but limited to the end of nodes, and grads)"

@@ -55,7 +55,7 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                              (:Module (subseq (princ-to-string (node-type node)) 6))
                              (otherwise (princ-to-string (node-type node))))))
                  (if (getattr node :_type_relay :allow-undefined t)
-                     (let ((buffer (car (uiop:symbol-call :caten/ajit :relay-writes (getattr node :_type_relay)))))
+                     (let ((buffer (car (uiop:symbol-call :caten/codegen/shape-inference :relay-writes (getattr node :_type_relay)))))
                        (format nil "~a|~a ~a"
                                (node-class node) name
                                (uiop:symbol-call :caten/avm :buffer-shape buffer)))
