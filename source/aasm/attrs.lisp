@@ -301,8 +301,7 @@ for i=0..N
 ")
 
 (defnode (:JIT :EXPR) (JITAble)
-	 "The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes. The list of composable nodes is defined in `op/expr` in `ajit/renderer.lisp.`
-
+	 "The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes.
 - Expr[caten/codegen/expr:EXPR] a tree structure comprised of `caten/codegen/expr:EXPR`
 - reduction[boolean]
 "
