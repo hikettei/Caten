@@ -54,7 +54,7 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
   (:export
    #:graph-schedule
    #:find-item2id-projection
-   #:retrieve-blueprint-from-cache
+   #:retrieve-schedule-node-from-cache
    #:*function-name-maxlen*))
 
 (in-package #:caten/codegen/scheduler)
@@ -126,7 +126,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                 "t" "nil")
             (if (getattr node :allocate-p)
                 ":allocate-p=T"
-                (format nil ":name=~a" (getattr node :name))))))
+                (if (getattr node :cache-name)
+                    (format nil ":cache-name=~a :name=~a" (getattr node :cache-name) (getattr node :name))
+                    (format nil ":name=~a" (getattr node :name)))))))
 
 (defmethod find-item2id-projection ((node Node))
   ;; -> List(Symbols)
@@ -142,26 +144,24 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (let ((table (make-hash-table)))
     (loop for p1 in proj1
           for p2 in proj2
-          do (setf (gethash p1 table) p2))
+          do (setf (gethash p2 table) p1))
     table))
 
-(defmethod retrieve-blueprint-from-cache ((node Node) schedule-graph projection-table)
+(defmethod retrieve-schedule-node-from-cache ((node Node) schedule-graph projection-table)
   (declare (type hash-table projection-table))
   (assert (eql (node-type node) :Schedule-Item))
-  (let ((projection (gethash (getattr node :cache-name) projection-table))
-        (base-node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
+  (let* ((projection (gethash (getattr node :cache-name) projection-table))
+         (base-node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name))))
+         (table (compare-and-make-projection-table (gethash (getattr node :name) projection-table) projection)))
     (assert projection)
     (assert base-node)
-    (setf (getattr node :blueprint)
-          (loop with table = (compare-and-make-projection-table (gethash (getattr base-node :name) projection-table) projection)
-                for bp in (getattr base-node :blueprint)
-                for bp1 = (copy-node bp)
-                collect
-                (progn
-                  (setf (node-id bp1) (gensym "CNID")
-                        (node-reads bp1) (map 'list #'(lambda (x) (or (gethash x table) x)) (node-reads bp1))
-                        (node-writes bp1) (map 'list #'(lambda (x) (or (gethash x table) x)) (node-writes bp1)))
-                  bp1)))
+    (flet ((new (x) (or (gethash x table) x)))
+      (setf (node-reads node) (map 'list #'new (node-reads base-node))
+            (node-writes node) (map 'list #'new (node-writes base-node))
+            (getattr node :storage-id-src) (map 'list #'new (node-reads base-node))
+            (getattr node :storage-id-dst) (map 'list #'new (node-writes base-node))
+            (getattr node :write-types) (getattr base-node :write-types)
+            (getattr node :read-types) (getattr base-node :read-types)))
     node))
 ;; ~~ Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Group

@@ -27,7 +27,7 @@
    :caten/codegen/scheduler
    #:graph-schedule
    #:find-item2id-projection
-   #:retrieve-blueprint-from-cache)
+   #:retrieve-schedule-node-from-cache)
   (:import-from
    :caten/codegen/blueprint
    #:lower-schedule-item
@@ -264,9 +264,9 @@
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
            (graph-nodes schedule-graph)))))
-    (dolist (n (graph-nodes schedule-graph))
-      (when (and (getattr n :jitable) (null (getattr n :blueprint)))
-        (retrieve-blueprint-from-cache n schedule-graph projection-table)))
+    (dolist (s (graph-nodes schedule-graph))
+      (when (and (getattr s :jitable) (null (getattr s :blueprint)))
+        (retrieve-schedule-node-from-cache s schedule-graph projection-table)))
     ;; 10. Running memory-planner, update the storage-id
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
@@ -276,7 +276,7 @@
       (fresh-line)
       (print-info "Rendering ..."))
     (dolist (s (graph-nodes schedule-graph))
-      (when (getattr s :jitable)
+      (when (and (getattr s :jitable) (getattr s :blueprint))
         (schedule-item-write-define-global s)
         (setf (getattr s :rendered-object) (%render-kernel renderer s))))
     ;; 11. Complete (Render by the renderer)

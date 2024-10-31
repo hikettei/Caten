@@ -196,7 +196,7 @@ Compiled with this command: ~a"
       (when (getattr item :rendered-object)
         (setf (getattr item :compiled-object)
               (make-foreign-function-caller
-               (or (getattr item :cache-name) (getattr item :name))
+               (getattr item :name)
                (loop for bp in (getattr item :blueprint)
                      if (eql :DEFINE-GLOBAL (node-type bp))
                        collect bp)))))
