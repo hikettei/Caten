@@ -53,8 +53,6 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    :nodes-apply-static-gensym)
   (:export
    #:graph-schedule
-   #:find-item2id-projection
-   #:retrieve-schedule-node-from-cache
    #:*function-name-maxlen*))
 
 (in-package #:caten/codegen/scheduler)
@@ -129,40 +127,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                 (if (getattr node :cache-name)
                     (format nil ":cache-name=~a :name=~a" (getattr node :cache-name) (getattr node :name))
                     (format nil ":name=~a" (getattr node :name)))))))
-
-(defmethod find-item2id-projection ((node Node))
-  ;; -> List(Symbols)
-  (assert (eql (node-type node) :Schedule-Item))
-  (let ((projection))
-    (loop for item in (getattr node :items) do
-      (loop for symbol in (append (node-reads node) (node-writes node))
-            if (symbolp symbol) do (push symbol projection)))
-    projection))
-
-(defun compare-and-make-projection-table (proj1 proj2)
-  (assert (= (length proj1) (length proj2)))
-  (let ((table (make-hash-table)))
-    (loop for p1 in proj1
-          for p2 in proj2
-          do (setf (gethash p2 table) p1))
-    table))
-
-(defmethod retrieve-schedule-node-from-cache ((node Node) schedule-graph projection-table)
-  (declare (type hash-table projection-table))
-  (assert (eql (node-type node) :Schedule-Item))
-  (let* ((projection (gethash (getattr node :cache-name) projection-table))
-         (base-node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name))))
-         (table (compare-and-make-projection-table (gethash (getattr node :name) projection-table) projection)))
-    (assert projection)
-    (assert base-node)
-    (flet ((new (x) (or (gethash x table) x)))
-      (setf (node-reads node) (map 'list #'new (node-reads base-node))
-            (node-writes node) (map 'list #'new (node-writes base-node))
-            (getattr node :storage-id-src) (map 'list #'new (node-reads base-node))
-            (getattr node :storage-id-dst) (map 'list #'new (node-writes base-node))
-            (getattr node :write-types) (getattr base-node :write-types)
-            (getattr node :read-types) (getattr base-node :read-types)))
-    node))
 ;; ~~ Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Group
   (key (gensym) :type symbol)

@@ -25,9 +25,7 @@
    #:schedule-item-write-define-global)
   (:import-from
    :caten/codegen/scheduler
-   #:graph-schedule
-   #:find-item2id-projection
-   #:retrieve-schedule-node-from-cache)
+   #:graph-schedule)
   (:import-from
    :caten/codegen/blueprint
    #:lower-schedule-item
@@ -221,11 +219,8 @@
           (remove-duplicates
            (loop for node in (graph-nodes (avm-graph avm))
                  if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
-                   collect (getattr node :value))))
-        (projection-table (make-hash-table)))
+                   collect (getattr node :value)))))
     (declare (type Graph schedule-graph))
-    (dolist (n (graph-nodes schedule-graph))
-      (setf (gethash (getattr n :name) projection-table) (find-item2id-projection n)))
     ;; 5. Minifying the number of schedules, (reuse kernels)
     (minify-equivalent-schedule schedule-graph)
     ;; 6. Start JIT Compilation. (Performing by group)
