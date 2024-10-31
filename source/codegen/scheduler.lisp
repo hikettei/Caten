@@ -492,6 +492,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
 ;; [TODO] Scheduling Unittest
 ;; [TODO] Tweak on ShapeTracker
 ;; [TODO] Refactor: JITABle, create attrs.lisp
+;; [TODO] reduction -> userがいないといけない
+
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; [todo] scheduling tests
 ;; - argmax = 1 kernels

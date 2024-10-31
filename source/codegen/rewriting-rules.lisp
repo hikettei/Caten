@@ -329,6 +329,6 @@ out[...] = f(*val_1);
             (setf (nth nth (getattr schedule-item :write-types)) (remove-broadcasted-axis wt))
             (push (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt)) ops))
     (setf (getattr schedule-item :blueprint)
-          (nconc
+          (append
            ops
            (getattr schedule-item :blueprint)))))
