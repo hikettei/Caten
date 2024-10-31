@@ -29,6 +29,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
    :simplify-blueprint)
   (:import-from
    :caten/avm
+   #:buffer-dtype
    #:buffer-nrank
    #:buffer-shape
    #:buffer-stride
@@ -434,6 +435,24 @@ Depends=~a Reduce=~a Users=~a
           (getattr node :storage-id-src) (map 'list #'car read-items)
           (getattr node :storage-id-dst) (map 'list #'car write-items))))
 
+(defmethod schedule-item-gather-dynamic-shapes ((node Node) blueprints)
+  (remove-duplicates
+   (append
+    (loop for item in blueprints
+          if (and (eql (node-type item) :LOAD) (symbolp (getattr item :value)))
+            collect (cons (getattr item :value) (buffer-dtype (car (relay-writes (read-type-relay item))))))
+    ;; Loop Bounds (loaded as default-int)
+    (loop for item in blueprints
+          if (not (eql (node-class item) :Render))
+            append
+            (loop for type in (append (relay-writes (read-type-relay item)) (relay-reads (read-type-relay item)))
+                  if type
+                    append
+                    (loop for s in (buffer-shape type)
+                          if (symbolp s)
+                            collect (cons s caten/aasm:*default-int*)))))
+   :key #'car))
+
 (defmethod lower-schedule-item ((node Node) (base-graph Graph) (scheduled-graph Graph))
   "Lowers the Schedule-Item into blueprint"
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
@@ -456,11 +475,8 @@ Depends=~a Reduce=~a Users=~a
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-      ;; Gathering dynamic shapes
-      (setf (getattr node :dynamic-shapes)
-            (loop for item in (ctx-blueprint ctx)
-                  if (and (eql (node-type item) :LOAD) (symbolp (getattr item :value)))
-                    collect item))
+      ;; Gathering dynamic shapes used in the schedule-item
+      (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node (ctx-blueprint ctx)))
       ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)

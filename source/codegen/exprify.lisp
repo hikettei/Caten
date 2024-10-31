@@ -98,6 +98,7 @@
         for n = (find r bp :key #'node-writes :test #'find)
         if (and (not (eql (node-class node) :Render))
                 (and n (eql (node-type n) :LOAD)) ;; Propagate only scalars
+                (numberp (getattr n :value))
                 (= (buffer-nrank (car (relay-writes (read-type-relay n)))) 0))
           do (setf (nth nth (node-reads node)) (getattr n :value))))
 
