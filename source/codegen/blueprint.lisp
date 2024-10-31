@@ -206,7 +206,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                          (nth (car p) view)
                          nil)))
              (fixup-dims (id original-buffer)
-               (when (and original-buffer (> (buffer-nrank original-buffer) 0))
+               (when (and original-buffer (> (length (buffer-shape original-buffer)) 0))
                  ;; Caten cannot inference where to insert one here.
                  (assert (= (length (buffer-shape original-buffer)) (1+ kernel-rank))
                          ()
@@ -221,7 +221,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                     :views new-view
                     :procedure procedure)))))
       (dolist (n (graph-nodes graph))
-        (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (relay-reads (read-type-relay n)))
+        (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (print (relay-reads (read-type-relay n))))
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
 
 (defmethod node-depend-idx-list ((node Node) gid
@@ -426,7 +426,6 @@ Depends=~a Reduce=~a Users=~a
                     do (push (cons write wt) write-items)
                   end
                   do (push write seen)))
-    (print read-items)
     (setf (node-reads node) (map 'list #'car read-items)
           (node-writes node) (map 'list #'car write-items)
           (getattr node :read-types) (map 'list #'cdr read-items)

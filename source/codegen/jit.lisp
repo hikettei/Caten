@@ -101,7 +101,7 @@
 (defun make-compiled-kernel-node (si graph)
   (make-node :JIT :JIT_KERNEL (node-writes si)
              (append
-              (node-writes si)
+              (getattr si :storage-id-dst) ;; optimized by memory-planner [todo] as well as allocate creation!!!
               (map 'list #'car (getattr si :dynamic-shapes))
               (node-reads si))
              :output-buffer-n (length (node-writes si))

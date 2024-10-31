@@ -184,9 +184,10 @@
                     collect nil
                   else
                     collect t)))
-      (setf (node-reads node) (loop for r in (node-reads node)
-                                    for g in gather-map
-                                    if g collect r)
+      (setf (node-reads node)
+            (loop for r in (node-reads node)
+                  for g in gather-map
+                  if g collect r)
             (relay-reads (read-type-relay node))
             (loop for r in (relay-reads (read-type-relay node))
                   for g in gather-map
@@ -208,9 +209,12 @@
           (let* ((allocated-but-not-used
                    (loop with expr = (expr-graph (getattr node :EXPR))
                          for node in (graph-nodes expr)
-                         if (not (eql (node-class node) :Render))
-                           collect
-                           (get-output-to node)))
+                         ;; See renderer.lisp, MOVE first argument is not rendered for example.
+                         ;; [Note] Add more nodes if you found an argument which is actually rendered but not used in the rendered kernel.
+                         if (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD))
+                           collect (car (node-reads node))
+                         if (not (eql (node-type node) :Aref))
+                           collect (car (node-writes node))))
                  (reads
                    (loop for read in (node-reads node)
                          for rt in (relay-reads (read-type-relay node))

@@ -276,6 +276,7 @@
 (defun merge-dims (g shape strides views &key (no-collapse nil))
   (declare (type list shape strides views))
   (when (null shape) (return-from merge-dims))
+  (when (every #'null views) (setf views (loop repeat (length shape) collect nil)))
   (assert (= (length shape) (length strides) (length views)))
   ;; ret = (list new-shapes new-strides new-views)
   (let ((ret (list
