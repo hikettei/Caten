@@ -236,9 +236,10 @@
         (with-expr-cache () ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
           (mapc
            #'(lambda (x &aux (start (get-internal-real-time)))
-               (when (and (getattr x :jitable) (getattr x :cache-name) (>= (ctx:getenv :JIT_DEBUG) 2))
-                 (print-progress "~a" (getattr x :name))
-                 (format t "=====> (Skipped) redirect to ~a~%" (getattr x :cache-name)))
+               (when (and (getattr x :jitable) (getattr x :cache-name))
+                 (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                   (print-progress "~a" (getattr x :name))
+                   (format t "=====> (Skipped) redirect to ~a~%" (getattr x :cache-name))))
                (when (and (getattr x :jitable) (null (getattr x :cache-name)))
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
                    (print-progress "~a" (getattr x :name))

@@ -571,8 +571,12 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [TODO] Scheduling Unittest (as well as im doing in repl)
 ;; [TODO] Tweak on ShapeTracker
 ;; [TODO] Refactor: JITABle, create attrs.lisp
-;; [TODO] Softmax = 1 Kernels
+;; [TODO] Softmax = 1 Kernels, LayerNorm = 1 Kernels
+;; [TODO] Finally remove Caten/ajit
 ;; [todo] args, node-depends-on based judgement
+;; [todo] stride computation for 3d dynamic shaped kernel
+;; [todo] (!randn `(n))
+;; [todo] NonJIT Kernel -> Base AVM GraphからRecursive id->valueをする
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; [todo] scheduling tests
@@ -623,7 +627,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;;   - [ ] (caten/codegen:jit (caten (!sum (!matmul (make-tensor `(10 10)) (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))))
 ;;   - [x] (caten/codegen:jit (time (caten (call (LayerNorm `(10)) (call (Embedding 10 10) (make-tensor `(10 10)))))))
 ;;   - [x] randint
-;;  -  [ ] (caten/codegen:jit (caten (!argmax (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))) INDEX COMPONENTSがFuseされない・・・
+;;  -  [ ] (caten/codegen:jit (caten (!argmax (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))))) INDEX COMPONENTSがFuseされない・・;; 
 ;; - [ ] Running w/ tests?
 
 ;; - [ ] Schedule !mean in the single group (caten/codegen:jit (caten (!mean (Make-tensor `(3 3 3)) :axis 0))) also ids are invaild ... (should have a global hash table)

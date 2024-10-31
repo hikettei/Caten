@@ -487,8 +487,7 @@ Depends=~a Reduce=~a Users=~a
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
-      (when (>= (ctx:getenv :JIT_DEBUG) 2)
-        (print-blueprint (ctx-blueprint ctx) t))
+      (when (>= (ctx:getenv :JIT_DEBUG) 2) (print-blueprint (ctx-blueprint ctx) t))
       ;; Infer the input/output buffers again, they can be removed during the op fusion.
-      (schedule-item-infer-io-buffers node (ctx-blueprint ctx)) ;; Need to ref EXPR
+      (schedule-item-infer-io-buffers node (ctx-blueprint ctx))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
