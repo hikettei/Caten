@@ -530,44 +530,6 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                             (mapc #'explore (node-reads parent)))
                      else
                        do (explore (car (node-writes parent)))))))
-    (print schedule-graph)
-    (mapc #'explore (graph-outputs schedule-graph))))
-
-(defun apply-post-loop-fusion (schedule-graph &aux (seen))
-  ""
-  (declare (type FastGraph schedule-graph))
-  (labels ((parent-groups (self)
-             (assert (node-p self))
-             (loop for r in (node-reads self)
-                   for val = (and (symbolp r) (id->value schedule-graph r))
-                   ;; Only :jitable scheduleitems are merged
-                   if (and val (getattr val :jitable)) collect val))
-           (reduce-w/o-store (self)
-             (loop for id in (node-writes self) ;; only the output of the kernel matters
-                   for item = (find id (getattr self :items) :key #'node-writes :test #'find)
-                   if (getattr item :reduction :allow-undefined t)
-                     collect item))
-           (explore (id)
-             (when (find id seen) (return-from explore nil))
-             (push id seen)
-             (let* ((self (id->value schedule-graph id))
-                    (_ (when (or (null self) (null (getattr self :jitable))) (return-from explore nil)))
-                    (candidates (parent-groups self))
-                    (reduced-but-not-stored
-                      (map 'list #'reduce-w/o-store candidates)))
-               (declare (ignore _))
-               (assert (<= (count-if #'identity reduced-but-not-stored) 1))
-               (loop for parent in candidates
-                     for merge-p in reduced-but-not-stored
-                     if merge-p
-                       do (let ((merged (merge-schedule-items self parent)))
-                            (insert-nodes schedule-graph (list merged))
-                            ;; [TODO] so the schedule won't generate a schedule item whose (length writes) > 1?
-                            (dolist (w (node-writes parent))
-                              (remnode schedule-graph w))
-                            (mapc #'explore (node-reads parent)))
-                     else
-                       do (explore (car (node-writes parent)))))))
     (mapc #'explore (graph-outputs schedule-graph))))
 
 (defgeneric graph-schedule (graph) (:documentation "Splits a given graph into small subgraphs called Schedule-Item. It always returns `FastGraph`."))
