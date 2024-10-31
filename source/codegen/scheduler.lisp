@@ -464,10 +464,77 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
              else ;; unmergeable
              append p)))))
 
-(defgeneric graph-schedule (graph) (:documentation "Returns a scheduled each node is `FastGraph` consisted of :Schedule-Item."))
+(defmethod merge-schedule-items ((si1 Node) (si2 Node))
+  (assert (eql (node-type si1) :Schedule-Item))
+  (assert (eql (node-type si2) :Schedule-Item))
+  (assert (= (getattr si1 :rank) (getattr si2 :rank)))
+  (group->schedule (make-group :items (append (getattr si1 :items) (getattr si2 :items)))))
+
+(defun apply-post-loop-fusion (schedule-graph &aux (seen))
+  "Applies the post-loop-fusion to eliminate MOVE after the reduction.
+```
+     Group1
+       |
+      SELF
+```
+Consider the case where group1 and self fusion was rejected by the group-reduce-dims rule, group1 is a reduction, and `MOVE` after the reduction is merged to `self`. For example:
+```
+[Group1]
+{
+  int _acc_0 = 0;
+  for (...)
+    _acc_0 += ...;
+  // Expected element wise operation here! otherwise we have to mutate _acc_0 as an array...
+}
+[SELF]
+{
+  for (...)
+   out[...] = f(_acc_0);
+}
+```
+This function enumerates all such pairs and allows all reduction operations to have a `MOVE` node after the reduction by serializing the loop. (This scheduling pattern can be observed by running an operation with multiple reductions in a single kernel, such as `!softmax`, `!argmax`, or `RMSNorm`, etc.)
+
+To put it bluntly, this function explores all `reduced-but-not-stored` pairs, and merges two schedule items who shares `reduced-but-not-stored`.
+
+If this interrupts the parallelism, AutoScheduler should distribute them and create a shared buffer."
+  (declare (type FastGraph schedule-graph))
+  (labels ((parent-groups (self)
+             (assert (node-p self))
+             (loop for r in (node-reads self)
+                   for val = (and (symbolp r) (id->value schedule-graph r))
+                   ;; Only :jitable scheduleitems are merged
+                   if (and val (getattr val :jitable)) collect val))
+           (reduce-w/o-store (self)
+             (loop for id in (node-writes self) ;; only the output of the kernel matters
+                   for item = (find id (getattr self :items) :key #'node-writes :test #'find)
+                   if (getattr item :reduction :allow-undefined t)
+                     collect item))
+           (explore (id)
+             (when (find id seen) (return-from explore nil))
+             (push id seen)
+             (let* ((self (id->value schedule-graph id))
+                    (_ (when (or (null self) (null (getattr self :jitable))) (return-from explore nil)))
+                    (candidates (parent-groups self))
+                    (reduced-but-not-stored
+                      (map 'list #'reduce-w/o-store candidates)))
+               (declare (ignore _))
+               (assert (<= (count-if #'identity reduced-but-not-stored) 1))
+               (loop for parent in candidates
+                     for merge-p in reduced-but-not-stored
+                     if merge-p
+                       do (let ((merged (merge-schedule-items self parent)))
+                            (insert-nodes schedule-graph (list merged))
+                            ;; [TODO] so the schedule won't generate a kernel which produces multiple outputs?
+                            (dolist (w (node-writes parent))
+                              (remnode schedule-graph w))
+                            (mapc #'explore (node-reads parent)))
+                     else
+                       do (explore (car (node-writes parent)))))))
+    (mapc #'explore (graph-outputs schedule-graph))))
+
+(defgeneric graph-schedule (graph) (:documentation "Splits a given graph into small subgraphs called Schedule-Item. It always returns `FastGraph`."))
 
 (defmethod graph-schedule ((graph Graph))
-  ;; Split the graph into multiple graphs
   (let* ((seen (make-hash-table))
          (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph)))))
     (mapc #'verify-group groups)
@@ -482,6 +549,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
     (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
+      (apply-post-loop-fusion schedule)
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
