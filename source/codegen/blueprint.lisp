@@ -221,7 +221,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                     :views new-view
                     :procedure procedure)))))
       (dolist (n (graph-nodes graph))
-        (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (print (relay-reads (read-type-relay n))))
+        (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n)  (relay-reads (read-type-relay n)))
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
 
 (defmethod node-depend-idx-list ((node Node) gid
@@ -369,6 +369,19 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
       (when (null insertable-positions)
         (return-from try-insert-node (values blueprint nil)))
       (when (find -1 insertable-positions)
+        (when (> (buffer-nrank (car (relay-writes (read-type-relay node)))) 0)
+          ;; The node is located out of the loop, scalarize it.
+          (flet ((scalarize (b bi)
+                   (assert (every #'(lambda (x) (eql x 1)) (buffer-shape b)))
+                   (setf (buffer-nrank b) 0
+                         (buffer-shape b) nil
+                         (buffer-stride b) nil
+                         (buffer-views b) nil
+                         (iteration-space-shape bi) nil
+                         (iteration-space-strides bi) nil
+                         (iteration-space-views bi) nil)))
+            (mapc #'scalarize (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node)))
+            (mapc #'scalarize (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node)))))
         (return-from try-insert-node
           (if node-reduce-axes
               (values `(,@(reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))) ,@blueprint) t)

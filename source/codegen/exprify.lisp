@@ -369,5 +369,5 @@
           do (setf gids (remove (getattr bp :idx) gids))
         else do
           (assert (eql (node-type bp) :EXPR))
-          (setf (getattr bp :Iterations) (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids))))
+          (setf (getattr bp :iterations) (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids))))
   blueprint)
