@@ -530,7 +530,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
              (dolist (node (graph-nodes g))
                ;; reduced but no users in the group: This is now allowed. Adding :MOVE
                (when (and (getattr node :reduction :allow-undefined t)
-                          (null (print (id->users g (car (node-writes node))))))
+                          (null (id->users g (car (node-writes node)))))
                  (let ((base-id (car (node-reads node)))
                        (write-id (car (node-writes node)))
                        (acc-id (acc (car (node-reads node)))))
