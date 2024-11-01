@@ -145,7 +145,18 @@ caten/codegen overview:
     (apply (compiled-kernel-caller info) args)
     (apply #'values (subseq args 0 out-n))))
 
-(defun schedule-graph->vmop (graph)
+(defun get-subgraph (graph top-id seen &aux (seen (copy-list seen)))
+  (labels ((explore (x)
+             (when (find x seen) (return-from explore))
+             (push x seen)
+             (let ((node (id->value graph x)))
+               (when (null node) (return-from explore))
+               (append
+                (list node)
+                (apply #'append (map 'list #'explore (node-reads node)))))))
+    (values (nreverse (explore top-id)) seen)))
+
+(defun schedule-graph->vmop (avm graph)
   (declare (type Graph graph))
   (verify-graph graph)
   (setf graph (->graph graph)) ;; Convert from FastGraph to Graph to sort the order
@@ -155,7 +166,11 @@ caten/codegen overview:
         ((getattr node :allocate-p)
          (push (car (node-writes node)) allocated)
          (dolist (i (getattr node :items))
-           (push i nodes)))
+           (push i nodes)
+           (dolist (dep (node-reads i))
+             (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) dep allocated)
+               (setf allocated new-seen)
+               (dolist (d deps) (push d nodes))))))
         ((null (getattr node :jitable))
          (dolist (w (node-writes node)) (push w allocated))
          (dolist (i (getattr node :items))
@@ -164,6 +179,10 @@ caten/codegen overview:
          (loop for w in (getattr node :storage-id-dst)
                for wt in (getattr node :write-types)
                if (null (find w allocated)) do
+                 (dolist (dep (append (buffer-shape wt) (buffer-stride wt)))
+                   (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) dep allocated)
+                     (setf allocated new-seen)
+                     (dolist (d deps) (push d nodes))))
                  (push
                   (make-node :Buffer :Allocate (list w) (append (buffer-shape wt) (buffer-stride wt))
                              :nrank (buffer-nrank wt) :dtype (buffer-dtype wt))
@@ -306,7 +325,7 @@ caten/codegen overview:
       (fresh-line)
       (print-info "Compiling ..."))
     (%compile-kernel renderer (graph-nodes schedule-graph) dir)
-    (let ((new-graph (schedule-graph->vmop schedule-graph)))
+    (let ((new-graph (schedule-graph->vmop avm schedule-graph)))
       (setf (avm-graph avm) new-graph
             (avm-tape-length avm) (length (graph-nodes new-graph))
             (avm-pc avm) 0
