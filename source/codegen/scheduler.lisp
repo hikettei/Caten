@@ -532,9 +532,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [TODO] Scheduling Unittest (as well as im doing in repl)
 ;; [TODO] Tweak on ShapeTracker
 ;; [TODO] Softmax = 1 Kernels, LayerNorm = 1 Kernels
-;; [todo] stride computation for 3d dynamic shaped kernel
 ;; [todo] (!randn `(n))
-;; [todo] NonJIT Kernel -> Base AVM GraphからRecursive id->valueをする
 ;; [TODO] Implementing simple Tiling/Vectorizing/Parallelizing second
 ;; - 今日やる
 ;; - [ ] !sum !mean bugfix

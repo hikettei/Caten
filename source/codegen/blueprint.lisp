@@ -307,6 +307,31 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
       ,@something
       ,@(reverse (map 'list #'%make-endfor gids)))))
 
+(defun recursive-scalar-p (ctx id)
+  (declare (type ctx ctx))
+  (or
+   (null (id->value (ctx-graph ctx) id))
+   (let* ((node (id->value (ctx-graph ctx) id))
+          (node-depend-axes
+            (node-depend-idx-list node (ctx-gids ctx)))
+          (node-reduce-axes
+            (node-reduced-gids node (ctx-gids ctx)))
+          (node-depend-axes
+            (loop for x in node-depend-axes
+                  if (null (find x node-reduce-axes))
+                    collect x))
+          (node-depend-users
+            ;; `node` must be located before users are located.
+            (id->users (ctx-graph ctx) (car (node-writes node))))
+          (user-depend-axes
+            (loop for user in node-depend-users
+                  if (and
+                      (eql (car (node-writes node)) (car (node-reads user)))
+                      (getattr user :reduction :allow-undefined t))
+                    append (node-reduced-gids user (ctx-gids ctx)))))
+     (and (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes)
+          (every #'(lambda (x) (recursive-scalar-p ctx x)) (node-reads node))))))
+
 (defun try-insert-node (ctx node &aux (changed-p nil))
   (with-slots ((blueprint blueprint)) ctx
     (let* ((node-depend-axes ;; list of gids `node` should depend on
@@ -368,7 +393,9 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                      (push nth insertable-positions)))
       (when (null insertable-positions)
         (return-from try-insert-node (values blueprint nil)))
-      (when (find -1 insertable-positions)
+      (when (and
+             (find -1 insertable-positions)
+             (every #'(lambda (x) (recursive-scalar-p ctx x)) (node-reads node)))
         (let ((nrank (buffer-nrank (car (relay-writes (read-type-relay node))))))
           (when (and (> nrank 0) (getattr node :reduction :allow-undefined t))
             ;; The node is located out of the loop, scalarize it.

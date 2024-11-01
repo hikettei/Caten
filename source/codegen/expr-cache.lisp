@@ -13,7 +13,8 @@
    #:with-expr-cache
    #:stash-expr
    #:restore-expr
-   #:expr-cache-reduce-alias))
+   #:expr-cache-reduce-alias
+   #:read-newid))
 
 (in-package :caten/codegen/expr-cache)
 
@@ -61,3 +62,7 @@
     (or
      (gethash key (id2expr-table *expr-cache*))
      (error "Undefined EXPR ID ~a (or do not use the symbol starting with _expr_id)" key))))
+
+(defun read-newid (id)
+  (assert *expr-cache*)
+  (or (gethash id (expr-cache-reduce-alias *expr-cache*)) id))
