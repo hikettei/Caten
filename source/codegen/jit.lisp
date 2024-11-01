@@ -9,7 +9,7 @@ caten/codegen overview:
                                        |
 --- [Step2] Auto-Tuning --------------------------------------------------------------------------------------------
                                        | (foreach schedule-item)
-  (dolist (schedule-item (graph-nodes schedule-graph))
+  (dolist (schedule-item (remove-duplicates (graph-nodes schedule-graph)))
                  |
              [Lowerer] (blueprint.lisp)
                  |
