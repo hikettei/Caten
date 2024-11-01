@@ -499,6 +499,52 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                        do (explore (car (node-writes parent)))))))
     (mapc #'explore (graph-outputs schedule-graph))))
 
+(defun apply-move-after-reduction (schedule-graph)
+  (labels ((%newtype (buffer)
+             (caten/avm:make-buffer
+              (buffer-nrank buffer)
+              (loop for s in (buffer-shape buffer)
+                    for nth upfrom 0
+                    for v = (nth nth (buffer-views buffer))
+                    if (and (listp v) (fourth v)) ;; broadcasted
+                      collect 1
+                    else
+                      collect s)
+              (buffer-stride buffer)
+              (buffer-dtype buffer)
+              (loop for s in (buffer-shape buffer)
+                    for nth upfrom 0
+                    for v = (nth nth (buffer-views buffer))
+                    if (and (listp v) (fourth v))
+                      collect `(0 1 1 t)
+                    else
+                      collect v)))
+           (%jstore (w a b base-type)
+             (make-node :Buffer :MOVE (list w) (list a b)
+                        :_type_relay
+                        (caten/codegen/shape-inference:make-inferred-type
+                         (list (%newtype base-type))
+                         (list (%newtype base-type) (%newtype base-type)))))
+           (acc (id) (intern (format nil "~(~a~)_acc" id)))
+           (r (si &aux (g (apply #'make-graph (getattr si :items))))
+             (dolist (node (graph-nodes g))
+               ;; reduced but no users in the group: This is now allowed. Adding :MOVE
+               (when (and (getattr node :reduction :allow-undefined t)
+                          (null (print (id->users g (car (node-writes node))))))
+                 (let ((base-id (car (node-reads node)))
+                       (write-id (car (node-writes node)))
+                       (acc-id (acc (car (node-reads node)))))
+                   (setf (node-writes node) (list acc-id))
+                   ;; val_3 = val_3_acc
+                   ;; ```
+                   ;; float val_3 = 0.0;               float val_3 = 0.0;
+                   ;; for (...) val_4 = val_3+1.0  =>  for (...) val_3_acc = val_3+1.0;
+                   ;; ```                              val_4[0] = val_3_acc;
+                   (push
+                    (%jstore write-id base-id acc-id (car (relay-writes (read-type-relay node))))
+                    (getattr si :items)))))))
+    (mapc #'r (graph-nodes schedule-graph))))
+
 (defgeneric graph-schedule (graph) (:documentation "Splits a given graph into small subgraphs called Schedule-Item. It always returns `FastGraph`."))
 
 (defmethod graph-schedule ((graph Graph))
@@ -514,7 +560,11 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
     (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
+      ;; ~~ Rewriting Rules + Post Fusion ~~~~
       (apply-reduce+move-fusion schedule)
+      ;; (apply-serialize-reduction) // Softmax
+      (apply-move-after-reduction schedule)
+      ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
