@@ -45,7 +45,7 @@
       pg)))
 
 (defmethod debug-render-to-clang ((pg Polyhedral-IR))
-  (let* ((schedule (schedule-set-options (copy (poly-schedule pg)) :atomic))
+  (let* ((schedule (schedule-set-options (copy (poly-schedule pg)) :separate))
          (build (ast-build-from-context (set-from-str "{:}")))
          (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
          (ast   (ast-build-node-from-schedule build schedule))

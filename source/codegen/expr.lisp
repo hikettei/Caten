@@ -194,7 +194,7 @@ Only supports the scalar computation because it is intended to identify the same
 (defun expr-<= (&rest args) (reduce #'expr-<=-binary args))
 (defun expr-> (&rest args) (reduce #'expr->-binary args))
 (defun expr->= (&rest args) (reduce #'expr->=-binary args))
-(defun expr-= (&rest args) (reduce #'expr-= args))
+(defun expr-= (&rest args) (reduce #'expr-=-binary args))
 (defun expr-where (condition then else &aux (out (gensym "w")))
   (declare (type Expr condition then else))
   (let ((grh (with-context (_ (%where (expr-out condition) (expr-out then) (expr-out else) :id out)))))

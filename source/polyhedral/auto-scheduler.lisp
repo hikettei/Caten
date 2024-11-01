@@ -17,7 +17,7 @@
     (set-option "ast_build_scale_strides" 1)
     (set-option "ast_build_allow_else" 0)
     (set-option "ast_build_allow_or" 0))
-  (let* ((schedule (isl:schedule-set-options (isl:copy (poly-schedule poly)) :atomic))
+  (let* ((schedule (isl:schedule-set-options (isl:copy (poly-schedule poly)) :separate))
 	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
          (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
          (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
@@ -27,10 +27,10 @@
 
 (defmethod schedule ((pg Polyhedral-IR))
   (let ((serialize-sccs 0)
-        (outer-coincidence 1)
+        (outer-coincidence 0)
         (maximize-coincidence 1)
         (treat-coalescing 1)
-        (maximize-band-depth 0)
+        (maximize-band-depth 1)
         ;; Only schedule the scc. (not to change the structure of kernel)
         (schedule-whole-component 0))
     (macrolet ((set-option (name level)
