@@ -64,5 +64,6 @@
   (caten/polyhedral/tiling:solve poly)
   ;; Unrolling/Vectorizing
   ;; (caten/polyhedral/packing:solve poly)
-  ;; Post Fusion
+  ;; Parallelize
+  
   poly)

@@ -85,6 +85,7 @@
     tileable-bands))
 ;; Goal: https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-metal.metal
 ;; [TODO] Tile dims/SIZE optimization
+;; [TODO] Prefer packing for softmax/layernorm etc
 (defun solve (ir)
   "An entry point for the tiling optimizer"
   (declare (type Polyhedral-IR ir))
