@@ -79,7 +79,7 @@
    #:create-space-params
    #:create-space-set
    #:create-space-map
-   #:space-dim-
+   #:space-dim
    ;; Local Space
    #:local-space
    #:local-space-p
@@ -148,6 +148,7 @@
    #:mupa-from-union-map
    #:multi-union-pw-aff-get-union-pw-aff
    #:multi-union-pw-aff-scale-down-val
+   #:union-pw-aff-scale-down-val
    #:multi-union-pw-aff-floor
    #:union-pw-aff-floor
    #:union-pw-aff-scale-val

@@ -55,7 +55,8 @@
     (let* ((tiling-sizes (tiling-sizes band :size-default size-default :dims dims))
            (partial-schedule (tile-partial-schedule partial-schedule tiling-sizes))
            (tiled-sched (multi-union-pw-aff-add partial-schedule shift)))
-      (schedule-node-insert-partial-schedule band tiled-sched))))
+      (schedule-node-get-schedule
+       (schedule-node-insert-partial-schedule band tiled-sched)))))
 
 (defun get-tileable-bands (schedule)
   (declare (type schedule schedule))
@@ -87,7 +88,6 @@
   (declare (type Polyhedral-IR ir))
   (let* ((schedule (poly-schedule ir))
          (bands (get-tileable-bands schedule)))
-    (when bands
+    (dotimes (i (length bands))
       (setf (poly-schedule ir)
-            (schedule-node-get-schedule
-             (schedule-tile-band (car bands)))))))
+            (schedule-tile-band (nth i (get-tileable-bands (poly-schedule ir))))))))
