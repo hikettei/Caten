@@ -135,6 +135,14 @@
    ;; MultiUnionPwAff
    #:multi-union-pw-aff
    #:multi-union-pw-aff-from-str
+   #:multi-union-pw-aff-intersect-domain
+   #:multi-union-pw-aff-size
+   #:multi-union-pw-aff-min-multi-val
+   #:multi-val-get-val
+   #:multi-val-set-val
+   #:multi-union-pw-aff-multi-val-on-domain
+   #:multi-union-pw-aff-neg
+   #:multi-union-pw-aff-add
    #:mupa-from-union-map
    ;; Union set
    #:union-set
@@ -352,6 +360,7 @@
    #:schedule-node-get-child
    #:schedule-insert-sequence
    #:schedule-node-get-domain
+   #:schedule-node-band-get-partial-schedule
    ))
 
 (in-package :caten/isl)

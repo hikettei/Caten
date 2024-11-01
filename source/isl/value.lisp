@@ -94,7 +94,7 @@
     (:take value a)
     (:take value b)
     (:give value x)
-    (:give value y))
+  (:give value y))
 
 (defun %value (value-designator)
   (etypecase value-designator

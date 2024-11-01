@@ -40,8 +40,6 @@
               (union-map-union WaR RaW)
               WaW)))
       (setf (poly-dependencies pg) dependencies)
-      ;; Memo: delete v
-      ;; (setf (poly-schedule pg) (schedule pg))
       pg)))
 
 (defmethod debug-render-to-clang ((pg Polyhedral-IR))

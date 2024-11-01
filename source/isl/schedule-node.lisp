@@ -72,6 +72,10 @@
   (:give schedule)
   (:keep schedule-node))
 
+(define-isl-function schedule-node-band-get-partial-schedule %isl-schedule-node-band-get-partial-schedule
+  (:give multi-union-pw-aff)
+  (:keep schedule-node))
+
 (define-isl-function schedule-node-get-domain %isl-schedule-node-get-domain
   (:give union-set)
   (:keep schedule-node))
