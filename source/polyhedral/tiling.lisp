@@ -17,10 +17,11 @@
          (dim (space-dim band-space 3)))
     (multi-val-from-val-list
      band-space
-     (apply #'make-value-list
-            (loop for i upfrom 0 below dim
-                  collect
-                  (or (nth i dims) size-default))))))
+     (apply
+      #'make-value-list
+      (loop for i upfrom 0 below dim
+            collect
+            (or (nth i dims) size-default))))))
                 
 (defun shift-band-zero (band)
   "Refernece: https://github.com/hikettei/cl-polyhedral/blob/main/source/tiling.lisp#L52C1-L79C37"
@@ -83,11 +84,11 @@
             (setf node (pop next-nodes)))
     tileable-bands))
 ;; Goal: https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-metal.metal
+;; [TODO] Tile dims/SIZE optimization
 (defun solve (ir)
   "An entry point for the tiling optimizer"
   (declare (type Polyhedral-IR ir))
   (let* ((schedule (poly-schedule ir))
          (bands (get-tileable-bands schedule)))
     (dotimes (i (length bands))
-      (setf (poly-schedule ir)
-            (schedule-tile-band (nth i (get-tileable-bands (poly-schedule ir))))))))
+      (setf (poly-schedule ir) (schedule-tile-band (nth i (get-tileable-bands (poly-schedule ir))))))))
