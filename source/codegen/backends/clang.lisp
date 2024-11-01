@@ -52,9 +52,11 @@
        (decf *indent* 2)
        (format stream "~a}~%" (indent)))
       (:IF
-       (error "not ready"))
+       (format stream "~aif(~a){~%" (indent) (render-expr 'CStyle-Renderer (getattr bp :condition)))
+       (incf *indent* 2))
       (:ENDIF
-       (error "not ready"))
+       (decf *indent* 2)
+       (format stream "~a}~%" (indent)))
       (:EXPR
        (let ((pre-iterations (getattr bp :iterations)))
          (labels ((print-aref (name b is &key iterations)

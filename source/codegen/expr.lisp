@@ -31,6 +31,7 @@
    #:expr-=
    #:expr-where
    #:expr-neg
+   #:expr-not
    #:with-expr-cache))
 
 (in-package :caten/codegen/expr)
@@ -167,7 +168,8 @@ Only supports the scalar computation because it is intended to identify the same
                 (declare (type Expr x))
                 (let ((grh (with-context (_ (,op (expr-out x) :id out)))))
                   (%connect-expr grh (list x) out)))))
-  (def expr-neg %neg))
+  (def expr-neg %neg)
+  (def expr-not %not))
 
 (defun expr-add (&rest args)
   (if (= (length args) 0)

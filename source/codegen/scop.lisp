@@ -36,7 +36,11 @@
 (defun expr-affine-p (expr)
   (every #'(lambda (x) (find (node-type x) `(:< :ALLOCATE :LOAD :ADD :NEG))) (graph-nodes (expr-graph expr))))
 
-(defmethod render-domain-body-from-group ((node Node) symbolics &aux (idx2domain (make-hash-table)) (device 'Default-Renderer) (extra-symbolics nil))
+(defmethod render-domain-body-from-group ((node Node) symbolics
+                                          &aux
+                                            (idx2domain (make-hash-table))
+                                            (device 'Default-Renderer)
+                                            (extra-symbolics nil))
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (values

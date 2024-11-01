@@ -27,10 +27,10 @@
 
 (defmethod schedule ((pg Polyhedral-IR))
   (let ((serialize-sccs 0)
-        (outer-coincidence 0)
+        (outer-coincidence 1)
         (maximize-coincidence 1)
         (treat-coalescing 1)
-        (maximize-band-depth 1)
+        (maximize-band-depth 0)
         ;; Only schedule the scc. (not to change the structure of kernel)
         (schedule-whole-component 0))
     (macrolet ((set-option (name level)
@@ -59,8 +59,7 @@
 (defmethod auto-schedule ((poly Polyhedral-IR))
   "An entrypoint for auto-scheduling"
   ;; Getting the initial schedule (TODO: Make configuration changeable)
-  ;; but :atomic=T is must
-  ;; (setf (poly-schedule poly) (schedule poly))
+  (setf (poly-schedule poly) (schedule poly))
   ;; Tiling
   ;; (caten/polyhedral/tiling:solve poly)
   ;; Unrolling/Vectorizing

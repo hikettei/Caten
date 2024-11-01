@@ -26,7 +26,7 @@
 	    (:constructor make-if (condition then-node else-node)))
   (condition condition :type Expr)
   (then-node then-node :type (or ASTBlock User ASTFOR ASTIF))
-  (else-node else-node :type (or ASTBlock User ASTFOR ASTIF)))
+  (else-node else-node :type (or ASTBlock User ASTFOR ASTIF null)))
 
 (declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast))
 (defun parse-isl-ast (ast)
@@ -115,7 +115,7 @@
                     ;; Rewrite LE to simplify the expression
 		    (:ast-expr-op-le (expr-< lhs (expr-add rhs (expr-const 1 :int64)))) ;; <=
 		    (:ast-expr-op-lt (expr-< lhs rhs)) ;; <
-		    (:ast-expr-op-ge (expr->= lhs rhs)) ;; >=
+		    (:ast-expr-op-ge (expr-not (expr-< lhs rhs))) ;; >=
 		    (:ast-expr-op-gt (expr-> lhs rhs)) ;; >
 		    ;; (:expr-op-call)
 		    ;; (:expr-op-access)

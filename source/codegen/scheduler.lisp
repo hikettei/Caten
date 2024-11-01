@@ -537,6 +537,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [todo] NonJIT Kernel -> Base AVM GraphからRecursive id->valueをする
 ;; [TODO] Implementing simple Tiling/Vectorizing/Parallelizing second
 ;; - 今日やる
+;; - [ ] !sum !mean bugfix
 ;; - [ ] Complete Polyhedral
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
@@ -698,3 +699,4 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; - [ ] Passing all tests
 ;; - [ ] Running tinyllama
 ;; - [ ] Support merging CUSTOM/Foreign/Pre-compiled kernel
+
