@@ -1,5 +1,36 @@
 (defpackage :caten/codegen/jit
-  (:documentation "This is an entry point for JIT. JIT compiles unoptimized AVM into optimized AVM.")
+  (:documentation "
+caten/codegen overview:
+```
+--- [Step1] Scheduling ---------------------------------------------------------------------------------------------
+                          [Deep Learning Models (AVM)]
+                                       | Partitioning into subgraphs (scheduler.lisp)
+ [Embedding_Embedding_ADD], [LayerNorm], [Matmul+GELU], [Attention1], [Attention2 (Cached)] ..., (Nx Schedule-Item)
+                                       |
+--- [Step2] Auto-Tuning --------------------------------------------------------------------------------------------
+                                       | (foreach schedule-item)
+  (dolist (schedule-item (graph-nodes schedule-graph))
+                 |
+             [Lowerer] (blueprint.lisp)
+                 |
+   [(Optional) Lower to Polyhedral IR]
+                 |
+            [AutoTuning] (searching the best configuration for Parallelizing/Tiling/Vectorizing, etc...)
+                 |
+            [Complete])
+--- [Step3] Memory Optimizing --------------------------------------------------------------------------------------
+                                 |
+                     [Optimized Schedule-Graph]
+                                 |
+                      [Running Memory-Planner]
+                                 |
+--- [Step4] Rendering ----------------------------------------------------------------------------------------------
+                                 |
+                         [Render the kernel]
+                                 |
+                  [Deep Learning Models (Compiled AVM)]
+--------------------------------------------------------------------------------------------------------------------
+```")
   (:use :cl :caten/air :caten/codegen/shape-inference)
   (:import-from
    :caten/avm
