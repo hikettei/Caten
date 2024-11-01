@@ -505,8 +505,6 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
   (let* ((seen (make-hash-table))
          (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph)))))
     (mapc #'verify-group groups)
-    ;; Serialize ADD (Embedding Embedding)
-    ;; Merge two independent groups
     (when (>= (ctx:getenv :JIT_DEBUG) 4)
       (format t "[graph-schedule] Prescheduled ~a groups:~%" (length groups))
       (dolist (g groups)
@@ -520,7 +518,6 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
-
 ;; [TODO] Post Loop Fusion (Softmax, ArgMax, Serialize the outermost Loop! and they are in the single kernel)
 ;; [TODO] Introduce SINK, or fuse !argmax in a single kernel (do not allow the kernel ends with reduction w/o STORE)
 ;; [TODO] there is a still weirdness in the args determination and -1 or 1? (batch=1 transform)
@@ -534,13 +531,11 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [TODO] METAL GPU SUPPORT
 ;; [TODO] Scheduling Unittest (as well as im doing in repl)
 ;; [TODO] Tweak on ShapeTracker
-;; [TODO] Refactor: JITABle, create attrs.lisp
 ;; [TODO] Softmax = 1 Kernels, LayerNorm = 1 Kernels
-;; [TODO] Finally remove Caten/ajit
-;; [todo] args, node-depends-on based judgement
 ;; [todo] stride computation for 3d dynamic shaped kernel
 ;; [todo] (!randn `(n))
 ;; [todo] NonJIT Kernel -> Base AVM GraphからRecursive id->valueをする
+;; [todo] the order of args (define-global)
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; [todo] scheduling tests

@@ -318,18 +318,22 @@ out[...] = f(*val_1);
   "Inserts DEFINE_GLOBAL to the top of graph"
   (declare (type node schedule-item))
   (assert (eql (node-type schedule-item) :Schedule-Item))
-  (let ((ops))
-    (loop for read in (node-reads schedule-item)
-          for rt in (getattr schedule-item :read-types) do
-            (push (make-define-global read (buffer-dtype rt) t :input (buffer-nrank rt)) ops))
-    (loop for item in (getattr schedule-item :dynamic-shapes) do
-      (push (make-define-global (car item) (cdr item) nil :shape 0) ops))
-    (loop for write in (node-writes schedule-item)
-          for wt in (getattr schedule-item :write-types)
-          for nth upfrom 0 do
-            (setf (nth nth (getattr schedule-item :write-types)) (remove-broadcasted-axis wt))
-            (push (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt)) ops))
-    (setf (getattr schedule-item :blueprint)
-          (append
-           ops
-           (getattr schedule-item :blueprint)))))
+  (setf (getattr schedule-item :blueprint)
+        (append
+         ;; writes
+         (loop for write in (node-writes schedule-item)
+               for wt in (getattr schedule-item :write-types)
+               for nth upfrom 0
+               collect
+               (progn
+                 (setf (nth nth (getattr schedule-item :write-types)) (remove-broadcasted-axis wt))
+                 (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt))))
+         ;; dynamic shapes
+         (loop for item in (getattr schedule-item :dynamic-shapes)
+               collect
+               (make-define-global (car item) (cdr item) nil :shape 0))
+         (loop for read in (node-reads schedule-item)
+               for rt in (getattr schedule-item :read-types)
+               collect
+               (make-define-global read (buffer-dtype rt) t :input (buffer-nrank rt)))
+         (getattr schedule-item :blueprint))))
