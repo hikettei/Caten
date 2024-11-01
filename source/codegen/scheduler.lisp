@@ -518,6 +518,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
+
 ;; [TODO] Post Loop Fusion (Softmax, ArgMax, Serialize the outermost Loop! and they are in the single kernel)
 ;; [TODO] Introduce SINK, or fuse !argmax in a single kernel (do not allow the kernel ends with reduction w/o STORE)
 ;; [TODO] there is a still weirdness in the args determination and -1 or 1? (batch=1 transform)
@@ -527,7 +528,6 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [TODO] batch_size=1 is not scheduled w/o NOOPT=0?
 ;; [TODO] memory planner just by rewriting storage id
 ;; [TODO] Running the transformer first
-;; [TODO] Implementing simple Tiling/Vectorizing/Parallelizing second
 ;; [TODO] METAL GPU SUPPORT
 ;; [TODO] Scheduling Unittest (as well as im doing in repl)
 ;; [TODO] Tweak on ShapeTracker
@@ -535,7 +535,9 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [todo] stride computation for 3d dynamic shaped kernel
 ;; [todo] (!randn `(n))
 ;; [todo] NonJIT Kernel -> Base AVM GraphからRecursive id->valueをする
-;; [todo] the order of args (define-global)
+;; [TODO] Implementing simple Tiling/Vectorizing/Parallelizing second
+;; - 今日やる
+;; - [ ] Complete Polyhedral
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; [todo] scheduling tests
@@ -680,3 +682,19 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; - [ ] relu(gemm)
 ;; - [ ] conv
 ;; (caten/codegen:jit (caten (call (TransformerBlock 64 4) (make-tensor `(10 10 64)) (iconst 2))))
+;; MemoryPlanner w/ Caching the duplicated kernel?
+
+;; Test Case1
+;; (with-no-grad (caten/codegen:jit (caten (call (Transformer 64 4 1 1e-5 32) (make-tensor `(10 30)) (iconst 0)))))
+;; Test Case2
+;; (caten (!randn `(a b)))
+
+;; memo: Transformer Model Initialization is slow.
+;; Priority
+;; - [ ] Auto Scheduler for Tiling/Vectorizing
+;; - [ ] Caching the kernel+Memory Planner
+;; - [ ] Kernel Generation by CLANG
+;; - [ ] Running the kernel
+;; - [ ] Passing all tests
+;; - [ ] Running tinyllama
+;; - [ ] Support merging CUSTOM/Foreign/Pre-compiled kernel

@@ -227,14 +227,7 @@ caten/codegen overview:
           else
             do (push tgt seen))
     schedule-graph))
-;; Priority
-;; - [ ] Auto Scheduler for Tiling/Vectorizing
-;; - [ ] Caching the kernel+Memory Planner
-;; - [ ] Kernel Generation by CLANG
-;; - [ ] Running the kernel
-;; - [ ] Passing all tests
-;; - [ ] Running tinyllama
-;; - [ ] Support merging CUSTOM/Foreign/Pre-compiled kernel
+
 (defun jit (avm
             &key
               (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
@@ -317,12 +310,3 @@ caten/codegen overview:
             (avm-tape-length avm) (length (graph-nodes new-graph))
             (avm-pc avm) 0))
     avm))
-;; MemoryPlanner w/ Caching the duplicated kernel?
-
-;; Test Case1
-;; (with-no-grad (caten/codegen:jit (caten (call (Transformer 64 4 1 1e-5 32) (make-tensor `(10 30)) (iconst 0)))))
-;; Test Case2
-;; (caten (!randn `(a b)))
-
-;; memo: Transformer Model Initialization is slow.
-
