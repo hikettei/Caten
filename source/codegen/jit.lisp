@@ -40,6 +40,7 @@ caten/codegen overview:
    #:avm-name
    #:avm-tape-length
    #:avm-pc
+   #:avm-variables
    #:buffer-nrank
    #:buffer-shape
    #:buffer-views
@@ -308,5 +309,6 @@ caten/codegen overview:
     (let ((new-graph (schedule-graph->vmop schedule-graph)))
       (setf (avm-graph avm) new-graph
             (avm-tape-length avm) (length (graph-nodes new-graph))
-            (avm-pc avm) 0))
+            (avm-pc avm) 0
+            (avm-variables avm) (make-hash-table)))
     avm))
