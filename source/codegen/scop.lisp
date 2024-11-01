@@ -146,7 +146,7 @@ Corresponds to the position of the subgraph in the parent schedule.
                (format out " } "))
       (format out "~%]"))))
 
-(defun render-access-rep (reader type-reader node idx2domain render-graph symbolics)
+(defun render-access-rep (reader buffer-reader type-reader node idx2domain render-graph symbolics)
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
   (union-map-from-str
@@ -159,9 +159,9 @@ Corresponds to the position of the subgraph in the parent schedule.
                      (expr-scalar-equivalent-p axis (expr-const 0 :int64))))
               (when tgt-node
                 (loop for var in (funcall reader tgt-node)
+                      for buf in (funcall buffer-reader (read-type-relay tgt-node))
                       for typ in (funcall type-reader (read-type-relay tgt-node))
                       if (symbolp var)
-                        ;; [TODO] (getattr node :reduction)
                         do (format out "  ~a -> ~(~a~)[~(~a~)];~%"
                                    dom
                                    var
@@ -169,7 +169,7 @@ Corresponds to the position of the subgraph in the parent schedule.
                                     #'concatenate
                                     'string
                                     (butlast
-                                     (when typ
+                                     (when (and typ (not (= -1 (caten/avm:buffer-nrank buf))))
                                        (loop for stride in (iteration-space-strides typ)
                                              for nth upfrom 0
                                              for view = (nth nth (iteration-space-views typ))
@@ -275,8 +275,8 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
            "[~(~a~)] -> ~a"
            deps
            domain))
-         (render-access-rep #'node-reads #'relay-read-iters node idx2domain render-nodes symbolics)
-         (render-access-rep #'node-writes #'relay-write-iters node idx2domain render-nodes symbolics)
+         (render-access-rep #'node-reads #'relay-reads #'relay-read-iters node idx2domain render-nodes symbolics)
+         (render-access-rep #'node-writes #'relay-writes #'relay-write-iters node idx2domain render-nodes symbolics)
          (explore-schedule-tree 0 (length render-nodes)))))))
 
 (defmethod scop ((node Node) symbolics)
