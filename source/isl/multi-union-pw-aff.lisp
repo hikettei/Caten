@@ -5,6 +5,10 @@
   :copy %isl-multi-union-pw-aff-copy
   :from-str t)
 
+(define-isl-object union-pw-aff
+  :free %isl-union-pw-aff-free
+  :copy %isl-union-pw-aff-copy)
+
 (define-isl-object multi-val
   :free %isl-multi-val-free
   :copy %isl-multi-val-copy)
@@ -12,6 +16,10 @@
 (defmethod print-object ((value multi-union-pw-aff) stream)
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-multi-union-pw-aff-to-str (multi-union-pw-aff-handle value)) stream)))
+
+(defmethod print-object ((value multi-val) stream)
+  (print-unreadable-object (value stream :type t)
+    (write-string (%isl-multi-val-to-str (multi-val-handle value)) stream)))
 
 (define-isl-function mupa-from-union-map %isl-multi-union-pw-aff-from-union-map
   (:give multi-union-pw-aff)
@@ -21,6 +29,32 @@
   (:give multi-union-pw-aff)
   (:take multi-union-pw-aff)
   (:take union-set))
+
+(define-isl-function multi-union-pw-aff-scale-down-val %isl-multi-union-pw-aff-scale-down-val
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take value))
+
+(define-isl-function union-pw-aff-scale-down-val %isl-union-pw-aff-scale-down-val
+  (:give union-pw-aff)
+  (:take union-pw-aff)
+  (:take value))
+
+(define-isl-function multi-union-pw-aff-floor %isl-multi-union-pw-aff-floor
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff))
+
+(define-isl-function union-pw-aff-floor %isl-union-pw-aff-floor
+  (:give union-pw-aff)
+  (:take union-pw-aff))
+
+(define-isl-function union-pw-aff-scale-val %isl-union-pw-aff-scale-val
+  (:give union-pw-aff)
+  (:take union-pw-aff)
+  (:take value))
+
+(defun multi-union-pw-aff-get-union-pw-aff (mupa int)
+  (%make-union-pw-aff (%isl-multi-union-pw-aff-get-union-pw-aff (multi-union-pw-aff-handle mupa) int)))
 
 (defun multi-union-pw-aff-size (mupa)
   (%isl-multi-union-pw-aff-size (multi-union-pw-aff-handle mupa)))
@@ -35,6 +69,9 @@
 (defun multi-val-set-val (mval nth val)
   (%make-multi-val (%isl-multi-val-set-val (multi-val-handle mval) nth (value-handle val))))
 
+(defun multi-union-pw-aff-set-union-pw-aff (mupa pos upa)
+  (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-set-union-pw-aff (multi-union-pw-aff-handle mupa) pos (union-pw-aff-handle upa))))
+
 (define-isl-function multi-union-pw-aff-multi-val-on-domain %isl-multi-union-pw-aff-multi-val-on-domain
   (:give multi-union-pw-aff)
   (:take union-set)
@@ -48,3 +85,8 @@
   (:give multi-union-pw-aff)
   (:take multi-union-pw-aff)
   (:take multi-union-pw-aff))
+
+(define-isl-function multi-val-from-val-list %isl-multi-val-from-val-list
+  (:give multi-val)
+  (:take space)
+  (:take value-list))

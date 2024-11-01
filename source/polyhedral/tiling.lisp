@@ -14,6 +14,17 @@
 ;; https://github.com/mindspore-ai/akg/blob/master/src/poly/tiling/tiling_solver.cc#L1238
 ;; https://github.com/mindspore-ai/akg/blob/master/src/poly/tiling/tiling_analyzer.cc#L1532
 
+(defun tiling-sizes (n band &key (size-default 32) (dims))
+  (declare (type list dims) (type fixnum size-default))
+  (let* ((band-space (schedule-node-band-get-space band))
+         (dim (space-dim band-space 3)))
+    (multi-val-from-val-list
+     band-space
+     (apply #'make-value-list
+            (loop for i upfrom 0 below dim
+                  collect
+                  (or (nth i dims) size-default))))))
+                
 (defun shift-band-zero (band)
   "Refernece: https://github.com/hikettei/cl-polyhedral/blob/main/source/tiling.lisp#L52C1-L79C37"
   (let* ((domain (schedule-node-get-domain band))
@@ -30,12 +41,24 @@
            (partial-schedule (multi-union-pw-aff-add partial-schedule shift-neg)))
       (values partial-schedule shift))))
 
-(defun schedule-tile-band (schedule band)
-  (declare (type schedule schedule))
+(defun tile-partial-schedule (partial-schedule tile-size &key (scale-tile-loops nil))
+  (let ((n (multi-union-pw-aff-size partial-schedule)))
+    (loop for i upfrom 0 below n
+          for upa1 = (multi-union-pw-aff-get-union-pw-aff partial-schedule i)
+          for v = (multi-val-get-val tile-size i)
+          for upa2 = (union-pw-aff-scale-down-val upa1 v)
+          for upa3 = (union-pw-aff-floor upa2)
+          for upa = (if scale-tile-loops (union-pw-aff-scale-val upa3 v) upa3)
+          do (setf partial-schedule (multi-union-pw-aff-set-union-pw-aff partial-schedule i upa)))
+    partial-schedule))
+
+(defun schedule-tile-band (band)
   (multiple-value-bind (partial-schedule shift)
       (shift-band-zero band)
-    (print partial-schedule)
-    (print shift)))
+    (let* ((tiling-sizes (tiling-sizes 1 band))
+           (partial-schedule (tile-partial-schedule partial-schedule tiling-sizes))
+           (tiled-sched (multi-union-pw-aff-add partial-schedule shift)))
+      (schedule-node-insert-partial-schedule band tiled-sched))))
 
 ;; Goal: https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-metal.metal
 (defun get-tileable-bands (schedule)
@@ -70,6 +93,5 @@
   (let* ((schedule (poly-schedule ir))
          (bands (get-tileable-bands schedule)))
     (when bands
-      (print (schedule-tile-band schedule (car (last bands)))))
-
+      (print (schedule-tile-band (car (last bands)))))
     ))

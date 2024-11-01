@@ -80,6 +80,10 @@
   (:give union-set)
   (:keep schedule-node))
 
+(define-isl-function schedule-node-band-get-space %isl-schedule-node-band-get-space
+  (:give space)
+  (:keep schedule-node))
+
 (defun schedule-node-get-child (schedule-node n)
   (let ((x (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
     (%make-schedule-node (%isl-schedule-node-copy x))))

@@ -146,3 +146,13 @@
 (define-isl-function value-object %value-object
   (:give value-designator)
   (:keep value))
+
+(defun make-value-list (&rest value-list)
+  (declare (type list value-list))
+  (let* ((n (length value-list))
+	 (value-list (cl:map 'list #'value value-list))
+	 (ls (%make-value-list (%isl-val-list-alloc (context-handle *context*) n))))
+    (loop for value in value-list
+	  for nth upfrom 0
+	  do (%isl-val-list-add (value-list-handle ls) (value-handle value)))
+    ls))

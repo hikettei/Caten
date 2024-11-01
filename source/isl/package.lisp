@@ -24,6 +24,7 @@
    #:identifier-context
    #:make-id-list
    ;; Value
+   #:make-value-list
    #:value
    #:valuep
    #:value-context
@@ -78,6 +79,7 @@
    #:create-space-params
    #:create-space-set
    #:create-space-map
+   #:space-dim-
    ;; Local Space
    #:local-space
    #:local-space-p
@@ -144,6 +146,13 @@
    #:multi-union-pw-aff-neg
    #:multi-union-pw-aff-add
    #:mupa-from-union-map
+   #:multi-union-pw-aff-get-union-pw-aff
+   #:multi-union-pw-aff-scale-down-val
+   #:multi-union-pw-aff-floor
+   #:union-pw-aff-floor
+   #:union-pw-aff-scale-val
+   #:multi-union-pw-aff-set-union-pw-aff
+   #:multi-val-from-val-list
    ;; Union set
    #:union-set
    #:union-set-p
@@ -361,6 +370,7 @@
    #:schedule-insert-sequence
    #:schedule-node-get-domain
    #:schedule-node-band-get-partial-schedule
+   #:schedule-node-band-get-space
    ))
 
 (in-package :caten/isl)
