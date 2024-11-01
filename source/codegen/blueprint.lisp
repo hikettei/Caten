@@ -227,18 +227,23 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
 (defmethod node-depend-idx-list ((node Node) gid
                                  &aux
                                    (type (read-type-relay node))
-                                   (shapes (make-list (length gid))))
+                                   (shapes (make-list (length gid)))
+                                   (strides (make-list (length gid))))
   "Enumerates a list of gid that the node depends on."
-  (flet ((is-one (axis)
-           (expr-scalar-equivalent-p axis (expr-const 1 :int64))))
+  (labels ((is-n (axis n)
+             (expr-scalar-equivalent-p axis (expr-const n :int64)))
+           (broadcasted-p (size stride)
+             (or (is-n size 1) (is-n stride 0))))
     (dolist (space (append (relay-read-iters type) (relay-write-iters type)))
       (when space
         (loop for axis upfrom 0
               for shape in (iteration-space-shape space)
-              do (push shape (nth axis shapes)))))
+              for stride in (iteration-space-strides space)
+              do (push shape (nth axis shapes)) (push stride (nth axis strides)))))
     (loop for g in gid
-          for s in shapes
-          if (not (every #'is-one s))
+          for size in shapes
+          for stride in strides
+          if (not (every #'broadcasted-p size stride))
             collect g)))
 
 (defun node-reduced-axes (node)
