@@ -42,8 +42,8 @@
   (def value-integerp %isl-val-is-int)
   (def value-rationalp %isl-val-is-rat)
   (def value-nan-p %isl-val-is-nan)
-  (def value-positive-infinity-p %isl-val-infty)
-  (def value-negative-infinity-p %isl-val-neginfty))
+  (def value-positive-infinity-p %isl-val-is-infty)
+  (def value-negative-infinity-p %isl-val-is-neginfty))
 
 (macrolet ((def (name impl)
              `(define-isl-function ,name ,impl

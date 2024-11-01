@@ -30,10 +30,10 @@
   (:take multi-union-pw-aff))
 
 (defun multi-val-get-val (mval nth)
-  (%make-multi-val (%isl-multi-val-get-val (multi-val-handle mval) nth)))
+  (%make-value (%isl-multi-val-get-val (multi-val-handle mval) nth)))
 
 (defun multi-val-set-val (mval nth val)
-  (%make-multi-val (%isl-multi-val-set-val (multi-val-handle mval) nth (multi-val-handle val))))
+  (%make-multi-val (%isl-multi-val-set-val (multi-val-handle mval) nth (value-handle val))))
 
 (define-isl-function multi-union-pw-aff-multi-val-on-domain %isl-multi-union-pw-aff-multi-val-on-domain
   (:give multi-union-pw-aff)

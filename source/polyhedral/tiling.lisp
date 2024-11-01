@@ -15,6 +15,7 @@
 ;; https://github.com/mindspore-ai/akg/blob/master/src/poly/tiling/tiling_analyzer.cc#L1532
 
 (defun shift-band-zero (band)
+  "Refernece: https://github.com/hikettei/cl-polyhedral/blob/main/source/tiling.lisp#L52C1-L79C37"
   (let* ((domain (schedule-node-get-domain band))
          (partial-schedule (schedule-node-band-get-partial-schedule band))
          (mupa (multi-union-pw-aff-intersect-domain partial-schedule domain))
@@ -31,8 +32,10 @@
 
 (defun schedule-tile-band (schedule band)
   (declare (type schedule schedule))
-
-  )
+  (multiple-value-bind (partial-schedule shift)
+      (shift-band-zero band)
+    (print partial-schedule)
+    (print shift)))
 
 ;; Goal: https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-metal.metal
 (defun get-tileable-bands (schedule)
