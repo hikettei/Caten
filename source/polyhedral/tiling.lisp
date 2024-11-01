@@ -11,10 +11,7 @@
 
 (in-package :caten/polyhedral/tiling)
 
-;; https://github.com/mindspore-ai/akg/blob/master/src/poly/tiling/tiling_solver.cc#L1238
-;; https://github.com/mindspore-ai/akg/blob/master/src/poly/tiling/tiling_analyzer.cc#L1532
-
-(defun tiling-sizes (n band &key (size-default 32) (dims))
+(defun tiling-sizes (band &key (size-default 32) (dims))
   (declare (type list dims) (type fixnum size-default))
   (let* ((band-space (schedule-node-band-get-space band))
          (dim (space-dim band-space 3)))
@@ -35,7 +32,7 @@
     (loop for i upfrom 0 below n
           for v = (multi-val-get-val multi-val i)
           do (when (value-negative-infinity-p v)
-               (setf multi-val (multi-val-set-val multi-val 1 (value 1)))))
+               (setf multi-val (multi-val-set-val multi-val i (value 1)))))
     (let* ((shift (multi-union-pw-aff-multi-val-on-domain domain multi-val))
            (shift-neg (multi-union-pw-aff-neg shift))
            (partial-schedule (multi-union-pw-aff-add partial-schedule shift-neg)))
@@ -52,15 +49,14 @@
           do (setf partial-schedule (multi-union-pw-aff-set-union-pw-aff partial-schedule i upa)))
     partial-schedule))
 
-(defun schedule-tile-band (band)
+(defun schedule-tile-band (band &key (size-default 32) (dims))
   (multiple-value-bind (partial-schedule shift)
       (shift-band-zero band)
-    (let* ((tiling-sizes (tiling-sizes 1 band))
+    (let* ((tiling-sizes (tiling-sizes band :size-default size-default :dims dims))
            (partial-schedule (tile-partial-schedule partial-schedule tiling-sizes))
            (tiled-sched (multi-union-pw-aff-add partial-schedule shift)))
       (schedule-node-insert-partial-schedule band tiled-sched))))
 
-;; Goal: https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-metal.metal
 (defun get-tileable-bands (schedule)
   (declare (type schedule schedule))
   (let ((node (schedule-get-root schedule))
@@ -85,13 +81,13 @@
               (return-from tiling-search))
             (setf node (pop next-nodes)))
     tileable-bands))
-;; TODO: Create Shard Memory (softmax) loop fussion -> SINK
-;; TODO: 
+;; Goal: https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-metal.metal
 (defun solve (ir)
   "An entry point for the tiling optimizer"
   (declare (type Polyhedral-IR ir))
   (let* ((schedule (poly-schedule ir))
          (bands (get-tileable-bands schedule)))
     (when bands
-      (print (schedule-tile-band (car (last bands)))))
-    ))
+      (setf (poly-schedule ir)
+            (schedule-node-get-schedule
+             (schedule-tile-band (car bands)))))))
