@@ -313,6 +313,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
 (defmethod identify-view-type ((view Node))
   (assert (eql :VIEW (node-type view)))
   (when (some #'identity (getattr view :broadcast)) (return-from identify-view-type :broadcast))
+  (when (not (equal (getattr view :permute) (range 0 (getattr view :nrank))))
+    (return-from identify-view-type :permute))
   (flet ((shrink-p (size view)
            (assert (= (length view) 4) () "not a view")
            (multiple-value-bind (from to by broadcast) (apply #'values view)
@@ -587,11 +589,11 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
     (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
-      ;; ~~ Rewriting Rules + Post Fusion ~~~~
+      ;; ~~ Rewriting Rules + Post Fusion ~~~~~
       (apply-reduce+move-fusion schedule)
       ;; (apply-serialize-reduction) // Softmax
       (apply-move-after-reduction schedule)
-      ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
