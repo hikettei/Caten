@@ -13,7 +13,7 @@
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
    (_read_views :initform nil :initarg :_read_views)
-   (_write_views :initform nil :initarg :_write_views)
+   (_output_type :initform nil :initarg :_output_type)
    (declare-type :initarg :declare-type :initform nil)
    (iterations :initarg :iterations :initform nil)
    (_lowering_history :initform nil :initarg :_lowering_history))

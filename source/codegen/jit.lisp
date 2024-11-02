@@ -182,40 +182,54 @@ caten/codegen overview:
                           :nrank (length (buffer-shape wt)) :dtype (buffer-dtype wt))))
     (values view alloc)))
 
-(defun schedule-graph->vmop (avm graph)
+(defun id->output-map (graph)
+  (let ((table (make-hash-table)))
+    (loop for si in (graph-nodes graph) do
+      (loop for item in (getattr si :items)
+            for v = (getattr item :_output_type) do
+              (when v
+                (setf (car (node-writes v)) (car (node-reads v))
+                      (gethash (car (node-reads v)) table) v))))
+    table))
+
+(defun schedule-graph->vmop (avm graph &aux (map (id->output-map graph)))
   (declare (type Graph graph))
   (verify-graph graph)
   (setf graph (->graph graph)) ;; Convert from FastGraph to Graph to sort the order
   (let ((nodes) (allocated))
-    (dolist (node (graph-nodes graph))
-      (cond
-        ((getattr node :allocate-p)
-         (push (car (node-writes node)) allocated)
-         (dolist (i (getattr node :items))
-           (push i nodes)
-           (dolist (dep (node-reads i))
-             (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) dep allocated)
+    (flet ((merge-id (id)
+             (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) id allocated)
                (setf allocated new-seen)
-               (dolist (d deps) (push d nodes))))))
-        ((null (getattr node :jitable)) ;; Relocating non-jitable ops
-         (dolist (w (node-writes node)) (push w allocated))
-         (dolist (i (getattr node :items))
-           (push i nodes)))
-        ((getattr node :jitable)
-         (loop for w in (getattr node :storage-id-dst)
-               for wt in (getattr node :write-types)
-               if (null (find w allocated)) do
-                 (dolist (dep (append (buffer-shape wt) (buffer-stride wt) (apply #'append (buffer-views wt))))
-                   (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) dep allocated)
-                     (setf allocated new-seen)
-                     (dolist (d deps) (push d nodes))))
-                 (multiple-value-bind (view alloc) (make-alloc+view-node-from-buffer wt w)
-                   (push alloc nodes)
-                   (when view (push view nodes)))
-                 (push w allocated))
-         (push (make-compiled-kernel-node node graph) nodes))
-        (T (error "schedule-graph->vmop: dont know how to merge ~a" node))))
-    (apply #'make-graph (nreverse nodes))))
+               (dolist (d deps) (push d nodes)))))
+      (dolist (node (graph-nodes graph))
+        (cond
+          ((getattr node :allocate-p)
+           (push (car (node-writes node)) allocated)
+           (dolist (i (getattr node :items))
+             (push i nodes)
+             (mapc #'merge-id (node-reads i))))
+          ((null (getattr node :jitable)) ;; Relocating non-jitable ops
+           (dolist (w (node-writes node)) (push w allocated))
+           (dolist (i (getattr node :items))
+             (push i nodes)))
+          ((getattr node :jitable)
+           (loop for w in (getattr node :storage-id-dst)
+                 for wt in (getattr node :write-types)
+                 if (null (find w allocated)) do
+                   (mapc #'merge-id (append (buffer-shape wt) (buffer-stride wt) (apply #'append (buffer-views wt))))
+                   (multiple-value-bind (view alloc) (make-alloc+view-node-from-buffer wt w)
+                     (push alloc nodes)
+                     (when view (push view nodes)))
+                   (push w allocated))
+           (push (make-compiled-kernel-node node graph) nodes)
+           ;; Merging view after the JIT_KERNEL invocation
+           (loop for w in (getattr node :storage-id-dst)
+                 for out-view = (gethash w map)
+                 if out-view do
+                   (mapc #'merge-id (node-reads out-view))
+                   (push out-view nodes)))
+          (T (error "schedule-graph->vmop: dont know how to merge ~a" node))))
+      (apply #'make-graph (nreverse nodes)))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun buffer-equal (a b)
   (declare (optimize (speed 3))

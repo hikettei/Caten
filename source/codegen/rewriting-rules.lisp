@@ -83,13 +83,20 @@
 		    collect
 		    (progn
                       (setf (getattr n :_read_views) (map 'list #'v (node-reads n))
-                            (getattr n :_write_views) (map 'list #'v (node-writes n))
                             (node-reads n) (map 'list #'r (node-reads n))
 			    (node-writes n) (map 'list #'r (node-writes n)))
 		      n)))
-      (setf (avm-fw-outputs avm) (map 'list #'r (avm-fw-outputs avm))
-	    (avm-bw-outputs avm) (map 'list #'r (avm-bw-outputs avm))
-            (graph-outputs (avm-graph avm)) (map 'list #'r (graph-outputs (avm-graph avm))))
+      ;; Gather views for avm-fw-outputs and avm-bw-outputs, storing them in the :_output_type
+      (let ((views (map 'list #'v (append (avm-fw-outputs avm) (avm-bw-outputs avm)))))
+        (setf (avm-fw-outputs avm) (map 'list #'r (avm-fw-outputs avm))
+	      (avm-bw-outputs avm) (map 'list #'r (avm-bw-outputs avm))
+              (graph-outputs (avm-graph avm)) (map 'list #'r (graph-outputs (avm-graph avm))))
+        (loop for id in (append (avm-fw-outputs avm) (avm-bw-outputs avm))
+              for view in views
+              for node = (id->value (avm-graph avm) id) do
+                (when (null node) (warn "The output ~a is not found in the graph." id))
+                (when (> (length view) 1) (warn "(No simplifier?) Detected multiple views in a single buffer: ~a~%Using the first one ~a~%" views (car view)))
+                (when node (setf (getattr node :_output_type) (car view)))))
       (macrolet ((renew (accessor)
 		   `(let ((new-table (make-hash-table)))
 		      (maphash
@@ -300,20 +307,6 @@ out[...] = f(*val_1);
   (setf (avm-graph avm) (->graph (avm-graph avm)))
   avm)
 
-(defun remove-broadcasted-axis (wt)
-  (declare (type buffer wt))
-  (let ((wt1 (copy-buffer wt))
-        (mask (loop for s in (buffer-shape wt)
-                    collect (eql s 1))))
-    (setf (buffer-shape wt1) (loop for m in mask
-                                   for s in (buffer-shape wt)
-                                   if (null m) collect s)
-          (buffer-stride wt1) (loop for m in mask
-                                    for s in (buffer-stride wt)
-                                    if (null m) collect s)
-          (buffer-nrank wt1) (length (buffer-shape wt1)))
-    (if (null (buffer-shape wt1)) wt wt1)))
-
 (defmethod schedule-item-write-define-global ((schedule-item Node))
   "Inserts DEFINE_GLOBAL to the top of graph"
   (declare (type node schedule-item))
@@ -326,7 +319,7 @@ out[...] = f(*val_1);
                for nth upfrom 0
                collect
                (progn
-                 (setf (nth nth (getattr schedule-item :write-types)) (remove-broadcasted-axis wt))
+                 (setf (nth nth (getattr schedule-item :write-types)) wt)
                  (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt))))
          ;; dynamic shapes
          (loop for item in (getattr schedule-item :dynamic-shapes)

@@ -316,9 +316,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
     (let* ((read (nth nth (node-reads node)))
            (read-node (id->value graph read))
            (read-view (car (nth nth (getattr node :_read_views))))
-           (read-type (group-get-type parent-group))
-           (write-view (getattr node :_write_views)))
-      (assert (every #'null write-view))
+           (read-type (group-get-type parent-group)))
       (assert (<= (length (nth nth (getattr node :_read_views))) 1))
       ;; Relations between group and parent-group:
       ;; ```
