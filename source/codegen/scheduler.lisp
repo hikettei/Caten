@@ -262,8 +262,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                          if b collect `(0 1 1 t) else collect (pop views))
                    (buffer-nrank typ) (length (buffer-shape typ)))
              ;; Consumed all masks?
-             (assert (= (buffer-nrank typ) (length mask))))
-           typ)))
+             (assert (= (buffer-nrank typ) (length mask)))
+             typ))))
    mask))
 
 (defun broadcastable-p (prev new)
