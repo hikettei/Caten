@@ -232,9 +232,9 @@ caten/codegen overview:
       (apply #'make-graph (nreverse nodes)))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun buffer-equal (a b)
-  (declare (optimize (speed 3))
-           (type buffer a b))
+  (declare (optimize (speed 3)))
   (and
+   (caten/avm:buffer-p a) (caten/avm:buffer-p b)
    (equal (buffer-shape a) (buffer-shape b))
    (equal (buffer-stride a) (buffer-stride b))
    (equal (buffer-views a) (buffer-views b))
