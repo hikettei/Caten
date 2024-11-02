@@ -74,7 +74,8 @@
    #:%expr-const
    #:mergeable-view-p
    #:iteration-space-expr-aref
-   #:buffer-iteration-space))
+   #:buffer-iteration-space
+   #:ensure-iteration-space-length))
 
 (in-package :caten/codegen/shape-inference)
 
@@ -354,3 +355,8 @@
       (when (some #'identity views) views)
       (loop repeat (buffer-nrank buffer) collect nil))
      :no-collapse t)))
+
+(defmethod ensure-iteration-space-length ((is Iteration-Space) gids)
+  (let* ((rank (length (iteration-space-procedure is)))
+         (pads (loop repeat (max 0 (- rank (length gids))) collect (expr-const 0 :int64))))
+    (append gids pads)))

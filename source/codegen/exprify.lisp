@@ -8,7 +8,8 @@
    #:relay-writes
    #:relay-read-iters
    #:relay-write-iters
-   #:iteration-space-shape)
+   #:iteration-space-shape
+   #:ensure-iteration-space-length)
   (:import-from
    :caten/avm
    #:Buffer
@@ -382,5 +383,7 @@
                 (setf (getattr bp :iterations) (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids)))
                 (progn
                   ;; Set gid=0 for ops located in outside of a loop.
-                  (setf (getattr bp :iterations) (loop repeat required-gids collect (expr-const 0 :int64)))))))
+                  (setf (getattr bp :iterations) (loop repeat required-gids collect (expr-const 0 :int64)))))
+            (when is
+              (setf (getattr bp :iterations) (ensure-iteration-space-length is (getattr bp :iterations))))))
   blueprint)

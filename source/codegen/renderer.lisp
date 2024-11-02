@@ -105,9 +105,10 @@
   (assert (eql (node-type node) :AREF))
   (let ((buffer (getattr node :buffer))
         (space  (getattr node :space))
-        (index-space (renderer-index-space renderer)))
+        (index-space (renderer-index-space renderer))
+        (id (car (node-writes node))))
     (when (and (null index-space) (> (buffer-nrank buffer) 0))
-      (warn "render-aref: Cannot render :AREF without providing :index-space, thus replaced with ?."))
+      (warn "render-aref: Cannot render :AREF for ~a without providing :index-space, thus replaced with ?." id))
     (if (= -1 (buffer-nrank buffer))
         (format nil "~(~a~)" (car (node-writes node)))
         (if index-space

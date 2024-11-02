@@ -173,7 +173,7 @@ Corresponds to the position of the subgraph in the parent schedule.
                                        (loop for stride in (iteration-space-strides typ)
                                              for nth upfrom 0
                                              for view = (nth nth (iteration-space-views typ))
-                                             for gid = (gid nth)
+                                             for gid = (or (nth nth (getattr tgt-node :iterations)) (error "too few iteration space ~a" (getattr tgt-node :iterations)))
                                              if (is-zero stride)
                                                collect (format nil "0")
                                              else if view
@@ -181,9 +181,12 @@ Corresponds to the position of the subgraph in the parent schedule.
                                                     (multiple-value-bind (upfrom below to) (apply #'values view)
                                                       (declare (ignore below))
                                                       (assert (numberp to) () "AUTO_SCHEDULER does not support for symbolic increments. detected=~a" view)
-                                                      (format nil "~(~a~)+~(~a~)*~(~a~)" upfrom gid to))
+                                                      (format nil "~(~a~)+~(~a~)*~(~a~)"
+                                                              (render-expr 'Default-Renderer (expr-const upfrom :int64))
+                                                              (render-expr 'Default-Renderer (expr-const gid :int64))
+                                                              (render-expr 'Default-Renderer (expr-const to :int64))))
                                              else
-                                               collect (format nil "~(~a~)" gid)
+                                               collect (format nil "~(~a~)" (render-expr 'Default-Renderer (expr-const gid :int64)))
                                            collect ", "))))))))))
       idx2domain)
      (format out "}"))))
