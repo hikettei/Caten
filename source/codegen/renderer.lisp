@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/renderer
   (:use :cl :caten/codegen/shape-inference)
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
-  (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p)
+  (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p #:expr-from-graph)
   (:import-from :caten/avm :Buffer #:buffer-nrank)
   (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code #:->cdtype #:float-type-of)
   (:export
@@ -122,18 +122,34 @@
                       (render-node renderer (car (node-writes (expr-out expr))))))
             (format nil "~(~a~)[?]" (car (node-writes node)))))))
 
-(defun expr-index-components (is index-space)
-  (reduce
-   #'expr-add
-   (map
-    'list
-    #'(lambda (shape stride gid)
-        (if (expr-scalar-equivalent-p shape (expr-const 1 :int64))
-            (expr-const 0 :int64)
-            (expr-mul stride (expr-const gid :int64))))
-    (iteration-space-shape is)
-    (iteration-space-strides is)
-    index-space)))
+(defun expr-index-components (renderer node index-space)
+  (assert (eql (node-type node) :INDEX-COMPONENTS))
+  (labels ((from-expr (shapes components)
+             (reduce
+              #'expr-add
+              (map
+               'list
+               #'(lambda (size stride gid)
+                   (if (expr-scalar-equivalent-p size (expr-const 1 :int64))
+                       (expr-const 0 :int64)
+                       (expr-mul (expr-const stride :int64) (expr-const gid :int64))))
+               shapes
+               components
+               index-space)))
+           (%expr-from-graph (id graph)
+             (assert id)
+             (if (symbolp id)
+                 (expr-from-graph id graph)
+                 (expr-const id :int64)))
+           (merge-stride (proc list)
+             (loop for p in proc
+                   collect
+                   (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
+                     (%expr-from-graph (if (find 0 strides :test #'eql) 0 (car (last strides))) (renderer-graph renderer))))))
+    (let* ((is (car (relay-read-iters (read-type-relay node))))
+           (proc (iteration-space-procedure is))
+           (components (merge-stride proc (cdr (node-reads node)))))
+      (from-expr (iteration-space-shape is) components))))
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
   nil
@@ -196,7 +212,7 @@
   (format nil "(~(~a~))~a" (getattr node :dtype) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :INDEX-COMPONENTS)) node)
-  (render-expr 'Default-Renderer (expr-index-components (car (relay-read-iters (read-type-relay node))) (renderer-index-space renderer))))
+  (render-expr 'Default-Renderer (expr-index-components renderer node (renderer-index-space renderer))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :WHERE)) node)
   (format nil "~a ? ~a : ~a"
@@ -284,7 +300,7 @@
   (format nil "(~(~a~))~a" (->cdtype (getattr node :dtype)) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :INDEX-COMPONENTS)) node)
-  (render-expr 'CStyle-Renderer (expr-index-components (car (relay-read-iters (read-type-relay node))) (renderer-index-space renderer))))
+  (render-expr 'CStyle-Renderer (expr-index-components renderer node (renderer-index-space renderer))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :WHERE)) node)
   (format nil "(~a ? ~a : ~a)"

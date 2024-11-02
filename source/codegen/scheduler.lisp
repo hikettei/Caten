@@ -219,8 +219,15 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         ;; Returns uncollapsed rank list
         (when (some #'identity out) out)))))
 
-(defmethod group-items-st-rewriter ((group Group) f)
+(defmethod group-items-st-rewriter ((group Group) f mask)
   (dolist (item (group-items group))
+    (when (eql (node-type item) :INDEX-COMPONENTS) ;; (cdr (node-reads index-components)) also represents for the stride
+      (setf (node-reads item)
+            (append
+             (list (car (node-reads item)))
+             (loop with s = (cdr (node-reads item))
+                   for m in mask
+                   if m collect 1 else collect (pop s)))))
     (loop for typ in (relay-reads (read-type-relay item))
           for nth upfrom 0
           unless (or (null typ) (= 0 (buffer-nrank typ)))
@@ -256,7 +263,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                    (buffer-nrank typ) (length (buffer-shape typ)))
              ;; Consumed all masks?
              (assert (= (buffer-nrank typ) (length mask))))
-           typ)))))
+           typ)))
+   mask))
 
 (defun broadcastable-p (prev new)
   (let ((prev-shape (copy-list (buffer-shape prev)))
