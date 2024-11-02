@@ -215,13 +215,6 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                      (values (merge-list procedure (buffer-shape original-buffer))
                              (merge-stride procedure (new-stride (buffer-stride original-buffer) (buffer-views original-buffer)))
                              (merge-view procedure (buffer-views original-buffer)))
-                   ;; 1. permuteしていない
-                   ;; 2. ここでViewMergeができていない
-                   ;; [MEMO] IterationSpace: space=gids1 gids0 gids2に対して(3 2 2)みたいな感じ
-                   ;; [TODO] Fix Index-Components for column major
-                   ;; Index-Components+SLICE Fusion
-                   ;; Polyhedral Compilerが0を入れたりTransposeしたりしたら？
-                   ;; c1 c2 c3 -> c1, c3, c2
                    (make-iteration-space
                     :shape new-shape
                     :strides new-stride

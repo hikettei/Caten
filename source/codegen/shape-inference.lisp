@@ -290,22 +290,19 @@
           for stride = (nth nth strides)
           for view = (nth nth views) do
             (multiple-value-bind (last-size last-stride last-view last-pd) (apply #'values (car (last ret)))
-              (if (or no-collapse (not (eql size 1))) ;; always merge 1
-                  (if (and
-                       (null no-collapse)
-                       (mergeable-view-p last-view last-size)
-                       (mergeable-view-p view size)
-                       (expr-scalar-equivalent-p
-                        last-stride
-                        (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64))))
-                      (setf (nth (1- (length ret)) ret)
-                            (list (expr-mul last-size (%expr-const g size :int64)) (%expr-const g stride :int64) nil (append last-pd (list nth))))
-                      (setf ret
-                            (append
-                             ret
-                             (list (list (%expr-const g size :int64) (%expr-const g stride :int64) (if (mergeable-view-p view size) nil view) (list nth))))))
-                  ;; Update nth
-                  (setf ret (append (butlast ret) (list (list last-size last-stride last-view (append last-pd (list nth)))))))))
+              (if (and
+                   (null no-collapse)
+                   (mergeable-view-p last-view last-size)
+                   (mergeable-view-p view size)
+                   (expr-scalar-equivalent-p
+                    last-stride
+                    (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64))))
+                  (setf (nth (1- (length ret)) ret)
+                        (list (expr-mul last-size (%expr-const g size :int64)) (%expr-const g stride :int64) nil (append last-pd (list nth))))
+                  (setf ret
+                        (append
+                         ret
+                         (list (list (%expr-const g size :int64) (%expr-const g stride :int64) (if (mergeable-view-p view size) nil view) (list nth))))))))
     (iteration-space-sync-broadcast
      (make-iteration-space
       :shape
