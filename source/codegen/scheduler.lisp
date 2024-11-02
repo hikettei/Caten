@@ -310,6 +310,25 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                               "Rank mismatch: (expected from ~a -> ~a)~%view=~a~%buffer:~%~a~%group~%~a"
                               (min r1 r2) rank view typ group))))
 
+(defmethod identify-view-type ((view Node))
+  (assert (eql :VIEW (node-type view)))
+  (when (some #'identity (getattr view :broadcast)) (return-from identify-view-type :broadcast))
+  (flet ((shrink-p (size view)
+           (assert (= (length view) 4) () "not a view")
+           (multiple-value-bind (from to by broadcast) (apply #'values view)
+             (assert (null broadcast))
+             (or
+              (not (eql from 0))
+              (not (eql to size))
+              (not (eql by 1))))))
+    (let* ((base-buffer (car (relay-reads (read-type-relay view))))
+           (views (buffer-views (car (relay-writes (read-type-relay view))))))
+      (when (and
+             (= (buffer-nrank base-buffer) (getattr view :nrank))
+             (some #'shrink-p (buffer-shape base-buffer) views))
+        (return-from identify-view-type :shrink)))
+    :reshape))
+
 (defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
   (symbol-macrolet ((->ok
                       (progn
@@ -333,6 +352,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
       ;; ```
       (when (or (not (jitable-p node)) (not (jitable-p read-node)))->ng)
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      ;; :shrink is not mergeable
+      (when (and read-view (eql (identify-view-type read-view) :shrink))->ng)
       (let ((r1 (group-rank self))
             (r2 (group-rank parent-group)))
         ;; r2 -> r1
