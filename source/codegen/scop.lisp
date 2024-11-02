@@ -178,13 +178,13 @@ Corresponds to the position of the subgraph in the parent schedule.
                                                collect (format nil "0")
                                              else if view
                                                     collect
-                                                    (multiple-value-bind (upfrom below to) (apply #'values view)
+                                                    (multiple-value-bind (upfrom below by) (apply #'values view)
                                                       (declare (ignore below))
-                                                      (assert (numberp to) () "AUTO_SCHEDULER does not support for symbolic increments. detected=~a" view)
+                                                      (assert (numberp by) () "AUTO_SCHEDULER does not support for symbolic increments. detected=~a" view)
                                                       (format nil "~(~a~)+~(~a~)*~(~a~)"
                                                               (render-expr 'Default-Renderer (expr-const upfrom :int64))
                                                               (render-expr 'Default-Renderer (expr-const gid :int64))
-                                                              (render-expr 'Default-Renderer (expr-const to :int64))))
+                                                              (render-expr 'Default-Renderer (expr-const by :int64))))
                                              else
                                                collect (format nil "~(~a~)" (render-expr 'Default-Renderer (expr-const gid :int64)))
                                            collect ", "))))))))))

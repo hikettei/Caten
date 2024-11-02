@@ -71,7 +71,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                             'list
                             #'(lambda (view stride i)
                                 (if view
-                                    (expr-mul (expr-const (third view) :int64) (expr-mul stride (expr-add (expr-const (car view) :int64) i)))
+                                    (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
                                     (expr-mul stride i)))
                             (iteration-space-views is)
                             (iteration-space-strides is)
@@ -218,6 +218,8 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                    ;; 1. permuteしていない
                    ;; 2. ここでViewMergeができていない
                    ;; [MEMO] IterationSpace: space=gids1 gids0 gids2に対して(3 2 2)みたいな感じ
+                   ;; [TODO] Fix Index-Components for column major
+                   ;; Index-Components+SLICE Fusion
                    ;; Polyhedral Compilerが0を入れたりTransposeしたりしたら？
                    ;; c1 c2 c3 -> c1, c3, c2
                    (make-iteration-space
@@ -226,7 +228,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                     :views new-view
                     :procedure procedure)))))
       (dolist (n (graph-nodes graph))
-        (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n)  (relay-reads (read-type-relay n)))
+        (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (relay-reads (read-type-relay n)))
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
 
 (defmethod graph-swizzle-space ((graph Graph) (order list))

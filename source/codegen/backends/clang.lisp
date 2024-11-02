@@ -70,7 +70,7 @@
                                    'list
                                    #'(lambda (view stride i)
                                        (if view
-                                           (expr-mul (expr-const (third view) :int64) (expr-mul stride (expr-add (expr-const (car view) :int64) i)))
+                                           (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
                                            (expr-mul stride i)))
                                    (iteration-space-views is)
                                    (iteration-space-strides is)

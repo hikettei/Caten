@@ -249,7 +249,7 @@
 
 (defmethod iteration-space-expr-aref ((is Iteration-Space) (type Buffer) gids)
   (assert (not (= (buffer-nrank type) -1)) () "buffer-nrank = -1 means the array was mutated to scalar!")
-  (let ((size (iteration-space-shape is))
+  (let (;;(size (iteration-space-shape is))
         (stride (iteration-space-strides is))
         (view (iteration-space-views is)))
     ;; (assert (= (length gids) (length size)) () "The iteration space and the buffer should have the same rank, getting gids=~a~%~a" gids is)
@@ -258,7 +258,7 @@
           for i in gids
           for v = (nth nth view)
           if v
-            collect (expr-mul (expr-const (third v) :int64) (expr-mul s (expr-add (expr-const (car v) :int64) (expr-const i :int64))))
+            collect (expr-mul s (expr-add (expr-const (car v) :int64) (expr-mul (expr-const (third v) :int64) (expr-const i :int64))))
           else
             collect (expr-mul i s))))
 
