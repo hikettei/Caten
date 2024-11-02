@@ -586,7 +586,11 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [TODO] Implementing simple Tiling/Vectorizing/Parallelizing second
 ;; - 今日やる
 ;; - [ ] !sum !mean bugfix
+;; - [ ] Transformer (iconst 'n)
+;; - [ ] 最後に来るViewをどうするか問題(simple-view-test, !sum test)
 ;; - [ ] Complete Polyhedral
+;; - [ ] Tiling autotune
+;; - [ ] Vectorizing autotune
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; [todo] scheduling tests

@@ -266,7 +266,7 @@ out = x;
 	 "Creates a view object of the tensor in a first read.
 `View object` can modify the multi-dimensional offset of tensors, strides, shapes, and strides without copying.
 ```
-out = view(x, *upfrom, *below, *by, *shape-new, *stride-new)
+out = view(x, *shape-new, *upfrom, *below, *by, *stride-new)
 ```
 upfrom and below describes the multi-dimensional offset of the tensor. Caten applies an operation to out in the range of `[upfrom, below)`. by indicates the step of stride. the out tensor is reinitialized with `shape-new` and stride-new`.
 View has an attribute `broadcast[list]`, this indicates the stride of thecorresponding axis is recognised as 0 if set to T.

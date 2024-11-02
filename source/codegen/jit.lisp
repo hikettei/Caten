@@ -147,6 +147,8 @@ caten/codegen overview:
 
 (defun get-subgraph (graph top-id seen &aux (seen (copy-list seen)))
   (labels ((explore (x)
+             (when (null x) (return-from explore))
+             (when (eql x t) (return-from explore))
              (when (find x seen) (return-from explore))
              (push x seen)
              (let ((node (id->value graph x)))
@@ -155,6 +157,30 @@ caten/codegen overview:
                 (list node)
                 (apply #'append (map 'list #'explore (node-reads node)))))))
     (values (nreverse (explore top-id)) seen)))
+
+(defun make-alloc+view-node-from-buffer (wt w)
+  (let ((view
+          (when (some #'identity (buffer-views wt))
+            (make-node :Buffer :View (list w)
+                       (append
+                        (list w)
+                        (buffer-shape wt)
+                        (map 'list #'first (buffer-views wt))
+                        (map 'list #'second (buffer-views wt))
+                        (map 'list #'third (buffer-views wt))
+                        (buffer-stride wt))
+                       :broadcast (map 'list #'fourth (buffer-views wt))
+                       :nrank (length (buffer-shape wt)))))
+        (alloc (make-node :Buffer :Allocate (list w)
+                          (append
+                           (loop for s in (buffer-shape wt)
+                                 for nth upfrom 0
+                                 for v = (nth nth (buffer-views wt))
+                                 if (fourth v) collect 1
+                                   else collect s)
+                           (buffer-stride wt))
+                          :nrank (length (buffer-shape wt)) :dtype (buffer-dtype wt))))
+    (values view alloc)))
 
 (defun schedule-graph->vmop (avm graph)
   (declare (type Graph graph))
@@ -171,7 +197,7 @@ caten/codegen overview:
              (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) dep allocated)
                (setf allocated new-seen)
                (dolist (d deps) (push d nodes))))))
-        ((null (getattr node :jitable))
+        ((null (getattr node :jitable)) ;; Relocating non-jitable ops
          (dolist (w (node-writes node)) (push w allocated))
          (dolist (i (getattr node :items))
            (push i nodes)))
@@ -179,14 +205,13 @@ caten/codegen overview:
          (loop for w in (getattr node :storage-id-dst)
                for wt in (getattr node :write-types)
                if (null (find w allocated)) do
-                 (dolist (dep (append (buffer-shape wt) (buffer-stride wt)))
+                 (dolist (dep (append (buffer-shape wt) (buffer-stride wt) (apply #'append (buffer-views wt))))
                    (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) dep allocated)
                      (setf allocated new-seen)
                      (dolist (d deps) (push d nodes))))
-                 (push
-                  (make-node :Buffer :Allocate (list w) (append (buffer-shape wt) (buffer-stride wt))
-                             :nrank (buffer-nrank wt) :dtype (buffer-dtype wt))
-                  nodes)
+                 (multiple-value-bind (view alloc) (make-alloc+view-node-from-buffer wt w)
+                   (push alloc nodes)
+                   (when view (push view nodes)))
                  (push w allocated))
          (push (make-compiled-kernel-node node graph) nodes))
         (T (error "schedule-graph->vmop: dont know how to merge ~a" node))))
