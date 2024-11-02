@@ -254,8 +254,13 @@
   (def :SIN "sin")
   (def :log2 "log2")
   (def :exp2 "exp2")
-  (def :RECIP "1/")
   (def :SQRT "sqrt"))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :RECIP)) node)
+  (let ((dtype (caten/avm:buffer-dtype (car (relay-writes (read-type-relay node))))))
+    (if (caten/common.dtype:dtype/floatp dtype)
+        (format nil "1.0/(~a)" (render-node renderer (nth 0 (node-reads node))))
+        (format nil "1/(~a)" (render-node renderer (nth 0 (node-reads node)))))))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)

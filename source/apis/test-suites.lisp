@@ -198,7 +198,7 @@
 		    (let ((val1 (pproceed ',params (,op (make-tensor ',shape :initial-element ,initial-element) :axis ,axis :keepdims t))))
 		      (ok (equal (shape val1) ',shape))
 		      (ok (= (length (elements val1)) ,element-length))
-		      (ok (every (equal-to ,evaluated-to) (elements val1)))))))
+		      (ok (every (equal-to ,evaluated-to) (elements val1)) (format nil "expecting ~a, getting ~a" ,evaluated-to (elements val1)))))))
       (testcase !sum  (a b) 1.0 1 9.0 t ((a . 3) (b . 3)))
       (testcase !mean (a b) 1.0 1 1.0 t ((a . 3) (b . 3)))
       
