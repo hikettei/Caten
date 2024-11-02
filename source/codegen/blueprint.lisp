@@ -485,6 +485,7 @@ Depends=~a Reduce=~a Users=~a
 (defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph)
   (flet ((is-dynamic-shape-p (val)
            (and (not (null val))
+                (not (eql val t))
                 (find val (graph-nodes base-graph) :key #'(lambda (x) (getattr x :value :allow-undefined t))))))
     (remove-duplicates
      (append
@@ -498,7 +499,7 @@ Depends=~a Reduce=~a Users=~a
              (loop for type in (append (relay-writes (read-type-relay item)) (relay-reads (read-type-relay item)))
                    if type
                      append
-                     (loop for s in (buffer-shape type)
+                     (loop for s in (append (buffer-shape type) (apply #'append (buffer-views type)))
                            if (and (symbolp s) (is-dynamic-shape-p s))
                              collect (cons s caten/aasm:*default-int*))))))
      :key #'car)))

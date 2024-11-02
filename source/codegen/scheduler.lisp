@@ -596,6 +596,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
 
+;; [TODO] Need to fuse some symbolic stuffs
 ;; [TODO] Post Loop Fusion (Softmax, ArgMax, Serialize the outermost Loop! and they are in the single kernel)
 ;; [TODO] Introduce SINK, or fuse !argmax in a single kernel (do not allow the kernel ends with reduction w/o STORE)
 ;; [TODO] there is a still weirdness in the args determination and -1 or 1? (batch=1 transform)
