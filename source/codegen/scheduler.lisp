@@ -589,6 +589,8 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; - [ ] Complete Polyhedral
 ;; - [ ] Tiling autotune
 ;; - [ ] Vectorizing autotune
+;; - [ ] Weirdness in the sum (caten (!sum (make-tensor `(3 3) :initial-element 1) :axis 0))
+;; - related to simple-view-test ig
 
 ;; - (caten/codegen:jit (caten (!add (call (Embedding 10 10) (make-tensor `(10 10))) (forward (Embedding 10 10) (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))))
 ;; [todo] scheduling tests

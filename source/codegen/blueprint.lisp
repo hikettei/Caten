@@ -215,6 +215,11 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                      (values (merge-list procedure (buffer-shape original-buffer))
                              (merge-stride procedure (new-stride (buffer-stride original-buffer) (buffer-views original-buffer)))
                              (merge-view procedure (buffer-views original-buffer)))
+                   ;; 1. permuteしていない
+                   ;; 2. ここでViewMergeができていない
+                   ;; [MEMO] IterationSpace: space=gids1 gids0 gids2に対して(3 2 2)みたいな感じ
+                   ;; Polyhedral Compilerが0を入れたりTransposeしたりしたら？
+                   ;; c1 c2 c3 -> c1, c3, c2
                    (make-iteration-space
                     :shape new-shape
                     :strides new-stride
@@ -223,6 +228,18 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
       (dolist (n (graph-nodes graph))
         (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n)  (relay-reads (read-type-relay n)))
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
+
+(defmethod graph-swizzle-space ((graph Graph) (order list))
+  (flet ((swizzle (id space)
+           (when space
+             (assert (length (iteration-space-procedure space)) () "graph-swizzle-loop-order: Cannot swizzle the space ~a ~a with ~a" id space order)
+             (setf (iteration-space-shape space) (permute-list order (iteration-space-shape space))
+                   (iteration-space-strides space) (permute-list order (iteration-space-strides space))
+                   (iteration-space-views space) (permute-list order (iteration-space-views space))
+                   (iteration-space-procedure space) (permute-list order (iteration-space-procedure space))))))
+    (dolist (n (graph-nodes graph))
+      (mapc #'swizzle (node-reads n) (relay-read-iters (read-type-relay n)))
+      (mapc #'swizzle (node-writes n) (relay-write-iters (read-type-relay n))))))
 
 (defmethod node-depend-idx-list ((node Node) gid
                                  &aux
@@ -297,9 +314,9 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
 (defmethod print-object ((ctx ctx) stream) (format stream "<CTX>"))
 
 (defmethod initial-bp ((ctx ctx))
-  (with-slots ((gids gids) (group-size loop-size-list) (order order)) ctx
-    `(,@(permute-list order (map 'list #'%make-for gids group-size))
-      ,@(reverse (permute-list order (map 'list #'%make-endfor gids))))))
+  (with-slots ((gids gids) (group-size loop-size-list)) ctx
+    `(,@(map 'list #'%make-for gids group-size)
+      ,@(reverse (map 'list #'%make-endfor gids)))))
 
 (defmethod reduce-bp ((ctx ctx) something gids key)
   (let* ((sizes (loop for g in gids
@@ -500,10 +517,11 @@ Depends=~a Reduce=~a Users=~a
          (_ (setf (graph-outputs graph) (node-writes node)))
          (iterspace (get-grouped-dims graph base-graph))
          (__ (fixup-graph-iteration-space graph iterspace base-graph)) ; Use the common iteration space in the group
-         (group-size (car iterspace))
-         (gids (map 'list #'gid (range 0 (length group-size))))
-         (order (initial-loop-permutation graph (length group-size)))) ;; permute reduce axes deeper
+         (order (initial-loop-permutation graph (length (car iterspace)))) ;; permute reduce axes deeper
+         (gids (permute-list order (map 'list #'gid (range 0 (length (car iterspace))))))
+         (group-size (permute-list order (car iterspace))))
     (declare (ignore _ __))
+    (graph-swizzle-space graph order)
     ;; gids       = (gid0, gid1, gid2, ...)
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
