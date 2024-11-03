@@ -175,7 +175,7 @@ caten/codegen overview:
                        :nrank (length (buffer-shape wt)))))
         (alloc (make-node :Buffer :Allocate (list w)
                           (append
-                           (loop for s in (or (buffer-orig-buffer-shape wt) (buffer-shape wt))
+                           (loop for s in (buffer-shape wt)
                                  for nth upfrom 0
                                  for v = (nth nth (buffer-views wt))
                                  if (fourth v) collect 1
