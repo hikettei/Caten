@@ -3,7 +3,7 @@
   :author      "hikettei <ichndm@gmail.com>"
   :depends-on
   ("rove" "trivia" "cl-ppcre" "float-features"
-   "caten.common" "caten.air" "caten.aasm" "caten.avm" "caten.codegen")
+   "caten.common" "caten.air" "caten.aasm" "caten.avm" "caten.ajit")
   :serial t
   :components ((:file "package")
 	       (:file "attrs")
@@ -18,6 +18,7 @@
 	       (:file "model")
 	       (:file "ahead-of-time")
 	       (:file "initializers")
+	       (:file "syntax-sugar")
                (:file "documentation"))
   :in-order-to
   ((test-op
@@ -25,7 +26,7 @@
     (asdf:test-op "caten.aasm")
     (asdf:test-op "caten.avm")
     (asdf:test-op "caten.apis/test")
-    (asdf:test-op "caten.codegen/test"))))
+    (asdf:test-op "caten.ajit/test"))))
 
 (asdf:defsystem "caten.apis/test"
   :depends-on

@@ -6,8 +6,7 @@
 						   (dtype *default-float*) (order *default-order*) (id (gensym "TID"))
 						   (variables nil) (views nil) (requires-grad nil)
 						   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD"))))
-						   (grad-id (when requires-grad (gensym "TGRAD")))
-                                                   (tracker (start-tracking shape :order order)))))
+						   (grad-id (when requires-grad (gensym "TGRAD"))))))
   "
 A struct `tensor` is a multi-dimensional, and strided matrix (and nrank=0 to scalar value) containing elements of the single dtype.
 Also the tensor has following slots:
@@ -25,7 +24,6 @@ Also the tensor has following slots:
 - variables[list] A list of `Tensor` objects that are used in the operation of the tensor. Tensors listed here are involved in the compilation.
 "
   (shape shape :type list)
-  (tr tracker :type Tracker)
   (buffer nil :type (or null Buffer))
   (dtype dtype :type dtype-t)
   (order order :type (member :row :column))
@@ -47,7 +45,6 @@ Also the tensor has following slots:
      :dtype ,(tensor-dtype tensor) :order ',(tensor-order tensor)
      :id ',(tensor-id tensor) :variables ',(tensor-variables tensor)
      :views nil :requires-grad ,(tensor-requires-grad tensor)
-     :tracker (start-tracking ',(tensor-shape tensor) :order ',(tensor-order tensor))
      :grad ,(tensor-grad tensor) :grad-id ',(tensor-grad-id tensor))))
 
 (defun grad (tensor)
@@ -95,8 +92,7 @@ Returns a memory-layout of the tensor."
 ~a
   :op ~a
   :requires-grad ~a
-  :variables ~a
-  :tracker ~a}"
+  :variables ~a}"
 	  (tensor-dtype tensor)
 	  (loop for s in (tensor-shape tensor) collect (if (tensor-p s) (tensor-id s) s))
 	  (tensor-id tensor)
@@ -105,10 +101,9 @@ Returns a memory-layout of the tensor."
 	      "  :buffer nil")
 	  (tensor-op tensor)
 	  (tensor-requires-grad tensor)
-	  (map 'list #'tensor-id (tensor-variables tensor))
-          (tensor-tr tensor)))
+	  (map 'list #'tensor-id (tensor-variables tensor))))
 
-(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil) (from nil) (tr nil))
+(defun make-tensor (shape &key (dtype *default-float*) (order *default-order*) (id (gensym "TID")) (requires-grad nil) (initial-element nil) (views nil) (from nil))
   "
 ```
 (make-tensor shape &key (dtype *default-float*) (order *default-order*) (id (gensym \"TID\")) (requires-grad nil) (initial-element nil) (views nil) (from nil))
@@ -134,7 +129,7 @@ Create a new lazy tensor.
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()
 	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  Butgot: ~a~%  Shape=~a" s shape))
-  (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views :tracker (or tr (start-tracking shape :order order)))))
+  (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views)))
     (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element :from from)
           (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
     buff))
@@ -185,18 +180,20 @@ View is a tensor which shares the buffer from the original tensor, but having di
 	  (assert (every #'(lambda (x) (or (is-broadcast x) (eql x t))) subscripts)
 		  ()
 		  "Do not slice other axes when using broadcast. ~a" subscripts))
-	(setf (tensor-variables buff) (list base)
+	(setf (tensor-variables buff)
+	      (append
+	       (list base)
+	       (map 'list (compose #'sfold #'vrange-size) views)
+	       (map 'list (compose #'sfold #'viewrange-from) views)
+	       (map 'list (compose #'sfold #'viewrange-to) views)
+	       (map 'list (compose #'sfold #'viewrange-by) views)
+	       (map 'list (compose #'sfold #'viewrange-size) views)
+	       (loop for s in stride collect (if (node-p s) s (iconst s))))
 	      (tensor-op buff) (make-instance 'View :views views :broadcast-mode broadcast-mode-p :subscripts subscripts :nrank (length views)))
 	(setf (func-variables (tensor-op buff)) (tensor-variables buff))
 	(assert (every #'tensor-p (tensor-variables buff)) ())
 	;; Fold Constants in Shape (detached from the graph, no side effects)
 	(setf (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
-        (if broadcast-mode-p
-            (setf (tensor-tr buff) (tr-apply-broadcast
-                                    base
-                                    (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) (second x) nil)) subscripts)))
-            (setf (tensor-tr buff) (tr-apply-slice base views (map 'list #'vrange-size views))))
-        (setf (view-tr (tensor-op buff)) (tensor-tr buff))
 	buff))))
 
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

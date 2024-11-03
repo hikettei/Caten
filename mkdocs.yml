@@ -47,8 +47,7 @@ nav:
   - API Reference:
     - caten/air: packages/caten.air.md
     - caten/aasm: packages/caten.aasm.md
-    - caten/codegen: packages/caten.codegen.md
-    - caten/polyhedral: packages/caten.polyhedral.md
+    - caten/ajit: packages/caten.ajit.md
     - caten/apis:
       - Overview: packages/caten.apis.md
       - Tensor: packages/caten.apis.tensor.md

@@ -63,7 +63,6 @@ exec ros -Q -- $0 "$@"
    :sub-commands (list (caten/llm) (caten/test) (caten/docs))))
 
 (defun main (&rest argv &aux (*argv* argv))
-  (setf (ctx:getenv :COLOR) 1)
   (let ((app (caten/command)))
     (if (= (length argv) 0)
 	(clingon:print-usage app t)

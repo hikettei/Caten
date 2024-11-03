@@ -48,9 +48,8 @@ Sets the seed for random operations within the scope of the body.
 	(setf xr (list (!add (first xr) (nth (mod i 3) ks)) (!add (second xr) (!add (nth (mod (1+ i) 3) ks) (uconst (1+ i) :dtype :uint32))))))
       (!or (!mul (!cast (second xr) :uint64) (uconst (expt 2 32) :dtype :uint64)) (!cast (car xr) :uint64)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmodel (Threefry2x32-Random ()
-           :where "A[~] -> A[~]"
-	   :documentation "Generates a random array sampled from a uniform distribution in the range of [0.0, 1.0)")
+(defmodel (Threefry2x32-Random () :where "A[~] -> A[~]"
+				  :documentation "Generates a random array sampled from a uniform distribution in the range of [0.0, 1.0)")
     ())
 (defmethod call ((op Threefry2x32-Random) &rest inputs)
   (st "A[~] -> A[~]" (inputs))
