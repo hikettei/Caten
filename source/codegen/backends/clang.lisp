@@ -15,6 +15,9 @@
     :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
     )
 
+(define-hook-auto-scheduler (CStyle-Renderer Clang-Auto-Scheduler))
+;; (define-schedule-primitive (tiling) (pir x))
+
 (defvar *indent*)
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)
   (let ((args (loop for item in (getattr si :blueprint)

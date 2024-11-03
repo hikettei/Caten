@@ -21,7 +21,10 @@
    #:%render-const
    #:expr-index-components
    #:make-aref
-   #:make-define-global))
+   #:make-define-global
+
+   #:%renderer-get-auto-scheduler
+   #:define-hook-auto-scheduler))
 
 (in-package :caten/codegen/renderer)
 
@@ -31,6 +34,12 @@
 
 (defgeneric %render-kernel (renderer schedule-item))
 (defgeneric %compile-kernel (renderer schedule-items dir))
+(defgeneric %renderer-get-auto-scheduler (renderer) (:documentation "Gets the auto-scheduler for the renderer."))
+
+(defmacro define-hook-auto-scheduler ((renderer-name auto-scheduler-name) &rest args)
+  "Defines a hook for auto-scheduler for the renderer."
+  `(defmethod %renderer-get-auto-scheduler ((renderer ,renderer-name))
+     (,auto-scheduler-name ,@args)))
 
 (defnode (:Render :FOR) ()
          "TODO"
