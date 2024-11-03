@@ -195,6 +195,7 @@ caten/codegen overview:
 
 (defun schedule-graph->vmop (avm graph &aux (map (id->output-map graph)))
   (declare (type Graph graph))
+  (verify-graph graph)
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
              (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) id allocated)
