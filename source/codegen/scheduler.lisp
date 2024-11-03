@@ -512,15 +512,14 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                    if (getattr item :reduction :allow-undefined t)
                      collect item))
            (explore (id)
-             (when (find id seen) (return-from explore nil))
-             (push id seen)
              (let* ((self (id->value schedule-graph id))
-                    (_ (when (null self) (return-from explore nil)))
+                    (_ (when (or (null self) (find (node-id self) seen)) (return-from explore nil)))
                     (candidates (parent-groups self))
                     (reduced-but-not-stored
                       (map 'list #'reduce-w/o-store candidates))
                     (self-mergeable-p (getattr self :jitable)))
                (declare (ignore _))
+               (push (node-id self) seen)
                (assert (<= (count-if #'identity reduced-but-not-stored) 1))
                (loop for parent in candidates
                      for merge-p in reduced-but-not-stored
