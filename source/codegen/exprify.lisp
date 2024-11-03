@@ -91,7 +91,9 @@
     t))
 
 (defmethod rewrite-as-scalar ((buffer buffer) wi suffix)
-  (setf (buffer-nrank buffer) -1))
+  (let ((buffer (caten/avm:copy-buffer buffer)))
+    (setf (buffer-nrank buffer) -1)
+    buffer))
 
 (defun schedule-outputs (graph)
   (let ((outs))
@@ -132,14 +134,17 @@
                 (loop for r in (node-reads b)
                       for rt in (relay-reads (read-type-relay b))
                       for ri in (relay-read-iters (read-type-relay b))
+                      for nth upfrom 0
                       if (and (symbolp r) rt ri (find r replaceable))
-                        do (rewrite-as-scalar rt ri (reverse suffix)))
+                        do (setf (nth nth (relay-reads (read-type-relay b))) (rewrite-as-scalar rt ri (reverse suffix))))
                 (assert (= (length (node-writes b)) 1) () "graph-scalarify excepts only one write node. (please update the loop below...)")
                 (loop for w in (node-writes b)
                       for wt in (relay-writes (read-type-relay b))
                       for wi in (relay-write-iters (read-type-relay b))
+                      for nth upfrom 0
                       if (and (symbolp w) wt wi (find w replaceable))
-                        do (rewrite-as-scalar wt wi (reverse suffix))
+                        do (setf (nth nth (relay-writes (read-type-relay b)))
+                                 (rewrite-as-scalar wt wi (reverse suffix)))
                            (setf (getattr b :declare-type) (list t)
                                  (node-reads node) (remove w (node-reads node)))
                       else if (find w replaceable)

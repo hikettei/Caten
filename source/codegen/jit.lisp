@@ -197,6 +197,7 @@ caten/codegen overview:
   (declare (type Graph graph))
   (verify-graph graph)
   (setf graph (->graph graph)) ;; Convert from FastGraph to Graph to sort the order
+  (setf (graph-outputs graph) nil)
   (verify-graph graph :no-purge t)
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
