@@ -462,7 +462,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                append (cdr p)
              else ;; unmergeable
              append p)))))
-
+;; ~~~~~~ More Fusion Rules ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO] Rewrite them as a pattern matcher. (need a prepreq refactor for multiple outputs)
 (defun apply-reduce+move-fusion (schedule-graph &aux (seen))
   "Applies the post-loop-fusion to eliminate MOVE after the reduction.
 ```
@@ -506,21 +507,59 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
              (when (find id seen) (return-from explore nil))
              (push id seen)
              (let* ((self (id->value schedule-graph id))
-                    (_ (when (or (null self) (null (getattr self :jitable))) (return-from explore nil)))
+                    (_ (when (null self) (return-from explore nil)))
                     (candidates (parent-groups self))
                     (reduced-but-not-stored
-                      (map 'list #'reduce-w/o-store candidates)))
+                      (map 'list #'reduce-w/o-store candidates))
+                    (self-mergeable-p (getattr self :jitable)))
                (declare (ignore _))
                (assert (<= (count-if #'identity reduced-but-not-stored) 1))
                (loop for parent in candidates
                      for merge-p in reduced-but-not-stored
-                     if merge-p
+                     if (and self-mergeable-p merge-p)
                        do (let ((merged (merge-schedule-items self parent)))
                             (insert-nodes schedule-graph (list merged))
                             ;; note: so the schedule won't generate a schedule item whose (length writes) > 1?
                             ;; ^ this is because (node-writes schedule-item) does not take into account whether the item is read by other items or not.
                             ;; That is, even if the val is not appeared in node-writes, there could be a dependency.
                             ;; (TODO: This is misleading, refactor graph->schedule to have multiple outputs)
+                            (dolist (w (node-writes parent))
+                              (remnode schedule-graph w))
+                            (mapc #'explore (node-reads parent)))
+                     else
+                       do (explore (car (node-writes parent)))))))
+    (mapc #'explore (graph-outputs schedule-graph))))
+
+(defun apply-serialize-reduction (schedule-graph &aux (seen))
+  (declare (type FastGraph schedule-graph))
+  (labels ((parent-groups (self)
+             (assert (node-p self))
+             (loop for r in (node-reads self)
+                   for val = (and (symbolp r) (id->value schedule-graph r))
+                   ;; Only :jitable scheduleitems are merged
+                   if (and val (getattr val :jitable)) collect val))
+           (merge-p (self c)
+             ;; Checklist to merge:
+             ;; - Reduced at the same rank? or c is not reduced?
+             ;; - The same ranked?
+             ;; - Not across :SPECIAL/VM?
+             (when (null (getattr c :jitable)) (return-from merge-p nil))
+             (print "+++MERGEABLE+++")
+             (print self)
+             (print c)
+             nil
+             )
+           (explore (id)
+             (when (find id seen) (return-from explore nil))
+             (push id seen)
+             (let* ((self (id->value schedule-graph id))
+                    (_ (when (or (null self) (null (getattr self :jitable))) (return-from explore nil)))
+                    (candidates (parent-groups self)))
+               (declare (ignore _))
+               (loop for parent in candidates
+                     if (merge-p self parent)
+                       do (let ((merged (merge-schedule-items self parent)))
+                            (insert-nodes schedule-graph (list merged))
                             (dolist (w (node-writes parent))
                               (remnode schedule-graph w))
                             (mapc #'explore (node-reads parent)))
@@ -559,7 +598,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
              (dolist (node (graph-nodes g))
                ;; reduced but no users in the group: This is now allowed. Adding :MOVE
                (when (and (getattr node :reduction :allow-undefined t)
-                          (null (id->users g (car (node-writes node)))))
+                          (null (id->users g (car (node-writes node))))) ;; no users in a group
                  (let ((base-id (car (node-reads node)))
                        (write-id (car (node-writes node)))
                        (acc-id (acc (car (node-reads node)))))
@@ -573,7 +612,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                     (%jstore write-id base-id acc-id (car (relay-writes (read-type-relay node))))
                     (getattr si :items)))))))
     (mapc #'r (graph-nodes schedule-graph))))
-
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defgeneric graph-schedule (graph) (:documentation "Splits a given graph into small subgraphs called Schedule-Item. It always returns `FastGraph`."))
 
 (defmethod graph-schedule ((graph Graph))
@@ -591,7 +630,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (setf schedule (->fast-graph schedule))
       ;; ~~ Rewriting Rules + Post Fusion ~~~~~
       (apply-reduce+move-fusion schedule)
-      ;; (apply-serialize-reduction) // Softmax
+      ;;(apply-serialize-reduction schedule)
       (apply-move-after-reduction schedule)
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
