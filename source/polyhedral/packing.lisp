@@ -30,13 +30,8 @@
               (return-from tiling-search))
             (setf node (pop next-nodes)))
     tileable-bands))
-
-(defun insert-mark (band)
-
-  )
-
+;; (defun insert-mark (band))
 (defun packing (config ir)
   (declare (type polyhedral-ir ir))
-  
-
+  ;; [TODO]
   )
