@@ -61,7 +61,7 @@
   ;; Getting the initial schedule (TODO: Make configuration changeable)
   (setf (poly-schedule poly) (schedule poly))
   ;; Tiling
-  (caten/polyhedral/tiling:solve poly)
+  ;; (caten/polyhedral/tiling:tile-bands poly)
   ;; Unrolling/Vectorizing
   ;; (caten/polyhedral/packing:solve poly)
   ;; Parallelize

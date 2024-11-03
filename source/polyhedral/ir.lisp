@@ -141,4 +141,3 @@
 (defmethod print-object ((pg Polyhedral-IR) stream)
   (print-unreadable-object (pg stream :type t)
     (format stream "~a~%[Kernel]:~%~a" (pprint-schedule (copy (poly-schedule pg))) (debug-render-to-clang pg))))
-

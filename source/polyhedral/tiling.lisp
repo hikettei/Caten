@@ -2,10 +2,9 @@
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/isl :caten/polyhedral/ir)
-  (:export #:solve)
+  (:export #:tile-bands)
   (:documentation "Provides an auto-tuner for tiling dims and params
 - References
-  - [AKG]()
   - https://speakerdeck.com/ideininc/pldi-21lun-wen-du-mihui-akg-automatic-kernel-generation-for-neural-processing-units-using-polyhedral-transformations?slide=11
 "))
 
@@ -83,11 +82,9 @@
               (return-from tiling-search))
             (setf node (pop next-nodes)))
     tileable-bands))
-;; Goal: https://github.com/ggerganov/llama.cpp/blob/master/ggml/src/ggml-metal.metal
-;; [TODO] Tile dims/SIZE optimization
-;; [TODO] Prefer packing for softmax/layernorm etc
-(defun solve (ir)
-  "An entry point for the tiling optimizer"
+
+(defun tile-bands (ir)
+  "`tile-bands` helps you execute the computation tile by tile over the two axes"
   (declare (type Polyhedral-IR ir))
   (let* ((schedule (poly-schedule ir))
          (bands (get-tileable-bands schedule)))
