@@ -217,7 +217,7 @@ Applying a further slicing:
 (defmethod tr-reshapeable-p ((tracker Tracker) new-shape &aux (new-shape (canonicalize-shape new-shape)))
   (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
-      (return-from tr-reshapeable-p t)))
+      (return-from tr-reshapeable-p (tr-contiguous tracker))))
   ;; Not contiguous -> Not reshapeable (todo: masked reshape)
   (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
   ;; Permuted -> Not contiguous

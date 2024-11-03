@@ -173,7 +173,8 @@ View is a tensor which shares the buffer from the original tensor, but having di
   (declare (type Tensor base)
 	   (type list subscripts)
 	   (type dtype-t dtype)
-	   (type (member :row :column) order))
+	   (type (member :row :column) order)
+           (ignore stride))
   (handler-bind
       ((error
 	 #'(lambda (c) (error 'caten-forward-error :op 'make-view-internal :inputs (list base) :c c))))
