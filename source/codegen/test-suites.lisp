@@ -1,9 +1,6 @@
-(in-package :cl-user)
-
-(defpackage :caten/ajit.test
-  (:use :cl :rove :caten :caten/nn :caten/air :caten/avm :trivia :caten/ajit))
-
-(in-package :caten/ajit.test)
+(defpackage :caten/codegen/test-suite
+  (:use :cl :rove :caten :caten/nn :caten/air :caten/avm :trivia))
+(in-package :caten/codegen/test-suite)
 
 (defun equal-to (a) #'(lambda (x) (= x a)))
 (defun pproceed (params tensor)
