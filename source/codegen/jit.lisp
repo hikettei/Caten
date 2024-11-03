@@ -195,10 +195,6 @@ caten/codegen overview:
 
 (defun schedule-graph->vmop (avm graph &aux (map (id->output-map graph)))
   (declare (type Graph graph))
-  (verify-graph graph)
-  (setf graph (->graph graph)) ;; Convert from FastGraph to Graph to sort the order
-  (setf (graph-outputs graph) nil)
-  (verify-graph graph :no-purge t)
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
              (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) id allocated)
@@ -328,6 +324,8 @@ caten/codegen overview:
     (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
+      (verify-graph schedule-graph)
+      (setf schedule-graph (->graph schedule-graph))
       (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
         (with-expr-cache () ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
           (mapc
