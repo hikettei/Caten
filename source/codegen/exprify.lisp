@@ -42,16 +42,11 @@
       (if (getattr allocate :from) t nil))))
 
 (defun blueprint-tmp-buffers (blueprints node schedule-graph &key (except-for nil))
+  (declare (ignore node))
   (setf except-for
         (append except-for
                 (loop for s in (graph-nodes schedule-graph)
                       append (node-writes s))))
-  (loop with pos = (position (node-id node) (graph-nodes schedule-graph) :key #'node-id)
-        for si in (subseq (graph-nodes schedule-graph) (1+ pos)) do
-          (dolist (item (getattr si :items))
-            (dolist (r (node-reads item))
-              (when (symbolp r) ;; read by other kernels -> buffer allocation is required
-                (push r except-for)))))
   (let ((ids) (seen))
     (dolist (b blueprints)
       (let ((out (get-output-to b)))
