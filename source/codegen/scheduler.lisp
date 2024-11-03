@@ -50,7 +50,8 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:ensure-string-as-compilable)
   (:import-from
    #:caten/codegen/rewriting-rules
-   :nodes-apply-static-gensym)
+   :nodes-apply-static-gensym
+   :node-fuse-const-loadp)
   (:export
    #:graph-schedule
    #:*function-name-maxlen*))
@@ -180,10 +181,11 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 
 (defmethod group->schedule ((group Group) (base-graph Graph))
   (let ((reads (nodes-depends-on (group-items group)))
-        (writes (items-write-to (group-items group) base-graph));;(nodes-write-to (group-items group)))
+        (writes (items-write-to (group-items group) base-graph))
         (allocate-p (find :Allocate (group-items group) :key #'node-type))
         (no-symbolic-incremental-p t)
         (full-scalar-p t) (rank 0))
+    ;; Ensure there's no symbolic incremental for the auto scheduler.
     (dolist (node (group-items group))
       (dolist (r (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node))))
         (when r
@@ -193,15 +195,19 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (dolist (v (buffer-views r))
             (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
               (setf no-symbolic-incremental-p nil))))))
-    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
-               :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
-               :allocate-p (when allocate-p t)
-               :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
-               :storage-id-dst writes
-               :storage-id-src reads
-               :rank rank
-               :items (group-items group)
-               :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
+    (let ((jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))))
+      (when jitable
+        (dolist (item (group-items group))
+          (node-fuse-const-loadp item base-graph)))
+      (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
+                 :jitable jitable
+                 :allocate-p (when allocate-p t)
+                 :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
+                 :storage-id-dst writes
+                 :storage-id-src reads
+                 :rank rank
+                 :items (group-items group)
+                 :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group)))))))
 
 (defmethod merge-schedule-items ((si1 Node) (si2 Node) (base-graph Graph))
   (assert (eql (node-type si1) :Schedule-Item))

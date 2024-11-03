@@ -492,6 +492,13 @@ Depends=~a Reduce=~a Users=~a
       (loop for item in (getattr node :items)
             if (and (eql (node-type item) :LOAD) (symbolp (getattr item :value)))
               collect (cons (getattr item :value) (buffer-dtype (car (relay-writes (read-type-relay item))))))
+      ;; Fused Dynamic Shape
+      (loop for item in (getattr node :items)
+            append
+            (loop for r in (node-reads item)
+                  for rt in (relay-reads (read-type-relay item))
+                  if (and (symbolp r) (is-dynamic-shape-p r))
+                    collect (cons r (buffer-dtype rt))))
       ;; Loop Bounds (loaded as default-int)
       (nreverse
        (loop for item in (getattr node :items)
