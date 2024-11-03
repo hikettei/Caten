@@ -169,9 +169,18 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         (setf key (subseq key 0 *function-name-maxlen*)))
       (gensym key))))
 
-(defmethod group->schedule ((group Group))
+(defun items-write-to (items graph)
+  (let ((result (nodes-write-to items)) (wrap (map 'list #'node-id items)))
+    (loop for item in items do
+      (loop for write in (node-writes item)
+            for users = (id->users graph write)
+            if (some #'(lambda (x) (null (find (node-id x) wrap))) users) ;; user is read outside of the items
+              do (push write result)))
+    (remove-duplicates result)))
+
+(defmethod group->schedule ((group Group) (base-graph Graph))
   (let ((reads (nodes-depends-on (group-items group)))
-        (writes (nodes-write-to (group-items group)))
+        (writes (items-write-to (group-items group) base-graph));;(nodes-write-to (group-items group)))
         (allocate-p (find :Allocate (group-items group) :key #'node-type))
         (no-symbolic-incremental-p t)
         (full-scalar-p t) (rank 0))
@@ -194,11 +203,11 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :items (group-items group)
                :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
 
-(defmethod merge-schedule-items ((si1 Node) (si2 Node))
+(defmethod merge-schedule-items ((si1 Node) (si2 Node) (base-graph Graph))
   (assert (eql (node-type si1) :Schedule-Item))
   (assert (eql (node-type si2) :Schedule-Item))
   (assert (= (getattr si1 :rank) (getattr si2 :rank)))
-  (group->schedule (make-group :items (append (getattr si1 :items) (getattr si2 :items)))))
+  (group->schedule (make-group :items (append (getattr si1 :items) (getattr si2 :items))) base-graph))
 
 (defmethod group-get-type ((group Group))
   (let* ((last (nodes-write-to (group-items group)))
@@ -471,8 +480,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
              else ;; unmergeable
              append p)))))
 ;; ~~~~~~ More Fusion Rules ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Rewrite them as a pattern matcher. (need a prepreq refactor for multiple outputs)
-(defun apply-reduce+move-fusion (schedule-graph &aux (seen))
+;; [TODO] Rewrite them as a pattern matcher.
+(defun apply-reduce+move-fusion (schedule-graph base-graph &aux (seen))
   "Applies the post-loop-fusion to eliminate MOVE after the reduction.
 ```
      Group1
@@ -524,7 +533,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                (loop for parent in candidates
                      for merge-p in reduced-but-not-stored
                      if (and self-mergeable-p merge-p)
-                       do (let ((merged (merge-schedule-items self parent)))
+                       do (let ((merged (merge-schedule-items self parent base-graph)))
                             (insert-nodes schedule-graph (list merged))
                             ;; note: so the schedule won't generate a schedule item whose (length writes) > 1?
                             ;; ^ this is because (node-writes schedule-item) does not take into account whether the item is read by other items or not.
@@ -595,14 +604,15 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
         (when (not (eql (node-type (car (group-items g))) :Allocate))
           (print g)))
       (fresh-line))
-    (let ((schedule (apply #'make-graph (map 'list #'group->schedule groups))))
+    (let ((schedule (apply #'make-graph (map 'list #'(lambda (x) (group->schedule x graph)) groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
       ;; ~~ Rewriting Rules + Post Fusion ~~~~~
-      (apply-reduce+move-fusion schedule)
+      (apply-reduce+move-fusion schedule graph)
       ;; (apply-serialize-reduction schedule) ;; TODO: Softmax=1 Kernel when not fused w/ gemm
       (apply-move-after-reduction schedule)
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
+;; [TODO] exprify replaceable = node-writes schedule_item
