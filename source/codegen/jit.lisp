@@ -161,6 +161,13 @@ caten/codegen overview:
     (values (nreverse (explore top-id)) seen)))
 
 (defun make-alloc+view-node-from-buffer (wt w)
+  (when (some #'identity (buffer-views wt))
+    ;; Consider the case: (NIL NIL (0 3 1 T))
+    (setf (buffer-views wt)
+          (loop for v in (buffer-views wt)
+                for s in (buffer-shape wt)
+                if v collect v
+                else collect (list 0 s 1 nil))))
   (let ((view
           (when (some #'identity (buffer-views wt))
             (make-node :Buffer :View (list w)
