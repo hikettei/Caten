@@ -115,15 +115,20 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                      append (list (format nil "~a" x1) ", ")
                    else
                      append (list (format nil "~a[~a]" x1 y1) ", "))))))
-    (format nil "<[Schedule-Item] : ~a <- ~a where lowered-p=~a ~a>"
+    (format nil "<{ ~a } : ~a <- ~a where lowered-p=~a ~a>"
+            (if (getattr node :allocate-p)
+                "Allocate"
+                (if (getattr node :jitable)
+                    " KERNEL "
+                    "  VMOP  "))
             (r (node-writes node) (getattr node :storage-id-dst))
             (if (getattr node :allocate-p)
                 (subseq (node-reads (car (getattr node :items))) 0 (getattr (car (getattr node :items)) :nrank))
                 (r (node-reads node) (getattr node :storage-id-src)))
             (if (getattr node :blueprint)
                 "t" "nil")
-            (if (getattr node :allocate-p)
-                ":allocate-p=T"
+            (if (or (getattr node :allocate-p) (null (getattr node :jitable)))
+                ""
                 (if (getattr node :cache-name)
                     (format nil ":cache-name=~a :name=~a" (getattr node :cache-name) (getattr node :name))
                     (format nil ":name=~a" (getattr node :name)))))))
