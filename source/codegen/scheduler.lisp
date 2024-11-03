@@ -115,7 +115,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                      append (list (format nil "~a" x1) ", ")
                    else
                      append (list (format nil "~a[~a]" x1 y1) ", "))))))
-    (format nil "<{ ~a } : ~a <- ~a where lowered-p=~a ~a>"
+    (format nil "{ ~a } : [ ~a <- ~a where lowered-p=~a ~a]"
             (if (getattr node :allocate-p)
                 "Allocate"
                 (if (getattr node :jitable)
