@@ -1,5 +1,5 @@
 (defpackage :caten/polyhedral/auto-scheduler
-  (:use :cl :caten/polyhedral/ir :cffi)
+  (:use :cl :caten/polyhedral/ir :cffi :caten/polyhedral/config)
   (:export :auto-schedule #:->ast))
 
 (in-package :caten/polyhedral/auto-scheduler)
@@ -25,41 +25,23 @@
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
 
-(defmethod schedule ((pg Polyhedral-IR))
-  (let ((serialize-sccs 0)
-        (outer-coincidence 0)
-        (maximize-coincidence 1)
-        (treat-coalescing 1)
-        (maximize-band-depth 1)
-        ;; Only schedule the scc. (not to change the structure of kernel)
-        (schedule-whole-component 0))
-    (macrolet ((set-option (name level)
-	         `(progn
-		    (foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
-				     :pointer (isl::context-handle isl::*context*)
-				     :int ,level
-				     :void))))
-      (flet ((configure ()
-               (set-option "schedule_serialize_sccs" serialize-sccs)
-               (set-option "schedule_outer_coincidence" outer-coincidence)
-               (set-option "schedule_maximize_coincidence" maximize-coincidence)
-               (set-option "schedule_treat_coalescing" treat-coalescing)
-               (set-option "schedule_maximize_band_depth" maximize-band-depth)
-               (set-option "schedule_whole_component" schedule-whole-component)))
-        (configure))))
-  (isl:schedule-constraints-compute-schedule
-   (isl:schedule-constraints-set-coincidence
-    (isl:schedule-constraints-set-proximity
-     (isl:schedule-constraints-set-validity
-      (isl:schedule-constraints-on-domain (poly-domain pg))
-      (poly-dependencies pg))
-     (poly-dependencies pg))
-    (poly-dependencies pg))))
+(defmethod schedule ((config Auto-Scheduler-Config) (pg Polyhedral-IR))
+  (apply-schedule-options-global (auto-scheduler-schedule-options config))
+  (let ((schedule-constraints (isl:schedule-constraints-on-domain (poly-domain pg))))
+    (dolist (option (auto-scheduler-cost-functions config))
+      (ecase option
+        (:coincidence
+         (setf schedule-constraints (isl:schedule-constraints-set-coincidence schedule-constraints (poly-dependencies pg))))
+        (:proximity
+         (setf schedule-constraints (isl:schedule-constraints-set-proximity schedule-constraints (poly-dependencies pg))))
+        (:validity
+         (setf schedule-constraints (isl:schedule-constraints-set-validity schedule-constraints (poly-dependencies pg))))))
+    (isl:schedule-constraints-compute-schedule schedule-constraints)))
 
-(defmethod auto-schedule ((poly Polyhedral-IR))
+(defmethod auto-schedule ((scheduler Auto-Scheduler-Config) (poly Polyhedral-IR))
   "An entrypoint for auto-scheduling"
-  ;; Getting the initial schedule (TODO: Make configuration changeable)
-  (setf (poly-schedule poly) (schedule poly))
+  ;; Getting the initial schedule
+  (setf (poly-schedule poly) (schedule scheduler poly))
   ;; Tiling
   ;; (caten/polyhedral/tiling:tile-bands poly)
   ;; Unrolling/Vectorizing

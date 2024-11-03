@@ -2,9 +2,13 @@
   (:use :cl :cffi)
   (:export
    #:Schedule-Options
+   #:Auto-Scheduler-Config
    #:make-schedule-options
    #:apply-schedule-options-global
    #:define-auto-scheduler
+   #:auto-scheduler-schedule-options
+   #:auto-scheduler-cost-functions
+   #:auto-scheduler-n-global-loops
    ))
 
 (in-package :caten/polyhedral/config)
@@ -82,5 +86,3 @@
                  (auto-scheduler-cost-functions ,instance) ,cost-functions
                  (auto-scheduler-n-global-loops ,instance) ,n-global-loop)
            ,instance)))))
-;; (print (Clang-Auto-Scheduler))
-;; Ref https://arxiv.org/pdf/2401.06665

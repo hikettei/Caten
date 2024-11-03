@@ -357,3 +357,7 @@
   (let* ((rank (length (iteration-space-procedure is)))
          (pads (loop repeat (max 0 (- rank (length gids))) collect (expr-const 0 :int64))))
     (append gids pads)))
+
+(defmethod ensure-iteration-space-length ((rank fixnum) gids)
+  (let ((pads (loop repeat (max 0 (- rank (length gids))) collect (expr-const 0 :int64))))
+    (append gids pads)))

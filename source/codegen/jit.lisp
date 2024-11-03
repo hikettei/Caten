@@ -81,7 +81,8 @@ caten/codegen overview:
    :caten/codegen/renderer
    #:get-default-renderer
    #:%compile-kernel
-   #:%render-kernel)
+   #:%render-kernel
+   #:%renderer-get-auto-scheduler)
   (:export
    #:jit))
 
@@ -291,7 +292,12 @@ caten/codegen overview:
             &key
               (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
               (dir nil)
-            &aux (renderer (if (keywordp renderer) (get-default-renderer renderer) renderer)))
+            &aux
+              (renderer (if (keywordp renderer) (get-default-renderer renderer) renderer))
+              (auto-scheduler
+               (when (= (ctx:getenv :AUTO_SCHEDULER) 1)
+                 (or (%renderer-get-auto-scheduler renderer)
+                     (error "Cannot enable auto-scheduler without the renderer support.~%Use define-auto-scheduler and define-hook-auto-scheduler and compilers will recognise it.~%or, set AUTO_SCHEDULER=0 to ignore this error.")))))
   "Runs the JIT compilation (destructive)"
   (declare (type AVM avm))
   ;; 1. Running the shape/offset/type inference
@@ -338,7 +344,7 @@ caten/codegen overview:
                      (when (>= (ctx:getenv :JIT_DEBUG) 2)
                        (format t "=====> Auto Scheduler~%"))
                      ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
-                     (auto-schedule x)
+                     (auto-schedule auto-scheduler x)
                      (when (>= (ctx:getenv :JIT_DEBUG) 2)
                        (print (getattr x :polyhedral))
                        (fresh-line)

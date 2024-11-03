@@ -292,8 +292,9 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
         (format t "~a~%" (getattr node :polyhedral)))
       node)))
 
-(defmethod auto-schedule ((node Node))
-  (caten/polyhedral:auto-schedule (getattr node :polyhedral))
+(defmethod auto-schedule (auto-scheduler (node Node))
+  (assert (getattr node :polyhedral))
+  (caten/polyhedral:auto-schedule auto-scheduler (getattr node :polyhedral))
   ;; Load blueprint from optimized polyhedral IR
   (setf (getattr node :blueprint)
         (lower-into-bp-from-polyhedral

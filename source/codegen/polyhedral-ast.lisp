@@ -181,7 +181,9 @@
                    (setf (getattr node :iterations) args)
                    (if (and (null args) (> (length base) 0))
                        (setf (getattr node :iterations) base)
-                       (assert (= (length args) (length base)) () "Before and after the polyhedral compilation, the rank of iteration space should not be changed.")))
+                       (progn
+                         (setf (getattr node :iterations) (ensure-iteration-space-length (length base) (getattr node :iterations)))
+                         (assert (= (length (getattr node :iterations)) (length base)) () "Before and after the polyhedral compilation, the rank of iteration space should not be changed. ~a -> ~a" (getattr node :iterations) args))))
                  node))
              (lower (object)
 	       (when (listp object) (return-from lower (map 'list #'lower object)))

@@ -21,7 +21,7 @@
       (loop for i upfrom 0 below dim
             collect
             (or (nth i dims) size-default))))))
-                
+
 (defun shift-band-zero (band)
   "Refernece: https://github.com/hikettei/cl-polyhedral/blob/main/source/tiling.lisp#L52C1-L79C37"
   (let* ((domain (schedule-node-get-domain band))
