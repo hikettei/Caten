@@ -98,12 +98,11 @@
 				  collect (car (node-reads ss-node))
 				else
 				  collect ss-val)))
-          (when (symbolp (car new-views))
-	    (unless (equal new-views ss)
-	      (make-node
-	       :Buffer :View
-	       (node-writes node) new-views
-	       :nrank nrank :broadcast broadcast :permute permute))))))))
+	  (unless (equal new-views ss)
+	    (make-node
+	     :Buffer :View
+	     (node-writes node) new-views
+	     :nrank nrank :broadcast broadcast :permute permute)))))))
 
 (defsimplifier
     (%2_unfold_load_alloc)

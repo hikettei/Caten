@@ -30,6 +30,3 @@
   (:keep integer nparam)
   (:keep integer n_in)
   (:keep integer n_out))
-
-(defun space-dim (space dim-type)
-  (%isl-space-dim (space-handle space) dim-type))

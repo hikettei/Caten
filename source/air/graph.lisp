@@ -67,7 +67,7 @@ Creates a copy of the given graph.
 
 (defmethod graph-nodes ((graph Graph)) (%graph-nodes graph))
 
-(defmethod graph-nodes ((graph FastGraph)) (remove-duplicates (hash-table-values (%graph-nodes-table graph)) :key #'node-id))
+(defmethod graph-nodes ((graph FastGraph)) (hash-table-values (%graph-nodes-table graph)))
 
 (defmethod (setf graph-nodes) (nodes (graph Graph)) (setf (%graph-nodes graph) nodes))
 
@@ -165,20 +165,21 @@ Converts the given graph to a fast graph.
 
 (defmethod ->graph ((fast-graph FastGraph))
   (declare (type FastGraph fast-graph) (optimize (speed 3)))
-  (assert (graph-outputs fast-graph) () "Cannot create a graph from the given fast graph because it does not have `outputs`.")
+  (assert (graph-outputs fast-graph) () "Cannot create a graph from the given fast graph because it does not provide a `outputs`.")
   (let ((result) (seen nil))
     (declare (type list result seen))
     (flet ((get-parents (top-id &aux (result nil))
 	     (labels
-                 ((explore (id)
+		 ((explore (id)
 		    (declare (type symbol id))
-		    (let ((node (id->value fast-graph id)))
-		      (when (and node (null (find (node-id node) seen)))
-                        (push (node-id node) seen)
-			(setf result (nconc (list node) result))
-                        (dolist (r (node-reads node))
-                          (when (symbolp r)
-                            (explore r)))))))
+		    (when (null (find id seen))
+		      (push id seen)
+		      (let ((node (id->value fast-graph id)))
+			(when node
+			  (setf result (nconc (list node) result))
+			  (dolist (r (node-reads node))
+			    (when (symbolp r)
+			      (explore r))))))))
 	       (explore top-id)
 	       result)))
       (dolist (out (graph-outputs fast-graph))

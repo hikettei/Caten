@@ -59,13 +59,13 @@
   ;; (2/n) ... (yyy ms)
   (defparameter *progress* nil)
   (defstruct (Progress
-	      (:constructor make-progress (total-count &key (debug 0) (timeit t))))
-    (debug debug) (n 0) (timeit timeit)
+	      (:constructor make-progress (total-count &key (debug 0))))
+    (debug debug) (n 0)
     (total total-count)
     (last-time (get-internal-run-time)))
 
-  (defmacro with-progress ((total &key (title nil) (debug 0) (timeit t)) &body body)
-    `(let ((*progress* (make-progress ,total :debug ,debug :timeit ,timeit)))
+  (defmacro with-progress ((total &key (title nil) (debug 0)) &body body)
+    `(let ((*progress* (make-progress ,total :debug ,debug)))
        (when ,title
 	 (format *default-stream* (maybe-ansi white-bright (format nil "~a (n/~a)~%" ,title ,total))))
        ,@body))
@@ -79,11 +79,9 @@
 	(setf (progress-last-time *progress*) now)
 	(incf (progress-n *progress*))
 	(flet ((render-time ()
-                 (if (progress-timeit *progress*)
-		     (if (or (= 0 ms) (>= ms 1000))
-		         (maybe-ansi gray (format nil "(~a sec)" (float (/ ms (* 1000 1000)))))
-		         (maybe-ansi gray (format nil "(~a ms)" ms)))
-                     "")))
+		 (if (or (= 0 ms) (>= ms 1000))
+		     (maybe-ansi gray (format nil "(~a sec)" (float (/ ms (* 1000 1000)))))
+		     (maybe-ansi gray (format nil "(~a ms)" ms)))))
 	  (format *default-stream* "~a~%* ~a ~a~a~%"
 		  (if (= 1 (progress-n *progress*))
 		      ""

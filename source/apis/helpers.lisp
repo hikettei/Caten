@@ -1,5 +1,6 @@
 (in-package :caten/apis)
 
+;; In SBCL, compilation takes longer than 2s.
 (defun %tpsort-tensors (session &rest tensors)
   "Destructive to session-seen"
   (declare (type Compiler-Session session)
@@ -118,7 +119,6 @@ Reads and binds attributes from module.
   `(loop for i from ,from below ,below by ,by collect i))
 
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
-
 (defun render-attrs (node)
   (let ((attr (dump-into-list (node-attr node) :allow-unbound nil)))
     (if attr
@@ -221,5 +221,3 @@ Reads and binds attributes from module.
 		 nth
 		 (+ (length list) nth))))
     (setf (nth idx list) value)))
-
-(defmethod permute-list ((op list) list) (loop for nth in op collect (nth nth list)))

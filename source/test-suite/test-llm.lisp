@@ -17,6 +17,8 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 
 (import-function "test_scaled_dot_product_attention")
 
+;; Neural Ops used in implementing LLM
+;; [TODO] If batched+JIT, wont work
 (deftest test-scaled-dot-product-attention
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
