@@ -125,7 +125,7 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
                     ;; Set the longest time for the output variables (not to destruct it, and users can see the result)
 		    (if (find key outputs)
 			total-time
-			(apply #'max (gethash key trace-table)))
+			(1+ (apply #'max (gethash key trace-table))))
 		    :lock (gethash key lock-table))))
            ;; Minimize the peak memory usage
 	   (solved (greedy-solve-dsa memory-blocks total-time))
