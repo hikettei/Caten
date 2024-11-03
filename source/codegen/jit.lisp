@@ -366,7 +366,7 @@ caten/codegen overview:
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
-    (run-memory-planner schedule-graph)
+    ;;(run-memory-planner schedule-graph) disable until fixing weirdness in Padding2D/AutoDiff
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Rendering ..."))
