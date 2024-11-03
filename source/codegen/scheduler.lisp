@@ -360,7 +360,10 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
       (when (or (not (jitable-p node)) (not (jitable-p read-node)))->ng)
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ;; :shrink is not mergeable
-      (when (and read-view (eql (identify-view-type read-view) :shrink))->ng)
+      (when (and read-view (eql (identify-view-type read-view) :shrink))
+        ;; [TODO] Add a mask like:
+        ;; _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
+        ->ng)
       (let ((r1 (group-rank self))
             (r2 (group-rank parent-group)))
         ;; r2 -> r1
