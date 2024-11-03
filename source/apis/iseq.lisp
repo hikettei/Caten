@@ -183,7 +183,7 @@
     (mapc #'backward-helper (reverse iseq))
     iseq-bw))
 
-(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels) (toplevel-ids) (maximum-recursion 100))
+(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels) (toplevel-ids) (maximum-recursion 1024))
   "Constructs a forward/backward graph based on iseq"
   (declare (type Compiler-Session session)
 	   (type list iseq toplevel-ids)
@@ -202,8 +202,8 @@
   (flet ((lower-all (graph)
 	   (flet ((ok () (null (find :Module (the list (graph-nodes (->graph graph))) :key #'node-class))))
 	     (loop until (ok) for n fixnum upfrom 0 do
-	       (when (>= n maximum-recursion)
-		 (error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
+               (when (>= n maximum-recursion)
+	         (error "%make-graph-from-iseq: maximum-recursion has reached ~a. Make sure that modules have no cycle dependencies." n))
 	       ;; e.g.:
 	       ;; n=1 Quantize (Matmul) Dequantize -> QMatmul
 	       ;; n=1 (Simplify)
@@ -321,6 +321,9 @@ The iseq obtained by lowering the Module must match the output destination speci
 	  (flet ((r (x) (if (symbolp x) (or (gethash x alias-map) x) x)))
 	    (setf (node-reads node) (map 'list #'r (node-reads node))
 		  (node-writes node) (map 'list #'r (node-writes node)))))
+        (dolist (n (graph-nodes lowered-graph))
+          (when (typep (node-attr n) 'JITAble)
+            (push (cons (node-type module-node) (node-id module-node)) (getattr n :_lowering_history))))
 	(graph-nodes lowered-graph)))))
 
 (defun %module->iseqbw (session module prev-grad)
@@ -363,7 +366,8 @@ The iseq obtained by lowering the Module must match the output destination speci
 (defparameter *no-grad* nil)
 (defun %compile-toplevel (tensors &key (no-grad *no-grad*) (external-simplifiers *external-simplifiers*) (name :main))
   (declare (type list tensors))
-  (let* ((session (make-compiler-session :name name))
+  (let* ((external-simplifiers `(compose-views-from-graph ,@external-simplifiers))
+         (session (make-compiler-session :name name))
 	 (iseq (apply #'%tpsort-tensors session tensors))
 	 (prev-grad
 	   (make-tensor
@@ -407,6 +411,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
 	;; If the graph was created from FastGraph, the time-series order should be broken.
 	;; call verify-graph to sort them.
+        (compose-views-from-graph graph)
 	(verify-graph graph)
 	(make-avm graph (session-name session)
 		  (session-tid->tensor session)
@@ -428,7 +433,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 Compiles the given tensors, returning an AVM struct.
 
 - tensor[Tensor|List] toplevel tensors.
-- jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls `%jit` to generate the fast kernel supported by `caten/ajit`. This parameter should be specified using the `(ctx:with-contextvar)` macro.
+- jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls `%jit` to generate the fast kernel supported by `caten/codegen`. This parameter should be specified using the `(ctx:with-contextvar)` macro.
 - name[keyword] the name of compiled avm.
 - simplifiers[list] a list of external simplifiers used in the graph-level compilation. (defined by defsimplifier) Pass the function name.
 "
@@ -437,7 +442,7 @@ Compiles the given tensors, returning an AVM struct.
   (let ((avm (%compile-toplevel tensors :name name :external-simplifiers simplifiers)))
     ;; FIXME: Since we can't determine when garbage collection (in caten/isl) will occur during testing, we run it every time.
     (when (and (= (ctx:getenv :JIT) 1) (= (ctx:getenv :CI) 1)) (trivial-garbage:gc))
-    (if jit (caten/ajit:jit avm :backend (or *jit-device* (ctx:getenv :jit_backend))) avm)))
+    (if jit (caten/codegen:jit avm :renderer (or *jit-device* (ctx:getenv :jit_backend))) avm)))
 
 (defun avm/sync-tensors (avm)
   "Synchronize buffer and tensor (but limited to the end of nodes, and grads)"

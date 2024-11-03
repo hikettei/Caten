@@ -1,7 +1,6 @@
 (in-package :caten/apis)
 ;; Function creating a lazy computation node, should start with the prefix !.
 
-;; [TODO] func-variables are not used?
 (defclass Func () ((variables :initarg :variables :initform nil :accessor func-variables))
   (:documentation "A CLOS class that represents a computation.
 
@@ -116,7 +115,8 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
   ((views :initarg :views :type list :accessor view-views)
    (subscripts :initarg :subscripts :accessor view-subscripts)
    (broadcast-mode :initarg :broadcast-mode :accessor view-broadcast-mode)
-   (nrank :initarg :nrank :accessor view-nrank)))
+   (nrank :initarg :nrank :accessor view-nrank)
+   (tr :accessor view-tr)))
 
 (defmethod backward ((op View) &optional dout)
   (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
@@ -128,17 +128,7 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 	  (apply #'!view-from-base (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect `(0 ,s)))))))
 
 (defmethod lower ((op View) &rest inputs)
-  (let ((nrank (view-nrank op))
-	(bs (car (func-variables op))))
-    (flet ((subseq1p (x frm &optional to) (subseq x (1+ frm) (if to (1+ to)))))
-      (with-context
-	  (viewed (%view (car inputs)
-			 (subseq1p inputs 0 nrank) (subseq1p inputs nrank (* 2 nrank))
-			 (subseq1p inputs (* 2 nrank) (* 3 nrank)) (subseq1p inputs (* 3 nrank) (* 4 nrank))
-			 (map 'list #'viewrange-broadcast (view-views op))
-			 (let ((base-shape (subseq1p inputs (* 4 nrank) (* 5 nrank)))
-			       (stride     (subseq1p inputs (* 5 nrank))))
-			   (or stride (%stride base-shape (tensor-order bs))))))))))
+  (%make-view-from-tracker (view-tr op) (gensym "TID") (car inputs)))
 
 (defun !view (base &rest subscripts)
   "
@@ -168,7 +158,8 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
 
 (defclass Permute (Func)
   ((nrank :initarg :nrank :accessor permute-nrank)
-   (order :initarg :order :accessor permute-order)))
+   (order :initarg :order :accessor permute-order)
+   (tr :accessor permute-tr)))
 
 (defmethod permute-list ((op Permute) list)
   (loop for nth in (permute-order op)
@@ -180,55 +171,15 @@ It is supported to compose mutliple views; the viewed tensors can be created fro
     (assert (= (length order) (ndim (car inputs)) (length (intersection (range 0 (ndim (car inputs))) order)))
 	    ()
 	    "Permute: order is not a valid permutation, getting ~a.~%axes are chosen from ~a" order (range 0 (ndim (car inputs))))
-    (make-tensor (permute-list op (shape x)) :dtype (dtype-of x) :order (order x) :views (and (tensor-views x) (permute-list op (tensor-views x))))))
-
-(defmethod forward :around ((op Permute) &rest inputs)
-  (let* ((x (call-next-method))
-	 (views (tensor-views x)))
-    (setf (tensor-views x)
-          (or (tensor-views x)
-              ;; Let (!reshape (!permute ..)) to call !contiguous
-              (loop for size in (shape x)
-                    collect (make-vrange 0 size 1 nil size t)))
-          (tensor-variables x)
-	  (append
-	   (tensor-variables x)
-	   (if (and views (every #'identity (tensor-views (car inputs))))
-	       (append
-		(map 'list (compose #'sfold #'vrange-size) views)
-		(map 'list (compose #'sfold #'viewrange-from) views)
-		(map 'list (compose #'sfold #'viewrange-to) views)
-		(map 'list (compose #'sfold #'viewrange-by) views)
-		(map 'list (compose #'sfold #'viewrange-size) (tensor-views (car inputs))))
-	       (append
-		;; visible shape
-		(map 'list (compose #'sfold #'->iconst) (shape x))
-		;; upfrom
-		(map 'list #'(lambda (_) _ (iconst 0)) (shape x))
-		;; below
-		(map 'list (compose #'sfold #'->iconst) (shape x))
-		;; by
-		(map 'list #'(lambda (_) _ (iconst 1)) (shape x))
-		;; original shape
-		(map 'list (compose #'sfold #'->iconst) (shape (car inputs))))))
-	  (func-variables op) (tensor-variables x))
-    x))
+    (let ((out (make-tensor (permute-list op (shape x)) :dtype (dtype-of x) :order (order x) :views (and (tensor-views x) (permute-list op (tensor-views x))))))
+      (setf (tensor-tr out) (tr-apply-permute x order)
+            (permute-tr op) (tensor-tr out))
+      out)))
 
 (defmethod backward ((op Permute) &optional dout) (!permute dout (permute-order op)))
 
 (defmethod lower ((op Permute) &rest inputs)
-  (let* ((bs (car (func-variables op)))
-	 (nrank (ndim bs)))
-    (flet ((subseq1p (x frm &optional to) (subseq x (1+ frm) (if to (1+ to)))))
-      (with-context
-	  (viewed (%view (car inputs)
-			 (subseq1p inputs 0 nrank)
-			 (subseq1p inputs nrank (* 2 nrank))
-			 (subseq1p inputs (* 2 nrank) (* 3 nrank))
-			 (subseq1p inputs (* 3 nrank) (* 4 nrank))
-			 (permute-list op (map 'list #'viewrange-broadcast (tensor-views bs)))
-			 (permute-list op (%stride (subseq1p inputs (* 4 nrank) (* 5 nrank)) (tensor-order bs)))
-			 :permute (permute-order op)))))))
+  (%make-view-from-tracker (permute-tr op) (gensym "PERMUTE") (car inputs)))
 
 (defun !permute (tensor &rest order)
   "
@@ -295,7 +246,8 @@ Creates a copy of the tensor. In Caten, the in-place operations are automaticall
 (defclass Reshape (Func)
   ((shape-bf :initarg :shape-bf :accessor reshape-shape-bf)
    (shape-af :initarg :shape-af :accessor reshape-shape-af)
-   (order    :initarg :order    :accessor reshape-order)))
+   (order    :initarg :order    :accessor reshape-order)
+   (tr       :accessor reshape-tr)))
 
 (defmethod forward ((op Reshape) &rest tensors)
   (when (and (every #'numberp (reshape-shape-bf op)) (every #'numberp (reshape-shape-af op)))
@@ -303,28 +255,15 @@ Creates a copy of the tensor. In Caten, the in-place operations are automaticall
 	    ()
 	    "Assertion Failed: Cannot reshape from ~a to ~a. The number of total elements should correspond."
 	    (reshape-shape-bf op) (reshape-shape-af op)))
-  (make-tensor (reshape-shape-af op) :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))))
-
-(defmethod forward :around ((op Reshape) &rest tensors)
-  (let ((out-tensor (call-next-method)))
-    (setf (tensor-variables out-tensor)
-	  (append (list (car tensors))
-		  (loop for s in (reshape-shape-af (tensor-op out-tensor))
-			collect (if (tensor-p s) s (iconst s))))
-	  (func-variables (tensor-op out-tensor)) (tensor-variables out-tensor))
-    out-tensor))
+  (let ((out (make-tensor (reshape-shape-af op) :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors)))))
+    (setf (tensor-tr out) (tr-apply-reshape (car tensors) (reshape-shape-af op))
+          (reshape-tr op) (tensor-tr out))
+    out))
 
 (defmethod backward ((op Reshape) &optional prev-grad) (!reshape prev-grad (reshape-shape-bf op)))
 
 (defmethod lower ((op Reshape) &rest nodes)
-  (let ((tensor (car (func-variables op))))
-    (with-context
-      (a (if (null (reshape-shape-bf op))
-	     (%move (%make-tensor `(1) :dtype (tensor-dtype tensor) :order (tensor-order tensor)) (car nodes))
-	     (if (null (reshape-shape-af op))
-		 (%load (%salloc :dtype (tensor-dtype tensor)) (car nodes))
-		 (car nodes))))
-      (a (when (reshape-shape-af op) (%reshape a (cdr nodes) :order (reshape-order op)))))))
+  (%make-view-from-tracker (reshape-tr op) (gensym "RESHAPE") (car nodes)))
 
 (defun !reshape (x &rest shape)
   "
@@ -340,7 +279,8 @@ If `x` is a viewed tensor, it creates a copy of the tensor with contiguous memor
 "
   (declare (type tensor x) (type list shape))
   (let ((shape (flatten shape)))
-    (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape :order (tensor-order x)) (!contiguous x))))
+    (forward (make-instance 'Reshape :shape-bf (tensor-shape x) :shape-af shape :order (tensor-order x))
+             (if (tr-reshapeable-p x shape) x (!contiguous x :force t)))))
 
 (defun !uprank (x n)
   "
@@ -728,7 +668,8 @@ Creates a constant tensor with the specified value from the tensor.
   "Proceed-Output[Tensor] - a realized tensor."
   (declare (type tensor proceed-output))
   (let* ((detached-tensor (st "A[~] -> A[~]" (proceed-output))))
-    (setf (tensor-buffer detached-tensor) (tensor-buffer proceed-output))
+    (setf (tensor-buffer detached-tensor) (tensor-buffer proceed-output)
+          (tensor-id detached-tensor) (tensor-id proceed-output))
     (let ((output (forward (make-instance 'ProceedNode) detached-tensor)))
       (setf (tensor-buffer output) (tensor-buffer detached-tensor))
       output)))

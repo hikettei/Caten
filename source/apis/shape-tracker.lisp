@@ -210,11 +210,10 @@
 				     (unless (eql s :~)
 				       (assert o () "ShapeTracker: ~a~%~a is not determined." (st-base st) s))
 				     (if (listp o) o (list o))))))
-		   ;; TODO: Extend views
 		   (if allow-broadcast
 		       base
 		       (make-tensor shp :dtype (tensor-dtype base) :order (tensor-order base) :id (gensym "STC") :views (tensor-views base)
-				    :initial-element (gethash :initial-element solved))))))
+				    :initial-element (gethash :initial-element solved) :tr (tensor-tr base))))))
 	(apply #'values (map 'list #'make-new-tensor (st-aft st))))))
   (defun parse-where (where)
     "Verifies the where form"

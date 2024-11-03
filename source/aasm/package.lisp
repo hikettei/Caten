@@ -45,6 +45,7 @@
    #:%mul
    #:%div
    #:%idiv
+   #:%mod
    #:%move
    #:%and
    #:%or
