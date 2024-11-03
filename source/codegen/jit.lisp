@@ -197,6 +197,7 @@ caten/codegen overview:
   (declare (type Graph graph))
   (verify-graph graph)
   (setf graph (->graph graph)) ;; Convert from FastGraph to Graph to sort the order
+  (verify-graph graph :no-purge t)
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
              (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) id allocated)
@@ -230,6 +231,13 @@ caten/codegen overview:
                    (mapc #'merge-id (node-reads out-view))
                    (push out-view nodes)))
           (T (error "schedule-graph->vmop: dont know how to merge ~a" node))))
+      ;; Clean up nodes
+      (dolist (node nodes)
+        (flet ((replace-id (id)
+                 (when (getattr node id :allow-undefined t)
+                   (setf (getattr node id) nil))))
+          (replace-id :_type_relay)
+          (replace-id :_read_views)))
       (apply #'make-graph (nreverse nodes)))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun buffer-equal (a b)
