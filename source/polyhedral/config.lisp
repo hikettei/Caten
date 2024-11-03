@@ -9,6 +9,7 @@
    #:auto-scheduler-schedule-options
    #:auto-scheduler-cost-functions
    #:auto-scheduler-n-global-loops
+   #:auto-scheduler-tile-size
    ))
 
 (in-package :caten/polyhedral/config)
@@ -55,7 +56,8 @@
 (defclass Auto-Scheduler-Config ()
   ((schedule-options :type Schedule-Options :accessor auto-scheduler-schedule-options)
    (cost-functions :type list :accessor auto-scheduler-cost-functions)
-   (n-global-loops :type fixnum :accessor auto-scheduler-n-global-loops))
+   (n-global-loops :type fixnum :accessor auto-scheduler-n-global-loops)
+   (auto-scheduler-tile-size :type fixnum :accessor auto-scheduler-tile-size))
   (:documentation ""))
 
 (defmethod print-object ((config Auto-Scheduler-Config) stream)
@@ -71,6 +73,7 @@
                                    (schedule-option `(make-schedule-options))
                                    (cost-functions '(:proximity :coincidence :validity))
                                    (n-global-loop 0)
+                                   (tile-size 0)
                                    (documentation ""))
   "define-auto-scheduler"
   (let ((instance (gensym)) (cs (gensym)))
@@ -84,5 +87,6 @@
            (assert (and (listp ,cs) (every #'(lambda (x) (typep x 'cost-function-t)) ,cs)) () "Cost functions must be a list of :proximity, :coincidence, or :validity, getting ~a" ,cs)
            (setf (auto-scheduler-schedule-options ,instance) ,schedule-option
                  (auto-scheduler-cost-functions ,instance) ,cost-functions
-                 (auto-scheduler-n-global-loops ,instance) ,n-global-loop)
+                 (auto-scheduler-n-global-loops ,instance) ,n-global-loop
+                 (auto-scheduler-tile-size ,instance) ,tile-size)
            ,instance)))))

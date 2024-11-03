@@ -43,7 +43,7 @@
   ;; Getting the initial schedule
   (setf (poly-schedule poly) (schedule scheduler poly))
   ;; Tiling
-  ;; (caten/polyhedral/tiling:tile-bands poly)
+  (caten/polyhedral/tiling:tile-bands scheduler poly)
   ;; Unrolling/Vectorizing
   ;; (caten/polyhedral/packing:solve poly)
   ;; Parallelize

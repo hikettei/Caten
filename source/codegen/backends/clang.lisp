@@ -13,8 +13,8 @@
     :schedule-option (make-schedule-options :schedule-outer-coincidence fuse-softmax)
     :cost-functions '(:validity :proximity :coincidence)
     :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
+    :tile-size 32 ;; [TODO] Automatic Parameter Tuning
     )
-
 (define-hook-auto-scheduler (CStyle-Renderer Clang-Auto-Scheduler))
 
 (defvar *indent*)

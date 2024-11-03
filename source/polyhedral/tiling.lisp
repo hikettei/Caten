@@ -1,7 +1,7 @@
 (defpackage :caten/polyhedral/tiling
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/isl :caten/polyhedral/ir)
+  (:use :cl :caten/isl :caten/polyhedral/ir :caten/polyhedral/config)
   (:export #:tile-bands)
   (:documentation "Provides an auto-tuner for tiling dims and params
 - References
@@ -83,10 +83,14 @@
             (setf node (pop next-nodes)))
     tileable-bands))
 
-(defun tile-bands (ir)
+(defun tile-bands (scheduler ir)
   "`tile-bands` helps you execute the computation tile by tile over the two axes"
   (declare (type Polyhedral-IR ir))
   (let* ((schedule (poly-schedule ir))
          (bands (get-tileable-bands schedule)))
-    (dotimes (i (length bands))
-      (setf (poly-schedule ir) (schedule-tile-band (nth i (get-tileable-bands (poly-schedule ir))))))))
+    (when (not (= 0 (auto-scheduler-tile-size scheduler)))
+      (dotimes (i (length bands))
+        (setf (poly-schedule ir)
+              (schedule-tile-band
+               (nth i (get-tileable-bands (poly-schedule ir)))
+               :size-default (auto-scheduler-tile-size scheduler)))))))
