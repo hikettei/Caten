@@ -84,9 +84,3 @@
            ,instance)))))
 ;; (print (Clang-Auto-Scheduler))
 ;; Ref https://arxiv.org/pdf/2401.06665
-(define-auto-scheduler (Clang-Auto-Scheduler (&key (fuse-softmax 1) (n-global-loop (ctx:getenv :OMP))))
-    ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
-    :schedule-option (make-schedule-options :schedule-outer-coincidence fuse-softmax)
-    :cost-functions '(:proximity :coincidence :validity)
-    :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
-    )

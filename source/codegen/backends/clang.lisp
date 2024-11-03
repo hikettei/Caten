@@ -1,8 +1,19 @@
 (defpackage :caten/codegen/backends/clang
   (:use :cl :caten/air :cffi :caten/codegen/renderer :caten/codegen/helpers
-        :caten/codegen/shape-inference :caten/avm :caten/codegen/expr))
+   :caten/codegen/shape-inference :caten/avm :caten/codegen/expr)
+  (:import-from
+   :caten/polyhedral
+   #:define-auto-scheduler
+   #:make-schedule-options))
 
 (in-package :caten/codegen/backends/clang)
+
+(define-auto-scheduler (Clang-Auto-Scheduler (&key (fuse-softmax 1) (n-global-loop (ctx:getenv :OMP))))
+    ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
+    :schedule-option (make-schedule-options :schedule-outer-coincidence fuse-softmax)
+    :cost-functions '(:proximity :coincidence :validity)
+    :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
+    )
 
 (defvar *indent*)
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)

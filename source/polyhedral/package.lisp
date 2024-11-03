@@ -9,7 +9,13 @@
    :caten/polyhedral/auto-scheduler
    #:auto-schedule
    #:->ast)
+  (:import-from
+   :caten/polyhedral/config
+   :define-auto-scheduler
+   #:make-schedule-options)
   (:export
    #:Polyhedral-IR
    #:auto-schedule
-   #:->ast))
+   #:->ast
+   #:define-auto-scheduler
+   #:make-schedule-options))
