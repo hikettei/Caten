@@ -127,7 +127,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                 (r (node-reads node) (getattr node :storage-id-src)))
             (if (getattr node :blueprint)
                 "t" "nil")
-            (if (or (getattr node :allocate-p) (null (getattr node :jitable)))
+            (if (getattr node :allocate-p)
                 ""
                 (if (getattr node :cache-name)
                     (format nil ":cache-name=~a :name=~a" (getattr node :cache-name) (getattr node :name))
