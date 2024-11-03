@@ -155,7 +155,7 @@
                    collect
                    (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
                      (%expr-from-graph (if (find 0 strides :test #'eql) 0 (car (last strides))) (renderer-graph renderer))))))
-    (let* ((is (car (relay-read-iters (read-type-relay node))))
+    (let* ((is (car (relay-write-iters (read-type-relay node))))
            (proc (iteration-space-procedure is))
            (components (merge-stride proc (cdr (node-reads node)))))
       (from-expr (iteration-space-shape is) components))))
