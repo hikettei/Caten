@@ -8,15 +8,14 @@
 
 (in-package :caten/codegen/backends/clang)
 
-(define-auto-scheduler (Clang-Auto-Scheduler (&key (fuse-softmax 1) (n-global-loop (ctx:getenv :OMP))))
+(define-auto-scheduler (Clang-Auto-Scheduler (&key (fuse-softmax 0) (n-global-loop (ctx:getenv :OMP))))
     ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
     :schedule-option (make-schedule-options :schedule-outer-coincidence fuse-softmax)
-    :cost-functions '(:proximity :coincidence :validity)
+    :cost-functions '(:validity :proximity :coincidence)
     :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
     )
 
 (define-hook-auto-scheduler (CStyle-Renderer Clang-Auto-Scheduler))
-;; (define-schedule-primitive (tiling) (pir x))
 
 (defvar *indent*)
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)

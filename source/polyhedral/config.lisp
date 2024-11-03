@@ -40,7 +40,7 @@
                       ,@(loop for (name . default) in options-and-default
                               for lisp-name = (intern (lispify name))
                               collect `(format stream "  ~a | ~a |~%" ,(align name) (slot-value config ',lisp-name)))))
-                  (defmethod apply-schedule-options-global((config Schedule-Options))
+                  (defmethod apply-schedule-options-global ((config Schedule-Options))
                     ,@(loop for (name . default) in options-and-default
                             for lisp-name = (intern (lispify name))
                             collect `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name) :pointer (isl::context-handle isl::*context*) :int (slot-value config ',lisp-name) :void)))))))
