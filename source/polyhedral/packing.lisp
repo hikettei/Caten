@@ -1,8 +1,8 @@
 (defpackage :caten/polyhedral/packing
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/isl :caten/polyhedral/ir)
-  (:export #:solve))
+  (:use :cl :caten/isl :caten/polyhedral/ir :caten/polyhedral/config)
+  (:export #:packing))
 
 (in-package :caten/polyhedral/packing)
 
@@ -35,7 +35,7 @@
 
   )
 
-(defun solve (ir)
+(defun packing (config ir)
   (declare (type polyhedral-ir ir))
   
 
