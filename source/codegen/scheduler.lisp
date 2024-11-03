@@ -530,43 +530,6 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                        do (explore (car (node-writes parent)))))))
     (mapc #'explore (graph-outputs schedule-graph))))
 
-(defun apply-serialize-reduction (schedule-graph &aux (seen))
-  (declare (type FastGraph schedule-graph))
-  (labels ((parent-groups (self)
-             (assert (node-p self))
-             (loop for r in (node-reads self)
-                   for val = (and (symbolp r) (id->value schedule-graph r))
-                   ;; Only :jitable scheduleitems are merged
-                   if (and val (getattr val :jitable)) collect val))
-           (merge-p (self c)
-             ;; Checklist to merge:
-             ;; - Reduced at the same rank? or c is not reduced?
-             ;; - The same ranked?
-             ;; - Not across :SPECIAL/VM?
-             (when (null (getattr c :jitable)) (return-from merge-p nil))
-             (print "+++MERGEABLE+++")
-             (print self)
-             (print c)
-             nil
-             )
-           (explore (id)
-             (when (find id seen) (return-from explore nil))
-             (push id seen)
-             (let* ((self (id->value schedule-graph id))
-                    (_ (when (or (null self) (null (getattr self :jitable))) (return-from explore nil)))
-                    (candidates (parent-groups self)))
-               (declare (ignore _))
-               (loop for parent in candidates
-                     if (merge-p self parent)
-                       do (let ((merged (merge-schedule-items self parent)))
-                            (insert-nodes schedule-graph (list merged))
-                            (dolist (w (node-writes parent))
-                              (remnode schedule-graph w))
-                            (mapc #'explore (node-reads parent)))
-                     else
-                       do (explore (car (node-writes parent)))))))
-    (mapc #'explore (graph-outputs schedule-graph))))
-
 (defun apply-move-after-reduction (schedule-graph)
   (labels ((%newtype (buffer)
              (caten/avm:make-buffer
@@ -630,7 +593,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (setf schedule (->fast-graph schedule))
       ;; ~~ Rewriting Rules + Post Fusion ~~~~~
       (apply-reduce+move-fusion schedule)
-      ;;(apply-serialize-reduction schedule)
+      ;; (apply-serialize-reduction schedule) ;; TODO: Softmax=1 Kernel when not fused w/ gemm
       (apply-move-after-reduction schedule)
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
