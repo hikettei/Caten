@@ -1,11 +1,12 @@
 (defpackage :caten/codegen/memory-planner
   (:use :cl :caten/air :caten/avm)
   (:export #:run-memory-planner))
+
 (in-package :caten/codegen/memory-planner)
 
 (defstruct (MemoryBlock
 	    (:constructor make-memoryblock (id type create release &key (lock nil))))
-  "An abstraction for memory_block
+  "Ab abstraction for a memory allocation and release pipeline.
     |
  i  |  (create)  (release)
  d  |     |----------| 
@@ -43,7 +44,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   "Returns a shape of the buffer, which is not VIEWED."
   (declare (type buffer buffer))
   (or
-   (buffer-orig-buffer-shape buffer)
+   (buffer-orig-buffer-shape buffer) ;; non-viewed-size
    (buffer-shape buffer)))
 
 ;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
@@ -55,6 +56,8 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	       (loop for candidate in I
 		     if (and (null (find (memoryblock-id candidate) locked))
 			     (freed-p candidate time)
+                             (not (= -1 (buffer-nrank (memoryblock-type mb))))
+                             (not (= -1 (buffer-nrank (memoryblock-type candidate))))
 			     (buffer-shape (memoryblock-type mb)) ;; <=> assure the memory-block is a tensor
 			     (equal (buffer-orig-shape (memoryblock-type candidate))
 				    (buffer-orig-shape (memoryblock-type mb)))
@@ -85,6 +88,8 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
       I)))
 
 (defmethod run-memory-planner ((schedule-graph Graph))
+  "write_1, write_2 = f(write_suite_1, write_suite_2, *[dynamic_shape + read_buffers])
+The goal of run-memory-planner is to reduce the number of :allocate-p object in schedule-graph, by rewriting write_suite1 and write_suite2."
   (let* ((trace-table (make-hash-table))
 	 (id2type (make-hash-table))
 	 (lock-table (make-hash-table))
@@ -98,7 +103,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 		  for typ in (getattr node :read-types)
 		  for time = `(,nth ,@(gethash val trace-table))
                   if (and (symbolp val) (null (find val constants)))
-                    do (setf (gethash val id2type) typ (gethash val trace-table) time))
+                    do (setf (gethash val id2type) typ (gethash val trace-table) time)) ;; (incf consume)
 	    (loop for val in (node-writes node)
 		  for typ in (getattr node :write-types)
 		  if (and (symbolp val) (null (gethash val trace-table)))
@@ -107,7 +112,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                     ;; LockTable  -> Set T to lock (never become in-place)
 		    do (setf (gethash val id2type) typ
 			     (gethash val trace-table) (list nth)
-			     (gethash val lock-table) lock-p)))
+                             (gethash val lock-table) lock-p)))
     (let* ((memory-blocks
 	     (loop for key in (alexandria:hash-table-keys trace-table)
 	           for typ = (gethash key id2type)
@@ -129,5 +134,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
       (loop for mb in solved
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
       (flet ((newid (id) (or (gethash id alias-map) id)))
-        
-        ))))
+        (dolist (node (graph-nodes schedule-graph))
+          (when (getattr node :jitable)
+            (setf (getattr node :storage-id-dst) (map 'list #'newid (node-writes node))))))
+      (when (>= (ctx:getenv :JIT_DEBUG) 2)
+        (let ((before (length (remove-duplicates (alexandria:hash-table-keys alias-map))))
+              (after (length (remove-duplicates (alexandria:hash-table-values alias-map)))))
+          ;; [TODO] unit should be MiB
+          (format t "  Memory Planner: n_alloc(~a) -> n_alloc(~a)~%" before after))))))

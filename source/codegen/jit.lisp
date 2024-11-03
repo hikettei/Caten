@@ -357,7 +357,7 @@ caten/codegen overview:
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
-    ;; (run-memory-planner schedule-graph)
+    (run-memory-planner schedule-graph)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Rendering ..."))
