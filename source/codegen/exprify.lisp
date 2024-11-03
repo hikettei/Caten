@@ -321,7 +321,7 @@
         ;; C <- A + B
         ;; =>
         ;; A += B
-        (expr-only-leaf-are-arguments (graph-propagete-reduction (rewriter 0 (length new-bp)) replaceable))))))
+        (expr-only-leaf-are-arguments (graph-propagate-reduction (rewriter 0 (length new-bp)) replaceable))))))
 
 (defun rewrite-expr-aref (expr replace)
   (declare (type graph expr))
@@ -339,7 +339,7 @@
                      (or id x)))
                (node-reads n))))))
 
-(defmethod graph-propagete-reduction (blueprint replaceable)
+(defmethod graph-propagate-reduction (blueprint replaceable)
   (assert *expr-cache*)
   (let ((id->tgt (expr-cache-reduce-alias *expr-cache*))) ;; id -> (list new_id new_type new_is)
     (loop for bp in blueprint
