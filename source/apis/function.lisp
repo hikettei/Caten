@@ -124,7 +124,7 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
       (if broadcast-mode
 	  (let* ((base (apply #'!view base subscripts))
 		 (dout (!add base (!contiguous dout) :reduce t)))
-	    (apply #'!view dout (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) 0 t)) subscripts)))
+            (apply #'!view dout (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) x t)) subscripts)))
 	  (apply #'!view-from-base (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect `(0 ,s)))))))
 
 (defmethod lower ((op View) &rest inputs)
