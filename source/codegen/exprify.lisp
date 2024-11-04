@@ -248,10 +248,11 @@
                   if (eql (node-class bp) :Render) collect bp
                     else collect (exprify bp))))
       (labels ((replace-p (id group other-pairs current-pair)
+                 (declare (ignore group))
                  (if (find id replaceable)
                      ;; If the id was used by more than two nodes, split them. (not to introduce the extra computation)
                      (and
-                      (= 1 (count-if #'(lambda (node) (find id (node-reads node))) group))
+                      (= 1 (count-if #'(lambda (node) (find id (node-reads node))) blueprint)) ;; note: blueprint was previously group
                       (or (null current-pair)
                           (null (intersection (expr-writes current-pair) (apply #'append (map 'list #'expr-writes other-pairs))))))
                      nil))
