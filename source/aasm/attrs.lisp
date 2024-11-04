@@ -16,9 +16,7 @@
    (_output_type :initform nil :initarg :_output_type)
    (declare-type :initarg :declare-type :initform nil)
    (iterations :initarg :iterations :initform nil)
-   (_lowering_history :initform nil :initarg :_lowering_history)
-   (storage-id-src :initform nil :initarg :storage-id-src)
-   (storage-id-dst :initform nil :initarg :storage-id-dst))
+   (_lowering_history :initform nil :initarg :_lowering_history))
   (:documentation "This node is jitable.
 - declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:
 ```
