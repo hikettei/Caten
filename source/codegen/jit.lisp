@@ -145,10 +145,9 @@ caten/codegen overview:
              :output-buffer-n (length (node-writes si))
              :kernel-info (make-compiled-kernel-from-si si graph)
              :dtypes
-             (append
-              (map 'list #'buffer-dtype (getattr si :write-types))
-              (loop for i in (getattr si :dynamic-shapes) collect caten/aasm:*default-int*)
-              (map 'list #'buffer-dtype (getattr si :read-types)))))
+             (loop for item in (getattr si :blueprint)
+                   if (eql (node-type item) :DEFINE-GLOBAL)
+                     collect (getattr item :dtype))))
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((info (getattr node :kernel-info))
