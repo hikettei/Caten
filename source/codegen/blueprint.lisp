@@ -482,9 +482,10 @@ Depends=~a Reduce=~a Users=~a
           (node-writes node) (map 'list #'car write-items)
           seen nil)
     (labels ((address-of (id)
-               (if (gethash id rewrite-map)
-                   (address-of (gethash id rewrite-map))
-                   id))
+               (read-ptrid
+                (if (gethash id rewrite-map)
+                    (address-of (gethash id rewrite-map))
+                    id)))
              (only-unseen (list)
                (loop for l in list
                      for id = (address-of (car l))
@@ -497,8 +498,8 @@ Depends=~a Reduce=~a Users=~a
         (setf
          (getattr node :read-types) (map 'list #'cdr read-items)
          (getattr node :write-types) (map 'list #'cdr write-items)
-         (getattr node :storage-id-src) (map 'list (compose #'address-of #'car) read-items)
-         (getattr node :storage-id-dst) (map 'list (compose #'address-of #'car) write-items))))))
+         (getattr node :storage-id-src) (map 'list #'car read-items)
+         (getattr node :storage-id-dst) (map 'list #'car write-items))))))
 
 (defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph)
   (flet ((is-dynamic-shape-p (val)
@@ -559,7 +560,7 @@ Depends=~a Reduce=~a Users=~a
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
       (expr-set-iterations (ctx-blueprint ctx))
-      (multiple-value-bind (new-bp id-rewrite-map) (graph-propagate-pointer-id-type (ctx-blueprint ctx))
+      (multiple-value-bind (new-bp id-rewrite-map) (graph-propagate-pointer-id-type (ctx-blueprint ctx) scheduled-graph)
         (setf (ctx-blueprint ctx) new-bp)
         ;; Infer the input/output buffers again, they can be removed during the op fusion.
         (schedule-item-infer-io-buffers node (ctx-blueprint ctx) id-rewrite-map)

@@ -212,7 +212,7 @@
   (loop for item in (graph-nodes (expr-graph (getattr expr :expr)))
         append (node-writes item)))
 
-(defun expr-only-leaf-are-arguments (nodes)
+(defun expr-only-leaf-are-arguments (nodes schedule-graph)
   "Rewrites the expr in nodes, to have only the leaf nodes as an argument."
   (loop for node in nodes
         if (eql (node-type node) :EXPR) do
@@ -221,7 +221,10 @@
                          for node in (graph-nodes expr)
                          ;; See renderer.lisp, MOVE first argument is not rendered for example.
                          ;; [Note] Add more nodes if you found an argument which is actually rendered but not used in the rendered kernel.
-                         if (find (node-type node) `(:CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
+                         if (and
+                             (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
+                             (id->value schedule-graph (car (node-reads node)))
+                             (getattr (id->value schedule-graph (car (node-reads node))) :allocate-p))
                            collect (car (node-reads node))
                          if (not (eql (node-type node) :Aref))
                            collect (car (node-writes node))))
@@ -320,9 +323,9 @@
         ;; A += B
         (rewriter 0 (length new-bp))))))
 ;; [TODO] Clean up this function!
-(defun graph-propagate-pointer-id-type (blueprint)
+(defun graph-propagate-pointer-id-type (blueprint schedule-graph)
   (assert *expr-cache*)
-  (let ((rewrite-map (alexandria:copy-hash-table (cache-pointer-map *expr-cache*)))
+  (let ((rewrite-map (make-hash-table))
         (id->tgt (expr-cache-reduce-alias *expr-cache*))) ;; id -> (list new_id new_type new_is)
     (loop for bp in blueprint
           if (and (eql (node-type bp) :EXPR) (getattr bp :reduction))
@@ -355,7 +358,7 @@
                 do (updt bp :reader node-reads :ireader relay-read-iters :treader relay-reads)
                    (updt bp :reader node-writes :ireader relay-write-iters :treader relay-writes)
                    (rewrite-expr-aref (expr-graph (getattr bp :expr)) #'new))
-        (values (expr-only-leaf-are-arguments blueprint) rewrite-map)))))
+        (values (expr-only-leaf-are-arguments blueprint schedule-graph) rewrite-map)))))
 
 (defun rewrite-expr-aref (expr replace)
   (declare (type graph expr))
