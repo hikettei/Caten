@@ -84,6 +84,9 @@
 		  (list (first form) (nconc (list tid) (second form))))))
       (setf (gethash grad-id (session-grad->grads session)) (if alloc (list tid nil) (list nil (list tid))))))
 
+(defun accumlate-grads (subgrads last-id)
+  (graph-nodes (with-context (_ (%add (reduce #'%add (butlast subgrads)) (car (last subgrads)) :id last-id)))))
+
 (defun session/sync-multi-grads (session graph)
   (declare (type Compiler-session session)
 	   (type graph graph)
@@ -103,9 +106,10 @@
 	     (if (>= (length rest-grads) 2)
 		 (let* ((subgrads (map 'list #'(lambda (x) (session/read session x)) rest-grads))
 			(subgrad-id (gensym "SUBGRAD"))
-			(total (make-node :BinaryOps :ADD (list subgrad-id) (map 'list #'node->id subgrads) :reduction nil))
-			(final-node (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id (node->id total)))))
-		   (push total (graph-nodes graph))
+			(totals (accumlate-grads subgrads subgrad-id))
+			(final-node (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id subgrad-id))))
+                   (dolist (total totals)
+		     (push total (graph-nodes graph)))
 		   (push final-node (graph-nodes graph))
 		   (session/assign session grad-id final-node))
 		 (let* ((subgrad (session/read session (car rest-grads)))
