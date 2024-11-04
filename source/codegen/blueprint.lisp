@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/blueprint
   (:documentation "The `Blueprint` represents a transformed computation graph format of `caten/AASM` that incorporates loop information. The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.
 The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it is used for loop optimization and by the Renderer.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria)
+  (:use :cl :caten/air :caten/codegen/expr :caten/codegen/expr-cache :alexandria)
   (:import-from
    :caten/codegen/shape-inference
    #:read-type-relay
@@ -41,7 +41,8 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
   (:import-from
    :caten/codegen/exprify
    #:graph-exprify
-   #:graph-scalarify)
+   #:graph-scalarify
+   #:finalize-bp-and-deploy-address-inference)
   (:export
    #:lower-schedule-item
    #:print-blueprint))
@@ -59,7 +60,8 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
   "Represents the end of the iteration."
   (make-node :Render :ENDFOR nil nil :idx idx))
 
-(defmethod print-blueprint (nodes stream &aux (gids))
+(defmethod print-blueprint (schedule-item nodes stream &aux (gids))
+  (assert (eql (node-type schedule-item) :Schedule-Item))
   (labels ((print-aref (name b is &key (iterations (make-index-space)))
              (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
                  (format nil "~a[~(~a~)]" name
@@ -460,6 +462,7 @@ Depends=~a Reduce=~a Users=~a
       nil)))
 
 (defmethod schedule-item-infer-io-buffers ((node Node) (bp-items list))
+  "Infers read arguments, write arguments, and a list of dynamic shape depending on."
   (assert (eql (node-type node) :Schedule-Item))
   (let ((seen) (read-items) (write-items))
     (loop for item in bp-items
@@ -475,10 +478,8 @@ Depends=~a Reduce=~a Users=~a
                     do (push (cons write wt) write-items)
                   end
                   do (push write seen)))
-    (setf (node-reads node) (map 'list #'car read-items)
-          (node-writes node) (map 'list #'car write-items)
-          (getattr node :read-types) (map 'list #'cdr read-items)
-          (getattr node :write-types) (map 'list #'cdr write-items)
+    (setf (getattr node :read-types)     (map 'list #'cdr read-items)
+          (getattr node :write-types)    (map 'list #'cdr write-items)
           (getattr node :storage-id-src) (map 'list #'car read-items)
           (getattr node :storage-id-dst) (map 'list #'car write-items))))
 
@@ -539,9 +540,10 @@ Depends=~a Reduce=~a Users=~a
       ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
-            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
-      (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr node :cache-name)))
-        (print-blueprint (ctx-blueprint ctx) t))
+            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph)
+            (ctx-blueprint ctx) (finalize-bp-and-deploy-address-inference (ctx-blueprint ctx)))
       ;; Infer the input/output buffers again, they can be removed during the op fusion.
       (schedule-item-infer-io-buffers node (ctx-blueprint ctx))
+      (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr node :cache-name)))
+        (print-blueprint node (ctx-blueprint ctx) t))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))

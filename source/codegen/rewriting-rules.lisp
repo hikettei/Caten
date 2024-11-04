@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/rewriting-rules
-  (:use :cl)
+  (:use :cl :caten/codegen/expr-cache)
   (:import-from
    :caten/aasm
    #:JITAble
@@ -62,7 +62,7 @@
    #:apply-rewriting-rules
    #:nodes-apply-static-gensym
    #:apply-static-gensym
-   #:node-fuse-const-loadp))
+   #:graph-infer-pointer-address))
 
 (in-package :caten/codegen/rewriting-rules)
 
@@ -71,15 +71,12 @@
 Only the :MOVE has an ability to modify this rule. (Or :STORE?)"
   (declare (type graph graph))
   (let ((map (make-hash-table)))
-    (flet ((newid (x) (if (symbolp x) (or (gethash x map) x) x)))
-      (dolist (node (graph-nodes graph))
-        (when (typep (node-attr node) 'JITAble)
-          (setf (getattr node :storage-id-src) (map 'list #'newid (node-reads node))
-                (getattr node :storage-id-dst) (map 'list #'newid (node-writes node))))
-        (when (or (eql (node-type node) :MOVE) (getattr node :reduction :allow-undefined t))
-          (assert (symbolp (car (node-reads node))))
-          ;; WRTTE=READ
-          (setf (gethash (car (node-writes node)) map) (car (node-reads node))))))))
+    (dolist (node (graph-nodes graph))
+      (when (eql (node-type node) :MOVE)
+        (assert (symbolp (car (node-reads node))))
+        ;; WRTTE=READ
+        (setf (gethash (car (node-writes node)) map) (car (node-reads node)))))
+    map))
 
 (defun rewrite-views-as-buffer (avm)
   "Rewrite the node :VIEW as an object in the type-relay, so that the code generator can handle view as a buffer."
@@ -325,7 +322,6 @@ out[...] = f(*val_1);
     ;; (wmma-rewriter (avm-graph avm) :no-verify t)
     (propagate-rebundant-loadp (avm-graph avm))
     (apply-static-gensym avm id2view))
-  (graph-infer-pointer-address (avm-graph avm))
   (setf (avm-graph avm) (->graph (avm-graph avm)))
   avm)
 
@@ -333,10 +329,15 @@ out[...] = f(*val_1);
   "Inserts DEFINE_GLOBAL to the top of graph"
   (declare (type node schedule-item))
   (assert (eql (node-type schedule-item) :Schedule-Item))
-  (setf (getattr schedule-item :blueprint)
+  (setf (getattr schedule-item :blueprint) ;; remove previous define-global
+        (loop for item in (getattr schedule-item :blueprint)
+                  unless (eql (node-type item) :DEFINE-GLOBAL)
+                    collect item)
+        ;; Append new schedule-item
+        (getattr schedule-item :blueprint)
         (append
          ;; writes
-         (loop for write in (node-writes schedule-item)
+         (loop for write in (getattr schedule-item :storage-id-dst)
                for wt in (getattr schedule-item :write-types)
                for nth upfrom 0
                collect
@@ -347,24 +348,8 @@ out[...] = f(*val_1);
          (loop for item in (getattr schedule-item :dynamic-shapes)
                collect
                (make-define-global (car item) (cdr item) nil :shape 0))
-         (loop for read in (node-reads schedule-item)
+         (loop for read in (getattr schedule-item :storage-id-src)
                for rt in (getattr schedule-item :read-types)
                collect
                (make-define-global read (buffer-dtype rt) t :input (buffer-nrank rt)))
          (getattr schedule-item :blueprint))))
-
-(defmethod node-fuse-const-loadp ((node Node) (base-graph Graph))
-  (flet ((is-loadp (id)
-           (let ((node (id->value base-graph id)))
-             (and node (eql (node-type node) :Load) (getattr node :value))))
-         (scalarify (buffer)
-           (let ((buffer (copy-buffer buffer)))
-             (setf (buffer-nrank buffer) 0)
-             buffer)))
-    (loop for nth upfrom 0
-          for read in (node-reads node)
-          for rt in (relay-reads (read-type-relay node))
-          for load = (is-loadp read)
-          if (and (not (eql (get-output-to node) read)) load) do
-            (setf (nth nth (node-reads node)) load
-                  (nth nth (relay-reads (read-type-relay node))) (scalarify rt)))))

@@ -26,7 +26,8 @@
   (:export
    #:graph-scalarify
    #:graph-exprify
-   #:graph-propagete-reduction))
+   #:graph-propagete-reduction
+   #:finalize-bp-and-deploy-address-inference))
 
 (in-package :caten/codegen/exprify)
 
@@ -97,27 +98,9 @@
             do (setf outs (append outs (node-writes n))))
     (remove-duplicates outs)))
 
-(defmethod propagate-load-const ((node Node) bp)
-  (loop for nth upfrom 0
-        for r in (node-reads node)
-        for n = (find r bp :key #'node-writes :test #'find)
-        if (and (not (eql (node-class node) :Render))
-                (and n (eql (node-type n) :LOAD)) ;; Propagate only scalars
-                (numberp (getattr n :value))
-                (= (buffer-nrank (car (relay-writes (read-type-relay n)))) 0))
-          do (setf (nth nth (node-reads node)) (getattr n :value))))
-
-(defun remove-unused-blueprint (blueprint sched-graph)
-  (loop for bp in blueprint
-        for us = (+
-                  (count (car (node-writes bp)) blueprint :key #'node-reads :test #'find)
-                  (count (car (node-writes bp)) (graph-nodes sched-graph) :key #'node-reads :test #'find)
-                  (count (car (node-writes bp)) (graph-outputs sched-graph)))
-        if (or (eql (node-class bp) :Render) (> us 0))
-          collect bp))
-
 (defmethod graph-scalarify (blueprint (node Node) (schedule-graph Graph))
-  "Rewrites the buffer as scalar as many as possible"
+  "Rewrites the buffer as scalar as many as possible.
+If you set buffer-nrank=-1 for an arbitary ranked buffer, the compiler will regocnise it as a scalar."
   (declare (type list blueprint))
   (let* ((ids (blueprint-tmp-buffers blueprint node schedule-graph :except-for (schedule-outputs schedule-graph)))
          (replaceable (loop for i in ids if (memory-access-local-p blueprint i) collect i))
@@ -126,27 +109,24 @@
           if (eql (node-type b) :FOR) do (push (getattr b :idx) suffix)
             if (eql (node-type b) :ENDFOR) do (setf suffix (remove (getattr b :idx) suffix))
               if (not (eql (node-class b) :Render)) do
+                ;; Just setting -1 for all scalarifyable buffers
                 (loop for r in (node-reads b)
                       for rt in (relay-reads (read-type-relay b))
                       for ri in (relay-read-iters (read-type-relay b))
                       for nth upfrom 0
                       if (and (symbolp r) rt ri (find r replaceable))
                         do (setf (nth nth (relay-reads (read-type-relay b))) (rewrite-as-scalar rt ri (reverse suffix))))
-                (assert (= (length (node-writes b)) 1) () "graph-scalarify excepts only one write node. (please update the loop below...)")
                 (loop for w in (node-writes b)
                       for wt in (relay-writes (read-type-relay b))
                       for wi in (relay-write-iters (read-type-relay b))
                       for nth upfrom 0
                       if (and (symbolp w) wt wi (find w replaceable))
                         do (setf (nth nth (relay-writes (read-type-relay b)))
-                                 (rewrite-as-scalar wt wi (reverse suffix)))
-                           (setf (getattr b :declare-type) (list t)
-                                 (node-reads node) (remove w (node-reads node)))
+                                 (rewrite-as-scalar wt wi (reverse suffix))
+                                 (getattr b :declare-type) (list t))
                       else if (find w replaceable)
                              do (setf (getattr b :declare-type) (list t))))
-    (dolist (node blueprint)
-      (propagate-load-const node blueprint))
-    (remove-unused-blueprint blueprint schedule-graph)))
+    blueprint))
 
 (defmethod exprify ((node Node))
   (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
@@ -311,12 +291,7 @@
                  (if (eql new-region :nothing)
                      nil
                      new-region)))
-        ;; graph-propagete-function:
-        ;; Shifting to the let binding based IR from DAG
-        ;; C <- A + B
-        ;; =>
-        ;; A += B
-        (expr-only-leaf-are-arguments (graph-propagate-reduction (rewriter 0 (length new-bp)) replaceable))))))
+        (rewriter 0 (length new-bp))))))
 
 (defun rewrite-expr-aref (expr replace)
   (declare (type graph expr))
@@ -333,8 +308,8 @@
                    (let ((id (funcall replace x nil nil)))
                      (or id x)))
                (node-reads n))))))
-
-(defmethod graph-propagate-reduction (blueprint replaceable)
+;; [TODO] The implementation could be much simplier!
+(defun graph-propagate-reduction (blueprint)
   (assert *expr-cache*)
   (let ((id->tgt (expr-cache-reduce-alias *expr-cache*))) ;; id -> (list new_id new_type new_is)
     (loop for bp in blueprint
@@ -349,24 +324,25 @@
                (let ((new-id (final-new-id id)))
                  (if (null new-id)
                      (values id type is)
-                     (apply #'values new-id)))))
-      (macrolet ((updt (expr &key (reader) (ireader) (treader))
+                     (values (car new-id) (second new-id) (third new-id))))))
+      (macrolet ((updt (expr &key (reader) (ireader) (treader) (rewriter 'new))
                    `(loop for nth upfrom 0
                           for read in (,reader ,expr)
                           for is in (,ireader (read-type-relay ,expr))
                           for type in (,treader (read-type-relay ,expr))
                           if (and read is type (symbolp read)) do
-                            (multiple-value-bind (newid new-type new-is) (new read type is)
+                            (multiple-value-bind (newid new-type new-is) (,rewriter read type is)
                               (assert (and newid new-type new-is))
                               (setf (nth nth (,reader ,expr)) newid
                                     (nth nth (,ireader (read-type-relay ,expr))) new-is
                                     (nth nth (,treader (read-type-relay ,expr))) new-type)))))
+        ;; Infer for the reduction
         (loop for bp in blueprint
               if (eql (node-type bp) :EXPR)
                 do (updt bp :reader node-reads :ireader relay-read-iters :treader relay-reads)
                    (updt bp :reader node-writes :ireader relay-write-iters :treader relay-writes)
                    (rewrite-expr-aref (expr-graph (getattr bp :expr)) #'new))
-        (expr-set-iterations blueprint)))))
+        blueprint))))
 
 (defun expr-set-iterations (blueprint)
   (loop with gids = nil
@@ -387,3 +363,8 @@
             (when is
               (setf (getattr bp :iterations) (ensure-iteration-space-length is (getattr bp :iterations))))))
   blueprint)
+
+(defun finalize-bp-and-deploy-address-inference (blueprint)
+  (expr-only-leaf-are-arguments
+   (expr-set-iterations
+    (graph-propagate-reduction blueprint))))

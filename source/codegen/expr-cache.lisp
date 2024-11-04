@@ -14,7 +14,8 @@
    #:stash-expr
    #:restore-expr
    #:expr-cache-reduce-alias
-   #:read-newid))
+   #:read-newid
+   #:read-ptrid))
 
 (in-package :caten/codegen/expr-cache)
 
@@ -24,11 +25,12 @@
   ((cache :type hash-table :initform (make-hash-table :test 'equal) :accessor cache-table)
    (id2expr :type hash-table :initform (make-hash-table :test 'equal) :accessor id2expr-table)
    (global-counter :initform 0 :type fixnum :accessor global-counter)
+   (pointer-map :type hash-table :accessor cache-pointer-map :initarg :pointer-map)
    (global-reduce-alias :type hash-table :initform (make-hash-table :test 'equal) :accessor expr-cache-reduce-alias))
   (:documentation "Creates a cached object for (scalar) EXPR graph."))
 
-(defmacro with-expr-cache (() &body body)
-  `(let ((*expr-cache* (make-instance 'Expr-Cache)))
+(defmacro with-expr-cache ((&key (pointer-map (make-hash-table))) &body body)
+  `(let ((*expr-cache* (make-instance 'Expr-Cache :pointer-map ,pointer-map)))
      ,@body))
 
 (defun expr-id (num) (format nil "_expr_id_~a" num))
@@ -66,3 +68,7 @@
 (defun read-newid (id)
   (assert *expr-cache*)
   (or (gethash id (expr-cache-reduce-alias *expr-cache*)) id))
+
+(defun read-ptrid (id)
+  (assert *expr-cache*)
+  (or (gethash id (cache-pointer-map *expr-cache*)) id))

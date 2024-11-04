@@ -55,6 +55,7 @@ caten/codegen overview:
   (:import-from
    :caten/codegen/rewriting-rules
    #:apply-rewriting-rules
+   #:graph-infer-pointer-address
    #:schedule-item-write-define-global)
   (:import-from
    :caten/codegen/scheduler
@@ -136,8 +137,8 @@ caten/codegen overview:
              (append
               (getattr si :storage-id-dst) ;; optimized by memory-planner
               (map 'list #'car (getattr si :dynamic-shapes))
-              (node-reads si))
-             :output-buffer-n (length (node-writes si))
+              (getattr si :storage-id-src))
+             :output-buffer-n (length (getattr si :storage-id-dst))
              :kernel-info (make-compiled-kernel-from-si si graph)))
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
@@ -320,6 +321,7 @@ caten/codegen overview:
   (apply-rewriting-rules avm)
   ;; 3. Running the scheduler
   (let ((schedule-graph (graph-schedule (avm-graph avm)))
+        (pointer-infer-map (graph-infer-pointer-address (avm-graph avm)))
         ;; 4. Gathering the dynamic shapes used in the graph.
         (symbolics
           (remove-duplicates
@@ -333,9 +335,10 @@ caten/codegen overview:
     (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
-      ;; [TODO] mapc is pmapc
+      ;; [TODO] mapc => pmapc is possible (Parallel Compilation)
       (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
-        (with-expr-cache () ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
+        (with-expr-cache (:pointer-map pointer-infer-map)
+          ;; with-expr-cache: Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
           (mapc
            #'(lambda (x &aux (start (get-internal-real-time)))
                (when (and (getattr x :jitable) (getattr x :cache-name))
@@ -364,7 +367,7 @@ caten/codegen overview:
                        (print (getattr x :polyhedral))
                        (fresh-line)
                        (format t "=====> Optimized kernel~%")
-                       (print-blueprint (getattr x :blueprint) t)))
+                       (print-blueprint x (getattr x :blueprint) t)))
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)
                      (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second)))))))
            (graph-nodes schedule-graph)))))
@@ -372,8 +375,6 @@ caten/codegen overview:
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
-    (verify-graph schedule-graph)
-    (setf schedule-graph (->graph schedule-graph))
     ;;(run-memory-planner schedule-graph) disable until fixing weirdness in Padding2D/AutoDiff
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
