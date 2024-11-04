@@ -307,7 +307,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
 
 (defstruct ctx
   "an intermidate object used to debug `recursive-lower-into-bp`"
-  graph order blueprint seen gids loop-size-list band2node)
+  graph order blueprint seen gids loop-size-list band2node schedule-graph)
 ;; ctx: print-object displays nothing not to collapse the trace macro.
 (defmethod print-object ((ctx ctx) stream) (format stream "<CTX>"))
 
@@ -423,7 +423,17 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
             ;; Running `simplify-pointer-and-constant` and fix them.
             (setf (iteration-space-strides (car (relay-read-iters (read-type-relay node))))
                   (loop repeat nrank collect (expr-const 0 :int64))))
-          (when (= nrank 0) (setf (getattr node :declare-type) (list t))))
+          (when (= nrank 0)
+            ;; If only used in this blueprint
+            (let ((users (id->users (ctx-schedule-graph ctx) (car (node-writes node)))))
+              (if (some #'(lambda (x) (getattr x :jitable)) users) ;; If the scalar is used in another jitable kernel?
+                  (let* ((dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
+                         (buffer (caten/avm:make-buffer 1 `(1) `(0) dtype `((0 1 1 t))))
+                         (space (buffer-merge-dims (ctx-schedule-graph ctx) buffer)))
+                    (setf (car (relay-write-iters (read-type-relay node))) space
+                          (car (relay-writes (read-type-relay node))) buffer))
+                  ;; Otherwise, its constant
+                  (setf (getattr node :declare-type) (list t))))))
         (return-from try-insert-node
           (if node-reduce-axes
               (values `(,@(reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))) ,@blueprint) t)
@@ -569,7 +579,8 @@ Depends=~a Reduce=~a Users=~a
     ;; gids       = (gid0, gid1, gid2, ...)
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
-    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil :band2node (make-hash-table))))
+    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil :band2node (make-hash-table)
+                         :schedule-graph scheduled-graph)))
       ;; Initially the blueprint starts with plain loops
       (setf (ctx-blueprint ctx) (initial-bp ctx))
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)

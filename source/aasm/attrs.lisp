@@ -109,11 +109,7 @@ x <- f(x, y)
 	 "The node :ADD adds the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
-```
-Unlike other BinaryOps, :ADD is allowed to have more than two values in Read. This is only used when aggregating three or more gradients. i.e.:
-```
-out <- x + y + z + ...
-```")	
+```")
 
 (defnode (:BinaryOps :MUL) (BinaryOps JITAble)
 	 "The node :MUL multiplies the two tensors in `read` and writes the result to the first `write`.

@@ -420,7 +420,7 @@
 			(backward m nil)
 			(when zero-grad
 			  (forward m) (backward m nil)))
-		      (ok (every (equal-to ,v) (elements (grad a))))))))
+		      (ok (every (equal-to ,v) (elements (grad a))) (format nil "expecting ~a, getting ~a" ,v (elements (grad a))))))))
       (f (!+ (!neg a) (!neg a) (!neg a)) -3)
       (f (!+ (!neg a) (!neg a) a) -1)
       (f (!+ a (!neg a) (!neg a)) -1)
@@ -428,7 +428,6 @@
       (f (!+ (!neg a) a a) 1)
       (f (!+ a (!neg a) a) 1)
       (f (!+ a a (!neg a)) 1)
-
       (f (!neg (!+ a a a)) -3)
       (f (!neg (!+ (!neg a) a (!neg a))) 1))))
 
