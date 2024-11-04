@@ -420,7 +420,8 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
           (when (and (> nrank 0) (getattr node :reduction :allow-undefined t))
             ;; The node is located out of the loop, scalarize it.
             (setf (iteration-space-strides (car (relay-read-iters (read-type-relay node))))
-                  (loop repeat nrank collect (expr-const 0 :int64)))))
+                  (loop repeat nrank collect (expr-const 0 :int64))))
+          (when (= nrank 0) (setf (getattr node :declare-type) (list t))))
         (return-from try-insert-node
           (if node-reduce-axes
               (values `(,@(reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))) ,@blueprint) t)
