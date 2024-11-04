@@ -16,7 +16,9 @@
    (_output_type :initform nil :initarg :_output_type)
    (declare-type :initarg :declare-type :initform nil)
    (iterations :initarg :iterations :initform nil)
-   (_lowering_history :initform nil :initarg :_lowering_history))
+   (_lowering_history :initform nil :initarg :_lowering_history)
+   (storage-id-src :initform nil :initarg :storage-id-src)
+   (storage-id-dst :initform nil :initarg :storage-id-dst))
   (:documentation "This node is jitable.
 - declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:
 ```
@@ -156,14 +158,12 @@ out <- x ^ y (if integer)
 ```")
 
 (defnode (:BinaryOps :MOVE) (BinaryOps JITAble)
-	 "Moves the second read into the first read, setting the result to first write.
+	 "Moves reads the second `read` tensor and copies the element into the first read. The first `write` represents for the address of the first read.
 ```
 out <- move(x, y)
 where move(x, y) is x = y
 ```
-- _jit_dont_render_me[boolean] (TODO)
-"
-	 :slots ((_jit_dont_render_me :initform nil)))
+")
 
 (defnode (:BinaryOps :MAX) (BinaryOps JITAble)
 	 "Computes the maximum value of two tensors in read, writing the result to the first write.
