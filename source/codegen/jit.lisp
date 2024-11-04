@@ -136,7 +136,7 @@ caten/codegen overview:
              (append
               (getattr si :storage-id-dst) ;; optimized by memory-planner
               (map 'list #'car (getattr si :dynamic-shapes))
-              (node-reads si))
+              (getattr si :storage-id-src))
              :output-buffer-n (length (node-writes si))
              :kernel-info (make-compiled-kernel-from-si si graph)))
 
@@ -203,7 +203,6 @@ caten/codegen overview:
 
 (defun schedule-graph->vmop (avm graph &aux (map (id->output-map graph)))
   (declare (type Graph graph))
-  (verify-graph graph)
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
              (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) id allocated)
@@ -372,8 +371,6 @@ caten/codegen overview:
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
-    (verify-graph schedule-graph)
-    (setf schedule-graph (->graph schedule-graph))
     ;;(run-memory-planner schedule-graph) disable until fixing weirdness in Padding2D/AutoDiff
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)

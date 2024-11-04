@@ -316,7 +316,7 @@ out[...] = f(*val_1);
   (setf (getattr schedule-item :blueprint)
         (append
          ;; writes
-         (loop for write in (node-writes schedule-item)
+         (loop for write in (getattr schedule-item :storage-id-dst)
                for wt in (getattr schedule-item :write-types)
                for nth upfrom 0
                collect
