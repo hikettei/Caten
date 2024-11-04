@@ -109,9 +109,7 @@
 		   (push final-node (graph-nodes graph))
 		   (session/assign session grad-id final-node))
 		 (let* ((subgrad (session/read session (car rest-grads)))
-			;; [TODO] Remove _jit_dont_render_me option (should only used in: ./ajit/graph.lisp, air->expr)
-			;; JIT do not want to render the ir below.
-			(final-node (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id (node->id subgrad)) :_jit_dont_render_me t)))
+			(final-node (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id (node->id subgrad)))))
 		   (push final-node (graph-nodes graph))
 		   (session/assign session grad-id final-node))))))
    (session-grad->grads session)))

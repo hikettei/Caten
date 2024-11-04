@@ -161,9 +161,7 @@ out <- x ^ y (if integer)
 out <- move(x, y)
 where move(x, y) is x = y
 ```
-- _jit_dont_render_me[boolean] (TODO)
-"
-	 :slots ((_jit_dont_render_me :initform nil)))
+")
 
 (defnode (:BinaryOps :MAX) (BinaryOps JITAble)
 	 "Computes the maximum value of two tensors in read, writing the result to the first write.
