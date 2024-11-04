@@ -481,11 +481,12 @@ Depends=~a Reduce=~a Users=~a
     (setf (node-reads node) (map 'list #'car read-items)
           (node-writes node) (map 'list #'car write-items)
           seen nil)
-    (labels ((address-of (id)
-               (read-ptrid
-                (if (gethash id rewrite-map)
-                    (address-of (gethash id rewrite-map))
-                    id)))
+    (labels ((reduce-address-of (id)
+               (if (gethash id rewrite-map)
+                   (reduce-address-of (gethash id rewrite-map))
+                   id))
+             (address-of (id)
+               (read-ptrid (reduce-address-of id)))
              (only-unseen (list)
                (loop for l in list
                      for id = (address-of (car l))
@@ -498,8 +499,8 @@ Depends=~a Reduce=~a Users=~a
         (setf
          (getattr node :read-types) (map 'list #'cdr read-items)
          (getattr node :write-types) (map 'list #'cdr write-items)
-         (getattr node :storage-id-src) (map 'list #'car read-items)
-         (getattr node :storage-id-dst) (map 'list #'car write-items))))))
+         (getattr node :storage-id-src) (map 'list (compose #'reduce-address-of #'car) read-items)
+         (getattr node :storage-id-dst) (map 'list (compose #'reduce-address-of #'car) write-items))))))
 
 (defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph)
   (flet ((is-dynamic-shape-p (val)
