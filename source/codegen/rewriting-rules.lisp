@@ -58,7 +58,6 @@
    #:apply-rewriting-rules
    #:nodes-apply-static-gensym
    #:apply-static-gensym
-   #:node-fuse-const-loadp
    #:graph-infer-pointer-address))
 
 (in-package :caten/codegen/rewriting-rules)
@@ -345,19 +344,3 @@ out[...] = f(*val_1);
                collect
                (make-define-global read (buffer-dtype rt) t :input (buffer-nrank rt)))
          (getattr schedule-item :blueprint))))
-
-(defmethod node-fuse-const-loadp ((node Node) (base-graph Graph))
-  (flet ((is-loadp (id)
-           (let ((node (id->value base-graph id)))
-             (and node (eql (node-type node) :Load) (getattr node :value))))
-         (scalarify (buffer)
-           (let ((buffer (copy-buffer buffer)))
-             (setf (buffer-nrank buffer) 0)
-             buffer)))
-    (loop for nth upfrom 0
-          for read in (node-reads node)
-          for rt in (relay-reads (read-type-relay node))
-          for load = (is-loadp read)
-          if (and (not (eql (get-output-to node) read)) load) do
-            (setf (nth nth (node-reads node)) load
-                  (nth nth (relay-reads (read-type-relay node))) (scalarify rt)))))

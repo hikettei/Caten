@@ -50,8 +50,7 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:ensure-string-as-compilable)
   (:import-from
    #:caten/codegen/rewriting-rules
-   :nodes-apply-static-gensym
-   :node-fuse-const-loadp)
+   :nodes-apply-static-gensym)
   (:export
    #:graph-schedule
    #:*function-name-maxlen*))
