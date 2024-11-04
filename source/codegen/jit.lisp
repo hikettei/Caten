@@ -368,6 +368,8 @@ caten/codegen overview:
                      (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second)))))))
            (graph-nodes schedule-graph)))))
     ;; 10. Running memory-planner, update the storage-id
+    (setf schedule-graph (->graph schedule-graph))
+    (verify-graph schedule-graph)
     (when (>= (ctx:getenv :JIT_DEBUG) 2)
       (fresh-line)
       (print-info "Running the memory planner..."))
