@@ -11,7 +11,8 @@
    #:simplify-arithmetic-code
    #:simplify-blueprint
    #:->cdtype
-   #:float-type-of))
+   #:float-type-of
+   #:coerce-dtyped-buffer))
 
 (in-package :caten/codegen/helpers)
 
@@ -109,3 +110,12 @@
 
 (defun float-type-of (value)
   (uiop:symbol-call :caten/apis :float-type-of value))
+
+(defun coerce-dtyped-buffer (arg type)
+  (if (caten/avm:buffer-p arg)
+      (if (= (caten/avm:buffer-nrank arg) 0)
+	  (progn
+	    (setf (caten/avm:buffer-value arg) (caten/common.dtype:dtype/cast (caten/avm:buffer-value arg) type))
+	    arg)
+	  arg)
+      (caten/common.dtype:dtype/cast arg type)))

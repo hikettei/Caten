@@ -69,6 +69,9 @@ caten/codegen overview:
    #:scop
    #:auto-schedule)
   (:import-from
+   :caten/codegen/helpers
+   #:coerce-dtyped-buffer)
+  (:import-from
    :caten/common.logger
    #:print-info
    #:with-progress
@@ -101,7 +104,7 @@ caten/codegen overview:
 
 (defnode (:JIT :JIT_KERNEL) ()
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
-	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel)))
+	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list)))
 
 (defmethod make-load-form ((jit Compiled-Kernel) &optional env)
   (declare (ignore env))
@@ -140,14 +143,20 @@ caten/codegen overview:
               (map 'list #'car (getattr si :dynamic-shapes))
               (getattr si :storage-id-src))
              :output-buffer-n (length (node-writes si))
-             :kernel-info (make-compiled-kernel-from-si si graph)))
+             :kernel-info (make-compiled-kernel-from-si si graph)
+             :dtypes
+             (append
+              (map 'list #'buffer-dtype (getattr si :write-types))
+              (loop for i in (getattr si :dynamic-shapes) collect caten/aasm:*default-int*)
+              (map 'list #'buffer-dtype (getattr si :read-types)))))
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((info (getattr node :kernel-info))
         (out-n (getattr node :output-buffer-n)))
-    (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
-    (apply (compiled-kernel-caller info) args)
-    (apply #'values (subseq args 0 out-n))))
+    (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
+      (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
+      (apply (compiled-kernel-caller info) args)
+      (apply #'values (subseq args 0 out-n)))))
 
 (defun get-subgraph (graph top-id seen &aux (seen (copy-list seen)))
   (labels ((explore (x)
