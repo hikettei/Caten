@@ -1,6 +1,10 @@
 (defpackage :caten/codegen/rewriting-rules
   (:use :cl)
   (:import-from
+   :caten/aasm
+   #:JITAble
+   #:node-attr)
+  (:import-from
    :caten/avm
    #:AVM
    #:avm-graph
@@ -61,6 +65,21 @@
    #:node-fuse-const-loadp))
 
 (in-package :caten/codegen/rewriting-rules)
+
+(defun graph-infer-pointer-address (graph)
+  "Infer the address of the pointer in the graph.
+Only the :MOVE has an ability to modify this rule. (Or :STORE?)"
+  (declare (type graph graph))
+  (let ((map (make-hash-table)))
+    (flet ((newid (x) (if (symbolp x) (or (gethash x map) x) x)))
+      (dolist (node (graph-nodes graph))
+        (when (typep (node-attr node) 'JITAble)
+          (setf (getattr node :storage-id-src) (map 'list #'newid (node-reads node))
+                (getattr node :storage-id-dst) (map 'list #'newid (node-writes node))))
+        (when (or (eql (node-type node) :MOVE) (getattr node :reduction :allow-undefined t))
+          (assert (symbolp (car (node-reads node))))
+          ;; WRTTE=READ
+          (setf (gethash (car (node-writes node)) map) (car (node-reads node))))))))
 
 (defun rewrite-views-as-buffer (avm)
   "Rewrite the node :VIEW as an object in the type-relay, so that the code generator can handle view as a buffer."
@@ -306,6 +325,7 @@ out[...] = f(*val_1);
     ;; (wmma-rewriter (avm-graph avm) :no-verify t)
     (propagate-rebundant-loadp (avm-graph avm))
     (apply-static-gensym avm id2view))
+  (graph-infer-pointer-address (avm-graph avm))
   (setf (avm-graph avm) (->graph (avm-graph avm)))
   avm)
 
