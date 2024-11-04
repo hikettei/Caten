@@ -141,8 +141,8 @@
                       for nth upfrom 0
                       if (and (symbolp w) wt wi (find w replaceable))
                         do (setf (nth nth (relay-writes (read-type-relay b)))
-                                 (rewrite-as-scalar wt wi (reverse suffix)))
-                           (setf (getattr b :declare-type) (list t)
+                                 (rewrite-as-scalar wt wi (reverse suffix))
+                                 (getattr b :declare-type) (list t)
                                  (node-reads node) (remove w (node-reads node)))
                       else if (find w replaceable)
                              do (setf (getattr b :declare-type) (list t))))
@@ -255,9 +255,7 @@
                       (or (null current-pair)
                           (null (intersection (expr-writes current-pair) (apply #'append (map 'list #'expr-writes other-pairs))))))
                      nil))
-               (group->expr-group (group &aux
-                                           (tops (nodes-write-to group))
-                                           (graph (apply #'make-graph group)) (seen nil))
+               (group->expr-group (group &aux (tops (nodes-write-to group)) (graph (apply #'make-graph group)) (seen nil))
                  (setf (graph-outputs graph) tops)
                  (assert (every #'(lambda (x) (eql (node-type x) :EXPR)) group))
                  (labels ((explore (id &aux (node (id->value graph id)))
