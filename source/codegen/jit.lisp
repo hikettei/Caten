@@ -55,6 +55,7 @@ caten/codegen overview:
   (:import-from
    :caten/codegen/rewriting-rules
    #:apply-rewriting-rules
+   #:graph-infer-pointer-address
    #:schedule-item-write-define-global)
   (:import-from
    :caten/codegen/scheduler
@@ -324,7 +325,8 @@ caten/codegen overview:
           (remove-duplicates
            (loop for node in (graph-nodes (avm-graph avm))
                  if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
-                   collect (getattr node :value)))))
+                   collect (getattr node :value))))
+        (pointer-map (graph-infer-pointer-address (avm-graph avm))))
     (declare (type Graph schedule-graph))
     ;; 5. Minifying the number of schedules, (reuse kernels)
     (minify-equivalent-schedule schedule-graph)
@@ -334,7 +336,7 @@ caten/codegen overview:
         (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
       ;; [TODO] mapc is pmapc
       (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
-        (with-expr-cache () ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
+        (with-expr-cache (:pointer-map pointer-map) ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
           (mapc
            #'(lambda (x &aux (start (get-internal-real-time)))
                (when (and (getattr x :jitable) (getattr x :cache-name))

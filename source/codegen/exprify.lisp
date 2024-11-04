@@ -221,7 +221,7 @@
                          for node in (graph-nodes expr)
                          ;; See renderer.lisp, MOVE first argument is not rendered for example.
                          ;; [Note] Add more nodes if you found an argument which is actually rendered but not used in the rendered kernel.
-                         if (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
+                         if (find (node-type node) `(:CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
                            collect (car (node-reads node))
                          if (not (eql (node-type node) :Aref))
                            collect (car (node-writes node))))
@@ -319,10 +319,10 @@
         ;; =>
         ;; A += B
         (rewriter 0 (length new-bp))))))
-
+;; [TODO] Clean up this function!
 (defun graph-propagate-pointer-id-type (blueprint)
   (assert *expr-cache*)
-  (let ((rewrite-map (make-hash-table))
+  (let ((rewrite-map (alexandria:copy-hash-table (cache-pointer-map *expr-cache*)))
         (id->tgt (expr-cache-reduce-alias *expr-cache*))) ;; id -> (list new_id new_type new_is)
     (loop for bp in blueprint
           if (and (eql (node-type bp) :EXPR) (getattr bp :reduction))
@@ -374,7 +374,10 @@
                (node-reads n))))))
 
 (defun expr-rewrite-edge-with-pointer-id (blueprint map)
-  (flet ((newid (id &optional _ __) (declare (ignore _ __)) (or (gethash id map) id)))
+  (labels ((newid (id &optional _ __) (declare (ignore _ __))
+             (if (gethash id map)
+                 (newid (gethash id map))
+                 id)))
       (macrolet ((updt (expr &key (reader))
                    `(loop for nth upfrom 0
                           for read in (,reader ,expr)

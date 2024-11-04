@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/blueprint
   (:documentation "The `Blueprint` represents a transformed computation graph format of `caten/AASM` that incorporates loop information. The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.
 The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it is used for loop optimization and by the Renderer.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria)
+  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache)
   (:import-from
    :caten/codegen/shape-inference
    #:read-type-relay
@@ -479,14 +479,26 @@ Depends=~a Reduce=~a Users=~a
                   end
                   do (push write seen)))
     (setf (node-reads node) (map 'list #'car read-items)
-          (node-writes node) (map 'list #'car write-items))
-    (flet ((make-pair (list)
-             (remove-duplicates list :key #'(lambda (x) (or (gethash (car x) rewrite-map) (car x))))))
-      (setf
-       (getattr node :read-types) (map 'list #'cdr (make-pair read-items))
-       (getattr node :write-types) (map 'list #'cdr (make-pair write-items))
-       (getattr node :storage-id-src) (map 'list #'car (make-pair read-items))
-       (getattr node :storage-id-dst) (map 'list #'car (make-pair write-items))))))
+          (node-writes node) (map 'list #'car write-items)
+          seen nil)
+    (labels ((address-of (id)
+               (if (gethash id rewrite-map)
+                   (address-of (gethash id rewrite-map))
+                   id))
+             (only-unseen (list)
+               (loop for l in list
+                     for id = (address-of (car l))
+                     if (null (find id seen))
+                       do (push id seen) and collect l))
+             (make-pair (list)
+               (only-unseen (remove-duplicates list :key #'(lambda (x) (address-of (car x)))))))
+      (multiple-value-bind (write-items read-items)
+          (values (make-pair write-items) (make-pair read-items))
+        (setf
+         (getattr node :read-types) (map 'list #'cdr read-items)
+         (getattr node :write-types) (map 'list #'cdr write-items)
+         (getattr node :storage-id-src) (map 'list (compose #'address-of #'car) read-items)
+         (getattr node :storage-id-dst) (map 'list (compose #'address-of #'car) write-items))))))
 
 (defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph)
   (flet ((is-dynamic-shape-p (val)
@@ -555,6 +567,3 @@ Depends=~a Reduce=~a Users=~a
       (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr node :cache-name)))
         (print-blueprint (ctx-blueprint ctx) t))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
-;; [TODO] Add
-;; [TODO]   Move Alias
-;; [TODO]   FIX RNG_COUNTER (no duplication)
