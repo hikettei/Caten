@@ -69,6 +69,9 @@ caten/codegen overview:
    #:scop
    #:auto-schedule)
   (:import-from
+   :caten/codegen/helpers
+   #:coerce-dtyped-buffer)
+  (:import-from
    :caten/common.logger
    #:print-info
    #:with-progress
@@ -101,7 +104,7 @@ caten/codegen overview:
 
 (defnode (:JIT :JIT_KERNEL) ()
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
-	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel)))
+	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list)))
 
 (defmethod make-load-form ((jit Compiled-Kernel) &optional env)
   (declare (ignore env))
@@ -140,14 +143,19 @@ caten/codegen overview:
               (map 'list #'car (getattr si :dynamic-shapes))
               (getattr si :storage-id-src))
              :output-buffer-n (length (node-writes si))
-             :kernel-info (make-compiled-kernel-from-si si graph)))
+             :kernel-info (make-compiled-kernel-from-si si graph)
+             :dtypes
+             (loop for item in (getattr si :blueprint)
+                   if (eql (node-type item) :DEFINE-GLOBAL)
+                     collect (getattr item :dtype))))
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((info (getattr node :kernel-info))
         (out-n (getattr node :output-buffer-n)))
-    (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
-    (apply (compiled-kernel-caller info) args)
-    (apply #'values (subseq args 0 out-n))))
+    (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
+      (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
+      (apply (compiled-kernel-caller info) args)
+      (apply #'values (subseq args 0 out-n)))))
 
 (defun get-subgraph (graph top-id seen &aux (seen (copy-list seen)))
   (labels ((explore (x)
@@ -203,11 +211,11 @@ caten/codegen overview:
                       (gethash (car (node-reads v)) table) v))))
     table))
 
-(defun schedule-graph->vmop (avm graph &aux (map (id->output-map graph)))
-  (declare (type Graph graph))
+(defun schedule-graph->vmop (base-graph graph &aux (map (id->output-map graph)))
+  (declare (type Graph graph base-graph))
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
-             (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) id allocated)
+             (multiple-value-bind (deps new-seen) (get-subgraph base-graph id allocated)
                (setf allocated new-seen)
                (dolist (d deps) (push d nodes)))))
       (dolist (node (graph-nodes graph))
@@ -320,7 +328,8 @@ caten/codegen overview:
   ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views, Symbol Loads, ...)
   (apply-rewriting-rules avm)
   ;; 3. Running the scheduler
-  (let ((schedule-graph (graph-schedule (avm-graph avm)))
+  (let ((base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (avm-graph avm)))))
+        (schedule-graph (graph-schedule (avm-graph avm)))
         ;; 4. Gathering the dynamic shapes used in the graph.
         (symbolics
           (remove-duplicates
@@ -392,7 +401,7 @@ caten/codegen overview:
           (fresh-line)
           (print-info "Compiling ..."))
         (%compile-kernel renderer (graph-nodes schedule-graph) dir)
-        (let ((new-graph (schedule-graph->vmop avm schedule-graph)))
+        (let ((new-graph (schedule-graph->vmop base-graph schedule-graph)))
           (setf (avm-graph avm) new-graph
                 (avm-tape-length avm) (length (graph-nodes new-graph))
                 (avm-pc avm) 0

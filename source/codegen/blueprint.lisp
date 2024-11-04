@@ -419,8 +419,11 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
         (let ((nrank (buffer-nrank (car (relay-writes (read-type-relay node))))))
           (when (and (> nrank 0) (getattr node :reduction :allow-undefined t))
             ;; The node is located out of the loop, scalarize it.
+            ;; This will mutate constant as a pointer, or pointer as a constant.
+            ;; Running `simplify-pointer-and-constant` and fix them.
             (setf (iteration-space-strides (car (relay-read-iters (read-type-relay node))))
-                  (loop repeat nrank collect (expr-const 0 :int64)))))
+                  (loop repeat nrank collect (expr-const 0 :int64))))
+          (when (= nrank 0) (setf (getattr node :declare-type) (list t))))
         (return-from try-insert-node
           (if node-reduce-axes
               (values `(,@(reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))) ,@blueprint) t)
@@ -531,6 +534,24 @@ Depends=~a Reduce=~a Users=~a
                              collect (cons s caten/aasm:*default-int*))))))
      :key #'car)))
 
+(defun simplify-pointer-and-constant (blueprints)
+  (let ((constants))
+    (loop for bp in blueprints
+          if (and (not (eql (node-class bp) :Render)) (getattr bp :declare-type)) do
+            (push (car (node-writes bp)) constants))
+    (loop for bp in blueprints
+          if (not (eql (node-class bp) :Render)) do
+            (loop for read in (node-reads bp)
+                  for type in (relay-reads (read-type-relay bp))
+                  for is in (relay-read-iters (read-type-relay bp))
+                  for nth upfrom 0
+                  if (and type is (find read constants)) do
+                    (setf (nth nth (relay-reads (read-type-relay bp)))
+                          (let ((buffer (caten/avm:copy-buffer type)))
+                            (setf (buffer-nrank buffer) -1)
+                            buffer))))
+    blueprints))
+
 (defmethod lower-schedule-item ((node Node) (base-graph Graph) (scheduled-graph Graph))
   "Lowers the Schedule-Item into blueprint"
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
@@ -558,6 +579,7 @@ Depends=~a Reduce=~a Users=~a
       (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph))
       ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
+            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
       (expr-set-iterations (ctx-blueprint ctx))
