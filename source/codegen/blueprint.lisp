@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/blueprint
   (:documentation "The `Blueprint` represents a transformed computation graph format of `caten/AASM` that incorporates loop information. The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.
 The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it is used for loop optimization and by the Renderer.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria)
+  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache)
   (:import-from
    :caten/codegen/shape-inference
    #:read-type-relay
@@ -41,7 +41,10 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
   (:import-from
    :caten/codegen/exprify
    #:graph-exprify
-   #:graph-scalarify)
+   #:graph-scalarify
+   #:expr-set-iterations
+   #:graph-propagate-pointer-id-type
+   #:expr-rewrite-edge-with-pointer-id)
   (:export
    #:lower-schedule-item
    #:print-blueprint))
@@ -459,7 +462,7 @@ Depends=~a Reduce=~a Users=~a
        (node-reads node))
       nil)))
 
-(defmethod schedule-item-infer-io-buffers ((node Node) (bp-items list))
+(defmethod schedule-item-infer-io-buffers ((node Node) (bp-items list) rewrite-map)
   (assert (eql (node-type node) :Schedule-Item))
   (let ((seen) (read-items) (write-items))
     (loop for item in bp-items
@@ -477,10 +480,27 @@ Depends=~a Reduce=~a Users=~a
                   do (push write seen)))
     (setf (node-reads node) (map 'list #'car read-items)
           (node-writes node) (map 'list #'car write-items)
-          (getattr node :read-types) (map 'list #'cdr read-items)
-          (getattr node :write-types) (map 'list #'cdr write-items)
-          (getattr node :storage-id-src) (map 'list #'car read-items)
-          (getattr node :storage-id-dst) (map 'list #'car write-items))))
+          seen nil)
+    (labels ((reduce-address-of (id)
+               (if (gethash id rewrite-map)
+                   (reduce-address-of (gethash id rewrite-map))
+                   id))
+             (address-of (id)
+               (read-ptrid (reduce-address-of id)))
+             (only-unseen (list)
+               (loop for l in list
+                     for id = (address-of (car l))
+                     if (null (find id seen))
+                       do (push id seen) and collect l))
+             (make-pair (list)
+               (only-unseen (remove-duplicates list :key #'(lambda (x) (address-of (car x)))))))
+      (multiple-value-bind (write-items read-items)
+          (values (make-pair write-items) (make-pair read-items))
+        (setf
+         (getattr node :read-types) (map 'list #'cdr read-items)
+         (getattr node :write-types) (map 'list #'cdr write-items)
+         (getattr node :storage-id-src) (map 'list (compose #'reduce-address-of #'car) read-items)
+         (getattr node :storage-id-dst) (map 'list (compose #'reduce-address-of #'car) write-items))))))
 
 (defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph)
   (flet ((is-dynamic-shape-p (val)
@@ -540,8 +560,12 @@ Depends=~a Reduce=~a Users=~a
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
+      (expr-set-iterations (ctx-blueprint ctx))
+      (multiple-value-bind (new-bp id-rewrite-map) (graph-propagate-pointer-id-type (ctx-blueprint ctx) scheduled-graph)
+        (setf (ctx-blueprint ctx) new-bp)
+        ;; Infer the input/output buffers again, they can be removed during the op fusion.
+        (schedule-item-infer-io-buffers node (ctx-blueprint ctx) id-rewrite-map)
+        (expr-rewrite-edge-with-pointer-id (ctx-blueprint ctx) id-rewrite-map))
       (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr node :cache-name)))
         (print-blueprint (ctx-blueprint ctx) t))
-      ;; Infer the input/output buffers again, they can be removed during the op fusion.
-      (schedule-item-infer-io-buffers node (ctx-blueprint ctx))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))

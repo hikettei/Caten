@@ -55,6 +55,7 @@ caten/codegen overview:
   (:import-from
    :caten/codegen/rewriting-rules
    #:apply-rewriting-rules
+   #:graph-infer-pointer-address
    #:schedule-item-write-define-global)
   (:import-from
    :caten/codegen/scheduler
@@ -74,7 +75,8 @@ caten/codegen overview:
    #:print-progress)
   (:import-from
    :caten/codegen/expr-cache
-   #:with-expr-cache)
+   #:with-expr-cache
+   #:read-ptrid)
   (:import-from
    :caten/codegen/memory-planner
    #:run-memory-planner)
@@ -136,7 +138,7 @@ caten/codegen overview:
              (append
               (getattr si :storage-id-dst) ;; optimized by memory-planner
               (map 'list #'car (getattr si :dynamic-shapes))
-              (node-reads si))
+              (getattr si :storage-id-src))
              :output-buffer-n (length (node-writes si))
              :kernel-info (make-compiled-kernel-from-si si graph)))
 
@@ -203,7 +205,6 @@ caten/codegen overview:
 
 (defun schedule-graph->vmop (avm graph &aux (map (id->output-map graph)))
   (declare (type Graph graph))
-  (verify-graph graph)
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
              (multiple-value-bind (deps new-seen) (get-subgraph (avm-graph avm) id allocated)
@@ -325,17 +326,18 @@ caten/codegen overview:
           (remove-duplicates
            (loop for node in (graph-nodes (avm-graph avm))
                  if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
-                   collect (getattr node :value)))))
+                   collect (getattr node :value))))
+        (pointer-map (graph-infer-pointer-address (avm-graph avm))))
     (declare (type Graph schedule-graph))
-    ;; 5. Minifying the number of schedules, (reuse kernels)
-    (minify-equivalent-schedule schedule-graph)
-    ;; 6. Start JIT Compilation. (Performing by group)
-    (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
-      (when (>= (ctx:getenv :JIT_DEBUG) 2)
-        (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
-      ;; [TODO] mapc is pmapc
-      (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
-        (with-expr-cache () ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
+    (with-expr-cache (:pointer-map pointer-map) ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
+      ;; 5. Minifying the number of schedules, (reuse kernels)
+      (minify-equivalent-schedule schedule-graph)
+      ;; 6. Start JIT Compilation. (Performing by group)
+      (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
+        (when (>= (ctx:getenv :JIT_DEBUG) 2)
+          (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
+        ;; [TODO] mapc is pmapc
+        (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
           (mapc
            #'(lambda (x &aux (start (get-internal-real-time)))
                (when (and (getattr x :jitable) (getattr x :cache-name))
@@ -366,30 +368,33 @@ caten/codegen overview:
                        (format t "=====> Optimized kernel~%")
                        (print-blueprint (getattr x :blueprint) t)))
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                     (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second)))))))
-           (graph-nodes schedule-graph)))))
-    ;; 10. Running memory-planner, update the storage-id
-    (when (>= (ctx:getenv :JIT_DEBUG) 2)
-      (fresh-line)
-      (print-info "Running the memory planner..."))
-    (verify-graph schedule-graph)
-    (setf schedule-graph (->graph schedule-graph))
-    ;;(run-memory-planner schedule-graph) disable until fixing weirdness in Padding2D/AutoDiff
-    (when (>= (ctx:getenv :JIT_DEBUG) 2)
-      (fresh-line)
-      (print-info "Rendering ..."))
-    (dolist (s (graph-nodes schedule-graph))
-      (when (and (getattr s :jitable) (getattr s :blueprint))
-        (schedule-item-write-define-global s)
-        (setf (getattr s :rendered-object) (%render-kernel renderer s))))
-    ;; 11. Complete (Render by the renderer)
-    (when (>= (ctx:getenv :JIT_DEBUG) 2)
-      (fresh-line)
-      (print-info "Compiling ..."))
-    (%compile-kernel renderer (graph-nodes schedule-graph) dir)
-    (let ((new-graph (schedule-graph->vmop avm schedule-graph)))
-      (setf (avm-graph avm) new-graph
-            (avm-tape-length avm) (length (graph-nodes new-graph))
-            (avm-pc avm) 0
-            (avm-variables avm) (make-hash-table)))
-    avm))
+                     (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second)))))
+                 (schedule-item-write-define-global x)))
+           (graph-nodes schedule-graph)))
+        ;; 10. Running memory-planner, update the storage-id
+        (setf schedule-graph (->graph schedule-graph))
+        (verify-graph schedule-graph)
+        (when (>= (ctx:getenv :JIT_DEBUG) 2)
+          (fresh-line)
+          (print-info "Running the memory planner..."))
+        (dolist (item (graph-nodes schedule-graph))
+          (setf (getattr item :storage-id-src) (map 'list #'read-ptrid (getattr item :storage-id-src))
+                (getattr item :storage-id-dst) (map 'list #'read-ptrid (getattr item :storage-id-dst))))
+        ;; (run-memory-planner schedule-graph) disable until fixing weirdness in Padding2D/AutoDiff
+        (when (>= (ctx:getenv :JIT_DEBUG) 2)
+          (fresh-line)
+          (print-info "Rendering ..."))
+        (dolist (s (graph-nodes schedule-graph))
+          (when (and (getattr s :jitable) (getattr s :blueprint))
+            (setf (getattr s :rendered-object) (%render-kernel renderer s))))
+        ;; 11. Complete (Render by the renderer)
+        (when (>= (ctx:getenv :JIT_DEBUG) 2)
+          (fresh-line)
+          (print-info "Compiling ..."))
+        (%compile-kernel renderer (graph-nodes schedule-graph) dir)
+        (let ((new-graph (schedule-graph->vmop avm schedule-graph)))
+          (setf (avm-graph avm) new-graph
+                (avm-tape-length avm) (length (graph-nodes new-graph))
+                (avm-pc avm) 0
+                (avm-variables avm) (make-hash-table)))
+        avm))))
