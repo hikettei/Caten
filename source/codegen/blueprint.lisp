@@ -148,10 +148,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                                             (gethash p pid2space)))))))))
              (explore (node &key (noopt t))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
-               (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node))))
-             (related-keys (rank)
-               (loop for key in candidates
-                     if (find rank key) collect key)))
+               (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
       (if (= 1 (ctx:getenv :NOOPT))
           (progn
             (mapc #'explore (graph-nodes graph))
@@ -161,23 +158,14 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
             (mapc #'(lambda (x) (explore x :noopt nil)) (graph-nodes graph))
             (setf candidates (hash-table-keys pid2space))
             (mapc #'explore (graph-nodes graph))))
-      (let* ((new-procedure
-               (loop for dimension upfrom 0 below (1+ kernel-rank)
-                     collect (car (sort (related-keys dimension) #'< :key #'length))))
-             (new-procedure
-               (loop with seen = nil
-                     for p in new-procedure
-                     if (null (find p seen :test #'equal))
-                       collect (loop for x in p if (null (find x seen)) collect x and do (push x seen))
-                       and do (push p seen)))
-             (new-procedure (loop for p in new-procedure if p collect p))
-             (new-procedure
-               ;; If it has unknown merged dims => split
-               (loop for p in new-procedure
-                     if (gethash p pid2space)
-                       collect p
-                     else
-                       append (map 'list #'list p))))
+      (let ((new-procedure))
+        (dolist (c (sort (copy-list candidates) #'< :key #'length))
+          (when (every #'(lambda (x) (null (find x (flatten new-procedure)))) c)
+            (push c new-procedure)))
+        (loop for i upfrom 0 below kernel-rank
+              if (null (find i (flatten new-procedure)))
+                do (push (list i) new-procedure))
+        (setf new-procedure (sort new-procedure #'< :key #'car))
         (assert (equal (alexandria:flatten new-procedure) (range 0 kernel-rank)))
         (cons
          (map
