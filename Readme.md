@@ -8,7 +8,7 @@
 
 something between tvm and tinygrad.
 
-## Getting started
+## Getting Started
 
 1. Install [Roswell](https://github.com/roswell/roswell) and suitable IDE. (If unsure, Emacs or [Lem](https://github.com/lem-project/lem) is recommended)
 2. Install [ISL (Integer Set Library)](https://github.com/Meinersbur/isl) for the fast kernel generation.
