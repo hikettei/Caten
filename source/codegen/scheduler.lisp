@@ -284,6 +284,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
              typ))))
    mask))
 
+(defmethod apply-index-component-fusion ((group Group) permute)
+  "Permutes the strides of :INDEX-COMPONENTS in the group in the group"
+  (dolist (item (group-items group))
+    (when (and (eql (node-type item) :INDEX-COMPONENTS) (= (length permute) (length (cdr (node-reads item)))))
+      (setf (cdr (node-reads item)) (permute-list permute (cdr (node-reads item)))))))
+
 (defun broadcastable-p (prev new)
   (let ((prev-shape (copy-list (buffer-shape prev)))
         (new-shape  (copy-list (buffer-shape new))))
@@ -401,6 +407,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                    (assert (some #'identity mask))
                    (apply-view-fusor (min r1 r2) mask self)
                    (apply-view-fusor (min r1 r2) mask parent-group)
+                   (when (getattr read-view :permute)
+                     (apply-index-component-fusion parent-group (getattr read-view :permute)))
                    (group-assert-rank self r1 r2 read-view)
                    (group-assert-rank parent-group r1 r2 read-view)
                    ->ok)
@@ -411,6 +419,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                        (when (not (= (length mask) (max r1 r2)))->ng)
                        (apply-view-fusor (min r1 r2) mask self)
                        (apply-view-fusor (min r1 r2) mask parent-group)
+                       (when (getattr read-view :permute)
+                         (apply-index-component-fusion parent-group (getattr read-view :permute)))
                        (group-assert-rank self r1 r2 read-view)
                        (group-assert-rank parent-group r1 r2 read-view)
                        ->ok)

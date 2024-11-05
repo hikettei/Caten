@@ -187,8 +187,8 @@ View is a tensor which shares the buffer from the original tensor, but having di
 		  ()
 		  "Do not slice other axes when using broadcast. ~a" subscripts))
 	(setf (tensor-variables buff) (list base)
-	      (tensor-op buff) (make-instance 'View :views views :broadcast-mode broadcast-mode-p :subscripts subscripts :nrank (length views)))
-	(setf (func-variables (tensor-op buff)) (tensor-variables buff))
+	      (tensor-op buff) (make-instance 'View :views views :broadcast-mode broadcast-mode-p :subscripts subscripts :nrank (length views))
+              (func-variables (tensor-op buff)) (tensor-variables buff))
 	(assert (every #'tensor-p (tensor-variables buff)) ())
 	;; Fold Constants in Shape (detached from the graph, no side effects)
 	(setf (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
@@ -199,7 +199,6 @@ View is a tensor which shares the buffer from the original tensor, but having di
             (setf (tensor-tr buff) (tr-apply-slice base views (map 'list #'vrange-size views))))
         (setf (view-tr (tensor-op buff)) (tensor-tr buff))
 	buff))))
-
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun inf (&key (dtype *default-float*))
   "
