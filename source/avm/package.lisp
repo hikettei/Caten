@@ -43,7 +43,8 @@
    #:vm/step
    #:vm/forward
    #:vm/backward
-   #:vm/set-params)
+   #:vm/set-params
+   #:avm-reset)
   ;; from conditions.lisp
   (:export
    #:avm-runtime-error)

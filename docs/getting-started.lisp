@@ -97,14 +97,23 @@
    #:graph-schedule)
   (:import-from
    :caten/codegen/rewriting-rules
-   #:apply-rewriting-rules)
+   #:apply-rewriting-rules
+   #:schedule-item-write-define-global)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer)
   (:import-from
    :caten/codegen/blueprint
    #:lower-schedule-item
-   #:print-blueprint))
+   #:print-blueprint)
+  (:import-from
+   :caten/codegen/renderer
+   #:CStyle-Renderer
+   #:%render-kernel
+   #:%compile-kernel)
+  (:import-from
+   :caten/codegen/jit
+   #:schedule-graph->avm-graph))
 
 (in-package :codegen-example)
 
@@ -129,7 +138,8 @@
   (run-shape-inference vm)
   ;; Ready for running the scheduler
   (let ((schedule-graph (graph-schedule (avm-graph vm)))
-        (*expr-cache* (make-expr-cache)))
+        (*expr-cache* (make-expr-cache))
+        (renderer (make-instance 'CStyle-Renderer)))
     ;; This is your schedule graph
     (print schedule-graph)
     ;; Optimization/Lowering is applied to each schedule-item
@@ -137,11 +147,23 @@
       ;; If schedule-item was labelled as jitable, you can lower this
       (when (getattr item :jitable)
         (lower-schedule-item item (avm-graph vm) schedule-graph)
-        ))
+        (print-blueprint (getattr item :blueprint) t)
+        (schedule-item-write-define-global item)
+        (let ((c-kernel (%render-kernel renderer item)))
+          (print c-kernel)
+          (setf (getattr item :rendered-object) c-kernel))))
+    ;; Invoking gcc ...
+    (%compile-kernel renderer (graph-nodes schedule-graph) nil)
+    ;; Overwrite the base graph with compiled graph
+    (setf (avm-graph vm) (schedule-graph->avm-graph (avm-graph vm) schedule-graph))
+    (avm-reset vm)
+    ;; Try axpy!
+    (print
+     (time
+      (%run vm (cons 'x (linspace `(3 3) 1 0)) (cons 'y (linspace `(3 3) 1 0)))))))
 
-    ))
-
-;; ~~~ Forget ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; !matmul is complicated! much clear way to explain this?
 ;; Matmul Example
 ;; avm-graphを用いてコンパイルされたMatmulのデータ構造を取り出してみましょう。
 (defparameter *matmul-graph* (caten (!matmul (make-tensor `(10 20)) (make-tensor `(20 30)))))

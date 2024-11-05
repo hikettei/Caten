@@ -48,6 +48,11 @@
   (setf (graph-nodes (avm-graph avm)) (map 'list #'copy-node (graph-nodes (avm-graph avm))))
   avm)
 
+(defmethod avm-reset ((avm AVM))
+  (setf (avm-pc avm) 0
+        (avm-tape-length avm) (length (graph-nodes (avm-graph avm)))
+        (avm-variables avm) (make-hash-table)))
+
 (defun vm/readvar (avm id)
   (declare (type avm avm)
 	   (type symbol id))
