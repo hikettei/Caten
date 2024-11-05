@@ -241,10 +241,10 @@ caten/codegen overview:
                    (push w allocated))
            (push (make-compiled-kernel-node node graph) nodes)
            ;; Merging view after the JIT_KERNEL invocation
-           (loop for w in (getattr node :storage-id-dst)
+           (loop for w in (node-writes node)
                  for out-view = (gethash w map)
                  if out-view do
-                   (mapc #'merge-id (node-reads out-view))
+                   (mapc #'merge-id (cdr (node-reads out-view)))
                    (push out-view nodes)))
           (T (error "schedule-graph->avm-graph: dont know how to merge ~a" node))))
       ;; Clean up nodes

@@ -451,7 +451,7 @@
     (ok (equal-to 4) (elements (proceed (!matmul a b)))))
   (let ((m (proceed (!matmul (ax+b `(3 4) 1 1) (ax+b `(4 3) 1 1)))))
     (ok (every #'= (elements m) #(70 80 90 158 184 210 246 288 330)))))
-;; TODO: 1024x1024x1024 gemm
+
 (deftest broadcast-regression-test
   (ok (every #'= (elements (proceed (!mul (ax+b `(1 10) 1 0) (ax+b `(10 1) 1 0))))
 	     #(0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 1.0 2.0 3.0 4.0 5.0 6.0
@@ -501,7 +501,7 @@
   (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
     (let ((caten/aasm::*wrap-around-mode* t))
       (loop for dtype in `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8)
-	    for ans   in `(1 1 1 1 -9223372036854775809 -2147483647 -32767 -127) do
+	    for ans   in `(1 1 1 1 -9223372036854775807 -2147483647 -32767 -127) do
 	(let* ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
 	       (one (make-tensor `(3 3) :initial-element 2 :dtype dtype))
 	       (val (proceed (!add max one))))

@@ -91,9 +91,6 @@ Applying a further slicing:
         (when (and val (eql (node-type val) :VIEW))
           (make-node :Buffer :VIEW (node-writes node) (append (list (car (node-reads val))) (cdr args)) :nrank nrank :broadcast broadcast :permute permute))))))
 
-;; [TODO] Handle the stride by ShapeTracker
-;; 1. Modules can inference ShapeTracker?
-;; 4. Create a cache for lowering modules
 (defstruct (Tracker
             (:conc-name tr-)
             (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))
