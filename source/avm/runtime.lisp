@@ -12,7 +12,12 @@
 	  (gethash nil out) :nil)
     out))
 (defstruct (AVM
-	    (:constructor make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil) &aux (id2tensor (or id2tensor (make-hash-table))))))
+	    (:constructor make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil)
+                                          &aux
+                                          (id2tensor (or id2tensor (make-hash-table)))
+                                            (_
+                                             (when (null (graph-outputs graph))
+                                               (setf (graph-outputs graph) (append fw-outputs bw-outputs)))))))
   "Tape based iseq executor"
   (graph graph :type graph)
   (name name :type keyword)
