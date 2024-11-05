@@ -20,11 +20,8 @@
   ;; Original_Tensor -> {%view} -> Viewed_Tensor
   ;;   ^
   ;;  orig-buffer-shape ...
-  (depend-idx-list nil :type list)
-  (orig-buffer-shape nil :type list)
-  (shape-base nil :type list)
-  (stride-base nil :type list)
-  (views-base nil :type list))
+  (depend-idx-list nil :type list) ;; Stores a list of depend _gids to unroll the buffer
+  (orig-buffer-shape nil :type list))
 
 ;; methods start with % = users need to override it to implement new backends.
 (defgeneric %vm/allocate-buffer (device-id buffer)
