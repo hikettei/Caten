@@ -463,10 +463,19 @@ Compiles the given tensors, returning an AVM struct.
     (vm/set-params avm params)
     (vm/forward avm)
     (avm/sync-tensors avm)
-    (flet ((ap (x &aux (tensor (gethash x (avm-id2tensor avm))))
+    (flet ((ap (x &aux (tensor (or (gethash x (avm-id2tensor avm)))))
 	     (assert (tensor-p tensor) () "Forward: Attempted to reference the output variable ~a, but it is not defined in the avm id2tensor table: ~a~%~a"
 		     x (hash-table-keys (avm-id2tensor avm)) avm)
 	     (%apply-proceed tensor)))
+      (apply #'values (map 'list #'ap (avm-fw-outputs avm))))))
+
+(defmethod %run ((avm caten/avm:AVM) &rest params)
+  (let ((*device* (ctx:getenv :AVM))
+	(params (loop for (key . val) in params collect (cons key (if (tensor-p val) (tensor-buffer val) val)))))
+    (vm/set-params avm params)
+    (vm/forward avm)
+    (avm/sync-tensors avm)
+    (flet ((ap (x) (gethash x (avm-variables avm))))
       (apply #'values (map 'list #'ap (avm-fw-outputs avm))))))
 
 (defmethod backward ((avm caten/avm:AVM) &optional prev-dout)

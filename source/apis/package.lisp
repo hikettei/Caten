@@ -101,6 +101,7 @@
    #:forward
    #:backward
    #:proceed
+   #:%run
    #:with-jit)
 
   ;; from function.lisp

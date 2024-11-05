@@ -90,7 +90,8 @@ caten/codegen overview:
    #:%render-kernel
    #:%renderer-get-auto-scheduler)
   (:export
-   #:jit))
+   #:jit
+   #:schedule-graph->avm-graph))
 
 (in-package :caten/codegen/jit)
 
@@ -211,7 +212,7 @@ caten/codegen overview:
                       (gethash (car (node-reads v)) table) v))))
     table))
 
-(defun schedule-graph->vmop (base-graph graph &aux (map (id->output-map graph)))
+(defun schedule-graph->avm-graph (base-graph graph &aux (map (id->output-map graph)))
   (declare (type Graph graph base-graph))
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
@@ -245,7 +246,7 @@ caten/codegen overview:
                  if out-view do
                    (mapc #'merge-id (cdr (node-reads out-view)))
                    (push out-view nodes)))
-          (T (error "schedule-graph->vmop: dont know how to merge ~a" node))))
+          (T (error "schedule-graph->avm-graph: dont know how to merge ~a" node))))
       ;; Clean up nodes
       (dolist (node nodes)
         (flet ((replace-id (id)
@@ -401,7 +402,7 @@ caten/codegen overview:
           (fresh-line)
           (print-info "Compiling ..."))
         (%compile-kernel renderer (graph-nodes schedule-graph) dir)
-        (let ((new-graph (schedule-graph->vmop base-graph schedule-graph)))
+        (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
           (setf (avm-graph avm) new-graph
                 (avm-tape-length avm) (length (graph-nodes new-graph))
                 (avm-pc avm) 0
