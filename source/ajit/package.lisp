@@ -12,7 +12,8 @@
   ;; from helpers.lisp
   (:export
    #:apply-static-gensym
-   #:unroll-suffix)
+   #:unroll-suffix
+   #:render-list)
   ;; from isl-objects.lisp
   (:export
    #:form
@@ -20,8 +21,10 @@
   ;; from isl-ast-helpers.lisp
   (:export
    #:Expr
+   #:Expr-op
    #:Expr-x
    #:Expr-y
+   #:simplify-expr
    )
   ;; from device.lisp
   (:export
@@ -50,7 +53,9 @@
    #:Inferred-Types
    #:read-type-relay
    #:relay-reads
-   #:relay-writes)
+   #:relay-writes
+   #:make-inferred-type
+   )
   ;; from polyhedral.lisp
   (:export
    #:Polyhedral
@@ -71,6 +76,7 @@
    #:render-expr
    #:render-aref
    #:Argument
+   #:make-argument
    #:argument-name
    #:argument-p
    #:argument-pointer-p
@@ -78,6 +84,22 @@
    #:argument-type
    #:argument-io
    #:argument-metadata
-  ))
+
+   #:op/expr)
+  ;; from render-graph.lisp
+  (:export
+   #:r/funcall-string
+   #:r/funcall
+   #:r/funcall-symbol
+   #:r/if
+   #:r/else
+   #:r/endif
+   #:r/for
+   #:r/endfor
+   #:r/while
+   #:r/endwhile)
+  ;; Expr construction
+  (:export
+   #:make-expr))
 
 (in-package :caten/ajit)

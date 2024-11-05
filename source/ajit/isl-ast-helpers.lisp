@@ -147,7 +147,7 @@
 		    (:ast-expr-op-pdiv-r (make-expr :% lhs rhs))
 		    (:ast-expr-op-zdiv-r (make-expr :% lhs rhs))
 		    ;;(:expr-op-cond)
-		    (:ast-expr-op-eq (make-expr :equal lhs rhs))
+		    (:ast-expr-op-eq (make-expr :== lhs rhs))
 		    (:ast-expr-op-le (make-expr :<= lhs rhs))
 		    (:ast-expr-op-lt (make-expr :< lhs rhs))
 		    (:ast-expr-op-ge (make-expr :>= lhs rhs))

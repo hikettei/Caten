@@ -1,9 +1,9 @@
 (in-package :caten/avm)
-;; TODO: magicl backend
+
 (defmethod %vm/allocate-buffer ((device-id (eql :lisp)) buffer)
   (let ((initial-value (if (eql (buffer-dtype buffer) :bool)
 			   nil
-			   (coerce 0 (dtype->lisp (buffer-dtype buffer))))))
+			   (caten/common.dtype:dtype/cast 0 (buffer-dtype buffer)))))
     (if (= (buffer-nrank buffer) 0)
 	(setf (buffer-value buffer) initial-value)
 	(setf (buffer-value buffer)
@@ -27,7 +27,7 @@
 	  "Assertion Failed: All buffers should have the same rank, getting ~a." (map 'list #'buffer-nrank buffers))
   (let* ((nrank (buffer-nrank (car buffers)))
 	 (index-components-p (eql op #'index-components))
-	 (index-components (when index-components-p (coerce 0 (dtype->lisp (buffer-dtype (car buffers))))))
+	 (index-components (when index-components-p (caten/common.dtype:dtype/cast 0 (buffer-dtype (car buffers)))))
 	 (offsets (make-list (1+ (length buffers)) :initial-element 0)))
     (labels ((bref (buffer idx)
 	       (if (= (buffer-nrank buffer) 0)
@@ -91,7 +91,7 @@
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Load)) graph node args)
   (let* ((tgt (car args))
 	 (val (getattr node :value))
-	 (val (reveal-buffer (if (numberp val) val (vm/readvar *vm* val))))
+	 (val (reveal-buffer (if (symbolp val) (vm/readvar *vm* val) val)))
 	 (val (dtype/cast val (buffer-dtype tgt))))
     (if (= (buffer-nrank (car args)) 0)
 	(let ((out (copy-buffer tgt)))
@@ -112,7 +112,11 @@
       ;; TODO
       (mod x (1+ max))))
 (macrolet ((impl (kw op)
-	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args &aux (min (caten/common.dtype:dtype/min (buffer-dtype (car args)))) (max (caten/common.dtype:dtype/max (buffer-dtype (car args)))) (wrap-around (getattr node :wrap-around :allow-undefined t)))
+	     `(defmethod %impl ((device-id (eql :lisp)) (op (eql ,kw)) graph node args
+                                &aux
+                                  (min (caten/common.dtype:dtype/min (buffer-dtype (car args))))
+                                  (max (caten/common.dtype:dtype/max (buffer-dtype (car args))))
+                                  (wrap-around (getattr node :wrap-around :allow-undefined t)))
 		(declare (ignorable max min wrap-around))
 		(apply #'map-view (getattr node :reduction :allow-undefined t) ,op args))))
   (impl :add #'(lambda (&rest args &aux (out (apply #'+ args))) (if wrap-around (wrap-around out max min) out)))

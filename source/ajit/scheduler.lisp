@@ -291,13 +291,13 @@ Options:
 	   for nth upfrom 0
 	   for name = (setf (avm-name avm) (intern (format nil "~a_~a_k~a" base-name name-prefix (kernel-renderer-nth kernel)) "KEYWORD"))
 	   for body = (%render-body backend backend (apply #'make-graph (kernel-renderer-nodes kernel))
-				    (group-polyhedron group) 1 (kernel-renderer-args kernel))
-	   for function = (%render-function backend avm (kernel-renderer-args kernel) body)
+				    (poly-pipeline (group-polyhedron group)) 1 (kernel-renderer-args kernel))
+	   for function = (%render-function backend (avm-name avm) (kernel-renderer-args kernel) body)
 	   collect
 	   (progn
 	     (setf code (format nil "~a~%~a~%" code function))
 	     (make-compiled-kernel name (kernel-renderer-args kernel)
-				   function (%render-function-caller backend avm (kernel-renderer-args kernel)) group)))
+				   function (%render-function-caller backend (avm-name avm) (kernel-renderer-args kernel)) group)))
      (progn
        (when (>= debug 1) (format t "Compiled[~a]:~%~a" name-prefix code))
        (setf (avm-name avm) base-name)
@@ -375,7 +375,7 @@ DEBUG=4 to debug both DEBUG=3 and DEBUG=4."
 		      ;;(print (group-graph kr))
 		      nil
 		      (dolist (k kr) (print (kernel-renderer-nodes k))))))
-	(unless compile-later (%render-compile backend avm final-code dir))
+	(unless compile-later (%render-compile backend final-code dir))
 	(list
 	 (map 'list #'car blueprints/codes) final-code mp
 	 (loop for kr in kernels
