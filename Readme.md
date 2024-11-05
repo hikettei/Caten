@@ -8,6 +8,25 @@
 
 something between tvm and tinygrad.
 
+## Getting started
+
+- 1. Install [Roswell](https://github.com/roswell/roswell) and suitable IDE. (If unsure, Emacs or [Lem](https://github.com/lem-project/lem) is recommended)
+- 2. Install [ISL (Integer Set Library)](https://github.com/Meinersbur/isl) for the fast kernel generation.
+- 3. Install [Qlot](https://github.com/fukamachi/qlot)
+- 4. Check out [getting-started.lisp](./docs/getting-started.lisp)
+
+```sh
+$ git clone git@github.com:hikettei/Caten.git
+$ cd Caten
+$ qlot install
+$ qlot exec ros run
+> (ql:quickload :caten)
+> (in-package :caten-user)
+> (proceed (!randn `(3 3)))
+```
+
+## Overview
+
 Caten is an extremely experimental deep learning compiler. The core design philosophy is centered around:
 
 1. Minimal dependency libraries
@@ -34,7 +53,7 @@ Nearly all of Caten's APIs support Symbolic Compilation, allowing for compilatio
 
 In the future, I would like to reimplement the frontend in Coalton.
 
-## Project Structure (WIP)
+## Project Structure (old)
 
 Everything is a syntax sugar for ./source/air.
 
@@ -81,8 +100,6 @@ $ make test
 
 ```sh
 $ brew install isl
-# (Optional, For runtime code modification when debugging)
-$ brew install zenity
 ```
 
 ## Dependencies
