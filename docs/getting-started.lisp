@@ -7,7 +7,7 @@
   (:use :cl :caten/air :caten/aasm :caten/apis :caten/avm))
 
 (in-package :getting-started)
-
+;;; [Introduction]
 ;;; Welcome to Caten.
 ;;; Caten is a tensor library written in Common Lisp.
 ;;; Our ultimate goal is to generate a fast deep learning model inference runtime across a wide range of devices with the minimal cost.
@@ -19,36 +19,28 @@
 ;;; - 2. caten/air     | Low-Level  Graph Interface
 ;;; - 3. caten/codegen | AIR Graph => Kernel Generator
 ;;; **All other systems are built on top of these packages.**
-
 (defun present (&rest tensors)
   "Present compiles and executes the given tensor, then prints the result."
   (format t "~{~& =>~% ~A~}" (multiple-value-list (apply #'proceed tensors))))
-;; ~~~[1. High Level Intercace (caten/apis)]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; Caten is a tensor library. Just like Petalisp or Tinygrad, it creates a computation node lazily, and then executes it.
-;; CatenはTensor Libraryです。Petalisp/Tinygradのように，計算は全て遅延評価です。コンパイルをするまで実行されません。
-;; 例えば，3x3で初期値が1.0である行列をmake-tensorで作成しても，何も起こりません。
-(print (make-tensor `(3 3) :initial-element 1.0))
+;;; ~~~[1. High Level Intercace (caten/apis)]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; The main role of `caten/apis` is to provide matrix operation APIs **with the same interface as Numpy/PyTorch**.
+;;; Like Petalisp/tinygrad, Caten uses lazy evaluation.
 
-;; 計算を実行したいときに，`(proceed tensor)`を用いてグラフをコンパイルすることで初めて計算を実行できます。
+;; For example, creating a 3x3 matrix initialized with 1.0 using make-tensor doesn't trigger any computation.
+(print (make-tensor `(3 3) :initial-element 1.0)) ;; Getting nothing!
+
+;; If you want to see the result, you have to compile the kernel using the function `proceed`.
 (print (proceed (make-tensor `(3 3) :initial-element 1.0)))
 
-;; このような設計は遅延評価と呼ばれ，MLXやPetalisp，Tinygradなどの線形代数コンパイラで採用されている設計です。
-
-;; 同じグラフを再度実行するには，Caten関数を用いてAVMを作成し，その後Forwardを用いて実行します。(Proceed = Caten+Forward)
-;; Catenは, 全ての計算においてDynamic Shapeを保証しているので，Batch_Sizeなどを後から変更することができます。
+;; To execute a previously compiled graph without recompiling, create an `AVM` using the `caten` function, then execute it with forward.
+;; (that is: proceed = caten + forward)
 (print (caten (!matmul (make-tensor `(3 3)) (make-tensor `(3 3)))))
+(print (proceed (!matmul (!randn `(3 3)) (!randn `(3 3)))))
+;; Of course, Caten is designed so that all graphs can be compiled with dynamic shapes. There's no need to recompile every time the batch_size changes.
 
-;; caten/apisはCatenの最も高いレイヤーに位置するシステムで，以下の機能を提供します。
-;; - Numpy/PyTorch like matrix operations
-;; - Reverse Mode Autodiff
-;; - Tinygrad like ShapeTracker
-;; - AOT Shape Inference
-;; - and more!
-
-;; caten/apisはCatenのUIであり，Numpy-LikeなAPIや自動微分，ShapeTrackerなどの機能を提供します。
-;; このシステムを提供するゴールは，Low Level Interfaceをより高レベルなAPIでWrapすることによって，バグを防いだりユーザーがCatenの使用を
-;; 簡単にすることです。
-;; -> Shap
+;;; The goal of `caten/apis` is to prevent bugs by wrapping the low-level interface commands (described later) in a high-level API.
+;;; You can use various optimizations by lowering the AST in `caten/apis` into `caten/air`!
+;;; => In the next section, we will learn about `caten/air`.
 
 ;; ~~~[Low Level Interface (caten/air)]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; 一般に，深層学習コンパイラはDAGに対するコンパイルを実装します。
