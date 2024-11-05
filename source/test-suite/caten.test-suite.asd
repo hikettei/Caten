@@ -13,7 +13,9 @@ Tests that are not related to the core functionality of Caten or are time-consum
 	       (:file "test-gemm")
 	       (:file "test-conv")
                (:file "test-shape-tracker")
-               (:file "test-schedule"))
+               (:file "test-schedule")
+               (:file "test-dynamic-shape")
+               (:file "test-memory-planner"))
   :perform
   (asdf:test-op
    (o s)

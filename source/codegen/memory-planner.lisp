@@ -46,7 +46,6 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (or
    (buffer-orig-buffer-shape buffer) ;; non-viewed-size
    (buffer-shape buffer)))
-
 ;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
 (defun greedy-solve-dsa (I total-time)
   "A greedy solver for minimizing `peak_mem`"
@@ -99,12 +98,12 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
     (loop for node in (graph-nodes schedule-graph)
 	  for nth upfrom 0
           for lock-p = (null (getattr node :jitable)) do
-	    (loop for val in (node-reads node)
+	    (loop for val in (getattr node :storage-id-src)
 		  for typ in (getattr node :read-types)
 		  for time = `(,nth ,@(gethash val trace-table))
                   if (and (symbolp val) (null (find val constants)))
                     do (setf (gethash val id2type) typ (gethash val trace-table) time)) ;; (incf consume)
-	    (loop for val in (node-writes node)
+	    (loop for val in (getattr node :storage-id-dst)
 		  for typ in (getattr node :write-types)
 		  if (and (symbolp val) (null (gethash val trace-table)))
                     ;; ID2Type    -> the variable name and its type

@@ -49,3 +49,5 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 	  (with-torch (x)
 	    (->caten (f:softmax x)))
 	  (proceed (!softmax x))))))
+
+;; [TODO] Compile Transformer
