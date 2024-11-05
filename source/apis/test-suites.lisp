@@ -501,7 +501,7 @@
   (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
     (let ((caten/aasm::*wrap-around-mode* t))
       (loop for dtype in `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8)
-	    for ans   in `(1 1 1 1 -9223372036854775809 -2147483647 -32767 -127) do
+	    for ans   in `(1 1 1 1 -9223372036854775807 -2147483647 -32767 -127) do
 	(let* ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
 	       (one (make-tensor `(3 3) :initial-element 2 :dtype dtype))
 	       (val (proceed (!add max one))))
