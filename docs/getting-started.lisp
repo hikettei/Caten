@@ -121,36 +121,72 @@
   (run-type-infer avm)
   (apply-rewriting-rules avm))
 
-;; Two number addition example
+(defparameter *width* 120)
+(defun saying (number title object)
+  (dotimes (i *width*) (princ "="))
+  (fresh-line)
+  (format t "~a. ~a~%~a~%" number title object)
+  object)
+
+;; Utils
+(defun try-codegen! (graph outputs)
+  (optimize-aasm graph)
+  (let ((vm (make-avm graph :main nil outputs nil)))
+    (fresh-line)
+    (saying 1 "Compiling the following initial computation graph:" graph)
+    (saying 2 "Created AVM (Abstract VM) with the computation graph:" vm)
+    (run-shape-inference vm)
+    (let ((schedule-graph (graph-schedule (avm-graph vm)))
+          (*expr-cache* (make-expr-cache))
+          (renderer (make-instance 'CStyle-Renderer)))
+      (saying 3 "Generated schedule-graph with the computation graph" schedule-graph)
+      (dolist (item (graph-nodes schedule-graph))
+        ;; If schedule-item was labelled as jitable, you can lower this
+        (when (getattr item :jitable)
+          (lower-schedule-item item (avm-graph vm) schedule-graph)
+          (saying 4 "Lowered schedule item to a blueprint suitable for code generation:" (print-blueprint (getattr item :blueprint) nil))
+          (schedule-item-write-define-global item)
+          (let ((c-kernel (%render-kernel renderer item)))
+            (saying 5 "Generated C code from the blueprint:" c-kernel)
+            (setf (getattr item :rendered-object) c-kernel))))
+      ;; Invoking gcc ...
+      (%compile-kernel renderer (graph-nodes schedule-graph) nil)
+      ;; Overwrite the base graph with compiled graph
+      (setf (avm-graph vm) (schedule-graph->avm-graph (avm-graph vm) schedule-graph))
+      (avm-reset vm))))
+
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+;; 1. Two matrices addition example:
 (let* ((graph
-         ;; Creates a graph: Z(3 3) = X(3 3) + Y(3 3)
+         ;; This is a graph to compile: Z(3 3) = X(3 3) + Y(3 3)
          (with-context
-           (a (%make-tensor `(3 3) :dtype :float32 :from 'x))
-           (b (%make-tensor `(3 3) :dtype :float32 :from 'y))
-           (c (%add a b :id 'z))))
-       ;; Simplifying the graph
+           (x (%make-tensor `(3 3) :dtype :float32 :from 'x))
+           (y (%make-tensor `(3 3) :dtype :float32 :from 'y))
+           (c (%add x y :id 'z))))
+       ;; Simplifying the input graph
        (_ (optimize-aasm graph))
-       ;; Graph: Input=NIL, Output=Z, NAME=axpy-demo graph=graph
+       ;; Wrap the graph as an instance of AVM to manage allocations
        (vm (make-avm graph :axpy-demo nil (list 'z) nil)))
   (declare (ignore _))
-  (print vm)
-  ;; Running a shape inference
+  (fresh-line)
+  (saying 1 "Compiling the following initial computation graph:" graph)
+  (saying 2 "Created AVM (Abstract VM) with the computation graph:" vm)
+  ;; caten/codegen requires the shape of all computation nodes to be known!
   (run-shape-inference vm)
-  ;; Ready for running the scheduler
+  ;; Ready for running the scheduler. `graph-schedule` to partition the input graph.
   (let ((schedule-graph (graph-schedule (avm-graph vm)))
         (*expr-cache* (make-expr-cache))
         (renderer (make-instance 'CStyle-Renderer)))
-    ;; This is your schedule graph
-    (print schedule-graph)
-    ;; Optimization/Lowering is applied to each schedule-item
+    (saying 3 "Generated schedule-graph with the computation graph" schedule-graph)
     (dolist (item (graph-nodes schedule-graph))
       ;; If schedule-item was labelled as jitable, you can lower this
       (when (getattr item :jitable)
         (lower-schedule-item item (avm-graph vm) schedule-graph)
-        (print-blueprint (getattr item :blueprint) t)
+        (saying 4 "Lowered schedule item to a blueprint suitable for code generation:" (print-blueprint (getattr item :blueprint) nil))
         (schedule-item-write-define-global item)
         (let ((c-kernel (%render-kernel renderer item)))
-          (print c-kernel)
+          (saying 5 "Generated C code from the blueprint:" c-kernel)
           (setf (getattr item :rendered-object) c-kernel))))
     ;; Invoking gcc ...
     (%compile-kernel renderer (graph-nodes schedule-graph) nil)
@@ -158,32 +194,49 @@
     (setf (avm-graph vm) (schedule-graph->avm-graph (avm-graph vm) schedule-graph))
     (avm-reset vm)
     ;; Try axpy!
-    (print
-     (time
-      (%run vm (cons 'x (linspace `(3 3) 1 0)) (cons 'y (linspace `(3 3) 1 0)))))))
+    (saying
+     6 "Running the computation X(3x3) + Y(3x3), the result is:"
+     (%run vm (cons 'x (linspace `(3 3) 1 0)) (cons 'y (linspace `(3 3) 1 0))))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun %make-squared-gemm (N out)
+  "a @ b.T"
+  (optimize-aasm
+   (with-context
+     (a  (%make-tensor `(,n ,n)))
+     (b  (%make-tensor `(,n ,n)))
+     (a1 (%view a `(,n ,n ,n) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil t nil) (%stride `(,n 1 ,n) :row)))
+     (b1 (%view b `(,n ,n ,n) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(t nil nil) (%stride `(1 ,n ,n) :row)))
+     (o  (%mul a1 b1))
+     (c  (%load (%make-tensor `(,n ,n 1)) 0.0))
+     (c  (%view c `(,n ,n 1) `(0 0 0) `(,n ,n ,n) `(1 1 1) `(nil nil t) (%stride `(,n ,n 1) :row)))
+     (c  (%add c o :reduction t))
+     (c  (%reshape c `(,n ,n) :id out)))))
+;; Try matmul
+(try-codegen!
+ (%make-squared-gemm 128 'out)
+ (list 'out))
 
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; !matmul is complicated! much clear way to explain this?
-;; Matmul Example
-;; avm-graphを用いてコンパイルされたMatmulのデータ構造を取り出してみましょう。
-(defparameter *matmul-graph* (caten (!matmul (make-tensor `(10 20)) (make-tensor `(20 30)))))
-(print *matmul-graph*)
+#+(or nil)
+(try-codegen!
+ (make-graph
+  ;; your code follows ...
+  )
+ (list ... ))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; 前のセクションでExampleとして提供されたコードは，JIT_DEBUG >= 3を与えることでより美しくデバッグできます。
+(defun present-beautiful (tensor &key (auto-scheduler 0))
+  (ctx:with-contextvar (:JIT 1 :JIT_DEBUG 3 :AUTO_SCHEDULER auto-scheduler)
+    (with-no-grad (caten tensor))))
 
-;; そのためには，グラフの全てのShapeやOffsetの情報を推論する必要があります。
+;; auto-scheduler is WIP as of this writing!
+(present-beautiful
+ (!matmul (make-tensor `(128 512)) (make-tensor `(512 1024)))
+ :auto-scheduler 1)
 
-;; グラフの前処理が必要です。
-(run-shape-inference *matmul-graph*)
-(print *matmul-graph*)
+(present-beautiful
+ (!matmul (make-tensor `(a b)) (make-tensor `(b c))))
 
-;; これで準備が整いました。
-
-;; GemmのAASM実装があったはず
-(defun schedule-item-from-avm (avm)
-  (let ((group (make-group :items (graph-nodes (avm-graph avm)))))
-    (group->schedule group (avm-graph avm))))
-
-(defparameter *schedule-item* (schedule-item-from-avm *matmul-graph*))
-
-(print *schedule-item*)
+(present-beautiful
+ (forward (caten/nn:Embedding 10 20) (make-tensor `(b 20))))
 
 ;; [TODO] README.MDを更新する(How To InstallとGetting-Started.lispへ誘導)
