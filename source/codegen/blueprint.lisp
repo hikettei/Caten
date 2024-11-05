@@ -170,7 +170,14 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                      if (null (find p seen :test #'equal))
                        collect (loop for x in p if (null (find x seen)) collect x and do (push x seen))
                        and do (push p seen)))
-             (new-procedure (loop for p in new-procedure if p collect p)))
+             (new-procedure (loop for p in new-procedure if p collect p))
+             (new-procedure
+               ;; If it has unknown merged dims => split
+               (loop for p in new-procedure
+                     if (gethash p pid2space)
+                       collect p
+                     else
+                       append (map 'list #'list p))))
         (assert (equal (alexandria:flatten new-procedure) (range 0 kernel-rank)))
         (cons
          (map

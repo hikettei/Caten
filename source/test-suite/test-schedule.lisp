@@ -75,3 +75,7 @@
 (define-kernel-count-test activation-after-embedding 1
   "Embedding+GeLU should be fused"
   (with-no-grad (caten (!gelu (call (Embedding 10 10) (make-tensor `(b c)))))))
+
+(define-kernel-count-test symbolic-gemm-fused 2
+  "Symbolic Composed Matmul"
+  (caten (!matmul (make-tensor `(a b)) (!matmul (make-tensor `(b c)) (make-tensor `(c d))))))
