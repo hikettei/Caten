@@ -42,21 +42,20 @@
 ;;; You can use various optimizations by lowering the AST in `caten/apis` into `caten/air`!
 ;;; => In the next section, we will learn about `caten/air`.
 
-;; ~~~[Low Level Interface (caten/air)]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; 一般に，深層学習コンパイラはDAGに対するコンパイルを実装します。
-;; Catenは`caten/air`という汎用的なグラフ処理ライブラリを持っています。
-;; Catenは，この`caten/air`を用いた計算グラフを`caten/avm`が実行する機構を保有しています
-;; %で始まる関数は，caten/airの計算を作成します。with-contextで%の計算を囲むことで，Catenは自動で実行可能グラフに整形してくれます。
-;; caten/avm:%realize関数を用いることで，Graphを実行することができます。
-;; ->dotで，全てのAIR GraphをBrowserで可視化することができます。
+;;; ~~~[Low Level Interface (caten/air)]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; In general, a deep learning compiler is a program that provides transformations and operations on a DAG (Directed Acyclic Graph).
+;;; Caten implements a general-purpose graph processing library called `caten/air`.
+;;; Any data structure with a graph structure in Caten's source code should be defined as a `caten/air:Graph`.
 
-;; 全てのAIR NodeはWrites/Readsのリストと，Attrsを持っています。
-;; 全てのAIRはDumpableであるべきです。(つまり，コンパイルしたグラフをFaslに直接書き込めるべきです。)
 (print (make-node :BinaryOps :ADD (list 'a) (list 'b 'c) :reduction t))
-
 (print (make-graph (make-node :BinaryOps :ADD (list 'a) (list 'b 'c))))
 
-;; これらのAPIを綺麗にしたのがaasmです。
+;;; Any functions starting with `%` represents for the air node creation.
+;;; By wrapping such graph constructions with the with-context macro, Caten automatically organizes them into an executable graph.
+;;; - caten/avm:%realize to run the graph in AVM
+;;; - caten/aasm:->dot to open the graph in your browser
+
+;; Example:
 (let ((graph
         (with-context
           (x (%fconst 1.0))
@@ -64,28 +63,33 @@
           (out (%add x y)))))
   (print graph)
   (print (%realize graph))
-  ;; Optionally
-  ;; (->dot graph)
-  )
-;; caten/aasmは，AIRを用いた命令セットの定義を提供します。
+  (->dot graph))
 
-;; ~~~[A Bridge between AIR and APIs]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; High Level InterfaceとLow Level Interfaceの架け橋
-;; Catenはどうやってcaten/apisのHigh Level InterfaceをLow Level Interfaceに変換するのでしょうか？
-;; CatenのHigh Level APIは，aasmをwrapすることで実装できます。試しに新しい計算グラフを実装してみましょう。
+;;; - Nodes can be defined using defnode.
+;;; - Pattern Matcher can be defined using `defsimplifier`
+;;; - `caten/aasm` provides a set of instruction used in AVM
+;;; ~~~[A Bridge between AIR and APIs]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; In this section, we will explain the mechanism of lowering the high-level interface(APIs) to the low-level interface(AIR Graph).
+
+;;; To lower `caten/apis` to a Graph, implement the lower method in the computation graph `Func` of `Caten/apis` and describe the lowered computation graph there.
+;;; Let’s try defining a `Func` to compute `Sin(Cos(x))` as an example.
 (defclass SinCos (Func) nil
   (:documentation "The func SinCos computes sin(cos(x))"))
 
+;; Forward creates a lazy tensor for the next computation.
+;; You can skip this process by using the `st` macro.
 (defmethod forward ((op SinCos) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-;; Optinonal
+;; Backward is optional (skipped this time)
 (defmethod backward ((op SinCos) &optional prev-grad) (declare (ignore prev-grad)) nil)
-
+;; Lower describes the lowered expression of `SinCos`
 (defmethod lower ((op SinCos) &rest inputs)
   (let ((x (car inputs)))
     (with-context
       (a (%sin (%add x (%fconst (/ pi 2)))))
       (b (%sin a)))))
 
+;; You can create the next lazy tensor using forward method.
+;; Let's define a function doing this as a utility named !sincos.
 (defun !sincos (tensor)
   (forward (make-instance 'SinCos) tensor))
 
