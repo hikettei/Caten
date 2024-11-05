@@ -9,6 +9,7 @@
   (:use :cl :caten/codegen/expr :caten/codegen/renderer)
   (:export
    #:Expr-Cache
+   #:make-expr-cache
    #:*expr-cache*
    #:with-expr-cache
    #:stash-expr
@@ -29,6 +30,9 @@
    (pointer-map :type hash-table :accessor cache-pointer-map :initarg :pointer-map)
    (global-reduce-alias :type hash-table :initform (make-hash-table :test 'equal) :accessor expr-cache-reduce-alias))
   (:documentation "Creates a cached object for (scalar) EXPR graph."))
+
+(defun make-expr-cache (&key (pointer-map (make-hash-table)))
+  (make-instance 'Expr-Cache :pointer-map pointer-map))
 
 (defmacro with-expr-cache ((&key (pointer-map (make-hash-table))) &body body)
   `(let ((*expr-cache* (make-instance 'Expr-Cache :pointer-map ,pointer-map)))

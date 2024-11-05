@@ -52,8 +52,11 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:caten/codegen/rewriting-rules
    :nodes-apply-static-gensym)
   (:export
+   #:Group
+   #:make-group
    #:graph-schedule
-   #:*function-name-maxlen*))
+   #:*function-name-maxlen*
+   #:group->schedule))
 
 (in-package #:caten/codegen/scheduler)
 
