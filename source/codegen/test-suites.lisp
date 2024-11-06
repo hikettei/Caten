@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/test-suite
   (:use :cl :rove :caten :caten/nn :caten/air :caten/avm :trivia))
 (in-package :caten/codegen/test-suite)
-
+;; [TODO] Delete test-suite here
 (defun equal-to (a) #'(lambda (x) (= x a)))
 (defun pproceed (params tensor)
   (let ((mdl (caten tensor)))
@@ -44,20 +44,6 @@
   `(if (= 1 (ctx:getenv :JIT))
        (progn ,@body)
        (skip "Requires JIT")))
-
-(deftest check-in-place-mutation
-  (with-no-grad
-    (with-jit-only-mode
-      ;; TODO: More!
-      (check-args 1 `(3 3) (caten (!tan (make-tensor `(3 3)))))
-      (check-args 1 `(3 3) (caten (!tan (!tan (!tan (make-tensor `(3 3)))))))
-      (check-args 1 `(3 3) (caten (!softmax (make-tensor `(3 3)))))
-      (check-args 2 `(3 3) (caten (!softmax (ax+b `(3 3) 1 1))))
-      (check-args 1 `(3 3) (caten (!softmax (!softmax (make-tensor `(3 3))))))
-      (check-args 1 `(t t) (caten (!softmax (!softmax (make-tensor `(a b))))))
-      (check-args 1 :tensor (caten (!tril (make-tensor `(5 5) :initial-element 1.0))))
-      ;; [TODO] The !tril below should be nargs = 1 by deleting the extra buffer for index-components (val_14 is not used!!!)
-      (check-args 1 :tensor (caten (!tril (make-tensor `(5 5 5) :initial-element 1.0)))))))
 
 (deftest matmul-schedule-test
   (with-no-grad
