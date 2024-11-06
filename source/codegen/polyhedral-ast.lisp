@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/polyhedral-ast
   (:documentation "ISL Polyhedral IR ==> Caten Blueprint IR")
-  (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference)
+  (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia)
   (:export #:lower-into-bp-from-polyhedral))
 
 (in-package :caten/codegen/polyhedral-ast)
@@ -187,7 +187,7 @@
                  node))
              (lower (object)
 	       (when (listp object) (return-from lower (map 'list #'lower object)))
-	       (trivia:ematch object
+	       (ematch object
 		 ((ASTBlock :body body) (map 'list #'lower body))
 		 ((AstFor :idx idx :from upfrom :to to :by by :body body)
 		  (push (r/for idx upfrom to by) new-graph)

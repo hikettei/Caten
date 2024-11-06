@@ -3,6 +3,8 @@
 ;; [TODO] Fix Dynamic Shape Testing
 ;; - Passing the comment outed test
 ;; - Transformer Full Symbolic
+;; - (defparameter *model* (time (Transformer 64 1 2 1e-5 32)))
+;; - (defparameter *transformer* (caten (call *model* (make-tensor `(10 32)) (iconst 'n))))
 
 #|
 (deftest symbolic-function-args-test
