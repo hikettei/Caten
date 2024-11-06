@@ -571,19 +571,22 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
      base-graph)))
 
 (defun apply-serialize-reduction (schedule-graph base-graph)
-  (apply-schedule-item-fusor
-   #'(lambda (self parent)
-       (let ((self-type (group-get-type (make-group :items (getattr self :items))))
-             (parent-type (group-get-type (make-group :items (getattr parent :items)))))
-         (and
-          (= (getattr self :rank) (getattr parent :rank)) ;; Make sure not extra loop is introduced
-          (buffer-mergeable-p base-graph self-type parent-type)
-          (or
-           (null (getattr self :reduce-dims))
-           (null (getattr parent :reduce-dims))
-           (equal (getattr self :reduce-dims) (getattr parent :reduce-dims))))))
-   schedule-graph
-   base-graph))
+  (flet ((is-tensor (buffer)
+           (not (every #'(lambda (x) (eql x 1)) (buffer-shape buffer)))))
+    (apply-schedule-item-fusor
+     #'(lambda (self parent)
+         (let ((self-type (group-get-type (make-group :items (getattr self :items))))
+               (parent-type (group-get-type (make-group :items (getattr parent :items)))))
+           (and
+            (= (getattr self :rank) (getattr parent :rank)) ;; Make sure not extra loop is introduced
+            (buffer-mergeable-p base-graph self-type parent-type)
+            (is-tensor self-type) (is-tensor parent-type)
+            (or
+             (null (getattr self :reduce-dims))
+             (null (getattr parent :reduce-dims))
+             (equal (getattr self :reduce-dims) (getattr parent :reduce-dims))))))
+     schedule-graph
+     base-graph)))
 
 (defun apply-move-after-reduction (schedule-graph)
   (labels ((%newtype (buffer)
