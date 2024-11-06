@@ -573,12 +573,15 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 (defun apply-serialize-reduction (schedule-graph base-graph)
   (apply-schedule-item-fusor
    #'(lambda (self parent)
-       (and
-        (= (getattr self :rank) (getattr parent :rank)) ;; Make sure not extra loop is introduced
-        (or
-         (null (getattr self :reduce-dims))
-         (null (getattr parent :reduce-dims))
-         (equal (getattr self :reduce-dims) (getattr parent :reduce-dims)))))
+       (let ((self-type (group-get-type (make-group :items (getattr self :items))))
+             (parent-type (group-get-type (make-group :items (getattr parent :items)))))
+         (and
+          (= (getattr self :rank) (getattr parent :rank)) ;; Make sure not extra loop is introduced
+          (buffer-mergeable-p base-graph self-type parent-type)
+          (or
+           (null (getattr self :reduce-dims))
+           (null (getattr parent :reduce-dims))
+           (equal (getattr self :reduce-dims) (getattr parent :reduce-dims))))))
    schedule-graph
    base-graph))
 
@@ -655,4 +658,6 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; Need to consider the views
 ;; [TODO] (proceed (!sin (caten/nn:!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 1.0)))
 ;; Reject by views
-;; Transformer Scheduling has a bug in FUSED_ATTENTION (TODO: FIX and more tests for views)
+;; Transformer Scheduling has a bug in FUSED_ATTENTION (TODO: FIX and more tests for views) (val_313)
+;; ^ というかViewの値がおかしい箇所がいくつかある。Memory Plannerする前にViewのBehaviourをTestする
+;; val_313, val_329 etc ...
