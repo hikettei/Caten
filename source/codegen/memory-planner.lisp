@@ -228,8 +228,6 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
                     (getattr item :storage-id-dst)  (map 'list (alexandria:compose #'newid #'car) writes)
                     (getattr item :read-types) (map 'list #'cdr reads)
                     (getattr item :write-types) (map 'list #'cdr writes))))))
-     ;; (print (alexandria:hash-table-keys alias-map))
-     ;; (print (alexandria:hash-table-values alias-map))
       alias-map)))
 
 (defmethod run-memory-planner ((schedule-graph Graph) (symbolics list) (base-graph Graph))

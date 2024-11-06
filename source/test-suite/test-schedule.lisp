@@ -79,3 +79,7 @@
 (define-kernel-count-test symbolic-gemm-fused 2
   "Symbolic Composed Matmul"
   (caten (!matmul (make-tensor `(a b)) (!matmul (make-tensor `(b c)) (make-tensor `(c d))))))
+
+(define-kernel-count-test scaled-dot-product-attention 3
+  "ScaledDotProductAttention is 3 kernels"
+  (caten (scaled-dot-product-attention (rand `(4 8 8)) (rand `(4 8 8)) (rand `(4 8 8)))))
