@@ -1,9 +1,9 @@
 (defpackage :caten/codegen/memory-planner
-  (:use :cl :caten/air :caten/avm)
-  (:export #:run-memory-planner))
-
+  (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr)
+  (:export
+   #:run-memory-planner))
 (in-package :caten/codegen/memory-planner)
-
+;; ~~~ Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (MemoryBlock
 	    (:constructor make-memoryblock (id type create release &key (lock nil))))
   "Ab abstraction for a memory allocation and release pipeline.
@@ -25,20 +25,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 (defmethod print-object ((mb MemoryBlock) stream)
   (format stream "MemoryBlock(~(~a~) -> ~(~a~)) : (~a, ~a, ~a, lock=~a)~%" (memoryblock-id mb) (memoryblock-answer mb) (buffer-shape (memoryblock-type mb)) (memoryblock-create mb) (memoryblock-release mb) (memoryblock-lock mb)))
 
-(defmethod allocate-p ((mb MemoryBlock) time)
-  (= time (memoryblock-create mb)))
-
-(defmethod created-p ((mb MemoryBlock) time)
-  (>= time (memoryblock-create mb)))
-
-(defmethod preserved-p ((mb MemoryBlock) time)
-  (< time (memoryblock-release mb)))
-
-(defmethod release-p ((mb MemoryBlock) time)
-  (= time (memoryblock-release mb)))
-
-(defmethod freed-p ((mb MemoryBlock) time)
-  (and (created-p mb time) (>= time (memoryblock-release mb))))
+(defmethod allocate-p ((mb MemoryBlock) time) (= time (memoryblock-create mb)))
+(defmethod created-p ((mb MemoryBlock) time) (>= time (memoryblock-create mb)))
+(defmethod preserved-p ((mb MemoryBlock) time) (< time (memoryblock-release mb)))
+(defmethod release-p ((mb MemoryBlock) time) (= time (memoryblock-release mb)))
+(defmethod freed-p ((mb MemoryBlock) time) (and (created-p mb time) (>= time (memoryblock-release mb))))
 
 (defun buffer-orig-shape (buffer)
   "Returns a shape of the buffer, which is not VIEWED."
@@ -85,8 +76,8 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	(apply-release time)
 	(apply-creation time))
       I)))
-
-(defmethod run-memory-planner ((schedule-graph Graph))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmethod run-memory-planner-global ((schedule-graph Graph))
   "write_1, write_2 = f(write_suite_1, write_suite_2, *[dynamic_shape + read_buffers])
 The goal of run-memory-planner is to reduce the number of :allocate-p object in schedule-graph, by rewriting write_suite1 and write_suite2."
   (let* ((trace-table (make-hash-table))
@@ -141,3 +132,108 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
               (after (length (remove-duplicates (alexandria:hash-table-values alias-map)))))
           ;; [TODO] unit should be MiB
           (format t "  Memory Planner: n_alloc(~a) -> n_alloc(~a)~%" before after))))))
+
+(defun run-memory-planner-local (item schedule-graph symbolics)
+  "Minimizes the number of allocation buffers that are only used in the item."
+  (declare (type node item) (type graph schedule-graph))
+  (assert (eql (node-type item) :Schedule-Item))
+  (let* ((blueprint (getattr item :blueprint))
+         (trace-table (make-hash-table))
+	 (id2type (make-hash-table))
+	 (lock-table (make-hash-table))
+	 (total-time (length blueprint))
+         (outputs ;; a list of buffers that do no changed by the memory-planner
+             (append ;; If the output were read by other kernels, it should be optimized by the global memory-planner.
+              (graph-outputs schedule-graph)
+              symbolics
+              (loop for node in (graph-nodes schedule-graph)
+                    if (not (eql (node-id node) (node-id item)))
+                      append (node-reads node))))
+	 (constants))
+    (loop for node in blueprint
+	  for nth upfrom 0
+          if (not (eql (node-class node) :Render)) do
+	    (loop for val in (node-reads node)
+		  for typ in (relay-reads (read-type-relay node))
+		  for time = `(,nth ,@(gethash val trace-table))
+                  if (and (symbolp val) (null (find val constants)))
+                    do (setf (gethash val id2type) typ (gethash val trace-table) time)) ;; (incf consume)
+	    (loop for val in (node-writes node)
+		  for typ in (relay-writes (read-type-relay node))
+		  if (and (symbolp val) (null (gethash val trace-table)))
+                    ;; ID2Type    -> the variable name and its type
+                    ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
+                    ;; LockTable  -> Set T to lock (never become in-place)
+		    do (setf (gethash val id2type) typ
+                             (gethash val trace-table) (list nth))))
+    (let* ((memory-blocks
+	     (loop for key in (alexandria:hash-table-keys trace-table)
+	           for typ = (gethash key id2type)
+		   collect
+                   ;; [Note] A memory block lives in the range of [min{t}, max{t})
+                   ;; Plus, If the same task (e.g.: T0(x) -> T1(x) -> T0(x+1)) is scheduled, the memory block lives from 0 to 2.
+		   (make-memoryblock
+		    key typ
+		    (apply #'min (gethash key trace-table))
+                    ;; Set the longest time for the output variables (not to destruct it, and users can see the result)
+		    (if (find key outputs)
+			total-time
+			(apply #'max (gethash key trace-table)))
+		    :lock (gethash key lock-table))))
+           ;; Minimize the peak memory usage
+	   (solved (greedy-solve-dsa memory-blocks total-time))
+           ;; Retrive the solution. A hash table of OLD_MEMORY_ID -> NEW_MEMORY_ID
+           (alias-map (make-hash-table)))
+      (loop for mb in solved
+            do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
+      (flet ((newid (id) (or (gethash id alias-map) id)))
+        (dolist (bp (getattr item :blueprint))
+          (setf (node-writes bp) (map 'list #'newid (node-writes bp))
+                (node-reads bp) (map 'list #'newid (node-reads bp)))
+          (when (eql (node-type bp) :EXPR)
+            (dolist (item (graph-nodes (expr-graph (getattr bp :EXPR))))
+              (when (eql (node-type item) :AREF)
+                (setf (getattr item :storage-id) (newid (car (node-writes item))))))))
+        ;; remove duplicated define-global
+        (setf (getattr item :blueprint)
+              (loop with seen = nil
+                    for item in (getattr item :blueprint)
+                    if (or (not (eql (node-type item) :DEFINE-GLOBAL))
+                           (null (find (car (node-writes item)) seen)))
+                      collect item
+                    if (eql (node-type item) :DEFINE-GLOBAL)
+                      do (push (car (node-writes item)) seen)))
+        (let* ((reads (map 'list #'cons (getattr item :storage-id-src) (getattr item :read-types)))
+               (writes (map 'list #'cons (getattr item :storage-id-dst) (getattr item :write-types)))
+               (reads (remove-duplicates reads :key (alexandria:compose #'newid #'car)))
+               (writes (remove-duplicates writes :key (alexandria:compose #'newid #'car)))
+               (seen))
+          (flet ((only-unseen (items)
+                   (loop for (id . type) in items
+                         if (null (find (newid id) seen))
+                           do (push (newid id) seen) and collect (cons id type))))
+            (multiple-value-bind (reads writes) (values (only-unseen reads) (only-unseen writes))
+              (setf (getattr item :storage-id-src) (print (map 'list (alexandria:compose #'newid #'car) reads))
+                    (getattr item :storage-id-dst) (print (map 'list (alexandria:compose #'newid #'car) writes))
+                    (getattr item :read-types) (map 'list #'cdr reads)
+                    (getattr item :write-types) (map 'list #'cdr writes))))))
+      ;; (print (alexandria:hash-table-keys alias-map))
+      ;; (print (alexandria:hash-table-values alias-map))
+      alias-map)))
+
+;; :Itemsの時点でMemoryPlannerを実行する必要がある (OK)
+(defmethod run-memory-planner ((schedule-graph Graph) (symbolics list))
+  (let ((total-allocations))
+    ;; First, applying the memory-planner kernel by kernel.
+    ;; The goal is to reduce the number of arguments in the kernel.
+    (dolist (item (graph-nodes schedule-graph))
+      (when (and (getattr item :jitable) (getattr item :blueprint))
+        (run-memory-planner-local item schedule-graph symbolics)
+        ))
+    ;; Second, applying the memory-planner in the schedule-graph level
+    ;; The goal here is to reduce the number of :allocate-p object in schedule-graph.
+
+    ;; == [REPORT] ======
+    ;; MiB => xx
+
+    ))

@@ -61,7 +61,8 @@
 
 (defnode (:Render :Aref) ()
          "TODO"
-         :slots ((buffer :type Buffer)
+         :slots ((storage-id :type symbol)
+                 (buffer :type Buffer)
                  (space :type Iteration-Space)))
 
 (defnode (:Render :DEFINE-GLOBAL) ()
@@ -115,11 +116,11 @@
   (let ((buffer (getattr node :buffer))
         (space  (getattr node :space))
         (index-space (renderer-index-space renderer))
-        (id (car (node-writes node))))
+        (id (or (getattr node :storage-id) (car (node-writes node)))))
     (when (and (null index-space) (> (buffer-nrank buffer) 0))
       (warn "render-aref: Cannot render :AREF for ~a without providing :index-space, thus replaced with ?." id))
     (if (= -1 (buffer-nrank buffer))
-        (format nil "~(~a~)" (car (node-writes node)))
+        (format nil "~(~a~)" id)
         (if index-space
             (let ((expr (apply #'expr-add (iteration-space-expr-aref space buffer (renderer-index-space renderer)))))
               (setf (graph-nodes (renderer-graph renderer))
@@ -127,9 +128,9 @@
                      (graph-nodes (expr-graph expr))
                      (graph-nodes (renderer-graph renderer))))
               (format nil "~(~a~)[~a]"
-                      (%render-const renderer (car (node-writes node)))
+                      (%render-const renderer id)
                       (render-node renderer (car (node-writes (expr-out expr))))))
-            (format nil "~(~a~)[?]" (car (node-writes node)))))))
+            (format nil "~(~a~)[?]" id)))))
 
 (defun expr-index-components (renderer node index-space)
   (assert (eql (node-type node) :INDEX-COMPONENTS))

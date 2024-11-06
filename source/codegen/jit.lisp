@@ -368,6 +368,7 @@ caten/codegen overview:
                      (format t "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
                    (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
                      (when (>= (ctx:getenv :JIT_DEBUG) 2)
+
                        (format t "=====> Lowering to Polyhedral IR~%"))
                      (scop x symbolics)
                      (when (>= (ctx:getenv :JIT_DEBUG) 2)
@@ -385,18 +386,14 @@ caten/codegen overview:
            (graph-nodes schedule-graph)))
         ;; 10. Running memory-planner, update the storage-id
         (setf schedule-graph (->graph schedule-graph))
-        (verify-graph schedule-graph)
+        (verify-graph schedule-graph) ;; Sort the graph for memory planner
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Running the memory planner..."))
-        
         (dolist (item (graph-nodes schedule-graph))
           (setf (getattr item :storage-id-src) (map 'list #'read-ptrid (getattr item :storage-id-src))
                 (getattr item :storage-id-dst) (map 'list #'read-ptrid (getattr item :storage-id-dst))))
-        ;; [TODO] Implement two things
-        ;; Memory Planner In Schedule Items
-        ;; Memory Planner In 
-        (run-memory-planner schedule-graph)
+        (run-memory-planner schedule-graph symbolics)
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Rendering ..."))
