@@ -133,7 +133,14 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
           ;; [TODO] unit should be MiB
           (format t "  Memory Planner: n_alloc(~a) -> n_alloc(~a)~%" before after))))))
 
-(defun run-memory-planner-local (item schedule-graph symbolics)
+(defun id-is-input-p (id graph)
+  (let ((node (id->value graph id)))
+    (when (and node (eql (node-type node) :Allocate))
+      (when (getattr node :from)
+        ;; If :from is specified => the input should not be destructed.
+        t))))
+
+(defun run-memory-planner-local (item schedule-graph symbolics base-graph)
   "Minimizes the number of allocation buffers that are only used in the item."
   (declare (type node item) (type graph schedule-graph))
   (assert (eql (node-type item) :Schedule-Item))
@@ -156,10 +163,12 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
 	    (loop for val in (node-reads node)
 		  for typ in (relay-reads (read-type-relay node))
 		  for time = `(,nth ,@(gethash val trace-table))
+                  if (id-is-input-p val base-graph) do (push val outputs)
                   if (and (symbolp val) (null (find val constants)))
                     do (setf (gethash val id2type) typ (gethash val trace-table) time)) ;; (incf consume)
 	    (loop for val in (node-writes node)
 		  for typ in (relay-writes (read-type-relay node))
+                  if (id-is-input-p val base-graph) do (push val outputs)
 		  if (and (symbolp val) (null (gethash val trace-table)))
                     ;; ID2Type    -> the variable name and its type
                     ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
@@ -222,14 +231,13 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
       alias-map)))
 
 ;; :Itemsの時点でMemoryPlannerを実行する必要がある (OK)
-(defmethod run-memory-planner ((schedule-graph Graph) (symbolics list))
+(defmethod run-memory-planner ((schedule-graph Graph) (symbolics list) (base-graph Graph))
   (let ((total-allocations))
     ;; First, applying the memory-planner kernel by kernel.
     ;; The goal is to reduce the number of arguments in the kernel.
     (dolist (item (graph-nodes schedule-graph))
       (when (and (getattr item :jitable) (getattr item :blueprint))
-        (run-memory-planner-local item schedule-graph symbolics)
-        ))
+        (run-memory-planner-local item schedule-graph symbolics base-graph)))
     ;; Second, applying the memory-planner in the schedule-graph level
     ;; The goal here is to reduce the number of :allocate-p object in schedule-graph.
 

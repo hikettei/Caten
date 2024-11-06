@@ -393,7 +393,7 @@ caten/codegen overview:
         (dolist (item (graph-nodes schedule-graph))
           (setf (getattr item :storage-id-src) (map 'list #'read-ptrid (getattr item :storage-id-src))
                 (getattr item :storage-id-dst) (map 'list #'read-ptrid (getattr item :storage-id-dst))))
-        (run-memory-planner schedule-graph symbolics)
+        (run-memory-planner schedule-graph symbolics base-graph)
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Rendering ..."))
