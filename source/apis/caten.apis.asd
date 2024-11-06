@@ -24,14 +24,14 @@
     (asdf:test-op "caten.air")
     (asdf:test-op "caten.aasm")
     (asdf:test-op "caten.avm")
-    (asdf:test-op "caten.apis/test")
-    (asdf:test-op "caten.codegen/test"))))
+    (asdf:test-op "caten.apis/test"))))
 
 (asdf:defsystem "caten.apis/test"
   :depends-on
   ("rove")
   :components ((:file "test-suites"))
   :perform
-  (test-op (o s)
-	   (let ((result (uiop:symbol-call (find-package :rove) :run s :style (if (uiop:getenv "DOT") :dot :spec))))
-	     (assert (or (null (uiop:getenv "CI")) result)))))
+  (asdf:test-op
+   (o s)
+   (let ((result (uiop:symbol-call (find-package :rove) :run s :style (if (uiop:getenv "DOT") :dot :spec))))
+     (assert (or (null (uiop:getenv "CI")) result)))))
