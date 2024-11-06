@@ -47,7 +47,7 @@
     (:float16 'single-float)
     (:bfloat16 'single-float)
     (:uint64  '(unsigned-byte 64))
-    (:int64   '(unsigned-byte 64))
+    (:int64   '(signed-byte 64))
     (:uint32  '(unsigned-byte 32))
     (:int32   '(signed-byte 32))
     (:uint16  '(unsigned-byte 16))

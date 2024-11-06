@@ -198,7 +198,7 @@
 		    (let ((val1 (pproceed ',params (,op (make-tensor ',shape :initial-element ,initial-element) :axis ,axis :keepdims t))))
 		      (ok (equal (shape val1) ',shape))
 		      (ok (= (length (elements val1)) ,element-length))
-		      (ok (every (equal-to ,evaluated-to) (elements val1)))))))
+		      (ok (every (equal-to ,evaluated-to) (elements val1)) (format nil "expecting ~a, getting ~a" ,evaluated-to (elements val1)))))))
       (testcase !sum  (a b) 1.0 1 9.0 t ((a . 3) (b . 3)))
       (testcase !mean (a b) 1.0 1 1.0 t ((a . 3) (b . 3)))
       
@@ -233,7 +233,6 @@
       (testcase !sum (3 3) (1 1) nil 1.0 1 9.0 '(0 -1))
       (testcase !mean (3 3) (1 1) nil 1.0 1 1.0 '(0 -1))
 
-      ;; TODO: Shapes are inferenced to (a 1)
       (testcase !sum (a b) nil ((a . 3) (b . 3)) 1.0 3 3.0 1)
       (testcase !mean (a b) nil ((a . 3) (b . 3)) 1.0 3 1.0 1)))
   (let ((*default-order* :row))
@@ -421,7 +420,7 @@
 			(backward m nil)
 			(when zero-grad
 			  (forward m) (backward m nil)))
-		      (ok (every (equal-to ,v) (elements (grad a))))))))
+		      (ok (every (equal-to ,v) (elements (grad a))) (format nil "expecting ~a, getting ~a" ,v (elements (grad a))))))))
       (f (!+ (!neg a) (!neg a) (!neg a)) -3)
       (f (!+ (!neg a) (!neg a) a) -1)
       (f (!+ a (!neg a) (!neg a)) -1)
@@ -429,7 +428,6 @@
       (f (!+ (!neg a) a a) 1)
       (f (!+ a (!neg a) a) 1)
       (f (!+ a a (!neg a)) 1)
-
       (f (!neg (!+ a a a)) -3)
       (f (!neg (!+ (!neg a) a (!neg a))) 1))))
 
@@ -453,7 +451,7 @@
     (ok (equal-to 4) (elements (proceed (!matmul a b)))))
   (let ((m (proceed (!matmul (ax+b `(3 4) 1 1) (ax+b `(4 3) 1 1)))))
     (ok (every #'= (elements m) #(70 80 90 158 184 210 246 288 330)))))
-;; TODO: 1024x1024x1024 gemm
+
 (deftest broadcast-regression-test
   (ok (every #'= (elements (proceed (!mul (ax+b `(1 10) 1 0) (ax+b `(10 1) 1 0))))
 	     #(0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 1.0 2.0 3.0 4.0 5.0 6.0
@@ -503,7 +501,7 @@
   (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
     (let ((caten/aasm::*wrap-around-mode* t))
       (loop for dtype in `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8)
-	    for ans   in `(1 1 1 1 9223372036854775809 -2147483647 -32767 -127) do
+	    for ans   in `(1 1 1 1 -9223372036854775807 -2147483647 -32767 -127) do
 	(let* ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
 	       (one (make-tensor `(3 3) :initial-element 2 :dtype dtype))
 	       (val (proceed (!add max one))))

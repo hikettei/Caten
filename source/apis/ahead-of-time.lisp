@@ -15,7 +15,7 @@
 	   (outputs (multiple-value-list (apply graph-f (collect-initargs-names lambda-list))))
 	   (name (intern (format nil "~(~a~)_~(~a~)_~(~a~)" name order dtype) "KEYWORD"))
 	   (blueprint (if aot-mode (let ((*device* :lisp)) (caten outputs :jit nil :name name)) (caten outputs :name name))))
-      (when aot-mode (when (= 1 (ctx:getenv :STATIC_GENSYM)) (caten/ajit:apply-static-gensym blueprint)))	
+      (when aot-mode (when (= 1 (ctx:getenv :STATIC_GENSYM)) (caten/codegen/rewriting-rules:apply-static-gensym blueprint)))	
       blueprint))
   (defmacro caten/defun[T] ((name cffi-prefix &key (dtypes) (orders `(:row :column))) lambda-list &body body)
     (declare (type string cffi-prefix))
@@ -31,7 +31,7 @@
 		 for *device* in `(,@*aot-vm* ,@*aot-jit*)
 		 for jit-p = (find *device* *aot-jit*)
 		 for blueprint = (create-blueprint-from-body cffi-prefix dtype order lambda-list body)
-		 for avm = (if jit-p (caten/ajit:jit blueprint :backend *device* :dir (cache-dir name dtype order *device*)) blueprint)
+		 for avm = (if jit-p (caten/codegen:jit blueprint :renderer *device* :dir (cache-dir name dtype order *device*)) blueprint)
 		 append
 		 `((defmethod invoke-aot-function ((device-id (eql ,*device*)) (default-dtype (eql ,dtype))
 						   (order (eql ,order)) (op (eql ,op-dispatcher)) &rest args)

@@ -15,9 +15,6 @@
    #:with-device
    #:Buffer #:make-buffer #:copy-buffer #:buffer-p #:buffer-nrank #:buffer-value #:buffer-dtype #:buffer-shape #:buffer-stride #:buffer-views #:buffer-depend-idx-list
    #:buffer-orig-buffer-shape
-   #:buffer-shape-base
-   #:buffer-stride-base
-   #:buffer-views-base
    #:buffer-inferred-permute
    #:%vm/allocate-buffer
    #:%vm/read-index
@@ -43,7 +40,8 @@
    #:vm/step
    #:vm/forward
    #:vm/backward
-   #:vm/set-params)
+   #:vm/set-params
+   #:avm-reset)
   ;; from conditions.lisp
   (:export
    #:avm-runtime-error)

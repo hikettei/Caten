@@ -1,6 +1,6 @@
 (in-package :caten/test-suite)
 
-;; [TODO] Needs precision test
+;; [TODO] the behaviour is the same as numpy?
 (deftest compile-randn
   (ok (caten (!randn `(n)))))
 

@@ -42,8 +42,8 @@
   (def value-integerp %isl-val-is-int)
   (def value-rationalp %isl-val-is-rat)
   (def value-nan-p %isl-val-is-nan)
-  (def value-positive-infinity-p %isl-val-infty)
-  (def value-negative-infinity-p %isl-val-neginfty))
+  (def value-positive-infinity-p %isl-val-is-infty)
+  (def value-negative-infinity-p %isl-val-is-neginfty))
 
 (macrolet ((def (name impl)
              `(define-isl-function ,name ,impl
@@ -94,7 +94,7 @@
     (:take value a)
     (:take value b)
     (:give value x)
-    (:give value y))
+  (:give value y))
 
 (defun %value (value-designator)
   (etypecase value-designator
@@ -146,3 +146,13 @@
 (define-isl-function value-object %value-object
   (:give value-designator)
   (:keep value))
+
+(defun make-value-list (&rest value-list)
+  (declare (type list value-list))
+  (let* ((n (length value-list))
+	 (value-list (cl:map 'list #'value value-list))
+	 (ls (%make-value-list (%isl-val-list-alloc (context-handle *context*) n))))
+    (loop for value in value-list
+	  for nth upfrom 0
+	  do (%isl-val-list-add (value-list-handle ls) (value-handle value)))
+    ls))

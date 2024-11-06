@@ -12,13 +12,11 @@
 
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
-   (_loop_bound_nodes :initarg :_loop_bound_nodes :initform nil)
-   (_loop_bound_nodes_type :initarg :_loop_bound_nodes_type :initform nil)
-   (_no_group_realize_on_vm :initarg :_no_group_realize_on_vm :initform nil)
-   (_reads_old_for_multiexpr :initarg :_reads_old_for_multiexpr :initform nil)
-   (_reads :initarg :_reads)
-   (_writes :initarg :_writes)
-   (declare-type :initarg :declare-type :initform nil))
+   (_read_views :initform nil :initarg :_read_views)
+   (_output_type :initform nil :initarg :_output_type)
+   (declare-type :initarg :declare-type :initform nil)
+   (iterations :initarg :iterations :initform nil)
+   (_lowering_history :initform nil :initarg :_lowering_history))
   (:documentation "This node is jitable.
 - declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:
 ```
@@ -111,16 +109,18 @@ x <- f(x, y)
 	 "The node :ADD adds the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
-```
-Unlike other BinaryOps, :ADD is allowed to have more than two values in Read. This is only used when aggregating three or more gradients. i.e.:
-```
-out <- x + y + z + ...
-```")	
+```")
 
 (defnode (:BinaryOps :MUL) (BinaryOps JITAble)
 	 "The node :MUL multiplies the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
+```")
+
+(defnode (:BinaryOps :MOD) (BinaryOps JITAble)
+	 "The node :MOD finds the reminder of the first tensor in `read` divided by the second tensor in `read`.
+```
+out <- x % y
 ```")
 
 (defnode (:BinaryOps :IDIV) (BinaryOps JITAble)
@@ -157,9 +157,7 @@ out <- x ^ y (if integer)
 out <- move(x, y)
 where move(x, y) is x = y
 ```
-- _jit_dont_render_me[boolean] (TODO)
-"
-	 :slots ((_jit_dont_render_me :initform nil)))
+")
 
 (defnode (:BinaryOps :MAX) (BinaryOps JITAble)
 	 "Computes the maximum value of two tensors in read, writing the result to the first write.
@@ -262,7 +260,7 @@ out = x;
 	 "Creates a view object of the tensor in a first read.
 `View object` can modify the multi-dimensional offset of tensors, strides, shapes, and strides without copying.
 ```
-out = view(x, *upfrom, *below, *by, *shape-new, *stride-new)
+out = view(x, *shape-new, *upfrom, *below, *by, *stride-new)
 ```
 upfrom and below describes the multi-dimensional offset of the tensor. Caten applies an operation to out in the range of `[upfrom, below)`. by indicates the step of stride. the out tensor is reinitialized with `shape-new` and stride-new`.
 View has an attribute `broadcast[list]`, this indicates the stride of thecorresponding axis is recognised as 0 if set to T.
@@ -291,9 +289,8 @@ for i=0..N
 ")
 
 (defnode (:JIT :EXPR) (JITAble)
-	 "The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes. The list of composable nodes is defined in `op/expr` in `ajit/renderer.lisp.`
-
-- Expr[Caten/AJIT:EXPR] a tree structure comprised of `CATEN/AJIT:EXPR`. Each node are comprised of `op/expr`.
+	 "The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes.
+- Expr[caten/codegen/expr:EXPR] a tree structure comprised of `caten/codegen/expr:EXPR`
 - reduction[boolean]
 "
 	 :slots ((expr)

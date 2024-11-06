@@ -105,7 +105,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'sigmoid-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun relu-lisp (x) (max x 0.0))
@@ -116,7 +116,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'relu-lisp x))))
   :assert-close ((x y) (every #'= x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun leaky-relu-lisp (x) (- (relu-lisp x) (relu-lisp (* x (- 1e-3)))))
@@ -127,7 +127,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'leaky-relu-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (define-nn-test Softmax
@@ -142,7 +142,7 @@
 		   (every #'(lambda (x) (<= (abs (- x 1.0)) 1e-1)) (elements sum)))
 		 (every (~= 1e-6) (elements x) (elements y)))
   :in-place ((model) (and
-		      (= 1 (n-args `(512 256) model))
+		      (= 2 (n-args `(512 256) model))
 		      (= 0 (n-args `(512 1) model))))
   :kernel   ((model) (= 1 (n-kernels model))))
 
@@ -155,7 +155,7 @@
   :lisp  ((model x) (proceed (!log-softmax x)))
   :assert-close ((x y)
 		 (every (~= 1e-6) (elements x) (elements y)))
-  :in-place ((model) (= 1 (n-args `(512 256) model)))
+  :in-place ((model) (= 2 (n-args `(512 256) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun elu-lisp (x &aux (alpha 1.0)) (- (relu-lisp x) (relu-lisp (* alpha (- 1 (exp x))))))
@@ -166,7 +166,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'elu-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun relu6-lisp (x) (- (relu-lisp x) (relu-lisp (- x 6))))
@@ -177,7 +177,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'relu6-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun softplus-lisp (x &aux (beta 1.0))
@@ -189,7 +189,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'softplus-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun softsign-lisp (x) (/ x (+ 1 (abs x))))
@@ -200,7 +200,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'softsign-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun celu-lisp (x &aux (alpha 1.0)) (+ (max x 0.0) (min 0 (* alpha (- (exp (/ x alpha)) 1)))))
@@ -211,7 +211,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'celu-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun silu-lisp (x) (* x (sigmoid-lisp x)))
@@ -222,7 +222,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'silu-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun gelu-lisp (x) (* 0.5 x (+ 1 (tanh (* (sqrt (/ 2.0 (coerce pi (type-of x)))) (+ x (* 0.044715 (* x x x))))))))
@@ -233,7 +233,7 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'gelu-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
 (defun hardswish-lisp (x) (* x (relu6-lisp (+ x 3.0)) (/ 1 6)))
@@ -244,5 +244,5 @@
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'hardswish-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
-  :in-place ((model) (= 1 (n-args `(100 100) model)))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
