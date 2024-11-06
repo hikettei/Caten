@@ -575,7 +575,15 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 
 (defun apply-serialize-reduction (schedule-graph base-graph)
   (flet ((is-tensor (buffer)
-           (not (every #'(lambda (x) (eql x 1)) (buffer-shape buffer)))))
+           (not (every #'(lambda (x) (eql x 1)) (buffer-shape buffer))))
+         (depend-dims-p (items rank &aux (common-views (make-list rank)))
+           (loop for item in items do
+             (loop for rt in (relay-reads (read-type-relay item))
+                   if (some #'identity (buffer-views rt)) do
+                     (loop for nth upfrom 0
+                           for view in (buffer-views rt) do
+                             (setf (nth nth common-views) (or (nth nth common-views) (fourth view))))))
+           (and (every #'null (butlast common-views)))))
     (apply-schedule-item-fusor
      #'(lambda (self parent)
          (let ((self-type (group-get-type (make-group :items (getattr self :items))))
@@ -587,7 +595,10 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
             (or
              (null (getattr self :reduce-dims))
              (null (getattr parent :reduce-dims))
-             (equal (getattr self :reduce-dims) (getattr parent :reduce-dims))))))
+             (and
+              (equal (getattr self :reduce-dims) (getattr parent :reduce-dims))
+              (depend-dims-p (getattr self :items) (getattr self :rank))
+              (depend-dims-p (getattr self :items) (getattr parent :rank)))))))
      schedule-graph
      base-graph)))
 
