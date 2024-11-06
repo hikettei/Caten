@@ -5,8 +5,6 @@
 
 (in-package :caten/codegen/polyhedral-ast)
 ;; ~~ ISL AST <-> Lisp Intermidate Object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(eval-when (:compile-toplevel :execute :load-tolevel)
-
 (defstruct (ASTBlock
 	    (:constructor make-block (body)))
   (body body :type list))
@@ -29,8 +27,6 @@
   (condition condition :type Expr)
   (then-node then-node :type (or ASTBlock User ASTFOR ASTIF))
   (else-node else-node :type (or ASTBlock User ASTFOR ASTIF null)))
-
-) ;; eval-when
 
 (declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast))
 (defun parse-isl-ast (ast)
