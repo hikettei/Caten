@@ -654,10 +654,3 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
-;; Padding is not working
-;; Need to consider the views
-;; [TODO] (proceed (!sin (caten/nn:!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 1.0)))
-;; Reject by views
-;; Transformer Scheduling has a bug in FUSED_ATTENTION (TODO: FIX and more tests for views) (val_313)
-;; ^ というかViewの値がおかしい箇所がいくつかある。Memory Plannerする前にViewのBehaviourをTestする
-;; val_313, val_329 etc ...
