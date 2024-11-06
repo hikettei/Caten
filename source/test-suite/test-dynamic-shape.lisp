@@ -1,6 +1,9 @@
 (in-package :caten/test-suite)
 
-;; failing case in the PR
+;; [TODO] Fix Dynamic Shape Testing
+;; - Passing the comment outed test
+;; - Transformer Full Symbolic
+
 #|
 (deftest symbolic-function-args-test
   (with-protect-jit
