@@ -501,14 +501,18 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
 ;; ~~~~~~ More Fusion Rules ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Rewrite them as a pattern matcher.
 (defun apply-schedule-item-fusor (f schedule-graph base-graph &aux (seen) (changed-p t))
+  (declare (optimize (speed 3))
+           (type function f)
+           (type graph schedule-graph base-graph)
+           (type list seen))
   (labels ((parent-groups (self)
              (assert (node-p self))
              (loop for r in (node-reads self)
                    for val = (and (symbolp r) (id->value schedule-graph r))
                    ;; Only :jitable scheduleitems are merged
-                   if (and val (getattr val :jitable)) collect val))
+                   if val collect val))
            (can-split-p (id)
-             (<= (length (id->users schedule-graph id)) 1))
+             (<= (length (the list (id->users schedule-graph id))) 1))
            (explore (id)
              (let* ((self (id->value schedule-graph id))
                     (_ (when (or (null self) (find (node-id self) seen)) (return-from explore)))
@@ -518,20 +522,19 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                (push (node-id self) seen)
                (loop for parent in candidates
                      if (and self-mergeable-p parent
+                             (getattr parent :jitable)
                              (every #'can-split-p (node-writes parent))
                              (funcall f self parent))
                        do (let ((merged (merge-schedule-items self parent base-graph)))
                             (setf changed-p t)
                             (insert-nodes schedule-graph (list merged))
                             (dolist (w (node-writes parent))
-                              (remnode schedule-graph w))
-                            (mapc #'explore (node-reads parent)))
-                     else
-                       do (mapc #'explore (node-reads parent))))))
+                              (remnode schedule-graph w))))
+               (mapc #'explore (node-reads self)))))
     (loop while changed-p do
-      (setf changed-p nil)
+      (setf changed-p nil seen nil)
       (mapc #'explore (graph-outputs schedule-graph)))))
-
+      
 (defun apply-reduce+move-fusion (schedule-graph base-graph)
   "Applies the post-loop-fusion to eliminate MOVE after the reduction.
 ```
