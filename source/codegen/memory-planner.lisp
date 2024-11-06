@@ -135,12 +135,7 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
       (flet ((newid (id) (or (gethash id alias-map) id)))
         (dolist (node (graph-nodes schedule-graph))
           (when (getattr node :jitable)
-            (setf (getattr node :storage-id-dst) (map 'list #'newid (getattr node :storage-id-dst))))))
-      (when (>= (ctx:getenv :JIT_DEBUG) 2)
-        (let ((before (length (remove-duplicates (alexandria:hash-table-keys alias-map))))
-              (after (length (remove-duplicates (alexandria:hash-table-values alias-map)))))
-          ;; [TODO] unit should be MiB
-          (format t "  Memory Planner: n_alloc(~a) -> n_alloc(~a)~%" before after))))))
+            (setf (getattr node :storage-id-dst) (map 'list #'newid (getattr node :storage-id-dst)))))))))
 
 (defun run-memory-planner-local (item schedule-graph symbolics base-graph)
   "Minimizes the number of allocation buffers that are only used in the item."
@@ -230,13 +225,55 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
                     (getattr item :write-types) (map 'list #'cdr writes))))))
       alias-map)))
 
-(defmethod run-memory-planner ((schedule-graph Graph) (symbolics list) (base-graph Graph))
-  (let ((total-allocations))
-    ;; First, applying the memory-planner kernel by kernel.
-    ;; The goal is to reduce the number of arguments in the kernel.
+(defun buffer-sizeof (buffer)
+  "Returns the size of the buffer in bits"
+  (assert (every #'numberp (buffer-shape buffer)))
+  (* (apply #'* (buffer-shape buffer)) (caten/common.dtype:dtype/size-of (buffer-dtype buffer))))
+
+(defmethod evaluate ((schedule-graph Graph) static-p)
+  (let ((seen)
+        (tensor-counter 0)
+        (total-size 0))
     (dolist (item (graph-nodes schedule-graph))
-      (when (and (getattr item :jitable) (getattr item :blueprint))
-        (run-memory-planner-local item schedule-graph symbolics base-graph)))
-    ;; Second, applying the memory-planner in the schedule-graph level
-    ;; The goal here is to reduce the number of :allocate-p object in schedule-graph.
-    (run-memory-planner-global schedule-graph symbolics base-graph)))
+      (when (getattr item :allocate-p)
+        (let ((alloc (car (getattr item :items))))
+          (if alloc
+              (when (null (find (car (node-writes item)) seen))
+                (push (car (node-writes item)) seen)
+                (incf tensor-counter)
+                (when static-p
+                  (incf total-size (buffer-sizeof (car (relay-writes (read-type-relay alloc)))))))
+              (warn "evaluate: ~a is not allocation right?" item))))
+      (when (getattr item :jitable)
+        (loop for w in (getattr item :storage-id-dst)
+              for wt in (getattr item :write-types)
+              if (null (find w seen)) do
+                (push w seen)
+                (incf tensor-counter)
+                (when static-p
+                  (incf total-size (buffer-sizeof wt))))))
+    ;; (values counter total_size[GB])
+    (values tensor-counter (float (/ total-size 8e+9)))))
+
+(defmethod run-memory-planner ((schedule-graph Graph) (symbolics list) (base-graph Graph))
+  (let ((static-graph-p (null symbolics)))
+    (multiple-value-bind (before-count before-size)
+        (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate schedule-graph static-graph-p))
+      ;; First, applying the memory-planner kernel by kernel.
+      ;; The goal is to reduce the number of arguments in the kernel.
+      (dolist (item (graph-nodes schedule-graph))
+        (when (and (getattr item :jitable) (getattr item :blueprint))
+          (run-memory-planner-local item schedule-graph symbolics base-graph)))
+      ;; Second, applying the memory-planner in the schedule-graph level
+      ;; The goal here is to reduce the number of :allocate-p object in schedule-graph.
+      (run-memory-planner-global schedule-graph symbolics base-graph)
+      (multiple-value-bind (after-count after-size)
+          (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate schedule-graph static-graph-p))
+        (when (>= (ctx:getenv :JIT_DEBUG) 2)
+          (let ((compressing-rate
+                  (if (and static-graph-p (> before-size 0))
+                      (format nil "~2,3f%" (/ (* 100 (- before-size after-size)) before-size))
+                      (format nil "<Not Available in dynamic graph>"))))
+            (caten/common.logger:print-info " | number of allocations: ~a -> ~a" before-count after-count)
+            (caten/common.logger:print-info " | total allocation size: ~a GB -> ~a GB" before-size after-size)
+            (caten/common.logger:print-info " | Compressing rate(GB):  ~a" compressing-rate)))))))
