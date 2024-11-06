@@ -583,12 +583,16 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                      (loop for nth upfrom 0
                            for view in (buffer-views rt) do
                              (setf (nth nth common-views) (or (nth nth common-views) (fourth view))))))
-           (and (every #'null (butlast common-views)))))
+           (and (every #'null (butlast common-views))))
+         (no-index-components-p (si)
+           (null (find :INDEX-COMPONENTS (getattr si :items) :key #'node-type))))
     (apply-schedule-item-fusor
      #'(lambda (self parent)
          (let ((self-type (group-get-type (make-group :items (getattr self :items))))
                (parent-type (group-get-type (make-group :items (getattr parent :items)))))
            (and
+            (no-index-components-p self) ;; [TODO] Merge Index Components
+            (no-index-components-p parent)
             (= (getattr self :rank) (getattr parent :rank)) ;; Make sure not extra loop is introduced
             (buffer-mergeable-p base-graph self-type parent-type)
             (is-tensor self-type) (is-tensor parent-type)
