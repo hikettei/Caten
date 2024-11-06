@@ -527,9 +527,9 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                              (funcall f self parent))
                        do (let ((merged (merge-schedule-items self parent base-graph)))
                             (setf changed-p t)
-                            (insert-nodes schedule-graph (list merged))
                             (dolist (w (node-writes parent))
-                              (remnode schedule-graph w))))
+                              (remnode schedule-graph w))
+                            (insert-nodes schedule-graph (list merged))))
                (mapc #'explore (node-reads self)))))
     (loop while changed-p do
       (setf changed-p nil seen nil)
@@ -670,4 +670,5 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
+      (verify-graph schedule)
       schedule)))
