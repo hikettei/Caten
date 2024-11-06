@@ -1,5 +1,11 @@
 (in-package :caten/test-suite)
 
+(defmacro with-protect-jit (&body body)
+  "Ensures the body is only executed under JIT=1"
+  `(if (= 1 (ctx:getenv :JIT))
+       (progn ,@body)
+       (skip "NEED JIT")))
+
 (deftest matmul-schedule-test
   (with-no-grad
     (with-protect-jit
@@ -35,12 +41,6 @@
         (check-args 3 t (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
         (check-kernels 1 (caten (call (Embedding 100 100) (make-tensor `(batch_size sentence_len)))))
         (check-args 3 :tensor (caten (call (Embedding 100 100) (make-tensor `(batch_size sentence_len)))))))))
-
-(defmacro with-protect-jit (&body body)
-  "Ensures the body is only executed under JIT=1"
-  `(if (= 1 (ctx:getenv :JIT))
-       (progn ,@body)
-       (skip "NEED JIT")))
 
 (defmacro define-kernel-count-test (name n-excepted description body)
   `(deftest ,name
