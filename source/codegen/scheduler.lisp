@@ -213,9 +213,10 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (assert (eql (node-type si2) :Schedule-Item))
   (assert (= (getattr si1 :rank) (getattr si2 :rank)))
   (assert (or (null (getattr si1 :reduce-dims)) (null (getattr si2 :reduce-dims)) (equal (getattr si1 :reduce-dims) (getattr si2 :reduce-dims))))
-  (group->schedule (make-group :items (append (getattr si1 :items) (getattr si2 :items))
-                               :reduce-dims (or (getattr si1 :reduce-dims) (getattr si2 :reduce-dims)))
-                   base-graph))
+  (group->schedule
+   (make-group :items (append (getattr si1 :items) (getattr si2 :items))
+               :reduce-dims (or (getattr si1 :reduce-dims) (getattr si2 :reduce-dims)))
+   base-graph))
 
 (defmethod group-get-type ((group Group))
   (let* ((last (nodes-write-to (group-items group)))
@@ -506,6 +507,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                    for val = (and (symbolp r) (id->value schedule-graph r))
                    ;; Only :jitable scheduleitems are merged
                    if (and val (getattr val :jitable)) collect val))
+           (can-split-p (id)
+             (<= (length (id->users schedule-graph id)) 1))
            (explore (id)
              (let* ((self (id->value schedule-graph id))
                     (_ (when (or (null self) (find (node-id self) seen)) (return-from explore)))
@@ -514,7 +517,9 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                (declare (ignore _))
                (push (node-id self) seen)
                (loop for parent in candidates
-                     if (and self-mergeable-p self parent (funcall f self parent))
+                     if (and self-mergeable-p parent
+                             (every #'can-split-p (node-writes parent))
+                             (funcall f self parent))
                        do (let ((merged (merge-schedule-items self parent base-graph)))
                             (setf changed-p t)
                             (insert-nodes schedule-graph (list merged))
@@ -646,3 +651,8 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
+;; Padding is not working
+;; Need to consider the views
+;; [TODO] (proceed (!sin (caten/nn:!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 1.0)))
+;; Reject by views
+;; Transformer Scheduling has a bug in FUSED_ATTENTION (TODO: FIX and more tests for views)
