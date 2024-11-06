@@ -178,7 +178,7 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
                     ;; Set the longest time for the output variables (not to destruct it, and users can see the result)
 		    (if (find key outputs)
 			total-time
-			(apply #'max (gethash key trace-table)))
+			(+ 1 (apply #'max (gethash key trace-table))))
 		    :lock (gethash key lock-table))))
            ;; Minimize the peak memory usage
 	   (solved (greedy-solve-dsa memory-blocks total-time))
@@ -213,12 +213,12 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
                          if (null (find (newid id) seen))
                            do (push (newid id) seen) and collect (cons id type))))
             (multiple-value-bind (reads writes) (values (only-unseen reads) (only-unseen writes))
-              (setf (getattr item :storage-id-src) (print (map 'list (alexandria:compose #'newid #'car) reads))
-                    (getattr item :storage-id-dst) (print (map 'list (alexandria:compose #'newid #'car) writes))
+              (setf (getattr item :storage-id-src) (map 'list (alexandria:compose #'newid #'car) reads)
+                    (getattr item :storage-id-dst)  (map 'list (alexandria:compose #'newid #'car) writes)
                     (getattr item :read-types) (map 'list #'cdr reads)
                     (getattr item :write-types) (map 'list #'cdr writes))))))
-      ;; (print (alexandria:hash-table-keys alias-map))
-      ;; (print (alexandria:hash-table-values alias-map))
+     ;; (print (alexandria:hash-table-keys alias-map))
+     ;; (print (alexandria:hash-table-values alias-map))
       alias-map)))
 
 ;; :Itemsの時点でMemoryPlannerを実行する必要がある (OK)
