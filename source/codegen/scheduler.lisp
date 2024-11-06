@@ -495,7 +495,32 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
              append p)))))
 ;; ~~~~~~ More Fusion Rules ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Rewrite them as a pattern matcher.
-(defun apply-reduce+move-fusion (schedule-graph base-graph &aux (seen))
+(defun apply-schedule-item-fusor (f schedule-graph base-graph &aux (seen))
+  (labels ((parent-groups (self)
+             (assert (node-p self))
+             (loop for r in (node-reads self)
+                   for val = (and (symbolp r) (id->value schedule-graph r))
+                   ;; Only :jitable scheduleitems are merged
+                   if (and val (getattr val :jitable)) collect val))
+           (explore (id)
+             (let* ((self (id->value schedule-graph id))
+                    (_ (when (or (null self) (find (node-id self) seen))))
+                    (candidates (parent-groups self))
+                    (self-mergeable-p (getattr self :jitable)))
+               (declare (ignore _))
+               (push (node-id self) seen)
+               (loop for parent in candidates
+                     if (and self-mergeable-p (funcall f self parent))
+                       do (let ((merged (merge-schedule-items self parent base-graph)))
+                            (insert-nodes schedule-graph (list merged))
+                            (dolist (w (node-writes parent))
+                              (remnode schedule-graph w))
+                            (mapc #'explore (node-reads parent)))
+                     else
+                       do (explore (car (node-writes parent)))))))
+    (mapc #'explore (graph-outputs schedule-graph))))
+
+(defun apply-reduce+move-fusion (schedule-graph base-graph)
   "Applies the post-loop-fusion to eliminate MOVE after the reduction.
 ```
      Group1
@@ -523,38 +548,15 @@ To put it bluntly, this function explores all `reduced-but-not-stored` pairs, an
 
 If this interrupts the parallelism, AutoScheduler should distribute them and create a shared buffer."
   (declare (type FastGraph schedule-graph))
-  (labels ((parent-groups (self)
-             (assert (node-p self))
-             (loop for r in (node-reads self)
-                   for val = (and (symbolp r) (id->value schedule-graph r))
-                   ;; Only :jitable scheduleitems are merged
-                   if (and val (getattr val :jitable)) collect val))
-           (reduce-w/o-store (self)
-             (loop for id in (node-writes self) ;; only the output of the kernel matters
-                   for item = (find id (getattr self :items) :key #'node-writes :test #'find)
-                   if (getattr item :reduction :allow-undefined t)
-                     collect item))
-           (explore (id)
-             (let* ((self (id->value schedule-graph id))
-                    (_ (when (or (null self) (find (node-id self) seen)) (return-from explore nil)))
-                    (candidates (parent-groups self))
-                    (reduced-but-not-stored
-                      (map 'list #'reduce-w/o-store candidates))
-                    (self-mergeable-p (getattr self :jitable)))
-               (declare (ignore _))
-               (push (node-id self) seen)
-               (assert (<= (count-if #'identity reduced-but-not-stored) 1))
-               (loop for parent in candidates
-                     for merge-p in reduced-but-not-stored
-                     if (and self-mergeable-p merge-p)
-                       do (let ((merged (merge-schedule-items self parent base-graph)))
-                            (insert-nodes schedule-graph (list merged))
-                            (dolist (w (node-writes parent))
-                              (remnode schedule-graph w))
-                            (mapc #'explore (node-reads parent)))
-                     else
-                       do (explore (car (node-writes parent)))))))
-    (mapc #'explore (graph-outputs schedule-graph))))
+  (flet ((reduce-w/o-store (self)
+           (loop for id in (node-writes self) ;; only the output of the kernel matters
+                 for item = (find id (getattr self :items) :key #'node-writes :test #'find)
+                 if (getattr item :reduction :allow-undefined t)
+                   collect item)))
+    (apply-schedule-item-fusor
+     #'(lambda (self parent) (declare (ignore self)) (reduce-w/o-store parent))
+     schedule-graph
+     base-graph)))
 
 (defun apply-move-after-reduction (schedule-graph)
   (labels ((%newtype (buffer)
@@ -619,6 +621,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (setf schedule (->fast-graph schedule))
       ;; ~~ Rewriting Rules + Post Fusion ~~~~~
       (apply-reduce+move-fusion schedule graph)
+      ;; group-rankが一致してれば並列化OK
       ;; (apply-serialize-reduction schedule) ;; TODO: Softmax=1 Kernel when not fused w/ gemm
       (apply-move-after-reduction schedule)
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
