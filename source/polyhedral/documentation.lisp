@@ -3,17 +3,15 @@
 
 (in-package :caten/polyhedral/documentation)
 
-;; This package is user-extensible
-
 (define-page ("caten/polyhedral" "packages/caten.polyhedral.md")
-  (title "caten/polhedral")
-  (subtitle "Automatic Parameter Scheduler")
-  (body "Optimizes the following thing:
+  (title "caten/polyhedral")
+  (subtitle "Automatic Parameter Scheduler (Coming soon!)")
+  (body "caten/polyhedral will provide a customizable polyhedral compiler for various backends
 
-- Auto-Packing for vectorization
+The goal is:
+- Auto-Packing for Vectorization
 - Finding the best tiling
-- Tune parallel, unroll
+- auto parallelization
 
 To enable this, set `AUTO_SCHEDULER=1`.
-")
-  (subtitle "Configuration"))
+"))

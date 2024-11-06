@@ -1,9 +1,9 @@
 (defpackage :caten/codegen/documentation
-  (:use :cl))
+  (:use :cl :caten/common.documentation))
 
 (in-package :caten/codegen/documentation)
 
-;; NOOPT
-;; AUTO_SCHEDULE
-
-;; How to debug?
+(define-page ("caten/codegen" "packages/caten.codegen.md")
+  (title "caten/codegen")
+  (subtitle "Customizable Kernel Generator")
+  (body "(Full documentations are coming soon...)"))

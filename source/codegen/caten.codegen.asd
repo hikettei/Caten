@@ -19,4 +19,5 @@
    (:file "scop")
    (:file "jit")
    (:file "backends/clang")
-   (:file "package")))
+   (:file "package")
+   (:file "documentation")))

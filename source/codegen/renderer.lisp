@@ -42,22 +42,36 @@
      (,auto-scheduler-name ,@args)))
 
 (defnode (:Render :FOR) ()
-         "TODO"
+         "
+```
+for(int idx=upfrom, below, by)
+```
+"
          :slots ((idx :type symbol)
                  (upfrom :type Expr)
                  (below :type Expr)
                  (by :type Expr)))
 
 (defnode (:Render :ENDFOR) ()
-         "TODO"
+         "
+```
+} // idx
+```"
          :slots ((idx :type symbol)))
 
 (defnode (:Render :IF) ()
-         "TODO"
+         "
+```
+if(condition)
+```"
          :slots ((condition :type Expr)))
 
 (defnode (:Render :ENDIF) ()
-         "TODO")
+         "
+```
+} // endif
+```
+")
 
 (defnode (:Render :Aref) ()
          ":AREF corresponds to the following code:
@@ -78,7 +92,9 @@ The source ID is determined by the following rule:
                  (space :type Iteration-Space)))
 
 (defnode (:Render :DEFINE-GLOBAL) ()
-         ""
+         "
+The node :DEFINE-GLOBAL declares a global variable in the kernel. (it corresponds to the argument of the kernel.)
+"
          :slots ((dtype :type keyword)
                  (pointer-p :type boolean)
                  (type :type (member :input :output :shape))
