@@ -10,4 +10,3 @@
       (check-args 1 `(t t) (caten (!softmax (!softmax (make-tensor `(a b))))))
       (check-args 1 :tensor (caten (!tril (make-tensor `(5 5) :initial-element 1.0))))
       (check-args 1 :tensor (caten (!tril (make-tensor `(5 5 5) :initial-element 1.0)))))))
-

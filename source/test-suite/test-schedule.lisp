@@ -1,5 +1,41 @@
 (in-package :caten/test-suite)
 
+(deftest matmul-schedule-test
+  (with-no-grad
+    (with-protect-jit
+      (let* ((m (caten (!matmul (make-tensor `(3 10)) (make-tensor `(10 20)))))
+	     (allocs (loop for node in (graph-nodes (avm-graph m))
+			   if (eql (node-type node) :Allocate) collect node)))
+	(ok (= (length allocs) 3) "gemm(a, b, c)")
+	(ok (every #'(lambda (x) (if (= (getattr x :nrank) 2)
+				     t
+				     (if (= (getattr x :nrank) 3)
+					 (some #'(lambda (x) (= x 1)) (subseq (node-reads x) 0 3))
+					 nil)))
+		   allocs)
+	    "Contiguous array creations are not allowed"))))
+  (testing "Static Matmul"
+    (flet ((f () (caten (!matmul (make-tensor `(10 20)) (!matmul (make-tensor `(20 30)) (make-tensor `(30 40)))))))
+      (with-no-grad
+        (with-protect-jit
+          (check-kernels 2 (f))
+          (check-args 5 :tensor (f))))))
+  (testing "Symbolic Matmul"
+    (flet ((f () (caten (!matmul (make-tensor `(a b)) (!matmul (make-tensor `(b c)) (make-tensor `(c d)))))))
+      (with-no-grad
+        (with-protect-jit
+          (check-kernels 2 (f))
+          (check-args 5 :tensor (f)))))))
+
+(deftest embedding-schedule-test
+  (testing "Embedding < 1 Kernels, < 3 Tensors."
+    (with-no-grad
+      (with-protect-jit
+        (check-kernels 1 (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
+        (check-args 3 t (caten (call (Embedding 100 100) (make-tensor `(100 100)))))
+        (check-kernels 1 (caten (call (Embedding 100 100) (make-tensor `(batch_size sentence_len)))))
+        (check-args 3 :tensor (caten (call (Embedding 100 100) (make-tensor `(batch_size sentence_len)))))))))
+
 (defmacro with-protect-jit (&body body)
   "Ensures the body is only executed under JIT=1"
   `(if (= 1 (ctx:getenv :JIT))
