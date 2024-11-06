@@ -32,13 +32,13 @@
                       append (list
                               (format nil "~a~a~a~a ~(~a~)"
                                       (ecase (getattr arg :type)
-                                        (:input "") ;; [TODO]
+                                        (:input "const ")
                                         (:output "")
                                         (:shape "const "))
                                       (->cdtype (getattr arg :dtype))
                                       (if (getattr arg :pointer-p) "*" "")
                                       (if (eql :input (getattr arg :type))
-                                          "";" restrict"
+                                          " restrict"
                                           "")
                                       (car (node-writes arg)))
                               ", "))))))

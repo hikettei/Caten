@@ -97,11 +97,10 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (items :type list) (items-to-cache :type list)
           (rank :type fixnum) (reduce-dims :type list)
           (read-types :type list) (write-types :type list)
-          
+          (reference-counters :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)
           (dynamic-shapes :type list)
-          
           (rendered-object :type string)
           (compiled-object :type list)))
 
@@ -203,6 +202,14 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
                :storage-id-dst writes
                :storage-id-src reads
+               :reference-counters
+               (map
+                'list
+                #'(lambda (x)
+                    (+
+                     (if (find x (graph-outputs base-graph)) 1 0)
+                     (length (id->users base-graph x))))
+                (append writes reads))
                :rank rank
                :reduce-dims (group-reduce-dims group)
                :items (group-items group)
@@ -674,5 +681,4 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
-      (verify-graph schedule)
       schedule)))
