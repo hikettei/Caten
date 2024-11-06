@@ -38,7 +38,7 @@
                                       (->cdtype (getattr arg :dtype))
                                       (if (getattr arg :pointer-p) "*" "")
                                       (if (eql :input (getattr arg :type))
-                                          "restrict"
+                                          " restrict"
                                           "")
                                       (car (node-writes arg)))
                               ", "))))))
