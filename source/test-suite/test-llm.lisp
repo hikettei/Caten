@@ -50,4 +50,4 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 	    (->caten (f:softmax x)))
 	  (proceed (!softmax x))))))
 
-;; [TODO] Compile Transformer
+;; [TODO] Compiling the entire transformer graph here
