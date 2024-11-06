@@ -60,7 +60,19 @@
          "TODO")
 
 (defnode (:Render :Aref) ()
-         "TODO"
+         ":AREF corresponds to the following code:
+```
+ID[*space]
+```
+
+The source ID is determined by the following rule:
+- If the :storage-id is provided, ID is storage-id. (:storage-id is written by the memory-planner)
+- If the :storage-id is nil, ID is (car (node-writes aref))
+
+- storage-id[symbol or null] An index to the reference pointer optimized by the memory-planner.
+- buffer[Buffer] The buffer to be accessed.
+- space[Iteration-Space] The iteration space `:AREF` belongs to.
+"
          :slots ((storage-id :type symbol)
                  (buffer :type Buffer)
                  (space :type Iteration-Space)))
