@@ -270,6 +270,8 @@ caten/codegen overview:
 
 (defun schedule-item-equal (si1 si2 &aux (items1 (getattr si1 :items-to-cache)) (items2 (getattr si2 :items-to-cache)))
   (and
+   ;; The number of reference counters are the same => memory-planner should produce the same result
+   (equal (getattr si1 :reference-counters) (getattr si2 :reference-counters))
    (= (length items1) (length items2))
    (every
     #'(lambda (x y)
@@ -289,7 +291,7 @@ caten/codegen overview:
                    ;; i.e.: attrs that impacts on the computation results are always typed number/symbol/list/bool
                    (if (and (typep a1 'attr-value-type) (typep a2 'attr-value-type))
                        (equal a1 a2)
-                       t ;; [fixme] isn't it danger? if attrs are not found, they ignore it!
+                       t ;; [FIXME] isn't it danger? if attrs are not found, they ignore it!
                        )))
              attrs1 attrs2)))
          (let ((xt (read-type-relay x))
@@ -387,10 +389,14 @@ caten/codegen overview:
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Running the memory planner..."))
+        
         (dolist (item (graph-nodes schedule-graph))
           (setf (getattr item :storage-id-src) (map 'list #'read-ptrid (getattr item :storage-id-src))
                 (getattr item :storage-id-dst) (map 'list #'read-ptrid (getattr item :storage-id-dst))))
-        ;; (run-memory-planner schedule-graph) (TODO: Bring back this)
+        ;; [TODO] Implement two things
+        ;; Memory Planner In Schedule Items
+        ;; Memory Planner In 
+        (run-memory-planner schedule-graph)
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Rendering ..."))

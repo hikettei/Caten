@@ -681,5 +681,4 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
-      (verify-graph schedule)
       schedule)))
