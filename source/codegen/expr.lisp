@@ -124,8 +124,13 @@ Only supports the scalar computation because it is intended to identify the same
     (setf (graph-outputs g) (list id))
     (setf g (->fast-graph g))
     (verify-graph g)
-    (make-expr :graph (apply #'make-graph (graph-nodes g)) :out (id->value g id))))
-  
+    (if (null (id->value g id))
+        (progn
+          (assert (null (graph-nodes g)))
+          ;; Assuming ID=Dynamic Shape
+          (expr-const id :int64))
+        (make-expr :graph (apply #'make-graph (graph-nodes g)) :out (id->value g id)))))
+
 (defun expr-const (value dtype &aux (out (gensym "w")))
   (when (expr-p value) (return-from expr-const value))
   (assert (or (numberp value) (symbolp value)) () "expr-const: the value must be a number or a symbol. getting ~a" value)

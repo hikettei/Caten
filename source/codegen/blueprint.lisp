@@ -371,6 +371,11 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
            (insertable-positions)
            (high-priority-positions)
            (serialized-reduce-idx))
+      (dolist (depend node-depend-users)
+        ;; The try-insert-node algorithm below assumes all of `node-depend-users` are located to ctx-blueprint.
+        ;; <=> If the node depends on an unplaced node, determine that node first.
+        (when (null (find (node-id depend) (ctx-blueprint ctx) :key #'node-id))
+          (recursive-lower-into-bp ctx (car (node-writes depend)))))
       ;; If the condition is satisfied when T=0 -> insert -1
       (when (and
              (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes))
@@ -462,12 +467,13 @@ Depends=~a Reduce=~a Users=~a
 ~a
 ```" node (node-depend-idx-list node (ctx-gids ctx)) (node-reduced-gids node (ctx-gids ctx))
      (map 'list #'node-id (id->users (ctx-graph ctx) (car (node-writes node)))) (ctx-blueprint ctx))
-      (setf blueprint new-bp)
-      (mapc
-       #'(lambda (x)
-           (when (and (null (find x seen)) (id->value (ctx-graph ctx) x))
-             (recursive-lower-into-bp ctx x)))
-       (node-reads node))
+
+     (setf blueprint new-bp)
+     (mapc
+      #'(lambda (x)
+          (when (and (null (find x seen)) (id->value (ctx-graph ctx) x))
+            (recursive-lower-into-bp ctx x)))
+      (node-reads node))
       nil)))
 
 (defmethod schedule-item-infer-io-buffers ((node Node) (bp-items list) rewrite-map)

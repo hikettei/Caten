@@ -390,7 +390,7 @@ caten/codegen overview:
         (dolist (item (graph-nodes schedule-graph))
           (setf (getattr item :storage-id-src) (map 'list #'read-ptrid (getattr item :storage-id-src))
                 (getattr item :storage-id-dst) (map 'list #'read-ptrid (getattr item :storage-id-dst))))
-        ;; (run-memory-planner schedule-graph) disable until fixing weirdness in Padding2D/AutoDiff
+        ;; (run-memory-planner schedule-graph) (TODO: Bring back this)
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Rendering ..."))
