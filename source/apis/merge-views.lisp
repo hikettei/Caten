@@ -3,26 +3,42 @@
 (deftype axis-t () `(or number symbol Tensor))
 
 (defstruct (ViewRange
-	    (:constructor make-vrange (from to by broadcast size subscript
-				       &aux
-					 (from (->iconst from))
-					 (to (->iconst to))
-					 (by (->iconst by))
-					 (size (->iconst size)))))
-  (from from :type Tensor) (to to :type Tensor)
-  (by by :type Tensor) (broadcast broadcast :type boolean)
-  (size size :type Tensor) (subscript subscript))
+	    (:constructor %make-vrange
+                (symbolic-p from to by broadcast size loop-size subscript)))
+  (symbolic-p symbolic-p :type boolean)
+  (from from :type (or fixnum Tensor))
+  (to to :type (or fixnum Tensor))
+  (by by :type (or fixnum Tensor))
+  (broadcast broadcast :type boolean)
+  (size size :type (or fixnum Tensor))
+  (loop-size size :type (or fixnum Tensor))
+  (subscript subscript))
+
+(defun make-vrange (from to by broadcast size subscript)
+  (let ((symbolic-p (not (every #'numberp (list from to by size)))))
+    (flet ((size-fixnum () (/ (- to from) by))
+           (size-dynamic (from to by)  (!div (!sub to from) by)))
+      (if symbolic-p
+          (multiple-value-bind (from to by)
+              (values (->iconst from) (->iconst to) (->iconst by))
+            (%make-vrange symbolic-p from to by broadcast (->iconst size) (size-dynamic from to by) subscript))
+          (%make-vrange symbolic-p from to by broadcast size (size-fixnum) subscript)))))
 
 (defun vrange-size (vrange)
   (declare (type ViewRange vrange))
-  (!div (!sub (viewrange-to vrange) (viewrange-from vrange)) (viewrange-by vrange)))
+  (viewrange-loop-size vrange))
 
 (defun parse-view-subscript (size subscript)
   (declare (type axis-t size))
-  (flet ((normalize (x) (if (and (numberp x) (< x 0)) (!add (->iconst size) (iconst x)) x))
-	 (1p (x) (if (tensor-p x) (!add x (iconst 1)) (!add (iconst x) (iconst 1)))))
+  (flet ((normalize (x)
+           (if (and (numberp x) (< x 0))
+               (if (and (numberp size) (numberp x))
+                   (+ size x)
+                   (!add (->iconst size) (iconst x)))
+               x))
+	 (1p (x) (if (numberp x) (1+ x) (!add (->iconst x) (iconst 1)))))
     (ematch subscript
-      ((list :~ n) (make-vrange 0 (normalize n) 1 t size subscript));; broadcasting (:~ N)
+      ((list :~ n) (make-vrange 0 (normalize n) 1 t size subscript)) ;; broadcasting (:~ N)
       ((eql t)  (make-vrange 0 size 1 nil size subscript)) ;; nothing
       ((guard x (typep x 'axis-t)) (make-vrange (normalize x) (1p (normalize x)) 1 nil size subscript)) ;; A[i]
       ((list (guard from (typep from 'axis-t)) (guard to (typep to 'axis-t)))
@@ -48,16 +64,19 @@ Applying a further slicing:
          (assert bc2)
          (make-vrange frm2 to2 by2 bc2 size s2))
         (_
-         ;; Computes from/to/step manually
-         ;; [FIXME]
-         ;; During JIT execution, Scheduler may generate guard statements due to incorrect inference of dynamic_shape in the projection from Symbol to Symbol.
-         ;; e.g. (A B) Tesnor -> View ([c, d], [e, f]) 
-         (let* ((offset (!where (!> by1 (iconst 0)) (!minimum frm1 to1) (!maximum frm1 to1)))
-	        (from (!+ offset (!* (!signum by1) frm2)))
-	        (from (if (listp s1) from (iconst 0))) ;; A[2][3] is equivalent to A[3], do not compose them.
-	        (to   (!+ offset (!* (!signum by1) to2)))
-	        (step (!* (!signum (!* by1 by2)) (!lcm by1 by2))))
-	   (make-vrange from to step bc2 (if bc1 (iconst 1) size) s2)))))))
+         (if (every #'numberp (list frm1 frm2 to1 to2 by1 by2 s1 s2))
+             (let* ((offset (if (> by1 0) (min frm1 to1) (max frm1 to1)))
+                    (from (+ offset (* (signum by1) frm2)))
+                    (from (if (listp s1) from 0))
+                    (to   (+ offset (* (signum by1) to2)))
+                    (step (* (signum (* by1 by2)) (lcm by1 by2))))
+               (make-vrange from to step bc2 (if bc1 1 size) s2))
+             (let* ((offset (!where (!> by1 (iconst 0)) (!minimum frm1 to1) (!maximum frm1 to1)))
+	            (from (!+ offset (!* (!signum by1) frm2)))
+	            (from (if (listp s1) from (iconst 0))) ;; A[2][3] is equivalent to A[3], do not compose them.
+	            (to   (!+ offset (!* (!signum by1) to2)))
+	            (step (!* (!signum (!* by1 by2)) (!lcm by1 by2))))
+	       (make-vrange from to step bc2 (if bc1 (iconst 1) size) s2))))))))
 
 (defun merge-views (base subscripts allow-merge)
   "Composes the two mergeable views"
@@ -79,7 +98,6 @@ Applying a further slicing:
 	    do (setf (viewrange-size s) (viewrange-size v)))
       (return-from merge-views parsed-subscripts))
     (map 'list #'.compose-views (tensor-views base) parsed-subscripts)))
-
 ;; ~~ Movement Composer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Rewrite (:VIEW (:VIEW (x ...))) -> (:VIEW (x ...))
 (defsimplifier

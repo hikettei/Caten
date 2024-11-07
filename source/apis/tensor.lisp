@@ -180,7 +180,7 @@ View is a tensor which shares the buffer from the original tensor, but having di
 	 #'(lambda (c) (error 'caten-forward-error :op 'make-view-internal :inputs (list base) :c c))))
     (flet ((is-broadcast (x) (and (listp x) (eql (car x) :~))))
       (let* ((views (merge-views base subscripts allow-merge))
-             (size (time (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (map 'list #'vrange-size views))))
+             (size (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (map 'list #'vrange-size views)))
 	     (buff (%internal-make-tensor nil size :dtype dtype :order order :id id :views views))
 	     (broadcast-mode-p (some #'is-broadcast subscripts)))
 	(when broadcast-mode-p
