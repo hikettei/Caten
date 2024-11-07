@@ -180,7 +180,8 @@ View is a tensor which shares the buffer from the original tensor, but having di
 	 #'(lambda (c) (error 'caten-forward-error :op 'make-view-internal :inputs (list base) :c c))))
     (flet ((is-broadcast (x) (and (listp x) (eql (car x) :~))))
       (let* ((views (merge-views base subscripts allow-merge))
-	     (buff (%internal-make-tensor nil (map 'list #'vrange-size views) :dtype dtype :order order :id id :views views))
+             (size (time (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (map 'list #'vrange-size views))))
+	     (buff (%internal-make-tensor nil size :dtype dtype :order order :id id :views views))
 	     (broadcast-mode-p (some #'is-broadcast subscripts)))
 	(when broadcast-mode-p
 	  (assert (every #'(lambda (x) (or (is-broadcast x) (eql x t))) subscripts)
@@ -190,13 +191,11 @@ View is a tensor which shares the buffer from the original tensor, but having di
 	      (tensor-op buff) (make-instance 'View :views views :broadcast-mode broadcast-mode-p :subscripts subscripts :nrank (length views))
               (func-variables (tensor-op buff)) (tensor-variables buff))
 	(assert (every #'tensor-p (tensor-variables buff)) ())
-	;; Fold Constants in Shape (detached from the graph, no side effects)
-	(setf (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
         (if broadcast-mode-p
             (setf (tensor-tr buff) (tr-apply-broadcast
                                     base
                                     (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) (second x) nil)) subscripts)))
-            (setf (tensor-tr buff) (tr-apply-slice base views (map 'list #'vrange-size views))))
+            (setf (tensor-tr buff) (tr-apply-slice base views size)))
         (setf (view-tr (tensor-op buff)) (tensor-tr buff))
 	buff))))
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
