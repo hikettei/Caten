@@ -67,7 +67,18 @@
   (let ((x (car inputs)))
     (!div x (!+ (!const x 1) (!abs x)))))
 (defun !softsign (x) (forward (Softsign) x))
-;; TODO: SoftShrink
+
+(defmodel (SoftShrink (&key (lmd 0.5)) :where "A[~] -> A[~]")
+  ((lmd lmd)))
+(defmethod call ((op SoftShrink) &rest inputs)
+  (let* ((x (car inputs))
+         (lmd-tensor (!const x (slot-value op 'lmd))))
+    (declare (type tensor x))
+    (!where (!> (!abs x) lmd-tensor)
+            (!sub x (!mul (!signum x) lmd-tensor))
+            (!const x 0))))
+(defun !softshrink (x &key (lmd 0.5)) (forward (SoftShrink :lmd lmd) x))
+
 (defmodel (CeLU (&key (alpha 1.0)) :where "A[~] -> A[~]") ((alpha alpha)))
 (defmethod call ((op CeLU) &rest inputs)
   (let ((x (car inputs))
@@ -202,6 +213,17 @@
   :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
+
+(define-nn-test SoftShrink
+  "Testing w/ SoftShrink([100, 100])"
+  :compile (caten (!softshrink (make-tensor `(100 100) :from 'x)))
+  :inputs (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'softshrink-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+)
 
 (defun celu-lisp (x &aux (alpha 1.0)) (+ (max x 0.0) (min 0 (* alpha (- (exp (/ x alpha)) 1)))))
 (define-nn-test CeLU
