@@ -225,7 +225,7 @@
 	       ;; n=2 (Simplify)
 	       ;;      ...
                (when dot (->dot graph :title (format nil "lowerer T=~a" n)))
-	       (%lower-modules session graph)
+	       (%lower-modules session graph) ;; For more than 70 layers: Lower them in a 2~3 calls
 	       ;; Func level whole optimization
 	       (dolist (f external-simplifiers) (funcall f graph))))
            (when dot (->dot graph :title "lowerer (final)"))))
