@@ -2,8 +2,11 @@
 ;; Goal:
 ;; - Lower them in 1s
 ;; - (defparameter *model* (time (Transformer 64 1 72 1e-5 32)))
-;; - (defparameter *transformer* (caten (call *model* (make-tensor `(10 32)) (iconst 3))))
-
+;; - JIT=0: (call *model* (make-tensor `(10 32)))
+;; - Lowered tests
+;; - After finishing this
+;; TODO
+;; - separate *external-simplifiers* and rewriters
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; iseq.lisp transforms the graph of Tensor into caten/aasm graph by the following steps:
 ;; 1. (Sort)     Topologically sorting the tensor graph, getting iseq (a list of tensors)
@@ -190,7 +193,10 @@
     (mapc #'backward-helper (reverse iseq))
     iseq-bw))
 
-(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels) (toplevel-ids) (maximum-recursion 1024))
+(defun %make-graph-from-iseq (session iseq prev-grad
+                              &key
+                                (no-grad nil) (external-simplifiers nil) (toplevels) (toplevel-ids) (maximum-recursion 1024)
+                                (dot (= 1 (ctx:getenv :DOT))))
   "Constructs a forward/backward graph based on iseq"
   (declare (type Compiler-Session session)
 	   (type list iseq toplevel-ids)
@@ -217,13 +223,11 @@
 	       ;; n=2 QMatmul -> QAdd + SHR + ...
 	       ;; n=2 (Simplify)
 	       ;;      ...
-               (when (= 1 (ctx:getenv :DOT))
-                 (->dot graph :title (format nil "lowerer T=~a" n)))
+               (when dot (->dot graph :title (format nil "lowerer T=~a" n)))
 	       (%lower-modules session graph)
 	       ;; Func level whole optimization
 	       (dolist (f external-simplifiers) (funcall f graph))))
-           (when (= 1 (ctx:getenv :DOT))
-             (->dot graph :title "lowerer (final)"))))
+           (when dot (->dot graph :title "lowerer (final)"))))
     (let* ((forward-graph
 	     (prog1
 		 (->fast-graph (%lower-iseq session iseq))
@@ -274,6 +278,7 @@
 	    (verify-graph merged-graph)
 	    (values (->graph merged-graph) pause-backward-p)))))))
 ;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [NOTE] %module->iseqfw is slow
 (defun %module->iseqfw (session module-node)
   "Lowers the given module.
 e.g.:
@@ -294,7 +299,7 @@ FastGraph[seen=NIL, outputs=(STC23957099)] {
 ```
 The iseq obtained by lowering the Module must match the output destination specified in the (module-outputs :metadata).
 "
-  (declare (type compiler-session session) (type node module-node))
+  (declare (type compiler-session session) (type node module-node) (optimize (speed 3)))
   (assert (eql :Module (node-class module-node)) ())
   (assert (getattr module-node :metadata) () "~a has lost its metadata. Check simplifier processes." module-node)
   (let* ((module (getattr module-node :metadata))
@@ -303,7 +308,7 @@ The iseq obtained by lowering the Module must match the output destination speci
     ;; Lower the blueprint into iseq. (seen is global during compiling, no duplications here)
     (let ((lowered-graph (%lower-iseq session (module-impl-iseq module) :no-verify t)))
       (assert (= (length (the list (module-lower-outputs module))) (length (the list (module-outputs module)))) ())
-      (assert (= (length (node-writes module-node)) (length (module-outputs module))) ())
+      (assert (= (length (node-writes module-node)) (length (the list (module-outputs module)))) ())
       ;; module-outputs: a list of tensors at "FORWARD"    }
       ;; module-lower-outputs: a list of tensors at "IMPL" } they are both used to confirm the validity of shape inference.
       ;; Rewrite output tensor ids in `lowered-graph` to `(node-writes module-node)`
@@ -317,10 +322,11 @@ The iseq obtained by lowering the Module must match the output destination speci
 		     (node-writes node))
 		 (module-lower-outputs module)))))
 	    (alias-map (make-hash-table)))
+        (declare (type list lowered-output-ids))
 	;; Multiple Outputs:
 	;; Consider lowering a module A: A -> A B
 	;; A is defind as K(X) -> A B
-	(assert (= (length lowered-output-ids) (length (module-lower-outputs module))) () "The number of outputs does not match when lowering ~a" module-node)
+	(assert (= (length lowered-output-ids) (length (the list (module-lower-outputs module)))) () "The number of outputs does not match when lowering ~a" module-node)
 	(loop for output-id-in-final-graph in (node-writes module-node)
 	      for output-id-in-lower-graph in lowered-output-ids
 	      do (setf (gethash output-id-in-lower-graph alias-map) output-id-in-final-graph))
@@ -341,21 +347,6 @@ The iseq obtained by lowering the Module must match the output destination speci
   (when (module-impl-iseq module)
     (dolist (out (module-lower-outputs module)) (session/setgrad session (tensor-id out) prev-grad))
     (%make-graph-backward session (module-impl-iseq module))))
-
-(defmethod %lower-modules ((session Compiler-Session) (graph Graph))
-  "Lowers all modules existing in the graph until they are disappeared."
-  (declare (type graph graph)
-	   (type compiler-session session))
-  (let ((new-graph
-	  (map 'list
-	       #'(lambda (x)
-		   (if (eql :module (node-class x))
-		       (%module->iseqfw session x)
-		       x))
-	       (graph-nodes graph))))
-    (setf (graph-nodes graph) (flatten new-graph))
-    (verify-graph graph)
-    graph))
 
 (defmethod %lower-modules ((session Compiler-Session) (graph FastGraph))
   (declare (optimize (speed 3)))
@@ -431,6 +422,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 	      &key
 		(jit (= 1 (ctx:getenv :JIT)))
 		(name (intern (symbol-name (gensym "MAIN")) "KEYWORD"))
+                (rewriters nil)
 		(simplifiers *external-simplifiers*))
   "
 ```lisp
