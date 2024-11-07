@@ -126,6 +126,7 @@
 		   (session/assign session grad-id final-node))))))
    (session-grad->grads session)))
 ;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Note: Optimized well, no room to optimize this function
 (defun %lower-iseq (session iseq &key (no-verify nil))
   "Lowers iseq (a list of topologically sorted tensors) into caten/air graph."
   (declare (type compiler-session session)
@@ -278,7 +279,9 @@
 	    (verify-graph merged-graph)
 	    (values (->graph merged-graph) pause-backward-p)))))))
 ;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [NOTE] %module->iseqfw is slow
+;; Note: Very slow due to two parts:
+;; - #'impl node construction, because symbolic !view is very slow due to try-fold-constant. Make !view zero-cost to solve this.
+;; - %lower-iseq? 
 (defun %module->iseqfw (session module-node)
   "Lowers the given module.
 e.g.:
@@ -309,6 +312,9 @@ The iseq obtained by lowering the Module must match the output destination speci
     (let ((lowered-graph (%lower-iseq session (module-impl-iseq module) :no-verify t)))
       (assert (= (length (the list (module-lower-outputs module))) (length (the list (module-outputs module)))) ())
       (assert (= (length (node-writes module-node)) (length (the list (module-outputs module)))) ())
+      ;; I'm okay with %lower-iseq takes a littl times (1e-3 sec for each module is FINE)
+      ;; [REFACTOR]: Run %optimize-aasm here, instead of lower-modules (avoid running simplifier to the entire graph)
+      
       ;; module-outputs: a list of tensors at "FORWARD"    }
       ;; module-lower-outputs: a list of tensors at "IMPL" } they are both used to confirm the validity of shape inference.
       ;; Rewrite output tensor ids in `lowered-graph` to `(node-writes module-node)`
@@ -409,7 +415,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
 	;; If the graph was created from FastGraph, the time-series order should be broken.
 	;; call verify-graph to sort them.
-        (compose-views-from-graph graph)
+        (compose-views-from-graph graph) ;; <==== VERY SLOW
 	(verify-graph graph)
 	(make-avm graph (session-name session)
 		  (session-tid->tensor session)
