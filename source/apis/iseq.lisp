@@ -1,4 +1,9 @@
 (in-package :caten/apis)
+;; Goal:
+;; - Lower them in 1s
+;; - (defparameter *model* (time (Transformer 64 1 72 1e-5 32)))
+;; - (defparameter *transformer* (caten (call *model* (make-tensor `(10 32)) (iconst 3))))
+
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; iseq.lisp transforms the graph of Tensor into caten/aasm graph by the following steps:
 ;; 1. (Sort)     Topologically sorting the tensor graph, getting iseq (a list of tensors)
