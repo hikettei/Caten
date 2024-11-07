@@ -29,7 +29,7 @@ $ qlot exec ros run
 
 1. Join our [Discord Server](https://discord.gg/tNawU7TN3s).
 
-2. Check out our [roadmap]().
+2. Check out our [roadmap](https://github.com/users/hikettei/projects/2).
 
 3. Create a PR
 
@@ -40,6 +40,8 @@ Caten is a project that started only a few months ago. We are currently in the s
 - Bug reports and additional tests.
 
 - Refactoring of the core compiler components
+
+- Improving the documentation
 
 etc...
 
