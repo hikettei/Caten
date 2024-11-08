@@ -79,7 +79,11 @@
 (defmodel (SiLU () :where "A[~] -> A[~]") ())
 (defmethod call ((op SiLU) &rest inputs &aux (x (car inputs))) (!mul x (!sigmoid x)))
 (defun !silu (x) (forward (SiLU) x))
-;; TODO: LogSigmoid
+
+(defmodel (LogSigmoid () :where "A[~] -> A[~]") ())
+(defmethod call ((op LogSigmoid) &rest inputs &aux (x (car inputs))) (!neg (!softplus (!neg x ))))
+(defun !logsigmoid (x) (forward (LogSigmoid) x))
+
 (defmodel (GeLU (&key (approx :tanh)) :where "A[~] -> A[~]") ((approx approx)))
 (defmethod gelu/call ((op GeLU) (approx (eql :tanh)) x)
   (!* (!const x 0.5) x (!+ (!const x 1) (!tanh (!* (!const x (sqrt (/ 2.0 pi))) (!+ x (!* (!const x 0.044715) (!* x x x))))))))
@@ -221,6 +225,18 @@
   :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'silu-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+
+(defun logsigmoid-lisp (x)(log (/ 1 ( + 1 (exp (- x))))))
+(define-nn-test LogSigmoid
+  "Testing w/ LogSigmoid([100, 100])"
+  :compile (caten (!logsigmoid (make-tensor `(100 100) :from 'x)))
+  :inputs (list (proceed (ax+b `(100 100) 0.01 -10)))
+  :caten   ((model x) (elements (print (forward model `(x . ,x)))))
+  :lisp    ((model x) (elements (print (proceed (lazy-lisp #'logsigmoid-lisp x)))))
   :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
