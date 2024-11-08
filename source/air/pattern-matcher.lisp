@@ -76,10 +76,7 @@
 (defparameter *matched-bind* nil "a temporary place to store matched nodes during simplifying")
 (defvar *node-top* nil)
 (defvar *graph-bind* nil)
-(defpattern <Node> (&rest form)
-  `(and
-    (satisfies (lambda (x) (declare (ignore x)) (setf *matched-bind* nil) t))
-    ,(find/replace-rules form '*graph-bind*)))
+(defpattern <Rule> (&rest form) (find/replace-rules form '*graph-bind*))
 
 (defmacro defsimplifier ((name &key (speed 3)) &rest rules)
   "
