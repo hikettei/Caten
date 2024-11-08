@@ -5,26 +5,23 @@
 
 (in-package :caten/aasm.test)
 
-(defun check-schedule (graph count)
+(defun check-schedule (graph count outputs)
   (declare (type graph graph)
 	   (type fixnum count))
-  (let ((sched (optimize-aasm graph)))
-    (assert
-     (= (length (graph-nodes sched)) count)
-     ()
-     "check-schedule: should satisfy (kernel_count=~a) <= ~a.~%~a" (length (graph-nodes sched)) count sched))
-  t)
+  (setf (graph-outputs graph) outputs)
+  (let ((sched (optimize-aasm (->fast-graph graph))))
+    (ok (<= (length (graph-nodes sched)) count) (format nil "check-schedule: should satisfy (kernel_count=~a) <= ~a." (length (graph-nodes sched)) count))))
 
 (deftest constant-folding
   (testing "Tensor Creation (Fixed Shape/Dynamic Shape)"
     (macrolet ((check (s1 s2 count)
-		 `(ok
-		   (check-schedule
+		 `(check-schedule
 		    (with-context
 		      (a (%make-tensor ',s1))
 		      (b (%make-tensor ',s2))
-		      (c (%add a b)))
-		    ,count))))
+		      (c (%add a b :id 'x)))
+		    ,count
+                    (list 'x))))
       (check (3 3) (3 3) 3)
       (check (a b) (3 3) 9)
       (check (3 3) (a b) 9)
@@ -45,18 +42,19 @@
 		   (check-schedule
 		    (with-context
 		      (a (%make-tensor ',s1))
-		      (b (%view a ',frm ',frm ',to ',by ',bc (%stride ',frm :column))))
-		    ,count))))
+		      (b (%view a ',frm ',frm ',to ',by ',bc (%stride ',frm :column) :id 'x)))
+		    ,count
+                    (list 'x)))))
       (check (5 5 5) (0 0 0) (5 5 5) (1 1 1) (nil nil nil) 2)
       (check (a b c) (d e f) (g h i) (j k l) (nil nil nil) 42)))
   (testing "Reshape Creation"
     (macrolet ((check (s1 s2 count)
-		 `(ok
-		   (check-schedule
+		 `(check-schedule
 		    (with-context
 		      (a (%make-tensor ',s1))
-		      (b (%reshape a ',s2)))
-		    ,count))))
+		      (b (%reshape a ',s2 :id 'x)))
+		    ,count
+                    (list 'x))))
       (check (1 2 3) (6) 2)
       (check (1 2 3) (d) 4)
       (check (a b c) (d) 15))))
@@ -98,10 +96,10 @@
     ;; a = alpha * i + b
     (t1 (%mul i alpha))
     (t2 (%add t1 beta))
-    (c  (%store m t2))))
+    (c  (%store m t2 :id 'out))))
 
 (deftest test-arange-kernel-count
-  (ok (check-schedule (%arange `(3 3) 3 3) 9))
-  (ok (check-schedule (%arange `(3 3) 0 3) 6))
-  (ok (check-schedule (%arange `(3 3) 3 0) 6))
-  (ok (check-schedule (%arange `(3 3) 0 0) 1)))
+  (check-schedule (%arange `(3 3) 3 3) 9 (list 'out))
+  (check-schedule (%arange `(3 3) 0 3) 6 (list 'out))
+  (check-schedule (%arange `(3 3) 3 0) 6 (list 'out))
+  (check-schedule (%arange `(3 3) 0 0) 1 (list 'out)))
