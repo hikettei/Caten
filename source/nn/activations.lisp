@@ -107,6 +107,10 @@
 (defmethod call ((op SeLU) &rest inputs &aux (x (car inputs))) (!mul (!elu x :alpha 1.67326) (!const x 1.0507)))
 (defun !selu (x) (forward (SeLU) x))
 ;; TODO: Mish (needs tanh)
+;(defmodel (Mish () :where "A[~] -> A[~]") ())
+;(defmethod call ((op Mish) &rest inputs &aux (x (car inputs))) (!mul x (tanh (!softplus x))))
+;(defun !mish (x) (forward (Mish) x))
+
 (defmodel (HardSwish () :where "A[~] -> A[~]") ())
 (defmethod call ((op HardSwish) &rest inputs &aux (x (car inputs)))
   (!* x (!relu6 (!add x (!const x 3))) (!const x (/ 1 6))))
