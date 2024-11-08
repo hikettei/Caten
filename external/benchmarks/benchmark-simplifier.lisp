@@ -9,13 +9,14 @@
 
 (defun measure-simplify-time (model jit)
   (ctx:with-contextvar (:JIT jit)
-    (let ((started (get-internal-real-time)))
-      (caten (forward model (make-tensor `(b 32))
-                      (if (= jit 0) ;; [TODO] Once the compiler issue was solved, use (iconst 'n) for JIT=1
-                          (iconst 'n)
-                          (iconst 3))))
-      (let ((finished (get-internal-real-time)))
-        (float (/ (- finished started) internal-time-units-per-second))))))
+    (with-no-grad
+      (let ((started (get-internal-real-time)))
+        (caten (forward model (make-tensor `(b 32))
+                        (if (= jit 0) ;; [TODO] Once the compiler issue was solved, use (iconst 'n) for JIT=1
+                            (iconst 'n)
+                            (iconst 3))))
+        (let ((finished (get-internal-real-time)))
+          (float (/ (- finished started) internal-time-units-per-second)))))))
 
 ;; brew install gnuplot for prepreq
 (defun run (&key (n 12) (jit 0) (path nil))
