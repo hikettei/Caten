@@ -1,0 +1,4 @@
+#ignore qlot/qfile
+/.qlot
+qlfile
+qlfile.lock
