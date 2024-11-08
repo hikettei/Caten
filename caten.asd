@@ -52,3 +52,12 @@
   ((:file "package")
    (:file "bpe")
    (:file "layers")))
+
+(asdf:defsystem "caten/benchmarks"
+  :description "A set of benchmarks for Caten"
+  :author "hikettei <ichndm@gmail.com>"
+  :depends-on ("caten" "caten/llm" "clgplot" "clingon")
+  :pathname "external/benchmarks"
+  :components
+  ((:file "benchmark-simplifier")
+   (:file "package")))
