@@ -117,6 +117,10 @@
 (defun !hardswish (x) (forward (HardSwish) x))
 ;; TODO: Hard_Tanh
 ;; TODO: Softmin
+(defmodel (Softmin () :where "A[~] -> A[~]") ())
+(defmethod call ((op Softmin) &rest inputs &aux (x (car inputs))) (!softmax (!neg x)))
+(defun !softmin (x) (forward (Softmin) x))
+
 (in-package :caten/nn.test)
 ;; TODO: Implement Assert Close, printing atol/rtol
 (defun sigmoid-lisp (x) (/ (+ 1 (expt 2 (* x (/ -1 (log 2)))))))
