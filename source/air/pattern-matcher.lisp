@@ -68,8 +68,18 @@
 	       `((let ((,node ,bind)
 		       (,graph ,graph-bind))
 		   (declare (ignorable ,node ,graph))
-		   ,@body)))
-	      (_ `((progn ,to))))
+		   (let ((result (progn ,@body)))
+                     (when result
+                       (assert (listp result))
+                       (assert (= (length (the list (node-writes (car (last result))))) (length (the list (node-writes ,bind)))))
+                       (setf (node-writes (car (last result))) (node-writes ,bind))
+                       result)))))
+	      (_ `((let ((result (progn ,to)))
+                     (when result
+                       (assert (listp result))
+                       (assert (= (length (the list (node-writes (car (last result))))) (length (the list (node-writes ,bind)))))
+                       (setf (node-writes (car (last result))) (node-writes ,bind))
+                       result)))))
 	  *matched-bind*)))
       (_ (error "Follow this notation: (From_Pattern) -> (To_Pattern).~%~a" rule)))))
 
