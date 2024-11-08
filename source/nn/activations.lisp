@@ -214,8 +214,6 @@
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
-
-
 (defun softshrink-lisp (x &aux (lmd 0.5))(cond ((> x lmd) (- x lmd))((< x (- lmd)) (+ x lmd))(t 0)))
 (define-nn-test SoftShrink
   "Testing w/ SoftShrink([100, 100])"
