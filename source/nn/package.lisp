@@ -43,6 +43,9 @@ Policy:
    #:GeLU
    #:!gelu
 
+   #:SeLU
+   #:!selu
+
    #:CeLU
    #:!celu
 

@@ -102,7 +102,10 @@
   (!mul x (!sigmoid (!* (!const x 1.702) x))))
 (defmethod call ((op GeLU) &rest inputs) (gelu/call op (slot-value op 'approx) (car inputs)))
 (defun !gelu (x &key (approx :tanh)) (forward (GeLU :approx approx) x))
-;; TODO: SeLU
+
+(defmodel (SeLU () :where "A[~] -> A[~]") ())
+(defmethod call ((op SeLU) &rest inputs &aux (x (car inputs))) (!mul (!elu x :alpha 1.67326) (!const x 1.0507)))
+(defun !selu (x) (forward (SeLU) x))
 ;; TODO: Mish (needs tanh)
 (defmodel (HardSwish () :where "A[~] -> A[~]") ())
 (defmethod call ((op HardSwish) &rest inputs &aux (x (car inputs)))
@@ -270,6 +273,17 @@
   :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'gelu-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun selu-lisp (x &aux (lambda 1.0507) (alpha 1.67326))(* lambda (if (>= x 0) x (* alpha (- (exp x) 1)))))
+(define-nn-test SeLU
+  "Testing w/ SeLU([100, 100])"
+  :compile (caten (!selu (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'selu-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
