@@ -6,7 +6,7 @@ exec ros -Q -- $0 "$@"
 (progn ;;init forms
   (ros:ensure-asdf)
    #+quicklisp(cl:push (cl:pathname "./") ql:*local-project-directories*)
-   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf) :silent t)
+   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/benchmarks) :silent t)
    (when (and (uiop:getenv "JIT_BACKEND")
 	      (equalp (uiop:getenv "JIT_BACKEND") "METAL"))
      #+quicklisp(ql:quickload '(:caten/metal) :silent nil)))
@@ -49,6 +49,12 @@ exec ros -Q -- $0 "$@"
    :description (maybe-ansi white-bright "Builds the documentation in ./docs folder")
    :handler #'(lambda (cmd) (declare (ignore cmd)) (caten/common.documentation:build-docs))))
 
+(defun caten/benchmark ()
+  (clingon:make-command
+   :name "benchmark"
+   :description (maybe-ansi white-bright "Runs the benchmarks")
+   :handler #'(lambda (cmd) (caten/benchmarks:run-benchmarks cmd))))
+
 (defun caten/options ()
   (list))
 
@@ -60,7 +66,7 @@ exec ros -Q -- $0 "$@"
    :options (caten/options)
    :usage (maybe-ansi white (format nil "[COMMAND] [OPTIONS]~%~a" (ctx:help nil)))
    :handler #'identity
-   :sub-commands (list (caten/llm) (caten/test) (caten/docs))))
+   :sub-commands (list (caten/llm) (caten/test) (caten/docs) (caten/benchmark))))
 
 (defun main (&rest argv &aux (*argv* argv))
   (setf (ctx:getenv :COLOR) 1)
