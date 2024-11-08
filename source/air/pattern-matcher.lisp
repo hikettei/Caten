@@ -40,12 +40,14 @@
 	     `(%Node ,type ,args ,attrs))))
       ((type list) (map 'list #'replace-form rules))
       (_ rules))))
-;; [TODO] node-class => Classを検索する方がいい
+
 (defun parse-to-pattern (bind rule)
   (flet ((r (r) (parse-to-pattern bind r)))
     (match rule
       ((<>Node type reads attrs)
-       `(make-node (node-class ,bind) ,type (list (gensym)) (list ,@(map 'list #'r reads)) ,@attrs))
+       (let ((class (attribute->instance type)))
+         (assert (keywordp class))
+         `(make-node ,class ,type (list (gensym)) (list ,@(map 'list #'r reads)) ,@attrs)))
       (_ rule))))
 
 (defun parse-rule (rule bind graph-bind)
@@ -59,7 +61,9 @@
          (values
 	  ,@(match to
 	      ((<>Node type reads attrs)
-	       `((list (make-node (node-class ,bind) ,type (node-writes ,bind) (list ,@(map 'list #'r reads)) ,@attrs))))
+               (let ((class (attribute->instance type)))
+                 (assert (keywordp class))
+	         `((list (make-node ,class ,type (node-writes ,bind) (list ,@(map 'list #'r reads)) ,@attrs)))))
 	      ((list* (list node graph) body)
 	       `((let ((,node ,bind)
 		       (,graph ,graph-bind))
