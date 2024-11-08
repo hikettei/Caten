@@ -56,7 +56,6 @@
 
 (defmethod run-expr-with-vars ((expr Expr) vars)
   (let ((graph
-          (->graph
            (apply
             #'make-graph
             (loop for node in (graph-nodes (expr-graph expr))
@@ -66,10 +65,12 @@
                       (setf (getattr cp :value) (or (gethash (getattr cp :value) vars) (getattr cp :value)))
                       cp)
                   else
-                    collect node)))))
+                    collect node))))
+    (setf (graph-outputs graph) (list (car (node-writes (expr-out expr))))
+          graph (->fast-graph graph))
     (fold-constant graph)
     (when (= (length (graph-nodes graph)) 2)
-      (%get-scalar graph :no-verify t)
+      (%get-scalar graph)
       (when (and (= (length (graph-nodes graph)) 1)
 		 (eql :_TmpScalarConst (node-type (car (graph-nodes graph)))))
 	(car (node-reads (car (graph-nodes graph))))))))
@@ -98,13 +99,9 @@ Only supports the scalar computation because it is intended to identify the same
         (and a b (eql a b))))))
 
 (defmethod simplify-expr ((expr Expr))
-  (let ((out (graph-outputs (expr-graph expr))))
-    (assert (= (length out) 1))
-    (optimize-aasm (expr-graph expr))
-    ;;(assert (= (length (nodes-write-to (graph-nodes (expr-graph expr)))) 1) () "simplify-expr: failed to simplify the expr to have a single output... something went wrong during the compilation process.")
-    ;;(setf (graph-outputs (expr-graph expr)) (nodes-write-to (graph-nodes (expr-graph expr)))
-    ;;      (expr-out expr) (id->value (expr-graph expr) (car (graph-outputs (expr-graph expr)))))
-    expr))
+  ;; [TODO] Use FastGraph
+  (optimize-aasm (expr-graph expr))
+  expr)
 
 (defun %connect-expr (grh args out)
   (declare (type graph grh))
