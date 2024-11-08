@@ -58,6 +58,9 @@ Policy:
    #:HardSwish
    #:!hardswish
 
+   #:HardTanh
+   #:!hardtanh
+
    #:Softmin
    #:!softmin
    )

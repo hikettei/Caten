@@ -116,6 +116,16 @@
   (!* x (!relu6 (!add x (!const x 3))) (!const x (/ 1 6))))
 (defun !hardswish (x) (forward (HardSwish) x))
 ;; TODO: Hard_Tanh
+(defmodel (HardTanh (&key (min_val -1.0) (max_val 1.0)) :where "A[~] -> A[~]") ((min_val min_val) (max_val max_val)) )
+(defmethod call ((op HardTanh) &rest inputs)
+  (let ((x (car inputs))
+        (min_val (slot-value op 'min_val))
+        (max_val (slot-value op 'max_val)))
+    (!minimum (!maximum x (!const x min_val)) (!const x max_val))
+    )
+  )
+(defun !hardtanh (x &key (min_val -1.0) (max_val 1.0)) (forward (HardTanh :min_val min_val :max_val max_val) x))
+
 (defmodel (Softmin () :where "A[~] -> A[~]") ())
 (defmethod call ((op Softmin) &rest inputs &aux (x (car inputs))) (!softmax (!neg x)))
 (defun !softmin (x) (forward (Softmin) x))
@@ -302,6 +312,18 @@
   :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'hardswish-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+
+(defun hardtanh-lisp (x &aux  (min_val -1.0)(max_val 1.0))(cond ((> x max_val) max_val)((< x min_val) min_val)(t x)))
+(define-nn-test HardTanh
+  "Testing w/ HardTanh([100, 100])"
+  :compile (caten (!hardtanha (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'hardtanh-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
