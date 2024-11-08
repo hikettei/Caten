@@ -84,7 +84,7 @@ jobs:
       - name: Building documentations
         run: CI=1 mkdir -p docs/packages && make build_docs
   Compiler_Benchmark:
-    name: Profile the compilation time
+    name: Benchmark
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
