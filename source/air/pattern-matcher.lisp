@@ -68,13 +68,15 @@
 	       `((let ((,node ,bind)
 		       (,graph ,graph-bind))
 		   (declare (ignorable ,node ,graph))
-		   (let ((result (progn ,@body)))
+		   (let* ((result (progn ,@body))
+                          (result (if (node-p result) (list result) result)))
                      (when result
                        (assert (listp result))
                        (assert (= (length (the list (node-writes (car (last result))))) (length (the list (node-writes ,bind)))))
                        (setf (node-writes (car (last result))) (node-writes ,bind))
                        result)))))
-	      (_ `((let ((result (progn ,to)))
+	      (_ `((let* ((result (progn ,to))
+                          (result (if (node-p result) (list result) result)))
                      (when result
                        (assert (listp result))
                        (assert (= (length (the list (node-writes (car (last result))))) (length (the list (node-writes ,bind)))))
