@@ -116,7 +116,6 @@
   (!* x (!relu6 (!add x (!const x 3))) (!const x (/ 1 6))))
 (defun !hardswish (x) (forward (HardSwish) x))
 ;; TODO: Hard_Tanh
-;; TODO: Softmin
 (defmodel (Softmin () :where "A[~] -> A[~]") ())
 (defmethod call ((op Softmin) &rest inputs &aux (x (car inputs))) (!softmax (!neg x)))
 (defun !softmin (x) (forward (Softmin) x))
@@ -306,3 +305,20 @@
   :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
+
+(define-nn-test Softmin
+  "Testing w/ Softmin([512, 256])"
+  :compile (caten (!softmin (make-tensor `(512 256) :from 'x)))
+  :inputs (ctx:with-contextvar (:jit 0 :avm :lisp)
+            (list (proceed (!rand `(512 256)))))
+  :caten ((model x) (forward model `(x . ,x)))
+  :lisp  ((model x) (proceed (!softmin x)))
+  :assert-close ((x y)
+                 (let ((sum (proceed (!contiguous (!sum x :axis -1)))))
+                   (every #'(lambda (x) (<= (abs (- x 1.0)) 1e-1)) (elements sum)))
+                 (every (~= 1e-6) (elements x) (elements y)))
+  :in-place ((model) (and
+                      (= 2 (n-args `(512 256) model))
+                      (= 0 (n-args `(512 1) model))))
+  :kernel   ((model) (= 1 (n-kernels model))))
+

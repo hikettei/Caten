@@ -57,6 +57,9 @@ Policy:
 
    #:HardSwish
    #:!hardswish
+
+   #:Softmin
+   #:!softmin
    )
   ;; from normalization.lisp
   (:export
