@@ -98,8 +98,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.12
-      - name: Installing ISL
-        run: sudo apt-get install -y libisl-dev
+      - name: Installing Dependencies
+        run: sudo apt-get install -y libisl-dev gnuplot
       - name: Transformer Simplifiers (N<=12, JIT=0, AUTO_SCHEDULER=0)
         run: ./roswell/caten.ros benchmark transformer_compile_time 12 0 transformer_simplifier_plot.png
       - name: Transformer Schedulers (N<=12, JIT=1, AUTO_SCHEDULER=0)
