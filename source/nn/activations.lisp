@@ -257,8 +257,8 @@
   "Testing w/ LogSigmoid([100, 100])"
   :compile (caten (!logsigmoid (make-tensor `(100 100) :from 'x)))
   :inputs (list (proceed (ax+b `(100 100) 0.01 -10)))
-  :caten   ((model x) (elements (print (forward model `(x . ,x)))))
-  :lisp    ((model x) (elements (print (proceed (lazy-lisp #'logsigmoid-lisp x)))))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'logsigmoid-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
