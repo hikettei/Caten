@@ -77,10 +77,11 @@
                        result)))))
               ((guard id (typep id 'symbol))
                `((let* ((val (id->value ,graph-bind ,id)))
-                   (when val
-                     (assert (= (length (the list (node-writes val))) (length (the list (node-writes ,bind)))))
-                     (setf (node-writes val) (node-writes ,bind))
-                     (list val)))))
+                   (when (and val (not (eql (node-id val) (node-id ,bind))))
+                     (let ((val (copy-node val)))
+                       (assert (= (length (the list (node-writes val))) (length (the list (node-writes ,bind)))))
+                       (setf (node-writes val) (node-writes ,bind))
+                       (list val))))))
 	      (_ `((let* ((result (progn ,to))
                           (result (if (node-p result) (list result) result)))
                      (when result
@@ -177,9 +178,11 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 			  (push id ,seen)
 			  (when (,simplifier-bind node -1)
 			    (setf changed-p t))
-			  (or changed-p (some #'identity (map 'list #',apply-bind2 (node-reads node)))))))))
+                          ;; If changed path was found => restart from the top of graph
+                          (or changed-p (some #'identity (map 'list #',apply-bind2 (node-reads node)))))))))
 	   (if ,fast-graph-p
-	       (loop while (and (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph))) (setf ,changed-p t)))
+	       (loop while (and (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph)))
+                                (progn (setf ,seen nil) (setf ,changed-p t))))
 	       (loop while (and (,apply-bind1 ,graph) (setf ,changed-p t))))
 	   (unless no-verify (verify-graph ,graph))
 	   (when return-changed-p (return-from ,name ,changed-p))
