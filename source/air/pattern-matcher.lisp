@@ -56,8 +56,7 @@
     (match rule
       ((list from (symbol-eq "->") to)
        `((and
-          ;; [TODO] This is slow: <> *matched-bind* nil is ok.
-	  (satisfies (lambda (x) (declare (ignore x)) (setf *matched-bind* nil) t))
+	  (<> *matched-bind* nil)
 	  ,(find/replace-rules from graph-bind))
          (values
 	  ,@(match to
