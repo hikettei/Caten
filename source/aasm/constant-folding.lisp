@@ -2,13 +2,11 @@
 
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defpattern boolean (x) `(guard ,x (typep ,x 'boolean)))
+(defpattern dtype-float-p (dtype) `(guard ,dtype (caten/common.dtype:dtype/floatp ,dtype)))
+(defnode (:Tmp :_TmpScalarConst) () "" :slots ((dtype))) ;; TODO: delete
 
-(defnode (:Tmp :_TmpScalarConst) () "" :slots ((dtype)))
-(defnode (:Tmp :_TmpScalarBool) () "" :slots ((value)))
-(defnode (:Tmp :_TmpPurged) () "")
-
-(defun reinitialize-tensor (graph id node)
-  (declare (type graph graph))
+(defun reinitialize-tensor (graph node &aux (id (car (node-writes node))))
+  (declare (type graph graph) (optimize (speed 3)))
   (multiple-value-bind (nrank shape stride dtype views)
       (infer-tensor-info graph id)
     ;; [TODO] Fix why shape infer fails
@@ -18,168 +16,128 @@
       (setf shape (map 'list #'->find shape)
 	    stride (map 'list #'->find stride)))
     (let ((viewed (every #'identity views)))
-      (if (= nrank 0)
+      (if (= (the fixnum nrank) 0)
 	  (with-context-nodes (m1 (%salloc :dtype dtype :id id)))
 	  (with-context-nodes
 	    (m1 (%alloc nrank shape stride :dtype dtype :id (if viewed (gensym "TID") (node->id node))))
-	    ;; [TODO] Test against viewed outputs
 	    (m2 (if viewed (%view m1 shape (nth 0 views) (nth 1 views) (nth 2 views) (nth 3 views) stride :id (node->id node)) m1)))))))
+;; :Cast Instead of :Load
+(defpattern Const (x dtype)
+  `(or
+    (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value (number ,x))
+    (and (<Rule> :Allocate () :nrank 0 :dtype ,dtype) (<> ,x 0))))
 
-;; Folds against scalar values
+(defpattern Var (x dtype)
+  `(or
+    (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value ,x)
+    ,@(when (equal x `(= 0))
+        `((<Rule> :Allocate () :nrank 0 :dtype ,dtype)))))
+
+(defun Const (x dtype) (with-context-nodes (_ (%load (%salloc :dtype dtype) x))))
+(defpattern Bool (x) `(<Rule> :Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean ,x)))
+(defpattern Cast (x dtype) `(<Rule> :Cast ((:Allocate () :nrank 0 :dtype ,dtype) (Const ,x))))
+(defun Purged (node x)
+  (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))
+
+(declaim (inline scalar-p))
+(defun scalar-p (id graph)
+  (declare (type graph graph) (optimize (speed 3)))
+  (let* ((load (id->value graph id))
+         (alloc (and load (id->value graph (car (node-reads load))))))
+    (and load alloc (eql (node-type load) :LOAD) (eql (node-type alloc) :Allocate)
+         (= (the fixnum (getattr alloc :nrank)) 0) (numberp (getattr load :value))
+         (getattr load :value))))
+
+(declaim (notinline sfold-index-components sfold-allocate sfold-view))
+(defun sfold-index-components (ss node graph)
+  (declare (type list ss) (type node node) (type graph graph)
+           (optimize (speed 3)))
+  (when ss
+    (let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
+	   (new-shape (loop for ss-node in (cdr ss-nodes)
+			    for ss-val  in (cdr ss)
+                            for val = (and ss-node (scalar-p ss-val graph))
+			    if val
+			      collect val
+			    else
+			      collect ss-val)))
+      (unless (equal new-shape (cdr ss))
+        (list
+	 (make-node
+          :Indexing :INDEX-COMPONENTS
+          (node-writes node) `(,(car ss) ,@new-shape)))))))
+
+(defun sfold-allocate (ss node graph nrank dtype from)
+  (declare (type list ss) (type node node) (type graph graph) (optimize (speed 3)))
+  (when ss
+    (let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
+	   (new-shape (loop for ss-node in ss-nodes
+			    for ss-val  in ss
+                            for val = (and ss-node (scalar-p ss-val graph))
+                            if val
+                              collect val
+			    else
+	                      collect ss-val)))
+      (unless (equal new-shape ss)
+        (list
+	 (make-node
+          :Buffer :Allocate
+          (node-writes node) new-shape
+          :nrank nrank :dtype dtype :from from))))))
+
+(defun sfold-view (ss node graph nrank broadcast permute)
+  (declare (type list ss) (type node node) (type graph graph) (optimize (speed 3)))
+  (when ss
+    (let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
+	   (new-views (loop for ss-node in ss-nodes
+			    for ss-val  in ss
+                            for val = (and ss-node (scalar-p ss-val graph))
+                            if val
+                              collect val
+			    else
+			      collect ss-val)))
+      (when (symbolp (car new-views))
+	(unless (equal new-views ss)
+          (list
+	   (make-node
+	    :Buffer :View
+	    (node-writes node) new-views
+	    :nrank nrank :broadcast broadcast :permute permute)))))))
+;; [TODO] Logical AND/XOR/OR for threefry2x32
 (defsimplifier
-    (%0_fuse_load_alloc)
-    ((:Load ((:Allocate () :nrank 0 :dtype dtype)) :value (number x)) -> (:_TmpScalarConst (x) :dtype dtype))
-    ((:Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean x)) -> (:_TmpScalarBool () :value x))
-    ((:Cast ((:Allocate () :nrank 0 :dtype dtype-to) (:_TmpScalarConst (val) :dtype _)))
-     ->
-     (:_TmpScalarConst ((caten/common.dtype:dtype/cast val dtype-to)) :dtype dtype-to)))
+    (apply-fold-constant :speed 1)
+    ((:Add ((Const x dtype) (Const y _))) -> (Const (+ x y) dtype))
+    ((:Mul ((Const x dtype) (Const y _))) -> (Const (* x y) dtype))
+    ((:Mul ((Const x dtype) (:Recip ((Const y _))))) -> (Const (/ x y) dtype))
+    ((:Neg ((Const x dtype))) -> (Const (- x) dtype))
+    ((:Recip ((Const x (dtype-float-p dtype)))) -> (Const (/ x) dtype))
+    ((:GCD ((Const x dtype) (Const y _))) -> (Const (gcd x y) dtype))
+    ((:< (_ (Const x _) (Const y _))) -> (Const (< x y) :bool))
+    ((:!= (_ (Const x _) (Const y _))) -> (Const (not (= x y)) :bool))
+    ((:MAX ((Const x dtype) (Const y _))) -> (Const (max x y) dtype))
+    ((:NOT ((Bool x))) -> (Const (not x) :bool))
+    ((:AND ((Bool x) (Bool y))) -> (Const (and x y) :bool))
+    ((:OR ((Bool x) (Bool y))) -> (Const (or x y) :bool))
+    ((:WHERE ((Bool x) (Const y dtype) (Const z _))) -> (Const (if x y z) dtype))
+    ((:Recip ((Var (= 1) dtype))) -> (Const 1 dtype))
+    ((:Mul (_ (Var (= 0) _))) -> ((node graph) (reinitialize-tensor graph node)))
+    ((:Mul ((Var (= 0) _) _)) -> ((node graph) (reinitialize-tensor graph node)))
+    ((:Mul (x (Var (= 1) _))) -> x)
+    ((:Mul ((Var (= 1) _) x)) -> x)
+    ((:Add (x (Var (= 0) _))) -> x)
+    ((:Add ((Var (= 0) _) x)) -> x))
 
 (defsimplifier
-    (%1_fold_constant)
-    ((:Add ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((+ x y)) :dtype dtype))
-    ((:Mul ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((* x y)) :dtype dtype))
-    ((:Neg ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((- x)) :dtype dtype))
-    ((:Recip ((:_TmpScalarConst (x) :dtype dtype))) -> (:_TmpScalarConst ((/ x)) :dtype dtype))
-    ((:GCD ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((gcd x y)) :dtype dtype))
-    ((:< (_ (:_TmpScalarConst (x)) (:_TmpScalarConst (y)))) -> (:_TmpScalarBool () :value (< x y)))
-    ((:!= (_ (:_TmpScalarConst (x)) (:_TmpScalarConst (y)))) -> (:_TmpScalarBool () :value (not (= x y))))
-    ((:MAX ((:_TmpScalarConst (x) :dtype dtype) (:_TmpScalarConst (y)))) -> (:_TmpScalarConst ((max x y)) :dtype dtype))
-    ((:NOT ((:_TmpScalarBool () :value value))) -> (:_TmpScalarBool () :value (not value)))
-    ((:AND ((:_TmpScalarBool () :value x) (:_TmpScalarBool () :value y))) -> (:_TmpScalarBool () :value (and x y)))
-    ((:OR ((:_TmpScalarBool () :value x) (:_TmpScalarBool () :value y))) -> (:_TmpScalarBool () :value (or x y)))
-    ((:WHERE ((:_TmpScalarBool () :value x) (:_TmpScalarConst (y) :dtype dtype) (:_TmpScalarConst (z))))
-     ->
-     (:_TmpScalarConst ((if x y z)) :dtype dtype))     
-    ((:Mul (_ (:_TmpScalarConst ((= 0))))) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))
-    ((:Mul ((:_TmpScalarConst ((= 0))) _)) -> ((node graph) (reinitialize-tensor graph (car (node-writes node)) node)))
-    ((:Mul (x (:_TmpScalarConst ((= 1))))) -> (:_TmpPurged (x)))
-    ((:Mul ((:_TmpScalarConst ((= 1))) x)) -> (:_TmpPurged (x)))
-    ((:Add (x (:_TmpScalarConst ((= 0))))) -> (:_TmpPurged (x)))
-    ((:Add ((:_TmpScalarConst ((= 0))) x)) -> (:_TmpPurged (x)))
-    ((:INDEX-COMPONENTS (~ ss))
-     -> ;; inlining the shape/stride computation
-     ((node graph)
-      (when ss
-	(let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
-	       (new-shape (loop for ss-node in (cdr ss-nodes)
-				for ss-val  in (cdr ss)
-				if (and ss-node (eql (node-type ss-node) :_TmpScalarConst))
-				  collect (car (node-reads ss-node))
-				else
-				  collect ss-val)))
-	  (unless (equal new-shape (cdr ss))
-	    (make-node
-	     :Indexing :INDEX-COMPONENTS
-	     (node-writes node) `(,(car ss) ,@new-shape)))))))
+    (fuse-vmops :speed 1)
+    ((:INDEX-COMPONENTS (~ ss)) -> ((node graph) (sfold-index-components ss node graph)))
     ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype :from from)
-     -> ;; inlining the shape/stride computation
-     ((node graph)
-      (when ss
-	(let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
-	       (new-shape (loop for ss-node in ss-nodes
-				for ss-val  in ss
-				if (and ss-node (eql (node-type ss-node) :_TmpScalarConst))
-				  collect (car (node-reads ss-node))
-				else
-				  collect ss-val)))
-	  (unless (equal new-shape ss)
-	    (make-node
-	     :Buffer :Allocate
-	     (node-writes node) new-shape
-	     :nrank nrank :dtype dtype :from from))))))
+     ->
+     ((node graph) (sfold-allocate ss node graph nrank dtype from)))
     ((:View (~ ss) :broadcast broadcast :nrank nrank :permute permute)
      ->
-     ((node graph)
-      (when ss
-	(let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
-	       (new-views (loop for ss-node in ss-nodes
-				for ss-val  in ss
-				if (and ss-node (eql (node-type ss-node) :_TmpScalarConst))
-				  collect (car (node-reads ss-node))
-				else
-				  collect ss-val)))
-          (when (symbolp (car new-views))
-	    (unless (equal new-views ss)
-	      (make-node
-	       :Buffer :View
-	       (node-writes node) new-views
-	       :nrank nrank :broadcast broadcast :permute permute))))))))
+     ((node graph) (sfold-view ss node graph nrank broadcast permute))))
 
-(defsimplifier
-    (%2_unfold_load_alloc)
-    ((:_TmpScalarConst (x) :dtype dtype)
-     ->
-     ((node graph)
-      (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node))))))
-    ((:_TmpScalarBool () :value value)
-     ->
-     ((node graph)
-      (with-context-nodes (_ (%load (%salloc :dtype :bool) value :id (node->id node))))))
-    ((:_TmpPurged (x))
-     ->
-     ((node graph)
-      (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))))
-
-(defmethod fold-constant ((graph Graph) &aux (n (length (graph-nodes graph))))
-  (declare (type Graph graph))
-  (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
-	  ()
- 	  "_TmpScalarConst shouldn't exist!")
-  (assert (null (find :_TmpScalarBool (graph-nodes graph) :key #'node-type))
-	  ()
- 	  "_TmpScalarBool shouldn't exist!")
-  (%0_fuse_load_alloc graph :no-verify t)
-  (%1_fold_constant graph :no-verify t)
-  (let ((purges (loop for node in (graph-nodes graph)
-		      if (eql (node-type node) :_TmpPurged)
-			collect node)))
-    ;; If y <- _TmpPurge(x), rewrite all y with x
-    (dolist (pnode purges)
-      (assert (symbolp (car (node-reads pnode))))
-      (flet ((->new (x)
-	       (if (eql (car (node-writes pnode)) x)
-		   (car (node-reads pnode))
-		   x)))
-	(loop for node in (graph-nodes graph)
-	      for n upfrom 0
-	      do (setf (node-reads node) (map 'list #'->new (node-reads node))))
-	(assert (equal (graph-outputs graph) (map 'list #'->new (graph-outputs graph))) ()))))
-  (%2_unfold_load_alloc graph :no-verify t)
-  (assert (null (find :_TmpScalarConst (graph-nodes graph) :key #'node-type))
-	  ()
-	  "_TmpScalarConst shouldn't exist! (but it is a simplifier's bug)")
-  (assert (null (find :_TmpScalarBool (graph-nodes graph) :key #'node-type))
-	  ()
-	  "_TmpScalarBool shouldn't exist! (but it is a simplifier's bug)")
-  (assert (null (find :_TmpPurged (graph-nodes graph) :key #'node-type))
-	  ()
-	  "_TmpPurged shouldn't exist! (it is a simplifier's bug)")
-  (if (not (= (length (graph-nodes graph)) n))
-      (progn
-	(verify-graph graph)
-	(fold-constant graph))
-      (verify-graph graph))
+(defun fold-constant (graph)
+  (apply-fold-constant graph)
+  (fuse-vmops graph)
   graph)
-
-(defmethod fold-constant ((graph FastGraph))
-  (%0_fuse_load_alloc graph :no-verify t)
-  (let ((matched-p (%1_fold_constant graph :no-verify t :return-changed-p t))
-	(purges (loop for node in (graph-nodes graph)
-		      if (eql (node-type node) :_TmpPurged)
-			collect node)))
-    ;; If y <- _TmpPurge(x), rewrite all y with x
-    (dolist (pnode purges)
-      (assert (symbolp (car (node-reads pnode))))
-      (flet ((->new (x)
-	       (if (eql (car (node-writes pnode)) x)
-		   (car (node-reads pnode))
-		   x)))
-	(loop for node in (graph-nodes graph)
-	      for n upfrom 0
-	      do (setf (node-reads node) (map 'list #'->new (node-reads node))))
-	(assert (equal (graph-outputs graph) (map 'list #'->new (graph-outputs graph))) ())))
-    (%2_unfold_load_alloc graph :no-verify t)
-    (verify-graph graph)
-    (if matched-p
-	(fold-constant graph)
-	graph)))

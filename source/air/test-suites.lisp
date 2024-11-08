@@ -6,7 +6,7 @@
 (in-package :caten/air.test)
 
 ;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun <node> (type writes reads &rest attrs) (apply #'make-node :node type writes reads attrs))
+(defun <node> (type writes reads &rest attrs) (apply #'make-node :Testing type writes reads attrs))
 (defun compare (graph expected
 		&key
 		  (slots `(caten/air::writes caten/air::reads caten/air::type caten/air::class))
