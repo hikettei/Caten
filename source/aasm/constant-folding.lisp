@@ -117,13 +117,11 @@
     ((:AND ((Bool x) (Bool y))) -> (Const (and x y) :bool))
     ((:OR ((Bool x) (Bool y))) -> (Const (or x y) :bool))
     ((:WHERE ((Bool x) (Const y dtype) (Const z _))) -> (Const (if x y z) dtype))
-    ;; 0 * x
+    ((:Recip ((Var (= 1) dtype))) -> (Const 1 dtype))
     ((:Mul (_ (Var (= 0) _))) -> ((node graph) (reinitialize-tensor graph node)))
     ((:Mul ((var (= 0) _) _)) -> ((node graph) (reinitialize-tensor graph node)))
-    ;; 1 * x
     ((:Mul (x (Var (= 1) _))) -> x)
     ((:Mul ((var (= 1) _) x)) -> x)
-    ;; 0 + x
     ((:Add (x (Var (= 0) _))) -> x)
     ((:Add ((Var (= 0) _) x)) -> x))
 
