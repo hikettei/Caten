@@ -56,6 +56,7 @@
     (match rule
       ((list from (symbol-eq "->") to)
        `((and
+          ;; [TODO] This is slow: <> *matched-bind* nil is ok.
 	  (satisfies (lambda (x) (declare (ignore x)) (setf *matched-bind* nil) t))
 	  ,(find/replace-rules from graph-bind))
          (values
@@ -75,6 +76,12 @@
                        (assert (= (length (the list (node-writes (car (last result))))) (length (the list (node-writes ,bind)))))
                        (setf (node-writes (car (last result))) (node-writes ,bind))
                        result)))))
+              ((guard id (typep id 'symbol))
+               `((let* ((val (id->value ,graph-bind ,id)))
+                   (when val
+                     (assert (= (length (the list (node-writes val))) (length (the list (node-writes ,bind)))))
+                     (setf (node-writes val) (node-writes ,bind))
+                     (list val)))))
 	      (_ `((let* ((result (progn ,to))
                           (result (if (node-p result) (list result) result)))
                      (when result
