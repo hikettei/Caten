@@ -12,7 +12,7 @@ Policy:
   (:export
    #:Sigmoid
    #:!sigmoid
-   
+
    #:ReLU
    #:!relu
 
@@ -36,6 +36,9 @@ Policy:
 
    #:Softsign
    #:!softsign
+
+   #:SoftShrink
+   #:!softshrink
 
    #:GeLU
    #:!gelu
