@@ -83,3 +83,26 @@ jobs:
         run: make install_docs
       - name: Building documentations
         run: CI=1 mkdir -p docs/packages && make build_docs
+  Compiler_Benchmark:
+    name: Profile the compilation time
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up SBCL via Roswell.
+        run: |
+          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install sbcl-bin/2.4.0
+          ros use sbcl-bin/2.4.0
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Installing ISL
+        run: sudo apt-get install -y libisl-dev
+      - name: Transformer Simplifiers (N<=12, JIT=0, AUTO_SCHEDULER=0)
+        run: ./roswell/caten.ros benchmark transformer_compile_time 12 0 transformer_simplifier_plot.png
+      - name: Transformer Schedulers (N<=12, JIT=1, AUTO_SCHEDULER=0)
+        run: AUTO_SCHEDULER=0 ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_no_auto_sched_plot.png
+      - name: Transformer Schedulers (N<=12, JIT=1, AUTO_SCHEDULER=1)
+        run: AUTO_SCHEDULER=1 ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_auto_scheduler_plot.png
