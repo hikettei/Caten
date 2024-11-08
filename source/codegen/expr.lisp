@@ -100,12 +100,10 @@ Only supports the scalar computation because it is intended to identify the same
 (defmethod simplify-expr ((expr Expr))
   (let ((out (graph-outputs (expr-graph expr))))
     (assert (= (length out) 1))
-    (setf (graph-outputs (expr-graph expr)) nil)
-    ;; Setting (graph-outputs out) = nil to simplify the last expr.
     (optimize-aasm (expr-graph expr))
-    (assert (= (length (nodes-write-to (graph-nodes (expr-graph expr)))) 1))
-    (setf (graph-outputs (expr-graph expr)) (nodes-write-to (graph-nodes (expr-graph expr)))
-          (expr-out expr) (id->value (expr-graph expr) (car (graph-outputs (expr-graph expr)))))
+    ;;(assert (= (length (nodes-write-to (graph-nodes (expr-graph expr)))) 1) () "simplify-expr: failed to simplify the expr to have a single output... something went wrong during the compilation process.")
+    ;;(setf (graph-outputs (expr-graph expr)) (nodes-write-to (graph-nodes (expr-graph expr)))
+    ;;      (expr-out expr) (id->value (expr-graph expr) (car (graph-outputs (expr-graph expr)))))
     expr))
 
 (defun %connect-expr (grh args out)
