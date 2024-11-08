@@ -214,6 +214,9 @@
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
+
+
+(defun softshrink-lisp (x &aux (lmd 0.5))(cond ((> x lmd) (- x lmd))((< x (- lmd)) (+ x lmd))(t 0)))
 (define-nn-test SoftShrink
   "Testing w/ SoftShrink([100, 100])"
   :compile (caten (!softshrink (make-tensor `(100 100) :from 'x)))
@@ -223,7 +226,6 @@
   :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
-)
 
 (defun celu-lisp (x &aux (alpha 1.0)) (+ (max x 0.0) (min 0 (* alpha (- (exp (/ x alpha)) 1)))))
 (define-nn-test CeLU
