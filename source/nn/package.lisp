@@ -43,6 +43,9 @@ Policy:
    #:CeLU
    #:!celu
 
+   #:LogSigmoid
+   #:!logsigmoid
+
    #:SiLU
    #:!silu
 
