@@ -2,6 +2,7 @@
 
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defpattern boolean (x) `(guard ,x (typep ,x 'boolean)))
+(defpattern dtype-float-p (dtype) `(guard ,dtype (caten/common.dtype:dtype/floatp ,dtype)))
 (defnode (:Tmp :_TmpScalarConst) () "" :slots ((dtype))) ;; TODO: delete
 
 (defun reinitialize-tensor (graph node &aux (id (car (node-writes node))))
@@ -20,16 +21,17 @@
 	  (with-context-nodes
 	    (m1 (%alloc nrank shape stride :dtype dtype :id (if viewed (gensym "TID") (node->id node))))
 	    (m2 (if viewed (%view m1 shape (nth 0 views) (nth 1 views) (nth 2 views) (nth 3 views) stride :id (node->id node)) m1)))))))
-
+;; :Cast Instead of :Load
 (defpattern Const (x dtype)
   `(or
     (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value (number ,x))
     (and (<Rule> :Allocate () :nrank 0 :dtype ,dtype) (<> ,x 0))))
+
 (defpattern Var (x dtype)
   `(or
     (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value ,x)
     ,@(when (equal x `(= 0))
-        `((and (<Rule> :Allocate () :nrank 0 :dtype ,dtype) (<> ,x 0))))))
+        `((<Rule> :Allocate () :nrank 0 :dtype ,dtype)))))
 
 (defun Const (x dtype) (with-context-nodes (_ (%load (%salloc :dtype dtype) x))))
 (defpattern Bool (x) `(<Rule> :Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean ,x)))
@@ -74,8 +76,6 @@
                               collect val
 			    else
 	                      collect ss-val)))
-      (print graph)
-      (print new-shape)
       (unless (equal new-shape ss)
         (list
 	 (make-node
@@ -106,8 +106,9 @@
     (apply-fold-constant :speed 1)
     ((:Add ((Const x dtype) (Const y _))) -> (Const (+ x y) dtype))
     ((:Mul ((Const x dtype) (Const y _))) -> (Const (* x y) dtype))
+    ((:Mul ((Const x dtype) (:Recip ((Const y _))))) -> (Const (/ x y) dtype))
     ((:Neg ((Const x dtype))) -> (Const (- x) dtype))
-    ((:Recip ((Const x dtype))) -> (Const (/ x) dtype))
+    ((:Recip ((Const x (dtype-float-p dtype)))) -> (Const (/ x) dtype))
     ((:GCD ((Const x dtype) (Const y _))) -> (Const (gcd x y) dtype))
     ((:< (_ (Const x _) (Const y _))) -> (Const (< x y) :bool))
     ((:!= (_ (Const x _) (Const y _))) -> (Const (not (= x y)) :bool))
