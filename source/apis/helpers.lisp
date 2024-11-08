@@ -37,9 +37,9 @@
 
 (defun try-fold-constant (tensor)
   (declare (type Tensor tensor))
-  (let ((graph (fold-constant (%tensor->aasm tensor))))
+  (let ((graph (fold-constant (->fast-graph (%tensor->aasm tensor)))))
     (when (= (length (graph-nodes graph)) 2)
-      (%obtain-fold-constant-result graph :no-verify t)
+      (%obtain-fold-constant-result graph)
       (when (and (= (length (graph-nodes graph)) 1)
 		 (eql :_TmpScalarConst (node-type (car (graph-nodes graph)))))
 	(car (node-reads (car (graph-nodes graph))))))))

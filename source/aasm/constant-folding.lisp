@@ -36,6 +36,8 @@
 (defun Const (x dtype) (with-context-nodes (_ (%load (%salloc :dtype dtype) x))))
 (defpattern Bool (x) `(<Rule> :Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean ,x)))
 (defpattern Cast (x dtype) `(<Rule> :Cast ((:Allocate () :nrank 0 :dtype ,dtype) (Const ,x))))
+(defun Purged (node x)
+  (make-node :Buffer :Store (node-writes node) (list (car (node-writes node)) x)))
 
 (declaim (inline scalar-p))
 (defun scalar-p (id graph)
@@ -119,9 +121,9 @@
     ((:WHERE ((Bool x) (Const y dtype) (Const z _))) -> (Const (if x y z) dtype))
     ((:Recip ((Var (= 1) dtype))) -> (Const 1 dtype))
     ((:Mul (_ (Var (= 0) _))) -> ((node graph) (reinitialize-tensor graph node)))
-    ((:Mul ((var (= 0) _) _)) -> ((node graph) (reinitialize-tensor graph node)))
+    ((:Mul ((Var (= 0) _) _)) -> ((node graph) (reinitialize-tensor graph node)))
     ((:Mul (x (Var (= 1) _))) -> x)
-    ((:Mul ((var (= 1) _) x)) -> x)
+    ((:Mul ((Var (= 1) _) x)) -> x)
     ((:Add (x (Var (= 0) _))) -> x)
     ((:Add ((Var (= 0) _) x)) -> x))
 

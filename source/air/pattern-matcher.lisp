@@ -50,6 +50,14 @@
          `(make-node ,class ,type (list (gensym)) (list ,@(map 'list #'r reads)) ,@attrs)))
       (_ rule))))
 
+(defun purge-graph (graph old-id new-id)
+  (declare (type graph graph) (type symbol old-id new-id) (optimize (speed 3)))
+  (flet ((new (id) (if (eql old-id id) new-id id)))
+    (dolist (node (graph-nodes graph))
+      (setf (node-reads node) (map 'list #'new (node-reads node))))
+    (assert (equal (graph-outputs graph) (map 'list #'new (graph-outputs graph))))
+    graph))
+
 (defun parse-rule (rule bind graph-bind)
   (declare (type list rule))
   (flet ((r (r) (parse-to-pattern bind r)))
@@ -77,9 +85,10 @@
                        result)))))
               ((guard id (typep id 'symbol))
                `((let* ((val (id->value ,graph-bind ,id)))
-                   (when (and val (not (eql (node-id val) (node-id ,bind))))
+                   (when (and (not (eql (node-id val) (node-id ,bind))))
                      (let ((val (copy-node val)))
-                       (assert (= (length (the list (node-writes val))) (length (the list (node-writes ,bind)))))
+                       (assert (= 1 (length (the list (node-writes val))) (length (the list (node-writes ,bind)))) () "-> symbol should only support when (length writes) == 1")
+                       (purge-graph ,graph-bind (car (node-writes val)) (car (node-writes ,bind)))
                        (setf (node-writes val) (node-writes ,bind))
                        (list val))))))
 	      (_ `((let* ((result (progn ,to))
@@ -134,7 +143,7 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 					        if (find (the symbol o) (the list (node-writes ,node-top)) :test #'eql)
 						  collect o))))
 		    (declare (type list *matched-bind*))
-		    (when fixed-writes-to (return-from ,simplifier-bind))
+                    ;; (when fixed-writes-to (return-from ,simplifier-bind))
 		    (when (null ,node-top) (return-from ,simplifier-bind))		  
 		    (multiple-value-bind (replace-rule matched)
 		        (match ,node-top
@@ -145,10 +154,10 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 		        ;; reject the replace-rule only when:
 		        ;; - the original node writes the output to (graph-outputs graph)
 		        ;; - the replaced node breaks this rule
-		        ;;(when fixed-writes-to
-		        ;;  (let ((out (apply #'append (map 'list #'node-writes replace-rule))))
-		        ;;    (when (some #'(lambda (x) (null (find x out))) fixed-writes-to)
-		        ;;      (return-from ,simplifier-bind))))
+		        (when fixed-writes-to ;; when the node is connected to graph-outputs
+                          (dolist (w fixed-writes-to)
+                            (when (null (find w replace-rule :key #'node-writes :test #'find))
+                              (return-from ,simplifier-bind))))
 		        (if ,fast-graph-p
 			    (insert-nodes ,graph replace-rule)
 			    (setf (graph-nodes ,graph)

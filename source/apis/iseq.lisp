@@ -499,6 +499,5 @@ Compiles the given tensors, returning an evaluated tensors.
 (defun %tensor->aasm (&rest tensors)
   (let* ((sess (make-compiler-session :name :tensor->aasm))
          (graph (%lower-iseq sess (apply #'%tpsort-tensors sess tensors))))
-    ;; [TODO]: Use FastGraph
-    ;; (setf (graph-outputs graph) (map 'list #'(lambda (x) (car (node-writes (session/read sess (tensor-id x))))) tensors))
+    (setf (graph-outputs graph) (map 'list #'(lambda (x) (car (node-writes (session/read sess (tensor-id x))))) tensors))
     graph))
