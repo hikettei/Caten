@@ -188,8 +188,8 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 		        (when (null (find (the symbol id) (the list ,seen) :test #'eq))
 			  (push id ,seen)
 			  (when (,simplifier-bind node -1)
+                            (some #'identity (map 'list #',apply-bind2 (node-reads node)))
                             (return-from ,apply-bind2 t))
-                          ;; If changed path was found => restart from the top of graph
                           (some #'identity (map 'list #',apply-bind2 (node-reads node))))))))
 	   (if ,fast-graph-p
 	       (loop while (and (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph)))
