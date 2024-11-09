@@ -267,10 +267,9 @@
 		(session/update-outputs session merged-graph :alias map))
 	      (session/update-outputs session merged-graph))
 	  (let ((merged-graph (->fast-graph merged-graph)))
+            (lower-all merged-graph)
 	    ;; Function-level whole optimization
             (dolist (f external-simplifiers) (funcall f merged-graph)) ;; SLOW
-	    ;; Lower the :module if remained.
-	    (lower-all merged-graph)
 	    ;; verify and complete
             (verify-graph merged-graph)
 	    (values (->graph merged-graph) pause-backward-p)))))))
@@ -419,8 +418,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
 	;; If the graph was created from FastGraph, the time-series order should be broken.
 	;; call verify-graph to sort them.
-        (compose-views-from-graph graph) ;; SLOW
-	(verify-graph graph)
+	(verify-graph graph) ;; needed? SLOW
 	(make-avm graph (session-name session)
 		  (session-tid->tensor session)
 		  (if pause-backward-p
