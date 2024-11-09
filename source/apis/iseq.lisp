@@ -137,11 +137,7 @@
 	  (assert (>= (length (the list (graph-nodes low-graph))) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
           (when simplifiers
             (setf (graph-outputs low-graph) (nconc (graph-outputs low-graph) (copy-list (node-writes (car (last (graph-nodes low-graph))))))
-                  (graph-seen low-graph)
-                  (append (graph-seen low-graph)
-                          (loop for var in (func-variables (tensor-op tensor))
-                                for node = (t->id var)
-                                if node append (node-writes node)))
+                  (graph-seen low-graph) (apply #'append (graph-seen low-graph) (map 'list (compose #'node-writes #'t->id) (func-variables (tensor-op tensor))))
                   low-graph (->fast-graph low-graph))
             (dolist (f simplifiers) (funcall f low-graph))
             (setf low-graph (->graph low-graph)))

@@ -48,7 +48,7 @@
          (= (the fixnum (getattr alloc :nrank)) 0) (numberp (getattr load :value))
          (getattr load :value))))
 
-(declaim (notinline sfold-index-components sfold-allocate sfold-view))
+(declaim (inline sfold-index-components sfold-allocate sfold-view))
 (defun sfold-index-components (ss node graph)
   (declare (type list ss) (type node node) (type graph graph)
            (optimize (speed 3)))
