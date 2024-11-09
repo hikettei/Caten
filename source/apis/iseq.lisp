@@ -191,7 +191,7 @@
     (mapc #'backward-helper (reverse iseq))
     iseq-bw))
 
-(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (toplevels) (toplevel-ids) (maximum-recursion 1024))
+(defun %make-graph-from-iseq (session iseq prev-grad &key (no-grad nil) (external-simplifiers nil) (rewriters nil) (toplevels) (toplevel-ids) (maximum-recursion 1024))
   "Constructs a forward/backward graph based on iseq"
   (declare (type Compiler-Session session)
 	   (type list iseq toplevel-ids)
@@ -218,13 +218,12 @@
 	       ;; n=2 QMatmul -> QAdd + SHR + ...
 	       ;; n=2 (Simplify)
 	       ;;      ...
-               (when (= 1 (ctx:getenv :DOT))
+               (when (= 1 (the fixnum (ctx:getenv :DOT)))
                  (->dot graph :title (format nil "lowerer T=~a" n)))
 	       (%lower-modules session graph)
 	       ;; Func level whole optimization
-	       (dolist (f external-simplifiers) (funcall f graph))))
-           (when (= 1 (ctx:getenv :DOT))
-             (->dot graph :title "lowerer (final)"))))
+	       (dolist (f rewriters) (funcall f graph))))
+           (when (= 1 (the fixnum (ctx:getenv :DOT))) (->dot graph :title "lowerer (final)"))))
     (let* ((forward-graph
 	     (prog1
 		 (->fast-graph (%lower-iseq session iseq))
@@ -234,7 +233,7 @@
       ;; (Forward Mode) First, Simplify the forward graph in :Module/:Func level
       (dolist (f external-simplifiers) (funcall f forward-graph))
       ;; Second, lower an :module into a list of :func
-      (lower-all forward-graph)
+      (lower-all forward-graph) ;; lower-all is O(N)
       ;; (Backward Mode) First, create a reverse-mode backward tape from the sorted forward graph.
       ;; the tapes consequent after the allocation of prev-grad.
       (when (null no-grad) (setf iseq-bw (%make-graph-backward session iseq :iseq-bw iseq-bw)))
@@ -256,7 +255,7 @@
 		    (list (make-node :Special/VM :Pause/Backward toplevel-ids (list (node->id (car (last (graph-nodes forward-graph))))))))
 		   (and backward-graph (graph-nodes backward-graph))))))
 	  ;; Rewrite/Optimize f(A) + f(A) grad accumlation
-	  (when (null no-grad) (session/sync-multi-grads session merged-graph))
+          (when (null no-grad) (session/sync-multi-grads session merged-graph))
 	  ;; If Pause/Backward was generated, use toplevel-ids instead of toplevels because
 	  ;; val_1_1 val_2_1 <- pause/backward(val_1, val_2) was generated.
 	  (if pause-backward-p
@@ -267,13 +266,12 @@
 		(session/update-outputs session merged-graph :alias map))
 	      (session/update-outputs session merged-graph))
 	  (let ((merged-graph (->fast-graph merged-graph)))
+            (lower-all merged-graph)
 	    ;; Function-level whole optimization
-	    (dolist (f external-simplifiers) (funcall f merged-graph))
-	    ;; Lower the :module if remained.
-	    (lower-all merged-graph)
+            (dolist (f external-simplifiers) (funcall f merged-graph)) ;; SLOW
 	    ;; verify and complete
-	    (verify-graph merged-graph)
-	    (values (->graph merged-graph) pause-backward-p)))))))
+            (verify-graph merged-graph)
+	    (values (->graph-with-tpsort merged-graph) pause-backward-p)))))))
 ;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %module->iseqfw (session module-node)
   "Lowers the given module.
@@ -372,7 +370,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *external-simplifiers* `(optimize-aasm) "A list of external simplifiers. (defined by defsimplifier)")
 (defparameter *no-grad* nil)
-(defun %compile-toplevel (tensors &key (no-grad *no-grad*) (external-simplifiers *external-simplifiers*) (name :main))
+(defun %compile-toplevel (tensors &key (rewriters nil) (no-grad *no-grad*) (external-simplifiers *external-simplifiers*) (name :main))
   (declare (type list tensors))
   (let* ((external-simplifiers `(compose-views-from-graph ,@external-simplifiers))
          (session (make-compiler-session :name name))
@@ -387,7 +385,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 	(%make-graph-from-iseq
 	 session iseq prev-grad
 	 :no-grad no-grad :external-simplifiers external-simplifiers
-	 :toplevels tensors :toplevel-ids toplevel-ids)
+	 :toplevels tensors :toplevel-ids toplevel-ids :rewriters rewriters)
       (when (null no-grad)
 	(loop for id in (session-bw-out-ids session)
 	      do (assert (some #'(lambda (x) (find id (node-writes x))) (graph-nodes graph))
@@ -419,8 +417,6 @@ The iseq obtained by lowering the Module must match the output destination speci
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
 	;; If the graph was created from FastGraph, the time-series order should be broken.
 	;; call verify-graph to sort them.
-        (compose-views-from-graph graph)
-	(verify-graph graph)
 	(make-avm graph (session-name session)
 		  (session-tid->tensor session)
 		  (if pause-backward-p
@@ -432,6 +428,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 	      &key
 		(jit (= 1 (ctx:getenv :JIT)))
 		(name (intern (symbol-name (gensym "MAIN")) "KEYWORD"))
+                (rewriters nil)
 		(simplifiers *external-simplifiers*))
   "
 ```lisp
@@ -443,11 +440,12 @@ Compiles the given tensors, returning an AVM struct.
 - tensor[Tensor|List] toplevel tensors.
 - jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls `%jit` to generate the fast kernel supported by `caten/codegen`. This parameter should be specified using the `(ctx:with-contextvar)` macro.
 - name[keyword] the name of compiled avm.
+- rewriters[list] a list of graph rewriters called each time the compiler will lower the module.
 - simplifiers[list] a list of external simplifiers used in the graph-level compilation. (defined by defsimplifier) Pass the function name.
 "
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
-  (let ((avm (%compile-toplevel tensors :name name :external-simplifiers simplifiers)))
+  (let ((avm (%compile-toplevel tensors :name name :rewriters rewriters :external-simplifiers simplifiers)))
     ;; FIXME: Since we can't determine when garbage collection (in caten/isl) will occur during testing, we run it every time.
     (when (and (= (ctx:getenv :JIT) 1) (= (ctx:getenv :CI) 1)) (trivial-garbage:gc))
     (if jit (caten/codegen:jit avm :renderer (or *jit-device* (ctx:getenv :jit_backend))) avm)))
