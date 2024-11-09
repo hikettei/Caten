@@ -182,15 +182,15 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 		      (when (,simplifier-bind (nth nth (the list (graph-nodes graph))) nth)
 		        (setf changed-p t)))
 		    changed-p)
-		  (,apply-bind2 (id &key (changed-p nil))
+		  (,apply-bind2 (id)
 		    (let ((node (gethash id (%graph-nodes-table ,graph))))
 		      (when node
 		        (when (null (find (the symbol id) (the list ,seen) :test #'eq))
 			  (push id ,seen)
 			  (when (,simplifier-bind node -1)
-			    (setf changed-p t))
+                            (return-from ,apply-bind2 t))
                           ;; If changed path was found => restart from the top of graph
-                          (or changed-p (some #'identity (map 'list #',apply-bind2 (node-reads node)))))))))
+                          (some #'identity (map 'list #',apply-bind2 (node-reads node))))))))
 	   (if ,fast-graph-p
 	       (loop while (and (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph)))
                                 (progn (setf ,seen nil) (setf ,changed-p t))))
