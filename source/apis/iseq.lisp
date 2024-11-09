@@ -118,7 +118,7 @@
 		   (session/assign session grad-id final-node))))))
    (session-grad->grads session)))
 ;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %lower-iseq (session iseq &key (no-verify nil))
+(defun %lower-iseq (session iseq &key (no-verify nil) (simplifiers *external-simplifiers*))
   "Lowers iseq (a list of topologically sorted tensors) into caten/air graph."
   (declare (type compiler-session session)
 	   (type list iseq)
@@ -135,6 +135,12 @@
 	  (assert (graph-p low-graph) () "%tensor->asm: lower(~a, ...) should return a graph, butgot ~a" (tensor-op tensor) low-graph)
 	  (assert (every #'node-p (graph-nodes low-graph)) () "%tensor->asm: received invaild nodes. all elements should be a node. ~a" low-graph)
 	  (assert (>= (length (the list (graph-nodes low-graph))) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
+          (when simplifiers
+            (setf (graph-outputs low-graph) (nconc (graph-outputs low-graph) (copy-list (node-writes (car (last (graph-nodes low-graph))))))
+                  (graph-seen low-graph) (apply #'append (graph-seen low-graph) (map 'list (compose #'node-writes #'t->id) (func-variables (tensor-op tensor))))
+                  low-graph (->fast-graph low-graph))
+            (dolist (f simplifiers) (funcall f low-graph))
+            (setf low-graph (->graph low-graph)))
 	  (let ((final (car (last (graph-nodes low-graph)))))
 	    (session/assign session (tensor-id tensor) final))
 	  (setf nodes (nconc nodes (graph-nodes low-graph))))))
