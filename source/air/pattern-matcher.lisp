@@ -105,7 +105,8 @@
 (defvar *node-top* nil)
 (defvar *graph-bind* nil)
 (defpattern <Rule> (&rest form) (find/replace-rules form '*graph-bind* t))
-
+;; Simplifier Computation Order:
+;; - FastGraph: O(n) where n = the depth of rewriting patterns
 (defmacro defsimplifier ((name &key (speed 3)) &rest rules)
   "
 ```
