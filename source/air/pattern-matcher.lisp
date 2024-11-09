@@ -195,7 +195,7 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 	       (loop while (and (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph)))
                                 (progn (setf ,seen nil) (setf ,changed-p t))))
 	       (loop while (and (,apply-bind1 ,graph) (setf ,changed-p t))))
-           (when debug-opt (format t "~a: ~a calls for ~a nodes (~a%)~%" ',name ,counter ,n-nodes (float (/ ,n-nodes ,counter))))
+           (when debug-opt (format t "~a: ~a calls for ~a nodes (~a%)~%" ',name ,counter ,n-nodes (float (/ ,counter ,n-nodes))))
 	   (unless no-verify (verify-graph ,graph))
 	   (when return-changed-p (return-from ,name ,changed-p))
 	   ,graph)))))
