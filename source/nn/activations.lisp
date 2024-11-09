@@ -320,7 +320,7 @@
 (defun hardtanh-lisp (x &aux  (min_val -1.0)(max_val 1.0))(cond ((> x max_val) max_val)((< x min_val) min_val)(t x)))
 (define-nn-test HardTanh
   "Testing w/ HardTanh([100, 100])"
-  :compile (caten (!hardtanha (make-tensor `(100 100) :from 'x)))
+  :compile (caten (!hardtanh (make-tensor `(100 100) :from 'x)))
   :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'hardtanh-lisp x))))
