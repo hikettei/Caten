@@ -268,7 +268,8 @@
 	  (let ((merged-graph (->fast-graph merged-graph)))
             (lower-all merged-graph)
 	    ;; Function-level whole optimization
-            (dolist (f external-simplifiers) (funcall f merged-graph :debug-opt t)) ;; [TODO] delete this
+            (dolist (f external-simplifiers)
+              (funcall f merged-graph :debug-opt (= 1 (the fixnum (ctx:getenv :PROFILE_SIMPLIFIER)))))
 	    ;; verify and complete
             (verify-graph merged-graph)
 	    (values (->graph-with-tpsort merged-graph) pause-backward-p)))))))
