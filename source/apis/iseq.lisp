@@ -197,8 +197,7 @@
 	   (type list iseq toplevel-ids)
 	   (type tensor prev-grad)
 	   (type fixnum maximum-recursion)
-	   ;; (optimize (speed 3))
-           )
+	   (optimize (speed 3)))
   ;; Inserts toplevel_ids = pause_backward(toplevels)
   (setf (session-fw-out-ids session)
 	(nconc (session-fw-out-ids session) (map 'list #'tensor-id toplevels))
@@ -371,7 +370,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *external-simplifiers* `(optimize-aasm) "A list of external simplifiers. (defined by defsimplifier)")
 (defparameter *no-grad* nil)
-(defun %compile-toplevel (tensors &key (no-grad *no-grad*) (external-simplifiers *external-simplifiers*) (name :main))
+(defun %compile-toplevel (tensors &key (rewriters nil) (no-grad *no-grad*) (external-simplifiers *external-simplifiers*) (name :main))
   (declare (type list tensors))
   (let* ((external-simplifiers `(compose-views-from-graph ,@external-simplifiers))
          (session (make-compiler-session :name name))
@@ -386,7 +385,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 	(%make-graph-from-iseq
 	 session iseq prev-grad
 	 :no-grad no-grad :external-simplifiers external-simplifiers
-	 :toplevels tensors :toplevel-ids toplevel-ids)
+	 :toplevels tensors :toplevel-ids toplevel-ids :rewriters rewriters)
       (when (null no-grad)
 	(loop for id in (session-bw-out-ids session)
 	      do (assert (some #'(lambda (x) (find id (node-writes x))) (graph-nodes graph))
@@ -429,6 +428,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 	      &key
 		(jit (= 1 (ctx:getenv :JIT)))
 		(name (intern (symbol-name (gensym "MAIN")) "KEYWORD"))
+                (rewriters nil)
 		(simplifiers *external-simplifiers*))
   "
 ```lisp
@@ -440,11 +440,12 @@ Compiles the given tensors, returning an AVM struct.
 - tensor[Tensor|List] toplevel tensors.
 - jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls `%jit` to generate the fast kernel supported by `caten/codegen`. This parameter should be specified using the `(ctx:with-contextvar)` macro.
 - name[keyword] the name of compiled avm.
+- rewriters[list] a list of graph rewriters called each time the compiler will lower the module.
 - simplifiers[list] a list of external simplifiers used in the graph-level compilation. (defined by defsimplifier) Pass the function name.
 "
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
-  (let ((avm (%compile-toplevel tensors :name name :external-simplifiers simplifiers)))
+  (let ((avm (%compile-toplevel tensors :name name :rewriters rewriters :external-simplifiers simplifiers)))
     ;; FIXME: Since we can't determine when garbage collection (in caten/isl) will occur during testing, we run it every time.
     (when (and (= (ctx:getenv :JIT) 1) (= (ctx:getenv :CI) 1)) (trivial-garbage:gc))
     (if jit (caten/codegen:jit avm :renderer (or *jit-device* (ctx:getenv :jit_backend))) avm)))
