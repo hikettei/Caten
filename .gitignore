@@ -2,3 +2,10 @@
 /.qlot
 qlfile
 qlfile.lock
+
+*.fasl
+*.swp
+\#*\#
+.\#*
+.DS_Store
+*~
