@@ -107,9 +107,9 @@
 (defmethod call ((op SeLU) &rest inputs &aux (x (car inputs))) (!mul (!elu x :alpha 1.67326) (!const x 1.0507)))
 (defun !selu (x) (forward (SeLU) x))
 
-;(defmodel (Mish () :where "A[~] -> A[~]") ())
-;(defmethod call ((op Mish) &rest inputs &aux (x (car inputs))) (!mul x (!tanh (!softplus x))))
-;(defun !mish (x) (forward (Mish) x))
+(defmodel (Mish () :where "A[~] -> A[~]") ())
+(defmethod call ((op Mish) &rest inputs &aux (x (car inputs))) (!mul x (!tanh (!softplus x))))
+(defun !mish (x) (forward (Mish) x))
 
 (defmodel (HardSwish () :where "A[~] -> A[~]") ())
 (defmethod call ((op HardSwish) &rest inputs &aux (x (car inputs)))
@@ -303,6 +303,17 @@
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
+(defun mish-lisp (x) (* x (tanh (log (+ 1 (exp x))))))
+(define-nn-test Mish
+  "Testing w/ Mish([100, 100])"
+  :compile (caten (!mish (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 7)))
+  :caten   ((model x) (elements (print (forward model `(x . ,x)))))
+  :lisp    ((model x) (elements (print (proceed (lazy-lisp #'mish-lisp x)))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
 (defun hardswish-lisp (x) (* x (relu6-lisp (+ x 3.0)) (/ 1 6)))
 (define-nn-test HardSwish
   "Testing w/ HardSwish([100, 100])"
@@ -329,7 +340,8 @@
 (define-nn-test Softmin
   "Testing w/ Softmin([512, 256])"
   :compile (caten (!softmin (make-tensor `(512 256) :from 'x)))
-  :inputs (list (proceed (!rand `(512 256))))
+  :inputs (ctx:with-contextvar (:jit 0 :avm :lisp)
+            (list (proceed (!rand `(512 256)))))
   :caten ((model x) (forward model `(x . ,x)))
   :lisp  ((model x) (proceed (!softmin x)))
   :assert-close ((x y)
