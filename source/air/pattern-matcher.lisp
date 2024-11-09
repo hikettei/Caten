@@ -85,7 +85,7 @@
                        result)))))
               ((guard id (typep id 'symbol))
                `((let* ((val (id->value ,graph-bind ,id)))
-                   (when (and (not (eql (node-id val) (node-id ,bind))))
+                   (when (and val (not (eql (node-id val) (node-id ,bind))))
                      (let ((val (copy-node val)))
                        (assert (= 1 (length (the list (node-writes val))) (length (the list (node-writes ,bind)))) () "-> symbol should only support when (length writes) == 1~%~a" ,graph-bind)
                        (purge-graph ,graph-bind (car (node-writes val)) (car (node-writes ,bind)))
