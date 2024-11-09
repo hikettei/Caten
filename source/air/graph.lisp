@@ -209,7 +209,7 @@ Converts the given graph to a fast graph.
                 (when (null (gethash (node-id adj) in-degrees))
                   (push adj queue)))
               (remhash (node-id node) out-degrees))
-      (assert (= 0 (hash-table-count out-degrees)) () "Graph is not a DAG.")
+      (assert (= 0 (hash-table-count out-degrees)) () "tpsort-graph: the graph is not a DAG, or there's undefined variables in the graph~%use (verify-graph graph) for the detailed report.~%~a" graph)
       (nreverse sorted-nodes))))
 
 (defmethod ->graph-with-tpsort ((fast-graph FastGraph))

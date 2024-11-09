@@ -272,7 +272,7 @@
             (dolist (f external-simplifiers) (funcall f merged-graph)) ;; SLOW
 	    ;; verify and complete
             (verify-graph merged-graph)
-	    (values (->graph merged-graph) pause-backward-p)))))))
+	    (values (->graph-with-tpsort merged-graph) pause-backward-p)))))))
 ;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %module->iseqfw (session module-node)
   "Lowers the given module.
@@ -418,7 +418,6 @@ The iseq obtained by lowering the Module must match the output destination speci
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
 	;; If the graph was created from FastGraph, the time-series order should be broken.
 	;; call verify-graph to sort them.
-	(verify-graph graph) ;; needed? SLOW
 	(make-avm graph (session-name session)
 		  (session-tid->tensor session)
 		  (if pause-backward-p
