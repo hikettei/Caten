@@ -125,12 +125,13 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 
 (See also: `./source/aasm/constant-folding.lisp`)
 "
-  (with-gensyms (simplifier-bind apply-bind1 apply-bind2 count-bind fast-graph-p seen changed-p)
+  (with-gensyms (simplifier-bind apply-bind1 apply-bind2 count-bind fast-graph-p seen changed-p counter n-nodes)
     (let ((node-top '*node-top*) (graph '*graph-bind*))
-      `(defun ,name (,graph &key (no-verify nil) (return-changed-p nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil) (,changed-p nil))
+      `(defun ,name (,graph &key (no-verify nil) (return-changed-p nil) (debug-opt nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil) (,changed-p nil) (,counter 0) (,n-nodes (length (the list (graph-nodes ,graph)))))
          (declare (type graph ,graph)
 		  (type boolean no-verify return-changed-p ,fast-graph-p ,changed-p)
 		  (type list ,seen)
+                  (type fixnum ,counter)
 		  (optimize (speed ,speed)))
          (unless ,fast-graph-p (when (null (graph-nodes ,graph)) (return-from ,name)))
          (unless no-verify (verify-graph ,graph))
@@ -144,7 +145,8 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 						  collect o))))
 		    (declare (type list *matched-bind*))
                     ;; (when fixed-writes-to (return-from ,simplifier-bind))
-		    (when (null ,node-top) (return-from ,simplifier-bind))		  
+		    (when (null ,node-top) (return-from ,simplifier-bind))
+	            (incf ,counter)
 		    (multiple-value-bind (replace-rule matched)
 		        (match ,node-top
 			  ,@(map 'list #'(lambda (x) (parse-rule x node-top graph)) rules)
@@ -193,6 +195,7 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 	       (loop while (and (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph)))
                                 (progn (setf ,seen nil) (setf ,changed-p t))))
 	       (loop while (and (,apply-bind1 ,graph) (setf ,changed-p t))))
+           (when debug-opt (format t "~a: ~a calls for ~a nodes (~a%)~%" ',name ,counter ,n-nodes (float (/ ,n-nodes ,counter))))
 	   (unless no-verify (verify-graph ,graph))
 	   (when return-changed-p (return-from ,name ,changed-p))
 	   ,graph)))))

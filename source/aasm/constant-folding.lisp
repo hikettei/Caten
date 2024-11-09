@@ -137,7 +137,7 @@
      ->
      ((node graph) (sfold-view ss node graph nrank broadcast permute))))
 
-(defun fold-constant (graph)
-  (apply-fold-constant graph)
-  (fuse-vmops graph)
+(defun fold-constant (graph &key (debug-opt nil))
+  (apply-fold-constant graph :debug-opt debug-opt)
+  (fuse-vmops graph :debug-opt debug-opt)
   graph)
