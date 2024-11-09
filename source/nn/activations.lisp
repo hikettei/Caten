@@ -121,8 +121,7 @@
   (let ((x (car inputs))
         (min_val (slot-value op 'min_val))
         (max_val (slot-value op 'max_val)))
-    (!minimum (!maximum x (!const x min_val)) (!const x max_val))
-    ))
+    (!minimum (!maximum x (!const x min_val)) (!const x max_val))))
 (defun !hardtanh (x &key (min_val -1.0) (max_val 1.0)) (forward (HardTanh :min_val min_val :max_val max_val) x))
 
 (defmodel (Softmin () :where "A[~] -> A[~]") ())
