@@ -256,7 +256,8 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
 
 (defun remove-extra-node-writes-to (schedule-node)
   (assert (eql (node-type schedule-node) :Schedule-Item))
-  (when (getattr schedule-node :jitable)
+  (when (and (getattr schedule-node :jitable)
+             (not (= 0 (length (getattr schedule-node :storage-id-dst)))))
     (setf (node-writes schedule-node)
           (loop for d in (getattr schedule-node :storage-id-dst)
                 for id in (node-writes schedule-node)

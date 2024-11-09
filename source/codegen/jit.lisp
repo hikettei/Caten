@@ -138,7 +138,6 @@ caten/codegen overview:
                (getattr si :rendered-object)))))
 
 (defun make-compiled-kernel-node (si graph)
-  (assert (= (length (node-writes si)) (length (getattr si :storage-id-dst))))
   (make-node :JIT :JIT_KERNEL (node-writes si)
              (append
               (getattr si :storage-id-dst) ;; optimized by memory-planner
