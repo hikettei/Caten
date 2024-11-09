@@ -84,7 +84,7 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
     (verify-graph graph)
     graph))
 
-(defun optimize-aasm (graph)
-  (fold-constant graph)
+(defun optimize-aasm (graph &key (debug-opt nil))
+  (fold-constant graph :debug-opt debug-opt)
   (simplify-dynamic-arithmetic graph)
   (fuse-duplicated-store graph))

@@ -105,7 +105,8 @@
 (defvar *node-top* nil)
 (defvar *graph-bind* nil)
 (defpattern <Rule> (&rest form) (find/replace-rules form '*graph-bind* t))
-
+;; Simplifier Computation Order:
+;; - FastGraph: O(n) where n = the depth of rewriting patterns
 (defmacro defsimplifier ((name &key (speed 3)) &rest rules)
   "
 ```
@@ -125,12 +126,13 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 
 (See also: `./source/aasm/constant-folding.lisp`)
 "
-  (with-gensyms (simplifier-bind apply-bind1 apply-bind2 count-bind fast-graph-p seen changed-p)
+  (with-gensyms (simplifier-bind apply-bind1 apply-bind2 count-bind fast-graph-p seen changed-p counter n-nodes)
     (let ((node-top '*node-top*) (graph '*graph-bind*))
-      `(defun ,name (,graph &key (no-verify nil) (return-changed-p nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil) (,changed-p nil))
+      `(defun ,name (,graph &key (no-verify nil) (return-changed-p nil) (debug-opt nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil) (,changed-p nil) (,counter 0) (,n-nodes (length (the list (graph-nodes ,graph)))))
          (declare (type graph ,graph)
 		  (type boolean no-verify return-changed-p ,fast-graph-p ,changed-p)
 		  (type list ,seen)
+                  (type fixnum ,counter)
 		  (optimize (speed ,speed)))
          (unless ,fast-graph-p (when (null (graph-nodes ,graph)) (return-from ,name)))
          (unless no-verify (verify-graph ,graph))
@@ -144,7 +146,8 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 						  collect o))))
 		    (declare (type list *matched-bind*))
                     ;; (when fixed-writes-to (return-from ,simplifier-bind))
-		    (when (null ,node-top) (return-from ,simplifier-bind))		  
+		    (when (null ,node-top) (return-from ,simplifier-bind))
+	            (incf ,counter)
 		    (multiple-value-bind (replace-rule matched)
 		        (match ,node-top
 			  ,@(map 'list #'(lambda (x) (parse-rule x node-top graph)) rules)
@@ -180,19 +183,20 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 		      (when (,simplifier-bind (nth nth (the list (graph-nodes graph))) nth)
 		        (setf changed-p t)))
 		    changed-p)
-		  (,apply-bind2 (id &key (changed-p nil))
+		  (,apply-bind2 (id)
 		    (let ((node (gethash id (%graph-nodes-table ,graph))))
 		      (when node
 		        (when (null (find (the symbol id) (the list ,seen) :test #'eq))
 			  (push id ,seen)
 			  (when (,simplifier-bind node -1)
-			    (setf changed-p t))
-                          ;; If changed path was found => restart from the top of graph
-                          (or changed-p (some #'identity (map 'list #',apply-bind2 (node-reads node)))))))))
+                            (some #'identity (map 'list #',apply-bind2 (node-reads node)))
+                            (return-from ,apply-bind2 t))
+                          (some #'identity (map 'list #',apply-bind2 (node-reads node))))))))
 	   (if ,fast-graph-p
 	       (loop while (and (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph)))
                                 (progn (setf ,seen nil) (setf ,changed-p t))))
 	       (loop while (and (,apply-bind1 ,graph) (setf ,changed-p t))))
+           (when debug-opt (format t "~a: ~a calls for ~a nodes (~a%)~%" ',name ,counter ,n-nodes (float (* 100.0 (/ ,counter ,n-nodes)))))
 	   (unless no-verify (verify-graph ,graph))
 	   (when return-changed-p (return-from ,name ,changed-p))
 	   ,graph)))))
