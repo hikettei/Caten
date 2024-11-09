@@ -254,6 +254,14 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
     ;; (values counter total_size[GB])
     (values tensor-counter (float (/ total-size 8e+9)))))
 
+(defun remove-extra-node-writes-to (schedule-node)
+  (assert (eql (node-type schedule-node) :Schedule-Item))
+  (when (getattr schedule-node :jitable)
+    (setf (node-writes schedule-node)
+          (loop for d in (getattr schedule-node :storage-id-dst)
+                for id in (node-writes schedule-node)
+                collect id))))
+
 (defmethod run-memory-planner ((schedule-graph Graph) (symbolics list) (base-graph Graph))
   (let ((static-graph-p (null symbolics)))
     (multiple-value-bind (before-count before-size)
@@ -266,6 +274,7 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
       ;; Second, applying the memory-planner in the schedule-graph level
       ;; The goal here is to reduce the number of :allocate-p object in schedule-graph.
       (run-memory-planner-global schedule-graph symbolics base-graph)
+      (mapc #'remove-extra-node-writes-to (graph-nodes schedule-graph))
       (multiple-value-bind (after-count after-size)
           (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate schedule-graph static-graph-p))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
