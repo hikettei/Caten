@@ -185,6 +185,36 @@ Converts the given graph to a fast graph.
 	(setf result (nconc result (get-parents out)))))
     (make-instance 'Graph :output (graph-outputs fast-graph) :seen (graph-seen fast-graph) :nodes result)))
 
+(defmethod tpsort-graph ((graph Graph))
+  (declare (type Graph graph) (optimize (speed 3)))
+  (let ((sorted-nodes) (queue) (in-degrees (make-hash-table)) (out-degrees (make-hash-table)))
+    (declare (type list sorted-nodes queue) (type hash-table in-degrees out-degrees))
+    (flet ((butseen (list)
+             (loop for l in list
+                   for v = (id->value graph l)
+                   if (and v (symbolp l) (not (find l (the list (graph-seen graph)))))
+                     collect v)))
+      (loop for node in (graph-nodes graph) do
+        (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
+        (dolist (r (butseen (node-reads node)))
+          (when (null (find (the symbol (node-id node)) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
+            (push node (gethash (node-id r) out-degrees))))
+        (when (null (gethash (node-id node) in-degrees))
+          (push node queue)))
+      (loop while queue
+            for node = (pop queue) do
+              (push node sorted-nodes)
+              (dolist (adj (gethash (node-id node) out-degrees))
+                (setf (gethash (node-id adj) in-degrees) (remove (node-id node) (gethash (node-id adj) in-degrees) :key #'node-id))
+                (when (null (gethash (node-id adj) in-degrees))
+                  (push adj queue)))
+              (remhash (node-id node) out-degrees))
+      (assert (= 0 (hash-table-count out-degrees)) () "Graph is not a DAG.")
+      (nreverse sorted-nodes))))
+
+(defmethod ->graph-with-tpsort ((fast-graph FastGraph))
+  (make-instance 'Graph :output (graph-outputs fast-graph) :seen (graph-seen fast-graph) :nodes (tpsort-graph fast-graph)))
+
 (defgeneric verify-graph (graph &key no-purge) (:documentation "
 ```
 (verify-graph graph &key no-purge)
