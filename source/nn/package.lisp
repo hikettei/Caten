@@ -58,6 +58,9 @@ Policy:
    #:HardSwish
    #:!hardswish
 
+   #:Mish
+   #:!mish
+
    #:HardTanh
    #:!hardtanh
 
