@@ -106,24 +106,23 @@
 (defmodel (SeLU () :where "A[~] -> A[~]") ())
 (defmethod call ((op SeLU) &rest inputs &aux (x (car inputs))) (!mul (!elu x :alpha 1.67326) (!const x 1.0507)))
 (defun !selu (x) (forward (SeLU) x))
-;; TODO: Mish (needs tanh)
+
 ;(defmodel (Mish () :where "A[~] -> A[~]") ())
-;(defmethod call ((op Mish) &rest inputs &aux (x (car inputs))) (!mul x (tanh (!softplus x))))
+;(defmethod call ((op Mish) &rest inputs &aux (x (car inputs))) (!mul x (!tanh (!softplus x))))
 ;(defun !mish (x) (forward (Mish) x))
 
 (defmodel (HardSwish () :where "A[~] -> A[~]") ())
 (defmethod call ((op HardSwish) &rest inputs &aux (x (car inputs)))
   (!* x (!relu6 (!add x (!const x 3))) (!const x (/ 1 6))))
 (defun !hardswish (x) (forward (HardSwish) x))
-;; TODO: Hard_Tanh
+
 (defmodel (HardTanh (&key (min_val -1.0) (max_val 1.0)) :where "A[~] -> A[~]") ((min_val min_val) (max_val max_val)) )
 (defmethod call ((op HardTanh) &rest inputs)
   (let ((x (car inputs))
         (min_val (slot-value op 'min_val))
         (max_val (slot-value op 'max_val)))
     (!minimum (!maximum x (!const x min_val)) (!const x max_val))
-    )
-  )
+    ))
 (defun !hardtanh (x &key (min_val -1.0) (max_val 1.0)) (forward (HardTanh :min_val min_val :max_val max_val) x))
 
 (defmodel (Softmin () :where "A[~] -> A[~]") ())
@@ -317,7 +316,7 @@
   :kernel   ((model) (= 1 (n-kernels model))))
 
 
-(defun hardtanh-lisp (x &aux  (min_val -1.0)(max_val 1.0))(cond ((> x max_val) max_val)((< x min_val) min_val)(t x)))
+(defun hardtanh-lisp (x &aux (min_val -1.0) (max_val 1.0)) (cond ((> x max_val) max_val) ((< x min_val) min_val) (t x)))
 (define-nn-test HardTanh
   "Testing w/ HardTanh([100, 100])"
   :compile (caten (!hardtanh (make-tensor `(100 100) :from 'x)))
@@ -331,8 +330,7 @@
 (define-nn-test Softmin
   "Testing w/ Softmin([512, 256])"
   :compile (caten (!softmin (make-tensor `(512 256) :from 'x)))
-  :inputs (ctx:with-contextvar (:jit 0 :avm :lisp)
-            (list (proceed (!rand `(512 256)))))
+  :inputs (list (proceed (!rand `(512 256))))
   :caten ((model x) (forward model `(x . ,x)))
   :lisp  ((model x) (proceed (!softmin x)))
   :assert-close ((x y)
