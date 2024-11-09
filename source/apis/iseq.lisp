@@ -233,7 +233,7 @@
       ;; (Forward Mode) First, Simplify the forward graph in :Module/:Func level
       (dolist (f external-simplifiers) (funcall f forward-graph))
       ;; Second, lower an :module into a list of :func
-      (lower-all forward-graph) ;; lower-all is O(N)
+      (time (lower-all forward-graph)) ;; SLOW
       ;; (Backward Mode) First, create a reverse-mode backward tape from the sorted forward graph.
       ;; the tapes consequent after the allocation of prev-grad.
       (when (null no-grad) (setf iseq-bw (%make-graph-backward session iseq :iseq-bw iseq-bw)))
@@ -268,7 +268,7 @@
 	  (let ((merged-graph (->fast-graph merged-graph)))
             (lower-all merged-graph)
 	    ;; Function-level whole optimization
-            (dolist (f external-simplifiers)
+            (dolist (f external-simplifiers) ;; Slow but O(n)
               (funcall f merged-graph :debug-opt (= 1 (the fixnum (ctx:getenv :PROFILE_SIMPLIFIER)))))
 	    ;; verify and complete
             (verify-graph merged-graph)
