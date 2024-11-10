@@ -1,4 +1,5 @@
 (in-package :caten/nn)
+
 (defun conv-out-size (in padding dilation kernel-size stride)
   ;; TODO: Support Symbolic (needs !floor function)
   (floor (+ 1 (/ (+ in (* 2 padding) (* (- dilation) (- kernel-size 1)) -1) stride))))
@@ -43,8 +44,7 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
     (with-attrs ((groups :groups) (kernel-size :kernel-size) (in-channels :in-channels) (out-channels :out-channels) (requires-bias :bias)) conv
       (when (null weight)
 	(let ((k (/ groups (* in-channels (apply #'* kernel-size)))))
-	  (setf (convnd-weight conv)
-		(uniform `(,out-channels ,(/ in-channels groups) ,@kernel-size) :low (- (sqrt k)) :high (sqrt k) :requires-grad t))
+	  (setf (convnd-weight conv) (uniform `(,out-channels ,(/ in-channels groups) ,@kernel-size) :low (- (sqrt k)) :high (sqrt k) :requires-grad t))
 	  (when (and requires-bias (null bias))
 	    (setf (convnd-bias conv) (uniform`(,out-channels) :low (- (sqrt k)) :high (sqrt k) :requires-grad t))))))))
 
@@ -82,8 +82,21 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 		  (assert (tensor-p (convnd-bias conv)) () "Bias for ~a should be a Tensor, getting ~a" conv (convnd-bias conv))
 		  (!add x (!reshape (convnd-bias conv) (append (list 1) (list out-channels) (loop repeat (length hw) collect 1)))))
 		x)))))))
+
+(defun !convnd (x weight &key (bias nil) (groups 1) (stride 1) (dilation 1) (padding 0))
+  "
+```
+(!convnd x weight &key (bias nil) (groups 1) (stride 1) (dilation 1) (padding 0))
+```
+Applies a convolutional layer over a tensor `x` with a given `weight` and optional `bias`."
+  (declare (type Tensor x weight) (type (or null Tensor) bias))
+  (assert (>= (ndim weight) 3) () "!convnd: weight should have at least 3 dimensions, got ~a" (ndim weight))
+  (multiple-value-bind (c-in c-out kernel-size)
+      (values (second (shape x)) (first (shape weight)) (subseq (shape weight) 2))
+    (st "X[N C_in ~HW] Weight[C_out C_in/Group ~KERNEL_SIZE] -> X[N C_out ~KERNEL_SIZE]" (x weight) (:c-in/group . (/ c-in groups)))
+    (when bias (st "Weight[C_out C_in/Group ~KERNEL_SIZE] Bias[C_out] -> Weight[N C_in ~KERNEL_SIZE]" (weight bias) (:c-in/group . (/ c-in groups))))
+    (let ((convnd (ConvND c-in c-out kernel-size :groups groups :stride stride :dilation dilation :padding padding :bias (if bias t nil))))
+      (setf (convnd-weight convnd) weight (convnd-bias convnd) bias)
+      (forward convnd x))))
 ;; TODO: (defmethod export-to-onnx ((conv ConvND) x) ...)
 (in-package :caten/nn.test)
-
-;;(define-nn-test ConvND)
-;;(define-nn-test ConvND+ReLU)
