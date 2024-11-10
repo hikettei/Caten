@@ -185,6 +185,8 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
            (alias-map (make-hash-table)))
       (loop for mb in solved
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
+      ;; Note(hikettei): is this recursively applied? especially for schedule cached and big graph.
+      ;; As of this writing(2024/11/10), i am unsure if this is correct. Should be tested by GPT2 in the next pr.
       (labels ((newid (id)
                  (if (gethash id alias-map)
                      (if (eql (gethash id alias-map) id)
