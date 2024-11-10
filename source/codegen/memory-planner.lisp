@@ -80,10 +80,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (let ((node (id->value graph id)))
     (when (and node (eql (node-type node) :Allocate))
       (when (getattr node :from)
-        ;; If :from is specified => the input should not be destructed.
+        ;; Memory Planner is not allowed to destruct the input. (like: having a weight/parameter)
         t))))
 
 (defun rewrite-bp-with-newid (item newid)
+  "Rewrites the given schedule item with newid"
   (dolist (bp (getattr item :blueprint))
     (setf (node-writes bp) (map 'list newid (node-writes bp))
           (node-reads bp) (map 'list newid (node-reads bp)))
@@ -195,17 +196,17 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                          (newid (gethash id alias-map)))
                      id)))
         (when (>= (ctx:getenv :JIT_DEBUG) 4)
-          (format t "[DEBUG] MemoryPlanner: alias-map~%")
+          (format t "[DEBUG] MemoryPlanner: minimized alias-map~%")
           (maphash
            #'(lambda (k v)
-               (format t "|~a -> ~a[~a]~%" k (newid k) v))
+               (format t "   | newid(~a) = ~a, alias-map[~a] = ~a~%" k (newid k) k v))
            alias-map))
         (assert (equal outputs (map 'list #'newid outputs)) () "memory-planner: the value of constants are immutable. ~a -> ~a" outputs (map 'list #'newid outputs))
         (dolist (node (graph-nodes schedule-graph))
           (rewrite-bp-with-newid node #'newid))))))
 
 (defun buffer-sizeof (buffer)
-  "Returns the size of the buffer in bits"
+  "Computes the size of the buffer in bits."
   (assert (every #'numberp (buffer-shape buffer)))
   (* (apply #'* (buffer-shape buffer)) (caten/common.dtype:dtype/size-of (buffer-dtype buffer))))
 
