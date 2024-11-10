@@ -11,3 +11,33 @@
            (ok (every #'= vals #(4.0 6.0 8.0 10.0 20.0 22.0 24.0 26.0 36.0 38.0 40.0 42.0 52.0 54.0 56.0 58.0)))))))))
 
 ;; [TODO] Adding more failing case here ...
+;; Test Various View Combinations here: like: !reshape + !permute
+;; To find out why ConvND is failing
+(defun action->caten-view (bind actions)
+  (when (null actions) (return-from action->caten-view bind))
+  (trivia:ematch (car actions)
+    ((list* :reshape _) `(!reshape ,(action->caten-view bind (cdr actions)) ,@(cdr (car actions))))
+    ((list* :permute _) `(!permute ,(action->caten-view bind (cdr actions)) ,@(cdr (car actions))))))
+
+(defun action->npview (bind actions)
+  (when (null actions) (return-from action->npview bind))
+  (trivia:ematch (car actions)
+    ((list* :reshape _) `(np:reshape   ,(action->npview bind (cdr actions)) ,@(cdr (car actions))))
+    ((list* :permute _) `(np:transpose ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))))
+
+(defmacro define-view-test (name shape &rest actions &aux (actions (reverse actions)))
+  "Translates actions into Caten/PyTorch codes, checking they have the same result."
+  `(deftest ,name
+     (testing ,(format nil "Testing: ~(~a~)" (action->caten-view 'x actions))
+       (let ((x (linspace ',shape 1 0)))
+         (let ((caten (elements (proceed (!contiguous ,(action->caten-view 'x actions) :force t))))
+               (numpy
+                 (let ((x (->numpy x)))
+                   ,(action->npview 'x actions))))
+           (ok (every #'= caten numpy) (format nil "~a = ~a vs ~a" ',(action->caten-view 'x actions) caten numpy)))))))
+
+(define-view-test permute+reshape (10 10)
+  (:permute 1 0)
+  (:reshape 100))
+
+;; (run-test 'permute+reshape)
