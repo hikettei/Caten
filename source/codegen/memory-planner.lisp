@@ -151,8 +151,8 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
               symbolics
               (loop for node in (graph-nodes schedule-graph)
                     if (not (eql (node-id node) (node-id item)))
-                      append (node-reads node))))
-	 (constants))
+                      append (node-reads node)))))
+    (dolist (o outputs) (setf (gethash o lock-table) t))
     (loop for node in blueprint
 	  for nth upfrom 0
           if (not (eql (node-class node) :Render)) do
@@ -160,7 +160,7 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
 		  for typ in (relay-reads (read-type-relay node))
 		  for time = `(,nth ,@(gethash val trace-table))
                   if (id-is-input-p val base-graph) do (push val outputs)
-                  if (and (symbolp val) (null (find val constants)))
+                  if (symbolp val)
                     do (setf (gethash val id2type) typ (gethash val trace-table) time)) ;; (incf consume)
 	    (loop for val in (node-writes node)
 		  for typ in (relay-writes (read-type-relay node))
@@ -192,6 +192,7 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
       (loop for mb in solved
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
       (flet ((newid (id) (or (gethash id alias-map) id)))
+        (assert (equal outputs (map 'list #'newid outputs)) () "memory-planner: the value of constants are immutable. ~a -> ~a" outputs (map 'list #'newid outputs))
         (dolist (bp (getattr item :blueprint))
           (setf (node-writes bp) (map 'list #'newid (node-writes bp))
                 (node-reads bp) (map 'list #'newid (node-reads bp)))
