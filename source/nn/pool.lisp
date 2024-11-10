@@ -64,9 +64,9 @@
      (dilation dilation)
      (padding padding)))
 
-(defmethod call ((pool AvgPool2D) x)
+(defmethod call ((pool AvgPool2D) &rest inputs)
   (with-attrs ((kernel-size :kernel-size) (stride :stride) (dilation :dilation) (padding :padding)) pool
-    (make-pooling x #'!mean kernel-size :stride stride :dilation dilation :padding padding)))
+    (make-pooling (car inputs) #'!mean kernel-size :stride stride :dilation dilation :padding padding)))
 
 (defun !avgpool2d (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0))
   ""
@@ -79,9 +79,9 @@
      (dilation dilation)
      (padding padding)))
 
-(defmethod call ((pool MaxPool2d) x)
+(defmethod call ((pool MaxPool2d) &rest inputs)
   (with-attrs ((kernel-size :kernel-size) (stride :stride) (dilation :dilation) (padding :padding)) pool
-    (make-pooling x #'!max kernel-size :stride stride :dilation dilation :padding padding :pad-value (-inf))))
+    (make-pooling (car inputs) #'!max kernel-size :stride stride :dilation dilation :padding padding :pad-value (-inf))))
 
 (defun !maxpool2d (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0))
   ""
