@@ -81,14 +81,16 @@ Policy:
    #:!convnd
    #:convnd-weight
    #:convnd-bias)
-
   ;; from padding.lisp
   (:export
    #:!padding
    #:!padding2d)
   ;; from pool.lisp
   (:export
-   )
+   #:AvgPool2D
+   #:!avgpool2d
+   #:MaxPool2D
+   #:!maxpool2d)
   ;; from linear.lisp
   (:export
    #:Linear))

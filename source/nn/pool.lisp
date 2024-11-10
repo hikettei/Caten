@@ -42,14 +42,50 @@
 	      (!permute xup (append (range 0 (length noop_)) (loop for _ in i_ for i upfrom 0 collect (+ 1 (length noop_) (* i 2))) (loop for _ in i_ for i upfrom 0 collect (+ (length noop_) (* i 2))))))
 	    (progn
 	      ;; xup = self.pad(tuple(noop_ + [(0, max(0,o*s-i)) for i,o,s in zip(i_, o_, s_)]))
-	      (let* ((xup (!padding x (append noop_ (loop for i in i_ for o in o_ for s in s_ collect (list 0 (* o (- s i)))))))
+	      (let* ((xup (!padding x (append noop_ (loop for i in i_ for o in o_ for s in s_ collect (list 0 (- (* o s) i))))))
 		     ;; xup = xup.shrink(tuple(noop_ + [(0,o*s) for o,s in zip(o_, s_)]))
-		     (xup (apply #'!view xup (append (loop for o in o_ for s in s_ collect (list 0 (* s o))))))
+		     (xup (apply #'!view xup (append noop_ (loop for o in o_ for s in s_ collect (list 0 (* s o))))))
 		     ;; xup = xup.reshape(noop_ + flatten(((o,s) for o,s in zip(o_, s_))))
 		     (xup (!reshape xup (append noop1_ (loop for o in o_ for s in s_ collect (list o s)))))
 		     ;; xup = xup.shrink(noop_ + flatten(((0,o), (0,k)) for o,k in zip(o_, k_)))
 		     (xup (apply #'!view xup (append noop_ (loop for o in o_ for k in k_ append (list (list 0 o) (list 0 k)))))))
 		(!permute xup (append (range 0 (length noop_)) (loop for _ in i_ for i upfrom 0 collect (+ (length noop_) (* i 2))) (loop for _ in i_ for i upfrom 0 collect (+ 1 (length noop_) (* i 2))))))))))))
 
-(in-package :caten/nn.test)
+(defun make-pooling (x f kernel-size &key (stride nil) (dilation 1) (padding 0) (pad-value 0.0))
+  (declare (type Tensor x) (type function f))
+  (let* ((k_ (if (integerp kernel-size) (list kernel-size kernel-size) kernel-size))
+         (x (!padding2d x (padding2d-shape padding (length k_)) :value pad-value))
+         (x (_pool x k_ (or stride k_) dilation)))
+    (funcall f x :axis (map 'list #'- (range 0 (length k_))))))
+;; ~~ apis ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmodel (AvgPool2D (kernel-size &key (stride nil) (dilation 1) (padding 0)))
+    ((kernel-size kernel-size)
+     (stride stride)
+     (dilation dilation)
+     (padding padding)))
 
+(defmethod call ((pool AvgPool2D) x)
+  (with-attrs ((kernel-size :kernel-size) (stride :stride) (dilation :dilation) (padding :padding)) pool
+    (make-pooling x #'!mean kernel-size :stride stride :dilation dilation :padding padding)))
+
+(defun !avgpool2d (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0))
+  ""
+  (declare (type list kernel-size))
+  (forward (AvgPool2D kernel-size :stride stride :dilation dilation :padding padding) x))
+
+(defmodel (MaxPool2D (kernel-size &key (stride nil) (dilation 1) (padding 0)))
+    ((kernel-size kernel-size)
+     (stride stride)
+     (dilation dilation)
+     (padding padding)))
+
+(defmethod call ((pool MaxPool2d) x)
+  (with-attrs ((kernel-size :kernel-size) (stride :stride) (dilation :dilation) (padding :padding)) pool
+    (make-pooling x #'!max kernel-size :stride stride :dilation dilation :padding padding :pad-value (-inf))))
+
+(defun !maxpool2d (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0))
+  ""
+  (declare (type list kernel-size))
+  (forward (MaxPool2D kernel-size :stride stride :dilation dilation :padding padding) x))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(in-package :caten/nn.test)

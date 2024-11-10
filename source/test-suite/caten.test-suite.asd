@@ -12,6 +12,7 @@ Tests that are not related to the core functionality of Caten or are time-consum
 	       (:file "test-llm")
 	       (:file "test-gemm")
 	       (:file "test-conv")
+               (:file "test-pool")
                (:file "test-shape-tracker")
                (:file "test-schedule")
                (:file "test-dynamic-shape")
