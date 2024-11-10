@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/memory-planner
-  (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr)
+  (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr :alexandria)
   (:export
    #:run-memory-planner))
 (in-package :caten/codegen/memory-planner)
@@ -83,6 +83,38 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
         ;; If :from is specified => the input should not be destructed.
         t))))
 
+(defun rewrite-bp-with-newid (item newid)
+  (dolist (bp (getattr item :blueprint))
+    (setf (node-writes bp) (map 'list newid (node-writes bp))
+          (node-reads bp) (map 'list newid (node-reads bp)))
+    (when (eql (node-type bp) :EXPR)
+      (dolist (item (graph-nodes (expr-graph (getattr bp :EXPR))))
+        (when (eql (node-type item) :AREF)
+          (setf (getattr item :storage-id) (funcall newid (car (node-writes item))))))))
+  ;; Remove Duplicated :DEFINE_GLOBAL
+  (setf (getattr item :blueprint)
+        (loop with seen = nil
+              for item in (getattr item :blueprint)
+              if (or (not (eql (node-type item) :DEFINE-GLOBAL))
+                     (null (find (car (node-writes item)) seen)))
+                collect item
+              if (eql (node-type item) :DEFINE-GLOBAL)
+                do (push (car (node-writes item)) seen)))
+  (let* ((reads (map 'list #'cons (getattr item :storage-id-src) (getattr item :read-types)))
+         (writes (map 'list #'cons (getattr item :storage-id-dst) (getattr item :write-types)))
+         (reads (remove-duplicates reads :key (compose newid #'car)))
+         (writes (remove-duplicates writes :key (compose newid #'car)))
+         (seen))
+    (flet ((only-unseen (items)
+             (loop for (id . type) in items
+                   if (null (find (funcall newid id) seen))
+                     do (push (funcall newid id) seen) and collect (cons id type))))
+      (multiple-value-bind (writes reads) (values (only-unseen writes) (only-unseen reads))
+        (setf (getattr item :storage-id-src) (map 'list (compose newid #'car) reads)
+              (getattr item :storage-id-dst) (map 'list (compose newid #'car) writes)
+              (getattr item :read-types) (map 'list #'cdr reads)
+              (getattr item :write-types) (map 'list #'cdr writes))))))
+
 (defmethod run-memory-planner-global ((schedule-graph Graph) (symbolics list) (base-graph Graph))
   "write_1, write_2 = f(write_suite_1, write_suite_2, *[dynamic_shape + read_buffers])
 The goal of run-memory-planner is to reduce the number of :allocate-p object in schedule-graph, by rewriting write_suite1 and write_suite2."
@@ -144,8 +176,7 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
       (flet ((newid (id) (or (gethash id alias-map) id)))
         (dolist (node (graph-nodes schedule-graph))
           (when (getattr node :jitable)
-            ;; (setf (getattr node :storage-id-dst) (map 'list #'newid (getattr node :storage-id-dst)))
-            ))))))
+            (rewrite-bp-with-newid node #'newid)))))))
 
 (defun run-memory-planner-local (item schedule-graph symbolics base-graph)
   "Minimizes the number of allocation buffers that are only used in the item."
@@ -204,36 +235,8 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
       (flet ((newid (id) (or (gethash id alias-map) id)))
         (assert (equal outputs (map 'list #'newid outputs)) () "memory-planner: the value of constants are immutable. ~a -> ~a" outputs (map 'list #'newid outputs))
-        (dolist (bp (getattr item :blueprint))
-          (setf (node-writes bp) (map 'list #'newid (node-writes bp))
-                (node-reads bp) (map 'list #'newid (node-reads bp)))
-          (when (eql (node-type bp) :EXPR)
-            (dolist (item (graph-nodes (expr-graph (getattr bp :EXPR))))
-              (when (eql (node-type item) :AREF)
-                (setf (getattr item :storage-id) (newid (car (node-writes item))))))))
-        ;; remove duplicated define-global
-        (setf (getattr item :blueprint)
-              (loop with seen = nil
-                    for item in (getattr item :blueprint)
-                    if (or (not (eql (node-type item) :DEFINE-GLOBAL))
-                           (null (find (car (node-writes item)) seen)))
-                      collect item
-                    if (eql (node-type item) :DEFINE-GLOBAL)
-                      do (push (car (node-writes item)) seen)))
-        (let* ((reads (map 'list #'cons (getattr item :storage-id-src) (getattr item :read-types)))
-               (writes (map 'list #'cons (getattr item :storage-id-dst) (getattr item :write-types)))
-               (reads (remove-duplicates reads :key (alexandria:compose #'newid #'car)))
-               (writes (remove-duplicates writes :key (alexandria:compose #'newid #'car)))
-               (seen))
-          (flet ((only-unseen (items)
-                   (loop for (id . type) in items
-                         if (null (find (newid id) seen))
-                           do (push (newid id) seen) and collect (cons id type))))
-            (multiple-value-bind (reads writes) (values (only-unseen reads) (only-unseen writes))
-              (setf (getattr item :storage-id-src) (map 'list (alexandria:compose #'newid #'car) reads)
-                    (getattr item :storage-id-dst)  (map 'list (alexandria:compose #'newid #'car) writes)
-                    (getattr item :read-types) (map 'list #'cdr reads)
-                    (getattr item :write-types) (map 'list #'cdr writes))))))
+        (rewrite-bp-with-newid item #'newid)
+        )
       alias-map)))
 
 (defun buffer-sizeof (buffer)
