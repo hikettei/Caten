@@ -10,10 +10,8 @@
          (let ((vals (buffer-value (tensor-buffer (proceed (!add (!reshape b `(2 2 1 4)) (!reshape c `(2 2 1 4))))))))
            (ok (every #'= vals #(4.0 6.0 8.0 10.0 20.0 22.0 24.0 26.0 36.0 38.0 40.0 42.0 52.0 54.0 56.0 58.0)))))))))
 
-;; [TODO] Adding more failing case here ...
-;; Test Various View Combinations here: like: !reshape + !permute
-;; To find out why ConvND is failing
-;; reshape/permute/slice/broadcast
+(eval-when (:compile-toplevel :execute :load-toplevel)
+
 (defun action->caten-view (bind actions)
   (when (null actions) (return-from action->caten-view bind))
   (trivia:ematch (car actions)
@@ -62,6 +60,8 @@
                                           `(slice ,(second subscript) ,(car subscript) ,(third subscript))
                                           `(slice ,@subscript))))))))
 
+) ;; eval-when
+
 (defmacro define-view-test (name shape &rest actions &aux (actions (reverse actions)))
   "Translates actions into Caten/PyTorch codes, checking they have the same result."
   `(deftest ,name
@@ -86,4 +86,5 @@
 
 (define-view-test bc (1 10)
   (:broadcast 10 t))
+;; [TODO] More Compose Case ...
 
