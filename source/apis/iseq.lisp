@@ -233,7 +233,7 @@
       ;; (Forward Mode) First, Simplify the forward graph in :Module/:Func level
       (dolist (f external-simplifiers) (funcall f forward-graph))
       ;; Second, lower an :module into a list of :func
-      (time (lower-all forward-graph)) ;; SLOW
+      (lower-all forward-graph) ;; SLOW
       ;; (Backward Mode) First, create a reverse-mode backward tape from the sorted forward graph.
       ;; the tapes consequent after the allocation of prev-grad.
       (when (null no-grad) (setf iseq-bw (%make-graph-backward session iseq :iseq-bw iseq-bw)))
