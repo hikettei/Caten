@@ -102,14 +102,32 @@
   (!mul x (!sigmoid (!* (!const x 1.702) x))))
 (defmethod call ((op GeLU) &rest inputs) (gelu/call op (slot-value op 'approx) (car inputs)))
 (defun !gelu (x &key (approx :tanh)) (forward (GeLU :approx approx) x))
-;; TODO: SeLU
-;; TODO: Mish (needs tanh)
+
+(defmodel (SeLU () :where "A[~] -> A[~]") ())
+(defmethod call ((op SeLU) &rest inputs &aux (x (car inputs))) (!mul (!elu x :alpha 1.67326) (!const x 1.0507)))
+(defun !selu (x) (forward (SeLU) x))
+
+(defmodel (Mish () :where "A[~] -> A[~]") ())
+(defmethod call ((op Mish) &rest inputs &aux (x (car inputs))) (!mul x (!tanh (!softplus x))))
+(defun !mish (x) (forward (Mish) x))
+
 (defmodel (HardSwish () :where "A[~] -> A[~]") ())
 (defmethod call ((op HardSwish) &rest inputs &aux (x (car inputs)))
   (!* x (!relu6 (!add x (!const x 3))) (!const x (/ 1 6))))
 (defun !hardswish (x) (forward (HardSwish) x))
-;; TODO: Hard_Tanh
-;; TODO: Softmin
+
+(defmodel (HardTanh (&key (min_val -1.0) (max_val 1.0)) :where "A[~] -> A[~]") ((min_val min_val) (max_val max_val)) )
+(defmethod call ((op HardTanh) &rest inputs)
+  (let ((x (car inputs))
+        (min_val (slot-value op 'min_val))
+        (max_val (slot-value op 'max_val)))
+    (!minimum (!maximum x (!const x min_val)) (!const x max_val))))
+(defun !hardtanh (x &key (min_val -1.0) (max_val 1.0)) (forward (HardTanh :min_val min_val :max_val max_val) x))
+
+(defmodel (Softmin () :where "A[~] -> A[~]") ())
+(defmethod call ((op Softmin) &rest inputs &aux (x (car inputs))) (!softmax (!neg x)))
+(defun !softmin (x) (forward (Softmin) x))
+
 (in-package :caten/nn.test)
 ;; TODO: Implement Assert Close, printing atol/rtol
 (defun sigmoid-lisp (x) (/ (+ 1 (expt 2 (* x (/ -1 (log 2)))))))
@@ -274,6 +292,28 @@
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
+(defun selu-lisp (x &aux (lambda 1.0507) (alpha 1.67326))(* lambda (if (>= x 0) x (* alpha (- (exp x) 1)))))
+(define-nn-test SeLU
+  "Testing w/ SeLU([100, 100])"
+  :compile (caten (!selu (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'selu-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun mish-lisp (x) (* x (tanh (log (+ 1 (exp x))))))
+(define-nn-test Mish
+  "Testing w/ Mish([100, 100])"
+  :compile (caten (!mish (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 7)))
+  :caten   ((model x) (elements (print (forward model `(x . ,x)))))
+  :lisp    ((model x) (elements (print (proceed (lazy-lisp #'mish-lisp x)))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
 (defun hardswish-lisp (x) (* x (relu6-lisp (+ x 3.0)) (/ 1 6)))
 (define-nn-test HardSwish
   "Testing w/ HardSwish([100, 100])"
@@ -284,3 +324,32 @@
   :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
+
+
+(defun hardtanh-lisp (x &aux (min_val -1.0) (max_val 1.0)) (cond ((> x max_val) max_val) ((< x min_val) min_val) (t x)))
+(define-nn-test HardTanh
+  "Testing w/ HardTanh([100, 100])"
+  :compile (caten (!hardtanh (make-tensor `(100 100) :from 'x)))
+  :inputs  (list (proceed (ax+b `(100 100) 0.0001 -0.2)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'hardtanh-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(define-nn-test Softmin
+  "Testing w/ Softmin([512, 256])"
+  :compile (caten (!softmin (make-tensor `(512 256) :from 'x)))
+  :inputs (ctx:with-contextvar (:jit 0 :avm :lisp)
+            (list (proceed (!rand `(512 256)))))
+  :caten ((model x) (forward model `(x . ,x)))
+  :lisp  ((model x) (proceed (!softmin x)))
+  :assert-close ((x y)
+                 (let ((sum (proceed (!contiguous (!sum x :axis -1)))))
+                   (every #'(lambda (x) (<= (abs (- x 1.0)) 1e-1)) (elements sum)))
+                 (every (~= 1e-6) (elements x) (elements y)))
+  :in-place ((model) (and
+                      (= 2 (n-args `(512 256) model))
+                      (= 0 (n-args `(512 1) model))))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
