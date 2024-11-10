@@ -367,7 +367,10 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
         (return-from identify-view-type :shrink)))
     :reshape))
 
-(defmethod group-merge-p ((self Group) (graph Graph) (node Node) (parent-group Group) nth)
+(defun group-merge-p (self graph node parent-group nth)
+  (declare (type group self) (type graph graph) (type node node) (type group parent-group)
+           (type fixnum nth)
+           (optimize (speed 3)))
   (symbol-macrolet ((->ok
                       (progn
                         (setf (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims parent-group)))
@@ -382,7 +385,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
            (read-node (id->value graph read))
            (read-view (car (nth nth (getattr node :_read_views))))
            (read-type (group-get-type parent-group)))
-      (assert (<= (length (nth nth (getattr node :_read_views))) 1))
+      (assert (<= (length (the list (nth nth (getattr node :_read_views)))) 1))
       ;; Relations between group and parent-group:
       ;; ```
       ;; group=parent | X[write_type]{write_iter} = f(...)
@@ -397,6 +400,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
         ->ng)
       (let ((r1 (group-rank self))
             (r2 (group-rank parent-group)))
+        (declare (type fixnum r1 r2))
         ;; r2 -> r1
         (cond
           ((or (= r1 0) (= r2 0))->ok)
@@ -426,6 +430,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                    ->ok)
                  (if (and read-view (some #'identity (getattr read-view :broadcast)))
                      (let ((mask (getattr read-view :broadcast)))
+                       (declare (type list mask))
                        (when (not (= (length mask) (max r1 r2)))
                          (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
                        (when (not (= (length mask) (max r1 r2)))->ng)
@@ -663,7 +668,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 
 (defmethod graph-schedule ((graph Graph))
   (let* ((seen (make-hash-table))
-         (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph)))))
+         (groups (time (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph))))))
     (mapc #'verify-group groups)
     (when (>= (ctx:getenv :JIT_DEBUG) 4)
       (format t "[graph-schedule] Prescheduled ~a groups:~%" (length groups))
