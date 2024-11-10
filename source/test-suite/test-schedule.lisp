@@ -119,3 +119,7 @@
 (define-kernel-count-test scaled-dot-product-attention 3
   "ScaledDotProductAttention is 3 kernels"
   (caten (scaled-dot-product-attention (rand `(4 8 8)) (rand `(4 8 8)) (rand `(4 8 8)))))
+
+(define-kernel-count-test threefry-single-kernel 1
+  "threefry2x32 in a single kernel"
+  (caten (!rand `(3 3))))
