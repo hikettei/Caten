@@ -43,6 +43,9 @@ Policy:
    #:GeLU
    #:!gelu
 
+   #:SeLU
+   #:!selu
+
    #:CeLU
    #:!celu
 
@@ -54,6 +57,15 @@ Policy:
 
    #:HardSwish
    #:!hardswish
+
+   #:Mish
+   #:!mish
+
+   #:HardTanh
+   #:!hardtanh
+
+   #:Softmin
+   #:!softmin
    )
   ;; from normalization.lisp
   (:export
