@@ -526,7 +526,9 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
         (dolist (r (gethash (node-id node) in-degrees))
           (when (null (find (node-id node) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
             (push node (gethash (node-id r) out-degrees))))))
-    (flet ((node->users (node) (<= (length (the list (gethash (node-id node) out-degrees))) 1)))
+    (flet ((node->users (node)
+             (let ((users (gethash (node-id node) out-degrees)))
+               (every #'(lambda (x) (getattr x :jitable)) users))))
       #'node->users)))
 
 (defun apply-schedule-item-fusor (f can-split-p schedule-graph base-graph &aux (seen) (changed-p t))
@@ -551,7 +553,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                (loop for parent in candidates
                      if (and self-mergeable-p parent
                              (getattr parent :jitable)
-                             (funcall can-split-p parent) ;; confirm that parent is not used by other nodes except for self
+                             (funcall can-split-p parent) ;; confirm that the parent is not used by special ops
                              (funcall f self parent))
                        do (let ((merged (merge-schedule-items self parent base-graph)))
                             (setf changed-p t)
