@@ -467,7 +467,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
           (setf (group-items self) (append (group-items p) (group-items self))
                 (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims p))))
   self)
-;; DFA
+;; depth first serach
 (defun recursive-create-groups (id graph &key (seen))
   (declare (type symbol id) (type graph graph) (type hash-table seen) (optimize (speed 3)))
   (when (gethash id seen) (return-from recursive-create-groups))
@@ -515,7 +515,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
 (defun apply-schedule-item-fusor (f schedule-graph base-graph &aux (seen) (changed-p t))
   (declare (optimize (speed 3))
            (type function f)
-           (type graph schedule-graph base-graph)
+           (type fastgraph schedule-graph)
+           (type graph base-graph)
            (type list seen))
   (labels ((parent-groups (self)
              (assert (node-p self))
@@ -543,6 +544,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                             (dolist (w (node-writes parent))
                               (remnode schedule-graph w))))
                (mapc #'explore (node-reads self)))))
+    ;; This loop finishes in the constant time.
     (loop while changed-p do
       (setf changed-p nil seen nil)
       (mapc #'explore (graph-outputs schedule-graph)))))
@@ -681,6 +683,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
       ;; ~~ Rewriting Rules + Post Fusion ~~~~~
+      ;; SLOW
       (apply-reduce+move-fusion schedule graph)
       (apply-serialize-reduction schedule graph) ;; (TODO: Only execute when MAXIMIZE_MEMORY_LOCALITY=1?)
       (apply-move-after-reduction schedule)
