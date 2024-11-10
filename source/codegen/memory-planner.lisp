@@ -185,18 +185,18 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
            (alias-map (make-hash-table)))
       (loop for mb in solved
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
-      (when (>= 4 (ctx:getenv :JIT_DEBUG))
-        (format t "[DEBUG] MemoryPlanner: alias-map~%")
-        (maphash
-         #'(lambda (k v)
-             (format t "~a -> ~a~%" k v))
-         alias-map))
       (labels ((newid (id)
                  (if (gethash id alias-map)
                      (if (eql (gethash id alias-map) id)
                          id
                          (newid (gethash id alias-map)))
                      id)))
+        (when (>= 4 (ctx:getenv :JIT_DEBUG))
+          (format t "[DEBUG] MemoryPlanner: alias-map~%")
+          (maphash
+           #'(lambda (k v)
+               (format t "|~a -> ~a[~a]~%" k (newid k) v))
+           alias-map))
         (assert (equal outputs (map 'list #'newid outputs)) () "memory-planner: the value of constants are immutable. ~a -> ~a" outputs (map 'list #'newid outputs))
         (dolist (node (graph-nodes schedule-graph))
           (rewrite-bp-with-newid node #'newid))))))
