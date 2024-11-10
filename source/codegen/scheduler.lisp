@@ -462,9 +462,9 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
           (setf (group-items self) (append (group-items p) (group-items self))
                 (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims p))))
   self)
-
+;; DFA
 (defun recursive-create-groups (id graph &key (seen))
-  (declare (type symbol id) (type graph graph) (type hash-table seen))
+  (declare (type symbol id) (type graph graph) (type hash-table seen) (optimize (speed 3)))
   (when (gethash id seen) (return-from recursive-create-groups))
   (setf (gethash id seen) t)
   (let* ((node (id->value graph id))
@@ -491,13 +491,13 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
     (let ((mergeable-p-list
             (loop for parent in parents
                   for parent-return = (car parent)
-                  for nth upfrom 0
+                  for nth fixnum upfrom 0
                   if parent-return
                     collect (group-merge-p self graph node parent-return nth)
                   else
                    collect nil)))
       (assert (= (length mergeable-p-list) (length parents)))
-      (append
+      (nconc
        (list (merge-groups self (map 'list #'car parents) mergeable-p-list))
        (loop for p in parents
              for m in mergeable-p-list
