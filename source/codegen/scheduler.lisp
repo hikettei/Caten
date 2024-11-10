@@ -619,11 +619,12 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
      base-graph)))
 
 (defun apply-move-after-reduction (schedule-graph)
+  (declare (type graph schedule-graph) (optimize (speed 3)))
   (labels ((%newtype (buffer)
              (caten/avm:make-buffer
               (buffer-nrank buffer)
               (loop for s in (buffer-shape buffer)
-                    for nth upfrom 0
+                    for nth fixnum upfrom 0
                     for v = (nth nth (buffer-views buffer))
                     if (and (listp v) (fourth v)) ;; broadcasted
                       collect 1
@@ -632,7 +633,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
               (buffer-stride buffer)
               (buffer-dtype buffer)
               (loop for s in (buffer-shape buffer)
-                    for nth upfrom 0
+                    for nth fixnum upfrom 0
                     for v = (nth nth (buffer-views buffer))
                     if (and (listp v) (fourth v))
                       collect `(0 1 1 t)
@@ -668,7 +669,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 
 (defmethod graph-schedule ((graph Graph))
   (let* ((seen (make-hash-table))
-         (groups (time (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph))))))
+         (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph)))))
     (mapc #'verify-group groups)
     (when (>= (ctx:getenv :JIT_DEBUG) 4)
       (format t "[graph-schedule] Prescheduled ~a groups:~%" (length groups))
