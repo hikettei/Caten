@@ -71,9 +71,9 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 	  (let* ((x (!reshape x (flatten (list bs groups cin 1 oyx hw))))
 		 (x (apply #'!view x (append `(t t t (:~ ,rcout)) (loop for o in oyx collect t) (loop for h in hw collect t))))
                  ;; [TODO] Remove this contiguous by ShapeTracker
-		 (x (!permute (!contiguous x) (append (list 0 1 3) (map 'list #'(lambda (x) (+ 4 x)) (range 0 (length oyx))) (list 2) (map 'list #'(lambda (x) (+ 4 (length oyx) x)) (range 0 (length hw))))))
+		 (x (!permute x (append (list 0 1 3) (map 'list #'(lambda (x) (+ 4 x)) (range 0 (length oyx))) (list 2) (map 'list #'(lambda (x) (+ 4 (length oyx) x)) (range 0 (length hw))))))
 		 ;; x = (x * weight.reshape(1, groups, rcout, *[1] * len(oyx), cin, *HW))
-		 (x (!mul x (!reshape (convnd-weight conv) (append (list 1 groups rcout) (loop repeat (length oyx) collect 1) (list cin) hw))))
+		 (x (!mul (!reshape (convnd-weight conv) (append (list 1 groups rcout) (loop repeat (length oyx) collect 1) (list cin) hw)) x))
 		 ;; x = x.sum([-1-i for i in range(1+len(oyx))], keepdim=True, acc_dtype=acc_dtype)
 		 (x (!sum x :axis (loop for i in (range 0 (+ 1 (length oyx))) collect (+ -1 (- i)))))
 		 ;; x = x.reshape(bs, cout, *oyx)
