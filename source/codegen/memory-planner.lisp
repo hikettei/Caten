@@ -1,4 +1,6 @@
 (defpackage :caten/codegen/memory-planner
+  (:documentation "`Memory Planner` is a data structure that abstracts the allocation and freeing of memory over time.
+Its purpose is to optimize memory allocation by overlapping allocations to minimize the maximum memory (heap_size) required for all the time `t`.")
   (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr :alexandria)
   (:export
    #:run-memory-planner))
