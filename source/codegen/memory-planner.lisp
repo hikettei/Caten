@@ -193,7 +193,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                          id
                          (newid (gethash id alias-map)))
                      id)))
-        (when (>= 4 (ctx:getenv :JIT_DEBUG))
+        (when (>= (ctx:getenv :JIT_DEBUG) 4)
           (format t "[DEBUG] MemoryPlanner: alias-map~%")
           (maphash
            #'(lambda (k v)
