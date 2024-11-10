@@ -19,5 +19,4 @@
             (with-torch (input)
               (->caten (f:max_pool2d input `(2 2))))
             (proceed (!maxpool input :kernel-size `(2 2))))))))
-
-;; [TODO] Pooling in a single kernel
+;; [TODO] Scheduling Test: Max/Avg Pooling should be a single kernel

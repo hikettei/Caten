@@ -35,6 +35,7 @@
 	  ;; xup.permute(*range(len(noop_)), *[len(noop_)+i*2+1 for i in range(len(i_))], *[len(noop_)+i*2 for i in range(len(i_))])
 	  ;; Return: [N in_channels, o_, kernel_size]
 	  (!permute xup (append (range 0 (length noop_)) (loop for _ in i_ for i upfrom 0 collect (+ 1 (length noop_) (* i 2))) (loop for _ in i_ for i upfrom 0 collect (+ (length noop_) (* i 2))))))))))
+
 (defun make-pooling (x f kernel-size &key (stride nil) (dilation 1) (padding 0) (pad-value 0.0))
   (declare (type Tensor x) (type function f))
   (let* ((k_ (if (integerp kernel-size) (list kernel-size kernel-size) kernel-size))
