@@ -55,8 +55,10 @@
   (declare (type Tensor x) (type function f))
   (let* ((k_ (if (integerp kernel-size) (list kernel-size kernel-size) kernel-size))
          (x (!padding2d x (padding2d-shape padding (length k_)) :value pad-value))
-         (x (_pool x k_ (or stride k_) dilation)))
-    (funcall f x :axis (map 'list #'- (range 0 (length k_))))))
+         (x (_pool x k_ (or stride k_) dilation))
+         (axis (map 'list #'- (range 1 (1+ (length k_)))))
+         (reduced-shape (butlast (shape x) (length k_))))
+    (!reshape (funcall f x :axis axis) reduced-shape)))
 ;; ~~ apis ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodel (AvgPool2D (kernel-size &key (stride nil) (dilation 1) (padding 0)))
     ((kernel-size kernel-size)
