@@ -13,31 +13,56 @@
 ;; [TODO] Adding more failing case here ...
 ;; Test Various View Combinations here: like: !reshape + !permute
 ;; To find out why ConvND is failing
+;; reshape/permute/slice/broadcast
 (defun action->caten-view (bind actions)
   (when (null actions) (return-from action->caten-view bind))
   (trivia:ematch (car actions)
     ((list* :reshape _) `(!reshape ,(action->caten-view bind (cdr actions)) ,@(cdr (car actions))))
-    ((list* :permute _) `(!permute ,(action->caten-view bind (cdr actions)) ,@(cdr (car actions))))))
+    ((list* :permute _) `(!permute ,(action->caten-view bind (cdr actions)) ,@(cdr (car actions))))
+    ((list* :broadcast _) `(!view ,(action->caten-view bind (cdr actions))
+                                  ,@(loop for i in (cdr (car actions))
+                                          if (eql i t)
+                                            collect t
+                                          else
+                                            collect `(:~ ,i))))
+    ((list* :slice _) `(!view ,(action->caten-view bind (cdr actions))
+                              ,@(loop for subscript in (cdr (car actions))
+                                      if (integerp subscript)
+                                        collect subscript
+                                      else
+                                        collect `(list ,@subscript))))))
 
 (defun action->npview (bind actions)
   (when (null actions) (return-from action->npview bind))
   (trivia:ematch (car actions)
-    ((list* :reshape _) `(np:reshape   ,(action->npview bind (cdr actions)) ,@(cdr (car actions))))
-    ((list* :permute _) `(np:transpose ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))))
+    ((list* :reshape _) `(np:reshape   ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))
+    ((list* :permute _) `(np:transpose ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))
+    ((list* :broadcast _))
+    ((list* :slice _) `(chain
+                        ,(action->npview bind (cdr actions))
+                        ([] ,@(loop for subscript in (cdr (car actions))
+                                    if (integerp subscript)
+                                      collect subscript
+                                    else
+                                      collect `(slice ,@subscript)))))))
 
 (defmacro define-view-test (name shape &rest actions &aux (actions (reverse actions)))
   "Translates actions into Caten/PyTorch codes, checking they have the same result."
   `(deftest ,name
      (testing ,(format nil "Testing: ~(~a~)" (action->caten-view 'x actions))
        (let ((x (linspace ',shape 1 0)))
-         (let ((caten (elements (proceed (!contiguous ,(action->caten-view 'x actions) :force t))))
+         (let ((caten (elements (proceed (!contiguous ,(print (action->caten-view 'x actions)) :force t))))
                (numpy
                  (let ((x (->numpy x)))
-                   ,(action->npview 'x actions))))
-           (ok (every #'= caten numpy) (format nil "~a = ~a vs ~a" ',(action->caten-view 'x actions) caten numpy)))))))
+                   (np:reshape ,(action->npview 'x actions) -1))))
+           (ok (every #'= caten numpy) (format nil "~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x actions) caten numpy)))))))
 
-(define-view-test permute+reshape (10 10)
-  (:permute 1 0)
-  (:reshape 100))
+(define-view-test permute+reshape (3 3 3)
+  (:permute 1 0 2)
+  (:reshape 3 3 3)
+  (:permute 1 0 2))
 
-;; (run-test 'permute+reshape)
+(define-view-test permute+slice (3 3)
+  (:slice (1 3) (1 3))
+  (:permute 1 0))
+

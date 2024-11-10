@@ -49,5 +49,9 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 	  (with-torch (x)
 	    (->caten (f:softmax x)))
 	  (proceed (!softmax x))))))
+
+;; RMSNorm
+;; LayerNorm
+;; Attention
 ;; [TODO] Test all ops in caten/llm
 ;; [TODO] Compiling the entire transformer graph here
