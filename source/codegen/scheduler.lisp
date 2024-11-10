@@ -110,8 +110,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
             #'concatenate
             'string
             (butlast
-             (loop for x1 in x
-                   for nth upfrom 0
+             (loop for nth upfrom 0 below (max (length x) (length y))
+                   for x1 = (nth nth x)
                    for y1 = (nth nth y)
                    if (or (eql x1 y1) (null y1))
                      append (list (format nil "~a" x1) ", ")
@@ -185,23 +185,27 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         (writes (items-write-to (group-items group) base-graph))
         (allocate-p (find :Allocate (group-items group) :key #'node-type))
         (no-symbolic-incremental-p t)
-        (full-scalar-p t) (rank 0))
+        (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
     ;; Ensure there's no symbolic incremental for the auto scheduler.
     (dolist (node (group-items group))
-      (dolist (r (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node))))
-        (when r
-          (when (> (buffer-nrank r) 0)
-            (setf full-scalar-p nil))
-          (setf rank (max rank (buffer-nrank r)))
-          (dolist (v (buffer-views r))
-            (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
-              (setf no-symbolic-incremental-p nil))))))
+      (loop for r in (append (node-reads node) (node-writes node))
+            for rt in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
+            do (setf (gethash r id2type) rt)
+            if rt do
+              (when (> (buffer-nrank rt) 0)
+                (setf full-scalar-p nil))
+              (setf rank (max rank (buffer-nrank rt)))
+              (dolist (v (buffer-views rt))
+                (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
+                  (setf no-symbolic-incremental-p nil)))))
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
                :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
                :allocate-p (when allocate-p t)
                :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
                :storage-id-dst writes
                :storage-id-src reads
+               :read-types (map 'list #'(lambda (x) (gethash x id2type)) reads)
+               :write-types (map 'list #'(lambda (x) (gethash x id2type)) writes)
                :reference-counters
                (map
                 'list

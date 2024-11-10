@@ -90,16 +90,18 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
 	 (id2type (make-hash-table))
 	 (lock-table (make-hash-table))
 	 (total-time (length (graph-nodes schedule-graph)))
-         (outputs (append (graph-outputs schedule-graph) symbolics))
-	 (constants))
+         (outputs (append (graph-outputs schedule-graph) symbolics)))
+    (dolist (o outputs) (setf (gethash o lock-table) t))
     (loop for node in (graph-nodes schedule-graph)
 	  for nth upfrom 0
           for lock-p = (null (getattr node :jitable)) do
+            (assert (= (length (getattr node :storage-id-src)) (length (getattr node :read-types))))
+            (assert (= (length (getattr node :storage-id-dst)) (length (getattr node :write-types))))
 	    (loop for val in (getattr node :storage-id-src)
 		  for typ in (getattr node :read-types)
 		  for time = `(,nth ,@(gethash val trace-table))
                   if (id-is-input-p val base-graph) do (push val outputs)
-                  if (and (symbolp val) (null (find val constants)))
+                  if (symbolp val)
                     do (setf (gethash val id2type) typ (gethash val trace-table) time)) ;; (incf consume)
 	    (loop for val in (getattr node :storage-id-dst)
 		  for typ in (getattr node :write-types)
@@ -111,6 +113,10 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
 		    do (setf (gethash val id2type) typ
 			     (gethash val trace-table) (list nth)
                              (gethash val lock-table) lock-p)))
+    (maphash
+     #'(lambda (key val)
+         (format t "~a -> ~a~%" key val))
+     trace-table)
     (let* ((memory-blocks
 	     (loop for key in (alexandria:hash-table-keys trace-table)
 	           for typ = (gethash key id2type)
@@ -131,10 +137,15 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
            (alias-map (make-hash-table)))
       (loop for mb in solved
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
+      (maphash
+       #'(lambda (key val)
+           (format t "~a -> ~a~%" key val))
+       alias-map)
       (flet ((newid (id) (or (gethash id alias-map) id)))
         (dolist (node (graph-nodes schedule-graph))
           (when (getattr node :jitable)
-            (setf (getattr node :storage-id-dst) (map 'list #'newid (getattr node :storage-id-dst)))))))))
+            ;; (setf (getattr node :storage-id-dst) (map 'list #'newid (getattr node :storage-id-dst)))
+            ))))))
 
 (defun run-memory-planner-local (item schedule-graph symbolics base-graph)
   "Minimizes the number of allocation buffers that are only used in the item."
