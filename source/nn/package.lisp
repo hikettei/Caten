@@ -87,10 +87,10 @@ Policy:
    #:!padding2d)
   ;; from pool.lisp
   (:export
-   #:AvgPool2D
-   #:!avgpool2d
-   #:MaxPool2D
-   #:!maxpool2d)
+   #:AvgPool
+   #:!avgpool
+   #:MaxPool
+   #:!maxpool)
   ;; from linear.lisp
   (:export
    #:Linear))

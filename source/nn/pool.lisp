@@ -44,34 +44,34 @@
          (reduced-shape (butlast (shape x) (length k_))))
     (!reshape (funcall f x :axis axis) reduced-shape)))
 ;; ~~ apis ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmodel (AvgPool2D (kernel-size &key (stride nil) (dilation 1) (padding 0)))
+(defmodel (AvgPool (kernel-size &key (stride nil) (dilation 1) (padding 0)))
     ((kernel-size kernel-size)
      (stride stride)
      (dilation dilation)
      (padding padding)))
 
-(defmethod call ((pool AvgPool2D) &rest inputs)
+(defmethod call ((pool AvgPool) &rest inputs)
   (with-attrs ((kernel-size :kernel-size) (stride :stride) (dilation :dilation) (padding :padding)) pool
     (make-pooling (car inputs) #'!mean kernel-size :stride stride :dilation dilation :padding padding)))
 
-(defun !avgpool2d (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0))
-  ""
+(defun !avgpool (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0))
+  "Applies average pooling over the tensor."
   (declare (type list kernel-size))
-  (forward (AvgPool2D kernel-size :stride stride :dilation dilation :padding padding) x))
+  (forward (AvgPool kernel-size :stride stride :dilation dilation :padding padding) x))
 
-(defmodel (MaxPool2D (kernel-size &key (stride nil) (dilation 1) (padding 0)))
+(defmodel (MaxPool (kernel-size &key (stride nil) (dilation 1) (padding 0)))
     ((kernel-size kernel-size)
      (stride stride)
      (dilation dilation)
      (padding padding)))
 
-(defmethod call ((pool MaxPool2d) &rest inputs)
+(defmethod call ((pool MaxPool) &rest inputs)
   (with-attrs ((kernel-size :kernel-size) (stride :stride) (dilation :dilation) (padding :padding)) pool
     (make-pooling (car inputs) #'!max kernel-size :stride stride :dilation dilation :padding padding :pad-value (-inf))))
 
-(defun !maxpool2d (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0))
-  ""
+(defun !maxpool (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0))
+  "Applies max pooling over the tensor."
   (declare (type list kernel-size))
-  (forward (MaxPool2D kernel-size :stride stride :dilation dilation :padding padding) x))
+  (forward (MaxPool kernel-size :stride stride :dilation dilation :padding padding) x))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (in-package :caten/nn.test)
