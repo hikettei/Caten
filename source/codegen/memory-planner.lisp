@@ -134,6 +134,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
              (append ;; If the output were read by other kernels, it should be optimized by the global memory-planner.
               (graph-outputs schedule-graph)
               symbolics)))
+    (dolist (s symbolics) (setf (gethash s lock-table) t))
     ;; Creating a timestamp table for each node and variable.
     (loop for node in nodes
 	  for nth upfrom 0
@@ -141,13 +142,13 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
             do (loop for val in (getattr node :storage-id-src)
                      for typ in (getattr node :read-types)
                      for time = `(,nth ,@(gethash val trace-table))
-                     if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
+                     if (id-is-input-p val base-graph) do (push val outputs)
                        if (symbolp val)
                          do (setf (gethash val id2type) typ (gethash val trace-table) time))
                (loop for val in (getattr node :storage-id-dst)
                      for typ in (getattr node :write-types)
                      for time = `(,nth ,@(gethash val trace-table))
-                     if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
+                     if (id-is-input-p val base-graph) do (push val outputs)
                        if (and (symbolp val) (null (gethash val trace-table)))
                          do (setf (gethash val id2type) typ) (gethash val trace-table) (list nth))
           if (and
@@ -156,19 +157,18 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
             do (loop for val in (node-reads node)
 		     for typ in (relay-reads (read-type-relay node))
 		     for time = `(,nth ,@(gethash val trace-table))
-                     if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
+                     if (id-is-input-p val base-graph) do (push val outputs)
                        if (symbolp val)
                          do (setf (gethash val id2type) typ (gethash val trace-table) time))
 	       (loop for val in (node-writes node)
 		     for typ in (relay-writes (read-type-relay node))
-                     if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
+                     if (id-is-input-p val base-graph) do (push val outputs)
 		       if (and (symbolp val) (null (gethash val trace-table)))
                          ;; ID2Type    -> the variable name and its type
                          ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
                          ;; LockTable  -> Set T to lock (never become in-place)
 		         do (setf (gethash val id2type) typ
                                   (gethash val trace-table) (list nth))))
-    (dolist (o outputs) (setf (gethash o lock-table) t))
     (let* ((memory-blocks
 	     (loop for key in (alexandria:hash-table-keys trace-table)
 	           for typ = (gethash key id2type)
@@ -203,7 +203,6 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
            #'(lambda (k v)
                (format t "   | newid(~a) = ~a, alias-map[~a] = ~a~%" k (newid k) k v))
            alias-map))
-        (assert (equal outputs (map 'list #'newid outputs)) () "memory-planner: the value of constants are immutable. ~a -> ~a" outputs (map 'list #'newid outputs))
         (dolist (node (graph-nodes schedule-graph))
           (rewrite-bp-with-newid node #'newid))))))
 
