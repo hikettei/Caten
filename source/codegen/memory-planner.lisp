@@ -131,40 +131,41 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
              (append ;; If the output were read by other kernels, it should be optimized by the global memory-planner.
               (graph-outputs schedule-graph)
               symbolics)))
-    (dolist (o outputs) (setf (gethash o lock-table) t))
+    ;; Creating a timestamp table for each node and variable.
     (loop for node in nodes
 	  for nth upfrom 0
-          if (eql (node-type node) :Schedule-Item) do
-            (loop for val in (getattr node :storage-id-src)
-                  for typ in (getattr node :read-types)
-                  for time = `(,nth ,@(gethash val trace-table))
-                  if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
-                    if (symbolp val)
-                      do (setf (gethash val id2type) typ (gethash val trace-table) time))
-            (loop for val in (getattr node :storage-id-dst)
-                  for typ in (getattr node :write-types)
-                  for time = `(,nth ,@(gethash val trace-table))
-                  if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
-                    if (and (symbolp val) (null (gethash val trace-table)))
-                      do (setf (gethash val id2type) typ) (gethash val trace-table) (list nth))
+          if (eql (node-type node) :Schedule-Item) ; Optimization for non-jitable instructions (like: foreign kernel calls, allocation, pause/backward)
+            do (loop for val in (getattr node :storage-id-src)
+                     for typ in (getattr node :read-types)
+                     for time = `(,nth ,@(gethash val trace-table))
+                     if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
+                       if (symbolp val)
+                         do (setf (gethash val id2type) typ (gethash val trace-table) time))
+               (loop for val in (getattr node :storage-id-dst)
+                     for typ in (getattr node :write-types)
+                     for time = `(,nth ,@(gethash val trace-table))
+                     if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
+                       if (and (symbolp val) (null (gethash val trace-table)))
+                         do (setf (gethash val id2type) typ) (gethash val trace-table) (list nth))
           if (and
-              (not (eql (node-type node) :Schedule-Item))
-              (not (eql (node-class node) :Render))) do    
-	        (loop for val in (node-reads node)
-		      for typ in (relay-reads (read-type-relay node))
-		      for time = `(,nth ,@(gethash val trace-table))
-                      if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
-                        if (symbolp val)
-                          do (setf (gethash val id2type) typ (gethash val trace-table) time)) ;; (incf consume)
-	        (loop for val in (node-writes node)
-		      for typ in (relay-writes (read-type-relay node))
-                      if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
-		        if (and (symbolp val) (null (gethash val trace-table)))
-                          ;; ID2Type    -> the variable name and its type
-                          ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
-                          ;; LockTable  -> Set T to lock (never become in-place)
-		          do (setf (gethash val id2type) typ
-                                   (gethash val trace-table) (list nth))))
+              (not (eql (node-type node) :Schedule-Item)) ; For jitable and lowered instructions
+              (not (eql (node-class node) :Render)))
+            do (loop for val in (node-reads node)
+		     for typ in (relay-reads (read-type-relay node))
+		     for time = `(,nth ,@(gethash val trace-table))
+                     if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
+                       if (symbolp val)
+                         do (setf (gethash val id2type) typ (gethash val trace-table) time))
+	       (loop for val in (node-writes node)
+		     for typ in (relay-writes (read-type-relay node))
+                     if (id-is-input-p val base-graph) do (setf (gethash val lock-table) t) (push val outputs)
+		       if (and (symbolp val) (null (gethash val trace-table)))
+                         ;; ID2Type    -> the variable name and its type
+                         ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
+                         ;; LockTable  -> Set T to lock (never become in-place)
+		         do (setf (gethash val id2type) typ
+                                  (gethash val trace-table) (list nth))))
+    (dolist (o outputs) (setf (gethash o lock-table) t))
     (let* ((memory-blocks
 	     (loop for key in (alexandria:hash-table-keys trace-table)
 	           for typ = (gethash key id2type)
