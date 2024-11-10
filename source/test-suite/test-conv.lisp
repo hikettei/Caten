@@ -11,8 +11,8 @@
               (assert-equal
                   (:atol 1e-5 :rtol 1e-2)
                   (with-torch (input weight)
-                    (print (->caten (f:conv2d input weight :stride 1 :padding 0 :dilation 1 :groups 1))))
-                  (print (proceed (!convnd input weight :stride 1 :padding 0 :dilation 1 :groups 1))))))))))
+                    (->caten (f:conv2d input weight :stride 1 :padding 0 :dilation 1 :groups 1)))
+                  (proceed (!convnd input weight :stride 1 :padding 0 :dilation 1 :groups 1)))))))))
 
 (deftest test-convnd-2
   (testing "ConvND(1.0, bias=nil)"
