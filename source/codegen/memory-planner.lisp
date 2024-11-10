@@ -83,7 +83,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
         ;; If :from is specified => the input should not be destructed.
         t))))
 
-(defun rewrite-bp-with-newid (item newid)
+(defun rewrite-bp-with-newid (item newid no-rewrite)
   (dolist (bp (getattr item :blueprint))
     (setf (node-writes bp) (map 'list newid (node-writes bp))
           (node-reads bp) (map 'list newid (node-reads bp)))
@@ -100,20 +100,21 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                 collect item
               if (eql (node-type item) :DEFINE-GLOBAL)
                 do (push (car (node-writes item)) seen)))
-  (let* ((reads (map 'list #'cons (getattr item :storage-id-src) (getattr item :read-types)))
-         (writes (map 'list #'cons (getattr item :storage-id-dst) (getattr item :write-types)))
-         (reads (remove-duplicates reads :key (compose newid #'car)))
-         (writes (remove-duplicates writes :key (compose newid #'car)))
-         (seen))
-    (flet ((only-unseen (items)
-             (loop for (id . type) in items
-                   if (null (find (funcall newid id) seen))
-                     do (push (funcall newid id) seen) and collect (cons id type))))
-      (multiple-value-bind (writes reads) (values (only-unseen writes) (only-unseen reads))
-        (setf (getattr item :storage-id-src) (map 'list (compose newid #'car) reads)
-              (getattr item :storage-id-dst) (map 'list (compose newid #'car) writes)
-              (getattr item :read-types) (map 'list #'cdr reads)
-              (getattr item :write-types) (map 'list #'cdr writes))))))
+  (unless no-rewrite
+    (let* ((reads (map 'list #'cons (getattr item :storage-id-src) (getattr item :read-types)))
+           (writes (map 'list #'cons (getattr item :storage-id-dst) (getattr item :write-types)))
+           (reads (remove-duplicates reads :key (compose newid #'car)))
+           (writes (remove-duplicates writes :key (compose newid #'car)))
+           (seen))
+      (flet ((only-unseen (items)
+               (loop for (id . type) in items
+                     if (null (find (funcall newid id) seen))
+                       do (push (funcall newid id) seen) and collect (cons id type))))
+        (multiple-value-bind (writes reads) (values (only-unseen writes) (only-unseen reads))
+          (setf (getattr item :storage-id-src) (map 'list (compose newid #'car) reads)
+                (getattr item :storage-id-dst) (map 'list (compose newid #'car) writes)
+                (getattr item :read-types) (map 'list #'cdr reads)
+                (getattr item :write-types) (map 'list #'cdr writes)))))))
 
 (defmethod run-memory-planner-global ((schedule-graph Graph) (symbolics list) (base-graph Graph))
   "write_1, write_2 = f(write_suite_1, write_suite_2, *[dynamic_shape + read_buffers])
@@ -145,10 +146,10 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
 		    do (setf (gethash val id2type) typ
 			     (gethash val trace-table) (list nth)
                              (gethash val lock-table) lock-p)))
-    (maphash
-     #'(lambda (key val)
-         (format t "~a -> ~a~%" key val))
-     trace-table)
+    ;(maphash
+    ; #'(lambda (key val)
+    ;     (format t "~a -> ~a~%" key val))
+    ; trace-table)
     (let* ((memory-blocks
 	     (loop for key in (alexandria:hash-table-keys trace-table)
 	           for typ = (gethash key id2type)
@@ -161,7 +162,7 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
                     ;; Set the longest time for the output variables (not to destruct it, and users can see the result)
 		    (if (find key outputs)
 			total-time
-		        (apply #'max (gethash key trace-table)))
+		        (apply #'max (gethash key trace-table))) ;; the fragment will be available after t+1.
 		    :lock (gethash key lock-table))))
            ;; Minimize the peak memory usage
 	   (solved (greedy-solve-dsa memory-blocks total-time))
@@ -169,14 +170,19 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
            (alias-map (make-hash-table)))
       (loop for mb in solved
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
-      (maphash
-       #'(lambda (key val)
-           (format t "~a -> ~a~%" key val))
-       alias-map)
-      (flet ((newid (id) (or (gethash id alias-map) id)))
+      ;(maphash
+      ; #'(lambda (key val)
+      ;     (format t "~a -> ~a~%" key val))
+      ; alias-map)
+      (labels ((newid (id)
+                 (if (gethash id alias-map)
+                     (if (eql (gethash id alias-map) id)
+                         id
+                         (newid (gethash id alias-map)))
+                     id)))
         (dolist (node (graph-nodes schedule-graph))
           (when (getattr node :jitable)
-            (rewrite-bp-with-newid node #'newid)))))))
+            (rewrite-bp-with-newid node #'newid nil)))))))
 
 (defun run-memory-planner-local (item schedule-graph symbolics base-graph)
   "Minimizes the number of allocation buffers that are only used in the item."
@@ -202,17 +208,17 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
 		  for typ in (relay-reads (read-type-relay node))
 		  for time = `(,nth ,@(gethash val trace-table))
                   if (id-is-input-p val base-graph) do (push val outputs)
-                  if (symbolp val)
-                    do (setf (gethash val id2type) typ (gethash val trace-table) time)) ;; (incf consume)
+                    if (symbolp val)
+                      do (setf (gethash val id2type) typ (gethash val trace-table) time)) ;; (incf consume)
 	    (loop for val in (node-writes node)
 		  for typ in (relay-writes (read-type-relay node))
                   if (id-is-input-p val base-graph) do (push val outputs)
-		  if (and (symbolp val) (null (gethash val trace-table)))
-                    ;; ID2Type    -> the variable name and its type
-                    ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
-                    ;; LockTable  -> Set T to lock (never become in-place)
-		    do (setf (gethash val id2type) typ
-                             (gethash val trace-table) (list nth))))
+		    if (and (symbolp val) (null (gethash val trace-table)))
+                      ;; ID2Type    -> the variable name and its type
+                      ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
+                      ;; LockTable  -> Set T to lock (never become in-place)
+		      do (setf (gethash val id2type) typ
+                               (gethash val trace-table) (list nth))))
     (let* ((memory-blocks
 	     (loop for key in (alexandria:hash-table-keys trace-table)
 	           for typ = (gethash key id2type)
@@ -233,10 +239,14 @@ The goal of run-memory-planner is to reduce the number of :allocate-p object in 
            (alias-map (make-hash-table)))
       (loop for mb in solved
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
-      (flet ((newid (id) (or (gethash id alias-map) id)))
+      (labels ((newid (id)
+               (if (gethash id alias-map)
+                   (if (eql (gethash id alias-map) id)
+                       id
+                       (newid (gethash id alias-map)))
+                   id)))
         (assert (equal outputs (map 'list #'newid outputs)) () "memory-planner: the value of constants are immutable. ~a -> ~a" outputs (map 'list #'newid outputs))
-        (rewrite-bp-with-newid item #'newid)
-        )
+        (rewrite-bp-with-newid item #'newid t))
       alias-map)))
 
 (defun buffer-sizeof (buffer)
