@@ -188,9 +188,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
       (flet ((newid (id) (or (gethash id alias-map) id)))
         (assert (equal outputs (map 'list #'newid outputs)) () "memory-planner: the value of constants are immutable. ~a -> ~a" outputs (map 'list #'newid outputs))
         (dolist (node (graph-nodes schedule-graph))
-          (if (getattr node :jitable)
-              (rewrite-bp-with-newid node #'newid)
-              nil))))))
+          (rewrite-bp-with-newid node #'newid))))))
 
 (defun buffer-sizeof (buffer)
   "Returns the size of the buffer in bits"
