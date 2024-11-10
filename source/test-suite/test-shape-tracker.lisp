@@ -30,39 +30,47 @@
                                       if (integerp subscript)
                                         collect subscript
                                       else
-                                        collect `(list ,@subscript))))))
+                                        collect
+                                        (if (and (third subscript) (< (third subscript) 0))
+                                            `(list ,(second subscript) ,(car subscript) ,(third subscript))
+                                            `(list ,@subscript)))))))
 
 (defun action->npview (bind actions)
   (when (null actions) (return-from action->npview bind))
   (trivia:ematch (car actions)
     ((list* :reshape _) `(np:reshape   ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))
     ((list* :permute _) `(np:transpose ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))
-    ((list* :broadcast _))
+    ((list* :broadcast _) (error "not ready"))
     ((list* :slice _) `(chain
                         ,(action->npview bind (cdr actions))
                         ([] ,@(loop for subscript in (cdr (car actions))
                                     if (integerp subscript)
                                       collect subscript
                                     else
-                                      collect `(slice ,@subscript)))))))
+                                      collect
+                                      (if (and (third subscript) (< (third subscript) 0))
+                                          `(slice ,(second subscript) ,(car subscript) ,(third subscript))
+                                          `(slice ,@subscript))))))))
 
 (defmacro define-view-test (name shape &rest actions &aux (actions (reverse actions)))
   "Translates actions into Caten/PyTorch codes, checking they have the same result."
   `(deftest ,name
      (testing ,(format nil "Testing: ~(~a~)" (action->caten-view 'x actions))
        (let ((x (linspace ',shape 1 0)))
-         (let ((caten (elements (proceed (!contiguous ,(print (action->caten-view 'x actions)) :force t))))
+         (let ((caten (elements (proceed (!contiguous ,(action->caten-view 'x actions) :force t))))
                (numpy
                  (let ((x (->numpy x)))
                    (np:reshape ,(action->npview 'x actions) -1))))
-           (ok (every #'= caten numpy) (format nil "~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x actions) caten numpy)))))))
+           (ok (and (= (length caten) (length numpy)) (every #'= caten numpy))
+               (format nil "~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x actions) caten numpy)))))))
 
 (define-view-test permute+reshape (3 3 3)
   (:permute 1 0 2)
   (:reshape 3 3 3)
   (:permute 1 0 2))
 
-(define-view-test permute+slice (3 3)
-  (:slice (1 3) (1 3))
-  (:permute 1 0))
+(define-view-test permute+slice (5 5)
+  (:slice (1 3 -1) (1 3))
+  (:permute 1 0)
+  (:reshape 4))
 
