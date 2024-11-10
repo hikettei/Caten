@@ -512,9 +512,26 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
              append p)))))
 ;; ~~~~~~ More Fusion Rules ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Rewrite them as a pattern matcher.
-(defun apply-schedule-item-fusor (f schedule-graph base-graph &aux (seen) (changed-p t))
+(defun make-can-split-p (schedule-graph)
   (declare (optimize (speed 3))
-           (type function f)
+           (type fastgraph schedule-graph))
+  (let ((in-degrees (make-hash-table)) (out-degrees (make-hash-table)))
+    (declare (type hash-table in-degrees out-degrees))
+    (flet ((butseen (list)
+             (loop for l in list
+                   for v = (id->value schedule-graph l)
+                   if (and v (symbolp l)) collect v)))
+      (loop for node in (graph-nodes schedule-graph) do
+        (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
+        (dolist (r (gethash (node-id node) in-degrees))
+          (when (null (find (node-id node) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
+            (push node (gethash (node-id r) out-degrees))))))
+    (flet ((node->users (node) (<= (length (the list (gethash (node-id node) out-degrees))) 1)))
+      #'node->users)))
+
+(defun apply-schedule-item-fusor (f can-split-p schedule-graph base-graph &aux (seen) (changed-p t))
+  (declare (optimize (speed 3))
+           (type function f can-split-p)
            (type fastgraph schedule-graph)
            (type graph base-graph)
            (type list seen))
@@ -524,8 +541,6 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                    for val = (and (symbolp r) (id->value schedule-graph r))
                    ;; Only :jitable scheduleitems are merged
                    if val collect val))
-           (can-split-p (id)
-             (<= (length (the list (id->users schedule-graph id))) 1))
            (explore (id)
              (let* ((self (id->value schedule-graph id))
                     (_ (when (or (null self) (find (node-id self) seen)) (return-from explore)))
@@ -536,7 +551,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                (loop for parent in candidates
                      if (and self-mergeable-p parent
                              (getattr parent :jitable)
-                             (every #'can-split-p (node-writes parent))
+                             (funcall can-split-p parent) ;; confirm that parent is not used by other nodes except for self
                              (funcall f self parent))
                        do (let ((merged (merge-schedule-items self parent base-graph)))
                             (setf changed-p t)
@@ -549,7 +564,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
       (setf changed-p nil seen nil)
       (mapc #'explore (graph-outputs schedule-graph)))))
       
-(defun apply-reduce+move-fusion (schedule-graph base-graph)
+(defun apply-reduce+move-fusion (schedule-graph can-split-p base-graph)
   "Applies the post-loop-fusion to eliminate MOVE after the reduction.
 ```
      Group1
@@ -584,10 +599,11 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                    collect item)))
     (apply-schedule-item-fusor
      #'(lambda (self parent) (declare (ignore self)) (reduce-w/o-store parent))
+     can-split-p
      schedule-graph
      base-graph)))
 
-(defun apply-serialize-reduction (schedule-graph base-graph)
+(defun apply-serialize-reduction (schedule-graph can-split-p base-graph)
   (flet ((is-tensor (buffer)
            (not (every #'(lambda (x) (eql x 1)) (buffer-shape buffer))))
          (depend-dims-p (items rank &aux (common-views (make-list rank)))
@@ -617,6 +633,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
               (equal (getattr self :reduce-dims) (getattr parent :reduce-dims))
               (depend-dims-p (getattr self :items) (getattr self :rank))
               (depend-dims-p (getattr self :items) (getattr parent :rank)))))))
+     can-split-p
      schedule-graph
      base-graph)))
 
@@ -682,12 +699,12 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
     (let ((schedule (apply #'make-graph (map 'list #'(lambda (x) (group->schedule x graph)) groups))))
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
-      ;; ~~ Rewriting Rules + Post Fusion ~~~~~
-      ;; SLOW
-      (apply-reduce+move-fusion schedule graph)
-      (apply-serialize-reduction schedule graph) ;; (TODO: Only execute when MAXIMIZE_MEMORY_LOCALITY=1?)
+      ;; ~~ Rewriting Rules + Post Fusion ~~~~~~~~~~~~~~~~~~~~~~
+      (let ((can-split-p-cache (make-can-split-p schedule))) ;; Create a hash table for recording the edge and reference counter.
+        (apply-reduce+move-fusion schedule can-split-p-cache graph)
+        (apply-serialize-reduction schedule can-split-p-cache graph)) ;; (TODO: Only execute when MAXIMIZE_MEMORY_LOCALITY=1?)
       (apply-move-after-reduction schedule)
-      ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
       schedule)))
