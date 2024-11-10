@@ -239,6 +239,7 @@ caten/codegen overview:
                      (push alloc nodes)
                      (when view (push view nodes)))
                    (push w allocated))
+           (dolist (w (node-writes node)) (push w allocated))
            (push (make-compiled-kernel-node node graph) nodes)
            ;; Merging view after the JIT_KERNEL invocation
            (loop for w in (node-writes node)
