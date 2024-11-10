@@ -24,7 +24,7 @@
                                           if (eql i t)
                                             collect t
                                           else
-                                            collect `(:~ ,i))))
+                                            collect `(list :~ ,i))))
     ((list* :slice _) `(!view ,(action->caten-view bind (cdr actions))
                               ,@(loop for subscript in (cdr (car actions))
                                       if (integerp subscript)
@@ -40,7 +40,17 @@
   (trivia:ematch (car actions)
     ((list* :reshape _) `(np:reshape   ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))
     ((list* :permute _) `(np:transpose ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))
-    ((list* :broadcast _) (error "not ready"))
+    ((list* :broadcast _)
+     `(let ((val ,(action->npview bind (cdr actions))))
+        (np:broadcast_to
+         val
+         (list
+          ,@(loop for s in (cdr (car actions))
+                  for nth upfrom 0
+                  if (eql s t)
+                    collect `(nth ,nth (np:shape val))
+                  else
+                    collect s)))))
     ((list* :slice _) `(chain
                         ,(action->npview bind (cdr actions))
                         ([] ,@(loop for subscript in (cdr (car actions))
@@ -73,4 +83,7 @@
   (:slice (1 3 -1) (1 3))
   (:permute 1 0)
   (:reshape 4))
+
+(define-view-test bc (1 10)
+  (:broadcast 10 t))
 
