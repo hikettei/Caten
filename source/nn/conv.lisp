@@ -94,7 +94,7 @@ Applies a convolutional layer over a tensor `x` with a given `weight` and option
   (multiple-value-bind (c-in c-out kernel-size)
       (values (second (shape x)) (first (shape weight)) (subseq (shape weight) 2))
     (st "X[N C_in ~HW] Weight[C_out C_in/Group ~KERNEL_SIZE] -> X[N C_out ~KERNEL_SIZE]" (x weight) (:c-in/group . (/ c-in groups)))
-    (when bias (st "Weight[C_out C_in/Group ~KERNEL_SIZE] Bias[C_out] -> Weight[N C_in ~KERNEL_SIZE]" (weight bias) (:c-in/group . (/ c-in groups))))
+    (when bias (st "Weight[C_out C_in/Group ~KERNEL_SIZE] Bias[C_out] -> Weight[]" (weight bias) (:c-in/group . (/ c-in groups))))
     (let ((convnd (ConvND c-in c-out kernel-size :groups groups :stride stride :dilation dilation :padding padding :bias (if bias t nil))))
       (setf (convnd-weight convnd) weight (convnd-bias convnd) bias)
       (forward convnd x))))
