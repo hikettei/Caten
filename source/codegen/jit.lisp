@@ -407,6 +407,11 @@ caten/codegen overview:
           (print-info "Compiling ..."))
         (%compile-kernel renderer (graph-nodes schedule-graph) dir)
         (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
+          (when (>= (ctx:getenv :JIT_DEBUG) 4)
+            (print-info "Final Scheduling Graph:")
+            (print schedule-graph)
+            (print-info "Final VM Graph:")
+            (print new-graph))
           (setf (avm-graph avm) new-graph
                 (avm-tape-length avm) (length (graph-nodes new-graph))
                 (avm-pc avm) 0
