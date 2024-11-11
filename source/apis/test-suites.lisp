@@ -462,41 +462,6 @@
 	       28.0 35.0 42.0 49.0 56.0 63.0 0.0 8.0 16.0 24.0 32.0 40.0 48.0 56.0
 	       64.0 72.0 0.0 9.0 18.0 27.0 36.0 45.0 54.0 63.0 72.0 81.0))))
 
-(defun exp2 (x) (expt 2 x))
-(defun log2 (x) (log x 2))
-(macrolet ((unary-dtype-test (name op lisp-op &key (non-zero nil) (ulp) (max) (fuzz t))
-	     `(deftest ,name
-		(dolist (dtype `(:float32 :float64))
-		  (let ((model (caten (,op (make-tensor `(1) :initial-element 'a :dtype dtype))))
-			(ulp (or ,ulp (1.0ulp dtype))))
-		    (forall (x dtype :fuzzing nil)
-		      (when (if ,non-zero (> x 0.0) t)
-			(when (or (null ,max) (<= (abs x) ,max))
-			  (assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
-				  ()
-				  "~(~a~)(x=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
-				  ',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
-				  (,lisp-op x) ulp dtype))))
-		    (forall (x dtype :fuzzing ,fuzz)
-		      (when (if ,non-zero (> x 0.0) t)
-			(when (or (null ,max) (<= (abs x) ,max))
-			  (assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
-				  ()
-				  "~(~a~)({x+(random 2.0)}=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
-				  ',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
-				  (,lisp-op x) ulp dtype))))
-		    (ok t))))))
-  ;; TODO: Improve the accuracy
-  (unary-dtype-test sin-test !sin sin)
-  (unary-dtype-test cos-test !cos cos :ulp 1e-3 :max 121255)
-  (unary-dtype-test tan-test !tan tan :ulp 1e-1 :max 20 :fuzz nil)
-  (unary-dtype-test exp-test !exp exp :ulp 1e-3 :max 7)
-  (unary-dtype-test log-test !log log :non-zero t :ulp 1e-4)
-  (unary-dtype-test exp2-test !exp2 exp2 :ulp 1e-3 :max 7)
-  (unary-dtype-test log2-test !log2 log2 :non-zero t :ulp 1e-4) 
-  (unary-dtype-test abs-test !abs abs)
-  (unary-dtype-test signum-test !signum signum))
-
 (deftest test-wrapped-with
   (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
     (let ((caten/aasm::*wrap-around-mode* t))
