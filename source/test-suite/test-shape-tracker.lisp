@@ -72,8 +72,10 @@
                (numpy
                  (let ((x (->numpy x)))
                    (np:reshape ,(action->npview 'x actions) -1))))
-           (ok (and (= (length caten) (length numpy)) (every #'= caten numpy))
-               (format nil "~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x actions) caten numpy)))))))
+           (let ((succeed (and (= (length caten) (length numpy)) (every #'= caten numpy))))
+             (if succeed
+                 (ok succeed ,(format nil "~a" (action->caten-view 'x actions)))
+                 (ok succeed (format nil "~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x actions) caten numpy)))))))))
 
 (defmacro define-view-binary-test ((name shapex shapey) (&rest x-actions) (&rest y-actions)
                                    &aux (x-actions (reverse x-actions)) (y-actions (reverse y-actions)))
@@ -88,11 +90,11 @@
                    (np:add ,(action->npview 'x x-actions) ,(action->npview 'y y-actions)))))
            (ok (= (length (elements caten)) (length (np:reshape numpy -1)))
                (format nil "Total length: caten=~a numpy=~a" (length (elements caten)) (length (np:reshape numpy -1))))
-           (let ((c (and (= (length (elements caten)) (length (np:reshape numpy -1))) (every #'= (elements caten) (np:reshape numpy -1)))))
-             (if c
-                 (ok c ,(format nil "~a+~a" (action->caten-view 'x x-actions) (action->caten-view 'y y-actions)))
-                 (ok c (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
-                               caten (->caten (torch.from_numpy numpy)))))))))))
+           (let ((succeed (and (= (length (elements caten)) (length (np:reshape numpy -1))) (every #'= (elements caten) (np:reshape numpy -1)))))
+             (if succeed
+                 (ok succeed ,(format nil "~a+~a" (action->caten-view 'x x-actions) (action->caten-view 'y y-actions)))
+                 (ok succeed (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
+                                     caten (->caten (torch.from_numpy numpy)))))))))))
 
 (define-view-test permute+reshape (3 3 3)
   (:permute 1 0 2)
@@ -104,6 +106,12 @@
   (:permute 1 0)
   (:reshape 4))
 
+(define-view-test isolated-test-for-convnd-failing-4 (2 3 4 5 1 4 5 1)
+  (:reshape 2 3 4 5 4 5)
+  (:permute 0 1 3 5 2 4)
+  (:reshape   2 1 3 1 5 5 4 4)
+  (:broadcast t t t 3 t t t t)
+  (:permute 0 1 2 5 4 3 6 7))
 #+(or nil)(setf rove::*debug-on-error* t)
 ;; You can see the graph by doing:
 ;; - Disabling compose-views-from-graph (insert nil for the last line)
