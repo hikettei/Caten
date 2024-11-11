@@ -194,6 +194,10 @@ Applying a further slicing:
          (new-shape (loop for m in mask
                           if m collect (pop (tr-shape new-tracker))
                             else collect 1))
+         (new-shape-for-stride
+           (loop for m in mask
+                 if m collect (pop (tr-shape-for-stride new-tracker))
+                 else collect 1))
          (new-mask (loop for m in mask
                          if m collect (pop (tr-mask new-tracker))
                            else collect nil))
@@ -203,7 +207,7 @@ Applying a further slicing:
          (new-permute (compute-new-permute (tr-permute new-tracker) mask)))
     (assert (equal (sort (copy-list new-permute) #'<) (range 0 (length new-permute))))
     (setf (tr-shape new-tracker) new-shape
-          (tr-shape-for-stride new-tracker) (permute-list new-permute new-shape)
+          (tr-shape-for-stride new-tracker) new-shape-for-stride
           (tr-mask new-tracker) new-mask
           (tr-permute new-tracker) new-permute
           (tr-broadcast new-tracker) new-broadcast)

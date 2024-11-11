@@ -72,8 +72,10 @@
                (numpy
                  (let ((x (->numpy x)))
                    (np:reshape ,(action->npview 'x actions) -1))))
-           (ok (and (= (length caten) (length numpy)) (every #'= caten numpy))
-               (format nil "~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x actions) caten numpy)))))))
+           (let ((succeed (and (= (length caten) (length numpy)) (every #'= caten numpy))))
+             (if succeed
+                 (ok succeed ,(format nil "~a" (action->caten-view 'x actions)))
+                 (ok succeed (format nil "~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x actions) caten numpy)))))))))
 
 (defmacro define-view-binary-test ((name shapex shapey) (&rest x-actions) (&rest y-actions)
                                    &aux (x-actions (reverse x-actions)) (y-actions (reverse y-actions)))
@@ -88,9 +90,11 @@
                    (np:add ,(action->npview 'x x-actions) ,(action->npview 'y y-actions)))))
            (ok (= (length (elements caten)) (length (np:reshape numpy -1)))
                (format nil "Total length: caten=~a numpy=~a" (length (elements caten)) (length (np:reshape numpy -1))))
-           (ok (and (= (length (elements caten)) (length (np:reshape numpy -1))) (every #'= (elements caten) (np:reshape numpy -1)))
-               (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
-                       caten (->caten (torch.from_numpy numpy)))))))))
+           (let ((succeed (and (= (length (elements caten)) (length (np:reshape numpy -1))) (every #'= (elements caten) (np:reshape numpy -1)))))
+             (if succeed
+                 (ok succeed ,(format nil "~a+~a" (action->caten-view 'x x-actions) (action->caten-view 'y y-actions)))
+                 (ok succeed (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
+                                     caten (->caten (torch.from_numpy numpy)))))))))))
 
 (define-view-test permute+reshape (3 3 3)
   (:permute 1 0 2)
@@ -102,12 +106,51 @@
   (:permute 1 0)
   (:reshape 4))
 
-#+(or nil)(setf rove::*debug-on-error* t)
+(define-view-test permute+reshape-1 (3 4 5)
+  (:permute 2 1 0)
+  (:reshape 5 1 4 1 3 1))
+
+(define-view-test permute+reshape-2 (3 4 5)
+  (:permute 2 1 0)
+  (:reshape 3 1 4 1 5 1))
+
+(define-view-test permute+reshape-3 (3 4 5) ;; small repro for islated-test-for-convnd-failing-4-3
+  (:permute 2 0 1)
+  (:reshape 1 5 1 3 1 4 1 1 1))
+
+(define-view-test permute+reshape-4 (3 4 5) ;; reshape+permute (not an ascending order) is the cause for isolated-test-for-convnd-failing-4-3?
+  (:permute 2 0 1)
+  (:reshape 5 3 4))
+
+(define-view-test isolated-test-for-convnd-failing-4-1 (2 3 4 5 1 4 5 1)
+  (:reshape 2 3 4 5 4 5))
+
+(define-view-test isolated-test-for-convnd-failing-4-2 (2 3 4 5 1 4 5 1)
+  (:reshape 2 3 4 5 4 5)
+  (:permute 0 1 3 5 2 4))
+;; So permute+reshape
+(define-view-test isolated-test-for-convnd-failing-4-3 (2 3 4 5 1 4 5 1)
+  (:reshape 2 3 4 5 4 5)
+  (:permute 0 1 3 5 2 4)
+  (:reshape  2 1 3 1 5 5 4 4))
+;; permute+reshape+broadcast
+(define-view-test isolated-test-for-convnd-failing-4-4 (2 3 4 5 1 4 5 1)
+  (:reshape 2 3 4 5 4 5)
+  (:permute 0 1 3 5 2 4)
+  (:reshape   2 1 3 1 5 5 4 4)
+  (:broadcast t t t 3 t t t t))
+
+(define-view-test isolated-test-for-convnd-failing-4 (2 3 4 5 1 4 5 1)
+  (:reshape 2 3 4 5 4 5)
+  (:permute 0 1 3 5 2 4)
+  (:reshape   2 1 3 1 5 5 4 4)
+  (:broadcast t t t 3 t t t t)
+  (:permute 0 1 2 5 4 3 6 7))
+#+(or nil)(setf rove::*debug-on-error* t) ;; <- C-c C-c to abort on the error
 ;; You can see the graph by doing:
 ;; - Disabling compose-views-from-graph (insert nil for the last line)
 ;; - Running: (->dot (avm-graph (caten (forward (ConvND 3 2 `(4 4)) (make-tensor `(2 3 8 8))))))
-;; - Memo: ;; 1. LHSがBroadcasted, RHSがNon-Broadcasted, Reduce=T以外の場合はSwap,無理なら!contiguousが必要
-#|
+
 (define-view-binary-test (convnd-failing-1 (2 3 4 4) (1 2 1 3 2 4 2 4))
     ((:reshape   1 2 1 3 1 4 1 4)
      (:broadcast 1 t 1 t 2 t 2 t))
@@ -156,4 +199,3 @@
     ((:reshape 1 3 1 1)
      (:broadcast 2 t 5 5))
     ((:reshape 2 3 5 5)))
-|#
