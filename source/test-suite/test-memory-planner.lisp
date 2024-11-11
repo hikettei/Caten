@@ -12,3 +12,9 @@
       (check-args 1 :tensor (caten (!tril (make-tensor `(5 5) :initial-element 1.0))))
       (check-args 1 :tensor (caten (!tril (make-tensor `(5 5 5) :initial-element 1.0))))
       (check-args 1 `(9) (caten (!rand `(3 3)))))))
+;; [TODO] Testing the following things
+;; - Schedule Cache for the big graph construction
+;; - Memory Planner for the big graph
+;; - Memory Planner for the big and cached schedule construction
+;; - Tested by doing (!matmul (!matmul (!matmul (!matmul ...)))) x 10
+;; - Tested by running the transformer with an dummy input

@@ -88,12 +88,17 @@
    #:!triu
 
    ;; argmax/min
-   #:!argmax #:!argmin)
+   #:!argmax #:!argmin
+
+   ;; statical
+   #:!variance #:!std)
   ;; from helpers.lisp
   (:export
    #:with-no-grad
    #:with-attrs
-   #:print-avm)
+   #:print-avm
+   #:normalize-axis
+   #:normalize-axes)
   ;; from iseq.lisp
   (:export
    #:%compile-toplevel
@@ -140,6 +145,8 @@
    #:!const
    #:!index-components
    #:!xor #:!or #:!and
+   ;; utils
+   #:!rsqrt #:!square
    )
   ;; from initializers.lisp
   (:export

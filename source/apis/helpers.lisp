@@ -97,6 +97,9 @@ Reads and binds attributes from module.
   (assert (integerp n) () "axes should be designed as a number. butgot ~A" n)
   (if (< n 0) (+ (ndim x) n) n))
 
+(defun normalize-axes (x axes)
+  (if (listp axes) (map 'list #'(lambda (n) (normalize-axis x n)) axes) (list (normalize-axis x axes))))
+
 (defun parse-reduce-axes (x lst)
   (declare (type tensor x))
   (ematch lst

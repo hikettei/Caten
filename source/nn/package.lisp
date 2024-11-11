@@ -70,8 +70,11 @@ Policy:
   ;; from normalization.lisp
   (:export
    #:LayerNorm
+   #:!layer-norm
    #:BatchNorm
-   #:RMSNorm)
+   #:!batch-norm
+   #:RMSNorm
+   #:!rms-norm)
   ;; from embedding.lisp
   (:export
    #:Embedding)

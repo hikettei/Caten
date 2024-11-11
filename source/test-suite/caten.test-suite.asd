@@ -7,6 +7,8 @@ Tests that are not related to the core functionality of Caten or are time-consum
   :serial t
   :components ((:file "package")
 	       (:file "helpers")
+               (:file "test-ops")
+               (:file "test-normalization")
 	       (:file "test-randomness")
 	       (:file "test-iseq-lowerer")
 	       (:file "test-llm")
