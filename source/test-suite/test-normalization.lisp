@@ -9,13 +9,13 @@
     (let ((x (rand `(30 30))))
       (assert-equal
           (:atol 1e-5 :rtol 1e-6)
-          (with-torch (x) (->caten (torch.var x :axis -1 :keepdims t)))
-          (proceed (!variance x :axis -1))))))
+          (with-torch (x) (->caten (torch.var x :axis -1 :keepdims t :correction 1)))
+          (proceed (!variance x :axis -1 :correction 1))))))
 
 (deftest test-std
   (with-given-dtype ((:float32 . "float32"))
     (let ((x (rand `(30 30))))
       (assert-equal
           (:atol 1e-5 :rtol 1e-6)
-          (with-torch (x) (->caten (torch.std x :axis -1 :keepdims t)))
-          (proceed (!std x :axis -1))))))
+          (with-torch (x) (->caten (torch.std x :axis -1 :keepdims t :correction 1)))
+          (proceed (!std x :axis -1 :correction 1))))))
