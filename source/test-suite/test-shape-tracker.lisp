@@ -146,14 +146,10 @@
   (:reshape   2 1 3 1 5 5 4 4)
   (:broadcast t t t 3 t t t t)
   (:permute 0 1 2 5 4 3 6 7))
-#+(or nil)(setf rove::*debug-on-error* t)
+#+(or nil)(setf rove::*debug-on-error* t) ;; <- C-c C-c to abort on the error
 ;; You can see the graph by doing:
 ;; - Disabling compose-views-from-graph (insert nil for the last line)
 ;; - Running: (->dot (avm-graph (caten (forward (ConvND 3 2 `(4 4)) (make-tensor `(2 3 8 8))))))
-;; - Memo: ;; 1. LHSがBroadcasted, RHSがNon-Broadcasted, Reduce=T以外の場合はSwap,無理なら!contiguousが必要
-;; 問題が2個ある
-;; - 1. とりあえずFailing1を通す (!contiguous)をVMでやればいい
-;; - 2. Failing4はShape Tracker's bug
 
 ;; Fails on VM
 (define-view-binary-test (convnd-failing-1 (2 3 4 4) (1 2 1 3 2 4 2 4))
