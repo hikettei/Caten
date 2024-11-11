@@ -1,5 +1,6 @@
 ROSWELL       := ros
 QUICKLOAD     := --eval '(progn (cl:push (cl:pathname "./") ql:*local-project-directories*) (asdf:load-asd "caten.asd") (ql:quickload "caten" :silent t))'
+PY4CL         := --eval '(progn (ql:quickload :py4cl) (setf py4cl:*python-command* "python")'
 PIP           := pip
 
 .PHONY: help
@@ -13,7 +14,7 @@ install_extra: ## Install extra dependencies for testing
 
 .PHONY: test
 test: ## Runs test harness
-	$(ROSWELL) $(QUICKLOAD) --eval '(asdf:test-system "caten")'
+	$(ROSWELL) $(PY4CL) $(QUICKLOAD) --eval '(asdf:test-system "caten")'
 
 .PHONY: install_docs
 install_docs: ## Install documentation dependencies
