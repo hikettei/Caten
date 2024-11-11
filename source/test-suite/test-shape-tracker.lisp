@@ -106,13 +106,28 @@
   (:permute 1 0)
   (:reshape 4))
 
+(define-view-test permute+reshape-1 (3 4 5)
+  (:permute 2 1 0)
+  (:reshape 5 1 4 1 3 1))
+
+(define-view-test permute+reshape-2 (3 4 5)
+  (:permute 2 1 0)
+  (:reshape 3 1 4 1 5 1))
+
+(define-view-test permute+reshape-3 (3 4 5) ;; small repro for islated-test-for-convnd-failing-4-3
+  (:permute 2 0 1)
+  (:reshape 1 5 1 3 1 4 1 1 1))
+
+(define-view-test permute+reshape-4 (3 4 5) ;; reshape+permute (not an ascending order) is the cause for isolated-test-for-convnd-failing-4-3?
+  (:permute 2 0 1)
+  (:reshape 5 3 4))
+
 (define-view-test isolated-test-for-convnd-failing-4-1 (2 3 4 5 1 4 5 1)
   (:reshape 2 3 4 5 4 5))
 
 (define-view-test isolated-test-for-convnd-failing-4-2 (2 3 4 5 1 4 5 1)
   (:reshape 2 3 4 5 4 5)
   (:permute 0 1 3 5 2 4))
-
 ;; So permute+reshape
 (define-view-test isolated-test-for-convnd-failing-4-3 (2 3 4 5 1 4 5 1)
   (:reshape 2 3 4 5 4 5)
