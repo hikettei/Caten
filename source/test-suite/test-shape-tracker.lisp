@@ -49,16 +49,17 @@
                     collect `(nth ,nth (np:shape val))
                   else
                     collect s)))))
-    ((list* :slice _) `(chain
-                        ,(action->npview bind (cdr actions))
-                        ([] ,@(loop for subscript in (cdr (car actions))
-                                    if (integerp subscript)
-                                      collect subscript
-                                    else
-                                      collect
-                                      (if (and (third subscript) (< (third subscript) 0))
-                                          `(slice ,(second subscript) ,(car subscript) ,(third subscript))
-                                          `(slice ,@subscript))))))))
+    ((list* :slice _) `(let ((tmp ,(action->npview bind (cdr actions))))
+                         (chain
+                          tmp
+                          ([] ,@(loop for subscript in (cdr (car actions))
+                                      if (integerp subscript)
+                                        collect subscript
+                                      else
+                                        collect
+                                        (if (and (third subscript) (< (third subscript) 0))
+                                            `(slice ,(second subscript) ,(car subscript) ,(third subscript))
+                                            `(slice ,@subscript)))))))))
 
 ) ;; eval-when
 
@@ -85,6 +86,8 @@
                  (let ((x (->numpy x))
                        (y (->numpy y)))
                    (np:add ,(action->npview 'x x-actions) ,(action->npview 'y y-actions)))))
+           (ok (= (length (elements caten)) (length (np:reshape numpy -1)))
+               (format nil "Total length: caten=~a numpy=~a" (length (elements caten)) (length (np:reshape numpy -1))))
            (ok (and (= (length (elements caten)) (length (np:reshape numpy -1))) (every #'= (elements caten) (np:reshape numpy -1)))
                (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
                        caten (->caten (torch.from_numpy numpy)))))))))
@@ -99,7 +102,50 @@
   (:permute 1 0)
   (:reshape 4))
 
+#+(or nil)(setf rove::*debug-on-error* t)
+;; You can see the graph by doing:
+;; - Disabling compose-views-from-graph (insert nil for the last line)
+;; - Running: (->dot (avm-graph (caten (forward (ConvND 3 2 `(4 4)) (make-tensor `(2 3 8 8))))))
 (define-view-binary-test (convnd-failing-1 (2 3 4 4) (1 2 1 3 2 4 2 4))
     ((:reshape   1 2 1 3 1 4 1 4)
      (:broadcast 1 t 1 t 2 t 2 t))
     ())
+
+(define-view-binary-test (convnd-failing-2 (1 2 1 3 5 8 5 8) (2 3 36 36))
+    ((:reshape 2 3 40 40)
+     (:slice (0 2) (0 3) (0 36) (0 36)))
+    ())
+
+(define-view-binary-test (convnd-failing-3 (2 3 4 5 4 5) (2 3 4 5 1 4 5 1))
+    ((:reshape 2 3 4 5 1 4 5 1))
+    ())
+;; ?
+(define-view-binary-test (convnd-failing-4 (2 3 4 5 1 4 5 1) (2 1 3 5 5 3 4 4))
+    ((:reshape 2 3 2 5 2 4)
+     (:permute 0 1 3 5 2 4)
+     (:reshape   2 1 3 1 5 5 4 4)
+     (:broadcast t t t 3 t t t t)
+     (:permute 0 3 1 5 7 2 4 6))
+    ())
+
+(define-view-binary-test (convnd-failing-5 (3 3 4 4) (2 1 3 5 5 3 4 4))
+    ((:reshape 1 1 3 1 1 3 4 4)
+     (:permute 4 3 2 1 0 5 6 7))
+    ())
+
+(define-view-binary-test (convnd-failing-5-rev (2 1 3 5 5 3 4 4) (3 3 4 4)) ;; case 5 but rhs/lhs are swapped.
+    ()
+    ((:reshape 1 1 3 1 1 3 4 4)
+     (:permute 4 3 2 1 0 5 6 7)))
+
+(define-view-binary-test (convnd-failing-6 (2 1 3 5 5 3 4 4) (2 1 3 5 5 3 4 4))
+    () ())
+
+(define-view-binary-test (convnd-failing-7 (2 1 3 5 5 1 1 1) (2 1 3 5 5 1 1 1))
+    ((:broadcast t t t t t 1 1 1))
+    ())
+
+(define-view-binary-test (convnd-failing-8 (3) (2 1 3 5 5 1 1 1))
+    ((:reshape 1 3 1 1)
+     (:broadcast 2 t 5 5))
+    ((:reshape 2 3 5 5)))
