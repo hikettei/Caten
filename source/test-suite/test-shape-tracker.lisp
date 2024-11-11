@@ -74,6 +74,21 @@
            (ok (and (= (length caten) (length numpy)) (every #'= caten numpy))
                (format nil "~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x actions) caten numpy)))))))
 
+(defmacro define-view-binary-test ((name shapex shapey) (&rest x-actions) (&rest y-actions)
+                                   &aux (x-actions (reverse x-actions)) (y-actions (reverse y-actions)))
+  `(deftest ,name
+     (testing ,(format nil "Testing: ~(~a~) + ~(~a~)" (action->caten-view 'x x-actions) (action->caten-view 'y y-actions))
+       (let ((x (linspace ',shapex 1 0))
+             (y (linspace ',shapey 1 0)))
+         (let ((caten (proceed (!contiguous (!add ,(action->caten-view 'x x-actions) ,(action->caten-view 'y y-actions)) :force t)))
+               (numpy
+                 (let ((x (->numpy x))
+                       (y (->numpy y)))
+                   (np:add ,(action->npview 'x x-actions) ,(action->npview 'y y-actions)))))
+           (ok (and (= (length (elements caten)) (length (np:reshape numpy -1))) (every #'= (elements caten) (np:reshape numpy -1)))
+               (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
+                       caten (->caten (torch.from_numpy numpy)))))))))
+
 (define-view-test permute+reshape (3 3 3)
   (:permute 1 0 2)
   (:reshape 3 3 3)
@@ -84,7 +99,7 @@
   (:permute 1 0)
   (:reshape 4))
 
-(define-view-test bc (1 10)
-  (:broadcast 10 t))
-;; [TODO] More Compose Case ...
-
+(define-view-binary-test (convnd-failing-1 (2 3 4 4) (1 2 1 3 2 4 2 4))
+    ((:reshape   1 2 1 3 1 4 1 4)
+     (:broadcast 1 t 1 t 2 t 2 t))
+    ())
