@@ -49,8 +49,6 @@
   ;; (unary-dtype-test truncate-test !truncate truncate :ulp 1e-6)
   ;; (unary-dtype-test floor-test !floor floor :ulp 1e-6)
   ;; (unary-dtype-test ceiling-test !ceiling ceiling :ulp 1e-6)
-
   )
-
-;; TODO: Test Binary
-;; TODO:
+;; [TODO] Binary Ops Test
+;; [TODO] Reduce Ops Test
