@@ -27,6 +27,12 @@
 (defgeneric %vm/allocate-buffer (device-id buffer)
   (:documentation "This method allocates new array/scalar based on buffer, modifying buffer-value, returning buffer."))
 
+(defun make-contiguous-buffer (device base-buffer)
+  (setf (buffer-stride base-buffer) (compute-strides (buffer-shape base-buffer))
+        (buffer-views base-buffer) (loop for i upfrom 0 below (buffer-nrank base-buffer) collect nil)
+        (buffer-value base-buffer) (buffer-value (%vm/allocate-buffer device base-buffer)))
+  base-buffer)
+
 (defun realize-buffer (graph id &key shape1 stride1 views1)
   "allocates the id"
   (declare (type graph graph)

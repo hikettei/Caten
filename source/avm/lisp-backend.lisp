@@ -71,12 +71,17 @@
   (let ((out (copy-buffer (car buffers))))
     (if (= 0 (buffer-nrank (car buffers)))
 	(setf (buffer-value out) (apply op (map 'list #'buffer-value buffers)))
-	(progn
-	  (setf (buffer-value out) (copy-seq (buffer-value out)))
-	  (if reduction-p
-	      (progn
-		(apply #'map-into/buffer out op `(,out ,@(cdr buffers)))
-		(setf (buffer-value (car buffers)) (buffer-value out)))
+	(if reduction-p
+	    (progn
+              (setf (buffer-value out) (copy-seq (buffer-value out)))
+	      (apply #'map-into/buffer out op `(,out ,@(cdr buffers)))
+	      (setf (buffer-value (car buffers)) (buffer-value out)))
+            (progn
+              ;; If not reduced and the `out` is broadcasted?
+              ;; In that case the output tensor should be a contiguous.
+              (if (some #'identity (buffer-views out)) ;; Is not an contiguous?
+                  (setf out (make-contiguous-buffer :lisp out)) ;; Initializing a new contiguous array for the output
+                  (setf (buffer-value out) (copy-seq (buffer-value out))))
 	      (apply #'map-into/buffer out op buffers))))
     out))
 
