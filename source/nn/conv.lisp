@@ -1,4 +1,5 @@
 (in-package :caten/nn)
+
 (defun conv-out-size (in padding dilation kernel-size stride)
   ;; TODO: Support Symbolic (needs !floor function)
   (floor (+ 1 (/ (+ in (* 2 padding) (* (- dilation) (- kernel-size 1)) -1) stride))))
@@ -43,8 +44,7 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
     (with-attrs ((groups :groups) (kernel-size :kernel-size) (in-channels :in-channels) (out-channels :out-channels) (requires-bias :bias)) conv
       (when (null weight)
 	(let ((k (/ groups (* in-channels (apply #'* kernel-size)))))
-	  (setf (convnd-weight conv)
-		(uniform `(,out-channels ,(/ in-channels groups) ,@kernel-size) :low (- (sqrt k)) :high (sqrt k) :requires-grad t))
+	  (setf (convnd-weight conv) (uniform `(,out-channels ,(/ in-channels groups) ,@kernel-size) :low (- (sqrt k)) :high (sqrt k) :requires-grad t))
 	  (when (and requires-bias (null bias))
 	    (setf (convnd-bias conv) (uniform`(,out-channels) :low (- (sqrt k)) :high (sqrt k) :requires-grad t))))))))
 
@@ -70,9 +70,9 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 	  ;; x = x.permute(0,1,3,*[4+i for i in range(len(oyx))],2,*[4+len(oyx)+i for i in range(len(HW))])
 	  (let* ((x (!reshape x (flatten (list bs groups cin 1 oyx hw))))
 		 (x (apply #'!view x (append `(t t t (:~ ,rcout)) (loop for o in oyx collect t) (loop for h in hw collect t))))
-		 (x (!permute x (append (list 0 1 3) (loop for i in (range 0 (length oyx)) collect (+ i 4)) (list 2) (loop for i in (range 0 (length hw)) collect (+ 4 i (length oyx))))))
+		 (x (!permute x (append (list 0 1 3) (map 'list #'(lambda (x) (+ 4 x)) (range 0 (length oyx))) (list 2) (map 'list #'(lambda (x) (+ 4 (length oyx) x)) (range 0 (length hw))))))
 		 ;; x = (x * weight.reshape(1, groups, rcout, *[1] * len(oyx), cin, *HW))
-		 (x (!mul x (!reshape (convnd-weight conv) (append (list 1 groups rcout) (loop repeat (length oyx) collect 1) (list cin) hw))))
+		 (x (!mul (!reshape (convnd-weight conv) (append (list 1 groups rcout) (loop repeat (length oyx) collect 1) (list cin) hw)) x))
 		 ;; x = x.sum([-1-i for i in range(1+len(oyx))], keepdim=True, acc_dtype=acc_dtype)
 		 (x (!sum x :axis (loop for i in (range 0 (+ 1 (length oyx))) collect (+ -1 (- i)))))
 		 ;; x = x.reshape(bs, cout, *oyx)
@@ -82,8 +82,21 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 		  (assert (tensor-p (convnd-bias conv)) () "Bias for ~a should be a Tensor, getting ~a" conv (convnd-bias conv))
 		  (!add x (!reshape (convnd-bias conv) (append (list 1) (list out-channels) (loop repeat (length hw) collect 1)))))
 		x)))))))
+
+(defun !convnd (x weight &key (bias nil) (groups 1) (stride 1) (dilation 1) (padding 0))
+  "
+```
+(!convnd x weight &key (bias nil) (groups 1) (stride 1) (dilation 1) (padding 0))
+```
+Applies a convolutional layer over a tensor `x` with a given `weight` and optional `bias`."
+  (declare (type Tensor x weight) (type (or null Tensor) bias))
+  (assert (>= (ndim weight) 3) () "!convnd: weight should have at least 3 dimensions, got ~a" (ndim weight))
+  (multiple-value-bind (c-in c-out kernel-size)
+      (values (second (shape x)) (first (shape weight)) (subseq (shape weight) 2))
+    (st "X[N C_in ~HW] Weight[C_out C_in/Group ~KERNEL_SIZE] -> X[N C_out ~KERNEL_SIZE]" (x weight) (:c-in/group . (/ c-in groups)))
+    (when bias (st "Weight[C_out C_in/Group ~KERNEL_SIZE] Bias[C_out] -> Weight[]" (weight bias) (:c-in/group . (/ c-in groups))))
+    (let ((convnd (ConvND c-in c-out kernel-size :groups groups :stride stride :dilation dilation :padding padding :bias (if bias t nil))))
+      (setf (convnd-weight convnd) weight (convnd-bias convnd) bias)
+      (forward convnd x))))
 ;; TODO: (defmethod export-to-onnx ((conv ConvND) x) ...)
 (in-package :caten/nn.test)
-
-;;(define-nn-test ConvND)
-;;(define-nn-test ConvND+ReLU)

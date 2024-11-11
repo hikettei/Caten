@@ -71,25 +71,26 @@ Policy:
   (:export
    #:LayerNorm
    #:BatchNorm
-   #:RMSNorm
-   )
+   #:RMSNorm)
   ;; from embedding.lisp
   (:export
    #:Embedding)
   ;; from conv.lisp
   (:export
    #:ConvND
+   #:!convnd
    #:convnd-weight
    #:convnd-bias)
-
   ;; from padding.lisp
   (:export
    #:!padding
-   #:!padding2d
-   )
+   #:!padding2d)
   ;; from pool.lisp
   (:export
-   )
+   #:AvgPool
+   #:!avgpool
+   #:MaxPool
+   #:!maxpool)
   ;; from linear.lisp
   (:export
    #:Linear))

@@ -45,9 +45,14 @@ Caten is a project that started only a few months ago. We are currently in the s
 
 etc...
 
+Before contributing, please note that there is no linter here. Make an effort to adhere to [Google Common Lisp Style Guide](https://google.github.io/styleguide/lispguide.xml). Changes that do not follow this should be rejected by the review.
+
 ## Running tests
+
+You should install python, numpy, pytorch before running the test-suite by using `make install_extra`. If not specified, install the latest one. 
 
 ```sh
 $ make install_extra # extra dependencies for running tests
 $ make test
 ```
+

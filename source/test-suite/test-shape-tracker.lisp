@@ -10,4 +10,150 @@
          (let ((vals (buffer-value (tensor-buffer (proceed (!add (!reshape b `(2 2 1 4)) (!reshape c `(2 2 1 4))))))))
            (ok (every #'= vals #(4.0 6.0 8.0 10.0 20.0 22.0 24.0 26.0 36.0 38.0 40.0 42.0 52.0 54.0 56.0 58.0)))))))))
 
-;; [TODO] Adding more failing case here ...
+(eval-when (:compile-toplevel :execute :load-toplevel)
+
+(defun action->caten-view (bind actions)
+  (when (null actions) (return-from action->caten-view bind))
+  (trivia:ematch (car actions)
+    ((list* :reshape _) `(!reshape ,(action->caten-view bind (cdr actions)) ,@(cdr (car actions))))
+    ((list* :permute _) `(!permute ,(action->caten-view bind (cdr actions)) ,@(cdr (car actions))))
+    ((list* :broadcast _) `(!view ,(action->caten-view bind (cdr actions))
+                                  ,@(loop for i in (cdr (car actions))
+                                          if (eql i t)
+                                            collect t
+                                          else
+                                            collect `(list :~ ,i))))
+    ((list* :slice _) `(!view ,(action->caten-view bind (cdr actions))
+                              ,@(loop for subscript in (cdr (car actions))
+                                      if (integerp subscript)
+                                        collect subscript
+                                      else
+                                        collect
+                                        (if (and (third subscript) (< (third subscript) 0))
+                                            `(list ,(second subscript) ,(car subscript) ,(third subscript))
+                                            `(list ,@subscript)))))))
+
+(defun action->npview (bind actions)
+  (when (null actions) (return-from action->npview bind))
+  (trivia:ematch (car actions)
+    ((list* :reshape _) `(np:reshape   ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))
+    ((list* :permute _) `(np:transpose ,(action->npview bind (cdr actions)) (list ,@(cdr (car actions)))))
+    ((list* :broadcast _)
+     `(let ((val ,(action->npview bind (cdr actions))))
+        (np:broadcast_to
+         val
+         (list
+          ,@(loop for s in (cdr (car actions))
+                  for nth upfrom 0
+                  if (eql s t)
+                    collect `(nth ,nth (np:shape val))
+                  else
+                    collect s)))))
+    ((list* :slice _) `(let ((tmp ,(action->npview bind (cdr actions))))
+                         (chain
+                          tmp
+                          ([] ,@(loop for subscript in (cdr (car actions))
+                                      if (integerp subscript)
+                                        collect subscript
+                                      else
+                                        collect
+                                        (if (and (third subscript) (< (third subscript) 0))
+                                            `(slice ,(second subscript) ,(car subscript) ,(third subscript))
+                                            `(slice ,@subscript)))))))))
+
+) ;; eval-when
+
+(defmacro define-view-test (name shape &rest actions &aux (actions (reverse actions)))
+  "Translates actions into Caten/PyTorch codes, checking they have the same result."
+  `(deftest ,name
+     (testing ,(format nil "Testing: ~(~a~)" (action->caten-view 'x actions))
+       (let ((x (linspace ',shape 1 0)))
+         (let ((caten (elements (proceed (!contiguous ,(action->caten-view 'x actions) :force t))))
+               (numpy
+                 (let ((x (->numpy x)))
+                   (np:reshape ,(action->npview 'x actions) -1))))
+           (ok (and (= (length caten) (length numpy)) (every #'= caten numpy))
+               (format nil "~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x actions) caten numpy)))))))
+
+(defmacro define-view-binary-test ((name shapex shapey) (&rest x-actions) (&rest y-actions)
+                                   &aux (x-actions (reverse x-actions)) (y-actions (reverse y-actions)))
+  `(deftest ,name
+     (testing ,(format nil "Testing: ~(~a~) + ~(~a~)" (action->caten-view 'x x-actions) (action->caten-view 'y y-actions))
+       (let ((x (linspace ',shapex 1 0))
+             (y (linspace ',shapey 1 0)))
+         (let ((caten (proceed (!contiguous (!add ,(action->caten-view 'x x-actions) ,(action->caten-view 'y y-actions)) :force t)))
+               (numpy
+                 (let ((x (->numpy x))
+                       (y (->numpy y)))
+                   (np:add ,(action->npview 'x x-actions) ,(action->npview 'y y-actions)))))
+           (ok (= (length (elements caten)) (length (np:reshape numpy -1)))
+               (format nil "Total length: caten=~a numpy=~a" (length (elements caten)) (length (np:reshape numpy -1))))
+           (ok (and (= (length (elements caten)) (length (np:reshape numpy -1))) (every #'= (elements caten) (np:reshape numpy -1)))
+               (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
+                       caten (->caten (torch.from_numpy numpy)))))))))
+
+(define-view-test permute+reshape (3 3 3)
+  (:permute 1 0 2)
+  (:reshape 3 3 3)
+  (:permute 1 0 2))
+
+(define-view-test permute+slice (5 5)
+  (:slice (1 3 -1) (1 3))
+  (:permute 1 0)
+  (:reshape 4))
+
+#+(or nil)(setf rove::*debug-on-error* t)
+;; You can see the graph by doing:
+;; - Disabling compose-views-from-graph (insert nil for the last line)
+;; - Running: (->dot (avm-graph (caten (forward (ConvND 3 2 `(4 4)) (make-tensor `(2 3 8 8))))))
+;; - Memo: ;; 1. LHSがBroadcasted, RHSがNon-Broadcasted, Reduce=T以外の場合はSwap,無理なら!contiguousが必要
+#|
+(define-view-binary-test (convnd-failing-1 (2 3 4 4) (1 2 1 3 2 4 2 4))
+    ((:reshape   1 2 1 3 1 4 1 4)
+     (:broadcast 1 t 1 t 2 t 2 t))
+    ())
+
+(define-view-binary-test (convnd-failing-1-rev (1 2 1 3 2 4 2 4) (2 3 4 4))
+    ()
+    ((:reshape   1 2 1 3 1 4 1 4)
+     (:broadcast 1 t 1 t 2 t 2 t)))
+
+(define-view-binary-test (convnd-failing-2 (1 2 1 3 5 8 5 8) (2 3 36 36))
+    ((:reshape 2 3 40 40)
+     (:slice (0 2) (0 3) (0 36) (0 36)))
+    ())
+
+(define-view-binary-test (convnd-failing-3 (2 3 4 5 4 5) (2 3 4 5 1 4 5 1))
+    ((:reshape 2 3 4 5 1 4 5 1))
+    ())
+
+(define-view-binary-test (convnd-failing-4 (2 3 4 5 1 4 5 1) (2 1 3 5 5 3 4 4))
+    ((:reshape 2 3 4 5 4 5)
+     (:permute 0 1 3 5 2 4)
+     (:reshape   2 1 3 1 5 5 4 4)
+     (:broadcast t t t 3 t t t t)
+     (:permute 0 1 2 5 4 3 6 7))
+    ())
+
+(define-view-binary-test (convnd-failing-5 (3 3 4 4) (2 1 3 5 5 3 4 4))
+    ((:reshape 1 1 3 1 1 3 4 4)
+     (:permute 4 3 2 1 0 5 6 7))
+    ())
+
+(define-view-binary-test (convnd-failing-5-rev (2 1 3 5 5 3 4 4) (3 3 4 4)) ;; case 5 but rhs/lhs are swapped.
+    ()
+    ((:reshape 1 1 3 1 1 3 4 4)
+     (:permute 4 3 2 1 0 5 6 7)))
+
+(define-view-binary-test (convnd-failing-6 (2 1 3 5 5 3 4 4) (2 1 3 5 5 3 4 4))
+    () ())
+
+(define-view-binary-test (convnd-failing-7 (2 1 3 5 5 1 1 1) (2 1 3 5 5 1 1 1))
+    ((:broadcast t t t t t 1 1 1))
+    ())
+
+(define-view-binary-test (convnd-failing-8 (3) (2 1 3 5 5 1 1 1))
+    ((:reshape 1 3 1 1)
+     (:broadcast 2 t 5 5))
+    ((:reshape 2 3 5 5)))
+|#

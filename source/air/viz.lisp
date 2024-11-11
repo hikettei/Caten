@@ -70,6 +70,16 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
            (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :node) "filled, curve"))
           (:Buffer
            (case (node-type node)
+             (:Allocate
+              (node (node-id node)
+                    (let ((nrank (getattr node :nrank)))
+                      (with-output-to-string (out)
+                        (format
+                         out "{ALLOCATE|shape=[~a]|strides=[~a]|dtype=~a}"
+                         (subseq (node-reads node) 0 nrank)
+                         (subseq (node-reads node) nrank (* 2 nrank))
+                         (getattr node :dtype))))
+                    (helper/color :node) "filled, solid"))
              (:VIEW
               (node (node-id node)
                     (let ((nrank (getattr node :nrank)))
