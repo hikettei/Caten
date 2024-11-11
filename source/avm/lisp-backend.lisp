@@ -78,8 +78,10 @@
 	      (setf (buffer-value (car buffers)) (buffer-value out)))
             (progn
               ;; If not reduced and the `out` is broadcasted?
-              ;; In that case the output tensor should be a contiguous.
-              (if (some #'identity (buffer-views out)) ;; Is not an contiguous?
+              ;; In that case the output tensor should be a contiguous. (e.g: out[10, 10] = x[1] + y[10, 10])
+              (if (and (some #'identity(buffer-views out))
+                       ;; But when all buffers have the same sized array -> no need to make contiguous.
+                       (some #'(lambda (x) (> (array-total-size (buffer-value x)) (array-total-size (buffer-value out)))) (cdr buffers)))
                   (setf out (make-contiguous-buffer :lisp out)) ;; Initializing a new contiguous array for the output
                   (setf (buffer-value out) (copy-seq (buffer-value out))))
 	      (apply #'map-into/buffer out op buffers))))
