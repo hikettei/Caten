@@ -1,6 +1,6 @@
 ROSWELL       := ros
 QUICKLOAD     := --eval '(progn (cl:push (cl:pathname "./") ql:*local-project-directories*) (asdf:load-asd "caten.asd") (ql:quickload "caten" :silent t))'
-PY4CL         := --eval '(progn (ql:quickload :py4cl) (setf py4cl:*python-command* "python")'
+PY4CL         := --eval '(ql:quickload :py4cl :silent t)' --eval '(setf py4cl:*python-command* "python")'
 PIP           := pip
 
 .PHONY: help
