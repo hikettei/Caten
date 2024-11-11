@@ -465,3 +465,45 @@ Returns the indices of the maximum values along an axis.
 Returns the indices of the minimum values along an axis.
 "
   (forward (ArgMinNode :axis axis :keepdims keepdims) x))
+;; ~~~ Statical Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmodule (VarianceNode ((&key (axis -1) (keepdims nil) (correction 1)) :axis axis :keepdims keepdims :correction correction))
+    ()
+    :documentation ""
+    :forward st/reduction1
+    :impl ((variance x)
+           (with-attrs ((axis :axis) (keepdims :keepdims) (correction :correction)) variance
+             (let* ((squares (!square (!- x (!mean x :axis axis :keepdims t))))
+                    (n (apply #'!*
+                              (loop for si in (shape x)
+                                    for so in (shape (!sum squares :axis axis))
+                                    if (not (eql si so)) collect (->fconst si)))))
+               (!div (!sum squares :axis axis :keepdims keepdims) (!maximum (fconst 0) (!- n (->fconst correction))))))))
+                    
+(defun !variance (x &key (axis -1) (keepdims nil) (correction 1))
+  "
+```
+(!variance x &key (axis -1) (keepdims nil))
+```
+
+Returns the variance of the tensor elements along an axis.
+"
+  (declare (type tensor x))
+  (forward (VarianceNode :axis axis :keepdims keepdims :correction correction) x))
+
+(defmodule (StdNode ((&key (axis -1) (keepdims nil) (correction 1)) :axis axis :keepdims keepdims :correction correction))
+    ()
+    :documentation ""
+    :forward st/reduction1
+    :impl ((std x)
+           (with-attrs ((axis :axis) (keepdims :keepdims) (correction :correction)) std
+             (!sqrt (!variance x :axis axis :keepdims keepdims :correction correction)))))
+
+(defun !std (x &key (axis -1) (keepdims nil) (correction 1))
+  "
+```
+(!std x &key (axis -1) (keepdims nil) (correction 1))
+```
+Returns the standard deviation of the tensor elements along an axis.
+"
+  (declare (type tensor x))
+  (forward (StdNode :axis axis :keepdims keepdims :correction correction) x))

@@ -710,3 +710,6 @@ Computes the ~a of the tensor."
   (def OrNode %or !or "logical/bitwise or")
   (def XorNode %xor !xor "logical/bitwise xor")
   (def AndNode %and !and "logical/bitwise and"))
+;; ~~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun !square (x) (!mul x x))
+(defun !rsqrt (x) (!recip (!sqrt x)))

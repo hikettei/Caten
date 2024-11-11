@@ -88,7 +88,10 @@
    #:!triu
 
    ;; argmax/min
-   #:!argmax #:!argmin)
+   #:!argmax #:!argmin
+
+   ;; statical
+   #:!variance #:!std)
   ;; from helpers.lisp
   (:export
    #:with-no-grad
@@ -140,6 +143,8 @@
    #:!const
    #:!index-components
    #:!xor #:!or #:!and
+   ;; utils
+   #:!rsqrt #:!square
    )
   ;; from initializers.lisp
   (:export
