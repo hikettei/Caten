@@ -207,6 +207,9 @@ Usage:
      "When this parameter is set to 1, caten/air checks that all dependencies are satisfied during each process of Graph Rewriting. (i.e.: FastGraph becomes Graph) This directly impacts the compilation speed.")
     (:PROFILE_SIMPLIFIER
      0 :int #.(oneof "PROFILE_SIMPLIFIER" 0 `(0 1))
-     "Set 1 to profile the simplifier in %make-graph-from-iseq")))
+     "Set 1 to profile the simplifier in %make-graph-from-iseq")
+    (:PY4CL_PYTHON
+     "python" :string identity
+     "py4cl:*python-command* (only required for running the test)")))
 
 (defparameter *ctx* (make-contextvar))

@@ -8,6 +8,7 @@
 
 (in-package :caten/test-suite)
 
+(setf *python-command* (ctx:getenv :PY4CL_PYTHON))
 (python-exec "import torch
 import torch.nn.functional as f
 import numpy as np")
