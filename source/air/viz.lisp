@@ -78,7 +78,7 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                          out "{ALLOCATE|shape=[~a]|strides=[~a]|dtype=~a}"
                          (subseq (node-reads node) 0 nrank)
                          (subseq (node-reads node) nrank (* 2 nrank))
-                         (getattr node :nrank))))
+                         (getattr node :dtype))))
                     (helper/color :node) "filled, solid"))
              (:VIEW
               (node (node-id node)
