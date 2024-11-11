@@ -88,9 +88,11 @@
                    (np:add ,(action->npview 'x x-actions) ,(action->npview 'y y-actions)))))
            (ok (= (length (elements caten)) (length (np:reshape numpy -1)))
                (format nil "Total length: caten=~a numpy=~a" (length (elements caten)) (length (np:reshape numpy -1))))
-           (ok (and (= (length (elements caten)) (length (np:reshape numpy -1))) (every #'= (elements caten) (np:reshape numpy -1)))
-               (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
-                       caten (->caten (torch.from_numpy numpy)))))))))
+           (let ((c (and (= (length (elements caten)) (length (np:reshape numpy -1))) (every #'= (elements caten) (np:reshape numpy -1)))))
+             (if c
+                 (ok c ,(format nil "~a+~a" (action->caten-view 'x x-actions) (action->caten-view 'y y-actions)))
+                 (ok c (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
+                               caten (->caten (torch.from_numpy numpy)))))))))))
 
 (define-view-test permute+reshape (3 3 3)
   (:permute 1 0 2)
