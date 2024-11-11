@@ -96,7 +96,9 @@
   (:export
    #:with-no-grad
    #:with-attrs
-   #:print-avm)
+   #:print-avm
+   #:normalize-axis
+   #:normalize-axes)
   ;; from iseq.lisp
   (:export
    #:%compile-toplevel
