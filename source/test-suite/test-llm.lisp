@@ -50,8 +50,72 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 	    (->caten (f:softmax x)))
 	  (proceed (!softmax x))))))
 
-;; RMSNorm
-;; LayerNorm
-;; Attention
-;; [TODO] Test all ops in caten/llm
+(defun mha-parameters (dim)
+  (let ((c-attn-weight (rand `(,(* 3 dim) ,dim)))
+        (c-attn-bias   (rand `(,(* 3 dim))))
+        (c-proj-weight (rand `(,dim ,dim)))
+        (c-proj-bias   (rand `(,dim))))
+    (values c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
+
+(python-exec "
+def mha_scaled_dot_product_attention(query, key, value, mask) -> torch.Tensor:
+    # Compute scaled dot-product attention
+    qk = torch.matmul(query, key.transpose(-2, -1))
+    scale_factor = 1 / math.sqrt(query.size(-1))
+    qk = qk * scale_factor
+    qk = qk + mask
+    attn_weights = torch.softmax(qk, dim=-1)
+    return torch.matmul(attn_weights, value)
+    
+def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_weight, c_proj_bias):
+    # Combine queries, keys, and values into one matrix multiplication for efficiency
+    xqkv = torch.matmul(input, c_attn_weight.T) + c_attn_bias
+    batch_size, seq_len, _ = input.size()
+    head_dim = dim // n_heads
+    mask = torch.triu(torch.full((1, 1, seq_len, seq_len), float('-inf')), diagonal=1+n)
+    # Reshape and split the combined QKV tensor
+    xqkv = xqkv.view(batch_size, seq_len, n_heads, 3, head_dim)
+    xqkv = xqkv.permute(3, 0, 2, 1, 4)  # Rearrange dimensions for splitting
+    xq, xk, xv = xqkv[0], xqkv[1], xqkv[2]
+    # Compute attention output
+    attn_output = mha_scaled_dot_product_attention(xq, xk, xv, mask)
+    # Concatenate and reshape the attention output
+    attn_output = attn_output.transpose(1, 2).contiguous().view(batch_size, seq_len, dim)
+    # Apply the final linear projection
+    return torch.matmul(attn_output, c_proj_weight.T) + c_proj_bias
+")
+(import-function "torch_mha_impl")
+
+#|
+[TODO] Need to update the codegen!
+(defun mha-impl (n dim n-heads input c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
+  (let* ((xqkv (!add (!matmul input (!t c-attn-weight)) c-attn-bias))
+         (batch-size (car (shape input)))
+         (head-dim (/ dim n-heads))
+         (seq-len (second (shape input)))
+         (mask (!triu (!full `(1 1 ,seq-len ,seq-len) (-inf)) :diagonal (!+ (iconst 1) (iconst n))))
+         (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
+         (xqkv (!permute xqkv 3 0 2 1 4)))
+    (multiple-value-bind (xq xk xv)
+        (values (!view xqkv 0 t t t t) (!view xqkv 1 t t t t) (!view xqkv 2 t t t t))
+      (let* ((attn-output (scaled-dot-product-attention xq xk xv mask))
+             (attn-output (!reshape (!transpose attn-output 1 2) `(,batch-size ,seq-len ,dim))))
+        (!add (!matmul attn-output (!t c-proj-weight)) c-proj-bias)))))
+
+(deftest test-multihead-attention
+  (with-given-dtype ((:float32 . "float32"))
+    (with-no-grad
+      (let* ((dim 128)
+             (n-heads 8)
+             (batch-size 4)
+             (seq-len 64)
+             (n 1)
+             (x (rand `(,batch-size ,seq-len ,dim))))
+        (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
+          (assert-equal
+              (:atol 1e-5 :rtol 1e-5)
+              (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
+                (->caten (torch_mha_impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
+              (proceed (mha-impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))))))
+|#
 ;; [TODO] Compiling the entire transformer graph here
