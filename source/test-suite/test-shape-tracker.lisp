@@ -106,10 +106,17 @@
 ;; You can see the graph by doing:
 ;; - Disabling compose-views-from-graph (insert nil for the last line)
 ;; - Running: (->dot (avm-graph (caten (forward (ConvND 3 2 `(4 4)) (make-tensor `(2 3 8 8))))))
+;; - Memo: ;; 1. LHSがBroadcasted, RHSがNon-Broadcasted, Reduce=T以外の場合はSwap,無理なら!contiguousが必要
+#|
 (define-view-binary-test (convnd-failing-1 (2 3 4 4) (1 2 1 3 2 4 2 4))
     ((:reshape   1 2 1 3 1 4 1 4)
      (:broadcast 1 t 1 t 2 t 2 t))
     ())
+
+(define-view-binary-test (convnd-failing-1-rev (1 2 1 3 2 4 2 4) (2 3 4 4))
+    ()
+    ((:reshape   1 2 1 3 1 4 1 4)
+     (:broadcast 1 t 1 t 2 t 2 t)))
 
 (define-view-binary-test (convnd-failing-2 (1 2 1 3 5 8 5 8) (2 3 36 36))
     ((:reshape 2 3 40 40)
@@ -149,3 +156,4 @@
     ((:reshape 1 3 1 1)
      (:broadcast 2 t 5 5))
     ((:reshape 2 3 5 5)))
+|#
