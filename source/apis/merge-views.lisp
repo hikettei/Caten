@@ -206,10 +206,6 @@ Applying a further slicing:
                                 else collect nil))
          (new-permute (compute-new-permute (tr-permute new-tracker) mask)))
     (assert (equal (sort (copy-list new-permute) #'<) (range 0 (length new-permute))))
-   ;; (print "++++")
-   ;; (print new-permute)
-   ;; (format t "~%new-shape=~a~%shape4stride=~a~%pnshape=~a~%" new-shape (tr-shape-for-stride tracker) (permute-list new-permute new-shape))
-   ;; (print new-shape-for-stride)
     (setf (tr-shape new-tracker) new-shape
           (tr-shape-for-stride new-tracker) new-shape-for-stride
           (tr-mask new-tracker) new-mask

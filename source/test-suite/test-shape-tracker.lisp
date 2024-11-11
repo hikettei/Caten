@@ -151,7 +151,6 @@
 ;; - Disabling compose-views-from-graph (insert nil for the last line)
 ;; - Running: (->dot (avm-graph (caten (forward (ConvND 3 2 `(4 4)) (make-tensor `(2 3 8 8))))))
 
-;; Fails on VM
 (define-view-binary-test (convnd-failing-1 (2 3 4 4) (1 2 1 3 2 4 2 4))
     ((:reshape   1 2 1 3 1 4 1 4)
      (:broadcast 1 t 1 t 2 t 2 t))
@@ -170,7 +169,7 @@
 (define-view-binary-test (convnd-failing-3 (2 3 4 5 4 5) (2 3 4 5 1 4 5 1))
     ((:reshape 2 3 4 5 1 4 5 1))
     ())
-;; Fails on JIT/VM
+
 (define-view-binary-test (convnd-failing-4 (2 3 4 5 1 4 5 1) (2 1 3 5 5 3 4 4))
     ((:reshape 2 3 4 5 4 5)
      (:permute 0 1 3 5 2 4)
