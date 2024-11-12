@@ -271,7 +271,7 @@
                  (if (find id replaceable)
                      ;; If the id was used by more than two nodes, split them. (not to introduce the extra computation)
                      (and
-                      (= 1 (count-if #'(lambda (node) (find id (node-reads node))) blueprint)) ;; note: blueprint was previously group
+                      (= 1 (apply #'+ (map 'list #'(lambda (node) (count id (node-reads node))) blueprint)))
                       (or (null current-pair) ;; no parent                          
                           (null (intersection (expr-writes current-pair) (apply #'append (map 'list #'expr-writes other-pairs))))))
                      nil))
