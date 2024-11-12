@@ -1,5 +1,4 @@
 (in-package :caten/apis)
-
 ;; ~~~ Dimension Manipulation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodel (SplitNode (sizes &key (dim 0)))
     ((sizes sizes :type (or fixnum list))
