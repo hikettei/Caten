@@ -172,7 +172,7 @@ caten/codegen overview:
     (values (nreverse (explore top-id)) seen)))
 
 (defun select-output-shape (wt)
-  (if (buffer-orig-buffer-shape wt)
+  (if (and (buffer-orig-buffer-shape wt) (= (length (buffer-orig-buffer-shape wt)) (length (buffer-shape wt))))
       ;; If the view is slice?
       (if (every #'(lambda (view orig-shape) (or (null view) (equal view `(0 ,orig-shape 1 nil)))) (buffer-views wt) (buffer-orig-buffer-shape wt))
           (buffer-shape wt)
@@ -208,8 +208,7 @@ caten/codegen overview:
                                    else collect s)
                            (buffer-stride wt))
                           :nrank (length (buffer-shape wt)) :dtype (buffer-dtype wt))))
-    (when (buffer-orig-buffer-shape wt)
-      (assert (= (length (buffer-orig-buffer-shape wt)) (length (buffer-shape wt)))))
+    (assert (= (length (select-output-shape wt)) (length (buffer-shape wt))))
     (values view alloc)))
 
 (defun id->output-map (graph)
