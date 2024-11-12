@@ -18,5 +18,6 @@
   (let ((x (ax+b `(3) 1 0))
         (y (ax+b `(3) 1 3))
         (z (ax+b `(3) 1 6)))
+    (ok (= 9 (array-total-size (elements (proceed (!concatenate 0 x y z))))))
     (ok (every #'= (elements (proceed (!concatenate 0 x y z))) #(0 1 2 3 4 5 6 7 8 9)))))
 ;; !split + !matmul which is required for Attention Scheduling
