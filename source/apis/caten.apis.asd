@@ -16,6 +16,7 @@
 	       (:file "function")
 	       (:file "module")
 	       (:file "model")
+               (:file "ops")
 	       (:file "ahead-of-time")
 	       (:file "initializers")
                (:file "documentation"))
