@@ -10,6 +10,8 @@
    (base base)
    (scale scale)))
 
+;RoPE needs an extra arg in the call function, the generic doesn't consider it
+;offset: int = 0
 (defmethod call ((op RoPE) &rest inputs)
   (let* ((x (car inputs))
          (shape (shape x))
@@ -17,9 +19,12 @@
          (n (first last-two))
          (d (second last-two)))
     (dotimes (i 10)
-      (format t "i = ~a~%" i))))
-
-(defparameter *tensor1* (make-tensor `(3 4 3) :initial-element 1.0))
+      (format t "i = ~a~%" i)
+      (defparameter shape (shape x))
+      (defparameter x (!reshape x (list n d)))
+      (defparameter positions (range 0 n )) ;not sure if this is what mlx doing (mx.arange(n))
+      (print positions)
+      )))
 
 (let ((instance (make-instance 'RoPE)))
   (call instance *tensor1*))
