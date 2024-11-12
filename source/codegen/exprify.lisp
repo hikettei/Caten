@@ -151,28 +151,37 @@
     (remove-unused-blueprint blueprint schedule-graph)))
 
 (defmethod exprify ((node Node))
-  (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
-             :reduction (getattr node :reduction :allow-undefined t)
-             :_type_relay (read-type-relay node)
-             :declare-type (getattr node :declare-type)
-             :expr (make-expr
-                    :graph
-                    (apply
-                     #'make-graph
-                     (append
-                      (loop for r in (node-reads node)
-                            for rt in (relay-reads (read-type-relay node))
-                            for ri in (relay-read-iters (read-type-relay node))
-                            if (symbolp r)
-                              append
-                              (if (= 0 (buffer-nrank rt))
-                                  (let ((nodes (graph-nodes (expr-graph (expr-const r (buffer-dtype rt))))))
-                                    (assert (eql (node-type (car (last nodes))) :LOAD))
-                                    (setf (node-writes (car (last nodes))) (list r))
-                                    nodes)
-                                  (list (make-aref r rt ri))))
-                      (list node)))
-                    :out node)))
+  (let ((nth->aref (make-hash-table)))
+    (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
+               :reduction (getattr node :reduction :allow-undefined t)
+               :_type_relay (read-type-relay node)
+               :declare-type (getattr node :declare-type)
+               :expr (make-expr
+                      :graph
+                      (apply
+                       #'make-graph
+                       (append
+                        (loop for r in (node-reads node)
+                              for rt in (relay-reads (read-type-relay node))
+                              for ri in (relay-read-iters (read-type-relay node))
+                              for nth upfrom 0
+                              if (symbolp r)
+                                append
+                                (if (= 0 (buffer-nrank rt))
+                                    (let ((nodes (graph-nodes (expr-graph (expr-const r (buffer-dtype rt))))))
+                                      (assert (eql (node-type (car (last nodes))) :LOAD))
+                                      (setf (node-writes (car (last nodes))) (list r))
+                                      nodes)
+                                    (let ((newid (gensym "JIT_AREF_TMP")))
+                                      (setf (gethash nth nth->aref) newid)
+                                      (list (make-aref newid r rt ri)))))
+                        (let ((node (copy-node node)))
+                          (setf (node-reads node)
+                                (loop for i upfrom 0
+                                      for r in (node-reads node)
+                                      collect (or (gethash i nth->aref) r)))
+                          (list node))))
+                      :out node))))
 
 (defun merge-and-graft-expr (node pairs)
   (assert (eql (node-type node) :EXPR))
@@ -253,7 +262,7 @@
                      ;; If the id was used by more than two nodes, split them. (not to introduce the extra computation)
                      (and
                       (= 1 (count-if #'(lambda (node) (find id (node-reads node))) blueprint)) ;; note: blueprint was previously group
-                      (or (null current-pair)
+                      (or (null current-pair) ;; no parent                          
                           (null (intersection (expr-writes current-pair) (apply #'append (map 'list #'expr-writes other-pairs))))))
                      nil))
                (group->expr-group (group &aux (tops (nodes-write-to group)) (graph (apply #'make-graph group)) (seen nil))
@@ -363,8 +372,8 @@
   (declare (type graph expr))
   (dolist (n (graph-nodes expr))
     (if (eql (node-type n) :AREF)
-        (multiple-value-bind (id type is) (funcall replace (car (node-writes n)) (getattr n :buffer) (getattr n :space))
-          (setf (node-writes n) (list id)
+        (multiple-value-bind (id type is) (funcall replace (getattr n :storage-id) (getattr n :buffer) (getattr n :space))
+          (setf (getattr n :storage-id) id
                 (getattr n :buffer) (or type (getattr n :buffer))
                 (getattr n :space) (or is (getattr n :space))))
         (setf (node-reads n)
