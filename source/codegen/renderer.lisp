@@ -110,7 +110,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (declare (type symbol name)
            (type buffer buffer)
            (type Iteration-Space space))
-  (make-node :Render :Aref (list name) nil :buffer buffer :space space))
+  (make-node :Render :Aref (list name) nil :buffer buffer :space space :storage-id name))
 
 (defclass Renderer ()
   ((graph :initarg :graph :accessor renderer-graph)
