@@ -36,7 +36,8 @@ Also the tensor has following slots:
   (grad grad :type (or null Tensor))
   (grad-id grad-id :type symbol)
   (variables variables :type list)
-  (cache-canonicalize nil))
+  (cache-canonicalize nil)
+  (nth-output 0 :type fixnum))
 
 (defmethod make-load-form ((tensor Tensor) &optional env &aux (debug-p (= 1 (ctx:getenv :AOT_VERBOSE))))
   (declare (ignore env))

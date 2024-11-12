@@ -47,5 +47,7 @@ Note: The dimension to split must be an integer.
   (declare (type tensor x)
            (type (or fixnum list) sizes)
            (type fixnum dim))
-  ;; Defmodel doesnot support multiple output creation?
   (forward (SplitNode sizes :dim dim) x))
+
+;; Before merging:
+;; !concatenate !split should be implemented here

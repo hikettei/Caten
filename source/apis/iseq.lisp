@@ -118,6 +118,15 @@
 		   (session/assign session grad-id final-node))))))
    (session-grad->grads session)))
 ;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun sync-output-to (tensors nodes)
+  (assert (= (length tensors) (length nodes)))
+  (loop for tensor in tensors
+        for node in nodes
+        if (= 0 (tensor-nth-output tensor))
+          collect node
+        else
+          collect (make-node-pointing-to-nth node (tensor-nth-output tensor))))
+
 (defun %lower-iseq (session iseq &key (no-verify nil) (simplifiers *external-simplifiers*))
   "Lowers iseq (a list of topologically sorted tensors) into caten/air graph."
   (declare (type compiler-session session)
@@ -131,7 +140,7 @@
 		()
 		"Every tensor ~a should be appeared in the graph first. (make sure that the top of nodes is allocation)"
 		(func-variables (tensor-op tensor)))
-	(let ((low-graph (apply #'lower (tensor-op tensor) (map 'list #'t->id (func-variables (tensor-op tensor))))))
+	(let ((low-graph (apply #'lower (tensor-op tensor) (sync-output-to (func-variables (tensor-op tensor)) (map 'list #'t->id (func-variables (tensor-op tensor)))))))
 	  (assert (graph-p low-graph) () "%tensor->asm: lower(~a, ...) should return a graph, butgot ~a" (tensor-op tensor) low-graph)
 	  (assert (every #'node-p (graph-nodes low-graph)) () "%tensor->asm: received invaild nodes. all elements should be a node. ~a" low-graph)
 	  (assert (>= (length (the list (graph-nodes low-graph))) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")

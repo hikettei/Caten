@@ -12,6 +12,9 @@
   (declare (ignore inputs))
   (let ((outputs (multiple-value-list (call-next-method))))
     (setf (module-outputs module) outputs)
+    (loop for o in outputs
+          for nth upfrom 0
+          do (setf (tensor-nth-output o) nth))
     (apply #'values outputs)))
 (defmethod impl :around ((module Module) &rest inputs)
   (declare (ignore inputs))
