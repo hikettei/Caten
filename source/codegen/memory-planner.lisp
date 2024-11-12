@@ -93,7 +93,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
     (when (eql (node-type bp) :EXPR)
       (dolist (item (graph-nodes (expr-graph (getattr bp :EXPR))))
         (when (eql (node-type item) :AREF)
-          (setf (getattr item :storage-id) (funcall newid (car (node-writes item))))))))
+          (setf (getattr item :storage-id) (funcall newid (getattr item :storage-id)))))))
   ;; Remove Duplicated :DEFINE_GLOBAL
   (setf (getattr item :blueprint)
         (loop with seen = nil

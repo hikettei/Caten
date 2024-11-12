@@ -668,8 +668,8 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
              (make-node :Buffer :MOVE (list w) (list a b)
                         :_type_relay
                         (caten/codegen/shape-inference:make-inferred-type
-                         (list (%newtype base-type))
-                         (list (%newtype base-type) (%newtype base-type)))))
+                         (list (%newtype base-type) (%newtype base-type))
+                         (list (%newtype base-type)))))
            (acc (id) (intern (format nil "~(~a~)_acc" id)))
            (r (si &aux (g (apply #'make-graph (getattr si :items))))
              (dolist (node (graph-nodes g))

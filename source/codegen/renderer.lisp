@@ -79,11 +79,7 @@ if(condition)
 ID[*space]
 ```
 
-The source ID is determined by the following rule:
-- If the :storage-id is provided, ID is storage-id. (:storage-id is written by the memory-planner)
-- If the :storage-id is nil, ID is (car (node-writes aref))
-
-- storage-id[symbol or null] An index to the reference pointer optimized by the memory-planner.
+- storage-id[symbol] An index to the reference pointer optimized by the memory-planner.
 - buffer[Buffer] The buffer to be accessed.
 - space[Iteration-Space] The iteration space `:AREF` belongs to.
 "
@@ -106,11 +102,11 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
            (type boolean pointer-p))
   (make-node :Render :DEFINE-GLOBAL (list id) nil :dtype dtype :pointer-p pointer-p :type type :nrank nrank))
 
-(defun make-aref (name buffer space)
-  (declare (type symbol name)
+(defun make-aref (idx storage-id buffer space)
+  (declare (type symbol storage-id)
            (type buffer buffer)
            (type Iteration-Space space))
-  (make-node :Render :Aref (list name) nil :buffer buffer :space space))
+  (make-node :Render :Aref (list idx) nil :buffer buffer :space space :storage-id storage-id))
 
 (defclass Renderer ()
   ((graph :initarg :graph :accessor renderer-graph)
@@ -144,7 +140,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (let ((buffer (getattr node :buffer))
         (space  (getattr node :space))
         (index-space (renderer-index-space renderer))
-        (id (or (getattr node :storage-id) (car (node-writes node)))))
+        (id (getattr node :storage-id)))
     (when (and (null index-space) (> (buffer-nrank buffer) 0))
       (warn "render-aref: Cannot render :AREF for ~a without providing :index-space, thus replaced with ?." id))
     (if (= -1 (buffer-nrank buffer))
