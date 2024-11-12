@@ -94,6 +94,7 @@
    #:!variance #:!std
    ;; dimension manipulation
    #:!split
+   #:!chunk
    )
   ;; from helpers.lisp
   (:export

@@ -394,5 +394,16 @@ Note: The dimension to split must be an integer.
            (type fixnum dim))
   (forward (SplitNode sizes :dim dim) x))
 
-;; Before merging:
-;; !concatenate !split should be implemented here
+(defun !chunk (x chunks &key (dim 0))
+  "
+```
+(!chunk x chunks &key (dim 0))
+```
+Splits the tensor into `chunks` number of tensors along the specified dimension.
+"
+  (declare (type tensor x)
+           (type (integer 0 *) chunks)
+           (type fixnum dim))
+  (let ((dim (normalize-axis x dim)))
+    (assert (nth dim (shape x)) () "The dimension to split must be an integer.")
+    (forward (SplitNode (ceiling (/ (nth dim (shape x)) chunks)) :dim dim) x)))
