@@ -407,3 +407,51 @@ Splits the tensor into `chunks` number of tensors along the specified dimension.
   (let ((dim (normalize-axis x dim)))
     (assert (nth dim (shape x)) () "The dimension to split must be an integer.")
     (forward (SplitNode (ceiling (/ (nth dim (shape x)) chunks)) :dim dim) x)))
+
+(defmodel (ConcatenateNode (dim)) ((dim dim :type fixnum)))
+(defmethod call ((op ConcatenateNode) &rest inputs)
+  (let ((dim (normalize-axis (car inputs) (slot-value op 'dim))))
+    (flet ((s (tensor)
+             (let ((shape (copy-list (tensor-shape tensor))))
+               (setf (nth dim shape) 0)
+               shape)))
+      (assert (every #'(lambda (x) (equal (s x) (s (first inputs)))) (cdr inputs)) () "ConcatenateNode: All tensors must have the same shape except in the concatenation dimension.")
+      (let* ((cat-dims (map 'list #'(lambda (x) (nth dim (shape x))) inputs))
+             (_ (assert (every #'integerp cat-dims) () "ConcatenateNode: All concatenation dimensions must be integers."))
+             (cat-tensor (make-tensor
+                          (loop for s in (shape (car inputs))
+                                for nth upfrom 0
+                                if (= nth dim)
+                                  collect (apply #'+ cat-dims)
+                                else
+                                  collect s)
+                          :dtype (dtype-of (car inputs)))))
+        (declare (ignore _))
+        (flet ((~ (offset nth)
+                 (loop with cat-dim = (nth nth cat-dims)
+                       for s in (shape (car inputs))
+                       for nth upfrom 0
+                       if (= nth dim)
+                         collect (list offset (+ offset cat-dim))
+                       else
+                         collect t)))
+          (loop with offset = 0
+                for nth upfrom 0
+                for cat-dim in cat-dims
+                for in in inputs do
+                  (setf cat-tensor (!move (apply #'!view-from-base cat-tensor (~ offset nth)) in))
+                  (incf offset cat-dim))
+          (apply #'!view-from-base cat-tensor
+                 (loop for i upfrom 0 below (ndim cat-tensor)
+                       if (= i dim) collect `(0 ,(apply #'+ cat-dims))
+                         else collect t)))))))
+
+(defun !concatenate (dim &rest tensors)
+  "
+```
+(!concatenate dim &rest tensors)
+```
+Concatenates the tensor along the specified dimension. Note that all tensors must have the same shape except in the concatenation dimension, which must be an integer.
+"
+  (declare (type fixnum dim))
+  (apply #'forward (ConcatenateNode dim) tensors))

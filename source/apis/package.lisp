@@ -69,8 +69,9 @@
    #:defmodule
    #:module-outputs
    #:module-attrs
-   #:module-sv4bws
-
+   #:module-sv4bws)
+  ;; from high-level-ops.lisp
+  (:export
    ;; reductions
    #:SumNode
    #:!sum
@@ -95,7 +96,7 @@
    ;; dimension manipulation
    #:!split
    #:!chunk
-   )
+   #:!concatenate)
   ;; from helpers.lisp
   (:export
    #:with-no-grad
