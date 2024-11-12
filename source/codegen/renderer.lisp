@@ -142,7 +142,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 (defun render-child (renderer self nth)
   (declare (type Renderer renderer))
   (let ((child (id->value (renderer-graph renderer) (nth nth (node-reads self)))))
-    (if (eql (node-type child) :Aref)
+    (if (and child (eql (node-type child) :Aref))
         (render-aref renderer child :buffer (nth nth (relay-reads (read-type-relay self))) :space (nth nth (relay-read-iters (read-type-relay self))))
         (render-node renderer (nth nth (node-reads self))))))
 
