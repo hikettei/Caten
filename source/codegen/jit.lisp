@@ -171,6 +171,14 @@ caten/codegen overview:
                 (apply #'append (map 'list #'explore (node-reads node)))))))
     (values (nreverse (explore top-id)) seen)))
 
+(defun select-output-shape (wt)
+  (if (buffer-orig-buffer-shape wt)
+      ;; If the view is slice?
+      (if (every #'(lambda (view orig-shape) (or (null view) (equal view `(0 ,orig-shape 1 nil)))) (buffer-views wt) (buffer-orig-buffer-shape wt))
+          (buffer-shape wt)
+          (buffer-orig-buffer-shape wt))
+      (buffer-shape wt)))
+
 (defun make-alloc+view-node-from-buffer (wt w)
   (when (some #'identity (buffer-views wt))
     ;; Consider the case: (NIL NIL (0 3 1 T))
@@ -193,7 +201,7 @@ caten/codegen overview:
                        :nrank (length (buffer-shape wt)))))
         (alloc (make-node :Buffer :Allocate (list w)
                           (append
-                           (loop for s in (or (buffer-orig-buffer-shape wt) (buffer-shape wt))
+                           (loop for s in (select-output-shape wt)
                                  for nth upfrom 0
                                  for v = (nth nth (buffer-views wt))
                                  if (fourth v) collect 1

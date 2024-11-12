@@ -6,7 +6,7 @@
       (ok (every #'= (elements (proceed (!+ a b c d))) #(18.0 22.0 26.0)))))
   (let ((x (ax+b `(8 8) 1 0)))
     (multiple-value-bind (a b c d) (!chunk x 4)
-      (ok (every #'= (elements (proceed (!+ a b c d)))
+      (ok (every #'= (elements (proceed (!contiguous (!+ a b c d))))
                  #(96.0 100.0 104.0 108.0 112.0 116.0 120.0 124.0 128.0 132.0 136.0
                    140.0 144.0 148.0 152.0 156.0 16.0 17.0 18.0 19.0 20.0 21.0 22.0
                    23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0 32.0 33.0 34.0 35.0
