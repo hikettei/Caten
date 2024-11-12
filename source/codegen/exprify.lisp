@@ -219,6 +219,8 @@
 
 (defun expr-writes (expr)
   (loop for item in (graph-nodes (expr-graph (getattr expr :expr)))
+        if (eql (node-type item) :Aref)
+          collect (getattr item :storage-id)
         append (node-writes item)))
 
 (defun expr-only-leaf-are-arguments (nodes schedule-graph)
