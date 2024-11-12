@@ -221,33 +221,41 @@
   (loop for item in (graph-nodes (expr-graph (getattr expr :expr)))
         if (eql (node-type item) :Aref)
           collect (getattr item :storage-id)
-        append (node-writes item)))
+        else
+          append (node-writes item)))
 
 (defun expr-only-leaf-are-arguments (nodes schedule-graph)
   "Rewrites the expr in nodes, to have only the leaf nodes as an argument."
-  (loop for node in nodes
-        if (eql (node-type node) :EXPR) do
-          (let* ((allocated-but-not-used
-                   (loop with expr = (expr-graph (getattr node :EXPR))
-                         for node in (graph-nodes expr)
-                         ;; See renderer.lisp, MOVE first argument is not rendered for example.
-                         ;; [Note] Add more nodes if you found an argument which is actually rendered but not used in the rendered kernel.
-                         if (and
-                             (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
-                             (id->value schedule-graph (car (node-reads node)))
-                             (getattr (id->value schedule-graph (car (node-reads node))) :allocate-p))
-                           collect (car (node-reads node))
-                         if (not (eql (node-type node) :Aref))
-                           collect (car (node-writes node))))
-                 (reads
-                   (loop for read in (node-reads node)
-                         for rt in (relay-reads (read-type-relay node))
-                         for ri in (relay-read-iters (read-type-relay node))
-                         if (and (symbolp read) (not (find read allocated-but-not-used)))
-                           collect (list read rt ri))))
-            (setf (node-reads node) (map 'list #'first reads)
-                  (relay-reads (read-type-relay node)) (map 'list #'second reads)
-                  (relay-read-iters (read-type-relay node)) (map 'list #'third reads))))
+  (let* ((tmp->id (make-hash-table)))
+    (dolist (node nodes)
+      (when (eql (node-type node) :EXPR)
+        (dolist (item (graph-nodes (expr-graph (getattr node :expr))))
+          (when (eql (node-type item) :Aref)
+            (setf (gethash (car (node-writes item)) tmp->id) (getattr item :storage-id))))))
+    (flet ((newid (x) (or (gethash x tmp->id) x)))
+      (loop for node in nodes
+            if (eql (node-type node) :EXPR) do
+              (let* ((allocated-but-not-used
+                       (loop with expr = (expr-graph (getattr node :EXPR))
+                             for node in (graph-nodes expr)
+                             ;; See renderer.lisp, MOVE first argument is not rendered for example.
+                             ;; [Note] Add more nodes if you found an argument which is actually rendered but not used in the rendered kernel.
+                             if (and
+                                 (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
+                                 (id->value schedule-graph (newid (car (node-reads node))))
+                                 (getattr (id->value schedule-graph (newid (car (node-reads node)))) :allocate-p))
+                               collect (newid (car (node-reads node)))
+                             if (not (eql (node-type node) :Aref))
+                               collect (car (node-writes node))))
+                     (reads
+                       (loop for read in (node-reads node)
+                             for rt in (relay-reads (read-type-relay node))
+                             for ri in (relay-read-iters (read-type-relay node))
+                             if (and (symbolp read) (not (find read allocated-but-not-used)))
+                               collect (list read rt ri))))
+                (setf (node-reads node) (map 'list #'first reads)
+                      (relay-reads (read-type-relay node)) (map 'list #'second reads)
+                      (relay-read-iters (read-type-relay node)) (map 'list #'third reads))))))
   nodes)
 
 (defmethod graph-exprify (blueprint (node Node) (schedule-graph Graph))
