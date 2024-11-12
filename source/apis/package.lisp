@@ -91,7 +91,10 @@
    #:!argmax #:!argmin
 
    ;; statical
-   #:!variance #:!std)
+   #:!variance #:!std
+   ;; dimension manipulation
+   #:!split
+   )
   ;; from helpers.lisp
   (:export
    #:with-no-grad
