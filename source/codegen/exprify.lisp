@@ -151,28 +151,37 @@
     (remove-unused-blueprint blueprint schedule-graph)))
 
 (defmethod exprify ((node Node))
-  (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
-             :reduction (getattr node :reduction :allow-undefined t)
-             :_type_relay (read-type-relay node)
-             :declare-type (getattr node :declare-type)
-             :expr (make-expr
-                    :graph
-                    (apply
-                     #'make-graph
-                     (append
-                      (loop for r in (node-reads node)
-                            for rt in (relay-reads (read-type-relay node))
-                            for ri in (relay-read-iters (read-type-relay node))
-                            if (symbolp r)
-                              append
-                              (if (= 0 (buffer-nrank rt))
-                                  (let ((nodes (graph-nodes (expr-graph (expr-const r (buffer-dtype rt))))))
-                                    (assert (eql (node-type (car (last nodes))) :LOAD))
-                                    (setf (node-writes (car (last nodes))) (list r))
-                                    nodes)
-                                  (list (make-aref r rt ri))))
-                      (list node)))
-                    :out node)))
+  (let ((nth->aref (make-hash-table)))
+    (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
+               :reduction (getattr node :reduction :allow-undefined t)
+               :_type_relay (read-type-relay node)
+               :declare-type (getattr node :declare-type)
+               :expr (make-expr
+                      :graph
+                      (apply
+                       #'make-graph
+                       (append
+                        (loop for r in (node-reads node)
+                              for rt in (relay-reads (read-type-relay node))
+                              for ri in (relay-read-iters (read-type-relay node))
+                              for nth upfrom 0
+                              if (symbolp r)
+                                append
+                                (if (= 0 (buffer-nrank rt))
+                                    (let ((nodes (graph-nodes (expr-graph (expr-const r (buffer-dtype rt))))))
+                                      (assert (eql (node-type (car (last nodes))) :LOAD))
+                                      (setf (node-writes (car (last nodes))) (list r))
+                                      nodes)
+                                    (let ((newid (gensym "JIT_AREF_TMP")))
+                                      (setf (gethash nth nth->aref) newid)
+                                      (list (make-aref newid r rt ri)))))
+                        (let ((node (copy-node node)))
+                          (setf (node-reads node)
+                                (loop for i upfrom 0
+                                      for r in (node-reads node)
+                                      collect (or (gethash i nth->aref) r)))
+                          (list node))))
+                      :out node))))
 
 (defun merge-and-graft-expr (node pairs)
   (assert (eql (node-type node) :EXPR))
@@ -210,33 +219,43 @@
 
 (defun expr-writes (expr)
   (loop for item in (graph-nodes (expr-graph (getattr expr :expr)))
-        append (node-writes item)))
+        if (eql (node-type item) :Aref)
+          collect (getattr item :storage-id)
+        else
+          append (node-writes item)))
 
 (defun expr-only-leaf-are-arguments (nodes schedule-graph)
   "Rewrites the expr in nodes, to have only the leaf nodes as an argument."
-  (loop for node in nodes
-        if (eql (node-type node) :EXPR) do
-          (let* ((allocated-but-not-used
-                   (loop with expr = (expr-graph (getattr node :EXPR))
-                         for node in (graph-nodes expr)
-                         ;; See renderer.lisp, MOVE first argument is not rendered for example.
-                         ;; [Note] Add more nodes if you found an argument which is actually rendered but not used in the rendered kernel.
-                         if (and
-                             (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
-                             (id->value schedule-graph (car (node-reads node)))
-                             (getattr (id->value schedule-graph (car (node-reads node))) :allocate-p))
-                           collect (car (node-reads node))
-                         if (not (eql (node-type node) :Aref))
-                           collect (car (node-writes node))))
-                 (reads
-                   (loop for read in (node-reads node)
-                         for rt in (relay-reads (read-type-relay node))
-                         for ri in (relay-read-iters (read-type-relay node))
-                         if (and (symbolp read) (not (find read allocated-but-not-used)))
-                           collect (list read rt ri))))
-            (setf (node-reads node) (map 'list #'first reads)
-                  (relay-reads (read-type-relay node)) (map 'list #'second reads)
-                  (relay-read-iters (read-type-relay node)) (map 'list #'third reads))))
+  (let* ((tmp->id (make-hash-table)))
+    (dolist (node nodes)
+      (when (eql (node-type node) :EXPR)
+        (dolist (item (graph-nodes (expr-graph (getattr node :expr))))
+          (when (eql (node-type item) :Aref)
+            (setf (gethash (car (node-writes item)) tmp->id) (getattr item :storage-id))))))
+    (flet ((newid (x) (or (gethash x tmp->id) x)))
+      (loop for node in nodes
+            if (eql (node-type node) :EXPR) do
+              (let* ((allocated-but-not-used
+                       (loop with expr = (expr-graph (getattr node :EXPR))
+                             for node in (graph-nodes expr)
+                             ;; See renderer.lisp, MOVE first argument is not rendered for example.
+                             ;; [Note] Add more nodes if you found an argument which is actually rendered but not used in the rendered kernel.
+                             if (and
+                                 (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
+                                 (id->value schedule-graph (newid (car (node-reads node))))
+                                 (getattr (id->value schedule-graph (newid (car (node-reads node)))) :allocate-p))
+                               collect (newid (car (node-reads node)))
+                             if (not (eql (node-type node) :Aref))
+                               collect (car (node-writes node))))
+                     (reads
+                       (loop for read in (node-reads node)
+                             for rt in (relay-reads (read-type-relay node))
+                             for ri in (relay-read-iters (read-type-relay node))
+                             if (and (symbolp read) (not (find read allocated-but-not-used)))
+                               collect (list read rt ri))))
+                (setf (node-reads node) (map 'list #'first reads)
+                      (relay-reads (read-type-relay node)) (map 'list #'second reads)
+                      (relay-read-iters (read-type-relay node)) (map 'list #'third reads))))))
   nodes)
 
 (defmethod graph-exprify (blueprint (node Node) (schedule-graph Graph))
@@ -252,8 +271,8 @@
                  (if (find id replaceable)
                      ;; If the id was used by more than two nodes, split them. (not to introduce the extra computation)
                      (and
-                      (= 1 (count-if #'(lambda (node) (find id (node-reads node))) blueprint)) ;; note: blueprint was previously group
-                      (or (null current-pair)
+                      (= 1 (apply #'+ (map 'list #'(lambda (node) (count id (node-reads node))) blueprint)))
+                      (or (null current-pair) ;; no parent                          
                           (null (intersection (expr-writes current-pair) (apply #'append (map 'list #'expr-writes other-pairs))))))
                      nil))
                (group->expr-group (group &aux (tops (nodes-write-to group)) (graph (apply #'make-graph group)) (seen nil))
@@ -363,8 +382,8 @@
   (declare (type graph expr))
   (dolist (n (graph-nodes expr))
     (if (eql (node-type n) :AREF)
-        (multiple-value-bind (id type is) (funcall replace (car (node-writes n)) (getattr n :buffer) (getattr n :space))
-          (setf (node-writes n) (list id)
+        (multiple-value-bind (id type is) (funcall replace (getattr n :storage-id) (getattr n :buffer) (getattr n :space))
+          (setf (getattr n :storage-id) id
                 (getattr n :buffer) (or type (getattr n :buffer))
                 (getattr n :space) (or is (getattr n :space))))
         (setf (node-reads n)

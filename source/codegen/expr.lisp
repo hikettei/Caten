@@ -49,10 +49,33 @@
 
 (defmethod expr-graft-after ((expr Expr) id new-expr)
   (assert (not (typep (expr-graph expr) 'FastGraph)) () "remnode not tested for Graph? [todo: fix]")
-  (dolist (n (graph-nodes (expr-graph expr)))
-    (when (and (eql (node-type n) :AREF) (eql (car (node-writes n)) id))
-      (remnode (expr-graph expr) (node-id n))))
-  (setf (graph-nodes (expr-graph expr)) (append (graph-nodes (expr-graph new-expr)) (graph-nodes (expr-graph expr)))))
+  (let* ((tmp->id (make-hash-table))
+         (id->tmp (make-hash-table))
+         (written
+           (append
+            (loop for e in (list expr new-expr)
+                  append
+                  (loop for node in (graph-nodes (expr-graph e))
+                        if (not (eql (node-type node) :Aref))
+                          append (node-writes node)
+                        if (eql (node-type node) :Aref)
+                          do (setf (gethash (car (node-writes node)) tmp->id) (getattr node :storage-id)
+                                   (gethash (getattr node :storage-id) id->tmp) (car (node-writes node)))))))
+         (written (map 'list #'(lambda (x) (gethash x id->tmp x)) written)))
+    ;; wanna assert (every #'identity written) ?
+    ;; Possible duplicated writing case: (written is a candidate of the duplicated writing)
+    ;; EXPR      : x = y + z
+    ;; NEW_EXPR  : x_jit_tmp = x[...];  // remove this aref, and replace x_jit_tmp with x.
+    ;;           : out = sin(x_jit_tmp)
+    (labels ((rewrite-p (x) (find x written))
+             (newid (x) (if (rewrite-p x) (or (gethash x tmp->id) x) x))
+             (rewrite-node (node)
+               (when (not (eql (node-type node) :Aref))
+                 (setf (node-reads node) (map 'list #'newid (node-reads node))
+                       (node-writes node) (map 'list #'newid (node-writes node))))))
+      (mapc #'rewrite-node (graph-nodes (expr-graph new-expr)))
+      (mapc #'rewrite-node (graph-nodes (expr-graph expr)))
+      (setf (graph-nodes (expr-graph expr)) (append (graph-nodes (expr-graph new-expr)) (graph-nodes (expr-graph expr)))))))
 
 (defmethod run-expr-with-vars ((expr Expr) vars)
   (let ((graph
