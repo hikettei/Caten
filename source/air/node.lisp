@@ -48,13 +48,15 @@ Before creating a node using `make-node`, the node must be defined using `defnod
 - node-writes[list] a list of symbols that represent the output buffers.
 - node-reads[list] a list of symbols or numbers that represent the input buffers. (usually connected with the `(node-writes)`)
 - node-attr[Attribute] additional information about the node. (e.g.: reduction, dtype, type inference etc...)
+- out-nth[fixnum] node->id will point to the out-nth element of the writes list.
 "
   (class  class  :type keyword)
   (id     id     :type symbol)
   (type   type   :type keyword)
   (writes writes :type list)
   (reads  reads  :type list)
-  (attr   attr   :type Attribute))
+  (attr   attr   :type Attribute)
+  (out-nth 0 :type fixnum))
 
 (defun make-node (class type writes reads &rest attrs)
   "
@@ -102,6 +104,12 @@ Create a deepcopy of the given node.
 	  (node-attr copied-node) (apply #'make-attr (node-type node) (dump-into-list (node-attr node))))
     copied-node))
 
+(defun make-node-pointing-to-nth (node nth)
+  "Creates a new node that points to the nth element of the writes list of the given node."
+  (let ((node (copy-node node)))
+    (setf (node-out-nth node) nth)
+    node))
+
 (deftype dumpable-type () `(or symbol number keyword))
 (defmethod make-load-form ((node Node) &optional env &aux (debug-dump (= 1 (ctx:getenv :AOT_VERBOSE))))
   (declare (ignore env))
@@ -133,7 +141,15 @@ Create a deepcopy of the given node.
 		  (node-class node)
 		  (node-type node)
 		  (node-id node)
-		  (render-list (node-writes node))
+                  (apply
+                   #'concatenate
+                   'string
+                   (butlast
+                    (loop for w in (node-writes node)
+                          for nth upfrom 0
+                          if (= nth (node-out-nth node))
+                            append (list (format nil "~a*" w) " ")
+                          else append (list (format nil "~a" w) " "))))
 		  (render-list (node-reads node))
 		  (if (and
 		       (dump-into-list (node-attr node) :allow-unbound nil)
@@ -192,4 +208,4 @@ Equivalent to:
   (declare (type node node) (type keyword id))
   (setf (getattr node id :allow-undefined allow-undefined) nil))
 
-(defun node->id (node) (car (node-writes node)))
+(defun node->id (node) (nth (node-out-nth node) (node-writes node)))

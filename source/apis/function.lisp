@@ -62,6 +62,9 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (assert (tensor-p o) ())
       (setf (tensor-variables o) tensors
 	    (tensor-op o) op))
+    (loop for o in outs
+          for nth upfrom 0
+          do (setf (tensor-nth-output o) nth))
     (apply #'values outs)))
 ;; ~~ differentiable ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass IdentityNode (Func) nil)
