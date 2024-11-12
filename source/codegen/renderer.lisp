@@ -247,6 +247,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (def :< "<"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
+  (warn "AREF IS USED")
   (render-aref renderer node))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
@@ -341,6 +342,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (def :< "<"))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :Aref)) node)
+  (warn "AREF IS USED FOR CSTYLE RENDERER")
   (render-aref renderer node))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :MOVE)) node)
