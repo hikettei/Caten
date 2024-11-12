@@ -365,6 +365,7 @@
     (if (eql (node-type n) :AREF)
         (multiple-value-bind (id type is) (funcall replace (car (node-writes n)) (getattr n :buffer) (getattr n :space))
           (setf (node-writes n) (list id)
+                (getattr n :storage-id) id
                 (getattr n :buffer) (or type (getattr n :buffer))
                 (getattr n :space) (or is (getattr n :space))))
         (setf (node-reads n)
