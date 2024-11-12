@@ -143,10 +143,14 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (declare (type Renderer renderer))
   (let ((child (id->value (renderer-graph renderer) (nth nth (node-reads self)))))
     (if (and child (eql (node-type child) :Aref))
-        (render-aref renderer child :buffer (nth nth (relay-reads (read-type-relay self))) :space (nth nth (relay-read-iters (read-type-relay self))))
+        (let ((scalar-p (= -1 (buffer-nrank (getattr child :buffer)))))
+          (render-aref renderer child
+                       :scalar-p scalar-p
+                       :buffer (nth nth (relay-reads (read-type-relay self)))
+                       :space (nth nth (relay-read-iters (read-type-relay self)))))
         (render-node renderer (nth nth (node-reads self))))))
 
-(defun render-aref (renderer node &key (buffer) (space))
+(defun render-aref (renderer node &key (scalar-p) (buffer) (space))
   (assert (eql (node-type node) :AREF))
   (let ((buffer (or buffer (getattr node :buffer)))
         (space  (or space (getattr node :space)))
@@ -154,7 +158,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
         (id (or (getattr node :storage-id) (car (node-writes node)))))
     (when (and (null index-space) (> (buffer-nrank buffer) 0))
       (warn "render-aref: Cannot render :AREF for ~a without providing :index-space, thus replaced with ?." id))
-    (if (= -1 (buffer-nrank buffer))
+    (if (or scalar-p (= -1 (buffer-nrank buffer)))
         (format nil "~(~a~)" id)
         (if index-space
             (let ((expr (apply #'expr-add (iteration-space-expr-aref space buffer (renderer-index-space renderer)))))
