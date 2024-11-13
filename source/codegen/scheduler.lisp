@@ -301,32 +301,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (let ((buff (group-get-type group)))
     (when buff (buffer-nrank buff))))
 
-(defun apply-view-fusor (tgt-rank mask group)
-  ;; T = broadcasted, NIL = old axes2
-  (error "deprecated")
-  (group-items-st-rewriter
-   group
-   #'(lambda (typ)
-       (when (= (buffer-nrank typ) tgt-rank)
-         (let ((typ (copy-buffer typ)))
-           (let ((shp (copy-list (buffer-shape typ)))
-                 (str (copy-list (buffer-stride typ)))
-                 (views (copy-list (buffer-views typ))))
-             (setf (buffer-shape typ)
-                   (loop for b in mask
-                         if b collect 1 else collect (or (pop shp) 1))
-                   (buffer-stride typ)
-                   (loop for b in mask
-                         if b collect 0 else collect (or (pop str) 1))
-                   (buffer-views typ)
-                   (loop for b in mask
-                         if b collect `(0 1 1 t) else collect (pop views))
-                   (buffer-nrank typ) (length (buffer-shape typ)))
-             ;; Consumed all masks?
-             (assert (= (buffer-nrank typ) (length mask)))
-             typ))))
-   mask))
-
 (defmethod apply-index-component-fusion ((group Group) permute)
   "Permutes the strides of :INDEX-COMPONENTS in the group in the group"
   (dolist (item (group-items group))
@@ -574,7 +548,9 @@ mergeable = all views in parent group can be composed with read_view.
         ->ng))
     (let* ((read (nth nth (node-reads node)))
            (read-node (id->value graph read))
-           (read-view (car (nth nth (getattr node :_read_views)))))
+           (read-view (car (nth nth (getattr node :_read_views))))
+           (read-type (nth nth (relay-reads (read-type-relay read-node))))
+           (self-type (group-get-type self)))
       (assert (<= (length (the list (nth nth (getattr node :_read_views)))) 1))
       ;; Relations between group and parent-group:
       ;; ```
@@ -609,7 +585,10 @@ mergeable = all views in parent group can be composed with read_view.
                 ->ng)))
         (when (buffer-mergeable-p graph (group-get-type self) (group-get-type parent-group))
           (let* ((rewrite-self (< r1 r2))
-                 (mask nil)) ;; TODO
+                 (mask
+                   (if (broadcastable-p read-type self-type)
+                       (map 'list #'(lambda (x) (eql x 1)) (buffer-shape (if rewrite-self self-type read-type)))
+                       (map 'list #'fourth (buffer-views (if rewrite-self self-type read-type))))))
             (when rewrite-self
               (when (null read-view)
                 (setf read-view (group-view parent-group)))
@@ -621,42 +600,13 @@ mergeable = all views in parent group can be composed with read_view.
                     (group-compose-views self new-view mask)
                     ->ok)
                   (group-compose-views parent-group read-view mask)))
-            ;; [TODO] apply-index-component-fusion
+            (when (and read-view (getattr read-view :permute))
+              (apply-index-component-fusion parent-group (getattr read-view :permute)))
             (group-assert-rank self r1 r2 read-view)
             (group-assert-rank parent-group r1 r2 read-view)
             ->ok))
         ->ng))))
-#|
-        (if (or (null read-view) (group-view-rewritable-p parent-group read-view))
-            (let ((self-type (group-get-type self))
-                  (c (< r1 r2)))
-              (when (null self-type)->ng)
-              (if (broadcastable-p read-type self-type)
-                  (let ((mask (map 'list #'(lambda (x) (eql x 1)) (buffer-shape (if c read-type self-type)))))
-                    (assert (some #'identity mask))
-                    (apply-view-fusor (min r1 r2) mask self)
-                    (apply-view-fusor (min r1 r2) mask parent-group)
-                    (when (and read-view (getattr read-view :permute))
-                      (apply-index-component-fusion parent-group (getattr read-view :permute)))
-                    (group-assert-rank self r1 r2 read-view)
-                    (group-assert-rank parent-group r1 r2 read-view)
-                    ->ok)
-                  (if (and read-view (some #'identity (getattr read-view :broadcast)))
-                      (let ((mask (getattr read-view :broadcast)))
-                        (declare (type list mask))
-                        (when (not (= (length mask) (max r1 r2)))
-                          (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
-                        (when (not (= (length mask) (max r1 r2)))->ng)
-                        (apply-view-fusor (min r1 r2) mask self)
-                        (apply-view-fusor (min r1 r2) mask parent-group)
-                        (when (and read-view (getattr read-view :permute))
-                          (apply-index-component-fusion parent-group (getattr read-view :permute)))
-                        (group-assert-rank self r1 r2 read-view)
-                        (group-assert-rank parent-group r1 r2 read-view)
-                        ->ok)
-                      ->ng)))
-            ->ng)))))
-|#
+
 (defmethod merge-groups ((self Group) parents mergeable-list)
   (let* ((p (loop for m in mergeable-list for p in parents
                   if m collect p))
@@ -671,8 +621,6 @@ mergeable = all views in parent group can be composed with read_view.
                    (m (map 'list #'fourth (buffer-views typ1))))
               (assert (some #'identity m))
               (group-compose-views group (group-view self) m)
-             ; (error "not elegant, remove this!!!")
-             ; (apply-view-fusor r m group)
               (group-assert-rank group srank srank nil))))
   (loop for m in mergeable-list
         for p in parents
