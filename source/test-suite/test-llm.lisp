@@ -86,8 +86,6 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
 ")
 (import-function "torch_mha_impl")
 
-#|
-[TODO] Need to update the codegen!
 (defun mha-impl (n dim n-heads input c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
   (let* ((xqkv (!add (!matmul input (!t c-attn-weight)) c-attn-bias))
          (batch-size (car (shape input)))
@@ -117,5 +115,3 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
               (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
                 (->caten (torch_mha_impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
               (proceed (mha-impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))))))
-|#
-;; [TODO] Compiling the entire transformer graph here
