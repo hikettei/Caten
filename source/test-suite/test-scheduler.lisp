@@ -75,7 +75,6 @@
               (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
                 (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type)))
                 (testing "Valid load is val_2 = val_1[(((4096*(1+_gid0))+_gid2)+64*_gid3)]"
-                  (print bp)
                   (let ((loader (find-if #'(lambda (x) (and (eql (node-type x) :EXPR) (equalp (symbol-name (car (node-writes x))) "val_2"))) bp))
                         (wmma   (find-if #'(lambda (x)
                                              (and (eql (node-type x) :EXPR)
@@ -95,9 +94,44 @@
   (let ((schedule (schedule-with-vars (!gelu (!matmul (make-tensor `(1 64 64)) (!t (make-tensor `(1 64 64))))))))
     (check-kernel schedule 1)))
 
-;; More Failing loweres and schedulers
 ;; (!softmax `(10))
 ;; ConvND batch_size=1
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;
+;; [Group1]
+;;    |
+;; [Group2]
+;;    |
+(defun schedule-from-graph (graph)
+  (ctx:with-contextvar (:JIT 0)
+    (let ((avm (make-avm graph :x nil (graph-outputs graph) nil))) 
+      (caten/codegen/shape-inference:run-type-infer avm)
+      (caten/codegen/rewriting-rules:apply-rewriting-rules avm)
+      (values (graph-schedule (avm-graph avm)) avm))))
+;; The most primitive way to write the fusion test
+(deftest swizzle-permute-group-test
+  (let ((g (with-context
+             (x  (%make-tensor `(10 10)))
+             (x  (%view x `(10 10) `(0 0) `(10 10) `(1 1) `(nil nil) `(2 2))) ;; this view should be overwritten
+             (y  (%make-tensor `(10 10)))
+             (x  (%sin x)) ;; expect: x = sin(x[x+10*y])
+             (x1 (%view x `(10 10) `(0 0) `(10 10) `(1 1) `(nil nil) `(1 10) :permute `(1 0))) ;; %sin should use this view
+             (z  (%add x1 y :id 'out)))))
+    (setf (graph-outputs g) (list 'out))
+    (optimize-aasm g)
+    (multiple-value-bind (schedule avm) (schedule-from-graph g)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (check-kernel schedule 1)
+        (let* ((kernel (car (gather-kernels schedule)))
+               (bp (caten/codegen/blueprint:lower-schedule-item kernel (avm-graph avm) schedule)))
+          (assert (= 1 (count :EXPR bp :key #'node-type)))
+          (caten/codegen/blueprint:print-blueprint bp t)
+          (dolist (b bp)
+            (when (eql (node-type b) :EXPR)
+              (let ((val_1_type (second (caten/codegen/shape-inference:relay-reads (caten/codegen/shape-inference:read-type-relay b)))))
+                (ok (equal `(1 10) (buffer-stride val_1_type)))
+                (print val_1_type)
+                ))))))))
 
 ;; Testing Expr Merging (e.g.: Count the number of expr in the group)
 ;; もうちょっとMinimalに考えたい
@@ -106,3 +140,4 @@
 ;; Can't we add more general tests for it?
 ;; [GOAL] Eliminate bugs from the scheduler
 ;; Failing ?
+
