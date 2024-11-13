@@ -156,6 +156,17 @@
     (assert (= (length (graph-nodes g)) 2))
     (find :VIEW (graph-nodes g) :key #'node-type)))
 
+(defun view-eq (a b)
+  (if (or (eql a :failed) (eql b :failed))
+      (eql a b)
+      (and
+       (not (eql a :failed))
+       (not (eql b :failed))
+       (equal (cdr (node-reads a)) (cdr (node-reads b)))
+       (equal (getattr a :broadcast) (getattr b :broadcast))
+       (equal (getattr a :permute) (getattr b :permute))
+       (= (getattr a :nrank) (getattr b :nrank)))))
+
 (defun compose-views (v-old v-new) (or (caten/codegen/scheduler:.view v-old v-new) :failed))
 
 (deftest test-merge-views-same-rank
@@ -172,3 +183,14 @@
         (y (make-view `(3 3) `((0 3 1) (0 3 1)) `(nil nil) `(1 3) `(1 0))))
     (let ((v (compose-views x y)))
       (ok (and (not (eql v :failed)) (equal (cdr (node-reads v)) '(3 3 0 0 3 3 1 1 1 3)))))))
+
+(deftest test-merge-views-broadcast
+  (let ((x (make-view `(9) `((0 9 1)) `(nil) `(1) nil))
+        (y (make-view `(64 64) `((0 64 1) (0 64 1)) `(nil nil) `(1 1) nil)))
+    (let ((v (compose-views x y)))
+      (ok (view-eq v :failed))))
+  (let ((x (make-view `(64 64 64) `((0 64 1) (0 64 1) (0 64 1)) `(nil t nil) `(1 1 1) nil))
+        (y (make-view `(64 64) `((0 64 1) (0 64 1)) `(nil nil) `(1 1) nil))
+        (result (make-view `(64 64 64) `((0 64 1) (0 64 1) (0 64 1)) `(nil t nil) `(1 1 1) nil)))
+    (let ((v (compose-views x y)))
+      (ok (view-eq v result)))))

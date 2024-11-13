@@ -426,8 +426,8 @@ test is used to compare two symbols or fixnums."
                       (assert (= (length list) (count-if #'null mask)) () "non-mergeable views? mask = ~a list = ~a" mask list)
                       (loop for m in mask
                             for nth upfrom 0
-                            if m collect pad-value
-                              else collect (pop list))))))
+                            if m collect (if (listp pad-value) (nth nth pad-value) pad-value)
+                            else collect (pop list))))))
          (let ((m1 (make-mask view-old))
                (m2 (make-mask view-new)))
            (when (and (every #'null m1) (every #'null m2)) (return-from .view nil))
@@ -436,16 +436,16 @@ test is used to compare two symbols or fixnums."
              (return-from .view nil))
            (let ((view-old (copy-node view-old))
                  (view-new (copy-node view-new)))
-             (flet ((merge-mask (node mask &aux (nrank (getattr node :nrank)) (args (node-reads node)))
+             (flet ((merge-mask (node mask other-size &aux (nrank (getattr node :nrank)) (args (node-reads node)))
                       (append
                        (list (car (node-reads node)))
-                       (padding-with-mask mask 1 (subseq args 1 (1+ nrank))) ;; args
+                       (padding-with-mask mask other-size (subseq args 1 (1+ nrank))) ;; args
                        (padding-with-mask mask 0 (subseq args (1+ nrank) (1+ (* 2 nrank)))) ;; below
-                       (padding-with-mask mask 1 (subseq args (1+ (* 2 nrank)) (1+ (* 3 nrank)))) ;; to
+                       (padding-with-mask mask other-size (subseq args (1+ (* 2 nrank)) (1+ (* 3 nrank)))) ;; to
                        (padding-with-mask mask 1 (subseq args (1+ (* 3 nrank)) (1+ (* 4 nrank)))) ;; by
                        (padding-with-mask mask 1 (subseq args (1+ (* 4 nrank)) (1+ (* 5 nrank))))))) ;; stride
-               (setf (node-reads view-old) (merge-mask view-old m2)
-                     (node-reads view-new) (merge-mask view-new m1)
+               (setf (node-reads view-old) (merge-mask view-old m2 (subseq (cdr (node-reads view-new)) 0 (getattr view-new :nrank)))
+                     (node-reads view-new) (merge-mask view-new m1 (subseq (cdr (node-reads view-old)) 0 (getattr view-old :nrank)))
                      (getattr view-old :broadcast) (padding-with-mask m2 t (getattr view-old :broadcast))
                      (getattr view-new :broadcast) (padding-with-mask m1 t (getattr view-new :broadcast)))
                (when (getattr view-old :permute)
@@ -534,8 +534,9 @@ mergeable = all views in parent group can be composed with read_view.
             (r2 (group-rank parent-group)))
         (declare (type fixnum r1 r2))
         ;; r2 -> r1
-        (print node)
-        (group-view-rewritable-p parent-group read-view)
+        (when read-view
+          (print node)
+          (print (group-view-rewritable-p parent-group read-view)))
         ;; この後Mergeを最後のGroupのReadViewでSElfに適用するのを忘れずに。。。
         (cond
           ((or (= r1 0) (= r2 0))->ok)
