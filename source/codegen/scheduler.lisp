@@ -254,9 +254,29 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         ;; Returns uncollapsed rank list
         (when (some #'identity out) out)))))
 
+(defun buffer->view (buffer)
+  (let* ((views (loop for shape in (buffer-shape buffer)
+                      for nth upfrom 0
+                      for view = (nth nth (buffer-views buffer))
+                      if view collect view else collect (list 0 shape 1 nil)))
+         (base (make-node :Buffer :View (list (gensym))
+                         (append
+                          (list (gensym))
+                          (buffer-shape buffer)
+                          (map 'list #'first views)
+                          (map 'list #'second views)
+                          (map 'list #'third views)
+                          (buffer-stride buffer))
+                          :permute (buffer-inferred-permute buffer)
+                          :broadcast (map 'list #'fourth views)
+                          :nrank (buffer-nrank buffer))))
+    (when (getattr base :permute)
+      (assert (= (length (buffer-inferred-permute buffer)) (buffer-nrank buffer))))
+    base))
+
 (defmethod group-items-st-rewriter ((group Group) f mask)
   (dolist (item (group-items group))
-    (when (eql (node-type item) :INDEX-COMPONENTS) ;; (cdr (node-reads index-components)) also represents for the stride
+    (when (and mask (eql (node-type item) :INDEX-COMPONENTS)) ;; (cdr (node-reads index-components)) also represents for the stride
       (setf (node-reads item)
             (append
              (list (car (node-reads item)))
@@ -264,13 +284,18 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                    for m in mask
                    if m collect 1 else collect (pop s)))))
     (loop for typ in (relay-reads (read-type-relay item))
+          for view in (getattr item :_read_views)
           for nth upfrom 0
           unless (or (null typ) (= 0 (buffer-nrank typ)))
-            do (setf (nth nth (relay-reads (read-type-relay item))) (or (funcall f typ) typ)))
+            do (multiple-value-bind (new-type new-view) (funcall f typ (car view))
+                 (setf (nth nth (relay-reads (read-type-relay item))) new-type
+                       (nth nth (getattr item :_read_views)) (list new-view))))
     (loop for typ in (relay-writes (read-type-relay item))
+          for view = (buffer->view typ)
           for nth upfrom 0
           unless (or (null typ) (= 0 (buffer-nrank typ)))
-            do (setf (nth nth (relay-writes (read-type-relay item))) (or (funcall f typ) typ)))))
+            do (multiple-value-bind (new-type) (funcall f typ view)
+                 (setf (nth nth (relay-writes (read-type-relay item))) new-type)))))
 
 (defmethod group-rank ((group Group))
   (let ((buff (group-get-type group)))
@@ -278,6 +303,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 
 (defun apply-view-fusor (tgt-rank mask group)
   ;; T = broadcasted, NIL = old axes2
+  (error "deprecated")
   (group-items-st-rewriter
    group
    #'(lambda (typ)
@@ -351,29 +377,18 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                               "Rank mismatch: (expected from ~a -> ~a)~%view=~a~%buffer:~%~a~%group~%~a"
                               (min r1 r2) rank view typ group))))
 
-(defmethod identify-view-type ((view Node))
-  (assert (eql :VIEW (node-type view)))
-  (when (some #'identity (getattr view :broadcast)) (return-from identify-view-type :broadcast))
-  (when (not (equal (getattr view :permute) (range 0 (getattr view :nrank))))
-    (return-from identify-view-type :permute))
-  (flet ((shrink-p (size view)
-           (assert (= (length view) 4) () "not a view")
-           (multiple-value-bind (from to by broadcast) (apply #'values view)
-             (assert (null broadcast))
-             (or
-              (not (eql from 0))
-              (not (eql to size))
-              (not (eql by 1))))))
-    (let* ((base-buffer (car (relay-reads (read-type-relay view))))
-           (views (buffer-views (car (relay-writes (read-type-relay view))))))
-      (when (and
-             (= (buffer-nrank base-buffer) (getattr view :nrank))
-             (some #'shrink-p (buffer-shape base-buffer) views))
-        (return-from identify-view-type :shrink)))
-    :reshape))
+(defun group-view (group)
+  (let* ((l (nodes-write-to (group-items group)))
+         (node (when l (find (car l) (group-items group) :key #'node-writes :test #'find))))
+    (when node
+      (buffer->view (car (relay-writes (read-type-relay node)))))))
 
 (defun merge-permute-from-mask (permute mask)
-  (uiop:symbol-call :caten/apis :compute-new-permute permute mask))
+  (when (>= (length permute) (length mask))
+    (return-from merge-permute-from-mask permute))
+  (let ((val (uiop:symbol-call :caten/apis :compute-new-permute permute mask)))
+    (assert (= (length val) (length mask)) () "permute=~a mask=~a val=~a" permute mask val)
+    val))
 
 (defun .view (view-old view-new &key (test #'eql))
   "Tries to compose two views and creates new one. If impossible, returns nil
@@ -425,7 +440,10 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                        for nth upfrom (1+ (* 4 nrank))
                        do (setf (nth nth (node-reads node)) s))
                  node)
-               nil)))) ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
+               (progn
+                 ;; hutuuni new view wo sakusei dekiru
+                 (warn "need some update")
+                 nil))))) ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
       (T
        (flet ((make-mask (node)
                 (loop for s in (subseq (node-reads node) 1 (1+ (getattr node :nrank)))
@@ -473,11 +491,31 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                  (assert (= (length (node-reads view-old)) (length (node-reads view-new))))
                  (.view view-old view-new :test test))))))))))
 
-(defun view->buffer (view)
+(defun sync-views-and-buffer (view base-buffer)
   (declare (type node view))
   (assert (eql (node-type view) :VIEW))
-  
-  )
+  (let ((nrank (getattr view :nrank))
+        (args (cdr (node-reads view))))
+    (multiple-value-bind (sizes below to by stride)
+        (values
+         (subseq args 0 nrank)
+         (subseq args nrank (* 2 nrank))
+         (subseq args (* 2 nrank) (* 3 nrank))
+         (subseq args (* 3 nrank) (* 4 nrank))
+         (subseq args (* 4 nrank) (* 5 nrank)))
+      (setf (buffer-shape base-buffer)
+            sizes
+            (buffer-views base-buffer)
+            (loop for b1 in below
+                  for t1 in to
+                  for b2 in by
+                  for b3 in (getattr view :broadcast)
+                  collect (list b1 t1 b2 b3))
+            (buffer-stride base-buffer)
+            stride
+            (buffer-nrank base-buffer) (getattr view :nrank)
+            (buffer-inferred-permute base-buffer) (getattr view :permute))
+      base-buffer)))
 
 (defun group-view-rewritable-p (parent read-view)
   "
@@ -509,15 +547,16 @@ mergeable = all views in parent group can be composed with read_view.
                           collect item)))
     (every #'identity (map 'list #'mergeable-p items)))))
 
-(defun group-compose-views (parent read-view)
-  (labels ((view-mergeable-p (views &aux (view (car views)))
-             (assert (<= (length views) 1))
-             (if view
-                 (.view view read-view)
-                 t))
-           (mergeable-p (node)
-             (every #'view-mergeable-p (getattr node :_read_views))))
-    (mapc #'mergeable-p (group-items parent))))
+(defun group-compose-views (parent read-view mask)
+  (group-items-st-rewriter
+   parent
+   #'(lambda (old-buffer old-view)
+       (let ((new-view (.view old-view read-view)))
+         (assert new-view () "The group and read-view is not mergeable.")
+         (let ((new-buffer (copy-buffer old-buffer)))
+           (sync-views-and-buffer new-view new-buffer)
+           new-buffer)))
+   mask))
 
 (defun group-merge-p (self graph node parent-group nth)
   (declare (type group self) (type graph graph) (type node node) (type group parent-group)
@@ -535,8 +574,7 @@ mergeable = all views in parent group can be composed with read_view.
         ->ng))
     (let* ((read (nth nth (node-reads node)))
            (read-node (id->value graph read))
-           (read-view (car (nth nth (getattr node :_read_views))))
-           (read-type (group-get-type parent-group)))
+           (read-view (car (nth nth (getattr node :_read_views)))))
       (assert (<= (length (the list (nth nth (getattr node :_read_views)))) 1))
       ;; Relations between group and parent-group:
       ;; ```
@@ -546,67 +584,79 @@ mergeable = all views in parent group can be composed with read_view.
       (when (or (not (jitable-p node)) (not (jitable-p read-node)))->ng)
       ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       ;; :shrink is not mergeable
-      (when (and read-view (eql (identify-view-type read-view) :shrink))
-        ;; [TODO] Add a mask like:
-        ;; _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
-        ->ng)
+      ;;(when (and read-view (eql (identify-view-type read-view) :shrink))
+      ;; [TODO] Add a mask like:
+      ;; _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
+      ;;  ->ng)
       (let ((r1 (group-rank self))
             (r2 (group-rank parent-group)))
         (declare (type fixnum r1 r2))
-        ;; r2 -> r1
-        (when read-view
-          (print "MERGE")
-          ;; (print node)
-          (print (group-view-rewritable-p parent-group read-view)))
-        ;; この後Mergeを最後のGroupのReadViewでSElfに適用するのを忘れずに。。。
-        (cond
-          ((or (= r1 0) (= r2 0))->ok)
-          ((= r1 r2)
-           (when (group-reduce-dims parent-group)
-             ;; e.g.:
-             ;;   [Matmul]
-             ;;      |
-             ;;    [GeLU]
-             ;;      |
-             ;;   [Matmul] < group-reduce-dims matches but need to introduce a new loop...
-             ;;      | 
-             ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
-             ;; does not introduce new axis = the total element size is the same as the reducing parent group.
-             (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
-                 ->ok ;; => this should be nil
-                 ->ng))
-           (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
-               ->ok
-               ->ng))
-          (T
-           (let ((self-type (group-get-type self))
-                 (c (< r1 r2)))
-             (when (null self-type)->ng)
-             (if (broadcastable-p read-type self-type)
-                 (let ((mask (map 'list #'(lambda (x) (eql x 1)) (buffer-shape (if c read-type self-type)))))
-                   (assert (some #'identity mask))
-                   (apply-view-fusor (min r1 r2) mask self)
-                   (apply-view-fusor (min r1 r2) mask parent-group)
-                   (when (and read-view (getattr read-view :permute))
-                     (apply-index-component-fusion parent-group (getattr read-view :permute)))
-                   (group-assert-rank self r1 r2 read-view)
-                   (group-assert-rank parent-group r1 r2 read-view)
-                   ->ok)
-                 (if (and read-view (some #'identity (getattr read-view :broadcast)))
-                     (let ((mask (getattr read-view :broadcast)))
-                       (declare (type list mask))
-                       (when (not (= (length mask) (max r1 r2)))
-                         (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
-                       (when (not (= (length mask) (max r1 r2)))->ng)
-                       (apply-view-fusor (min r1 r2) mask self)
-                       (apply-view-fusor (min r1 r2) mask parent-group)
-                       (when (and read-view (getattr read-view :permute))
-                         (apply-index-component-fusion parent-group (getattr read-view :permute)))
-                       (group-assert-rank self r1 r2 read-view)
-                       (group-assert-rank parent-group r1 r2 read-view)
-                       ->ok)
-                     ->ng)))))))))
-
+        ;; Scalars are always merged
+        (when (or (= r1 0) (= r2 0))->ok)
+        (when (= r1 r2)
+          (when (group-reduce-dims parent-group)
+            ;; e.g.:
+            ;;   [Matmul]
+            ;;      |
+            ;;    [GeLU]
+            ;;      |
+            ;;   [Matmul] < group-reduce-dims matches but need to introduce a new loop...
+            ;;      | 
+            ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
+            ;; does not introduce new axis = the total element size is the same as the reducing parent group.
+            (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
+                nil
+                ->ng)))
+        (when (buffer-mergeable-p graph (group-get-type self) (group-get-type parent-group))
+          (let* ((rewrite-self (< r1 r2))
+                 (mask nil)) ;; TODO
+            (when rewrite-self
+              (when (null read-view)
+                (setf read-view (group-view parent-group)))
+              (assert read-view () "squeezing the array without expliciting %view is not allowed."))
+            (when read-view
+              (if rewrite-self
+                  (let ((new-view (.view (group-view parent-group) read-view)))
+                    (assert (= (the fixnum (getattr new-view :nrank)) (max r1 r2)))
+                    (group-compose-views self new-view mask)
+                    ->ok)
+                  (group-compose-views parent-group read-view mask)))
+            ;; [TODO] apply-index-component-fusion
+            (group-assert-rank self r1 r2 read-view)
+            (group-assert-rank parent-group r1 r2 read-view)
+            ->ok))
+        ->ng))))
+#|
+        (if (or (null read-view) (group-view-rewritable-p parent-group read-view))
+            (let ((self-type (group-get-type self))
+                  (c (< r1 r2)))
+              (when (null self-type)->ng)
+              (if (broadcastable-p read-type self-type)
+                  (let ((mask (map 'list #'(lambda (x) (eql x 1)) (buffer-shape (if c read-type self-type)))))
+                    (assert (some #'identity mask))
+                    (apply-view-fusor (min r1 r2) mask self)
+                    (apply-view-fusor (min r1 r2) mask parent-group)
+                    (when (and read-view (getattr read-view :permute))
+                      (apply-index-component-fusion parent-group (getattr read-view :permute)))
+                    (group-assert-rank self r1 r2 read-view)
+                    (group-assert-rank parent-group r1 r2 read-view)
+                    ->ok)
+                  (if (and read-view (some #'identity (getattr read-view :broadcast)))
+                      (let ((mask (getattr read-view :broadcast)))
+                        (declare (type list mask))
+                        (when (not (= (length mask) (max r1 r2)))
+                          (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
+                        (when (not (= (length mask) (max r1 r2)))->ng)
+                        (apply-view-fusor (min r1 r2) mask self)
+                        (apply-view-fusor (min r1 r2) mask parent-group)
+                        (when (and read-view (getattr read-view :permute))
+                          (apply-index-component-fusion parent-group (getattr read-view :permute)))
+                        (group-assert-rank self r1 r2 read-view)
+                        (group-assert-rank parent-group r1 r2 read-view)
+                        ->ok)
+                      ->ng)))
+            ->ng)))))
+|#
 (defmethod merge-groups ((self Group) parents mergeable-list)
   (let* ((p (loop for m in mergeable-list for p in parents
                   if m collect p))
@@ -616,11 +666,13 @@ mergeable = all views in parent group can be composed with read_view.
           for group in p
           for eql-p = (or (eql 0 r) (eql 0 srank) (= r srank))
           unless eql-p do
-            (assert (< r srank))
+            (assert (< r srank) () "(< r=~a srank=~a)" ranks srank)
             (let* ((typ1 (group-get-type self))
                    (m (map 'list #'fourth (buffer-views typ1))))
               (assert (some #'identity m))
-              (apply-view-fusor r m group)
+              (group-compose-views group (group-view self) m)
+             ; (error "not elegant, remove this!!!")
+             ; (apply-view-fusor r m group)
               (group-assert-rank group srank srank nil))))
   (loop for m in mergeable-list
         for p in parents
