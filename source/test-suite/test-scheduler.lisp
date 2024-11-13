@@ -5,7 +5,7 @@
     (let ((avm (apply #'caten tensors)))
       (caten/codegen/shape-inference:run-type-infer avm)
       (caten/codegen/rewriting-rules:apply-rewriting-rules avm)
-      (graph-schedule (avm-graph avm)))))
+      (values (graph-schedule (avm-graph avm)) avm))))
 
 (defun gather-kernels (schedule-graph)
   (loop for node in (graph-nodes schedule-graph)
@@ -23,11 +23,25 @@
     (let ((schedule (schedule-with-vars (!sum (!sum (make-tensor `(10 10)) :axis 0 :keepdims t) :axis 1 :keepdims t))))
       (check-kernel schedule 2))))
 
+(deftest test-double-reduction-separated-mean
+  (testing "Reduction with different axes are not fused into a single kernel"
+    (let ((schedule (schedule-with-vars (!sum (!sum (make-tensor `(10 10)) :axis 0 :keepdims t) :axis 1 :keepdims t))))
+      (check-kernel schedule 2))))
+
+(deftest test-no-extra-loop-after-out-complex
+  (multiple-value-bind (schedule avm)
+      (schedule-with-vars (!matmul (make-tensor `(64 64)) (!gelu (!matmul (make-tensor `(64 64)) (make-tensor `(64 64))))))
+    (check-kernel schedule 2)
+    (caten/codegen/expr-cache:with-expr-cache ()
+      (dolist (item (gather-kernels schedule))
+        (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+          (ok (= 3 (count :FOR bp :key #'node-type)) (format nil "Expected 3 loops, got ~a" (count :FOR bp :key #'node-type))))))))
+
 (deftest test-chunk-schedule
-  (let ((schedule (schedule-with-vars (apply #'!matmul (multiple-value-list (!chunk (make-tensor `(2 64 64)) 2))))))
-    (check-kernel schedule 1)
-    (let ((items (getattr (car (gather-kernels schedule)) :items)))
-      (print items))))
+  (multiple-value-bind (schedule avm)
+      (schedule-with-vars (apply #'!matmul (multiple-value-list (!chunk (make-tensor `(2 64 64)) 2))))
+    (check-kernel schedule 2)
+    ))
 
 (deftest test-view-merge-failing-case
   (let ((schedule (schedule-with-vars (caten (!gelu (!matmul (make-tensor `(1 64 64)) (!t (make-tensor `(1 64 64)))))))))
