@@ -419,10 +419,7 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                  (warn "need some update")
                  nil))))) ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
       (T
-       (flet ((make-mask (node)
-                (loop for s in (subseq (node-reads node) 1 (1+ (getattr node :nrank)))
-                      for b in (getattr node :broadcast)
-                      if (teq s 1) collect t else collect b))
+       (flet ((make-mask (node) (getattr node :broadcast))
               (padding-with-mask (mask pad-value list)
                 (if (>= (length list) (length mask))
                     list
@@ -498,7 +495,7 @@ Self and parent are connected by the following relations.
  [Parent Group Items ...]
            |
        [read_view]
-           |
+         1  |
         [SELF]
 ```
 Self reads the elements of parent using `read_view`.
@@ -599,6 +596,9 @@ mergeable = all views in parent group can be composed with read_view.
             (when read-view
               (if rewrite-self
                   (let ((new-view (.view (group-view parent-group) read-view)))
+                    (when (null new-view)
+                      (warn "Failed to merge out-complex-view")
+                      ->ng)
                     (assert (= (the fixnum (getattr new-view :nrank)) (max r1 r2)))
                     (group-compose-views self new-view mask)
                     ->ok)
