@@ -4,6 +4,14 @@
 ;; RoPE
 ;; PositionalEncoding
 
+(defmodel (RoPE (dims &key (traditional NIL) (base 10000) (scale 1.0) (offset 1.0)))
+    ((dims dims)
+     (traditional traditional)
+     (base base)
+     (scale scale)
+     (offset offset)))
+
+
 (defmethod call ((op RoPE) &rest inputs)
   (let* ((x (car inputs))
          (shape (shape x))
@@ -24,6 +32,7 @@
              )
         (print (proceed freqs))
         ))))
+
 
 
 
