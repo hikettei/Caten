@@ -109,7 +109,7 @@
       (caten/codegen/rewriting-rules:apply-rewriting-rules avm)
       (values (graph-schedule (avm-graph avm)) avm))))
 ;; The most primitive way to write the fusion test
-(deftest swizzle-permute-group-test
+(deftest swizzle-permute-group-test ;; r1 = r2 in group-merge-p
   (let ((g (with-context
              (x  (%make-tensor `(10 10)))
              (x  (%view x `(10 10) `(0 0) `(10 10) `(1 1) `(nil nil) `(2 2))) ;; this view should be overwritten
@@ -119,6 +119,7 @@
              (z  (%add x1 y :id 'out)))))
     (setf (graph-outputs g) (list 'out))
     (optimize-aasm g)
+    ;;(->dot g)
     (multiple-value-bind (schedule avm) (schedule-from-graph g)
       (caten/codegen/expr-cache:with-expr-cache ()
         (check-kernel schedule 1)
@@ -132,6 +133,12 @@
                 (ok (equal `(1 10) (buffer-stride val_1_type)))
                 (print val_1_type)
                 ))))))))
+
+;; complex-out-fusable
+
+;; r1 > r2
+
+;; r1 < r2
 
 ;; Testing Expr Merging (e.g.: Count the number of expr in the group)
 ;; もうちょっとMinimalに考えたい

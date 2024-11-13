@@ -371,6 +371,28 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
         (return-from identify-view-type :shrink)))
     :reshape))
 
+(defun group-intersect-p (self parent read-view)
+  "
+Self and parent are connected by the following relations.
+```
+ [Parent Group Items ...]
+           |
+       [read_view]
+           |
+        [SELF]
+```
+Self reads the elements of parent using `read_view`.
+If self and parent satisfies the following equation, this function returns T indicating that self and parent are mergeable.
+mergeable = all views in parent group can be composed with read_view
+"
+  (declare (type Group self parent) (type node read-view))
+  
+  )
+
+(defun group-compose-views (parent read-view)
+
+  )
+
 (defun group-merge-p (self graph node parent-group nth)
   (declare (type group self) (type graph graph) (type node node) (type group parent-group)
            (type fixnum nth)
@@ -410,6 +432,13 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
           ((or (= r1 0) (= r2 0))->ok)
           ((= r1 r2)
            (when (group-reduce-dims parent-group)
+             ;; e.g.:
+             ;;   [Matmul]
+             ;;      |
+             ;;    [GeLU]
+             ;;      |
+             ;;   [Matmul] < group-reduce-dims matches but need to introduce a new loop...
+             ;;      | 
              ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
              ;; does not introduce new axis = the total element size is the same as the reducing parent group.
              (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
