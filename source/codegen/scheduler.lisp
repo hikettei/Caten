@@ -56,7 +56,8 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:make-group
    #:graph-schedule
    #:*function-name-maxlen*
-   #:group->schedule))
+   #:group->schedule
+   #:.view))
 
 (in-package #:caten/codegen/scheduler)
 
@@ -371,7 +372,99 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
         (return-from identify-view-type :shrink)))
     :reshape))
 
-(defun group-intersect-p (self parent read-view)
+(defun merge-permute-from-mask (permute mask)
+  (uiop:symbol-call :caten/apis :compute-new-permute permute mask))
+
+(defun .view (view-old view-new &key (test #'eql))
+  "Tries to compose two views and creates new one. If impossible, returns nil
+test is used to compare two symbols or fixnums."
+  (declare (type (or null node) view-old)
+           (type node view-new)
+           (type function test))
+  (when (null view-old) (return-from .view view-new))
+  (assert (eql (node-type view-new) :VIEW))
+  (assert (eql (node-type view-old) :VIEW))
+  (flet ((teq (a b) (funcall test a b)))
+    (cond
+      ((= (the fixnum (getattr view-old :nrank)) (the fixnum (getattr view-new :nrank)))
+       (let ((permute (getattr view-new :permute))
+             (args    (cdr (node-reads view-old))) ;; exlucde first args
+             (broadcast (getattr view-old :broadcast))
+             (nrank   (getattr view-old :nrank)))
+         (declare (type list args) (type fixnum nrank))
+         (when permute
+           ;; Sort the axis
+           (setf args (loop for nth upfrom 0 below (length args) by nrank
+                            for ls = (subseq args nth (+ nth nrank))
+                            append (permute-list permute ls))
+                 broadcast (permute-list permute broadcast)))
+         (let* ((sizes  (subseq args 0 nrank))
+                (below  (subseq args nrank (* 2 nrank)))
+                (to     (subseq args (* 2 nrank) (* 3 nrank)))
+                (by     (subseq args (* 3 nrank) (* 4 nrank)))
+                ;; (stride (subseq args (* 4 nrank) (* 5 nrank)))
+                (new-broadcast (map 'list #'(lambda (x y) (or x y)) broadcast (getattr view-new :broadcast)))
+                (contiguous-p ;; = no offsets are created
+                  (and
+                   (every #'(lambda (x) (teq x 0)) below)
+                   (every #'teq to sizes)
+                   (every #'(lambda (x) (teq x 1)) by))))
+           (if (and contiguous-p (every #'teq args (cdr (node-reads view-new))))
+               (let ((node (copy-node view-new)))
+                 (setf (getattr node :broadcast) new-broadcast)
+                 node)
+               nil)))) ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
+      (T
+       (flet ((make-mask (node)
+                (loop for s in (subseq (node-reads node) 1 (1+ (getattr node :nrank)))
+                      for b in (getattr node :broadcast)
+                      if (teq s 1) collect t else collect b))
+              (padding-with-mask (mask pad-value list)
+                (if (>= (length list) (length mask))
+                    list
+                    (progn
+                      (assert (= (length list) (count-if #'null mask)) () "non-mergeable views? mask = ~a list = ~a" mask list)
+                      (loop for m in mask
+                            for nth upfrom 0
+                            if m collect pad-value
+                              else collect (pop list))))))
+         (let ((m1 (make-mask view-old))
+               (m2 (make-mask view-new)))
+           (when (and (every #'null m1) (every #'null m2)) (return-from .view nil))
+           (when (not (= (+ (count-if #'identity m1) (getattr view-new :nrank))
+                         (+ (count-if #'identity m2) (getattr view-old :nrank))))
+             (return-from .view nil))
+           (let ((view-old (copy-node view-old))
+                 (view-new (copy-node view-new)))
+             (flet ((merge-mask (node mask &aux (nrank (getattr node :nrank)) (args (node-reads node)))
+                      (append
+                       (list (car (node-reads node)))
+                       (padding-with-mask mask 1 (subseq args 1 (1+ nrank))) ;; args
+                       (padding-with-mask mask 0 (subseq args (1+ nrank) (1+ (* 2 nrank)))) ;; below
+                       (padding-with-mask mask 1 (subseq args (1+ (* 2 nrank)) (1+ (* 3 nrank)))) ;; to
+                       (padding-with-mask mask 1 (subseq args (1+ (* 3 nrank)) (1+ (* 4 nrank)))) ;; by
+                       (padding-with-mask mask 1 (subseq args (1+ (* 4 nrank)) (1+ (* 5 nrank))))))) ;; stride
+               (setf (node-reads view-old) (merge-mask view-old m2)
+                     (node-reads view-new) (merge-mask view-new m1)
+                     (getattr view-old :broadcast) (padding-with-mask m2 t (getattr view-old :broadcast))
+                     (getattr view-new :broadcast) (padding-with-mask m1 t (getattr view-new :broadcast)))
+               (when (getattr view-old :permute)
+                 (setf (getattr view-old :permute) (merge-permute-from-mask (getattr view-old :permute) m2)))
+               (when (getattr view-new :permute)
+                 (setf (getattr view-new :permute) (merge-permute-from-mask (getattr view-new :permute) m1)))
+               (let ((nrank (max (getattr view-new :nrank) (getattr view-old :nrank))))
+                 (setf (getattr view-old :nrank) nrank
+                       (getattr view-new :nrank) nrank)
+                 (assert (= (length (node-reads view-old)) (length (node-reads view-new))))
+                 (.view view-old view-new :test test))))))))))
+
+(defun view->buffer (view)
+  (declare (type node view))
+  (assert (eql (node-type view) :VIEW))
+  
+  )
+
+(defun group-view-rewritable-p (parent read-view)
   "
 Self and parent are connected by the following relations.
 ```
@@ -383,15 +476,28 @@ Self and parent are connected by the following relations.
 ```
 Self reads the elements of parent using `read_view`.
 If self and parent satisfies the following equation, this function returns T indicating that self and parent are mergeable.
-mergeable = all views in parent group can be composed with read_view
+mergeable = all views in parent group can be composed with read_view.
 "
-  (declare (type Group self parent) (type node read-view))
-  
-  )
+  (declare (type Group parent) (type (or null node) read-view))
+  (when (null read-view) (return-from group-view-rewritable-p t))
+  (labels ((view-mergeable-p (views &aux (view (car views)))
+             (assert (<= (length views) 1))
+             (if view
+                 (.view view read-view)
+                 t))
+           (mergeable-p (node)
+             (every #'view-mergeable-p (getattr node :_read_views))))
+    (every #'identity (map 'list #'mergeable-p (group-items parent)))))
 
 (defun group-compose-views (parent read-view)
-
-  )
+  (labels ((view-mergeable-p (views &aux (view (car views)))
+             (assert (<= (length views) 1))
+             (if view
+                 (.view view read-view)
+                 t))
+           (mergeable-p (node)
+             (every #'view-mergeable-p (getattr node :_read_views))))
+    (mapc #'mergeable-p (group-items parent))))
 
 (defun group-merge-p (self graph node parent-group nth)
   (declare (type group self) (type graph graph) (type node node) (type group parent-group)
@@ -428,6 +534,9 @@ mergeable = all views in parent group can be composed with read_view
             (r2 (group-rank parent-group)))
         (declare (type fixnum r1 r2))
         ;; r2 -> r1
+        (print node)
+        (group-view-rewritable-p parent-group read-view)
+        ;; この後Mergeを最後のGroupのReadViewでSElfに適用するのを忘れずに。。。
         (cond
           ((or (= r1 0) (= r2 0))->ok)
           ((= r1 r2)
@@ -442,7 +551,7 @@ mergeable = all views in parent group can be composed with read_view
              ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
              ;; does not introduce new axis = the total element size is the same as the reducing parent group.
              (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
-                 ->ok
+                 ->ok ;; => this should be nil
                  ->ng))
            (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
                ->ok

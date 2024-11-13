@@ -112,7 +112,7 @@
 (deftest swizzle-permute-group-test ;; r1 = r2 in group-merge-p
   (let ((g (with-context
              (x  (%make-tensor `(10 10)))
-             (x  (%view x `(10 10) `(0 0) `(10 10) `(1 1) `(nil nil) `(2 2))) ;; this view should be overwritten
+             (x  (%view x `(10 10) `(0 0) `(10 10) `(1 1) `(nil nil) `(10 1))) ;; this view should be overwritten
              (y  (%make-tensor `(10 10)))
              (x  (%sin x)) ;; expect: x = sin(x[x+10*y])
              (x1 (%view x `(10 10) `(0 0) `(10 10) `(1 1) `(nil nil) `(1 10) :permute `(1 0))) ;; %sin should use this view
@@ -147,4 +147,28 @@
 ;; Can't we add more general tests for it?
 ;; [GOAL] Eliminate bugs from the scheduler
 ;; Failing ?
+;; ~~~ View Merging Tests ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun make-view (shape views broadcast stride permute)
+  (let ((g (with-context
+             (x (%make-tensor shape))
+             (x (%view x shape (map 'list #'first views) (map 'list #'second views) (map 'list #'third views) broadcast stride :permute permute)))))
+    (optimize-aasm g)
+    (assert (= (length (graph-nodes g)) 2))
+    (find :VIEW (graph-nodes g) :key #'node-type)))
 
+(defun compose-views (v-old v-new) (or (caten/codegen/scheduler:.view v-old v-new) :failed))
+
+(deftest test-merge-views-same-rank
+  (let ((x (make-view `(3 3) `((0 3 1) (0 3 1)) `(nil nil) `(3 1) nil))
+        (y (make-view `(3 3) `((0 3 1) (0 3 1)) `(nil nil) `(3 1) nil)))
+    (let ((v (compose-views x y)))
+      (ok (and (not (eql v :failed)) (equal (cdr (node-reads v)) `(3 3 0 0 3 3 1 1 3 1))))))
+  (let ((x (make-view `(3 3) `((0 3 1) (0 3 1)) `(t nil) `(3 1) nil))
+        (y (make-view `(3 3) `((0 3 1) (0 3 1)) `(nil t) `(3 1) nil)))
+    (let ((v (compose-views x y)))
+      (ok (and (not (eql v :failed)) (equal (cdr (node-reads v)) `(3 3 0 0 3 3 1 1 3 1))))
+      (ok (equal (getattr v :broadcast) `(t t)))))
+  (let ((x (make-view `(3 3) `((0 3 1) (0 3 1)) `(nil nil) `(3 1) nil))
+        (y (make-view `(3 3) `((0 3 1) (0 3 1)) `(nil nil) `(1 3) `(1 0))))
+    (let ((v (compose-views x y)))
+      (ok (and (not (eql v :failed)) (equal (cdr (node-reads v)) '(3 3 0 0 3 3 1 1 1 3)))))))
