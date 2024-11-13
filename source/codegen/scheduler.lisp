@@ -549,7 +549,7 @@ mergeable = all views in parent group can be composed with read_view.
     (let* ((read (nth nth (node-reads node)))
            (read-node (id->value graph read))
            (read-view (car (nth nth (getattr node :_read_views))))
-           (read-type (nth nth (relay-reads (read-type-relay read-node))))
+           (read-type (group-get-type parent-group))
            (self-type (group-get-type self)))
       (assert (<= (length (the list (nth nth (getattr node :_read_views)))) 1))
       ;; Relations between group and parent-group:
