@@ -558,6 +558,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                      if (and self-mergeable-p parent
                              (getattr parent :jitable)
                              (funcall can-split-p parent) ;; confirm that the parent is not used by special ops
+                             (or (null (getattr self :reduce-dims)) (null (getattr parent :reduce-dims))
+                                 (equal (getattr self :reduce-dims) (getattr parent :reduce-dims)))
                              (funcall f self parent))
                        do (let ((merged (merge-schedule-items self parent base-graph)))
                             (setf changed-p t)
