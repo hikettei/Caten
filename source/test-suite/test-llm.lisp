@@ -94,9 +94,8 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
          (mask (!triu (!full `(1 1 ,seq-len ,seq-len) (-inf)) :diagonal (!+ (iconst 1) (iconst n))))
          (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
          (xqkv (!permute xqkv 3 0 2 1 4)))
-    (multiple-value-bind (xq xk xv)
-        (values (!view xqkv 0 t t t t) (!view xqkv 1 t t t t) (!view xqkv 2 t t t t))
-      (let* ((attn-output (scaled-dot-product-attention xq xk xv mask))
+    (multiple-value-bind (xq xk xv) (!chunk xqkv 3 :dim 0)
+      (let* ((attn-output (scaled-dot-product-attention (!contiguous xq) (!contiguous xk) (!contiguous xv) mask))
              (attn-output (!reshape (!transpose attn-output 1 2) `(,batch-size ,seq-len ,dim))))
         (!add (!matmul attn-output (!t c-proj-weight)) c-proj-bias)))))
 
