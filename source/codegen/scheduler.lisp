@@ -519,7 +519,8 @@ mergeable = all views in parent group can be composed with read_view.
            (items (loop for item in (group-items parent)
                         if (find (car (node-writes item)) items)
                           collect item)))
-    (every #'identity (map 'list #'mergeable-p items)))))
+      ;;(every #'identity (map 'list #'mergeable-p items))
+      (every #'identity (map 'list #'mergeable-p (group-items parent))))))
 
 (defun group-compose-views (parent read-view mask)
   (group-items-st-rewriter
@@ -583,7 +584,9 @@ mergeable = all views in parent group can be composed with read_view.
             (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
                 nil
                 ->ng)))
-        (when (buffer-mergeable-p graph (group-get-type self) (group-get-type parent-group))
+        (when (and
+               (buffer-mergeable-p graph (group-get-type self) (group-get-type parent-group))
+               (group-view-rewritable-p parent-group read-view))
           (let* ((rewrite-self (< r1 r2))
                  (mask
                    (if (broadcastable-p read-type self-type)
