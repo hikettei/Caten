@@ -182,15 +182,27 @@
   (let ((x (make-view `(3 3) `((0 3 1) (0 3 1)) `(nil nil) `(3 1) nil))
         (y (make-view `(3 3) `((0 3 1) (0 3 1)) `(nil nil) `(1 3) `(1 0))))
     (let ((v (compose-views x y)))
-      (ok (and (not (eql v :failed)) (equal (cdr (node-reads v)) '(3 3 0 0 3 3 1 1 1 3)))))))
+      (ok (and (not (eql v :failed)) (equal (cdr (node-reads v)) '(3 3 0 0 3 3 1 1 1 3))))))
+  (let ((x (make-view `(1 1) `((0 1 1) (0 1 1)) `(nil nil) `(1 1) nil))
+        (y (make-view `(64 64) `((0 64 1) (0 64 1)) `(nil nil) `(64 1) nil))
+        (z (make-view `(64 64) `((0 64 1) (0 64 1)) `(t t) `(1 1) nil)))
+    (ok (view-eq (print (compose-views x y)) z))))
 
 (deftest test-merge-views-broadcast
+  ;; Cannot be merged
   (let ((x (make-view `(9) `((0 9 1)) `(nil) `(1) nil))
         (y (make-view `(64 64) `((0 64 1) (0 64 1)) `(nil nil) `(1 1) nil)))
     (let ((v (compose-views x y)))
       (ok (view-eq v :failed))))
+  ;; Low->High
   (let ((x (make-view `(64 64 64) `((0 64 1) (0 64 1) (0 64 1)) `(nil t nil) `(1 1 1) nil))
         (y (make-view `(64 64) `((0 64 1) (0 64 1)) `(nil nil) `(1 1) nil))
+        (result (make-view `(64 64 64) `((0 64 1) (0 64 1) (0 64 1)) `(nil t nil) `(1 1 1) nil)))
+    (let ((v (compose-views x y)))
+      (ok (view-eq v result))))
+  ;; High->Low
+  (let ((y (make-view `(64 64 64) `((0 64 1) (0 64 1) (0 64 1)) `(nil t nil) `(1 1 1) nil))
+        (x (make-view `(64 64) `((0 64 1) (0 64 1)) `(nil nil) `(1 1) nil))
         (result (make-view `(64 64 64) `((0 64 1) (0 64 1) (0 64 1)) `(nil t nil) `(1 1 1) nil)))
     (let ((v (compose-views x y)))
       (ok (view-eq v result)))))

@@ -377,14 +377,16 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
 
 (defun .view (view-old view-new &key (test #'eql))
   "Tries to compose two views and creates new one. If impossible, returns nil
-test is used to compare two symbols or fixnums."
+test is used to compare two symbols or fixnums.
+If the two view's rank are different, .view try to uprank the fewer rank view to the higher rank view."
   (declare (type (or null node) view-old)
            (type node view-new)
            (type function test))
   (when (null view-old) (return-from .view view-new))
   (assert (eql (node-type view-new) :VIEW))
   (assert (eql (node-type view-old) :VIEW))
-  (flet ((teq (a b) (funcall test a b)))
+  (labels ((teq (a b) (funcall test a b))
+           (shape-eq (a b) (or (teq a 1) (teq b 1) (teq a b))))
     (cond
       ((= (the fixnum (getattr view-old :nrank)) (the fixnum (getattr view-new :nrank)))
        (let ((permute (getattr view-new :permute))
@@ -409,9 +411,16 @@ test is used to compare two symbols or fixnums."
                    (every #'(lambda (x) (teq x 0)) below)
                    (every #'teq to sizes)
                    (every #'(lambda (x) (teq x 1)) by))))
-           (if (and contiguous-p (every #'teq args (cdr (node-reads view-new))))
+           (if (and contiguous-p (every #'shape-eq sizes (subseq (node-reads view-new) 1 (1+ (getattr view-new :nrank)))))
                (let ((node (copy-node view-new)))
-                 (setf (getattr node :broadcast) new-broadcast)
+                 (setf (getattr node :broadcast)
+                       (loop for s-old in (subseq args 0 nrank)
+                             for s-new in (subseq (node-reads view-new) 1 (1+ (getattr view-new :nrank)))
+                             for b in new-broadcast
+                             if (and (teq s-old 1) (not (eq s-new 1)))
+                               collect t
+                             else
+                               collect b))
                  node)
                nil)))) ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
       (T
@@ -423,7 +432,8 @@ test is used to compare two symbols or fixnums."
                 (if (>= (length list) (length mask))
                     list
                     (progn
-                      (assert (= (length list) (count-if #'null mask)) () "non-mergeable views? mask = ~a list = ~a" mask list)
+                      (unless (= (length list) (count-if #'null mask))
+                        (return-from .view nil))
                       (loop for m in mask
                             for nth upfrom 0
                             if m collect (if (listp pad-value) (nth nth pad-value) pad-value)
