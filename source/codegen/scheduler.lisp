@@ -404,7 +404,7 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                 (below  (subseq args nrank (* 2 nrank)))
                 (to     (subseq args (* 2 nrank) (* 3 nrank)))
                 (by     (subseq args (* 3 nrank) (* 4 nrank)))
-                ;; (stride (subseq args (* 4 nrank) (* 5 nrank)))
+                (stride (subseq args (* 4 nrank) (* 5 nrank)))
                 (new-broadcast (map 'list #'(lambda (x y) (or x y)) broadcast (getattr view-new :broadcast)))
                 (contiguous-p ;; = no offsets are created
                   (and
@@ -421,6 +421,9 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                                collect t
                              else
                                collect b))
+                 (loop for s in stride
+                       for nth upfrom (1+ (* 4 nrank))
+                       do (setf (nth nth (node-reads node)) s))
                  node)
                nil)))) ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
       (T
@@ -432,14 +435,16 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                 (if (>= (length list) (length mask))
                     list
                     (progn
-                      (unless (= (length list) (count-if #'null mask))
-                        (return-from .view nil))
+                      (assert (= (length list) (count-if #'null mask)) () "padding-with-mask: list and mask should have the same length. mask = ~a list = ~a" mask list)
                       (loop for m in mask
                             for nth upfrom 0
                             if m collect (if (listp pad-value) (nth nth pad-value) pad-value)
-                            else collect (pop list))))))
+                              else collect (pop list))))))
          (let ((m1 (make-mask view-old))
                (m2 (make-mask view-new)))
+           (if (> (length m1) (length m2)) ;; hide the smaller one
+               (setf m2 (loop repeat (length m2) collect nil))
+               (setf m1 (loop repeat (length m1) collect nil)))
            (when (and (every #'null m1) (every #'null m2)) (return-from .view nil))
            (when (not (= (+ (count-if #'identity m1) (getattr view-new :nrank))
                          (+ (count-if #'identity m2) (getattr view-old :nrank))))
@@ -497,7 +502,12 @@ mergeable = all views in parent group can be composed with read_view.
                  t))
            (mergeable-p (node)
              (every #'view-mergeable-p (getattr node :_read_views))))
-    (every #'identity (map 'list #'mergeable-p (group-items parent)))))
+    ;; Only compare the outputs
+    (let* ((items (nodes-write-to (group-items parent)))
+           (items (loop for item in (group-items parent)
+                        if (find (car (node-writes item)) items)
+                          collect item)))
+    (every #'identity (map 'list #'mergeable-p items)))))
 
 (defun group-compose-views (parent read-view)
   (labels ((view-mergeable-p (views &aux (view (car views)))
@@ -545,7 +555,8 @@ mergeable = all views in parent group can be composed with read_view.
         (declare (type fixnum r1 r2))
         ;; r2 -> r1
         (when read-view
-          (print node)
+          (print "MERGE")
+          ;; (print node)
           (print (group-view-rewritable-p parent-group read-view)))
         ;; この後Mergeを最後のGroupのReadViewでSElfに適用するのを忘れずに。。。
         (cond

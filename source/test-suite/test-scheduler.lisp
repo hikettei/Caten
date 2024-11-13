@@ -186,7 +186,7 @@
   (let ((x (make-view `(1 1) `((0 1 1) (0 1 1)) `(nil nil) `(1 1) nil))
         (y (make-view `(64 64) `((0 64 1) (0 64 1)) `(nil nil) `(64 1) nil))
         (z (make-view `(64 64) `((0 64 1) (0 64 1)) `(t t) `(1 1) nil)))
-    (ok (view-eq (print (compose-views x y)) z))))
+    (ok (view-eq (compose-views x y) z))))
 
 (deftest test-merge-views-broadcast
   ;; Cannot be merged
@@ -205,4 +205,8 @@
         (x (make-view `(64 64) `((0 64 1) (0 64 1)) `(nil nil) `(1 1) nil))
         (result (make-view `(64 64 64) `((0 64 1) (0 64 1) (0 64 1)) `(nil t nil) `(1 1 1) nil)))
     (let ((v (compose-views x y)))
-      (ok (view-eq v result)))))
+      (ok (view-eq v result))))
+  (let ((x (make-view `(1) `((0 1 1)) `(nil) `(1) nil))
+        (y (make-view `(64 64) `((0 64 1) (0 64 1)) `(nil nil) `(64 1) nil))
+        (z :failed))
+    (ok (view-eq (compose-views x y) z))))
