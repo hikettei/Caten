@@ -95,18 +95,14 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
          (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
          (xqkv (!permute xqkv 3 0 2 1 4)))
     (multiple-value-bind (xq xk xv) (!chunk xqkv 3 :dim 0)
-      (let* ((attn-output (scaled-dot-product-attention (!contiguous xq) (!contiguous xk) (!contiguous xv) mask))
+      (let* ((attn-output (scaled-dot-product-attention xq xk xv mask))
              (attn-output (!reshape (!transpose attn-output 1 2) `(,batch-size ,seq-len ,dim))))
         (!add (!matmul attn-output (!t c-proj-weight)) c-proj-bias)))))
 
 (deftest test-multihead-attention
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
-      (let* ((dim 128)
-             (n-heads 8)
-             (batch-size 4)
-             (seq-len 64)
-             (n 1)
+      (let* ((dim 128) (n-heads 8) (batch-size 4) (seq-len 64) (n 1)
              (x (rand `(,batch-size ,seq-len ,dim))))
         (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
           (assert-equal

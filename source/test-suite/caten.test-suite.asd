@@ -8,6 +8,7 @@ Tests that are not related to the core functionality of Caten or are time-consum
   :components ((:file "package")
 	       (:file "helpers")
                (:file "test-ops")
+               (:file "test-scheduler")
                (:file "test-view")
                (:file "test-normalization")
 	       (:file "test-randomness")
