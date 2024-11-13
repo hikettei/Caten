@@ -75,6 +75,7 @@
               (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
                 (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type)))
                 (testing "Valid load is val_2 = val_1[(((4096*(1+_gid0))+_gid2)+64*_gid3)]"
+                  (print bp)
                   (let ((loader (find-if #'(lambda (x) (and (eql (node-type x) :EXPR) (equalp (symbol-name (car (node-writes x))) "val_2"))) bp))
                         (wmma   (find-if #'(lambda (x)
                                              (and (eql (node-type x) :EXPR)
@@ -85,11 +86,18 @@
                     (flet ((r (n)
                              (caten/codegen/renderer:render-expr renderer (getattr n :EXPR) :index-space index-space)))
                       (ok (equalp (r wmma) "(val_9+(val_1[(((4096*a)+(64*b))+d)]*val_2))") (format nil "WMMA Part is rendered as ~a" (r wmma)))
-                      (ok (equalp (r loader) "val_1[(((4096*(1+a))+c)+(64*d))]") (format nil "Loader Part is rendered as ~a" (r loader)))))))))))
+                      (ok (equalp (r loader) "val_1[(((4096*(1+a))+c)+(64*d))]") (format nil "Loader Part is rendered as ~a" (r loader)))
+                      (let ((type (caten/codegen/shape-inference:read-type-relay loader)))
+                        (ok (= (length (node-reads loader)) 1))
+                        (ok (equal `(4096 0 1 64) (buffer-stride (car (caten/codegen/shape-inference:relay-reads type))))))))))))))
 
 (deftest test-view-merge-failing-case
-  (let ((schedule (schedule-with-vars (caten (!gelu (!matmul (make-tensor `(1 64 64)) (!t (make-tensor `(1 64 64)))))))))
+  (let ((schedule (schedule-with-vars (!gelu (!matmul (make-tensor `(1 64 64)) (!t (make-tensor `(1 64 64))))))))
     (check-kernel schedule 1)))
+
+;; More Failing loweres and schedulers
+;; (!softmax `(10))
+;; ConvND batch_size=1
 
 ;; Testing Expr Merging (e.g.: Count the number of expr in the group)
 ;; もうちょっとMinimalに考えたい
