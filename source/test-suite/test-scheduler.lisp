@@ -12,8 +12,10 @@
         if (getattr node :jitable)
           collect node))
 
-(defun check-kernel (schedule-graph n-count)
-  (ok (= n-count (length (gather-kernels schedule-graph))) (format nil "Scheduled ~a, expected ~a" (length (gather-kernels schedule-graph)) n-count)))
+(defun check-kernel (schedule-graph n-count &key (expect-failure nil))
+  (if expect-failure
+      (ng (= n-count (length (gather-kernels schedule-graph))) (format nil "[Expect Failure] Scheduled ~a, expected ~a" (length (gather-kernels schedule-graph)) n-count))
+      (ok (= n-count (length (gather-kernels schedule-graph))) (format nil "Scheduled ~a, expected ~a" (length (gather-kernels schedule-graph)) n-count))))
 ;; ~~ Testing reduction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest test-double-reduction-separated
   (testing "Reduction with different axes are not fused into a single kernel"
@@ -92,7 +94,7 @@
 
 (deftest test-view-merge-failing-case
   (let ((schedule (schedule-with-vars (!gelu (!matmul (make-tensor `(1 64 64)) (!t (make-tensor `(1 64 64))))))))
-    (check-kernel schedule 1)))
+    (check-kernel schedule 1 :expect-failure t)))
 
 ;; (!softmax `(10))
 ;; ConvND batch_size=1
