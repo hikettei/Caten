@@ -34,10 +34,10 @@
          (x2 (!view x t t `(1 ,d 2)))
          (rx1 (!sub (!mul x1 costheta) (!mul x2 sintheta)))
          (rx2 (!add (!mul x1 sintheta) (!mul x2 costheta)))
-         (result (!concatenate -1 rx1 rx2))
-         ;(final (!reshape result (list b n d)))
-         )
-
+         (rx1-expanded (!reshape rx1 (append (shape rx1) (list 1))))
+         (rx2-expanded (!reshape rx2 (append (shape rx2) (list 1))))
+         (result (!concatenate -1 rx1-expanded rx2-expanded))
+         (final-result (!reshape result (list b n d))))
     (format t "~%Original x shape: ~A" (shape x))
     (format t "~%costheta shape: ~A" (shape costheta))
     (format t "~%sintheta shape: ~A" (shape sintheta))
@@ -45,18 +45,13 @@
     (format t "~%rx1 shape: ~A" (shape rx1))
     (format t "~%rx2 shape: ~A" (shape rx2))
     (format t "~%result shape: ~A" (shape result))
-    (print (proceed result))
-    ))
+    (print (proceed final-result))))
 
-
-
-(defparameter *tensor1* (make-tensor '(3 3 3) :initial-element 1.0))
+(defparameter *tensor1* (make-tensor '(4 4 4) :initial-element 1.0))
 (let ((instance (make-instance 'RoPE)))
   (call instance *tensor1*))
 
 (in-package :caten/nn.test)
-
-
 
 (defun test-rope-tensor ()
   (with-no-grad
