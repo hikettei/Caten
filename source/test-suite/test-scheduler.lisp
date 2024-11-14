@@ -207,7 +207,7 @@
         (z :failed))
     (ok (view-eq (compose-views x y) z)))
   (let ((x (make-view `(1 64 64 64) `((0 1 1) (0 64 1) (0 64 1) (0 64 1)) `(nil nil t nil) `(4096 64 64 1) `(0 1 2 3)))
-        (y (make-view `(1 64 64) `((0 1 1) (0 64 1) (0 64 1)) `(nil nil nil) `(4096 64 1) `(0 1 2)))
-        (z (make-view `(1 64 64 64) `((0 1 1) (0 64 1) (0 64 1) (0 64 1)) `(nil nil t nil) `(1 64 64 64) nil)))
-    (print (compose-views x y))
+        (y (make-view `(1 64 64)    `((0 1 1) (0 64 1) (0 64 1)) `(nil nil nil) `(4096 64 1) `(0 1 2)))
+        (z (make-view `(1 64 64 64) `((0 1 1) (0 64 1) (0 64 1) (0 64 1)) `(nil nil t nil) `(4096 64 64 1) `(0 1 2 3))))
     (ok (view-eq (compose-views x y) z))))
+

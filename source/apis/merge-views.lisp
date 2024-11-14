@@ -180,6 +180,7 @@ Applying a further slicing:
             when (nth i mask)
             do (setf (nth i new-permute) (pop mapped-permute)))
       ;; Fill in unused indices at positions where mask is NIL
+      (setf unused-indices (reverse unused-indices))
       (loop for i from 0 below new-axis-count
             unless (nth i mask)
               do (setf (nth i new-permute) (pop unused-indices)))
