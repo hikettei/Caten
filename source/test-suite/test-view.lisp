@@ -25,6 +25,7 @@
 def chunk_mm_test_torch(x):
   a, b = x.chunk(2)
   return a @ b")
+
 (import-function "chunk_mm_test_torch")
 
 (deftest chunk+matmul
@@ -35,3 +36,4 @@ def chunk_mm_test_torch(x):
           (->caten (chunk_mm_test_torch x)))
         (multiple-value-bind (a b) (!chunk x 2)
           (proceed (!matmul a b))))))
+;; [TODO] Concatenate Fusion+Dynamic Shape for KV Cache

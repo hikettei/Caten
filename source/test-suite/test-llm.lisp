@@ -86,8 +86,6 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
 ")
 (import-function "torch_mha_impl")
 
-#|
-[TODO] Need to update the codegen!
 (defun mha-impl (n dim n-heads input c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
   (let* ((xqkv (!add (!matmul input (!t c-attn-weight)) c-attn-bias))
          (batch-size (car (shape input)))
@@ -96,8 +94,7 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
          (mask (!triu (!full `(1 1 ,seq-len ,seq-len) (-inf)) :diagonal (!+ (iconst 1) (iconst n))))
          (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
          (xqkv (!permute xqkv 3 0 2 1 4)))
-    (multiple-value-bind (xq xk xv)
-        (values (!view xqkv 0 t t t t) (!view xqkv 1 t t t t) (!view xqkv 2 t t t t))
+    (multiple-value-bind (xq xk xv) (!chunk xqkv 3 :dim 0)
       (let* ((attn-output (scaled-dot-product-attention xq xk xv mask))
              (attn-output (!reshape (!transpose attn-output 1 2) `(,batch-size ,seq-len ,dim))))
         (!add (!matmul attn-output (!t c-proj-weight)) c-proj-bias)))))
@@ -105,11 +102,7 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
 (deftest test-multihead-attention
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
-      (let* ((dim 128)
-             (n-heads 8)
-             (batch-size 4)
-             (seq-len 64)
-             (n 1)
+      (let* ((dim 128) (n-heads 8) (batch-size 4) (seq-len 64) (n 1)
              (x (rand `(,batch-size ,seq-len ,dim))))
         (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
           (assert-equal
@@ -117,5 +110,3 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
               (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
                 (->caten (torch_mha_impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
               (proceed (mha-impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))))))
-|#
-;; [TODO] Compiling the entire transformer graph here
