@@ -421,15 +421,22 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
         (cond
           ((or (= r1 0) (= r2 0))->ok)
           ((= r1 r2)
-           (when (group-reduce-dims parent-group)
-             ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
-             ;; does not introduce new axis = the total element size is the same as the reducing parent group.
-             (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
-                 ->ok
-                 ->ng))
-           (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
-               ->ok
-               ->ng))
+           (let ((permute (and read-view (getattr read-view :permute))))
+             (when (group-reduce-dims parent-group)
+               ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
+               ;; does not introduce new axis = the total element size is the same as the reducing parent group.
+               (if (and
+                    (null permute) ;; no permute reduce axes
+                    (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group)))
+                   ->ok
+                   ->ng))
+             (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
+                 (progn
+                   ;; Swizzle and merge
+                   (when permute
+                     (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
+                   ->ok)
+                 ->ng)))
           (T
            (let ((self-type (group-get-type self))
                  (c (< r1 r2)))
