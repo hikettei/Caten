@@ -435,12 +435,23 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                  ;; Merge Shape
                  (loop for size in sizes
                        for size-new in sizes-new
+                       for bc-old in broadcast
+                       for bc-new in (getattr view-new :broadcast)
                        for nth upfrom 1
-                       do (setf (nth nth (node-reads node)) (if (teq size 1) size-new size)))
+                       do (setf (nth nth (node-reads node))
+                                (if (and (null bc-old) (null bc-new)) size-new size)))
+                 ;; Merge upfrom
+                 (loop for upfrom-old in below
+                       for upfrom-new in below-new
+                       for nth upfrom (1+ nrank)
+                       do (setf (nth nth (node-reads node)) (if (teq upfrom-old 0) upfrom-new upfrom-old)))
+                 ;; Merge to
                  (loop for siz in (cdr (node-reads node))
-                       for t1 in to
+                       for to-old in to
+                       for to-new in to-new
                        for nth upfrom (1+ (* 2 nrank))
-                       do (setf (nth nth (node-reads node)) t1))
+                       do (setf (nth nth (node-reads node)) (if (teq to-old siz) to-new to-old)))
+                 ;; Merge by (skipped as contiguous-p/contiguous-p-new is T
                  (loop for s in stride
                        for nth upfrom (1+ (* 4 nrank))
                        do (setf (nth nth (node-reads node)) s))
@@ -631,12 +642,10 @@ mergeable = all views in parent group can be composed with read_view.
                       (warn "Failed to merge out-complex-view!!")
                       ->ng)
                     (assert (= (the fixnum (getattr new-view :nrank)) (max r1 r2)))
-                    (print "REVERSE MODE")
                     (group-compose-views self new-view mask graph)
                     ->ok)
                   (group-compose-views parent-group read-view mask graph)))
             (when (and read-view (getattr read-view :permute))
-              (print "FORWARD MODE")
               (apply-index-component-fusion parent-group (getattr read-view :permute)))
             (group-assert-rank self r1 r2 read-view)
             (group-assert-rank parent-group r1 r2 read-view)
