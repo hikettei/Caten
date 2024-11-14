@@ -392,6 +392,9 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
              (broadcast (getattr view-old :broadcast))
              (nrank   (getattr view-old :nrank)))
          (declare (type list args) (type fixnum nrank))
+         ;(print "++MERGE++")
+         ;(print view-old)
+         ;(print view-new)
          (when permute
            ;; Sort the axis
            (setf args (loop for nth upfrom 0 below (length args) by nrank
@@ -419,6 +422,9 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                    (every #'(lambda (x) (teq x 0)) below-new)
                    (every #'teq to-new sizes-new)
                    (every #'(lambda (x) (teq x 1)) by-new))))
+           (when (or (every #'(lambda (x) (eql x 1)) sizes) (every #'(lambda (x) (eql x 1)) sizes-new))
+             (unless (equal sizes sizes-new)
+               (return-from .view nil)))
            (if (and (or contiguous-p-new contiguous-p)
                     ;; shapes are broadastable and mergeable
                     (every #'shape-eq sizes (subseq (node-reads view-new) 1 (1+ (getattr view-new :nrank)))))
@@ -450,11 +456,13 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                        for to-old in to
                        for to-new in to-new
                        for nth upfrom (1+ (* 2 nrank))
-                       do (setf (nth nth (node-reads node)) (if (teq to-old siz) to-new to-old)))
+                       do (setf (nth nth (node-reads node)) (if (teq to-old siz) to-old to-new)))
                  ;; Merge by (skipped as contiguous-p/contiguous-p-new is T
+                 ;; Merging stride (maybe unnecessary)
                  (loop for s in stride
                        for nth upfrom (1+ (* 4 nrank))
                        do (setf (nth nth (node-reads node)) s))
+                 ;(print node)
                  node)
                (progn
                  (warn "NON_MERGEABLE")
@@ -546,13 +554,15 @@ mergeable = all views in parent group can be composed with read_view.
 "
   (declare (type Group parent) (type (or null node) read-view))
   (when (null read-view) (return-from group-view-rewritable-p t))
-  (labels ((view-mergeable-p (views &aux (view (car views)))
+  (labels ((view-mergeable-p (views typ &aux (view (car views)))
              (assert (<= (length views) 1))
              (if view
                  (.view view read-view :test (make-symbol-eq graph))
-                 t))
+                 (if (null typ)
+                     t ;; scalar
+                     (.view (buffer->view typ) read-view :test (make-symbol-eq graph)))))
            (mergeable-p (node)
-             (every #'view-mergeable-p (getattr node :_read_views))))
+             (every #'view-mergeable-p (getattr node :_read_views) (relay-reads (read-type-relay node)))))
     ;; Only compare the outputs
     (let* ((items (nodes-write-to (group-items parent)))
            (items (loop for item in (group-items parent)
@@ -625,7 +635,8 @@ mergeable = all views in parent group can be composed with read_view.
                 ->ng)))
         (when (and
                (buffer-mergeable-p graph (group-get-type self) (group-get-type parent-group))
-               (group-view-rewritable-p parent-group read-view graph))
+               (group-view-rewritable-p parent-group (print read-view) graph))
+          (print 0)
           (let* ((rewrite-self (< r1 r2))
                  (mask
                    (if (broadcastable-p read-type self-type)
