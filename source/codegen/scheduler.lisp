@@ -275,7 +275,14 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (let ((buff (group-get-type group)))
     (when buff (buffer-nrank buff))))
 
-(defun apply-view-fusor (tgt-rank mask group)
+(defun merge-permute-from-mask (permute mask)
+  (when (>= (length permute) (length mask))
+    (return-from merge-permute-from-mask permute))
+  (let ((val (uiop:symbol-call :caten/apis :compute-new-permute permute mask)))
+    (assert (= (length val) (length mask)) () "permute=~a mask=~a val=~a" permute mask val)
+    val))
+
+(defun apply-view-fusor (tgt-rank mask group &key (permute))
   ;; T = broadcasted, NIL = old axes2
   (group-items-st-rewriter
    group
@@ -294,7 +301,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                    (buffer-views typ)
                    (loop for b in mask
                          if b collect `(0 1 1 t) else collect (pop views))
-                   (buffer-nrank typ) (length (buffer-shape typ)))
+                   (buffer-nrank typ) (length (buffer-shape typ))
+                   (buffer-inferred-permute typ) (when (buffer-inferred-permute typ) (merge-permute-from-mask (buffer-inferred-permute typ) mask)))
+             (when permute
+               (setf (buffer-shape typ) (permute-list permute (buffer-shape typ))
+                     (buffer-stride typ) (permute-list permute (buffer-stride typ))
+                     (buffer-views typ) (permute-list permute (buffer-views typ))))
              ;; Consumed all masks?
              (assert (= (buffer-nrank typ) (length mask)))
              typ))))
@@ -425,8 +437,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
              (if (broadcastable-p read-type self-type)
                  (let ((mask (map 'list #'(lambda (x) (eql x 1)) (buffer-shape (if c read-type self-type)))))
                    (assert (some #'identity mask))
-                   (apply-view-fusor (min r1 r2) mask self)
-                   (apply-view-fusor (min r1 r2) mask parent-group)
+                   (apply-view-fusor (min r1 r2) mask self :permute (getattr read-view :permute))
+                   (apply-view-fusor (min r1 r2) mask parent-group :permute (getattr read-view :permute))
                    (when (and read-view (getattr read-view :permute))
                      (apply-index-component-fusion parent-group (getattr read-view :permute)))
                    (group-assert-rank self r1 r2 read-view)
@@ -438,8 +450,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                        (when (not (= (length mask) (max r1 r2)))
                          (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
                        (when (not (= (length mask) (max r1 r2)))->ng)
-                       (apply-view-fusor (min r1 r2) mask self)
-                       (apply-view-fusor (min r1 r2) mask parent-group)
+                       (apply-view-fusor (min r1 r2) mask self :permute (getattr read-view :permute))
+                       (apply-view-fusor (min r1 r2) mask parent-group :permute (getattr read-view :permute))
                        (when (and read-view (getattr read-view :permute))
                          (apply-index-component-fusion parent-group (getattr read-view :permute)))
                        (group-assert-rank self r1 r2 read-view)
