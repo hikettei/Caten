@@ -158,16 +158,18 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 
 (defun expr-index-components (renderer node index-space)
   (assert (eql (node-type node) :INDEX-COMPONENTS))
-  (labels ((from-expr (shapes components)
+  (labels ((from-expr (is components)
              (reduce
               #'expr-add
               (map
                'list
-               #'(lambda (size stride gid)
-                   (if (expr-scalar-equivalent-p size (expr-const 1 :int64))
-                       (expr-const 0 :int64)
+               #'(lambda (views stride gid)
+                   (if views
+                       (if (fourth views) ;; broadcasted
+                           (expr-const 0 :int64)
+                           (expr-mul stride (expr-add (expr-const (car views) :int64) (expr-mul (expr-const (third views) :int64) (expr-const gid :int64)))))
                        (expr-mul (expr-const stride :int64) (expr-const gid :int64))))
-               shapes
+               (iteration-space-views is)
                components
                index-space)))
            (%expr-from-graph (id graph)
@@ -183,7 +185,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
     (let* ((is (car (relay-write-iters (read-type-relay node))))
            (proc (iteration-space-procedure is))
            (components (merge-stride proc (cdr (node-reads node)))))
-      (from-expr (iteration-space-shape is) components))))
+      (from-expr is components))))
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
   nil
