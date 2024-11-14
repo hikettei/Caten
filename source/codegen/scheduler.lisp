@@ -351,6 +351,14 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                               "Rank mismatch: (expected from ~a -> ~a)~%view=~a~%buffer:~%~a~%group~%~a"
                               (min r1 r2) rank view typ group))))
 
+(defun make-symbol-eq (graph)
+  #'(lambda (a b)
+      (if (and (numberp a) (numberp b))
+          (= a b)
+          (or (eql a b)
+              (and (symbolp a) (symbolp b)
+                   (expr-scalar-equivalent-p (expr-from-graph a graph) (expr-from-graph b graph)))))))
+
 (defun group-view (group)
   (let* ((l (nodes-write-to (group-items group)))
          (node (when l (find (car l) (group-items group) :key #'node-writes :test #'find))))
@@ -415,6 +423,10 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                        do (setf (nth nth (node-reads node)) s))
                  node)
                (progn
+                 (print view-old)
+                 (print view-new)
+                 (print args)
+                 (print (cdr (node-reads view-new)))
                  ;; hutuuni new view wo sakusei dekiru
                  (warn "need some update")
                  nil))))) ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
@@ -488,7 +500,7 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
             (buffer-inferred-permute base-buffer) (getattr view :permute))
       base-buffer)))
 
-(defun group-view-rewritable-p (parent read-view)
+(defun group-view-rewritable-p (parent read-view graph)
   "
 Self and parent are connected by the following relations.
 ```
@@ -507,7 +519,7 @@ mergeable = all views in parent group can be composed with read_view.
   (labels ((view-mergeable-p (views &aux (view (car views)))
              (assert (<= (length views) 1))
              (if view
-                 (.view view read-view)
+                 (.view view read-view :test (make-symbol-eq graph))
                  t))
            (mergeable-p (node)
              (every #'view-mergeable-p (getattr node :_read_views))))
@@ -519,11 +531,11 @@ mergeable = all views in parent group can be composed with read_view.
       ;;(every #'identity (map 'list #'mergeable-p items))
       (every #'identity (map 'list #'mergeable-p (group-items parent))))))
 
-(defun group-compose-views (parent read-view mask)
+(defun group-compose-views (parent read-view mask graph)
   (group-items-st-rewriter
    parent
    #'(lambda (old-buffer old-view)
-       (let ((new-view (.view old-view read-view)))
+       (let ((new-view (.view old-view read-view :test (make-symbol-eq graph))))
          (assert new-view () "The group and read-view is not mergeable.")
          (let ((new-buffer (copy-buffer old-buffer)))
            (sync-views-and-buffer new-view new-buffer)
@@ -583,7 +595,7 @@ mergeable = all views in parent group can be composed with read_view.
                 ->ng)))
         (when (and
                (buffer-mergeable-p graph (group-get-type self) (group-get-type parent-group))
-               (group-view-rewritable-p parent-group read-view))
+               (group-view-rewritable-p parent-group read-view graph))
           (let* ((rewrite-self (< r1 r2))
                  (mask
                    (if (broadcastable-p read-type self-type)
@@ -595,14 +607,14 @@ mergeable = all views in parent group can be composed with read_view.
               (assert read-view () "squeezing the array without expliciting %view is not allowed."))
             (when read-view
               (if rewrite-self
-                  (let ((new-view (.view (group-view parent-group) read-view)))
+                  (let ((new-view (.view (group-view parent-group) read-view :test (make-symbol-eq graph))))
                     (when (null new-view)
                       (warn "Failed to merge out-complex-view")
                       ->ng)
                     (assert (= (the fixnum (getattr new-view :nrank)) (max r1 r2)))
-                    (group-compose-views self new-view mask)
+                    (group-compose-views self new-view mask graph)
                     ->ok)
-                  (group-compose-views parent-group read-view mask)))
+                  (group-compose-views parent-group read-view mask graph)))
             (when (and read-view (getattr read-view :permute))
               (apply-index-component-fusion parent-group (getattr read-view :permute)))
             (group-assert-rank self r1 r2 read-view)
@@ -610,7 +622,7 @@ mergeable = all views in parent group can be composed with read_view.
             ->ok))
         ->ng))))
 
-(defmethod merge-groups ((self Group) parents mergeable-list)
+(defmethod merge-groups ((self Group) parents mergeable-list graph)
   (let* ((p (loop for m in mergeable-list for p in parents
                   if m collect p))
          (ranks (map 'list #'group-rank p))
@@ -623,7 +635,7 @@ mergeable = all views in parent group can be composed with read_view.
             (let* ((typ1 (group-get-type self))
                    (m (map 'list #'fourth (buffer-views typ1))))
               (assert (some #'identity m))
-              (group-compose-views group (group-view self) m)
+              (group-compose-views group (group-view self) m graph)
               (group-assert-rank group srank srank nil))))
   (loop for m in mergeable-list
         for p in parents
@@ -670,7 +682,7 @@ mergeable = all views in parent group can be composed with read_view.
                    collect nil)))
       (assert (= (length mergeable-p-list) (length parents)))
       (nconc
-       (list (merge-groups self (map 'list #'car parents) mergeable-p-list))
+       (list (merge-groups self (map 'list #'car parents) mergeable-p-list graph))
        (loop for p in parents
              for m in mergeable-p-list
              if m ;; mergeable

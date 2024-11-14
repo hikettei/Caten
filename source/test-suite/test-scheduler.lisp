@@ -111,7 +111,7 @@
 ;; The most primitive way to write the fusion test
 (deftest swizzle-permute-group-test ;; r1 = r2 in group-merge-p
   (let ((g (with-context
-             (x  (%make-tensor `(10 10)))
+               (x  (%make-tensor `(10 10)))
              (x  (%view x `(10 10) `(0 0) `(10 10) `(1 1) `(nil nil) `(10 1))) ;; this view should be overwritten
              (y  (%make-tensor `(10 10)))
              (x  (%sin x)) ;; expect: x = sin(x[x+10*y])
@@ -126,18 +126,14 @@
         (let* ((kernel (car (gather-kernels schedule)))
                (bp (caten/codegen/blueprint:lower-schedule-item kernel (avm-graph avm) schedule)))
           (assert (= 1 (count :EXPR bp :key #'node-type)))
-          (caten/codegen/blueprint:print-blueprint bp t)
+          ;; (caten/codegen/blueprint:print-blueprint bp t)
           (dolist (b bp)
             (when (eql (node-type b) :EXPR)
               (let ((val_1_type (second (caten/codegen/shape-inference:relay-reads (caten/codegen/shape-inference:read-type-relay b)))))
-                (ok (equal `(1 10) (buffer-stride val_1_type)))
-                (print val_1_type)
-                ))))))))
+                (ok (equal `(1 10) (buffer-stride val_1_type)))))))))))
 
 ;; complex-out-fusable
-
 ;; r1 > r2
-
 ;; r1 < r2
 
 ;; Testing Expr Merging (e.g.: Count the number of expr in the group)
