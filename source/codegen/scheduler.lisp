@@ -276,7 +276,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 
 (defmethod group-items-st-rewriter ((group Group) f mask)
   (dolist (item (group-items group))
-    (when (and mask (eql (node-type item) :INDEX-COMPONENTS)) ;; (cdr (node-reads index-components)) also represents for the stride
+    (when (and mask (some #'identity mask) (eql (node-type item) :INDEX-COMPONENTS)) ;; (cdr (node-reads index-components)) also represents for the stride
       (setf (node-reads item)
             (append
              (list (car (node-reads item)))
@@ -409,8 +409,20 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                   (and
                    (every #'(lambda (x) (teq x 0)) below)
                    (every #'teq to sizes)
-                   (every #'(lambda (x) (teq x 1)) by))))
-           (if (and contiguous-p (every #'shape-eq sizes (subseq (node-reads view-new) 1 (1+ (getattr view-new :nrank)))))
+                   (every #'(lambda (x) (teq x 1)) by)))
+                (args-new (cdr (node-reads view-new)))
+                (sizes-new (subseq args-new 0 nrank))
+                (below-new (subseq args-new nrank (* 2 nrank)))
+                (to-new    (subseq args-new (* 2 nrank) (* 3 nrank)))
+                (by-new (subseq args-new (* 3 nrank) (* 4 nrank)))
+                (contiguous-p-new ;; = no offsets are created to the base view
+                  (and
+                   (every #'(lambda (x) (teq x 0)) below-new)
+                   (every #'teq to-new sizes-new)
+                   (every #'(lambda (x) (teq x 1)) by-new))))
+           (if (and (or contiguous-p-new contiguous-p)
+                    ;; shapes are broadastable and mergeable
+                    (every #'shape-eq sizes (subseq (node-reads view-new) 1 (1+ (getattr view-new :nrank)))))
                (let ((node (copy-node view-new)))
                  (setf (getattr node :broadcast)
                        (loop for s-old in (subseq args 0 nrank)
@@ -420,27 +432,23 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                                collect t
                              else
                                collect b))
+                 ;; Merge Shape
+                 (loop for size in sizes
+                       for size-new in sizes-new
+                       for nth upfrom 1
+                       do (setf (nth nth (node-reads node)) (if (teq size 1) size-new size)))
+                 (loop for siz in (cdr (node-reads node))
+                       for t1 in to
+                       for nth upfrom (1+ (* 2 nrank))
+                       do (setf (nth nth (node-reads node)) t1))
                  (loop for s in stride
                        for nth upfrom (1+ (* 4 nrank))
                        do (setf (nth nth (node-reads node)) s))
                  node)
-               (let* ((args-new (cdr (node-reads view-new)))
-                      (sizes-new (subseq args-new 0 nrank))
-                      (below-new (subseq args-new nrank (* 2 nrank)))
-                      (to-new    (subseq args-new (* 2 nrank) (* 3 nrank)))
-                      (by-new (subseq args-new (* 3 nrank) (* 4 nrank))))
-                 ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
-                 (let ((contiguous-p ;; = no offsets are created to the base view
-                         (and
-                          (every #'(lambda (x) (teq x 0)) below-new)
-                          (every #'teq to-new sizes-new)
-                          (every #'(lambda (x) (teq x 1)) by-new))))
-                   (when contiguous-p
-                     (let ((view-old (copy-node view-old)))
-                       (setf (cdr (node-reads view-old)) args
-                             (getattr view-old :broadcast) new-broadcast
-                             (getattr view-old :permute) (getattr view-new :permute))
-                       view-old))))))))
+               (progn
+                 (warn "NON_MERGEABLE")
+                 (print view-old)
+                 (return-from .view nil))))))
       (T
        (flet ((make-mask (node) (getattr node :broadcast))
               (padding-with-mask (mask pad-value list)
