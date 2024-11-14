@@ -423,7 +423,8 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
            (if (and (or contiguous-p-new contiguous-p)
                     ;; shapes are broadastable and mergeable
                     (every #'shape-eq sizes (subseq (node-reads view-new) 1 (1+ (getattr view-new :nrank)))))
-               (let ((node (copy-node view-new)))
+               (let ((node (copy-node view-old)))
+                 (setf (cdr (node-reads node)) (append sizes below to by stride))
                  (setf (getattr node :broadcast)
                        (loop for s-old in (subseq args 0 nrank)
                              for s-new in (subseq (node-reads view-new) 1 (1+ (getattr view-new :nrank)))
