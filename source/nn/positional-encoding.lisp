@@ -35,12 +35,18 @@
          (rx1 (!sub (!mul x1 costheta) (!mul x2 sintheta)))
          (rx2 (!add (!mul x1 sintheta) (!mul x2 costheta)))
          (rx1-expanded (!reshape rx1 (append (shape rx1) (list 1))))
-         (rx2-expanded (!reshape rx2 (append (shape rx2) (list 1)))))
+         (rx2-expanded (!reshape rx2 (append (shape rx2) (list 1))))
+         (result (!concatenate -1 rx1-expanded rx2-expanded))
+         ;(final (!reshape result (list b n d)))
+         )
     (format t "~%Original x shape: ~A" (shape x))
     (format t "~%costheta shape: ~A" (shape costheta))
     (format t "~%sintheta shape: ~A" (shape sintheta))
     (format t "~%Freqs: ~A" (proceed freqs))
-    (print ( proceed rx1-expanded))))
+    (print b)
+    (print (proceed result))
+    ;(print final)
+    ))
 
 
 
