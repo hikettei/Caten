@@ -352,6 +352,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                               (min r1 r2) rank view typ group))))
 
 (defun make-symbol-eq (graph)
+  (declare (type graph graph))
   #'(lambda (a b)
       (if (and (numberp a) (numberp b))
           (= a b)
@@ -373,7 +374,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
     val))
 
 (defun .view (view-old view-new &key (test #'eql))
-  "Tries to compose two views and creates new one. If impossible, returns nil
+  "Tries to compose two views and creates the new one. If impossible, returns nil
 test is used to compare two symbols or fixnums.
 If the two view's rank are different, .view try to uprank the fewer rank view to the higher rank view."
   (declare (type (or null node) view-old)
@@ -402,8 +403,9 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                 (to     (subseq args (* 2 nrank) (* 3 nrank)))
                 (by     (subseq args (* 3 nrank) (* 4 nrank)))
                 (stride (subseq args (* 4 nrank) (* 5 nrank)))
-                (new-broadcast (map 'list #'(lambda (x y) (or x y)) broadcast (getattr view-new :broadcast)))
-                (contiguous-p ;; = no offsets are created
+                ;;(new-broadcast (map 'list #'(lambda (x y) (or x y)) broadcast (getattr view-new :broadcast)))
+                (new-broadcast (getattr view-old :broadcast))
+                (contiguous-p ;; = no offsets are created to the base view
                   (and
                    (every #'(lambda (x) (teq x 0)) below)
                    (every #'teq to sizes)
@@ -422,14 +424,23 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                        for nth upfrom (1+ (* 4 nrank))
                        do (setf (nth nth (node-reads node)) s))
                  node)
-               (progn
-                 (print view-old)
-                 (print view-new)
-                 (print args)
-                 (print (cdr (node-reads view-new)))
-                 ;; hutuuni new view wo sakusei dekiru
-                 (warn "need some update")
-                 nil))))) ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
+               (let* ((args-new (cdr (node-reads view-new)))
+                      (sizes-new (subseq args-new 0 nrank))
+                      (below-new (subseq args-new nrank (* 2 nrank)))
+                      (to-new    (subseq args-new (* 2 nrank) (* 3 nrank)))
+                      (by-new (subseq args-new (* 3 nrank) (* 4 nrank))))
+                 ;; [TODO] Create VIEW.Pad and merge them. (renderer will render then using where)
+                 (let ((contiguous-p ;; = no offsets are created to the base view
+                         (and
+                          (every #'(lambda (x) (teq x 0)) below-new)
+                          (every #'teq to-new sizes-new)
+                          (every #'(lambda (x) (teq x 1)) by-new))))
+                   (when contiguous-p
+                     (let ((view-old (copy-node view-old)))
+                       (setf (cdr (node-reads view-old)) args
+                             (getattr view-old :broadcast) new-broadcast
+                             (getattr view-old :permute) (getattr view-new :permute))
+                       view-old))))))))
       (T
        (flet ((make-mask (node) (getattr node :broadcast))
               (padding-with-mask (mask pad-value list)
@@ -528,7 +539,7 @@ mergeable = all views in parent group can be composed with read_view.
            (items (loop for item in (group-items parent)
                         if (find (car (node-writes item)) items)
                           collect item)))
-      ;;(every #'identity (map 'list #'mergeable-p items))
+      ;; (every #'identity (map 'list #'mergeable-p items))
       (every #'identity (map 'list #'mergeable-p (group-items parent))))))
 
 (defun group-compose-views (parent read-view mask graph)
@@ -539,7 +550,7 @@ mergeable = all views in parent group can be composed with read_view.
          (assert new-view () "The group and read-view is not mergeable.")
          (let ((new-buffer (copy-buffer old-buffer)))
            (sync-views-and-buffer new-view new-buffer)
-           new-buffer)))
+           (values new-buffer new-view))))
    mask))
 
 (defun group-merge-p (self graph node parent-group nth)
@@ -609,7 +620,7 @@ mergeable = all views in parent group can be composed with read_view.
               (if rewrite-self
                   (let ((new-view (.view (group-view parent-group) read-view :test (make-symbol-eq graph))))
                     (when (null new-view)
-                      (warn "Failed to merge out-complex-view")
+                      (warn "Failed to merge out-complex-view!!")
                       ->ng)
                     (assert (= (the fixnum (getattr new-view :nrank)) (max r1 r2)))
                     (group-compose-views self new-view mask graph)
