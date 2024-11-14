@@ -422,11 +422,12 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
           ((or (= r1 0) (= r2 0))->ok)
           ((= r1 r2)
            (let ((permute (and read-view (getattr read-view :permute))))
+             (declare (type list permute))
              (when (group-reduce-dims parent-group)
                ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
                ;; does not introduce new axis = the total element size is the same as the reducing parent group.
                (if (and
-                    (null permute) ;; no permute reduce axes
+                    (or (null permute) (equal (range 0 (length permute)) permute)) ;; no permute reduce axes
                     (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group)))
                    ->ok
                    ->ng))
