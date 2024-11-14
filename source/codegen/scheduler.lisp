@@ -388,7 +388,7 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
     (cond
       ((= (the fixnum (getattr view-old :nrank)) (the fixnum (getattr view-new :nrank)))
        (let ((permute (getattr view-new :permute))
-             (args    (cdr (node-reads view-old))) ;; exlucde first args
+             (args    (cdr (node-reads view-old)))
              (broadcast (getattr view-old :broadcast))
              (nrank   (getattr view-old :nrank)))
          (declare (type list args) (type fixnum nrank))
@@ -404,7 +404,6 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                 (by     (subseq args (* 3 nrank) (* 4 nrank)))
                 (stride (subseq args (* 4 nrank) (* 5 nrank)))
                 ;;(new-broadcast (map 'list #'(lambda (x y) (or x y)) broadcast (getattr view-new :broadcast)))
-                (new-broadcast (getattr view-old :broadcast))
                 (contiguous-p ;; = no offsets are created to the base view
                   (and
                    (every #'(lambda (x) (teq x 0)) below)
@@ -428,7 +427,7 @@ If the two view's rank are different, .view try to uprank the fewer rank view to
                  (setf (getattr node :broadcast)
                        (loop for s-old in (subseq args 0 nrank)
                              for s-new in (subseq (node-reads view-new) 1 (1+ (getattr view-new :nrank)))
-                             for b in new-broadcast
+                             for b in broadcast
                              if (and (teq s-old 1) (not (eq s-new 1)))
                                collect t
                              else
@@ -632,10 +631,12 @@ mergeable = all views in parent group can be composed with read_view.
                       (warn "Failed to merge out-complex-view!!")
                       ->ng)
                     (assert (= (the fixnum (getattr new-view :nrank)) (max r1 r2)))
+                    (print "REVERSE MODE")
                     (group-compose-views self new-view mask graph)
                     ->ok)
                   (group-compose-views parent-group read-view mask graph)))
             (when (and read-view (getattr read-view :permute))
+              (print "FORWARD MODE")
               (apply-index-component-fusion parent-group (getattr read-view :permute)))
             (group-assert-rank self r1 r2 read-view)
             (group-assert-rank parent-group r1 r2 read-view)
