@@ -203,10 +203,9 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
       (loop
-        ;; [TODO] Fix: dim=128, n-heads=8, batch_size=4, seq_len=64, n=1
         for dim in        `(8 128)
         for n-heads in    `(1 8)
-        for batch-size in `(1 1)
+        for batch-size in `(1 1) ;; [TODO] Unstable with batch_size > 1 ?
         for seq-len in    `(3 64)
         for n in          `(1 1) do        
           (let ((x (rand `(,batch-size ,seq-len ,dim))))
@@ -217,4 +216,3 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
                     (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
                       (->caten (torch_mha_impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
                     (proceed (mha-impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))))))))
-;; [TODO] Test external/llm/Attention vs Caten Multi Head Attention
