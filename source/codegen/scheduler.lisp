@@ -467,6 +467,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                        (when (not (= (length mask) (max r1 r2)))
                          (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
                        (when (not (= (length mask) (max r1 r2)))->ng)
+                       (when (not (= (+ (count-if #'identity mask) (min r1 r2)) (max r1 r2)))->ng)
                        (apply-view-fusor (min r1 r2) mask self :permute (and read-view (getattr read-view :permute)))
                        (apply-view-fusor (min r1 r2) mask parent-group :permute (and read-view (getattr read-view :permute)))
                        (when (and read-view (getattr read-view :permute))
