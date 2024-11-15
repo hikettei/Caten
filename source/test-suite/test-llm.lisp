@@ -77,6 +77,13 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
         (c-proj-bias   (rand `(,dim))))
     (values c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
 
+(defun mha-parameters1 (dim)
+  (let ((c-attn-weight (linspace `(,(* 3 dim) ,dim) 0.1 0.0))
+        (c-attn-bias   (linspace `(,(* 3 dim)) 0.1 0.0))
+        (c-proj-weight (linspace `(,dim ,dim) 0.1 0.0))
+        (c-proj-bias   (linspace `(,dim) 0.1 0.0)))
+    (values c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
+
 (python-exec "
 def mha_scaled_dot_product_attention(query, key, value, mask) -> torch.Tensor:
     # Compute scaled dot-product attention
@@ -170,7 +177,7 @@ def chunk_fail_case_1(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj
           (assert-equal
               (:atol 1e-5 :rtol 1e-5)
               (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
-                (print (->caten (mha_fail_1 n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))
+                (print (->caten (chunk_fail_case_1 n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))
               (let* ((xqkv (!add (!matmul x (!t c-attn-weight)) c-attn-bias))
                      (batch-size (car (shape x)))
                      (head-dim (/ dim n-heads))
@@ -180,3 +187,43 @@ def chunk_fail_case_1(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj
                      (xqkv (!permute xqkv 3 0 2 1 4)))
                 (multiple-value-bind (xq xk xv) (!chunk xqkv 3 :dim 0)
                   (proceed (!contiguous (!+ xq xk xv)))))))))))
+
+(python-exec
+ "
+def chunk_fail_case_2(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_weight, c_proj_bias):
+    # Combine queries, keys, and values into one matrix multiplication for efficiency
+    xqkv = torch.matmul(input, c_attn_weight.T) + c_attn_bias
+    batch_size, seq_len, _ = input.size()
+    head_dim = dim // n_heads
+    mask = torch.triu(torch.full((1, 1, seq_len, seq_len), float('-inf')), diagonal=1+n)
+    # Reshape and split the combined QKV tensor
+    xqkv = xqkv.view(batch_size, seq_len, n_heads, 3, head_dim)
+    xqkv = xqkv.permute(3, 0, 2, 1, 4)  # Rearrange dimensions for splitting
+    return xqkv
+    xq, xk, xv = xqkv.chunk(3)
+    return xq+xk+xv
+")
+
+(import-function "chunk_fail_case_2")
+
+(deftest chunk-fail-case-2
+  (with-given-dtype ((:float32 . "float32"))
+    (with-no-grad
+      (let* ((dim 8) (n-heads 1) (batch-size 1) (seq-len 3) (n 1)
+             (x (linspace `(,batch-size ,seq-len ,dim) 0.1 0.0)))
+        (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters1 dim)
+          (assert-equal
+              (:atol 1e-5 :rtol 1e-5)
+              (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
+                (let ((m (->caten (chunk_fail_case_2 n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))
+                  (print (tensor-buffer m))
+                  m))
+              (let* ((xqkv (!add (!matmul x (!t c-attn-weight)) c-attn-bias))
+                     (batch-size (car (shape x)))
+                     (head-dim (/ dim n-heads))
+                     (seq-len (second (shape x)))
+                     (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
+                     (xqkv (!permute xqkv 3 0 2 1 4)))
+                (let ((m (proceed (!contiguous xqkv :force t))))
+                  (print (tensor-buffer m))
+                  m))))))))
