@@ -91,31 +91,29 @@ def mha_failing_case_1(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_pro
 ")
 
 (import-function "mha_failing_case_1")
-;; [TODO] Still Unstable for larget dim/n-heads and batch_size?...
+
 (deftest mha-failing-case-1
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
-      (loop for dim in        `(8  16)
-            for n-heads in    `(1  4)
-            for batch-size in `(1  10)
-            for seq-len in    `(10 16)
-            for n in          `(1  2) do
-              (let ((x (linspace `(,batch-size ,seq-len ,dim) 0.1 0.0)))
+      (loop for dim in        `(8  128 256)
+            for n-heads in    `(1  8   8)
+            for batch-size in `(1  20  30)
+            for seq-len in    `(10 16  32)
+            for n in          `(1  2   1) do
+              (let ((x (rand `(,batch-size ,seq-len ,dim))))
                 (testing (format nil "dim=~a n-heads=~a batch-size=~a seq-len=~a n=~a" dim n-heads batch-size seq-len n)
-                  (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters-linspace dim)
-                    (if (= 0 (ctx:getenv :JIT))
-                        (skip "Failing with JIT=0")
-                        (assert-equal
-                            (:atol 1e-5 :rtol 1.0) ;; [TODO] Fix rtol=1e-5!! on CI the latter parameter has rtol=0.635
-                            (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
-                              (->caten (mha_failing_case_1 n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
-                            (let* ((xqkv (!add (!matmul x (!t c-attn-weight)) c-attn-bias))
-                                   (batch-size (car (shape x)))
-                                   (head-dim (/ dim n-heads))
-                                   (seq-len (second (shape x)))
-                                   (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
-                                   (xqkv (!permute xqkv 3 0 2 1 4)))
-                              (proceed (!contiguous xqkv :force t))))))))))))
+                  (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
+                    (assert-equal
+                        (:atol 1e-5 :rtol 1e-4)
+                        (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
+                          (->caten (mha_failing_case_1 n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
+                        (let* ((xqkv (!add (!matmul x (!t c-attn-weight)) c-attn-bias))
+                               (batch-size (car (shape x)))
+                               (seq-len (second (shape x)))
+                               (head-dim (/ dim n-heads))
+                               (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
+                               (xqkv (!permute xqkv 3 0 2 1 4)))
+                          (proceed (!contiguous xqkv :force t)))))))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Failing Case2: Matmul+Reshape+Permute+Chunk
 (python-exec
@@ -222,3 +220,4 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
                         (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
                           (->caten (torch_mha_impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
                         (proceed (mha-impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))))))))))
+;; [TODO] Test external/llm/Attention vs Caten Multi Head Attention
