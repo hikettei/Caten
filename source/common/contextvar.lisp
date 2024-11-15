@@ -163,12 +163,12 @@ Usage:
      #.(oneof-kw "DEFAULT_FLOAT" :float32 `(:float64 :float32 :float16 :bfloat16))
      "Default float to use (one of :FLOAT64, :FLOAT32, :FLOAT16, :BFLOAT16)")
     (:DEFAULT_INT
-     "INT32" :string
-     #.(oneof-kw "DEFAULT_INT" :int32 `(:int64 :int32 :int16 :int8))
+     "INT64" :string
+     #.(oneof-kw "DEFAULT_INT" :int64 `(:int64 :int32 :int16 :int8))
      "A default dtype to use as a (iconst x)")
     (:DEFAULT_UINT
-     "UINT32" :string
-     #.(oneof-kw "DEFAULT_UINT" :uint32 `(:uint64 :uint32 :uint16 :uint8))
+     "UINT64" :string
+     #.(oneof-kw "DEFAULT_UINT" :uint64 `(:uint64 :uint32 :uint16 :uint8))
      "A default dtype to use as a (uconst x)")
     (:DEFAULT_ORDER
      "ROW" :string
