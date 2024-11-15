@@ -112,7 +112,7 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
     return torch.matmul(attn_output, c_proj_weight.T) + c_proj_bias
 ")
 (import-function "torch_mha_impl")
-;; Permute does n o t h i n g w t f
+
 (defun mha-impl (n dim n-heads input c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
   (let* ((xqkv (!add (!matmul input (!t c-attn-weight)) c-attn-bias))
          (batch-size (car (shape input)))
@@ -125,7 +125,7 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
       (let* ((attn-output (scaled-dot-product-attention xq xk xv mask))
              (attn-output (!reshape (!transpose attn-output 1 2) `(,batch-size ,seq-len ,dim))))
         (!add (!matmul attn-output (!t c-proj-weight)) c-proj-bias)))))
-;; PERMUTE DOES N O T H I N G T _ T
+
 (deftest test-multihead-attention
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
@@ -149,8 +149,7 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
               (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
                 (->caten (torch_mha_impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
               (proceed (mha-impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))))))
-;; Complete High Level ASM Level Problem
-;; Failing Case
+
 (python-exec
  "
 def chunk_fail_case_1(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_weight, c_proj_bias):
@@ -193,9 +192,9 @@ def chunk_fail_case_1(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj
 def chunk_fail_case_2(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_weight, c_proj_bias):
     # Combine queries, keys, and values into one matrix multiplication for efficiency
     xqkv = torch.matmul(input, c_attn_weight.T) + c_attn_bias
+    return xqkv
     batch_size, seq_len, _ = input.size()
     head_dim = dim // n_heads
-    mask = torch.triu(torch.full((1, 1, seq_len, seq_len), float('-inf')), diagonal=1+n)
     # Reshape and split the combined QKV tensor
     xqkv = xqkv.view(batch_size, seq_len, n_heads, 3, head_dim)
     xqkv = xqkv.permute(3, 0, 2, 1, 4)  # Rearrange dimensions for splitting
@@ -222,8 +221,28 @@ def chunk_fail_case_2(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj
                      (batch-size (car (shape x)))
                      (head-dim (/ dim n-heads))
                      (seq-len (second (shape x)))
-                     (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
-                     (xqkv (!permute xqkv 3 0 2 1 4)))
+                     ;(xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
+                     ;(xqkv (!permute xqkv 3 0 2 1 4))
+                     )
                 (let ((m (proceed (!contiguous xqkv :force t))))
                   (print (tensor-buffer m))
                   m))))))))
+
+;; Linear is not working?
+(python-exec
+ "def test_linear(x, weight, bias):
+  return (x @ weight.T + bias)")
+(import-function "test_linear")
+
+(deftest test-linear-failing
+  (with-given-dtype ((:float32 . "float32"))
+    (with-no-grad
+      (let ((x (rand `(1 3 8)))
+            (attn-weight (rand `(24 8)))
+            (attn-bias (rand `(24))))
+        (assert-equal
+            (:atol 1e-5 :rtol 1e-5)
+            (with-torch (x attn-weight attn-bias)
+              (->caten (test_linear x attn-weight attn-bias)))
+            (proceed (!add (!matmul x (!t attn-weight)) attn-bias)))))))
+;; [TODO] Refactor
