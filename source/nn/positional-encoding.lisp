@@ -11,8 +11,6 @@
      (scale scale)
      (offset offset)))
 
-
-
 (defmethod call ((op RoPE) &rest inputs)
   (let* ((x (car inputs))
          (shape (shape x))
@@ -38,23 +36,57 @@
          (rx2-expanded (!reshape rx2 (append (shape rx2) (list 1))))
          (result (!concatenate -1 rx1-expanded rx2-expanded))
          (final-result (!reshape result (list b n d))))
-    (format t "~%Original x shape: ~A" (shape x))
-    (format t "~%costheta shape: ~A" (shape costheta))
-    (format t "~%sintheta shape: ~A" (shape sintheta))
-    (format t "~%Freqs: ~A" (proceed freqs))
-    (format t "~%rx1 shape: ~A" (shape rx1))
-    (format t "~%rx2 shape: ~A" (shape rx2))
-    (format t "~%result shape: ~A" (shape result))
-    (print (proceed final-result))))
+    proceed final-result)))
 
-(defparameter *tensor1* (make-tensor '(4 4 4) :initial-element 1.0))
+
+
+
+(defparameter *tensor1* (make-tensor '(10 10 20) :initial-element 1.0))
+
 (let ((instance (make-instance 'RoPE)))
   (call instance *tensor1*))
 
-(in-package :caten/nn.test)
 
-(defun test-rope-tensor ()
+
+
+
+
+
+
+(in-package :caten/test-suite)
+
+(python-exec
+"
+def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
+    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
+    t = torch.arange(end, device=freqs.device)  # type: ignore
+    freqs = torch.outer(t, freqs).float()  # type: ignore
+    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
+    return freqs_cis
+")
+
+
+(import-function "precompute_freqs_cis")
+
+
+
+
+(->caten (precompute_freqs_cis 1 1))
+;; [TODO] Fuse in a single kernel (var/std)
+;; (deftest test-variance
+;;(with-given-dtype ((:float32 . "float32"))
+;;  (let ((x (rand `(30 30))))
+;;    (assert-equal
+;;     (:atol 1e-5 :rtol 1e-6)
+;;    (with-torch (x) (->caten (torch.var x :axis -1 :keepdims t :correction 1)))
+;;     (proceed (!rope x :axis -1 :correction 1))))));(in-package :caten/nn.test)
+
+
+
+
+
+(deftest test-rope-tensor ()
   (with-no-grad
-    (let ((input-tensor *tensor1*))
-      (print input-tensor))))
-
+    (let* ((model (RoPE 1)))
+      (print model)
+      (print "test"))))
