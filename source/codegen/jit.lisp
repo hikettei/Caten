@@ -336,6 +336,7 @@ caten/codegen overview:
                      (error "Cannot enable auto-scheduler without the renderer support.~%Use define-auto-scheduler and define-hook-auto-scheduler and compilers will recognise it.~%or, set AUTO_SCHEDULER=0 to ignore this error.")))))
   "Runs the JIT compilation (destructive)"
   (declare (type AVM avm))
+  (when (= 2 (ctx:getenv :DOT)) (->dot (avm-graph avm) :title "Base Graph"))
   ;; 1. Running the shape/offset/type inference
   (run-type-infer avm)
   ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views, Symbol Loads, ...)
