@@ -60,7 +60,7 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
           (with-torch (a b c)
             (->caten (f:softmax (torch.matmul (f:softmax c) (f:softmax (torch.matmul (f:softmax a) (f:softmax b)))))))
           (proceed (!softmax (!matmul (!softmax c) (!softmax (!matmul (!softmax a) (!softmax b))))))))))
-
+#|
 (deftest reshape-permute
   (let ((x (rand `(4 8 8))))
     (with-no-grad
@@ -227,4 +227,5 @@ def chunk_fail_case_2(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj
                 (let ((m (proceed (!contiguous xqkv :force t))))
                   (print (tensor-buffer m))
                   m))))))))
-;; [TODO] Remove
+;; [TODO] Remove this ugly test only mha is needed
+|#

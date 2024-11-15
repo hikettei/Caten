@@ -429,5 +429,3 @@
             (when is
               (setf (getattr bp :iterations) (ensure-iteration-space-length is (getattr bp :iterations))))))
   blueprint)
-
-
