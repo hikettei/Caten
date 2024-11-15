@@ -7,8 +7,6 @@
 (import-function "test_linear")
 
 (deftest test-linear-failing-case
-  (skip "SKIP")
-  (when nil
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
       ;; Only Fails at batch_size=1
@@ -19,4 +17,4 @@
             (:atol 1e-5 :rtol 1e-5)
             (with-torch (x attn-weight attn-bias)
               (->caten (test_linear x attn-weight attn-bias)))
-            (proceed (!add (!matmul x (!t attn-weight)) attn-bias))))))))
+            (proceed (!add (!matmul x (!t attn-weight)) attn-bias)))))))
