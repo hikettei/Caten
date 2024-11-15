@@ -60,16 +60,8 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
           (with-torch (a b c)
             (->caten (f:softmax (torch.matmul (f:softmax c) (f:softmax (torch.matmul (f:softmax a) (f:softmax b)))))))
           (proceed (!softmax (!matmul (!softmax c) (!softmax (!matmul (!softmax a) (!softmax b))))))))))
-#|
-(deftest reshape-permute
-  (let ((x (rand `(4 8 8))))
-    (with-no-grad
-      (assert-equal
-          (:atol 1e-5 :rtol 1e-5)
-          (with-torch (x)
-            (->caten (!permute (!reshape x `(4 8 8)) 1 0 2)))
-          (proceed (!permute (!reshape x `(4 8 8)) 1 0 2))))))
 
+#|
 (defun mha-parameters (dim)
   (let ((c-attn-weight (rand `(,(* 3 dim) ,dim)))
         (c-attn-bias   (rand `(,(* 3 dim))))

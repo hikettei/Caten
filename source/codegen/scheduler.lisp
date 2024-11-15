@@ -302,7 +302,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                    (loop for b in mask
                          if b collect `(0 1 1 t) else collect (pop views))
                    (buffer-nrank typ) (length (buffer-shape typ))
-                   (buffer-inferred-permute typ) (when (buffer-inferred-permute typ) (merge-permute-from-mask (buffer-inferred-permute typ) mask)))
+                   (buffer-inferred-permute typ) (if (buffer-inferred-permute typ)
+                                                     (merge-permute-from-mask (buffer-inferred-permute typ) mask)
+                                                     (merge-permute-from-mask (range 0 (buffer-nrank typ)) mask)))
              (when (and permute (buffer-inferred-permute typ) (= (length permute) (buffer-nrank typ))
                         (not (equal permute (buffer-inferred-permute typ))))
                (setf (buffer-shape typ) (permute-list permute (buffer-shape typ))
