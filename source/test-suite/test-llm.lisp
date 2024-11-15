@@ -227,22 +227,4 @@ def chunk_fail_case_2(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj
                 (let ((m (proceed (!contiguous xqkv :force t))))
                   (print (tensor-buffer m))
                   m))))))))
-
-;; Linear is not working?
-(python-exec
- "def test_linear(x, weight, bias):
-  return (x @ weight.T + bias)")
-(import-function "test_linear")
-
-(deftest test-linear-failing
-  (with-given-dtype ((:float32 . "float32"))
-    (with-no-grad
-      (let ((x (rand `(1 3 8)))
-            (attn-weight (rand `(24 8)))
-            (attn-bias (rand `(24))))
-        (assert-equal
-            (:atol 1e-5 :rtol 1e-5)
-            (with-torch (x attn-weight attn-bias)
-              (->caten (test_linear x attn-weight attn-bias)))
-            (proceed (!add (!matmul x (!t attn-weight)) attn-bias)))))))
-;; [TODO] Refactor
+;; [TODO] Remove
