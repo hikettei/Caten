@@ -150,7 +150,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                                         (if (is-one (gethash p pid2space))
                                             s
                                             (gethash p pid2space))))
-                              (when (not (broadcastable-p (gethash p pid2space) s))
+                              (when (and (= 1 (ctx:getenv :NOOPT)) (not (broadcastable-p (gethash p pid2space) s)))
                                 (warn "Detected invaild scheduling: ~a vs ~a are not broadcastable." (gethash p pid2space) s)))))))
              (explore (node &key (noopt t))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
