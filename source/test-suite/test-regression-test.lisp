@@ -18,3 +18,15 @@
             (with-torch (x attn-weight attn-bias)
               (->caten (test_linear x attn-weight attn-bias)))
             (proceed (!add (!matmul x (!t attn-weight)) attn-bias)))))))
+
+(deftest test-linear-failing-case-1
+  (with-given-dtype ((:float32 . "float32"))
+    (with-no-grad
+      (let ((x (linspace `(10 16 64) 1.0 0))
+            (attn-weight (linspace `(192 64) 1.0 0))
+            (attn-bias (linspace `(192) 1.0 0)))
+        (assert-equal
+            (:atol 1e-5 :rtol 1e-5)
+            (with-torch (x attn-weight attn-bias)
+              (->caten (test_linear x attn-weight attn-bias)))
+            (proceed (!add (!matmul x (!t attn-weight)) attn-bias)))))))
