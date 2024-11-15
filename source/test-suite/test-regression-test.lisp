@@ -2,8 +2,10 @@
 ;; Add more and more failing scheduling case
 
 (python-exec
- "def test_linear(x, weight, bias):
-  return (x @ weight.T + bias)")
+ "
+def test_linear(x, weight, bias):
+  out = torch.matmul(x, weight.T) + bias
+  return out")
 (import-function "test_linear")
 
 (deftest test-linear-failing-case
