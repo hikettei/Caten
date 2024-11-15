@@ -715,6 +715,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 (defgeneric graph-schedule (graph) (:documentation "Splits a given graph into small subgraphs called Schedule-Item. It always returns `FastGraph`."))
 
 (defmethod graph-schedule ((graph Graph))
+  (when (= 2 (ctx:getenv :DOT)) (->dot graph :title "Graph [Before Scheduling]"))
   (let* ((seen (make-hash-table))
          (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph)))))
     (mapc #'verify-group groups)
@@ -735,4 +736,8 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
+      (when (= 2 (ctx:getenv :DOT))
+        (let ((graph (apply #'make-graph (apply #'append (map 'list #'(lambda (x) (getattr x :items)) (graph-nodes schedule))))))
+          ;; (->dot schedule :title "Schedule Graph")
+          (->dot graph :title "Graph [After Scheduling]")))
       schedule)))
