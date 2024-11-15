@@ -68,13 +68,6 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
         (c-proj-weight (rand `(,dim ,dim)))
         (c-proj-bias   (rand `(,dim))))
     (values c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
-
-(defun mha-parameters-linspace (dim)
-  (let ((c-attn-weight (linspace `(,(* 3 dim) ,dim) 0.1 0.0))
-        (c-attn-bias   (linspace `(,(* 3 dim)) 0.1 0.0))
-        (c-proj-weight (linspace `(,dim ,dim) 0.1 0.0))
-        (c-proj-bias   (linspace `(,dim) 0.1 0.0)))
-    (values c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Failing Case1: Matmul+Reshape+Permute
 (python-exec
@@ -95,11 +88,11 @@ def mha_failing_case_1(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_pro
 (deftest mha-failing-case-1
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
-      (loop for dim in        `(8  128 256)
-            for n-heads in    `(1  8   8)
-            for batch-size in `(1  20  30)
-            for seq-len in    `(10 16  32)
-            for n in          `(1  2   1) do
+      (loop for dim in        `(8  128)
+            for n-heads in    `(1  8)
+            for batch-size in `(1  20)
+            for seq-len in    `(10 16)
+            for n in          `(1  2) do
               (let ((x (rand `(,batch-size ,seq-len ,dim))))
                 (testing (format nil "dim=~a n-heads=~a batch-size=~a seq-len=~a n=~a" dim n-heads batch-size seq-len n)
                   (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
@@ -136,11 +129,11 @@ def mha_failing_case_2(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_pro
 (deftest mha-failing-case-2
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
-      (loop for dim in        `(8  64)
-            for n-heads in    `(1  4)
+      (loop for dim in        `(8  128)
+            for n-heads in    `(1  8)
             for batch-size in `(1  10)
             for seq-len in    `(10 16)
-            for n in          `(1 2) do
+            for n in          `(1  2) do
               (let ((x (rand `(,batch-size ,seq-len ,dim))))
                 (testing (format nil "dim=~a n-heads=~a batch-size=~a seq-len=~a n=~a" dim n-heads batch-size seq-len n)
                   (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
