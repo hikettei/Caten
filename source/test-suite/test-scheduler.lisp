@@ -113,7 +113,7 @@
 ;; The most primitive way to write the fusion test
 (deftest swizzle-permute-group-test ;; r1 = r2 in group-merge-p
   (let ((g (with-context
-               (x  (%make-tensor `(10 10)))
+             (x  (%make-tensor `(10 10)))
              (x  (%view x `(10 10) `(0 0) `(10 10) `(1 1) `(nil nil) `(10 1))) ;; this view should be overwritten
              (y  (%make-tensor `(10 10)))
              (x  (%sin x)) ;; expect: x = sin(x[x+10*y])
