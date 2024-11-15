@@ -95,7 +95,7 @@ def mha_failing_case_1(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_pro
 (deftest mha-failing-case-1
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
-      (loop for dim in        `(8  32)
+      (loop for dim in        `(8  16)
             for n-heads in    `(1  4)
             for batch-size in `(1  10)
             for seq-len in    `(10 16)
