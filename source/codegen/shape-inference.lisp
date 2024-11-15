@@ -75,7 +75,8 @@
    #:mergeable-view-p
    #:iteration-space-expr-aref
    #:buffer-iteration-space
-   #:ensure-iteration-space-length))
+   #:ensure-iteration-space-length
+   #:inferred-type-vizualize-to-dot))
 
 (in-package :caten/codegen/shape-inference)
 
@@ -210,6 +211,24 @@
                  (loop for w in (relay-writes type)
                        if w collect w))))
       (format stream "~a <- ~a" writes reads))))
+
+(defmethod inferred-type-vizualize-to-dot ((type Inferred-type))
+  (with-output-to-string (out)
+    (format out "|[INFERRED_TYPE]|SHAPE: ")
+    (loop for w in (relay-writes type)
+          do (format out "~a" (buffer-shape w)))
+    (loop for r in (relay-reads type)
+          do (format out "~a " (buffer-shape r)))
+    (format out "|STRIDE: ")
+    (loop for w in (relay-writes type)
+          do (format out "~a" (buffer-stride w)))
+    (loop for r in (relay-reads type)
+          do (format out "~a " (buffer-stride r)))
+    (format out "|VIEW: ")
+    (loop for w in (relay-writes type)
+          do (format out "~a" (buffer-views w)))
+    (loop for r in (relay-reads type)
+          do (format out "~a " (buffer-views r)))))
 
 (defun read-type-relay (node)
   (declare (type node node))
