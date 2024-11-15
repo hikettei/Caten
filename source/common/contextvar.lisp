@@ -136,8 +136,8 @@ Usage:
      0 :int #.(oneof "NOOPT" 0 `(0 1))
      "")
     (:DOT
-     0 :int #.(oneof "DOT" 0 `(0 1))
-     "Set 1 to generate a lowered dot graph and opening in the default browser. (requirement: graphviz")
+     0 :int #.(oneof "DOT" 0 `(0 1 2))
+     "Set 1 to generate a lowered dot graph when lowering iseq. Set 2 to generate a graph for scheduler. The graph is opened on the default browswer. (requirement: graphviz)")
     (:CI
      0 :int identity
      "Set 1 if the test is running under Github Actions")

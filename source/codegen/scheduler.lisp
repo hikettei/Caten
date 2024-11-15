@@ -275,7 +275,14 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (let ((buff (group-get-type group)))
     (when buff (buffer-nrank buff))))
 
-(defun apply-view-fusor (tgt-rank mask group)
+(defun merge-permute-from-mask (permute mask)
+  (when (>= (length permute) (length mask))
+    (return-from merge-permute-from-mask permute))
+  (let ((val (uiop:symbol-call :caten/apis :compute-new-permute permute mask)))
+    (assert (= (length val) (length mask)) () "permute=~a mask=~a val=~a" permute mask val)
+    val))
+
+(defun apply-view-fusor (tgt-rank mask group &key (permute))
   ;; T = broadcasted, NIL = old axes2
   (group-items-st-rewriter
    group
@@ -294,7 +301,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                    (buffer-views typ)
                    (loop for b in mask
                          if b collect `(0 1 1 t) else collect (pop views))
-                   (buffer-nrank typ) (length (buffer-shape typ)))
+                   (buffer-nrank typ) (length (buffer-shape typ))
+                   (buffer-inferred-permute typ) (when (buffer-inferred-permute typ) (merge-permute-from-mask (buffer-inferred-permute typ) mask)))
+             (when (and permute (= (length permute) (buffer-nrank typ)))
+               (setf (buffer-shape typ) (permute-list permute (buffer-shape typ))
+                     (buffer-stride typ) (permute-list permute (buffer-stride typ))
+                     (buffer-views typ) (permute-list permute (buffer-views typ))))
              ;; Consumed all masks?
              (assert (= (buffer-nrank typ) (length mask)))
              typ))))
@@ -409,15 +421,23 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
         (cond
           ((or (= r1 0) (= r2 0))->ok)
           ((= r1 r2)
-           (when (group-reduce-dims parent-group)
-             ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
-             ;; does not introduce new axis = the total element size is the same as the reducing parent group.
-             (if (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group))
-                 ->ok
-                 ->ng))
-           (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
-               ->ok
-               ->ng))
+           (let ((permute (and read-view (getattr read-view :permute))))
+             (declare (type list permute))
+             (when (group-reduce-dims parent-group)
+               ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
+               ;; does not introduce new axis = the total element size is the same as the reducing parent group.
+               (if (and
+                    (or (null permute) (equal (range 0 (length permute)) permute)) ;; no permute reduce axes
+                    (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group)))
+                   ->ok
+                   ->ng))
+             (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
+                 (progn
+                   ;; Swizzle and merge
+                   (when permute
+                     (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
+                   ->ok)
+                 ->ng)))
           (T
            (let ((self-type (group-get-type self))
                  (c (< r1 r2)))
@@ -425,8 +445,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
              (if (broadcastable-p read-type self-type)
                  (let ((mask (map 'list #'(lambda (x) (eql x 1)) (buffer-shape (if c read-type self-type)))))
                    (assert (some #'identity mask))
-                   (apply-view-fusor (min r1 r2) mask self)
-                   (apply-view-fusor (min r1 r2) mask parent-group)
+                   (apply-view-fusor (min r1 r2) mask self :permute (and read-view (getattr read-view :permute)))
+                   (apply-view-fusor (min r1 r2) mask parent-group :permute (and read-view (getattr read-view :permute)))
                    (when (and read-view (getattr read-view :permute))
                      (apply-index-component-fusion parent-group (getattr read-view :permute)))
                    (group-assert-rank self r1 r2 read-view)
@@ -438,8 +458,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                        (when (not (= (length mask) (max r1 r2)))
                          (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
                        (when (not (= (length mask) (max r1 r2)))->ng)
-                       (apply-view-fusor (min r1 r2) mask self)
-                       (apply-view-fusor (min r1 r2) mask parent-group)
+                       (apply-view-fusor (min r1 r2) mask self :permute (and read-view (getattr read-view :permute)))
+                       (apply-view-fusor (min r1 r2) mask parent-group :permute (and read-view (getattr read-view :permute)))
                        (when (and read-view (getattr read-view :permute))
                          (apply-index-component-fusion parent-group (getattr read-view :permute)))
                        (group-assert-rank self r1 r2 read-view)
@@ -558,6 +578,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                      if (and self-mergeable-p parent
                              (getattr parent :jitable)
                              (funcall can-split-p parent) ;; confirm that the parent is not used by special ops
+                             (or (null (getattr self :reduce-dims)) (null (getattr parent :reduce-dims))
+                                 (equal (getattr self :reduce-dims) (getattr parent :reduce-dims)))
                              (funcall f self parent))
                        do (let ((merged (merge-schedule-items self parent base-graph)))
                             (setf changed-p t)
@@ -693,6 +715,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 (defgeneric graph-schedule (graph) (:documentation "Splits a given graph into small subgraphs called Schedule-Item. It always returns `FastGraph`."))
 
 (defmethod graph-schedule ((graph Graph))
+  (when (= 2 (ctx:getenv :DOT)) (->dot graph :title "Graph [Before Scheduling]"))
   (let* ((seen (make-hash-table))
          (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph)))))
     (mapc #'verify-group groups)
@@ -713,4 +736,8 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
         (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
+      (when (= 2 (ctx:getenv :DOT))
+        (let ((graph (apply #'make-graph (apply #'append (map 'list #'(lambda (x) (getattr x :items)) (graph-nodes schedule))))))
+          ;; (->dot schedule :title "Schedule Graph")
+          (->dot graph :title "Graph [After Scheduling]")))
       schedule)))

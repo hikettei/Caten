@@ -146,6 +146,11 @@
   (:reshape   2 1 3 1 5 5 4 4)
   (:broadcast t t t 3 t t t t)
   (:permute 0 1 2 5 4 3 6 7))
+
+(define-view-test test-mha-failing-case (10 32 3 64)
+  (:permute 0 1 3 2)
+  (:reshape 10 32 8 3 8)
+  (:permute 3 0 2 1 4))
 #+(or nil)(setf rove::*debug-on-error* t) ;; <- C-c C-c to abort on the error
 ;; You can see the graph by doing:
 ;; - Disabling compose-views-from-graph (insert nil for the last line)
@@ -199,3 +204,10 @@
     ((:reshape 1 3 1 1)
      (:broadcast 2 t 5 5))
     ((:reshape 2 3 5 5)))
+
+; [todo] skip fail due to memory planner
+;(define-view-binary-test (mha-failing-case-binary-1 (10 32 3 64) (10 32 64 3))
+;    ((:permute 0 1 3 2)
+;     (:reshape 10 32 1 3 64))
+;    ((:permute 0 1 2 3)
+;     (:reshape 10 32 1 3 64)))

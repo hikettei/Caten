@@ -21,3 +21,19 @@
     (ok (= 9 (array-total-size (elements (proceed (!concatenate 0 x y z))))))
     (ok (every #'= (elements (proceed (!concatenate 0 x y z))) #(0 1 2 3 4 5 6 7 8 9)))))
 ;; !split + !matmul which is required for Attention Scheduling
+(python-exec "
+def chunk_mm_test_torch(x):
+  a, b = x.chunk(2)
+  return a @ b")
+
+(import-function "chunk_mm_test_torch")
+
+(deftest chunk+matmul
+  (let ((x (rand `(2 64 64))))
+    (assert-equal
+        (:rtol 1e-4 :atol 1e-5)
+        (with-torch (x)
+          (->caten (chunk_mm_test_torch x)))
+        (multiple-value-bind (a b) (!chunk x 2)
+          (proceed (!matmul a b))))))
+;; [TODO] Concatenate Fusion+Dynamic Shape for KV Cache

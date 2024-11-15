@@ -9,6 +9,7 @@ Tests that are not related to the core functionality of Caten or are time-consum
 	       (:file "helpers")
                (:file "test-ops")
                (:file "test-view")
+               (:file "test-regression-test")
                (:file "test-normalization")
 	       (:file "test-randomness")
 	       (:file "test-iseq-lowerer")
@@ -18,6 +19,7 @@ Tests that are not related to the core functionality of Caten or are time-consum
                (:file "test-pool")
                (:file "test-shape-tracker")
                (:file "test-schedule")
+               (:file "test-scheduler")
                (:file "test-dynamic-shape")
                (:file "test-memory-planner"))
   :perform
