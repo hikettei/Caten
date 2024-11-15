@@ -443,7 +443,15 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                  (c (< r1 r2)))
              (when (null self-type)->ng)
              (if (broadcastable-p read-type self-type)
-                 (let ((mask (map 'list #'(lambda (x) (eql x 1)) (buffer-shape (if c read-type self-type)))))
+                 (let* ((base-1 (loop for s in (buffer-shape (if c self-type read-type)) if (eql s 1) collect s))
+                        (mask (map 'list
+                                   #'(lambda (x)
+                                       (if (eql x 1)
+                                           (if base-1
+                                               (progn (pop base-1) nil)
+                                               t)
+                                           nil))
+                                   (buffer-shape (if c read-type self-type)))))
                    (assert (some #'identity mask))
                    (apply-view-fusor (min r1 r2) mask self :permute (and read-view (getattr read-view :permute)))
                    (apply-view-fusor (min r1 r2) mask parent-group :permute (and read-view (getattr read-view :permute)))
