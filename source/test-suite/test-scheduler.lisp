@@ -94,7 +94,7 @@
 
 (deftest test-view-merge-failing-case
   (let ((schedule (schedule-with-vars (!gelu (!matmul (make-tensor `(1 64 64)) (!t (make-tensor `(1 64 64))))))))
-    (check-kernel schedule 1 :expect-failure t)))
+    (check-kernel schedule 1)))
 
 ;; (!softmax `(10))
 ;; ConvND batch_size=1

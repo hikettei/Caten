@@ -130,7 +130,11 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                        when r maximize (length (buffer-shape r)))))
          (pid2space (make-hash-table :test #'equal))
          (candidates nil))
-    (labels ((is-one (expr)
+    (labels ((broadcastable-p (a b)
+               (or (expr-scalar-equivalent-p a (expr-const 1 :int64))
+                   (expr-scalar-equivalent-p b (expr-const 1 :int64))
+                   (expr-scalar-equivalent-p a b)))
+             (is-one (expr)
                (expr-scalar-equivalent-p expr (expr-const 1 :int64)))
              (check (buffer &key (noopt t))
                (when buffer
@@ -145,7 +149,9 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                                         s
                                         (if (is-one (gethash p pid2space))
                                             s
-                                            (gethash p pid2space)))))))))
+                                            (gethash p pid2space))))
+                              (when (and (= 1 (ctx:getenv :NOOPT)) (not (broadcastable-p (gethash p pid2space) s)))
+                                (warn "Detected invaild scheduling: ~a vs ~a are not broadcastable." (gethash p pid2space) s)))))))
              (explore (node &key (noopt t))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
