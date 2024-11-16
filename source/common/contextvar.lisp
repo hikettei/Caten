@@ -187,10 +187,6 @@ Usage:
     (:COLOR
      0 :int #.(oneof "COLOR" 0 `(0 1))
      "Set 1 to use cl-ansi-color")
-    ;; [TODO]remove
-    (:SAFETY
-     0 :int #.(oneof "SAFETY" 0 `(0 1))
-     "Set 1 to always use Graph instead of FastGraph.")
     (:PROFILE_SIMPLIFIER
      0 :int #.(oneof "PROFILE_SIMPLIFIER" 0 `(0 1))
      "Set 1 to profile the simplifier in %make-graph-from-iseq")))
