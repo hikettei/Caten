@@ -333,6 +333,25 @@ caten/codegen overview:
             do (push tgt seen))
     schedule-graph))
 
+;; [TODO] 1. JIT_DEBUG >=2で動くようにする
+(defun maybe-pmapc (f list &key (slope 1))
+  (flet ((is-heavy-p (x)
+           (and (getattr x :jitable) (null (getattr x :cache-name)))))
+    (let ((list-to-lower
+            (loop for x in list
+                  ;; pick up the elements which takes a long time to compile
+                  if (is-heavy-p x)
+                    collect x))
+          (list-not-to-lower
+            (loop for x in list
+                  if (Not (is-heavy-p x))
+                    collect x)))
+      (if (and (> (ctx:getenv :PARALLEL) 0) (>= (length list-to-lower) (* (ctx:getenv :PARALLEL) slope)))
+          (let ((lparallel:*kernel* (lparallel:make-kernel (ctx:getenv :PARALLEL) :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)))))
+            (lparallel:pmapc f list-to-lower)
+            (mapc f list-not-to-lower))
+          (mapc f list)))))
+
 (defun jit (avm
             &key
               (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
@@ -371,7 +390,7 @@ caten/codegen overview:
           (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
         ;; [TODO] mapc is pmapc
         (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
-          (mapc
+          (maybe-pmapc
            #'(lambda (x &aux (start (get-internal-real-time)))
                (when (and (getattr x :jitable) (getattr x :cache-name))
                  (when (>= (ctx:getenv :JIT_DEBUG) 2)
