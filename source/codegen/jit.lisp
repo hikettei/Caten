@@ -347,7 +347,10 @@ caten/codegen overview:
                   if (Not (is-heavy-p x))
                     collect x)))
       (if (and (> (ctx:getenv :PARALLEL) 0) (>= (length list-to-lower) (* (ctx:getenv :PARALLEL) slope)))
-          (let ((lparallel:*kernel* (lparallel:make-kernel (ctx:getenv :PARALLEL) :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)))))
+          (let ((lparallel:*kernel*
+                  (lparallel:make-kernel (ctx:getenv :PARALLEL)
+                                         :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)
+                                                     (caten/common.logger::*progress* . ,caten/common.logger::*progress*)))))
             (lparallel:pmapc f list-to-lower)
             (mapc f list-not-to-lower))
           (mapc f list)))))
