@@ -119,19 +119,19 @@ Usage:
       ;; (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
     (:DEBUG
      0 :int #.(oneof "DEBUG" 0 `(-1 0))
-     "Select either 0 or -1. Set -1 to supress the caten/common.logger")
+     "Select either 0 or -1. Set -1 to supress the caten/common.logger.")
     (:JIT_DEBUG
      0 :int
      (lambda (x)
-       (when (not (typep x '(integer 0 5))) (warn "JIT_DEBUG should be an integer from 0 to 5, got ~a, setting 0" x) (setf x 0))
+       (when (not (typep x '(integer 0 5))) (warn "JIT_DEBUG should be an integer from 0 to 5, got ~a, setting 0." x) (setf x 0))
        x)
-     "Choose a value from 0 to 5. Gradually specifies the level of debugging when executing with JIT=1 (setting JIT_DEBUG >= 2 is recommended).")
+     "Choose a value from 0 to 5. Gradually specifies the level of debugging when executing with JIT=1 (If unsure, setting JIT_DEBUG >= 2 is recommended).")
     (:NOOPT
      0 :int #.(oneof "NOOPT" 0 `(0 1))
      "Select either 0 or 1. Disables Loop Collapse during JIT execution.")
     (:DOT
      0 :int #.(oneof "DOT" 0 `(0 1 2))
-     "Choose from 0, 1, or 2. Setting it to 1 opens the computation graph in a default browser when lowering the AST; setting it to 2 does so when running the scheduler. (Requirement: graphviz)")
+     "Choose from 0, 1, or 2. Setting it to 1 opens the computation graph in a default browser when lowering the AST; setting it to 2 does so when running the scheduler (Requirement: graphviz).")
     (:CI
      0 :int identity
      "Set to 1 to indicate that it runs on GitHub Actions.")
@@ -152,7 +152,7 @@ Usage:
     (:DEFAULT_FLOAT
      "FLOAT32" :string
      #.(oneof-kw "DEFAULT_FLOAT" :float32 `(:float64 :float32 :float16 :bfloat16))
-     "Declares the default FLOAT type. Selected from :FLOAT64, :FLOAT32, :FLOAT16, and :BFLOAT16")
+     "Declares the default FLOAT type. Selected from :FLOAT64, :FLOAT32, :FLOAT16, and :BFLOAT16.")
     (:DEFAULT_INT
      "INT64" :string
      #.(oneof-kw "DEFAULT_INT" :int64 `(:int64 :int32 :int16 :int8))
@@ -164,7 +164,7 @@ Usage:
     (:DEFAULT_ORDER
      "ROW" :string
      #.(oneof-kw "DEFAULT_ORDER" :row `(:row :column))
-     "Declare the default memory layouts. Selected from ROW or COLUMN")
+     "Declare the default memory layouts. Selected from ROW or COLUMN.")
     (:ANIMATE
      1 :int
      #.(oneof "ANIMATE" 1 `(0 1))
@@ -180,15 +180,15 @@ Usage:
      "Set to 1 to debug the AIR dump during AOT compilation.")
     (:AOT
      "" :string parse-list->kw
-     "Declare all JIT device names capable of performing AOT compilation. (e.g.: AOT=CLANG,METAL)")
+     "Declare all JIT device names capable of performing AOT compilation (e.g.: AOT=CLANG,METAL).")
     (:AOT_VM
      "" :string parse-list->kw
-     "Declare all VM device names capable of performing AOT compilation. (e.g.: AOT_VM=LISP)")
+     "Declare all VM device names capable of performing AOT compilation (e.g.: AOT_VM=LISP).")
     (:COLOR
      0 :int #.(oneof "COLOR" 0 `(0 1))
-     "Set 1 to use cl-ansi-color")
+     "Set 1 to use cl-ansi-color.")
     (:PROFILE_SIMPLIFIER
      0 :int #.(oneof "PROFILE_SIMPLIFIER" 0 `(0 1))
-     "Set 1 to profile the simplifier in %make-graph-from-iseq")))
+     "Set 1 to profile the simplifier during the %make-graph-from-iseq execution.")))
 
 (defparameter *ctx* (make-contextvar))
