@@ -35,16 +35,21 @@
   (if (eql (node-type node1) :JIT_KERNEL)
       (let* ((info1 (getattr node1 :kernel-info))
              (info2 (getattr node2 :kernel-info))
-             (base-node
+             (base-node1
                (if (getattr node1 :cached-p)
                    (find (compiled-kernel-name info1) kernels
                          :test #'(lambda (x y)
                                    (and (null (getattr y :cached-p)) (eql x (compiled-kernel-name (getattr y :kernel-info))))))
                    node1))
+             (base-node2
+               (if (getattr node2 :cached-p)
+                   (find (compiled-kernel-name info2) kernels
+                         :test #'(lambda (x y)
+                                   (and (null (getattr y :cached-p)) (eql x (compiled-kernel-name (getattr y :kernel-info))))))
+                   node2))
              (nmp (= no-mp 1))
-             (code1 (hide-vars (compiled-kernel-code info1) base-node kernels :test-with-memory-planner nmp))
-             (code2 (hide-vars (compiled-kernel-code info2) node2 kernels :test-with-memory-planner nmp)))
-        (assert (null (getattr node2 :cached-p)))
+             (code1 (hide-vars (compiled-kernel-code info1) base-node1 kernels :test-with-memory-planner nmp))
+             (code2 (hide-vars (compiled-kernel-code info2) base-node2 kernels :test-with-memory-planner nmp)))
         (and       
          (equal (node-reads node1) (node-reads node2))
          (equal (node-writes node1) (node-writes node2))
@@ -109,9 +114,9 @@ Code2:
   (with-protect-jit
     (dolist (no-mp `(0 1))
       (testing (format nil "Running with NO_MEMORY_PLANNER=~a" no-mp)
-        (let* ((n-layers 3)
+        (let* ((n-layers 6)
                (tf1 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 4) (compile-transformer n-layers))))
-               (tf2 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 1 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 4) (compile-transformer n-layers))))
+               (tf2 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 0) (compile-transformer n-layers))))
                (kernels
                  (loop for item in (append (graph-nodes tf1) (graph-nodes tf2))
                        if (eql (node-type item) :JIT_KERNEL)
