@@ -651,6 +651,7 @@ Depends=~a Reduce=~a Users=~a
 
 (defmethod lower-cached-schedule-item ((node Node) (schedule-graph Graph))
   (assert (getattr node :cache-name))
+  (assert (getattr node :jitable))
   (let* ((base-item (find-cache-base-schedule-item node schedule-graph))
          (namemap (compare-and-make-namespace-map node base-item)))
     (assert (getattr base-item :blueprint) () "The base-item is not lowered!")
@@ -682,25 +683,25 @@ Depends=~a Reduce=~a Users=~a
                   if (eql (node-class bp) :Render)
                     do (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
                              (node-writes bp) (map 'list #'map-from (node-writes bp)))
+                       (assert (not (eql (node-type bp) :AREF)))
                     and
                       collect bp
                   else
                     if (eql (node-type bp) :EXPR)
                       collect
-                      (let ((expr (copy-node bp))
-                            (expr-out-node (copy-node (expr-out (getattr bp :EXPR)))))
+                      (let ((expr-out-node (copy-node (expr-out (getattr bp :EXPR)))))
                         (when (eql (node-type expr-out-node) :Aref)
                           (setf (getattr expr-out-node :storage-id) (map-from (getattr expr-out-node :storage-id))))
-                        (setf (node-reads expr) (map 'list #'map-from (node-reads expr))
-                              (node-writes expr) (map 'list #'map-from (node-writes expr))
+                        (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
+                              (node-writes bp) (map 'list #'map-from (node-writes bp))
                               (node-reads expr-out-node) (map 'list #'map-from (node-reads expr-out-node))
                               (node-writes expr-out-node) (map 'list #'map-from (node-writes expr-out-node))
-                              (getattr expr :EXPR)
+                              (getattr bp :EXPR)
                               (make-expr
                                :graph
                                (apply
                                 #'make-graph
-                                (loop for expr-node-base in (graph-nodes (expr-graph (getattr expr :EXPR)))
+                                (loop for expr-node-base in (graph-nodes (expr-graph (getattr bp :EXPR)))
                                       for expr-node = (copy-node expr-node-base)
                                       do (setf (node-reads expr-node) (map 'list #'map-from (node-reads expr-node))
                                                (node-writes expr-node) (map 'list #'map-from (node-writes expr-node)))
@@ -708,6 +709,6 @@ Depends=~a Reduce=~a Users=~a
                                            (setf (getattr expr-node :storage-id) (map-from (getattr expr-node :storage-id))))
                                       collect expr-node))
                                :out expr-out-node))
-                        expr)
+                        bp)
                   else
                     do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))))
