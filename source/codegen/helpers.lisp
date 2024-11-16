@@ -12,7 +12,8 @@
    #:simplify-blueprint
    #:->cdtype
    #:float-type-of
-   #:coerce-dtyped-buffer))
+   #:coerce-dtyped-buffer
+   #:nodes-create-namespace))
 
 (in-package :caten/codegen/helpers)
 
@@ -119,3 +120,10 @@ Otherwise -> they are passed as a buffer."
           (caten/common.dtype:dtype/cast (caten/avm:buffer-value arg) type)
 	  arg)
       (caten/common.dtype:dtype/cast arg type)))
+
+(defun nodes-create-namespace (nodes)
+  "This function returns a list of symbols used in the nodes."
+  (declare (type list nodes))
+  (loop for node in nodes
+        append (node-writes node)
+        append (node-reads node)))

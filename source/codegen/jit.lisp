@@ -63,6 +63,7 @@ caten/codegen overview:
   (:import-from
    :caten/codegen/blueprint
    #:lower-schedule-item
+   #:lower-cached-schedule-item
    #:print-blueprint)
   (:import-from
    :caten/codegen/scop
@@ -372,9 +373,9 @@ caten/codegen overview:
                  (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :cache-name)))
                    (print-progress "~a" (getattr x :name))
                    (format t "=====> Lowering to blueprint~%"))
-                 ;; 7. Running Lowerer
-                 (lower-schedule-item x (avm-graph avm) schedule-graph)
                  (when (null (getattr x :cache-name))
+                   ;; 7. Running Lowerer
+                   (lower-schedule-item x (avm-graph avm) schedule-graph)
                    ;; 8. Lower into Polyhedral IR
                    (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
                      (format t "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
@@ -392,9 +393,17 @@ caten/codegen overview:
                        (format t "=====> Optimized kernel~%")
                        (print-blueprint (getattr x :blueprint) t)))
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                     (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second)))))
-                 (schedule-item-write-define-global x)))
+                     (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))
+                   (schedule-item-write-define-global x))))
            (graph-nodes schedule-graph)))
+        (mapc
+         #'(lambda (x)
+             (when (getattr x :cache-name)
+               (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                 (fresh-line)
+                 (format t "Copying the schedule from ~a~%" (getattr x :cache-name)))
+               (lower-cached-schedule-item x schedule-graph)))
+         (graph-nodes schedule-graph))
         ;; 10. Running memory-planner, update the storage-id
         (setf schedule-graph (->graph schedule-graph))
         (verify-graph schedule-graph) ;; Sort the graph for memory planner

@@ -47,6 +47,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
    #:expr-rewrite-edge-with-pointer-id)
   (:export
    #:lower-schedule-item
+   #:lower-cached-schedule-item
    #:print-blueprint))
 
 (in-package :caten/codegen/blueprint)
@@ -624,3 +625,89 @@ Depends=~a Reduce=~a Users=~a
       (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr node :cache-name)))
         (print-blueprint (ctx-blueprint ctx) t))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
+
+(defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
+  (let ((node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
+    (assert node () "find-cache-base-schedule-item: No cache item for ~a" node)
+    node))
+
+(defun compare-and-make-namespace-map (cache-node tgt-node)
+  (let ((namespace-cache (getattr cache-node :namespace))
+        (namespace-tgt-node (getattr tgt-node :namespace))
+        (result (make-hash-table)))
+    (assert (= (length namespace-cache) (length namespace-tgt-node)) () "compare-and-make-namespace-map: two schedules should have the same-sized namespace. Make sure that they are really equivalent schedule?~%~a~%~a" cache-node tgt-node)
+    (loop for id-old in namespace-cache
+          for id-tgt in namespace-tgt-node
+          if (or (numberp id-old) (numberp id-tgt))
+            do (assert (eql id-old id-tgt)
+                       ()
+                       "compare-and-make-namespace-map: Found an distinct point in the namespace ~a vs ~a~%NameSpace:~%~a~%~a~%Schedule-Items:~%~a~%~a"
+                       id-old id-tgt namespace-cache namespace-tgt-node cache-node tgt-node)
+               (setf (gethash id-tgt result) id-old)
+          else
+            do (assert (and (symbolp id-tgt) (symbolp id-old)))
+               (setf (gethash id-tgt result) id-old))
+    result))
+
+(defmethod lower-cached-schedule-item ((node Node) (schedule-graph Graph))
+  (assert (getattr node :cache-name))
+  (let* ((base-item (find-cache-base-schedule-item node schedule-graph))
+         (namemap (compare-and-make-namespace-map node base-item)))
+    (assert (getattr base-item :blueprint) () "The base-item is not lowered!")
+    ;; Copying the following nodes from the base-item. But node/reads are mapped from namemap
+    ;; :items (to ensure the equivalence of two kernels?)
+    ;; :blueprint (and :EXPR inside) (memory-planner will use this)
+    ;; :dynamic-shapes
+    ;; :storage-id-src / :read-types
+    ;; :storage-id-dst / :write-types
+    (flet ((map-from (x &key (allow-nil t))
+             (let ((val (gethash x namemap)))
+               (if val
+                   val
+                   (if allow-nil
+                       x
+                       (error "map-from: the id ~a is not found." x))))))
+      ;; what attrs does the mp use?
+      (setf (node-reads node) (map 'list #'map-from (node-reads base-item))
+            (node-writes node) (map 'list #'map-from (node-writes base-item))
+            (getattr node :storage-id-src) (map 'list #'map-from (getattr base-item :storage-id-src))
+            (getattr node :storage-id-dst) (map 'list #'map-from (getattr base-item :storage-id-dst))
+            (getattr node :read-types) (getattr base-item :read-types)
+            (getattr node :write-types) (getattr base-item :write-types)
+            (getattr node :dynamic-shapes) (getattr base-item :dynamic-shapes))
+      ;; creates a copy of blueprint, expr is also refreshed. Memory Planner will use this.
+      (setf (getattr node :blueprint)
+            (loop for bp-base in (getattr base-item :blueprint)
+                  for bp = (copy-node bp-base)
+                  if (eql (node-class bp) :Render)
+                    do (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
+                             (node-writes bp) (map 'list #'map-from (node-writes bp)))
+                    and
+                      collect bp
+                  else
+                    if (eql (node-type bp) :EXPR)
+                      collect
+                      (let ((expr (copy-node bp))
+                            (expr-out-node (copy-node (expr-out (getattr bp :EXPR)))))
+                        (when (eql (node-type expr-out-node) :Aref)
+                          (setf (getattr expr-out-node :storage-id) (map-from (getattr expr-out-node :storage-id))))
+                        (setf (node-reads expr) (map 'list #'map-from (node-reads expr))
+                              (node-writes expr) (map 'list #'map-from (node-writes expr))
+                              (node-reads expr-out-node) (map 'list #'map-from (node-reads expr-out-node))
+                              (node-writes expr-out-node) (map 'list #'map-from (node-writes expr-out-node))
+                              (getattr expr :EXPR)
+                              (make-expr
+                               :graph
+                               (apply
+                                #'make-graph
+                                (loop for expr-node-base in (graph-nodes (expr-graph (getattr expr :EXPR)))
+                                      for expr-node = (copy-node expr-node-base)
+                                      do (setf (node-reads expr-node) (map 'list #'map-from (node-reads expr-node))
+                                               (node-writes expr-node) (map 'list #'map-from (node-writes expr-node)))
+                                         (when (eql (node-type expr-node) :Aref)
+                                           (setf (getattr expr-node :storage-id) (map-from (getattr expr-node :storage-id))))
+                                      collect expr-node))
+                               :out expr-out-node))
+                        expr)
+                  else
+                    do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))))
