@@ -5,6 +5,7 @@
 ;; - Transformer Full Symbolic
 ;; - (defparameter *model* (time (Transformer 64 1 2 1e-5 32)))
 ;; - (defparameter *transformer* (caten (call *model* (make-tensor `(10 32)) (iconst 'n))))
+
 (deftest symbolic-function-args-test
   (with-protect-jit
     (let ((kernel (find :JIT_KERNEL (graph-nodes (avm-graph (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))) :key #'node-type)))
@@ -41,9 +42,13 @@
       (ok (every #'(lambda (x) (= x 1.0)) (elements result))))))
 
 (deftest symbolic-tensor-failing-case-1
-  (let ((m (caten (!sin (make-tensor `(,(!reshape (!add (make-tensor `(1)) (iconst 'n)))))))))
-    (print (forward m `(n . 3)))))
+  (let ((m (caten (!sin (make-tensor `(,(!add (iconst 1) (iconst 'n))))))))
+    (ok (= (length (elements (forward m `(n . 3))))))))
 
 (deftest symbolic-tensor-failing-case-2
-  (let ((m (caten (!add (!add (!index-components `(5)) (!add caten/apis::*rng-counter* (!* (iconst 2) (iconst 'n)) :reduce t))  (!* (iconst 2) (iconst 'n))))))
-    (print m)))
+  (let* ((x (aref (buffer-value (tensor-buffer caten/apis::*rng-counter*)) 0))
+         (m (caten (!add (!add (!index-components `(5)) (!add caten/apis::*rng-counter* (!* (iconst 2) (iconst 'n)) :reduce t))  (!* (iconst 2) (iconst 'n)))))
+         (o `(,(+ x (* 4 4)) ,(+ x (* 4 4) 1) ,(+ x (* 4 4) 2) ,(+ x (* 4 4) 3))))
+    (ok (every #'= o (elements (forward m `(n . 4)))))))
+
+;; Need more tests... transformer is not still working
