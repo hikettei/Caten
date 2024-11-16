@@ -104,3 +104,38 @@ Code2:
                 (format nil "Scheduled ~a(cached) and ~a(no cached) kernels" (length kernels1) (length kernels2)))
             (ok (not (= (length kernels1) (count-compiled-kernels tf1)))
                 (format nil "The scheduler cache reduced this ~a kernels" (count-compiled-kernels tf1)))))))))
+
+(deftest transformer-schedule-cache-consistency-test-parallel
+  (with-protect-jit
+    (dolist (no-mp `(0 1))
+      (testing (format nil "Running with NO_MEMORY_PLANNER=~a" no-mp)
+        (let* ((n-layers 3)
+               (tf1 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 4) (compile-transformer n-layers))))
+               (tf2 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 1 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 4) (compile-transformer n-layers))))
+               (kernels
+                 (loop for item in (append (graph-nodes tf1) (graph-nodes tf2))
+                       if (eql (node-type item) :JIT_KERNEL)
+                         collect item)))
+          (ok (= (length (graph-nodes tf1)) (length (graph-nodes tf2)))
+              (format nil "Scheduled ~a(no cache) and ~a(cached) kernels" (length (graph-nodes tf1)) (length (graph-nodes tf2))))
+          (loop for node1 in (graph-nodes tf1)
+                for node2 in (graph-nodes tf2)
+                for nth upfrom 0
+                for ok = (compare-two-cache-nodes node1 node2 kernels no-mp)
+                if (not ok)
+                  do (ok nil (format nil "Found a discrepancy point at the ~ath node.
+  CACHED   | ~a
+ NO CACHED |~a
+" nth node1 node2)))
+          (let ((kernels1
+                  (loop for item in (graph-nodes tf1)
+                        if (eql (node-type item) :JIT_KERNEL)
+                          collect item))
+                (kernels2
+                  (loop for item in (graph-nodes tf2)
+                        if (eql (node-type item) :JIT_KERNEL)
+                          collect item)))
+            (ok (= (length kernels1) (length kernels2))
+                (format nil "Scheduled ~a(cached) and ~a(no cached) kernels" (length kernels1) (length kernels2)))
+            (ok (not (= (length kernels1) (count-compiled-kernels tf1)))
+                (format nil "The scheduler cache reduced this ~a kernels" (count-compiled-kernels tf1)))))))))
