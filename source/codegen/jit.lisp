@@ -153,6 +153,7 @@ caten/codegen overview:
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((info (getattr node :kernel-info))
         (out-n (getattr node :output-buffer-n)))
+    ;; (For details, see coerce-dtyped-buffer)
     (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
       (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
       (apply (compiled-kernel-caller info) args)

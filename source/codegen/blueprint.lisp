@@ -554,7 +554,7 @@ Depends=~a Reduce=~a Users=~a
                                   (:IF (graph-nodes (expr-graph (getattr item :condition)))))
                     if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)) (is-dynamic-shape-p (getattr node :value)))
                       collect (cons (getattr node :value) :int64)))
-      ;; Symbols used to compute the strides.
+      ;; Symbols used to compute the views
       (nreverse
        (loop for item in (getattr node :items)
              append
