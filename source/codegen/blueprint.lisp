@@ -551,7 +551,7 @@ Depends=~a Reduce=~a Users=~a
                                            (graph-nodes (expr-graph (getattr item :below)))
                                            (graph-nodes (expr-graph (getattr item :by)))))
                                   (:IF (graph-nodes (expr-graph (getattr item :condition)))))
-                    if (and (eql (node-type node) :LOAD) (is-dynamic-shape-p (getattr node :value)))
+                    if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)) (is-dynamic-shape-p (getattr node :value)))
                       collect (cons (getattr node :value) :int64)))
       ;; Loop Bounds (loaded as default-int)
       (nreverse
