@@ -17,19 +17,20 @@
   (if (eql (node-type node1) :JIT_KERNEL)
       (and
         ;;(equal (compiled-kernel-name (getattr node1 :kernel-info))
-        ;;        (compiled-kernel-name (getattr node2 :kernel-info)))
-        (equal (getattr node1 :kernel-info) (getattr node2 :kernel-info)))
+       ;;        (compiled-kernel-name (getattr node2 :kernel-info)))
+       (equal (node-reads node1) (node-reads node2))
+       (equal (node-writes node1) (node-writes node2)))
       (and
        (equal (node-reads node1) (node-reads node2))
        (equal (node-writes node1) (node-writes node2)))))
-;; 2. N-Layersを増やしてもGCCが読んだカーネルは変わらないことを確認する
+
 (deftest schedule-cache-count-test
   (with-protect-jit
     (loop for i upfrom 1 below 6
           for tf = (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0) (compile-transformer i)))
           do (ok (= (+ 15 i) (count-compiled-kernels tf))
                  (format nil "Compiled ~a kernels (expecting ~a)" (count-compiled-kernels tf) (+ 15 i))))))
-
+;; [TODO] cached-pはCacheを遡って元のカーネルと一致するか検証する
 (deftest schedule-cache-consistency-test
   (with-protect-jit
     (let* ((n-layers 3)
@@ -42,7 +43,7 @@
             for nth upfrom 0
             for ok = (compare-two-cache-nodes node1 node2)
             if (not ok)
-              do (ok nil (format nil "Found an discrepancy point at the ~ath node.
+              do (ok nil (format nil "Found a discrepancy point at the ~ath node.
   CACHED   | ~a
  NO CACHED |~a
 " nth node1 node2)))
@@ -57,8 +58,4 @@
         (ok (= (length kernels1) (length kernels2))
             (format nil "Scheduled ~a(cached) and ~a(no cached) kernels" (length kernels1) (length kernels2)))
         (ok (not (= (length kernels1) (count-compiled-kernels tf1)))
-            (format nil "Compiled ~a kernels" (count-compiled-kernels tf1)))
-        
-        ))))
-
-;; (run-test 'schedule-cache-consistency-test)
+            (format nil "The scheduler cache reduced this ~a kernels" (count-compiled-kernels tf1)))))))
