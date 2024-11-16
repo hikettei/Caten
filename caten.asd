@@ -18,6 +18,15 @@
     (asdf:test-op "caten.apis")
     (asdf:test-op "caten.nn")
     (asdf:test-op "caten.test-suite"))))
+
+(asdf:defsystem "caten/apps"
+  :description ""
+  :author "hikettei <ichndm@gmail.com>"
+  :depends-on ("caten"
+               "caten/llm"
+               "caten/gguf"
+               ;; More application follows ...
+               "caten.apps.gpt2"))
 ;; External system for Caten.
 ;; Systems including non-portable dependencies (e.g.: CUDA, Metal) or systems cannot be guaranteed to be maintained, are separated from caten.
 (asdf:defsystem "caten/metal"
