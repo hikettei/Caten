@@ -3,7 +3,12 @@
 (defclass Graph ()
   ((nodes :initarg :nodes :type list :accessor %graph-nodes)
    (seen :initarg :seen :initform nil :type list :accessor graph-seen)
-   (outputs :initarg :output :initform nil :type list :accessor graph-outputs))
+   (outputs :initarg :output :initform nil :type list :accessor graph-outputs)
+   ;; Utils for fast id->users
+   (use-fast-id->users :initform nil :type boolean :accessor graph-use-fast-id->users)
+   (up-to-date-p :initform nil :type boolean :accessor graph-up-to-date-p)
+   (in-degrees :initform (make-hash-table) :type hash-table :accessor graph-in-degrees)
+   (out-degrees :initform (make-hash-table) :type hash-table :accessor graph-out-degrees))
   (:documentation "A Graph is a data structure used to handle a collection of nodes.
 
 Graph has a list of nodes (nodes), node inputs (seen), and node outputs (outputs).
@@ -85,8 +90,42 @@ Returns a node whose node-writes includes the given id."))
 ```
 Returns a list of nodes whose node-reads includes the given id."))
 
+(defmacro with-cache-io-degree ((graph) &body body)
+  "Creates a cache of in/out degrees for the current nodes. This makes id->users faster. Note that during this macro, (graph-nodes graph) should not be modified in any case. If unsure, do not use this macro."
+  `(progn
+     (setf (graph-use-fast-id->users ,graph) t)
+     (unwind-protect
+          (progn ,@body)
+       (setf (graph-use-fast-id->users ,graph) nil))))
+
+(defmethod graph-sync-io-degree ((graph Graph))
+  (let ((in-degrees (make-hash-table)) (out-degrees (make-hash-table)))
+    (flet ((butseen (list)
+             (loop for l in list
+                   for v = (id->value graph l)
+                   if (and v (symbolp l) (not (find l (the list (graph-seen graph)))))
+                     collect v)))
+      (loop for node in (graph-nodes graph) do
+        (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
+        (dolist (r (butseen (node-reads node)))
+          (when (null (find (the symbol (node-id node)) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
+            (push node (gethash (node-id r) out-degrees))))))
+    (setf (graph-up-to-date-p graph) t
+          (graph-in-degrees graph) in-degrees
+          (graph-out-degrees graph) out-degrees)))
+
+(defmethod %id->users-cached ((graph Graph) id)
+  (assert (graph-use-fast-id->users graph) () "id->users-cached: graph-use-fast-id->users is not set to T.")
+  (when (null (graph-up-to-date-p graph))
+    (graph-sync-io-degree graph))
+  (let ((node (id->value graph id)))
+    (when node
+      (gethash (node-id node) (graph-out-degrees graph)))))
+
 (defmethod id->users ((graph Graph) id)
   (declare (optimize (speed 3)))
+  (when (graph-use-fast-id->users graph)
+    (return-from id->users (%id->users-cached graph id)))
   (if (not (symbolp id))
       nil
       (loop for node in (graph-nodes graph)
