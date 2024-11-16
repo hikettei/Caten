@@ -623,8 +623,6 @@ Depends=~a Reduce=~a Users=~a
         ;; Infer the input/output buffers again, they can be removed during the op fusion.
         (schedule-item-infer-io-buffers node (ctx-blueprint ctx) id-rewrite-map)
         (expr-rewrite-edge-with-pointer-id (ctx-blueprint ctx) id-rewrite-map))
-      (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr node :cache-name)))
-        (print-blueprint (ctx-blueprint ctx) t))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
