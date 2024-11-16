@@ -5,6 +5,17 @@
 ;; - Transformer Full Symbolic
 ;; - (defparameter *model* (time (Transformer 64 1 2 1e-5 32)))
 ;; - (defparameter *transformer* (caten (call *model* (make-tensor `(10 32)) (iconst 'n))))
+(deftest symbolic-function-args-test
+  (with-protect-jit
+    (let ((kernel (find :JIT_KERNEL (graph-nodes (avm-graph (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))) :key #'node-type)))
+      (assert kernel () "axpy is not scheduled")
+      (let ((args (node-reads kernel)))
+        (ok (equal (butlast (subseq args 1)) `(BYB TOB FROMB BYA TOA FROMA)))))))
+
+(run-test 'symbolic-function-args-test)
+
+
+
 
 #|
 (deftest symbolic-function-args-test
