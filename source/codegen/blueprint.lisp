@@ -33,7 +33,8 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
    #:buffer-nrank
    #:buffer-shape
    #:buffer-stride
-   #:buffer-views)
+   #:buffer-views
+   #:buffer-orig-buffer-shape)
   (:import-from
    :caten/codegen/renderer
    #:render-expr
@@ -663,20 +664,31 @@ Depends=~a Reduce=~a Users=~a
     ;; :dynamic-shapes
     ;; :storage-id-src / :read-types
     ;; :storage-id-dst / :write-types
-    (flet ((map-from (x &key (allow-nil t))
-             (let ((val (gethash x namemap)))
-               (if val
-                   val
-                   (if allow-nil
-                       x
-                       (error "map-from: the id ~a is not found." x))))))
+    (labels ((map-from (x &key (allow-nil t))
+               (let ((val (gethash x namemap)))
+                 (if val
+                     val
+                     (if allow-nil
+                         x
+                         (error "map-from: the id ~a is not found." x)))))
+             (update-buffer (buffer)
+               (when buffer
+                 (let ((buffer (caten/avm:copy-buffer buffer)))
+                   (setf (buffer-shape buffer) (map 'list #'map-from (buffer-shape buffer))
+                         (buffer-stride buffer) (map 'list #'map-from (buffer-stride buffer))
+                         (buffer-views buffer)
+                         (loop for v in (buffer-views buffer)
+                               collect
+                               (map 'list #'map-from v))
+                         (buffer-orig-buffer-shape buffer) (map 'list #'map-from (buffer-orig-buffer-shape buffer)))
+                   buffer))))
       ;; what attrs does the mp use?
       (setf (node-reads node) (map 'list #'map-from (node-reads base-item))
             (node-writes node) (map 'list #'map-from (node-writes base-item))
             (getattr node :storage-id-src) (map 'list #'map-from (getattr base-item :storage-id-src))
             (getattr node :storage-id-dst) (map 'list #'map-from (getattr base-item :storage-id-dst))
-            (getattr node :read-types) (getattr base-item :read-types)
-            (getattr node :write-types) (getattr base-item :write-types)
+            (getattr node :read-types) (map 'list #'update-buffer (getattr base-item :read-types))
+            (getattr node :write-types) (map 'list #'update-buffer (getattr base-item :write-types))
             (getattr node :dynamic-shapes) (getattr base-item :dynamic-shapes))
       ;; creates a copy of blueprint, expr is also refreshed. Memory Planner will use this.
       (setf (getattr node :blueprint)
@@ -707,6 +719,10 @@ Depends=~a Reduce=~a Users=~a
                                       for expr-node = (copy-node expr-node-base)
                                       do (setf (node-reads expr-node) (map 'list #'map-from (node-reads expr-node))
                                                (node-writes expr-node) (map 'list #'map-from (node-writes expr-node)))
+                                         (when (getattr expr-node :_type_relay :allow-undefined t)
+                                           (setf
+                                            (relay-reads (read-type-relay expr-node)) (map 'list #'update-buffer (relay-reads (read-type-relay expr-node)))
+                                            (relay-writes (read-type-relay expr-node)) (map 'list #'update-buffer (relay-writes (read-type-relay expr-node)))))
                                          (when (eql (node-type expr-node) :Aref)
                                            (setf (getattr expr-node :storage-id) (map-from (getattr expr-node :storage-id))))
                                       collect expr-node))
