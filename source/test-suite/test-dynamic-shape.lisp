@@ -51,4 +51,11 @@
          (o `(,(+ x (* 4 4)) ,(+ x (* 4 4) 1) ,(+ x (* 4 4) 2) ,(+ x (* 4 4) 3))))
     (ok (every #'= o (elements (forward m `(n . 4)))))))
 
+(deftest transformer-failing-case-repro
+  (let* ((n (iconst 'n))
+         (wpe (Embedding 10 10))
+         (mask (!triu (!full `(1 1 10 10) (-inf)) :diagonal (!+ (iconst 1) n)))
+         (pos-emb (forward wpe (!cast (!add n (!index-components `(1 10))) :float32)))
+         (out (!mul mask pos-emb)))
+    (print (caten out))))
 ;; Need more tests... transformer is not still working
