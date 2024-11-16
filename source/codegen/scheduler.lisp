@@ -512,7 +512,10 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
   (let ((node (id->value graph id)))
     (unless (and node (eql (node-type node) :LOAD)
                  (= 0 (buffer-nrank (car (relay-writes (read-type-relay node)))))
-                 (symbolp (getattr node :value)))
+                 (symbolp (getattr node :value))
+                 (let ((alloc
+                         (id->value graph (car (node-reads node)))))
+                   (and alloc (eql (node-type alloc) :Allocate))))
       (setf (gethash id seen) t)))
   (let* ((node (id->value graph id))
          (self
