@@ -42,12 +42,12 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 
 (defun buffer-element-size (buffer)
   (let ((shape (buffer-orig-shape buffer))
-        (count 0)
+        (count nil)
         (symbols nil))
     (loop for s in shape
           if (symbolp s) do (push s symbols)
-          else do (incf count s))
-    (cons count symbols)))
+          else do (push s count))
+    (cons (apply #'* count) symbols)))
 
 (defun buffer-size-eq (a b)
   (let ((s1 (buffer-element-size a))
