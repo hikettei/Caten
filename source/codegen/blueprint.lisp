@@ -553,16 +553,26 @@ Depends=~a Reduce=~a Users=~a
                                   (:IF (graph-nodes (expr-graph (getattr item :condition)))))
                     if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)) (is-dynamic-shape-p (getattr node :value)))
                       collect (cons (getattr node :value) :int64)))
-      ;; Loop Bounds (loaded as default-int)
+      ;; Symbols used to compute the strides.
       (nreverse
        (loop for item in (getattr node :items)
              append
-             (loop for type in (append (relay-writes (read-type-relay item)) (relay-reads (read-type-relay item)))
+             (loop for type in (append (relay-read-iters (read-type-relay item)) (relay-write-iters (read-type-relay item)))
                    if type
                      append
-                     (loop for s in (append (buffer-shape type) (apply #'append (buffer-views type)))
-                           if (and (symbolp s) (is-dynamic-shape-p s))
-                             collect (cons s caten/aasm:*default-int*))))))
+                     (loop for s in (append (apply #'append (iteration-space-views type)))
+                           if (and (symbolp s) (not (eql s t)) (not (eql s nil)))
+                             collect (cons s caten/aasm:*default-int*)))))
+      ;; ? [todo] remove
+      ;;(loop for item in (getattr node :items)
+      ;;      append
+      ;;      (loop for type in (append (relay-writes (read-type-relay item)) (relay-reads (read-type-relay item)))
+      ;;            if type
+      ;;              append
+      ;;              (loop for s in (append (buffer-shape type) (apply #'append (buffer-views type)))
+      ;;                    if (and (symbolp s) (is-dynamic-shape-p s))
+      ;;                      collect (cons s caten/aasm:*default-int*))))
+      )
      :key #'car)))
 
 (defun simplify-pointer-and-constant (blueprints)
