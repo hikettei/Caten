@@ -100,7 +100,6 @@
                    (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
       (:DEFINE-GLOBAL))))
 
-
 (defun header ()
   (format nil "~%#include <math.h>
 #include <stdint.h>
