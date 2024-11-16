@@ -189,6 +189,12 @@ Usage:
      "Set 1 to use cl-ansi-color.")
     (:PROFILE_SIMPLIFIER
      0 :int #.(oneof "PROFILE_SIMPLIFIER" 0 `(0 1))
-     "Set 1 to profile the simplifier during the %make-graph-from-iseq execution.")))
+     "Set 1 to profile the simplifier during the %make-graph-from-iseq execution.")
+    (:NO_SCHEDULE_CACHE
+     0 :int #.(oneof "NO_SCHEDULE_CACHE" 0 `(0 1))
+     "Set 1 to disable the schedule cache by the codegen.")
+    (:NO_MEMORY_PLANNER
+     0 :int #.(oneof "NO_MEMORY_PLANNER" 0 `(0 1))
+     "Set 1 to disable the memory planner by the codegen.")))
 
 (defparameter *ctx* (make-contextvar))

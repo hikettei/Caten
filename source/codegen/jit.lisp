@@ -92,7 +92,13 @@ caten/codegen overview:
    #:%renderer-get-auto-scheduler)
   (:export
    #:jit
-   #:schedule-graph->avm-graph))
+   #:schedule-graph->avm-graph
+   #:Compiled-Kernel
+   #:compiled-kernel-name
+   #:compiled-kernel-caller
+   #:compiled-kernel-raw-caller
+   #:compiled-kernel-device
+   #:compiled-kernel-code))
 
 (in-package :caten/codegen/jit)
 
@@ -356,7 +362,8 @@ caten/codegen overview:
     (declare (type Graph schedule-graph))
     (with-expr-cache (:pointer-map pointer-map) ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
       ;; 5. Minifying the number of schedules, (reuse kernels)
-      (minify-equivalent-schedule schedule-graph)
+      (when (not (= 1 (ctx:getenv :NO_SCHEDULE_CACHE)))
+        (minify-equivalent-schedule schedule-graph))
       ;; 6. Start JIT Compilation. (Performing by group)
       (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
@@ -410,7 +417,8 @@ caten/codegen overview:
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Running the memory planner..."))
-        (run-memory-planner schedule-graph symbolics base-graph)
+        (when (not (= 1 (ctx:getenv :NO_MEMORY_PLANNER)))
+          (run-memory-planner schedule-graph symbolics base-graph))
         (dolist (item (graph-nodes schedule-graph))
           (setf (getattr item :storage-id-src) (map 'list #'read-ptrid (getattr item :storage-id-src))
                 (getattr item :storage-id-dst) (map 'list #'read-ptrid (getattr item :storage-id-dst))))
