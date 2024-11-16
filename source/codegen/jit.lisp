@@ -373,14 +373,13 @@ caten/codegen overview:
                    (print-progress "~a" (getattr x :name))
                    (format t "=====> Lowering to blueprint~%"))
                  ;; 7. Running Lowerer
-                 (lower-schedule-item x (avm-graph avm) schedule-graph) ;; slow
+                 (lower-schedule-item x (avm-graph avm) schedule-graph)
                  (when (null (getattr x :cache-name))
                    ;; 8. Lower into Polyhedral IR
                    (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
                      (format t "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
                    (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
                      (when (>= (ctx:getenv :JIT_DEBUG) 2)
-
                        (format t "=====> Lowering to Polyhedral IR~%"))
                      (scop x symbolics)
                      (when (>= (ctx:getenv :JIT_DEBUG) 2)
