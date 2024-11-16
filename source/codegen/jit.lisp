@@ -112,7 +112,7 @@ caten/codegen overview:
 
 (defnode (:JIT :JIT_KERNEL) ()
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
-	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list)))
+	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list) (cached-p :type boolean)))
 
 (defmethod make-load-form ((jit Compiled-Kernel) &optional env)
   (declare (ignore env))
@@ -155,7 +155,8 @@ caten/codegen overview:
              :dtypes
              (loop for item in (getattr si :blueprint)
                    if (eql (node-type item) :DEFINE-GLOBAL)
-                     collect (getattr item :dtype))))
+                     collect (getattr item :dtype))
+             :cached-p (if (getattr si :cache-name) t nil)))
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((info (getattr node :kernel-info))
