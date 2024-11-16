@@ -1,8 +1,5 @@
 (in-package :caten/test-suite)
 
-;; [TODO] Fix Dynamic Shape Testing
-;; - Passing the comment outed test
-;; - Transformer Full Symbolic
 ;; - (defparameter *model* (time (Transformer 64 1 2 1e-5 32)))
 ;; - (defparameter *transformer* (caten (call *model* (make-tensor `(10 32)) (iconst 'n))))
 
@@ -51,11 +48,26 @@
          (o `(,(+ x (* 4 4)) ,(+ x (* 4 4) 1) ,(+ x (* 4 4) 2) ,(+ x (* 4 4) 3))))
     (ok (every #'= o (elements (forward m `(n . 4)))))))
 
+;; Transformer-Failing-Case-Repro:
+;; ```
+;; LOAD: val_3 = N
+;; WPE:  val_5 = Embedding(..., val_3)
+;; MASK: val_6 = Triu(..., val_3)
+;; ```
+;; - val_3 is used by both `val_5` and `val_6`
+;; - graph-schedule once adds val_3 to `seen`, val_6 group has no val_3.
+(deftest transformer-working-case-repro
+  ;; Initialize 'N for WPE and MASK respectively
+  (let* ((wpe (Embedding 10 10))
+         (mask (!triu (!full `(1 1 10 10) (-inf)) :diagonal (!+ (iconst 1) (iconst 'n))))
+         (pos-emb (forward wpe (!cast (!add (iconst 'n) (!index-components `(1 10))) :float32)))
+         (out (!mul mask pos-emb)))
+    (ok (caten out))))
+
 (deftest transformer-failing-case-repro
-  (let* ((n (iconst 'n))
+  (let* ((n (iconst 'n)) ;; val_3 <- N, both WPE/MASK use this
          (wpe (Embedding 10 10))
          (mask (!triu (!full `(1 1 10 10) (-inf)) :diagonal (!+ (iconst 1) n)))
          (pos-emb (forward wpe (!cast (!add n (!index-components `(1 10))) :float32)))
          (out (!mul mask pos-emb)))
-    (print (caten out))))
-;; Need more tests... transformer is not still working
+    (ok (caten out))))
