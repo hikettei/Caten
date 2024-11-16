@@ -195,6 +195,9 @@ Usage:
      "Set 1 to disable the schedule cache by the codegen.")
     (:NO_MEMORY_PLANNER
      0 :int #.(oneof "NO_MEMORY_PLANNER" 0 `(0 1))
-     "Set 1 to disable the memory planner by the codegen.")))
+     "Set 1 to disable the memory planner by the codegen.")
+    (:PARALLEL
+     0 :int identity
+     "If set to > 0, Caten will run the scheduler in parallel for the larger graph. PARALLEL indicates the number of cores used by the lparallel.")))
 
 (defparameter *ctx* (make-contextvar))

@@ -35,16 +35,21 @@
   (if (eql (node-type node1) :JIT_KERNEL)
       (let* ((info1 (getattr node1 :kernel-info))
              (info2 (getattr node2 :kernel-info))
-             (base-node
+             (base-node1
                (if (getattr node1 :cached-p)
                    (find (compiled-kernel-name info1) kernels
                          :test #'(lambda (x y)
                                    (and (null (getattr y :cached-p)) (eql x (compiled-kernel-name (getattr y :kernel-info))))))
                    node1))
+             (base-node2
+               (if (getattr node2 :cached-p)
+                   (find (compiled-kernel-name info2) kernels
+                         :test #'(lambda (x y)
+                                   (and (null (getattr y :cached-p)) (eql x (compiled-kernel-name (getattr y :kernel-info))))))
+                   node2))
              (nmp (= no-mp 1))
-             (code1 (hide-vars (compiled-kernel-code info1) base-node kernels :test-with-memory-planner nmp))
-             (code2 (hide-vars (compiled-kernel-code info2) node2 kernels :test-with-memory-planner nmp)))
-        (assert (null (getattr node2 :cached-p)))
+             (code1 (hide-vars (compiled-kernel-code info1) base-node1 kernels :test-with-memory-planner nmp))
+             (code2 (hide-vars (compiled-kernel-code info2) base-node2 kernels :test-with-memory-planner nmp)))
         (and       
          (equal (node-reads node1) (node-reads node2))
          (equal (node-writes node1) (node-writes node2))
@@ -104,3 +109,40 @@ Code2:
                 (format nil "Scheduled ~a(cached) and ~a(no cached) kernels" (length kernels1) (length kernels2)))
             (ok (not (= (length kernels1) (count-compiled-kernels tf1)))
                 (format nil "The scheduler cache reduced this ~a kernels" (count-compiled-kernels tf1)))))))))
+
+(deftest transformer-schedule-cache-consistency-test-parallel
+  (with-protect-jit
+    (if (= 1 (ctx:getenv :CI))
+        (skip "Unstable test on CI")
+        (dolist (no-mp `(0 1))
+          (testing (format nil "Running with NO_MEMORY_PLANNER=~a" no-mp)
+            (let* ((n-layers 6)
+                   (tf1 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 4) (compile-transformer n-layers))))
+                   (tf2 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 0) (compile-transformer n-layers))))
+                   (kernels
+                     (loop for item in (append (graph-nodes tf1) (graph-nodes tf2))
+                           if (eql (node-type item) :JIT_KERNEL)
+                             collect item)))
+              (ok (= (length (graph-nodes tf1)) (length (graph-nodes tf2)))
+                  (format nil "Scheduled ~a(no cache) and ~a(cached) kernels" (length (graph-nodes tf1)) (length (graph-nodes tf2))))
+              (loop for node1 in (graph-nodes tf1)
+                    for node2 in (graph-nodes tf2)
+                    for nth upfrom 0
+                    for ok = (compare-two-cache-nodes node1 node2 kernels no-mp)
+                    if (not ok)
+                      do (ok nil (format nil "Found a discrepancy point at the ~ath node.
+  CACHED   | ~a
+ NO CACHED |~a
+" nth node1 node2)))
+              (let ((kernels1
+                      (loop for item in (graph-nodes tf1)
+                            if (eql (node-type item) :JIT_KERNEL)
+                              collect item))
+                    (kernels2
+                      (loop for item in (graph-nodes tf2)
+                            if (eql (node-type item) :JIT_KERNEL)
+                              collect item)))
+                (ok (= (length kernels1) (length kernels2))
+                    (format nil "Scheduled ~a(cached) and ~a(no cached) kernels" (length kernels1) (length kernels2)))
+                (ok (not (= (length kernels1) (count-compiled-kernels tf1)))
+                    (format nil "The scheduler cache reduced this ~a kernels" (count-compiled-kernels tf1))))))))))
