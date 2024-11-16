@@ -39,6 +39,25 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (or
    (buffer-orig-buffer-shape buffer) ;; non-viewed-size
    (buffer-shape buffer)))
+
+(defun buffer-element-size (buffer)
+  (let ((shape (buffer-orig-shape buffer))
+        (count 0)
+        (symbols nil))
+    (loop for s in shape
+          if (symbolp s) do (push s symbols)
+          else do (incf count s))
+    (cons count symbols)))
+
+(defun buffer-size-eq (a b)
+  (let ((s1 (buffer-element-size a))
+        (s2 (buffer-element-size b)))
+    (and
+     (= (car s1) (car s2)) ;; fixed parts
+     (= (length (cdr s1)) (length (cdr s2))) ;; number of symbols
+     (let ((stack (cdr s1)))
+       (dolist (k (cdr s2)) (setf stack (remove k stack :test #'eql)))
+       (null stack)))))
 ;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
 (defun greedy-solve-dsa (I total-time)
   "A greedy solver for minimizing `peak_mem`"
@@ -51,8 +70,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                              (not (= -1 (buffer-nrank (memoryblock-type mb))))
                              (not (= -1 (buffer-nrank (memoryblock-type candidate))))
 			     (buffer-shape (memoryblock-type mb)) ;; <=> assure the memory-block is a tensor
-			     (equal (buffer-orig-shape (memoryblock-type candidate))
-				    (buffer-orig-shape (memoryblock-type mb)))
+                             (buffer-size-eq (memoryblock-type candidate) (memoryblock-type mb))
 			     (equal (buffer-dtype (memoryblock-type candidate))
 				    (buffer-dtype (memoryblock-type mb)))
                              ;; [TODO] If offsets were created but size are equivalent; they are not cached right?
