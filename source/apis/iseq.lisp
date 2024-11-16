@@ -456,8 +456,6 @@ Compiles the given tensors, returning an AVM struct.
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
   (let ((avm (%compile-toplevel tensors :name name :rewriters rewriters :external-simplifiers simplifiers)))
-    ;; FIXME: Since we can't determine when garbage collection (in caten/isl) will occur during testing, we run it every time.
-    (when (and (= (ctx:getenv :JIT) 1) (= (ctx:getenv :CI) 1)) (trivial-garbage:gc))
     (if jit (caten/codegen:jit avm :renderer (or *jit-device* (ctx:getenv :jit_backend))) avm)))
 
 (defun avm/sync-tensors (avm)
