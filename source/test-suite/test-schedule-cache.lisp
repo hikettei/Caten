@@ -11,15 +11,40 @@
           if (eql (node-type node) :JIT_KERNEL)
             collect (compiled-kernel-name (getattr node :kernel-info))))))
 
-(defun compare-two-cache-nodes (node1 node2)
+(defun hide-vars (code node kernels)
+  (declare (type string code))
+  (setf code (string-downcase code))
+  (loop for nth upfrom 0
+        for v in (map 'list #'(lambda (x) (compiled-kernel-name (getattr x :kernel-info))) kernels)
+        do (setf code (cl-ppcre:regex-replace-all (format nil "~(~a~)" v) code (format nil "func"))))
+  (loop for nth upfrom 0
+        for v in (append (node-reads node) (node-writes node))
+        do (setf code (cl-ppcre:regex-replace-all (format nil "~(~a~)" v) code (format nil "var~a" nth))))
+  ;; Remove val_NNN
+  (setf code (cl-ppcre:regex-replace-all "val_[0-9]+" code "[TMP_SCALAR_VAL]"))
+  code)
+
+(defun compare-two-cache-nodes (node1 node2 kernels)
   (when (not (eql (node-type node1) (node-type node2)))
     (return-from compare-two-cache-nodes nil))
   (if (eql (node-type node1) :JIT_KERNEL)
-      (and
-        ;;(equal (compiled-kernel-name (getattr node1 :kernel-info))
-       ;;        (compiled-kernel-name (getattr node2 :kernel-info)))
-       (equal (node-reads node1) (node-reads node2))
-       (equal (node-writes node1) (node-writes node2)))
+      (let* ((info1 (getattr node1 :kernel-info))
+             (info2 (getattr node2 :kernel-info))
+             (base-node
+               (if (getattr node1 :cached-p)
+                   (find (compiled-kernel-name info1) kernels
+                         :test #'(lambda (x y)
+                                   (and (null (getattr y :cached-p)) (eql x (compiled-kernel-name (getattr y :kernel-info))))))
+                   node1))
+             (code1 (hide-vars (compiled-kernel-code info1) base-node kernels))
+             (code2 (hide-vars (compiled-kernel-code info2) node2 kernels)))
+        (assert (null (getattr node2 :cached-p)))
+        (and       
+         (equal (node-reads node1) (node-reads node2))
+         (equal (node-writes node1) (node-writes node2))
+         (if (equal code1 code2)
+             t
+             (format t "Code1:~%~a~%Code2:~%~a~%" code1 code2))))
       (and
        (equal (node-reads node1) (node-reads node2))
        (equal (node-writes node1) (node-writes node2)))))
@@ -30,18 +55,22 @@
           for tf = (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0) (compile-transformer i)))
           do (ok (= (+ 15 i) (count-compiled-kernels tf))
                  (format nil "Compiled ~a kernels (expecting ~a)" (count-compiled-kernels tf) (+ 15 i))))))
-;; [TODO] cached-pはCacheを遡って元のカーネルと一致するか検証する
+
 (deftest schedule-cache-consistency-test
   (with-protect-jit
     (let* ((n-layers 3)
            (tf1 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0) (compile-transformer n-layers))))
-           (tf2 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 1) (compile-transformer n-layers)))))
+           (tf2 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 1) (compile-transformer n-layers))))
+           (kernels
+             (loop for item in (append (graph-nodes tf1) (graph-nodes tf2))
+                   if (eql (node-type item) :JIT_KERNEL)
+                     collect item)))
       (ok (= (length (graph-nodes tf1)) (length (graph-nodes tf2)))
           (format nil "Scheduled ~a(no cache) and ~a(cached) kernels" (length (graph-nodes tf1)) (length (graph-nodes tf2))))
       (loop for node1 in (graph-nodes tf1)
             for node2 in (graph-nodes tf2)
             for nth upfrom 0
-            for ok = (compare-two-cache-nodes node1 node2)
+            for ok = (compare-two-cache-nodes node1 node2 kernels)
             if (not ok)
               do (ok nil (format nil "Found a discrepancy point at the ~ath node.
   CACHED   | ~a
