@@ -128,3 +128,15 @@
      (<node> :Test-F (list 'a) nil))
     (list
      (<node> :Test-L (list 'a) nil)))))
+
+(deftest test-with-cache-io-degree
+  (let ((g
+          (make-graph
+           (<node> :Test-Add (list 'm) (list 1 1))
+           (<node> :Test-F (list 'a) (list 'm))
+           (<node> :Test-F (list 'b) (list 'm))
+           (<node> :Test-F (list 'c) (list 'm))
+           (<node> :Test-Add (list 'out) (list 'a 'b 'c)))))
+    (let ((res1 (id->users g 'm))
+          (res2 (with-cache-io-degree (g) (reverse (id->users g 'm)))))
+      (ok (equal (map 'list #'node-id res1) (map 'list #'node-id res2))))))
