@@ -643,9 +643,11 @@ Depends=~a Reduce=~a Users=~a
                        ()
                        "compare-and-make-namespace-map: Found an distinct point in the namespace ~a vs ~a~%NameSpace:~%~a~%~a~%Schedule-Items:~%~a~%~a"
                        id-old id-tgt namespace-cache namespace-tgt-node cache-node tgt-node)
+               (let ((v (gethash id-tgt result))) (assert (or (null v) (eql v id-old))))
                (setf (gethash id-tgt result) id-old)
           else
             do (assert (and (symbolp id-tgt) (symbolp id-old)))
+               (let ((v (gethash id-tgt result))) (assert (or (null v) (eql v id-old))))
                (setf (gethash id-tgt result) id-old))
     result))
 

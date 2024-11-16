@@ -139,7 +139,9 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
     (loop for node in nodes
 	  for nth upfrom 0
           if (eql (node-type node) :Schedule-Item) ; Optimization for non-jitable instructions (like: foreign kernel calls, allocation, pause/backward)
-            do (loop for val in (getattr node :storage-id-src)
+            do (assert (= (length (getattr node :storage-id-src)) (length (getattr node :read-types))))
+               (assert (= (length (getattr node :storage-id-dst)) (length (getattr node :write-types))))
+               (loop for val in (getattr node :storage-id-src)
                      for typ in (getattr node :read-types)
                      for time = `(,nth ,@(gethash val trace-table))
                      if (id-is-input-p val base-graph) do (push val outputs)

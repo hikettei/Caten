@@ -415,10 +415,10 @@ caten/codegen overview:
         ;; 10. Running memory-planner, update the storage-id
         (setf schedule-graph (->graph schedule-graph))
         (verify-graph schedule-graph) ;; Sort the graph for memory planner
-        (when (>= (ctx:getenv :JIT_DEBUG) 2)
-          (fresh-line)
-          (print-info "Running the memory planner..."))
         (when (not (= 1 (ctx:getenv :NO_MEMORY_PLANNER)))
+          (when (>= (ctx:getenv :JIT_DEBUG) 2)
+            (fresh-line)
+            (print-info "Running the memory planner..."))
           (run-memory-planner schedule-graph symbolics base-graph))
         (dolist (item (graph-nodes schedule-graph))
           (setf (getattr item :storage-id-src) (map 'list #'read-ptrid (getattr item :storage-id-src))
