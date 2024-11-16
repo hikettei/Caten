@@ -5,7 +5,7 @@
    :caten :caten/nn :caten/air :caten/aasm
    :caten/avm :caten/common.dtype :alexandria
    :caten/codegen :caten/llm :py4cl
-   :caten/codegen/scheduler :caten/codegen/expr))
+   :caten/codegen/scheduler :caten/codegen/expr :caten/codegen/jit))
 
 (in-package :caten/test-suite)
 

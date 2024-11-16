@@ -148,7 +148,6 @@ Inserts the given nodes (list) into the graph.
 
 Creates a FastGraph object from the given graph."
   (declare (type graph graph))
-  (when (= 1 (ctx:getenv :SAFETY)) (return-from ->fast-graph graph))
   (assert (graph-outputs graph) () "Cannot create a fast graph because the graph does not have a `outputs`.")
   (let ((fast-graph (make-instance 'FastGraph :output (graph-outputs graph) :seen (graph-seen graph))))
     (insert-nodes fast-graph (graph-nodes graph))

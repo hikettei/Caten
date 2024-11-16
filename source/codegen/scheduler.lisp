@@ -47,7 +47,8 @@ One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the m
    #:permute-list
    #:nodes-depends-on
    #:nodes-write-to
-   #:ensure-string-as-compilable)
+   #:ensure-string-as-compilable
+   #:nodes-create-namespace)
   (:import-from
    #:caten/codegen/rewriting-rules
    :nodes-apply-static-gensym)
@@ -86,6 +87,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 - rank[fixnum] is the highest rank of the iteration space.
 - storage-id-src[list] is the list of the storage-id of the source buffer (optimized by running memory-planner)
 - storage-id-dst[list] is the list of the storage-id of the destination buffer (optimized by running memory-planner)
+- namespace[list] a list of symbols appeared in the items. It is used to map a new blueprint from the cached blueprint.
 "
          :slots
          ((blueprint :type list :initform nil)
@@ -102,7 +104,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (storage-id-dst :type list)
           (dynamic-shapes :type list)
           (rendered-object :type string)
-          (compiled-object :type list)))
+          (compiled-object :type list)
+          (namespace :type list)))
 
 (defmethod print-node (node (id (eql :Schedule-Item)))
   (flet ((r (x y)
@@ -134,6 +137,11 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                 (if (getattr node :cache-name)
                     (format nil ":cache-name=~a :name=~a" (getattr node :cache-name) (getattr node :name))
                     (format nil ":name=~a" (getattr node :name)))))))
+
+(defun schedule-item-initialize-namespace (si)
+  (declare (type node si))
+  (assert (eql (node-type si) :Schedule-Item))
+  (setf (getattr si :namespace) (nodes-create-namespace (getattr si :items))))
 ;; ~~ Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Group
   (key (gensym) :type symbol)
@@ -761,4 +769,5 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
         (let ((graph (apply #'make-graph (apply #'append (map 'list #'(lambda (x) (getattr x :items)) (graph-nodes schedule))))))
           ;; (->dot schedule :title "Schedule Graph")
           (->dot graph :title "Graph [After Scheduling]")))
+      (mapc #'schedule-item-initialize-namespace (graph-nodes schedule))
       schedule)))
