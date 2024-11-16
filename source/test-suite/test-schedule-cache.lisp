@@ -63,14 +63,14 @@ Code2:
        (equal (node-reads node1) (node-reads node2))
        (equal (node-writes node1) (node-writes node2)))))
 
-(deftest schedule-cache-count-test
+(deftest transformer-schedule-cache-count-test
   (with-protect-jit
     (loop for i upfrom 1 below 6
           for tf = (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0) (compile-transformer i)))
           do (ok (= (+ 15 i) (count-compiled-kernels tf))
                  (format nil "Compiled ~a kernels (expecting ~a)" (count-compiled-kernels tf) (+ 15 i))))))
 
-(deftest schedule-cache-consistency-test
+(deftest transformer-schedule-cache-consistency-test
   (with-protect-jit
     (dolist (no-mp `(0 1))
       (testing (format nil "Running with NO_MEMORY_PLANNER=~a" no-mp)
