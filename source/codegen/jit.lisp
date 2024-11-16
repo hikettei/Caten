@@ -333,7 +333,6 @@ caten/codegen overview:
             do (push tgt seen))
     schedule-graph))
 
-;; [TODO] 1. JIT_DEBUG >=2で動くようにする
 (defun maybe-pmapc (f list &key (slope 1))
   (flet ((is-heavy-p (x)
            (and (getattr x :jitable) (null (getattr x :cache-name)))))
