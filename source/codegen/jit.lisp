@@ -399,9 +399,9 @@ caten/codegen overview:
         (mapc
          #'(lambda (x)
              (when (getattr x :cache-name)
-               (when (>= (ctx:getenv :JIT_DEBUG) 2)
+               (when (>= (ctx:getenv :JIT_DEBUG) 4)
                  (fresh-line)
-                 (format t "Copying the schedule from ~a~%" (getattr x :cache-name)))
+                 (print-info "Copying cache ~a => ~a" (getattr x :name) (getattr x :cache-name)))
                (lower-cached-schedule-item x schedule-graph)))
          (graph-nodes schedule-graph))
         ;; 10. Running memory-planner, update the storage-id
