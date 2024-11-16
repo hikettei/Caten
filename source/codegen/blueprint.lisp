@@ -527,7 +527,8 @@ Depends=~a Reduce=~a Users=~a
   (flet ((is-dynamic-shape-p (val)
            (and (not (null val))
                 (not (eql val t))
-                (find val (graph-nodes base-graph) :key #'(lambda (x) (getattr x :value :allow-undefined t))))))
+                (find val (graph-nodes base-graph) :key #'(lambda (x) (getattr x :value :allow-undefined t)))))
+         (not-defined-by-bp (val) (null (find val blueprints :key #'node-writes :test #'find))))
     (remove-duplicates
      (append
       ;; From the lowered blueprint
@@ -561,18 +562,8 @@ Depends=~a Reduce=~a Users=~a
                    if type
                      append
                      (loop for s in (append (apply #'append (iteration-space-views type)))
-                           if (and (symbolp s) (not (eql s t)) (not (eql s nil)))
-                             collect (cons s caten/aasm:*default-int*)))))
-      ;; ? [todo] remove
-      ;;(loop for item in (getattr node :items)
-      ;;      append
-      ;;      (loop for type in (append (relay-writes (read-type-relay item)) (relay-reads (read-type-relay item)))
-      ;;            if type
-      ;;              append
-      ;;              (loop for s in (append (buffer-shape type) (apply #'append (buffer-views type)))
-      ;;                    if (and (symbolp s) (is-dynamic-shape-p s))
-      ;;                      collect (cons s caten/aasm:*default-int*))))
-      )
+                           if (and (symbolp s) (not (eql s t)) (not (eql s nil)) (not-defined-by-bp s))
+                             collect (cons s caten/aasm:*default-int*))))))
      :key #'car)))
 
 (defun simplify-pointer-and-constant (blueprints)
