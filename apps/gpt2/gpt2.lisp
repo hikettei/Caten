@@ -1,5 +1,5 @@
 (defpackage :caten/apps.gpt2
-  (:use :cl :caten/apis :caten/llm)
+  (:use :cl :caten/apis :caten/llm :caten/gguf)
   (:export
    :make-gpt2
    :gpt2-generate))
@@ -31,8 +31,12 @@
   (assert (find model-type `(:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)) () "model-type must be one of :gpt2, :gpt2-medium, :gpt2-large, :gpt2-xl")
   (with-no-grad
     (let* ((param (get-param model-type))
+           (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
            (model (Transformer (param-dim param) (param-n-heads param) (param-n-layers param) (param-vocab-size param) (param-norm-eps param) :max-seq-len max-seq-len))
            (avm (caten (forward model (make-tensor `(1 ,max-seq-len)) (iconst 'pos)))))
+      
+      ;; [TODO] Replace the keys
+      (load-state-dict model (gguf->state-dict gguf))
       (%make-gpt2 avm nil max-seq-len))))
 
 (defun gpt2-generate (gpt2 input)
@@ -41,4 +45,4 @@
     (let ((input (proceed (make-tensor `(1 ,max-seq-len) :initial-elements 1.0)))
           (start-pos 0))
       ;; WIP!
-      )))
+      (error "NOT READY!!"))))

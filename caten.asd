@@ -38,7 +38,7 @@
 (asdf:defsystem "caten/gguf"
   :description "[gguf](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md) format translator."
   :author "hikettei <ichndm@gmail.com>"
-  :depends-on ("caten.apis" "babel" "fast-io")
+  :depends-on ("caten.apis" "babel" "fast-io" "drakma")
   :serial t
   :pathname "external/gguf"
   :components

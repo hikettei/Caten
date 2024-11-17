@@ -65,3 +65,11 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
     (loop for info in (gguf-tensor-info gguf)
           do (setf (gethash (tensor-info-name info) dict) (tensor-info->tensor info)))
     (caten/apis:make-state-dict :entry dict)))
+
+(defun load-gguf-url (url filename &optional (output-directory "./"))
+  (let* ((output-path (merge-pathnames filename (pathname output-directory))))
+    (unless (probe-file output-path)
+      (caten/common.logger:print-info "Downloading ~a to ~a..." url output-path)
+      (with-open-file (stream output-path :direction :output :element-type '(unsigned-byte 8) :if-exists :supersede)
+        (drakma:http-request url :method :get :want-stream t :stream stream)))
+    (load-gguf output-path)))

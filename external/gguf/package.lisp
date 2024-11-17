@@ -3,6 +3,7 @@
   (:use :cl :fast-io)
   (:export
    #:load-gguf
+   #:load-gguf-url
    #:make-gguf
    #:GGUF
    #:gguf-version
