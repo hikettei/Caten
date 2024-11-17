@@ -179,7 +179,15 @@ The provided form does not match any of them:~%~a" method method method method f
 ;; - [ ] Everything exported?
 ;; - [ ] Write a test ok? (tested by gpt2?)
 (defstruct State-Dict
-  ""
+  "
+A structure representing the state dictionary of a neural network model.
+
+- Entry[Hash-Table]: A hash table containing the parameters of the model, where:
+  - Key[string]: A string representing the parameter name, following a naming convention that reflects the model's architecture.
+  - Value[Tensor]: A tensor containing the parameter values associated with the key.
+
+This hash table stores all the parameters of the model, enabling easy saving, loading, and manipulation of model weights.
+"
   (entry (make-hash-table :test #'equal) :type hash-table))
 
 (defmethod print-object ((obj State-Dict) stream)
@@ -198,7 +206,34 @@ The provided form does not match any of them:~%~a" method method method method f
          (state-dict-entry obj))))
     (format stream "  }")))
 
-(defgeneric ->state-dict (module parents))
+(defgeneric ->state-dict (module parents) (:documentation "
+```
+(->state-dict module parents)
+```
+
+Generates a list of cons cells containing the keys and values for creating a `State-Dict` from any given `Module/Class`.
+
+Return: A list of cons cells in the form `(coms (list module_names ...) . tensor)`, representing parameters and their corresponding tensors. module_names are the list of symbols representing the path to the parameter slot from the root module.
+
+TL;DR. this function traverses all slots of the Module/Class and recognizes the following objects as parameters:
+
+- Tensor
+- Module/Class
+- List of Tensors
+- List of Modules/Classes
+
+By default, the keys are created according to the following rules:
+
+- Tensor
+  - If a slot contains a Tensor, create a cons cell with the key as `(append parent (list slot_name))` and the value as the Tensor.
+- Module
+  - If a slot contains a Module, recursively apply `(->state-dict slot_value parent)` to that Module with setting parent = `(append parent (list slot_name))` as the new Parent.
+- List of Tensors/Modules
+  - If a slot contains a list of Tensors or Modules, apply the above rules to each element.
+  - Keys are created by appending the slot name and the index (e.g., `slot_name 0`, `slot_name 1`, ...) to the Parent.
+
+To recognize other objects as parameters, please extend this method by adding methods for the desired classes.
+"))
 
 (defmethod ->state-dict ((module Module) parents)
   (let ((slots (map 'list #'c2mop:slot-definition-name (c2mop:class-slots (class-of module)))))
@@ -221,19 +256,23 @@ The provided form does not match any of them:~%~a" method method method method f
                   append (->state-dict m (append parents (list slot nth))))
           if (typep value 'Module)
             append (->state-dict value (append parents (list slot))))))
-;; [TODO] Documentation sikkari kaku!!!
+
 (defun pytorch-style-dict-key (list)
   (let ((key (apply #'concatenate 'string (butlast (loop for l in list append (list (format nil "~(~a~)" l) "."))))))
     (cl-ppcre:regex-replace-all "-" key "_")))
 
 (defun get-state-dict (module &key (key-mapper #'pytorch-style-dict-key))
-  "Return the parameter tree of the module.
-What values are recognised as a parameter?
-For example:
+  "
 ```
-(defmodel ...)
+(get-state-dict module &key (key-mapper #'pytorch-style-dict-key))
 ```
-"
+
+Constructs a `State-Dict` by recursively exploring all paramters of the given Module/Class.
+
+- Module[Module/Class] The module from which to extract parameters.
+- Key-Mapper[Function] A function that takes a list of names (the first element of the cons cell) and returns a string to be used as the key in the StateDict. Defaults to `pytorch-style-dict-key`. which must be `#'(lambda (x) ...)`
+
+Returns: `State-Dict`"
   (declare (type Module module))
   (let ((state-dict-base (->state-dict module nil))
         (state-dict (make-state-dict)))

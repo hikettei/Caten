@@ -69,7 +69,15 @@
    #:defmodule
    #:module-outputs
    #:module-attrs
-   #:module-sv4bws)
+   #:module-sv4bws
+   ;; State-Dict
+   #:State-Dict
+   #:State-Dict-Entry
+   #:State-Dict-p
+   #:Copy-State-Dict
+   #:->state-dict
+   #:get-state-dict
+   )
   ;; from high-level-ops.lisp
   (:export
    ;; reductions
