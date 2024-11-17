@@ -59,3 +59,9 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
   "Creates GGUF from pahtname"
   (with-open-file (stream pathname :element-type '(unsigned-byte 8))
     (make-gguf stream)))
+
+(defmethod gguf->state-dict ((gguf GGUF))
+  (let ((dict (make-hash-table :test #'equal)))
+    (loop for info in (gguf-tensor-info gguf)
+          do (setf (gethash (tensor-info-name info) dict) (tensor-info->tensor info)))
+    (caten/apis:make-state-dict :entry dict)))

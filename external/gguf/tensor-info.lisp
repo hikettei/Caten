@@ -33,6 +33,12 @@
     (28 :F64)
     (29 :IQ1_M)))
 
+(defun ggml-type->caten-type (indicator)
+  (case indicator
+    (:F32 :float32)
+    (:F16 :float16)
+    (otherwise (error "Not ready ~a" indicator))))
+
 (defstruct (Tensor-Info
 	    (:constructor make-tensor-info (name n-dimension dimensions tensor-type offset)))
   (name name :type string)
@@ -88,3 +94,20 @@
       (tqdm:with (tqdm (length tensors) :description "Extracting tensors...")
 	(loop for tensor in tensors
 	      collect (r tensor) do (tqdm:update tqdm))))))
+
+(defun tensor-info->tensor (tensor-info)
+  (declare (type tensor-info tensor-info))
+  (let ((buffer
+          (caten/avm:make-buffer
+           (tensor-info-n-dimension tensor-info)
+           (tensor-info-dimensions tensor-info)
+           (caten/apis::static-compute-strides :row (tensor-info-dimensions tensor-info))
+           (ggml-type->caten-type (tensor-info-ggml-type tensor-info))
+           nil)))
+    (setf (caten/avm:buffer-value buffer) (tensor-info-buffer tensor-info))
+    (let ((out (caten/apis:make-tensor
+                (tensor-info-dimensions tensor-info)
+                :dtype (ggml-type->caten-type (tensor-info-ggml-type tensor-info))
+                :from buffer)))
+      (setf (caten/apis:tensor-buffer out) buffer)
+      out)))

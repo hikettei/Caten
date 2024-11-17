@@ -24,6 +24,8 @@
     (:gpt2-large *gpt2-large*)
     (:gpt2-xl *gpt2-xl*)))
 
+(defun url (model-type) (format nil "https://huggingface.co/hikettei/gpt2-gguf/blob/main/~(~a~)-f32.gguf?download=true" model-type))
+
 (defun make-gpt2 (model-type &key (max-seq-len 1024))
   (declare (type keyword model-type))
   (assert (find model-type `(:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)) () "model-type must be one of :gpt2, :gpt2-medium, :gpt2-large, :gpt2-xl")
@@ -31,11 +33,6 @@
     (let* ((param (get-param model-type))
            (model (Transformer (param-dim param) (param-n-heads param) (param-n-layers param) (param-vocab-size param) (param-norm-eps param) :max-seq-len max-seq-len))
            (avm (caten (forward model (make-tensor `(1 ,max-seq-len)) (iconst 'pos)))))
-      ;; (load-state-dict )
-      ;; [TODO] Prefetch fp32 model from gguf
-      ;; [TODO] GGUF Creates a state-dict
-      ;; [TODO] Load the weight
-      ;; [TODO] Tokenizer
       (%make-gpt2 avm nil max-seq-len))))
 
 (defun gpt2-generate (gpt2 input)
@@ -43,6 +40,5 @@
   (with-slots ((model model) (tokenizer tokenizer) (max-seq-len max-seq-len)) gpt2
     (let ((input (proceed (make-tensor `(1 ,max-seq-len) :initial-elements 1.0)))
           (start-pos 0))
-
-      (forward model input 2)
+      ;; WIP!
       )))
