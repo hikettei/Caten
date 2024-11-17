@@ -73,8 +73,7 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
   (let* ((output-path (merge-pathnames filename (pathname output-directory))))
     (unless (probe-file output-path)
       (caten/common.logger:print-info "Downloading ~a to ~a..." url output-path)
-      (with-open-file (stream output-path :direction :output :element-type '(unsigned-byte 8) :if-exists :supersede)
-        (drakma:http-request url :method :get :want-stream t :stream stream)))
+      (trivial-download:download url output-path))
     (load-gguf output-path)))
 
 (defun gguf->bpe-tokenizer (gguf

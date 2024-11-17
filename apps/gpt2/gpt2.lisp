@@ -24,7 +24,7 @@
     (:gpt2-large *gpt2-large*)
     (:gpt2-xl *gpt2-xl*)))
 
-(defun url (model-type) (format nil "https://huggingface.co/hikettei/gpt2-gguf/blob/main/~(~a~)-f32.gguf?download=true" model-type))
+(defun url (model-type) (format nil "https://huggingface.co/hikettei/gpt2-gguf/resolve/main/~(~a~)-f32.gguf?download=true" model-type))
 
 (defun make-gpt2 (model-type &key (max-seq-len 1024))
   (declare (type keyword model-type))
