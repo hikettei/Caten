@@ -30,10 +30,8 @@
   (assert (find model-type `(:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)) () "model-type must be one of :gpt2, :gpt2-medium, :gpt2-large, :gpt2-xl")
   (let* ((param (get-param model-type))
          (model (Transformer (param-dim param) (param-n-heads param) (param-n-layers param) (param-vocab-size param) (param-norm-eps param) :max-seq-len max-seq-len)))
-
     ;; [TODO] Fetch the parameter from https://huggingface.co/{model_size}/resolve/main/pytorch_model.bin
     ;; [TODO] Somehow load the weight from ^
     ;; [TODO] Run the inference from CLI
     ;; [TODO] Fix for the MHA, getting GPT2 to work
-    ))
-         
+    (%make-gpt2 model nil)))

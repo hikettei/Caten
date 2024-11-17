@@ -159,9 +159,22 @@ The provided form does not match any of them:~%~a" method method method method f
 				if (and (= 0 (mod nth 2)) (keywordp attr))
 				  collect (list (intern (symbol-name attr))))
 			(metadata :type ,name)))
+       (defmethod print-object ((module ,name) stream)
+         (print-unreadable-object (module stream :type t :identity t)
+           (format stream "~a" (module-attrs module))))
        (defmethod lower ((op ,name) &rest inputs)
 	 (make-graph
 	  (apply #'make-node :Module (intern (symbol-name (symb 'graph/ ',name)) "KEYWORD")
 		 (map 'list #'tensor-id (module-outputs op))
 		 (map 'list #'node->id inputs) (append (module-attrs op) (list :metadata op)))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
+;; ~~ State Dict ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defgeneric as-param-tree (module))
+;; (defnode (:State Parameter))
+;; Print Object
+(defun get-param-tree (module)
+  "Return the parameter tree of the module."
+  (declare (type Module module))
+  
+  
+  )
