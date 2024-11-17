@@ -56,6 +56,7 @@
   :pathname "external/llm"
   :components
   ((:file "package")
+   (:file "tokenizers")
    (:file "bpe")
    (:file "layers")))
 
