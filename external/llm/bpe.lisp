@@ -1,15 +1,5 @@
 (in-package :caten/llm)
 ;; https://github.com/hikettei/cl-waffe2/blob/master/examples/gpt-2/tokenizer.lisp
-;; [TODO] Optimize as far as i go!!!
-;; [TODO] Split bpe-merges by 50000 in the gguf level
-;; Workload:
-;; - [ ] Clean up the impl
-;; - [ ] Write a documentation
-;; - [ ] Optimize
-;; - [ ] Load from GGUF (Convert)
-;; - [ ] Testing
-;; - [ ] Add: self.cache
-;; - [ ] OK (Fetch from URL is working?)
 (defparameter *pat* (create-scanner "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+"))
 
 (defclass BPETokenizer (Tokenizer)
@@ -50,7 +40,6 @@ Creates a new instance of BPETokenizer from given tokens and merges.
   (loop for index fixnum upfrom 0 below (1- (length token))
 	collect
 	(list (nth index token) (nth (1+ index) token))))
-
 ;; TODO: When I have a time, Let's rewrite bpe-split using xsubseq for maximize the performance! (+ i think i should refactor this function)
 (defun bpe-split (tokenizer token)
   (declare (type string token)
