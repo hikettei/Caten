@@ -1,5 +1,5 @@
 (defpackage :caten/llm
-  (:use :cl :caten/apis :caten/nn)
+  (:use :cl :caten/apis :caten/nn :cl-ppcre)
   (:export
    #:Transformer
    #:TransformerBlock
