@@ -175,12 +175,70 @@ The provided form does not match any of them:~%~a" method method method method f
 		 (map 'list #'node->id inputs) (append (module-attrs op) (list :metadata op)))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
 ;; ~~ State Dict ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defgeneric as-param-tree (module))
-;; (defnode (:State Parameter))
-;; Print Object
-(defun get-param-tree (module)
-  "Return the parameter tree of the module."
+;; - [ ] Documentation.lisp?
+;; - [ ] Everything exported?
+;; - [ ] Write a test ok? (tested by gpt2?)
+(defstruct State-Dict
+  ""
+  (entry (make-hash-table :test #'equal) :type hash-table))
+
+(defmethod print-object ((obj State-Dict) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (format stream "~%  {~%")
+    (let* ((keys (map 'list #'princ-to-string (hash-table-keys (state-dict-entry obj))))
+           (maxlen (if keys (apply #'max (map 'list #'length keys)) 0)))
+      (flet ((print-key (key)
+               (let ((len (length key)))
+                 (with-output-to-string (out)
+                   (princ key out)
+                   (dotimes (i (- maxlen len)) (princ " " out))))))
+        (maphash
+         #'(lambda (key value)
+             (format stream "    ~a -> ~a~%" (print-key key) (tensor-shape value)))
+         (state-dict-entry obj))))
+    (format stream "  }")))
+
+(defgeneric ->state-dict (module parents))
+
+(defmethod ->state-dict ((module Module) parents)
+  (let ((slots (map 'list #'c2mop:slot-definition-name (c2mop:class-slots (class-of module)))))
+    (loop for slot in slots
+          for value = (slot-value module slot)
+          ;; A single tensor
+          if (tensor-p value)
+            collect (cons (append parents (list slot)) value)
+          ;; A list of tensor: parents.0, parents.1, ...
+          if (and value (listp value) (every #'tensor-p value))
+            append
+            (loop for nth upfrom 0
+                  for v in value
+                  collect (cons (append parents (list slot nth)) v))
+            ;; A list of Module:
+          if (and value (listp value) (every #'(lambda (x) (typep x 'Module)) value))
+            append
+            (loop for nth upfrom 0
+                  for m in value
+                  append (->state-dict m (append parents (list slot nth))))
+          if (typep value 'Module)
+            append (->state-dict value (append parents (list slot))))))
+;; [TODO] Documentation sikkari kaku!!!
+(defun pytorch-style-dict-key (list)
+  (let ((key (apply #'concatenate 'string (butlast (loop for l in list append (list (format nil "~(~a~)" l) "."))))))
+    (cl-ppcre:regex-replace-all "-" key "_")))
+
+(defun get-state-dict (module &key (key-mapper #'pytorch-style-dict-key))
+  "Return the parameter tree of the module.
+What values are recognised as a parameter?
+For example:
+```
+(defmodel ...)
+```
+"
   (declare (type Module module))
-  
-  
-  )
+  (let ((state-dict-base (->state-dict module nil))
+        (state-dict (make-state-dict)))
+    (assert (every #'consp state-dict-base) () "get-state-dict: The state-dict-base must be a list of cons.")
+    (loop for (key . value) in state-dict-base
+          do (assert (tensor-p value) () "get-state-dict: The value for ~a must be a tensor, getting ~a" key value)
+             (setf (gethash (funcall key-mapper key) (state-dict-entry state-dict)) value))
+    state-dict))
