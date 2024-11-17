@@ -8,7 +8,7 @@
 
 (defstruct (GPT2
             (:constructor %make-gpt2 (model tokenizer max-seq-len)))
-  (model model) (tokenizer tokenizer) (max-seq-len))
+  (model model :type caten/avm:AVM) (tokenizer tokenizer :type Tokenizer) (max-seq-len max-seq-len :type fixnum))
 
 (defstruct Param n-layers n-heads dim (norm-eps 1e-5) (vocab-size 50257))
 
@@ -33,10 +33,11 @@
     (let* ((param (get-param model-type))
            (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
            (model (Transformer (param-dim param) (param-n-heads param) (param-n-layers param) (param-vocab-size param) (param-norm-eps param) :max-seq-len max-seq-len))
-           (avm (caten (forward model (make-tensor `(1 ,max-seq-len)) (iconst 'pos)))))
+           (avm (caten (forward model (make-tensor `(1 ,max-seq-len)) (iconst 'pos))))
+           (tokenizer (gguf->bpe-tokenizer gguf)))
       ;; [TODO] Replace the keys
       (load-state-dict model (gguf->state-dict gguf))
-      (%make-gpt2 avm nil max-seq-len))))
+      (%make-gpt2 avm tokenizer max-seq-len))))
 
 (defun gpt2-generate (gpt2 input)
   (declare (type GPT2 gpt2) (type string input))
