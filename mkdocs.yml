@@ -60,5 +60,6 @@ nav:
       - AOT: packages/caten.apis.aot.md
       - Initializers: packages/caten.apis.initializers.md
       - ShapeTracker: packages/caten.apis.shapetracker.md
+      - StateDict: packages/caten.apis.state-dict.md
     - caten/avm: packages/caten.avm.md
     - caten/nn: packages/caten.nn.md

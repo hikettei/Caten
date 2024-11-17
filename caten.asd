@@ -18,6 +18,12 @@
     (asdf:test-op "caten.apis")
     (asdf:test-op "caten.nn")
     (asdf:test-op "caten.test-suite"))))
+
+(asdf:defsystem "caten/apps"
+  :description ""
+  :author "hikettei <ichndm@gmail.com>"
+  :depends-on (;; More Applications follow ...
+               "caten.apps.gpt2"))
 ;; External system for Caten.
 ;; Systems including non-portable dependencies (e.g.: CUDA, Metal) or systems cannot be guaranteed to be maintained, are separated from caten.
 (asdf:defsystem "caten/metal"
@@ -32,7 +38,7 @@
 (asdf:defsystem "caten/gguf"
   :description "[gguf](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md) format translator."
   :author "hikettei <ichndm@gmail.com>"
-  :depends-on ("caten.apis" "babel" "fast-io")
+  :depends-on ("caten.apis" "caten/llm" "babel" "fast-io" "trivial-download")
   :serial t
   :pathname "external/gguf"
   :components
@@ -46,10 +52,12 @@
 (asdf:defsystem "caten/llm"
   :description "Various Generative Language Model Implementation in Caten"
   :author "hikettei <ichndm@gmail.com>"
-  :depends-on ("caten")
+  :depends-on ("caten" "cl-ppcre")
   :pathname "external/llm"
   :components
   ((:file "package")
+   (:file "utils")
+   (:file "tokenizers")
    (:file "bpe")
    (:file "layers")))
 

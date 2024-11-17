@@ -9,6 +9,9 @@
    (metadata :initarg :metadata :accessor gguf-metadata)
    (tensor-info :initarg :tensor-info :accessor gguf-tensor-info)))
 
+(defmethod gguf-metadata-get ((gguf GGUF) key)
+  (find key (gguf-metadata gguf) :key #'metadata-key :test #'equal))
+
 (defmethod print-object ((gguf gguf) stream)
   (with-slots ((version version) (tensor-info tensor-info) (metadata metadata)) gguf
     (format stream "<GGUF
@@ -59,3 +62,46 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
   "Creates GGUF from pahtname"
   (with-open-file (stream pathname :element-type '(unsigned-byte 8))
     (make-gguf stream)))
+
+(defmethod gguf->state-dict ((gguf GGUF))
+  (let ((dict (make-hash-table :test #'equal)))
+    (loop for info in (gguf-tensor-info gguf)
+          do (setf (gethash (tensor-info-name info) dict) (tensor-info->tensor info)))
+    (caten/apis:make-state-dict :entry dict)))
+
+(defun load-gguf-url (url filename &optional (output-directory "./"))
+  (let* ((output-path (merge-pathnames filename (pathname output-directory))))
+    (unless (probe-file output-path)
+      (caten/common.logger:print-info "Downloading ~a to ~a..." url output-path)
+      (trivial-download:download url output-path))
+    (load-gguf output-path)))
+
+(defun gguf->bpe-tokenizer (gguf
+                            &key
+                              (metadata-tokens "tokenizer.ggml.tokens")
+                              (metadata-merges "tokenizer.ggml.merges"))
+  (declare (type gguf gguf))
+  (let ((tokens (gguf-metadata-get gguf metadata-tokens))
+        (merges (gguf-metadata-get gguf metadata-merges)))
+    (assert (and tokens merges) () "The given gguf does not have the metadata for the tokenizers.~%tokens_key: ~a~%merges_key: ~a" metadata-tokens metadata-merges)
+    (let ((tokens-split-id (/ (array-total-size (metadata-value tokens)) 2))
+          (merges-split-id (/ (array-total-size (metadata-value merges)) 2)))
+      (assert (and (integerp tokens-split-id) (integerp merges-split-id)) ()
+              "The sizes for tokens/merges are not even.~%tokens: ~a~%merges: ~a"
+              (array-total-size (metadata-value tokens)) (array-total-size (metadata-value merges)))
+      (let ((tokens
+              (with-output-to-string (out)
+                (loop for value across (metadata-value tokens)
+                      if (and (numberp value) (= tokens-split-id value))
+                        do (princ " " out)
+                      else
+                        do (princ value out))))
+            (merges
+              (with-output-to-string (out)
+                (loop for value across (metadata-value merges)
+                      if (and (numberp value) (= merges-split-id value))
+                        do (princ #\newline out)
+                      else
+                        do (princ value out) (princ " " out)))))
+        (setf merges (cl-ppcre:regex-replace-all " \\n" merges (format nil "~%")))
+        (caten/llm:make-bpe-tokenizer tokens merges)))))

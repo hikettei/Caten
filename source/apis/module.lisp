@@ -159,9 +159,161 @@ The provided form does not match any of them:~%~a" method method method method f
 				if (and (= 0 (mod nth 2)) (keywordp attr))
 				  collect (list (intern (symbol-name attr))))
 			(metadata :type ,name)))
+       (defmethod print-object ((module ,name) stream)
+         (print-unreadable-object (module stream :type t :identity t)
+           (format stream "(~a)"
+                   (with-output-to-string (out)
+                     (loop for nth upfrom 0 below (length (module-attrs module)) by 2
+                           for key = (nth nth (module-attrs module))
+                           for value = (nth (1+ nth) (module-attrs module))
+                           do (format out ":~(~a~) ~a" key value)
+                           if (not (= nth (- (length (module-attrs module)) 2))) do (format out " "))))))
        (defmethod lower ((op ,name) &rest inputs)
 	 (make-graph
 	  (apply #'make-node :Module (intern (symbol-name (symb 'graph/ ',name)) "KEYWORD")
 		 (map 'list #'tensor-id (module-outputs op))
 		 (map 'list #'node->id inputs) (append (module-attrs op) (list :metadata op)))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
+;; ~~ State Dict ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct State-Dict
+  "
+A structure representing the state dictionary of a neural network model.
+
+- Entry[Hash-Table]: A hash table containing the parameters of the model, where:
+  - Key[string]: A string representing the parameter name, following a naming convention that reflects the model's architecture.
+  - Value[Tensor]: A tensor containing the parameter values associated with the key.
+
+This hash table stores all the parameters of the model, enabling easy saving, loading, and manipulation of model weights.
+"
+  (entry (make-hash-table :test #'equal) :type hash-table))
+
+(defmethod print-object ((obj State-Dict) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (format stream "~%  {~%")
+    (let* ((keys (map 'list #'princ-to-string (hash-table-keys (state-dict-entry obj))))
+           (maxlen (if keys (apply #'max (map 'list #'length keys)) 0)))
+      (flet ((print-key (key)
+               (let ((len (length key)))
+                 (with-output-to-string (out)
+                   (princ key out)
+                   (dotimes (i (- maxlen len)) (princ " " out))))))
+        (maphash
+         #'(lambda (key value)
+             (format stream "    ~a -> ~a~%" (print-key key) (tensor-shape value)))
+         (state-dict-entry obj))))
+    (format stream "  }")))
+
+(defmethod state-dict-keys ((state-dict state-dict))
+  (hash-table-keys (state-dict-entry state-dict)))
+
+(defmethod state-dict-values ((state-dict state-dict))
+  (hash-table-values (state-dict-entry state-dict)))
+
+(defgeneric ->state-dict (module parents) (:documentation "
+```
+(->state-dict module parents)
+```
+
+Generates a list of cons cells containing the keys and values for creating a `State-Dict` from any given `Module/Class`.
+
+Return: A list of cons cells in the form `(coms (list module_names ...) . tensor)`, representing parameters and their corresponding tensors. module_names are the list of symbols representing the path to the parameter slot from the root module.
+
+TL;DR. this function traverses all slots of the Module/Class and recognizes the following objects as parameters:
+
+- Tensor
+- Module/Class
+- List of Tensors
+- List of Modules/Classes
+
+By default, the keys are created according to the following rules:
+
+- Tensor
+  - If a slot contains a Tensor, create a cons cell with the key as `(append parent (list slot_name))` and the value as the Tensor.
+- Module
+  - If a slot contains a Module, recursively apply `(->state-dict slot_value parent)` to that Module with setting parent = `(append parent (list slot_name))` as the new Parent.
+- List of Tensors/Modules
+  - If a slot contains a list of Tensors or Modules, apply the above rules to each element.
+  - Keys are created by appending the slot name and the index (e.g., `slot_name 0`, `slot_name 1`, ...) to the Parent.
+
+To recognize other objects as parameters, please extend this method by adding methods for the desired classes.
+"))
+
+(defmethod ->state-dict ((module Module) parents)
+  (let ((slots (map 'list #'c2mop:slot-definition-name (c2mop:class-slots (class-of module)))))
+    (loop for slot in slots
+          for value = (slot-value module slot)
+          ;; A single tensor
+          if (tensor-p value)
+            collect (cons (append parents (list slot)) value)
+          ;; A list of tensor: parents.0, parents.1, ...
+          if (and value (listp value) (every #'tensor-p value))
+            append
+            (loop for nth upfrom 0
+                  for v in value
+                  collect (cons (append parents (list slot nth)) v))
+            ;; A list of Module:
+          if (and value (listp value) (every #'(lambda (x) (typep x 'Module)) value))
+            append
+            (loop for nth upfrom 0
+                  for m in value
+                  append (->state-dict m (append parents (list slot nth))))
+          if (typep value 'Module)
+            append (->state-dict value (append parents (list slot))))))
+
+(defun pytorch-style-dict-key (list)
+  (let ((key (apply #'concatenate 'string (butlast (loop for l in list append (list (format nil "~(~a~)" l) "."))))))
+    (cl-ppcre:regex-replace-all "-" key "_")))
+
+(defun get-state-dict (module &key (key-mapper #'pytorch-style-dict-key))
+  "
+```
+(get-state-dict module &key (key-mapper #'pytorch-style-dict-key))
+```
+
+Constructs a `State-Dict` by recursively exploring all paramters of the given Module/Class.
+
+- Module[Module/Class] The module from which to extract parameters.
+- Key-Mapper[Function] A function that takes a list of names (the first element of the cons cell) and returns a string to be used as the key in the StateDict. Defaults to `pytorch-style-dict-key`. which must be `#'(lambda (x) ...)`
+
+Returns: `State-Dict`"
+  (declare (type Module module))
+  (let ((state-dict-base (->state-dict module nil))
+        (state-dict (make-state-dict)))
+    (assert (every #'consp state-dict-base) () "get-state-dict: The state-dict-base must be a list of cons.")
+    (loop for (key . value) in state-dict-base
+          do (assert (tensor-p value) () "get-state-dict: The value for ~a must be a tensor, getting ~a" key value)
+             (setf (gethash (funcall key-mapper key) (state-dict-entry state-dict)) value))
+    state-dict))
+
+(declaim (ftype (function (Module State-Dict &key (:silent boolean) (:key-mapper function)) Module) load-state-dict))
+(defun load-state-dict (module state-dict &key (silent nil) (key-mapper #'pytorch-style-dict-key))
+  "
+```
+(load-state-dict module state-dict &key (silent nil) (key-mapper #'pytorch-style-dict-key))
+```
+
+Loads the parameters from the given state-dict into the module, returning the given module.
+- silent[boolean] If set to t, suppresses warnings about unused keys, dtype mismatches, shape mismatches, and uninitialized tensors.
+- key-mapper[function] A function used to map the keys in the state-dict to the keys in the module. Defaults to `pytorch-style-dict-key`. (see: get-state-dict)
+"
+  (declare (type State-Dict state-dict) (type module module))
+  (let ((model-state-dict (get-state-dict module :key-mapper key-mapper)))
+    (when (and (null silent) (> (length (state-dict-keys state-dict)) (length (state-dict-keys model-state-dict))))
+      (let ((not-found (intersection (state-dict-keys state-dict) (state-dict-keys model-state-dict) :test-not #'string=)))
+        (warn "load-state-dict: Found unused keys in the state-dict: ~a" not-found)))
+    (maphash
+     #'(lambda (k v)
+         (let ((replacement (gethash k (state-dict-entry state-dict))))
+           (when (and (null silent) (null replacement))
+             (warn "load-state-dict: not loading ~a" k))
+           (when replacement
+             (when (null silent)
+               (when (not (eql (tensor-dtype v) (tensor-dtype replacement)))
+                 (warn "load-state-dict: dtype mismatch for ~a: ~a -> ~a" k (tensor-dtype v) (tensor-dtype replacement)))
+               (when (not (equal (shape v) (shape replacement)))
+                 (warn "load-state-dict: shape mismatch for ~a: ~a -> ~a" k (shape v) (shape replacement)))
+               (when (null (tensor-buffer v))
+                 (warn "load-state-dict: loading to an uninitialized tensor ~a" k)))
+             (setf (tensor-buffer v) (tensor-buffer replacement)))))
+     (state-dict-entry model-state-dict))
+    module))

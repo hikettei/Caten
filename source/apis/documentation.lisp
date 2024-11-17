@@ -192,3 +192,12 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
   (docs:title "ShapeTracker")
   (docs:body "TODO")
   )
+
+(docs:define-page ("State Dict" "packages/caten.apis.state-dict.md")
+  (docs:title "State-Dict")
+  (docs:doc/struct "State-Dict" 'State-Dict)
+  (docs:doc/generic "->state-dict" #'->state-dict)
+  (docs:doc/function "get-state-dict" #'get-state-dict)
+  (docs:doc/function "load-state-dict" #'load-state-dict)
+  (docs:subtitle "Example: Transformer")
+  (docs:example-repl "(progn (ql:quickload :caten/llm) (get-state-dict (caten/llm:Transformer 32 2 2 1e-5 32)))"))

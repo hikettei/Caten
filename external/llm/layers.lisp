@@ -68,11 +68,7 @@
 	     (pos-emb   (forward wpe (!cast (!add start-pos (!index-components `(1 ,(second (shape tokens))))) (dtype-of tokens))))
 	     (hi (!add token-emb pos-emb))
              (seq-len (iconst (second (shape tokens))))
-	     (mask (!triu
-                    (!full
-                     `(1 1 ,seq-len ,seq-len)
-                     (-inf))
-                    :diagonal (!+ (iconst 1) start-pos)))
+	     (mask (!triu (!full `(1 1 ,seq-len ,seq-len) (-inf)) :diagonal (!+ (iconst 1) start-pos)))
 	     (_ (loop for hn in h do
 	       (setf hi (forward hn hi mask))))
 	     (logits (forward lm-head (forward ln-f hi))))
