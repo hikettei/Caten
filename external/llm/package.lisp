@@ -5,6 +5,13 @@
    #:TransformerBlock
    #:FeedForward
    #:Attention
-   #:Scaled-Dot-Product-Attention))
+   #:Scaled-Dot-Product-Attention)
+  ;; Tokenizers
+  (:export
+   #:Tokenizer
+   #:BPETokenizer
+   #:encode
+   #:decode
+   #:make-bpe-tokenizer))
 
 (in-package :caten/llm)

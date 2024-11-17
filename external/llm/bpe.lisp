@@ -2,36 +2,49 @@
 ;; https://github.com/hikettei/cl-waffe2/blob/master/examples/gpt-2/tokenizer.lisp
 ;; [TODO] Optimize as far as i go!!!
 ;; [TODO] Split bpe-merges by 50000 in the gguf level
+;; Workload:
+;; - [ ] Clean up the impl
+;; - [ ] Write a documentation
+;; - [ ] Optimize
+;; - [ ] Load from GGUF (Convert)
+;; - [ ] Testing
+;; - [ ] OK (Fetch from URL is working?)
 (defparameter *pat* (create-scanner "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+"))
 
 (defclass BPETokenizer (Tokenizer)
   ((encoder :type hash-table :initarg :encoder)
    (decoder :type hash-table :initarg :decoder)
-   (merges :type hash-table :initarg :merges)))
+   (merges :type hash-table :initarg :merges))
+  (:documentation "An implementation of Byte Pair Encoding tokenizer. Initialized by the make-bpe-tokenizer function."))
 
 (defun make-bpe-tokenizer (tokens merges)
   "
-Tokens[string] A string that contains the vocabulary of the tokenizer, split by whitespace.
-Merges[string] A string that contains the BPE merges of the tokenizer, split by newline, and space. (e.g.: 'a b\nb c\n')
+```
+(make-bpe-tokenizer tokens merges)
+```
+
+Creates a new instance of BPETokenizer from given tokens and merges.
+
+- Tokens[string] A string that contains the vocabulary of the tokenizer. This function will split the given string by whitespace and label each token from 0 to N. (e.g.: `hello word a b c` -> `hello:0 word:1 a:2 b:3 c:4`)
+- Merges[string] A string that contains the BPE merges of the tokenizer, split by newline, and then space. (e.g.: 'a b\nb c\n' -> `a b:0 b c:1`)
 "
-  (declare (type string tokens merges)
-           (optimize (speed 3)))
+  (declare (type string tokens merges) (optimize (speed 3)))
   (let ((encoder (make-hash-table))
         (decoder (make-hash-table :test #'equal))
         (bpe-merges (make-hash-table :test #'equal))
         (bpe-pairs (loop for mstr in (split "\\n" merges) collect (split " " mstr))))
     (loop for token in (split " " tokens)
           for nth fixnum upfrom 0 do
-            (setf (gethash nth encoder) token
-                  (gethash token decoder) nth))
+            (setf (gethash nth encoder) token (gethash token decoder) nth))
     (loop for p in bpe-pairs
           for nth fixnum upfrom 0 do
             (setf (gethash p bpe-merges) nth))
     (make-instance 'BPETokenizer :encoder encoder :decoder decoder :merges bpe-merges)))
 
+(declaim (ftype (function (string) list) get-pairs))
 (defun get-pairs (token)
   (declare (type (simple-array character (*)) token) (optimize (speed 3)))
-  ;; token ... Hi Gthere, ...
+  ;; e.g.: HIThere -> ((H I) (I T) (T H) (H E) (E R) (R E))
   (loop for index fixnum upfrom 0 below (1- (length token))
 	collect
 	(list (string (aref token index)) (string (aref token (1+ index))))))
@@ -101,8 +114,9 @@ Merges[string] A string that contains the BPE merges of the tokenizer, split by 
            (tokens (all-matches-as-strings *pat* text))
            (bpe-tokens))
       (loop for token in tokens do
-        (let* ((token (loop for n upfrom 0 below (length token)
-	                    collect (gethash (char-code (aref token n)) *byte2unicode*)))
+        (let* ((token
+                 (loop for n upfrom 0 below (length token)
+                       collect (gethash (char-code (aref token n)) *byte2unicode*)))
 	       (token (apply #'concatenate 'string token)))
 	(dolist (bpetoken (bpe-split token merges n-merge))
 	  (push (+ 0.0 (or (gethash bpetoken encoder) 0)) bpe-tokens))))

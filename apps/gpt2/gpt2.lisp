@@ -34,7 +34,6 @@
            (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
            (model (Transformer (param-dim param) (param-n-heads param) (param-n-layers param) (param-vocab-size param) (param-norm-eps param) :max-seq-len max-seq-len))
            (avm (caten (forward model (make-tensor `(1 ,max-seq-len)) (iconst 'pos)))))
-      
       ;; [TODO] Replace the keys
       (load-state-dict model (gguf->state-dict gguf))
       (%make-gpt2 avm nil max-seq-len))))

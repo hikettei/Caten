@@ -10,6 +10,7 @@
    #:gguf-tensor-count
    #:gguf-metadata-kv-count
    #:gguf->state-dict
+   #:gguf->bpe-tokenizer
    #:metadata
    #:metadata-key
    #:metadata-value-type
