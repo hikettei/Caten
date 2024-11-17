@@ -104,5 +104,5 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
                         do (princ #\newline out)
                       else
                         do (princ value out) (princ " " out)))))
-        (setf merges (cl-ppcre:regex-replace-all " \\n" merges "\\n"))
+        (setf merges (cl-ppcre:regex-replace-all " \\n" merges (format nil "~%")))
         (caten/llm:make-bpe-tokenizer tokens merges)))))

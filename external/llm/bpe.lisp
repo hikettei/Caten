@@ -8,6 +8,7 @@
 ;; - [ ] Optimize
 ;; - [ ] Load from GGUF (Convert)
 ;; - [ ] Testing
+;; - [ ] Add: self.cache
 ;; - [ ] OK (Fetch from URL is working?)
 (defparameter *pat* (create-scanner "'s|'t|'re|'ve|'m|'ll|'d| ?\\p{L}+| ?\\p{N}+| ?[^\\s\\p{L}\\p{N}]+|\\s+(?!\\S)|\\s+"))
 
@@ -29,13 +30,13 @@ Creates a new instance of BPETokenizer from given tokens and merges.
 - Merges[string] A string that contains the BPE merges of the tokenizer, split by newline, and then space. (e.g.: 'a b\nb c\n' -> `a b:0 b c:1`)
 "
   (declare (type string tokens merges) (optimize (speed 3)))
-  (let ((encoder (make-hash-table))
-        (decoder (make-hash-table :test #'equal))
+  (let ((encoder (make-hash-table :test #'equal))
+        (decoder (make-hash-table))
         (bpe-merges (make-hash-table :test #'equal))
-        (bpe-pairs (loop for mstr in (split "\\n" merges) collect (split " " mstr))))
-    (loop for token in (split " " tokens)
+        (bpe-pairs (cdr (loop for mstr in (split "\\n" merges) collect (split " " mstr)))))
+    (loop for token in (cdr (split " " tokens))
           for nth fixnum upfrom 0 do
-            (setf (gethash nth encoder) token (gethash token decoder) nth))
+            (setf (gethash token encoder) nth (gethash nth decoder) token))
     (loop for p in bpe-pairs
           for nth fixnum upfrom 0 do
             (setf (gethash p bpe-merges) nth))
@@ -60,13 +61,13 @@ Creates a new instance of BPETokenizer from given tokens and merges.
 	  if (= count n)
 	    do (return-from countup-nth pos))))
 
-(defun bpe-split (token bpe-merges n-merge)
+(defun bpe-split (token bpe-merges)
   (declare (type string token)
            (type hash-table bpe-merges)
            ;; (optimize (speed 3))
            )
   (let ((word (list token))
-	(out-of-range (* -1 (+ 1 n-merge)))
+	(out-of-range (* -1 (+ 1 (hash-table-count bpe-merges))))
 	(pairs (get-pairs token)))
     (loop named bpe-iter while t do
       (let* ((smallest (loop for pair in pairs minimize (or (gethash pair bpe-merges) out-of-range)))
@@ -107,19 +108,18 @@ Creates a new instance of BPETokenizer from given tokens and merges.
     word))
 
 (defmethod encode ((tokenizer BPETokenizer) text)
-  ; (declare (optimize (speed 3)))
+  (declare (optimize (speed 3)))
   (check-type text string)
   (with-slots ((encoder encoder) (merges merges)) tokenizer
-    (let* ((n-merge (length (alexandria:hash-table-keys merges)))
-           (tokens (all-matches-as-strings *pat* text))
+    (let* ((tokens (all-matches-as-strings *pat* text))
            (bpe-tokens))
       (loop for token in tokens do
         (let* ((token
                  (loop for n upfrom 0 below (length token)
                        collect (gethash (char-code (aref token n)) *byte2unicode*)))
 	       (token (apply #'concatenate 'string token)))
-	(dolist (bpetoken (bpe-split token merges n-merge))
-	  (push (+ 0.0 (or (gethash bpetoken encoder) 0)) bpe-tokens))))
+	  (dolist (bpetoken (bpe-split token merges))
+	    (push (or (gethash bpetoken encoder) 0) bpe-tokens))))
       (nreverse bpe-tokens))))
 
 (defmethod decode ((tokenizer BPETokenizer) tokens)
