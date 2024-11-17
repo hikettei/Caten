@@ -161,7 +161,13 @@ The provided form does not match any of them:~%~a" method method method method f
 			(metadata :type ,name)))
        (defmethod print-object ((module ,name) stream)
          (print-unreadable-object (module stream :type t :identity t)
-           (format stream "~a" (module-attrs module))))
+           (format stream "(~a)"
+                   (with-output-to-string (out)
+                     (loop for nth upfrom 0 below (length (module-attrs module)) by 2
+                           for key = (nth nth (module-attrs module))
+                           for value = (nth (1+ nth) (module-attrs module))
+                           do (format out ":~(~a~) ~a" key value)
+                           if (not (= nth (- (length (module-attrs module)) 2))) do (format out " "))))))
        (defmethod lower ((op ,name) &rest inputs)
 	 (make-graph
 	  (apply #'make-node :Module (intern (symbol-name (symb 'graph/ ',name)) "KEYWORD")
