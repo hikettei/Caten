@@ -2,14 +2,13 @@
   (:use :cl :caten/apis :caten/llm)
   (:export
    :make-gpt2
-   ;; :predict
-   ))
+   :gpt2-generate))
 
 (in-package :caten/apps.gpt2)
 
 (defstruct (GPT2
-            (:constructor %make-gpt2 (model tokenizer)))
-  (model model) (tokenizer tokenizer))
+            (:constructor %make-gpt2 (model tokenizer max-seq-len)))
+  (model model) (tokenizer tokenizer) (max-seq-len))
 
 (defstruct Param n-layers n-heads dim (norm-eps 1e-5) (vocab-size 50257))
 
@@ -28,10 +27,22 @@
 (defun make-gpt2 (model-type &key (max-seq-len 1024))
   (declare (type keyword model-type))
   (assert (find model-type `(:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)) () "model-type must be one of :gpt2, :gpt2-medium, :gpt2-large, :gpt2-xl")
-  (let* ((param (get-param model-type))
-         (model (Transformer (param-dim param) (param-n-heads param) (param-n-layers param) (param-vocab-size param) (param-norm-eps param) :max-seq-len max-seq-len)))
-    ;; [TODO] Fetch the parameter from https://huggingface.co/{model_size}/resolve/main/pytorch_model.bin
-    ;; [TODO] Somehow load the weight from ^
-    ;; [TODO] Run the inference from CLI
-    ;; [TODO] Fix for the MHA, getting GPT2 to work
-    (%make-gpt2 model nil)))
+  (with-no-grad
+    (let* ((param (get-param model-type))
+           (model (Transformer (param-dim param) (param-n-heads param) (param-n-layers param) (param-vocab-size param) (param-norm-eps param) :max-seq-len max-seq-len))
+           (avm (caten (forward model (make-tensor `(1 ,max-seq-len)) (iconst 'pos)))))
+      ;; (load-state-dict )
+      ;; [TODO] Prefetch fp32 model from gguf
+      ;; [TODO] GGUF Creates a state-dict
+      ;; [TODO] Load the weight
+      ;; [TODO] Tokenizer
+      (%make-gpt2 avm nil max-seq-len))))
+
+(defun gpt2-generate (gpt2 input)
+  (declare (type GPT2 gpt2) (type string input))
+  (with-slots ((model model) (tokenizer tokenizer) (max-seq-len max-seq-len)) gpt2
+    (let ((input (proceed (make-tensor `(1 ,max-seq-len) :initial-elements 1.0)))
+          (start-pos 0))
+
+      (forward model input 2)
+      )))
