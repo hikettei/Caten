@@ -1,34 +1,53 @@
 (in-package :caten/llm)
-;; [TODO] Slot-name: is it possible to reconstruct from gguf in a meta-programming way?
-;; Some of subgraph are purged?
-;; call still has an issue?
-;; Cannot be compiled with the dynamic shaped?
+
 (defun scaled-dot-product-attention (query key value &optional mask)
   (let ((qk (!div (!matmul query (!transpose key -1 -2)) (fconst (sqrt (car (last (shape query))))))))
     (!matmul (!softmax (if mask (!add qk mask) qk) :axis -1) value)))
 
-(defmodel (Attention (dim n-heads max-seq-len))
+(defparameter *use-kv-cache* t)
+(defmodel (Attention (dim n-heads max-seq-len &key (use-kv-cache *use-kv-cache*)))
     ((c-attn (Linear dim (* 3 dim) :bias t))
      (c-proj (Linear dim dim :bias t))
      (n-heads n-heads)
      (dim dim)
-     (max-seq-len max-seq-len)
+     (max-seq-len max-seq-len :reader attn-max-seq-len)
      (head-dim (floor (/ dim n-heads)))
+     (use-kv-cache use-kv-cache :type boolean :reader attn-use-kv-cache)
      (k-cache nil :accessor attn-k-cache)
      (v-cache nil :accessor attn-v-cache)))
-;; [TODO] Add: KV-Cache
+
+(defmethod merge-kv-cache ((attn Attention) k v start-pos)
+  (when (null (attn-use-kv-cache attn))
+    (return-from merge-kv-cache (values k v)))
+  (multiple-value-bind (batch-size seq-len n-heads head-dim) (apply #'values (shape k))
+    (let* ((max-len (attn-max-seq-len attn))
+           (k-cache (or (attn-k-cache attn) (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0)))
+           (v-cache (or (attn-v-cache attn) (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0)))
+           (range1 (list start-pos (!+ start-pos (iconst seq-len))))
+           (range2 (list 0 (!+ start-pos (iconst seq-len)))))
+      (setf (attn-k-cache attn) k-cache
+            (attn-v-cache attn) v-cache)
+      (setf k-cache (!move (!view k-cache t range1 t t) k :reduce t)
+            v-cache (!move (!view v-cache t range1 t t) v :reduce t))
+      (values (!view-from-base k-cache t range2 t t) (!view-from-base v-cache t range2 t t)))))
+
 (defmethod call ((model Attention) &rest inputs)
   (with-slots ((c-attn c-attn) (c-proj c-proj) (n-heads n-heads) (dim dim) (head-dim head-dim) (max-seq-len max-seq-len)) model
-    (multiple-value-bind (x mask) (apply #'values inputs)
-      (let* ((batch-size (car (shape x)))
-             (seq-len (second (shape x)))
-             (xqkv (call c-attn x))
-             (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
-             (xqkv (!permute xqkv 3 0 2 1 4)))
-        (multiple-value-bind (xq xk xv) (!chunk xqkv 3 :dim 0)
-          (let* ((attn-output (scaled-dot-product-attention xq xk xv mask))
-                 (attn-output (!reshape (!transpose attn-output 1 2) `(,batch-size ,seq-len ,dim))))
-            (call c-proj attn-output)))))))
+    (multiple-value-bind (x mask start-pos) (apply #'values inputs)
+      (multiple-value-bind (xq xk xv) (!chunk (call c-attn x) 3 :dim 2)
+        (let* ((new-x-shape (append (butlast (shape xq)) (list n-heads (/ (car (last (shape xq))) n-heads))))
+               (xq (!reshape xq new-x-shape))
+               (xk (!reshape xk new-x-shape))
+               (xv (!reshape xv new-x-shape)))
+          (multiple-value-bind (xk xv) (merge-kv-cache model xk xv start-pos)
+            (let* ((xq (!transpose xq 1 2))
+                   (xk (!transpose xk 1 2))
+                   (xv (!transpose xv 1 2))
+                   (attn-output (scaled-dot-product-attention xq xk xv mask))
+                   ;; Merging heads (todo: this thing can be rewritten in a more readable way by introducing DSL)
+                   (attn-output (!permute attn-output 0 2 1 3))
+                   (attn-output (!reshape attn-output (append (butlast (shape attn-output) 2) (list (apply #'* (last (shape attn-output) 2)))))))
+              (call c-proj attn-output))))))))
 
 (defmodel (FeedForward (dim hidden-dim))
     ((c-fc   (Linear dim hidden-dim))
@@ -46,9 +65,9 @@
      (ln_2 (LayerNorm `(,dim) :eps norm-eps))))
 
 (defmethod call ((model TransformerBlock) &rest inputs)
-  (multiple-value-bind (x mask) (apply #'values inputs)
+  (multiple-value-bind (x mask start-pos) (apply #'values inputs)
     (with-slots ((attn attn) (mlp mlp) (ln_1 ln_1) (ln_2 ln_2)) model
-      (let ((h (forward attn (forward ln_1 x) mask)))
+      (let ((h (forward attn (forward ln_1 x) mask start-pos)))
 	(!add h (forward mlp (forward ln_2 h)))))))
 
 (defmodel (Transformer (dim n-heads n-layers norm-eps vocab-size &key (max-seq-len 1024)))
@@ -63,15 +82,14 @@
   (multiple-value-bind (tokens start-pos) (apply #'values inputs)
     (assert (and tokens start-pos))
     (st "Tokens[batch sentence_length] Start_Pos[] -> Tokens[batch sentence_length]" (tokens start-pos))
+    ;; (assert (numberp (second (shape tokens))) () "The second dimension of the tensor (seq_len) must be a fixnum, getting ~a" (shape tokens))
     (with-slots ((wte wte) (wpe wpe) (h h) (ln-f ln-f) (lm-head lm-head)) model
       (let* ((token-emb (forward wte tokens))
 	     (pos-emb   (forward wpe (!cast (!add start-pos (!index-components `(1 ,(second (shape tokens))))) (dtype-of tokens))))
 	     (hi (!add token-emb pos-emb))
              (seq-len (iconst (second (shape tokens))))
-	     (mask (!triu (!full `(1 1 ,seq-len ,seq-len) (-inf)) :diagonal (!+ (iconst 1) start-pos)))
-	     (_ (loop for hn in h do
-	       (setf hi (forward hn hi mask))))
+	     (mask (!triu (!full `(1 1 ,seq-len ,(!+ start-pos (iconst seq-len))) (-inf)) :diagonal (!+ (iconst 1) start-pos)))
+	     (_ (dolist (hn h) (setf hi (forward hn hi mask start-pos))))
 	     (logits (forward lm-head (forward ln-f hi))))
 	(declare (ignore _))
-	(!argmax logits)))))
-#+(or)(with-no-grad (caten (forward (Transformer 64 4 4 1e-5 512) (make-tensor `(10 10)) (iconst 0))))
+	(!argmax (!view logits t -1 t))))))
