@@ -206,6 +206,12 @@ This hash table stores all the parameters of the model, enabling easy saving, lo
          (state-dict-entry obj))))
     (format stream "  }")))
 
+(defmethod state-dict-keys ((state-dict state-dict))
+  (hash-table-keys (state-dict-entry state-dict)))
+
+(defmethod state-dict-values ((state-dict state-dict))
+  (hash-table-values (state-dict-entry state-dict)))
+
 (defgeneric ->state-dict (module parents) (:documentation "
 ```
 (->state-dict module parents)
@@ -281,3 +287,35 @@ Returns: `State-Dict`"
           do (assert (tensor-p value) () "get-state-dict: The value for ~a must be a tensor, getting ~a" key value)
              (setf (gethash (funcall key-mapper key) (state-dict-entry state-dict)) value))
     state-dict))
+
+(declaim (ftype (function (Module State-Dict &key (:silent boolean)) Module) load-state-dict))
+(defun load-state-dict (module state-dict &key (silent nil))
+  "
+```
+(load-state-dict module state-dict &key (silent nil))
+```
+
+Loads the parameters from the given state-dict into the module, returning the given module.
+- silent[boolean] If set to t, suppresses warnings about unused keys, dtype mismatches, shape mismatches, and uninitialized tensors.
+"
+  (declare (type State-Dict state-dict) (type module module))
+  (let ((model-state-dict (->state-dict module nil)))
+    (when (and (null silent) (> (length (state-dict-keys state-dict)) (length (state-dict-keys model-state-dict))))
+      (let ((not-found (intersection (state-dict-keys state-dict) (state-dict-keys model-state-dict) :test-not #'string=)))
+        (warn "load-state-dict: Found unused keys in the state-dict: ~a" not-found)))
+    (maphash
+     #'(lambda (k v)
+         (let ((replacement (gethash k (state-dict-entry state-dict))))
+           (when (and (null silent) (null replacement))
+             (warn "load-state-dict: not loading ~a" k))
+           (when replacement
+             (when (null silent)
+               (when (not (eql (tensor-dtype v) (tensor-dtype replacement)))
+                 (warn "load-state-dict: dtype mismatch for ~a: ~a -> ~a" k (tensor-dtype v) (tensor-dtype replacement)))
+               (when (not (equal (shape v) (shape replacement)))
+                 (warn "load-state-dict: shape mismatch for ~a: ~a -> ~a" k (shape v) (shape replacement)))
+               (when (null (tensor-buffer v))
+                 (warn "load-state-dict: loading to an uninitialized tensor ~a" k)))
+             (setf (tensor-buffer v) (tensor-buffer replacement)))))
+     (state-dict-entry model-state-dict))
+    module))

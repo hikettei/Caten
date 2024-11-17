@@ -77,7 +77,7 @@
    #:Copy-State-Dict
    #:->state-dict
    #:get-state-dict
-   )
+   #:load-state-dict)
   ;; from high-level-ops.lisp
   (:export
    ;; reductions
