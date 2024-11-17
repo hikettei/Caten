@@ -52,10 +52,11 @@
 (asdf:defsystem "caten/llm"
   :description "Various Generative Language Model Implementation in Caten"
   :author "hikettei <ichndm@gmail.com>"
-  :depends-on ("caten")
+  :depends-on ("caten" "cl-ppcre")
   :pathname "external/llm"
   :components
   ((:file "package")
+   (:file "utils")
    (:file "tokenizers")
    (:file "bpe")
    (:file "layers")))
