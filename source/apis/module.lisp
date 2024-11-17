@@ -175,9 +175,6 @@ The provided form does not match any of them:~%~a" method method method method f
 		 (map 'list #'node->id inputs) (append (module-attrs op) (list :metadata op)))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
 ;; ~~ State Dict ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; - [ ] Documentation.lisp?
-;; - [ ] Everything exported?
-;; - [ ] Write a test ok? (tested by gpt2?)
 (defstruct State-Dict
   "
 A structure representing the state dictionary of a neural network model.
@@ -288,18 +285,19 @@ Returns: `State-Dict`"
              (setf (gethash (funcall key-mapper key) (state-dict-entry state-dict)) value))
     state-dict))
 
-(declaim (ftype (function (Module State-Dict &key (:silent boolean)) Module) load-state-dict))
-(defun load-state-dict (module state-dict &key (silent nil))
+(declaim (ftype (function (Module State-Dict &key (:silent boolean) (:key-mapper function)) Module) load-state-dict))
+(defun load-state-dict (module state-dict &key (silent nil) (key-mapper #'pytorch-style-dict-key))
   "
 ```
-(load-state-dict module state-dict &key (silent nil))
+(load-state-dict module state-dict &key (silent nil) (key-mapper #'pytorch-style-dict-key))
 ```
 
 Loads the parameters from the given state-dict into the module, returning the given module.
 - silent[boolean] If set to t, suppresses warnings about unused keys, dtype mismatches, shape mismatches, and uninitialized tensors.
+- key-mapper[function] A function used to map the keys in the state-dict to the keys in the module. Defaults to `pytorch-style-dict-key`. (see: get-state-dict)
 "
   (declare (type State-Dict state-dict) (type module module))
-  (let ((model-state-dict (->state-dict module nil)))
+  (let ((model-state-dict (get-state-dict module :key-mapper key-mapper)))
     (when (and (null silent) (> (length (state-dict-keys state-dict)) (length (state-dict-keys model-state-dict))))
       (let ((not-found (intersection (state-dict-keys state-dict) (state-dict-keys model-state-dict) :test-not #'string=)))
         (warn "load-state-dict: Found unused keys in the state-dict: ~a" not-found)))
