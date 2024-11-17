@@ -72,6 +72,7 @@
    #:module-sv4bws
    ;; State-Dict
    #:State-Dict
+   #:Make-State-Dict
    #:State-Dict-Entry
    #:State-Dict-p
    #:Copy-State-Dict
