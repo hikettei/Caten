@@ -73,5 +73,5 @@
 	       (setf hi (forward hn hi mask))))
 	     (logits (forward lm-head (forward ln-f hi))))
 	(declare (ignore _))
-	(!argmax logits)))))
+	(!argmax (!view logits t -1 t))))))
 #+(or)(with-no-grad (caten (forward (Transformer 64 4 4 1e-5 512) (make-tensor `(10 10)) (iconst 0))))
