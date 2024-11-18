@@ -53,7 +53,10 @@
 (defun purge-graph (graph old-id new-id)
   (declare (type graph graph) (type symbol old-id new-id) (optimize (speed 3)))
   (flet ((new (id) (if (eql id old-id) new-id id)))
-    (remnode graph old-id)
+    ;; TODO: Refactor
+    (if (typep graph 'FastGraph)
+        (remnode graph old-id)
+        (push (node-id (id->value graph old-id)) *purge-bind*))
     (dolist (node (graph-nodes graph))
       (setf (node-reads node) (map 'list #'new (node-reads node))))
     (assert (equal (graph-outputs graph) (map 'list #'new (graph-outputs graph))))
@@ -103,6 +106,7 @@
       (_ (error "Follow this notation: (From_Pattern) -> (To_Pattern).~%~a" rule)))))
 
 (defparameter *matched-bind* nil "a temporary place to store matched nodes during simplifying")
+(defparameter *purge-bind* nil)
 (defvar *node-top* nil)
 (defvar *graph-bind* nil)
 (defpattern <Rule> (&rest form) (find/replace-rules form '*graph-bind* t))
@@ -139,6 +143,7 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
          (unless no-verify (verify-graph ,graph))
          (labels ((,simplifier-bind (,node-top ,count-bind
 				     &aux
+                                       (*purge-bind* nil)
 				       (*matched-bind* nil)
 				       (fixed-writes-to
 				        (when ,node-top
@@ -170,6 +175,7 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 				   replace-rule
 				   (subseq (graph-nodes ,graph) (1+ ,count-bind)))))
 		        (when (not ,fast-graph-p)
+                          (dolist (id *purge-bind*) (remnode ,graph id))
 			  ;; this may not be required but reduce the number of nodes as many as possible
 			  (dolist (r matched)
 			    ;; the top node of matched patten is always replaced.
