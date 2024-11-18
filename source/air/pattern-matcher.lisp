@@ -91,9 +91,9 @@
                `((let* ((val (id->value ,graph-bind ,id)))
                    (when (and val (not (eql (node-id val) (node-id ,bind))))
                      (let ((val (copy-node val)))
+                       (setf (node-id val) (gensym "NID"))
                        (assert (= 1 (length (the list (node-writes val))) (length (the list (node-writes ,bind)))) () "-> symbol should only support when (length writes) == 1~%~a" ,graph-bind)
-                       (purge-graph ,graph-bind (car (node-writes val)) (car (node-writes ,bind)))
-                       (setf (node-writes val) (node-writes ,bind))
+                       (setf (node-writes val) (copy-list (node-writes ,bind)))
                        (list val))))))
 	      (_ `((let* ((result (progn ,to))
                           (result (if (node-p result) (list result) result)))
@@ -106,7 +106,6 @@
       (_ (error "Follow this notation: (From_Pattern) -> (To_Pattern).~%~a" rule)))))
 
 (defparameter *matched-bind* nil "a temporary place to store matched nodes during simplifying")
-(defparameter *purge-bind* nil)
 (defvar *node-top* nil)
 (defvar *graph-bind* nil)
 (defpattern <Rule> (&rest form) (find/replace-rules form '*graph-bind* t))
@@ -143,7 +142,6 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
          (unless no-verify (verify-graph ,graph))
          (labels ((,simplifier-bind (,node-top ,count-bind
 				     &aux
-                                       (*purge-bind* nil)
 				       (*matched-bind* nil)
 				       (fixed-writes-to
 				        (when ,node-top
@@ -175,7 +173,6 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 				   replace-rule
 				   (subseq (graph-nodes ,graph) (1+ ,count-bind)))))
 		        (when (not ,fast-graph-p)
-                          (dolist (id *purge-bind*) (remnode ,graph id))
 			  ;; this may not be required but reduce the number of nodes as many as possible
 			  (dolist (r matched)
 			    ;; the top node of matched patten is always replaced.
