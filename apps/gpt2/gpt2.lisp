@@ -30,8 +30,8 @@
   (with-no-grad
     (let* ((param (get-param model-type))
            (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
-           (model (Transformer (params-dim param) (params-n-heads param) (params-n-layers param) (params-vocab-size param) (params-norm-eps param) :max-seq-len max-seq-len))
-           (avm (caten (forward model (make-tensor `(1 ,max-seq-len)) (iconst 'pos))))
+           (model (Transformer (params-dim param) (params-n-heads param) (params-n-layers param) (params-norm-eps param) (params-vocab-size param) :max-seq-len max-seq-len))
+           (avm (caten (forward model (make-tensor `(1 s)) (iconst 'pos))))
            (tokenizer (gguf->bpe-tokenizer gguf)))
       ;; [TODO] Replace the keys
       (load-state-dict model (gguf->state-dict gguf))
