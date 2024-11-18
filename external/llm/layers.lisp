@@ -20,6 +20,7 @@
   (when (null (attn-use-kv-cache attn))
     (return-from merge-kv-cache (values k v)))
   (multiple-value-bind (batch-size seq-len n-heads head-dim) (apply #'values (shape k))
+    (assert (integerp batch-size) () "KVCache does not support a dynamic batch size")
     (let* ((max-len (attn-max-seq-len attn))
            (k-cache (or (attn-k-cache attn) (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0)))
            (v-cache (or (attn-v-cache attn) (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0)))
