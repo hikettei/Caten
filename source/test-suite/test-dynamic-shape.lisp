@@ -86,7 +86,17 @@
   (let* ((n (iconst 'n))
          (m (iconst 'm))
          (ic (!index-components `(,(!add n m) ,(!add n m)))))
-    (caten ic)))
+    (ok (caten ic))))
+
+(deftest symbolic-small-repro
+  (ok (caten (!triu (make-tensor `(s s s s))))))
+
+(deftest binary-symbolic-small-repro
+  (ok (caten (!+ (make-tensor `(1 1 s 1)) (make-tensor `(1 1 1 s))))))
+
+(deftest binary-symbolic-small-repro-1
+  (let ((s (!add (iconst 'n) (iconst 1))))
+    (ok (caten (!+ (make-tensor `(1 1 ,s 1)) (make-tensor `(1 1 1 ,s)))))))
 
 (deftest symbolic-view+triu
   (let* ((n (iconst 'n))
