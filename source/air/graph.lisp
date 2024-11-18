@@ -3,8 +3,7 @@
 (defclass Graph ()
   ((nodes :initarg :nodes :type list :accessor %graph-nodes)
    (seen :initarg :seen :initform nil :type list :accessor graph-seen)
-   (outputs :initarg :output :initform nil :type list :accessor graph-outputs)
-   (tmp-alias-map :initform (make-hash-table) :accessor graph-tmp-alias-map))
+   (outputs :initarg :output :initform nil :type list :accessor graph-outputs))
   (:documentation "A Graph is a data structure used to handle a collection of nodes.
 
 Graph has a list of nodes (nodes), node inputs (seen), and node outputs (outputs).
@@ -110,15 +109,6 @@ Returns a list of nodes whose node-reads includes the given id."))
 (defmethod id->node ((graph Graph) id)
   (declare (type graph graph) (optimize (speed 3)))
   (find id (graph-nodes graph) :test #'eql :key #'node-id))
-
-(defun graph-newid (graph id)
-  (labels ((new (x &aux (map (graph-tmp-alias-map graph)))
-             (if (gethash x map)
-                 (if (eql (gethash x map) x)
-                     x
-                     (new (gethash x map)))
-                 x)))
-    (new id)))
 
 (defgeneric remnode (graph id) (:documentation "
 ```
