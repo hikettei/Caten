@@ -64,6 +64,10 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
   "Represents the end of the iteration."
   (make-node :Render :ENDFOR nil nil :idx idx))
 
+(defmethod pprint-expr (expr)
+  (with-output-to-string (out)
+    (format out " // EXPR: ~a <- ~a" (render-list (node-writes expr)) (render-list (node-reads expr)))))
+
 (defmethod print-blueprint (nodes stream &aux (gids))
   (labels ((print-aref (name b is &key (iterations (make-index-space)))
              (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
@@ -103,7 +107,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                       do (decf indent 2) (format out "~a } // endif~%" (indent indent))
                else if (eql (node-type node) :EXPR) do
                  (let ((pre-iterations (getattr node :Iterations)))
-                   (format out "~a~a = ~a;~a~%"
+                   (format out "~a~a = ~a;~a~a~%"
                            (indent indent)
                            (render-list
                             (map 'list #'(lambda (x y z) (print-aref x y z :iterations (or pre-iterations (make-index-space))))
@@ -111,7 +115,10 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                            (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (or pre-iterations (make-index-space)))
                            (if (getattr node :reduction :allow-undefined t)
                                " // :reduction=t"
-                               "")))
+                               "")
+                            (if (>= (ctx:getenv :JIT_DEBUG) 5)
+                                (pprint-expr node)
+                                "")))
                else
 	         do (format out "~a~a = ~(~a~)(~a);~a~%"
                             (indent indent)
