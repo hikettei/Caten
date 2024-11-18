@@ -95,11 +95,11 @@ Applying a further slicing:
             (:conc-name tr-)
             (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))
   (shape shape :type list)
-  (shape-for-stride (copy-list shape) :type list)
+  (stride (and shape (!stride order shape)) :type list)
   (order order :type (member :row :column))
-  (permute permute :type list)
   (broadcast broadcast :type list)
   (mask mask :type list)
+  (permute permute :type list)
   (contiguous contiguous :type boolean))
 
 (defmethod print-object ((tr Tracker) stream)
@@ -144,9 +144,10 @@ Applying a further slicing:
   (assert (equal (sort (copy-list order) #'<) (range 0 (length order))) () "Trying to permute tracker with invalid order: ~a, order are given from shuffling ~a" order (range 0 (length order)))
   (let ((new-tracker (copy-tracker tracker)))
     (setf (tr-shape new-tracker)     (permute-list order (tr-shape tracker))
+          (tr-stride new-tracker)    (permute-list order (tr-stride tracker))
           (tr-mask new-tracker)      (permute-list order (tr-mask tracker))
-          (tr-permute new-tracker)   (permute-list order (tr-permute tracker))
-          (tr-broadcast new-tracker) (permute-list order (tr-broadcast tracker)))
+          (tr-broadcast new-tracker) (permute-list order (tr-broadcast tracker))
+          (tr-permute new-tracker)   (permute-list order (tr-permute tracker)))
     new-tracker))
 
 (defun compute-new-permute (input mask)
@@ -195,10 +196,9 @@ Applying a further slicing:
          (new-shape (loop for m in mask
                           if m collect (pop (tr-shape new-tracker))
                             else collect 1))
-         (new-shape-for-stride
-           (loop for m in mask
-                 if m collect (pop (tr-shape-for-stride new-tracker))
-                 else collect 1))
+         (new-stride (loop for m in mask
+                           if m collect (pop (tr-stride new-tracker))
+                           else collect 1))
          (new-mask (loop for m in mask
                          if m collect (pop (tr-mask new-tracker))
                            else collect nil))
@@ -208,10 +208,10 @@ Applying a further slicing:
          (new-permute (compute-new-permute (tr-permute new-tracker) mask)))
     (assert (equal (sort (copy-list new-permute) #'<) (range 0 (length new-permute))))
     (setf (tr-shape new-tracker) new-shape
-          (tr-shape-for-stride new-tracker) new-shape-for-stride
+          (tr-stride new-tracker) new-stride
           (tr-mask new-tracker) new-mask
-          (tr-permute new-tracker) new-permute
-          (tr-broadcast new-tracker) new-broadcast)
+          (tr-broadcast new-tracker) new-broadcast
+          (tr-permute new-tracker) new-permute)
     new-tracker))
 
 (defgeneric tr-reshapeable-p (obj new-shape))
@@ -222,9 +222,6 @@ Applying a further slicing:
       (return-from tr-reshapeable-p (tr-contiguous tracker))))
   ;; Not contiguous -> Not reshapeable (todo: masked reshape)
   (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
-  ;; Permuted -> Not contiguous
-  (when (not (equal (range 0 (length (tr-shape tracker))) (tr-permute tracker)))
-    (return-from tr-reshapeable-p nil))
   ;; Broadcasted -> Not contiguous
   (when (some #'identity (tr-broadcast tracker))
     (return-from tr-reshapeable-p nil))
@@ -240,10 +237,10 @@ Applying a further slicing:
     ;; Can reshape (reshape=chainging the stride)
     (let* ((new-tracker (copy-tracker tracker)))
       (setf (tr-shape new-tracker) new-shape
-            (tr-shape-for-stride new-tracker) (copy-list new-shape)
-            (tr-permute new-tracker) (range 0 (length new-shape))
+            (tr-stride new-tracker) (and new-shape (!stride (tr-order new-tracker) new-shape))
             (tr-mask new-tracker) (make-list (length new-shape))
             (tr-broadcast new-tracker) (make-list (length new-shape))
+            (tr-permute new-tracker) (range 0 (length new-shape))
             (tr-contiguous new-tracker) t)
       new-tracker)))
 
@@ -289,7 +286,7 @@ Applying a further slicing:
              g))
          (->id (graph) (car (last (graph-nodes graph)))))
     (let* ((shape (map 'list #'->compile (tr-shape tracker)))
-           (shape-for-stride (map 'list #'->compile (tr-shape-for-stride tracker)))
+           (stride (map 'list #'->compile (tr-stride tracker)))
            (upfrom (loop for m in (tr-mask tracker)
                          collect (->compile (if m (car m) 0))))
            (below (loop for m in (tr-mask tracker)
@@ -299,22 +296,17 @@ Applying a further slicing:
            (by (loop for m in (tr-mask tracker)
                      collect (->compile (if m (third m) 1))))
            (bc (loop for b in (tr-broadcast tracker) collect (if b t nil)))
-           (stride nil)
-           (stride-graph
-             (with-context (_ (setf stride (%stride (map 'list #'->id shape-for-stride) (tr-order tracker))))))
-           (stride (permute-list (tr-permute tracker) stride))
            (g
              (with-context
                  (_ (%view base (map 'list #'->id shape) (map 'list #'->id upfrom) (map 'list #'->id below) (map 'list #'->id by) bc
-                           stride :id write-to :permute (tr-permute tracker))))))
+                           (map 'list #'->id stride) :id write-to :permute (tr-permute tracker))))))
       (setf (graph-nodes g)
             (append
              (apply #'append (map 'list #'graph-nodes shape))
-             (apply #'append (map 'list #'graph-nodes shape-for-stride))
+             (apply #'append (map 'list #'graph-nodes stride))
              (apply #'append (map 'list #'graph-nodes upfrom))
              (apply #'append (map 'list #'graph-nodes below))
              (apply #'append (map 'list #'graph-nodes by))
-             (graph-nodes stride-graph)
              (graph-nodes g))
             (graph-outputs g) (list write-to)
             (graph-seen g) (node-writes base))

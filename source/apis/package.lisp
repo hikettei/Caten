@@ -157,6 +157,7 @@
    #:!where
    ;; more
    #:!const
+   #:!stride
    #:!index-components
    #:!xor #:!or #:!and
    ;; utils
