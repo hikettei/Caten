@@ -105,6 +105,7 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
                         collect (or (pop inputs) (error "lower: not enough inputs for the tensor shaped tensor ~a" (tensor-shape buff)))
                       else
                         collect s)))
+    (assert (null inputs) () "lower: too many inputs for the tensor shaped tensor ~a" (tensor-shape buff))
     (with-context
       (a (%make-tensor shape :dtype (tensor-dtype buff) :order (tensor-order buff) :id (tensor-id buff) :from (alloc-from op)))
       (a (when (alloc-initial-element op) (%load a (alloc-initial-element op)))))))

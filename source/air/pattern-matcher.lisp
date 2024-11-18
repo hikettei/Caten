@@ -52,7 +52,8 @@
 
 (defun purge-graph (graph old-id new-id)
   (declare (type graph graph) (type symbol old-id new-id) (optimize (speed 3)))
-  (flet ((new (id) (if (eql old-id id) new-id id)))
+  (flet ((new (id) (if (eql id old-id) new-id id)))
+    (remnode graph old-id)
     (dolist (node (graph-nodes graph))
       (setf (node-reads node) (map 'list #'new (node-reads node))))
     (assert (equal (graph-outputs graph) (map 'list #'new (graph-outputs graph))))
