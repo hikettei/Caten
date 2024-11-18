@@ -36,57 +36,42 @@
          (rx2-expanded (!reshape rx2 (append (shape rx2) (list 1))))
          (result (!concatenate -1 rx1-expanded rx2-expanded))
          (final-result (!reshape result (list b n d))))
-    proceed final-result)))
+    (proceed final-result))))
 
 
-
-
-(defparameter *tensor1* (make-tensor '(10 10 20) :initial-element 1.0))
-
-(let ((instance (make-instance 'RoPE)))
-  (call instance *tensor1*))
-
-
-
-
-
-
-
+(defun !rope (x)
+(declare (type tensor x))
+(forward (RoPE 1) x))
 
 (in-package :caten/test-suite)
 
 (python-exec
 "
-def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
-    t = torch.arange(end, device=freqs.device)  # type: ignore
-    freqs = torch.outer(t, freqs).float()  # type: ignore
-    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
-    return freqs_cis
-")
+#from: https://pytorch.org/torchtune/0.2/_modules/torchtune/modules/position_embeddings.html
+def torch_rope(x):
+    base = 10000
+    dim = x.shape[-1]
+    theta = 1.0 / (base ** (torch.arange(0, dim, 2, device=x.device).float() / dim))
+    seq_len = x.size(1)
+    seq_idx = torch.arange(seq_len, dtype=theta.dtype, device=theta.device)
+    idx_theta = torch.einsum('i,j->ij', seq_idx, theta)
+    cache = torch.stack([torch.cos(idx_theta), torch.sin(idx_theta)], dim=-1)
+    x_shaped = x.float().reshape(*x.shape[:-1], -1, 2)
+    rope_cache = cache.view(1, seq_len, 1, x_shaped.size(-2), 2)
+    x_out = torch.stack([
+        x_shaped[..., 0] * rope_cache[..., 0] - x_shaped[..., 1] * rope_cache[..., 1],
+        x_shaped[..., 1] * rope_cache[..., 0] + x_shaped[..., 0] * rope_cache[..., 1],
+    ], dim=-1)
+    x_out = x_out.flatten(-2)
+    return x_out.type_as(x)")
 
 
-(import-function "precompute_freqs_cis")
+(deftest test-rope
+(with-given-dtype ((:float32 . "float32"))
+  (let ((x (rand `(30 30))))
+    (assert-equal
+     (:atol 1e-5 :rtol 1e-6)
+     (with-torch (x) (->caten (torch_rope x)))
+     (proceed (!rope x))))))
 
 
-
-
-(->caten (precompute_freqs_cis 1 1))
-;; [TODO] Fuse in a single kernel (var/std)
-;; (deftest test-variance
-;;(with-given-dtype ((:float32 . "float32"))
-;;  (let ((x (rand `(30 30))))
-;;    (assert-equal
-;;     (:atol 1e-5 :rtol 1e-6)
-;;    (with-torch (x) (->caten (torch.var x :axis -1 :keepdims t :correction 1)))
-;;     (proceed (!rope x :axis -1 :correction 1))))));(in-package :caten/nn.test)
-
-
-
-
-
-(deftest test-rope-tensor ()
-  (with-no-grad
-    (let* ((model (RoPE 1)))
-      (print model)
-      (print "test"))))
