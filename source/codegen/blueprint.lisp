@@ -45,7 +45,8 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
    #:graph-scalarify
    #:expr-set-iterations
    #:graph-propagate-pointer-id-type
-   #:expr-rewrite-edge-with-pointer-id)
+   #:expr-rewrite-edge-with-pointer-id
+   #:remove-unused-blueprint)
   (:export
    #:lower-schedule-item
    #:lower-cached-schedule-item
@@ -63,6 +64,10 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
 (defun %make-endfor (idx)
   "Represents the end of the iteration."
   (make-node :Render :ENDFOR nil nil :idx idx))
+
+(defmethod pprint-expr (expr)
+  (with-output-to-string (out)
+    (format out " // EXPR: ~a <- ~a" (render-list (node-writes expr)) (render-list (node-reads expr)))))
 
 (defmethod print-blueprint (nodes stream &aux (gids))
   (labels ((print-aref (name b is &key (iterations (make-index-space)))
@@ -103,7 +108,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                       do (decf indent 2) (format out "~a } // endif~%" (indent indent))
                else if (eql (node-type node) :EXPR) do
                  (let ((pre-iterations (getattr node :Iterations)))
-                   (format out "~a~a = ~a;~a~%"
+                   (format out "~a~a = ~a;~a~a~%"
                            (indent indent)
                            (render-list
                             (map 'list #'(lambda (x y z) (print-aref x y z :iterations (or pre-iterations (make-index-space))))
@@ -111,7 +116,10 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                            (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (or pre-iterations (make-index-space)))
                            (if (getattr node :reduction :allow-undefined t)
                                " // :reduction=t"
-                               "")))
+                               "")
+                            (if (>= (ctx:getenv :JIT_DEBUG) 5)
+                                (pprint-expr node)
+                                "")))
                else
 	         do (format out "~a~a = ~(~a~)(~a);~a~%"
                             (indent indent)
@@ -619,7 +627,7 @@ Depends=~a Reduce=~a Users=~a
       (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph (ctx-blueprint ctx)))
       (expr-set-iterations (ctx-blueprint ctx))
       (multiple-value-bind (new-bp id-rewrite-map) (graph-propagate-pointer-id-type (ctx-blueprint ctx) scheduled-graph)
-        (setf (ctx-blueprint ctx) new-bp)
+        (setf (ctx-blueprint ctx) (remove-unused-blueprint new-bp scheduled-graph))
         ;; Infer the input/output buffers again, they can be removed during the op fusion.
         (schedule-item-infer-io-buffers node (ctx-blueprint ctx) id-rewrite-map)
         (expr-rewrite-edge-with-pointer-id (ctx-blueprint ctx) id-rewrite-map))

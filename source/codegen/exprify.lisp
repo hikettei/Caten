@@ -28,7 +28,8 @@
    #:graph-exprify
    #:graph-propagate-pointer-id-type
    #:expr-set-iterations
-   #:expr-rewrite-edge-with-pointer-id))
+   #:expr-rewrite-edge-with-pointer-id
+   #:remove-unused-blueprint))
 
 (in-package :caten/codegen/exprify)
 
