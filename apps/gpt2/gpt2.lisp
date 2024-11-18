@@ -8,12 +8,12 @@
             (:constructor %make-gpt2 (model tokenizer max-seq-len)))
   (model model :type caten/avm:AVM) (tokenizer tokenizer :type Tokenizer) (max-seq-len max-seq-len :type fixnum))
 
-(defstruct Param n-layers n-heads dim (norm-eps 1e-5) (vocab-size 50257))
+(defstruct Params n-layers n-heads dim (norm-eps 1e-5) (vocab-size 50257))
 
-(defparameter *gpt2* (make-param :n-layers 12 :n-heads 12 :dim 768))
-(defparameter *gpt2-medium* (make-param :n-layers 24 :n-heads 16 :dim 1024))
-(defparameter *gpt2-large* (make-param :n-layers 36 :n-heads 20 :dim 1280))
-(defparameter *gpt2-xl* (make-param :n-layers 48 :n-heads 25 :dim 1600))
+(defparameter *gpt2* (make-params :n-layers 12 :n-heads 12 :dim 768))
+(defparameter *gpt2-medium* (make-params :n-layers 24 :n-heads 16 :dim 1024))
+(defparameter *gpt2-large* (make-params :n-layers 36 :n-heads 20 :dim 1280))
+(defparameter *gpt2-xl* (make-params :n-layers 48 :n-heads 25 :dim 1600))
 
 (defun get-param (model-type)
   (ecase model-type
@@ -30,7 +30,7 @@
   (with-no-grad
     (let* ((param (get-param model-type))
            (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
-           (model (Transformer (param-dim param) (param-n-heads param) (param-n-layers param) (param-vocab-size param) (param-norm-eps param) :max-seq-len max-seq-len))
+           (model (Transformer (params-dim param) (params-n-heads param) (params-n-layers param) (params-vocab-size param) (params-norm-eps param) :max-seq-len max-seq-len))
            (avm (caten (forward model (make-tensor `(1 ,max-seq-len)) (iconst 'pos))))
            (tokenizer (gguf->bpe-tokenizer gguf)))
       ;; [TODO] Replace the keys

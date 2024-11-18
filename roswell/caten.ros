@@ -62,8 +62,9 @@ exec ros -Q -- $0 "$@"
     (assert prompt () "--prompt <text> is required")
     (ecase type
       ((:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)
-       (let ((model (caten/apps.gpt2:make-gpt2 type)))
-         (caten/apps.gpt2:gpt2-generate model prompt))))))
+       (ctx:with-contextvar (:JIT 1)
+         (let ((model (caten/apps.gpt2:make-gpt2 type)))
+           (caten/apps.gpt2:gpt2-generate model prompt)))))))
 
 (defun caten/llm-example ()
   (clingon:make-command
