@@ -45,7 +45,8 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
    #:graph-scalarify
    #:expr-set-iterations
    #:graph-propagate-pointer-id-type
-   #:expr-rewrite-edge-with-pointer-id)
+   #:expr-rewrite-edge-with-pointer-id
+   #:remove-unused-blueprint)
   (:export
    #:lower-schedule-item
    #:lower-cached-schedule-item
@@ -626,7 +627,7 @@ Depends=~a Reduce=~a Users=~a
       (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph (ctx-blueprint ctx)))
       (expr-set-iterations (ctx-blueprint ctx))
       (multiple-value-bind (new-bp id-rewrite-map) (graph-propagate-pointer-id-type (ctx-blueprint ctx) scheduled-graph)
-        (setf (ctx-blueprint ctx) new-bp)
+        (setf (ctx-blueprint ctx) (remove-unused-blueprint new-bp scheduled-graph))
         ;; Infer the input/output buffers again, they can be removed during the op fusion.
         (schedule-item-infer-io-buffers node (ctx-blueprint ctx) id-rewrite-map)
         (expr-rewrite-edge-with-pointer-id (ctx-blueprint ctx) id-rewrite-map))
