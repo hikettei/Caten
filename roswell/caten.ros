@@ -54,16 +54,6 @@ exec ros -Q -- $0 "$@"
    :description (maybe-ansi white-bright "Runs the benchmarks")
    :handler #'(lambda (cmd) (caten/benchmarks:run-benchmarks cmd))))
 
-(defun caten/llm-example ()
-  (clingon:make-command
-   :name "llm-example"
-   :description (maybe-ansi white-bright "--model model_name --prompt initial_prompt")
-   :options
-   (list
-    (clingon:make-option :string :description "model to run" :short-name #\m :long-name "model" :key :model)
-    (clingon:make-option :string :description "initial-prompt" :long-name "prompt" :key :prompt))
-   :handler #'caten/llm-example/handler))
-
 (defun caten/llm-example/handler (cmd)
   (let* ((model (clingon:getopt cmd :model))
          (prompt (clingon:getopt cmd :prompt))
@@ -74,6 +64,16 @@ exec ros -Q -- $0 "$@"
       ((:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)
        (let ((model (caten/apps.gpt2:make-gpt2 type)))
          (caten/apps.gpt2:gpt2-generate model prompt))))))
+
+(defun caten/llm-example ()
+  (clingon:make-command
+   :name "llm-example"
+   :description (maybe-ansi white-bright "--model model_name --prompt initial_prompt")
+   :options
+   (list
+    (clingon:make-option :string :description "model to run" :short-name #\m :long-name "model" :key :model)
+    (clingon:make-option :string :description "initial-prompt" :long-name "prompt" :key :prompt))
+   :handler #'caten/llm-example/handler))
 
 (defun caten/options ()
   (list))
