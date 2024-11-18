@@ -226,7 +226,7 @@
           append (node-writes item)))
 
 (defun expr-only-leaf-are-arguments (nodes schedule-graph)
-  "Rewrites the expr in nodes, to have only the leaf nodes as an argument."
+  "Rebasing the reads of the EXPR in nodes to have the correct dependencies."
   (let* ((tmp->id (make-hash-table)))
     (dolist (node nodes)
       (when (eql (node-type node) :EXPR)
@@ -245,9 +245,7 @@
                                  (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
                                  (id->value schedule-graph (newid (car (node-reads node))))
                                  (getattr (id->value schedule-graph (newid (car (node-reads node)))) :allocate-p))
-                               collect (newid (car (node-reads node)))
-                             if (not (eql (node-type node) :Aref))
-                               collect (car (node-writes node))))
+                               collect (newid (car (node-reads node)))))
                      (reads
                        (loop for read in (node-reads node)
                              for rt in (relay-reads (read-type-relay node))
