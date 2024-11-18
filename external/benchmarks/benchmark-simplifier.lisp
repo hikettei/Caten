@@ -10,7 +10,7 @@
 (defun measure-simplify-time (model jit)
   (ctx:with-contextvar (:JIT jit)
     (let ((started (get-internal-real-time)))
-      (caten (forward model (make-tensor `(b 32)) (iconst 'n)))
+      (caten (forward model (make-tensor `(1 s)) (iconst 'n)))
       (let ((finished (get-internal-real-time)))
         (float (/ (- finished started) internal-time-units-per-second))))))
 

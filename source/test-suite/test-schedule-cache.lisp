@@ -2,7 +2,7 @@
 
 (defun compile-transformer (n-layers)
   (let ((model (Transformer 64 4 n-layers 1e-5 32 :max-seq-len 32)))
-    (caten (forward model (make-tensor `(b 32)) (iconst 'n)))))
+    (caten (forward model (make-tensor `(1 s)) (iconst 'n)))))
 
 (defun count-compiled-kernels (graph)
   (length
