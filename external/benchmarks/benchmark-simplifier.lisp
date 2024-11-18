@@ -10,7 +10,8 @@
 (defun measure-simplify-time (model jit)
   (ctx:with-contextvar (:JIT jit)
     (let ((started (get-internal-real-time)))
-      (caten (forward model (make-tensor `(1 s)) (iconst 'n)))
+      ;; TODO: Try full symbolic once we implement a module-wise asm cache
+      (caten (forward model (make-tensor `(1 1)) (iconst 1)))
       (let ((finished (get-internal-real-time)))
         (float (/ (- finished started) internal-time-units-per-second))))))
 
