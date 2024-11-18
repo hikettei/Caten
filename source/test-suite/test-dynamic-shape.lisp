@@ -102,4 +102,4 @@
   (let* ((n (iconst 'n))
          (s 's)
          (mask (!triu (!full `(1 1 ,s ,(!+ (iconst s) (iconst 1))) (-inf)) :diagonal (!+ (iconst 1) n))))
-    (caten mask)))
+    (ok (caten mask))))
