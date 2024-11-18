@@ -18,3 +18,6 @@
 ;; - Memory Planner for the big and cached schedule construction
 ;; - Tested by doing (!matmul (!matmul (!matmul (!matmul ...)))) x 10
 ;; - Tested by running the transformer with an dummy input
+(deftest memory-planner-recursive-call-regression-test
+  (testing "Testing: Infinite Recursion is not happening?"
+    (caten (!where (make-tensor `(s s s s)) (make-tensor `(s s s s)) (make-tensor `(s s s s))))))
