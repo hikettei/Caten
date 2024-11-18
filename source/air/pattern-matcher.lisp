@@ -50,18 +50,6 @@
          `(make-node ,class ,type (list (gensym)) (list ,@(map 'list #'r reads)) ,@attrs)))
       (_ rule))))
 
-(defun purge-graph (graph old-id new-id)
-  (declare (type graph graph) (type symbol old-id new-id) (optimize (speed 3)))
-  (flet ((new (id) (if (eql id old-id) new-id id)))
-    ;; TODO: Refactor
-    (if (typep graph 'FastGraph)
-        (remnode graph old-id)
-        (push (node-id (id->value graph old-id)) *purge-bind*))
-    (dolist (node (graph-nodes graph))
-      (setf (node-reads node) (map 'list #'new (node-reads node))))
-    (assert (equal (graph-outputs graph) (map 'list #'new (graph-outputs graph))))
-    graph))
-
 (defun parse-rule (rule bind graph-bind)
   (declare (type list rule))
   (flet ((r (r) (parse-to-pattern bind r)))
