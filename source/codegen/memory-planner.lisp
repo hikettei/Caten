@@ -211,11 +211,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
       ;; Note(hikettei): is this recursively applied? especially for schedule cached and big graph.
       ;; As of this writing(2024/11/10), i am unsure if this is correct. Should be tested by GPT2 in the next pr.
-      (labels ((newid (id)
+      (labels ((newid (id &key (seen))
                  (if (gethash id alias-map)
-                     (if (eql (gethash id alias-map) id)
+                     (if (or (eql (gethash id alias-map) id) (find (gethash id alias-map) seen))
                          id
-                         (newid (gethash id alias-map)))
+                         (newid (gethash id alias-map) :seen (append seen (list id))))
                      id)))
         (when (>= (ctx:getenv :JIT_DEBUG) 4)
           (format t "[DEBUG] MemoryPlanner: minimized alias-map~%")
