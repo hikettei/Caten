@@ -6,7 +6,7 @@ exec ros -Q -- $0 "$@"
 (progn ;;init forms
   (ros:ensure-asdf)
    #+quicklisp(cl:push (cl:pathname "./") ql:*local-project-directories*)
-   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/benchmarks) :silent t)
+   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/benchmarks :caten/apps) :silent t)
    (when (and (uiop:getenv "JIT_BACKEND")
 	      (equalp (uiop:getenv "JIT_BACKEND") "METAL"))
      #+quicklisp(ql:quickload '(:caten/metal) :silent nil)))
@@ -28,8 +28,7 @@ exec ros -Q -- $0 "$@"
       (let ((gguf-model (caten/gguf:load-gguf target-file)))
 	(print-progress "Confirmed the validity of the input. version=~a" (caten/gguf:gguf-version gguf-model))
 	(progn;let ((caten-model)) ;; gguf->caten
-	  (print-progress "OK")
-	  )))))
+	  (print-progress "OK"))))))
 
 (defun caten/llm ()
   (clingon:make-command
@@ -55,6 +54,28 @@ exec ros -Q -- $0 "$@"
    :description (maybe-ansi white-bright "Runs the benchmarks")
    :handler #'(lambda (cmd) (caten/benchmarks:run-benchmarks cmd))))
 
+(defun caten/llm-example/handler (cmd)
+  (let* ((model (clingon:getopt cmd :model))
+         (prompt (clingon:getopt cmd :prompt))
+         (type (intern (string-upcase model) :keyword)))
+    (assert model () "--model <name> is required")
+    (assert prompt () "--prompt <text> is required")
+    (ecase type
+      ((:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)
+       (ctx:with-contextvar (:JIT 1)
+         (let ((model (caten/apps.gpt2:make-gpt2 type)))
+           (caten/apps.gpt2:gpt2-generate model prompt)))))))
+
+(defun caten/llm-example ()
+  (clingon:make-command
+   :name "llm-example"
+   :description (maybe-ansi white-bright "--model model_name --prompt initial_prompt")
+   :options
+   (list
+    (clingon:make-option :string :description "model to run" :short-name #\m :long-name "model" :key :model)
+    (clingon:make-option :string :description "initial-prompt" :long-name "prompt" :key :prompt))
+   :handler #'caten/llm-example/handler))
+
 (defun caten/options ()
   (list))
 
@@ -66,7 +87,7 @@ exec ros -Q -- $0 "$@"
    :options (caten/options)
    :usage (maybe-ansi white (format nil "[COMMAND] [OPTIONS]~%~a" (ctx:help nil)))
    :handler #'identity
-   :sub-commands (list (caten/llm) (caten/test) (caten/docs) (caten/benchmark))))
+   :sub-commands (list (caten/llm) (caten/test) (caten/docs) (caten/benchmark) (caten/llm-example))))
 
 (defun main (&rest argv &aux (*argv* argv))
   (setf (ctx:getenv :COLOR) 1)

@@ -563,6 +563,13 @@ Depends=~a Reduce=~a Users=~a
              (loop for type in (append (relay-read-iters (read-type-relay item)) (relay-write-iters (read-type-relay item)))
                    if type
                      append
+                     (loop for s in (iteration-space-strides type)
+                           for ids = (expr-depends-on s)
+                           append
+                           (loop for i in ids if (is-dynamic-shape-p i)
+                                 collect (cons i caten/aasm:*default-int*)))
+                   if type
+                     append
                      (loop for s in (append (apply #'append (iteration-space-views type)))
                            if (and (symbolp s) (not (eql s t)) (not (eql s nil)) (not-defined-by-bp s))
                              collect (cons s caten/aasm:*default-int*))))))
