@@ -316,7 +316,7 @@ Applying a further slicing:
              (apply #'append (map 'list #'graph-nodes by))
              (graph-nodes stride-graph)
              (graph-nodes g))
-            ;; (graph-outputs g) (list write-to)
+            (graph-outputs g) (list write-to)
             (graph-seen g) (node-writes base))
       (optimize-aasm g)
       (assert (find write-to (graph-nodes g) :key #'node-writes :test #'find)
