@@ -82,6 +82,12 @@
          (out (!mul mask pos-emb)))
     (ok (caten out))))
 
+(deftest tensor-shaped-index-component
+  (let* ((n (iconst 'n))
+         (m (iconst 'm))
+         (ic (!index-components `(,(!add n m) ,(!add n m)))))
+    (caten ic)))
+
 (deftest symbolic-view+triu
   (let* ((n (iconst 'n))
          (s 's)
