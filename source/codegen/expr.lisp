@@ -6,6 +6,7 @@
    :nodes-write-to)
   (:export
    #:with-expr
+   #:expr-depends-on
    #:expr-graft-after
    #:expr-graph
    #:Expr
@@ -120,6 +121,13 @@ Only supports the scalar computation because it is intended to identify the same
       ;; a/b returns nil if failed.
       (multiple-value-bind (a b) (values (run-expr-with-vars expr1 vars) (run-expr-with-vars expr2 vars))
         (and a b (eql a b))))))
+
+(defmethod expr-depends-on ((expr Expr))
+  (let ((symbols))
+    (loop for node in (graph-nodes (expr-graph expr))
+          if (and (eql (node-type node) :Load) (symbolp (getattr node :value)))
+            do (push (getattr node :value) symbols))
+    (remove-duplicates symbols)))
 
 (defmethod simplify-expr ((expr Expr))
   ;; [TODO] Use FastGraph
