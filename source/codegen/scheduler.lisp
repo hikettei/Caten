@@ -512,7 +512,10 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
           (setf (group-items self) (append (group-items p) (group-items self))
                 (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims p))))
   self)
-;; depth first serach
+;; [TODO] Rewrite recursive-create-groups as a DFS
+;; - [ ] MHA is working?
+;; - [ ] BatchNorm JIT is working?
+;; - [ ] ROPE JIT is working?
 (defun recursive-create-groups (id graph &key (seen))
   (declare (type symbol id) (type graph graph) (type hash-table seen) (optimize (speed 3)))
   (when (gethash id seen) (return-from recursive-create-groups))
