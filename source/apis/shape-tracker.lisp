@@ -219,6 +219,7 @@
 		       (make-tensor shp :dtype (tensor-dtype base) :order (tensor-order base) :id (gensym "STC") :views (tensor-views base)
 				        :initial-element (gethash :initial-element solved)
                                         :tr
+                                        ;; ShapeTracker will be inherited only when the relations are injective.
                                         (if (equal (at-shape (find-at (at-name at) :key #'st-bf))
                                                    (at-shape (find-at (at-name at) :key #'st-aft)))
                                             (tensor-tr base)
@@ -255,6 +256,7 @@ TODO: Add LazyAssertion which applies shape check even for symbols
 
 ### Shape Tracker
 
+- Shape Tracker will be inherited only when the relations are injective.
 - If the subscript used in the first part of the subscript, is also used in the second part. the shape tracker will be inherited.
 - That is, `A[~] -> A[~]`, the returned tensor will extend the shape tracker of input A.
 - `A[~ i j] -> A[~ j i]` won't extend the shape tracker of input A.
