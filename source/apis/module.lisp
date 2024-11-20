@@ -309,9 +309,9 @@ Loads the parameters from the given state-dict into the module, returning the gi
            (when replacement
              (when (null silent)
                (when (not (eql (tensor-dtype v) (tensor-dtype replacement)))
-                 (warn "load-state-dict: dtype mismatch for ~a: ~a -> ~a" k (tensor-dtype v) (tensor-dtype replacement)))
+                 (warn "load-state-dict: dtype mismatch for ~a: place: ~a -> replacement: ~a" k (tensor-dtype v) (tensor-dtype replacement)))
                (when (not (equal (shape v) (shape replacement)))
-                 (warn "load-state-dict: shape mismatch for ~a: ~a -> ~a" k (shape v) (shape replacement)))
+                 (warn "load-state-dict: shape mismatch for ~a: place: ~a -> replacement: ~a" k (shape v) (shape replacement)))
                (when (null (tensor-buffer v))
                  (warn "load-state-dict: loading to an uninitialized tensor ~a" k)))
              (setf (tensor-buffer v) (tensor-buffer replacement)))))
