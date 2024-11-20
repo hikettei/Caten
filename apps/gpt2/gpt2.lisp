@@ -61,7 +61,7 @@
     (let* ((param (get-param model-type))
            (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
            (model (Transformer (params-dim param) (params-n-heads param) (params-n-layers param) (params-norm-eps param) (params-vocab-size param) :max-seq-len max-seq-len))
-           (avm (caten (forward model (make-tensor `(1 s) :from 'x) (iconst 1))))
+           (avm (caten (forward model (make-tensor `(1 s) :from 'x) (iconst 'n))))
            (tokenizer (gguf->bpe-tokenizer gguf))
            (state-dict (gguf->state-dict gguf)))
       (remap-state-dict-keys state-dict)
