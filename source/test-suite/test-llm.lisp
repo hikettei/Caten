@@ -239,7 +239,7 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
 ;; - 
 (defun attn-impl (x n-heads c_attn.weight c_attn.bias c_proj.weight c_proj.bias)
   (let ((xqkv (!add (!matmul x (!t c_attn.weight)) c_attn.bias)))
-    (multiple-value-bind (xq xk xv) (!chunk (!copy xqkv) 3 :dim 2)
+    (multiple-value-bind (xq xk xv) (!chunk xqkv 3 :dim 2)
       (let* ((new-x-shape (append (butlast (shape xq)) (list n-heads (/ (car (last (shape xq))) n-heads))))
              (xq (!reshape xq new-x-shape))
              (xv (!reshape xv new-x-shape))
