@@ -80,7 +80,8 @@ Policy:
    #:Embedding)
   ;; from positional-encoding.lisp
   (:export
-   #:RoPE)
+   #:RoPE
+   #:!rope)
   ;; from conv.lisp
   (:export
    #:ConvND
