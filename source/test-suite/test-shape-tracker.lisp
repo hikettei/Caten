@@ -211,3 +211,10 @@
 ;     (:reshape 10 32 1 3 64))
 ;    ((:permute 0 1 2 3)
 ;     (:reshape 10 32 1 3 64)))
+
+(deftest shape-tracker-shape-infer-failing-case
+  (macrolet ((test (form)
+               `(let ((x ,form))
+                  (ok (equal (caten/apis::tr-shape (caten/apis::tensor-tr x)) (tensor-shape x))))))
+    (test (!matmul (make-tensor `(10 3 32)) (!t (make-tensor `(96 32)))))
+    (test (!add (!matmul (make-tensor `(10 3 32)) (!t (make-tensor `(96 32)))) (make-tensor `(96))))))

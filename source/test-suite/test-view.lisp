@@ -36,4 +36,24 @@ def chunk_mm_test_torch(x):
           (->caten (chunk_mm_test_torch x)))
         (multiple-value-bind (a b) (!chunk x 2)
           (proceed (!matmul a b))))))
+
+(python-exec "
+def mm_chunk_fail_case(x, weight, bias):
+  xqkv = x @ weight.T + bias
+  q, k, v = xqkv.chunk(3, dim=2)
+  return q
+")
+(import-function "mm_chunk_fail_case")
+;; todo kernel test
+(deftest matmul->chunk-fail-case
+  (let ((x (rand `(10 3 32)))
+        (weight (rand `(96 32)))
+        (bias (rand `(96))))
+    (assert-equal
+        (:rtol 1e-5 :atol 1e-5)
+        (with-torch (x weight bias)
+          (->caten (mm_chunk_fail_case x weight bias)))
+        (multiple-value-bind (q k v) (!chunk (!add (!matmul x (!t weight)) bias) 3 :dim 2)
+          (declare (ignore k v))
+          (proceed (!contiguous q :force t))))))
 ;; [TODO] Concatenate Fusion+Dynamic Shape for KV Cache
