@@ -43,8 +43,9 @@ def mm_chunk_fail_case(x, weight, bias):
   q, k, v = xqkv.chunk(3, dim=2)
   return q
 ")
+
 (import-function "mm_chunk_fail_case")
-;; todo kernel test
+
 (deftest matmul->chunk-fail-case
   (let ((x (rand `(10 3 32)))
         (weight (rand `(96 32)))
