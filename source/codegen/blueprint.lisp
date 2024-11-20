@@ -570,7 +570,8 @@ Depends=~a Reduce=~a Users=~a
                                  collect (cons i caten/aasm:*default-int*)))
                    if type
                      append
-                     (loop for s in (append (apply #'append (iteration-space-views type)))
+                     (loop for s in (append (loop for v in (iteration-space-views type)
+                                                          if v append (list (first v) (third v))))
                            if (and (symbolp s) (not (eql s t)) (not (eql s nil)) (not-defined-by-bp s))
                              collect (cons s caten/aasm:*default-int*))))))
      :key #'car)))
