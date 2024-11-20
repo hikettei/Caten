@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 20
     strategy:
       matrix:
-        lisp: [sbcl-bin/2.4.0, ccl-bin/1.12.2] # Caten should work on the latest sbcl; but (ql:quickload :dissect) which rove depends on, fails with > sbcl-bin/2.4.2
+        lisp: [sbcl-bin, ccl-bin/1.12.2]
         backend: [lisp, clang]
         os: [ubuntu-latest]
         target:
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v1
       - name: Set up ${{ matrix.lisp }} via Roswell.
         env:
-          LISP: sbcl-bin/2.4.0 # Install rove with the older version of SBCL to pass (ql:quickload :dissect)
+          LISP: sbcl-bin
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
           ros install ${{ matrix.lisp }}
@@ -71,8 +71,8 @@ jobs:
       - name: Set up SBCL via Roswell.
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
-          ros install sbcl-bin/2.4.0
-          ros use sbcl-bin/2.4.0
+          ros install sbcl-bin
+          ros use sbcl-bin
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -92,8 +92,8 @@ jobs:
       - name: Set up SBCL via Roswell.
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
-          ros install sbcl-bin/2.4.0
-          ros use sbcl-bin/2.4.0
+          ros install sbcl-bin
+          ros use sbcl-bin
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
