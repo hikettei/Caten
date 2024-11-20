@@ -193,14 +193,14 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
          (seq-len (second (shape input)))
          (mask (!triu (!full `(1 1 ,seq-len ,seq-len) (-inf)) :diagonal (!+ (iconst 1) (iconst n))))
          (xqkv (!reshape xqkv `(,batch-size ,seq-len ,n-heads 3 ,head-dim)))
-         (xqkv (!permute xqkv 3 0 2 1 4)) ;; [TODO] Need !contiguous here, but should be handled by the shape tracker
-         )
+         (xqkv (!permute xqkv 3 0 2 1 4)))
     (multiple-value-bind (xq xk xv) (!chunk xqkv 3 :dim 0)
       (let* ((attn-output (scaled-dot-product-attention xq xk xv mask))
              (attn-output (!reshape (!transpose attn-output 1 2) `(,batch-size ,seq-len ,dim))))
         (!add (!matmul attn-output (!t c-proj-weight)) c-proj-bias)))))
 ;; [TODO] Test for more larger inputs
-#| Needs more tests to dig into ...
+#|
+;; TODO: Old implementation looks unstable?
 (deftest test-multihead-attention
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
@@ -229,8 +229,8 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
              (xk (!reshape xk new-x-shape))
              ;; No KV_Cache
              (xq (!transpose xq 1 2))
-             (xk (!transpose xk 1 2))
              (xv (!transpose xv 1 2))
+             (xk (!transpose xk 1 2))
              (attn-output (scaled-dot-product-attention xq xk xv))
              (attn-output (!permute attn-output 0 2 1 3))
              (attn-output (!reshape attn-output (append (butlast (shape attn-output) 2) (list (apply #'* (last (shape attn-output) 2)))))))
@@ -254,7 +254,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 
 (import-function "attn_impl_torch")
 
-(deftest nn-attn-test
+(deftest test-attention
   (let ((x (rand `(10 3 32)))
         (c_attn.weight (rand `(96 32)))
         (c_attn.bias   (rand `(96)))
@@ -265,3 +265,19 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
+
+(deftest test-attention-large
+  (let* ((dim 128)
+         (n-heads 8)
+         (batch-size 10)
+         (seq-len 32)
+         (x (rand `(,batch-size ,seq-len ,dim)))
+         (c_attn.weight (rand `(,(* 3 dim) ,dim)))
+         (c_attn.bias   (rand `(,(* 3 dim))))
+         (c_procj.weight (rand `(,dim ,dim)))
+         (c_procj.bias (rand `(,dim))))
+    (assert-equal
+        (:rtol 1e-2 :atol 1e-5) ;; TODO: Rtol in 1e-5
+        (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
+          (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
+        (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
