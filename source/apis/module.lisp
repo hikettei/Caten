@@ -299,7 +299,7 @@ Loads the parameters from the given state-dict into the module, returning the gi
   (declare (type State-Dict state-dict) (type module module))
   (let ((model-state-dict (get-state-dict module :key-mapper key-mapper)))
     (when (and (null silent) (> (length (state-dict-keys state-dict)) (length (state-dict-keys model-state-dict))))
-      (let ((not-found (set-difference (state-dict-keys state-dict) (state-dict-keys model-state-dict) :test-not #'string=)))
+      (let ((not-found (set-difference (state-dict-keys state-dict) (state-dict-keys model-state-dict) :test #'string=)))
         (warn "load-state-dict: Found unused keys in the state-dict: ~a" not-found)))
     (maphash
      #'(lambda (k v)
