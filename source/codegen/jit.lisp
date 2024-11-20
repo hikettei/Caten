@@ -63,6 +63,7 @@ caten/codegen overview:
   (:import-from
    :caten/codegen/blueprint
    #:lower-schedule-item
+   #:lower-cached-schedule-item
    #:print-blueprint)
   (:import-from
    :caten/codegen/scop
@@ -91,7 +92,13 @@ caten/codegen overview:
    #:%renderer-get-auto-scheduler)
   (:export
    #:jit
-   #:schedule-graph->avm-graph))
+   #:schedule-graph->avm-graph
+   #:Compiled-Kernel
+   #:compiled-kernel-name
+   #:compiled-kernel-caller
+   #:compiled-kernel-raw-caller
+   #:compiled-kernel-device
+   #:compiled-kernel-code))
 
 (in-package :caten/codegen/jit)
 
@@ -105,7 +112,7 @@ caten/codegen overview:
 
 (defnode (:JIT :JIT_KERNEL) ()
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
-	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list)))
+	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list) (cached-p :type boolean)))
 
 (defmethod make-load-form ((jit Compiled-Kernel) &optional env)
   (declare (ignore env))
@@ -148,11 +155,13 @@ caten/codegen overview:
              :dtypes
              (loop for item in (getattr si :blueprint)
                    if (eql (node-type item) :DEFINE-GLOBAL)
-                     collect (getattr item :dtype))))
+                     collect (getattr item :dtype))
+             :cached-p (if (getattr si :cache-name) t nil)))
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((info (getattr node :kernel-info))
         (out-n (getattr node :output-buffer-n)))
+    ;; (For details, see coerce-dtyped-buffer)
     (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
       (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
       (apply (compiled-kernel-caller info) args)
@@ -324,6 +333,35 @@ caten/codegen overview:
             do (push tgt seen))
     schedule-graph))
 
+(defun maybe-pmapc (f list &key (slope 1))
+  (flet ((is-heavy-p (x)
+           (and (getattr x :jitable) (null (getattr x :cache-name)))))
+    (let ((list-to-lower
+            (loop for x in list
+                  ;; pick up the elements which takes a long time to compile
+                  if (is-heavy-p x)
+                    collect x))
+          (list-not-to-lower
+            (loop for x in list
+                  if (Not (is-heavy-p x))
+                    collect x)))
+      (if (and (> (ctx:getenv :PARALLEL) 1) (>= (length list-to-lower) (* (ctx:getenv :PARALLEL) slope)))
+          (let ((lparallel:*kernel*
+                  (lparallel:make-kernel (ctx:getenv :PARALLEL)
+                                         :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)
+                                                     (caten/common.logger::*progress* . ,caten/common.logger::*progress*)))))
+            (lparallel:pmapc f list-to-lower)
+            (mapc f list-not-to-lower))
+          (mapc f list)))))
+
+(defmacro with-printing-as-chunk ((stream) &body body)
+  `(if (null lparallel:*kernel*)
+       (let ((,stream t)) ,@body)
+       (format t "~a"
+               (with-output-to-string (,stream)
+                 (let ((caten/common.logger:*default-stream* ,stream))
+                   ,@body)))))
+
 (defun jit (avm
             &key
               (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
@@ -336,6 +374,7 @@ caten/codegen overview:
                      (error "Cannot enable auto-scheduler without the renderer support.~%Use define-auto-scheduler and define-hook-auto-scheduler and compilers will recognise it.~%or, set AUTO_SCHEDULER=0 to ignore this error.")))))
   "Runs the JIT compilation (destructive)"
   (declare (type AVM avm))
+  (when (= 2 (ctx:getenv :DOT)) (->dot (avm-graph avm) :title "Base Graph"))
   ;; 1. Running the shape/offset/type inference
   (run-type-infer avm)
   ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views, Symbol Loads, ...)
@@ -353,54 +392,67 @@ caten/codegen overview:
     (declare (type Graph schedule-graph))
     (with-expr-cache (:pointer-map pointer-map) ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
       ;; 5. Minifying the number of schedules, (reuse kernels)
-      (minify-equivalent-schedule schedule-graph)
+      (when (not (= 1 (ctx:getenv :NO_SCHEDULE_CACHE)))
+        (minify-equivalent-schedule schedule-graph))
       ;; 6. Start JIT Compilation. (Performing by group)
       (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
         ;; [TODO] mapc is pmapc
         (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
-          (mapc
+          (maybe-pmapc
            #'(lambda (x &aux (start (get-internal-real-time)))
-               (when (and (getattr x :jitable) (getattr x :cache-name))
-                 (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                   (print-progress "~a" (getattr x :name))
-                   (format t "=====> (Skipped) redirect to ~a~%" (getattr x :cache-name))))
-               (when (getattr x :jitable)
-                 (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :cache-name)))
-                   (print-progress "~a" (getattr x :name))
-                   (format t "=====> Lowering to blueprint~%"))
-                 ;; 7. Running Lowerer
-                 (lower-schedule-item x (avm-graph avm) schedule-graph)
-                 (when (null (getattr x :cache-name))
-                   ;; 8. Lower into Polyhedral IR
-                   (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
-                     (format t "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
-                   (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
-                     (when (>= (ctx:getenv :JIT_DEBUG) 2)
-
-                       (format t "=====> Lowering to Polyhedral IR~%"))
-                     (scop x symbolics)
-                     (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                       (format t "=====> Auto Scheduler~%"))
-                     ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
-                     (auto-schedule auto-scheduler x)
-                     (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                       (print (getattr x :polyhedral))
-                       (fresh-line)
-                       (format t "=====> Optimized kernel~%")
-                       (print-blueprint (getattr x :blueprint) t)))
+               (with-printing-as-chunk
+                   (stream)
+                 (when (and (getattr x :jitable) (getattr x :cache-name))
                    (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                     (format t "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second)))))
-                 (schedule-item-write-define-global x)))
+                     (print-progress "~a" (getattr x :name))
+                     (format stream "=====> (Skipped) redirect to ~a~%" (getattr x :cache-name))))
+                 (when (getattr x :jitable)
+                   (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :cache-name)))
+                     (print-progress "~a" (getattr x :name))
+                     (format stream "=====> Lowering to blueprint~%"))
+                   (when (null (getattr x :cache-name))
+                     ;; 7. Running Lowerer
+                     (lower-schedule-item x (avm-graph avm) schedule-graph)
+                     (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                       (print-blueprint (getattr x :blueprint) stream))
+                     ;; 8. Lower into Polyhedral IR
+                     (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
+                       (format stream "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
+                     (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
+                       (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                         (format stream "=====> Lowering to Polyhedral IR~%"))
+                       (scop x symbolics)
+                       (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                         (format stream "=====> Auto Scheduler~%"))
+                       ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
+                       (auto-schedule auto-scheduler x)
+                       (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                         (print (getattr x :polyhedral) stream)
+                         (fresh-line stream)
+                         (format stream "=====> Optimized kernel~%")
+                         (print-blueprint (getattr x :blueprint) t)))
+                     (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                       (format stream "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))
+                     (schedule-item-write-define-global x)))))
            (graph-nodes schedule-graph)))
+        (mapc
+         #'(lambda (x)
+             (when (getattr x :cache-name)
+               (when (>= (ctx:getenv :JIT_DEBUG) 4)
+                 (fresh-line)
+                 (print-info "Copying cache ~a => ~a" (getattr x :name) (getattr x :cache-name)))
+               (lower-cached-schedule-item x schedule-graph)))
+         (graph-nodes schedule-graph))
         ;; 10. Running memory-planner, update the storage-id
         (setf schedule-graph (->graph schedule-graph))
         (verify-graph schedule-graph) ;; Sort the graph for memory planner
-        (when (>= (ctx:getenv :JIT_DEBUG) 2)
-          (fresh-line)
-          (print-info "Running the memory planner..."))
-        (run-memory-planner schedule-graph symbolics base-graph)
+        (when (not (= 1 (ctx:getenv :NO_MEMORY_PLANNER)))
+          (when (>= (ctx:getenv :JIT_DEBUG) 2)
+            (fresh-line)
+            (print-info "Running the memory planner..."))
+          (run-memory-planner schedule-graph symbolics base-graph))
         (dolist (item (graph-nodes schedule-graph))
           (setf (getattr item :storage-id-src) (map 'list #'read-ptrid (getattr item :storage-id-src))
                 (getattr item :storage-id-dst) (map 'list #'read-ptrid (getattr item :storage-id-dst))))

@@ -3,12 +3,14 @@
   (:use :cl :fast-io)
   (:export
    #:load-gguf
+   #:load-gguf-url
    #:make-gguf
-
    #:GGUF
    #:gguf-version
    #:gguf-tensor-count
    #:gguf-metadata-kv-count
+   #:gguf->state-dict
+   #:gguf->bpe-tokenizer
    #:metadata
    #:metadata-key
    #:metadata-value-type
@@ -20,6 +22,7 @@
    #:tensor-info-ggml-type
    #:tensor-info-relative-offset
    #:tensor-info-absolute-offset
-   #:tensor-info-buffer))
+   #:tensor-info-buffer
+   #:tensor-info->tensor))
 
 (in-package :caten/gguf)

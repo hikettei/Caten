@@ -455,3 +455,28 @@ Concatenates the tensor along the specified dimension. Note that all tensors mus
 "
   (declare (type fixnum dim))
   (apply #'forward (ConcatenateNode dim) tensors))
+;; ~~ Strides ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+(defgeneric !stride (order shape) (:documentation "
+```
+(!stride order shape)
+```
+Computes the strides of the tensor given the order and shape.
+
+order is one of :column or :row. Shape is a list consisted of integers, symbols, and tensors. The list of tensor is returned.
+"))
+
+(defmethod !stride ((order (eql :column)) shape)
+  (declare (type list shape))
+  (let* ((num-dims (length shape))
+         (strides (make-list num-dims :initial-element (iconst 1))))
+    (loop for i from 1 to (- num-dims 1) do
+      (setf (nth i strides) (!* (nth (- i 1) strides) (->iconst (nth (- i 1) shape)))))
+    strides))
+
+(defmethod !stride ((order (eql :row)) shape)
+  (declare (type list shape))
+  (let* ((num-dims (length shape))
+         (strides (make-list num-dims :initial-element (iconst 1))))
+    (loop for i downfrom (- num-dims 2) to 0 do
+      (setf (nth i strides) (!* (nth (+ i 1) strides) (->iconst (nth (+ i 1) shape)))))
+    strides))

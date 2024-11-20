@@ -138,7 +138,9 @@ Create a new lazy tensor.
 	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  Butgot: ~a~%  Shape=~a" s shape))
   (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views :tracker (or tr (start-tracking shape :order order)))))
     (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element :from from)
-          (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff)))
+          (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff))
+          (tensor-variables buff) (loop for s in (tensor-shape buff) if (tensor-p s) collect s)
+          (func-variables (tensor-op buff)) (tensor-variables buff))
     buff))
 
 (defun make-scalar (value &key (dtype *default-float*) (order *default-order*) (id (gensym "SID")) (requires-grad nil))

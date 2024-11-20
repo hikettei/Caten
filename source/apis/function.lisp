@@ -99,20 +99,16 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 	(values (!add (tensor-grad buff) dout :reduce t :id id))))))
 
 (defmethod lower ((op Allocate) &rest inputs)
-  (declare (ignore inputs))
-  (let ((buff (alloc-buffer op))
-	(nodes))
-    (flet ((->lower (obj) ;; If the shape includes a tensor, it also needs to be lowered
-	     (if (or (numberp obj) (symbolp obj)) obj
-		 (let ((g (%tensor->aasm obj)))
-		   (and (push g nodes) (car (last (graph-nodes g))))))))
-      (let ((g
-	      (with-context
-		(s (map 'list #'->lower (tensor-shape buff)))
-		(a (%make-tensor s :dtype (tensor-dtype buff) :order (tensor-order buff) :id (tensor-id buff) :from (alloc-from op)))
-		(a (when (alloc-initial-element op) (%load a (alloc-initial-element op)))))))
-	(push g nodes)
-	(apply #'make-graph (apply #'append (map 'list #'graph-nodes (reverse nodes))))))))
+  (let* ((buff (alloc-buffer op))
+         (shape (loop for s in (tensor-shape buff)
+                      if (tensor-p s)
+                        collect (or (pop inputs) (error "lower: not enough inputs for the tensor shaped tensor ~a" (tensor-shape buff)))
+                      else
+                        collect s)))
+    (assert (null inputs) () "lower: too many inputs for the tensor shaped tensor ~a" (tensor-shape buff))
+    (with-context
+      (a (%make-tensor shape :dtype (tensor-dtype buff) :order (tensor-order buff) :id (tensor-id buff) :from (alloc-from op)))
+      (a (when (alloc-initial-element op) (%load a (alloc-initial-element op)))))))
 
 (defclass View (Func)
   ((views :initarg :views :type list :accessor view-views)
@@ -674,10 +670,24 @@ Creates a constant tensor with the specified value from the tensor.
       output)))
 
 (defclass IndexComponents (Func) nil)
+(defmethod forward :around ((op IndexComponents) &rest inputs)
+  (let ((out (call-next-method))
+        (shape (shape (car inputs))))
+    (setf (tensor-variables out) (append (tensor-variables out) (loop for s in shape if (tensor-p s) collect s))
+          (func-variables (tensor-op out)) (tensor-variables out))
+    out))
 (defmethod forward ((op IndexComponents) &rest inputs) (st "A[~] -> A[~]" (inputs)))
 (defmethod backward ((op IndexComponents) &optional prev-grad))
 (defmethod lower ((op IndexComponents) &rest inputs)
-  (with-context (_ (%index-components (car inputs) (%shape (shape (car (func-variables op))))))))
+  (let ((shape
+          (loop with inputs = (cdr inputs)
+                for s in (shape (car (func-variables op)))
+                if (tensor-p s)
+                  collect (or (pop inputs) (error "Cannot lower the index-components due to not enough inputs"))
+                else
+                  collect s)))
+    (with-context (_ (%index-components (car inputs) (%shape shape))))))
+
 (defgeneric !index-components (tensor) (:documentation "
 ```
 (!index-components object)

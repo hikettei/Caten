@@ -33,7 +33,8 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
    #:buffer-nrank
    #:buffer-shape
    #:buffer-stride
-   #:buffer-views)
+   #:buffer-views
+   #:buffer-orig-buffer-shape)
   (:import-from
    :caten/codegen/renderer
    #:render-expr
@@ -47,6 +48,7 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
    #:expr-rewrite-edge-with-pointer-id)
   (:export
    #:lower-schedule-item
+   #:lower-cached-schedule-item
    #:print-blueprint))
 
 (in-package :caten/codegen/blueprint)
@@ -130,7 +132,11 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                        when r maximize (length (buffer-shape r)))))
          (pid2space (make-hash-table :test #'equal))
          (candidates nil))
-    (labels ((is-one (expr)
+    (labels ((broadcastable-p (a b)
+               (or (expr-scalar-equivalent-p a (expr-const 1 :int64))
+                   (expr-scalar-equivalent-p b (expr-const 1 :int64))
+                   (expr-scalar-equivalent-p a b)))
+             (is-one (expr)
                (expr-scalar-equivalent-p expr (expr-const 1 :int64)))
              (check (buffer &key (noopt t))
                (when buffer
@@ -145,7 +151,9 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
                                         s
                                         (if (is-one (gethash p pid2space))
                                             s
-                                            (gethash p pid2space)))))))))
+                                            (gethash p pid2space))))
+                              (when (and (= 1 (ctx:getenv :NOOPT)) (not (broadcastable-p (gethash p pid2space) s)))
+                                (warn "Detected invaild scheduling: ~a vs ~a are not broadcastable." (gethash p pid2space) s)))))))
              (explore (node &key (noopt t))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
@@ -516,13 +524,16 @@ Depends=~a Reduce=~a Users=~a
          (getattr node :storage-id-src) (map 'list (compose #'reduce-address-of #'car) read-items)
          (getattr node :storage-id-dst) (map 'list (compose #'reduce-address-of #'car) write-items))))))
 
-(defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph)
+(defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph blueprints)
+  "Returns a list of dynamic shapes used in the schedule-item."
   (flet ((is-dynamic-shape-p (val)
            (and (not (null val))
                 (not (eql val t))
-                (find val (graph-nodes base-graph) :key #'(lambda (x) (getattr x :value :allow-undefined t))))))
+                (find val (graph-nodes base-graph) :key #'(lambda (x) (getattr x :value :allow-undefined t)))))
+         (not-defined-by-bp (val) (null (find val blueprints :key #'node-writes :test #'find))))
     (remove-duplicates
      (append
+      ;; From the lowered blueprint
       (loop for item in (getattr node :items)
             if (and (eql (node-type item) :LOAD) (symbolp (getattr item :value)))
               collect (cons (getattr item :value) (buffer-dtype (car (relay-writes (read-type-relay item))))))
@@ -533,15 +544,34 @@ Depends=~a Reduce=~a Users=~a
                   for rt in (relay-reads (read-type-relay item))
                   if (and (symbolp r) (is-dynamic-shape-p r))
                     collect (cons r (buffer-dtype rt))))
-      ;; Loop Bounds (loaded as default-int)
+      ;; :FOR/:IF
+      (loop for item in blueprints
+            if (find (node-type item) `(:FOR :IF))
+              append
+              (loop for node in (ecase (node-type item)
+                                  (:FOR
+                                   (append (graph-nodes (expr-graph (getattr item :upfrom)))
+                                           (graph-nodes (expr-graph (getattr item :below)))
+                                           (graph-nodes (expr-graph (getattr item :by)))))
+                                  (:IF (graph-nodes (expr-graph (getattr item :condition)))))
+                    if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)) (is-dynamic-shape-p (getattr node :value)))
+                      collect (cons (getattr node :value) :int64)))
+      ;; Symbols used to compute the views
       (nreverse
        (loop for item in (getattr node :items)
              append
-             (loop for type in (append (relay-writes (read-type-relay item)) (relay-reads (read-type-relay item)))
+             (loop for type in (append (relay-read-iters (read-type-relay item)) (relay-write-iters (read-type-relay item)))
                    if type
                      append
-                     (loop for s in (append (buffer-shape type) (apply #'append (buffer-views type)))
-                           if (and (symbolp s) (is-dynamic-shape-p s))
+                     (loop for s in (iteration-space-strides type)
+                           for ids = (expr-depends-on s)
+                           append
+                           (loop for i in ids if (is-dynamic-shape-p i)
+                                 collect (cons i caten/aasm:*default-int*)))
+                   if type
+                     append
+                     (loop for s in (append (apply #'append (iteration-space-views type)))
+                           if (and (symbolp s) (not (eql s t)) (not (eql s nil)) (not-defined-by-bp s))
                              collect (cons s caten/aasm:*default-int*))))))
      :key #'car)))
 
@@ -587,19 +617,121 @@ Depends=~a Reduce=~a Users=~a
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-      ;; Gathering dynamic shapes used in the schedule-item
-      (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph))
       ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
             (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx))
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
+      ;; Gathering dynamic shapes used in the schedule-item
+      (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph (ctx-blueprint ctx)))
       (expr-set-iterations (ctx-blueprint ctx))
       (multiple-value-bind (new-bp id-rewrite-map) (graph-propagate-pointer-id-type (ctx-blueprint ctx) scheduled-graph)
         (setf (ctx-blueprint ctx) new-bp)
         ;; Infer the input/output buffers again, they can be removed during the op fusion.
         (schedule-item-infer-io-buffers node (ctx-blueprint ctx) id-rewrite-map)
         (expr-rewrite-edge-with-pointer-id (ctx-blueprint ctx) id-rewrite-map))
-      (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr node :cache-name)))
-        (print-blueprint (ctx-blueprint ctx) t))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
+
+(defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
+  (let ((node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
+    (assert node () "find-cache-base-schedule-item: No cache item for ~a" node)
+    node))
+
+(defun compare-and-make-namespace-map (cache-node tgt-node)
+  (let ((namespace-cache (getattr cache-node :namespace))
+        (namespace-tgt-node (getattr tgt-node :namespace))
+        (result (make-hash-table)))
+    (assert (= (length namespace-cache) (length namespace-tgt-node)) () "compare-and-make-namespace-map: two schedules should have the same-sized namespace. Make sure that they are really equivalent schedule?~%~a~%~a" cache-node tgt-node)
+    (loop for id-old in namespace-cache
+          for id-tgt in namespace-tgt-node
+          if (or (numberp id-old) (numberp id-tgt))
+            do (assert (eql id-old id-tgt)
+                       ()
+                       "compare-and-make-namespace-map: Found an distinct point in the namespace ~a vs ~a~%NameSpace:~%~a~%~a~%Schedule-Items:~%~a~%~a"
+                       id-old id-tgt namespace-cache namespace-tgt-node cache-node tgt-node)
+               (let ((v (gethash id-tgt result))) (assert (or (null v) (eql v id-old))))
+               (setf (gethash id-tgt result) id-old)
+          else
+            do (assert (and (symbolp id-tgt) (symbolp id-old)))
+               (let ((v (gethash id-tgt result))) (assert (or (null v) (eql v id-old))))
+               (setf (gethash id-tgt result) id-old))
+    result))
+
+(defmethod lower-cached-schedule-item ((node Node) (schedule-graph Graph))
+  (assert (getattr node :cache-name))
+  (assert (getattr node :jitable))
+  (let* ((base-item (find-cache-base-schedule-item node schedule-graph))
+         (namemap (compare-and-make-namespace-map node base-item)))
+    (assert (getattr base-item :blueprint) () "The base-item is not lowered!")
+    ;; Copying the following nodes from the base-item. But node/reads are mapped from namemap
+    ;; :items (to ensure the equivalence of two kernels?)
+    ;; :blueprint (and :EXPR inside) (memory-planner will use this)
+    ;; :dynamic-shapes
+    ;; :storage-id-src / :read-types
+    ;; :storage-id-dst / :write-types
+    (labels ((map-from (x &key (allow-nil t))
+               (let ((val (gethash x namemap)))
+                 (if val
+                     val
+                     (if allow-nil
+                         x
+                         (error "map-from: the id ~a is not found." x)))))
+             (update-buffer (buffer)
+               (when buffer
+                 (let ((buffer (caten/avm:copy-buffer buffer)))
+                   (setf (buffer-shape buffer) (map 'list #'map-from (buffer-shape buffer))
+                         (buffer-stride buffer) (map 'list #'map-from (buffer-stride buffer))
+                         (buffer-views buffer)
+                         (loop for v in (buffer-views buffer)
+                               collect
+                               (map 'list #'map-from v))
+                         (buffer-orig-buffer-shape buffer) (map 'list #'map-from (buffer-orig-buffer-shape buffer)))
+                   buffer))))
+      ;; what attrs does the mp use?
+      (setf (node-reads node) (map 'list #'map-from (node-reads base-item))
+            (node-writes node) (map 'list #'map-from (node-writes base-item))
+            (getattr node :storage-id-src) (map 'list #'map-from (getattr base-item :storage-id-src))
+            (getattr node :storage-id-dst) (map 'list #'map-from (getattr base-item :storage-id-dst))
+            (getattr node :read-types) (map 'list #'update-buffer (getattr base-item :read-types))
+            (getattr node :write-types) (map 'list #'update-buffer (getattr base-item :write-types))
+            (getattr node :dynamic-shapes) (getattr base-item :dynamic-shapes))
+      ;; creates a copy of blueprint, expr is also refreshed. Memory Planner will use this.
+      (setf (getattr node :blueprint)
+            (loop for bp-base in (getattr base-item :blueprint)
+                  for bp = (copy-node bp-base)
+                  if (eql (node-class bp) :Render)
+                    do (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
+                             (node-writes bp) (map 'list #'map-from (node-writes bp)))
+                       (assert (not (eql (node-type bp) :AREF)))
+                    and
+                      collect bp
+                  else
+                    if (eql (node-type bp) :EXPR)
+                      collect
+                      (let ((expr-out-node (copy-node (expr-out (getattr bp :EXPR)))))
+                        (when (eql (node-type expr-out-node) :Aref)
+                          (setf (getattr expr-out-node :storage-id) (map-from (getattr expr-out-node :storage-id))))
+                        (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
+                              (node-writes bp) (map 'list #'map-from (node-writes bp))
+                              (node-reads expr-out-node) (map 'list #'map-from (node-reads expr-out-node))
+                              (node-writes expr-out-node) (map 'list #'map-from (node-writes expr-out-node))
+                              (getattr bp :EXPR)
+                              (make-expr
+                               :graph
+                               (apply
+                                #'make-graph
+                                (loop for expr-node-base in (graph-nodes (expr-graph (getattr bp :EXPR)))
+                                      for expr-node = (copy-node expr-node-base)
+                                      do (setf (node-reads expr-node) (map 'list #'map-from (node-reads expr-node))
+                                               (node-writes expr-node) (map 'list #'map-from (node-writes expr-node)))
+                                         (when (getattr expr-node :_type_relay :allow-undefined t)
+                                           (setf
+                                            (relay-reads (read-type-relay expr-node)) (map 'list #'update-buffer (relay-reads (read-type-relay expr-node)))
+                                            (relay-writes (read-type-relay expr-node)) (map 'list #'update-buffer (relay-writes (read-type-relay expr-node)))))
+                                         (when (eql (node-type expr-node) :Aref)
+                                           (setf (getattr expr-node :storage-id) (map-from (getattr expr-node :storage-id))))
+                                      collect expr-node))
+                               :out expr-out-node))
+                        bp)
+                  else
+                    do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))))

@@ -39,6 +39,25 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (or
    (buffer-orig-buffer-shape buffer) ;; non-viewed-size
    (buffer-shape buffer)))
+
+(defun buffer-element-size (buffer)
+  (let ((shape (buffer-orig-shape buffer))
+        (count nil)
+        (symbols nil))
+    (loop for s in shape
+          if (symbolp s) do (push s symbols)
+          else do (push s count))
+    (cons (apply #'* count) symbols)))
+
+(defun buffer-size-eq (a b)
+  (let ((s1 (buffer-element-size a))
+        (s2 (buffer-element-size b)))
+    (and
+     (= (car s1) (car s2)) ;; fixed parts
+     (= (length (cdr s1)) (length (cdr s2))) ;; number of symbols
+     (let ((stack (cdr s1)))
+       (dolist (k (cdr s2)) (setf stack (remove k stack :test #'eql)))
+       (null stack)))))
 ;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
 (defun greedy-solve-dsa (I total-time)
   "A greedy solver for minimizing `peak_mem`"
@@ -51,8 +70,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                              (not (= -1 (buffer-nrank (memoryblock-type mb))))
                              (not (= -1 (buffer-nrank (memoryblock-type candidate))))
 			     (buffer-shape (memoryblock-type mb)) ;; <=> assure the memory-block is a tensor
-			     (equal (buffer-orig-shape (memoryblock-type candidate))
-				    (buffer-orig-shape (memoryblock-type mb)))
+                             (buffer-size-eq (memoryblock-type candidate) (memoryblock-type mb))
 			     (equal (buffer-dtype (memoryblock-type candidate))
 				    (buffer-dtype (memoryblock-type mb)))
                              ;; [TODO] If offsets were created but size are equivalent; they are not cached right?
@@ -139,7 +157,9 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
     (loop for node in nodes
 	  for nth upfrom 0
           if (eql (node-type node) :Schedule-Item) ; Optimization for non-jitable instructions (like: foreign kernel calls, allocation, pause/backward)
-            do (loop for val in (getattr node :storage-id-src)
+            do (assert (= (length (getattr node :storage-id-src)) (length (getattr node :read-types))))
+               (assert (= (length (getattr node :storage-id-dst)) (length (getattr node :write-types))))
+               (loop for val in (getattr node :storage-id-src)
                      for typ in (getattr node :read-types)
                      for time = `(,nth ,@(gethash val trace-table))
                      if (id-is-input-p val base-graph) do (push val outputs)
@@ -191,11 +211,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
             do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
       ;; Note(hikettei): is this recursively applied? especially for schedule cached and big graph.
       ;; As of this writing(2024/11/10), i am unsure if this is correct. Should be tested by GPT2 in the next pr.
-      (labels ((newid (id)
+      (labels ((newid (id &key (seen))
                  (if (gethash id alias-map)
-                     (if (eql (gethash id alias-map) id)
+                     (if (or (eql (gethash id alias-map) id) (find (gethash id alias-map) seen))
                          id
-                         (newid (gethash id alias-map)))
+                         (newid (gethash id alias-map) :seen (append seen (list id))))
                      id)))
         (when (>= (ctx:getenv :JIT_DEBUG) 4)
           (format t "[DEBUG] MemoryPlanner: minimized alias-map~%")

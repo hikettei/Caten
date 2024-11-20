@@ -15,7 +15,7 @@
 	   (outputs (multiple-value-list (apply graph-f (collect-initargs-names lambda-list))))
 	   (name (intern (format nil "~(~a~)_~(~a~)_~(~a~)" name order dtype) "KEYWORD"))
 	   (blueprint (if aot-mode (let ((*device* :lisp)) (caten outputs :jit nil :name name)) (caten outputs :name name))))
-      (when aot-mode (when (= 1 (ctx:getenv :STATIC_GENSYM)) (caten/codegen/rewriting-rules:apply-static-gensym blueprint)))	
+      (when aot-mode (caten/codegen/rewriting-rules:apply-static-gensym blueprint))	
       blueprint))
   (defmacro caten/defun[T] ((name cffi-prefix &key (dtypes) (orders `(:row :column))) lambda-list &body body)
     (declare (type string cffi-prefix))
