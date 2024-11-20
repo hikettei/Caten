@@ -24,8 +24,6 @@
                 1))               ; Batch size
          (x (!reshape x (list b n d)))
          (positions (!index-components (list n)))
-         (freqs (!exp (!div (!mul (!index-components (list (floor d 2)))
-                                  (!const x (- (log 10000))))
          (two-scalar (!const x 2))
          (indices (!mul two-scalar (!index-components (list (floor d 2)))))
          (freqs (!exp (!div (!mul indices (!const x (- (log 10000))))
