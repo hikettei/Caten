@@ -222,6 +222,9 @@ Applying a further slicing:
       (return-from tr-reshapeable-p (tr-contiguous tracker))))
   ;; Not contiguous -> Not reshapeable (todo: masked reshape)
   (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
+  ;; Permuted: (except for the mask creation) not reshapeable
+  (when (not (equal (range 0 (length (tr-shape tracker))) (tr-permute tracker)))
+    (return-from tr-reshapeable-p nil))
   ;; Broadcasted -> Not contiguous
   (when (some #'identity (tr-broadcast tracker))
     (return-from tr-reshapeable-p nil))
@@ -244,7 +247,6 @@ Applying a further slicing:
             (tr-contiguous new-tracker) t)
       new-tracker)))
 
-;; !!! [TODO] When apply-slice is MERGEABLE??
 (defmethod tr-apply-slice ((tensor Tensor) slice new-shape) (tr-apply-slice (tensor-tr tensor) slice new-shape))
 (defmethod tr-apply-slice ((tracker Tracker) slice new-shape &aux (new-shape (canonicalize-shape new-shape)))
   (assert (= (length slice) (length (tr-shape tracker))) () "Trying to slice tracker with different dimension: ~a" slice)
