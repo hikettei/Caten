@@ -275,11 +275,8 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
     (:-inf "_negative_infinity")
     (:nan "_nan")
     (otherwise
-     ;; [TODO: Fix] (hikettei) This code is not ANSI-Portable because the way the sytem rendering double-float differs. This is why FP64+CCL fails.
      (if (typep obj 'double-float)
-         (progn
-           #-sbcl(progn (warn "FP64 Math w/o SBCL is not tested."))
-           #+sbcl(cl-ppcre:regex-replace "d" (format nil "~a" obj) "e"))
+         (format nil "~,15f" obj)
          (format nil "~(~a~)" obj)))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :LOAD)) node)
