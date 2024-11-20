@@ -202,6 +202,10 @@
 		 (let ((pos (position name (st-bf st) :key #'at-name)))
 		   (assert pos () "ShapeTracker: ~a~% ~a was not appeared in bf." (st-base st) name)
 		   (nth pos tensors)))
+               (find-at (name &key (key))
+	         (let ((pos (find name (funcall key st) :key #'at-name)))
+		   (assert pos () "ShapeTracker: ~a~% ~a was not appeared in aft/bf." (st-base st) name)
+                   pos))
 	       (make-new-tensor (at)
 		 (let ((base (find-base-tensor (at-name at)))
 		       (shp  (loop for s in (at-shape at)
@@ -213,7 +217,13 @@
 		   (if allow-broadcast
 		       base
 		       (make-tensor shp :dtype (tensor-dtype base) :order (tensor-order base) :id (gensym "STC") :views (tensor-views base)
-				    :initial-element (gethash :initial-element solved) :tr (tensor-tr base))))))
+				        :initial-element (gethash :initial-element solved)
+                                        :tr
+                                        ;; ShapeTracker will be inherited only when the relations are injective.
+                                        (if (equal (at-shape (find-at (at-name at) :key #'st-bf))
+                                                   (at-shape (find-at (at-name at) :key #'st-aft)))
+                                            (tensor-tr base)
+                                            nil))))))
 	(apply #'values (map 'list #'make-new-tensor (st-aft st))))))
   (defun parse-where (where)
     "Verifies the where form"
@@ -243,6 +253,13 @@ TODO: Add LazyAssertion which applies shape check even for symbols
 
 - (KEYWORD . VALUE) will specify a special argument to st. It can specify that `keyword` is solved to `value`.
 - `VALUE` can be one of number or list (concatenated).
+
+### Shape Tracker
+
+- Shape Tracker will be inherited only when the relations are injective.
+- If the subscript used in the first part of the subscript, is also used in the second part. the shape tracker will be inherited.
+- That is, `A[~] -> A[~]`, the returned tensor will extend the shape tracker of input A.
+- `A[~ i j] -> A[~ j i]` won't extend the shape tracker of input A.
 
 ### Special Keywods
 

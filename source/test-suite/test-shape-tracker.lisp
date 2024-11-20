@@ -95,7 +95,7 @@
                  (ok succeed ,(format nil "~a+~a" (action->caten-view 'x x-actions) (action->caten-view 'y y-actions)))
                  (ok succeed (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
                                      caten (->caten (torch.from_numpy numpy)))))))))))
-
+;; [TODO] Add kernel count tests for each define-view-test. The goal is to simplify the convnd jit kernel!
 (define-view-test permute+reshape (3 3 3)
   (:permute 1 0 2)
   (:reshape 3 3 3)
@@ -211,3 +211,10 @@
 ;     (:reshape 10 32 1 3 64))
 ;    ((:permute 0 1 2 3)
 ;     (:reshape 10 32 1 3 64)))
+
+(deftest shape-tracker-shape-infer-failing-case
+  (macrolet ((test (form)
+               `(let ((x ,form))
+                  (ok (equal (caten/apis::tr-shape (caten/apis::tensor-tr x)) (tensor-shape x))))))
+    (test (!matmul (make-tensor `(10 3 32)) (!t (make-tensor `(96 32)))))
+    (test (!add (!matmul (make-tensor `(10 3 32)) (!t (make-tensor `(96 32)))) (make-tensor `(96))))))
