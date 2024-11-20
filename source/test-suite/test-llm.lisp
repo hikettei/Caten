@@ -283,7 +283,18 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
 
 (deftest test-symbolic-regression-test
-  (let* ((model (Transformer 32 4 0 1e-5 32))
-         (x (forward model (make-tensor `(b s)) (iconst 'n)))
-         (model (caten x)))
-    (ok (forward model `(b . 1) `(s . 2) `(n . 2)))))
+  (with-no-grad
+    (with-protect-jit
+      (let* ((model (Transformer 32 4 0 1e-5 32))
+             (x (forward model (make-tensor `(b s)) (iconst 'n)))
+             (model (caten x)))
+        (ok (forward model `(b . 1) `(s . 2) `(n . 2)))))))
+
+(deftest test-symbolic-regression-test-1
+  (with-no-grad
+    (with-protect-jit
+      (let* ((caten/llm::*use-kv-cache* nil)
+             (model (Transformer 32 4 1 1e-5 32))
+             (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
+             (model (caten x)))
+        (ok (forward model `(x . ,(randint `(1 2) :low 0 :high 10)) `(s . 2) `(n . 1)))))))
