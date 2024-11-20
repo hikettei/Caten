@@ -1,9 +1,5 @@
 (in-package :caten/test-suite)
 
-(defun !rope (x)
-  (declare (type tensor x))
-  (forward (RoPE 1) x))
-
 (python-exec
  "
 #from: https://pytorch.org/torchtune/0.2/_modules/torchtune/modules/position_embeddings.html
