@@ -178,7 +178,8 @@ caten/codegen overview:
                (append
                 (list node)
                 (apply #'append (map 'list #'explore (node-reads node)))))))
-    (values (nreverse (explore top-id)) seen)))
+    (let ((g (apply #'make-graph (explore top-id))))
+      (values (tpsort-graph g) seen))))
 
 (defun select-output-shape (wt)
   (if (and (buffer-orig-buffer-shape wt) (= (length (buffer-orig-buffer-shape wt)) (length (buffer-shape wt))))
