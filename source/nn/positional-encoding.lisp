@@ -32,10 +32,10 @@
          (theta (!mul positions-reshaped freqs-reshaped))        ; Shape: (n, D/2)
          (costheta (!cos theta))
          (sintheta (!sin theta))
-         (x1 (!view x 't 't `(0 ,d 2)))  ; x[..., 0:d:2]
+         (x1 (!view x t t `(0 ,d 2)))  ; x[..., 0:d:2]
          (x2 (if (evenp d)
-                 (!view x 't 't `(1 ,(1+ d) 2))  ; x[..., 1:(d+1):2]
-                 (!view x 't 't `(1 ,d 2))))     ; x[..., 1:d:2]
+                 (!view x t t `(1 ,(1+ d) 2))  ; x[..., 1:(d+1):2]
+                 (!view x t t `(1 ,d 2))))     ; x[..., 1:d:2]
          ;; Compute rx1 and rx2
          (rx1 (!sub (!mul x1 costheta) (!mul x2 sintheta)))
          (rx2 (!add (!mul x1 sintheta) (!mul x2 costheta)))
@@ -45,6 +45,6 @@
          (rotated (!reshape result (list b n (* 2 (floor d 2)))))
          (final-result (if (evenp d)
                            rotated
-                           (let ((last-elem (!view x 't 't `(,(- d 1) ,d))))  ; Shape: (b, n, 1)
+                           (let ((last-elem (!view x t t `(,(- d 1) ,d))))  ; Shape: (b, n, 1)
                              (!concatenate -1 rotated last-elem)))))
     (proceed (!reshape final-result shape))))
