@@ -95,7 +95,7 @@
                  (ok succeed ,(format nil "~a+~a" (action->caten-view 'x x-actions) (action->caten-view 'y y-actions)))
                  (ok succeed (format nil "~a+~a~%  caten=~a~%  numpy=~a" ',(action->caten-view 'x x-actions) ',(action->caten-view 'y y-actions)
                                      caten (->caten (torch.from_numpy numpy)))))))))))
-
+;; [TODO] Add kernel count tests for each define-view-test. The goal is to simplify the convnd jit kernel!
 (define-view-test permute+reshape (3 3 3)
   (:permute 1 0 2)
   (:reshape 3 3 3)
