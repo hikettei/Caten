@@ -468,6 +468,7 @@ caten/codegen overview:
           (print-info "Compiling ..."))
         (%compile-kernel renderer (graph-nodes schedule-graph) dir)
         (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
+          (setf (graph-nodes new-graph) (tpsort-graph new-graph))
           (when (>= (ctx:getenv :JIT_DEBUG) 4)
             (print-info "Final Scheduling Graph:")
             (print schedule-graph)
