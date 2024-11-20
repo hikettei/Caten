@@ -281,3 +281,9 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
+
+(deftest test-symbolic-regression-test
+  (let* ((model (Transformer 32 4 0 1e-5 32))
+         (x (forward model (make-tensor `(b s)) (iconst 'n)))
+         (model (caten x)))
+    (forward model `(b . 1) `(s . 2) `(n . 2))))
