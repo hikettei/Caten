@@ -44,6 +44,15 @@
     ("output_norm.weight" . "ln_f.affine")
     ("position_embd.weight" . "wpe.weight")))
 
+(defparameter *transpose-aot* (caten (!copy (!t (make-tensor `(a b) :from 'x)))))
+
+(defun transpose-tensor (tensor)
+  (assert (= (ndim tensor) 2) () "Cannot transpose the tensor ~a" tensor)
+  (multiple-value-bind (a b) (apply #'values (shape tensor))
+    (let ((out (forward *transpose-aot* `(x . ,tensor) `(a . ,a) `(b . ,b))))
+      (setf (tensor-shape out) (list b a))
+      out)))
+
 (defun remap-key (key)
   (loop for (before . after) in *remap-key*
         do (setf key (cl-ppcre:regex-replace-all before key after)))
@@ -52,6 +61,11 @@
 (defun remap-state-dict-keys (state-dict)
   (let ((new-entry (make-hash-table :test #'equal)))
     (maphash #'(lambda (k v) (setf (gethash (remap-key k) new-entry) v)) (state-dict-entry state-dict))
+    (maphash
+     #'(lambda (k v)
+         (when (cl-ppcre:scan ".weight" k)
+           (setf (gethash k new-entry) (transpose-tensor v))))
+        new-entry)
     (setf (state-dict-entry state-dict) new-entry)))
 
 (defun make-gpt2 (model-type &key (max-seq-len 1024))
