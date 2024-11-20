@@ -284,7 +284,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 
 (deftest test-symbolic-regression-test
   (with-no-grad
-    (with-protect-jit
+    (when (= 1 (ctx:getenv :JIT))
       (let* ((model (Transformer 32 4 0 1e-5 32))
              (x (forward model (make-tensor `(b s)) (iconst 'n)))
              (model (caten x)))
@@ -292,7 +292,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 
 (deftest test-symbolic-regression-test-1
   (with-no-grad
-    (with-protect-jit
+    (when (= 1 (ctx:getenv :JIT))
       (let* ((caten/llm::*use-kv-cache* nil)
              (model (Transformer 32 4 1 1e-5 32))
              (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
@@ -301,9 +301,9 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 
 (deftest test-symbolic-regression-test-2
   (with-no-grad
-    (with-protect-jit
+    (when (= 1 (ctx:getenv :JIT))
       (testing "No Segv?"
-        (let* ((caten/llm::*use-kv-cache* nil)
+        (let* ((caten/llm::*use-kv-cache* nil) ;; *use-kv-cache*=T will also cause segfault
                (model (Transformer 32 4 2 1e-5 32))
                (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
                (model (caten x)))
