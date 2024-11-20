@@ -48,3 +48,6 @@
                            (let ((last-elem (!view x t t `(,(- d 1) ,d))))  ; Shape: (b, n, 1)
                              (!concatenate -1 rotated last-elem)))))
     (proceed (!reshape final-result shape))))
+(defun !rope (x)
+  (declare (type tensor x))
+  (forward (rope 1) x))

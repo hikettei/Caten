@@ -24,19 +24,12 @@ def torch_rope(x):
     x_out = x_out.flatten(-2)
     return x_out.type_as(x)")
 
-
 (import-function "torch_rope")
 
 (deftest test-rope
   (with-given-dtype ((:float32 . "float32"))
     (let ((x (rand `(1 20 20 20))))
       (assert-equal
-       (:atol 2 :rtol 3)
+       (:atol 1e-5 :rtol 1e-6)
        (with-torch (x) (->caten (torch_rope x)))
        (proceed (!rope x))))))
-
-
-
-
-
-
