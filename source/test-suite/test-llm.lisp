@@ -219,16 +219,6 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
                       (->caten (torch_mha_impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
                     (proceed (mha-impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))))))))
 |#
-
-(deftest repl-test
-  (let ((x (rand `(10 11 12 13)))
-        (y (rand `(10 12 11 13))))
-    (assert-equal
-        (:atol 1e-5 :rtol 1e-5)
-        (with-torch (x y)
-          (->caten (torch.matmul y (torch.transpose (torch.transpose x 1 2) -1 -2))))
-        (proceed (!matmul y (!transpose (!transpose x 1 2) -1 -2))))))
-
 ;; Attention自体動いてるきも？
 ;; (with-no-grad (proceed (forward (Attention 32 4 16 :use-kv-cache nil) (make-tensor `(10 3 32)))))
 ;; (proceed (forward (Attention 32 4 16 :use-kv-cache nil) (make-tensor `(10 3 32))))

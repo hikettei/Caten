@@ -237,6 +237,7 @@ Applying a further slicing:
   (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
       (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape))))
+    (assert (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))) () "Trying to reshape the permuted tracker!")
     ;; Can reshape (reshape=chainging the stride)
     (let* ((new-tracker (copy-tracker tracker)))
       (setf (tr-shape new-tracker) new-shape
