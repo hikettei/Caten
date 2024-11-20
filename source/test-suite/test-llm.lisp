@@ -286,4 +286,4 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
   (let* ((model (Transformer 32 4 0 1e-5 32))
          (x (forward model (make-tensor `(b s)) (iconst 'n)))
          (model (caten x)))
-    (forward model `(b . 1) `(s . 2) `(n . 2))))
+    (ok (forward model `(b . 1) `(s . 2) `(n . 2)))))
