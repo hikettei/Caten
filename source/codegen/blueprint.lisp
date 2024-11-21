@@ -537,6 +537,7 @@ Depends=~a Reduce=~a Users=~a
 (defmethod schedule-item-gather-dynamic-shapes ((node node) base-graph blueprints)
   (flet ((as-shape (val) (cons val caten/aasm:*default-int*)))
     (let* ((candidates (loop for node in (graph-nodes base-graph)
+                             append (node-writes node)
                              if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
                                collect (getattr node :value)))
            (related-iters)
