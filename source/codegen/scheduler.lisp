@@ -487,7 +487,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                        (group-assert-rank parent-group r1 r2 read-view)
                        ->ok)
                      ->ng)))))))))
-
+;; [TODO] Remove
 (defmethod merge-groups ((self Group) parents mergeable-list)
   (let* ((p (loop for m in mergeable-list for p in parents
                   if m collect p))
@@ -512,6 +512,20 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
           (setf (group-items self) (append (group-items p) (group-items self))
                 (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims p))))
   self)
+
+(defmethod merge-two-group ((self Group) (parent group))
+  "Trying to merge self <- parent"
+  (let ((t1 (group-get-type self))
+        (t2 (group-get-type parent)))
+    (assert (or (= (buffer-nrank t1) 0) (= (buffer-nrank t2) 0) (= (buffer-nrank t1) (buffer-nrank t2)))
+            ()
+            "rank = ~a vs ~a" (buffer-nrank t1) (buffer-nrank t2)))
+  (assert (or (null (group-reduce-dims self)) (null (group-reduce-dims parent)) (equal (group-reduce-dims self) (group-reduce-dims parent)))
+          ()
+          "merge-two-group: Incorrect reduce dims ~a vs ~a" (group-reduce-dims self) (group-reduce-dims parent))
+  (setf (group-items self) (append (group-items self) (group-items parent))
+        (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims parent)))
+  t)
 ;; [TODO] Rewrite recursive-create-groups as a DFS
 ;; - [ ] MHA is working?
 ;; - [ ] BatchNorm JIT is working?
@@ -534,6 +548,8 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
             :items (list node)
             :reduce-dims (node-reduce-axes node)))
          (parents
+           ;; at least reverse(reverse(x)) is removable
+           ;; ^ 順序に関係ないアルゴリズムにしたい
            (reverse (map 'list #'(lambda (x) (and (symbolp x) (recursive-create-groups x graph :seen seen))) (reverse (node-reads node))))))
     (declare (type node node) (type list parents))
     ;; Consider this structured graph:
@@ -566,6 +582,80 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                append (cdr p)
              else ;; unmergeable
              append p)))))
+;; [todo]
+;; - 1. remove recursive-create-group
+;; - 2. move and rename bfs-schedule-graph -> schedule-graph
+;; - 3. Transformer Failing Caseでテストかけない？
+(defun make-group-from-node (node)
+  (declare (type node node))
+  (make-group :key (node-id node) :reduce-dims (node-reduce-axes node) :items (list node)))
+
+(defun bfs-graph-schedule (graph)
+  (declare (type Graph graph))
+  (let* ((groups (map 'list #'make-group-from-node (graph-nodes graph)))
+         (queue) (sorted-nodes)
+         (present-key-map (make-hash-table))
+         (in-degrees (make-hash-table))
+         (out-degrees (make-hash-table)))
+    (declare (type list groups))
+    ;; doing a bfs to create a schedule group from the bottom to up
+    (format t "(Before Scheduling) Total ~a tasks~%" (length groups))
+    (labels ((present (node-id &aux (val (gethash node-id present-key-map)))
+               (if val
+                   (if (eql val node-id)
+                       val
+                       (present val))
+                   node-id))
+             (get-group (node-id)
+               ;; Returns a group the node-id belongs to
+               (or (find (present node-id) groups :key #'group-key) (error "~a does not exist" node-id)))
+             (butseen (list)
+               (loop for l in list
+                     for v = (id->value graph l)
+                     if (and v (symbolp l) (not (find l (the list (graph-seen graph)))))
+                       collect v)))
+      ;; recording the relationships to in-degrees/out-degrees
+      (loop for node in (graph-nodes graph) do
+        ;; in_degrees[node_id] = parent_node_ids.
+        (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
+        ;; out_degrees[parent_id] = node_id
+        (dolist (r (butseen (node-reads node))) (push node (gethash (node-id r) out-degrees))))
+      ;; Confirm no duplication in out-degrees. e.g.: X <- Node(A, A) is possible but remove will only purge the first A.
+      (maphash #'(lambda (k v) (setf (gethash k out-degrees) (remove-duplicates v :key #'node-id))) out-degrees)
+      ;; push the first persons (= no parents) to the queue.
+      (loop for node in (graph-nodes graph)
+            if (null (gethash (node-id node) in-degrees))
+              do (push node queue))
+      ;; O(V+E)
+      (loop while queue
+            for parent = (pop queue)
+            for parent-group = (get-group (node-id parent)) do
+              (push parent sorted-nodes)
+              (loop for self in (gethash (node-id parent) out-degrees) ;; the same as doing (id->users graph parent)
+                    do (setf (gethash (node-id self) in-degrees)
+                             (remove (node-id parent) (gethash (node-id self) in-degrees) :key #'node-id))
+                       ;; all parents are realized and become an entry point?
+                       (when (null (gethash (node-id self) in-degrees))
+                         ;; TODO: is it valid when the read is like:
+                         ;; ```
+                         ;; X = (10 10)
+                         ;; Z = X[0:5] + X[5:10]
+                         ;; ```
+                         (let ((self-group (get-group (node-id self)))
+                               (pos (position (node-id parent) (node-reads self) :key #'(lambda (x &aux (val (id->value graph x))) (when val (node-id val))))))
+                           (assert pos)
+                           (when (group-merge-p self-group graph self parent-group pos)
+                             ;; Merge self-group into parent-group
+                             (setf groups (remove (group-key self-group) groups :key #'group-key)
+                                   (gethash (group-key self-group) present-key-map) (group-key parent-group)) ;; The access to self is the access to its parent group
+                             (merge-two-group parent-group self-group)))
+                         (push self queue))
+                       (remhash (node-id parent) out-degrees))))
+    (assert (= (length sorted-nodes) (length (graph-nodes graph))) () "~a prescheduled but only ~a scheduled." (length (graph-nodes graph)) (length sorted-nodes))
+    ;; Post Processing    
+    (format t "(After Scheduling) total ~a tasks~%" (length groups))
+    (print groups)
+    groups))
 ;; ~~~~~~ More Fusion Rules ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Rewrite them as a pattern matcher.
 (defun make-can-split-p (schedule-graph)
@@ -745,9 +835,11 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                     (getattr si :items)))))))
     (mapc #'r (graph-nodes schedule-graph))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [todo] make graph-schedule defun
 (defgeneric graph-schedule (graph) (:documentation "Splits a given graph into small subgraphs called Schedule-Item. It always returns `FastGraph`."))
 
 (defmethod graph-schedule ((graph Graph))
+  (bfs-graph-schedule graph)
   (when (= 2 (ctx:getenv :DOT)) (->dot graph :title "Graph [Before Scheduling]"))
   (let* ((seen (make-hash-table))
          (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph)))))
