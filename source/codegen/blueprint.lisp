@@ -551,12 +551,12 @@ Depends=~a Reduce=~a Users=~a
                      do (push (car (relay-write-iters (read-type-relay item))) related-iters) and
                    append
                    (loop for expr-item in (graph-nodes (expr-graph (getattr item :EXPR)))
-                         if (and (eql (node-type expr-item) :LOAD) (symbolp (getattr expr-item :value)))
+                         if (and (eql (node-type expr-item) :LOAD)
+                                 (symbolp (getattr expr-item :value))
+                                 (getattr expr-item :_type_relay :allow-undefined t)
+                                 (car (relay-reads (read-type-relay expr-item))))
                            collect
-                           (let ((dtype (if (and (getattr expr-item :_type_relay :allow-undefined t) (car (relay-reads (read-type-relay expr-item))))
-                                            (buffer-dtype (car (relay-reads (read-type-relay expr-item))))
-                                            caten/aasm:*default-int*)))
-                             (cons (getattr expr-item :value) dtype))
+                           (cons (getattr expr-item :value) (buffer-dtype (car (relay-reads (read-type-relay expr-item)))))
                          if (eql (node-type expr-item) :AREF)
                            do (push (getattr expr-item :space) related-iters))
                    if (eql (node-type item) :FOR)
