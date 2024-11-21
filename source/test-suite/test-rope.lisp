@@ -7,7 +7,6 @@ def torch_rope(x):
     base = 10000
     dim = x.shape[-1]
     theta = 1.0 / (base ** (torch.arange(0, dim, 2, device=x.device).float() / dim))
-    print(theta)
     seq_len = x.size(1)
     seq_idx = torch.arange(seq_len, dtype=theta.dtype, device=theta.device)
     idx_theta = torch.einsum('i,j->ij', seq_idx, theta)
