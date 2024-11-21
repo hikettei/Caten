@@ -1,54 +1,56 @@
-
-
 (in-package :caten/nn)
 
-; from https://github.com/ml-explore/mlx/blob/main/python/mlx/nn/layers/positional_encoding.py
 ;; RoPE
 ;; PositionalEncoding
 
-(defmodel (RoPE (dims &key (traditional NIL) (base 10000) (scale 1.0) (offset 1.0)))
-    ((dims dims)
-     (traditional traditional)
-     (base base)
-     (scale scale)
-     (offset offset)))
+(defmodel (RoPE (dim &key (base 10000)))
+    ((dim dim)
+     (base base)))
 
 (defmethod call ((op RoPE) &rest inputs)
-  (let* ((x (car inputs))
-         (shape (shape x))
-         (last-two (last shape 2))
-         (n (first last-two))     ; Sequence length
-         (d (second last-two))    ; Embedding size
-         (b (if (> (length shape) 2)
-                (reduce #'* (butlast shape 2))
-                1))               ; Batch size
-         (x (!reshape x (list b n d)))
-         (positions (!index-components (list n)))
-         (two-scalar (!const x 2))
-         (indices (!mul two-scalar (!index-components (list (floor d 2)))))
-         (freqs (!exp (!div (!mul indices (!const x (- (log 10000))))
-                            (!const x d))))
-         (positions-reshaped (!reshape positions (list n 1)))    ; Shape: (n,1)
-         (freqs-reshaped (!reshape freqs (list 1 (floor d 2))))  ; Shape: (1, D/2)
-         (theta (!mul positions-reshaped freqs-reshaped))        ; Shape: (n, D/2)
-         (costheta (!cos theta))
-         (sintheta (!sin theta))
-         (x1 (!view x t t `(0 ,d 2)))  ; x[..., 0:d:2]
-         (x2 (if (evenp d)
-                 (!view x t t `(1 ,(1+ d) 2))  ; x[..., 1:(d+1):2]
-                 (!view x t t `(1 ,d 2))))     ; x[..., 1:d:2]
-         ;; Compute rx1 and rx2
-         (rx1 (!sub (!mul x1 costheta) (!mul x2 sintheta)))
-         (rx2 (!add (!mul x1 sintheta) (!mul x2 costheta)))
-         (rx1-expanded (!reshape rx1 (append (shape rx1) (list 1))))
-         (rx2-expanded (!reshape rx2 (append (shape rx2) (list 1))))
-         (result (!concatenate -1 rx1-expanded rx2-expanded))    ; Shape: (b, n, half-dim, 2)
-         (rotated (!reshape result (list b n (* 2 (floor d 2)))))
-         (final-result (if (evenp d)
-                           rotated
-                           (let ((last-elem (!view x t t `(,(- d 1) ,d))))  ; Shape: (b, n, 1)
-                             (!concatenate -1 rotated last-elem)))))
-    (!reshape final-result shape)))
+  (with-slots (dim traditional base scale offset) op
+    (let* ((x (first inputs))
+         (x-shape (shape x)) ; x-shape: (batch-size, seq-len, num-heads, head-dim)
+         (batch-size (nth 0 x-shape))
+         (seq-len (nth 1 x-shape))
+         (num-heads (nth 2 x-shape))
+         (head-dim (nth 3 x-shape))
+         (head-dim-half (floor (/ head-dim 2)))
+         (indices (!mul (!const x 2) (!index-components (list head-dim-half)))) ; Shape: (head-dim-half)
+         (exponents (!div indices (!const x head-dim))) ; Shape: (head-dim-half)
+         (base (!const x base))
+         (log-base (!log base)) ; Natural logarithm
+         (theta (!exp (!neg (!mul exponents log-base)))) ; Shape: (head-dim-half)
+         (theta-reshaped (!reshape theta (list 1 head-dim-half))) ; Shape: (1, head-dim-half)
+         (seq-idx (!index-components (list seq-len))) ; Shape: (seq-len)
+         (seq-idx-reshaped (!reshape seq-idx (list seq-len 1))) ; Shape: (seq-len, 1)
+         (idx-theta (!mul seq-idx-reshaped theta-reshaped)) ; Shape: (seq-len, head-dim-half)
+         (cosine (!cos idx-theta)) ; Shape: (seq-len, head-dim-half)
+         (sine (!sin idx-theta))   ; Shape: (seq-len, head-dim-half)
+         (xshaped (!reshape x (list batch-size seq-len num-heads head-dim-half 2)))
+         (cosine-reshaped (!reshape cosine (list 1 seq-len 1 head-dim-half 1)))
+         (sine-reshaped (!reshape sine (list 1 seq-len 1 head-dim-half 1)))
+         (num-dimensions 5)
+         (x0-subscripts (make-list num-dimensions :initial-element 'T))
+         (x1-subscripts (make-list num-dimensions :initial-element 'T)))
+    (setf (nth (- num-dimensions 1) x0-subscripts) '(0 1)) ; Select index 0
+    (setf (nth (- num-dimensions 1) x1-subscripts) '(1 2)) ; Select index 1
+    (let* ((x0 (apply #'!view xshaped x0-subscripts))
+           (x1 (apply #'!view xshaped x1-subscripts))
+           (rotated0 (!sub (!mul x0 cosine-reshaped) (!mul x1 sine-reshaped))) ; Shape: same as x0
+           (rotated1 (!add (!mul x0 sine-reshaped) (!mul x1 cosine-reshaped))) ; Shape: same as x0
+           (x-out (!concatenate -1 rotated0 rotated1)) 
+           (x-out-final (!reshape x-out (list batch-size seq-len num-heads (* 2 head-dim-half)))))
+      (let ((final-result (if (= (* 2 head-dim-half) head-dim)
+                              x-out-final
+                              (let* ((x-dims (shape x))
+                                     (subs (make-list (length x-dims) :initial-element 'T)))
+                                (setf (nth (- (length x-dims) 1) subs) (list (- head-dim 1) head-dim))
+                                (let ((last-elem (apply #'!view x subs))) ; Shape: (batch-size, seq-len, num-heads, 1)
+                                  (!concatenate -1 x-out-final last-elem))))))
+        (!reshape final-result x-shape))))))
+
+
 
 (defun !rope (x)
   (declare (type tensor x))

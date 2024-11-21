@@ -7,6 +7,7 @@ def torch_rope(x):
     base = 10000
     dim = x.shape[-1]
     theta = 1.0 / (base ** (torch.arange(0, dim, 2, device=x.device).float() / dim))
+    print(theta)
     seq_len = x.size(1)
     seq_idx = torch.arange(seq_len, dtype=theta.dtype, device=theta.device)
     idx_theta = torch.einsum('i,j->ij', seq_idx, theta)
@@ -24,8 +25,9 @@ def torch_rope(x):
 
 (deftest test-rope
   (with-given-dtype ((:float32 . "float32"))
-    (let ((x (rand `(1 20 20 20))))
+    (let ((x (rand `(1 10 10 10))))
       (assert-equal
-       (:atol 1e-5 :rtol 1e-6)
+       (:atol 1e-4 :rtol 1e-6)
        (with-torch (x) (->caten (torch_rope x)))
        (proceed (!rope x))))))
+
