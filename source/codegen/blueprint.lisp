@@ -537,9 +537,13 @@ Depends=~a Reduce=~a Users=~a
 (defmethod schedule-item-gather-dynamic-shapes ((node node) base-graph blueprints)
   (flet ((as-shape (val) (cons val caten/aasm:*default-int*)))
     (let* ((candidates (loop for node in (graph-nodes base-graph)
-                             append (node-writes node)
+                             if (= 0 (buffer-nrank (car (relay-writes (read-type-relay node)))))
+                               collect (car (node-writes node))
                              if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
                                collect (getattr node :value)))
+           (candidates (loop with written-in-bp = (apply #'append (map 'list #'node-writes blueprints))
+                             for c in candidates
+                             if (null (find c written-in-bp)) collect c))
            (related-iters)
            (related-expr-symbols
              (loop for item in blueprints
