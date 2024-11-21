@@ -524,57 +524,37 @@ Depends=~a Reduce=~a Users=~a
          (getattr node :storage-id-src) (map 'list (compose #'reduce-address-of #'car) read-items)
          (getattr node :storage-id-dst) (map 'list (compose #'reduce-address-of #'car) write-items))))))
 
-(defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph blueprints)
-  "Returns a list of dynamic shapes used in the schedule-item."
-  (flet ((is-dynamic-shape-p (val)
-           (and (not (null val))
-                (not (eql val t))
-                (find val (graph-nodes base-graph) :key #'(lambda (x) (getattr x :value :allow-undefined t)))))
-         (not-defined-by-bp (val) (null (find val blueprints :key #'node-writes :test #'find))))
-    (remove-duplicates
-     (append
-      ;; From the lowered blueprint
-      (loop for item in (getattr node :items)
-            if (and (eql (node-type item) :LOAD) (symbolp (getattr item :value)))
-              collect (cons (getattr item :value) (buffer-dtype (car (relay-writes (read-type-relay item))))))
-      ;; Fused Dynamic Shape
-      (loop for item in (getattr node :items)
-            append
-            (loop for r in (node-reads item)
-                  for rt in (relay-reads (read-type-relay item))
-                  if (and (symbolp r) (is-dynamic-shape-p r))
-                    collect (cons r (buffer-dtype rt))))
-      ;; :FOR/:IF
-      (loop for item in blueprints
-            if (find (node-type item) `(:FOR :IF))
-              append
-              (loop for node in (ecase (node-type item)
-                                  (:FOR
-                                   (append (graph-nodes (expr-graph (getattr item :upfrom)))
-                                           (graph-nodes (expr-graph (getattr item :below)))
-                                           (graph-nodes (expr-graph (getattr item :by)))))
-                                  (:IF (graph-nodes (expr-graph (getattr item :condition)))))
-                    if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)) (is-dynamic-shape-p (getattr node :value)))
-                      collect (cons (getattr node :value) :int64)))
-      ;; Symbols used to compute the views
-      (nreverse
-       (loop for item in (getattr node :items)
-             append
-             (loop for type in (append (relay-read-iters (read-type-relay item)) (relay-write-iters (read-type-relay item)))
-                   if type
-                     append
-                     (loop for s in (iteration-space-strides type)
-                           for ids = (expr-depends-on s)
-                           append
-                           (loop for i in ids if (is-dynamic-shape-p i)
-                                 collect (cons i caten/aasm:*default-int*)))
-                   if type
-                     append
-                     (loop for s in (append (loop for v in (iteration-space-views type)
-                                                          if v append (list (first v) (third v))))
-                           if (and (symbolp s) (not (eql s t)) (not (eql s nil)) (not-defined-by-bp s))
-                             collect (cons s caten/aasm:*default-int*))))))
-     :key #'car)))
+(defmethod schedule-item-gather-dynamic-shapes ((node node) base-graph blueprints)
+  (let* ((candidates (loop for node in (graph-nodes base-graph)
+                           if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
+                             collect (getattr node :value)))
+         (related-iters)
+         (related-expr-symbols
+           (loop for item in blueprints
+                 if (eql (node-type item) :EXPR)
+                   do (push (car (relay-write-iters (read-type-relay item))) related-iters) and
+                   append
+                   (loop for expr-item in (graph-nodes (expr-graph (getattr item :EXPR)))
+                         if (and (eql (node-type expr-item) :LOAD) (symbolp (getattr expr-item :value)))
+                           collect (getattr expr-item :value)
+                         if (eql (node-type expr-item) :AREF)
+                           do (push (getattr expr-item :space) related-iters))
+                 if (eql (node-type item) :FOR)
+                   append (apply #'append (map 'list #'expr-depends-on (list (getattr item :upfrom) (getattr item :below) (getattr item :by))))
+                 if (eql (node-type item) :IF)
+                   append (expr-depends-on (getattr item :condition)))))
+    (dolist (iter related-iters)
+      (when iter
+        (loop for stride in (iteration-space-strides iter)
+              do (dolist (id (expr-depends-on stride)) (push id related-expr-symbols)))
+        (loop for view in (iteration-space-views iter)
+              if view do
+                ;; upfrom
+                (when (symbolp (car view)) (push (car view) related-expr-symbols))
+                ;; by
+                (when (symbolp (third view)) (push (third view) related-expr-symbols)))))
+    (loop for i in (remove-duplicates related-expr-symbols)
+          if (find i candidates) collect (cons i caten/aasm:*default-int*))))
 
 (defun simplify-pointer-and-constant (blueprints)
   (let ((constants))

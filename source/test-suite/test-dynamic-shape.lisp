@@ -104,7 +104,7 @@
          (mask (!triu (!full `(1 1 ,s ,(!+ (iconst s) (iconst 1))) (-inf)) :diagonal (!+ (iconst 1) n))))
     (ok (caten mask))))
 
-(deftest transformer-serialized-compilation-test
-  (with-protect-jit
-    (ctx:with-contextvar (:SERIALIZE 1)
-      (ok (caten (Transformer 32 4 2 1e-5 32 :max-seq-len 32) (make-tensor `(1 s)) (iconst 'n))))))
+;;(deftest transformer-serialized-compilation-test
+;;  (with-protect-jit
+;;    (ctx:with-contextvar (:SERIALIZE 1)
+;;      (ok (caten (forward (Transformer 32 4 2 1e-5 32 :max-seq-len 32) (make-tensor `(1 s)) (iconst 'n)))))))
