@@ -8,7 +8,7 @@
      (base base)))
 
 (defmethod call ((op RoPE) &rest inputs)
-  (with-slots (dim traditional base scale offset) op
+  (with-slots (dim base) op
     (let* ((x (first inputs))
          (x-shape (shape x)) ; x-shape: (batch-size, seq-len, num-heads, head-dim)
          (batch-size (nth 0 x-shape))
