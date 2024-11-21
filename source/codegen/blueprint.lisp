@@ -524,37 +524,52 @@ Depends=~a Reduce=~a Users=~a
          (getattr node :storage-id-src) (map 'list (compose #'reduce-address-of #'car) read-items)
          (getattr node :storage-id-dst) (map 'list (compose #'reduce-address-of #'car) write-items))))))
 
+(defmethod expr-depends-on ((expr Expr))
+  (let ((symbols))
+    (loop for node in (graph-nodes (expr-graph expr))
+          if (and (eql (node-type node) :Load) (symbolp (getattr node :value))) do
+            (let ((dtype (if (and (getattr node :_type_relay :allow-undefined t) (car (relay-reads (read-type-relay node))))
+                             (buffer-dtype (car (relay-reads (read-type-relay node))))
+                             caten/aasm:*default-int*)))
+              (push (cons (getattr node :value) dtype) symbols)))
+    (remove-duplicates symbols :key #'car)))
+
 (defmethod schedule-item-gather-dynamic-shapes ((node node) base-graph blueprints)
-  (let* ((candidates (loop for node in (graph-nodes base-graph)
-                           if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
-                             collect (getattr node :value)))
-         (related-iters)
-         (related-expr-symbols
-           (loop for item in blueprints
-                 if (eql (node-type item) :EXPR)
-                   do (push (car (relay-write-iters (read-type-relay item))) related-iters) and
+  (flet ((as-shape (val) (cons val caten/aasm:*default-int*)))
+    (let* ((candidates (loop for node in (graph-nodes base-graph)
+                             if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
+                               collect (getattr node :value)))
+           (related-iters)
+           (related-expr-symbols
+             (loop for item in blueprints
+                   if (eql (node-type item) :EXPR)
+                     do (push (car (relay-write-iters (read-type-relay item))) related-iters) and
                    append
                    (loop for expr-item in (graph-nodes (expr-graph (getattr item :EXPR)))
                          if (and (eql (node-type expr-item) :LOAD) (symbolp (getattr expr-item :value)))
-                           collect (getattr expr-item :value)
+                           collect
+                           (let ((dtype (if (and (getattr expr-item :_type_relay :allow-undefined t) (car (relay-reads (read-type-relay expr-item))))
+                                            (buffer-dtype (car (relay-reads (read-type-relay expr-item))))
+                                            caten/aasm:*default-int*)))
+                             (cons (getattr expr-item :value) dtype))
                          if (eql (node-type expr-item) :AREF)
                            do (push (getattr expr-item :space) related-iters))
-                 if (eql (node-type item) :FOR)
-                   append (apply #'append (map 'list #'expr-depends-on (list (getattr item :upfrom) (getattr item :below) (getattr item :by))))
-                 if (eql (node-type item) :IF)
-                   append (expr-depends-on (getattr item :condition)))))
-    (dolist (iter related-iters)
-      (when iter
-        (loop for stride in (iteration-space-strides iter)
-              do (dolist (id (expr-depends-on stride)) (push id related-expr-symbols)))
-        (loop for view in (iteration-space-views iter)
-              if view do
-                ;; upfrom
-                (when (symbolp (car view)) (push (car view) related-expr-symbols))
-                ;; by
-                (when (symbolp (third view)) (push (third view) related-expr-symbols)))))
-    (loop for i in (remove-duplicates related-expr-symbols)
-          if (find i candidates) collect (cons i caten/aasm:*default-int*))))
+                   if (eql (node-type item) :FOR)
+                     append (apply #'append (map 'list #'expr-depends-on (list (getattr item :upfrom) (getattr item :below) (getattr item :by))))
+                   if (eql (node-type item) :IF)
+                     append (expr-depends-on (getattr item :condition)))))
+      (dolist (iter related-iters)
+        (when iter
+          (loop for stride in (iteration-space-strides iter)
+                do (dolist (id (expr-depends-on stride)) (push (as-shape (car id)) related-expr-symbols)))
+          (loop for view in (iteration-space-views iter)
+                if view do
+                  ;; upfrom
+                  (when (symbolp (car view)) (push (as-shape (car view)) related-expr-symbols))
+                  ;; by
+                  (when (symbolp (third view)) (push (as-shape (third view)) related-expr-symbols)))))
+      (loop for i in (remove-duplicates related-expr-symbols :key #'car)
+            if (find (car i) candidates) collect i))))
 
 (defun simplify-pointer-and-constant (blueprints)
   (let ((constants))
