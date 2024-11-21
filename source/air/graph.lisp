@@ -197,9 +197,20 @@ Converts the given graph to a fast graph.
         (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
         (dolist (r (butseen (node-reads node)))
           (when (null (find (the symbol (node-id node)) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
-            (push node (gethash (node-id r) out-degrees))))
-        (when (null (gethash (node-id node) in-degrees))
-          (push node queue)))
+            (push node (gethash (node-id r) out-degrees)))))
+      (let* ((graph (->graph graph))
+             (backward (find :PAUSE/BACKWARD (the list (graph-nodes graph)) :key #'node-type))
+             (backward-pos (position :PAUSE/BACKWARD (the list (graph-nodes graph)) :key #'node-type)))
+        (when backward
+          ;; nodes located after :PAUSE/BACKWARD should be placed after :PAUSE/BACKWARD.
+          (dolist (node (nthcdr (1+ backward-pos) (graph-nodes graph)))
+            (when (null (find (the symbol (node-id node)) (the list (gethash (node-id backward) out-degrees)) :key #'node-id))
+              (push node (gethash (node-id backward) out-degrees)))
+            (when (null (find (the symbol (node-id backward)) (the list (gethash (node-id node) in-degrees)) :key #'node-id))
+              (push backward (gethash (node-id node) in-degrees))))))
+      (loop for node in (graph-nodes graph)
+            if (null (gethash (node-id node) in-degrees))
+              do (push node queue))
       (loop while queue
             for node = (pop queue) do
               (push node sorted-nodes)
