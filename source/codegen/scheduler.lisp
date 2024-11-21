@@ -551,7 +551,10 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                   for parent-return = (car parent)
                   for nth fixnum upfrom 0
                   if parent-return
-                    collect (group-merge-p self graph node parent-return nth)
+                    collect
+                    (if (= 1 (the fixnum (ctx:getenv :SERIALIZE)))
+                        nil
+                        (group-merge-p self graph node parent-return nth))
                   else
                    collect nil)))
       (assert (= (length mergeable-p-list) (length parents)))
