@@ -572,12 +572,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
           (setf (group-items self) (append (group-items p) (group-items self))
                 (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims p))))
   self)
-;; [TODO] Rewrite recursive-create-groups as a DFS
-;; - [ ] MHA is working?
-;; - [ ] BatchNorm JIT is working?
-;; - [ ] ROPE JIT is working?
-;; - [ ] ここで順序に優劣をラベル付けする必要がある。
-;; - [ ] id->usersが複数ある場合は，一番上のPriorityとFuseしないといけない。
+
 (defun recursive-create-groups (id graph &key (ctx))
   (declare (type symbol id) (type graph graph) (optimize (speed 3)))
   (assert ctx)
@@ -597,8 +592,6 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
             :items (list node)
             :reduce-dims (node-reduce-axes node)))
          (parents
-           ;; at least reverse(reverse(x)) is removable
-           ;; ^ 順序に関係ないアルゴリズムにしたい
            (map
             'list
             #'(lambda (x &aux (parent (id->value graph x)))
@@ -626,7 +619,7 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                   if parent-return
                     collect (group-merge-p self graph node parent-return nth)
                   else
-                   collect nil)))
+                    collect nil)))
       (assert (= (length mergeable-p-list) (length parents)))
       (nconc
        (list (merge-groups self (map 'list #'car parents) mergeable-p-list))
