@@ -234,10 +234,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (assert (= (getattr si1 :rank) (getattr si2 :rank)))
   (assert (getattr si1 :jitable)) (assert (getattr si2 :jitable))
   (assert (or (null (getattr si1 :reduce-dims)) (null (getattr si2 :reduce-dims)) (equal (getattr si1 :reduce-dims) (getattr si2 :reduce-dims))))
-  (group->schedule
-   (make-group :items (append (getattr si1 :items) (getattr si2 :items))
-               :reduce-dims (or (getattr si1 :reduce-dims) (getattr si2 :reduce-dims)))
-   base-graph))
+  (let ((graph (apply #'make-graph (append (getattr si1 :items) (getattr si2 :items)))))
+    (setf (graph-seen graph) (append (node-reads si1) (node-reads si2)))
+    (group->schedule
+     (make-group :items (tpsort-graph graph)
+                 :reduce-dims (or (getattr si1 :reduce-dims) (getattr si2 :reduce-dims)))
+     base-graph)))
 
 (defmethod group-get-type ((group Group))
   (let* ((last (nodes-write-to (group-items group)))
