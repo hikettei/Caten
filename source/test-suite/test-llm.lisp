@@ -309,3 +309,12 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
                (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
                (model (caten x)))
           (ok (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0))))))))
+
+(deftest triu-sched
+  (with-no-grad
+    (let* ((x (!triu (make-tensor `(5 5))))
+           (z (!matmul (!add x x) (make-tensor `(5 5))))
+           (z (!matmul (!add z x) (make-tensor `(5 5))))
+           (z (!matmul (!add z x) (make-tensor `(5 5)))))
+      )))
+           
