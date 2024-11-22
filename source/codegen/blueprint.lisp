@@ -500,6 +500,7 @@ Depends=~a Reduce=~a Users=~a
                     do (push (cons write wt) write-items)
                   end
                   do (push write seen)))
+    ;; remote extra read/write dependencies purged by op fusion
     (setf (node-reads node) (map 'list #'car read-items)
           (node-writes node) (map 'list #'car write-items)
           seen nil)
