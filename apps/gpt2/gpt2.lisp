@@ -29,9 +29,9 @@
     (".attn_qkv.bias" . ".attn.c_attn.bias")
     (".attn_qkv.weight" . ".attn.c_attn.weight")
     (".ffn_norm.bias" . ".ln_2.bias")
-    (".ffn_norm.weight" . ".ln_2.weight")
+    (".ffn_norm.weight" . ".ln_2.affine")
     (".attn_norm.bias" . ".ln_1.bias")
-    (".attn_norm.weight" . ".ln_1.weight")
+    (".attn_norm.weight" . ".ln_1.affine")
     (".attn_output.bias" . ".attn.c_proj.bias")
     (".attn_output.weight" . ".attn.c_proj.weight")
     (".ffn_up.bias" . ".mlp.c_fc.bias")
@@ -41,8 +41,17 @@
     ("token_embd.weight" . "wte.weight")
     ("output.weight" . "lm_head.weight")
     ("output_norm.bias" . "ln_f.bias")
-    ("output_norm.weight" . "ln_f.weight")
+    ("output_norm.weight" . "ln_f.affine")
     ("position_embd.weight" . "wpe.weight")))
+
+(defparameter *transpose-aot* (caten (!copy (!t (make-tensor `(a b) :from 'x)))))
+
+(defun transpose-tensor (tensor)
+  (assert (= (ndim tensor) 2) () "Cannot transpose the tensor ~a" tensor)
+  (multiple-value-bind (a b) (apply #'values (shape tensor))
+    (let ((out (forward *transpose-aot* `(x . ,tensor) `(a . ,a) `(b . ,b))))
+      (setf (tensor-shape out) (list b a))
+      out)))
 
 (defun remap-key (key)
   (loop for (before . after) in *remap-key*
@@ -52,16 +61,22 @@
 (defun remap-state-dict-keys (state-dict)
   (let ((new-entry (make-hash-table :test #'equal)))
     (maphash #'(lambda (k v) (setf (gethash (remap-key k) new-entry) v)) (state-dict-entry state-dict))
+    (maphash
+     #'(lambda (k v)
+         (when (cl-ppcre:scan ".weight" k)
+           (setf (gethash k new-entry) (transpose-tensor v))))
+        new-entry)
     (setf (state-dict-entry state-dict) new-entry)))
 
 (defun make-gpt2 (model-type &key (max-seq-len 1024))
   (declare (type keyword model-type))
   (assert (find model-type `(:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)) () "model-type must be one of :gpt2, :gpt2-medium, :gpt2-large, :gpt2-xl")
   (with-no-grad
-    (let* ((param (get-param model-type))
+    (let* ((caten/llm::*use-kv-cache* nil) ;; todo: use kv-cache once segv is resolved.
+           (param (get-param model-type))
            (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
            (model (Transformer (params-dim param) (params-n-heads param) (params-n-layers param) (params-norm-eps param) (params-vocab-size param) :max-seq-len max-seq-len))
-           (avm (caten (forward model (make-tensor `(1 s) :from 'x) (iconst 1))))
+           (avm (caten (forward model (make-tensor `(1 s) :from 'x) (iconst 'n))))
            (tokenizer (gguf->bpe-tokenizer gguf))
            (state-dict (gguf->state-dict gguf)))
       (remap-state-dict-keys state-dict)

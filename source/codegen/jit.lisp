@@ -178,7 +178,8 @@ caten/codegen overview:
                (append
                 (list node)
                 (apply #'append (map 'list #'explore (node-reads node)))))))
-    (values (nreverse (explore top-id)) seen)))
+    (let ((g (apply #'make-graph (explore top-id))))
+      (values (tpsort-graph g) seen))))
 
 (defun select-output-shape (wt)
   (if (and (buffer-orig-buffer-shape wt) (= (length (buffer-orig-buffer-shape wt)) (length (buffer-shape wt))))
@@ -446,7 +447,7 @@ caten/codegen overview:
                (lower-cached-schedule-item x schedule-graph)))
          (graph-nodes schedule-graph))
         ;; 10. Running memory-planner, update the storage-id
-        (setf schedule-graph (->graph schedule-graph))
+        (setf schedule-graph (->graph-with-tpsort schedule-graph))
         (verify-graph schedule-graph) ;; Sort the graph for memory planner
         (when (not (= 1 (ctx:getenv :NO_MEMORY_PLANNER)))
           (when (>= (ctx:getenv :JIT_DEBUG) 2)

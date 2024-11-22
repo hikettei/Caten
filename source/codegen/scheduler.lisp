@@ -551,7 +551,10 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                   for parent-return = (car parent)
                   for nth fixnum upfrom 0
                   if parent-return
-                    collect (group-merge-p self graph node parent-return nth)
+                    collect
+                    (if (= 1 (the fixnum (ctx:getenv :SERIALIZE)))
+                        nil
+                        (group-merge-p self graph node parent-return nth))
                   else
                    collect nil)))
       (assert (= (length mergeable-p-list) (length parents)))
@@ -759,9 +762,10 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (setf (graph-outputs schedule) (graph-outputs graph))
       (setf schedule (->fast-graph schedule))
       ;; ~~ Rewriting Rules + Post Fusion ~~~~~~~~~~~~~~~~~~~~~~
-      (let ((can-split-p-cache (make-can-split-p schedule))) ;; Create a hash table for recording the edge and reference counter.
-        (apply-reduce+move-fusion schedule can-split-p-cache graph)
-        (apply-serialize-reduction schedule can-split-p-cache graph)) ;; (TODO: Only execute when MAXIMIZE_MEMORY_LOCALITY=1?)
+      (when (= 0 (ctx:getenv :SERIALIZE))
+        (let ((can-split-p-cache (make-can-split-p schedule))) ;; Create a hash table for recording the edge and reference counter.
+          (apply-reduce+move-fusion schedule can-split-p-cache graph)
+          (apply-serialize-reduction schedule can-split-p-cache graph))) ;; (TODO: Only execute when MAXIMIZE_MEMORY_LOCALITY=1?)
       (apply-move-after-reduction schedule)
       ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
       (when (>= (ctx:getenv :JIT_DEBUG) 3)
