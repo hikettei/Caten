@@ -4,8 +4,8 @@
 ;; PositionalEncoding
 
 (defmodel (RoPE (dim &key (base 10000)))
-    ((dim dim)
-     (base base)))
+    ((dim dim :type fixnum)
+     (base base :type fixnum)))
 
 (defmethod call ((op RoPE) &rest inputs)
   (with-slots (dim base) op
