@@ -230,7 +230,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defmethod merge-schedule-items ((si1 Node) (si2 Node) (base-graph Graph))
   (assert (eql (node-type si1) :Schedule-Item))
   (assert (eql (node-type si2) :Schedule-Item))
+  (assert (null (getattr si1 :allocate-p))) (assert (null (getattr si2 :allocate-p)))
   (assert (= (getattr si1 :rank) (getattr si2 :rank)))
+  (assert (getattr si1 :jitable)) (assert (getattr si2 :jitable))
   (assert (or (null (getattr si1 :reduce-dims)) (null (getattr si2 :reduce-dims)) (equal (getattr si1 :reduce-dims) (getattr si2 :reduce-dims))))
   (group->schedule
    (make-group :items (append (getattr si1 :items) (getattr si2 :items))

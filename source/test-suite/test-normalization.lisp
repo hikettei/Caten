@@ -39,6 +39,9 @@ def torch_rms_norm(x):
           (with-torch (x) (->caten (f:batch_norm x (torch.ones `(40)) (torch.ones `(40)))))
           (proceed (!batch-norm x nil nil (linspace `(40 40) 0 1) (linspace `(40 40) 0 1)))))))
 
+(deftest test-bn-varinvstd-fused
+  (ok (caten (!batch-norm `(3 3)))))
+
 (deftest test-layer-norm
   (with-given-dtype ((:float32 . "float32"))
     (let ((x (rand `(30 40))))
