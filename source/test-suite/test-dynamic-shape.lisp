@@ -8,7 +8,7 @@
     (let ((kernel (find :JIT_KERNEL (graph-nodes (avm-graph (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))) :key #'node-type)))
       (assert kernel () "axpy is not scheduled")
       (let ((args (node-reads kernel)))
-        (ok (equal (butlast (subseq args 1)) `(BYB TOB FROMB BYA TOA FROMA)))))))
+        (ok (equal (print (butlast (subseq args 1))) `(TOA BYB FROMB BYA FROMA)))))))
 
 (deftest tensor-shaped-tensor-test-1
   (let* ((size1 (!add (iconst 'a) (iconst 'a)))

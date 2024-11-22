@@ -87,7 +87,9 @@ Creates a new instance of BPETokenizer from given tokens and merges.
   (declare (optimize (speed 3)))
   (check-type text string)
   (let ((encoder (bpe-encoder tokenizer)))
-    (let* ((tokens (all-matches-as-strings *pat* text)) (bpe-tokens))
+    (let* ((tokens (all-matches-as-strings *pat* text))
+           (tokens (if (stringp tokens) (list tokens) tokens))
+           (bpe-tokens))
       (declare (type list tokens bpe-tokens))
       (loop for token string in tokens do
         (let ((token
