@@ -29,6 +29,6 @@ def torch_rope(x):
       (assert-equal
        (:atol 1e-4 :rtol 1e-6)
        (with-torch (x) (->caten (torch_rope x)))
-       (proceed (!rope x 1)))))
+       (proceed (!rope x 5)))))
    (skip "TODO: Not working with JIT=1")))
 
