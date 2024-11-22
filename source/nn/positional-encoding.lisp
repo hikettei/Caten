@@ -52,6 +52,6 @@
 
 
 
-(defun !rope (x)
+(defun !rope (x dim)
   (declare (type tensor x))
-  (forward (rope 1) x))
+  (forward (rope dim) x))
