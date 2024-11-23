@@ -878,6 +878,8 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                             (when lastp-map (setf (car lastp-map) t))
                             (mapc #'explore (node-reads node) (nreverse lastp-map)))))))))
        (setf stashed (copy-list (graph-outputs graph)))
+       (dotimes (i screen-width) (princ "=" out))
+       (format out "~%")
        (loop while stashed
              for ids = stashed do
                (separate-screen)
@@ -888,7 +890,9 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                   #'(lambda (x)
                       (unless (= 0 part) (restart-point (id->value graph x)))
                       (explore x))
-                  ids)))))))
+                  ids)))
+       (dotimes (i screen-width) (princ "=" out))
+       (format out "~%")))))
                  
 (defstruct (Schedule-Context
             (:conc-name ctx-)
