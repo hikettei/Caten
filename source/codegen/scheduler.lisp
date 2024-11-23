@@ -803,7 +803,11 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 
 ;; [TODO] Move to caten/aasm. 絶対に別PRでもいいからmergeする!!
 (defparameter *indent* 0)
-(defun pprint-graph (graph &aux (seen nil) (preserved (make-hash-table)))
+(defun pprint-graph (graph &key (screen-width 100)
+                     &aux (seen nil) (preserved (make-hash-table)) (stashed nil) (part 0) (static-gensym (make-hash-table)))
+  (when (null (graph-outputs graph))
+    (warn "pprint-grpah does nothing without graph-outputs."))
+  (assert (>= screen-width 20))
   (princ
    (with-output-to-string (out)
      (labels ((indent (lastp)
@@ -820,6 +824,17 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
               (preserve (val &aux (node (id->value graph val)))
                 (when node
                   (setf (gethash (node-id node) preserved) (1+ *indent*))))
+              (static-gensym (id)
+                (if (gethash id static-gensym)
+                    (gethash id static-gensym)
+                    (setf (gethash id static-gensym) (format nil "~a" (hash-table-count static-gensym)))))
+              (separate-screen ()
+                (format out "=== [P: ~a] ===" part)
+                (dotimes (i (- screen-width 15))
+                  (princ "=" out))
+                (format out "~%"))
+              (restart-point (node)
+                (format out "[P=~a, ID=~a]:~%" (- part 1) (static-gensym (node-id node))))
               (princ-node (node)
                 ;; princ-node controls how the node is rendered.
                 (case (node-type node)
@@ -837,24 +852,43 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                   (otherwise
                    (format nil "~a" (node-type node)))))
               (pn (node lastp)
-                (format out "~a~a~a~%" (indent lastp) (if (zerop *indent*) "" " ") (princ-node node)))
+                (let ((item (format nil "~a~a~a~%" (indent lastp) (if (zerop *indent*) "" " ") (princ-node node))))
+                  (princ item out)
+                  (> (length item) screen-width)))
               (explore (id &optional (lastp nil))
                 (when (find id seen)
                   (let ((node (id->value graph id)))
                     (when node
-                      (format out "~a [cycle]~%" (indent lastp)))
+                      (format out "~a [cycle]~%" (indent lastp))
+                      (remhash (node-id node) preserved))
                     (return-from explore)))
                 (push id seen)
                 (let ((node (id->value graph id)))
                   (when (null node) (return-from explore))
-                  (pn node lastp)
-                  (remhash (node-id node) preserved)
-                  (mapc #'preserve (node-reads node))
-                  (let ((*indent* (+ 2 *indent*))
-                        (lastp-map (make-list (length (node-reads node)))))
-                    (when lastp-map (setf (car lastp-map) t))
-                    (mapc #'explore (node-reads node) (nreverse lastp-map))))))
-       (mapc #'explore (graph-outputs graph))))))
+                  (let ((stash-p (pn node lastp)))
+                    (remhash (node-id node) preserved)
+                    (if stash-p
+                        (let ((*indent* (+ 2 *indent*)))
+                          (format out "~a>[P=~a, ID=~a]~%" (indent lastp) part (static-gensym (node-id node)))
+                          (setf seen (remove id seen)) (push id stashed))
+                        (progn
+                          (mapc #'preserve (node-reads node))
+                          (let ((*indent* (+ 2 *indent*))
+                                (lastp-map (make-list (length (node-reads node)))))
+                            (when lastp-map (setf (car lastp-map) t))
+                            (mapc #'explore (node-reads node) (nreverse lastp-map)))))))))
+       (setf stashed (copy-list (graph-outputs graph)))
+       (loop while stashed
+             for ids = stashed do
+               (separate-screen)
+               (incf part)
+               (setf stashed nil preserved (make-hash-table))
+               (let ((*indent* (if (= 0 part) 0 2)))
+                 (mapc
+                  #'(lambda (x)
+                      (unless (= 0 part) (restart-point (id->value graph x)))
+                      (explore x))
+                  ids)))))))
                  
 (defstruct (Schedule-Context
             (:conc-name ctx-)
