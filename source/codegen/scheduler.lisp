@@ -1066,15 +1066,17 @@ Otherwise, returns NIL. (= not fusable)"
 ;; - Add Embed Embed = 1 Kernel?
 ;; 412 nodes for randn
 ;; とりあえずOrderを削減しないといけない・・・
-(defun %run-schedule (ctx &key (no-serialize-p (= 0 (ctx:getenv :SERIALIZE))) (c 0) (stashed nil))
+;; - Dynamic Shape -> :LOADは何回でもSchedule OK
+;; - 終了条件を定義する (no-changed-p)
+(defun %run-schedule (ctx &key (no-serialize-p (= 0 (the fixnum (ctx:getenv :SERIALIZE)))) (c 0) (stashed nil))
   "Implements a simple BFS DAG Scheduler.
 ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
 Produces a list of groups, fuses sometime. sometimes rewrite view.
 items in the same group should have the same rank"
-  (declare (type Schedule-Context ctx))
+  (declare (type Schedule-Context ctx) (type list stashed) (type fixnum c) (optimize (speed 3)))
   ;; Initialize a priority queue of all nodes ready to be scheduled.
   (ctx-sync-queue ctx)
-  (flet ((s ()
+  (flet ((s (&aux (changed-p nil))
            (loop while (ctx-queue ctx)
                  for tgt of-type Node = (pop (ctx-queue ctx))
                  for children = (ctx-children ctx tgt)
@@ -1104,7 +1106,7 @@ items in the same group should have the same rank"
                          for parent-group = (ctx-get-group ctx p)
                          for tgt-group = (ctx-get-group ctx tgt) ;; tgt-group would be updated if tgt is merged
                          unless (eql (group-key parent-group) (group-key tgt-group)) do
-                           ;; (print c)
+                           (print c)
                            (incf c)
                            ;; いい感じのGraphを作るのが先決
                            ;; :LOAD nは何回でもScheduleできるようにする必要がある。
@@ -1122,23 +1124,29 @@ items in the same group should have the same rank"
                                  (progn
                                    ;; remove(parent_group) and tgt_group += parent-group
                                    (ctx-register-new-group ctx p tgt)
-                                   (setf (group-items tgt-group) (append (group-items parent-group) (group-items tgt-group))
+                                   (setf changed-p t
+                                         (group-items tgt-group) (append (group-items parent-group) (group-items tgt-group))
                                          (group-predecessor tgt-group)
                                          (remove-duplicates
                                           (loop with write-set = (apply #'append (map 'list #'node-writes (group-items tgt-group)))
                                                 for p in (append (group-predecessor parent-group) (group-predecessor tgt-group))
-                                                unless (find p write-set) ; p is not written by tgt-group => p is written by other group.
+                                                unless (find (the symbol p) (the list write-set)) ; p is not written by tgt-group => p is written by other group.
                                                   collect p))
                                          (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-graph ctx))))
-                                 
                                  (unless (and force-realize-p injective-p) ;; waiting until other scheduling processes are finished.
-                                   (when (null (find (node-id tgt) stashed :key #'node-id))
-                                     (push tgt stashed)))))))))
+                                   (when (null (find (the symbol (node-id tgt)) stashed :key #'node-id))
+                                     (push tgt stashed)))))))
+           changed-p))
     (s)
     (loop while stashed do
       (setf (ctx-queue ctx) stashed
             stashed nil)
-      (s)))
+      ;;(print "TMPGRAPH")
+      ;;(let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
+      ;;  (let ((g (apply #'make-graph (map 'list #'(lambda (x) (group->schedule x (ctx-graph ctx))) (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))))
+      ;;    (setf (graph-outputs g) (graph-outputs (ctx-graph ctx)))
+      ;;    (pprint-graph g)))
+      (unless (s) (loop-finish))))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
 ;; ↓に直接書く？
