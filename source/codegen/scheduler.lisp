@@ -189,10 +189,49 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
             if (some #'(lambda (x) (null (find (node-id x) wrap))) users) ;; user is read outside of the items
               do (push write result)))
     (remove-duplicates result)))
-
+;; [TODO] taken over by group->schedule-item
 (defmethod group->schedule ((group Group) (base-graph Graph))
   (let ((reads (nodes-depends-on (group-items group)))
         (writes (items-write-to (group-items group) base-graph))
+        (allocate-p (find :Allocate (group-items group) :key #'node-type))
+        (no-symbolic-incremental-p t)
+        (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
+    ;; Ensure there's no symbolic incremental for the auto scheduler.
+    (dolist (node (group-items group))
+      (loop for r in (append (node-reads node) (node-writes node))
+            for rt in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
+            do (setf (gethash r id2type) rt)
+            if rt do
+              (when (> (buffer-nrank rt) 0)
+                (setf full-scalar-p nil))
+              (setf rank (max rank (buffer-nrank rt)))
+              (dolist (v (buffer-views rt))
+                (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
+                  (setf no-symbolic-incremental-p nil)))))
+    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
+               :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
+               :allocate-p (when allocate-p t)
+               :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
+               :storage-id-dst writes
+               :storage-id-src reads
+               :read-types (map 'list #'(lambda (x) (gethash x id2type)) reads)
+               :write-types (map 'list #'(lambda (x) (gethash x id2type)) writes)
+               :reference-counters
+               (map
+                'list
+                #'(lambda (x)
+                    (+
+                     (if (find x (graph-outputs base-graph)) 1 0)
+                     (length (id->users base-graph x))))
+                (append writes reads))
+               :rank rank
+               :reduce-dims (group-reduce-dims group)
+               :items (group-items group)
+               :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
+
+(defmethod group->schedule-item ((group Group) (base-graph Graph))
+  (let ((reads (group-predecessor group))
+        (writes (group-successor group))
         (allocate-p (find :Allocate (group-items group) :key #'node-type))
         (no-symbolic-incremental-p t)
         (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
@@ -1139,11 +1178,10 @@ items in the same group should have the same rank"
            changed-p))
     (s)
     (loop while stashed do
-      (setf (ctx-queue ctx) stashed
-            stashed nil)
+      (setf (ctx-queue ctx) stashed stashed nil)
       ;;(print "TMPGRAPH")
       ;;(let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
-      ;;  (let ((g (apply #'make-graph (map 'list #'(lambda (x) (group->schedule x (ctx-graph ctx))) (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))))
+      ;;  (let ((g (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x (ctx-graph ctx))) (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))))
       ;;    (setf (graph-outputs g) (graph-outputs (ctx-graph ctx)))
       ;;    (pprint-graph g)))
       (unless (s) (loop-finish))))
@@ -1167,7 +1205,7 @@ Return: ScheduleGraph
   (let* ((ctx (make-schedule-context graph))
          (groups (time (%run-schedule ctx)))
          ;; (Optional)ここにbreak-schedを作った方が簡単
-         (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule x graph)) groups))))
+         (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x graph)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph)
           schedule-graph (->fast-graph schedule-graph))
     (pprint-graph schedule-graph)
