@@ -787,6 +787,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; - Realize Graphでグラフを依存関係から大まかに分割した後に，recursive-create-schedule?
 (defun make-io-degree-map (graph)
   (declare (optimize (speed 3)) (type graph graph))
+  ;; [TODO] Pause for backwardがある場合: in-degreesにそれを追加
   (let ((in-degrees (make-hash-table)) (out-degrees (make-hash-table)))
     (declare (type hash-table in-degrees out-degrees))
     (flet ((butseen (list)
@@ -801,172 +802,105 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
     (list in-degrees out-degrees)))
 
 (defparameter *indent* 0)
-(defun pprint-graph (graph &aux (seen nil))
+(defun pprint-graph (graph &aux (seen nil) (preserved (make-hash-table)))
   ;; tekitou
   (princ
    (with-output-to-string (out)
-     (labels ((indent () (make-string *indent* :initial-element #\space))
-              (pn (node)
-                (format out "~a~a~%" (indent) (node-type node)))
-              (explore (id)
+     (labels ((indent (lastp)
+                (with-output-to-string (tmp)
+                  (dotimes (i *indent*)
+                    (if (find i (alexandria:hash-table-values preserved))
+                        ;; intersection
+                        (if (= i (1- *indent*))
+                            (if lastp
+                                (format tmp "└")
+                                (format tmp "├"))
+                            (format tmp "│"))
+                        (princ " " tmp)))))
+              (preserve (val &aux (node (id->value graph val)))
+                (when node
+                  (setf (gethash (node-id node) preserved) (1+ *indent*))))
+              (pn (node lastp)
+                (format out "~a~a~a~%" (indent lastp) (if (zerop *indent*) "" " ") (node-type node)))
+              (explore (id &optional (lastp nil))
                 (when (find id seen) (return-from explore))
                 (push id seen)
                 (let ((node (id->value graph id)))
                   (when (null node) (return-from explore))
-                  (pn node)
-                  (let ((*indent* (+ 2 *indent*)))
-                    (mapc #'explore (node-reads node))))))
+                  (pn node lastp)
+                  (remhash (node-id node) preserved)
+                  (mapc #'preserve (node-reads node))
+                  (let ((*indent* (+ 2 *indent*))
+                        (lastp-map (make-list (length (node-reads node)))))
+                    (when lastp-map (setf (car lastp-map) t))
+                    (mapc #'explore (node-reads node) (nreverse lastp-map))))))
        (mapc #'explore (graph-outputs graph))))))
                  
 (defstruct (Schedule-Context
             (:conc-name ctx-)
             (:constructor make-schedule-context (graph &aux (io-degree (make-io-degree-map graph)))))
   (graph graph :type graph)
-  (seen (make-hash-table :test 'equal) :type hash-table) ;; key = (self_id from_id nth)
-  (realize (make-hash-table) :type hash-table)
   (in-degrees (car io-degree) :type hash-table)
   (out-degrees (second io-degree) :type hash-table)
-  (realized (make-hash-table) :type hash-table)
+  (realize (make-hash-table) :type hash-table)
+  (node->group (make-hash-table) :type hash-table)
   (queue nil :type list))
 
 (defmethod ctx-children ((ctx Schedule-Context) (node node)) (gethash (node-id node) (ctx-out-degrees ctx)))
 (defmethod ctx-parents ((ctx Schedule-Context) (node node)) (gethash (node-id node) (ctx-in-degrees ctx)))
+(defmethod ctx-set-realize ((ctx Schedule-Context) node)
+  (setf
+   (gethash (node-id node) (ctx-node->group ctx)) (make-group :reduce-dims (node-reduce-axes node) :items (list node))
+   (gethash (node-id node) (ctx-realize ctx)) t))
+(defmethod ctx-realize-p ((ctx Schedule-Context) node) (gethash (node-id node) (ctx-realize ctx)))
+(defmethod ctx-sync-queue ((ctx Schedule-Context))
+  (declare (optimize (speed 3)))
+  (setf (ctx-queue ctx)
+        (loop for node in (graph-nodes (ctx-graph ctx))
+              if (and
+                  (null (ctx-realize-p ctx node)) ;; node is not realized and all parents are realized
+                  (every #'(lambda (x) (ctx-realize-p ctx x)) (ctx-parents ctx node)))
+                collect node)))
+(defmethod ctx-append-queue ((ctx Schedule-Context) nodes)
+  (declare (optimize (speed 3)))
+  (loop for node in nodes
+        if (and (null (ctx-realize-p ctx node))
+                (every #'(lambda (x) (ctx-realize-p ctx x)) (ctx-parents ctx node)))
+          do (push node (ctx-queue ctx))))
+(defmethod ctx-get-group ((ctx Schedule-Context) node)
+  (or
+   (gethash (node-id node) (ctx-node->group ctx))
+   (error "The node ~a is not yet scheduled!" node)))
 
-(defmethod ctx-set-realize ((ctx Schedule-Context) node nth realize-p)
-  (let ((realize (ctx-realize ctx)))
-    (if (gethash (node-id node) realize)
-        (setf (nth nth (gethash (node-id node) realize)) realize-p)
-        (setf (gethash (node-id node) realize) (loop repeat (length (node-reads node)) collect nil)
-              (nth nth (gethash (node-id node) realize)) realize-p))))
-
-(defmethod ctx-realize-node ((ctx Schedule-Context) (node node))
-  (setf (gethash (node-id node) (ctx-realized ctx)) t))
-
-(defmethod ctx-realized-p ((ctx Schedule-Context) (node node))
-  (gethash (node-id node) (ctx-realized ctx)))
-
-(defun node-do-realize-p (node from nth &key (child-views nil) (child-reduce-dims nil))
-  (declare (type node node from) (type fixnum nth))
-  (symbol-macrolet ((->do-realize (return-from node-do-realize-p t))
-                    (->no-realize (return-from node-do-realize-p nil)))
-    (when (null (jitable-p from)) ->do-realize)
-    (when (null (jitable-p node)) ->do-realize)
-    (when (getattr from :reduction :allow-undefined t)
-      (let ((reduce-axes (node-reduce-axes from)))
-        (when (and reduce-axes (some #'(lambda (x) (not (equal x reduce-axes))) child-reduce-dims)) ->do-realize)))
-    (let ((read-view (nth nth (getattr node :_read_views))))
-      (assert (<= (length read-view) 1))
-      (when (null read-view) ->no-realize)
-      ;; [todo] non-mergeable views here?
-      ;;      (print "++MERGEABLE++")
-      ;;      (print read-view)
-      ;;      (print child-views)
-      nil)))
-
-(defmethod ctx-push-schedule-queue ((ctx Schedule-Context) node) (push node (ctx-queue ctx)))
-;; X  A
-;; L__| <- realize at this point
-;; L__|
-;; L__|
-;; L__|
-;;   ..
-(defun realize-graph (ctx id &key (from nil) (nthfrom 0) (child-views nil) (child-reduce-dims nil))
-  (declare (type Schedule-Context ctx) (type symbol id)
-           (type fixnum nthfrom)
-           (type (or null node) from)
-           (optimize (speed 3)))
-  (let* ((graph (ctx-graph ctx)) (seen (ctx-seen ctx)) (node (id->value graph id)))
-    ;; when from is provided = not a toplevel of the graph
-    (when from
-      ;; key = (self from nth)
-      (when (or (null node) (gethash (list (node-id node) (node-id from) nthfrom) seen)) (return-from realize-graph))
-      (setf (gethash (list (node-id node) (node-id from) nthfrom) seen) t))
-    (let ((realize-map
-            (loop for r in (node-reads node)
-                  for nth fixnum upfrom 0
-                  for read-node = (id->value graph r)
-                  for realize-p = (and read-node (node-do-realize-p node read-node nth :child-views child-views :child-reduce-dims child-reduce-dims))
-                  do (ctx-set-realize ctx node nth realize-p)
-                  collect realize-p)))
-      (flet ((merge-view-prev (realize-p nth child-views)
-               (let ((view (nth nth (getattr node :_read_views))))
-                 (declare (type list view))
-                 (assert (<= (length view) 1))
-                 (if realize-p ;; T -> reset the extending views
-                     view
-                     (remove-duplicates (append child-views view) :key #'node-id))))
-             (merge-rdim-prev (realize-p nth child-reduce-dims)
-               (let* ((n (id->value graph (nth nth (node-reads node))))
-                      (rdim (and n (node-reduce-axes n))))
-                 (if realize-p
-                     (and rdim (list rdim))
-                     (remove-duplicates (append child-reduce-dims rdim) :test #'equal)))))
-        (loop for nth fixnum upfrom 0
-              for r in (node-reads node)
-              for realize-p in realize-map
-              for child-views = (merge-view-prev realize-p nth child-views)
-              for child-reduce-dims = (merge-rdim-prev realize-p nth child-reduce-dims)
-              if (symbolp r)
-                do (realize-graph ctx r :from node :nthfrom nth :child-views child-views :child-reduce-dims child-reduce-dims))))))
-
-(defmethod ctx-mergeable-path-p ((ctx Schedule-Context) node parent)
-  (when (null (jitable-p node)) (return-from ctx-mergeable-path-p))
-  (when (null (jitable-p parent)) (return-from ctx-mergeable-path-p))
-  (when (ctx-realized-p ctx parent) (return-from ctx-mergeable-path-p))
-  ;; [TOOD] もう少し真面目にCheck
-  t)
-
-(defun ctx-explore-injective (ctx node)
-  (declare (type Schedule-Context ctx) (type node node))
-  (let ((items) (seen) (queue (ctx-parents ctx node)))
-    (loop while queue
-          for parent = (pop queue) do
-            (if (ctx-mergeable-path-p ctx node parent)
-                (progn
-                  (push parent items)
-                  (dolist (read (ctx-parents ctx parent))
-                    (when (null (find (node-id read) seen))
-                      (push read queue))))
-                (ctx-push-schedule-queue ctx parent)))
-    items))
-
-(defun ctx-chase-down-complex-out-fusable (ctx node)
+(defun %run-schedule (ctx)
+  "Implements a simple BFS DAG Scheduler.
+ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
+Produces a list of groups, fuses sometime."
   (declare (type Schedule-Context ctx))
-  (let ((queue (ctx-children ctx node)) (seen) (items))
-    ;; [TODO] Push the queue after all queue.parents are realized in THIS GROUP (for self contained dag?)
-    (loop while queue
-          for child = (pop queue)
-          for mergeable-p = (ctx-mergeable-path-p ctx child node)
-          if mergeable-p do
-            (push child items)
-            (setf items (nconc (ctx-explore-injective ctx child) items))
-            (dolist (next (ctx-children ctx child))
-              (when (null (find (node-id next) seen))
-                (push next queue)))
-            else do (ctx-push-schedule-queue ctx child))
-    items))
+  (ctx-sync-queue ctx) ;; initialize the first queue
+  (loop while (ctx-queue ctx)
+        for tgt of-type Node = (pop (ctx-queue ctx))
+        for children = (ctx-children ctx tgt)
+        for parents  = (ctx-parents ctx tgt) do
+          ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+          ;; parents[0] parents[1] parents[2] ...
+          ;;      \      |      /
+          ;;           [TGT]
+          ;;       /     |      \
+          ;; children[0] children[1] children[2] ...
+          ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+          ;; 1. In order to schedule "TGT", all parents must be scheduled first.
+          ;; 2. children are scheduled after "TGT" and their parents of each children are scheduled.
+          (ctx-set-realize ctx tgt)
+          (ctx-append-queue ctx children)
+          ;; 比較のやり方 = 巨大化するParentと単体のSelfの比較
+          ;; ここで基本的にsorted-nodesにPushするが，FuseするためにParentsのGroupにFuseできるかを考える
+          ;; ここでchildren == 1の場合は適当にFuseしてOK
+          ;; children > 1の場合 -> FuseするTargetが複数あるわけだけど，これはどうするか？
+          ;; 考える場所が違っていて，TGTを基軸に考える
+        )
+  (remove-duplicates (alexandria:hash-table-values (ctx-node->group ctx)) :key #'group-key))
 
-(defun ctx-make-groups (ctx)
-  (declare (type Schedule-Context ctx))
-  ;; First -> Low is the priority to the node execution
-  (let ((groups nil))
-    (flet ((r (node)
-             ;; [todo] recursively search for the groupable children after the reduction?
-             ;; todo: rec seach for the groupable cldren before the reduction?
-             (when (getattr node :reduction :allow-undefined t)
-               ;; chase down and gather elementwise ops that can be clearly grouped
-               (let ((elwise-ops (ctx-explore-injective ctx node))
-                     (complex-out-fusable (ctx-chase-down-complex-out-fusable ctx node)))
-                 (print "+++REDUCTION++++")
-                 (print node)
-                 (print elwise-ops)
-                 (print "COMPLEX_OUT_FUSABLE")
-                 (print complex-out-fusable)
-                 ))))
-      (mapc #'r (tpsort-graph (ctx-graph ctx))))
-    groups))
-
-;; todo: visualize the realize map in the dot graph
 (defun graph-schedule1 (graph)
   "
 ```
@@ -979,10 +913,12 @@ Return: ScheduleGraph
   (pprint-graph graph)
   (assert (graph-outputs graph) () "Cannot schedule a graph without explicit outputs.")
   (let* ((ctx (make-schedule-context graph))
-         (_ (mapc #'(lambda (x) (realize-graph ctx x :from nil)) (graph-outputs graph)))
-         ;(groups (ctx-make-groups ctx))
-         )
-    (declare (ignore _))
+         (groups (%run-schedule ctx))
+         (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule x graph)) groups))))
+    (setf (graph-outputs schedule-graph) (graph-outputs graph)
+          schedule-graph (->fast-graph schedule-graph))
+    (pprint-graph schedule-graph)
+    (print schedule-graph)
     ;; 1. recursive-create-groupsでRealizeするPointを作成する
     ;; 2. RealizeするPointのBuffer前後をChaseする
     ;; 3. Scheduled Itemを作成
