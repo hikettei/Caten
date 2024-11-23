@@ -989,7 +989,6 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       c ──────> e
           ^ If groups are separated at here, a and b cannot be merged.
 This method returns T if every children are scheduled in the same group as a or b. (= fusable).
-Or, returns :wait-realize if some of descendants are not realized yet.
 Otherwise, returns NIL. (= not fusable)"
   (declare (optimize (speed 3)))
   (let ((a-children (ctx-children ctx a))
@@ -999,7 +998,7 @@ Otherwise, returns NIL. (= not fusable)"
      #'identity
      (loop with items = (append (group-items a-group) (group-items b-group))
            for a-child in a-children
-           for scheduled-p = (find (node-id a-child) items :key #'node-id)
+           for scheduled-p = (if (find (node-id a-child) items :key #'node-id) t nil)
            for closed-p = (or scheduled-p
                               (and
                                ;; a must be realized before b
@@ -1064,7 +1063,8 @@ Otherwise, returns NIL. (= not fusable)"
 ;; - 3. [ ] force-realize-pで失敗した時の処理を考えてみる。
 ;; - 4. [ ] Small Reproを作成して試してみる (SERIALIZE=1)
 ;; - Add Embed Embed = 1 Kernel?
-(defun %run-schedule (ctx &key (no-serialize-p (= 0 (ctx:getenv :SERIALIZE))))
+;; 412 nodes for randn
+(defun %run-schedule (ctx &key (no-serialize-p (= 0 (ctx:getenv :SERIALIZE))) (c 0))
   "Implements a simple BFS DAG Scheduler.
 ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
 Produces a list of groups, fuses sometime. sometimes rewrite view.
@@ -1101,6 +1101,8 @@ items in the same group should have the same rank"
                 for parent-group = (ctx-get-group ctx p)
                 for tgt-group = (ctx-get-group ctx tgt) ;; tgt-group would be updated if tgt is merged
                 unless (eql (group-key parent-group) (group-key tgt-group)) do
+                  ;(print c)
+                  (incf c)
                   ;; いい感じのGraphを作るのが先決
                   ;; :LOAD nは何回でもScheduleできるようにする必要がある。
                   ;;   - 1. :LOAD nは必ずIsolated
@@ -1152,7 +1154,7 @@ Return: ScheduleGraph
   (pprint-graph graph)
   (assert (graph-outputs graph) () "Cannot schedule a graph without explicit outputs.")
   (let* ((ctx (make-schedule-context graph))
-         (groups (%run-schedule ctx))
+         (groups (time (%run-schedule ctx)))
          ;; (Optional)ここにbreak-schedを作った方が簡単
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule x graph)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph)
