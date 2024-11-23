@@ -820,10 +820,25 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
               (preserve (val &aux (node (id->value graph val)))
                 (when node
                   (setf (gethash (node-id node) preserved) (1+ *indent*))))
+              (princ-node (node)
+                ;; Determines how the node is rendered here
+                (case (node-type node)
+                  (:SCHEDULE-ITEM
+                   (if (getattr node :allocate-p)
+                       (format nil "[ALLOCATE]")
+                       (if (getattr node :jitable)
+                           (format nil "[KERNEL] ~a" (getattr node :name))
+                           (format nil "[VMOP] ~a" (getattr node :name)))))
+                  (otherwise
+                   (format nil "~a" (node-type node)))))
               (pn (node lastp)
-                (format out "~a~a~a~%" (indent lastp) (if (zerop *indent*) "" " ") (node-type node)))
+                (format out "~a~a~a~%" (indent lastp) (if (zerop *indent*) "" " ") (princ-node node)))
               (explore (id &optional (lastp nil))
-                (when (find id seen) (return-from explore))
+                (when (find id seen)
+                  (let ((node (id->value graph id)))
+                    (when node
+                      (format out "~a [cycle]~%" (indent lastp)))
+                    (return-from explore)))
                 (push id seen)
                 (let ((node (id->value graph id)))
                   (when (null node) (return-from explore))
