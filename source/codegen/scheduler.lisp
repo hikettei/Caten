@@ -821,6 +821,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
           ;; (->dot schedule :title "Schedule Graph")
           (->dot graph :title "Graph [After Scheduling]")))
       (mapc #'schedule-item-initialize-namespace (graph-nodes schedule))
+      ;; (pprint-graph schedule)
       schedule)))
 ;; ~~ New Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-graph-edge-map (graph)
@@ -856,6 +857,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; [TODO] Move to caten/aasm. 絶対に別PRでもいいからmergeする!!
 ;; [TODO] make pprint-graph default?
 ;; [TODO] AUTO_DETECT screen-width on terminal, in emacs+repl, set manually! check from CI
+;; [TODO] Docs with repl example
 (defparameter *indent* 0)
 (defun pprint-graph (graph &key (screen-width 140)
                      &aux (seen nil) (preserved (make-hash-table)) (stashed nil) (part 0) (static-gensym (make-hash-table)))
@@ -1018,7 +1020,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
     (loop for w of-type symbol in write-set
           if (find w read-except-for-items)
             collect w)))
-;; [TODO] Memorize site optimize siteoku
+
 (defmethod ctx-node-force-realize-p ((ctx Schedule-Context) (a node) (b node))
   "Detects the following pattern in the DAG. In order to merge a and b in the same group, c must be grouped to a or b.
 [a] ──────> d ──────>[b]
@@ -1074,12 +1076,6 @@ Otherwise, returns NIL. (= not fusable)"
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
-    ;; [TODO] This returning will make attention kv cache separated
-    ;; caten is not clever as merging multiple shrink?...
-    (when (and view (eql (identify-view-type view) :SHRINK))
-      ;; [TODO] Add a mask like:
-      ;;  _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
-      ->ng)
     (let ((after-reduction-p (identity (group-reduce-dims parent-group))))
       ;; float _acc_0 = 0.0f;
       ;; for (...) {
@@ -1087,9 +1083,22 @@ Otherwise, returns NIL. (= not fusable)"
       ;; }
       ;; self = _acc_0;
       ;; // tgt-group is here if after-reduction-p is T
+      (print "+++MERGE+++")
+      (print parent-group)
+      (print view)
+      (print tgt-group)
+      ;; MERGEABLE is T when ...
+      ;; - 1. it is legal to rewrite all views in parent-group, with view
+      ;; - 2. 
       (when after-reduction-p
         ;; After the reduction, only the broadcast is mergeable.
         )
+      ;; [TODO] This returning will make attention kv cache separated
+      ;; caten is not clever as merging multiple shrink?...
+      (when (and view (eql (identify-view-type view) :SHRINK))
+        ;; [TODO] Add a mask like:
+        ;;  _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
+        ->ng)
       t
       )))
 ;; [TODO] group-reads
@@ -1102,13 +1111,13 @@ Otherwise, returns NIL. (= not fusable)"
 ;; - 2. [x] Group Fusionができるのは，node-writesの全てがnode-readsへ通じる時のみ
 ;; - 3. [x] force-realize-pで失敗した時の処理を考えてみる。
 ;; - 4. [ ] Small Reproを作成して試してみる (SERIALIZE=1)
-;; - 5. [ ] ViewでSeparateするケースを実装する
-;; - Add Embed Embed = 1 Kernel?
-;; 412 nodes for randn
+;; - 5. [ ] Dynamic Shapeの計算ノードは何回でもScheduleしてOK
+;; - 6. [ ] Break-Sched内部で色々やればDFSで安全にScheduleできるはず
+;; - 7. [ ] group-mergeable-pでNILをReturnするケースがないとTRIUが分割されない (それはそう）なのでVIEW分割もここでやる。
 ;; とりあえずOrderを削減しないといけない・・・
 ;; - Dynamic Shape -> :LOADは何回でもSchedule OK
 ;; - 終了条件を定義する (no-changed-p)
-(defun %run-schedule (ctx &key (no-serialize-p (= 0 (the fixnum (ctx:getenv :SERIALIZE)))) (c 0) (stashed nil))
+(defun %run-scheduler (ctx &key (debug nil) (no-serialize-p (= 0 (the fixnum (ctx:getenv :SERIALIZE)))) (c 0) (stashed nil))
   "Implements a simple BFS DAG Scheduler.
 ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
 Produces a list of groups, fuses sometime. sometimes rewrite view.
@@ -1172,11 +1181,12 @@ items in the same group should have the same rank"
     (s)
     (loop while stashed do
       (setf (ctx-queue ctx) stashed stashed nil)
-      ;;(print "TMPGRAPH")
-      ;;(let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
-      ;;  (let ((g (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x (ctx-graph ctx))) (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))))
-      ;;    (setf (graph-outputs g) (graph-outputs (ctx-graph ctx)))
-      ;;    (pprint-graph g)))
+      (when debug
+        (print "TMPGRAPH")
+        (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
+          (let ((g (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x (ctx-graph ctx))) (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))))
+            (setf (graph-outputs g) (graph-outputs (ctx-graph ctx)))
+            (pprint-graph g))))
       (unless (s) (loop-finish))))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
@@ -1196,19 +1206,23 @@ Return: ScheduleGraph
   (pprint-graph graph)
   (assert (graph-outputs graph) () "Cannot schedule a graph without explicit outputs.")
   (let* ((ctx (make-schedule-context graph))
-         (groups (time (%run-schedule ctx)))
+         (groups (time (%run-scheduler ctx :debug t)))
          ;; (Optional)ここにbreak-schedを作った方が簡単
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x graph)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph)
           schedule-graph (->fast-graph schedule-graph))
     (pprint-graph schedule-graph)
-   ; (print schedule-graph)
+    ;; (print schedule-graph)
     (verify-graph schedule-graph)
     (let ((prescheduled (length groups))
           (scheduled (count :Schedule-Item (graph-nodes schedule-graph) :key #'node-type)))
       ;; [TODO] update group->schedule
-      ;(print groups)
+      ;; (print groups)
       (assert (= prescheduled scheduled) () "Prescheduled ~a groups but only ~a groups are scheduled." prescheduled scheduled))
+    (let ((nodes (map 'list #'node-id (apply #'append (map 'list #'group-items groups)))))
+      (dolist (n (graph-nodes graph))
+        (setf nodes (remove (node-id n) nodes)))
+      (assert (null nodes) () "Nodes ~a are not scheduled." nodes))
     ;; 1. recursive-create-groupsでRealizeするPointを作成する
     ;; 2. RealizeするPointのBuffer前後をChaseする
     ;; 3. Scheduled Itemを作成
