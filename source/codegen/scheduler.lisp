@@ -988,7 +988,9 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
      \ /         /
       c ──────> e
           ^ If groups are separated at here, a and b cannot be merged.
-This method returns T if every children are scheduled in the same group as a or b. (= fusable)"
+This method returns T if every children are scheduled in the same group as a or b. (= fusable).
+Or, returns :wait-realize if some of descendants are not realized yet.
+Otherwise, returns NIL. (= not fusable)"
   (declare (optimize (speed 3)))
   (let ((a-children (ctx-children ctx a))
         (a-group (ctx-get-group ctx a))
@@ -1058,8 +1060,9 @@ This method returns T if every children are scheduled in the same group as a or 
 ;; Workload
 ;; - 1. [x] node-writes, node-readsをきちんと定義する
 ;; - 2. [x] Group Fusionができるのは，node-writesの全てがnode-readsへ通じる時のみ
-;; - 3. force-realize-pで失敗した時の処理を考えてみる。
-;; - 4. Small Reproを作成して試してみる (SERIALIZE=1)
+;; - 3. [ ] force-realize-pで失敗した時の処理を考えてみる。
+;; - 4. [ ] Small Reproを作成して試してみる (SERIALIZE=1)
+;; - Add Embed Embed = 1 Kernel?
 (defun %run-schedule (ctx &key (no-serialize-p (= 0 (ctx:getenv :SERIALIZE))))
   "Implements a simple BFS DAG Scheduler.
 ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
@@ -1082,8 +1085,9 @@ items in the same group should have the same rank"
           ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
           ;; 1. In order to schedule "TGT", all parents must be scheduled first.
           ;; 2. children are scheduled after "TGT" and their parents of each children are scheduled.
-          (ctx-set-realize ctx tgt)
-          (ctx-append-queue ctx children) ;; tgt may make some children ready to be scheduled.
+          (when (not (ctx-realize-p ctx tgt))
+            (ctx-set-realize ctx tgt)
+            (ctx-append-queue ctx children)) ; tgt may make some children ready to be scheduled.
           ;; 考えること1. Cyclic GraphのFusion (Transformer Triuのケース)
           ;; 考えること2. BatchNorm/Softmaxを1KernelにFusionすることが可能か？
           ;; Parentの全てのChildrenが同一のGroupへSchedule可能？ => Mergeable!
@@ -1100,30 +1104,34 @@ items in the same group should have the same rank"
                   ;; :LOAD nは何回でもScheduleできるようにする必要がある。
                   ;;   - 1. :LOAD nは必ずIsolated
                   ;;   - 2. :LOADのグラフをコピーする
-                  (print "++++++++")
-                  (print parent-group)
-                  (print tgt-group)
-                  (print parent-view)
-                  (if (ctx-node-force-realize-p ctx p tgt)
-                      (when (and no-serialize-p (group-mergeable-p ctx tgt-group parent-group parent-view))
-                        ;; remove(parent_group) and tgt_group += parent-group
-                        (ctx-register-new-group ctx p tgt)
-                        (setf (group-items tgt-group) (append (group-items parent-group) (group-items tgt-group))
-                              (group-predecessor tgt-group)
-                              (remove-duplicates
-                               (loop with write-set = (apply #'append (map 'list #'node-writes (group-items tgt-group)))
-                                     for p in (append (group-predecessor parent-group) (group-predecessor tgt-group))
-                                     unless (find p write-set) ; p is not written by tgt-group => p is written by other group.
-                                       collect p))
-                              (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-graph ctx))))
-                      (progn ;; some of children are grouped to another group
-                        (print "NG")
-                        (print (ctx-children ctx p))
-                        ;; ここの処理を実装してSoftmax = 1 Kernelにする
-                        ;; tgtをQueueに追加する。(Not RealizedでFailした場合には)
-                        ;; (push tgt (ctx-queue ctx))
-                        ;; Assert by force realizeがTになって，group-writseとgroup-reads selfの依存が自分の身になったらmerge
-                        ))))
+                  ;(print "++++++++")
+                  ;(print p)
+                  ;(print tgt)
+                  ;(print parent-group)
+                  ;(print tgt-group)
+                  ;(print parent-view)
+                  (let ((force-realize-p (ctx-node-force-realize-p ctx p tgt)))
+                    (print force-realize-p)
+                    (if (and no-serialize-p force-realize-p (group-mergeable-p ctx tgt-group parent-group parent-view))
+                        (progn
+                          ;; remove(parent_group) and tgt_group += parent-group
+                          (ctx-register-new-group ctx p tgt)
+                          (setf (group-items tgt-group) (append (group-items parent-group) (group-items tgt-group))
+                                (group-predecessor tgt-group)
+                                (remove-duplicates
+                                 (loop with write-set = (apply #'append (map 'list #'node-writes (group-items tgt-group)))
+                                       for p in (append (group-predecessor parent-group) (group-predecessor tgt-group))
+                                       unless (find p write-set) ; p is not written by tgt-group => p is written by other group.
+                                         collect p))
+                                (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-graph ctx))))
+                        (progn
+                          (print "++CMP++")
+                          (when (null force-realize-p)
+                            (setf (ctx-queue ctx) (append (ctx-queue ctx) (list tgt))))
+                          (print tgt)
+                          (print p)
+                          (print "FAILING")
+                          )))))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
 ;; ↓に直接書く？
