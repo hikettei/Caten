@@ -787,15 +787,21 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 ;; - Realize Graphでグラフを依存関係から大まかに分割した後に，recursive-create-schedule?
 (defun make-io-degree-map (graph)
   (declare (optimize (speed 3)) (type graph graph))
-  ;; [TODO] Pause for backwardがある場合: in-degreesにそれを追加
-  (let ((in-degrees (make-hash-table)) (out-degrees (make-hash-table)))
+  (let ((in-degrees (make-hash-table)) (out-degrees (make-hash-table))
+        (backward (find :PAUSE/BACKWARD (graph-nodes graph) :key #'node-type))
+        (backward-pos (position :PAUSE/BACKWARD (graph-nodes graph) :key #'node-type)))
     (declare (type hash-table in-degrees out-degrees))
     (flet ((butseen (list)
              (loop for l in list
                    for v = (id->value graph l)
                    if (and v (symbolp l)) collect v)))
-      (loop for node in (graph-nodes graph) do
+      (loop for node in (graph-nodes graph)
+            for nth fixnum upfrom 0 do
         (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
+        (when (and backward backward-pos (> nth backward-pos))
+          ;; If PAUSE/BACKWARD is defined, nodes placed after it must be realized after :PAUSE/BACKWARD.
+          (push backward (gethash (node-id node) in-degrees))
+          (push node (gethash (node-id backward) out-degrees)))
         (dolist (r (gethash (node-id node) in-degrees))
           (when (null (find (node-id node) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
             (push node (gethash (node-id r) out-degrees))))))
@@ -934,15 +940,23 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 
 (defmethod ctx-node-force-realize-p ((ctx Schedule-Context) (a node) (b node))
   "Detects the following pattern in the DAG. In order to merge a and b in the same group, c must be grouped to a or b.
- a ──────> b
-  \       /
-   \     /
-    \   /
-     \ /
-      c"
-  (let ((a-children (ctx-children ctx a)))
-    
-    ))
+ a ──────> b ──────> d
+  \       /         /
+   \     /         /
+    \   /         /  ... (recursively)
+     \ /         /
+      c ──────> e
+Returns T if some of children won't satisfy the condition above."
+  (let ((a-children (ctx-children ctx a))
+        (a-group (ctx-get-group ctx a))
+        (b-group (ctx-get-group ctx b)))
+    (loop with items = (append (group-items a-group) (group-items b-group))
+          for child in a-children
+          ;; WAKARAN
+          if (null (find (node-id child) items :key #'node-id)) ;; the relation is closed
+            do (if (ctx-node-force-realize-p ctx child b)
+                   nil))
+    nil))
 
 (defun %run-schedule (ctx)
   "Implements a simple BFS DAG Scheduler.
