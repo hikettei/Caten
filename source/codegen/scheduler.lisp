@@ -803,7 +803,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 
 ;; [TODO] Move to caten/aasm. 絶対に別PRでもいいからmergeする!!
 ;; [TODO] make pprint-graph default?
-;; [TODO] AUTO_DETECT screen-width on terminal, in emacs+repl, set manually!
+;; [TODO] AUTO_DETECT screen-width on terminal, in emacs+repl, set manually! check from CI
 (defparameter *indent* 0)
 (defun pprint-graph (graph &key (screen-width 140)
                      &aux (seen nil) (preserved (make-hash-table)) (stashed nil) (part 0) (static-gensym (make-hash-table)))
@@ -871,11 +871,11 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                     (remhash (node-id node) preserved)
                     (if stash-p
                         (let ((*indent* (+ 2 *indent*)))
-                          (format out "~a>[P=~a, ID=~a]~%" (indent lastp) part (static-gensym (node-id node)))
+                          (format out "~a [P=~a, ID=~a]~%" (indent lastp) part (static-gensym (node-id node)))
                           (setf seen (remove id seen)) (push id stashed))
                         (progn
                           (mapc #'preserve (node-reads node))
-                          (let ((*indent* (+ 2 *indent*))
+                          (let ((*indent* (+ 2 *indent*))g
                                 (lastp-map (make-list (length (node-reads node)))))
                             (when lastp-map (setf (car lastp-map) t))
                             (mapc #'explore (node-reads node) (nreverse lastp-map)))))))))
@@ -932,12 +932,25 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
    (gethash (node-id node) (ctx-node->group ctx))
    (error "The node ~a is not yet scheduled!" node)))
 
+(defmethod ctx-node-force-realize-p ((ctx Schedule-Context) (a node) (b node))
+  "Detects the following pattern in the DAG. In order to merge a and b in the same group, c must be grouped to a or b.
+ a ──────> b
+  \       /
+   \     /
+    \   /
+     \ /
+      c"
+  (let ((a-children (ctx-children ctx a)))
+    
+    ))
+
 (defun %run-schedule (ctx)
   "Implements a simple BFS DAG Scheduler.
 ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
 Produces a list of groups, fuses sometime."
   (declare (type Schedule-Context ctx))
-  (ctx-sync-queue ctx) ;; initialize the first queue
+  ;; Initialize a priority queue of all nodes ready to be scheduled.
+  (ctx-sync-queue ctx)
   (loop while (ctx-queue ctx)
         for tgt of-type Node = (pop (ctx-queue ctx))
         for children = (ctx-children ctx tgt)
@@ -952,7 +965,9 @@ Produces a list of groups, fuses sometime."
           ;; 1. In order to schedule "TGT", all parents must be scheduled first.
           ;; 2. children are scheduled after "TGT" and their parents of each children are scheduled.
           (ctx-set-realize ctx tgt)
-          (ctx-append-queue ctx children)
+          (ctx-append-queue ctx children) ;; tgt may make some children ready to be scheduled.
+          ;; 1. Trying to merge tgt and parents
+          ;; 2. Trying to merge the parent and parent
           ;; 比較のやり方 = 巨大化するParentと単体のSelfの比較
           ;; ここで基本的にsorted-nodesにPushするが，FuseするためにParentsのGroupにFuseできるかを考える
           ;; ここでchildren == 1の場合は適当にFuseしてOK
@@ -960,6 +975,9 @@ Produces a list of groups, fuses sometime."
           ;; 考える場所が違っていて，TGTを基軸に考える
           ;; 考えること1. Cyclic GraphのFusion (Transformer Triuのケース)
           ;; 考えること2. BatchNorm/Softmaxを1KernelにFusionすることが可能か？
+          ;; Parentの全てのChildrenが同一のGroupへSchedule可能？ => Mergeable!
+          
+          
           
           )
   (remove-duplicates (alexandria:hash-table-values (ctx-node->group ctx)) :key #'group-key))
