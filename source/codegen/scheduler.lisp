@@ -801,9 +801,9 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
             (push node (gethash (node-id r) out-degrees))))))
     (list in-degrees out-degrees)))
 
+;; [TODO] Move to caten/aasm. 絶対に別PRでもいいからmergeする!!
 (defparameter *indent* 0)
 (defun pprint-graph (graph &aux (seen nil) (preserved (make-hash-table)))
-  ;; tekitou
   (princ
    (with-output-to-string (out)
      (labels ((indent (lastp)
@@ -821,14 +821,19 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                 (when node
                   (setf (gethash (node-id node) preserved) (1+ *indent*))))
               (princ-node (node)
-                ;; Determines how the node is rendered here
+                ;; princ-node controls how the node is rendered.
                 (case (node-type node)
                   (:SCHEDULE-ITEM
                    (if (getattr node :allocate-p)
-                       (format nil "[ALLOCATE]")
+                       (let ((alloc (car (getattr node :items))))
+                         (format nil "Allocate[:~(~a~)] ~a" (getattr alloc :dtype) (subseq (node-reads alloc) 0 (getattr alloc :nrank))))
                        (if (getattr node :jitable)
                            (format nil "[KERNEL] ~a" (getattr node :name))
                            (format nil "[VMOP] ~a" (getattr node :name)))))
+                  (:Allocate
+                   (format nil "Allocate[:~(~a~)] ~a" (getattr node :dtype) (subseq (node-reads node) 0 (getattr node :nrank))))
+                  (:LOAD
+                   (format nil "load(~a)" (getattr node :value)))
                   (otherwise
                    (format nil "~a" (node-type node)))))
               (pn (node lastp)
