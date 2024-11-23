@@ -1012,6 +1012,10 @@ Otherwise, returns NIL. (= not fusable)"
            else
              do (return-from ctx-node-force-realize-p nil)))))
 
+(defmethod groups-are-injective-p ((tgt-group Group) (parent-group Group))
+  ;; If the output of parent-group is also used by other groups, don't merge it.
+  (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group)))  
+
 (defun group-mergeable-p (ctx tgt-group parent-group view)
   "PARENT_GROUP
         |
@@ -1031,9 +1035,6 @@ Otherwise, returns NIL. (= not fusable)"
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
-    ;; If the output of parent-group is also used by other groups, don't merge it.
-    (unless (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group))
-      ->ng)
     ;; [TODO] This returning will make attention kv cache separated
     ;; caten is not clever as merging multiple shrink?...
     (when (and view (eql (identify-view-type view) :SHRINK))
@@ -1110,9 +1111,9 @@ items in the same group should have the same rank"
                   ;(print parent-group)
                   ;(print tgt-group)
                   ;(print parent-view)
-                  (let ((force-realize-p (ctx-node-force-realize-p ctx p tgt)))
-                    (print force-realize-p)
-                    (if (and no-serialize-p force-realize-p (group-mergeable-p ctx tgt-group parent-group parent-view))
+                  (let ((force-realize-p (ctx-node-force-realize-p ctx p tgt))
+                        (injective-p (groups-are-injective-p tgt-group parent-group)))
+                    (if (and no-serialize-p force-realize-p injective-p (group-mergeable-p ctx tgt-group parent-group parent-view))
                         (progn
                           ;; remove(parent_group) and tgt_group += parent-group
                           (ctx-register-new-group ctx p tgt)
@@ -1125,12 +1126,13 @@ items in the same group should have the same rank"
                                          collect p))
                                 (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-graph ctx))))
                         (progn
-                          (print "++CMP++")
-                          (when (null force-realize-p)
-                            (setf (ctx-queue ctx) (append (ctx-queue ctx) (list tgt))))
-                          (print tgt)
-                          (print p)
-                          (print "FAILING")
+                          ;(print "++CMP++")
+                          (unless (and force-realize-p injective-p) ;; waiting until other scheduling processes are finished.
+                            (when (null (find (node-id tgt) (ctx-queue ctx) :key #'node-id))
+                              (setf (ctx-queue ctx) (append (ctx-queue ctx) (list tgt)))))
+                          ;(print tgt)
+                          ;(print p)
+                          ;(print "FAILING")
                           )))))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
