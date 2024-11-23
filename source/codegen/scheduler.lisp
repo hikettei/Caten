@@ -954,9 +954,10 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
 (defmethod ctx-register-new-group ((ctx Schedule-Context) (tgt node) (parent node))
   (setf (gethash (node-id tgt) (ctx-node-id->parent-id ctx)) (node-id parent)))
 (defmethod ctx-find-group-id ((ctx Schedule-Context) (tgt symbol))
+  (declare (optimize (speed 3)))
   (labels ((explore (id &aux (val (gethash id (ctx-node-id->parent-id ctx))))
              (if val
-                 (if (not (eql val id))
+                 (if (not (eql (the symbol val) id))
                      (explore val)
                      (error "Group Fusion from x -> x is detected. ~a" id))
                  id)))
@@ -1064,7 +1065,8 @@ Otherwise, returns NIL. (= not fusable)"
 ;; - 4. [ ] Small Reproを作成して試してみる (SERIALIZE=1)
 ;; - Add Embed Embed = 1 Kernel?
 ;; 412 nodes for randn
-(defun %run-schedule (ctx &key (no-serialize-p (= 0 (ctx:getenv :SERIALIZE))) (c 0))
+;; とりあえずOrderを削減しないといけない・・・
+(defun %run-schedule (ctx &key (no-serialize-p (= 0 (ctx:getenv :SERIALIZE))) (c 0) (stashed nil))
   "Implements a simple BFS DAG Scheduler.
 ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
 Produces a list of groups, fuses sometime. sometimes rewrite view.
@@ -1072,70 +1074,71 @@ items in the same group should have the same rank"
   (declare (type Schedule-Context ctx))
   ;; Initialize a priority queue of all nodes ready to be scheduled.
   (ctx-sync-queue ctx)
-  (loop while (ctx-queue ctx)
-        for tgt of-type Node = (pop (ctx-queue ctx))
-        for children = (ctx-children ctx tgt)
-        for parents  = (ctx-parents ctx tgt)
-        for parent-views = (ctx-parent-views ctx tgt) do
-          ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-          ;; parents[0] parents[1] parents[2] ...
-          ;;      \      |      /
-          ;;           [TGT]
-          ;;       /     |      \
-          ;; children[0] children[1] children[2] ...
-          ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-          ;; 1. In order to schedule "TGT", all parents must be scheduled first.
-          ;; 2. children are scheduled after "TGT" and their parents of each children are scheduled.
-          (when (not (ctx-realize-p ctx tgt))
-            (ctx-set-realize ctx tgt)
-            (ctx-append-queue ctx children)) ; tgt may make some children ready to be scheduled.
-          ;; 考えること1. Cyclic GraphのFusion (Transformer Triuのケース)
-          ;; 考えること2. BatchNorm/Softmaxを1KernelにFusionすることが可能か？
-          ;; Parentの全てのChildrenが同一のGroupへSchedule可能？ => Mergeable!
-          ;; 考えること3. node-reads node どのノードとmergeするべきかの重みつけ
-          ;; 考えること4. group-reads/group-writes
-          ;; 最後にViewによるSchedule Splitを実装する。
-          ;; 1. group <-> node_idをちゃんと考える
-          (loop for p in parents
-                for parent-view in (map 'list #'car parent-views)
-                for parent-group = (ctx-get-group ctx p)
-                for tgt-group = (ctx-get-group ctx tgt) ;; tgt-group would be updated if tgt is merged
-                unless (eql (group-key parent-group) (group-key tgt-group)) do
-                  ;(print c)
-                  (incf c)
-                  ;; いい感じのGraphを作るのが先決
-                  ;; :LOAD nは何回でもScheduleできるようにする必要がある。
-                  ;;   - 1. :LOAD nは必ずIsolated
-                  ;;   - 2. :LOADのグラフをコピーする
-                  ;(print "++++++++")
-                  ;(print p)
-                  ;(print tgt)
-                  ;(print parent-group)
-                  ;(print tgt-group)
-                  ;(print parent-view)
-                  (let ((force-realize-p (ctx-node-force-realize-p ctx p tgt))
-                        (injective-p (groups-are-injective-p tgt-group parent-group)))
-                    (if (and no-serialize-p force-realize-p injective-p (group-mergeable-p ctx tgt-group parent-group parent-view))
-                        (progn
-                          ;; remove(parent_group) and tgt_group += parent-group
-                          (ctx-register-new-group ctx p tgt)
-                          (setf (group-items tgt-group) (append (group-items parent-group) (group-items tgt-group))
-                                (group-predecessor tgt-group)
-                                (remove-duplicates
-                                 (loop with write-set = (apply #'append (map 'list #'node-writes (group-items tgt-group)))
-                                       for p in (append (group-predecessor parent-group) (group-predecessor tgt-group))
-                                       unless (find p write-set) ; p is not written by tgt-group => p is written by other group.
-                                         collect p))
-                                (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-graph ctx))))
-                        (progn
-                          ;(print "++CMP++")
-                          (unless (and force-realize-p injective-p) ;; waiting until other scheduling processes are finished.
-                            (when (null (find (node-id tgt) (ctx-queue ctx) :key #'node-id))
-                              (setf (ctx-queue ctx) (append (ctx-queue ctx) (list tgt)))))
-                          ;(print tgt)
-                          ;(print p)
-                          ;(print "FAILING")
-                          )))))
+  (flet ((s ()
+           (loop while (ctx-queue ctx)
+                 for tgt of-type Node = (pop (ctx-queue ctx))
+                 for children = (ctx-children ctx tgt)
+                 for parents  = (ctx-parents ctx tgt)
+                 for parent-views = (ctx-parent-views ctx tgt) do
+                   ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                   ;; parents[0] parents[1] parents[2] ...
+                   ;;      \      |      /
+                   ;;           [TGT]
+                   ;;       /     |      \
+                   ;; children[0] children[1] children[2] ...
+                   ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+                   ;; 1. In order to schedule "TGT", all parents must be scheduled first.
+                   ;; 2. children are scheduled after "TGT" and their parents of each children are scheduled.
+                   (when (not (ctx-realize-p ctx tgt))
+                     (ctx-set-realize ctx tgt)
+                     (ctx-append-queue ctx children)) ; tgt may make some children ready to be scheduled.
+                   ;; 考えること1. Cyclic GraphのFusion (Transformer Triuのケース)
+                   ;; 考えること2. BatchNorm/Softmaxを1KernelにFusionすることが可能か？
+                   ;; Parentの全てのChildrenが同一のGroupへSchedule可能？ => Mergeable!
+                   ;; 考えること3. node-reads node どのノードとmergeするべきかの重みつけ
+                   ;; 考えること4. group-reads/group-writes
+                   ;; 最後にViewによるSchedule Splitを実装する。
+                   ;; 1. group <-> node_idをちゃんと考える
+                   (loop for p in parents
+                         for parent-view in (map 'list #'car parent-views)
+                         for parent-group = (ctx-get-group ctx p)
+                         for tgt-group = (ctx-get-group ctx tgt) ;; tgt-group would be updated if tgt is merged
+                         unless (eql (group-key parent-group) (group-key tgt-group)) do
+                           ;; (print c)
+                           (incf c)
+                           ;; いい感じのGraphを作るのが先決
+                           ;; :LOAD nは何回でもScheduleできるようにする必要がある。
+                           ;;   - 1. :LOAD nは必ずIsolated
+                           ;;   - 2. :LOADのグラフをコピーする
+                           ;;(print "++++++++")
+                           ;;(print p)
+                           ;;(print tgt)
+                           ;;(print parent-group)
+                           ;;(print tgt-group)
+                           ;;(print parent-view)
+                           (let ((force-realize-p (ctx-node-force-realize-p ctx p tgt))
+                                 (injective-p (groups-are-injective-p tgt-group parent-group)))
+                             (if (and no-serialize-p force-realize-p injective-p (group-mergeable-p ctx tgt-group parent-group parent-view))
+                                 (progn
+                                   ;; remove(parent_group) and tgt_group += parent-group
+                                   (ctx-register-new-group ctx p tgt)
+                                   (setf (group-items tgt-group) (append (group-items parent-group) (group-items tgt-group))
+                                         (group-predecessor tgt-group)
+                                         (remove-duplicates
+                                          (loop with write-set = (apply #'append (map 'list #'node-writes (group-items tgt-group)))
+                                                for p in (append (group-predecessor parent-group) (group-predecessor tgt-group))
+                                                unless (find p write-set) ; p is not written by tgt-group => p is written by other group.
+                                                  collect p))
+                                         (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-graph ctx))))
+                                 
+                                 (unless (and force-realize-p injective-p) ;; waiting until other scheduling processes are finished.
+                                   (when (null (find (node-id tgt) stashed :key #'node-id))
+                                     (push tgt stashed)))))))))
+    (s)
+    (loop while stashed do
+      (setf (ctx-queue ctx) stashed
+            stashed nil)
+      (s)))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
 ;; ↓に直接書く？
@@ -1151,7 +1154,7 @@ Return: ScheduleGraph
   ;; [TODO] Assert the following things:
   ;; 1. node is type-inferred
   ;; 2. :VIEW is not allowed to use
-  (pprint-graph graph)
+  ;(pprint-graph graph)
   (assert (graph-outputs graph) () "Cannot schedule a graph without explicit outputs.")
   (let* ((ctx (make-schedule-context graph))
          (groups (time (%run-schedule ctx)))
@@ -1160,12 +1163,12 @@ Return: ScheduleGraph
     (setf (graph-outputs schedule-graph) (graph-outputs graph)
           schedule-graph (->fast-graph schedule-graph))
     (pprint-graph schedule-graph)
-    (print schedule-graph)
+   ; (print schedule-graph)
     (verify-graph schedule-graph)
     (let ((prescheduled (length groups))
           (scheduled (count :Schedule-Item (graph-nodes schedule-graph) :key #'node-type)))
       ;; [TODO] update group->schedule
-      (print groups)
+      ;(print groups)
       (assert (= prescheduled scheduled) () "Prescheduled ~a groups but only ~a groups are scheduled." prescheduled scheduled))
     ;; 1. recursive-create-groupsでRealizeするPointを作成する
     ;; 2. RealizeするPointのBuffer前後をChaseする
