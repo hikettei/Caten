@@ -1100,8 +1100,9 @@ Otherwise, returns NIL. (= not fusable)"
 ;; Workload
 ;; - 1. [x] node-writes, node-readsをきちんと定義する
 ;; - 2. [x] Group Fusionができるのは，node-writesの全てがnode-readsへ通じる時のみ
-;; - 3. [ ] force-realize-pで失敗した時の処理を考えてみる。
+;; - 3. [x] force-realize-pで失敗した時の処理を考えてみる。
 ;; - 4. [ ] Small Reproを作成して試してみる (SERIALIZE=1)
+;; - 5. [ ] ViewでSeparateするケースを実装する
 ;; - Add Embed Embed = 1 Kernel?
 ;; 412 nodes for randn
 ;; とりあえずOrderを削減しないといけない・・・
@@ -1133,21 +1134,13 @@ items in the same group should have the same rank"
                    (when (not (ctx-realize-p ctx tgt))
                      (ctx-set-realize ctx tgt)
                      (ctx-append-queue ctx children)) ; tgt may make some children ready to be scheduled.
-                   ;; 考えること1. Cyclic GraphのFusion (Transformer Triuのケース)
-                   ;; 考えること2. BatchNorm/Softmaxを1KernelにFusionすることが可能か？
-                   ;; Parentの全てのChildrenが同一のGroupへSchedule可能？ => Mergeable!
-                   ;; 考えること3. node-reads node どのノードとmergeするべきかの重みつけ
-                   ;; 考えること4. group-reads/group-writes
-                   ;; 最後にViewによるSchedule Splitを実装する。
-                   ;; 1. group <-> node_idをちゃんと考える
                    (loop for p in parents
                          for parent-view in (map 'list #'car parent-views)
                          for parent-group = (ctx-get-group ctx p)
                          for tgt-group = (ctx-get-group ctx tgt) ;; tgt-group would be updated if tgt is merged
                          unless (eql (group-key parent-group) (group-key tgt-group)) do
-                           (print c)
+                           ;; (print c)
                            (incf c)
-                           ;; いい感じのGraphを作るのが先決
                            ;; :LOAD nは何回でもScheduleできるようにする必要がある。
                            ;;   - 1. :LOAD nは必ずIsolated
                            ;;   - 2. :LOADのグラフをコピーする
@@ -1200,7 +1193,7 @@ Return: ScheduleGraph
   ;; [TODO] Assert the following things:
   ;; 1. node is type-inferred
   ;; 2. :VIEW is not allowed to use
-  ;(pprint-graph graph)
+  (pprint-graph graph)
   (assert (graph-outputs graph) () "Cannot schedule a graph without explicit outputs.")
   (let* ((ctx (make-schedule-context graph))
          (groups (time (%run-schedule ctx)))
