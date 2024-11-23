@@ -856,10 +856,13 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                   (:SCHEDULE-ITEM
                    (if (getattr node :allocate-p)
                        (let ((alloc (car (getattr node :items))))
-                         (format nil "Allocate[:~(~a~)] ~a" (getattr alloc :dtype) (subseq (node-reads alloc) 0 (getattr alloc :nrank))))
+                         (assert alloc)
+                         (princ-node alloc))
                        (if (getattr node :jitable)
                            (format nil "[KERNEL] ~a" (getattr node :name))
-                           (format nil "[VMOP] ~a" (getattr node :name)))))
+                           (let ((node (car (getattr node :items))))
+                             (assert node)
+                             (princ-node node)))))
                   (:Allocate
                    (format nil "Allocate[:~(~a~)] ~a" (getattr node :dtype) (subseq (node-reads node) 0 (getattr node :nrank))))
                   (:LOAD
@@ -888,7 +891,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                           (setf seen (remove id seen)) (push id stashed))
                         (progn
                           (mapc #'preserve (node-reads node))
-                          (let ((*indent* (+ 2 *indent*))g
+                          (let ((*indent* (+ 2 *indent*))
                                 (lastp-map (make-list (length (node-reads node)))))
                             (when lastp-map (setf (car lastp-map) t))
                             (mapc #'explore (node-reads node) (nreverse lastp-map)))))))))
@@ -946,26 +949,52 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
   (or
    (gethash (node-id node) (ctx-node->group ctx))
    (error "The node ~a is not yet scheduled!" node)))
-
+;; [TODO] Memorize site optimize siteoku
 (defmethod ctx-node-force-realize-p ((ctx Schedule-Context) (a node) (b node))
   "Detects the following pattern in the DAG. In order to merge a and b in the same group, c must be grouped to a or b.
- a ──────> b ──────> d
+[a] ──────> d ──────>[b]
   \       /         /
    \     /         /
     \   /         /  ... (recursively)
      \ /         /
       c ──────> e
-Returns T if some of children won't satisfy the condition above."
+          ^ If groups are separated at here, a and b cannot be merged.
+This method returns T if every children are scheduled in the same group as a or b. (= fusable)"
+  (declare (optimize (speed 3)))
   (let ((a-children (ctx-children ctx a))
         (a-group (ctx-get-group ctx a))
         (b-group (ctx-get-group ctx b)))
-    (loop with items = (append (group-items a-group) (group-items b-group))
-          for child in a-children
-          ;; WAKARAN
-          if (null (find (node-id child) items :key #'node-id)) ;; the relation is closed
-            do (if (ctx-node-force-realize-p ctx child b)
-                   nil))
-    nil))
+    (every
+     #'identity
+     (loop with items = (append (group-items a-group) (group-items b-group))
+           for a-child in a-children
+           for scheduled-p = (find (node-id a-child) items :key #'node-id)
+           for closed-p = (or scheduled-p
+                              (and
+                               ;; a must be realized before b
+                               (ctx-realize-p ctx a-child)
+                               ;; a and c must be in the same group for example.
+                               (eql (group-key (ctx-get-group ctx a-child)) (group-key a-group))
+                               (ctx-node-force-realize-p ctx a-child b)))
+           if closed-p
+             collect t
+           else
+             do (return-from ctx-node-force-realize-p nil)))))
+
+(defun group-mergeable-p (ctx tgt-group parent-group view)
+  "PARENT_GROUP
+        |
+      [VIEW]
+        |
+       [TGT]"
+  (declare (type Schedule-Context ctx) (type Group tgt-group parent-group) (type (or null node) view))
+  (symbol-macrolet ((->ng (return-from group-mergeable-p nil)))
+    (flet ((force-realize-p (nodes) (some #'(lambda (x) (null (jitable-p x))) nodes)))
+      ;; :Allocate, VMOP, etc are scheduled standalone.
+      (when (force-realize-p (group-items tgt-group))->ng)
+      (when (force-realize-p (group-items parent-group))->ng))
+
+    ))
 ;; [TODO] group-reads
 ;;  LOAD_ALLOCATE (Scalar) 例えばこれはgroup-predecessorに追加しない。
 ;;  group->scheduleはgroup-predecessorを使う。
@@ -1004,22 +1033,29 @@ Produces a list of groups, fuses sometime."
           ;; 考えること2. BatchNorm/Softmaxを1KernelにFusionすることが可能か？
           ;; Parentの全てのChildrenが同一のGroupへSchedule可能？ => Mergeable!
           ;; 考えること3. node-reads node どのノードとmergeするべきかの重みつけ
+          ;; 考えること4. group-reads/group-writes
           (loop with tgt-group = (ctx-get-group ctx tgt)
                 for p in parents
                 for parent-view in (map 'list #'car parent-views)
                 for parent-group = (ctx-get-group ctx p)
-                ;; nodeをCopyしてnode-idを再度付与したい気持ち
-                ;; Viewが何番目かを100%%確実に考慮する。
-                ;; workload1. VIEWの特定をちゃんと考える
                 unless (eql (group-key parent-group) (group-key tgt-group)) do
+                  ;; group-mergeable-pも作り直したいが作り直すとだいぶめんどくさい :(
+                  ;; :LOAD nは何回でもScheduleできるようにする必要がある。
                   (print "++++++++")
                   (print parent-group)
                   (print tgt-group)
                   (print parent-view)
-                  
-                ))
+                  (if (ctx-node-force-realize-p ctx parents tgt)
+                      (when (group-mergeable-p ctx tgt-group parent-group parent-view)
+                        ;; parent-group += tgt-group
+                        )
+                      (progn
+                        (print "NG")
+                        (error "THIS CASE IS TODO")
+                        ;; [TODO] queueに再度Pushしてmergeable可能になるまで待ってみる
+                        ))))
   (remove-duplicates (alexandria:hash-table-values (ctx-node->group ctx)) :key #'group-key))
-
+;; ↓に直接書く？
 (defun graph-schedule1 (graph)
   "
 ```
