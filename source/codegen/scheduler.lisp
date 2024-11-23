@@ -920,12 +920,14 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
   (out-degrees (second io-degree) :type hash-table)
   (realize (make-hash-table) :type hash-table)
   (node->group (make-hash-table) :type hash-table)
+  (node-id->parent-id (make-hash-table) :type hash-table)
   (queue nil :type list))
 
 (defmethod ctx-children ((ctx Schedule-Context) (node node)) (gethash (node-id node) (ctx-out-degrees ctx)))
 (defmethod ctx-parents ((ctx Schedule-Context) (node node)) (map 'list #'car (gethash (node-id node) (ctx-in-degrees ctx))))
 (defmethod ctx-parent-views ((ctx Schedule-Context) (node node)) (map 'list #'cdr (gethash (node-id node) (ctx-in-degrees ctx))))
 (defmethod ctx-set-realize ((ctx Schedule-Context) node)
+  (assert (eql (node-id node) (ctx-find-group-id ctx (node-id node))) () "The node ~a is already scheduled?" node)
   (setf
    (gethash (node-id node) (ctx-node->group ctx))
    (make-group :predecessor (nodes-depends-on (list node)) :successor (nodes-write-to (list node)) :reduce-dims (node-reduce-axes node) :items (list node))
@@ -947,8 +949,18 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
           do (push node (ctx-queue ctx))))
 (defmethod ctx-get-group ((ctx Schedule-Context) node)
   (or
-   (gethash (node-id node) (ctx-node->group ctx))
+   (gethash (ctx-find-group-id ctx (node-id node)) (ctx-node->group ctx))
    (error "The node ~a is not yet scheduled!" node)))
+(defmethod ctx-register-new-group ((ctx Schedule-Context) (tgt node) (parent node))
+  (setf (gethash (node-id tgt) (ctx-node-id->parent-id ctx)) (node-id parent)))
+(defmethod ctx-find-group-id ((ctx Schedule-Context) (tgt symbol))
+  (labels ((explore (id &aux (val (gethash id (ctx-node-id->parent-id ctx))))
+             (if val
+                 (if (not (eql val id))
+                     (explore val)
+                     (error "Group Fusion from x -> x is detected. ~a" id))
+                 id)))
+    (explore tgt)))
 ;; [TODO] Memorize site optimize siteoku
 (defmethod ctx-node-force-realize-p ((ctx Schedule-Context) (a node) (b node))
   "Detects the following pattern in the DAG. In order to merge a and b in the same group, c must be grouped to a or b.
@@ -988,21 +1000,46 @@ This method returns T if every children are scheduled in the same group as a or 
         |
        [TGT]"
   (declare (type Schedule-Context ctx) (type Group tgt-group parent-group) (type (or null node) view))
-  (symbol-macrolet ((->ng (return-from group-mergeable-p nil)))
+  (when view (assert (eql (node-type view) :VIEW)))
+  (symbol-macrolet ((->ng (return-from group-mergeable-p nil))
+                    (->ok (return-from group-mergeable-p t)))
+    ;; parent.items != 1なのに注意して書き換える。
     (flet ((force-realize-p (nodes) (some #'(lambda (x) (null (jitable-p x))) nodes)))
       ;; :Allocate, VMOP, etc are scheduled standalone.
       (when (force-realize-p (group-items tgt-group))->ng)
       (when (force-realize-p (group-items parent-group))->ng))
-
-    ))
+    ;; Reductions with the different axes cannot be merged.
+    (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
+      (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
+        ->ng))
+    ;; [TODO] This returning will make attention kv cache separated
+    ;; caten is not clever as merging multiple shrink?...
+    (when (and view (eql (identify-view-type view) :SHRINK))
+      ;; [TODO] Add a mask like:
+      ;;  _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
+      ->ng)
+    (let ((after-reduction-p (identity (group-reduce-dims parent-group))))
+      ;; float _acc_0 = 0.0f;
+      ;; for (...) {
+      ;;   _acc_0 = ...;
+      ;; }
+      ;; self = _acc_0;
+      ;; // tgt-group is here if after-reduction-p is T
+      (when after-reduction-p
+        ;; After the reduction, only the broadcast is mergeable.
+        )
+      t
+      )))
 ;; [TODO] group-reads
 ;;  LOAD_ALLOCATE (Scalar) 例えばこれはgroup-predecessorに追加しない。
 ;;  group->scheduleはgroup-predecessorを使う。
 ;;  pprint-group
+;; - create a small repro for transformer case
 (defun %run-schedule (ctx)
   "Implements a simple BFS DAG Scheduler.
 ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
-Produces a list of groups, fuses sometime."
+Produces a list of groups, fuses sometime. sometimes rewrite view.
+items in the same group should have the same rank"
   (declare (type Schedule-Context ctx))
   ;; Initialize a priority queue of all nodes ready to be scheduled.
   (ctx-sync-queue ctx)
@@ -1022,39 +1059,54 @@ Produces a list of groups, fuses sometime."
           ;; 2. children are scheduled after "TGT" and their parents of each children are scheduled.
           (ctx-set-realize ctx tgt)
           (ctx-append-queue ctx children) ;; tgt may make some children ready to be scheduled.
-          ;; 1. Trying to merge tgt and parents
-          ;; 2. Trying to merge the parent and parent
-          ;; 比較のやり方 = 巨大化するParentと単体のSelfの比較
-          ;; ここで基本的にsorted-nodesにPushするが，FuseするためにParentsのGroupにFuseできるかを考える
-          ;; ここでchildren == 1の場合は適当にFuseしてOK
-          ;; children > 1の場合 -> FuseするTargetが複数あるわけだけど，これはどうするか？
-          ;; 考える場所が違っていて，TGTを基軸に考える
           ;; 考えること1. Cyclic GraphのFusion (Transformer Triuのケース)
           ;; 考えること2. BatchNorm/Softmaxを1KernelにFusionすることが可能か？
           ;; Parentの全てのChildrenが同一のGroupへSchedule可能？ => Mergeable!
           ;; 考えること3. node-reads node どのノードとmergeするべきかの重みつけ
           ;; 考えること4. group-reads/group-writes
-          (loop with tgt-group = (ctx-get-group ctx tgt)
-                for p in parents
+          ;; 最後にViewによるSchedule Splitを実装する。
+          ;; 1. group <-> node_idをちゃんと考える
+          (loop for p in parents
                 for parent-view in (map 'list #'car parent-views)
                 for parent-group = (ctx-get-group ctx p)
+                for tgt-group = (ctx-get-group ctx tgt) ;; tgt-group would be updated if tgt is merged
                 unless (eql (group-key parent-group) (group-key tgt-group)) do
-                  ;; group-mergeable-pも作り直したいが作り直すとだいぶめんどくさい :(
+                  ;; いい感じのGraphを作るのが先決
                   ;; :LOAD nは何回でもScheduleできるようにする必要がある。
+                  ;;   - 1. :LOAD nは必ずIsolated
+                  ;;   - 2. :LOADのグラフをコピーする
                   (print "++++++++")
                   (print parent-group)
                   (print tgt-group)
                   (print parent-view)
-                  (if (ctx-node-force-realize-p ctx parents tgt)
+                  (if (ctx-node-force-realize-p ctx p tgt)
                       (when (group-mergeable-p ctx tgt-group parent-group parent-view)
-                        ;; parent-group += tgt-group
-                        )
-                      (progn
+                        (print "MERGED")
+                        ;; get-groupして，write-toがselfにしか繋がってなかったらmerge可能，これが正しい？
+                        ;; [TODO] This is merge-groups
+                        ;; remove(parent_group) and tgt_group += parent-group
+                        (ctx-register-new-group ctx p tgt)
+                        (setf (group-items tgt-group) (append (group-items parent-group) (group-items tgt-group))
+                              (group-predecessor tgt-group)
+                              (remove-duplicates
+                               (loop for p in (append (group-predecessor parent-group) (group-predecessor tgt-group))
+                                     unless (find p (append (group-successor tgt-group) (group-successor parent-group)))
+                                       collect p))
+                              (group-successor tgt-group)
+                              (remove-duplicates
+                               (loop for p in (append (group-successor parent-group) (group-successor tgt-group))
+                                     unless (find p (append (group-predecessor tgt-group) (group-predecessor parent-group)))
+                                       collect p))))
+                      (progn ;; some of children are grouped to another group
                         (print "NG")
-                        (error "THIS CASE IS TODO")
-                        ;; [TODO] queueに再度Pushしてmergeable可能になるまで待ってみる
+                        (print (ctx-children ctx p))
+                        ;; ここの処理を実装してSoftmax = 1 Kernelにする
+                        ;; tgtをQueueに追加する。(Not RealizedでFailした場合には)
+                        ;; (push tgt (ctx-queue ctx))
+                        ;; Assert by force realizeがTになって，group-writseとgroup-reads selfの依存が自分の身になったらmerge
                         ))))
-  (remove-duplicates (alexandria:hash-table-values (ctx-node->group ctx)) :key #'group-key))
+  (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
+    (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
 ;; ↓に直接書く？
 (defun graph-schedule1 (graph)
   "
@@ -1072,14 +1124,21 @@ Return: ScheduleGraph
   (assert (graph-outputs graph) () "Cannot schedule a graph without explicit outputs.")
   (let* ((ctx (make-schedule-context graph))
          (groups (%run-schedule ctx))
+         ;; (Optional)ここにbreak-schedを作った方が簡単
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule x graph)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph)
           schedule-graph (->fast-graph schedule-graph))
     (pprint-graph schedule-graph)
     (print schedule-graph)
+    (verify-graph schedule-graph)
+    (let ((prescheduled (length groups))
+          (scheduled (count :Schedule-Item (graph-nodes schedule-graph) :key #'node-type)))
+      ;; [TODO] update group->schedule
+      (print groups)
+      (assert (= prescheduled scheduled) () "Prescheduled ~a groups but only ~a groups are scheduled." prescheduled scheduled))
     ;; 1. recursive-create-groupsでRealizeするPointを作成する
     ;; 2. RealizeするPointのBuffer前後をChaseする
     ;; 3. Scheduled Itemを作成
     ;; 4. (iconst 'n)とかは複数回Scheduleして良い
-    
+    ;; 5. Reduction without contiguousのPatch
     ))
