@@ -144,6 +144,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (setf (getattr si :namespace) (nodes-create-namespace (getattr si :items))))
 ;; ~~ Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Group
+  (predecessor '() :type list) ;; = group-reads
+  (successor '() :type list)   ;; = group-writes
   (key (gensym) :type symbol)
   (reduce-dims nil :type list)
   (items nil :type list))
@@ -782,31 +784,36 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
       (mapc #'schedule-item-initialize-namespace (graph-nodes schedule))
       schedule)))
 ;; ~~ New Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; もうちょっと単純に考えてみる：
-;; - CLI上のGraphのPPRINTは欲しい
-;; - Realize Graphでグラフを依存関係から大まかに分割した後に，recursive-create-schedule?
-(defun make-io-degree-map (graph)
+(defun make-graph-edge-map (graph)
+  "Computes the in-degrees and out-degrees of the graph.
+- Nodes located after the :PAUSE/BACKWARD must be realized after :PAUSE/BACKWARD.
+- "
   (declare (optimize (speed 3)) (type graph graph))
+  ;; in-degrees:  NODE_ID -> (list (cons node view) ...)
+  ;; out-degrees  NODE_ID -> (list node ...)
   (let ((in-degrees (make-hash-table)) (out-degrees (make-hash-table))
-        (backward (find :PAUSE/BACKWARD (graph-nodes graph) :key #'node-type))
-        (backward-pos (position :PAUSE/BACKWARD (graph-nodes graph) :key #'node-type)))
+        (backward (find :PAUSE/BACKWARD (the list (graph-nodes graph)) :key #'node-type))
+        (backward-pos (position :PAUSE/BACKWARD (the list (graph-nodes graph)) :key #'node-type)))
     (declare (type hash-table in-degrees out-degrees))
-    (flet ((butseen (list)
+    (flet ((butseen (list views)
+             (assert (every #'(lambda (x) (<= (length (the list x)) 1)) views))
              (loop for l in list
+                   for view in views
                    for v = (id->value graph l)
-                   if (and v (symbolp l)) collect v)))
+                   if (and v (symbolp l)) collect (cons v view))))
       (loop for node in (graph-nodes graph)
             for nth fixnum upfrom 0 do
-        (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
-        (when (and backward backward-pos (> nth backward-pos))
-          ;; If PAUSE/BACKWARD is defined, nodes placed after it must be realized after :PAUSE/BACKWARD.
-          (push backward (gethash (node-id node) in-degrees))
-          (push node (gethash (node-id backward) out-degrees)))
-        (dolist (r (gethash (node-id node) in-degrees))
-          (when (null (find (node-id node) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
-            (push node (gethash (node-id r) out-degrees))))))
+              (assert (= (length (the list (node-reads node))) (length (the list (getattr node :_read_views)))))
+              (setf (gethash (node-id node) in-degrees) (butseen (node-reads node) (getattr node :_read_views)))
+              (when (and backward backward-pos (> nth backward-pos))
+                ;; If PAUSE/BACKWARD is defined, nodes placed after it must be realized after :PAUSE/BACKWARD.
+                (push (cons backward nil) (gethash (node-id node) in-degrees))
+                (push node (gethash (node-id backward) out-degrees)))
+              (dolist (r (gethash (node-id node) in-degrees))
+                (let ((r (car r))) ;; r = node
+                  (when (null (find (node-id node) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
+                    (push node (gethash (node-id r) out-degrees)))))))
     (list in-degrees out-degrees)))
-
 ;; [TODO] Move to caten/aasm. 絶対に別PRでもいいからmergeする!!
 ;; [TODO] make pprint-graph default?
 ;; [TODO] AUTO_DETECT screen-width on terminal, in emacs+repl, set manually! check from CI
@@ -904,7 +911,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                  
 (defstruct (Schedule-Context
             (:conc-name ctx-)
-            (:constructor make-schedule-context (graph &aux (io-degree (make-io-degree-map graph)))))
+            (:constructor make-schedule-context (graph &aux (io-degree (make-graph-edge-map graph)))))
   (graph graph :type graph)
   (in-degrees (car io-degree) :type hash-table)
   (out-degrees (second io-degree) :type hash-table)
@@ -913,10 +920,12 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
   (queue nil :type list))
 
 (defmethod ctx-children ((ctx Schedule-Context) (node node)) (gethash (node-id node) (ctx-out-degrees ctx)))
-(defmethod ctx-parents ((ctx Schedule-Context) (node node)) (gethash (node-id node) (ctx-in-degrees ctx)))
+(defmethod ctx-parents ((ctx Schedule-Context) (node node)) (map 'list #'car (gethash (node-id node) (ctx-in-degrees ctx))))
+(defmethod ctx-parent-views ((ctx Schedule-Context) (node node)) (map 'list #'cdr (gethash (node-id node) (ctx-in-degrees ctx))))
 (defmethod ctx-set-realize ((ctx Schedule-Context) node)
   (setf
-   (gethash (node-id node) (ctx-node->group ctx)) (make-group :reduce-dims (node-reduce-axes node) :items (list node))
+   (gethash (node-id node) (ctx-node->group ctx))
+   (make-group :predecessor (nodes-depends-on (list node)) :successor (nodes-write-to (list node)) :reduce-dims (node-reduce-axes node) :items (list node))
    (gethash (node-id node) (ctx-realize ctx)) t))
 (defmethod ctx-realize-p ((ctx Schedule-Context) node) (gethash (node-id node) (ctx-realize ctx)))
 (defmethod ctx-sync-queue ((ctx Schedule-Context))
@@ -957,7 +966,10 @@ Returns T if some of children won't satisfy the condition above."
             do (if (ctx-node-force-realize-p ctx child b)
                    nil))
     nil))
-
+;; [TODO] group-reads
+;;  LOAD_ALLOCATE (Scalar) 例えばこれはgroup-predecessorに追加しない。
+;;  group->scheduleはgroup-predecessorを使う。
+;;  pprint-group
 (defun %run-schedule (ctx)
   "Implements a simple BFS DAG Scheduler.
 ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
@@ -968,7 +980,8 @@ Produces a list of groups, fuses sometime."
   (loop while (ctx-queue ctx)
         for tgt of-type Node = (pop (ctx-queue ctx))
         for children = (ctx-children ctx tgt)
-        for parents  = (ctx-parents ctx tgt) do
+        for parents  = (ctx-parents ctx tgt)
+        for parent-views = (ctx-parent-views ctx tgt) do
           ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
           ;; parents[0] parents[1] parents[2] ...
           ;;      \      |      /
@@ -990,10 +1003,21 @@ Produces a list of groups, fuses sometime."
           ;; 考えること1. Cyclic GraphのFusion (Transformer Triuのケース)
           ;; 考えること2. BatchNorm/Softmaxを1KernelにFusionすることが可能か？
           ;; Parentの全てのChildrenが同一のGroupへSchedule可能？ => Mergeable!
-          
-          
-          
-          )
+          ;; 考えること3. node-reads node どのノードとmergeするべきかの重みつけ
+          (loop with tgt-group = (ctx-get-group ctx tgt)
+                for p in parents
+                for parent-view in (map 'list #'car parent-views)
+                for parent-group = (ctx-get-group ctx p)
+                ;; nodeをCopyしてnode-idを再度付与したい気持ち
+                ;; Viewが何番目かを100%%確実に考慮する。
+                ;; workload1. VIEWの特定をちゃんと考える
+                unless (eql (group-key parent-group) (group-key tgt-group)) do
+                  (print "++++++++")
+                  (print parent-group)
+                  (print tgt-group)
+                  (print parent-view)
+                  
+                ))
   (remove-duplicates (alexandria:hash-table-values (ctx-node->group ctx)) :key #'group-key))
 
 (defun graph-schedule1 (graph)
@@ -1005,6 +1029,9 @@ TODO: Descripton
 Return: ScheduleGraph
 "
   (declare (type Graph graph))
+  ;; [TODO] Assert the following things:
+  ;; 1. node is type-inferred
+  ;; 2. :VIEW is not allowed to use
   (pprint-graph graph)
   (assert (graph-outputs graph) () "Cannot schedule a graph without explicit outputs.")
   (let* ((ctx (make-schedule-context graph))
