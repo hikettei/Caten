@@ -802,8 +802,10 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
     (list in-degrees out-degrees)))
 
 ;; [TODO] Move to caten/aasm. 絶対に別PRでもいいからmergeする!!
+;; [TODO] make pprint-graph default?
+;; [TODO] AUTO_DETECT screen-width on terminal, in emacs+repl, set manually!
 (defparameter *indent* 0)
-(defun pprint-graph (graph &key (screen-width 100)
+(defun pprint-graph (graph &key (screen-width 140)
                      &aux (seen nil) (preserved (make-hash-table)) (stashed nil) (part 0) (static-gensym (make-hash-table)))
   (when (null (graph-outputs graph))
     (warn "pprint-grpah does nothing without graph-outputs."))
@@ -824,10 +826,10 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
               (preserve (val &aux (node (id->value graph val)))
                 (when node
                   (setf (gethash (node-id node) preserved) (1+ *indent*))))
-              (static-gensym (id)
+              (static-gensym (id &key (prefix ""))
                 (if (gethash id static-gensym)
                     (gethash id static-gensym)
-                    (setf (gethash id static-gensym) (format nil "~a" (hash-table-count static-gensym)))))
+                    (setf (gethash id static-gensym) (format nil "~a~a" prefix (hash-table-count static-gensym)))))
               (separate-screen ()
                 (format out "=== [P: ~a] ====" part)
                 (dotimes (i (- screen-width 15))
@@ -850,7 +852,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                   (:LOAD
                    (format nil "load(~a)" (getattr node :value)))
                   (otherwise
-                   (format nil "~a" (node-type node)))))
+                   (format nil ":~a {~a}" (node-type node) (static-gensym (node-id node) :prefix "N")))))
               (pn (node lastp)
                 (let ((item (format nil "~a~a~a~%" (indent lastp) (if (zerop *indent*) "" " ") (princ-node node))))
                   (princ item out)
@@ -859,7 +861,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                 (when (find id seen)
                   (let ((node (id->value graph id)))
                     (when node
-                      (format out "~a [cycle]~%" (indent lastp))
+                      (format out "~a ~a~%" (indent lastp) (princ-node node))
                       (remhash (node-id node) preserved))
                     (return-from explore)))
                 (push id seen)
@@ -956,7 +958,10 @@ Produces a list of groups, fuses sometime."
           ;; ここでchildren == 1の場合は適当にFuseしてOK
           ;; children > 1の場合 -> FuseするTargetが複数あるわけだけど，これはどうするか？
           ;; 考える場所が違っていて，TGTを基軸に考える
-        )
+          ;; 考えること1. Cyclic GraphのFusion (Transformer Triuのケース)
+          ;; 考えること2. BatchNorm/Softmaxを1KernelにFusionすることが可能か？
+          
+          )
   (remove-duplicates (alexandria:hash-table-values (ctx-node->group ctx)) :key #'group-key))
 
 (defun graph-schedule1 (graph)
