@@ -961,6 +961,23 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                      (error "Group Fusion from x -> x is detected. ~a" id))
                  id)))
     (explore tgt)))
+
+(defun compute-group-write-to (group-items graph)
+  "Lists all write dependencies used by non-group-items nodes originated from the group-items."
+  (declare (type list group-items) (type graph graph) (optimize (speed 3)))
+  (let ((read-except-for-items
+          (remove-duplicates
+           (append
+            (graph-outputs graph)
+            (loop with region = (map 'list #'node-id group-items)
+                  for node in (graph-nodes graph)
+                  if (null (find (node-id node) region))
+                    append (node-reads node)))))
+        (write-set (remove-duplicates (apply #'append (map 'list #'node-writes group-items)))))
+    (declare (type list read-except-for-items write-set))
+    (loop for w of-type symbol in write-set
+          if (find w read-except-for-items)
+            collect w)))
 ;; [TODO] Memorize site optimize siteoku
 (defmethod ctx-node-force-realize-p ((ctx Schedule-Context) (a node) (b node))
   "Detects the following pattern in the DAG. In order to merge a and b in the same group, c must be grouped to a or b.
@@ -1012,6 +1029,9 @@ This method returns T if every children are scheduled in the same group as a or 
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
+    ;; If the output of parent-group is also used by other groups, don't merge it.
+    (unless (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group))
+      ->ng)
     ;; [TODO] This returning will make attention kv cache separated
     ;; caten is not clever as merging multiple shrink?...
     (when (and view (eql (identify-view-type view) :SHRINK))
@@ -1035,7 +1055,12 @@ This method returns T if every children are scheduled in the same group as a or 
 ;;  group->scheduleはgroup-predecessorを使う。
 ;;  pprint-group
 ;; - create a small repro for transformer case
-(defun %run-schedule (ctx)
+;; Workload
+;; - 1. [x] node-writes, node-readsをきちんと定義する
+;; - 2. [x] Group Fusionができるのは，node-writesの全てがnode-readsへ通じる時のみ
+;; - 3. force-realize-pで失敗した時の処理を考えてみる。
+;; - 4. Small Reproを作成して試してみる (SERIALIZE=1)
+(defun %run-schedule (ctx &key (no-serialize-p (= 0 (ctx:getenv :SERIALIZE))))
   "Implements a simple BFS DAG Scheduler.
 ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
 Produces a list of groups, fuses sometime. sometimes rewrite view.
@@ -1080,23 +1105,17 @@ items in the same group should have the same rank"
                   (print tgt-group)
                   (print parent-view)
                   (if (ctx-node-force-realize-p ctx p tgt)
-                      (when (group-mergeable-p ctx tgt-group parent-group parent-view)
-                        (print "MERGED")
-                        ;; get-groupして，write-toがselfにしか繋がってなかったらmerge可能，これが正しい？
-                        ;; [TODO] This is merge-groups
+                      (when (and no-serialize-p (group-mergeable-p ctx tgt-group parent-group parent-view))
                         ;; remove(parent_group) and tgt_group += parent-group
                         (ctx-register-new-group ctx p tgt)
                         (setf (group-items tgt-group) (append (group-items parent-group) (group-items tgt-group))
                               (group-predecessor tgt-group)
                               (remove-duplicates
-                               (loop for p in (append (group-predecessor parent-group) (group-predecessor tgt-group))
-                                     unless (find p (append (group-successor tgt-group) (group-successor parent-group)))
+                               (loop with write-set = (apply #'append (map 'list #'node-writes (group-items tgt-group)))
+                                     for p in (append (group-predecessor parent-group) (group-predecessor tgt-group))
+                                     unless (find p write-set) ; p is not written by tgt-group => p is written by other group.
                                        collect p))
-                              (group-successor tgt-group)
-                              (remove-duplicates
-                               (loop for p in (append (group-successor parent-group) (group-successor tgt-group))
-                                     unless (find p (append (group-predecessor tgt-group) (group-predecessor parent-group)))
-                                       collect p))))
+                              (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-graph ctx))))
                       (progn ;; some of children are grouped to another group
                         (print "NG")
                         (print (ctx-children ctx p))
@@ -1141,4 +1160,5 @@ Return: ScheduleGraph
     ;; 3. Scheduled Itemを作成
     ;; 4. (iconst 'n)とかは複数回Scheduleして良い
     ;; 5. Reduction without contiguousのPatch
+    (print "END")
     ))
