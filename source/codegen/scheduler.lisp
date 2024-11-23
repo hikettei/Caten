@@ -829,7 +829,7 @@ If this interrupts the parallelism, AutoScheduler should distribute them and cre
                     (gethash id static-gensym)
                     (setf (gethash id static-gensym) (format nil "~a" (hash-table-count static-gensym)))))
               (separate-screen ()
-                (format out "=== [P: ~a] ===" part)
+                (format out "=== [P: ~a] ====" part)
                 (dotimes (i (- screen-width 15))
                   (princ "=" out))
                 (format out "~%"))
