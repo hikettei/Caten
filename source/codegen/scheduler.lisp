@@ -629,6 +629,53 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                (push item (group-items group))))
   group)
 
+(defun apply-move-after-reduction (schedule-graph)
+  (declare (type graph schedule-graph) (optimize (speed 3)))
+  (labels ((%newtype (buffer)
+             (caten/avm:make-buffer
+              (buffer-nrank buffer)
+              (loop for s in (buffer-shape buffer)
+                    for nth fixnum upfrom 0
+                    for v = (nth nth (buffer-views buffer))
+                    if (and (listp v) (fourth v)) ;; broadcasted
+                      collect 1
+                    else
+                      collect s)
+              (buffer-stride buffer)
+              (buffer-dtype buffer)
+              (loop for s in (buffer-shape buffer)
+                    for nth fixnum upfrom 0
+                    for v = (nth nth (buffer-views buffer))
+                    if (and (listp v) (fourth v))
+                      collect `(0 1 1 t)
+                    else
+                      collect v)))
+           (%jstore (w a b base-type)
+             (make-node :Buffer :MOVE (list w) (list a b)
+                        :_type_relay
+                        (caten/codegen/shape-inference:make-inferred-type
+                         (list (%newtype base-type) (%newtype base-type))
+                         (list (%newtype base-type)))))
+           (acc (id) (intern (format nil "~(~a~)_acc" id)))
+           (r (si &aux (g (apply #'make-graph (getattr si :items))))
+             (dolist (node (graph-nodes g))
+               ;; reduced but no users in the group: This is now allowed. Adding :MOVE
+               (when (and (getattr node :reduction :allow-undefined t)
+                          (null (id->users g (car (node-writes node))))) ;; no users in a group
+                 (let ((base-id (car (node-reads node)))
+                       (write-id (car (node-writes node)))
+                       (acc-id (acc (car (node-reads node)))))
+                   (setf (node-writes node) (list acc-id))
+                   ;; val_3 = val_3_acc
+                   ;; ```
+                   ;; float val_3 = 0.0;               float val_3 = 0.0;
+                   ;; for (...) val_4 = val_3+1.0  =>  for (...) val_3_acc = val_3+1.0;
+                   ;; ```                              val_4[0] = val_3_acc;
+                   (push
+                    (%jstore write-id base-id acc-id (car (relay-writes (read-type-relay node))))
+                    (getattr si :items)))))))
+    (mapc #'r (graph-nodes schedule-graph))))
+
 (defun graph-schedule (graph)
   "
 ```
@@ -650,6 +697,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
+    (apply-move-after-reduction schedule-graph)
     (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
       (format t "[graph-schedule] scheduled graph:~%")
       (pprint-graph schedule-graph))
