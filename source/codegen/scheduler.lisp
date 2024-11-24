@@ -193,16 +193,14 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :reduce-dims (group-reduce-dims group)
                :items (group-items group)
                :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
-;; [TODO] UPDATE!! Use group-successor!!
-(defmethod group-get-type ((group Group))
-  (let* ((last (nodes-write-to (group-items group)))
-         (node (when last (find (car last) (group-items group) :key #'node-writes :test #'find))))
-    (when node
-      (car (relay-writes (read-type-relay node))))))
 
-(defmethod group-rank ((group Group))
-  (let ((buff (group-get-type group)))
-    (when buff (buffer-nrank buff))))
+(defmethod group-get-type ((group Group))
+  (let* ((last (nodes-write-to (group-items group))) ;; [TODO] This should be group-successor
+         (node (when last (find (car last) (group-items group) :key #'node-writes :test #'find))))
+    (when node (car (relay-writes (read-type-relay node))))))
+
+(defmethod group-rank ((group Group) &aux (buff (group-get-type group)))
+  (and buff (buffer-nrank buff)))
 
 (defun group-assert-rank (group r1 r2 view &aux (rank (max r1 r2)))
   (loop for item in (group-items group)
@@ -488,18 +486,9 @@ Otherwise, returns NIL. (= not fusable)"
       ;; }
       ;; self = _acc_0;
       ;; // tgt-group is here if after-reduction-p is T
-      ;; MERGEABLE is T when ...
-      ;; - 1. it is legal to rewrite all views in parent-group, with view
-      ;; - 2. 
       (when after-reduction-p
         ;; After the reduction, only the broadcast is mergeable.
         (when (and view (eql (identify-view-type view) :SHRINK)) ->ng))
-      ;; [TODO] This returning will make attention kv cache separated
-      ;; caten is not clever as merging multiple shrink?...
-      ;;(when (and view (eql (identify-view-type view) :SHRINK))
-      ;; [TODO] Add a mask like:
-      ;;  _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
-      ;;->ng)
       ;; always merge scalars
       (when (or (= r1 0) (= r2 0))->ok)
       (when (= r1 r2)
@@ -556,7 +545,7 @@ Otherwise, returns NIL. (= not fusable)"
                   ->ok)
                 ->ng))))))
 
-(defun graph-breadth-first-schedule (ctx &key (debug nil) (no-serialize-p (= 0 (the fixnum (ctx:getenv :SERIALIZE)))) (stashed nil))
+(defun graph-breadth-first-schedule (ctx &key (no-serialize-p (= 0 (the fixnum (ctx:getenv :SERIALIZE)))) (stashed nil))
   (declare (type Schedule-Context ctx) (type list stashed) (optimize (speed 3)))
   ;; Initialize a priority queue of all nodes ready to be scheduled.
   (ctx-sync-queue ctx)
@@ -605,13 +594,6 @@ Otherwise, returns NIL. (= not fusable)"
     (s)
     (loop while stashed do
       (setf (ctx-queue ctx) stashed stashed nil)
-      ;; [todo] delete just before merging
-      (when debug
-        (print "TMPGRAPH")
-        (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
-          (let ((g (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x (ctx-graph ctx))) (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))))
-            (setf (graph-outputs g) (graph-outputs (ctx-graph ctx)))
-            (pprint-graph g))))
       (unless (s) (loop-finish))))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
@@ -621,8 +603,7 @@ Otherwise, returns NIL. (= not fusable)"
 ```
 (graph-schedule graph)
 ```
-Creates a schedule-graph(FastGraph) from the given `graph`.
-"
+Creates a schedule-graph(FastGraph) from the given `graph`."
   (declare (type Graph graph) (optimize (speed 3)))
   (assert (graph-nodes graph) () "graph-schedule: Nothing to schedule?")
   (assert (graph-shape-inferred-p graph) () "graph-schedule: Run the shape inference first!")
@@ -649,14 +630,3 @@ Creates a schedule-graph(FastGraph) from the given `graph`.
       (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
     (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph))
     schedule-graph))
-;; - create a small repro for transformer case
-;; Workload
-;; - 1. [x] node-writes, node-readsをきちんと定義する
-;; - 2. [x] Group Fusionができるのは，node-writesの全てがnode-readsへ通じる時のみ
-;; - 3. [x] force-realize-pで失敗した時の処理を考えてみる。
-;; - 4. [ ] Small Reproを作成して試してみる (SERIALIZE=1)
-;; - 5. [ ] Dynamic Shapeの計算ノードは何回でもScheduleしてOK
-;; - 6. [ ] Break-Sched内部で色々やればDFSで安全にScheduleできるはず
-;; - 7. [ ] group-mergeable-pでNILをReturnするケースがないとTRIUが分割されない (それはそう）なのでVIEW分割もここでやる。
-;; とりあえずOrderを削減しないといけない・・・
-;; - Dynamic Shape -> :LOADは何回でもSchedule OK
