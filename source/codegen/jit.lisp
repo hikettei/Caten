@@ -399,7 +399,6 @@ caten/codegen overview:
       (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
-        ;; [TODO] mapc is pmapc
         (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
           (maybe-pmapc
            #'(lambda (x &aux (start (get-internal-real-time)))

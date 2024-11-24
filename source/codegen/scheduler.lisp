@@ -155,45 +155,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
         (setf key (subseq key 0 *function-name-maxlen*)))
       (gensym key))))
 
-(defmethod group->schedule-item ((group Group) (base-graph Graph))
-  (let ((reads (group-predecessor group))
-        (writes (group-successor group))
-        (allocate-p (find :Allocate (group-items group) :key #'node-type))
-        (no-symbolic-incremental-p t)
-        (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
-    ;; Ensure there's no symbolic incremental for the auto scheduler.
-    (dolist (node (group-items group))
-      (loop for r in (append (node-reads node) (node-writes node))
-            for rt in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
-            do (setf (gethash r id2type) rt)
-            if rt do
-              (when (> (buffer-nrank rt) 0)
-                (setf full-scalar-p nil))
-              (setf rank (max rank (buffer-nrank rt)))
-              (dolist (v (buffer-views rt))
-                (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
-                  (setf no-symbolic-incremental-p nil)))))
-    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
-               :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
-               :allocate-p (when allocate-p t)
-               :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
-               :storage-id-dst writes
-               :storage-id-src reads
-               :read-types (map 'list #'(lambda (x) (gethash x id2type)) reads)
-               :write-types (map 'list #'(lambda (x) (gethash x id2type)) writes)
-               :reference-counters
-               (map
-                'list
-                #'(lambda (x)
-                    (+
-                     (if (find x (graph-outputs base-graph)) 1 0)
-                     (length (id->users base-graph x))))
-                (append writes reads))
-               :rank rank
-               :reduce-dims (group-reduce-dims group)
-               :items (group-items group)
-               :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
-
 (defmethod group-get-type ((group Group))
   (let* ((last (nodes-write-to (group-items group))) ;; [TODO] This should be group-successor
          (node (when last (find (car last) (group-items group) :key #'node-writes :test #'find))))
@@ -370,6 +331,46 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
   (node->group (make-hash-table) :type hash-table)
   (node-id->parent-id (make-hash-table) :type hash-table)
   (queue nil :type list))
+
+(defmethod group->schedule-item ((group Group) (ctx Schedule-Context))
+  (let ((reads (group-predecessor group))
+        (writes (group-successor group))
+        (allocate-p (find :Allocate (group-items group) :key #'node-type))
+        (no-symbolic-incremental-p t)
+        (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
+    ;; Ensure there's no symbolic incremental for the auto scheduler.
+    (dolist (node (group-items group))
+      (loop for r in (append (node-reads node) (node-writes node))
+            for rt in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
+            do (setf (gethash r id2type) rt)
+            if rt do
+              (when (> (buffer-nrank rt) 0)
+                (setf full-scalar-p nil))
+              (setf rank (max rank (buffer-nrank rt)))
+              (dolist (v (buffer-views rt))
+                (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
+                  (setf no-symbolic-incremental-p nil)))))
+    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
+               :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
+               :allocate-p (when allocate-p t)
+               :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
+               :storage-id-dst writes
+               :storage-id-src reads
+               :read-types (map 'list #'(lambda (x) (gethash x id2type)) reads)
+               :write-types (map 'list #'(lambda (x) (gethash x id2type)) writes)
+               :reference-counters
+               ;; TODO: Rethink the reference counter
+               (map
+                'list
+                #'(lambda (x)
+                    (+
+                     (if (find x (graph-outputs (ctx-graph ctx))) 1 0)
+                     (length (ctx-children ctx (id->value (ctx-graph ctx) x)))))
+                writes)
+               :rank rank
+               :reduce-dims (group-reduce-dims group)
+               :items (group-items group)
+               :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
 
 (defmethod ctx-children ((ctx Schedule-Context) (node node)) (gethash (node-id node) (ctx-out-degrees ctx)))
 (defmethod ctx-parents ((ctx Schedule-Context) (node node)) (map 'list #'car (gethash (node-id node) (ctx-in-degrees ctx))))
@@ -615,7 +616,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
     (pprint-graph graph))
   (let* ((ctx (make-schedule-context graph))
          (groups (graph-breadth-first-schedule ctx))
-         (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x graph)) groups))))
+         (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
     (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
