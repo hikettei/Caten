@@ -1,17 +1,14 @@
 (defpackage #:caten/codegen/scheduler
   (:documentation "
-`caten/codegen/scheduler` is responsible for partitioning a (huge amount of!) computation graph into several smaller subgraphs with the same iteration space.
+The `caten/codegen/scheduler` is responsible for assigining the execution order of the computation graph in the aasm.
+Occasionally they merges or rewrites a view in order to schedule multiple nodes into the same schedule if possible.
 
-`graph-schedule` as en entry point, it receives a graph of `caten/aasm` created by running `caten/apis/iseq.lisp`, and returns a graph of `Schedule-Item`.
-One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the more computation grouped in the same group, the better, in term of the memory-locality. Loops may be distributed elsewhere, but never fused except for `recursive-create-group`.")
+The function `graph-schedule` is an entry point, and takes a shape-inferred aasm graph as input, performs scheduling, and returns a schedule graph (called Schedule-Graph) whose each node is composed of Schedule-Item.
+
+One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure that each item is merged only within the bounds that can be lowered into a single kernel.")
   (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
   (:import-from :caten/aasm #:JITAble)
-  (:export
-   #:Group
-   #:make-group
-   #:graph-schedule
-   #:*function-name-maxlen*
-   #:group->schedule))
+  (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule))
 
 (in-package #:caten/codegen/scheduler)
 
