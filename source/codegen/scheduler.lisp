@@ -1067,7 +1067,6 @@ Otherwise, returns NIL. (= not fusable)"
   (when view (assert (eql (node-type view) :VIEW)))
   (symbol-macrolet ((->ng (return-from group-mergeable-p nil))
                     (->ok (return-from group-mergeable-p t)))
-    ;; parent.items != 1なのに注意して書き換える。
     (flet ((force-realize-p (nodes) (some #'(lambda (x) (null (jitable-p x))) nodes)))
       ;; :Allocate, VMOP, etc are scheduled standalone.
       (when (force-realize-p (group-items tgt-group))->ng)
@@ -1076,31 +1075,83 @@ Otherwise, returns NIL. (= not fusable)"
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
-    (let ((after-reduction-p (identity (group-reduce-dims parent-group))))
+    (let ((after-reduction-p (identity (group-reduce-dims parent-group)))
+          (r1 (group-rank tgt-group)) (r2 (group-rank parent-group)))
       ;; float _acc_0 = 0.0f;
       ;; for (...) {
       ;;   _acc_0 = ...;
       ;; }
       ;; self = _acc_0;
       ;; // tgt-group is here if after-reduction-p is T
-      (print "+++MERGE+++")
-      (print parent-group)
-      (print view)
-      (print tgt-group)
       ;; MERGEABLE is T when ...
       ;; - 1. it is legal to rewrite all views in parent-group, with view
       ;; - 2. 
       (when after-reduction-p
         ;; After the reduction, only the broadcast is mergeable.
-        )
+        (when (and view (eql (identify-view-type view) :SHRINK)) ->ng))
       ;; [TODO] This returning will make attention kv cache separated
       ;; caten is not clever as merging multiple shrink?...
-      (when (and view (eql (identify-view-type view) :SHRINK))
-        ;; [TODO] Add a mask like:
-        ;;  _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
-        ->ng)
-      t
-      )))
+      ;;(when (and view (eql (identify-view-type view) :SHRINK))
+      ;; [TODO] Add a mask like:
+      ;;  _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
+      ;;->ng)
+      
+      ;; always merge scalars
+      (when (or (= r1 0) (= r2 0))->ok)
+      (when (= r1 r2)
+        (let ((permute (and view (getattr view :permute))))
+          (declare (type list permute))
+          (when after-reduction-p
+            (if (and
+                 (or (null permute) (equal (range 0 (length permute)) permute)) ;; no permute after reduction
+                 (buffer-complex-out-fusable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group) (group-reduce-dims parent-group)))
+                ->ok
+                ->ng))
+          (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group))
+            (progn
+              (when permute (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
+              ->ok))
+          ->ng))
+      ;; otherwise
+      (let ((read-type (group-get-type parent-group))
+            (self-type (group-get-type tgt-group))
+            (c (< r1 r2)))
+        (when (null self-type)->ng)
+        (if (broadcastable-p read-type self-type) ;; simpliy broadcastable
+            (let* ((base-1 (loop for s in (buffer-shape (if c self-type read-type)) if (eql s 1) collect s))
+                   (mask (map 'list
+                              #'(lambda (x)
+                                  (if (eql x 1)
+                                      (if base-1
+                                          (progn (pop base-1) nil)
+                                          t)
+                                      nil))
+                              (buffer-shape (if c read-type self-type)))))
+              (assert (some #'identity mask))
+              (when (not (= (+ (count-if #'identity mask) (min r1 r2)) (max r1 r2)))->ng)
+              (apply-view-fusor (min r1 r2) mask tgt-group :permute (and view (getattr view :permute)))
+              (apply-view-fusor (min r1 r2) mask parent-group :permute (and view (getattr view :permute)))
+              (when (and view (getattr view :permute))
+                (apply-index-component-fusion parent-group (getattr view :permute)))
+              (group-assert-rank tgt-group r1 r2 view)
+              (group-assert-rank parent-group r1 r2 view)
+              ->ok)
+            (if (and view (some #'identity (getattr view :broadcast)))
+                (let ((mask (getattr view :broadcast)))
+                  (declare (type list mask))
+                  (when (not (= (length mask) (max r1 r2)))
+                    (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
+                  (when (not (= (length mask) (max r1 r2)))->ng)
+                  (when (not (= (+ (count-if #'identity mask) (min r1 r2)) (max r1 r2)))->ng)
+                  (apply-view-fusor (min r1 r2) mask tgt-group :permute (and view (getattr view :permute)))
+                  (apply-view-fusor (min r1 r2) mask parent-group :permute (and view (getattr view :permute)))
+                  (when (and view (getattr view :permute))
+                    (apply-index-component-fusion parent-group (getattr view :permute)))
+                  (group-assert-rank tgt-group r1 r2 view)
+                  (group-assert-rank parent-group r1 r2 view)
+                  ->ok)
+                ->ng))))))
+
 ;; [TODO] group-reads
 ;;  LOAD_ALLOCATE (Scalar) 例えばこれはgroup-predecessorに追加しない。
 ;;  group->scheduleはgroup-predecessorを使う。
