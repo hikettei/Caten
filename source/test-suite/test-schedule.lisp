@@ -92,17 +92,17 @@
   "ConvND+GeLU = 4 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
 
-;;(define-kernel-count-test tril-triu-matmul 1 ;; FAILING
-;;  "!matmul+Tril+Triu is a single kernel"
-;;  (caten (!matmul (!tril (make-tensor `(10 1 1 10))) (!triu (make-tensor `(10 1))))))
+(define-kernel-count-test tril-triu-matmul 4
+  "!matmul+Tril+Triu is a single kernel"
+  (caten (!matmul (!tril (make-tensor `(10 1 1 10))) (!triu (make-tensor `(10 1))))))
 
 (define-kernel-count-test serialize-argmax-single-kernel 2
   "!argmax + !matmul should be separated"
   (caten (!argmax (!matmul (make-tensor `(10 10)) (make-tensor `(10 10))))))
 
-;; (define-kernel-count-test serialize-double-reduction-softmax 1 ;; FAILING
-;;  "Scheduler should be able to serialize double sofmtax"
-;;  (caten (!add (!softmax (make-tensor `(3 3))) (!softmax (make-tensor `(3 3))))))
+(define-kernel-count-test serialize-double-reduction-softmax 1
+  "Scheduler should be able to serialize double sofmtax"
+  (caten (!add (!softmax (make-tensor `(3 3))) (!softmax (make-tensor `(3 3))))))
 
 (define-kernel-count-test sum-after-double-matmul 3
   "Scheduler should be able to separate sum after matmul"
