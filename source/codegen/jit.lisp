@@ -101,7 +101,6 @@ caten/codegen overview:
    #:compiled-kernel-code))
 
 (in-package :caten/codegen/jit)
-
 ;; ~~ Compiledop instruction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Compiled-Kernel)
   (name (error "name must occur") :type keyword)
@@ -259,7 +258,21 @@ caten/codegen overview:
                      (when view (push view nodes)))
                    (push w allocated))
            (dolist (w (node-writes node)) (push w allocated))
-           (push (make-compiled-kernel-node node graph) nodes)
+           (let ((kernel (make-compiled-kernel-node node graph)))
+             ;; Insert view before using variables which is defined as pointer in the kernel but scalar in the vmgraph.
+             (loop for r in (node-reads node)
+                   for rt in (getattr node :read-types)
+                   for nth upfrom (+ (length (node-writes node)) (length (getattr node :dynamic-shapes)))
+                   for d = (find r (reverse nodes) :key #'node-writes :test #'member)
+                   for dt = (and d (car (relay-writes (read-type-relay d))))
+                   if (and d dt (or (= 0 (buffer-nrank dt)) (= 0 (buffer-nrank rt))) (not (= (buffer-nrank dt) (buffer-nrank rt))))
+                     do (multiple-value-bind (view _) (make-alloc+view-node-from-buffer rt r)
+                          (declare (ignore _))
+                          (let ((key (gensym (format nil "~a_" r))))
+                            (setf (car (node-writes view)) key
+                                  (nth nth (node-reads kernel)) key)
+                            (push view nodes))))
+           (push kernel nodes))
            ;; Merging view after the JIT_KERNEL invocation
            (loop for w in (node-writes node)
                  for out-view = (gethash w map)
