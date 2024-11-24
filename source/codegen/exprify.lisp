@@ -245,9 +245,17 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                              if (and
                                  (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
                                  (id->value schedule-graph (newid (car (node-reads node))))
-                                 (getattr (id->value schedule-graph (newid (car (node-reads node)))) :allocate-p))
+                                 (getattr (id->value schedule-graph (newid (car (node-reads node)))) :allocate-p)
+                                 (if (eql (node-type node) :LOAD)
+                                     ;; x = load(x) is reading an output from another schedule item.
+                                     (not (eql (car (node-writes node)) (getattr node :value)))
+                                     t))
                                collect (newid (car (node-reads node)))
-                             if (not (eql (node-type node) :Aref))
+                             if (and
+                                 (not (eql (node-type node) :Aref))
+                                 (if (eql (node-type node) :LOAD)
+                                     (not (eql (car (node-writes node)) (getattr node :value)))
+                                     t))
                                collect (car (node-writes node))))
                      (reads
                        (loop for read in (node-reads node)
