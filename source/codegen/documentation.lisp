@@ -5,7 +5,7 @@
 
 (define-page ("caten/codegen" "packages/caten.codegen.md")
   (title "caten/codegen")
-  (subtitle "Full Hackable Kernel Generator")
+  (subtitle "Hackable Kernel Generator")
   (body "
 The `caten/codegen` is a system designed to JIT-compile AASM Graphs into other languages, such as C or Metal, to achieve faster computation.
 
@@ -41,15 +41,17 @@ After setting the contextvar, you can run the function `caten` to JIT-compile th
   (subtitle "How to debug JIT")
   (body "
 You can set the `JIT_DEBUG` contextvar to debug the JIT compilation process. The debugging level ranges from 0 to 4, as shown below:
+```
 JIT_DEBUG | Effect
-------|-------
-0     | None
-1     | Nothing for now
-2     | Displays blueprint and scop
-3     | Displays schedule-graph
-4     | Displays memory-planner and the compiled code
+----------|-------
+0         | None
+1         | Nothing for now
+2         | Displays blueprint and scop
+3         | Displays schedule-graph
+4        | Displays memory-planner and the compiled code
+```
 ")
-  (title "How to learn JIT")
+  (subtitle "How to learn JIT")
   (body "You can start by reading `./caten/docs/getting-started.lisp` to understand the basic concepts of `caten/codegen` through a running example.
 
 Additionally, the following sections provide documentation and explanations for each JIT mechanism, along with simple executable examples.")
