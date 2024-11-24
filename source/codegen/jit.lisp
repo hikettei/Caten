@@ -264,11 +264,12 @@ caten/codegen overview:
                    for rt in (getattr node :read-types)
                    for nth upfrom (+ (length (node-writes node)) (length (getattr node :dynamic-shapes)))
                    for d = (find r (reverse nodes) :key #'node-writes :test #'member)
-                   for dt = (and d (car (relay-writes (read-type-relay d))))
+                   for dt = (and d (getattr d :_type_relay :allow-undefined t) (car (relay-writes (read-type-relay d))))
                    if (and d dt (or (= 0 (buffer-nrank dt)) (= 0 (buffer-nrank rt))) (not (= (buffer-nrank dt) (buffer-nrank rt))))
                      do (multiple-value-bind (view _) (make-alloc+view-node-from-buffer rt r)
                           (declare (ignore _))
                           (let ((key (gensym (format nil "~a_" r))))
+                            (mapc #'merge-id (cdr (node-reads view)))
                             (setf (car (node-writes view)) key
                                   (nth nth (node-reads kernel)) key)
                             (push view nodes))))
