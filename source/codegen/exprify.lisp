@@ -1,7 +1,6 @@
 (defpackage :caten/codegen/exprify
   (:documentation "
-The package `caten/codegen/exprify` is responsible for applying OpFusion.
-;; todo
+The package `caten/codegen/exprify` is responsible for providing a rewriting-rule targeting the EXPR node.
 ")
   (:use :cl :caten/air :caten/codegen/expr :caten/codegen/expr-cache)
   (:import-from
@@ -34,11 +33,7 @@ The package `caten/codegen/exprify` is responsible for applying OpFusion.
    #:expr-rewrite-edge-with-pointer-id))
 
 (in-package :caten/codegen/exprify)
-;; [TODO] Refactor exprify!
-;; Now, think:
-;; - 20% of bugs are in scheduler
-;; - 20% of bugs are in lowerer
-;; - 40% of bugs are in exprify. (node purged, xxx is not defined! etc)
+
 (defun force-realize-p (node schedule-graph)
   (when (null (getattr node :reduction :allow-undefined t))
     (return-from force-realize-p nil))
@@ -126,7 +121,7 @@ The package `caten/codegen/exprify` is responsible for applying OpFusion.
           collect bp))
 
 (defmethod graph-scalarify (blueprint (node Node) (schedule-graph Graph))
-  "Rewrites the buffer as scalar as many as possible"
+  "Rewrite the local buffers as a scalar by setting buffer-nrank to -1."
   (declare (type list blueprint))
   (let* ((ids (blueprint-tmp-buffers blueprint node schedule-graph :except-for (schedule-outputs schedule-graph)))
          (replaceable (loop for i in ids if (memory-access-local-p blueprint i) collect i))

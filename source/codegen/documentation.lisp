@@ -108,5 +108,4 @@ Additionally, the following sections provide documentation and explanations for 
   (title "Memory Planner")
   (body "TODO: Docs (MIP Solver)")
   (title "Scop Analyzer")
-  (body "TODO: Docs for scop")
-  )
+  (body "TODO: Docs for scop"))

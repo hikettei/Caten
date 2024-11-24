@@ -553,6 +553,7 @@ Depends=~a Reduce=~a Users=~a
      :key #'car)))
 
 (defun simplify-pointer-and-constant (blueprints)
+  ;; [todo] removable?
   (let ((constants))
     (loop for bp in blueprints
           if (and (not (eql (node-class bp) :Render)) (getattr bp :declare-type)) do
@@ -576,7 +577,11 @@ Depends=~a Reduce=~a Users=~a
 (lower-schedule-item node base-graph scheduled-graph)
 ```
 
-Lowers the Schedule-Item into blueprint"
+Lowers the Schedule-Item into blueprint.
+- node is a schedule-item to lower.
+- base-graph is the aasm graph to compile.
+- scheduled-graph is the graph to schedule.
+"
   (declare (type node node) (type graph base-graph scheduled-graph))
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
   ;; won't lower the allocation, they are the vm instruction.
@@ -601,10 +606,10 @@ Lowers the Schedule-Item into blueprint"
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       ;; Peforming the OpFusion to the lowered blueprint.
-      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
-            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx))
-            (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
-            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
+      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
+            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; todo(hikettei) removable?
+            (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph) ; rewrite local buffers as a scalar
+            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph)) ; rewrite jitable nodes -> expr
       ;; Gathering dynamic shapes used in the schedule-item
       (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph (ctx-blueprint ctx)))
       (expr-set-iterations (ctx-blueprint ctx))
