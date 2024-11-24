@@ -4,55 +4,8 @@
 
 `graph-schedule` as en entry point, it receives a graph of `caten/aasm` created by running `caten/apis/iseq.lisp`, and returns a graph of `Schedule-Item`.
 One Schedule-Item corresponds to one kernel in GPU. Therefore, in general, the more computation grouped in the same group, the better, in term of the memory-locality. Loops may be distributed elsewhere, but never fused except for `recursive-create-group`.")
-  (:use :cl :caten/air :caten/codegen/expr)
+  (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
   (:import-from :caten/aasm #:JITAble)
-  (:import-from
-   #:caten/air
-   #:defnode
-   #:Node
-   #:node-type
-   #:node-attr
-   #:FastGraph
-   #:graph-outputs
-   #:id->value
-   #:id->users
-   #:copy-node
-   #:pprint-graph)
-  (:import-from
-   #:caten/avm
-   #:Buffer
-   #:copy-buffer
-   #:buffer-dtype
-   #:buffer-shape
-   #:buffer-stride
-   #:buffer-views
-   #:buffer-nrank
-   #:buffer-inferred-permute)
-  (:import-from
-   #:caten/codegen/shape-inference
-   #:mergeable-view-p
-   #:read-type-relay
-   #:relay-reads
-   #:relay-writes
-   #:relay-read-iters
-   #:relay-write-iters
-   #:buffer-merge-dims
-   #:iteration-space
-   #:iteration-space-shape
-   #:iteration-space-strides
-   #:iteration-space-views
-   #:iteration-space-procedure)
-  (:import-from
-   #:caten/codegen/helpers
-   #:range
-   #:permute-list
-   #:nodes-depends-on
-   #:nodes-write-to
-   #:ensure-string-as-compilable
-   #:nodes-create-namespace)
-  (:import-from
-   #:caten/codegen/rewriting-rules
-   :nodes-apply-static-gensym)
   (:export
    #:Group
    #:make-group
