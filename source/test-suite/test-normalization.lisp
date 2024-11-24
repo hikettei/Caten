@@ -39,8 +39,11 @@ def torch_rms_norm(x):
           (with-torch (x) (->caten (f:batch_norm x (torch.ones `(40)) (torch.ones `(40)))))
           (proceed (!batch-norm x nil nil (linspace `(40 40) 0 1) (linspace `(40 40) 0 1)))))))
 
-(deftest test-bn-varinvstd-fused
-  (ok (caten (!batch-norm `(3 3)))))
+(deftest test-batch-norm-1
+  (when (= 1 (ctx:getenv :JIT))
+    (let* ((jit (proceed (!batch-norm (ax+b `(10 10) 0.01 0.01))))
+           (vm  (ctx:with-contextvar (:JIT 0) (proceed (!batch-norm (ax+b `(10 10) 0.01 0.01))))))
+      (assert-equal (:atol 1e-3 :rtol 1e-3) jit vm))))
 
 (deftest test-layer-norm
   (with-given-dtype ((:float32 . "float32"))
