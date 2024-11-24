@@ -487,9 +487,8 @@ Otherwise, returns NIL. (= not fusable)"
       ;; }
       ;; self = _acc_0;
       ;; // tgt-group is here if after-reduction-p is T
-      (when after-reduction-p
-        ;; After the reduction, only the broadcast is mergeable.
-        (when (and view (eql (identify-view-type view) :SHRINK)) ->ng))
+      ;; [TODO] Merge Contiguous+SHRINK
+      (when (and view (eql (identify-view-type view) :SHRINK)) ->ng)
       ;; always merge scalars
       (when (or (= r1 0) (= r2 0))->ok)
       (when (= r1 r2)
