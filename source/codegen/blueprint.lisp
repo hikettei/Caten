@@ -1,32 +1,7 @@
 (defpackage :caten/codegen/blueprint
-  (:documentation "The `Blueprint` represents a transformed computation graph format of `caten/AASM` that incorporates loop information. The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.
-The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it is used for loop optimization and by the Renderer.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache)
-  (:import-from
-   :caten/codegen/shape-inference
-   #:read-type-relay
-   #:relay-read-iters
-   #:relay-write-iters
-   #:relay-reads
-   #:relay-writes
-   #:Iteration-Space
-   #:iteration-space-shape
-   #:iteration-space-strides
-   #:iteration-space-views
-   #:iteration-space-procedure
-   #:%expr-const
-   #:buffer-iteration-space
-   #:buffer-merge-dims
-   #:make-iteration-space)
-  (:import-from
-   :caten/codegen/helpers
-   :gid
-   :range
-   :permute-list
-   :render-list
-   :nodes-depends-on
-   :nodes-write-to
-   :simplify-blueprint)
+  (:documentation "The package `caten/codegen/blueprint` is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
+The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.")
+  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers)
   (:import-from
    :caten/avm
    #:buffer-dtype
@@ -737,4 +712,3 @@ Depends=~a Reduce=~a Users=~a
                         bp)
                   else
                     do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))))
-;; [TODO]
