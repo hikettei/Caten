@@ -70,7 +70,7 @@ Additionally, the following sections provide documentation and explanations for 
   (doc/package 'caten/codegen/scheduler)
   (body (caten/air:node-build-documentation-by-class "Schedule-Item" :GRAPH))
   (doc/function "graph-schedule" #'caten/codegen/scheduler:graph-schedule)
-  (subtitle "Example (Scheduler + Shape Inference + Rewriting Rules")
+  (subtitle "Example (Scheduler + Shape Inference + Rewriting Rules)")
   (body "This code snippet demonstrates how to create a schedule-graph from AASM Graph. AASM Graph is obtained by running caten with JIT=0.")
   (example-repl "(ctx:with-contextvar (:JIT 0) (pprint-graph (avm-graph (caten (!relu (!matmul (make-tensor `(3 3)) (make-tensor `(3 3))))))))")
   (example-code "
