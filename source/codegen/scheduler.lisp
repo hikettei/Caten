@@ -249,28 +249,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g))))))
     (every #'lazy-eq (buffer-shape b1) (buffer-shape b2))))
 
-(defun buffer-complex-out-fusable-p (g b1 b2 mask)
-  "An extra mergeable condition not to introduce an extra dim after reduction is performed.
-g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask for the reduced dims."
-  (declare (type Graph g) (type buffer b1 b2) (type list mask))
-  (assert (= (buffer-nrank b1) (buffer-nrank b2)))
-  (flet ((lazy-eq (a b nth m)
-           ;; b = a buffer belongs to grouped schedule.
-           ;; a = a buffer newly introducing.
-           (let ((a-view (nth nth (buffer-views b1)))
-                 (b-view (nth nth (buffer-views b2))))
-             (if m
-                 ;; Reduced dims ->
-                 (flet ((ok (size view)
-                          (or (eql size 1) (fourth view) (eql m 1))))
-                   (and
-                    (ok a a-view)
-                    (ok b b-view)))
-                 ;; Non-reduced dims -> mergeable as long as they have the same shape, or broadcasted.
-                 (or (eql a 1) (eql b 1) (eql a b)
-                     (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g))))))))
-    (every #'lazy-eq (buffer-shape b1) (buffer-shape b2) (range 0 (buffer-nrank b1)) mask)))
-
 (defmethod identify-view-type ((view Node))
   (assert (eql :VIEW (node-type view)))
   (when (some #'identity (getattr view :broadcast)) (return-from identify-view-type :broadcast))
@@ -497,7 +475,7 @@ Otherwise, returns NIL. (= not fusable)"
           (when after-reduction-p
             (if (and
                  (or (null permute) (equal (range 0 (length permute)) permute)) ;; no permute after reduction
-                 (buffer-complex-out-fusable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group) (group-reduce-dims parent-group)))
+                 (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group)))
                 ->ok
                 ->ng))
           (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group))
@@ -580,6 +558,7 @@ Otherwise, returns NIL. (= not fusable)"
                                    (ctx-register-new-group ctx p tgt)
                                    (setf changed-p t
                                          (group-items tgt-group) (append (group-items parent-group) (group-items tgt-group))
+                                         (group-reduce-dims tgt-group) (or (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
                                          (group-predecessor tgt-group)
                                          (remove-duplicates
                                           (loop with write-set = (apply #'append (map 'list #'node-writes (group-items tgt-group)))
