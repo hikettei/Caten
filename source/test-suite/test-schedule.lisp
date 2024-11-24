@@ -131,3 +131,7 @@
 (define-kernel-count-test layer-norm-single-kernel 1
   "LayerNorm = 1 Kernel"
   (caten (!layer-norm (make-tensor `(3 3)) `(3))))
+
+(define-kernel-count-test rms-norm-single-kernel 1
+  "RMSNorm = 1 Kernel"
+  (caten (!rms-norm (make-tensor `(3 3)) `(3))))
