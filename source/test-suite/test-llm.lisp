@@ -301,8 +301,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 
 (deftest test-symbolic-regression-test-2
   (with-no-grad
-    (skip "Skipping due to segv")
-    (when nil;(= 1 (ctx:getenv :JIT))
+    (when (= 1 (ctx:getenv :JIT))
       (testing "No Segv?"
         (let* ((caten/llm::*use-kv-cache* nil) ;; *use-kv-cache*=T will also cause segfault
                (model (Transformer 32 4 2 1e-5 32))
@@ -316,5 +315,6 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
            (z (!matmul (!add x x) (make-tensor `(5 5))))
            (z (!matmul (!add z x) (make-tensor `(5 5))))
            (z (!matmul (!add z x) (make-tensor `(5 5)))))
+      (caten z)
       )))
            
