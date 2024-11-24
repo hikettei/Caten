@@ -67,6 +67,7 @@
    #:buffer-merge-dims
    #:merge-dims
    #:Iteration-Space
+   #:make-iteration-space
    #:Iteration-space-shape
    #:Iteration-space-strides
    #:Iteration-space-views
