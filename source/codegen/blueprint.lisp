@@ -444,6 +444,11 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
     (push id seen)
     (multiple-value-bind (new-bp changed-p)
         (try-insert-node ctx node)
+      (when (null changed-p) ;; if failed -> add the outermost node and retry.
+        (setf (ctx-blueprint ctx) (append (initial-bp ctx) (ctx-blueprint ctx)))
+        (multiple-value-bind (new-bp1 changed-p1)
+            (try-insert-node ctx node)
+          (setf new-bp new-bp1 changed-p changed-p1)))
       (assert changed-p () "recursive-lower-into-bp: Cannot insert the node ~a into a single kernel.
 Depends=~a Reduce=~a Users=~a
 ```
