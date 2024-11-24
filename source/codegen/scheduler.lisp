@@ -618,7 +618,6 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x graph)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
-    (verify-graph schedule-graph)
     (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
       (format t "[graph-schedule] Schedule-Graph:~%")
       (pprint-graph schedule-graph))
