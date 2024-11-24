@@ -619,7 +619,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
     (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
-      (format t "[graph-schedule] Schedule-Graph:~%")
+      (format t "[graph-schedule] scheduled graph:~%")
       (pprint-graph schedule-graph))
     (when (= 2 (the fixnum (ctx:getenv :DOT)))
       (->dot schedule-graph :title "Schedule Graph"))
