@@ -23,12 +23,10 @@ def torch_rope(x):
 (import-function "torch_rope")
 
 (deftest test-rope
-  (if (= 0 (ctx:getenv :JIT))
-   (with-given-dtype ((:float32 . "float32"))
+  (with-given-dtype ((:float32 . "float32"))
     (let ((x (rand `(1 10 10 10))))
       (assert-equal
-       (:atol 1e-4 :rtol 1e-6)
-       (with-torch (x) (->caten (torch_rope x)))
-       (proceed (!rope x 5)))))
-   (skip "TODO: Not working with JIT=1")))
+          (:atol 1e-4 :rtol 1e-6)
+          (with-torch (x) (->caten (torch_rope x)))
+          (proceed (!rope x 5))))))
 
