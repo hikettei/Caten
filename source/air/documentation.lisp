@@ -37,4 +37,6 @@ Note that All nodes must be declared using the defnode macro before compilation.
   (title "Simplifier")
   (doc/macro "defsimplifier" 'defsimplifier)
   (title "Visualizer")
-  (doc/function "->dot" #'->dot))
+  (doc/function "->dot" #'->dot)
+  (doc/function "pprint-graph" #'pprint-graph)
+  (example-repl "(pprint-graph (avm-graph (caten (!gelu (make-tensor `(3 3) :id 'x)))) :stream nil)"))
