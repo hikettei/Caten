@@ -88,12 +88,41 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                 (if (getattr node :cache-name)
                     (format nil ":cache-name=~a :name=~a" (getattr node :cache-name) (getattr node :name))
                     (format nil ":name=~a" (getattr node :name)))))))
-
+;; ~~ Some Helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-item-initialize-namespace (si)
   (declare (type node si))
   (assert (eql (node-type si) :Schedule-Item))
   (setf (getattr si :namespace) (nodes-create-namespace (getattr si :items))))
-;; ~~ Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(defun pname (name)
+  (cl-ppcre:regex-replace-all
+   "PAUSE/"
+   (cl-ppcre:regex-replace-all "-" (cl-ppcre:regex-replace-all "GRAPH/" (princ-to-string name) "") "_")
+   ""))
+
+(defmethod jitable-p ((node Node))
+  (and
+   (null (find (node-type node) `(:ALLOCATE :PAUSE/BACKWARD)))
+   (typep (node-attr node) 'JITAble)))
+
+(defmethod graph-shape-inferred-p ((graph Graph))
+  (dolist (n (graph-nodes graph))
+    (when (and (jitable-p n) (null (getattr n :_type_relay :allow-undefined t))) (return-from graph-shape-inferred-p nil)))
+  t)
+
+(defmethod node-reduce-axes ((node Node))
+  (when (getattr node :reduction :allow-undefined t)
+    (let ((write-buffer (car (relay-writes (read-type-relay node)))))
+      (let ((out
+              (loop for v in (buffer-views write-buffer)
+                    for s in (buffer-shape write-buffer)
+                    if (fourth v)
+                      collect s
+                    else
+                      collect nil)))
+        ;; Returns uncollapsed rank list
+        (when (some #'identity out) out)))))
+;; ~~ Group ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Group
   (predecessor '() :type list) ;; = group-reads
   (successor '() :type list)   ;; = group-writes
@@ -104,12 +133,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defmethod verify-group ((group Group))
   (when (find :Allocate (group-items group) :key #'node-type)
     (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
-
-(defun pname (name)
-  (cl-ppcre:regex-replace-all
-   "PAUSE/"
-   (cl-ppcre:regex-replace-all "-" (cl-ppcre:regex-replace-all "GRAPH/" (princ-to-string name) "") "_")
-   ""))
 
 (defmethod make-unique-schedule-name ((group Group))
   (let ((names-func)
@@ -131,54 +154,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
       (when (> (length key) *function-name-maxlen*)
         (setf key (subseq key 0 *function-name-maxlen*)))
       (gensym key))))
-
-(defun items-write-to (items graph)
-  (let ((result (nodes-write-to items)) (wrap (map 'list #'node-id items)))
-    (loop for item in items do
-      (loop for write in (node-writes item)
-            for users = (id->users graph write)
-            if (some #'(lambda (x) (null (find (node-id x) wrap))) users) ;; user is read outside of the items
-              do (push write result)))
-    (remove-duplicates result)))
-;; [TODO] taken over by group->schedule-item
-(defmethod group->schedule ((group Group) (base-graph Graph))
-  (let ((reads (nodes-depends-on (group-items group)))
-        (writes (items-write-to (group-items group) base-graph))
-        (allocate-p (find :Allocate (group-items group) :key #'node-type))
-        (no-symbolic-incremental-p t)
-        (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
-    ;; Ensure there's no symbolic incremental for the auto scheduler.
-    (dolist (node (group-items group))
-      (loop for r in (append (node-reads node) (node-writes node))
-            for rt in (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))
-            do (setf (gethash r id2type) rt)
-            if rt do
-              (when (> (buffer-nrank rt) 0)
-                (setf full-scalar-p nil))
-              (setf rank (max rank (buffer-nrank rt)))
-              (dolist (v (buffer-views rt))
-                (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
-                  (setf no-symbolic-incremental-p nil)))))
-    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
-               :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
-               :allocate-p (when allocate-p t)
-               :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
-               :storage-id-dst writes
-               :storage-id-src reads
-               :read-types (map 'list #'(lambda (x) (gethash x id2type)) reads)
-               :write-types (map 'list #'(lambda (x) (gethash x id2type)) writes)
-               :reference-counters
-               (map
-                'list
-                #'(lambda (x)
-                    (+
-                     (if (find x (graph-outputs base-graph)) 1 0)
-                     (length (id->users base-graph x))))
-                (append writes reads))
-               :rank rank
-               :reduce-dims (group-reduce-dims group)
-               :items (group-items group)
-               :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
 
 (defmethod group->schedule-item ((group Group) (base-graph Graph))
   (let ((reads (group-predecessor group))
@@ -218,45 +193,26 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :reduce-dims (group-reduce-dims group)
                :items (group-items group)
                :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
-
-(defmethod merge-schedule-items ((si1 Node) (si2 Node) (base-graph Graph))
-  (assert (eql (node-type si1) :Schedule-Item))
-  (assert (eql (node-type si2) :Schedule-Item))
-  (assert (null (getattr si1 :allocate-p))) (assert (null (getattr si2 :allocate-p)))
-  (assert (= (getattr si1 :rank) (getattr si2 :rank)))
-  (assert (getattr si1 :jitable)) (assert (getattr si2 :jitable))
-  (assert (or (null (getattr si1 :reduce-dims)) (null (getattr si2 :reduce-dims)) (equal (getattr si1 :reduce-dims) (getattr si2 :reduce-dims))))
-  (let ((graph (apply #'make-graph (append (getattr si1 :items) (getattr si2 :items)))))
-    (setf (graph-seen graph) (append (node-reads si1) (node-reads si2)))
-    (group->schedule
-     (make-group :items (tpsort-graph graph)
-                 :reduce-dims (or (getattr si1 :reduce-dims) (getattr si2 :reduce-dims)))
-     base-graph)))
-
+;; [TODO] UPDATE!! Use group-successor!!
 (defmethod group-get-type ((group Group))
   (let* ((last (nodes-write-to (group-items group)))
          (node (when last (find (car last) (group-items group) :key #'node-writes :test #'find))))
     (when node
       (car (relay-writes (read-type-relay node))))))
 
-(defmethod jitable-p ((node Node))
-  (and
-   (null (find (node-type node) `(:ALLOCATE :PAUSE/BACKWARD)))
-   (typep (node-attr node) 'JITAble)))
+(defmethod group-rank ((group Group))
+  (let ((buff (group-get-type group)))
+    (when buff (buffer-nrank buff))))
 
-(defmethod node-reduce-axes ((node Node))
-  (when (getattr node :reduction :allow-undefined t)
-    (let ((write-buffer (car (relay-writes (read-type-relay node)))))
-      (let ((out
-              (loop for v in (buffer-views write-buffer)
-                    for s in (buffer-shape write-buffer)
-                    if (fourth v)
-                      collect s
-                    else
-                      collect nil)))
-        ;; Returns uncollapsed rank list
-        (when (some #'identity out) out)))))
-
+(defun group-assert-rank (group r1 r2 view &aux (rank (max r1 r2)))
+  (loop for item in (group-items group)
+        do (loop for typ in (append (relay-reads (read-type-relay item)) (relay-writes (read-type-relay item)))
+                 for nth upfrom 0
+                 unless (or (null typ) (= 0 (buffer-nrank typ)))
+                   do (assert (= rank (buffer-nrank typ)) ()
+                              "Rank mismatch: (expected from ~a -> ~a)~%view=~a~%buffer:~%~a~%group~%~a"
+                              (min r1 r2) rank view typ group))))
+;; ~~ View Rewriting ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod group-items-st-rewriter ((group Group) f mask)
   (dolist (item (group-items group))
     (when (eql (node-type item) :INDEX-COMPONENTS) ;; (cdr (node-reads index-components)) also represents for the stride
@@ -274,10 +230,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           for nth upfrom 0
           unless (or (null typ) (= 0 (buffer-nrank typ)))
             do (setf (nth nth (relay-writes (read-type-relay item))) (or (funcall f typ) typ)))))
-
-(defmethod group-rank ((group Group))
-  (let ((buff (group-get-type group)))
-    (when buff (buffer-nrank buff))))
 
 (defun merge-permute-from-mask (permute mask)
   (when (>= (length permute) (length mask))
@@ -324,7 +276,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (dolist (item (group-items group))
     (when (and (eql (node-type item) :INDEX-COMPONENTS) (= (length permute) (length (cdr (node-reads item)))))
       (setf (cdr (node-reads item)) (permute-list permute (cdr (node-reads item)))))))
-
+;; ~~ Shape Checking ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun broadcastable-p (prev new)
   (let ((prev-shape (copy-list (buffer-shape prev)))
         (new-shape  (copy-list (buffer-shape new))))
@@ -360,15 +312,6 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
                      (and (symbolp a) (symbolp b) (expr-scalar-equivalent-p (expr-from-graph a g) (expr-from-graph b g))))))))
     (every #'lazy-eq (buffer-shape b1) (buffer-shape b2) (range 0 (buffer-nrank b1)) mask)))
 
-(defun group-assert-rank (group r1 r2 view &aux (rank (max r1 r2)))
-  (loop for item in (group-items group)
-        do (loop for typ in (append (relay-reads (read-type-relay item)) (relay-writes (read-type-relay item)))
-                 for nth upfrom 0
-                 unless (or (null typ) (= 0 (buffer-nrank typ)))
-                   do (assert (= rank (buffer-nrank typ)) ()
-                              "Rank mismatch: (expected from ~a -> ~a)~%view=~a~%buffer:~%~a~%group~%~a"
-                              (min r1 r2) rank view typ group))))
-
 (defmethod identify-view-type ((view Node))
   (assert (eql :VIEW (node-type view)))
   (when (some #'identity (getattr view :broadcast)) (return-from identify-view-type :broadcast))
@@ -389,396 +332,9 @@ g represents for Graph, b1 for the self buffer, b2 for the parent buffer, mask f
              (some #'shrink-p (buffer-shape base-buffer) views))
         (return-from identify-view-type :shrink)))
     :reshape))
-
-(defun group-merge-p (self graph node parent-group nth)
-  (declare (type group self) (type graph graph) (type node node) (type group parent-group)
-           (type fixnum nth)
-           (optimize (speed 3)))
-  (symbol-macrolet ((->ok
-                      (progn
-                        (setf (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims parent-group)))
-                        (return-from group-merge-p t)))
-                    (->ng (return-from group-merge-p nil)))
-    (when (and (group-reduce-dims self) (group-reduce-dims parent-group))
-      ;; Both groups are reduced?
-      (when (not (equal (group-reduce-dims self) (group-reduce-dims parent-group)))
-        ;; Reduced at the same rank?
-        ->ng))
-    (let* ((read (nth nth (node-reads node)))
-           (read-node (id->value graph read))
-           (read-view (car (nth nth (getattr node :_read_views))))
-           (read-type (group-get-type parent-group)))
-      (assert (<= (length (the list (nth nth (getattr node :_read_views)))) 1))
-      ;; Relations between group and parent-group:
-      ;; ```
-      ;; group=parent | X[write_type]{write_iter} = f(...)
-      ;; group=self   | ... = f(..., X[read_type]{read_iter})
-      ;; ```
-      (when (or (not (jitable-p node)) (not (jitable-p read-node)))->ng)
-      ;; ~~ merge views ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      ;; :shrink is not mergeable
-      (when (and read-view (eql (identify-view-type read-view) :shrink))
-        ;; [TODO] Add a mask like:
-        ;; _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
-        ->ng)
-      (let ((r1 (group-rank self))
-            (r2 (group-rank parent-group)))
-        (declare (type fixnum r1 r2))
-        ;; r2 -> r1
-        (cond
-          ((or (= r1 0) (= r2 0))->ok)
-          ((= r1 r2)
-           (let ((permute (and read-view (getattr read-view :permute))))
-             (declare (type list permute))
-             (when (group-reduce-dims parent-group)
-               ;; Complex-Out-Fusable: After the reduction is performed in the parent group, only the buffers which does not introduce new axis, are allowed to be merged.
-               ;; does not introduce new axis = the total element size is the same as the reducing parent group.
-               (if (and
-                    (or (null permute) (equal (range 0 (length permute)) permute)) ;; no permute reduce axes
-                    (buffer-complex-out-fusable-p graph (group-get-type self) (group-get-type parent-group) (group-reduce-dims parent-group)))
-                   ->ok
-                   ->ng))
-             (if (buffer-mergeable-p graph (group-get-type parent-group) (group-get-type self))
-                 (progn
-                   ;; Swizzle and merge
-                   (when permute
-                     (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
-                   ->ok)
-                 ->ng)))
-          (T
-           (let ((self-type (group-get-type self))
-                 (c (< r1 r2)))
-             (when (null self-type)->ng)
-             (if (broadcastable-p read-type self-type)
-                 (let* ((base-1 (loop for s in (buffer-shape (if c self-type read-type)) if (eql s 1) collect s))
-                        (mask (map 'list
-                                   #'(lambda (x)
-                                       (if (eql x 1)
-                                           (if base-1
-                                               (progn (pop base-1) nil)
-                                               t)
-                                           nil))
-                                   (buffer-shape (if c read-type self-type)))))
-                   (assert (some #'identity mask))
-                   (when (not (= (+ (count-if #'identity mask) (min r1 r2)) (max r1 r2)))->ng)
-                   (apply-view-fusor (min r1 r2) mask self :permute (and read-view (getattr read-view :permute)))
-                   (apply-view-fusor (min r1 r2) mask parent-group :permute (and read-view (getattr read-view :permute)))
-                   (when (and read-view (getattr read-view :permute))
-                     (apply-index-component-fusion parent-group (getattr read-view :permute)))
-                   (group-assert-rank self r1 r2 read-view)
-                   (group-assert-rank parent-group r1 r2 read-view)
-                   ->ok)
-                 (if (and read-view (some #'identity (getattr read-view :broadcast)))
-                     (let ((mask (getattr read-view :broadcast)))
-                       (declare (type list mask))
-                       (when (not (= (length mask) (max r1 r2)))
-                         (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
-                       (when (not (= (length mask) (max r1 r2)))->ng)
-                       (when (not (= (+ (count-if #'identity mask) (min r1 r2)) (max r1 r2)))->ng)
-                       (apply-view-fusor (min r1 r2) mask self :permute (and read-view (getattr read-view :permute)))
-                       (apply-view-fusor (min r1 r2) mask parent-group :permute (and read-view (getattr read-view :permute)))
-                       (when (and read-view (getattr read-view :permute))
-                         (apply-index-component-fusion parent-group (getattr read-view :permute)))
-                       (group-assert-rank self r1 r2 read-view)
-                       (group-assert-rank parent-group r1 r2 read-view)
-                       ->ok)
-                     ->ng)))))))))
-
-(defmethod merge-groups ((self Group) parents mergeable-list)
-  (let* ((p (loop for m in mergeable-list for p in parents
-                  if m collect p))
-         (ranks (map 'list #'group-rank p))
-         (srank  (group-rank self)))
-    (loop for r in ranks
-          for group in p
-          for eql-p = (or (eql 0 r) (eql 0 srank) (= r srank))
-          unless eql-p do
-            (assert (< r srank))
-            (let* ((typ1 (group-get-type self))
-                   (m (map 'list #'fourth (buffer-views typ1))))
-              (assert (some #'identity m))
-              (apply-view-fusor r m group)
-              (group-assert-rank group srank srank nil))))
-  (loop for m in mergeable-list
-        for p in parents
-        if m do
-          (assert (or (null (group-reduce-dims p)) (null (group-reduce-dims self)) (equal (group-reduce-dims self) (group-reduce-dims p)))
-                  ()
-                  "Reduce dims = ~a ~a" (group-reduce-dims p) (group-reduce-dims self))
-          (setf (group-items self) (append (group-items p) (group-items self))
-                (group-reduce-dims self) (or (group-reduce-dims self) (group-reduce-dims p))))
-  self)
-;; depth first serach
-(defun recursive-create-groups (id graph &key (seen))
-  (declare (type symbol id) (type graph graph) (type hash-table seen) (optimize (speed 3)))
-  (when (gethash id seen) (return-from recursive-create-groups))
-  ;; See ./test-suite/test-dynamic-shape.lisp, transformer-failing-case-repro
-  (let ((node (id->value graph id)))
-    (unless (and node (eql (node-type node) :LOAD)
-                 (= 0 (buffer-nrank (car (relay-writes (read-type-relay node)))))
-                 (symbolp (getattr node :value))
-                 (let ((alloc
-                         (id->value graph (car (node-reads node)))))
-                   (and alloc (eql (node-type alloc) :Allocate))))
-      (setf (gethash id seen) t)))
-  (let* ((node (id->value graph id))
-         (self
-           (make-group
-            :items (list node)
-            :reduce-dims (node-reduce-axes node)))
-         (parents
-           (reverse (map 'list #'(lambda (x) (and (symbolp x) (recursive-create-groups x graph :seen seen))) (reverse (node-reads node))))))
-    (declare (type node node) (type list parents))
-    ;; Consider this structured graph:
-    ;; parents[0] parents[1] parents[2] ...
-    ;;        \      |      /
-    ;;              self
-    ;;               |
-    ;; => The function returns this flattend list
-    ;; (list               (list
-    ;;   parents[0]          parent[2]
-    ;;   parents[1]            ...
-    ;;   parents[2]    =>    group(items=self+parent[0]+parent[1]))
-    ;;     ...
-    ;;   self)
-    ;;  (No fuse)        (When parent[0] and parent[1] are fusable)
-    (let ((mergeable-p-list
-            (loop for parent in parents
-                  for parent-return = (car parent)
-                  for nth fixnum upfrom 0
-                  if parent-return
-                    collect
-                    (if (= 1 (the fixnum (ctx:getenv :SERIALIZE)))
-                        nil
-                        (group-merge-p self graph node parent-return nth))
-                  else
-                   collect nil)))
-      (assert (= (length mergeable-p-list) (length parents)))
-      (nconc
-       (list (merge-groups self (map 'list #'car parents) mergeable-p-list))
-       (loop for p in parents
-             for m in mergeable-p-list
-             if m ;; mergeable
-               append (cdr p)
-             else ;; unmergeable
-             append p)))))
-;; ~~~~~~ More Fusion Rules ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Rewrite them as a pattern matcher.
-(defun make-can-split-p (schedule-graph)
-  (declare (optimize (speed 3))
-           (type fastgraph schedule-graph))
-  (let ((in-degrees (make-hash-table)) (out-degrees (make-hash-table)))
-    (declare (type hash-table in-degrees out-degrees))
-    (flet ((butseen (list)
-             (loop for l in list
-                   for v = (id->value schedule-graph l)
-                   if (and v (symbolp l)) collect v)))
-      (loop for node in (graph-nodes schedule-graph) do
-        (setf (gethash (node-id node) in-degrees) (butseen (node-reads node)))
-        (dolist (r (gethash (node-id node) in-degrees))
-          (when (null (find (node-id node) (the list (gethash (node-id r) out-degrees)) :key #'node-id))
-            (push node (gethash (node-id r) out-degrees))))))
-    (flet ((node->users (node)
-             (let ((users (gethash (node-id node) out-degrees)))
-               (every #'(lambda (x) (getattr x :jitable)) users))))
-      #'node->users)))
-
-(defun apply-schedule-item-fusor (f can-split-p schedule-graph base-graph &aux (seen) (changed-p t))
-  (declare (optimize (speed 3))
-           (type function f can-split-p)
-           (type fastgraph schedule-graph)
-           (type graph base-graph)
-           (type list seen))
-  (labels ((parent-groups (self)
-             (assert (node-p self))
-             (loop for r in (node-reads self)
-                   for val = (and (symbolp r) (id->value schedule-graph r))
-                   ;; Only :jitable scheduleitems are merged
-                   if val collect val))
-           (explore (id)
-             (let* ((self (id->value schedule-graph id))
-                    (_ (when (or (null self) (find (node-id self) seen)) (return-from explore)))
-                    (candidates (parent-groups self))
-                    (self-mergeable-p (getattr self :jitable)))
-               (declare (ignore _))
-               (push (node-id self) seen)
-               (loop for parent in candidates
-                     if (and self-mergeable-p parent
-                             (getattr parent :jitable)
-                             (funcall can-split-p parent) ;; confirm that the parent is not used by special ops
-                             (or (null (getattr self :reduce-dims)) (null (getattr parent :reduce-dims))
-                                 (equal (getattr self :reduce-dims) (getattr parent :reduce-dims)))
-                             (= (the fixnum (getattr self :rank)) (the fixnum (getattr parent :rank)))
-                             (funcall f self parent))
-                       do (let ((merged (merge-schedule-items self parent base-graph)))
-                            (setf changed-p t)
-                            (insert-nodes schedule-graph (list merged))
-                            (dolist (w (node-writes parent))
-                              (remnode schedule-graph w))))
-               (mapc #'explore (node-reads self)))))
-    ;; This loop finishes in the constant time.
-    (loop while changed-p do
-      (setf changed-p nil seen nil)
-      (mapc #'explore (graph-outputs schedule-graph)))))
-      
-(defun apply-reduce+move-fusion (schedule-graph can-split-p base-graph)
-  "Applies the post-loop-fusion to eliminate MOVE after the reduction.
-```
-     Group1
-       |
-      SELF
-```
-Consider the case where group1 and self fusion was rejected by the group-reduce-dims rule, group1 is a reduction, and `MOVE` after the reduction is merged to `self`. For example:
-```
-[Group1]
-{
-  int _acc_0 = 0;
-  for (...)
-    _acc_0 += ...;
-  // Expected element wise operation here! otherwise we have to mutate _acc_0 as an array...
-}
-[SELF]
-{
-  for (...)
-   out[...] = f(_acc_0);
-}
-```
-This function enumerates all such pairs and allows all reduction operations to have a `MOVE` node after the reduction by serializing the loop. (This scheduling pattern can be observed by running an operation with multiple reductions in a single kernel, such as `!argmax`, or `RMSNorm`, etc.)
-
-To put it bluntly, this function explores all `reduced-but-not-stored` pairs, and merges two schedule items who shares `reduced-but-not-stored`.
-
-If this interrupts the parallelism, AutoScheduler should distribute them and create a shared buffer."
-  (declare (type FastGraph schedule-graph))
-  (flet ((reduce-w/o-store (self)
-           (loop for id in (node-writes self) ;; only the output of the kernel matters
-                 for item = (find id (getattr self :items) :key #'node-writes :test #'find)
-                 if (getattr item :reduction :allow-undefined t)
-                   collect item)))
-    (apply-schedule-item-fusor
-     #'(lambda (self parent) (declare (ignore self)) (reduce-w/o-store parent))
-     can-split-p
-     schedule-graph
-     base-graph)))
-
-(defun apply-serialize-reduction (schedule-graph can-split-p base-graph)
-  (flet ((is-tensor (buffer)
-           (not (every #'(lambda (x) (eql x 1)) (buffer-shape buffer))))
-         (depend-dims-p (items rank &aux (common-views (make-list rank)))
-           (loop for item in items do
-             (loop for rt in (relay-reads (read-type-relay item))
-                   if (some #'identity (buffer-views rt)) do
-                     (loop for nth upfrom 0
-                           for view in (buffer-views rt) do
-                             (setf (nth nth common-views) (or (nth nth common-views) (fourth view))))))
-           (and (every #'null (butlast common-views))))
-         (no-index-components-p (si)
-           (null (find :INDEX-COMPONENTS (getattr si :items) :key #'node-type))))
-    (apply-schedule-item-fusor
-     #'(lambda (self parent)
-         (let ((self-type (group-get-type (make-group :items (getattr self :items))))
-               (parent-type (group-get-type (make-group :items (getattr parent :items)))))
-           (and
-            (no-index-components-p self) ;; [TODO] Merge Index Components
-            (no-index-components-p parent)
-            (= (getattr self :rank) (getattr parent :rank)) ;; Make sure not extra loop is introduced
-            (buffer-mergeable-p base-graph self-type parent-type)
-            (is-tensor self-type) (is-tensor parent-type)
-            (or
-             (null (getattr self :reduce-dims))
-             (null (getattr parent :reduce-dims))
-             (and
-              (equal (getattr self :reduce-dims) (getattr parent :reduce-dims))
-              (depend-dims-p (getattr self :items) (getattr self :rank))
-              (depend-dims-p (getattr self :items) (getattr parent :rank)))))))
-     can-split-p
-     schedule-graph
-     base-graph)))
-
-(defun apply-move-after-reduction (schedule-graph)
-  (declare (type graph schedule-graph) (optimize (speed 3)))
-  (labels ((%newtype (buffer)
-             (caten/avm:make-buffer
-              (buffer-nrank buffer)
-              (loop for s in (buffer-shape buffer)
-                    for nth fixnum upfrom 0
-                    for v = (nth nth (buffer-views buffer))
-                    if (and (listp v) (fourth v)) ;; broadcasted
-                      collect 1
-                    else
-                      collect s)
-              (buffer-stride buffer)
-              (buffer-dtype buffer)
-              (loop for s in (buffer-shape buffer)
-                    for nth fixnum upfrom 0
-                    for v = (nth nth (buffer-views buffer))
-                    if (and (listp v) (fourth v))
-                      collect `(0 1 1 t)
-                    else
-                      collect v)))
-           (%jstore (w a b base-type)
-             (make-node :Buffer :MOVE (list w) (list a b)
-                        :_type_relay
-                        (caten/codegen/shape-inference:make-inferred-type
-                         (list (%newtype base-type) (%newtype base-type))
-                         (list (%newtype base-type)))))
-           (acc (id) (intern (format nil "~(~a~)_acc" id)))
-           (r (si &aux (g (apply #'make-graph (getattr si :items))))
-             (dolist (node (graph-nodes g))
-               ;; reduced but no users in the group: This is now allowed. Adding :MOVE
-               (when (and (getattr node :reduction :allow-undefined t)
-                          (null (id->users g (car (node-writes node))))) ;; no users in a group
-                 (let ((base-id (car (node-reads node)))
-                       (write-id (car (node-writes node)))
-                       (acc-id (acc (car (node-reads node)))))
-                   (setf (node-writes node) (list acc-id))
-                   ;; val_3 = val_3_acc
-                   ;; ```
-                   ;; float val_3 = 0.0;               float val_3 = 0.0;
-                   ;; for (...) val_4 = val_3+1.0  =>  for (...) val_3_acc = val_3+1.0;
-                   ;; ```                              val_4[0] = val_3_acc;
-                   (push
-                    (%jstore write-id base-id acc-id (car (relay-writes (read-type-relay node))))
-                    (getattr si :items)))))))
-    (mapc #'r (graph-nodes schedule-graph))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defgeneric graph-schedule (graph) (:documentation "Splits a given graph into small subgraphs called Schedule-Item. It always returns `FastGraph`."))
-
-(defmethod graph-schedule ((graph Graph))
-  (graph-schedule1 graph)
-  (when (= 2 (ctx:getenv :DOT)) (->dot graph :title "Graph [Before Scheduling]"))
-  (let* ((seen (make-hash-table))
-         (groups (apply #'append (map 'list #'(lambda (x) (recursive-create-groups x graph :seen seen)) (graph-outputs graph)))))
-    (mapc #'verify-group groups)
-    (when (>= (ctx:getenv :JIT_DEBUG) 4)
-      (format t "[graph-schedule] Prescheduled ~a groups:~%" (length groups))
-      (dolist (g groups)
-        (when (not (eql (node-type (car (group-items g))) :Allocate))
-          (print g)))
-      (fresh-line))
-    (let ((schedule (apply #'make-graph (map 'list #'(lambda (x) (group->schedule x graph)) groups))))
-      (setf (graph-outputs schedule) (graph-outputs graph))
-      (setf schedule (->fast-graph schedule))
-      ;; ~~ Rewriting Rules + Post Fusion ~~~~~~~~~~~~~~~~~~~~~~
-      (when (= 0 (ctx:getenv :SERIALIZE))
-        (let ((can-split-p-cache (make-can-split-p schedule))) ;; Create a hash table for recording the edge and reference counter.
-          (apply-reduce+move-fusion schedule can-split-p-cache graph)
-          (apply-serialize-reduction schedule can-split-p-cache graph))) ;; (TODO: Only execute when MAXIMIZE_MEMORY_LOCALITY=1?)
-      (apply-move-after-reduction schedule)
-      ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-      (when (>= (ctx:getenv :JIT_DEBUG) 3)
-        (format t "[graph-schedule] Schedule Graph:~%~a~%" schedule))
-      (when (= 2 (ctx:getenv :DOT))
-        (let ((graph (apply #'make-graph (apply #'append (map 'list #'(lambda (x) (getattr x :items)) (graph-nodes schedule))))))
-          ;; (->dot schedule :title "Schedule Graph")
-          (->dot graph :title "Graph [After Scheduling]")))
-      (mapc #'schedule-item-initialize-namespace (graph-nodes schedule))
-      ;; (pprint-graph schedule)
-      schedule)))
-;; ~~ New Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-graph-edge-map (graph)
-  "Computes the in-degrees and out-degrees of the graph.
-- Nodes located after the :PAUSE/BACKWARD must be realized after :PAUSE/BACKWARD.
-- "
+  "Computes the in-degrees and out-degrees of the graph. Nodes located after the :PAUSE/BACKWARD must be realized after :PAUSE/BACKWARD."
   (declare (optimize (speed 3)) (type graph graph))
   ;; in-degrees:  NODE_ID -> (list (cons node view) ...)
   ;; out-degrees  NODE_ID -> (list node ...)
@@ -911,11 +467,7 @@ Otherwise, returns NIL. (= not fusable)"
   (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group)))  
 
 (defun group-mergeable-p (ctx tgt-group parent-group view)
-  "PARENT_GROUP
-        |
-      [VIEW]
-        |
-       [TGT]"
+  "PARENT_GROUP -> [VIEW] -> TGT-GROUP"
   (declare (type Schedule-Context ctx) (type Group tgt-group parent-group) (type (or null node) view))
   (when view (assert (eql (node-type view) :VIEW)))
   (symbol-macrolet ((->ng (return-from group-mergeable-p nil))
@@ -948,7 +500,6 @@ Otherwise, returns NIL. (= not fusable)"
       ;; [TODO] Add a mask like:
       ;;  _gid0 >= 2 && _gid1 >= 2 ? move1 : move2
       ;;->ng)
-      
       ;; always merge scalars
       (when (or (= r1 0) (= r2 0))->ok)
       (when (= r1 r2)
@@ -1005,28 +556,8 @@ Otherwise, returns NIL. (= not fusable)"
                   ->ok)
                 ->ng))))))
 
-;; [TODO] group-reads
-;;  LOAD_ALLOCATE (Scalar) 例えばこれはgroup-predecessorに追加しない。
-;;  group->scheduleはgroup-predecessorを使う。
-;;  pprint-group
-;; - create a small repro for transformer case
-;; Workload
-;; - 1. [x] node-writes, node-readsをきちんと定義する
-;; - 2. [x] Group Fusionができるのは，node-writesの全てがnode-readsへ通じる時のみ
-;; - 3. [x] force-realize-pで失敗した時の処理を考えてみる。
-;; - 4. [ ] Small Reproを作成して試してみる (SERIALIZE=1)
-;; - 5. [ ] Dynamic Shapeの計算ノードは何回でもScheduleしてOK
-;; - 6. [ ] Break-Sched内部で色々やればDFSで安全にScheduleできるはず
-;; - 7. [ ] group-mergeable-pでNILをReturnするケースがないとTRIUが分割されない (それはそう）なのでVIEW分割もここでやる。
-;; とりあえずOrderを削減しないといけない・・・
-;; - Dynamic Shape -> :LOADは何回でもSchedule OK
-;; - 終了条件を定義する (no-changed-p)
-(defun %run-scheduler (ctx &key (debug nil) (no-serialize-p (= 0 (the fixnum (ctx:getenv :SERIALIZE)))) (c 0) (stashed nil))
-  "Implements a simple BFS DAG Scheduler.
-ref: (but the algorithm differs) https://dl.acm.org/doi/pdf/10.1145/301970.301974
-Produces a list of groups, fuses sometime. sometimes rewrite view.
-items in the same group should have the same rank"
-  (declare (type Schedule-Context ctx) (type list stashed) (type fixnum c) (optimize (speed 3)))
+(defun graph-breadth-first-schedule (ctx &key (debug nil) (no-serialize-p (= 0 (the fixnum (ctx:getenv :SERIALIZE)))) (stashed nil))
+  (declare (type Schedule-Context ctx) (type list stashed) (optimize (speed 3)))
   ;; Initialize a priority queue of all nodes ready to be scheduled.
   (ctx-sync-queue ctx)
   (flet ((s (&aux (changed-p nil))
@@ -1052,17 +583,6 @@ items in the same group should have the same rank"
                          for parent-group = (ctx-get-group ctx p)
                          for tgt-group = (ctx-get-group ctx tgt) ;; tgt-group would be updated if tgt is merged
                          unless (eql (group-key parent-group) (group-key tgt-group)) do
-                           ;; (print c)
-                           (incf c)
-                           ;; :LOAD nは何回でもScheduleできるようにする必要がある。
-                           ;;   - 1. :LOAD nは必ずIsolated
-                           ;;   - 2. :LOADのグラフをコピーする
-                           ;;(print "++++++++")
-                           ;;(print p)
-                           ;;(print tgt)
-                           ;;(print parent-group)
-                           ;;(print tgt-group)
-                           ;;(print parent-view)
                            (let ((force-realize-p (ctx-node-force-realize-p ctx p tgt))
                                  (injective-p (groups-are-injective-p tgt-group parent-group)))
                              (if (and no-serialize-p force-realize-p injective-p (group-mergeable-p ctx tgt-group parent-group parent-view))
@@ -1085,6 +605,7 @@ items in the same group should have the same rank"
     (s)
     (loop while stashed do
       (setf (ctx-queue ctx) stashed stashed nil)
+      ;; [todo] delete just before merging
       (when debug
         (print "TMPGRAPH")
         (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
@@ -1094,43 +615,48 @@ items in the same group should have the same rank"
       (unless (s) (loop-finish))))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
-;; ↓に直接書く？
-(defun graph-schedule1 (graph)
+
+(defun graph-schedule (graph)
   "
 ```
 (graph-schedule graph)
 ```
-TODO: Descripton
-Return: ScheduleGraph
+Creates a schedule-graph(FastGraph) from the given `graph`.
 "
-  (declare (type Graph graph))
-  ;; [TODO] Assert the following things:
-  ;; 1. node is type-inferred
-  ;; 2. :VIEW is not allowed to use
-  (pprint-graph graph)
-  (assert (graph-outputs graph) () "Cannot schedule a graph without explicit outputs.")
+  (declare (type Graph graph) (optimize (speed 3)))
+  (assert (graph-nodes graph) () "graph-schedule: Nothing to schedule?")
+  (assert (graph-shape-inferred-p graph) () "graph-schedule: Run the shape inference first!")
+  (assert (null (find :VIEW (the list (graph-nodes graph)) :key #'node-type)) () "graph-schedule: :VIEW should not be appeared here. (run caten/codegen/rewriting-rules:apply-rewriting-rules first.)")
+  (assert (graph-outputs graph) () "graph-schedule: Graph without graph-outputs cannot be scheduled!")
+  (when (= 2 (the fixnum (ctx:getenv :DOT))) (->dot graph :title "Graph [Before Scheduling]"))
+  (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 4)
+    (format t "[graph-schedule] graph before scheduling:~%")
+    (pprint-graph graph))
   (let* ((ctx (make-schedule-context graph))
-         (groups (time (%run-scheduler ctx :debug t)))
-         ;; (Optional)ここにbreak-schedを作った方が簡単
+         (groups (graph-breadth-first-schedule ctx))
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x graph)) groups))))
-    (setf (graph-outputs schedule-graph) (graph-outputs graph)
-          schedule-graph (->fast-graph schedule-graph))
-    (pprint-graph schedule-graph)
-    ;; (print schedule-graph)
+    (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
+    (mapc #'verify-group groups)
     (verify-graph schedule-graph)
-    (let ((prescheduled (length groups))
-          (scheduled (count :Schedule-Item (graph-nodes schedule-graph) :key #'node-type)))
-      ;; [TODO] update group->schedule
-      ;; (print groups)
-      (assert (= prescheduled scheduled) () "Prescheduled ~a groups but only ~a groups are scheduled." prescheduled scheduled))
+    (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
+      (format t "[graph-schedule] Schedule-Graph:~%")
+      (pprint-graph schedule-graph))
+    (when (= 2 (the fixnum (ctx:getenv :DOT)))
+      (->dot schedule-graph :title "Schedule Graph"))
+    ;; Assert all nodes in the base-graph was scheduled correctly.
     (let ((nodes (map 'list #'node-id (apply #'append (map 'list #'group-items groups)))))
-      (dolist (n (graph-nodes graph))
-        (setf nodes (remove (node-id n) nodes)))
-      (assert (null nodes) () "Nodes ~a are not scheduled." nodes))
-    ;; 1. recursive-create-groupsでRealizeするPointを作成する
-    ;; 2. RealizeするPointのBuffer前後をChaseする
-    ;; 3. Scheduled Itemを作成
-    ;; 4. (iconst 'n)とかは複数回Scheduleして良い
-    ;; 5. Reduction without contiguousのPatch
-    (print "END")
-    ))
+      (dolist (n (graph-nodes graph)) (setf nodes (remove (node-id n) nodes)))
+      (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
+    (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph))
+    schedule-graph))
+;; - create a small repro for transformer case
+;; Workload
+;; - 1. [x] node-writes, node-readsをきちんと定義する
+;; - 2. [x] Group Fusionができるのは，node-writesの全てがnode-readsへ通じる時のみ
+;; - 3. [x] force-realize-pで失敗した時の処理を考えてみる。
+;; - 4. [ ] Small Reproを作成して試してみる (SERIALIZE=1)
+;; - 5. [ ] Dynamic Shapeの計算ノードは何回でもScheduleしてOK
+;; - 6. [ ] Break-Sched内部で色々やればDFSで安全にScheduleできるはず
+;; - 7. [ ] group-mergeable-pでNILをReturnするケースがないとTRIUが分割されない (それはそう）なのでVIEW分割もここでやる。
+;; とりあえずOrderを削減しないといけない・・・
+;; - Dynamic Shape -> :LOADは何回でもSchedule OK
