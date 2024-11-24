@@ -174,7 +174,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 ;; ~~ View Rewriting ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod group-items-st-rewriter ((group Group) f mask)
   (dolist (item (group-items group))
-    (when (eql (node-type item) :INDEX-COMPONENTS) ;; (cdr (node-reads index-components)) also represents for the stride
+    (when (and
+           (eql (node-type item) :INDEX-COMPONENTS)
+           (not (= (length mask) (length (cdr (node-reads item))))));; (cdr (node-reads index-components)) also represents for the stride
       (setf (node-reads item)
             (append
              (list (car (node-reads item)))
