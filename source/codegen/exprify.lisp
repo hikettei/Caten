@@ -136,7 +136,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                       for nth upfrom 0
                       if (and (symbolp r) rt ri (find r replaceable))
                         do (setf (nth nth (relay-reads (read-type-relay b))) (rewrite-as-scalar rt ri (reverse suffix))))
-                (assert (= (length (node-writes b)) 1) () "graph-scalarify excepts only one write node. (please update the loop below...)")
+                (assert (= (length (node-writes b)) 1) () "graph-scalarify accepts only one write node.")
                 (loop for w in (node-writes b)
                       for wt in (relay-writes (read-type-relay b))
                       for wi in (relay-write-iters (read-type-relay b))
