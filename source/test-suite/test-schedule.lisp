@@ -135,3 +135,7 @@
 (define-kernel-count-test rms-norm-single-kernel 1
   "RMSNorm = 1 Kernel"
   (caten (!rms-norm (make-tensor `(3 3)) `(3))))
+
+(define-kernel-count-test softmax-1d 1
+  "Softmax(10)"
+  (caten (!softmax (make-tensor `(10)))))
