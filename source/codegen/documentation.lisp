@@ -58,15 +58,15 @@ Additionally, the following sections provide documentation and explanations for 
   (doc/function "run-type-infer" #'caten/codegen/shape-inference:run-type-infer)
   (doc/struct "Inferred-Type" 'caten/codegen/shape-inference:Inferred-Type)
   (doc/struct "Iteration-Space" 'caten/codegen/shape-inference:Iteration-Space)
-  ;; [TODO] Provide an example
   (title "Rewriting Rules")
-  (body "TODO: Some patterns")
-
+  (body "TODO: apply-rewriting-rules doc")
+  
   (subtitle "Optimization for gemm")
-  (body "TODO: WMMA Rewriting")
+  (body "TODO: WMMA Rewriting Docs")
   
   (title "Scheduler")
   (doc/package 'caten/codegen/scheduler)
+  (body (caten/air:node-build-documentation-by-class "Schedule-Item" :GRAPH))
   (doc/function "graph-schedule" #'caten/codegen/scheduler:graph-schedule)
   (subtitle "Example (Scheduler + Shape Inference + Rewriting Rules")
   (body "This code snippet demonstrates how to create a schedule-graph from AASM Graph. AASM Graph is obtained by running caten with JIT=0.")
@@ -79,14 +79,34 @@ Additionally, the following sections provide documentation and explanations for 
   ;; graph-schedule to finally run the scheduler
   (pprint-graph (graph-schedule (avm-graph vm))))
 ")
-  (title "Lowerer (Blueprint)")
-
-  (title "Renderer")
-
-  (title "EXPR")
-
-  (title "Memory Planner")
-
-  (title "Scop Analyzer")
   
+  (title "Lowerer (Blueprint)")
+  (doc/package 'caten/codegen/blueprint)
+  (doc/function 'lower-schedule-item #'caten/codegen/blueprint:lower-schedule-item)
+
+  (subtitle "Example (Scheduler + Lowerer)")
+  (body "This code snippet demonstrates how to lower the schedule-graph into a blueprint created in the previous section.")
+  (example-code "
+(let* ((graph (ctx:with-contextvar (:JIT 0) (avm-graph (caten (!relu (!matmul (make-tensor `(3 3)) (make-tensor `(3 3))))))))
+       (vm (make-avm graph :example nil (graph-outputs graph) nil)))
+  (run-type-infer vm) ;; Running the shape inference
+  (apply-rewriting-rules vm) ;; Running the rewriting rules
+  ;; graph-schedule to finally run the scheduler
+  (let ((schedule-graph (graph-schedule (avm-graph vm))))
+    (caten/codegen/expr-cache::with-expr-cache () ;; need this to forcibly keep the loop affine.
+      (let ((bp (lower-schedule-item (nth 1 (graph-nodes schedule-graph)) graph schedule-graph)))
+        (print-blueprint bp nil)))))")
+  
+  (title "Renderer")
+  (body "TODO (Docs for Renderer/rendre-expr/extensible polyhedral compiler/etc)")
+  (body "Here is a list of nodes used to render the kernel.")
+  (body (caten/air:node-build-documentation-by-class "Render IRs" :Render))
+  
+  (title "EXPR")
+  (body "TODO")
+  
+  (title "Memory Planner")
+  (body "TODO: Docs (MIP Solver)")
+  (title "Scop Analyzer")
+  (body "TODO: Docs for scop")
   )

@@ -570,8 +570,14 @@ Depends=~a Reduce=~a Users=~a
                             buffer))))
     blueprints))
 
-(defmethod lower-schedule-item ((node Node) (base-graph Graph) (scheduled-graph Graph))
-  "Lowers the Schedule-Item into blueprint"
+(defun lower-schedule-item (node base-graph scheduled-graph)
+  "
+```
+(lower-schedule-item node base-graph scheduled-graph)
+```
+
+Lowers the Schedule-Item into blueprint"
+  (declare (type node node) (type graph base-graph scheduled-graph))
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
   ;; won't lower the allocation, they are the vm instruction.
   (when (null (getattr node :jitable)) (return-from lower-schedule-item))

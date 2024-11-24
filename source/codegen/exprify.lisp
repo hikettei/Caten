@@ -1,5 +1,8 @@
 (defpackage :caten/codegen/exprify
-  (:documentation "")
+  (:documentation "
+The package `caten/codegen/exprify` is responsible for applying OpFusion.
+;; todo
+")
   (:use :cl :caten/air :caten/codegen/expr :caten/codegen/expr-cache)
   (:import-from
    :caten/codegen/shape-inference
@@ -31,7 +34,11 @@
    #:expr-rewrite-edge-with-pointer-id))
 
 (in-package :caten/codegen/exprify)
-
+;; [TODO] Refactor exprify!
+;; Now, think:
+;; - 20% of bugs are in scheduler
+;; - 20% of bugs are in lowerer
+;; - 40% of bugs are in exprify. (node purged, xxx is not defined! etc)
 (defun force-realize-p (node schedule-graph)
   (when (null (getattr node :reduction :allow-undefined t))
     (return-from force-realize-p nil))
