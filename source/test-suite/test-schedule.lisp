@@ -123,3 +123,11 @@
 (define-kernel-count-test threefry-single-kernel 1
   "threefry2x32 in a single kernel"
   (caten (!rand `(3 3))))
+
+(define-kernel-count-test batch-norm-single-kernel 1
+  "BatchNorm = 1 Kernel"
+  (caten (!batch-norm (make-tensor `(3 3)))))
+
+(define-kernel-count-test layer-norm-single-kernel 1
+  "LayerNorm = 1 Kernel"
+  (caten (!layer-norm (make-tensor `(3 3)) `(3))))
