@@ -311,7 +311,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (node->group (make-hash-table) :type hash-table)
   (node-id->parent-id (make-hash-table) :type hash-table)
   (queue nil :type list)
-  (restart-cache (make-hash-table) :type hash-table))
+  (restart-cache (make-hash-table) :type hash-table)
+  (restart-cache1 (make-hash-table) :type hash-table))
 
 (defmethod group->schedule-item ((group Group) (ctx Schedule-Context))
   (let ((reads (group-predecessor group))
@@ -549,6 +550,8 @@ Otherwise, returns NIL. (= not fusable)"
 ;; 5. BatchNorm? Chunk?
 ;; FeedForward, Activationは最初の方にくっついて欲しい
 ;; Matmul(GeLU(x), X) Matmul(X, GeLU(x)) <- TODO: Add tests
+;; As well as sin activation (OK)
+;; Sin Instead of GeLU (OK
 (defun group-mergeable-p (ctx restart-point tgt-group parent-group view)
   "
 ```
@@ -589,17 +592,18 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
         ;; case1 Injective + Reduce (e.g.: Load(0.0)+WMMA, Matmul+GeLU+Matmul)
         ;; case2 Reduce + Injective (e.g.: Matmul+ReLU)
         ;; case3 Reduce + Reduce    (e.g.: Normalization, Softmax, VarStd Fusion)
-        ;(print "++++++++")
-        ;(print pattern)
-        ;(print r1) (print r2)
-        ;(print parent-group)
-        ;(print tgt-group)
+        (print "++++++++")
+        (print pattern)
+        (print r1) (print r2)
+        (print parent-group)
+        (print tgt-group)
         (when (and (eql pattern :case1) (group-chase-down-reduction-p ctx tgt-group restart-point))
           ;; Think after merging tgt-group+reduction is scheduled.
           ;; If restart_cache is set to T, the child is scheduled but not merged with tgt-group. => proceed to the next stage.
-          (when (null (gethash (node-id restart-point) (ctx-restart-cache ctx)))
+          (when (null (gethash (node-id restart-point) (ctx-restart-cache1 ctx)))
             (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))
-                  (gethash (node-id restart-point) (ctx-restart-cache ctx)) t)
+                  (gethash (node-id restart-point) (ctx-restart-cache1 ctx)) t)
+            (print "SKIP")
             ->ng))
         (when (groups-reduce-permute-p tgt-group parent-group) ->ng)
         (if (= r1 r2)
@@ -607,6 +611,7 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
               ->ok)
             (when (and (eql pattern :case1) (groups-rewrite-views-in-the-same-space parent-group tgt-group view))
               ->ok))
+        (print "FAIL")
         ->ng)
       ;; Otherwise, merging non-reduction nodes to create a block of elwise ops group. (e.g.: a sequence of activations)
       ;; fuse/rewrite _read_views and buffers sometime.
@@ -616,11 +621,10 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
           (let ((permute (and view (getattr view :permute))))
             (when permute (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
             ->ok))
+        (print "FAIL")
         ->ng)
       ;; 2. Injective + Different Ranks
-      ;; [TODO] ここの条件式，GeLU/Chunk+Matmul両方をうまくScheduleするために調整する。MOVEはOK or ExpandはOK
-      ;; Chunk/GeLU L/R
-      (when (group-chase-down-reduction-p ctx tgt-group restart-point) ->ng) ; If tgt-group is used by the reduction => better to merge it with that.
+      (when (group-chase-down-reduction-p ctx tgt-group restart-point)->ng) ; If tgt-group is used by the reduction => better to merge it with that.
       ;; Needed to fuse (!add (10 10 10) (sin (10 10)))
       (if (groups-rewrite-views-in-the-same-space parent-group tgt-group view)
           ->ok
