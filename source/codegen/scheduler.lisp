@@ -500,39 +500,44 @@ Otherwise, returns NIL. (= not fusable)"
                 ->ok)
               ->ng)))))
 
-(defmethod groups-reduce-permute-p ((tgt-group Group) (parent-group Group))
+(defmethod groups-reduce-permute-p ((tgt-group Group) (parent-group Group) &aux (dims (or (group-reduce-dims tgt-group) (group-reduce-dims parent-group))))
   "reduction -> permute -> reduction is not allowed in the group. If such path exists, this method returns T."
-  (labels ((view-permute-p (view)
-             (and view
-                  (getattr view :permute)
-                  (not (equal (range 0 (getattr view :nrank)) (getattr view :permute)))))
-           (node-permute-p (node)
-             (let ((views (getattr node :_read_views)))
-               (some #'(lambda (x) (view-permute-p (car x))) views)))
-           (reduce-p (node)
-             (getattr node :reduction :allow-undefined t)))
+  (labels ((reduce-p (node)
+             (getattr node :reduction :allow-undefined t))
+           (broadcast-conflicts-p (node)
+             (loop for read in (relay-reads (read-type-relay node))
+                   for views = (buffer-views read)
+                   if (some #'identity views) do
+                     (assert (= (length views) (length dims)))
+                     (loop for broadcastable in dims
+                           for view in views
+                           if (and (null broadcastable) (fourth view))
+                             do (return-from broadcast-conflicts-p t)))
+             nil))
     (let ((bounds (append (group-successor tgt-group) (group-successor parent-group)))
           (g (apply #'make-graph (append (group-items parent-group) (group-items tgt-group))))
           (seen))
       (setf (graph-outputs g) bounds g (->fast-graph g))
-      (labels ((explore (id &key (permute-p nil) (reduce-p nil))
+      (labels ((explore (id &key (first-reduce-p nil) (double-reduce-p nil))
                  (when (find id seen) (return-from explore))
                  (let ((node (id->value g id)))
                    (when (null node) (return-from explore))
                    (push id seen)
-                   (when (and permute-p reduce-p (reduce-p node))
+                   (setf double-reduce-p (or double-reduce-p (and first-reduce-p (reduce-p node)))
+                         first-reduce-p (or first-reduce-p (reduce-p node)))
+                   (when (and double-reduce-p (broadcast-conflicts-p node))
                      (return-from groups-reduce-permute-p t))
-                   (let ((new-permute-p (or permute-p (node-permute-p node)))
-                         (new-reduce-p  (or reduce-p  (reduce-p node))))
-                     (mapc #'(lambda (x) (explore x :permute-p new-permute-p :reduce-p new-reduce-p)) (node-reads node))))))
+                   (mapc #'(lambda (x) (explore x :first-reduce-p first-reduce-p :double-reduce-p double-reduce-p))
+                         (node-reads node)))))
         ;; reduction -> permute -> reduction is not allowed.
-        (mapc #'explore bounds))
+        (mapc #'(lambda (x) (setf seen nil) (explore x)) (group-successor tgt-group)))
       nil)))
 ;; workload
 ;; 1. patch elwise (ok)
 ;; 2. patch gelu
 ;; 3. batch_norm/layer_norm/feed_forward/rope/attention/softmax/chunk/Transformer
-;; 4. Embedding+Embedding, Softmax+Softmax
+;; 4. Embedding+Embedding, Softmax+Softmax (OK
+;; 5. BatchNorm? Chunk?
 (defun group-mergeable-p (ctx restart-point tgt-group parent-group view)
   "
 ```
@@ -585,9 +590,7 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
             (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))
                   (gethash (node-id restart-point) (ctx-restart-cache ctx)) t)
             ->ng))
-        (when (print (groups-reduce-permute-p tgt-group parent-group))
-          ->ng)
-        ;; [TODO] Permuteに関するAssertionを作っておく
+        (when (groups-reduce-permute-p tgt-group parent-group) ->ng)
         (if (= r1 r2)
             (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
               ->ok)
