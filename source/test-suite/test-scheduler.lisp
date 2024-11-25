@@ -37,10 +37,10 @@
 (deftest test-no-extra-loop-matmul-ln-matmul
   (multiple-value-bind (schedule avm)
       (schedule-with-vars (!matmul (make-tensor `(64 64)) (!layer-norm (!matmul (make-tensor `(64 64)) (make-tensor `(64 64))) `(64 64))))
-    (check-kernel schedule 4)
+    (check-kernel schedule 3)
     (caten/codegen/expr-cache:with-expr-cache ()
       (loop for item in (gather-kernels schedule)
-            for count in `(3 2 2 3) do
+            for count in `(4 3 3) do ;; LayerNorm -> Matmul -> Matmul
               (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
                 (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type))))))))
 
