@@ -120,4 +120,4 @@ jobs:
       - name: Installing ISL
         run: sudo apt-get install -y libisl-dev
       - name: GPT2
-        run: JIT=1 PARALLEL=1 NO_MEMORY_PLANNER=1 NO_SCHEDULE_CACHE=1 ./roswell/caten.ros llm-example --model "gpt2" --prompt "What is the answer to life, the universe, and everything?"
+        run: JIT=1 PARALLEL=8 NO_MEMORY_PLANNER=1 NO_SCHEDULE_CACHE=1 ./roswell/caten.ros llm-example --model "gpt2" --prompt "What is the answer to life, the universe, and everything?"
