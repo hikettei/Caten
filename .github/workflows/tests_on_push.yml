@@ -56,7 +56,7 @@ jobs:
           ros -e '(ql:register-local-projects)' -q
           CI=1 JIT=0 AVM=LISP rove caten.asd
       - name: (Clang) rove caten.asd
-        if: ${{ matrix.backend == 'clang' && matrix.lisp != 'ccl-bin/1.12.2' }}
+        if: ${{ matrix.backend == 'clang' }}
         run: |
           ulimit -n 8192
           ros config set dynamic-space-size 8gb
