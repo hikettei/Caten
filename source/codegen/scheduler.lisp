@@ -681,36 +681,6 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
       (unless (s) (loop-finish))))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
-;; TODO(hikettei) unnecessary? full symbolic transformer works without this rule?
-(defun group-distribute-dynamic-shape-load (group ctx)
-  "Consider the following targeting graph and scheduling results.
-`X = LOAD(A)` appears only once in the graph, so it also appears only once in the Schedule-Item.
-```
-Graph:
-X = LOAD(A)
-L = sin(X)
-M = cos(X)
-```
-Schedule1:
-```
-X = LOAD(A)
-L = sin(X)
-```
-Schedule2:
-```
-M = cos(X)
-```
-Since LOAD is a zero-cost operation, it can be shared across multiple schedule items to make the generated kernel clean.
-This function will put a copy of LOAD if some of nodes in group-items stop right before LOAD.
-"
-  (declare (type group group) (type Schedule-Context ctx) (optimize (speed 3)))
-  (when (every #'jitable-p (group-items group)) ;; this is only the case for jitable kernel
-    (loop for predecessor in (group-predecessor group)
-          for item = (id->value (ctx-graph ctx) predecessor)
-          if (and item (eql (node-type item) :LOAD) (= 0 (buffer-nrank (car (relay-writes (read-type-relay item))))))
-            do (setf (group-predecessor group) (remove predecessor (group-predecessor group)))
-               (push item (group-items group))))
-  group)
 
 (defun apply-move-after-reduction (schedule-graph)
   (declare (type graph schedule-graph) (optimize (speed 3)))
@@ -776,7 +746,6 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
     (pprint-graph graph))
   (let* ((ctx (make-schedule-context graph))
          (groups (graph-breadth-first-schedule ctx))
-         ;(groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
