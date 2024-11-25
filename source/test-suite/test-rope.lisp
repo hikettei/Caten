@@ -24,7 +24,7 @@ def torch_rope(x):
 
 (deftest test-rope
   (with-given-dtype ((:float32 . "float32"))
-    (let ((x (rand `(1 10 10 10))))
+    (let ((x (with-manual-seed (0) (proceed (!rand `(1 10 10 10))))))
       (assert-equal
           (:atol 1e-4 :rtol 1e-6)
           (with-torch (x) (->caten (torch_rope x)))
