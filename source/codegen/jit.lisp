@@ -326,10 +326,12 @@ caten/codegen overview:
                        (a2 (getattr y k2)))
                    ;; Caten/AIR has an assertion that all nodes are "dumpable"
                    ;; i.e.: attrs that impacts on the computation results are always typed number/symbol/list/bool
-                   (if (and (typep a1 'attr-value-type) (typep a2 'attr-value-type))
-                       (equal a1 a2)
-                       t ;; [FIXME] isn't it danger? if attrs are not found, they ignore it!
-                       )))
+                   (if (eql k1 :_read_views)
+                       t
+                       (if (and (typep a1 'attr-value-type) (typep a2 'attr-value-type))
+                           (equal a1 a2)
+                           t ;; [FIXME] isn't it danger? if attrs are not found, they ignore it!
+                           ))))
              attrs1 attrs2)))
          (let ((xt (read-type-relay x))
                (yt (read-type-relay y)))
