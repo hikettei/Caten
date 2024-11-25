@@ -550,6 +550,24 @@ Otherwise, returns NIL. (= not fusable)"
           :case1
           :case2)))
 
+(defmethod ctx-get-scheduled-groups ((ctx Schedule-Context))
+  (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
+    (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
+
+(defmethod ctx-fusable-case1-p ((ctx Schedule-Context) entry-points)
+  ;; node-group-dims =T -> always T
+  (let ((groups (ctx-get-scheduled-groups ctx))
+        (seen))
+    (labels ((explore (id)
+               (when (find id seen) (return-from explore nil))
+               (let ((item (find id groups :key #'group-successor :test #'find)))
+                 (when (null item) (return-from explore nil))
+                 (when (group-reduce-dims item)
+                   (return-from ctx-fusable-case1-p t))
+                 (mapc #'explore (group-predecessor item)))))
+      (mapc #'explore entry-points)
+      nil)))
+
 (defun group-mergeable-p (ctx restart-point tgt-group parent-group view)
   "
 ```
@@ -599,13 +617,12 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
               ;; View Rewriting here?
               ;; Permute rewriting here?
               ->ok)
-            (progn
-              ;; Priority: case1 -> case2/case3
-              ;; Case2, 3が100%Mergeできないのが問題
-              ;; Other candidates
-              (when (and ;; (eql pattern :case1) ;(or (eql pattern :case1) (null (find :case1 candidates)))
-                         ;; (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
-                         (groups-rewrite-views-in-the-same-space parent-group tgt-group view))
+            (let ((optimal-p
+                    (or (eql pattern :case1)
+                        (eql pattern :case3)
+                        ;; If case2 (no reduction+no reduction) there could be better merging pair, if the path has a reduced group.
+                        (null (ctx-fusable-case1-p ctx (group-predecessor tgt-group))))))
+              (when (and optimal-p (groups-rewrite-views-in-the-same-space parent-group tgt-group view))
                 ;; View rewriting?
                 ->ok)))
         ->ng)
