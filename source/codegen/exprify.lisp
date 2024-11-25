@@ -1,5 +1,7 @@
 (defpackage :caten/codegen/exprify
-  (:documentation "")
+  (:documentation "
+The package `caten/codegen/exprify` is responsible for providing a rewriting-rule targeting the EXPR node.
+")
   (:use :cl :caten/air :caten/codegen/expr :caten/codegen/expr-cache)
   (:import-from
    :caten/codegen/shape-inference
@@ -119,7 +121,7 @@
           collect bp))
 
 (defmethod graph-scalarify (blueprint (node Node) (schedule-graph Graph))
-  "Rewrites the buffer as scalar as many as possible"
+  "Rewrite the local buffers as a scalar by setting buffer-nrank to -1."
   (declare (type list blueprint))
   (let* ((ids (blueprint-tmp-buffers blueprint node schedule-graph :except-for (schedule-outputs schedule-graph)))
          (replaceable (loop for i in ids if (memory-access-local-p blueprint i) collect i))
@@ -134,7 +136,7 @@
                       for nth upfrom 0
                       if (and (symbolp r) rt ri (find r replaceable))
                         do (setf (nth nth (relay-reads (read-type-relay b))) (rewrite-as-scalar rt ri (reverse suffix))))
-                (assert (= (length (node-writes b)) 1) () "graph-scalarify excepts only one write node. (please update the loop below...)")
+                (assert (= (length (node-writes b)) 1) () "graph-scalarify accepts only one write node.")
                 (loop for w in (node-writes b)
                       for wt in (relay-writes (read-type-relay b))
                       for wi in (relay-write-iters (read-type-relay b))
@@ -243,9 +245,17 @@
                              if (and
                                  (find (node-type node) `(:MOVE :CAST :!= :< :INDEX-COMPONENTS :LOAD :STORE))
                                  (id->value schedule-graph (newid (car (node-reads node))))
-                                 (getattr (id->value schedule-graph (newid (car (node-reads node)))) :allocate-p))
+                                 (getattr (id->value schedule-graph (newid (car (node-reads node)))) :allocate-p)
+                                 (if (eql (node-type node) :LOAD)
+                                     ;; x = load(x) is reading an output from another schedule item.
+                                     (not (eql (car (node-writes node)) (getattr node :value)))
+                                     t))
                                collect (newid (car (node-reads node)))
-                             if (not (eql (node-type node) :Aref))
+                             if (and
+                                 (not (eql (node-type node) :Aref))
+                                 (if (eql (node-type node) :LOAD)
+                                     (not (eql (car (node-writes node)) (getattr node :value)))
+                                     t))
                                collect (car (node-writes node))))
                      (reads
                        (loop for read in (node-reads node)

@@ -13,7 +13,6 @@
     (setf running-mean (or running-mean (!mean x :axis (slot-value op 'axes) :keepdims t))
           running-invstd (or running-invstd (!recip (!add (!std x :axis (slot-value op 'axes) :keepdims t) (fconst (slot-value op 'eps))))))
     (st "A[~] Mean[~] InvStd[~] -> A[~]" (x running-mean running-invstd))
-    (warn "BatchNorm is not tested")
     (with-slots ((gamma affine) (beta bias) (eps eps)) op
       (let* ((x (!sub x running-mean))
              (x (if gamma (!mul x gamma) x))
@@ -23,7 +22,6 @@
 (defun !batch-norm (x &optional weight bias mean invstd (axis 1) (eps 1e-5))
   (declare (type tensor x)
            (type (or null tensor) weight bias mean invstd))
-  (warn "!batch-norm is not tested")
   (let* ((axes (normalize-axes x axis))
          (dims (map 'list #'(lambda (n) (nth n (shape x))) axes))
          (model (BatchNorm dims :eps eps :affine weight :bias bias)))

@@ -37,10 +37,10 @@
 (deftest test-no-extra-loop-matmul-ln-matmul
   (multiple-value-bind (schedule avm)
       (schedule-with-vars (!matmul (make-tensor `(64 64)) (!layer-norm (!matmul (make-tensor `(64 64)) (make-tensor `(64 64))) `(64 64))))
-    (check-kernel schedule 4)
+    (check-kernel schedule 3)
     (caten/codegen/expr-cache:with-expr-cache ()
       (loop for item in (gather-kernels schedule)
-            for count in `(3 2 2 3) do
+            for count in `(4 3 3) do ;; LayerNorm -> Matmul -> Matmul
               (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
                 (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type))))))))
 
@@ -95,9 +95,91 @@
 (deftest test-view-merge-failing-case
   (let ((schedule (schedule-with-vars (!gelu (!matmul (make-tensor `(1 64 64)) (!t (make-tensor `(1 64 64))))))))
     (check-kernel schedule 1)))
+;; ~~ Test Matmul+Activation Fusion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(deftest matmul-gelu-fuse-1
+  (testing "Matmul(X, GeLU(X))"
+    (multiple-value-bind (schedule avm) (schedule-with-vars (!matmul (make-tensor `(10 10)) (!gelu (!matmul (make-tensor `(10 10)) (make-tensor `(10 10))))))
+      (check-kernel schedule 2)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (loop for item in (gather-kernels schedule)
+              for count in `(3 3) do
+                (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+                  (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type)))
+                  (let* ((innermost-for
+                           (position-if #'(lambda (x) (and (eql (node-type x) :FOR) (equalp (symbol-name (getattr x :idx)) "_gid2"))) bp))
+                         (innermost-endfor
+                           (position-if #'(lambda (x) (and (eql (node-type x) :ENDFOR) (equalp (symbol-name (getattr x :idx)) "_gid2"))) bp))
+                         (_ (assert (and innermost-for innermost-endfor)))
+                         (region (subseq bp (1+ innermost-for) innermost-endfor)))
+                    (declare (ignore _))
+                    ;; Activation should not be placed inside the innermost loop!
+                    (let ((ng (some #'(lambda (x) (null (find (node-type x) '(:MOVE :LOAD :ADD :MUL :WMMA :AREF))))
+                                    (apply #'append (map 'list #'(lambda (x) (graph-nodes (expr-graph (getattr x :EXPR)))) region)))))
+                      (ng ng "The innnermost loop is consisted of only MOVE, LOAD, ADD, MUL, WMMA, AREF")))))))))
 
-;; (!softmax `(10))
-;; ConvND batch_size=1
+(deftest matmul-gelu-fuse-2
+  (testing "Matmul(GeLU(X), X)"
+    (multiple-value-bind (schedule avm) (schedule-with-vars (!matmul (!gelu (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))) (make-tensor `(10 10)) ))
+      (check-kernel schedule 2)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (loop for item in (gather-kernels schedule)
+              for count in `(3 3) do
+                (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+                  (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type)))
+                  (let* ((innermost-for
+                           (position-if #'(lambda (x) (and (eql (node-type x) :FOR) (equalp (symbol-name (getattr x :idx)) "_gid2"))) bp))
+                         (innermost-endfor
+                           (position-if #'(lambda (x) (and (eql (node-type x) :ENDFOR) (equalp (symbol-name (getattr x :idx)) "_gid2"))) bp))
+                         (_ (assert (and innermost-for innermost-endfor)))
+                         (region (subseq bp (1+ innermost-for) innermost-endfor)))
+                    (declare (ignore _))
+                    ;; Activation should not be placed inside the innermost loop!
+                    (let ((ng (some #'(lambda (x) (null (find (node-type x) '(:MOVE :LOAD :ADD :MUL :WMMA :AREF))))
+                                    (apply #'append (map 'list #'(lambda (x) (graph-nodes (expr-graph (getattr x :EXPR)))) region)))))
+                      (ng ng "The innnermost loop is consisted of only MOVE, LOAD, ADD, MUL, WMMA, AREF")))))))))
+
+(deftest matmul-sin-fuse-1
+  (testing "Matmul(X, sin(X))"
+    (multiple-value-bind (schedule avm) (schedule-with-vars (!matmul (make-tensor `(10 10)) (!sin (!matmul (make-tensor `(10 10)) (make-tensor `(10 10))))))
+      (check-kernel schedule 2)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (loop for item in (gather-kernels schedule)
+              for count in `(3 3) do
+                (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+                  (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type)))
+                  (let* ((innermost-for
+                           (position-if #'(lambda (x) (and (eql (node-type x) :FOR) (equalp (symbol-name (getattr x :idx)) "_gid2"))) bp))
+                         (innermost-endfor
+                           (position-if #'(lambda (x) (and (eql (node-type x) :ENDFOR) (equalp (symbol-name (getattr x :idx)) "_gid2"))) bp))
+                         (_ (assert (and innermost-for innermost-endfor)))
+                         (region (subseq bp (1+ innermost-for) innermost-endfor)))
+                    (declare (ignore _))
+                    ;; Activation should not be placed inside the innermost loop!
+                    (let ((ng (some #'(lambda (x) (null (find (node-type x) '(:MOVE :LOAD :ADD :MUL :WMMA :AREF))))
+                                    (apply #'append (map 'list #'(lambda (x) (graph-nodes (expr-graph (getattr x :EXPR)))) region)))))
+                      (ng ng "The innnermost loop is consisted of only MOVE, LOAD, ADD, MUL, WMMA, AREF")))))))))
+
+(deftest matmul-sin-fuse-2
+  (testing "Matmul(sin(X), X)"
+    (multiple-value-bind (schedule avm) (schedule-with-vars (!matmul (!sin (!matmul (make-tensor `(10 10)) (make-tensor `(10 10)))) (make-tensor `(10 10)) ))
+      (check-kernel schedule 2)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (loop for item in (gather-kernels schedule)
+              for count in `(3 3) do
+                (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+                  (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type)))
+                  (let* ((innermost-for
+                           (position-if #'(lambda (x) (and (eql (node-type x) :FOR) (equalp (symbol-name (getattr x :idx)) "_gid2"))) bp))
+                         (innermost-endfor
+                           (position-if #'(lambda (x) (and (eql (node-type x) :ENDFOR) (equalp (symbol-name (getattr x :idx)) "_gid2"))) bp))
+                         (_ (assert (and innermost-for innermost-endfor)))
+                         (region (subseq bp (1+ innermost-for) innermost-endfor)))
+                    (declare (ignore _))
+                    ;; Activation should not be placed inside the innermost loop!
+                    (let ((ng (some #'(lambda (x) (null (find (node-type x) '(:MOVE :LOAD :ADD :MUL :WMMA :AREF))))
+                                    (apply #'append (map 'list #'(lambda (x) (graph-nodes (expr-graph (getattr x :EXPR)))) region)))))
+                      (ng ng "The innnermost loop is consisted of only MOVE, LOAD, ADD, MUL, WMMA, AREF")))))))))
+;;TODO:  ConvND batch_size=1
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;
 ;; [Group1]
@@ -133,3 +215,4 @@
             (when (eql (node-type b) :EXPR)
               (let ((val_1_type (second (caten/codegen/shape-inference:relay-reads (caten/codegen/shape-inference:read-type-relay b)))))
                 (ok (equal `(1 10) (buffer-stride val_1_type)))))))))))
+

@@ -17,6 +17,7 @@
    #:example-repl
    #:example-code)
   (:export
+   #:doc/package
    #:doc/function
    #:doc/class
    #:doc/struct
@@ -153,3 +154,7 @@
 (defun doc/generic (name generic)
   (assert *editing*)
   (format *editing* "### [generic] ~a~%~%~a~%~%" name (documentation generic 't)))
+
+(defun doc/package (name)
+  (assert *editing*)
+  (format *editing* "~a" (documentation (find-package name) t)))

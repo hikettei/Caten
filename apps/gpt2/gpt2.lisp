@@ -83,27 +83,31 @@
       (load-state-dict model state-dict)
       (%make-gpt2 avm tokenizer max-seq-len))))
 
-(defun extend-token (tensor token &aux (lim (nth 1 (shape tensor))))
-  (incf (nth 1 (shape tensor)))
-  (let ((new-value (linspace (shape tensor) 0 0)))
-    (loop for i upfrom 0 below (nth 1 (shape tensor))
-          if (< i lim)
-            do (setf (aref (caten/avm:buffer-value new-value) i) (aref (caten/avm:buffer-value tensor) i))
-          else
-            do (setf (aref (caten/avm:buffer-value new-value) i) (aref (caten/avm:buffer-value token) i)))
-    new-value))
+(defun extend-token (tensor token pos)
+  (loop for i upfrom 0 below (nth 1 (shape tensor))
+        if (not (= pos i))
+          do (setf (aref (caten/avm:buffer-value (tensor-buffer tensor)) i) (aref (caten/avm:buffer-value (tensor-buffer tensor)) i))
+        else
+          do (setf (aref (caten/avm:buffer-value (tensor-buffer tensor)) i) (+ 0.0 (aref (caten/avm:buffer-value (tensor-buffer token)) 0))))
+  tensor)
 
 (defun gpt2-generate (gpt2 input)
   (declare (type GPT2 gpt2) (type string input))
   (with-slots ((model model) (tokenizer tokenizer) (max-seq-len max-seq-len)) gpt2
-    (let* ((tokens (encode tokenizer input))
-           (x (linspace `(1 ,(length tokens)) 0 0)))
+    (setf max-seq-len 30)
+    (let* ((x (linspace `(1 ,max-seq-len) 0 0))
+           (outputs))
       (loop for i upfrom 0
             for token in (encode tokenizer input)
             do (setf (aref (caten/avm:buffer-value (tensor-buffer x)) i) (+ 0.0 token)))
       (loop for i upfrom 0 below max-seq-len
-            for out = (forward model `(x . ,x) `(s . ,(nth 1 (shape x))) `(pos . ,(nth 1 (shape x))))
-            do (setf x (extend-token x out)))
-      (print x)
-      ;; WIP!
-      (error "NOT READY!!"))))
+            for nth upfrom (length (encode tokenizer input))
+            for out = (forward model `(x . ,x) `(s . ,(nth 1 (shape x))) `(n . ,6))
+            do (setf x (extend-token x out nth))
+               (print (tensor-buffer out))
+               (print (tensor-buffer x))
+               (push (aref (caten/avm:buffer-value (tensor-buffer out)) i) outputs)
+               (print outputs)
+               (print (decode tokenizer (reverse outputs))))
+      (print "Output:")
+      (print (decode tokenizer (reverse outputs))))))
