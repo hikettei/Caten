@@ -381,6 +381,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (or
    (gethash (ctx-find-group-id ctx (node-id node)) (ctx-node->group ctx))
    (error "The node ~a is not yet scheduled!" node)))
+(defmethod ctx-try-get-group ((ctx Schedule-Context) node)
+  (gethash (ctx-find-group-id ctx (node-id node)) (ctx-node->group ctx)))
 (defmethod ctx-register-new-group ((ctx Schedule-Context) (tgt node) (parent node))
   (setf (gethash (node-id tgt) (ctx-node-id->parent-id ctx)) (node-id parent)))
 (defmethod ctx-find-group-id ((ctx Schedule-Context) (tgt symbol))
@@ -446,14 +448,21 @@ Otherwise, returns NIL. (= not fusable)"
   ;; If the output of parent-group is also used by other groups, don't merge it.
   (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group)))
 
-(defmethod group-chase-down-reduction-p ((ctx Schedule-Context) (group Group))
+(defmethod group-chase-down-reduction-p ((ctx Schedule-Context) (group Group) (restart-point Node))
   "Chace down until found reduction is succeed => return T"
   (let ((successor (group-successor group)))
     (loop for succ in successor
           for node = (id->value (ctx-graph ctx) succ)
           if node do
             (loop for child in (ctx-children ctx node)
-                  if (getattr child :reduction :allow-undefined t)
+                  for child-group = (ctx-try-get-group ctx child)
+                  if (null child-group)
+                    do (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))) ;; not yet scheduled => wait until group is constructed.
+                       (when (null (gethash (node-id restart-point) (ctx-restart-cache ctx)))
+                         (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))
+                               (gethash (node-id restart-point) (ctx-restart-cache ctx)) t))
+                       (return-from group-chase-down-reduction-p t)
+                  if (group-reduce-dims child-group)
                     do (return-from group-chase-down-reduction-p t)))
     nil))
 
@@ -538,6 +547,8 @@ Otherwise, returns NIL. (= not fusable)"
 ;; 3. batch_norm/layer_norm/feed_forward/rope/attention/softmax/chunk/Transformer
 ;; 4. Embedding+Embedding, Softmax+Softmax (OK
 ;; 5. BatchNorm? Chunk?
+;; FeedForward, Activationは最初の方にくっついて欲しい
+;; Matmul(GeLU(x), X) Matmul(X, GeLU(x)) <- TODO: Add tests
 (defun group-mergeable-p (ctx restart-point tgt-group parent-group view)
   "
 ```
@@ -583,7 +594,7 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
         ;(print r1) (print r2)
         ;(print parent-group)
         ;(print tgt-group)
-        (when (and (eql pattern :case1) (group-chase-down-reduction-p ctx tgt-group))
+        (when (and (eql pattern :case1) (group-chase-down-reduction-p ctx tgt-group restart-point))
           ;; Think after merging tgt-group+reduction is scheduled.
           ;; If restart_cache is set to T, the child is scheduled but not merged with tgt-group. => proceed to the next stage.
           (when (null (gethash (node-id restart-point) (ctx-restart-cache ctx)))
@@ -608,7 +619,8 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
         ->ng)
       ;; 2. Injective + Different Ranks
       ;; [TODO] ここの条件式，GeLU/Chunk+Matmul両方をうまくScheduleするために調整する。MOVEはOK or ExpandはOK
-      (when (group-chase-down-reduction-p ctx tgt-group) ->ng) ; If tgt-group is used by the reduction => better to merge it with that.
+      ;; Chunk/GeLU L/R
+      (when (group-chase-down-reduction-p ctx tgt-group restart-point) ->ng) ; If tgt-group is used by the reduction => better to merge it with that.
       ;; Needed to fuse (!add (10 10 10) (sin (10 10)))
       (if (groups-rewrite-views-in-the-same-space parent-group tgt-group view)
           ->ok
