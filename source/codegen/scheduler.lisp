@@ -310,7 +310,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (realize (make-hash-table) :type hash-table)
   (node->group (make-hash-table) :type hash-table)
   (node-id->parent-id (make-hash-table) :type hash-table)
-  (queue nil :type list))
+  (queue nil :type list)
+  (restart-cache (make-hash-table) :type hash-table))
 
 (defmethod group->schedule-item ((group Group) (ctx Schedule-Context))
   (let ((reads (group-predecessor group))
@@ -572,16 +573,18 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
         ;; case1 Injective + Reduce (e.g.: Load(0.0)+WMMA, Matmul+GeLU+Matmul)
         ;; case2 Reduce + Injective (e.g.: Matmul+ReLU)
         ;; case3 Reduce + Reduce    (e.g.: Normalization, Softmax, VarStd Fusion)
-        (print "++++++++")
-        (print pattern)
-        (print r1) (print r2)
-        (print parent-group)
-        (print tgt-group)
+        ;(print "++++++++")
+        ;(print pattern)
+        ;(print r1) (print r2)
+        ;(print parent-group)
+        ;(print tgt-group)
         (when (and (eql pattern :case1) (group-chase-down-reduction-p ctx tgt-group))
-          ;; If tgt-group has a chance to merged with another reduction
-          ;; Schedule after the children reduction is scheduled
-          (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point)))
-          ->ng)
+          ;; Think after merging tgt-group+reduction is scheduled.
+          ;; If restart_cache is set to T, the child is scheduled but not merged with tgt-group. => proceed to the next stage.
+          (when (null (gethash (node-id restart-point) (ctx-restart-cache ctx)))
+            (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))
+                  (gethash (node-id restart-point) (ctx-restart-cache ctx)) t)
+            ->ng))
         (when (print (groups-reduce-permute-p tgt-group parent-group))
           ->ng)
         ;; [TODO] Permuteに関するAssertionを作っておく
