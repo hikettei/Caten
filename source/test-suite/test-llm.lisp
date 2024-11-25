@@ -281,7 +281,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
-
+;; Segfault Test (occurs with use_kv_cache=T, and n_layers > 1)
 (deftest test-symbolic-regression-test
   (with-no-grad
     (when (= 1 (ctx:getenv :JIT))
