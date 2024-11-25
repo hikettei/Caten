@@ -443,11 +443,103 @@ Otherwise, returns NIL. (= not fusable)"
 
 (defmethod groups-are-injective-p ((tgt-group Group) (parent-group Group))
   ;; If the output of parent-group is also used by other groups, don't merge it.
-  (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group)))  
+  (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group)))
 
-(defun group-mergeable-p (ctx tgt-group parent-group view)
-  "PARENT_GROUP -> [VIEW] -> TGT-GROUP"
-  (declare (type Schedule-Context ctx) (type Group tgt-group parent-group) (type (or null node) view))
+(defmethod group-chase-down-reduction-p ((ctx Schedule-Context) (group Group))
+  "Chace down until found reduction is succeed => return T"
+  (let ((successor (group-successor group)))
+    (loop for succ in successor
+          for node = (id->value (ctx-graph ctx) succ)
+          if node do
+            (loop for child in (ctx-children ctx node)
+                  if (getattr child :reduction :allow-undefined t)
+                    do (return-from group-chase-down-reduction-p t)))
+    nil))
+
+(defmethod groups-rewrite-views-in-the-same-space ((parent-group Group) (tgt-group Group) view)
+  (symbol-macrolet ((->ng (return-from groups-rewrite-views-in-the-same-space nil))
+                    (->ok (return-from groups-rewrite-views-in-the-same-space t)))
+    (let* ((r1 (group-rank tgt-group)) (r2 (group-rank parent-group))
+           (read-type (group-get-type parent-group))
+           (self-type (group-get-type tgt-group))
+           (c (< r1 r2)))
+      (when (null self-type)->ng)
+      (if (broadcastable-p read-type self-type) ;; simpliy broadcastable
+          (let* ((base-1 (loop for s in (buffer-shape (if c self-type read-type)) if (eql s 1) collect s))
+                 (mask (map 'list
+                            #'(lambda (x)
+                                (if (eql x 1)
+                                    (if base-1
+                                        (progn (pop base-1) nil)
+                                        t)
+                                    nil))
+                            (buffer-shape (if c read-type self-type)))))
+            (assert (some #'identity mask))
+            (when (not (= (+ (count-if #'identity mask) (min r1 r2)) (max r1 r2)))->ng)
+            (apply-view-fusor (min r1 r2) mask tgt-group :permute (and view (getattr view :permute)))
+            (apply-view-fusor (min r1 r2) mask parent-group :permute (and view (getattr view :permute)))
+            (when (and view (getattr view :permute))
+              (apply-index-component-fusion parent-group (getattr view :permute)))
+            (group-assert-rank tgt-group r1 r2 view)
+            (group-assert-rank parent-group r1 r2 view)
+            ->ok)
+          (if (and view (some #'identity (getattr view :broadcast)))
+              (let ((mask (getattr view :broadcast)))
+                (declare (type list mask))
+                (when (not (= (length mask) (max r1 r2)))
+                  (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
+                (when (not (= (length mask) (max r1 r2)))->ng)
+                (when (not (= (+ (count-if #'identity mask) (min r1 r2)) (max r1 r2)))->ng)
+                (apply-view-fusor (min r1 r2) mask tgt-group :permute (and view (getattr view :permute)))
+                (apply-view-fusor (min r1 r2) mask parent-group :permute (and view (getattr view :permute)))
+                (when (and view (getattr view :permute))
+                  (apply-index-component-fusion parent-group (getattr view :permute)))
+                (group-assert-rank tgt-group r1 r2 view)
+                (group-assert-rank parent-group r1 r2 view)
+                ->ok)
+              ->ng)))))
+
+(defmethod groups-reduce-permute-p ((tgt-group Group) (parent-group Group))
+  "reduction -> permute -> reduction is not allowed in the group. If such path exists, this method returns T."
+  (labels ((view-permute-p (view)
+             (and view
+                  (getattr view :permute)
+                  (not (equal (range 0 (getattr view :nrank)) (getattr view :permute)))))
+           (node-permute-p (node)
+             (let ((views (getattr node :_read_views)))
+               (some #'(lambda (x) (view-permute-p (car x))) views)))
+           (reduce-p (node)
+             (getattr node :reduction :allow-undefined t)))
+    (let ((bounds (append (group-successor tgt-group) (group-successor parent-group)))
+          (g (apply #'make-graph (append (group-items parent-group) (group-items tgt-group))))
+          (seen))
+      (setf (graph-outputs g) bounds g (->fast-graph g))
+      (labels ((explore (id &key (permute-p nil) (reduce-p nil))
+                 (when (find id seen) (return-from explore))
+                 (let ((node (id->value g id)))
+                   (when (null node) (return-from explore))
+                   (push id seen)
+                   (when (and permute-p reduce-p (reduce-p node))
+                     (return-from groups-reduce-permute-p t))
+                   (let ((new-permute-p (or permute-p (node-permute-p node)))
+                         (new-reduce-p  (or reduce-p  (reduce-p node))))
+                     (mapc #'(lambda (x) (explore x :permute-p new-permute-p :reduce-p new-reduce-p)) (node-reads node))))))
+        ;; reduction -> permute -> reduction is not allowed.
+        (mapc #'explore bounds))
+      nil)))
+;; workload
+;; 1. patch elwise (ok)
+;; 2. patch gelu
+;; 3. batch_norm/layer_norm/feed_forward/rope/attention/softmax/chunk/Transformer
+;; 4. Embedding+Embedding, Softmax+Softmax
+(defun group-mergeable-p (ctx restart-point tgt-group parent-group view)
+  "
+```
+Graph: parent-group -> [view] -> tgt-group
+```
+Returns T if merging parent-group and tgt-group is the best choice, rewrites view/buffer sometime.
+"
+  (declare (type Schedule-Context ctx) (type Group tgt-group parent-group) (type (or null node) view) (type node restart-point))
   (when view (assert (eql (node-type view) :VIEW)))
   (symbol-macrolet ((->ng (return-from group-mergeable-p nil))
                     (->ok (return-from group-mergeable-p t)))
@@ -459,7 +551,12 @@ Otherwise, returns NIL. (= not fusable)"
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
-    (let ((after-reduction-p (identity (group-reduce-dims parent-group)))
+    (let ((reduce-p (identity (or (group-reduce-dims parent-group) (group-reduce-dims tgt-group))))
+          (pattern (if (and (group-reduce-dims parent-group) (group-reduce-dims tgt-group))
+                       :case3
+                       (if (group-reduce-dims parent-group)
+                           :case1
+                           :case2)))
           (r1 (group-rank tgt-group)) (r2 (group-rank parent-group)))
       ;; float _acc_0 = 0.0f;
       ;; for (...) {
@@ -467,63 +564,49 @@ Otherwise, returns NIL. (= not fusable)"
       ;; }
       ;; self = _acc_0;
       ;; // tgt-group is here if after-reduction-p is T
-      ;; [TODO] Merge Contiguous+SHRINK
-      (when (and view (eql (identify-view-type view) :SHRINK)) ->ng)
-      ;; always merge scalars
-      (when (or (= r1 0) (= r2 0))->ok)
-      (when (= r1 r2)
-        (let ((permute (and view (getattr view :permute))))
-          (declare (type list permute))
-          (when after-reduction-p
-            (if (and
-                 (or (null permute) (equal (range 0 (length permute)) permute)) ;; no permute after reduction
-                 (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group)))
-                ->ok
-                ->ng))
-          (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group))
-            (progn
-              (when permute (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
-              ->ok))
-          ->ng))
-      ;; otherwise
-      (let ((read-type (group-get-type parent-group))
-            (self-type (group-get-type tgt-group))
-            (c (< r1 r2)))
-        (when (null self-type)->ng)
-        (if (broadcastable-p read-type self-type) ;; simpliy broadcastable
-            (let* ((base-1 (loop for s in (buffer-shape (if c self-type read-type)) if (eql s 1) collect s))
-                   (mask (map 'list
-                              #'(lambda (x)
-                                  (if (eql x 1)
-                                      (if base-1
-                                          (progn (pop base-1) nil)
-                                          t)
-                                      nil))
-                              (buffer-shape (if c read-type self-type)))))
-              (assert (some #'identity mask))
-              (when (not (= (+ (count-if #'identity mask) (min r1 r2)) (max r1 r2)))->ng)
-              (apply-view-fusor (min r1 r2) mask tgt-group :permute (and view (getattr view :permute)))
-              (apply-view-fusor (min r1 r2) mask parent-group :permute (and view (getattr view :permute)))
-              (when (and view (getattr view :permute))
-                (apply-index-component-fusion parent-group (getattr view :permute)))
-              (group-assert-rank tgt-group r1 r2 view)
-              (group-assert-rank parent-group r1 r2 view)
+      (when (and view (eql (identify-view-type view) :SHRINK)) ->ng) ;; TODO(hikettei) Merge Contiguous+Shrink
+      (when (or (= r1 0) (= r2 0))->ok) ;; always merge scalar+anything
+      (when reduce-p ;; If tgt or parent has a reduction:
+        ;; Here, you have to consider the following three cases:
+        ;;         Parent     TGT
+        ;; case1 Injective + Reduce (e.g.: Load(0.0)+WMMA, Matmul+GeLU+Matmul)
+        ;; case2 Reduce + Injective (e.g.: Matmul+ReLU)
+        ;; case3 Reduce + Reduce    (e.g.: Normalization, Softmax, VarStd Fusion)
+        (print "++++++++")
+        (print pattern)
+        (print r1) (print r2)
+        (print parent-group)
+        (print tgt-group)
+        (when (and (eql pattern :case1) (group-chase-down-reduction-p ctx tgt-group))
+          ;; If tgt-group has a chance to merged with another reduction
+          ;; Schedule after the children reduction is scheduled
+          (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point)))
+          ->ng)
+        (when (print (groups-reduce-permute-p tgt-group parent-group))
+          ->ng)
+        ;; [TODO] Permuteに関するAssertionを作っておく
+        (if (= r1 r2)
+            (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
               ->ok)
-            (if (and view (some #'identity (getattr view :broadcast)))
-                (let ((mask (getattr view :broadcast)))
-                  (declare (type list mask))
-                  (when (not (= (length mask) (max r1 r2)))
-                    (setf mask (map 'list #'fourth (buffer-views (if c read-type self-type)))))
-                  (when (not (= (length mask) (max r1 r2)))->ng)
-                  (when (not (= (+ (count-if #'identity mask) (min r1 r2)) (max r1 r2)))->ng)
-                  (apply-view-fusor (min r1 r2) mask tgt-group :permute (and view (getattr view :permute)))
-                  (apply-view-fusor (min r1 r2) mask parent-group :permute (and view (getattr view :permute)))
-                  (when (and view (getattr view :permute))
-                    (apply-index-component-fusion parent-group (getattr view :permute)))
-                  (group-assert-rank tgt-group r1 r2 view)
-                  (group-assert-rank parent-group r1 r2 view)
-                  ->ok)
-                ->ng))))))
+            (when (and (eql pattern :case1) (groups-rewrite-views-in-the-same-space parent-group tgt-group view))
+              ->ok))
+        ->ng)
+      ;; Otherwise, merging non-reduction nodes to create a block of elwise ops group. (e.g.: a sequence of activations)
+      ;; fuse/rewrite _read_views and buffers sometime.
+      ;; 1. Injective + Same Ranks
+      (when (= r1 r2)
+        (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group))
+          (let ((permute (and view (getattr view :permute))))
+            (when permute (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
+            ->ok))
+        ->ng)
+      ;; 2. Injective + Different Ranks
+      ;; [TODO] ここの条件式，GeLU/Chunk+Matmul両方をうまくScheduleするために調整する。MOVEはOK or ExpandはOK
+      (when (group-chase-down-reduction-p ctx tgt-group) ->ng) ; If tgt-group is used by the reduction => better to merge it with that.
+      ;; Needed to fuse (!add (10 10 10) (sin (10 10)))
+      (if (groups-rewrite-views-in-the-same-space parent-group tgt-group view)
+          ->ok
+          ->ng))))
 
 (defun graph-breadth-first-schedule (ctx &key (no-serialize-p (= 0 (the fixnum (ctx:getenv :SERIALIZE)))) (stashed nil))
   (declare (type Schedule-Context ctx) (type list stashed) (optimize (speed 3)))
@@ -554,7 +637,7 @@ Otherwise, returns NIL. (= not fusable)"
                          unless (eql (group-key parent-group) (group-key tgt-group)) do
                            (let ((force-realize-p (ctx-node-force-realize-p ctx p tgt))
                                  (injective-p (groups-are-injective-p tgt-group parent-group)))
-                             (if (and no-serialize-p force-realize-p injective-p (group-mergeable-p ctx tgt-group parent-group parent-view))
+                             (if (and no-serialize-p force-realize-p injective-p (group-mergeable-p ctx tgt tgt-group parent-group parent-view))
                                  (progn
                                    ;; remove(parent_group) and tgt_group += parent-group
                                    (ctx-register-new-group ctx p tgt)
@@ -570,6 +653,7 @@ Otherwise, returns NIL. (= not fusable)"
                                          (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-graph ctx))))
                                  (unless (and force-realize-p injective-p) ;; waiting until other scheduling processes are finished.
                                    (when (null (find (the symbol (node-id tgt)) stashed :key #'node-id))
+                                     ;; stash until descendant scheduling are completed
                                      (push tgt stashed)))))))
            changed-p))
     (s)
