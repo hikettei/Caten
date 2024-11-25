@@ -681,7 +681,7 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
       (unless (s) (loop-finish))))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
-;; TODO(hikettei) unnecessary? full symbolic transformer works without this rule?
+
 (defun group-distribute-dynamic-shape-load (group ctx)
   "Consider the following targeting graph and scheduling results.
 `X = LOAD(A)` appears only once in the graph, so it also appears only once in the Schedule-Item.
@@ -709,6 +709,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
           for item = (id->value (ctx-graph ctx) predecessor)
           if (and item (eql (node-type item) :LOAD)
                   (= 0 (buffer-nrank (car (relay-writes (read-type-relay item)))))
+                  ;; note(hikettei) do not apply this for dynamic shape loading
                   (numberp (getattr item :value)))
             do (setf (group-predecessor group) (remove predecessor (group-predecessor group)))
                (push item (group-items group))))
