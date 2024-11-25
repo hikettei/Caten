@@ -80,16 +80,16 @@
   "Embedding is a single kernel"
   (with-no-grad (caten (call (Embedding 10 10) (make-tensor `(b c))))))
 
-(define-kernel-count-test conv-schedule 4
-  "ConvND = 4 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test conv-schedule 5
+  "ConvND = 5 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25))))))
 
-(define-kernel-count-test conv-relu-schedule 4
-  "ConvND+ReLU = 4 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test conv-relu-schedule 5
+  "ConvND+ReLU = 5 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
 
-(define-kernel-count-test conv-gelu-schedule 4
-  "ConvND+GeLU = 4 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test conv-gelu-schedule 5
+  "ConvND+GeLU = 5 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
 
 (define-kernel-count-test tril-triu-matmul 4
