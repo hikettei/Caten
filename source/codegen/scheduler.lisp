@@ -542,18 +542,7 @@ Otherwise, returns NIL. (= not fusable)"
         ;; reduction -> permute -> reduction is not allowed.
         (mapc #'(lambda (x) (setf seen nil) (explore x)) (group-successor tgt-group)))
       nil)))
-;; workload
-;; 1. patch elwise (ok)
-;; 2. patch gelu
-;; 3. batch_norm/layer_norm/feed_forward/rope/attention/softmax/chunk/Transformer
-;; 4. Embedding+Embedding, Softmax+Softmax (OK
-;; 5. BatchNorm? Chunk?
-;; FeedForward, Activationは最初の方にくっついて欲しい
-;; Matmul(GeLU(x), X) Matmul(X, GeLU(x)) <- TODO: Add tests
-;; As well as sin activation (OK)
-;; Sin Instead of GeLU (OK
-;; - Chunk = 1 Kernel
-;; - Attention
+
 (defun group-mergeable-p (ctx restart-point tgt-group parent-group view)
   "
 ```
@@ -787,7 +776,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
     (pprint-graph graph))
   (let* ((ctx (make-schedule-context graph))
          (groups (graph-breadth-first-schedule ctx))
-         (groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
+         ;(groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
