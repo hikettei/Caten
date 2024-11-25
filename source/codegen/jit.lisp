@@ -319,8 +319,9 @@ caten/codegen overview:
             (equal attrs1 attrs2)
             (every
              #'(lambda (k1 k2)
+                 (assert (eql k1 k2))
                  (let ((a1 (getattr x k1))
-                       (a2 (getattr x k2)))
+                       (a2 (getattr y k2)))
                    ;; Caten/AIR has an assertion that all nodes are "dumpable"
                    ;; i.e.: attrs that impacts on the computation results are always typed number/symbol/list/bool
                    (if (and (typep a1 'attr-value-type) (typep a2 'attr-value-type))
