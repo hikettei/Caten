@@ -106,3 +106,18 @@ jobs:
         run: PARALLEL=4 PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=0 ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_no_auto_sched_plot.png
 #      - name: Transformer Schedulers (N<=12, JIT=1, AUTO_SCHEDULER=1)
 #        run: PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=1 ./roswell/caten.ros benchmark transformer_compile_time 24 1 transformer_simplifier_auto_scheduler_plot.png
+  Practical_Test:
+    name: Running example models
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up SBCL via Roswell.
+        run: |
+          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install sbcl-bin
+          ros use sbcl-bin
+      - name: Installing ISL
+        run: sudo apt-get install -y libisl-dev
+      - name: GPT2
+        run: JIT=1 PARALLEL=1 NO_MEMORY_PLANNER=1 NO_SCHEDULE_CACHE=1 ./roswell/caten.ros llm-example --model "gpt2" --prompt "What is the answer to life, the universe, and everything?"
