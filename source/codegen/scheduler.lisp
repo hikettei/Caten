@@ -543,6 +543,13 @@ Otherwise, returns NIL. (= not fusable)"
         (mapc #'(lambda (x) (setf seen nil) (explore x)) (group-successor tgt-group)))
       nil)))
 
+(defmethod group-compute-reduce-pattern ((parent-group Group) (tgt-group Group))
+  (if (and (group-reduce-dims parent-group) (group-reduce-dims tgt-group))
+      :case3
+      (if (group-reduce-dims parent-group)
+          :case1
+          :case2)))
+
 (defun group-mergeable-p (ctx restart-point tgt-group parent-group view)
   "
 ```
@@ -563,11 +570,7 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
     (let ((reduce-p (identity (or (group-reduce-dims parent-group) (group-reduce-dims tgt-group))))
-          (pattern (if (and (group-reduce-dims parent-group) (group-reduce-dims tgt-group))
-                       :case3
-                       (if (group-reduce-dims parent-group)
-                           :case1
-                           :case2)))
+          (pattern (group-compute-reduce-pattern parent-group tgt-group))
           (r1 (group-rank tgt-group)) (r2 (group-rank parent-group)))
       ;; float _acc_0 = 0.0f;
       ;; for (...) {
@@ -579,22 +582,16 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
       (when (or (= r1 0) (= r2 0))->ok) ;; always merge scalar+anything
       (when reduce-p ;; If tgt or parent has a reduction:
         ;; Here, you have to consider the following three cases:
-        ;;         Parent     TGT
+        ;;         Parent     TGT              [Parent+TGT]
         ;; case1 Injective + Reduce (e.g.: Load(0.0)+WMMA, Matmul+GeLU+Matmul)
         ;; case2 Reduce + Injective (e.g.: Matmul+ReLU)
         ;; case3 Reduce + Reduce    (e.g.: Normalization, Softmax, VarStd Fusion)
-       ; (print "++++++++")
-       ; (print pattern)
-       ; (print r1) (print r2)
-       ; (print parent-group)
-       ; (print tgt-group)
         (when (and (eql pattern :case1) (group-chase-down-reduction-p ctx tgt-group restart-point))
           ;; Think after merging tgt-group+reduction is scheduled.
           ;; If restart_cache is set to T, the child is scheduled but not merged with tgt-group. => proceed to the next stage.
-          (when (null (gethash (node-id restart-point) (ctx-restart-cache1 ctx)))
+          (when (null (gethash (node-id restart-point) (ctx-restart-cache1 ctx))) ;; todo no skip
             (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))
                   (gethash (node-id restart-point) (ctx-restart-cache1 ctx)) t)
-            ;(print "SKIP")
             ->ng))
         (when (groups-reduce-permute-p tgt-group parent-group) ->ng)
         (if (= r1 r2)
@@ -602,12 +599,15 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
               ;; View Rewriting here?
               ;; Permute rewriting here?
               ->ok)
-            (when (and (eql pattern :case1)
-                       ;; (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
-                       (groups-rewrite-views-in-the-same-space parent-group tgt-group view))
-              ;; View rewriting?
-              ->ok))
-        ;(print "FAIL1")
+            (progn
+              ;; Priority: case1 -> case2/case3
+              ;; Case2, 3が100%Mergeできないのが問題
+              ;; Other candidates
+              (when (and ;; (eql pattern :case1) ;(or (eql pattern :case1) (null (find :case1 candidates)))
+                         ;; (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
+                         (groups-rewrite-views-in-the-same-space parent-group tgt-group view))
+                ;; View rewriting?
+                ->ok)))
         ->ng)
       ;; Otherwise, merging non-reduction nodes to create a block of elwise ops group. (e.g.: a sequence of activations)
       ;; fuse/rewrite _read_views and buffers sometime.
@@ -617,10 +617,8 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
           (let ((permute (and view (getattr view :permute))))
             (when permute (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
             ->ok))
-        ;(print "FAIL_ELWISE")
         ->ng)
       ;; 2. Injective + Different Ranks
-      ;; delete this line => chunk works
       (when (group-chase-down-reduction-p ctx tgt-group restart-point)->ng) ; If tgt-group is used by the reduction => better to merge it with that.
       ;; Needed to fuse (!add (10 10 10) (sin (10 10)))
       (if (groups-rewrite-views-in-the-same-space parent-group tgt-group view)
