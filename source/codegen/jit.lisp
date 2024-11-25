@@ -306,6 +306,8 @@ caten/codegen overview:
   (and
    ;; The number of reference counters are the same => memory-planner should produce the same result
    (equal (getattr si1 :reference-counters) (getattr si2 :reference-counters))
+   (every #'(lambda (x) (>= x 0)) (getattr si1 :reference-counters))
+   (every #'(lambda (x) (>= x 0)) (getattr si2 :reference-counters))
    (= (length items1) (length items2))
    (every
     #'(lambda (x y)

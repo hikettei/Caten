@@ -343,10 +343,10 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                (map
                 'list
                 #'(lambda (x)
-                    (+
-                     (if (find x (graph-outputs (ctx-graph ctx))) 1 0)
-                     (length (ctx-children ctx (id->value (ctx-graph ctx) x)))))
-                writes)
+                    (if (find x (graph-outputs (ctx-graph ctx)))
+                        -1
+                        (length (ctx-children ctx (id->value (ctx-graph ctx) x)))))
+                (append reads writes))
                :rank rank
                :reduce-dims (group-reduce-dims group)
                :items (group-items group)
