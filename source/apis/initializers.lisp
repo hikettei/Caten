@@ -4,7 +4,27 @@
 ;;   All computational nodes that exhibit random behavior must depend on `RandNode`.
 ;;   it implements PRNG Generator based on threefry2x32.
 ;;   *rng-counter* and *manual-seed* should be depended upon commonly by all graphs.
-;; ~~ randomness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Configurations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *inference-mode* nil
+  "
+When `*inference-mode*` is set to T, it explicitly indicates that the code is being executed in inference mode. Additionally, it has the following effects:
+
+- Static Random Generation (e.g., rand) with `:requires-grad=T` does nothing (it is expected to load a parameter from the state dictionary).
+
+- The behavior of certain NN operations, such as BatchNorm and Dropout, changes.
+")
+
+(defmacro with-inference-mode (() &body body)
+  "
+```
+(with-inference-mode (() &body body))
+```
+Sets `*inference-mode*=T` and `*no-grad*=T` within the scope of the body.
+"
+  `(with-no-grad
+     (let ((*inference-mode* t))
+       ,@body)))
+;; ~~ randomness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-rng-counter ()
   (ctx:with-contextvar (:jit 0)
     (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter))))
@@ -224,14 +244,15 @@ There is a `randint` function for the same purpose, but it is not lazy.
   (declare (type function initializer))
   (assert (every #'numberp shape) () "Shape should be a static.")
   (let* ((tensor (funcall initializer (apply #'* shape)))
-	 (place  (make-tensor shape :dtype dtype :order order :requires-grad requires-grad :id id :from (tensor-buffer tensor))))
-    (assert (tensor-p tensor) () "make-param: initializer should return a single tensor!")
-    (setf
-     (buffer-shape (tensor-buffer tensor)) shape
-     (buffer-stride (tensor-buffer tensor)) (static-compute-strides order shape)
-     (buffer-nrank (tensor-buffer tensor)) (length shape)
-     (buffer-views (tensor-buffer tensor)) nil
-     (tensor-buffer place) (tensor-buffer tensor))
+	 (place  (make-tensor shape :dtype dtype :order order :requires-grad requires-grad :id id :from (and tensor (tensor-buffer tensor)))))
+    (assert (or (null tensor) (tensor-p tensor)) () "make-param: initializer should return a single tensor!")
+    (when tensor
+      (setf
+       (buffer-shape (tensor-buffer tensor)) shape
+       (buffer-stride (tensor-buffer tensor)) (static-compute-strides order shape)
+       (buffer-nrank (tensor-buffer tensor)) (length shape)
+       (buffer-views (tensor-buffer tensor)) nil
+       (tensor-buffer place) (tensor-buffer tensor)))
     place))
 
 (macrolet ((def (name initializer &key (args nil) (keys nil) (dtype *default-float*) (documentation "No description provided"))
@@ -239,7 +260,11 @@ There is a `randint` function for the same purpose, but it is not lazy.
 		,documentation
 		(declare (type list shape))
 		(assert (every #'numberp shape) () ,(format nil "~a: Shape should be a static!" name))
-		(make-param #',initializer shape :dtype dtype :order order :requires-grad requires-grad :id id))))
+		(make-param
+                 (if (and requires-grad *inference-mode*)
+                     #'(lambda (x) (declare (ignore x)) nil)
+                     #',initializer)
+                 shape :dtype dtype :order order :requires-grad requires-grad :id id))))
   (def rand (lambda (n) ($random dtype n)))
   (def uniform (lambda (n) ($uniform dtype n low high)) :keys ((low 0) (high 1)))
   (def randn (lambda (n) ($randn dtype n)))
@@ -248,3 +273,4 @@ There is a `randint` function for the same purpose, but it is not lazy.
   (def xavier-uniform (lambda (n) ($xavier-uniform dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2))))))
   (def xavier-gaussian (lambda (n) ($xavier-gaussian dtype n (car (last shape)) (or (second (last shape 2)) (car (last shape 2))))))
   (def linspace (lambda (n) ($ax+b dtype n a b)) :args (a b)))
+;; todo docs
