@@ -82,31 +82,21 @@
       (load-state-dict model state-dict)
       (%make-gpt2 (caten (forward model (make-tensor `(1 s) :from 'x) (iconst 'n))) tokenizer max-seq-len))))
 
-(defun extend-token (tensor token pos)
-  (loop for i upfrom 0 below (nth 1 (shape tensor))
-        if (not (= pos i))
-          do (setf (aref (caten/avm:buffer-value (tensor-buffer tensor)) i) (aref (caten/avm:buffer-value (tensor-buffer tensor)) i))
-        else
-          do (setf (aref (caten/avm:buffer-value (tensor-buffer tensor)) i) (+ 0.0 (aref (caten/avm:buffer-value (tensor-buffer token)) 0))))
-  tensor)
+(defun ->input (list) (change-facet `(,(map 'list #'(lambda (x) (+ 0.0 x)) list)) :tensor))
 
 (defun gpt2-generate (gpt2 input)
   (declare (type GPT2 gpt2) (type string input))
   (with-slots ((model model) (tokenizer tokenizer) (max-seq-len max-seq-len)) gpt2
-    (setf max-seq-len 30)
-    (let* ((x (linspace `(1 ,max-seq-len) 0 0))
-           (outputs))
-      (loop for i upfrom 0
-            for token in (encode tokenizer input)
-            do (setf (aref (caten/avm:buffer-value (tensor-buffer x)) i) (+ 0.0 token)))
-      (loop for i upfrom 0 below max-seq-len
-            for nth upfrom (length (encode tokenizer input))
-            for out = (forward model `(x . ,x) `(s . ,(nth 1 (shape x))) `(n . ,6))
-            do (setf x (extend-token x out nth))
-               (print (tensor-buffer out))
-               (print (tensor-buffer x))
-               (push (aref (caten/avm:buffer-value (tensor-buffer out)) i) outputs)
-               (print outputs)
-               (print (decode tokenizer (reverse outputs))))
-      (print "Output:")
-      (print (decode tokenizer (reverse outputs))))))
+    (let* ((tokens (encode tokenizer input))
+           (start-pos 0)
+           (max-length 30))
+      (loop for i upfrom 0 below max-length
+            for out = (forward model `(x . ,(->input tokens)) `(s . ,(length tokens)) `(n . ,start-pos)) do
+              (with-facet (out* (out :direction :simple-array))
+                (setf start-pos (length tokens))
+                (let ((size (array-total-size out*)))
+                  (setf tokens (append tokens (list (aref out* (1- size)))))
+                  (print tokens)
+                  (print "Decode")
+                  (print (decode tokenizer tokens)))))
+      (print (decode tokenizer tokens)))))

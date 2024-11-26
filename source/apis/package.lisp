@@ -163,6 +163,11 @@
    ;; utils
    #:!rsqrt #:!square
    )
+  ;; from facets.lisp
+  (:export
+   #:change-facet
+   #:with-facet
+   #:with-facets)
   ;; from initializers.lisp
   (:export
    #:*inference-mode*

@@ -19,6 +19,7 @@
                (:file "high-level-ops")
 	       (:file "ahead-of-time")
 	       (:file "initializers")
+               (:file "facets")
                (:file "documentation"))
   :in-order-to
   ((test-op
