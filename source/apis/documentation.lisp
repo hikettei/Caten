@@ -188,6 +188,25 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
   (docs:doc/function "xavier-uniform" #'xavier-uniform)
   (docs:doc/function "xavier-gaussian" #'xavier-gaussian))
 
+(docs:define-page ("Facet API" "packages/caten.apis.facet_apis.md")
+  (docs:title "Facet APIs")
+  (docs:body "We are going to see how to access the Tensor as a lisp object.")
+  (docs:doc/generic "change-facet" #'change-facet)
+  (docs:example-repl "(change-facet 1 :tensor)")
+  (docs:example-repl "(change-facet '((1.0 2.0 3.0) (4.0 5.0 6.0)) :tensor)")
+  (docs:example-repl "(change-facet #(1 2 3) :tensor)")
+  (docs:example-repl "(change-facet (rand `(2 2)) :simple-array)")
+  (docs:example-repl "(change-facet (rand `(2 2)) :array)")
+  (docs:doc/macro "with-facet" 'with-facet)
+  (docs:doc/macro "with-facets" 'with-facets)
+  (docs:body "If you want to access an individual element of Tensor, it is wiser to convert it into an Array. The following code snippet initializes the diagonal of a Tensor to 0.0 without creating a copy:")
+  (docs:example-repl "(let ((x (rand `(3 3))))
+  (with-facet (a (x :direction :array))
+    (setf (aref a 0 0) 0.0
+          (aref a 1 1) 0.0
+          (aref a 2 2) 0.0))
+  (print x))"))
+
 (docs:define-page ("ShapeTracker" "packages/caten.apis.shapetracker.md")
   (docs:title "ShapeTracker")
   (docs:body "TODO")
