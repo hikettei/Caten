@@ -1,24 +1,40 @@
 (in-package :caten/avm)
-(defparameter *vm* nil)
-(defgeneric %impl (device op graph node args) (:documentation "Peforms the corresponding nodes"))
 
-(defun make-hash-table-from-params (params)
-  (declare (type list params))
-  (let ((out (make-hash-table :test #'eql)))
-    (loop for (k . v) in params
-	  do (setf (gethash k out) v))
-    ;; Constants
-    (setf (gethash t out) t
-	  (gethash nil out) :nil)
-    out))
+(defparameter *vm* nil)
+
+(defgeneric %impl (device op graph node args) (:documentation "
+```
+(%impl device op graph node args)
+```
+
+"))
+
 (defstruct (AVM
 	    (:constructor make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil)
-                                          &aux
-                                          (id2tensor (or id2tensor (make-hash-table)))
-                                            (_
-                                             (when (null (graph-outputs graph))
-                                               (setf (graph-outputs graph) (append fw-outputs bw-outputs)))))))
-  "Tape based iseq executor"
+                                    &aux
+                                      (id2tensor (or id2tensor (make-hash-table)))
+                                      (_
+                                       (when (null (graph-outputs graph))
+                                         (setf (graph-outputs graph) (append fw-outputs bw-outputs)))))))
+  "
+A runner of `Graph`.
+
+```
+(make-avm graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil))
+```
+
+- graph[Graph] graph to run
+
+- name[keyword] the name of avm
+
+- id2tensor[hash-table] a hash table to convert id to tensor. If unsure, set nil.
+
+- fw-outputs[list] a list of output tensor ids returned in the forward propagation.
+
+- bw-outputs[list] a list of output tensor ids returned in the backward propagation.
+
+`(forward avm &rest params)` to run the forward graph. `(backward avm)` to run the backward graph.
+"
   (graph graph :type graph)
   (name name :type keyword)
   (fw-outputs fw-outputs :type list)

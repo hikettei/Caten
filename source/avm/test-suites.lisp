@@ -255,10 +255,3 @@
     (testcase 120 10.0 2.0 6)
     (testcase 120 2.0 10.0 6)
     (testcase 600 10.0 10.0 6)))
-
-;; [TODO]
-;; - Composed View and infer-tensor-info testing
-;;   (im not sure if it works and the direction is right)
-;; - reshape testing
-;; - (arange x 0 0) into a single kernel (Store 0=0 fusion)
-;; - implement a frontend (Tensor, Function, Print etc)
