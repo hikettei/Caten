@@ -170,6 +170,8 @@
    #:with-facets)
   ;; from initializers.lisp
   (:export
+   #:*inference-mode*
+   #:with-inference-mode
    #:make-input
    #:make-param
    

@@ -71,17 +71,16 @@
 (defun make-gpt2 (model-type &key (max-seq-len 1024))
   (declare (type keyword model-type))
   (assert (find model-type `(:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)) () "model-type must be one of :gpt2, :gpt2-medium, :gpt2-large, :gpt2-xl")
-  (with-no-grad
+  (with-inference-mode ()
     (let* ((caten/llm::*use-kv-cache* nil) ;; todo: use kv-cache once segv is resolved.
            (param (get-param model-type))
            (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
            (model (Transformer (params-dim param) (params-n-heads param) (params-n-layers param) (params-norm-eps param) (params-vocab-size param) :max-seq-len max-seq-len))
-           (avm (caten (forward model (make-tensor `(1 s) :from 'x) (iconst 'n))))
            (tokenizer (gguf->bpe-tokenizer gguf))
            (state-dict (gguf->state-dict gguf)))
       (remap-state-dict-keys state-dict)
       (load-state-dict model state-dict)
-      (%make-gpt2 avm tokenizer max-seq-len))))
+      (%make-gpt2 (caten (forward model (make-tensor `(1 s) :from 'x) (iconst 'n))) tokenizer max-seq-len))))
 
 (defun extend-token (tensor token pos)
   (loop for i upfrom 0 below (nth 1 (shape tensor))
