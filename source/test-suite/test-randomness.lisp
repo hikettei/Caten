@@ -6,3 +6,7 @@
 
 (deftest compile-normal
   (ok (caten (!normal `(10 10)))))
+
+(deftest test-with-inference-mode
+  (with-inference-mode ()
+    (ok (null (tensor-buffer (rand `(3 3) :requires-grad t))))))
