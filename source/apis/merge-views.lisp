@@ -318,3 +318,22 @@ Applying a further slicing:
               ()
               "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invaild simplifier?~%~a" write-to g)
       g)))
+
+(defsimplifier
+    (simplify-contiguous :speed 1)
+    ((:View (~ _))
+     ->
+     ((view1 graph)
+      (let* ((move (id->value graph (car (node-reads view1))))
+             (allocate (and move (id->value graph (first (node-reads move)))))
+             (view2 (and move (id->value graph (second (node-reads move))))))
+        (when (and move allocate view1 view2
+                   (eql (node-type move) :MOVE) (eql (node-type allocate) :Allocate) (eql (node-type view1) :VIEW)
+                   (eql (node-type view2) :VIEW))
+          ;; VIEW2 -> MOVE(Contiguous) -> VIEW1
+          ;; ===> Rewriting
+          ;; {VIEW2+VIEW1}
+          (print "+++MERGE+++")
+          (print view2)
+          (print view1)
+          nil)))))
