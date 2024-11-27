@@ -224,6 +224,9 @@ Applying a further slicing:
 (defmethod apply-masked-reshape ((tracker Tracker) new-shape)
   (when (not (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))))
     (return-from apply-masked-reshape nil))
+  ;; [TODO] Add VIEW.offset and merge this
+  (when (some #'(lambda (x) (not (eql (first x) 0))) (tr-mask tracker))
+    (return-from apply-masked-reshape nil))
   ;; does not support symbolic
   (let ((new-shape-copy (copy-list new-shape))
         (shape-map)
@@ -243,19 +246,24 @@ Applying a further slicing:
                     (push (nreverse stack) shape-map)
                     (setf stack nil)))))
     ;; Creating a map: (10 6 6) -> (10 (2 3) (2 3))
+    ;;                   i j k      i j1 j2  k1 k2
+    ;; j = 2*j1+j2, k = 2*k1+k2
     (setf shape-map (nreverse shape-map))
     (when (not (equal (flatten shape-map) (flatten new-shape-copy)))
       (return-from apply-masked-reshape nil))
     ;; Create a stride inside each shape-map (e.g.: (10 (2 3) (2 3)) -> (1 (3 1) (3 1)))
     (let* ((stride-map (map 'list #'(lambda (x) (!stride (tr-order tracker) x)) shape-map))
+           ;; Multiplying the base stride
            (stride-map (flatten (map 'list #'(lambda (st x) (map 'list #'(lambda (a) (!mul st a)) x)) (tr-stride tracker) stride-map)))
-           (stride-map (canonicalize-shape stride-map)))
-      (print "Masked Reshape!")
-      (print tracker)
-      (print new-shape)
-      (print shape-map)
-      (print stride-map))))
-          
+           (stride-map (canonicalize-shape stride-map))
+           (new-tracker (copy-tracker tracker)))
+      (setf (tr-shape new-tracker) (flatten shape-map)
+            (tr-base-shape new-tracker) (flatten shape-map)
+            (tr-stride new-tracker) stride-map
+            (tr-mask new-tracker) (make-list (length new-shape-copy))
+            (tr-broadcast new-tracker) (make-list (length new-shape-copy))
+            (tr-permute new-tracker) (range 0 (length new-shape-copy)))
+      new-tracker)))
 
 (defgeneric tr-reshapeable-p (obj new-shape))
 (defmethod tr-reshapeable-p ((tensor Tensor) new-shape) (tr-reshapeable-p (tensor-tr tensor) new-shape))
@@ -263,8 +271,9 @@ Applying a further slicing:
   (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
       (return-from tr-reshapeable-p t)))
-  (when (tr-mask tracker)
-    (apply-masked-reshape tracker new-shape))
+  (when (and (tr-mask tracker) (not (equal (tr-shape tracker) (tr-base-shape tracker)))
+             (apply-masked-reshape tracker new-shape))
+    (return-from tr-reshapeable-p t))
   ;; Not contiguous -> Not reshapeable (todo: masked reshape)
   (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
   ;; Permuted: (except for the mask creation) not reshapeable
@@ -283,6 +292,8 @@ Applying a further slicing:
     (when (equal shape-w/o-one (tr-shape tracker))
       (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape))))
     (assert (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))) () "Trying to reshape the permuted tracker!")
+    (when (and (tr-mask tracker) (not (equal (tr-shape tracker) (tr-base-shape tracker))))
+      (return-from tr-apply-reshape (apply-masked-reshape tracker new-shape)))
     ;; Can reshape (reshape=chainging the stride)
     (let* ((new-tracker (copy-tracker tracker)))
       (setf (tr-shape new-tracker) new-shape
