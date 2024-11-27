@@ -219,7 +219,7 @@ Applying a further slicing:
 (defmethod tr-reshapeable-p ((tracker Tracker) new-shape &aux (new-shape (canonicalize-shape new-shape)))
   (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
-      (return-from tr-reshapeable-p (tr-contiguous tracker))))
+      (return-from tr-reshapeable-p t)))
   ;; Not contiguous -> Not reshapeable (todo: masked reshape)
   (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
   ;; Permuted: (except for the mask creation) not reshapeable
@@ -318,6 +318,68 @@ Applying a further slicing:
               ()
               "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invaild simplifier?~%~a" write-to g)
       g)))
+;; [todo] unittest,
+;; (10 4 4)
+;; -> (40 4) + 4
+;; -> (10 4 40 4)
+;; ->    ...
+(defun parse-view (view &aux (args (node-reads view)))
+  (declare (type node view))
+  (flet ((subseq1p (list from to) (subseq list (1+ from) (1+ to))))
+    (let ((nrank (getattr view :nrank)))
+      (values (subseq1p args 0 nrank) ;; shape
+              (loop for upfrom in (subseq1p args nrank (* 2 nrank))
+                    for below in (subseq1p args (* 2 nrank) (* 3 nrank))
+                    for by in (subseq1p args (* 3 nrank) (* 4 nrank))
+                    for bc in (getattr view :broadcast)
+                    collect (list upfrom below by bc))
+              (loop for stride in (subseq1p args (* 4 nrank) (* 5 nrank))
+                    for bc in (getattr view :broadcast)
+                    if bc collect 0 else collect stride)))))
+;; Proof
+;;  P_n(i, j, k, ...) = s1_1(i + b1_1) + s1_2(j + b1_2) + s1_3(k + b1_3) + ... + sn_k(index + bn_k) where k = dimension
+;;         ^ k ranks in total
+;;   where 0 < i < i_upper, 0 < j < j_upper, 0 < k < k_upper, ...
+;; Now we want:
+;;   P_1(i, j, k, ...) + P_2(l, m, n, ...) = P_3(l, m, n, ...)
+;;  where P_3(l, m, n, ...) = s2_1(l + b3_1) + s2_2(m + b3_2) + s2_3(n + b3_3) + ... + sn_k(index + bn_k)
+;; Question: A pair of (s1_1, ..., sn_k) and (b3_1, ..., bn_k) exists?
+;;
+;; 
+(defun +view (view-parent view-child)
+  "Creates a new VIEW from the given two view-parent and view-child."
+  (declare (type node view-parent view-child))
+  (multiple-value-bind (shape1 mask1 stride1) (parse-view view-parent)
+    (multiple-value-bind (shape2 mask2 stride2) (parse-view view-child)
+      (labels ((masked-p (s m)
+                 (assert (= (length s) (length m)))
+                 (not (every #'(lambda (size mask) (and (eql (car mask) 0) (eql (second mask) size) (eql (third mask) 1) (null (fourth mask)))) s m)))
+               (permute-p (n)
+                 (not (or (null (getattr n :permute)) (equal (range 0 (getattr n :nrank)) (getattr n :permute)))))
+               (contiguous-p (s m n)
+                 (and (null (masked-p s m)) (null (permute-p n)))))
+        ;; Contig+Contig
+        (when (and (contiguous-p shape1 mask1 view-parent) (contiguous-p shape2 mask2 view-child))
+          ;; (return-from +view (copy-node view-child))
+          ))
+        ;(when (and (= 330750 (apply #'* shape1) (apply #'* shape2)) (contiguous-p shape1 mask1 view-parent) (contiguous-p shape2 mask2 view-child))
+        ;  (return-from +view (copy-node view-child))))
+      
+      (print "++++++")
+      (print shape1)
+      (print mask1)
+      (print stride1)
+      (print (getattr view-parent :permute))
+      (print "-------")
+      (print shape2)
+      (print mask2)
+      (print stride2)
+      (print (getattr view-child :permute))
+      ;; 1. Contiguous -> return nil
+
+      ;; Project the offsets of parent to child
+      nil
+      )))
 
 (defsimplifier
     (simplify-contiguous :speed 1)
@@ -326,14 +388,21 @@ Applying a further slicing:
      ((view1 graph)
       (let* ((move (id->value graph (car (node-reads view1))))
              (allocate (and move (id->value graph (first (node-reads move)))))
-             (view2 (and move (id->value graph (second (node-reads move))))))
-        (when (and move allocate view1 view2
+             (view2 (and move (id->value graph (second (node-reads move)))))
+             (view2-user (and view2 (id->value graph (car (node-reads view2))))))
+        (when (and move allocate view1 view2 view2-user
+                   (null (getattr view2-user :reduction :allow-undefined t))
                    (eql (node-type move) :MOVE) (eql (node-type allocate) :Allocate) (eql (node-type view1) :VIEW)
                    (eql (node-type view2) :VIEW))
           ;; VIEW2 -> MOVE(Contiguous) -> VIEW1
           ;; ===> Rewriting
           ;; {VIEW2+VIEW1}
-          (print "+++MERGE+++")
-          (print view2)
-          (print view1)
-          nil)))))
+          (let* ((new-view (+view view2 view1)))
+            (when  new-view
+              (setf (node-writes new-view) (node-writes view1)
+                    (car (node-reads new-view)) (car (node-reads view2)))
+              (print "NEW")
+              (print view2)
+              (print view1)
+              (print new-view)
+              new-view)))))))

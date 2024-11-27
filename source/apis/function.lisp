@@ -300,7 +300,7 @@ Returns a tensor with the shape of `x` broadcasted by `repeats`.
 	 (new-shape (loop for s in (shape x) append (list 1 s)))
 	 (expand-shape (loop for r in repeats for b in base-shape append (list `(:~ ,r) t)))
 	 (final-shape (loop for s in (shape x) for r in repeats collect (!mul (->iconst s) (->iconst r)))))
-    (apply #'!view (!reshape (apply #'!view (!reshape x new-shape) expand-shape) final-shape) (loop for f in final-shape collect t))))
+    (apply #'!view (!reshape (!contiguous (apply #'!view (!reshape x new-shape) expand-shape)) final-shape) (loop for f in final-shape collect t))))
 
 (defun !expand (x &rest shape &aux (shape (flatten shape)))
   "
