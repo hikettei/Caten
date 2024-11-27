@@ -95,6 +95,7 @@ Applying a further slicing:
             (:conc-name tr-)
             (:constructor make-tracker (shape mask order permute broadcast &key (contiguous nil))))
   (shape shape :type list)
+  (base-shape (copy-list shape) :type list)
   (stride (and shape (!stride order shape)) :type list)
   (order order :type (member :row :column))
   (broadcast broadcast :type list)
@@ -113,7 +114,7 @@ Applying a further slicing:
                #'concatenate
                'string
                (butlast
-                (loop for s in (tr-shape tr)
+                (loop for s in (tr-base-shape tr)
                       for m in (tr-mask tr)
                       for b in (tr-broadcast tr)
                       append
@@ -144,6 +145,7 @@ Applying a further slicing:
   (assert (equal (sort (copy-list order) #'<) (range 0 (length order))) () "Trying to permute tracker with invalid order: ~a, order are given from shuffling ~a" order (range 0 (length order)))
   (let ((new-tracker (copy-tracker tracker)))
     (setf (tr-shape new-tracker)     (permute-list order (tr-shape tracker))
+          (tr-base-shape new-tracker) (permute-list order (tr-base-shape tracker))
           (tr-stride new-tracker)    (permute-list order (tr-stride tracker))
           (tr-mask new-tracker)      (permute-list order (tr-mask tracker))
           (tr-broadcast new-tracker) (permute-list order (tr-broadcast tracker))
@@ -196,6 +198,10 @@ Applying a further slicing:
          (new-shape (loop for m in mask
                           if m collect (pop (tr-shape new-tracker))
                             else collect 1))
+         (new-base-shape
+           (loop for m in mask
+                 if m collect (pop (tr-base-shape new-tracker))
+                   else collect 1))
          (new-stride (loop for m in mask
                            if m collect (pop (tr-stride new-tracker))
                            else collect 1))
@@ -208,11 +214,48 @@ Applying a further slicing:
          (new-permute (compute-new-permute (tr-permute new-tracker) mask)))
     (assert (equal (sort (copy-list new-permute) #'<) (range 0 (length new-permute))))
     (setf (tr-shape new-tracker) new-shape
+          (tr-base-shape new-tracker) new-base-shape
           (tr-stride new-tracker) new-stride
           (tr-mask new-tracker) new-mask
           (tr-broadcast new-tracker) new-broadcast
           (tr-permute new-tracker) new-permute)
     new-tracker))
+
+(defmethod apply-masked-reshape ((tracker Tracker) new-shape)
+  (when (not (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))))
+    (return-from apply-masked-reshape nil))
+  ;; does not support symbolic
+  (let ((new-shape-copy (copy-list new-shape))
+        (shape-map)
+        (old-shape (canonicalize-shape (tr-shape tracker)))
+        (stack))
+    (loop while new-shape
+          for ns = (pop new-shape) do
+            (if (eql (car old-shape) ns)
+                (if (null stack)
+                    (push (list (pop old-shape)) shape-map)
+                    (return-from apply-masked-reshape nil))
+                (progn
+                  (unless (numberp ns) (return-from apply-masked-reshape nil))
+                  (push ns stack)
+                  (when (eql (car old-shape) (apply #'* stack))
+                    ;; old-shape = stack
+                    (push (nreverse stack) shape-map)
+                    (setf stack nil)))))
+    ;; Creating a map: (10 6 6) -> (10 (2 3) (2 3))
+    (setf shape-map (nreverse shape-map))
+    (when (not (equal (flatten shape-map) (flatten new-shape-copy)))
+      (return-from apply-masked-reshape nil))
+    ;; Create a stride inside each shape-map (e.g.: (10 (2 3) (2 3)) -> (1 (3 1) (3 1)))
+    (let* ((stride-map (map 'list #'(lambda (x) (!stride (tr-order tracker) x)) shape-map))
+           (stride-map (flatten (map 'list #'(lambda (st x) (map 'list #'(lambda (a) (!mul st a)) x)) (tr-stride tracker) stride-map)))
+           (stride-map (canonicalize-shape stride-map)))
+      (print "Masked Reshape!")
+      (print tracker)
+      (print new-shape)
+      (print shape-map)
+      (print stride-map))))
+          
 
 (defgeneric tr-reshapeable-p (obj new-shape))
 (defmethod tr-reshapeable-p ((tensor Tensor) new-shape) (tr-reshapeable-p (tensor-tr tensor) new-shape))
@@ -220,6 +263,8 @@ Applying a further slicing:
   (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
       (return-from tr-reshapeable-p t)))
+  (when (tr-mask tracker)
+    (apply-masked-reshape tracker new-shape))
   ;; Not contiguous -> Not reshapeable (todo: masked reshape)
   (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
   ;; Permuted: (except for the mask creation) not reshapeable
@@ -241,6 +286,7 @@ Applying a further slicing:
     ;; Can reshape (reshape=chainging the stride)
     (let* ((new-tracker (copy-tracker tracker)))
       (setf (tr-shape new-tracker) new-shape
+            (tr-base-shape new-tracker) (copy-list new-shape)
             (tr-stride new-tracker) (and new-shape (!stride (tr-order new-tracker) new-shape))
             (tr-mask new-tracker) (make-list (length new-shape))
             (tr-broadcast new-tracker) (make-list (length new-shape))
@@ -323,6 +369,7 @@ Applying a further slicing:
 ;; -> (40 4) + 4
 ;; -> (10 4 40 4)
 ;; ->    ...
+;; [TODO] Add view.offset
 (defun parse-view (view &aux (args (node-reads view)))
   (declare (type node view))
   (flet ((subseq1p (list from to) (subseq list (1+ from) (1+ to))))
@@ -349,6 +396,8 @@ Applying a further slicing:
 (defun +view (view-parent view-child)
   "Creates a new VIEW from the given two view-parent and view-child."
   (declare (type node view-parent view-child))
+  (when (> (getattr view-parent :nrank) (getattr view-child :nrank))
+    (return-from +view nil))
   (multiple-value-bind (shape1 mask1 stride1) (parse-view view-parent)
     (multiple-value-bind (shape2 mask2 stride2) (parse-view view-child)
       (labels ((masked-p (s m)
@@ -360,7 +409,7 @@ Applying a further slicing:
                  (and (null (masked-p s m)) (null (permute-p n)))))
         ;; Contig+Contig
         (when (and (contiguous-p shape1 mask1 view-parent) (contiguous-p shape2 mask2 view-child))
-          ;; (return-from +view (copy-node view-child))
+          ;;(return-from +view (copy-node view-child))
           ))
         ;(when (and (= 330750 (apply #'* shape1) (apply #'* shape2)) (contiguous-p shape1 mask1 view-parent) (contiguous-p shape2 mask2 view-child))
         ;  (return-from +view (copy-node view-child))))
