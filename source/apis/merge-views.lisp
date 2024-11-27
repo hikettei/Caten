@@ -227,11 +227,14 @@ Applying a further slicing:
   ;; [TODO] Add VIEW.offset and merge this
   (when (some #'(lambda (x) (not (eql (first x) 0))) (tr-mask tracker))
     (return-from apply-masked-reshape nil))
-  ;; does not support symbolic
   (let ((new-shape-copy (copy-list new-shape))
         (shape-map)
-        (old-shape (canonicalize-shape (tr-shape tracker)))
+        (old-shape
+          ;; [TODO] Use merge-dims to maximize the chance?
+          (loop for s in (canonicalize-shape (tr-shape tracker))
+                if (not (eql s 1)) collect s))
         (stack))
+    ;; does not support to break a symbolic axis
     (loop while new-shape
           for ns = (pop new-shape) do
             (if (eql (car old-shape) ns)
@@ -248,13 +251,12 @@ Applying a further slicing:
     ;; Creating a map: (10 6 6) -> (10 (2 3) (2 3))
     ;;                   i j k      i j1 j2  k1 k2
     ;; j = 2*j1+j2, k = 2*k1+k2
-    (setf shape-map (nreverse shape-map))
     (when (not (equal (flatten shape-map) (flatten new-shape-copy)))
       (return-from apply-masked-reshape nil))
     ;; Create a stride inside each shape-map (e.g.: (10 (2 3) (2 3)) -> (1 (3 1) (3 1)))
     (let* ((stride-map (map 'list #'(lambda (x) (!stride (tr-order tracker) x)) shape-map))
            ;; Multiplying the base stride
-           (stride-map (flatten (map 'list #'(lambda (st x) (map 'list #'(lambda (a) (!mul st a)) x)) (tr-stride tracker) stride-map)))
+           (stride-map (flatten (map 'list #'(lambda (st x) (map 'list #'(lambda (a) (!mul (->iconst st) a)) x)) (tr-stride tracker) stride-map)))
            (stride-map (canonicalize-shape stride-map))
            (new-tracker (copy-tracker tracker)))
       (setf (tr-shape new-tracker) (flatten shape-map)
@@ -275,7 +277,11 @@ Applying a further slicing:
              (apply-masked-reshape tracker new-shape))
     (return-from tr-reshapeable-p t))
   ;; Not contiguous -> Not reshapeable (todo: masked reshape)
-  (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
+  (when (null (tr-contiguous tracker))
+    (print "FAILED")
+    (print tracker)
+    (print new-shape)
+    (return-from tr-reshapeable-p nil))
   ;; Permuted: (except for the mask creation) not reshapeable
   (when (not (equal (range 0 (length (tr-shape tracker))) (tr-permute tracker)))
     (return-from tr-reshapeable-p nil))
