@@ -510,6 +510,50 @@ Otherwise, returns NIL. (= not fusable)"
                 ->ok)
               ->ng)))))
 
+(defmethod group-as-graph ((group Group))
+  (let ((g (apply #'make-graph (group-items group))))
+    (setf (graph-outputs g) (group-successor group)
+          (graph-seen g) (group-predecessor group)
+          g (->fast-graph g))
+    g))
+
+(defmethod group-invoke-view-fusion ((group Group) (entry-point symbol) view do-rewrite-p)
+  (let ((graph (group-as-graph group)))
+    (labels ((explore (id)
+               
+               ))
+      (explore entry-point))))
+
+;; ConvND = 1 Kernel, Attention = 4 Kernel, remove 200 lines
+;; Reduce After ActivationはどうやってFuseする？
+(defmethod groups-force-merge-views ((parent-group Group) (tgt-group Group))
+  "Parent-Group -> Tgt-Group"
+  (assert (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group)))
+  (assert (null (group-reduce-dims parent-group)))
+  (let ((id->view (make-hash-table)))
+    (dolist (item (group-items tgt-group))
+      (loop for view in (getattr item :_read_views)
+            for read in (node-reads item)
+            if (symbolp read) do
+              (if (gethash read id->view)
+                  ;; The same id should appeared in the group at once (TODO: Can exists if only and views are equivalent)
+                  (return-from groups-force-merge-views nil)
+                  (setf (gethash read id->view) (car view)))))
+    (print "++LOG++")
+    ;; Before doing a destructive operation, ensure there's no non-mergeable views.
+    (loop for entry-point-parent in (group-successor parent-group)
+          for view-for-entry = (gethash entry-point-parent id->view)
+          unless (group-invoke-view-fusion parent-group entry-point-parent view-for-entry nil)
+            do (return-from groups-force-merge-views nil))
+    (loop for entry-point-parent in (group-successor parent-group)
+          for view-for-entry = (gethash entry-point-parent id->view)
+          do (assert (group-invoke-view-fusion parent-group entry-point-parent view-for-entry t)))
+    t))
+
+;; (< r1 r2)の時に使う，Activation Fusion限定
+;; (defmethod groups-broadcast-after-reduction ())
+            
+
 (defmethod groups-reduce-permute-p ((tgt-group Group) (parent-group Group) &aux (dims (or (group-reduce-dims tgt-group) (group-reduce-dims parent-group))))
   "reduction -> permute -> reduction is not allowed in the group. If such path exists, this method returns T."
   (labels ((reduce-p (node)
@@ -611,7 +655,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
             (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))
                   (gethash (node-id restart-point) (ctx-restart-cache1 ctx)) t)
             ->ng))
-        (when (groups-reduce-permute-p tgt-group parent-group) ->ng) ;; Reduce -> Permute -> Reduce is not fusable.
+        (when (groups-reduce-permute-p tgt-group parent-group) (print "FAIL1") ->ng) ;; Reduce -> Permute -> Reduce is not fusable.
         (if (= r1 r2)
             (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
               ;; View Rewriting here?
@@ -622,7 +666,16 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
                         (eql pattern :case3)
                         ;; If case2 (no reduction+no reduction) there could be better merging pair, if the path has a reduced group.
                         (null (ctx-fusable-case1-p ctx (group-predecessor tgt-group))))))
+              (print optimal-p)
               (when (and optimal-p (groups-rewrite-views-in-the-same-space parent-group tgt-group view))->ok)))
+        (print "++CHANCE++")
+        (print parent-group)
+        (print tgt-group)
+        (print view)
+        (print r1)
+        (print r2)
+        (print (groups-force-merge-views parent-group tgt-group))
+        (print "FAIL2")
         ->ng)
       ;; Otherwise, merging non-reduction nodes to create a block of elwise ops group. (e.g.: a sequence of activations)
       ;; fuse/rewrite _read_views and buffers sometime.
@@ -691,7 +744,10 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
     (s)
     (loop while stashed do
       (setf (ctx-queue ctx) stashed stashed nil)
-      (unless (s) (loop-finish))))
+      (unless (s) (loop-finish)))
+    ;; Final: Force merge fragments
+    (setf (ctx-queue ctx) (graph-nodes (ctx-graph ctx)))
+    (s))
   (let ((keys (remove-duplicates (map 'list #'(lambda (x) (ctx-find-group-id ctx x)) (alexandria:hash-table-keys (ctx-node->group ctx))))))
     (remove-duplicates (loop for k in keys collect (gethash k (ctx-node->group ctx))) :key #'group-key)))
 
