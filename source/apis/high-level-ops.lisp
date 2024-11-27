@@ -315,7 +315,7 @@ Returns the indices of the minimum values along an axis.
                                     for so in (shape (!sum squares :axis axis))
                                     if (not (eql si so)) collect (->fconst si)))))
                (!div (!sum squares :axis axis :keepdims keepdims) (!maximum (fconst 0) (!- n (->fconst correction))))))))
-                    
+
 (defun !variance (x &key (axis -1) (keepdims nil) (correction 1))
   "
 ```

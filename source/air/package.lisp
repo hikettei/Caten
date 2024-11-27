@@ -11,4 +11,4 @@
   (:export #:getattrs #:getattr #:remattr)
   (:export #:defsimplifier #:<Rule>)
   (:export #:Attribute #:defnode #:debug/render-defined-nodes #:debug/attrs-by-module #:node-build-documentation-by-class #:verify-args #:dump-into-list)
-  (:export #:->dot))
+  (:export #:->dot #:pprint-graph))

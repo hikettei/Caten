@@ -71,39 +71,32 @@
 (defun make-gpt2 (model-type &key (max-seq-len 1024))
   (declare (type keyword model-type))
   (assert (find model-type `(:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)) () "model-type must be one of :gpt2, :gpt2-medium, :gpt2-large, :gpt2-xl")
-  (with-no-grad
+  (with-inference-mode ()
     (let* ((caten/llm::*use-kv-cache* nil) ;; todo: use kv-cache once segv is resolved.
            (param (get-param model-type))
            (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
            (model (Transformer (params-dim param) (params-n-heads param) (params-n-layers param) (params-norm-eps param) (params-vocab-size param) :max-seq-len max-seq-len))
-           (avm (caten (forward model (make-tensor `(1 s) :from 'x) (iconst 'n))))
            (tokenizer (gguf->bpe-tokenizer gguf))
            (state-dict (gguf->state-dict gguf)))
       (remap-state-dict-keys state-dict)
       (load-state-dict model state-dict)
-      (%make-gpt2 avm tokenizer max-seq-len))))
+      (%make-gpt2 (caten (forward model (make-tensor `(1 s) :from 'x) (iconst 'n))) tokenizer max-seq-len))))
 
-(defun extend-token (tensor token &aux (lim (nth 1 (shape tensor))))
-  (incf (nth 1 (shape tensor)))
-  (let ((new-value (linspace (shape tensor) 0 0)))
-    (loop for i upfrom 0 below (nth 1 (shape tensor))
-          if (< i lim)
-            do (setf (aref (caten/avm:buffer-value new-value) i) (aref (caten/avm:buffer-value tensor) i))
-          else
-            do (setf (aref (caten/avm:buffer-value new-value) i) (aref (caten/avm:buffer-value token) i)))
-    new-value))
+(defun ->input (list) (change-facet `(,(map 'list #'(lambda (x) (+ 0.0 x)) list)) :tensor))
 
 (defun gpt2-generate (gpt2 input)
   (declare (type GPT2 gpt2) (type string input))
   (with-slots ((model model) (tokenizer tokenizer) (max-seq-len max-seq-len)) gpt2
     (let* ((tokens (encode tokenizer input))
-           (x (linspace `(1 ,(length tokens)) 0 0)))
-      (loop for i upfrom 0
-            for token in (encode tokenizer input)
-            do (setf (aref (caten/avm:buffer-value (tensor-buffer x)) i) (+ 0.0 token)))
-      (loop for i upfrom 0 below max-seq-len
-            for out = (forward model `(x . ,x) `(s . ,(nth 1 (shape x))) `(pos . ,(nth 1 (shape x))))
-            do (setf x (extend-token x out)))
-      (print x)
-      ;; WIP!
-      (error "NOT READY!!"))))
+           (start-pos 0)
+           (max-length 30))
+      (loop for i upfrom 0 below max-length
+            for out = (forward model `(x . ,(->input tokens)) `(s . ,(length tokens)) `(n . ,start-pos)) do
+              (with-facet (out* (out :direction :simple-array))
+                (setf start-pos (length tokens))
+                (let ((size (array-total-size out*)))
+                  (setf tokens (append tokens (list (aref out* (1- size)))))
+                  (print tokens)
+                  (print "Decode")
+                  (print (decode tokenizer tokens)))))
+      (print (decode tokenizer tokens)))))

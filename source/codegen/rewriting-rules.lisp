@@ -325,6 +325,8 @@ out[...] = f(*val_1);
   "Inserts DEFINE_GLOBAL to the top of graph"
   (declare (type node schedule-item))
   (assert (eql (node-type schedule-item) :Schedule-Item))
+  (assert (= (length (getattr schedule-item :storage-id-src)) (length (getattr schedule-item :read-types))))
+  (assert (= (length (getattr schedule-item :storage-id-dst)) (length (getattr schedule-item :write-types))))
   (setf (getattr schedule-item :blueprint)
         (append
          ;; writes
@@ -342,5 +344,5 @@ out[...] = f(*val_1);
          (loop for read in (getattr schedule-item :storage-id-src)
                for rt in (getattr schedule-item :read-types)
                collect
-               (make-define-global read (buffer-dtype rt) t :input (buffer-nrank rt)))
+               (make-define-global read (buffer-dtype rt) (> (buffer-nrank rt) 0) :input (buffer-nrank rt)))
          (getattr schedule-item :blueprint))))

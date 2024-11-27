@@ -1,32 +1,7 @@
 (defpackage :caten/codegen/blueprint
-  (:documentation "The `Blueprint` represents a transformed computation graph format of `caten/AASM` that incorporates loop information. The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.
-The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it is used for loop optimization and by the Renderer.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache)
-  (:import-from
-   :caten/codegen/shape-inference
-   #:read-type-relay
-   #:relay-read-iters
-   #:relay-write-iters
-   #:relay-reads
-   #:relay-writes
-   #:Iteration-Space
-   #:iteration-space-shape
-   #:iteration-space-strides
-   #:iteration-space-views
-   #:iteration-space-procedure
-   #:%expr-const
-   #:buffer-iteration-space
-   #:buffer-merge-dims
-   #:make-iteration-space)
-  (:import-from
-   :caten/codegen/helpers
-   :gid
-   :range
-   :permute-list
-   :render-list
-   :nodes-depends-on
-   :nodes-write-to
-   :simplify-blueprint)
+  (:documentation "The package `caten/codegen/blueprint` is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
+The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.")
+  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers)
   (:import-from
    :caten/avm
    #:buffer-dtype
@@ -469,6 +444,11 @@ The `Blueprint` is a data structure closer to the `Renderer` than AASM, and it i
     (push id seen)
     (multiple-value-bind (new-bp changed-p)
         (try-insert-node ctx node)
+      (when (null changed-p) ;; if failed -> add the outermost node and retry.
+        (setf (ctx-blueprint ctx) (append (initial-bp ctx) (ctx-blueprint ctx)))
+        (multiple-value-bind (new-bp1 changed-p1)
+            (try-insert-node ctx node)
+          (setf new-bp new-bp1 changed-p changed-p1)))
       (assert changed-p () "recursive-lower-into-bp: Cannot insert the node ~a into a single kernel.
 Depends=~a Reduce=~a Users=~a
 ```
@@ -500,6 +480,7 @@ Depends=~a Reduce=~a Users=~a
                     do (push (cons write wt) write-items)
                   end
                   do (push write seen)))
+    ;; remote extra read/write dependencies purged by op fusion
     (setf (node-reads node) (map 'list #'car read-items)
           (node-writes node) (map 'list #'car write-items)
           seen nil)
@@ -577,6 +558,7 @@ Depends=~a Reduce=~a Users=~a
      :key #'car)))
 
 (defun simplify-pointer-and-constant (blueprints)
+  ;; [todo] removable?
   (let ((constants))
     (loop for bp in blueprints
           if (and (not (eql (node-class bp) :Render)) (getattr bp :declare-type)) do
@@ -594,8 +576,18 @@ Depends=~a Reduce=~a Users=~a
                             buffer))))
     blueprints))
 
-(defmethod lower-schedule-item ((node Node) (base-graph Graph) (scheduled-graph Graph))
-  "Lowers the Schedule-Item into blueprint"
+(defun lower-schedule-item (node base-graph scheduled-graph)
+  "
+```
+(lower-schedule-item node base-graph scheduled-graph)
+```
+
+Lowers the Schedule-Item into blueprint.
+- node is a schedule-item to lower.
+- base-graph is the aasm graph to compile.
+- scheduled-graph is the graph to schedule.
+"
+  (declare (type node node) (type graph base-graph scheduled-graph))
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
   ;; won't lower the allocation, they are the vm instruction.
   (when (null (getattr node :jitable)) (return-from lower-schedule-item))
@@ -619,10 +611,10 @@ Depends=~a Reduce=~a Users=~a
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       ;; Peforming the OpFusion to the lowered blueprint.
-      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx))
-            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx))
-            (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph)
-            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph))
+      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
+            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; todo(hikettei) removable?
+            (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph) ; rewrite local buffers as a scalar
+            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph)) ; rewrite jitable nodes -> expr
       ;; Gathering dynamic shapes used in the schedule-item
       (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph (ctx-blueprint ctx)))
       (expr-set-iterations (ctx-blueprint ctx))

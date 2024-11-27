@@ -17,11 +17,13 @@
    #:example-repl
    #:example-code)
   (:export
+   #:doc/package
    #:doc/function
    #:doc/class
    #:doc/struct
    #:doc/macro
-   #:doc/generic))
+   #:doc/generic
+   #:doc/variable))
 (in-package :caten/common.documentation)
 ;; TODO: Create a fork of lantana, which supports English
 (defparameter *pages* (make-hash-table :test 'equal))
@@ -153,3 +155,11 @@
 (defun doc/generic (name generic)
   (assert *editing*)
   (format *editing* "### [generic] ~a~%~%~a~%~%" name (documentation generic 't)))
+
+(defun doc/variable (name variable)
+  (assert *editing*)
+  (format *editing* "### [variable] ~a~%~%~a~%~%" name (documentation variable 'variable)))
+
+(defun doc/package (name)
+  (assert *editing*)
+  (format *editing* "~a" (documentation (find-package name) t)))

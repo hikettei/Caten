@@ -101,7 +101,6 @@ caten/codegen overview:
    #:compiled-kernel-code))
 
 (in-package :caten/codegen/jit)
-
 ;; ~~ Compiledop instruction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Compiled-Kernel)
   (name (error "name must occur") :type keyword)
@@ -231,13 +230,18 @@ caten/codegen overview:
                       (gethash (car (node-reads v)) table) v))))
     table))
 
-(defun schedule-graph->avm-graph (base-graph graph &aux (map (id->output-map graph)))
+(defun schedule-graph->avm-graph (base-graph graph &aux (map (id->output-map graph)) (local-gensym-table (make-hash-table)))
   (declare (type Graph graph base-graph))
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
              (multiple-value-bind (deps new-seen) (get-subgraph base-graph id allocated)
                (setf allocated new-seen)
-               (dolist (d deps) (push d nodes)))))
+               (dolist (d deps) (push d nodes))))
+           (local-gensym (thing)
+             (if (null (gethash thing local-gensym-table))
+                 (setf (gethash thing local-gensym-table) 0)
+                 (incf (gethash thing local-gensym-table)))
+             (intern (format nil "~a_~a" thing (gethash thing local-gensym-table)))))
       (dolist (node (graph-nodes graph))
         (cond
           ((getattr node :allocate-p)
@@ -259,7 +263,22 @@ caten/codegen overview:
                      (when view (push view nodes)))
                    (push w allocated))
            (dolist (w (node-writes node)) (push w allocated))
-           (push (make-compiled-kernel-node node graph) nodes)
+           (let ((kernel (make-compiled-kernel-node node graph)))
+             ;; Insert view before using variables which is defined as pointer in the kernel but scalar in the vmgraph.
+             (loop for r in (node-reads node)
+                   for rt in (getattr node :read-types)
+                   for nth upfrom (+ (length (node-writes node)) (length (getattr node :dynamic-shapes)))
+                   for d = (find r (reverse nodes) :key #'node-writes :test #'member)
+                   for dt = (and d (getattr d :_type_relay :allow-undefined t) (car (relay-writes (read-type-relay d))))
+                   if (and d dt (or (= 0 (buffer-nrank dt)) (= 0 (buffer-nrank rt))) (not (= (buffer-nrank dt) (buffer-nrank rt))))
+                     do (multiple-value-bind (view _) (make-alloc+view-node-from-buffer rt r)
+                          (declare (ignore _))
+                          (let ((key (local-gensym r)))
+                            (mapc #'merge-id (cdr (node-reads view)))
+                            (setf (car (node-writes view)) key
+                                  (nth nth (node-reads kernel)) key)
+                            (push view nodes))))
+           (push kernel nodes))
            ;; Merging view after the JIT_KERNEL invocation
            (loop for w in (node-writes node)
                  for out-view = (gethash w map)
@@ -292,6 +311,8 @@ caten/codegen overview:
   (and
    ;; The number of reference counters are the same => memory-planner should produce the same result
    (equal (getattr si1 :reference-counters) (getattr si2 :reference-counters))
+   (every #'(lambda (x) (>= x 0)) (getattr si1 :reference-counters))
+   (every #'(lambda (x) (>= x 0)) (getattr si2 :reference-counters))
    (= (length items1) (length items2))
    (every
     #'(lambda (x y)
@@ -305,14 +326,17 @@ caten/codegen overview:
             (equal attrs1 attrs2)
             (every
              #'(lambda (k1 k2)
+                 (assert (eql k1 k2))
                  (let ((a1 (getattr x k1))
-                       (a2 (getattr x k2)))
+                       (a2 (getattr y k2)))
                    ;; Caten/AIR has an assertion that all nodes are "dumpable"
                    ;; i.e.: attrs that impacts on the computation results are always typed number/symbol/list/bool
-                   (if (and (typep a1 'attr-value-type) (typep a2 'attr-value-type))
-                       (equal a1 a2)
-                       t ;; [FIXME] isn't it danger? if attrs are not found, they ignore it!
-                       )))
+                   (if (eql k1 :_read_views)
+                       t
+                       (if (and (typep a1 'attr-value-type) (typep a2 'attr-value-type))
+                           (equal a1 a2)
+                           t ;; [FIXME] isn't it danger? if attrs are not found, they ignore it!
+                           ))))
              attrs1 attrs2)))
          (let ((xt (read-type-relay x))
                (yt (read-type-relay y)))
@@ -399,7 +423,6 @@ caten/codegen overview:
       (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
-        ;; [TODO] mapc is pmapc
         (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
           (maybe-pmapc
            #'(lambda (x &aux (start (get-internal-real-time)))

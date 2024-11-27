@@ -5,6 +5,7 @@
   (:export
    #:dtype-t
    #:dtype->lisp
+   #:lisp->dtype
    #:dtype/cast
    #:dtype/floatp
    #:dtype/integerp
@@ -56,6 +57,22 @@
     (:int8    '(signed-byte 8))
     (:bool    'boolean)
     (otherwise (error "dtype->lisp: ~a is not supported" dtype))))
+
+(defun lisp->dtype (lisp-type)
+  "Does the opposite thing of dtype->lisp"
+  (cond
+    ((eql lisp-type 'double-float) :float64)
+    ((eql lisp-type 'single-float) :float32)
+    ((equal lisp-type '(signed-byte 8)) :int8)
+    ((equal lisp-type '(unsigned-byte 8)) :uint8)
+    ((equal lisp-type '(unsigned-byte 16)) :uint16)
+    ((equal lisp-type '(signed-byte 16)) :int16)
+    ((equal lisp-type '(unsigned-byte 32)) :uint32)
+    ((equal lisp-type '(signed-byte 32)) :int32)
+    ((equal lisp-type '(unsigned-byte 64)) :uint64)
+    ((equal lisp-type '(signed-byte 64)) :int64)
+    ((eql lisp-type 'boolean) :bool)
+    (t (error "Cannot convert ~a to dtype" lisp-type))))
 
 (defun dtype/floatp (dtype)
   (declare (type dtype-t dtype))

@@ -281,7 +281,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
-
+;; Segfault Test (occurs with use_kv_cache=T, and n_layers > 1)
 (deftest test-symbolic-regression-test
   (with-no-grad
     (when (= 1 (ctx:getenv :JIT))
@@ -290,22 +290,44 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
              (model (caten x)))
         (ok (forward model `(b . 1) `(s . 2) `(n . 2)))))))
 
-(deftest test-symbolic-regression-test-1
+(deftest test-symbolic-transformer-forward-test-no-kv-cache-1-layer
   (with-no-grad
     (when (= 1 (ctx:getenv :JIT))
       (let* ((caten/llm::*use-kv-cache* nil)
              (model (Transformer 32 4 1 1e-5 32))
              (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
              (model (caten x)))
-        (ok (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0)))))))
+        (let ((value (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0))))
+          (ok value (format nil "~a" value)))))))
 
-(deftest test-symbolic-regression-test-2
+(deftest test-symbolic-transformer-forward-test-no-kv-cache-2-layer
   (with-no-grad
-    (skip "Skipping due to segv")
-    (when nil;(= 1 (ctx:getenv :JIT))
+    (when (= 1 (ctx:getenv :JIT))
       (testing "No Segv?"
         (let* ((caten/llm::*use-kv-cache* nil) ;; *use-kv-cache*=T will also cause segfault
                (model (Transformer 32 4 2 1e-5 32))
                (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
                (model (caten x)))
+          (let ((value (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0))))
+            (ok value (format nil "~a" value))))))))
+;; Failing for now (TODO: Fix)
+#|
+(deftest test-symbolic-transformer-forward-test-1-layer
+  (with-no-grad
+    (when (= 1 (ctx:getenv :JIT))
+      (let* ((caten/llm::*use-kv-cache* t)
+             (model (Transformer 32 4 1 1e-5 32))
+             (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
+             (model (caten x)))
+        (ok (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0)))))))
+
+(deftest test-symbolic-transformer-forward-test-2-layer
+  (with-no-grad
+    (when (= 1 (ctx:getenv :JIT))
+      (testing "No Segv?"
+        (let* ((caten/llm::*use-kv-cache* t)
+               (model (Transformer 32 4 2 1e-5 32))
+               (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
+               (model (caten x)))
           (ok (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0))))))))
+|#

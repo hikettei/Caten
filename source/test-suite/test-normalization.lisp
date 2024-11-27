@@ -2,6 +2,8 @@
 
 (import-function "torch.var")
 (import-function "torch.std")
+(import-function "torch.ones")
+
 (python-exec
  "
 # Taken from https://pytorch.org/torchtune/0.2/_modules/torchtune/modules/rms_norm.html
@@ -28,7 +30,21 @@ def torch_rms_norm(x):
           (:atol 1e-5 :rtol 1e-6)
           (with-torch (x) (->caten (torch.std x :axis -1 :keepdims t :correction 1)))
           (proceed (!std x :axis -1 :correction 1))))))
-;; [TODO] BatchNorm (Fix the jit compiler issue first)
+
+(deftest test-batch-norm
+  (with-given-dtype ((:float32 . "float32"))
+    (let ((x (rand `(40 40))))
+      (assert-equal
+          (:atol 1e-3 :rtol 1e-4)
+          (with-torch (x) (->caten (f:batch_norm x (torch.ones `(40)) (torch.ones `(40)))))
+          (proceed (!batch-norm x nil nil (linspace `(40 40) 0 1) (linspace `(40 40) 0 1)))))))
+
+(deftest test-batch-norm-1
+  (when (= 1 (ctx:getenv :JIT))
+    (let* ((jit (proceed (!batch-norm (ax+b `(10 10) 0.01 0.01))))
+           (vm  (ctx:with-contextvar (:JIT 0) (proceed (!batch-norm (ax+b `(10 10) 0.01 0.01))))))
+      (assert-equal (:atol 1e-3 :rtol 1e-3) jit vm))))
+
 (deftest test-layer-norm
   (with-given-dtype ((:float32 . "float32"))
     (let ((x (rand `(30 40))))

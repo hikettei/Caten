@@ -86,5 +86,5 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
 
 (defun optimize-aasm (graph &key (debug-opt nil))
   (fold-constant graph :debug-opt debug-opt)
-  (simplify-dynamic-arithmetic graph)
+  (simplify-dynamic-arithmetic graph) ;; TODO(hikettei) removing this is sometime beneficial for JIT=1 (for dynamic shape loading)
   (fuse-duplicated-store graph))

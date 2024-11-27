@@ -67,6 +67,7 @@
    #:buffer-merge-dims
    #:merge-dims
    #:Iteration-Space
+   #:make-iteration-space
    #:Iteration-space-shape
    #:Iteration-space-strides
    #:Iteration-space-views
@@ -177,7 +178,11 @@
 
 (declaim (ftype (function (AVM) Type-Reporter) run-type-infer))
 (defun run-type-infer (avm)
-  "Run the shape-inference given AVM, returning Type-Reporter"
+  "
+```
+(run-type-infer avm)
+```
+Run the shape inference to the given AVM, returning `Type-Reporter`"
   (declare (type avm avm))
   (let ((*device* :relay-checker) (*type-reporter* (make-type-reporter)))
     (setf (avm-tape-length avm) (length (graph-nodes (avm-graph avm))))
@@ -195,6 +200,14 @@
 (defstruct (Inferred-Type
 	    (:conc-name relay-)
 	    (:constructor make-inferred-type (reads writes)))
+  "A structure `Inferred-Type` contains the shape/stride/view information of the node at each points. Also, it containts the iteration space information that is used to render the kernel.
+
+If the shape inference is successfully done and properly deployed to the target graph by the `rewriting-rule`, the function `(read-type-relay node)` will return the `Inferred-Type` structure.
+
+- relay-reads returns the list of the buffer corresponding to the node-reads. (If node-reads a number, nil is set)
+- relay-writes returns the list of the buffer corresponding to the node-writes.
+- relay-read-iters returns the list of the iteration space corresponding to the node-reads.
+- relay-write-iters returns the list of the iteration space corresponding to the node-writes."
   (reads reads :type list)
   (read-iters nil :type list)
   (writes writes :type list)
@@ -270,6 +283,17 @@
         (expr-from-graph val graph))))
 
 (defstruct Iteration-Space
+  "
+Iteration-Space is a structure that contains the shape/stride/view information of the each buffer. It is used to render the kernel.
+iteration-space-shape to get the shape, iteration-space-strides to get the stride, iteration-space-views to get the offsets and increments, and iteration-space-procedure to get how the iteraton-space is collapsed or permuted. Each elements for shape/stride are Expr.
+
+`iteration-space-expr-aref` to render the aref.
+
+```
+(iteration-space-expr-aref iteration-space buffer gids)
+```
+gids corresponds for the loop idx in the kernel.
+"
   (shape nil :type list)
   (strides nil :type list)
   (views nil :type list)

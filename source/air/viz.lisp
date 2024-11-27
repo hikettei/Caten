@@ -119,3 +119,106 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
       (with-open-file (stream htmlpath :direction :output :if-exists :supersede :if-does-not-exist :create)
         (format stream "<html><p><b><font size=\"5\">~a</b></p><body><img src=\"~a.png\"></body></html>" title pathname)
         (uiop:launch-program (list "open" htmlpath) :output t)))))
+;; [TODO] optimize screen-width automatically
+(defparameter *indent* 0)
+(defun pprint-graph (graph &key (screen-width 140) (stream t)
+                     &aux (seen nil) (preserved (make-hash-table)) (stashed nil) (part 0) (static-gensym (make-hash-table)))
+  "
+```
+(pprint-graph graph &key (screen-width 140) (stream t))
+```
+
+The function `pprint-graph` prints the graph in a tree-like structure. `screen-width` controls the width of the output, if the graph is too wide and cannot fit in the screen, it will be split into multiple pages.
+"
+  (declare (type graph graph))
+  (when (null (graph-outputs graph)) (warn "pprint-grpah does nothing without graph-outputs."))
+  (assert (>= screen-width 20) () "screen-width must be greater than 20.")
+  (princ
+   (with-output-to-string (out)
+     (labels ((indent (lastp)
+                (with-output-to-string (tmp)
+                  (dotimes (i *indent*)
+                    (if (find i (alexandria:hash-table-values preserved))
+                        ;; intersection
+                        (if (= i (1- *indent*))
+                            (if lastp
+                                (format tmp "└")
+                                (format tmp "├"))
+                            (format tmp "│"))
+                        (princ " " tmp)))))
+              (preserve (val &aux (node (id->value graph val)))
+                (when node
+                  (setf (gethash (node-id node) preserved) (1+ *indent*))))
+              (static-gensym (id &key (prefix ""))
+                (if (gethash id static-gensym)
+                    (gethash id static-gensym)
+                    (setf (gethash id static-gensym) (format nil "~a~a" prefix (hash-table-count static-gensym)))))
+              (separate-screen ()
+                (format out "=== [P: ~a] ====" part)
+                (dotimes (i (- screen-width 15))
+                  (princ "=" out))
+                (format out "~%"))
+              (restart-point (node)
+                (format out "[P=~a, ID=~a]:~%" (- part 1) (static-gensym (node-id node))))
+              (princ-node (node)
+                ;; princ-node controls how the node is rendered.
+                (case (node-type node)
+                  (:SCHEDULE-ITEM
+                   (if (getattr node :allocate-p)
+                       (let ((alloc (car (getattr node :items))))
+                         (assert alloc)
+                         (princ-node alloc))
+                       (if (getattr node :jitable)
+                           (format nil "[KERNEL] ~a" (getattr node :name))
+                           (let ((node (car (getattr node :items))))
+                             (assert node)
+                             (princ-node node)))))
+                  (:Allocate
+                   (format nil "Allocate[:~(~a~)] ~a" (getattr node :dtype) (subseq (node-reads node) 0 (getattr node :nrank))))
+                  (:LOAD
+                   (format nil "load(~a)" (getattr node :value)))
+                  (otherwise
+                   (format nil ":~a {~a}" (node-type node) (static-gensym (node-id node) :prefix "N")))))
+              (pn (node lastp)
+                (let ((item (format nil "~a~a~a~%" (indent lastp) (if (zerop *indent*) "" " ") (princ-node node))))
+                  (princ item out)
+                  (> (length item) screen-width)))
+              (explore (id &optional (lastp nil))
+                (when (find id seen)
+                  (let ((node (id->value graph id)))
+                    (when node
+                      (format out "~a ~a~%" (indent lastp) (princ-node node))
+                      (remhash (node-id node) preserved))
+                    (return-from explore)))
+                (push id seen)
+                (let ((node (id->value graph id)))
+                  (when (null node) (return-from explore))
+                  (let ((stash-p (pn node lastp)))
+                    (remhash (node-id node) preserved)
+                    (if stash-p
+                        (let ((*indent* (+ 2 *indent*)))
+                          (format out "~a [P=~a, ID=~a]~%" (indent lastp) part (static-gensym (node-id node)))
+                          (setf seen (remove id seen)) (push id stashed))
+                        (progn
+                          (mapc #'preserve (node-reads node))
+                          (let ((*indent* (+ 2 *indent*))
+                                (lastp-map (make-list (length (node-reads node)))))
+                            (when lastp-map (setf (car lastp-map) t))
+                            (mapc #'explore (node-reads node) (nreverse lastp-map)))))))))
+       (setf stashed (copy-list (graph-outputs graph)))
+       (dotimes (i screen-width) (princ "=" out))
+       (format out "~%")
+       (loop while stashed
+             for ids = stashed do
+               (separate-screen)
+               (incf part)
+               (setf stashed nil preserved (make-hash-table))
+               (let ((*indent* (if (= 0 part) 0 2)))
+                 (mapc
+                  #'(lambda (x)
+                      (unless (= 0 part) (restart-point (id->value graph x)))
+                      (explore x))
+                  ids)))
+       (dotimes (i screen-width) (princ "=" out))
+       (format out "~%")))
+   stream))
