@@ -230,7 +230,7 @@ Applying a further slicing:
   (let ((new-shape-copy (copy-list new-shape))
         (shape-map)
         (old-shape
-          ;; [TODO] Use merge-dims to maximize the chance?
+          ;; [TODO] Use merge-dims to maximize the chance
           (loop for s in (canonicalize-shape (tr-shape tracker))
                 if (not (eql s 1)) collect s))
         (stack))
@@ -251,6 +251,7 @@ Applying a further slicing:
     ;; Creating a map: (10 6 6) -> (10 (2 3) (2 3))
     ;;                   i j k      i j1 j2  k1 k2
     ;; j = 2*j1+j2, k = 2*k1+k2
+    (setf shape-map (nreverse shape-map))
     (when (not (equal (flatten shape-map) (flatten new-shape-copy)))
       (return-from apply-masked-reshape nil))
     ;; Create a stride inside each shape-map (e.g.: (10 (2 3) (2 3)) -> (1 (3 1) (3 1)))
