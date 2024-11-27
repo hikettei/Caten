@@ -37,6 +37,7 @@
   (case indicator
     (:F32 :float32)
     (:F16 :float16)
+    (:Q8_0 :int8)
     (otherwise (error "Not ready ~a" indicator))))
 
 (defstruct (Tensor-Info

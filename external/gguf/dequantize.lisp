@@ -36,3 +36,16 @@
 		  (caten/apis:nan :dtype :float16)
 		  val))))
     out))
+
+(defmethod dequantize ((type-id (eql :Q8_0)) aligned-buffer tensor-info)
+  (declare (optimize (speed 3)))
+  (let* ((size (apply #'* (tensor-info-dimensions tensor-info)))
+         (out (make-array size :element-type 'single-float)))
+    ;; [TODO] Optimize this by rendering C kernel
+    (dotimes (i size)
+      (setf (aref out i)
+            (let ((val (read8 aligned-buffer)))
+              (if (eql val :not-a-number)
+                  (caten/apis:nan :dtype :int8)
+                  val))))
+    out))
