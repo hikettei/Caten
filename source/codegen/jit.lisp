@@ -262,6 +262,9 @@ caten/codegen overview:
                      (push alloc nodes)
                      (when view (push view nodes)))
                    (push w allocated))
+           (loop for (s . type) in (getattr node :dynamic-shapes)
+                 if (and (null (find s allocated)) (id->value base-graph s)) do
+                   (merge-id s))
            (dolist (w (node-writes node)) (push w allocated))
            (let ((kernel (make-compiled-kernel-node node graph)))
              ;; Insert view before using variables which is defined as pointer in the kernel but scalar in the vmgraph.

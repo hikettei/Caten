@@ -518,7 +518,9 @@ Otherwise, returns NIL. (= not fusable)"
              (loop for read in (relay-reads (read-type-relay node))
                    for views = (buffer-views read)
                    if (some #'identity views) do
-                     (assert (= (length views) (length dims)))
+                     (when (not (= (length views) (length dims)))
+                       (return-from groups-reduce-permute-p nil))
+                     ;; (assert (= (length views) (length dims)) () "views=~a dims=~a~%~a~%~a" views dims tgt-group parent-group)
                      (loop for broadcastable in dims
                            for view in views
                            if (and (null broadcastable) (fourth view))
@@ -573,7 +575,7 @@ Otherwise, returns NIL. (= not fusable)"
 ```
 Graph: parent-group -> [view] -> tgt-group
 ```
-Returns T if merging parent-group and tgt-group is the best choice, rewrites view/buffer sometime.
+Returns T if merging parent-group and tgt-group is possible. Sometime rewrites view/buffers to compute two kernel without allocating an extra buffer.
 "
   (declare (type Schedule-Context ctx) (type Group tgt-group parent-group) (type (or null node) view) (type node restart-point))
   (when view (assert (eql (node-type view) :VIEW)))
@@ -601,9 +603,9 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
       (when reduce-p ;; If tgt or parent has a reduction:
         ;; Here, you have to consider the following three cases:
         ;;         Parent     TGT              [Parent+TGT]
-        ;; case1 Injective + Reduce (e.g.: Load(0.0)+WMMA, Matmul+GeLU+Matmul)
-        ;; case2 Reduce + Injective (e.g.: Matmul+ReLU)
-        ;; case3 Reduce + Reduce    (e.g.: Normalization, Softmax, VarStd Fusion)
+        ;; case1 Reduce    + Injective (e.g.: Matmul+ReLU)
+        ;; case2 Injective + Reduce    (e.g.: Load(0.0)+WMMA, Matmul+GeLU+Matmul)
+        ;; case3 Reduce    + Reduce    (e.g.: Normalization, Softmax, VarStd Fusion)
         (when (and (eql pattern :case1) (group-chase-down-reduction-p ctx tgt-group restart-point))
           ;; Think after merging tgt-group+reduction is scheduled.
           ;; If restart_cache is set to T, the child is scheduled but not merged with tgt-group. => proceed to the next stage.
@@ -611,7 +613,7 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
             (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))
                   (gethash (node-id restart-point) (ctx-restart-cache1 ctx)) t)
             ->ng))
-        (when (groups-reduce-permute-p tgt-group parent-group) ->ng)
+        (when (groups-reduce-permute-p tgt-group parent-group) ->ng) ;; Reduce -> Permute -> Reduce is not fusable.
         (if (= r1 r2)
             (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
               ;; View Rewriting here?
@@ -622,9 +624,7 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
                         (eql pattern :case3)
                         ;; If case2 (no reduction+no reduction) there could be better merging pair, if the path has a reduced group.
                         (null (ctx-fusable-case1-p ctx (group-predecessor tgt-group))))))
-              (when (and optimal-p (groups-rewrite-views-in-the-same-space parent-group tgt-group view))
-                ;; View rewriting?
-                ->ok)))
+              (when (and optimal-p (groups-rewrite-views-in-the-same-space parent-group tgt-group view))->ok)))
         ->ng)
       ;; Otherwise, merging non-reduction nodes to create a block of elwise ops group. (e.g.: a sequence of activations)
       ;; fuse/rewrite _read_views and buffers sometime.
