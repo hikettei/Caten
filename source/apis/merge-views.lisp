@@ -241,7 +241,6 @@ for i in range(3):
 ```
 "
   (when (equal (tr-shape tracker) (tr-base-shape tracker)) (return-from apply-masked-reshape nil))
-  
   ;; Broadcast => Contiguous
   (when (some #'identity (tr-broadcast tracker))
     (when (null (tr-contiguous tracker))
@@ -291,7 +290,7 @@ for i in range(3):
                          for nth upfrom 0
                          for s in smap
                          if (eql nth point) ;; mini-stride=1?
-                           collect m
+                           collect (if m `(,(car m) ,s ,(third m)) `(0 ,s 1))
                          else
                            collect `(0 ,s 1))))
            (new-tracker (copy-tracker tracker)))
