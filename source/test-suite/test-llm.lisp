@@ -308,6 +308,22 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
+
+(deftest test-attention-large-b=1
+  (let* ((dim 128)
+         (n-heads 8)
+         (batch-size 1)
+         (seq-len 32)
+         (x (rand `(,batch-size ,seq-len ,dim)))
+         (c_attn.weight (rand `(,(* 3 dim) ,dim)))
+         (c_attn.bias   (rand `(,(* 3 dim))))
+         (c_procj.weight (rand `(,dim ,dim)))
+         (c_procj.bias (rand `(,dim))))
+    (assert-equal
+        (:rtol 1e-2 :atol 1e-5) ;; TODO: Rtol in 1e-5
+        (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
+          (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
+        (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
 ;; Segfault Test (occurs with use_kv_cache=T, and n_layers > 1)
 (deftest test-symbolic-regression-test
   (with-no-grad
