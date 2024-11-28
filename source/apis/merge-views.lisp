@@ -84,12 +84,12 @@ Applying a further slicing:
 ;; Rewrite (:VIEW (:VIEW (x ...))) -> (:VIEW (x ...))
 (defsimplifier
     (compose-views-from-graph :speed 0)
-    ((:VIEW (~ args) :nrank nrank :broadcast broadcast :permute permute)
+    ((:VIEW (~ args) :nrank nrank :broadcast broadcast :permute permute :tr tr)
      ->
      ((node graph)
       (let ((val (id->value graph (car args))))
         (when (and val (eql (node-type val) :VIEW))
-          (make-node :Buffer :VIEW (node-writes node) (append (list (car (node-reads val))) (cdr args)) :nrank nrank :broadcast broadcast :permute permute))))))
+          (make-node :Buffer :VIEW (node-writes node) (append (list (car (node-reads val))) (cdr args)) :nrank nrank :broadcast broadcast :permute permute :tr tr))))))
 
 (defstruct (Tracker
             (:conc-name tr-)
@@ -144,12 +144,12 @@ Applying a further slicing:
   (assert (= (length order) (length (tr-shape tracker))) () "Trying to permute tracker with different dimension: ~a" order)
   (assert (equal (sort (copy-list order) #'<) (range 0 (length order))) () "Trying to permute tracker with invalid order: ~a, order are given from shuffling ~a" order (range 0 (length order)))
   (let ((new-tracker (copy-tracker tracker)))
-    (setf (tr-shape new-tracker)     (permute-list order (tr-shape tracker))
+    (setf (tr-shape new-tracker)      (permute-list order (tr-shape tracker))
           (tr-base-shape new-tracker) (permute-list order (tr-base-shape tracker))
-          (tr-stride new-tracker)    (permute-list order (tr-stride tracker))
-          (tr-mask new-tracker)      (permute-list order (tr-mask tracker))
-          (tr-broadcast new-tracker) (permute-list order (tr-broadcast tracker))
-          (tr-permute new-tracker)   (permute-list order (tr-permute tracker)))
+          (tr-stride new-tracker)     (permute-list order (tr-stride tracker))
+          (tr-mask new-tracker)       (permute-list order (tr-mask tracker))
+          (tr-broadcast new-tracker)  (permute-list order (tr-broadcast tracker))
+          (tr-permute new-tracker)    (permute-list order (tr-permute tracker)))
     new-tracker))
 
 (defun compute-new-permute (input mask)
@@ -187,8 +187,6 @@ Applying a further slicing:
       (loop for i from 0 below new-axis-count
             unless (nth i mask)
               do (setf (nth i new-permute) (pop unused-indices)))
-;      (print "MASK")
-;      (print input) (print mask) (print new-permute)
       new-permute)))
 
 (defmethod tr-apply-uprank ((tensor Tensor) mask) (tr-apply-uprank (tensor-tr tensor) mask))
@@ -267,6 +265,7 @@ for i in range(3):
                     (push (list (pop old-shape)) shape-map)
                     (return-from apply-masked-reshape nil))
                 (progn
+                  ;; [TODO] detect !mul 'x 'y
                   (unless (numberp ns) (return-from apply-masked-reshape nil))
                   (assert (numberp ns))
                   (push ns stack)
@@ -322,7 +321,7 @@ for i in range(3):
       (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape))))
     (assert (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))) () "Trying to reshape the permuted tracker!")
     (when (and (tr-mask tracker) (not (equal (tr-shape tracker) (tr-base-shape tracker))))
-      (return-from tr-apply-reshape (apply-masked-reshape tracker new-shape)))
+      (return-from tr-apply-reshape (or (apply-masked-reshape tracker new-shape) (error "Cannot reshape the tracker from ~a tp ~a" tracker new-shape))))
     ;; Can reshape (reshape=chainging the stride)
     (let* ((new-tracker (copy-tracker tracker)))
       (setf (tr-shape new-tracker) new-shape
@@ -390,7 +389,7 @@ for i in range(3):
            (g
              (with-context
                  (_ (%view base (map 'list #'->id shape) (map 'list #'->id upfrom) (map 'list #'->id below) (map 'list #'->id by) bc
-                           (map 'list #'->id stride) :id write-to :permute (tr-permute tracker))))))
+                           (map 'list #'->id stride) :id write-to :permute (tr-permute tracker) :tr tracker)))))
       (setf (graph-nodes g)
             (append
              (apply #'append (map 'list #'graph-nodes shape))
@@ -406,54 +405,117 @@ for i in range(3):
               ()
               "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invaild simplifier?~%~a" write-to g)
       g)))
-;; REMOVE the following
-(defun parse-view (view &aux (args (node-reads view)))
-  (declare (type node view))
-  (flet ((subseq1p (list from to) (subseq list (1+ from) (1+ to))))
-    (let ((nrank (getattr view :nrank)))
-      (values (subseq1p args 0 nrank) ;; shape
-              (loop for upfrom in (subseq1p args nrank (* 2 nrank))
-                    for below in (subseq1p args (* 2 nrank) (* 3 nrank))
-                    for by in (subseq1p args (* 3 nrank) (* 4 nrank))
-                    collect (list upfrom below by))
-              (subseq1p args (* 4 nrank) (* 5 nrank))
-              (loop for s in (subseq1p args 0 nrank)
-                    for bc in (getattr view :broadcast)
-                    if bc collect s else collect nil)))))
-;; Proof
-;;  P_n(i, j, k, ...) = s1_1(i + b1_1) + s1_2(j + b1_2) + s1_3(k + b1_3) + ... + sn_k(index + bn_k) where k = dimension
-;;         ^ k ranks in total
-;;   where 0 < i < i_upper, 0 < j < j_upper, 0 < k < k_upper, ...
-;; Now we want:
-;;   P_1(i, j, k, ...) + P_2(l, m, n, ...) = P_3(l, m, n, ...)
-;;  where P_3(l, m, n, ...) = s2_1(l + b3_1) + s2_2(m + b3_2) + s2_3(n + b3_3) + ... + sn_k(index + bn_k)
-;; Question: A pair of (s1_1, ..., sn_k) and (b3_1, ..., bn_k) exists?
-;;
-;; 
-(defun +view (view-parent view-child alloc)
-  "Creates a new VIEW from the given two view-parent and view-child."
-  (declare (type node view-parent view-child))
-  (when (not (= (getattr view-parent :nrank) (getattr view-child :nrank)))
-    (return-from +view nil))
-  (multiple-value-bind (shape1 mask1 stride1 bc1) (parse-view view-parent)
-    (multiple-value-bind (shape2 mask2 stride2 bc2) (parse-view view-child)
-      (print "++++++")
-      (print shape1)
-      (print mask1)
-      (print stride1)
-      (print (getattr view-parent :permute))
-      (print "-------")
-      (print shape2)
-      (print mask2)
-      (print stride2)
-      (print (getattr view-child :permute))
-      (print "PERMUTE")
-      '(10 1 6 25 25 3 5 5)
-      ;; 1. Contiguous -> return nil
+;; [TODO] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; - ConvND=1
+;; - Attention=4
+;; - Pass all tests
+(defun un1d (order base-shape broadcasts offset &aux (result) (offset (->iconst offset)))
+  (loop for st in (!stride order (map 'list #'->iconst base-shape))
+        for bc in broadcasts
+        for here = (if bc (iconst 0) (!idiv offset st))
+        do (push here result)
+           (setf offset (!sub offset (!mul here st))))
+  (canonicalize-shape (nreverse result)))
 
-      ;; Project the offsets of parent to child
-      nil
-      )))
+(defun tr-reshape-bc (tr)
+  (let ((tr (copy-tracker tr)))
+    (setf (tr-shape tr) (loop for b in (tr-broadcast tr)
+                              for s in (tr-shape tr)
+                              collect (or b s))
+          (tr-base-shape tr) (copy-list (tr-shape tr))
+          (tr-stride tr) (loop for b in (tr-broadcast tr)
+                               for s in (tr-stride tr)
+                               collect (if b 0 s))
+          (tr-broadcast tr) (make-list (length (tr-shape tr))))
+    tr))
+                
+;; [TODO] Symbolic !<, !=, constant folding.
+;; [TODO] solve-symbolic-ilp
+;; [TODO] Should support full symbolic for future inlining
+;; [TODO] batch_size=1 is not 1 kernel.
+(defun +view (tr-parent tr-child)
+  "Creates a new VIEW from the given two view-parent and view-child."
+  (declare (type Tracker tr-parent tr-child))
+  (when (tr-contiguous tr-child)
+    (warn "NOT IMPLEMENTED1")
+    ;; TODO: return tr-parent
+    (return-from +view nil))
+
+  (when (and (tr-contiguous tr-parent) (equal (tr-shape tr-parent) (tr-shape tr-child)))
+    ;; return tr-child
+    (warn "NOT IMPLEMENTED2")
+    (return-from +view nil))
+  ;; vm2 -> vm1
+  ;; parent child
+  (when (some #'identity (tr-mask tr-child))
+    ;; Not implemented: MASK
+    (warn "NOT IMPLEMENTED3")
+    (return-from +view nil))
+  (let ((terms (make-list (length (tr-shape tr-parent))))
+        (strides (make-list (length (tr-shape tr-child)) :initial-element 0))
+        (merged-size (iconst 1))
+        (merged-term (iconst 0))
+        (extents))
+    ;; Project child's offset to parent's offset
+    (loop for d1 upfrom 0
+          for st in (tr-stride tr-child)
+          for bc in (tr-broadcast tr-child)
+          unless (or bc (eql 0 (canonicalize-int st))) do
+            (loop for d2 upfrom 0
+                  for bc2 in (tr-broadcast tr-parent)
+                  for s1 in (un1d (tr-order tr-child) (tr-shape tr-parent) (tr-broadcast tr-parent) st)
+                  unless (or (eql 0 (canonicalize-int s1)) (eql 0 (canonicalize-int bc2))) do
+                    (setf (nth d2 terms) (append (nth d2 terms) (list (cons d1 s1)))
+                          (nth d1 strides) (!+ (->iconst (nth d1 strides)) (!mul (->iconst s1) (->iconst (nth d2 (tr-stride tr-parent))))))))
+    (setf strides (canonicalize-shape strides))
+    (loop with idxs = (map 'list #'(lambda (x) (canonicalize-int (!- (iconst x) (iconst 1)))) (tr-shape tr-child))
+          for term in (reverse terms)
+          for s in (reverse (tr-shape tr-parent))
+          for mt = (!mul
+                    (if term
+                        (reduce #'!add
+                                (map 'list
+                                     #'(lambda (x &aux (dim (car x)) (size (cdr x)))
+                                         (!mul (->iconst (nth dim idxs)) (->iconst size)))
+                                     term))
+                        (iconst 0))
+                    merged-size)
+          do (setf merged-term (!add merged-term mt)
+                   merged-size (!mul merged-size (->iconst s)))
+             (let ((mi (canonicalize-int merged-term))
+                   (si (canonicalize-int merged-size)))
+               ;; [TODO] Symbolic !<, !=, etc
+               (when (or (not (numberp mi)) (not (numberp si)))
+                 (return-from +view nil))
+               (when (and (< mi si) (<= 0 mi))
+                 (setf extents (append extents (list (cons si mi))) merged-size (iconst 1) merged-term (iconst 0)))))
+    (let ((mt (canonicalize-int merged-term)))
+      (when (or (not (numberp mt)) (not (= 0 mt)))
+        (return-from +view nil)))
+    ;; extents: convnd-4には正しく計算できてるように見える。
+    ;; workload:
+    ;; - Fix ConvND 10 3 25 25
+    ;; - EXTENTSの下が必要
+    ;; - Symbolic
+    ;; - pass all the tests
+    ;; - attention = 4 kernels
+    (let ((parent-shape (map 'list #'car (reverse extents))))
+      (when (not (equal parent-shape (tr-shape tr-parent)))
+        (print "R")
+        (print tr-parent)
+        (print parent-shape)
+        (let ((tr-parent (tr-reshape-bc tr-parent)))
+          (if (tr-reshapeable-p tr-parent parent-shape)
+              (progn
+                (print "FINAL")
+                (print (+view (tr-apply-reshape tr-parent parent-shape) tr-child)))
+              (print "FAILED")))))
+    (when (some #'identity (tr-mask tr-parent))  (warn "Not ready"))
+    (let ((tr (copy-tracker tr-child)))
+      (setf (tr-shape tr) (tr-shape tr-child)
+            (tr-stride tr) strides
+            (tr-broadcast tr) (tr-broadcast tr-child))
+      tr)))
 
 (defsimplifier
     (simplify-contiguous :speed 1)
@@ -467,16 +529,17 @@ for i in range(3):
         (when (and move allocate view1 view2 view2-user
                    (null (getattr view2-user :reduction :allow-undefined t))
                    (eql (node-type move) :MOVE) (eql (node-type allocate) :Allocate) (eql (node-type view1) :VIEW)
-                   (eql (node-type view2) :VIEW))
+                   (eql (node-type view2) :VIEW)
+                   (getattr view1 :tr)
+                   (getattr view2 :tr))
           ;; VIEW2 -> MOVE(Contiguous) -> VIEW1
           ;; ===> Rewriting
           ;; {VIEW2+VIEW1}
-          (let* ((new-view (+view view2 view1 allocate)))
-            (when  new-view
-              (setf (node-writes new-view) (node-writes view1)
-                    (car (node-reads new-view)) (car (node-reads view2)))
+          (let* ((new-tracker (+view (getattr view2 :tr) (getattr view1 :tr))))
+            (when new-tracker
+              ;; (setf (node-writes new-view) (node-writes view1)
+              ;;       (car (node-reads new-view)) (car (node-reads view2)))
               (print "NEW")
               (print view2)
               (print view1)
-              (print new-view)
-              new-view)))))))
+              (graph-nodes (%make-view-from-tracker new-tracker (car (node-writes view1)) view2)))))))))
