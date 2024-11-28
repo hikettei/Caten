@@ -105,6 +105,18 @@
   "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(b 3 25 25)))))))
 
+(define-kernel-count-test singleconv-schedule 2
+  "ConvND = 2 Kernels (TODO: 1 Kernels)"
+  (with-no-grad (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(1 3 25 25))))))
+
+(define-kernel-count-test single-conv-relu-schedule 2
+  "ConvND+ReLU = 2 Kernels (TODO: 1 Kernels)"
+  (with-no-grad (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(1 3 25 25)))))))
+
+(define-kernel-count-test single-conv-gelu-schedule 2
+  "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
+  (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(1 3 25 25)))))))
+
 (define-kernel-count-test tril-triu-matmul 4
   "!matmul+Tril+Triu is a single kernel"
   (caten (!matmul (!tril (make-tensor `(10 1 1 10))) (!triu (make-tensor `(10 1))))))

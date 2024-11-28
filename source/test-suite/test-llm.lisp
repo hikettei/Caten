@@ -266,6 +266,33 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
           (->caten (attn_impl_torch x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
 
+(define-kernel-count-test fixed-attention-schedule 6
+  "Attention = 6 Kernels (TODO: 5 Kernel)"
+  (let ((x (make-tensor `(10 3 32)))
+        (c_attn.weight (make-tensor `(96 32)))
+        (c_attn.bias   (make-tensor `(96)))
+        (c_procj.weight (make-tensor `(32 32)))
+        (c_procj.bias (make-tensor `(32))))
+    (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
+
+(define-kernel-count-test symbolic-attention-schedule 6
+  "Attention = 6 Kernels (TODO: 5 Kernel)"
+  (let ((x (make-tensor `(10 b 32)))
+        (c_attn.weight (make-tensor `(96 32)))
+        (c_attn.bias   (make-tensor `(96)))
+        (c_procj.weight (make-tensor `(32 32)))
+        (c_procj.bias (make-tensor `(32))))
+    (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
+
+(define-kernel-count-test batch=1-symbolic-attention-schedule 6
+  "Attention = 6 Kernels (TODO: 5 Kernel)"
+  (let ((x (make-tensor `(1 b 32)))
+        (c_attn.weight (make-tensor `(96 32)))
+        (c_attn.bias   (make-tensor `(96)))
+        (c_procj.weight (make-tensor `(32 32)))
+        (c_procj.bias (make-tensor `(32))))
+    (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
+
 (deftest test-attention-large
   (let* ((dim 128)
          (n-heads 8)
