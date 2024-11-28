@@ -271,7 +271,8 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
 "
 	 :slots ((nrank :type (unsigned-byte 32))
 		 (broadcast :type list)
-		 (permute :type list :initform nil)))
+		 (permute :type list :initform nil)
+                 (tr :initform nil)))
 
 (defclass Indexing () nil)
 (defnode (:Indexing :Index-Components) (Indexing JITAble)
