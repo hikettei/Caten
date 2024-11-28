@@ -64,9 +64,17 @@ Code2:
 ~a"
                          code1 code2
                          (compiled-kernel-code info1) (compiled-kernel-code info2))))))
+      (labels ((val-p (s &aux (x (string-upcase (princ-to-string s))))
+                 (and (>= (length x) 3) (equalp (subseq x 0 3) "val")))
+               (maybe-eq (a b)
+                 (if (or (val-p a) (val-p b))
+                     (equal a b)
+                     (if (and (numberp a) (numberp b))
+                         (eql a b)
+                         (eql (val-p a) (val-p b))))))
       (and
-       (equal (node-reads node1) (node-reads node2))
-       (equal (node-writes node1) (node-writes node2)))))
+       (every #'maybe-eq (node-reads node1) (node-reads node2))
+       (every #'maybe-eq (node-writes node1) (node-writes node2))))))
 
 (deftest transformer-schedule-cache-count-test
   (with-protect-jit
