@@ -74,8 +74,11 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                     (let ((nrank (getattr node :nrank)))
                       (with-output-to-string (out)
                         (format
-                         out "{ALLOCATE|shape=[~a]|strides=[~a]|dtype=~a}"
+                         out "{ALLOCATE|shape=[~a]~a|strides=[~a]|dtype=~a}"
                          (subseq (node-reads node) 0 nrank)
+                         (if (every #'numberp (subseq (node-reads node) 0 nrank))
+                             (format nil ", size=(~a)" (apply #'* (subseq (node-reads node) 0 nrank)))
+                             "")
                          (subseq (node-reads node) nrank (* 2 nrank))
                          (getattr node :dtype))))
                     (helper/color :node) "filled, solid"))
@@ -86,8 +89,11 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                         (with-output-to-string (out)
                           (format
                            out
-                           "{VIEW|shape=[~a]|masks=[~a]~a~a}"
+                           "{VIEW|shape=[~a]~a|masks=[~a]~a~a}"
                            (subseq1p (node-reads node) 0 nrank)
+                           (if (every #'numberp (subseq1p (node-reads node) 0 nrank))
+                               (format nil ", size=(~a)" (apply #'* (subseq1p (node-reads node) 0 nrank)))
+                               "")
 	                   (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
 	                         (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
                                  (by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))

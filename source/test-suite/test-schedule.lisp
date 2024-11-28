@@ -81,17 +81,41 @@
   "Embedding is a single kernel"
   (with-no-grad (caten (call (Embedding 10 10) (make-tensor `(b c))))))
 
-(define-kernel-count-test conv-schedule 5
-  "ConvND = 5 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test conv-schedule 2
+  "ConvND = 2 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25))))))
 
-(define-kernel-count-test conv-relu-schedule 5
-  "ConvND+ReLU = 5 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test conv-relu-schedule 2
+  "ConvND+ReLU = 2 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
 
-(define-kernel-count-test conv-gelu-schedule 5
-  "ConvND+GeLU = 5 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test conv-gelu-schedule 2
+  "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
+
+(define-kernel-count-test symbolic-conv-schedule 2
+  "ConvND = 2 Kernels (TODO: 1 Kernels)"
+  (with-no-grad (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(b 3 25 25))))))
+
+(define-kernel-count-test symbolic-conv-relu-schedule 2
+  "ConvND+ReLU = 2 Kernels (TODO: 1 Kernels)"
+  (with-no-grad (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(b 3 25 25)))))))
+
+(define-kernel-count-test symbolic-conv-gelu-schedule 2
+  "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
+  (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(b 3 25 25)))))))
+
+(define-kernel-count-test singleconv-schedule 2
+  "ConvND = 2 Kernels (TODO: 1 Kernels)"
+  (with-no-grad (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(1 3 25 25))))))
+
+(define-kernel-count-test single-conv-relu-schedule 2
+  "ConvND+ReLU = 2 Kernels (TODO: 1 Kernels)"
+  (with-no-grad (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(1 3 25 25)))))))
+
+(define-kernel-count-test single-conv-gelu-schedule 2
+  "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
+  (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(1 3 25 25)))))))
 
 (define-kernel-count-test tril-triu-matmul 4
   "!matmul+Tril+Triu is a single kernel"
