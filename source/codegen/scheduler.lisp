@@ -518,7 +518,9 @@ Otherwise, returns NIL. (= not fusable)"
              (loop for read in (relay-reads (read-type-relay node))
                    for views = (buffer-views read)
                    if (some #'identity views) do
-                     (assert (= (length views) (length dims)))
+                     (when (not (= (length views) (length dims)))
+                       (return-from groups-reduce-permute-p nil))
+                     ;; (assert (= (length views) (length dims)) () "views=~a dims=~a~%~a~%~a" views dims tgt-group parent-group)
                      (loop for broadcastable in dims
                            for view in views
                            if (and (null broadcastable) (fourth view))
