@@ -240,6 +240,9 @@ for i in range(3):
         print(10 * i1 + 1 * j1)
 ```
 "
+  (when (eql *default-order* :column) ;; not tested
+    (return-from apply-masked-reshape nil))
+  
   (when (not (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))))
     (return-from apply-masked-reshape nil))
   ;; [TODO !!!] Add VIEW.offset and merge this
@@ -249,7 +252,7 @@ for i in range(3):
   (when (some #'identity (tr-broadcast tracker))
     (when (null (tr-contiguous tracker))
       (return-from apply-masked-reshape nil)))
-
+  
   (let ((new-shape-copy (copy-list new-shape))
         (shape-map)
         (old-shape
@@ -292,6 +295,8 @@ for i in range(3):
             (tr-mask new-tracker) (make-list (length new-shape-copy))
             (tr-broadcast new-tracker) (make-list (length new-shape-copy))
             (tr-permute new-tracker) (range 0 (length new-shape-copy)))
+      ;; Hint: Some of stride computation is WRONG!
+       (setf (tr-stride new-tracker) (sort (tr-stride new-tracker) #'>))
       new-tracker)))
 
 (defgeneric tr-reshapeable-p (obj new-shape))
@@ -409,12 +414,12 @@ for i in range(3):
 ;; - ConvND=1
 ;; - Attention=4
 ;; - Pass all tests
-(defun un1d (order base-shape broadcasts offset &aux (result) (offset (->iconst offset)))
-  (loop for st in (!stride order (map 'list #'->iconst base-shape))
+(defun un1d (stride broadcasts offset &aux (result) (offset (->iconst offset)))
+  (loop for st in stride
         for bc in broadcasts
-        for here = (if bc (iconst 0) (!idiv offset st))
+        for here = (if (or bc (eql 0 (canonicalize-int st))) (iconst 0) (!idiv offset st))
         do (push here result)
-           (setf offset (!sub offset (!mul here st))))
+           (setf offset (!sub offset (!mul here (->iconst st)))))
   (canonicalize-shape (nreverse result)))
 
 (defun tr-reshape-bc (tr)
@@ -463,11 +468,13 @@ for i in range(3):
           unless (or bc (eql 0 (canonicalize-int st))) do
             (loop for d2 upfrom 0
                   for bc2 in (tr-broadcast tr-parent)
-                  for s1 in (un1d (tr-order tr-child) (tr-shape tr-parent) (tr-broadcast tr-parent) st)
+                  for s1 in (un1d (!stride :row (tr-shape tr-parent)) (tr-broadcast tr-parent) st)
                   unless (or (eql 0 (canonicalize-int s1)) (eql 0 (canonicalize-int bc2))) do
                     (setf (nth d2 terms) (append (nth d2 terms) (list (cons d1 s1)))
                           (nth d1 strides) (!+ (->iconst (nth d1 strides)) (!mul (->iconst s1) (->iconst (nth d2 (tr-stride tr-parent))))))))
     (setf strides (canonicalize-shape strides))
+    (print "STRIDES")
+    (print strides)
     (loop with idxs = (map 'list #'(lambda (x) (canonicalize-int (!- (iconst x) (iconst 1)))) (tr-shape tr-child))
           for term in (reverse terms)
           for s in (reverse (tr-shape tr-parent))
@@ -501,14 +508,14 @@ for i in range(3):
     ;; - attention = 4 kernels
     (let ((parent-shape (map 'list #'car (reverse extents))))
       (when (not (equal parent-shape (tr-shape tr-parent)))
-        (print "R")
-        (print tr-parent)
-        (print parent-shape)
+        ;(print "R")
+        ;(print tr-parent)
+        ;(print parent-shape)
+        (print tr-parent) (print parent-shape)
         (let ((tr-parent (tr-reshape-bc tr-parent)))
           (if (tr-reshapeable-p tr-parent parent-shape)
               (progn
-                (print "FINAL")
-                (print (+view (tr-apply-reshape tr-parent parent-shape) tr-child)))
+                (+view (tr-apply-reshape tr-parent parent-shape) tr-child))
               (print "FAILED")))))
     (when (some #'identity (tr-mask tr-parent))  (warn "Not ready"))
     (let ((tr (copy-tracker tr-child)))

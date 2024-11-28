@@ -524,8 +524,6 @@ Otherwise, returns NIL. (= not fusable)"
                ))
       (explore entry-point))))
 
-;; ConvND = 1 Kernel, Attention = 4 Kernel, remove 200 lines
-;; Reduce After ActivationはどうやってFuseする？
 (defmethod groups-force-merge-views ((parent-group Group) (tgt-group Group))
   "Parent-Group -> Tgt-Group"
   (assert (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group)))
@@ -539,7 +537,6 @@ Otherwise, returns NIL. (= not fusable)"
                   ;; The same id should appeared in the group at once (TODO: Can exists if only and views are equivalent)
                   (return-from groups-force-merge-views nil)
                   (setf (gethash read id->view) (car view)))))
-    (print "++LOG++")
     ;; Before doing a destructive operation, ensure there's no non-mergeable views.
     (loop for entry-point-parent in (group-successor parent-group)
           for view-for-entry = (gethash entry-point-parent id->view)
@@ -552,8 +549,9 @@ Otherwise, returns NIL. (= not fusable)"
 
 ;; (< r1 r2)の時に使う，Activation Fusion限定
 ;; (defmethod groups-broadcast-after-reduction ())
-            
-
+;; ShapeTrackerをUpdateしないといけない
+;; - Attn
+;; - Conv
 (defmethod groups-reduce-permute-p ((tgt-group Group) (parent-group Group) &aux (dims (or (group-reduce-dims tgt-group) (group-reduce-dims parent-group))))
   "reduction -> permute -> reduction is not allowed in the group. If such path exists, this method returns T."
   (labels ((reduce-p (node)
@@ -655,7 +653,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
             (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))
                   (gethash (node-id restart-point) (ctx-restart-cache1 ctx)) t)
             ->ng))
-        (when (groups-reduce-permute-p tgt-group parent-group) (print "FAIL1") ->ng) ;; Reduce -> Permute -> Reduce is not fusable.
+        (when (groups-reduce-permute-p tgt-group parent-group) ->ng) ;; Reduce -> Permute -> Reduce is not fusable.
         (if (= r1 r2)
             (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
               ;; View Rewriting here?
@@ -666,16 +664,15 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
                         (eql pattern :case3)
                         ;; If case2 (no reduction+no reduction) there could be better merging pair, if the path has a reduced group.
                         (null (ctx-fusable-case1-p ctx (group-predecessor tgt-group))))))
-              (print optimal-p)
               (when (and optimal-p (groups-rewrite-views-in-the-same-space parent-group tgt-group view))->ok)))
-        (print "++CHANCE++")
-        (print parent-group)
-        (print tgt-group)
-        (print view)
-        (print r1)
-        (print r2)
-        (print (groups-force-merge-views parent-group tgt-group))
-        (print "FAIL2")
+        ;(print "++CHANCE++")
+        ;(print parent-group)
+        ;(print tgt-group)
+        ;(print view)
+        ;(print r1)
+        ;(print r2)
+        ;(print (groups-force-merge-views parent-group tgt-group))
+        ;(print "FAIL2")
         ->ng)
       ;; Otherwise, merging non-reduction nodes to create a block of elwise ops group. (e.g.: a sequence of activations)
       ;; fuse/rewrite _read_views and buffers sometime.
