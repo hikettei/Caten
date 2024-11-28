@@ -129,6 +129,14 @@ Applying a further slicing:
 (defun canonicalize-int (int) (if (tensor-p int) (or (try-fold-constant int) int) int))
 (defun canonicalize-shape (list) (map 'list #'canonicalize-int list))
 
+(defun un1d (stride broadcasts offset &aux (result) (offset (->iconst offset)))
+  (loop for st in stride
+        for bc in broadcasts
+        for here = (if (or bc (eql 0 (canonicalize-int st))) (iconst 0) (!idiv offset (->iconst st)))
+        do (push here result)
+           (setf offset (!sub offset (!mul here (->iconst st)))))
+  (canonicalize-shape (nreverse result)))
+
 (defun start-tracking (shape &key (order :row) (mask nil) &aux (shape (canonicalize-shape shape)))
   (declare (type (member :row :column) order)
            (type list shape))
@@ -431,121 +439,9 @@ for i in range(3):
               ()
               "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invaild simplifier?~%~a" write-to g)
       g)))
-;; [TODO] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; 最後にやる
-;; - ConvND=1
-;; - Attention=4
-;; - Pass all tests
-(defun un1d (stride broadcasts offset &aux (result) (offset (->iconst offset)))
-  (loop for st in stride
-        for bc in broadcasts
-        for here = (if (or bc (eql 0 (canonicalize-int st))) (iconst 0) (!idiv offset (->iconst st)))
-        do (push here result)
-           (setf offset (!sub offset (!mul here (->iconst st)))))
-  (canonicalize-shape (nreverse result)))
-
-(defun tr-reshape-bc (tr)
-  (let ((tr (copy-tracker tr)))
-    (setf (tr-shape tr) (loop for b in (tr-broadcast tr)
-                              for s in (tr-shape tr)
-                              collect (or b s))
-          (tr-base-shape tr) (copy-list (tr-shape tr))
-          (tr-stride tr) (loop for b in (tr-broadcast tr)
-                               for s in (tr-stride tr)
-                               collect (if b 0 s))
-          (tr-broadcast tr) (make-list (length (tr-shape tr))))
-    tr))
-                
-;; [TODO] Symbolic !<, !=, constant folding.
-;; [TODO] solve-symbolic-ilp
-;; [TODO] Should support full symbolic for future inlining
-;; [TODO] batch_size=1 is not 1 kernel.
-(defun +view (tr-parent tr-child)
-  "Creates a new VIEW from the given two view-parent and view-child."
-  (declare (type Tracker tr-parent tr-child))
-  (when (tr-contiguous tr-child)
-    (warn "NOT IMPLEMENTED1")
-    ;; TODO: return tr-parent
-    (return-from +view nil))
-
-  (when (and (tr-contiguous tr-parent) (equal (tr-shape tr-parent) (tr-shape tr-child)))
-    ;; return tr-child
-    (warn "NOT IMPLEMENTED2")
-    (return-from +view nil))
-  ;; vm2 -> vm1
-  ;; parent child
-  (when (some #'identity (tr-mask tr-child))
-    ;; Not implemented: MASK
-    (warn "NOT IMPLEMENTED3")
-    (return-from +view nil))
-  (let ((terms (make-list (length (tr-shape tr-parent))))
-        (strides (make-list (length (tr-shape tr-child)) :initial-element 0))
-        (merged-size (iconst 1))
-        (merged-term (iconst 0))
-        (extents))
-    ;; Project child's offset to parent's offset
-    (loop for d1 upfrom 0
-          for st in (tr-stride tr-child)
-          for bc in (tr-broadcast tr-child)
-          unless (or bc (eql 0 (canonicalize-int st))) do
-            (loop for d2 upfrom 0
-                  for bc2 in (tr-broadcast tr-parent)
-                  for s1 in (un1d (!stride :row (tr-shape tr-parent)) (tr-broadcast tr-parent) st)
-                  unless (or (eql 0 (canonicalize-int s1)) (eql 0 (canonicalize-int bc2))) do
-                    (setf (nth d2 terms) (append (nth d2 terms) (list (cons d1 s1)))
-                          (nth d1 strides) (!+ (->iconst (nth d1 strides)) (!mul (->iconst s1) (->iconst (nth d2 (tr-stride tr-parent))))))))
-    (setf strides (canonicalize-shape strides))
-    (print "STRIDES")
-    (print strides)
-    (loop with idxs = (map 'list #'(lambda (x) (canonicalize-int (!- (iconst x) (iconst 1)))) (tr-shape tr-child))
-          for term in (reverse terms)
-          for s in (reverse (tr-shape tr-parent))
-          for mt = (!mul
-                    (if term
-                        (reduce #'!add
-                                (map 'list
-                                     #'(lambda (x &aux (dim (car x)) (size (cdr x)))
-                                         (!mul (->iconst (nth dim idxs)) (->iconst size)))
-                                     term))
-                        (iconst 0))
-                    merged-size)
-          do (setf merged-term (!add merged-term mt)
-                   merged-size (!mul merged-size (->iconst s)))
-             (let ((mi (canonicalize-int merged-term))
-                   (si (canonicalize-int merged-size)))
-               ;; [TODO] Symbolic !<, !=, etc
-               (when (or (not (numberp mi)) (not (numberp si)))
-                 (return-from +view nil))
-               (when (and (< mi si) (<= 0 mi))
-                 (setf extents (append extents (list (cons si mi))) merged-size (iconst 1) merged-term (iconst 0)))))
-    (let ((mt (canonicalize-int merged-term)))
-      (when (or (not (numberp mt)) (not (= 0 mt)))
-        (return-from +view nil)))
-    ;; extents: convnd-4には正しく計算できてるように見える。
-    ;; workload:
-    ;; - Fix ConvND 10 3 25 25
-    ;; - EXTENTSの下が必要
-    ;; - Symbolic
-    ;; - pass all the tests
-    ;; - attention = 4 kernels
-    (let ((parent-shape (map 'list #'car (reverse extents))))
-      (when (not (equal parent-shape (tr-shape tr-parent)))
-        ;(print "R")
-        ;(print tr-parent)
-        ;(print parent-shape)
-        (print tr-parent) (print parent-shape)
-        (let ((tr-parent (tr-reshape-bc tr-parent)))
-          (if (tr-reshapeable-p tr-parent parent-shape)
-              (progn
-                (+view (tr-apply-reshape tr-parent parent-shape) tr-child))
-              (print "FAILED")))))
-    (when (some #'identity (tr-mask tr-parent))  (warn "Not ready"))
-    (let ((tr (copy-tracker tr-child)))
-      (setf (tr-shape tr) (tr-shape tr-child)
-            (tr-stride tr) strides
-            (tr-broadcast tr) (tr-broadcast tr-child))
-      tr)))
-
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+#|
+;; [TODO]: Complete this (Post View Fusor)
 (defsimplifier
     (simplify-contiguous :speed 1)
     ((:View (~ _))
@@ -566,9 +462,5 @@ for i in range(3):
           ;; {VIEW2+VIEW1}
           (let* ((new-tracker (+view (getattr view2 :tr) (getattr view1 :tr))))
             (when new-tracker
-              ;; (setf (node-writes new-view) (node-writes view1)
-              ;;       (car (node-reads new-view)) (car (node-reads view2)))
-              (print "NEW")
-              (print view2)
-              (print view1)
               (graph-nodes (%make-view-from-tracker new-tracker (car (node-writes view1)) view2)))))))))
+|#
