@@ -187,6 +187,8 @@ Applying a further slicing:
       (loop for i from 0 below new-axis-count
             unless (nth i mask)
               do (setf (nth i new-permute) (pop unused-indices)))
+;      (print "MASK")
+;      (print input) (print mask) (print new-permute)
       new-permute)))
 
 (defmethod tr-apply-uprank ((tensor Tensor) mask) (tr-apply-uprank (tensor-tr tensor) mask))
@@ -222,11 +224,34 @@ Applying a further slicing:
     new-tracker))
 
 (defmethod apply-masked-reshape ((tracker Tracker) new-shape)
+  "
+The basic idea:
+```python
+for i in range(6):
+  for j in range(6):
+    print(10 * i + j)
+```
+
+```python
+for i in range(3):
+  for ii in range(2):
+    for j in range(3):
+      for jj in range(2):
+        i1 = i*2 + ii # shape_map[0]
+        j1 = j*2 + jj # shape_map[1]
+        print(10 * i1 + 1 * j1)
+```
+"
   (when (not (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))))
     (return-from apply-masked-reshape nil))
-  ;; [TODO] Add VIEW.offset and merge this
-  (when (some #'(lambda (x) (not (eql (first x) 0))) (tr-mask tracker))
+  ;; [TODO !!!] Add VIEW.offset and merge this
+  (when (some #'(lambda (x) (and x (not (eql (first x) 0)))) (tr-mask tracker))
     (return-from apply-masked-reshape nil))
+  ;; Broadcast => Contiguous
+  (when (some #'identity (tr-broadcast tracker))
+    (when (null (tr-contiguous tracker))
+      (return-from apply-masked-reshape nil)))
+
   (let ((new-shape-copy (copy-list new-shape))
         (shape-map)
         (old-shape
@@ -243,6 +268,7 @@ Applying a further slicing:
                     (return-from apply-masked-reshape nil))
                 (progn
                   (unless (numberp ns) (return-from apply-masked-reshape nil))
+                  (assert (numberp ns))
                   (push ns stack)
                   (when (eql (car old-shape) (apply #'* stack))
                     ;; old-shape = stack
@@ -251,6 +277,7 @@ Applying a further slicing:
     ;; Creating a map: (10 6 6) -> (10 (2 3) (2 3))
     ;;                   i j k      i j1 j2  k1 k2
     ;; j = 2*j1+j2, k = 2*k1+k2
+    ;; [TODO] Apply the broadcasted axes
     (setf shape-map (nreverse shape-map))
     (when (not (equal (flatten shape-map) (flatten new-shape-copy)))
       (return-from apply-masked-reshape nil))
@@ -277,18 +304,13 @@ Applying a further slicing:
   (when (and (tr-mask tracker) (not (equal (tr-shape tracker) (tr-base-shape tracker)))
              (apply-masked-reshape tracker new-shape))
     (return-from tr-reshapeable-p t))
-  ;; Not contiguous -> Not reshapeable (todo: masked reshape)
-  (when (null (tr-contiguous tracker))
-    (print "FAILED")
-    (print tracker)
-    (print new-shape)
-    (return-from tr-reshapeable-p nil))
+  ;; Not contiguous -> Not reshapeable
+  (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
   ;; Permuted: (except for the mask creation) not reshapeable
   (when (not (equal (range 0 (length (tr-shape tracker))) (tr-permute tracker)))
     (return-from tr-reshapeable-p nil))
   ;; Broadcasted -> Not contiguous
-  (when (some #'identity (tr-broadcast tracker))
-    (return-from tr-reshapeable-p nil))
+  (when (some #'identity (tr-broadcast tracker)) (return-from tr-reshapeable-p nil))
   t)
 
 (defmethod tr-apply-reshape ((tensor Tensor) new-shape) (tr-apply-reshape (tensor-tr tensor) new-shape))
@@ -315,12 +337,14 @@ Applying a further slicing:
 (defmethod tr-apply-slice ((tensor Tensor) slice new-shape) (tr-apply-slice (tensor-tr tensor) slice new-shape))
 (defmethod tr-apply-slice ((tracker Tracker) slice new-shape &aux (new-shape (canonicalize-shape new-shape)))
   (assert (= (length slice) (length (tr-shape tracker))) () "Trying to slice tracker with different dimension: ~a" slice)
-  (assert (every #'viewrange-p slice) () "Trying to slice tracker with invalid slice: ~a" slice)
+  (assert (every #'(lambda (x) (or (viewrange-p x) (= (length x) 3))) slice) () "Trying to slice tracker with invalid slice: ~a" slice)
   (let ((new-tracker (copy-tracker tracker)))
     (setf (tr-shape new-tracker) new-shape
           (tr-mask new-tracker)
-          (loop for s in slice
-                collect (list (canonicalize-int (viewrange-from s)) (canonicalize-int (viewrange-to s)) (canonicalize-int (viewrange-by s))))
+          (if (some #'viewrange-p slice)
+              (loop for s in slice
+                    collect (list (canonicalize-int (viewrange-from s)) (canonicalize-int (viewrange-to s)) (canonicalize-int (viewrange-by s))))
+              slice)
           (tr-contiguous new-tracker) nil)
     new-tracker))
 
@@ -359,7 +383,7 @@ Applying a further slicing:
            (below (loop for m in (tr-mask tracker)
                         for s in shape
                         if m collect (->compile (second m))
-                        else collect s))
+                          else collect s))
            (by (loop for m in (tr-mask tracker)
                      collect (->compile (if m (third m) 1))))
            (bc (loop for b in (tr-broadcast tracker) collect (if b t nil)))
@@ -382,12 +406,7 @@ Applying a further slicing:
               ()
               "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invaild simplifier?~%~a" write-to g)
       g)))
-;; [todo] unittest,
-;; (10 4 4)
-;; -> (40 4) + 4
-;; -> (10 4 40 4)
-;; ->    ...
-;; [TODO] Add view.offset
+;; REMOVE the following
 (defun parse-view (view &aux (args (node-reads view)))
   (declare (type node view))
   (flet ((subseq1p (list from to) (subseq list (1+ from) (1+ to))))
@@ -396,11 +415,11 @@ Applying a further slicing:
               (loop for upfrom in (subseq1p args nrank (* 2 nrank))
                     for below in (subseq1p args (* 2 nrank) (* 3 nrank))
                     for by in (subseq1p args (* 3 nrank) (* 4 nrank))
+                    collect (list upfrom below by))
+              (subseq1p args (* 4 nrank) (* 5 nrank))
+              (loop for s in (subseq1p args 0 nrank)
                     for bc in (getattr view :broadcast)
-                    collect (list upfrom below by bc))
-              (loop for stride in (subseq1p args (* 4 nrank) (* 5 nrank))
-                    for bc in (getattr view :broadcast)
-                    if bc collect 0 else collect stride)))))
+                    if bc collect s else collect nil)))))
 ;; Proof
 ;;  P_n(i, j, k, ...) = s1_1(i + b1_1) + s1_2(j + b1_2) + s1_3(k + b1_3) + ... + sn_k(index + bn_k) where k = dimension
 ;;         ^ k ranks in total
@@ -411,27 +430,13 @@ Applying a further slicing:
 ;; Question: A pair of (s1_1, ..., sn_k) and (b3_1, ..., bn_k) exists?
 ;;
 ;; 
-(defun +view (view-parent view-child)
+(defun +view (view-parent view-child alloc)
   "Creates a new VIEW from the given two view-parent and view-child."
   (declare (type node view-parent view-child))
-  (when (> (getattr view-parent :nrank) (getattr view-child :nrank))
+  (when (not (= (getattr view-parent :nrank) (getattr view-child :nrank)))
     (return-from +view nil))
-  (multiple-value-bind (shape1 mask1 stride1) (parse-view view-parent)
-    (multiple-value-bind (shape2 mask2 stride2) (parse-view view-child)
-      (labels ((masked-p (s m)
-                 (assert (= (length s) (length m)))
-                 (not (every #'(lambda (size mask) (and (eql (car mask) 0) (eql (second mask) size) (eql (third mask) 1) (null (fourth mask)))) s m)))
-               (permute-p (n)
-                 (not (or (null (getattr n :permute)) (equal (range 0 (getattr n :nrank)) (getattr n :permute)))))
-               (contiguous-p (s m n)
-                 (and (null (masked-p s m)) (null (permute-p n)))))
-        ;; Contig+Contig
-        (when (and (contiguous-p shape1 mask1 view-parent) (contiguous-p shape2 mask2 view-child))
-          ;;(return-from +view (copy-node view-child))
-          ))
-        ;(when (and (= 330750 (apply #'* shape1) (apply #'* shape2)) (contiguous-p shape1 mask1 view-parent) (contiguous-p shape2 mask2 view-child))
-        ;  (return-from +view (copy-node view-child))))
-      
+  (multiple-value-bind (shape1 mask1 stride1 bc1) (parse-view view-parent)
+    (multiple-value-bind (shape2 mask2 stride2 bc2) (parse-view view-child)
       (print "++++++")
       (print shape1)
       (print mask1)
@@ -442,6 +447,8 @@ Applying a further slicing:
       (print mask2)
       (print stride2)
       (print (getattr view-child :permute))
+      (print "PERMUTE")
+      '(10 1 6 25 25 3 5 5)
       ;; 1. Contiguous -> return nil
 
       ;; Project the offsets of parent to child
@@ -464,7 +471,7 @@ Applying a further slicing:
           ;; VIEW2 -> MOVE(Contiguous) -> VIEW1
           ;; ===> Rewriting
           ;; {VIEW2+VIEW1}
-          (let* ((new-view (+view view2 view1)))
+          (let* ((new-view (+view view2 view1 allocate)))
             (when  new-view
               (setf (node-writes new-view) (node-writes view1)
                     (car (node-reads new-view)) (car (node-reads view2)))
