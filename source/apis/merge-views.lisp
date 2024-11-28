@@ -260,11 +260,11 @@ for i in range(3):
          (starts-with-one (and (car new-shape) (eql (car new-shape) 1)))
          (old-shape (loop for s in (canonicalize-shape (tr-shape tracker))
                           for nth upfrom 0
-                          if (or (and starts-with-one (= nth 0)) (not (eql s 1))) collect s))
+                          if (or (and starts-with-one (eql s 1) (= nth 0)) (not (eql s 1))) collect s))
          (merged-stride (loop for s in (canonicalize-shape (tr-shape tracker))
                               for st in (tr-stride tracker)
                               for nth upfrom 0
-                              if (or (and starts-with-one (= nth 0)) (not (eql s 1))) collect st))
+                              if (or (and starts-with-one (eql s 1) (= nth 0)) (not (eql s 1))) collect st))
          (stack))
     ;; does not support to break a symbolic axis
     (loop while new-shape
