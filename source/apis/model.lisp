@@ -35,3 +35,27 @@
 	       ,@(loop for slot-name in slot-names
 		       collect `(setf (slot-value ,name ',slot-name) ,slot-name))
 	       ,@body)))))))
+
+(defmacro defcall ((model-bind model) (&rest inputs) &body body)
+  "
+```
+(defcall (model-bind model) (&rest inputs) body0
+```
+"
+  (let* ((where (princ-to-string inputs))
+         (where (when inputs (subseq where 1 (1- (length where)))))
+         (wt (when where (%parse-st (format nil "~a -> ~a" where where))))
+         (wt (if where wt (make-st "" nil nil)))
+         (keys (when wt (remove-duplicates (flatten (map 'list #'at-shape (st-bf wt)))))))
+    (with-gensyms (inputs solved)
+      `(defmethod call ((,model-bind ,model) &rest ,inputs)
+         (assert (= ,(length (st-bf wt)) (length ,inputs))
+                 ()
+                 "(call ~a &rest inputs): The number of inputs does not match defined inputs ~a~%call is defined as: ~a" ',model ,inputs ,where)
+         ,(when where `(st ,(format nil "~a -> ~a" where where) (,inputs)))
+         (multiple-value-bind (,@(map 'list (compose #'intern #'princ-to-string #'at-name) (st-bf wt))) (apply #'values ,inputs)
+           (let ((,solved ,(when where `(%solve-st (%parse-st ,(format nil "~a -> ~a" where where)) nil nil :tensors ,inputs :return-solved t))))
+             (declare (ignorable ,solved))
+             (let (,@(loop for key in keys collect `(,(intern (princ-to-string key)) (gethash ,key ,solved))))
+               (declare (ignorable ,@(map 'list (compose #'intern #'princ-to-string) keys)))
+               ,@body)))))))
