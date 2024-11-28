@@ -247,15 +247,17 @@ for i in range(3):
       (return-from apply-masked-reshape nil)))
   (when (some #'(lambda (x) (and x (not (eql 1 (third x))))) (tr-mask tracker))
     (return-from apply-masked-reshape nil))
-  
-  (let ((new-shape-copy (copy-list new-shape))
-        (shape-map)
-        (old-shape (loop for s in (canonicalize-shape (tr-shape tracker))
-                         unless (eql s 1) collect s))
-        (merged-stride (loop for s in (canonicalize-shape (tr-shape tracker))
-                             for st in (tr-stride tracker)
-                             unless (eql s 1) collect st))
-        (stack))
+  (let* ((new-shape-copy (copy-list new-shape))
+         (shape-map)
+         (starts-with-one (and (car new-shape) (eql (car new-shape) 1)))
+         (old-shape (loop for s in (canonicalize-shape (tr-shape tracker))
+                          for nth upfrom 0
+                          if (or (and starts-with-one (= nth 0)) (not (eql s 1))) collect s))
+         (merged-stride (loop for s in (canonicalize-shape (tr-shape tracker))
+                              for st in (tr-stride tracker)
+                              for nth upfrom 0
+                              if (or (and starts-with-one (= nth 0)) (not (eql s 1))) collect st))
+         (stack))
     ;; does not support to break a symbolic axis
     (loop while new-shape
           for ns = (pop new-shape) do
