@@ -239,9 +239,8 @@ for i in range(3):
         j1 = j*2 + jj # shape_map[1]
         print(10 * i1 + 1 * j1)
 ```
-" 
-  (when (not (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))))
-    (return-from apply-masked-reshape nil))
+"
+  (when (equal (tr-shape tracker) (tr-base-shape tracker)) (return-from apply-masked-reshape nil))
   
   ;; Broadcast => Contiguous
   (when (some #'identity (tr-broadcast tracker))
@@ -311,8 +310,7 @@ for i in range(3):
   (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
       (return-from tr-reshapeable-p t)))
-  (when (and (tr-mask tracker) (not (equal (tr-shape tracker) (tr-base-shape tracker)))
-             (apply-masked-reshape tracker new-shape))
+  (when (apply-masked-reshape tracker new-shape)
     (return-from tr-reshapeable-p t))
   ;; Not contiguous -> Not reshapeable
   (when (null (tr-contiguous tracker)) (return-from tr-reshapeable-p nil))
@@ -331,8 +329,8 @@ for i in range(3):
     (when (equal shape-w/o-one (tr-shape tracker))
       (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape)))))
   (assert (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))) () "Trying to reshape the permuted tracker!")
-  (when (and (tr-mask tracker) (not (equal (tr-shape tracker) (tr-base-shape tracker))))
-    (return-from tr-apply-reshape (or (apply-masked-reshape tracker new-shape) (error "Cannot reshape the tracker from ~a tp ~a" tracker new-shape))))
+  (let ((r (apply-masked-reshape tracker new-shape)))
+    (when r (return-from tr-apply-reshape r)))
   ;; Can reshape (reshape=chainging the stride)
   (let* ((new-tracker (copy-tracker tracker)))
     (setf (tr-shape new-tracker) new-shape
