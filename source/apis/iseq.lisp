@@ -382,7 +382,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 (defparameter *no-grad* nil)
 (defun %compile-toplevel (tensors &key (rewriters nil) (no-grad *no-grad*) (external-simplifiers *external-simplifiers*) (name :main))
   (declare (type list tensors))
-  (let* ((external-simplifiers `(compose-views-from-graph  ,@external-simplifiers))
+  (let* ((external-simplifiers `(compose-views-from-graph ,@external-simplifiers))
          (session (make-compiler-session :name name))
 	 (iseq (apply #'%tpsort-tensors session tensors))
 	 (prev-grad

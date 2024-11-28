@@ -255,10 +255,11 @@ for i in range(3):
   
   (let ((new-shape-copy (copy-list new-shape))
         (shape-map)
-        (old-shape
-          ;; [TODO] Use merge-dims to maximize the chance
-          (loop for s in (canonicalize-shape (tr-shape tracker))
-                if (not (eql s 1)) collect s))
+        (old-shape (loop for s in (canonicalize-shape (tr-shape tracker))
+                         unless (eql s 1) collect s))
+        (merged-stride (loop for s in (canonicalize-shape (tr-shape tracker))
+                             for st in (tr-stride tracker)
+                             unless (eql s 1) collect st))
         (stack))
     ;; does not support to break a symbolic axis
     (loop while new-shape
@@ -286,17 +287,17 @@ for i in range(3):
     ;; Create a stride inside each shape-map (e.g.: (10 (2 3) (2 3)) -> (1 (3 1) (3 1)))
     (let* ((stride-map (map 'list #'(lambda (x) (!stride (tr-order tracker) x)) shape-map))
            ;; Multiplying the base stride
-           (stride-map (flatten (map 'list #'(lambda (st x) (map 'list #'(lambda (a) (!mul (->iconst st) a)) x)) (tr-stride tracker) stride-map)))
+           (_ (assert (= (length merged-stride) (length stride-map))))
+           (stride-map (flatten (map 'list #'(lambda (st x) (map 'list #'(lambda (a) (!mul (->iconst st) a)) x)) merged-stride stride-map)))
            (stride-map (canonicalize-shape stride-map))
            (new-tracker (copy-tracker tracker)))
+      (declare (ignore _))
       (setf (tr-shape new-tracker) (flatten shape-map)
             (tr-base-shape new-tracker) (flatten shape-map)
             (tr-stride new-tracker) stride-map
             (tr-mask new-tracker) (make-list (length new-shape-copy))
             (tr-broadcast new-tracker) (make-list (length new-shape-copy))
             (tr-permute new-tracker) (range 0 (length new-shape-copy)))
-      ;; Hint: Some of stride computation is WRONG!
-       (setf (tr-stride new-tracker) (sort (tr-stride new-tracker) #'>))
       new-tracker)))
 
 (defgeneric tr-reshapeable-p (obj new-shape))
@@ -323,20 +324,20 @@ for i in range(3):
   (assert (tr-reshapeable-p tracker new-shape) () "tr-apply-reshape: ~a ~a is not reshapeable! Call !contiguous in advance." tracker new-shape)
   (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
-      (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape))))
-    (assert (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))) () "Trying to reshape the permuted tracker!")
-    (when (and (tr-mask tracker) (not (equal (tr-shape tracker) (tr-base-shape tracker))))
-      (return-from tr-apply-reshape (or (apply-masked-reshape tracker new-shape) (error "Cannot reshape the tracker from ~a tp ~a" tracker new-shape))))
-    ;; Can reshape (reshape=chainging the stride)
-    (let* ((new-tracker (copy-tracker tracker)))
-      (setf (tr-shape new-tracker) new-shape
-            (tr-base-shape new-tracker) (copy-list new-shape)
-            (tr-stride new-tracker) (and new-shape (!stride (tr-order new-tracker) new-shape))
-            (tr-mask new-tracker) (make-list (length new-shape))
-            (tr-broadcast new-tracker) (make-list (length new-shape))
-            (tr-permute new-tracker) (range 0 (length new-shape))
-            (tr-contiguous new-tracker) t)
-      new-tracker)))
+      (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape)))))
+  (assert (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))) () "Trying to reshape the permuted tracker!")
+  (when (and (tr-mask tracker) (not (equal (tr-shape tracker) (tr-base-shape tracker))))
+    (return-from tr-apply-reshape (or (apply-masked-reshape tracker new-shape) (error "Cannot reshape the tracker from ~a tp ~a" tracker new-shape))))
+  ;; Can reshape (reshape=chainging the stride)
+  (let* ((new-tracker (copy-tracker tracker)))
+    (setf (tr-shape new-tracker) new-shape
+          (tr-base-shape new-tracker) (copy-list new-shape)
+          (tr-stride new-tracker) (and new-shape (!stride (tr-order new-tracker) new-shape))
+          (tr-mask new-tracker) (make-list (length new-shape))
+          (tr-broadcast new-tracker) (make-list (length new-shape))
+          (tr-permute new-tracker) (range 0 (length new-shape))
+          (tr-contiguous new-tracker) t)
+    new-tracker))
 
 (defmethod tr-apply-slice ((tensor Tensor) slice new-shape) (tr-apply-slice (tensor-tr tensor) slice new-shape))
 (defmethod tr-apply-slice ((tracker Tracker) slice new-shape &aux (new-shape (canonicalize-shape new-shape)))
@@ -411,6 +412,7 @@ for i in range(3):
               "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invaild simplifier?~%~a" write-to g)
       g)))
 ;; [TODO] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; 最後にやる
 ;; - ConvND=1
 ;; - Attention=4
 ;; - Pass all tests
