@@ -305,10 +305,20 @@ for i in range(3):
             (tr-permute new-tracker) (range 0 (length new-shape-copy)))
       new-tracker)))
 
+(defun make-broadcast-mask (base-shape new-shape)
+  (let* ((offset (count 1 (canonicalize-shape base-shape)))
+         (count 0))
+    (loop for n in new-shape
+          collect (or (not (eql n 1)) (< count offset))
+          do (incf count))))
+        
 (defgeneric tr-reshapeable-p (obj new-shape))
 (defmethod tr-reshapeable-p ((tensor Tensor) new-shape) (tr-reshapeable-p (tensor-tr tensor) new-shape))
 (defmethod tr-reshapeable-p ((tracker Tracker) new-shape &aux (new-shape (canonicalize-shape new-shape)))
-  (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
+  (let ((shape-w/o-one
+          (loop for m in (make-broadcast-mask (tr-shape tracker) new-shape)
+                for s in new-shape
+                if m collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
       (return-from tr-reshapeable-p t)))
   (when (apply-masked-reshape tracker new-shape)
@@ -326,9 +336,13 @@ for i in range(3):
 (defmethod tr-apply-reshape ((tracker Tracker) new-shape &aux (new-shape (canonicalize-shape new-shape)))
   (assert (every #'(lambda (s) (or (symbolp s) (tensor-p s) (and (integerp s) (> s 0)))) new-shape) () "Trying to reshape tracker with negative or wrong typed dimension: ~a" new-shape)
   (assert (tr-reshapeable-p tracker new-shape) () "tr-apply-reshape: ~a ~a is not reshapeable! Call !contiguous in advance." tracker new-shape)
-  (let ((shape-w/o-one (loop for s in new-shape if (not (eql s 1)) collect s)))
+  (let* ((mask (make-broadcast-mask (tr-shape tracker) new-shape))
+         (shape-w/o-one 
+           (loop for m in mask
+                 for s in new-shape
+                 if m collect s)))
     (when (equal shape-w/o-one (tr-shape tracker))
-      (return-from tr-apply-reshape (tr-apply-uprank tracker (map 'list #'(lambda (s) (not (eql s 1))) new-shape)))))
+      (return-from tr-apply-reshape (tr-apply-uprank tracker mask))))
   (assert (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))) () "Trying to reshape the permuted tracker!")
   (let ((r (apply-masked-reshape tracker new-shape)))
     (when r (return-from tr-apply-reshape r)))
