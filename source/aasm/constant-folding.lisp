@@ -85,7 +85,7 @@
           (node-writes node) new-shape
           :nrank nrank :dtype dtype :from from))))))
 
-(defun sfold-view (ss node graph nrank broadcast permute)
+(defun sfold-view (ss node graph nrank broadcast permute tr)
   (declare (type list ss) (type node node) (type graph graph) (optimize (speed 3)))
   (when ss
     (let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
@@ -102,7 +102,7 @@
 	   (make-node
 	    :Buffer :View
 	    (node-writes node) new-views
-	    :nrank nrank :broadcast broadcast :permute permute)))))))
+	    :nrank nrank :broadcast broadcast :permute permute :tr tr)))))))
 ;; [TODO] Logical AND/XOR/OR for threefry2x32
 (defsimplifier
     (apply-fold-constant :speed 1)
@@ -119,6 +119,7 @@
     ((:AND ((Bool x) (Bool y))) -> (Const (and x y) :bool))
     ((:OR ((Bool x) (Bool y))) -> (Const (or x y) :bool))
     ((:WHERE ((Bool x) (Const y dtype) (Const z _))) -> (Const (if x y z) dtype))
+    ((:IDIV ((Const x dtype) (Const y _))) -> (Const (floor x y) dtype))
     ((:Recip ((Var (= 1) dtype))) -> (Const 1 dtype))
     ((:Mul (_ (Var (= 0) _))) -> ((node graph) (reinitialize-tensor graph node)))
     ((:Mul ((Var (= 0) _) _)) -> ((node graph) (reinitialize-tensor graph node)))
@@ -133,9 +134,9 @@
     ((:Allocate (~ ss) :nrank (guard nrank (> 0)) :dtype dtype :from from)
      ->
      ((node graph) (sfold-allocate ss node graph nrank dtype from)))
-    ((:View (~ ss) :broadcast broadcast :nrank nrank :permute permute)
+    ((:View (~ ss) :broadcast broadcast :nrank nrank :permute permute :tr tr)
      ->
-     ((node graph) (sfold-view ss node graph nrank broadcast permute))))
+     ((node graph) (sfold-view ss node graph nrank broadcast permute tr))))
 
 (defun fold-constant (graph &key (debug-opt nil))
   (apply-fold-constant graph :debug-opt debug-opt)
