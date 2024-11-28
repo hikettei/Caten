@@ -245,6 +245,8 @@ for i in range(3):
   (when (some #'identity (tr-broadcast tracker))
     (when (null (tr-contiguous tracker))
       (return-from apply-masked-reshape nil)))
+  (when (some #'(lambda (x) (and x (not (eql 1 (third x))))) (tr-mask tracker))
+    (return-from apply-masked-reshape nil))
   
   (let ((new-shape-copy (copy-list new-shape))
         (shape-map)
@@ -277,27 +279,31 @@ for i in range(3):
     (when (not (equal (flatten shape-map) (flatten new-shape-copy)))
       (return-from apply-masked-reshape nil))
     ;; Create a stride inside each shape-map (e.g.: (10 (2 3) (2 3)) -> (1 (3 1) (3 1)))
+  ;  (print "+++++")
     (let* ((stride-map (map 'list #'(lambda (x) (!stride (tr-order tracker) x)) shape-map))
            ;; Multiplying the base stride
            (_ (assert (= (length merged-stride) (length stride-map))))
-           (stride-map (flatten (map 'list #'(lambda (st x) (map 'list #'(lambda (a) (!mul (->iconst st) a)) x)) merged-stride stride-map)))
-           (stride-map (canonicalize-shape stride-map))
+           (stride-map (map 'list #'(lambda (st x) (map 'list #'(lambda (a) (!mul (->iconst st) a)) x)) merged-stride stride-map))
+           (stride-map (map 'list #'canonicalize-shape stride-map))
            (new-mask
              (loop for m in (tr-mask tracker)
                    for smap in shape-map
+                   for base-st in (tr-stride tracker)
+                   for st in stride-map
+                   for offsets = (when m (canonicalize-shape (un1d st (make-list (length st)) (!mul (->iconst base-st) (->iconst (car m))))))
                    collect
-                   (loop with point = (if (eql (tr-order tracker) :row) (1- (length smap)) 0)
-                         for nth upfrom 0
+                   (loop for offset in offsets
                          for s in smap
-                         if (eql nth point) ;; mini-stride=1?
-                           collect (if m `(,(car m) ,s ,(third m)) `(0 ,s 1))
-                         else
-                           collect `(0 ,s 1))))
+                         for st1 in st
+                         collect `(,offset ,(!add (->iconst offset) (->iconst s)) 1))))
            (new-tracker (copy-tracker tracker)))
       (declare (ignore _))
+  ;    (print stride-map)
+  ;    (format t "~%Reshape: ~a -> ~a~%" (canonicalize-shape (tr-shape tracker)) (flatten shape-map))
+      
       (setf (tr-shape new-tracker) (flatten shape-map)
             (tr-base-shape new-tracker) (flatten shape-map)
-            (tr-stride new-tracker) stride-map
+            (tr-stride new-tracker) (flatten stride-map)
             (tr-mask new-tracker) (apply #'append new-mask)
             (tr-broadcast new-tracker) (make-list (length new-shape-copy))
             (tr-permute new-tracker) (range 0 (length new-shape-copy)))
@@ -421,7 +427,7 @@ for i in range(3):
 (defun un1d (stride broadcasts offset &aux (result) (offset (->iconst offset)))
   (loop for st in stride
         for bc in broadcasts
-        for here = (if (or bc (eql 0 (canonicalize-int st))) (iconst 0) (!idiv offset st))
+        for here = (if (or bc (eql 0 (canonicalize-int st))) (iconst 0) (!idiv offset (->iconst st)))
         do (push here result)
            (setf offset (!sub offset (!mul here (->iconst st)))))
   (canonicalize-shape (nreverse result)))
