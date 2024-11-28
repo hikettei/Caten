@@ -239,15 +239,10 @@ for i in range(3):
         j1 = j*2 + jj # shape_map[1]
         print(10 * i1 + 1 * j1)
 ```
-"
-  (when (eql *default-order* :column) ;; not tested
-    (return-from apply-masked-reshape nil))
-  
+" 
   (when (not (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))))
     (return-from apply-masked-reshape nil))
-  ;; [TODO !!!] Add VIEW.offset and merge this
-  (when (some #'(lambda (x) (and x (not (eql (first x) 0)))) (tr-mask tracker))
-    (return-from apply-masked-reshape nil))
+  
   ;; Broadcast => Contiguous
   (when (some #'identity (tr-broadcast tracker))
     (when (null (tr-contiguous tracker))
@@ -279,8 +274,7 @@ for i in range(3):
                     (setf stack nil)))))
     ;; Creating a map: (10 6 6) -> (10 (2 3) (2 3))
     ;;                   i j k      i j1 j2  k1 k2
-    ;; j = 2*j1+j2, k = 2*k1+k2
-    ;; [TODO] Apply the broadcasted axes
+    ;; j = 2*j1+j2, k = 2*k1+k2    ;; [TODO] Apply the broadcasted axes
     (setf shape-map (nreverse shape-map))
     (when (not (equal (flatten shape-map) (flatten new-shape-copy)))
       (return-from apply-masked-reshape nil))
@@ -290,12 +284,23 @@ for i in range(3):
            (_ (assert (= (length merged-stride) (length stride-map))))
            (stride-map (flatten (map 'list #'(lambda (st x) (map 'list #'(lambda (a) (!mul (->iconst st) a)) x)) merged-stride stride-map)))
            (stride-map (canonicalize-shape stride-map))
+           (new-mask
+             (loop for m in (tr-mask tracker)
+                   for smap in shape-map
+                   collect
+                   (loop with point = (if (eql (tr-order tracker) :row) (1- (length smap)) 0)
+                         for nth upfrom 0
+                         for s in smap
+                         if (eql nth point) ;; mini-stride=1?
+                           collect m
+                         else
+                           collect `(0 ,s 1))))
            (new-tracker (copy-tracker tracker)))
       (declare (ignore _))
       (setf (tr-shape new-tracker) (flatten shape-map)
             (tr-base-shape new-tracker) (flatten shape-map)
             (tr-stride new-tracker) stride-map
-            (tr-mask new-tracker) (make-list (length new-shape-copy))
+            (tr-mask new-tracker) (apply #'append new-mask)
             (tr-broadcast new-tracker) (make-list (length new-shape-copy))
             (tr-permute new-tracker) (range 0 (length new-shape-copy)))
       new-tracker)))
