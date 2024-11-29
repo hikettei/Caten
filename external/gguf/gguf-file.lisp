@@ -31,7 +31,7 @@
        (fast-read-byte buffer))
     (let ((header (make-array 4 :element-type '(unsigned-byte 8) :initial-contents (list g1 g2 u f))))
       (babel:octets-to-string header :encoding :utf-8))))
-
+;; TODO: maybe read-gguf is better naming?
 (defun make-gguf (stream)
   "GGUF File Structure:
 https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
@@ -59,7 +59,7 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
 	gguf))))
 
 (defun load-gguf (pathname)
-  "Creates GGUF from pahtname"
+  "Loads GGUF file to memory from pahtname"
   (with-open-file (stream pathname :element-type '(unsigned-byte 8))
     (make-gguf stream)))
 

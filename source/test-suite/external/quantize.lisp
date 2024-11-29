@@ -16,31 +16,40 @@ def generate_gguf():
 
 (in-package :caten/gguf)
 
-(defun create-test-buffer ()
-  (make-array '(5) :element-type '(signed-byte 8) :initial-contents '(127 -128 0 64 -64)))
 
-(defun create-test-tensor-info ()
-  (let ((tensor (make-tensor-info
-                 "test-tensor"
-                 1
-                 '(5)
-                 :Q8_0
-                 0)))
-    (setf (tensor-info-buffer tensor) (create-test-buffer)) ;; Set binary buffer
-    tensor))
+(defparameter *scale-factor-bytes*
+  (make-array 2
+              :element-type '(unsigned-byte 8)
+              :initial-contents '(#x00 #x30)))
 
-(print (type-of (create-test-buffer)))
 
-(defun test-dequantize-q8-0 ()
-  (let* ((tensor-info (create-test-tensor-info))               ;; Create test tensor-info
-         (aligned-buffer (tensor-info-buffer tensor-info))     ;; Get the buffer
-         (expected '(12.7 -12.8 0.0 6.4 -6.4))                ;; Expected output
-         (result (dequantize :Q8_0 aligned-buffer tensor-info))) ;; Call dequantize
-    (if (equal result expected)
-        (format t "Test passed: ~a~%" result)
-        (format t "Test failed: ~a (expected ~a)~%" result expected))))
+(defparameter *quantized-values*
+  (make-array 32
+              :element-type '(unsigned-byte 8)
+              :initial-contents
+              (let ((values '(1 -1 2 -2 3 -3 4 -4 5 -5 6 -6 7 -7 8 -8
+                              9 -9 10 -10 11 -11 12 -12 13 -13 14 -14 15 -15 16 -16)))
+                    (mapcar (lambda (v)
+                              (if (>= v 0)
+                                  v
+                                  (+ 256 v)))
+                            values))))
 
-(print (create-test-buffer))
 
-(test-dequantize-q8-0)
+(defparameter *data*
+  (let ((total-length (+ (length *scale-factor-bytes*) (length *quantized-values*))))
+    (make-array total-length
+                :element-type '(unsigned-byte 8)
+                :initial-contents
+                (concatenate 'list *scale-factor-bytes* *quantized-values*))))
 
+(defparameter *input-buffer* (fast-io:make-input-buffer :vector *data*))
+
+(defparameter *test-tensor-info*
+  (make-tensor-info "test-tensor"
+                    1           ;; Number of dimensions
+                    '(32)       ;; Dimensions
+                    :Q8_0       ;; Tensor type
+                    0))         ;; Offset
+
+(print (dequantize :Q8_0 *input-buffer* *test-tensor-info*))
