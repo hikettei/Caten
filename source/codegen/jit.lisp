@@ -497,7 +497,8 @@ caten/codegen overview:
         (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
           (when (>= (ctx:getenv :JIT_DEBUG) 4)
             (print-info "Final Scheduling Graph:")
-            (print schedule-graph)
+            (pprint-graph schedule-graph)
+            (when (= (ctx:getenv :DOT) 2) (->dot schedule-graph :title "Schedule Graph (Final)"))
             (print-info "Final VM Graph:")
             (print new-graph))
           (setf (avm-graph avm) new-graph

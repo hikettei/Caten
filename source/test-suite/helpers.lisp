@@ -13,7 +13,14 @@
     dtype)
    (buffer-shape (tensor-buffer tensor))))
 
-(defun ->torch (tensor &key (dtype *torch-dtype*)) (remote-objects (torch.from_numpy (->numpy tensor :dtype dtype))))
+(defun sync-visible-size (tensor)
+  (when (arrayp (buffer-value (tensor-buffer tensor)))
+    (when (not (= (apply #'* (buffer-shape (tensor-buffer tensor))) (array-total-size (buffer-value (tensor-buffer tensor)))))
+      (setf tensor (proceed (!copy tensor)))))
+  tensor)
+
+(defun ->torch (tensor &key (dtype *torch-dtype*))
+  (remote-objects (torch.from_numpy (->numpy (sync-visible-size tensor) :dtype dtype))))
 
 (defun torch-shape (tensor) (remote-objects* (py.list (chain tensor (size)))))
 
@@ -159,7 +166,7 @@
 (defmacro assert-equal ((&key (rtol 1e-7) (atol 0.0)) torch-form lisp-form)
 `(let ((torch ,torch-form) (lisp ,lisp-form))
    (ok (equal (shape torch) (shape lisp)) "Shapes match")
-   (multiple-value-bind (atol1 rtol1) (compute-rtol-atol (buffer-value (tensor-buffer torch)) (buffer-value (tensor-buffer lisp)))
+   (multiple-value-bind (atol1 rtol1) (compute-rtol-atol (buffer-value (tensor-buffer (sync-visible-size torch))) (buffer-value (tensor-buffer (sync-visible-size lisp))))
      (ok (<= atol1 ,atol) (format nil "Satisfying (atol=~a) <= ~a" atol1 ,atol))
      (ok (<= rtol1 ,rtol) (format nil "Satisfying (rtol=~a) <= ~a" rtol1 ,rtol)))))
 
