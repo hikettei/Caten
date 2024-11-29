@@ -46,6 +46,18 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 	    (with-torch (q k v)
 	      (->caten (test_scaled_dot_product_attention q k v)))
 	    (proceed (scaled-dot-product-attention q k v)))))))
+;; repro! SERIALIZE=1 to work, so the kernel fusion. JIT=1 only fails
+(deftest test-scaled-dot-product-attention-batched-composed
+  (with-given-dtype ((:float32 . "float32"))
+    (with-no-grad
+      (let ((q (randn `(4 4 8 8)))
+	    (k (randn `(4 4 8 8)))
+	    (v (randn `(4 4 8 8))))
+        (assert-equal
+	    (:atol 1e-4 :rtol 1e-6)
+	    (with-torch (q k v)
+	      (->caten (test_scaled_dot_product_attention (test_scaled_dot_product_attention q k v) k v)))
+	    (proceed (scaled-dot-product-attention (scaled-dot-product-attention q k v) k v)))))))
 
 (deftest test-softmax-pytorch
   (with-given-dtype ((:float32 . "float32"))
@@ -292,19 +304,19 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
         (c_procj.weight (make-tensor `(32 32)))
         (c_procj.bias (make-tensor `(32))))
     (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
-
+;; Fails with JIT=0, JIT=1
 (deftest test-attention-large
   (let* ((dim 128)
          (n-heads 8)
          (batch-size 10)
          (seq-len 32)
-         (x (rand `(,batch-size ,seq-len ,dim)))
-         (c_attn.weight (rand `(,(* 3 dim) ,dim)))
-         (c_attn.bias   (rand `(,(* 3 dim))))
-         (c_procj.weight (rand `(,dim ,dim)))
-         (c_procj.bias (rand `(,dim))))
+         (x (randn `(,batch-size ,seq-len ,dim)))
+         (c_attn.weight (randn `(,(* 3 dim) ,dim)))
+         (c_attn.bias   (randn `(,(* 3 dim))))
+         (c_procj.weight (randn `(,dim ,dim)))
+         (c_procj.bias (randn `(,dim))))
     (assert-equal
-        (:rtol 1e-2 :atol 1e-5) ;; TODO: Rtol in 1e-5
+        (:rtol 1e-4 :atol 1e-5) ;; TODO: Rtol in 1e-5
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
@@ -314,13 +326,13 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
          (n-heads 8)
          (batch-size 1)
          (seq-len 32)
-         (x (rand `(,batch-size ,seq-len ,dim)))
-         (c_attn.weight (rand `(,(* 3 dim) ,dim)))
-         (c_attn.bias   (rand `(,(* 3 dim))))
-         (c_procj.weight (rand `(,dim ,dim)))
-         (c_procj.bias (rand `(,dim))))
+         (x (randn `(,batch-size ,seq-len ,dim)))
+         (c_attn.weight (randn `(,(* 3 dim) ,dim)))
+         (c_attn.bias   (randn `(,(* 3 dim))))
+         (c_procj.weight (randn `(,dim ,dim)))
+         (c_procj.bias (randn `(,dim))))
     (assert-equal
-        (:rtol 1e-2 :atol 1e-5) ;; TODO: Rtol in 1e-5
+        (:rtol 1e-4 :atol 1e-5) ;; TODO: Rtol in 1e-5
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
