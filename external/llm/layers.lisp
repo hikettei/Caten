@@ -54,10 +54,9 @@
     ((c-fc   (Linear dim hidden-dim))
      (c-proj (Linear hidden-dim dim))))
 
-(defmethod call ((model FeedForward) &rest inputs)
-  (multiple-value-bind (x) (apply #'values inputs)
-    (with-slots ((c-fc c-fc) (c-proj c-proj)) model
-      (forward c-proj (!gelu (forward c-fc x))))))
+(defcall (model FeedForward) (X[~])
+  (with-slots ((c-fc c-fc) (c-proj c-proj)) model
+    (forward c-proj (!gelu (forward c-fc x)))))
 
 (defmodel (TransformerBlock (dim n-heads &key (norm-eps 1e-5) (max-seq-len 1024)))
     ((attn (Attention dim n-heads max-seq-len))

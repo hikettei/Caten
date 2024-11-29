@@ -41,6 +41,24 @@
 ```
 (defcall (model-bind model) (&rest inputs) body0
 ```
+
+A macro to write `defmethod call` in a more concise way.
+
+### Example
+
+```lisp
+(defcall (model Transformer) (Tokens[Batch Seq-Len] Start-Pos[])
+  (with-slots ((wte wte) (wpe wpe) (h h) (ln-f ln-f) (lm-head lm-head)) model
+    (let* ((token-emb (forward wte tokens))
+	   (pos-emb   (forward wpe (!cast (!add start-pos (!index-components `(1 ,seq-len))) (dtype-of tokens))))
+	   (hi (!add token-emb pos-emb))
+	   (mask (!triu (!full `(1 1 ,seq-len ,(!+ start-pos (iconst seq-len))) (-inf)) :diagonal (!+ (iconst 1) start-pos)))
+	   (_ (dolist (hn h) (setf hi (forward hn hi mask start-pos))))
+	   (logits (forward lm-head (forward ln-f hi))))
+      (declare (ignore _))
+      ;; (!argmax (!view logits t -1 t))
+      (!argmax logits))))
+```
 "
   (let* ((where (princ-to-string inputs))
          (where (when inputs (subseq where 1 (1- (length where)))))
