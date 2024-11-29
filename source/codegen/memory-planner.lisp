@@ -71,8 +71,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                              (not (= -1 (buffer-nrank (memoryblock-type candidate))))
 			     (buffer-shape (memoryblock-type mb)) ;; <=> assure the memory-block is a tensor
                              (buffer-size-eq (memoryblock-type candidate) (memoryblock-type mb))
-			     (equal (buffer-dtype (memoryblock-type candidate))
-				    (buffer-dtype (memoryblock-type mb)))
+			     (equal (buffer-dtype (memoryblock-type candidate)) (buffer-dtype (memoryblock-type mb)))
                              ;; [TODO] If offsets were created but size are equivalent; they are not cached right?
 			     (equal (buffer-views (memoryblock-type candidate)) (buffer-views (memoryblock-type mb))))
 		       do (push candidate candidates))
@@ -159,6 +158,9 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
           if (eql (node-type node) :Schedule-Item) ; Optimization for non-jitable instructions (like: foreign kernel calls, allocation, pause/backward)
             do (assert (= (length (getattr node :storage-id-src)) (length (getattr node :read-types))))
                (assert (= (length (getattr node :storage-id-dst)) (length (getattr node :write-types))))
+               ;; Lock the allocation
+               (when (getattr node :allocate-p)
+                 (setf (gethash (car (node-writes node)) lock-table) t))
                (loop for val in (getattr node :storage-id-src)
                      for typ in (getattr node :read-types)
                      for time = `(,nth ,@(gethash val trace-table))
