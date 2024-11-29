@@ -61,9 +61,9 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 
 (deftest test-softmax-pytorch
   (with-given-dtype ((:float32 . "float32"))
-    (let ((x (rand `(32 32))))
+    (let ((x (rand `(128 128))))
       (assert-equal
-	  (:atol 1e-5 :rtol 1e-3)
+	  (:atol 1e-5 :rtol 1e-7)
 	  (with-torch (x)
 	    (->caten (f:softmax x)))
 	  (proceed (!softmax x))))))
