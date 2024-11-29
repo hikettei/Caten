@@ -476,9 +476,6 @@ Otherwise, returns NIL. (= not fusable)"
            (self-type (group-get-type tgt-group))
            (c (< r1 r2)))
       (when (null self-type)->ng)
-      ;(print "+++++")
-      ;(print parent-group)
-      ;(print tgt-group)
       (if (broadcastable-p read-type self-type) ;; simpliy broadcastable
           (let* ((base-1 (loop for s in (buffer-shape (if c self-type read-type)) if (eql s 1) collect s))
                  (mask (map 'list
@@ -622,11 +619,6 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
             (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
               ;; View Rewriting here?
               ;; Permute rewriting here?
-              (when view
-                (print "++UNSAFE_VIEW_MERGE++")
-                (print parent-group)
-                (print tgt-group)
-                (print view))
               ->ok)
             (let ((optimal-p
                     (or (eql pattern :case1)
@@ -639,19 +631,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
       ;; fuse/rewrite _read_views and buffers sometime.
       ;; 1. Injective + Same Ranks
       (when (= r1 r2)
-        (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group))
-          ;; 1. fix for composed view
-          (when view
-            (print "++++")
-            (print parent-group)
-            (print tgt-group)
-            (print view))
-          
-          ;; parent_group should have a view of tgt_group
-          ;;(let ((permute (and view (getattr view :permute))))
-            ;; (when permute (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
-          ;;  ->ok)
-          ->ok)
+        (when (and (null view) (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group)))->ok)
         ->ng)
       ;; 2. Injective + Different Ranks
       (when (group-chase-down-reduction-p ctx tgt-group restart-point)->ng) ; If tgt-group is used by the reduction => better to merge it with that.
