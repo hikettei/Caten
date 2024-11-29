@@ -163,7 +163,7 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
 (docs:define-page ("Models" "packages/caten.apis.models.md")
   (docs:title "Models")
   (docs:body "TODO")
-  )
+  (docs:doc/macro "defcall" 'defcall))
 
 (docs:define-page ("AOT" "packages/caten.apis.aot.md")
   (docs:title "AOT")
