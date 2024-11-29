@@ -12,6 +12,7 @@ def softmax(x):
   ss = e.sum(axis=-1, keepdims=True)
   return e / ss
 
+def _softmax(x): return softmax(x)
 import math
 def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
     qk = torch.matmul(query, key.transpose(-2, -1))
@@ -22,6 +23,7 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 ")
 
 (import-function "test_scaled_dot_product_attention")
+(import-function "_softmax")
 
 (deftest test-scaled-dot-product-attention
   (with-given-dtype ((:float32 . "float32"))
@@ -61,22 +63,42 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 
 (deftest test-softmax-pytorch
   (with-given-dtype ((:float32 . "float32"))
-    (let ((x (rand `(128 128))))
+    (let ((x (randn `(128 128))))
       (assert-equal
 	  (:atol 1e-5 :rtol 1e-7)
 	  (with-torch (x)
 	    (->caten (f:softmax x)))
 	  (proceed (!softmax x))))))
 
+(deftest test-softmax-pytorch-fuzz
+  (with-given-dtype ((:float32 . "float32"))
+    (let ((x (normal `(512 512) :mean 10000.0 :std 10.0)))
+      (assert-equal
+	  (:atol 1e-5 :rtol 1e-5)
+	  (with-torch (x)
+	    (->caten (f:softmax x)))
+	  (proceed (!softmax x))))))
+
 (deftest softmax-matmul
-  (let ((a (rand `(128 128)))
-        (b (rand `(128 128)))
-        (c (rand `(128 128))))
+  (let ((a (randn `(512 512)))
+        (b (randn `(512 512)))
+        (c (randn `(512 512))))
     (with-no-grad
       (assert-equal
-          (:atol 1e-5 :rtol 1e-5)
+          (:atol 1e-4 :rtol 1e-5)
           (with-torch (a b c)
             (->caten (f:softmax (torch.matmul (f:softmax c) (f:softmax (torch.matmul (f:softmax a) (f:softmax b)))))))
+          (proceed (!softmax (!matmul (!softmax c) (!softmax (!matmul (!softmax a) (!softmax b))))))))))
+
+(deftest softmax-matmul-fuzz
+  (let ((a (normal `(512 512) :mean 10000.0 :std 10.0))
+        (b (normal `(512 512) :mean 10000.0 :std 10.0))
+        (c (normal `(512 512) :mean 10000.0 :std 10.0)))
+    (with-no-grad
+      (assert-equal
+          (:atol 1e-4 :rtol 1e-5)
+          (with-torch (a b c)
+            (->caten (f:softmax (torch.matmul (_softmax c) (_softmax (torch.matmul (_softmax a) (_softmax b)))))))
           (proceed (!softmax (!matmul (!softmax c) (!softmax (!matmul (!softmax a) (!softmax b))))))))))
 
 ;; ~~ Utils for testing MultiHeadAttention ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
