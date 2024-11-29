@@ -617,8 +617,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
         (when (groups-reduce-permute-p tgt-group parent-group) ->ng) ;; Reduce -> Permute -> Reduce is not fusable.
         (if (= r1 r2)
             (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
-              ;; View Rewriting here?
-              ;; Permute rewriting here?
+              ;; [TODO] apply-view-fusor here?
               ->ok)
             (let ((optimal-p
                     (or (eql pattern :case1)
@@ -637,6 +636,8 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
                      (eql :MOVE (node-type (car (group-items parent-group))))
                      (eql :MOVE (node-type (car (group-items tgt-group)))))
             ->ng)
+          (let ((permute (and view (getattr view :permute))))
+            (when permute (apply-view-fusor (length permute) (loop repeat (length permute) collect nil) parent-group :permute permute)))
           ->ok)
         ->ng)
       ;; 2. Injective + Different Ranks
