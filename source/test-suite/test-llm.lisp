@@ -72,7 +72,7 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 
 (deftest test-softmax-pytorch-fuzz
   (with-given-dtype ((:float32 . "float32"))
-    (let ((x (normal `(512 512) :mean 10000.0 :std 10.0)))
+    (let ((x (normal `(512 512) :mean 10.0 :std 100.0)))
       (assert-equal
 	  (:atol 1e-5 :rtol 1e-5)
 	  (with-torch (x)
@@ -91,9 +91,9 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
           (proceed (!softmax (!matmul (!softmax c) (!softmax (!matmul (!softmax a) (!softmax b))))))))))
 
 (deftest softmax-matmul-fuzz
-  (let ((a (normal `(512 512) :mean 10000.0 :std 10.0))
-        (b (normal `(512 512) :mean 10000.0 :std 10.0))
-        (c (normal `(512 512) :mean 10000.0 :std 10.0)))
+  (let ((a (normal `(512 512) :mean 100.0 :std 1000.0))
+        (b (normal `(512 512) :mean 100.0 :std 1000.0))
+        (c (normal `(512 512) :mean 100.0 :std 1000.0)))
     (with-no-grad
       (assert-equal
           (:atol 1e-4 :rtol 1e-5)
@@ -333,10 +333,10 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
          (batch-size 10)
          (seq-len 32)
          (x (randn `(,batch-size ,seq-len ,dim)))
-         (c_attn.weight (randn `(,(* 3 dim) ,dim)))
-         (c_attn.bias   (randn `(,(* 3 dim))))
-         (c_procj.weight (randn `(,dim ,dim)))
-         (c_procj.bias (randn `(,dim))))
+         (c_attn.weight  (normal `(,(* 3 dim) ,dim) :mean 0.1 :std 1.1))
+         (c_attn.bias    (normal`(,(* 3 dim))  :mean 0.1 :std 1.1))
+         (c_procj.weight (normal `(,dim ,dim) :mean 0.1 :std 1.1))
+         (c_procj.bias   (normal `(,dim) :mean 0.1 :std 1.1)))
     (assert-equal
         (:rtol 1e-4 :atol 1e-5) ;; TODO: Rtol in 1e-5
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
@@ -349,10 +349,10 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
          (batch-size 1)
          (seq-len 32)
          (x (randn `(,batch-size ,seq-len ,dim)))
-         (c_attn.weight (randn `(,(* 3 dim) ,dim)))
-         (c_attn.bias   (randn `(,(* 3 dim))))
-         (c_procj.weight (randn `(,dim ,dim)))
-         (c_procj.bias (randn `(,dim))))
+         (c_attn.weight  (normal `(,(* 3 dim) ,dim) :mean 0.0 :std 0.1))
+         (c_attn.bias    (normal`(,(* 3 dim))  :mean 0.0 :std 0.1))
+         (c_procj.weight (normal `(,dim ,dim) :mean 0.0 :std 0.1))
+         (c_procj.bias   (normal `(,dim) :mean 0.0 :std 0.1)))
     (assert-equal
         (:rtol 1e-4 :atol 1e-5) ;; TODO: Rtol in 1e-5
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
