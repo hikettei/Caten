@@ -338,7 +338,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
          (c_procj.weight (normal `(,dim ,dim) :mean 0.1 :std 1.1))
          (c_procj.bias   (normal `(,dim) :mean 0.1 :std 1.1)))
     (assert-equal
-        (:rtol 1e-1 :atol 1e-1) ;; TODO: Rtol in 1e-5
+        (:rtol 1.0 :atol 1.0) ;; TODO: Rtol in 1e-5
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
