@@ -111,6 +111,28 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
            (node (node-id node) (node-name node) (helper/color :node) "filled, solid"))
           (:Module
            (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :module) "filled, solid"))
+          (:Graph
+           (if (eql (node-type node) :Schedule-Item)
+               (if (getattr node :allocate-p)
+                   (let ((alloc (car (getattr node :items))))
+                     (assert alloc)
+                     (if (getattr alloc :from)
+                          (node
+                           (node-id node)
+                           (format nil "Input[~a] ~a" (car (node-writes alloc)) (subseq (node-reads alloc) 0 (getattr alloc :nrank)))
+                           (helper/color :input)
+                           "filled, solid")
+                          (node
+                           (node-id node)
+                           (format nil "TmpAlloc[~a]" (subseq (node-reads alloc) 0 (getattr alloc :nrank)))
+                           (helper/color :chain)
+                           "filled, solid")))
+                   (if (getattr node :jitable)
+                       (node (node-id node) (getattr node :name) (helper/color :node) "filled, solid")
+                       (let ((node (car (getattr node :items))))
+                         (assert node)
+                         (node (node-id node) (format nil "[VMOP] ~a" (node-type node)) (helper/color :chain) "filled, solid"))))
+               (node (node-id node) (node-name node) (helper/color :movement) "filled, solid")))
           (otherwise
            (node (node-id node) (node-name node) (helper/color :movement) "filled, solid")))))
     (dolist (node (graph-nodes graph))
