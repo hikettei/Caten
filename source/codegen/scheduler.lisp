@@ -466,8 +466,9 @@ Otherwise, returns NIL. (= not fusable)"
                   if (group-reduce-dims child-group)
                     do (return-from group-chase-down-reduction-p t)))
     nil))
-
+;; [TODO] Simplify the algorithm. at least :permute in apply-view-fusor may not be necessary.
 (defmethod groups-rewrite-views-in-the-same-space ((parent-group Group) (tgt-group Group) view)
+  "If you want to schedule parent-group and tgt-group in the same space, this method fixes the view to be compatible in the same kernel. If failed, returns NIL."
   (symbol-macrolet ((->ng (return-from groups-rewrite-views-in-the-same-space nil))
                     (->ok (return-from groups-rewrite-views-in-the-same-space t)))
     (let* ((r1 (group-rank tgt-group)) (r2 (group-rank parent-group))
