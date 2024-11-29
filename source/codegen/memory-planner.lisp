@@ -59,7 +59,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
        (dolist (k (cdr s2)) (setf stack (remove k stack :test #'eql)))
        (null stack)))))
 ;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
-(defun greedy-solve-dsa (I total-time)
+(defun greedy-solve-dsa (I total-time black-lists)
   "A greedy solver for minimizing `peak_mem`"
   (declare (type list I))
   (let ((locked))
@@ -67,6 +67,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	       (loop for candidate in I
 		     if (and (null (find (memoryblock-id candidate) locked))
 			     (freed-p candidate time)
+                             (null (find (memoryblock-id candidate) (gethash (memoryblock-id mb) black-lists)))
                              (not (= -1 (buffer-nrank (memoryblock-type mb))))
                              (not (= -1 (buffer-nrank (memoryblock-type candidate))))
 			     (buffer-shape (memoryblock-type mb)) ;; <=> assure the memory-block is a tensor
@@ -143,6 +144,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                    append (getattr node :blueprint)
                  else
                    collect node))
+         (exprs (apply #'make-graph (loop for n in nodes if (eql (node-type n) :EXPR) collect n)))
          (total-time (length nodes))
          (trace-table (make-hash-table))
 	 (id2type (make-hash-table))
@@ -150,15 +152,48 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
          (outputs ;; a list of buffers that do no changed by the memory-planner
              (append ;; If the output were read by other kernels, it should be optimized by the global memory-planner.
               (graph-outputs schedule-graph)
-              symbolics)))
+              symbolics))
+         (id->depend-loops (make-hash-table))
+         (black-list-table (make-hash-table)))
+    (loop with stacks = nil
+          for node in nodes
+          if (eql (node-type node) :FOR) do
+            (push node stacks)
+          else if (eql (node-type node) :ENDFOR) do
+            (setf stacks (remove (getattr node :idx) stacks :key #'(lambda (x) (getattr x :idx))))
+          else
+            do (setf (gethash (node-id node) id->depend-loops) stacks))
     (dolist (s symbolics) (setf (gethash s lock-table) t))
     ;; Creating a timestamp table for each node and variable.
     (loop for node in nodes
 	  for nth upfrom 0
+          if (eql (node-type node) :EXPR) do
+            ;; Some hacks to keep the dependency of reduce ops
+            ;; for ...
+            ;;  for ...
+            ;;   for ...
+            ;;    x = a * b + c
+            ;;  out = x
+            ;; Here, out should not be mutated as x, a, b, and c.
+            ;; Enumerate such pairs and record then to the black-list-table.
+            (loop with node-loops = (gethash (node-id node) id->depend-loops)
+                  for read in (node-reads node)
+                  for val = (loop for e in (graph-nodes exprs) if (find read (node-writes e)) collect e) do
+                    (loop for r in val
+                          for parent-loops = (gethash (node-id r) id->depend-loops)
+                          if (and r (not (eql (node-id r) (node-id node)))
+                                  (getattr r :reduction :allow-undefined t)
+                                  ;; reduction after elementwise will never a solution
+                                  (intersection node-loops parent-loops :key #'node-id) ;; intersects
+                                  (not (= (length node-loops) (length parent-loops)))) ;; but partially
+                            do (dolist (read-id (node-reads r))
+                                 (dolist (write-id (node-writes node))
+                                   ;; Explicit the mutation from W to R is invaild.
+                                   (push read-id (gethash write-id black-list-table))))))
           if (eql (node-type node) :Schedule-Item) ; Optimization for non-jitable instructions (like: foreign kernel calls, allocation, pause/backward)
             do (assert (= (length (getattr node :storage-id-src)) (length (getattr node :read-types))))
                (assert (= (length (getattr node :storage-id-dst)) (length (getattr node :write-types))))
-               ;; Lock the allocation
+               ;; Lock the allocation (its the minimum requirement for running the graph)
                (when (getattr node :allocate-p)
                  (setf (gethash (car (node-writes node)) lock-table) t))
                (loop for val in (getattr node :storage-id-src)
@@ -189,8 +224,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                          ;; ID2Type    -> the variable name and its type
                          ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
                          ;; LockTable  -> Set T to lock (never become in-place)
-		         do (setf (gethash val id2type) typ
-                                  (gethash val trace-table) (list nth))))
+		         do (setf (gethash val id2type) typ (gethash val trace-table) (list nth))))
     (let* ((memory-blocks
 	     (loop for key in (alexandria:hash-table-keys trace-table)
 	           for typ = (gethash key id2type)
@@ -206,7 +240,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 		        (apply #'max (gethash key trace-table)))
 		    :lock (gethash key lock-table))))
            ;; Minimize the peak memory usage
-	   (solved (greedy-solve-dsa memory-blocks total-time))
+	   (solved (greedy-solve-dsa memory-blocks total-time black-list-table))
            ;; Retrive the solution. A hash table of OLD_MEMORY_ID -> NEW_MEMORY_ID
            (alias-map (make-hash-table)))
       (loop for mb in solved
