@@ -48,13 +48,13 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 	    (with-torch (q k v)
 	      (->caten (test_scaled_dot_product_attention q k v)))
 	    (proceed (scaled-dot-product-attention q k v)))))))
-;; repro! SERIALIZE=1 to work, so the kernel fusion. JIT=1 only fails
+;; Note(hikettei) Previously failed due to two reasons: Invaild Scheduler + Invaild Memory Planner
 (deftest test-scaled-dot-product-attention-batched-composed
   (with-given-dtype ((:float32 . "float32"))
     (with-no-grad
-      (let ((q (randn `(4 4 8 8)))
-	    (k (randn `(4 4 8 8)))
-	    (v (randn `(4 4 8 8))))
+      (let ((q (rand `(4 4 8 8) :id 'query))
+	    (k (rand `(4 4 8 8) :id 'key))
+	    (v (rand `(4 4 8 8) :id 'value)))
         (assert-equal
 	    (:atol 1e-4 :rtol 1e-6)
 	    (with-torch (q k v)
