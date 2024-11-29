@@ -3,6 +3,7 @@
 (python-exec
  "
 def test_dequantization(values, scale):
+  #pygguf reader vs cl reader
   pass
 
 "
@@ -113,16 +114,27 @@ def write_gguf(filename, tensors):
                 f.write(b'\\x00' * padding)
             elif padding < 0:
                 raise ValueError(f\"Metadata for tensor '{metadata['name']}' exceeds 64 bytes. Increase the placeholder size.\")
+
+def generate_dummy_gguf():
+    tensor1 = {
+        \"name\": \"tensor1\",
+        \"shape\": (64,),
+        \"data\": np.random.uniform(-1.0, 1.0, size=(64,)).astype(np.float32),
+    }
+    write_gguf(\"dummy.gguf\", [tensor1])
+
 ")
+;;TODO: wrap write_gguf with dummy tensors to generate the file directly.
+(import-function "generate_dummy_gguf")
+
+(print (generate_dummy_gguf))
 
 (in-package :caten/gguf)
-
 
 (defparameter *scale-factor-bytes*
   (make-array 2
               :element-type '(unsigned-byte 8)
               :initial-contents '(#x00 #x30)))
-
 
 (defparameter *quantized-values*
   (make-array 32
@@ -135,7 +147,6 @@ def write_gguf(filename, tensors):
                                   v
                                   (+ 256 v)))
                             values))))
-
 
 (defparameter *data*
   (let ((total-length (+ (length *scale-factor-bytes*) (length *quantized-values*))))
