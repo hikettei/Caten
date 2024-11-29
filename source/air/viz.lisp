@@ -157,7 +157,6 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                  (mapc #'explore (node-reads val))))))
     (explore id)
     count))
-
 ;; [TODO] optimize screen-width automatically
 (defparameter *indent* 0)
 (defun pprint-graph (graph &key (screen-width 140) (stream t)
