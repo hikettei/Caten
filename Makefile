@@ -10,6 +10,8 @@ help:
 .PHONY: install_extra
 install_extra: ## Install extra dependencies for testing
 	$(PIP) install numpy torch
+	git clone  https://github.com/99991/pygguf.git
+	cd pygguf && $(PIP) install .
 
 .PHONY: test
 test: ## Runs test harness
