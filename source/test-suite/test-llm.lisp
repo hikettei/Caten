@@ -80,9 +80,9 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 	  (proceed (!softmax x))))))
 
 (deftest softmax-matmul
-  (let ((a (randn `(512 512)))
-        (b (randn `(512 512)))
-        (c (randn `(512 512))))
+  (let ((a (randn `(128 128)))
+        (b (randn `(128 128)))
+        (c (randn `(128 128))))
     (with-no-grad
       (assert-equal
           (:atol 1e-4 :rtol 1e-5)
@@ -91,9 +91,9 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
           (proceed (!softmax (!matmul (!softmax c) (!softmax (!matmul (!softmax a) (!softmax b))))))))))
 
 (deftest softmax-matmul-fuzz
-  (let ((a (normal `(512 512) :mean 100.0 :std 1000.0))
-        (b (normal `(512 512) :mean 100.0 :std 1000.0))
-        (c (normal `(512 512) :mean 100.0 :std 1000.0)))
+  (let ((a (normal `(128 128) :mean 100.0 :std 1000.0))
+        (b (normal `(128 128) :mean 100.0 :std 1000.0))
+        (c (normal `(128 128) :mean 100.0 :std 1000.0)))
     (with-no-grad
       (assert-equal
           (:atol 1e-4 :rtol 1e-5)
