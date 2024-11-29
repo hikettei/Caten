@@ -631,7 +631,13 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
       ;; fuse/rewrite _read_views and buffers sometime.
       ;; 1. Injective + Same Ranks
       (when (= r1 r2)
-        (when (and (null view) (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group)))->ok)
+        (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group))
+          ;; Reject :MOVE+:MOVE fusion if view is provided.
+          (when (and view (= (length (group-items parent-group)) (length (group-items tgt-group)) 1)
+                     (eql :MOVE (node-type (car (group-items parent-group))))
+                     (eql :MOVE (node-type (car (group-items tgt-group)))))
+            ->ng)
+          ->ok)
         ->ng)
       ;; 2. Injective + Different Ranks
       (when (group-chase-down-reduction-p ctx tgt-group restart-point)->ng) ; If tgt-group is used by the reduction => better to merge it with that.
