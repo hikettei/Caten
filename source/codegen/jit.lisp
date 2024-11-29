@@ -490,6 +490,7 @@ caten/codegen overview:
           (when (and (getattr s :jitable) (getattr s :blueprint))
             (setf (getattr s :rendered-object) (%render-kernel renderer s))))
         ;; 11. Complete (Render by the renderer)
+        ;; (->dot schedule-graph)
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Compiling ..."))
@@ -497,7 +498,7 @@ caten/codegen overview:
         (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
           (when (>= (ctx:getenv :JIT_DEBUG) 4)
             (print-info "Final Scheduling Graph:")
-            (print schedule-graph)
+            (pprint-graph schedule-graph)
             (print-info "Final VM Graph:")
             (print new-graph))
           (setf (avm-graph avm) new-graph
