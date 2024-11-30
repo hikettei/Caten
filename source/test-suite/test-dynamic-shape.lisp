@@ -130,15 +130,14 @@
                          (make-tensor `(b s 32) :from 'key)
                          (make-tensor `(b s 32) :from 'value)))
         for s upfrom 10 below 13 do
-          (loop for b upfrom 2 below 4 do
-            (loop
-              for query = (randn `(,b ,s 32))
-              for key   = (randn `(,b ,s 32))
-              for value = (randn `(,b ,s 32))
-              for symbolic = (forward m `(s . ,s) `(b . ,b) `(query . ,query) `(key . ,key) `(value . ,value))
-              for expected = (proceed (scaled-dot-product-attention query key value))
-              do (setf (tensor-shape symbolic) (tensor-shape expected))
-                 (assert-equal () symbolic expected)))))
+          (loop for b upfrom 2 below 4
+                for query = (randn `(,b ,s 32))
+                for key   = (randn `(,b ,s 32))
+                for value = (randn `(,b ,s 32))
+                for symbolic = (forward m `(s . ,s) `(b . ,b) `(query . ,query) `(key . ,key) `(value . ,value))
+                for expected = (proceed (scaled-dot-product-attention query key value))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
 
 (deftest symbolic-tensor-shaped-triu-test
   (loop with n = (iconst 'n)
