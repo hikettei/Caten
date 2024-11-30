@@ -728,9 +728,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
     (loop for predecessor in (group-predecessor group)
           for item = (id->value (ctx-graph ctx) predecessor)
           if (and item (eql (node-type item) :LOAD)
-                  (= 0 (buffer-nrank (car (relay-writes (read-type-relay item)))))
-                  ;; note(hikettei) do not apply this for dynamic shape loading
-                  (numberp (getattr item :value)))
+                  (= 0 (buffer-nrank (car (relay-writes (read-type-relay item))))))
             do (setf (group-predecessor group) (remove predecessor (group-predecessor group)))
                (push item (group-items group))))
   group)

@@ -252,15 +252,19 @@ caten/codegen overview:
           ((null (getattr node :jitable)) ;; Relocating non-jitable ops
            (dolist (w (node-writes node)) (push w allocated))
            (dolist (i (getattr node :items))
+             ;; TODO: Ensure that the parents of i is not JITABLE.
+             (mapc #'merge-id (node-reads i))
              (push i nodes)))
           ((getattr node :jitable)
            (loop for w in (getattr node :storage-id-dst)
                  for wt in (getattr node :write-types)
                  if (null (find w allocated)) do
-                   (mapc #'merge-id (append (buffer-shape wt) (buffer-stride wt) (apply #'append (buffer-views wt))))
                    (multiple-value-bind (view alloc) (make-alloc+view-node-from-buffer wt w)
+                     (mapc #'merge-id (node-reads alloc))
                      (push alloc nodes)
-                     (when view (push view nodes)))
+                     (when view
+                       (mapc #'merge-id (cdr (node-reads view)))
+                       (push view nodes)))
                    (push w allocated))
            (loop for (s . type) in (getattr node :dynamic-shapes)
                  if (and (null (find s allocated)) (id->value base-graph s)) do
