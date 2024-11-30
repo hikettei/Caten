@@ -151,8 +151,6 @@
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
 
-;; Failing case!
-#|
 (deftest symbolic-tensor-shaped-two-kernel-test-1
   (loop with n = (iconst 'n)
         with s = (iconst 's)
@@ -171,9 +169,7 @@
                                  (!sum (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))))
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
-|#
 
-#|
 (deftest symbolic-tensor-shaped-two-kernel-test-2
   (loop with n = (iconst 'n)
         with s = (iconst 's)
@@ -190,4 +186,3 @@
                                  (!sum (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))))
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
-|#
