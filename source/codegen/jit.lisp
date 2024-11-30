@@ -259,8 +259,11 @@ caten/codegen overview:
                  if (null (find w allocated)) do
                    (mapc #'merge-id (append (buffer-shape wt) (buffer-stride wt) (apply #'append (buffer-views wt))))
                    (multiple-value-bind (view alloc) (make-alloc+view-node-from-buffer wt w)
+                     (mapc #'merge-id (node-reads alloc))
                      (push alloc nodes)
-                     (when view (push view nodes)))
+                     (when view
+                       (mapc #'merge-id (node-reads view))
+                       (push view nodes)))
                    (push w allocated))
            (loop for (s . type) in (getattr node :dynamic-shapes)
                  if (and (null (find s allocated)) (id->value base-graph s)) do
