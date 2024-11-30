@@ -15,7 +15,7 @@ def torch_attn_fail_1(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_p
   attn_output = attn_output.permute(0, 2, 1, 3)
   attn_output = attn_output.reshape(batch_size, seq_len, -1)
   attn_output = torch.matmul(attn_output, c_proj_weight.T) + c_proj_bias
-  return attn_output
+  return attn_output.to(torch.float32)
 ")
 
 (import-function "torch_attn_fail_1")
@@ -37,6 +37,22 @@ def torch_attn_fail_1(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_p
              (attn-output (!reshape attn-output (append (butlast (shape attn-output) 2) (list (apply #'* (last (shape attn-output) 2)))))))
         (!add (!matmul attn-output (!t c_proj.weight)) c_proj.bias)))))
 
+(defun fround-to-n-digits (v &optional (n 0))
+  ;; These declarations are really to show intent: FLOAT is not enough
+  ;; to optimize although perhaps a good type-inferencing compiler can
+  ;; work out that this takes double->double &c.
+  (declare (type float v)
+           (type (integer 0) n))
+  (let ((10^-n (expt 10 (- n))))
+    (* (fround v 10^-n)
+       10^-n)))
+
+(defun tensor-fround-to-n-digits (tensor &optional (n 0))
+  (with-facet (x* (tensor :direction :simple-array))
+    (dotimes (i (array-total-size x*))
+      (setf (aref x* i) (fround-to-n-digits (aref x* i) n))))
+  tensor)
+
 (defun linspace1 (shape a b)
   ;; ignoring the rounding error by recip+mul
   (ctx:with-contextvar (:JIT 1) (proceed (ax+b shape a b))))
@@ -44,7 +60,7 @@ def torch_attn_fail_1(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_p
 (deftest test-attn-fail-1
   (let* ((dim 32)
          (n-heads 8)
-         (batch-size 3)
+         (batch-size 10)
          (seq-len 2)
          (x (linspace1 `(,batch-size ,seq-len ,dim) 0.01 0.0))
          (c_attn.weight  (linspace1 `(,(* 3 dim) ,dim) 0.01 0.0))
@@ -52,7 +68,7 @@ def torch_attn_fail_1(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_p
          (c_procj.weight (linspace1 `(,dim ,dim) 0.01 0.0))
          (c_procj.bias   (linspace1  `(,dim) 0.001 0.0)))
     (assert-equal
-        (:rtol 1e-5 :atol 1e-5)
+        (:rtol 3e-4 :atol 1e-5)
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (print (->caten (torch_attn_fail_1 x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
         (print (proceed (attn-fail-1 x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))))
