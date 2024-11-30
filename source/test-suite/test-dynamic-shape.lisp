@@ -1,8 +1,5 @@
 (in-package :caten/test-suite)
 
-;; - (defparameter *model* (time (Transformer 64 1 2 1e-5 32)))
-;; - (defparameter *transformer* (caten (call *model* (make-tensor `(10 32)) (iconst 'n))))
-
 (deftest symbolic-function-args-test
   (with-protect-jit
     (let ((kernel (find :JIT_KERNEL (graph-nodes (avm-graph (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))) :key #'node-type)))
@@ -57,7 +54,6 @@
          (m (caten (!add (!add (!index-components `(5)) (!add caten/apis::*rng-counter* (!* (iconst 2) (iconst 'n)) :reduce t))  (!* (iconst 2) (iconst 'n)))))
          (o `(,(+ x (* 4 4)) ,(+ x (* 4 4) 1) ,(+ x (* 4 4) 2) ,(+ x (* 4 4) 3))))
     (ok (every #'= o (elements (forward m `(n . 4)))))))
-
 ;; Transformer-Failing-Case-Repro:
 ;; ```
 ;; LOAD: val_3 = N
@@ -103,3 +99,6 @@
          (s 's)
          (mask (!triu (!full `(1 1 ,s ,(!+ (iconst s) (iconst 1))) (-inf)) :diagonal (!+ (iconst 1) n))))
     (ok (caten mask))))
+
+;; TODO: test-matmul, test-attetnion, test-ffn etc for dynamic shape
+;; having descent tests like tinygrad does (incresing the size from 0 to n ...)
