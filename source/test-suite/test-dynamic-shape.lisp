@@ -150,3 +150,42 @@
                 for expected = (proceed (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
+
+;; Failing case!
+#|
+(deftest symbolic-tensor-shaped-two-kernel-test-1
+  (loop with n = (iconst 'n)
+        with s = (iconst 's)
+        with m = (caten
+                  (!mul
+                   (!matmul (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n))
+                            (!t (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n))))
+                   (!sum (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n)))))
+        for nn upfrom 10 below 13 do
+          (loop for ss upfrom 10 below 13
+                for symbolic = (forward m `(s . ,ss) `(n . ,nn))
+                for expected = (proceed
+                                (!mul
+                                 (!matmul (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn))
+                                          (!t (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn))))
+                                 (!sum (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
+|#
+
+(deftest symbolic-tensor-shaped-two-kernel-test-2
+  (loop with n = (iconst 'n)
+        with s = (iconst 's)
+        with m = (caten
+                  (!mul
+                   (!matmul (ax+b `(,n ,s) n s) (ax+b `(,s ,n) s n))
+                   (!sum (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n)))))
+        for nn upfrom 10 below 13 do
+          (loop for ss upfrom 10 below 13
+                for symbolic = (forward m `(s . ,ss) `(n . ,nn))
+                for expected = (proceed
+                                (!mul
+                                 (!matmul (ax+b `(,nn ,ss) nn ss) (ax+b `(,ss ,nn) ss nn))
+                                 (!sum (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
