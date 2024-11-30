@@ -15,6 +15,7 @@
    #:expr-from-graph
    #:expr-const
    #:expr-scalar-equivalent-p
+   #:expr-equal-to
    #:expr-add
    #:expr-sub
    #:expr-mul
@@ -121,6 +122,19 @@ Only supports the scalar computation because it is intended to identify the same
       ;; a/b returns nil if failed.
       (multiple-value-bind (a b) (values (run-expr-with-vars expr1 vars) (run-expr-with-vars expr2 vars))
         (and a b (eql a b))))))
+
+(defun expr-equal-to (expr obj)
+  "much faster than expr-scalar-equivalent-p. Returns T if the expr is equal to the obj."
+  (declare (type Expr expr) (type (or number expr) obj))
+  (let* ((nodes (graph-nodes (expr-graph expr)))
+         (allocate (find :ALLOCATE nodes :key #'node-type))
+         (load     (find :LOAD nodes :key #'node-type)))
+    (declare (type list nodes))
+    ;; Find X = ALLOCATE() and OUT = LOAD(Y, VALUE), and then compares value == obj.
+    (when (or (not (= (length nodes) 2)) (null allocate) (null load)) (return-from expr-equal-to nil))
+    (when (node-reads allocate) (return-from expr-equal-to nil)) ;; allocate is a scalar.
+    (let ((val (getattr load :value)))
+      (eql val obj))))
 
 (defmethod expr-depends-on ((expr Expr))
   (let ((symbols))
