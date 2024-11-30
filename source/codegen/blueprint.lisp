@@ -108,11 +108,10 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
          (pid2space (make-hash-table :test #'equal))
          (candidates nil))
     (labels ((broadcastable-p (a b)
-               (or (expr-scalar-equivalent-p a (expr-const 1 :int64))
-                   (expr-scalar-equivalent-p b (expr-const 1 :int64))
+               (or (expr-equal-to a 1)
+                   (expr-equal-to b 1)
                    (expr-scalar-equivalent-p a b)))
-             (is-one (expr)
-               (expr-scalar-equivalent-p expr (expr-const 1 :int64)))
+             (is-one (expr) (expr-equal-to expr 1))
              (check (buffer &key (noopt t))
                (when buffer
                  (let ((space (if noopt
@@ -223,10 +222,8 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                                    (shapes (make-list (length gid)))
                                    (strides (make-list (length gid))))
   "Enumerates a list of gid that the node depends on."
-  (labels ((is-n (axis n)
-             (expr-scalar-equivalent-p axis (expr-const n :int64)))
-           (broadcasted-p (size stride)
-             (or (is-n size 1) (is-n stride 0))))
+  (flet ((broadcasted-p (size stride)
+           (or (expr-equal-to size 1) (expr-equal-to stride 0))))
     (dolist (space (append (relay-read-iters type) (relay-write-iters type)))
       (when space
         (loop for axis upfrom 0
@@ -241,14 +238,12 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 
 (defun node-reduced-axes (node)
   (let ((is (car (relay-write-iters (read-type-relay node)))))
-    (flet ((is-n (axis n)
-             (expr-scalar-equivalent-p axis (expr-const n :int64))))
-      (and is
-           (loop for s in (iteration-space-strides is)
-                 if (is-n s 0)
-                   collect t
-                 else
-                   collect nil)))))
+    (and is
+         (loop for s in (iteration-space-strides is)
+               if (expr-equal-to s 0)
+                 collect t
+               else
+                 collect nil))))
 
 (defun node-reduced-gids (node gids  &aux (axes (node-reduced-axes node)))
   (when (null axes) (setf axes (make-list (length gids))))
