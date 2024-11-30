@@ -111,13 +111,13 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                 (= (buffer-nrank (car (relay-writes (read-type-relay n)))) 0))
           do (setf (nth nth (node-reads node)) (getattr n :value))))
 
-(defun remove-unused-blueprint (blueprint sched-graph)
-  (loop for bp in blueprint
-        for us = (+
-                  (count (car (node-writes bp)) blueprint :key #'node-reads :test #'find)
-                  (count (car (node-writes bp)) (graph-nodes sched-graph) :key #'node-reads :test #'find)
-                  (count (car (node-writes bp)) (graph-outputs sched-graph)))
-        if (or (eql (node-class bp) :Render) (> us 0))
+(defun remove-unused-blueprint (blueprint sched-item)
+  (declare (type list blueprint) (type node sched-item) (optimize (speed 3)))
+  (loop with reads = (apply #'append (map 'list #'node-reads blueprint))
+        for bp in blueprint
+        for used-p = (or (find (the symbol (car (node-writes bp))) (the list (node-writes sched-item)))
+                         (find (the symbol (car (node-writes bp))) (the list reads)))
+        if (or (eql (node-class bp) :Render) used-p)
           collect bp))
 
 (defmethod graph-scalarify (blueprint (node Node) (schedule-graph Graph))
@@ -150,7 +150,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                              do (setf (getattr b :declare-type) (list t))))
     (dolist (node blueprint)
       (propagate-load-const node blueprint))
-    (remove-unused-blueprint blueprint schedule-graph)))
+    (remove-unused-blueprint blueprint node)))
 
 (defmethod exprify ((node Node))
   (let ((nth->aref (make-hash-table)))
