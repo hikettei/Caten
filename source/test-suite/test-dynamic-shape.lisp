@@ -99,9 +99,13 @@
          (s 's)
          (mask (!triu (!full `(1 1 ,s ,(!+ (iconst s) (iconst 1))) (-inf)) :diagonal (!+ (iconst 1) n))))
     (ok (caten mask))))
-;; ~~ Symbolic Accuracy Testing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] val_8 is a scalar.
-
-
-;; TODO: test-matmul, test-attetnion, test-ffn etc for dynamic shape
-;; having descent tests like tinygrad does (incresing the size from 0 to n ...)
+;; ~~ Symbolic Accuracy Testing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(deftest symbolic-matmul-test
+  (loop with m = (caten (!matmul (make-tensor `(a a) :from 'x) (make-tensor `(a a) :from 'y)))
+        for a upfrom 10 below 20
+        for x = (rand `(,a ,a))
+        for y = (rand `(,a ,a))
+        for symbolic = (forward m `(a . ,a) `(x . ,x) `(y . ,y))
+        for expected = (proceed (!matmul x y))
+        do (setf (tensor-shape symbolic) (tensor-shape expected)) ;; Symbolic returns `(A A) tensor.
+           (assert-equal () symbolic expected)))
