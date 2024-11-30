@@ -193,6 +193,7 @@
         (dolist (item (gather-kernels schedule))
           (let ((bp (caten/codegen/blueprint:print-blueprint (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule) nil)))
             ;; Here, val_8=n must be passed as a uint64_t, not a poitner!
+            ;; If the dynamic shape is appeared across different kernels, without proper patching, the dynamic shape is loaded as a pointer which is unexpected.
             (ok
              (or
               (cl-ppcre:scan "val_8\\+_gid1" bp)  ;; todo: remove then if lowerer can fuse val_8=n
