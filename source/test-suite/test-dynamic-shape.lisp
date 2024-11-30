@@ -139,3 +139,14 @@
               for expected = (proceed (scaled-dot-product-attention query key value))
               do (setf (tensor-shape symbolic) (tensor-shape expected))
                  (assert-equal () symbolic expected)))))
+
+(deftest symbolic-tensor-shaped-triu-test
+  (loop with n = (iconst 'n)
+        with s = (iconst 's)
+        with m = (caten (!triu (!full `(1 1 ,(!+ n s) ,s) (-inf)) :diagonal (!+ (iconst 1) n)))
+        for nn upfrom 10 below 13 do
+          (loop for ss upfrom 10 below 13
+                for symbolic = (forward m `(s . ,ss) `(n . ,nn))
+                for expected = (proceed (!triu (!full `(1 1 ,(+ nn ss) ,ss) (-inf)) :diagonal (+ 1 nn)))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
