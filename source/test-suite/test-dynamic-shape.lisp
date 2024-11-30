@@ -109,3 +109,33 @@
         for expected = (proceed (!matmul x y))
         do (setf (tensor-shape symbolic) (tensor-shape expected)) ;; Symbolic returns `(A A) tensor.
            (assert-equal () symbolic expected)))
+
+(deftest symbolic-scaled-dot-product-attention-test
+  (loop with m = (caten (scaled-dot-product-attention
+                         (make-tensor `(2 s 64) :from 'query)
+                         (make-tensor `(2 s 64) :from 'key)
+                         (make-tensor `(2 s 64) :from 'value)))
+        for s upfrom 10 below 20
+        for query = (randn `(2 ,s 64))
+        for key   = (randn `(2 ,s 64))
+        for value = (randn `(2 ,s 64))
+        for symbolic = (forward m `(s . ,s) `(query . ,query) `(key . ,key) `(value . ,value))
+        for expected = (proceed (scaled-dot-product-attention query key value))
+        do (setf (tensor-shape symbolic) (tensor-shape expected))
+           (assert-equal () symbolic expected)))
+
+(deftest full-symbolic-scaled-dot-product-attention-test
+  (loop with m = (caten (scaled-dot-product-attention
+                         (make-tensor `(b s 32) :from 'query)
+                         (make-tensor `(b s 32) :from 'key)
+                         (make-tensor `(b s 32) :from 'value)))
+        for s upfrom 10 below 13 do
+          (loop for b upfrom 2 below 4 do
+            (loop
+              for query = (randn `(,b ,s 32))
+              for key   = (randn `(,b ,s 32))
+              for value = (randn `(,b ,s 32))
+              for symbolic = (forward m `(s . ,s) `(b . ,b) `(query . ,query) `(key . ,key) `(value . ,value))
+              for expected = (proceed (scaled-dot-product-attention query key value))
+              do (setf (tensor-shape symbolic) (tensor-shape expected))
+                 (assert-equal () symbolic expected)))))
