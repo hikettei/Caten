@@ -99,6 +99,13 @@
          (s 's)
          (mask (!triu (!full `(1 1 ,s ,(!+ (iconst s) (iconst 1))) (-inf)) :diagonal (!+ (iconst 1) n))))
     (ok (caten mask))))
+;; ~~ Symbolic Accuracy Testing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun symbolic-fail-repro ()
+  (with-no-grad
+    (let* ((n (iconst 'n))
+           (out (!add (call (Embedding 10 10) (make-tensor `(10 10))) (call (Embedding 10 10) (!cast (!add n (!index-components `(1 10))) :float32)))))
+      (caten (!add (!matmul out (!t out)) n)))))
+;; [TODO] val_8 is a scalar.
 
 ;; TODO: test-matmul, test-attetnion, test-ffn etc for dynamic shape
 ;; having descent tests like tinygrad does (incresing the size from 0 to n ...)
