@@ -99,6 +99,91 @@
          (s 's)
          (mask (!triu (!full `(1 1 ,s ,(!+ (iconst s) (iconst 1))) (-inf)) :diagonal (!+ (iconst 1) n))))
     (ok (caten mask))))
+;; ~~ Symbolic Accuracy Testing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(deftest symbolic-matmul-test
+  (loop with m = (caten (!matmul (make-tensor `(a a) :from 'x) (make-tensor `(a a) :from 'y)))
+        for a upfrom 10 below 20
+        for x = (rand `(,a ,a))
+        for y = (rand `(,a ,a))
+        for symbolic = (forward m `(a . ,a) `(x . ,x) `(y . ,y))
+        for expected = (proceed (!matmul x y))
+        do (setf (tensor-shape symbolic) (tensor-shape expected)) ;; Symbolic returns `(A A) tensor.
+           (assert-equal () symbolic expected)))
 
-;; TODO: test-matmul, test-attetnion, test-ffn etc for dynamic shape
-;; having descent tests like tinygrad does (incresing the size from 0 to n ...)
+(deftest symbolic-scaled-dot-product-attention-test
+  (loop with m = (caten (scaled-dot-product-attention
+                         (make-tensor `(2 s 64) :from 'query)
+                         (make-tensor `(2 s 64) :from 'key)
+                         (make-tensor `(2 s 64) :from 'value)))
+        for s upfrom 10 below 20
+        for query = (randn `(2 ,s 64))
+        for key   = (randn `(2 ,s 64))
+        for value = (randn `(2 ,s 64))
+        for symbolic = (forward m `(s . ,s) `(query . ,query) `(key . ,key) `(value . ,value))
+        for expected = (proceed (scaled-dot-product-attention query key value))
+        do (setf (tensor-shape symbolic) (tensor-shape expected))
+           (assert-equal () symbolic expected)))
+
+(deftest full-symbolic-scaled-dot-product-attention-test
+  (loop with m = (caten (scaled-dot-product-attention
+                         (make-tensor `(b s 32) :from 'query)
+                         (make-tensor `(b s 32) :from 'key)
+                         (make-tensor `(b s 32) :from 'value)))
+        for s upfrom 10 below 13 do
+          (loop for b upfrom 2 below 4
+                for query = (randn `(,b ,s 32))
+                for key   = (randn `(,b ,s 32))
+                for value = (randn `(,b ,s 32))
+                for symbolic = (forward m `(s . ,s) `(b . ,b) `(query . ,query) `(key . ,key) `(value . ,value))
+                for expected = (proceed (scaled-dot-product-attention query key value))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
+
+(deftest symbolic-tensor-shaped-triu-test
+  (loop with n = (iconst 'n)
+        with s = (iconst 's)
+        with m = (caten (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n)))
+        for nn upfrom 10 below 13 do
+          (loop for ss upfrom 10 below 13
+                for symbolic = (forward m `(s . ,ss) `(n . ,nn))
+                for expected = (proceed (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
+;; Failing
+#|
+(deftest symbolic-tensor-shaped-two-kernel-test-1
+  (loop with n = (iconst 'n)
+        with s = (iconst 's)
+        with m = (caten
+                  (!mul
+                   (!matmul (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n))
+                            (!t (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n))))
+                   (!sum (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n)))))
+        for nn upfrom 10 below 13 do
+          (loop for ss upfrom 10 below 13
+                for symbolic = (forward m `(s . ,ss) `(n . ,nn))
+                for expected = (proceed
+                                (!mul
+                                 (!matmul (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn))
+                                          (!t (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn))))
+                                 (!sum (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
+
+(deftest symbolic-tensor-shaped-two-kernel-test-2
+  (loop with n = (iconst 'n)
+        with s = (iconst 's)
+        with m = (caten
+                  (!mul
+                   (!matmul (ax+b `(,n ,s) n s) (ax+b `(,s ,n) s n))
+                   (!sum (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n)))))
+        for nn upfrom 10 below 13 do
+          (loop for ss upfrom 10 below 13
+                for symbolic = (forward m `(s . ,ss) `(n . ,nn))
+                for expected = (proceed
+                                (!mul
+                                 (!matmul (ax+b `(,nn ,ss) nn ss) (ax+b `(,ss ,nn) ss nn))
+                                 (!sum (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
+|#
