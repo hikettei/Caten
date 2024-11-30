@@ -8,12 +8,13 @@
   (ctx:with-contextvar (:JIT 1) (Transformer 128 8 n-layers 1e-5 32)))
 
 (defun measure-simplify-time (model jit)
-  (ctx:with-contextvar (:JIT jit)
-    (let ((started (get-internal-real-time)))
-      ;; TODO: Try full symbolic once we implement a module-wise asm cache
-      (caten (forward model (make-tensor `(1 2)) (iconst 1)))
-      (let ((finished (get-internal-real-time)))
-        (float (/ (- finished started) internal-time-units-per-second))))))
+  (with-inference-mode ()
+    (ctx:with-contextvar (:JIT jit)
+      (let ((started (get-internal-real-time)))
+        ;; TODO: Try full symbolic once we implement a module-wise asm cache
+        (caten (forward model (make-tensor `(1 2)) (iconst 1)))
+        (let ((finished (get-internal-real-time)))
+          (float (/ (- finished started) internal-time-units-per-second)))))))
 
 ;; brew install gnuplot for prepreq
 (defun run (&key (n 12) (jit 0) (path nil))
