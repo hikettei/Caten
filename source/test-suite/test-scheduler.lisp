@@ -177,6 +177,29 @@
                     (let ((ng (some #'(lambda (x) (null (find (node-type x) '(:MOVE :LOAD :ADD :MUL :WMMA :AREF))))
                                     (apply #'append (map 'list #'(lambda (x) (graph-nodes (expr-graph (getattr x :EXPR)))) region)))))
                       (ng ng "The innnermost loop is consisted of only MOVE, LOAD, ADD, MUL, WMMA, AREF")))))))))
+
+(defun symbolic-fail-repro ()
+  (with-no-grad
+    (let* ((n (iconst 'n))
+           (out (!add (call (Embedding 10 10) (make-tensor `(10 10))) (call (Embedding 10 10) (!cast (!add n (!index-components `(1 10))) :float32)))))
+      (!add (!matmul out (!t out)) n))))
+
+(deftest test-dynamic-shape-schedule-fail-repro
+  (with-no-grad
+    (multiple-value-bind (schedule avm)
+        (schedule-with-vars (symbolic-fail-repro))
+      (check-kernel schedule 2)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (dolist (item (gather-kernels schedule))
+          (let ((bp (caten/codegen/blueprint:print-blueprint (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule) nil)))
+            ;; Here, val_8=n must be passed as a uint64_t, not a poitner!
+            (ok
+             (or
+              (cl-ppcre:scan "val_8\\+_gid1" bp)  ;; todo: remove then if lowerer can fuse val_8=n
+              (cl-ppcre:scan "val_55\\+val_8" bp) ;; 
+              (cl-ppcre:scan "n\\+_gid1" bp)
+              (cl-ppcre:scan "val_55\\+n" bp))
+             (format nil "Rendererd:~%~a" bp))))))))
 ;;TODO:  ConvND batch_size=1
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;
@@ -213,4 +236,3 @@
             (when (eql (node-type b) :EXPR)
               (let ((val_1_type (second (caten/codegen/shape-inference:relay-reads (caten/codegen/shape-inference:read-type-relay b)))))
                 (ok (equal `(1 10) (buffer-stride val_1_type)))))))))))
-
