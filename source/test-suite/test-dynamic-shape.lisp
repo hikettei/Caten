@@ -102,3 +102,4 @@
 
 ;; TODO: test-matmul, test-attetnion, test-ffn etc for dynamic shape
 ;; having descent tests like tinygrad does (incresing the size from 0 to n ...)
+
