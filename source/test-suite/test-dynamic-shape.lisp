@@ -202,30 +202,43 @@
 ;; [TODO] Add a scheduling test k_cache_data kernel is a single.
 ;; rest elements are filled with T? anything is ok for it because they are masked right?
 ;; invaild shape inference here, fix them first.
+;; - [ ] KVCache size is not determined by max-seq-len but MAX_CONTEXT=128
+;; - [ ] (subseq k start-pos) yattenai!
+;; - [ ] Test for pos=0, seq_len=10 for example
+;; T=0; start_pos = 0, seq_len = 10 (the length of prompt)
+;; T=1; start_pos = 10, seq_len = 1
+;; T=2; start_pos = 11, seq_len = 1
+;;                 ...
 (deftest symbolic-k-cache-test
   (with-no-grad
+    ;; Note: The relation between `start_pos` and `seq_len`:
+    ;; T=0 | start_pos=0, seq_len=10 (= the length of prompt) | Loading a prompt
+    ;; T=1 | start_pos=10, seq_len=1                          | Generating a next word
+    ;; T=2 | start_pos=11, seq_len=1                          | Generating a next word
+    ;;                                     ...
     (let ((*default-order* :row))
-      (let* ((batch-size 1) (max-seq-len 32) (n-heads 4) (head-dim 4)
-             (k-cache-data (linspace `(,batch-size ,max-seq-len ,n-heads ,head-dim) 0 0 :id 'k_cache_data))
+      ;; [TODO] max-seq-len = 256
+      (let* ((batch-size 1) (max-context-len 128) (max-seq-len 32) (n-heads 4) (head-dim 4) (prompt-len 32)
+             (k-cache-data (linspace `(,batch-size ,max-context-len ,n-heads ,head-dim) 0 0 :id 'k_cache_data))
              (start-pos (iconst 'start_pos))
              (seq-len   (iconst 'seq_len))
              (range1 (list start-pos (!+ start-pos seq-len)))
              (range2 (list 0 (!+ start-pos seq-len)))
              (k (make-tensor `(,batch-size ,seq-len ,n-heads ,head-dim) :from 'k :id 'k_input))
-             (k-cache (!move (!view k-cache-data t range1 t t) k :reduce t))
+             (k-cache (!assign (!view k-cache-data t range1 t t) k))
              (k-cache (!copy (!view-from-base k-cache t range2 t t)))
              (model (caten k-cache)))
-        (flet ((runit (start-pos seq-len)
-                 (let ((k (linspace `(,batch-size ,seq-len ,n-heads ,head-dim) 0 start-pos)))
-                   (forward model `(k . ,k) `(start_pos . ,start-pos) `(seq_len . ,seq-len))))
-               (out-is-ok (time out &key (rest nil))
-                 (let ((expected
-                         (apply #'append
-                                (loop for i upfrom 0 below max-seq-len
-                                      if (<= i time) collect (make-list (* head-dim n-heads) :initial-element i)
-                                      else collect (make-list (* head-dim n-heads) :initial-element (or rest time))))))
-                   (ok (every #'= expected (elements out)) (format nil "Succeed at t=~a" time)))))
-          (loop for pos upfrom 0 below max-seq-len
-                for out = (runit pos (1+ pos))
-                do (out-is-ok pos out)
-                   (out-is-ok pos k-cache-data :rest 0)))))))
+        (print model)
+        (flet ((k (seq-len) (randn `(,batch-size ,seq-len ,n-heads ,head-dim)))
+               (runit (start-pos seq-len k)
+                 (forward model `(k . ,k) `(start_pos . ,start-pos) `(seq_len . ,seq-len))))
+          (loop with start-pos = 0
+                with cached-elements = nil
+                for nth upfrom 0 below (1- max-seq-len)
+                for k = (k (if (= nth 0) prompt-len 1))
+                for out = (runit start-pos (if (= nth 0) prompt-len 1) k)
+                do (setf cached-elements (append cached-elements (coerce (change-facet k :simple-array) 'list)))
+                   ;; (format t "StartPos=~a, SeqLen=~a~%" start-pos (if (= nth 0) prompt-len 1))
+                   (incf start-pos (if (= nth 0) prompt-len 1))
+                   (ok (every #'= cached-elements (elements out)))
+                   (ok (every #'= cached-elements (elements k-cache-data)))))))))
