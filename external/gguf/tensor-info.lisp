@@ -54,10 +54,11 @@
 	 (obj (if (>= (length obj) *print-object-omit-threshold*)
 		  (subseq obj 0 *print-object-omit-threshold*)
 		  obj)))
-    (format stream "<Tensor-Info{name=~a, ggml-type=:~a, dimensions=~a}~%  ~a~%>"
+    (format stream "<Tensor-Info{name=~a, ggml-type=:~a, dimensions=~a, absolute-offset=~a}~%  ~a~%>"
 	    (tensor-info-name tensor)
 	    (tensor-info-ggml-type tensor)
 	    (tensor-info-dimensions tensor)
+            (tensor-info-absolute-offset tensor)
 	    (if (null (tensor-info-buffer tensor))
 		(format nil "[Not realized, relative_offset=~a, absolute_offset=~a]"
 			(tensor-info-relative-offset tensor) (tensor-info-absolute-offset tensor))
@@ -88,8 +89,8 @@
     (loop for tensor in tensors
 	  for rel = (tensor-info-relative-offset tensor)
 	  for offset = (+ start rel) do
-	    (incf offset (mod (- alignment (mod offset alignment)) alignment))
-	    (setf (tensor-info-absolute-offset tensor) offset))
+	    (setf (tensor-info-absolute-offset tensor)
+                  (+ offset (mod (- alignment (mod offset alignment)) alignment))))
     (flet ((r (tensor-info) (tensor-info-realize tensor-info buffer stream)))
       (tqdm:with (tqdm (length tensors) :description "Extracting tensors...")
 	(loop for tensor in tensors
