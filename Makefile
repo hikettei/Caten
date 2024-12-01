@@ -26,7 +26,7 @@ install_docs: ## Install documentation dependencies
 
 .PHONY: build_docs
 build_docs: ## Build documentation
-	./roswell/caten.ros docs
+	$(join $(PROJECT_ROOT),roswell/caten.ros) docs
 
 .PHONY: serve_docs
 serve_docs: ## Serve documentation
