@@ -138,7 +138,7 @@
 		  else
 		    collect tns))))))
 			 
-  (defun %solve-st (st lazy-solve allow-broadcast &rest tensors &aux (tensors (flatten tensors)))
+  (defun %solve-st (st lazy-solve allow-broadcast &key tensors (return-solved nil) &aux (tensors (flatten tensors)))
     "lazy-solve = (symbol . value)"
     (declare (type ShapeTracker st)
 	     (type list tensors)
@@ -224,6 +224,7 @@
                                                    (at-shape (find-at (at-name at) :key #'st-aft)))
                                             (tensor-tr base)
                                             nil))))))
+        (when return-solved (return-from %solve-st solved))
 	(apply #'values (map 'list #'make-new-tensor (st-aft st))))))
   (defun parse-where (where)
     "Verifies the where form"
@@ -267,7 +268,7 @@ TODO: Add LazyAssertion which applies shape check even for symbols
 "
   (declare (type string st-notation))
   (let ((st (%st->list (%parse-st st-notation))))
-    `(%solve-st ,st ,(parse-where where) nil ,@input-tensors)))
+    `(%solve-st ,st ,(parse-where where) nil :tensors (list ,@input-tensors))))
 
 (defmacro bc (st-notation (&rest input-tensors) &rest where)
   "## [macro] bc
@@ -275,6 +276,6 @@ Perform the same operation as `st`, but also doing broadcasting.
 It calls !reshape and !view inside, therefore, it must not be used inside the forward method."
   (declare (type string st-notation))
   (let ((st (%st->list (%parse-st st-notation))))
-    `(%solve-st ,st ,(parse-where where) t ,@input-tensors)))
+    `(%solve-st ,st ,(parse-where where) t :tensors (list ,@input-tensors))))
 
 (defun broadcast-elwise (a b) (multiple-value-list (bc "A[~] B[~] -> A[~] B[~]" (a b))))

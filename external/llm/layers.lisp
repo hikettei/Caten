@@ -28,8 +28,8 @@
            (range2 (list 0 (!+ start-pos (iconst seq-len)))))
       (setf (attn-k-cache attn) k-cache
             (attn-v-cache attn) v-cache)
-      (setf k-cache (!move (!view k-cache t range1 t t) k :reduce t)
-            v-cache (!move (!view v-cache t range1 t t) v :reduce t))
+      (setf k-cache (!assign (!view k-cache t range1 t t) k)
+            v-cache (!assign (!view v-cache t range1 t t) v))
       (values (!view-from-base k-cache t range2 t t) (!view-from-base v-cache t range2 t t)))))
 
 (defmethod call ((model Attention) &rest inputs)
@@ -54,10 +54,9 @@
     ((c-fc   (Linear dim hidden-dim))
      (c-proj (Linear hidden-dim dim))))
 
-(defmethod call ((model FeedForward) &rest inputs)
-  (multiple-value-bind (x) (apply #'values inputs)
-    (with-slots ((c-fc c-fc) (c-proj c-proj)) model
-      (forward c-proj (!gelu (forward c-fc x))))))
+(defcall (model FeedForward) (X[~])
+  (with-slots ((c-fc c-fc) (c-proj c-proj)) model
+    (forward c-proj (!gelu (forward c-fc x)))))
 
 (defmodel (TransformerBlock (dim n-heads &key (norm-eps 1e-5) (max-seq-len 1024)))
     ((attn (Attention dim n-heads max-seq-len))
@@ -79,19 +78,14 @@
      (ln-f (LayerNorm `(,dim) :eps norm-eps))
      (lm-head (Linear dim vocab-size :bias nil))))
 
-(defmethod call ((model Transformer) &rest inputs)
-  (multiple-value-bind (tokens start-pos) (apply #'values inputs)
-    (assert (and tokens start-pos))
-    (st "Tokens[batch sentence_length] Start_Pos[] -> Tokens[batch sentence_length]" (tokens start-pos))
-    ;; (assert (numberp (second (shape tokens))) () "The second dimension of the tensor (seq_len) must be a fixnum, getting ~a" (shape tokens))
-    (with-slots ((wte wte) (wpe wpe) (h h) (ln-f ln-f) (lm-head lm-head)) model
-      (let* ((token-emb (forward wte tokens))
-	     (pos-emb   (forward wpe (!cast (!add start-pos (!index-components `(1 ,(second (shape tokens))))) (dtype-of tokens))))
-	     (hi (!add token-emb pos-emb))
-             (seq-len (iconst (second (shape tokens))))
-	     (mask (!triu (!full `(1 1 ,seq-len ,(!+ start-pos (iconst seq-len))) (-inf)) :diagonal (!+ (iconst 1) start-pos)))
-	     (_ (dolist (hn h) (setf hi (forward hn hi mask start-pos))))
-	     (logits (forward lm-head (forward ln-f hi))))
-	(declare (ignore _))
-	;; (!argmax (!view logits t -1 t))
-        (!argmax logits)))))
+(defcall (model Transformer) (Tokens[Batch Seq-Len] Start-Pos[])
+  (with-slots ((wte wte) (wpe wpe) (h h) (ln-f ln-f) (lm-head lm-head)) model
+    (let* ((token-emb (forward wte tokens))
+	   (pos-emb   (forward wpe (!cast (!add start-pos (!index-components `(1 ,seq-len))) (dtype-of tokens))))
+	   (hi (!add token-emb pos-emb))
+	   (mask (!triu (!full `(1 1 ,seq-len ,(!+ start-pos (iconst seq-len))) (-inf)) :diagonal (!+ (iconst 1) start-pos)))
+	   (_ (dolist (hn h) (setf hi (forward hn hi mask start-pos))))
+	   (logits (forward lm-head (forward ln-f hi))))
+      (declare (ignore _))
+      ;; (!argmax (!view logits t -1 t))
+      (!argmax logits))))

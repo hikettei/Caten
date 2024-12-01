@@ -54,7 +54,7 @@
    #:float-type-of
    )
   ;; from model.lisp
-  (:export #:defmodel #:call)
+  (:export #:defmodel #:call #:defcall)
   ;; from conditions.lisp
   (:export
    #:caten-forward-error
@@ -140,6 +140,7 @@
    #:!div #:!/
    #:!idiv
    #:!move
+   #:!assign
    #:!maximum #:!minimum
    #:!max #:!min
    #:!gcd #:!lcm
