@@ -149,7 +149,7 @@
                 for expected = (proceed (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
-;; Failing
+;; Failing (due to simplify-dynamic-arithmetic in caten/aasm/optimizers.lisp)
 #|
 (deftest symbolic-tensor-shaped-two-kernel-test-1
   (loop with n = (iconst 'n)
@@ -187,3 +187,45 @@
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
 |#
+
+;; 1. Test KV Cache (LLM without kv cache is meaningless)
+;; 2. Change the inference part
+;; 3. Any chance to fuse k/vcache?
+;;
+;; T=0 | [0, 1, 2, ..., max_seq_len]
+;; T=1 | [start_pos, 1, 2, seq_len, seq_len+1, ..., max_seq_len]
+;; T=2 | [0, 1, 2, start_pos, ..., ]
+;; start_pos = previous seq_len
+;; start_pos=5, seq_len=6
+;; TODO: (A+B) - A = B
+;; [TODO] When to write a alias? nv
+;; [TODO] Add a scheduling test k_cache_data kernel is a single.
+;; rest elements are filled with T? anything is ok for it because they are masked right?
+;; invaild shape inference here, fix them first.
+(deftest symbolic-k-cache-test
+  (with-no-grad
+    (let ((*default-order* :row))
+      (let* ((batch-size 1) (max-seq-len 32) (n-heads 4) (head-dim 4)
+             (k-cache-data (linspace `(,batch-size ,max-seq-len ,n-heads ,head-dim) 0 0 :id 'k_cache_data))
+             (start-pos (iconst 'start_pos))
+             (seq-len   (iconst 'seq_len))
+             (range1 (list start-pos (!+ start-pos seq-len)))
+             (range2 (list 0 (!+ start-pos seq-len)))
+             (k (make-tensor `(,batch-size ,seq-len ,n-heads ,head-dim) :from 'k :id 'k_input))
+             (k-cache (!move (!view k-cache-data t range1 t t) k :reduce t))
+             (k-cache (!copy (!view-from-base k-cache t range2 t t)))
+             (model (caten k-cache)))
+        (flet ((runit (start-pos seq-len)
+                 (let ((k (linspace `(,batch-size ,seq-len ,n-heads ,head-dim) 0 start-pos)))
+                   (forward model `(k . ,k) `(start_pos . ,start-pos) `(seq_len . ,seq-len))))
+               (out-is-ok (time out &key (rest nil))
+                 (let ((expected
+                         (apply #'append
+                                (loop for i upfrom 0 below max-seq-len
+                                      if (<= i time) collect (make-list (* head-dim n-heads) :initial-element i)
+                                      else collect (make-list (* head-dim n-heads) :initial-element (or rest time))))))
+                   (ok (every #'= expected (elements out)) (format nil "Succeed at t=~a" time)))))
+          (loop for pos upfrom 0 below max-seq-len
+                for out = (runit pos (1+ pos))
+                do (out-is-ok pos out)
+                   (out-is-ok pos k-cache-data :rest 0)))))))
