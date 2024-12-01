@@ -22,8 +22,8 @@
   (multiple-value-bind (batch-size seq-len n-heads head-dim) (apply #'values (shape k))
     (assert (integerp batch-size) () "KVCache does not support a dynamic batch size")
     (let* ((max-len (attn-max-seq-len attn))
-           (k-cache (or (attn-k-cache attn) (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0 :id (gensym "K_CACHE"))))
-           (v-cache (or (attn-v-cache attn) (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0 :id (gensym "V_CACHE"))))
+           (k-cache (or (attn-k-cache attn) (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0)))
+           (v-cache (or (attn-v-cache attn) (linspace `(,batch-size ,max-len ,n-heads ,head-dim) 0 0)))
            (range1 (list start-pos (!+ start-pos (iconst seq-len))))
            (range2 (list 0 (!+ start-pos (iconst seq-len)))))
       (setf (attn-k-cache attn) k-cache
