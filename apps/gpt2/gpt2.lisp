@@ -90,9 +90,10 @@
            (start-pos 0)
            (max-length 100))
       (loop for i upfrom 0 below max-length
-            for out = (forward model `(x . ,(->input tokens)) `(s . ,(length tokens)) `(n . ,start-pos)) do
+            for in-tokens = (subseq tokens start-pos)
+            for out = (forward model `(x . ,(->input in-tokens)) `(s . ,(length in-tokens)) `(n . ,start-pos)) do
               (with-facet (out* (out :direction :simple-array))
-                (setf start-pos (length tokens)) ;; start_pos = previous_seq_len
+                (setf start-pos (length tokens)) ;; start_pos = previous_total_seq_len
                 (let ((size (array-total-size out*)))
                   (setf tokens (append tokens (list (aref out* (1- size)))))
                   (print tokens)
