@@ -68,7 +68,7 @@
   (declare (type input-buffer buffer) (optimize (speed 3)))
   (assert (null (tensor-info-buffer tensor)) () "The given tensor-info is already realized. ~a" tensor)
   (with-fast-input (rest-of-the-file nil stream (tensor-info-absolute-offset tensor))
-    (file-position stream (tensor-info-absolute-offset tensor)) ;; note: fast_io indicates N while stream indices N+4 ??? force synchronize them.
+    (file-position stream (tensor-info-absolute-offset tensor)) ;; note: fast_io indicates N while stream indicates N+4 ??? force synchronize them.
     (setf (tensor-info-buffer tensor) (dequantize (tensor-info-ggml-type tensor) rest-of-the-file tensor))
     tensor))
 
