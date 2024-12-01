@@ -149,7 +149,7 @@
                 for expected = (proceed (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
-;; Failing
+;; [TODO] they are failing (due to simplify-dynamic-arithmetic in caten/aasm/optimizers.lisp)
 #|
 (deftest symbolic-tensor-shaped-two-kernel-test-1
   (loop with n = (iconst 'n)
@@ -187,3 +187,41 @@
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
 |#
+;; FixME: the last element of initial prompt is overwritten? 
+(deftest symbolic-k-cache-test
+  (with-no-grad
+    ;; Note: The relation between `start_pos` and `seq_len`:
+    ;; T=0 | start_pos=0, seq_len=10 (= the length of prompt) | Loading a prompt
+    ;; T=1 | start_pos=10, seq_len=1                          | Generating a next word
+    ;; T=2 | start_pos=11, seq_len=1                          | Generating a next word
+    ;;                                     ...
+    (let ((*default-order* :row))
+      ;; TODO: max_context_len <= max_seq_len?
+      (let* ((batch-size 1) (max-context-len 128) (max-seq-len 10) (n-heads 4) (head-dim 4) (prompt-len 10)
+             (k-cache-data (linspace `(,batch-size ,max-context-len ,n-heads ,head-dim) 0 0 :id 'k_cache_data))
+             (start-pos (iconst 'start_pos))
+             (seq-len   (iconst 'seq_len))
+             (range1 (list start-pos (!+ start-pos seq-len)))
+             (range2 (list 0 (!+ start-pos seq-len)))
+             (k (make-tensor `(,batch-size ,seq-len ,n-heads ,head-dim) :from 'k :id 'k_input))
+             (k-cache (!assign (!view k-cache-data t range1 t t) k))
+             (k-cache (!copy (!view-from-base k-cache t range2 t t)))
+             (model (caten k-cache)))
+        (flet ((k (seq-len pos)
+                 (if (= pos 0)
+                     (linspace `(,batch-size ,seq-len ,n-heads ,head-dim) 0.01 -100.0)
+                     (linspace `(,batch-size ,seq-len ,n-heads ,head-dim) 0.01 pos)))
+               (runit (start-pos seq-len k)
+                 (forward model `(k . ,k) `(start_pos . ,start-pos) `(seq_len . ,seq-len))))
+          (loop with start-pos = 0
+                with cached-elements = nil
+                for nth upfrom 0 below max-seq-len
+                for k = (k (if (= nth 0) prompt-len 1) start-pos)
+                for out = (runit start-pos (if (= nth 0) prompt-len 1) k)
+                do (setf cached-elements (append cached-elements (list (coerce (change-facet k :simple-array) 'list))))
+                   (testing (format nil "StartPos=~a, SeqLen=~a~%" start-pos (if (= nth 0) prompt-len 1))
+                     (let ((len (+ (if (= nth 0) prompt-len 1) start-pos)))
+                       (ok (= (nth 1 (buffer-shape (tensor-buffer out))) len) (format nil "SeqLen=~a, getting=~a" len (nth 1 (buffer-shape (tensor-buffer out)))))
+                       (incf start-pos (if (= nth 0) prompt-len 1))
+                       (ok (every #'= (apply #'append cached-elements) (elements out)))
+                       (ok (every #'= (apply #'append cached-elements) (elements k-cache-data)))))))))))

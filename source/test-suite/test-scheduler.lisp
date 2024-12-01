@@ -201,6 +201,49 @@
               (cl-ppcre:scan "n\\+_gid1" bp)
               (cl-ppcre:scan "val_55\\+n" bp))
              (format nil "Rendererd:~%~a" bp))))))))
+
+(deftest test-assign-schedule
+  (with-no-grad
+    (multiple-value-bind (schedule avm) (schedule-with-vars (!assign (make-tensor `(3 3) :from 'a) (make-tensor `(3 3) :from 'b)))
+      (check-kernel schedule 1)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (dolist (item (gather-kernels schedule))
+          (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+            ;; MoveAfterReduction rule should not applied here.
+            (ok (= 1 (count :EXPR bp :key #'node-type)))))))))
+
+(defun make-k-cache-kernel ()
+  (let* ((batch-size 1) (max-context-len 128) (n-heads 4) (head-dim 4)
+         (k-cache-data (linspace `(,batch-size ,max-context-len ,n-heads ,head-dim) 0 0 :id 'k_cache_data))
+         (start-pos (iconst 'start_pos))
+         (seq-len   (iconst 'seq_len))
+         (range1 (list start-pos (!+ start-pos seq-len)))
+         (range2 (list 0 (!+ start-pos seq-len)))
+         (k (make-tensor `(,batch-size ,seq-len ,n-heads ,head-dim) :from 'k :id 'k_input))
+         (k-cache (!assign (!view k-cache-data t range1 t t) k))
+         (k-cache (!copy (!view-from-base k-cache t range2 t t))))
+    k-cache))
+
+(deftest test-k-cache-schedule
+  (with-no-grad
+    (multiple-value-bind (schedule avm) (schedule-with-vars (make-k-cache-kernel))
+      (check-kernel schedule 2)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (dolist (item (gather-kernels schedule))
+          (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+            ;; Assume the first one is a reduce, the second one is contiguous.
+            (if (find-if #'(lambda (x) (getattr x :reduction :allow-undefined t)) (getattr item :items))
+                (let ((expr (find :EXPR bp :key #'node-type)))
+                  (ok (= 1 (count :EXPR bp :key #'node-type))
+                      (format nil "Expected 1 reduction, got ~a" (count :EXPR bp :key #'node-type)))
+                  (ok (equal (node-writes expr) `(K_CACHE_DATA)))
+                  (ok (equal (node-reads expr) `(K_INPUT))))
+                (let ((expr (find :EXPR bp :key #'node-type)))
+                  (ok (= 1 (count :EXPR bp :key #'node-type))
+                      (format nil "Expected 1 contiguous, got ~a" (count :EXPR bp :key #'node-type)))
+                  (let* ((read-type (car (caten/codegen/shape-inference:relay-read-iters (caten/codegen/shape-inference:read-type-relay expr)))))
+                    (ok (every #'(lambda (x) (or (null x) (eql 0 (car x)))) (caten/codegen/shape-inference:iteration-space-views read-type))
+                        "The second kernel should not create a offset for rhs."))))))))))
 ;;TODO:  ConvND batch_size=1
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;

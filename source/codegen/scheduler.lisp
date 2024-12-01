@@ -765,6 +765,8 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
              (dolist (node (graph-nodes g))
                ;; reduced but no users in the group: This is now allowed. Adding :MOVE
                (when (and (getattr node :reduction :allow-undefined t)
+                          ;; write-to needs to be broadcasted.
+                          (node-writes-broadcasted-p node)
                           (null (id->users g (car (node-writes node))))) ;; no users in a group
                  (let ((base-id (car (node-reads node)))
                        (write-id (car (node-writes node)))

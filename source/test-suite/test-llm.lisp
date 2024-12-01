@@ -381,13 +381,13 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
   (with-no-grad
     (when (= 1 (ctx:getenv :JIT))
       (testing "No Segv?"
-        (let* ((caten/llm::*use-kv-cache* nil) ;; *use-kv-cache*=T will also cause segfault
+        (let* ((caten/llm::*use-kv-cache* nil)
                (model (Transformer 32 4 2 1e-5 32))
                (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
                (model (caten x)))
           (let ((value (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0))))
             (ok value (format nil "~a" value))))))))
-;; Failing for now (TODO: Fix)
+
 #|
 (deftest test-symbolic-transformer-forward-test-1-layer
   (with-no-grad
@@ -397,6 +397,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
              (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
              (model (caten x)))
         (ok (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0)))))))
+|#
 
 (deftest test-symbolic-transformer-forward-test-2-layer
   (with-no-grad
@@ -407,4 +408,3 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
                (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
                (model (caten x)))
           (ok (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0))))))))
-|#

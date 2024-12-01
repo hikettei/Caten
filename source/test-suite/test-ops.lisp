@@ -52,3 +52,8 @@
   )
 ;; [TODO] Binary Ops Test
 ;; [TODO] Reduce Ops Test
+(deftest test-assign
+  (let* ((x (linspace `(10 10) 0 0))
+         (y (!assign x (fconst 1.0))))
+    (proceed y)
+    (ok (every #'(lambda (elm) (= elm 1.0)) (elements x)))))

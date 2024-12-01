@@ -77,7 +77,8 @@
    #:iteration-space-expr-aref
    #:buffer-iteration-space
    #:ensure-iteration-space-length
-   #:inferred-type-vizualize-to-dot))
+   #:inferred-type-vizualize-to-dot
+   #:node-writes-broadcasted-p))
 
 (in-package :caten/codegen/shape-inference)
 
@@ -413,3 +414,6 @@ gids corresponds for the loop idx in the kernel.
 (defmethod ensure-iteration-space-length ((rank fixnum) gids)
   (let ((pads (loop repeat (max 0 (- rank (length gids))) collect (expr-const 0 :int64))))
     (append gids pads)))
+
+(defun node-writes-broadcasted-p (node)
+  (some #'(lambda (x) (and x (fourth x))) (buffer-views (car (relay-writes (read-type-relay node))))))
