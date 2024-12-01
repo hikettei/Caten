@@ -140,6 +140,7 @@
    #:!div #:!/
    #:!idiv
    #:!move
+   #:!assign
    #:!maximum #:!minimum
    #:!max #:!min
    #:!gcd #:!lcm

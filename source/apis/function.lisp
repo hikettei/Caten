@@ -332,6 +332,15 @@ Moves the element of b into a, returning a. If `reduce` is T, it will reduce the
   (declare (type tensor a b))
   (apply #'forward (make-instance 'Move :reduction reduce) (broadcast-elwise a b)))
 
+(defun !assign (a b)
+  "
+```
+(!assign a b)
+```
+Equivalent to doing `(!move a b :reduce t)`.
+"
+  (!move a b :reduce t))
+
 (defclass Add (Func)
   ((reduce :initarg :reduce :initform nil :accessor func-reduce)
    (id :initarg :id :initform nil :accessor func-id)
