@@ -188,7 +188,7 @@ caten/codegen overview:
           (buffer-orig-buffer-shape wt))
       (buffer-shape wt)))
 
-(defun make-alloc+view-node-from-buffer (wt w)
+(defun make-alloc+view-node-from-buffer (wt w base-graph)
   (when (some #'identity (buffer-views wt))
     ;; Consider the case: (NIL NIL (0 3 1 T))
     (setf (buffer-views wt)
@@ -208,15 +208,22 @@ caten/codegen overview:
                         (buffer-stride wt))
                        :broadcast (map 'list #'fourth (buffer-views wt))
                        :nrank (length (buffer-shape wt)))))
-        (alloc (make-node :Buffer :Allocate (list w)
-                          (append
-                           (loop for s in (select-output-shape wt)
-                                 for nth upfrom 0
-                                 for v = (nth nth (buffer-views wt))
-                                 if (fourth v) collect 1
-                                   else collect s)
-                           (buffer-stride wt))
-                          :nrank (length (buffer-shape wt)) :dtype (buffer-dtype wt))))
+        (alloc
+          (or
+           ;; Prefer to use the original node, if w is defined in the graph and that's allocate.
+           (let ((node (id->value base-graph w)))
+             (when (and node (eql (node-type node) :Allocate))
+               node))
+           ;; Otherwise create it.
+           (make-node :Buffer :Allocate (list w)
+                      (append
+                       (loop for s in (select-output-shape wt)
+                             for nth upfrom 0
+                             for v = (nth nth (buffer-views wt))
+                             if (fourth v) collect 1
+                               else collect s)
+                       (buffer-stride wt))
+                      :nrank (length (buffer-shape wt)) :dtype (buffer-dtype wt)))))
     (assert (= (length (select-output-shape wt)) (length (buffer-shape wt))))
     (values view alloc)))
 
@@ -259,7 +266,7 @@ caten/codegen overview:
            (loop for w in (getattr node :storage-id-dst)
                  for wt in (getattr node :write-types)
                  if (null (find w allocated)) do
-                   (multiple-value-bind (view alloc) (make-alloc+view-node-from-buffer wt w)
+                   (multiple-value-bind (view alloc) (make-alloc+view-node-from-buffer wt w base-graph)
                      (mapc #'merge-id (node-reads alloc))
                      (push alloc nodes)
                      (when view
@@ -278,7 +285,7 @@ caten/codegen overview:
                    for d = (find r (reverse nodes) :key #'node-writes :test #'member)
                    for dt = (and d (getattr d :_type_relay :allow-undefined t) (car (relay-writes (read-type-relay d))))
                    if (and d dt (or (= 0 (buffer-nrank dt)) (= 0 (buffer-nrank rt))) (not (= (buffer-nrank dt) (buffer-nrank rt))))
-                     do (multiple-value-bind (view _) (make-alloc+view-node-from-buffer rt r)
+                     do (multiple-value-bind (view _) (make-alloc+view-node-from-buffer rt r base-graph)
                           (declare (ignore _))
                           (let ((key (local-gensym r)))
                             (mapc #'merge-id (cdr (node-reads view)))

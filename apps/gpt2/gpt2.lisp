@@ -72,8 +72,7 @@
   (declare (type keyword model-type))
   (assert (find model-type `(:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)) () "model-type must be one of :gpt2, :gpt2-medium, :gpt2-large, :gpt2-xl")
   (with-inference-mode ()
-    (let* ((caten/llm::*use-kv-cache* nil) ;; todo: use kv-cache once segv is resolved.
-           (param (get-param model-type))
+    (let* ((param (get-param model-type))
            (gguf (load-gguf-url (url model-type) (format nil "~(~a~)-f32.gguf" model-type)))
            (model (Transformer (params-dim param) (params-n-heads param) (params-n-layers param) (params-norm-eps param) (params-vocab-size param) :max-seq-len max-seq-len))
            (tokenizer (gguf->bpe-tokenizer gguf))
@@ -89,11 +88,12 @@
   (with-slots ((model model) (tokenizer tokenizer) (max-seq-len max-seq-len)) gpt2
     (let* ((tokens (encode tokenizer input))
            (start-pos 0)
-           (max-length 30))
+           (max-length 100))
       (loop for i upfrom 0 below max-length
-            for out = (forward model `(x . ,(->input tokens)) `(s . ,(length tokens)) `(n . ,start-pos)) do
+            for in-tokens = (subseq tokens start-pos)
+            for out = (forward model `(x . ,(->input in-tokens)) `(s . ,(length in-tokens)) `(n . ,start-pos)) do
               (with-facet (out* (out :direction :simple-array))
-                (setf start-pos (length tokens))
+                (setf start-pos (length tokens)) ;; start_pos = previous_total_seq_len
                 (let ((size (array-total-size out*)))
                   (setf tokens (append tokens (list (aref out* (1- size)))))
                   (print tokens)

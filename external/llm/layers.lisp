@@ -28,8 +28,8 @@
            (range2 (list 0 (!+ start-pos (iconst seq-len)))))
       (setf (attn-k-cache attn) k-cache
             (attn-v-cache attn) v-cache)
-      (setf k-cache (!move (!view k-cache t range1 t t) k :reduce t)
-            v-cache (!move (!view v-cache t range1 t t) v :reduce t))
+      (setf k-cache (!assign (!view k-cache t range1 t t) k)
+            v-cache (!assign (!view v-cache t range1 t t) v))
       (values (!view-from-base k-cache t range2 t t) (!view-from-base v-cache t range2 t t)))))
 
 (defmethod call ((model Attention) &rest inputs)
