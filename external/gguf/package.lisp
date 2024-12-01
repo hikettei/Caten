@@ -9,6 +9,7 @@
    #:gguf-version
    #:gguf-tensor-count
    #:gguf-metadata-kv-count
+   #:gguf-tensor-info
    #:gguf->state-dict
    #:gguf->bpe-tokenizer
    #:metadata
