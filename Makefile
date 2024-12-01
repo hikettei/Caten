@@ -1,5 +1,6 @@
+PROJECT_ROOT  := $(dir $(realpath $(lastword $(MAKEFILE_LIST))))
+QLOT          := qlot
 ROSWELL       := ros
-QUICKLOAD     := --eval '(progn (cl:push (cl:pathname "./") ql:*local-project-directories*) (asdf:load-asd "caten.asd") (ql:quickload "caten" :silent t))'
 PIP           := pip
 
 .PHONY: help
@@ -13,7 +14,11 @@ install_extra: ## Install extra dependencies for testing
 
 .PHONY: test
 test: ## Runs test harness
-	$(ROSWELL) $(QUICKLOAD) --eval '(asdf:test-system "caten")'
+	$(QLOT) exec $(ROSWELL) run \
+		--source-registry $(PROJECT_ROOT) \
+		--eval '(ql:quickload "caten/test")' \
+		--eval '(asdf:test-system "caten/test")'\
+		--quit
 
 .PHONY: install_docs
 install_docs: ## Install documentation dependencies
