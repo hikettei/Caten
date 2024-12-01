@@ -159,11 +159,34 @@ caten/codegen overview:
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((info (getattr node :kernel-info))
-        (out-n (getattr node :output-buffer-n)))
+        (out-n (getattr node :output-buffer-n))
+        (scan "ATTENTION2096310");"FUSED_SUMNODE_MATMUL2096316")
+        (caten/avm:*max-display-matrix* 2)
+        (caten/avm:*max-display-len* 15))
+    ;; N=1 -> ok
+    ;; N=2 ->
+    ;; N=3 ->
+    ;;    ..
+    ;(print (compiled-kernel-name info))
     ;; (For details, see coerce-dtyped-buffer)
+    ;; TODO: 任意の層のPLOTを出力する, scanned by substring
     (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
       (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
+      (when (and scan (cl-ppcre:scan scan (princ-to-string (compiled-kernel-name info))))
+        (format t "~%===DEBUG: ~a===~%" (compiled-kernel-name info))
+        (format t "~%Inputs~%")
+        (loop for arg in args
+              for name in (node-reads node)
+              for nth upfrom 0 do
+                (format t "[nth=~a, ~a]~%```~%~a~%```~%" nth name (if (caten/avm:buffer-p arg) (caten/avm::pprint-buffer arg) arg))))
       (apply (compiled-kernel-caller info) args)
+      ;; [TODO] Debug Tool ni suru
+      (when (and scan (cl-ppcre:scan scan (princ-to-string (compiled-kernel-name info))))
+        (format t "~%Outputs~%")
+        (loop for nth upfrom 0
+              for name in (node-reads node)
+              for arg in (subseq args 0 out-n) do
+                (format t "[nth=~a, ~a]~%```~%~a~%```~%" nth name (if (caten/avm:buffer-p arg) (caten/avm::pprint-buffer arg) arg))))
       (apply #'values (subseq args 0 out-n)))))
 
 (defun get-subgraph (graph top-id seen &aux (seen (copy-list seen)))
