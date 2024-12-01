@@ -101,6 +101,7 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
     (def "!repeat" #'!repeat "(proceed (!repeat (ax+b `(1 10) 1 0) 10 1))")
     (def "!expand" #'!expand "(proceed (!expand (ax+b `(1 10) 1 0) `(10 10)))")
     (def "!move" #'!move "(proceed (!move (ax+b `(10 10) 0 0) (ax+b `(10 10) 0 2)))")
+    (def "!assign" #'!assign "(proceed (!assign (ax+b `(10 10) 0 0) (ax+b `(10 10) 0 2)))")
     (def "!add" #'!add "(proceed (!add (ax+b `(10 10) 1 0) (ax+b `(10 10) 1 0)))")
     (def "!sub" #'!sub "(proceed (!sub (ax+b `(10 10) 1 0) (ax+b `(10 10) 1 0)))")
     (def "!mul" #'!mul "(proceed (!mul (ax+b `(10 10) 1 0) (ax+b `(10 10) 1 0)))")

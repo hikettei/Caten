@@ -337,7 +337,7 @@ Moves the element of b into a, returning a. If `reduce` is T, it will reduce the
 ```
 (!assign a b)
 ```
-Equivalent to doing `(!move a b :reduce t)`.
+Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value of lazy ops to an pre-allocated buffer, like KV-Cache.
 "
   (!move a b :reduce t))
 
