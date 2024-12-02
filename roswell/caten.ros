@@ -6,7 +6,7 @@ exec ros -Q -- $0 "$@"
 (progn ;;init forms
   (ros:ensure-asdf)
    #+quicklisp(cl:push (cl:pathname "./") ql:*local-project-directories*)
-   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/onnx :caten/llm :caten/benchmarks :caten/apps) :silent t)
+   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/llm :caten/benchmarks :caten/apps) :silent t)
    (when (and (uiop:getenv "JIT_BACKEND")
 	      (equalp (uiop:getenv "JIT_BACKEND") "METAL"))
      #+quicklisp(ql:quickload '(:caten/metal) :silent nil)))
@@ -46,7 +46,9 @@ exec ros -Q -- $0 "$@"
   (clingon:make-command
    :name "docs"
    :description (maybe-ansi white-bright "Builds the documentation in ./docs folder")
-   :handler #'(lambda (cmd) (declare (ignore cmd)) (caten/common.documentation:build-docs))))
+   :handler #'(lambda (cmd) (declare (ignore cmd))
+                (ql:quickload :caten/onnx)
+                (caten/common.documentation:build-docs))))
 
 (defun caten/benchmark ()
   (clingon:make-command
