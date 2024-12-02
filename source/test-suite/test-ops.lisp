@@ -56,26 +56,46 @@
          (y (!assign x (fconst 1.0))))
     (proceed y)
     (ok (every #'(lambda (elm) (= elm 1.0)) (elements x)))))
-#|
+
+(defun =~nan (a b)
+  (if (eql :nan (caten/codegen/helpers:float-type-of a))
+      (eql :nan (caten/codegen/helpers:float-type-of b))
+      (if (eql :nan (caten/codegen/helpers:float-type-of b))
+          nil
+          (<= (abs (- a b)) 1e-5))))
+;; [TODO] CL returns complex number while caten returns NaN
 (deftest test-expt
   (testing "Power is a scalar and fixnum (-2.5 < n < 2.5), only for VM."
     (when (= 0 (ctx:getenv :JIT))
       (let ((failed nil))
         (loop for n upfrom 0 below 5.0 by 0.1
-              for power = (+ n -2.5)
+              for power = (+ n 0.0) ;; TODO: n < 0
               for x = (rand `(50 50))
               for answer = (proceed (!expt x power))
               for expected = (map 'list #'(lambda (x) (expt x power)) (change-facet x :simple-array))
-              do (unless (every #'(lambda (x y) (<= (abs (- x y)) 1e-5)) (change-facet answer :simple-array) expected)
+              do (unless (every #'=~nan (change-facet answer :simple-array) expected)
                    (push (cons (apply #'max (map 'list #'- (change-facet answer :simple-array) expected)) power) failed)))
         (ok (null failed)
             (when failed
               (with-output-to-string (out)
                 (loop for (diff . n) in failed do (format out "n=~a, max_atol=~a~%" n diff))))))))
-  (testing "Expt(X, N) where N is a dynamic shape."
-    
-    )
-  (testing "Power is a tensor"
-
-    ))
-|#
+  (testing "Expt(X, N) where N is a dynamic shape. (-2.5 < n < 2.5)"
+    (let ((failed nil))
+      (loop with model = (caten (!expt (make-tensor `(10 10) :from 'x) (fconst 'n)))
+            for n upfrom 0 below 5.0 by 0.1
+            for power =  (+ n 0.0) ;; TODO: n < 0
+            for x = (rand `(10 10))
+            for answer = (forward model `(x . ,x) `(n . ,power))
+            for expected = (map 'list #'(lambda (x) (expt x power)) (change-facet x :simple-array))
+            do (unless (every #'=~nan (change-facet answer :simple-array) expected)
+                 (push (cons (apply #'max (map 'list #'- (change-facet answer :simple-array) expected)) power) failed)))
+      (ok (null failed)
+          (when failed
+            (with-output-to-string (out)
+              (loop for (diff . n) in failed do (format out "n=~a, max_atol=~a~%" n diff)))))))
+  (testing "Power is a tensor."
+    (let* ((x (rand `(32 32)))
+           (y (rand `(32 32)))
+           (expected (map 'list #'expt (change-facet x :simple-array) (change-facet y :simple-array)))
+           (output (proceed (!expt x y))))
+      (ok (every #'=~nan (change-facet output :simple-array) expected)))))

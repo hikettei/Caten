@@ -185,7 +185,10 @@ Performs matrix multiplication between two tensors `a` and `b`.
                   (inject-nan (!where (!and neg-base-map (!neq power (!truncate power))) (!const base (nan)) (!const base 1))))
              (!where (!and (!eq base (!const base 0)) (!eq power (!const power 0))) (!const base 1) (!* ret correct-sign inject-nan)))))
 
-(defun !expt (base power &aux (power (if (and (tensor-p power) (= 0 (ndim power))) (canonicalize-int power) power)))
+(defun !expt (base power &aux (power (if (and (tensor-p power) (= 0 (ndim power)))
+                                         (let ((folded (canonicalize-int power)))
+                                           (if (numberp folded) folded power))
+                                         power)))
   "
 ```
 (!expt base power)
