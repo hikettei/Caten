@@ -233,7 +233,7 @@
 	  (if (numberp val)
 	      (caten:iconst val)
               (if (stringp val)
-                  (caten:iconst (intern val))
+                  (caten:iconst (intern (string-upcase val) "KEYWORD"))
 	          (if (arrayp val)
 		      (caten:change-facet val :tensor)
 		      (error "Constant-9: Cannot translate ~a into Caten?" val))))))))

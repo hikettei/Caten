@@ -65,7 +65,7 @@
   (let ((value (oneof-value (tensor-shape-proto.dimension-value proto))))
     (etypecase value
       (number value)
-      (string (intern value)))))
+      (string (intern (string-upcase value) "KEYWORD")))))
 
 (defun tensor-proto->aten (tensor-proto)
   "Creates a Caten Tensor from cl-onnx:Tensor-Proto"
