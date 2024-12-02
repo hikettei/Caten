@@ -67,3 +67,7 @@ nav:
   - Ready to use packages:
     - Overview: packages/caten.apps.md
     - caten/apps.gpt2: packages/caten.apps.gpt2.md
+  - External Libraries:
+    - caten/gguf: packages/caten.external.gguf.md
+    - caten/oonx: packages/caten.external.onnx.md
+    - caten/llm: packages/caten.external.llm.md

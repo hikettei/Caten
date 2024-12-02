@@ -48,7 +48,8 @@
    (:file "metadata")
    (:file "tensor-info")
    (:file "gguf-file")
-   (:file "dequantize")))
+   (:file "dequantize")
+   (:file "documentation")))
 
 (asdf:defsystem "caten/llm"
   :description "Various Generative Language Model Implementation in Caten"
@@ -60,7 +61,8 @@
    (:file "utils")
    (:file "tokenizers")
    (:file "bpe")
-   (:file "layers")))
+   (:file "layers")
+   (:file "documentation")))
 
 (asdf:defsystem "caten/onnx"
   :description "ONNX extension for Caten"
@@ -72,7 +74,8 @@
    (:file "helpers")
    (:file "defop")
    (:file "onnx")
-   (:file "opset")))
+   (:file "opset")
+   (:file "documentation")))
 
 (asdf:defsystem "caten/vision"
   :description "Computer Vision Implementation in Caten"

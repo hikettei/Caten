@@ -6,7 +6,7 @@ exec ros -Q -- $0 "$@"
 (progn ;;init forms
   (ros:ensure-asdf)
    #+quicklisp(cl:push (cl:pathname "./") ql:*local-project-directories*)
-   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/benchmarks :caten/apps) :silent t)
+   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/onnx :caten/llm :caten/benchmarks :caten/apps) :silent t)
    (when (and (uiop:getenv "JIT_BACKEND")
 	      (equalp (uiop:getenv "JIT_BACKEND") "METAL"))
      #+quicklisp(ql:quickload '(:caten/metal) :silent nil)))
