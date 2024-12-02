@@ -23,7 +23,8 @@
   :description ""
   :author "hikettei <ichndm@gmail.com>"
   :depends-on (;; More Applications follow ...
-               "caten.apps.gpt2"))
+               "caten.apps.gpt2")
+  :components ((:file "apps/documentation")))
 ;; External system for Caten.
 ;; Systems including non-portable dependencies (e.g.: CUDA, Metal) or systems cannot be guaranteed to be maintained, are separated from caten.
 (asdf:defsystem "caten/metal"
