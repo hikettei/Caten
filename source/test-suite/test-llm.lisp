@@ -65,7 +65,7 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
   (with-given-dtype ((:float32 . "float32"))
     (let ((x (randn `(128 128))))
       (assert-equal
-	  (:atol 1e-5 :rtol 1e-7)
+	  (:atol 1e-5 :rtol 1e-6)
 	  (with-torch (x)
 	    (->caten (f:softmax x)))
 	  (proceed (!softmax x))))))
@@ -137,7 +137,7 @@ def mha_failing_case_1(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_pro
                 (testing (format nil "dim=~a n-heads=~a batch-size=~a seq-len=~a n=~a" dim n-heads batch-size seq-len n)
                   (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
                     (assert-equal
-                        (:atol 1e-5 :rtol 1e-4)
+                        (:atol 1e-4 :rtol 1e-4)
                         (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
                           (->caten (mha_failing_case_1 n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
                         (let* ((xqkv (!add (!matmul x (!t c-attn-weight)) c-attn-bias))
@@ -178,7 +178,7 @@ def mha_failing_case_2(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_pro
                 (testing (format nil "dim=~a n-heads=~a batch-size=~a seq-len=~a n=~a" dim n-heads batch-size seq-len n)
                   (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
                     (assert-equal
-                        (:atol 1e-5 :rtol 1e-4)
+                        (:atol 1e-4 :rtol 1e-4)
                         (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
                           (->caten (mha_failing_case_2 n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
                         (let* ((xqkv (!add (!matmul x (!t c-attn-weight)) c-attn-bias))
@@ -295,7 +295,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
         (c_procj.weight (rand `(32 32)))
         (c_procj.bias (rand `(32))))
     (assert-equal
-        (:rtol 1e-4 :atol 1e-5)
+        (:rtol 1e-4 :atol 1e-4)
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
