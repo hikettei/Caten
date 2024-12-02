@@ -81,8 +81,10 @@ Compute the ~a of the tensor.
 
 Performs matrix multiplication between two tensors `a` and `b`.
 "
-  (multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
-    (forward (make-instance 'Matmul) a b)))
+  (if (= (ndim a) (ndim b))
+      (forward (make-instance 'Matmul) a b)
+      (multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
+        (forward (make-instance 'Matmul) a b))))
 ;; ~~ math ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (SinHNode (()) :where "A[~] -> A[~]")
     ()
