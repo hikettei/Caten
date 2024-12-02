@@ -1,2 +1,5 @@
+github qitab/cl-protobufs
+git cl-protobufs https://github.com/qitab/cl-protobufs.git :ref d5e9ddaa19465347f8c077326278e4d4416e1010
+github hikettei/cl-easel
 github hikettei/cl-onnx
 github hikettei/cl-metal

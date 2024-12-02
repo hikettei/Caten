@@ -64,12 +64,13 @@
 (asdf:defsystem "caten/onnx"
   :description "ONNX extension for Caten"
   :author "hikettei <ichndm@gmail.com>"
-  :depends-on ("caten" "cl-onnx")
+  :depends-on ("caten" "cl-onnx" "alexandria")
   :pathname "external/onnx"
   :components
   ((:file "package")
    (:file "helpers")
-   (:file "defop")))
+   (:file "defop")
+   (:file "onnx")))
 
 (asdf:defsystem "caten/vision"
   :description "Computer Vision Implementation in Caten"
