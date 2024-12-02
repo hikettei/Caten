@@ -16,6 +16,7 @@ jobs:
       - name: Set up SBCL via Roswell.
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          curl -L https://qlot.tech/installer | sh
           ros install sbcl-bin/2.4.0
           ros use sbcl-bin/2.4.0
       - name: Set up Python 3.12
@@ -27,7 +28,9 @@ jobs:
       - name: Installing requirements
         run: make install_docs
       - name: Building documentations
-        run: CI=1 mkdir -p docs/packages && make build_docs && echo -e "markdown-katex\nlantana==2.11.2" > docs/requirements.txt
+        run: |
+          qlot install
+          CI=1 mkdir -p docs/packages && qlot exec make build_docs && echo -e "markdown-katex\nlantana==2.11.2" > docs/requirements.txt
       - name: Deploy docs
         uses: mhausenblas/mkdocs-deploy-gh-pages@master
         env:
