@@ -116,7 +116,6 @@ def write_gguf(filename, tensors):
                 raise ValueError(f\"Metadata for tensor '{metadata['name']}' exceeds 64 bytes. Increase the placeholder size.\")
 ")
 
-
 (python-exec
 "
 def generate_dummy_gguf(filename, type):
@@ -139,7 +138,6 @@ def read_gguf(filename):
 
     info, tensorinfo = gguf.load_gguf(f)
 
-    print(tensorinfo)
     results = []
     for name in tensorinfo:
       weights = gguf.load_gguf_tensor(f, tensorinfo, name)
@@ -150,12 +148,13 @@ def read_gguf(filename):
 (import-function "generate_dummy_gguf")
 (import-function "read_gguf")
 
-;(in-package :caten/gguf)
+(print (type-of (read_gguf "dummy.gguf"))) ;type simple-vector
+(print (type-of (car (caten/gguf:gguf-tensor-info (caten/gguf:load-gguf "dummy.gguf")))))) ;type tensor-info!
 
 ;; generate a dummy gguf file with a single tensor of shape 64 and with random values from -1 to 1
-(generate_dummy_gguf "dummy1.gguf" "Q8_0")
+(generate_dummy_gguf "dummy.gguf" "Q8_0")
 
-(print (read_gguf "dummy1.gguf"))
+(print  (read_gguf "dummy.gguf"))
 
 (in-package :caten/gguf)
 (defparameter test (load-gguf "dummy.gguf"))
@@ -164,11 +163,13 @@ def read_gguf(filename):
 (in-package :caten/test-suite)
 
 (deftest test-dequantization-q8_0
+  (generate_dummy_gguf "dummy.gguf" "Q8_0")
   (with-given-dtype ((:float32 . "float32"))
     (assert-equal
-     (:atol 1e-5 :rtol 1e-6))
-    
-    ))
+     (:atol 1e-5 :rtol 1e-6)
+     (read_gguf "dummy.gguf")
+     (car (caten/gguf:gguf-tensor-info (caten/gguf:load-gguf "dummy.gguf")))) ;fixme: types are different!
+    )))
 
 (deftest test-dequantization-f16
   (with-given-dtype ((:float32 . "float32"))
