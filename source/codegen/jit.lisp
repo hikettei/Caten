@@ -156,24 +156,24 @@ caten/codegen overview:
                    if (eql (node-type item) :DEFINE-GLOBAL)
                      collect (getattr item :dtype))
              :cached-p (if (getattr si :cache-name) t nil)))
-
+(defparameter *scan* nil)
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((info (getattr node :kernel-info))
         (out-n (getattr node :output-buffer-n))
-        (scan "ATTENTION2096310");"FUSED_SUMNODE_MATMUL2096316")
+        ;; LayerNorm Accumlation?
+        (scan *scan*);"FUSED_MEANNODE_SUMNODE_LAYERNORM_MEANNODE_SUMNODE2105874");"FUSED_MEANNODE_SUMNODE_LAYERNORM_MEANNODE_SUMNODE2105874");"FUSED_SUMNODE_MATMUL2096316")
         (caten/avm:*max-display-matrix* 2)
         (caten/avm:*max-display-len* 15))
-    ;; N=1 -> ok
-    ;; N=2 ->
-    ;; N=3 ->
-    ;;    ..
+    ;; Cause = LayerNorm just next to WTE+WPE
     ;(print (compiled-kernel-name info))
     ;; (For details, see coerce-dtyped-buffer)
+    ;; どっかでAccumlationしちゃってる・・・
     ;; TODO: 任意の層のPLOTを出力する, scanned by substring
     (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
       (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
       (when (and scan (cl-ppcre:scan scan (princ-to-string (compiled-kernel-name info))))
         (format t "~%===DEBUG: ~a===~%" (compiled-kernel-name info))
+        (format t "~%Kernel:~%~a~%" (compiled-kernel-code info))
         (format t "~%Inputs~%")
         (loop for arg in args
               for name in (node-reads node)
