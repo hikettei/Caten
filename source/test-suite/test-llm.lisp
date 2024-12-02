@@ -332,13 +332,13 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
          (n-heads 8)
          (batch-size 10)
          (seq-len 32)
-         (x (randn `(,batch-size ,seq-len ,dim)))
-         (c_attn.weight  (normal `(,(* 3 dim) ,dim) :mean 0.1 :std 1.1))
-         (c_attn.bias    (normal`(,(* 3 dim))  :mean 0.1 :std 1.1))
-         (c_procj.weight (normal `(,dim ,dim) :mean 0.1 :std 1.1))
-         (c_procj.bias   (normal `(,dim) :mean 0.1 :std 1.1)))
+         (x (rand `(,batch-size ,seq-len ,dim)))
+         (c_attn.weight  (rand `(,(* 3 dim) ,dim)))
+         (c_attn.bias    (rand`(,(* 3 dim))))
+         (c_procj.weight (rand `(,dim ,dim)))
+         (c_procj.bias   (rand `(,dim))))
     (assert-equal
-        (:rtol 1.0 :atol 1.0) ;; TODO: Rtol in 1e-5
+        (:rtol 1e-6 :atol 1e-6) ;; TODO: Rtol in 1e-5
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
@@ -348,13 +348,13 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
          (n-heads 8)
          (batch-size 1)
          (seq-len 32)
-         (x (randn `(,batch-size ,seq-len ,dim)))
-         (c_attn.weight  (normal `(,(* 3 dim) ,dim) :mean 0.0 :std 0.1))
-         (c_attn.bias    (normal`(,(* 3 dim))  :mean 0.0 :std 0.1))
-         (c_procj.weight (normal `(,dim ,dim) :mean 0.0 :std 0.1))
-         (c_procj.bias   (normal `(,dim) :mean 0.0 :std 0.1)))
+         (x (rand `(,batch-size ,seq-len ,dim)))
+         (c_attn.weight  (rand `(,(* 3 dim) ,dim)))
+         (c_attn.bias    (rand`(,(* 3 dim))))
+         (c_procj.weight (rand `(,dim ,dim)))
+         (c_procj.bias   (rand `(,dim))))
     (assert-equal
-        (:rtol 1e-4 :atol 1e-2) ;; TODO: Rtol in 1e-5, atol looks still unstable?...
+        (:rtol 1e-6 :atol 1e-6) ;; TODO: Rtol in 1e-5, atol looks still unstable?...
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
