@@ -89,7 +89,7 @@ Sets the seed for random operations within the scope of the body.
 	   ;; (counts1 (!cast (!and x (uconst 4294967295)) :uint32))
 	   (counts2 (!and (!shr x1 32 :uint32) (uconst 4294967295 :dtype :uint32)))
 	   (cc counts2)
-	   (cc (!shr cc 8 :float32))
+	   (cc (!shr cc 8 *default-float*))
 	   (cc (!div cc (fconst (expt 2 24)))))
       (!reshape cc (shape x)))))
 
