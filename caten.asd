@@ -71,7 +71,7 @@
    (:file "helpers")
    (:file "defop")
    (:file "onnx")
-   (:file "impl/arithmetic")))
+   (:file "opset")))
 
 (asdf:defsystem "caten/vision"
   :description "Computer Vision Implementation in Caten"
