@@ -1,4 +1,5 @@
 (defpackage :caten/apps.gpt2
+  (:documentation "")
   (:use :cl :caten/apis :caten/llm :caten/gguf)
   (:export :make-gpt2 :gpt2-generate))
 
