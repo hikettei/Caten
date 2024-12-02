@@ -78,6 +78,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.12
+      - name: Update $PATH
+        run: |
+          echo $PATH
+          export PATH=/home/runner/.roswell/bin:$PATH
+          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing ISL
         run: sudo apt-get install -y libisl-dev
       - name: Installing requirements
@@ -103,6 +108,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: 3.12
+      - name: Update $PATH
+        run: |
+          echo $PATH
+          export PATH=/home/runner/.roswell/bin:$PATH
+          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Dependencies
         run: sudo apt-get install -y libisl-dev gnuplot
       - name: Transformer Simplifiers (N<=12, JIT=0, AUTO_SCHEDULER=0)
