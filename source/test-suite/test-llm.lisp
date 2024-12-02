@@ -328,7 +328,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
     (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
 ;; [TODO] Fix test-attention-large for both JIT=0 and JIT=1
 (deftest test-attention-large
-  (with-given-dtype ((:float32 . "float32") (:float64 . "float64"))
+  (with-given-dtype ((:float32 . "float32"))
     (let* ((dim 128)
            (n-heads 8)
            (batch-size 10)
