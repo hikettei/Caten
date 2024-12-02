@@ -83,9 +83,16 @@ jobs:
           echo $PATH
           export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
-      - name: Installing ISL
-        run: sudo apt-get install -y libisl-dev protobuf-compiler
-      - name: Installing requirements
+      - name: Installing Dependencies
+        run: sudo apt-get install -y libisl-dev protobuf-compiler cmake
+      - name: Set up cl-protobufs
+        run: |
+          git clone https://github.com/qitab/cl-protobufs.git
+          cd cl-protobufs/protoc
+          cmake . -DCMAKE_CXX_STANDARD=17
+          cmake --build . --target install --parallel 16
+          cd ../../
+      - name: Installing extra requirements
         run: |
           qlot install
           qlot exec make install_docs
