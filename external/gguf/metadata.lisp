@@ -50,6 +50,10 @@
 
 (defstruct (Metadata
 	    (:constructor make-metadata (key value-type value)))
+  "
+A structure to represent metadata in GGUF file.
+
+(metadata-key metadata) to access the key typed as string. (metadata-value-type metadata) to access the type of value typed as a keyword. (metadata-value metadata) to access the value typed as a number, boolean, or simple-array."
   (key key :type string)
   (value-type value-type :type keyword)
   (value value :type (or number boolean simple-array)))

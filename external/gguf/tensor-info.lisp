@@ -41,6 +41,9 @@
 
 (defstruct (Tensor-Info
 	    (:constructor make-tensor-info (name n-dimension dimensions tensor-type offset)))
+  "Tensor-Info stores the information of a tensor in the gguf file.
+(tensor-info-name tensor-info) returns the name of the tensor which is a string, (tensor-info-n-dimension tensor-info) returns the rank of the tensor. (tensor-info-dimensions tensor-info) returns the shape of the tensor. (tensor-info-ggml-type tensor-info) returns the data type of the tensor which is a keyword. (tensor-info-relative-offset tensor-info) returns the offset of the tensor in the gguf file. (tensor-info-absolute-offset tensor-info) returns the absolute offset of the tensor in the stream, (inconviniently buffers are stored with this offset but caten will precompute them). (tensor-info-buffer tensor-info) returns the parsed buffer of the tensor.
+"
   (name name :type string)
   (n-dimension n-dimension :type fixnum)
   (dimensions dimensions :type list)
