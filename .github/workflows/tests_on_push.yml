@@ -29,8 +29,7 @@ jobs:
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
           ros install ${{ matrix.lisp }}
           ros use ${{ matrix.lisp }}
-          ros install rove
-          curl -L https://qlot.tech/installer | sh
+          ros install rove qlot
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -72,9 +71,9 @@ jobs:
       - name: Set up SBCL via Roswell.
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
-          curl -L https://qlot.tech/installer | sh
           ros install sbcl-bin
           ros use sbcl-bin
+          ros install qlot
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -96,9 +95,9 @@ jobs:
       - name: Set up SBCL via Roswell.
         run: |
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
-          curl -L https://qlot.tech/installer | sh
           ros install sbcl-bin
           ros use sbcl-bin
+          ros install qlot
           qlot install
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
