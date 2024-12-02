@@ -169,8 +169,4 @@
       (dolist (node-proto innermosts) (node-proto->aten graph-proto-helper node-proto)))
     (let ((results (map 'list #'(lambda (x) (gp-name->value graph-proto-helper x)) output-names)))
       (assert (every #'identity results) () "Failed to trace the graph: ~a -> ~a" output-names results)
-      (append
-       (loop for value being each hash-value of (gp-name2value graph-proto-helper)
-	     if (caten:tensor-p value)
-	       collect value)
-       results))))
+      results)))
