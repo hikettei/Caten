@@ -184,7 +184,7 @@ Performs matrix multiplication between two tensors `a` and `b`.
                   (correct-sign (!add (!const power 1) (!mul neg-base (!- (!cos (!mul power (!const power pi))) (!const base 1)))))
                   (inject-nan (!where (!and neg-base-map (!neq power (!truncate power))) (!const base (nan)) (!const base 1))))
              (!where (!and (!eq base (!const base 0)) (!eq power (!const power 0))) (!const base 1) (!+ ret correct-sign inject-nan)))))
-;; todo: doc, truncate
+;; todo: test
 (defun !expt (base power &aux (power (if (and (tensor-p power) (= 0 (ndim power))) (canonicalize-int power) power)))
   "
 ```

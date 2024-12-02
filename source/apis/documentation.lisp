@@ -153,6 +153,7 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
     (def "!tan" #'!tan "(proceed (!tan (randn `(3 3))))")
     (def "!log2" #'!log2 "(proceed (!log2 (ax+b `(3 3) 1 0.1)))")
     (def "!exp2" #'!exp2 "(proceed (!exp2 (ax+b `(3 3) 1 0.1)))")
+    (def "!expt" #'!expt "(proceed (!expt (ax+b `(3 3) 1 0.1) 2))")
     (def "!truncate" #'!truncate "(proceed (!truncate (randn `(3 3))))")
     (def "!ceiling" #'!ceiling "(proceed (!ceiling (randn `(3 3))))")
     (def "!floor" #'!floor "(proceed (!floor (randn `(3 3))))")
