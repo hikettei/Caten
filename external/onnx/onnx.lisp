@@ -27,5 +27,9 @@ Converts a cl-onnx model proto into an equivalent caten IR.
     (graph-proto-helper->onnx (make-graph-proto-helper (model-proto-graph model-proto) opset))))
 
 (defun from-onnx (path &key (opset))
-  "Constructs a caten IR from an ONNX model file."
+  "
+```
+(from-onnx path &key opset)
+```
+Constructs a caten ir from an onnx model file at `path`. opset specifies the opset version to use. If not specified, uses the opset version in the file."
   (from-model-proto (cl-onnx:load-model path) :opset opset))
