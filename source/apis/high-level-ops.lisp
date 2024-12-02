@@ -208,7 +208,7 @@ Computes the power of base with power."
 (defmodule (TruncateNode (()) :where "A[~] -> A[~]")
     ()
     :documentation "Truncate(x)"
-    :impl ((trunc x) (!cast (!cast x :int32) (dtype-of x))))
+    :impl ((trunc x) (!cast (!cast x *default-int*) (dtype-of x))))
 
 (defun !truncate (x)
   "

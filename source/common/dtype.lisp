@@ -91,7 +91,7 @@
     (if (or (typep x 'ratio) (floatp x))
 	(if (or (eql cast-to :float64) (eql cast-to :float32) (eql cast-to :float16) (eql cast-to :bfloat16))
 	    (coerce x (dtype->lisp cast-to))
-	    (coerce (round x) (dtype->lisp cast-to)))
+	    (coerce (truncate x) (dtype->lisp cast-to)))
 	(coerce x (dtype->lisp cast-to)))))
 
 (defun 1.0ulp (dtype)
