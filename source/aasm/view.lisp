@@ -69,7 +69,7 @@
 ;;	       id nrank shape dtype view-from view-to view-by broadcast stride)
 	))))
 
-(defun %view (base shape from to by broadcast stride &key (id (gensym "VID")) (permute nil))
+(defun %view (base shape from to by broadcast stride &key (id (gensym "VID")) (permute nil) (tr nil))
   "Creates a view against base. (views are only created against the original buffer)
 Permute is an optional parameter and does nothing, but MUST required to enable Polyhedral Compiler, to inference an index of iteration by type-relay.lisp"
   ;; Allocation w/o allocation
@@ -104,7 +104,7 @@ broadcast=~a"
 			     (map 'list #'node->id1 to)
 			     (map 'list #'node->id1 by)
 			     (map 'list #'node->id1 stride))
-		     :nrank nrank :broadcast broadcast :permute permute))))
+		     :nrank nrank :broadcast broadcast :permute permute :tr tr))))
 ;; Not recommended: use %view instead
 ;; Note that x must be a contiguous array.
 (defun %reshape (x shape &key (id (gensym "RID")) (order :row))

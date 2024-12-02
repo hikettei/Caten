@@ -11,7 +11,8 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
    #:relay-read-iters
    #:relay-write-iters
    #:iteration-space-shape
-   #:ensure-iteration-space-length)
+   #:ensure-iteration-space-length
+   #:node-writes-broadcasted-p)
   (:import-from
    :caten/avm
    #:Buffer
@@ -111,13 +112,13 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                 (= (buffer-nrank (car (relay-writes (read-type-relay n)))) 0))
           do (setf (nth nth (node-reads node)) (getattr n :value))))
 
-(defun remove-unused-blueprint (blueprint sched-graph)
-  (loop for bp in blueprint
-        for us = (+
-                  (count (car (node-writes bp)) blueprint :key #'node-reads :test #'find)
-                  (count (car (node-writes bp)) (graph-nodes sched-graph) :key #'node-reads :test #'find)
-                  (count (car (node-writes bp)) (graph-outputs sched-graph)))
-        if (or (eql (node-class bp) :Render) (> us 0))
+(defun remove-unused-blueprint (blueprint sched-item)
+  (declare (type list blueprint) (type node sched-item) (optimize (speed 3)))
+  (loop with reads = (apply #'append (map 'list #'node-reads blueprint))
+        for bp in blueprint
+        for used-p = (or (find (the symbol (car (node-writes bp))) (the list (node-writes sched-item)))
+                         (find (the symbol (car (node-writes bp))) (the list reads)))
+        if (or (eql (node-class bp) :Render) used-p)
           collect bp))
 
 (defmethod graph-scalarify (blueprint (node Node) (schedule-graph Graph))
@@ -150,7 +151,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                              do (setf (getattr b :declare-type) (list t))))
     (dolist (node blueprint)
       (propagate-load-const node blueprint))
-    (remove-unused-blueprint blueprint schedule-graph)))
+    (remove-unused-blueprint blueprint node)))
 
 (defmethod exprify ((node Node))
   (let ((nth->aref (make-hash-table)))
@@ -358,7 +359,11 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
     (loop for bp in blueprint
           if (and (eql (node-type bp) :EXPR) (getattr bp :reduction))
             do (setf (gethash (car (node-writes bp)) id->tgt)
-                     (list (car (node-reads bp)) (car (relay-reads (read-type-relay bp))) (car (relay-read-iters (read-type-relay bp))))))
+                     (if (node-writes-broadcasted-p bp)
+                         ;; val[1, 10] += val[10, 10] is a reduction.
+                         (list (car (node-reads bp)) (car (relay-reads (read-type-relay bp))) (car (relay-read-iters (read-type-relay bp))))
+                         ;; val[10, 10] += val[10, 10] is just an assign.
+                         (list (car (node-reads bp)) nil nil))))
     (labels ((final-new-id (id)
                (if (gethash id id->tgt)
                    (or (final-new-id (car (gethash id id->tgt))) (gethash id id->tgt))
@@ -369,7 +374,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                      (values id type is)
                      (progn
                        (setf (gethash id rewrite-map) (car new-id))
-                       (values id (second new-id) (third new-id)))))))
+                       (values id (or (second new-id) type) (or (third new-id) is)))))))
       (macrolet ((updt (expr &key (reader) (ireader) (treader))
                    `(loop for nth upfrom 0
                           for read in (,reader ,expr)

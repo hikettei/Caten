@@ -75,7 +75,9 @@
 	    (progn
               (setf (buffer-value out) (copy-seq (buffer-value out)))
 	      (apply #'map-into/buffer out op `(,out ,@(cdr buffers)))
-	      (setf (buffer-value (car buffers)) (buffer-value out)))
+              (let ((base-elms (buffer-value (car buffers))))
+                (dotimes (i (array-total-size base-elms)) ;; synchronize the reduction to the original buffer.
+                  (setf (aref base-elms i) (aref (buffer-value out) i)))))
             (progn
               ;; If not reduced and the `out` is broadcasted?
               ;; In that case the output tensor should be a contiguous. (e.g: out[10, 10] = x[1] + y[10, 10])
@@ -125,7 +127,7 @@
 		(apply #'map-view (getattr node :reduction :allow-undefined t) ,op args))))
   (impl :add #'(lambda (&rest args &aux (out (apply #'+ args))) (if wrap-around (wrap-around out max min) out)))
   (impl :mul #'(lambda (&rest args &aux (out (apply #'* args))) (if wrap-around (wrap-around out max min) out)))
-  (impl :idiv #'(lambda (x y) (floor (/ x y))))
+  (impl :idiv #'(lambda (x y) (floor x y)))
   (impl :move #'(lambda (x y) x y))
   (impl :and #'(lambda (x y) (if (and (numberp x) (numberp y)) (logand x y) (and x y))))
   (impl :or #'(lambda (x y) (if (and (numberp x) (numberp y)) (logior x y) (or x y))))

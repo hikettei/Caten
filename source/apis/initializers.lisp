@@ -89,7 +89,7 @@ Sets the seed for random operations within the scope of the body.
 	   ;; (counts1 (!cast (!and x (uconst 4294967295)) :uint32))
 	   (counts2 (!and (!shr x1 32 :uint32) (uconst 4294967295 :dtype :uint32)))
 	   (cc counts2)
-	   (cc (!shr cc 8 :float32))
+	   (cc (!shr cc 8 *default-float*))
 	   (cc (!div cc (fconst (expt 2 24)))))
       (!reshape cc (shape x)))))
 
@@ -255,7 +255,7 @@ There is a `randint` function for the same purpose, but it is not lazy.
        (tensor-buffer place) (tensor-buffer tensor)))
     place))
 
-(macrolet ((def (name initializer &key (args nil) (keys nil) (dtype *default-float*) (documentation "No description provided"))
+(macrolet ((def (name initializer &key (args nil) (keys nil) (dtype '*default-float*) (documentation "No description provided"))
 	     `(defun ,name (shape ,@args &key ,@keys (dtype ,dtype) (order *default-order*) (id (gensym "TID")) (requires-grad nil))
 		,documentation
 		(declare (type list shape))

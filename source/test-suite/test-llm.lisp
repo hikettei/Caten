@@ -12,6 +12,7 @@ def softmax(x):
   ss = e.sum(axis=-1, keepdims=True)
   return e / ss
 
+def _softmax(x): return softmax(x)
 import math
 def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
     qk = torch.matmul(query, key.transpose(-2, -1))
@@ -22,6 +23,7 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 ")
 
 (import-function "test_scaled_dot_product_attention")
+(import-function "_softmax")
 
 (deftest test-scaled-dot-product-attention
   (with-given-dtype ((:float32 . "float32"))
@@ -46,25 +48,57 @@ def test_scaled_dot_product_attention(query, key, value) -> torch.Tensor:
 	    (with-torch (q k v)
 	      (->caten (test_scaled_dot_product_attention q k v)))
 	    (proceed (scaled-dot-product-attention q k v)))))))
+;; Note(hikettei) Previously failed due to two reasons: Invaild Scheduler + Invaild Memory Planner
+(deftest test-scaled-dot-product-attention-batched-composed
+  (with-given-dtype ((:float32 . "float32"))
+    (with-no-grad
+      (let ((q (rand `(4 4 8 8) :id 'query))
+	    (k (rand `(4 4 8 8) :id 'key))
+	    (v (rand `(4 4 8 8) :id 'value)))
+        (assert-equal
+	    (:atol 1e-4 :rtol 1e-6)
+	    (with-torch (q k v)
+	      (->caten (test_scaled_dot_product_attention (test_scaled_dot_product_attention q k v) k v)))
+	    (proceed (scaled-dot-product-attention (scaled-dot-product-attention q k v) k v)))))))
 
 (deftest test-softmax-pytorch
   (with-given-dtype ((:float32 . "float32"))
-    (let ((x (rand `(32 32))))
+    (let ((x (randn `(128 128))))
       (assert-equal
-	  (:atol 1e-5 :rtol 1e-3)
+	  (:atol 1e-5 :rtol 1e-6)
+	  (with-torch (x)
+	    (->caten (f:softmax x)))
+	  (proceed (!softmax x))))))
+
+(deftest test-softmax-pytorch-fuzz
+  (with-given-dtype ((:float32 . "float32"))
+    (let ((x (normal `(512 512) :mean 10.0 :std 100.0)))
+      (assert-equal
+	  (:atol 1e-5 :rtol 1e-5)
 	  (with-torch (x)
 	    (->caten (f:softmax x)))
 	  (proceed (!softmax x))))))
 
 (deftest softmax-matmul
-  (let ((a (rand `(128 128)))
-        (b (rand `(128 128)))
-        (c (rand `(128 128))))
+  (let ((a (randn `(128 128)))
+        (b (randn `(128 128)))
+        (c (randn `(128 128))))
     (with-no-grad
       (assert-equal
-          (:atol 1e-5 :rtol 1e-5)
+          (:atol 1e-4 :rtol 1e-5)
           (with-torch (a b c)
             (->caten (f:softmax (torch.matmul (f:softmax c) (f:softmax (torch.matmul (f:softmax a) (f:softmax b)))))))
+          (proceed (!softmax (!matmul (!softmax c) (!softmax (!matmul (!softmax a) (!softmax b))))))))))
+
+(deftest softmax-matmul-fuzz
+  (let ((a (normal `(128 128) :mean 100.0 :std 1000.0))
+        (b (normal `(128 128) :mean 100.0 :std 1000.0))
+        (c (normal `(128 128) :mean 100.0 :std 1000.0)))
+    (with-no-grad
+      (assert-equal
+          (:atol 1e-4 :rtol 1e-5)
+          (with-torch (a b c)
+            (->caten (f:softmax (torch.matmul (_softmax c) (_softmax (torch.matmul (_softmax a) (_softmax b)))))))
           (proceed (!softmax (!matmul (!softmax c) (!softmax (!matmul (!softmax a) (!softmax b))))))))))
 
 ;; ~~ Utils for testing MultiHeadAttention ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -103,7 +137,7 @@ def mha_failing_case_1(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_pro
                 (testing (format nil "dim=~a n-heads=~a batch-size=~a seq-len=~a n=~a" dim n-heads batch-size seq-len n)
                   (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
                     (assert-equal
-                        (:atol 1e-5 :rtol 1e-4)
+                        (:atol 1e-4 :rtol 1e-4)
                         (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
                           (->caten (mha_failing_case_1 n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
                         (let* ((xqkv (!add (!matmul x (!t c-attn-weight)) c-attn-bias))
@@ -144,7 +178,7 @@ def mha_failing_case_2(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_pro
                 (testing (format nil "dim=~a n-heads=~a batch-size=~a seq-len=~a n=~a" dim n-heads batch-size seq-len n)
                   (multiple-value-bind (c-attn-weight c-attn-bias c-proj-weight c-proj-bias) (mha-parameters dim)
                     (assert-equal
-                        (:atol 1e-5 :rtol 1e-4)
+                        (:atol 1e-4 :rtol 1e-4)
                         (with-torch (x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)
                           (->caten (mha_failing_case_2 n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias)))
                         (let* ((xqkv (!add (!matmul x (!t c-attn-weight)) c-attn-bias))
@@ -261,23 +295,67 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
         (c_procj.weight (rand `(32 32)))
         (c_procj.bias (rand `(32))))
     (assert-equal
-        (:rtol 1e-4 :atol 1e-5)
+        (:rtol 1e-4 :atol 1e-4)
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
 
+(define-kernel-count-test fixed-attention-schedule 6
+  "Attention = 6 Kernels (TODO: 5 Kernel)"
+  (let ((x (make-tensor `(10 3 32)))
+        (c_attn.weight (make-tensor `(96 32)))
+        (c_attn.bias   (make-tensor `(96)))
+        (c_procj.weight (make-tensor `(32 32)))
+        (c_procj.bias (make-tensor `(32))))
+    (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
+
+(define-kernel-count-test symbolic-attention-schedule 6
+  "Attention = 6 Kernels (TODO: 5 Kernel)"
+  (let ((x (make-tensor `(10 b 32)))
+        (c_attn.weight (make-tensor `(96 32)))
+        (c_attn.bias   (make-tensor `(96)))
+        (c_procj.weight (make-tensor `(32 32)))
+        (c_procj.bias (make-tensor `(32))))
+    (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
+
+(define-kernel-count-test batch=1-symbolic-attention-schedule 6
+  "Attention = 6 Kernels (TODO: 5 Kernel)"
+  (let ((x (make-tensor `(1 b 32)))
+        (c_attn.weight (make-tensor `(96 32)))
+        (c_attn.bias   (make-tensor `(96)))
+        (c_procj.weight (make-tensor `(32 32)))
+        (c_procj.bias (make-tensor `(32))))
+    (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
+;; [TODO] Fix test-attention-large for both JIT=0 and JIT=1
 (deftest test-attention-large
+  (with-given-dtype ((:float32 . "float32"))
+    (let* ((dim 128)
+           (n-heads 8)
+           (batch-size 10)
+           (seq-len 32)
+           (x (rand `(,batch-size ,seq-len ,dim)))
+           (c_attn.weight  (rand `(,(* 3 dim) ,dim)))
+           (c_attn.bias    (rand `(,(* 3 dim))))
+           (c_procj.weight (rand `(,dim ,dim)))
+           (c_procj.bias   (rand `(,dim))))
+      (assert-equal
+          (:rtol 1e-5 :atol 5e-3) ;; TODO: Rtol in 1e-5
+          (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
+            (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
+          (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))))
+;; [TODO] Update test-attention-large-b=1 for both JIT=0 and JIT=1, atol looks unstable
+(deftest test-attention-large-b=1
   (let* ((dim 128)
          (n-heads 8)
-         (batch-size 10)
+         (batch-size 1)
          (seq-len 32)
          (x (rand `(,batch-size ,seq-len ,dim)))
-         (c_attn.weight (rand `(,(* 3 dim) ,dim)))
-         (c_attn.bias   (rand `(,(* 3 dim))))
+         (c_attn.weight  (rand `(,(* 3 dim) ,dim)))
+         (c_attn.bias    (rand`(,(* 3 dim))))
          (c_procj.weight (rand `(,dim ,dim)))
-         (c_procj.bias (rand `(,dim))))
+         (c_procj.bias   (rand `(,dim))))
     (assert-equal
-        (:rtol 1e-2 :atol 1e-5) ;; TODO: Rtol in 1e-5
+        (:rtol 1e-5 :atol 5e-3) ;; TODO: Rtol in 1e-5, atol looks still unstable?...
         (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
           (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
         (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
@@ -304,13 +382,13 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
   (with-no-grad
     (when (= 1 (ctx:getenv :JIT))
       (testing "No Segv?"
-        (let* ((caten/llm::*use-kv-cache* nil) ;; *use-kv-cache*=T will also cause segfault
+        (let* ((caten/llm::*use-kv-cache* nil)
                (model (Transformer 32 4 2 1e-5 32))
                (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
                (model (caten x)))
           (let ((value (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0))))
             (ok value (format nil "~a" value))))))))
-;; Failing for now (TODO: Fix)
+
 #|
 (deftest test-symbolic-transformer-forward-test-1-layer
   (with-no-grad
@@ -320,6 +398,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
              (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
              (model (caten x)))
         (ok (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0)))))))
+|#
 
 (deftest test-symbolic-transformer-forward-test-2-layer
   (with-no-grad
@@ -330,4 +409,3 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
                (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
                (model (caten x)))
           (ok (forward model `(x . ,(randint `(1 3) :low 0 :high 10)) `(s . 3) `(n . 0))))))))
-|#

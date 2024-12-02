@@ -74,8 +74,11 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                     (let ((nrank (getattr node :nrank)))
                       (with-output-to-string (out)
                         (format
-                         out "{ALLOCATE|shape=[~a]|strides=[~a]|dtype=~a}"
+                         out "{ALLOCATE|shape=[~a]~a|strides=[~a]|dtype=~a}"
                          (subseq (node-reads node) 0 nrank)
+                         (if (every #'numberp (subseq (node-reads node) 0 nrank))
+                             (format nil ", size=(~a)" (apply #'* (subseq (node-reads node) 0 nrank)))
+                             "")
                          (subseq (node-reads node) nrank (* 2 nrank))
                          (getattr node :dtype))))
                     (helper/color :node) "filled, solid"))
@@ -86,8 +89,11 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
                         (with-output-to-string (out)
                           (format
                            out
-                           "{VIEW|shape=[~a]|masks=[~a]~a~a}"
+                           "{VIEW|shape=[~a]~a|masks=[~a]~a~a}"
                            (subseq1p (node-reads node) 0 nrank)
+                           (if (every #'numberp (subseq1p (node-reads node) 0 nrank))
+                               (format nil ", size=(~a)" (apply #'* (subseq1p (node-reads node) 0 nrank)))
+                               "")
 	                   (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
 	                         (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
                                  (by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
@@ -105,6 +111,28 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
            (node (node-id node) (node-name node) (helper/color :node) "filled, solid"))
           (:Module
            (node (node-id node) (render-attrs (node-name node) node (getattrs node)) (helper/color :module) "filled, solid"))
+          (:Graph
+           (if (eql (node-type node) :Schedule-Item)
+               (if (getattr node :allocate-p)
+                   (let ((alloc (car (getattr node :items))))
+                     (assert alloc)
+                     (if (getattr alloc :from)
+                          (node
+                           (node-id node)
+                           (format nil "Input[~a] ~a" (car (node-writes alloc)) (subseq (node-reads alloc) 0 (getattr alloc :nrank)))
+                           (helper/color :input)
+                           "filled, solid")
+                          (node
+                           (node-id node)
+                           (format nil "TmpAlloc[~a]" (subseq (node-reads alloc) 0 (getattr alloc :nrank)))
+                           (helper/color :chain)
+                           "filled, solid")))
+                   (if (getattr node :jitable)
+                       (node (node-id node) (getattr node :name) (helper/color :node) "filled, solid")
+                       (let ((node (car (getattr node :items))))
+                         (assert node)
+                         (node (node-id node) (format nil "[VMOP] ~a" (node-type node)) (helper/color :chain) "filled, solid"))))
+               (node (node-id node) (node-name node) (helper/color :movement) "filled, solid")))
           (otherwise
            (node (node-id node) (node-name node) (helper/color :movement) "filled, solid")))))
     (dolist (node (graph-nodes graph))
@@ -119,6 +147,16 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
       (with-open-file (stream htmlpath :direction :output :if-exists :supersede :if-does-not-exist :create)
         (format stream "<html><p><b><font size=\"5\">~a</b></p><body><img src=\"~a.png\"></body></html>" title pathname)
         (uiop:launch-program (list "open" htmlpath) :output t)))))
+
+(defun compute-n-children (graph id &aux (seen nil) (count 0))
+  (labels ((explore (id)
+             (when (find id seen) (return-from explore))
+             (let ((val (id->value graph id)))
+               (when val
+                 (push id seen) (incf count)
+                 (mapc #'explore (node-reads val))))))
+    (explore id)
+    count))
 ;; [TODO] optimize screen-width automatically
 (defparameter *indent* 0)
 (defun pprint-graph (graph &key (screen-width 140) (stream t)
@@ -183,6 +221,12 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                 (let ((item (format nil "~a~a~a~%" (indent lastp) (if (zerop *indent*) "" " ") (princ-node node))))
                   (princ item out)
                   (> (length item) screen-width)))
+              (child-weights (node lastp-map)
+                (let* ((weights (map 'list #'(lambda (x) (compute-n-children graph x)) (node-reads node)))
+                       (paired (map 'list #'list weights (node-reads node) lastp-map)))
+                  ;; Small children first
+                  ;; argsort
+                  (map 'list #'cdr (sort paired #'< :key #'car))))
               (explore (id &optional (lastp nil))
                 (when (find id seen)
                   (let ((node (id->value graph id)))
@@ -204,7 +248,9 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                           (let ((*indent* (+ 2 *indent*))
                                 (lastp-map (make-list (length (node-reads node)))))
                             (when lastp-map (setf (car lastp-map) t))
-                            (mapc #'explore (node-reads node) (nreverse lastp-map)))))))))
+                            (loop for pair in (child-weights node (reverse lastp-map))
+                                  for nth upfrom 0
+                                  do (explore (car pair) (second pair))))))))))
        (setf stashed (copy-list (graph-outputs graph)))
        (dotimes (i screen-width) (princ "=" out))
        (format out "~%")

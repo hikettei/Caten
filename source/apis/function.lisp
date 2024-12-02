@@ -107,7 +107,7 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
                         collect s)))
     (assert (null inputs) () "lower: too many inputs for the tensor shaped tensor ~a" (tensor-shape buff))
     (with-context
-      (a (%make-tensor shape :dtype (tensor-dtype buff) :order (tensor-order buff) :id (tensor-id buff) :from (alloc-from op)))
+      (a (%make-tensor shape :dtype (tensor-dtype buff) :order (tensor-order buff) :id (tensor-id buff) :from (or (alloc-from op) (tensor-buffer buff))))
       (a (when (alloc-initial-element op) (%load a (alloc-initial-element op)))))))
 
 (defclass View (Func)
@@ -300,7 +300,7 @@ Returns a tensor with the shape of `x` broadcasted by `repeats`.
 	 (new-shape (loop for s in (shape x) append (list 1 s)))
 	 (expand-shape (loop for r in repeats for b in base-shape append (list `(:~ ,r) t)))
 	 (final-shape (loop for s in (shape x) for r in repeats collect (!mul (->iconst s) (->iconst r)))))
-    (apply #'!view (!reshape (!contiguous (apply #'!view (!reshape x new-shape) expand-shape)) final-shape) (loop for f in final-shape collect t))))
+    (apply #'!view (!reshape (apply #'!view (!reshape x new-shape) expand-shape) final-shape) (loop for f in final-shape collect t))))
 
 (defun !expand (x &rest shape &aux (shape (flatten shape)))
   "
@@ -331,6 +331,15 @@ Moves the element of b into a, returning a. If `reduce` is T, it will reduce the
 "
   (declare (type tensor a b))
   (apply #'forward (make-instance 'Move :reduction reduce) (broadcast-elwise a b)))
+
+(defun !assign (a b)
+  "
+```
+(!assign a b)
+```
+Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value of lazy ops to an pre-allocated buffer, like KV-Cache.
+"
+  (!move a b :reduce t))
 
 (defclass Add (Func)
   ((reduce :initarg :reduce :initform nil :accessor func-reduce)

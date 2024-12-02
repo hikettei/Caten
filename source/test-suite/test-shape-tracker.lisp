@@ -7,7 +7,7 @@
            (a (ax+b `(2 2 8) 1 0)))
        (let ((b (!view a t t `(0 4)))
              (c (!view a t t `(4 8))))
-         (let ((vals (buffer-value (tensor-buffer (proceed (!add (!reshape b `(2 2 1 4)) (!reshape c `(2 2 1 4))))))))
+         (let ((vals (buffer-value (tensor-buffer (proceed (!copy (!add (!reshape b `(2 2 1 4)) (!reshape c `(2 2 1 4)))))))))
            (ok (every #'= vals #(4.0 6.0 8.0 10.0 20.0 22.0 24.0 26.0 36.0 38.0 40.0 42.0 52.0 54.0 56.0 58.0)))))))))
 
 (eval-when (:compile-toplevel :execute :load-toplevel)
@@ -204,13 +204,12 @@
     ((:reshape 1 3 1 1)
      (:broadcast 2 t 5 5))
     ((:reshape 2 3 5 5)))
-
-; [todo] skip fail due to memory planner
-;(define-view-binary-test (mha-failing-case-binary-1 (10 32 3 64) (10 32 64 3))
-;    ((:permute 0 1 3 2)
-;     (:reshape 10 32 1 3 64))
-;    ((:permute 0 1 2 3)
-;     (:reshape 10 32 1 3 64)))
+;; Note(hikettei) Previously failing due to memory planner
+(define-view-binary-test (mha-failing-case-binary-1 (10 32 3 64) (10 32 64 3))
+    ((:permute 0 1 3 2)
+     (:reshape 10 32 1 3 64))
+    ((:permute 0 1 2 3)
+     (:reshape 10 32 1 3 64)))
 
 (deftest shape-tracker-shape-infer-failing-case
   (macrolet ((test (form)

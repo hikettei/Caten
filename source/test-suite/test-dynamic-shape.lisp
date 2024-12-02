@@ -1,8 +1,5 @@
 (in-package :caten/test-suite)
 
-;; - (defparameter *model* (time (Transformer 64 1 2 1e-5 32)))
-;; - (defparameter *transformer* (caten (call *model* (make-tensor `(10 32)) (iconst 'n))))
-
 (deftest symbolic-function-args-test
   (with-protect-jit
     (let ((kernel (find :JIT_KERNEL (graph-nodes (avm-graph (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))) :key #'node-type)))
@@ -57,7 +54,6 @@
          (m (caten (!add (!add (!index-components `(5)) (!add caten/apis::*rng-counter* (!* (iconst 2) (iconst 'n)) :reduce t))  (!* (iconst 2) (iconst 'n)))))
          (o `(,(+ x (* 4 4)) ,(+ x (* 4 4) 1) ,(+ x (* 4 4) 2) ,(+ x (* 4 4) 3))))
     (ok (every #'= o (elements (forward m `(n . 4)))))))
-
 ;; Transformer-Failing-Case-Repro:
 ;; ```
 ;; LOAD: val_3 = N
@@ -103,3 +99,125 @@
          (s 's)
          (mask (!triu (!full `(1 1 ,s ,(!+ (iconst s) (iconst 1))) (-inf)) :diagonal (!+ (iconst 1) n))))
     (ok (caten mask))))
+;; ~~ Symbolic Accuracy Testing ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(deftest symbolic-matmul-test
+  (loop with m = (caten (!matmul (make-tensor `(a a) :from 'x) (make-tensor `(a a) :from 'y)))
+        for a upfrom 10 below 20
+        for x = (rand `(,a ,a))
+        for y = (rand `(,a ,a))
+        for symbolic = (forward m `(a . ,a) `(x . ,x) `(y . ,y))
+        for expected = (proceed (!matmul x y))
+        do (setf (tensor-shape symbolic) (tensor-shape expected)) ;; Symbolic returns `(A A) tensor.
+           (assert-equal () symbolic expected)))
+
+(deftest symbolic-scaled-dot-product-attention-test
+  (loop with m = (caten (scaled-dot-product-attention
+                         (make-tensor `(2 s 64) :from 'query)
+                         (make-tensor `(2 s 64) :from 'key)
+                         (make-tensor `(2 s 64) :from 'value)))
+        for s upfrom 10 below 20
+        for query = (randn `(2 ,s 64))
+        for key   = (randn `(2 ,s 64))
+        for value = (randn `(2 ,s 64))
+        for symbolic = (forward m `(s . ,s) `(query . ,query) `(key . ,key) `(value . ,value))
+        for expected = (proceed (scaled-dot-product-attention query key value))
+        do (setf (tensor-shape symbolic) (tensor-shape expected))
+           (assert-equal () symbolic expected)))
+
+(deftest full-symbolic-scaled-dot-product-attention-test
+  (loop with m = (caten (scaled-dot-product-attention
+                         (make-tensor `(b s 32) :from 'query)
+                         (make-tensor `(b s 32) :from 'key)
+                         (make-tensor `(b s 32) :from 'value)))
+        for s upfrom 10 below 13 do
+          (loop for b upfrom 2 below 4
+                for query = (randn `(,b ,s 32))
+                for key   = (randn `(,b ,s 32))
+                for value = (randn `(,b ,s 32))
+                for symbolic = (forward m `(s . ,s) `(b . ,b) `(query . ,query) `(key . ,key) `(value . ,value))
+                for expected = (proceed (scaled-dot-product-attention query key value))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
+
+(deftest symbolic-tensor-shaped-triu-test
+  (loop with n = (iconst 'n)
+        with s = (iconst 's)
+        with m = (caten (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n)))
+        for nn upfrom 10 below 13 do
+          (loop for ss upfrom 10 below 13
+                for symbolic = (forward m `(s . ,ss) `(n . ,nn))
+                for expected = (proceed (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
+;; [TODO] they are failing (due to simplify-dynamic-arithmetic in caten/aasm/optimizers.lisp)
+#|
+(deftest symbolic-tensor-shaped-two-kernel-test-1
+  (loop with n = (iconst 'n)
+        with s = (iconst 's)
+        with m = (caten
+                  (!mul
+                   (!matmul (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n))
+                            (!t (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n))))
+                   (!sum (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n)))))
+        for nn upfrom 10 below 13 do
+          (loop for ss upfrom 10 below 13
+                for symbolic = (forward m `(s . ,ss) `(n . ,nn))
+                for expected = (proceed
+                                (!mul
+                                 (!matmul (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn))
+                                          (!t (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn))))
+                                 (!sum (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
+
+(deftest symbolic-tensor-shaped-two-kernel-test-2
+  (loop with n = (iconst 'n)
+        with s = (iconst 's)
+        with m = (caten
+                  (!mul
+                   (!matmul (ax+b `(,n ,s) n s) (ax+b `(,s ,n) s n))
+                   (!sum (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n)))))
+        for nn upfrom 10 below 13 do
+          (loop for ss upfrom 10 below 13
+                for symbolic = (forward m `(s . ,ss) `(n . ,nn))
+                for expected = (proceed
+                                (!mul
+                                 (!matmul (ax+b `(,nn ,ss) nn ss) (ax+b `(,ss ,nn) ss nn))
+                                 (!sum (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))))
+                do (setf (tensor-shape symbolic) (tensor-shape expected))
+                   (assert-equal () symbolic expected))))
+|#
+(deftest symbolic-k-cache-test
+  (with-no-grad
+    ;; Note: The relation between `start_pos` and `seq_len`:
+    ;; T=0 | start_pos=0, seq_len=10 (= the length of prompt) | Loading a prompt
+    ;; T=1 | start_pos=10, seq_len=1                          | Generating a next word
+    ;; T=2 | start_pos=11, seq_len=1                          | Generating a next word
+    ;;                                     ...
+    (let ((*default-order* :row))
+      ;; TODO: max_context_len <= max_seq_len?
+      (let* ((batch-size 1) (max-context-len 128) (max-seq-len 10) (n-heads 4) (head-dim 4) (prompt-len 10)
+             (k-cache-data (linspace `(,batch-size ,max-context-len ,n-heads ,head-dim) 0 0 :id 'k_cache_data))
+             (start-pos (iconst 'start_pos))
+             (seq-len   (iconst 'seq_len))
+             (range1 (list start-pos (!+ start-pos seq-len)))
+             (range2 (list 0 (!+ start-pos seq-len)))
+             (k (make-tensor `(,batch-size ,seq-len ,n-heads ,head-dim) :from 'k :id 'k_input))
+             (k-cache (!assign (!view k-cache-data t range1 t t) k))
+             (k-cache (!copy (!view-from-base k-cache t range2 t t)))
+             (model (caten k-cache)))
+        (flet ((k (seq-len)  (rand `(,batch-size ,seq-len ,n-heads ,head-dim)))
+               (runit (start-pos seq-len k)
+                 (forward model `(k . ,k) `(start_pos . ,start-pos) `(seq_len . ,seq-len))))
+          (loop with start-pos = 0
+                with cached-elements = nil
+                for nth upfrom 0 below max-seq-len
+                for k = (k (if (= nth 0) prompt-len 1))
+                for out = (runit start-pos (if (= nth 0) prompt-len 1) k)
+                do (setf cached-elements (append cached-elements (list (coerce (change-facet k :simple-array) 'list))))
+                   (testing (format nil "StartPos=~a, SeqLen=~a~%" start-pos (if (= nth 0) prompt-len 1))
+                     (let ((len (+ (if (= nth 0) prompt-len 1) start-pos)))
+                       (ok (= (nth 1 (buffer-shape (tensor-buffer out))) len) (format nil "SeqLen=~a, getting=~a" len (nth 1 (buffer-shape (tensor-buffer out)))))
+                       (incf start-pos (if (= nth 0) prompt-len 1))
+                       (ok (every #'= (apply #'append cached-elements) (elements out)))
+                       (ok (every #'= (apply #'append cached-elements) (elements k-cache-data)))))))))))

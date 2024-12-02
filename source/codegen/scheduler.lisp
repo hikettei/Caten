@@ -466,8 +466,9 @@ Otherwise, returns NIL. (= not fusable)"
                   if (group-reduce-dims child-group)
                     do (return-from group-chase-down-reduction-p t)))
     nil))
-
+;; [TODO] Simplify the algorithm. at least :permute in apply-view-fusor may not be necessary.
 (defmethod groups-rewrite-views-in-the-same-space ((parent-group Group) (tgt-group Group) view)
+  "If you want to schedule parent-group and tgt-group in the same space, this method fixes the view to be compatible in the same kernel. If failed, returns NIL."
   (symbol-macrolet ((->ng (return-from groups-rewrite-views-in-the-same-space nil))
                     (->ok (return-from groups-rewrite-views-in-the-same-space t)))
     (let* ((r1 (group-rank tgt-group)) (r2 (group-rank parent-group))
@@ -518,7 +519,9 @@ Otherwise, returns NIL. (= not fusable)"
              (loop for read in (relay-reads (read-type-relay node))
                    for views = (buffer-views read)
                    if (some #'identity views) do
-                     (assert (= (length views) (length dims)))
+                     (when (not (= (length views) (length dims)))
+                       (return-from groups-reduce-permute-p nil))
+                     ;; (assert (= (length views) (length dims)) () "views=~a dims=~a~%~a~%~a" views dims tgt-group parent-group)
                      (loop for broadcastable in dims
                            for view in views
                            if (and (null broadcastable) (fourth view))
@@ -573,7 +576,7 @@ Otherwise, returns NIL. (= not fusable)"
 ```
 Graph: parent-group -> [view] -> tgt-group
 ```
-Returns T if merging parent-group and tgt-group is the best choice, rewrites view/buffer sometime.
+Returns T if merging parent-group and tgt-group is possible. Sometime rewrites view/buffers to compute two kernel without allocating an extra buffer.
 "
   (declare (type Schedule-Context ctx) (type Group tgt-group parent-group) (type (or null node) view) (type node restart-point))
   (when view (assert (eql (node-type view) :VIEW)))
@@ -601,9 +604,9 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
       (when reduce-p ;; If tgt or parent has a reduction:
         ;; Here, you have to consider the following three cases:
         ;;         Parent     TGT              [Parent+TGT]
-        ;; case1 Injective + Reduce (e.g.: Load(0.0)+WMMA, Matmul+GeLU+Matmul)
-        ;; case2 Reduce + Injective (e.g.: Matmul+ReLU)
-        ;; case3 Reduce + Reduce    (e.g.: Normalization, Softmax, VarStd Fusion)
+        ;; case1 Reduce    + Injective (e.g.: Matmul+ReLU)
+        ;; case2 Injective + Reduce    (e.g.: Load(0.0)+WMMA, Matmul+GeLU+Matmul)
+        ;; case3 Reduce    + Reduce    (e.g.: Normalization, Softmax, VarStd Fusion)
         (when (and (eql pattern :case1) (group-chase-down-reduction-p ctx tgt-group restart-point))
           ;; Think after merging tgt-group+reduction is scheduled.
           ;; If restart_cache is set to T, the child is scheduled but not merged with tgt-group. => proceed to the next stage.
@@ -611,29 +614,31 @@ Returns T if merging parent-group and tgt-group is the best choice, rewrites vie
             (setf (ctx-queue ctx) (append (ctx-queue ctx) (list restart-point))
                   (gethash (node-id restart-point) (ctx-restart-cache1 ctx)) t)
             ->ng))
-        (when (groups-reduce-permute-p tgt-group parent-group) ->ng)
+        (when (groups-reduce-permute-p tgt-group parent-group) ->ng) ;; Reduce -> Permute -> Reduce is not fusable.
         (if (= r1 r2)
             (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
-              ;; View Rewriting here?
-              ;; Permute rewriting here?
+              ;; [TODO] apply-view-fusor here?
               ->ok)
             (let ((optimal-p
                     (or (eql pattern :case1)
                         (eql pattern :case3)
                         ;; If case2 (no reduction+no reduction) there could be better merging pair, if the path has a reduced group.
                         (null (ctx-fusable-case1-p ctx (group-predecessor tgt-group))))))
-              (when (and optimal-p (groups-rewrite-views-in-the-same-space parent-group tgt-group view))
-                ;; View rewriting?
-                ->ok)))
+              (when (and optimal-p (groups-rewrite-views-in-the-same-space parent-group tgt-group view))->ok)))
         ->ng)
       ;; Otherwise, merging non-reduction nodes to create a block of elwise ops group. (e.g.: a sequence of activations)
       ;; fuse/rewrite _read_views and buffers sometime.
       ;; 1. Injective + Same Ranks
       (when (= r1 r2)
         (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group))
+          ;; Reject :MOVE+:MOVE fusion if view is provided.
+          (when (and view (= (length (group-items parent-group)) (length (group-items tgt-group)) 1)
+                     (eql :MOVE (node-type (car (group-items parent-group))))
+                     (eql :MOVE (node-type (car (group-items tgt-group)))))
+            ->ng)
           (let ((permute (and view (getattr view :permute))))
-            (when permute (apply-view-fusor r1 (loop repeat r1 collect nil) parent-group :permute permute))
-            ->ok))
+            (when permute (apply-view-fusor (length permute) (loop repeat (length permute) collect nil) parent-group :permute permute)))
+          ->ok)
         ->ng)
       ;; 2. Injective + Different Ranks
       (when (group-chase-down-reduction-p ctx tgt-group restart-point)->ng) ; If tgt-group is used by the reduction => better to merge it with that.
@@ -723,9 +728,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
     (loop for predecessor in (group-predecessor group)
           for item = (id->value (ctx-graph ctx) predecessor)
           if (and item (eql (node-type item) :LOAD)
-                  (= 0 (buffer-nrank (car (relay-writes (read-type-relay item)))))
-                  ;; note(hikettei) do not apply this for dynamic shape loading
-                  (numberp (getattr item :value)))
+                  (= 0 (buffer-nrank (car (relay-writes (read-type-relay item))))))
             do (setf (group-predecessor group) (remove predecessor (group-predecessor group)))
                (push item (group-items group))))
   group)
@@ -762,6 +765,8 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
              (dolist (node (graph-nodes g))
                ;; reduced but no users in the group: This is now allowed. Adding :MOVE
                (when (and (getattr node :reduction :allow-undefined t)
+                          ;; write-to needs to be broadcasted.
+                          (node-writes-broadcasted-p node)
                           (null (id->users g (car (node-writes node))))) ;; no users in a group
                  (let ((base-id (car (node-reads node)))
                        (write-id (car (node-writes node)))
@@ -798,7 +803,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
-    (apply-move-after-reduction schedule-graph)
+    (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
     (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
       (format t "[graph-schedule] scheduled graph:~%")
       (pprint-graph schedule-graph))

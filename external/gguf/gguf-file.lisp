@@ -46,7 +46,7 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
       (declare (type string header) (type (unsigned-byte 64) version tensor-count))
       (assert (string= header "GGUF") () "Expecting the header to be GGUF, but got ~a.~%The given stream is not a gguf format.~%~a" header stream)
       (let* ((metadata (parse-metadata-kv buffer metadata-kv-count))
-	     (alignment (find "general.alignment" metadata :key #'metadata-key :test #'equal))
+	     (alignment (find "general.alignment" metadata :key #'metadata-key :test #'equalp))
 	     (alignment (if alignment (metadata-value alignment) 32))
 	     (tensors (parse-tensor-info buffer tensor-count alignment stream))
 	     (gguf (make-instance 'gguf :version version :tensor-count tensor-count :metadata-kv-count metadata-kv-count
