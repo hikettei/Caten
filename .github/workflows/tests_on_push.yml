@@ -84,7 +84,16 @@ jobs:
           export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Dependencies
-        run: sudo apt-get install -y libisl-dev protobuf-compiler cmake libabsl-dev
+        run: sudo apt-get install -y libisl-dev protobuf-compiler cmake
+      - name: Download and install Abseil
+        run: |
+          set -ex
+          git clone --recursive -b lts_2024_07_22 https://github.com/abseil/abseil-cpp $GITHUB_WORKSPACE/abseil-cpp
+          cd $GITHUB_WORKSPACE/abseil-cpp
+          sudo cmake .  -DCMAKE_CXX_STANDARD=17 -DABSL_ENABLE_INSTALL=ON
+          sudo make -j20
+          sudo make install
+          sudo ldconfig
       - name: Download and install protobuf
         run: |
           git clone --recursive -b 28.x https://github.com/protocolbuffers/protobuf
