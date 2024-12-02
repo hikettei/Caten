@@ -56,9 +56,9 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 	  (apply #'values `(,@(subseq (shape x) 0 2) ,@(subseq (shape weight) 0 2)))
 	;; assert groups*cin == cin_ and len(self.shape) == len(weight.shape)
 	(when (and (numberp groups) (numberp cin) (numberp cin_)))
-	(assert (= cin (* groups cin_))
+	(assert (= cin_ (* groups cin))
 		()
-		"Input Tensor shape ~a do not match the shape of the weights ~a. ~a vs ~a (= cin (* groups cin_))"
+		"Input Tensor shape ~a do not match the shape of the weights ~a. ~a vs ~a (= cin_ (* groups cin))"
 		(shape x) (shape weight) cin (* groups cin_))
 	(assert (= (ndim weight) (ndim x)) () "Input Tensor Shape ~a do not match the shape of the weights ~a" (shape x) (shape weight))
 	;; x = [bs, groups*cin, oy, ox, H, W]
