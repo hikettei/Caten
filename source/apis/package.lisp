@@ -151,7 +151,7 @@
    #:!sin #:!cos #:!tan
    #:!exp #:!exp2
    #:!log #:!log2
-   #:!sqrt
+   #:!sqrt #:!expt
    ;; Logical
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
    ;; TernaryOps
