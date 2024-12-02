@@ -103,7 +103,6 @@ jobs:
           ros install sbcl-bin
           ros use sbcl-bin
           ros install qlot
-          qlot install
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -114,7 +113,9 @@ jobs:
           export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Dependencies
-        run: sudo apt-get install -y libisl-dev gnuplot
+        run: |
+          sudo apt-get install -y libisl-dev gnuplot
+          qlot install
       - name: Transformer Simplifiers (N<=12, JIT=0, AUTO_SCHEDULER=0)
         run: PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 36 0 transformer_simplifier_plot.png
       - name: Transformer Schedulers (N<=12, JIT=1, AUTO_SCHEDULER=0)
