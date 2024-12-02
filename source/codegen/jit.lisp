@@ -131,7 +131,7 @@ caten/codegen overview:
            (or (find (getattr node :cache-name) (graph-nodes graph) :key #'(lambda (x) (getattr x :name)) :test #'equalp)
                (error "The cache item for ~a was not found." node))))
     (make-compiled-kernel
-     :name (intern (princ-to-string (or (getattr si :cache-name) (getattr si :name))) "KEYWORD")
+     :name (intern (princ-to-string (getattr si :name)) "KEYWORD");;(intern (princ-to-string (or (getattr si :cache-name) (getattr si :name))) "KEYWORD")
      :caller (if (getattr si :cache-name)
                  (compile nil (getattr (from-cache si) :compiled-object))
                  (compile nil (getattr si :compiled-object)))
@@ -156,22 +156,26 @@ caten/codegen overview:
                    if (eql (node-type item) :DEFINE-GLOBAL)
                      collect (getattr item :dtype))
              :cached-p (if (getattr si :cache-name) t nil)))
+
 (defparameter *scan* nil)
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
-  (let ((info (getattr node :kernel-info))
-        (out-n (getattr node :output-buffer-n))
-        ;; LayerNorm Accumlation?
-        (scan *scan*);"FUSED_MEANNODE_SUMNODE_LAYERNORM_MEANNODE_SUMNODE2105874");"FUSED_MEANNODE_SUMNODE_LAYERNORM_MEANNODE_SUMNODE2105874");"FUSED_SUMNODE_MATMUL2096316")
-        (caten/avm:*max-display-matrix* 2)
-        (caten/avm:*max-display-len* 15))
+  (let* ((info (getattr node :kernel-info))
+         (out-n (getattr node :output-buffer-n))
+         (nodes
+           (loop for n in (graph-nodes graph)
+                 if (eql (node-type n) :JIT_KERNEL)
+                   collect (compiled-kernel-name (getattr n :kernel-info))))
+         (scan nil);(princ-to-string (nth 34 nodes)))
+         (caten/avm:*max-display-matrix* 2)
+         (caten/avm:*max-display-len* 15))
     ;; Cause = LayerNorm just next to WTE+WPE
-    ;(print (compiled-kernel-name info))
     ;; (For details, see coerce-dtyped-buffer)
     ;; どっかでAccumlationしちゃってる・・・
+    ;; LayerNormのInput引数一つ目がかしい
     ;; TODO: 任意の層のPLOTを出力する, scanned by substring
     (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
       (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
-      (when (and scan (cl-ppcre:scan scan (princ-to-string (compiled-kernel-name info))))
+      (when nil;(and scan (cl-ppcre:scan scan (princ-to-string (compiled-kernel-name info))))
         (format t "~%===DEBUG: ~a===~%" (compiled-kernel-name info))
         (format t "~%Kernel:~%~a~%" (compiled-kernel-code info))
         (format t "~%Inputs~%")
@@ -182,6 +186,7 @@ caten/codegen overview:
       (apply (compiled-kernel-caller info) args)
       ;; [TODO] Debug Tool ni suru
       (when (and scan (cl-ppcre:scan scan (princ-to-string (compiled-kernel-name info))))
+        (print scan)
         (format t "~%Outputs~%")
         (loop for nth upfrom 0
               for name in (node-reads node)
