@@ -187,7 +187,6 @@
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
 |#
-;; FixME: the last element of initial prompt is overwritten? 
 (deftest symbolic-k-cache-test
   (with-no-grad
     ;; Note: The relation between `start_pos` and `seq_len`:
@@ -207,16 +206,13 @@
              (k-cache (!assign (!view k-cache-data t range1 t t) k))
              (k-cache (!copy (!view-from-base k-cache t range2 t t)))
              (model (caten k-cache)))
-        (flet ((k (seq-len pos)
-                 (if (= pos 0)
-                     (linspace `(,batch-size ,seq-len ,n-heads ,head-dim) 0.01 -100.0)
-                     (linspace `(,batch-size ,seq-len ,n-heads ,head-dim) 0.01 pos)))
+        (flet ((k (seq-len)  (rand `(,batch-size ,seq-len ,n-heads ,head-dim)))
                (runit (start-pos seq-len k)
                  (forward model `(k . ,k) `(start_pos . ,start-pos) `(seq_len . ,seq-len))))
           (loop with start-pos = 0
                 with cached-elements = nil
                 for nth upfrom 0 below max-seq-len
-                for k = (k (if (= nth 0) prompt-len 1) start-pos)
+                for k = (k (if (= nth 0) prompt-len 1))
                 for out = (runit start-pos (if (= nth 0) prompt-len 1) k)
                 do (setf cached-elements (append cached-elements (list (coerce (change-facet k :simple-array) 'list))))
                    (testing (format nil "StartPos=~a, SeqLen=~a~%" start-pos (if (= nth 0) prompt-len 1))
