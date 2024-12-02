@@ -47,9 +47,9 @@ def torch_rms_norm(x):
 
 (deftest test-layer-norm
   (with-given-dtype ((:float32 . "float32"))
-    (let ((x (rand `(30 40))))
+    (let ((x (randn `(30 40))))
       (assert-equal
-          (:atol 1e-3 :rtol 1e-6)
+          (:atol 1e-4 :rtol 1e-6)
           (with-torch (x) (->caten (f:layer_norm x `(40) :eps 1e-5)))
           (proceed (!layer-norm x `(40) :eps 1e-5))))))
 
@@ -60,3 +60,19 @@ def torch_rms_norm(x):
           (:atol 1e-3 :rtol 1e-6)
           (with-torch (x) (->caten (torch_rms_norm x)))
           (proceed (!rms-norm x `(40) :eps 1e-5))))))
+
+(deftest test-layer-norm-affine-bias
+  (with-given-dtype ((:float32 . "float32"))
+    (let* ((x (make-tensor `(10 s 32) :from 'x))
+           (affine (rand `(32)))
+           (bias   (rand `(32)))
+           (model (caten (!layer-norm x `(32) :weight affine :bias bias))))
+      (loop for s upfrom 3 below 7
+            for x = (randn `(10 ,s 32)) do
+              (assert-equal
+                  (:atol 1e-4 :rtol 1e-5)
+                  (with-torch (x affine bias)
+                    (->caten (f:layer_norm x `(32) :weight affine :bias bias)))
+                  (let ((x (forward model `(x . ,x) `(s . ,s))))
+                    (setf (nth 1 (tensor-shape x)) s)
+                    x))))))
