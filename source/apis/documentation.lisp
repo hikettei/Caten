@@ -97,6 +97,7 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
     (def "!contiguous" #'!contiguous "(proceed (!contiguous (ax+b `(10 10) 1 0)))")
     (def "!copy" #'!copy "(proceed (!copy (ax+b `(10 10) 1 0)))")
     (def "!reshape" #'!reshape "(proceed (!reshape (ax+b `(10 10) 1 0) `(5 20)))")
+    (def "!flatten" #'!flatten "(proceed (!flatten (make-tensor `(3 3 3 3)) :axis 1))")
     (def "!uprank" #'!uprank "(proceed (!uprank (ax+b `(10 10) 1 0) 2))")
     (def "!repeat" #'!repeat "(proceed (!repeat (ax+b `(1 10) 1 0) 10 1))")
     (def "!expand" #'!expand "(proceed (!expand (ax+b `(1 10) 1 0) `(10 10)))")
