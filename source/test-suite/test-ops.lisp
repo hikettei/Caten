@@ -46,10 +46,9 @@
   (unary-dtype-test sqrt-test !sqrt sqrt :ulp 1e-6 :non-zero t :max 1e6)
   (unary-dtype-test recip-test !recip / :ulp 1e-6 :non-zero t :max 1e6)
   
-  ;; (unary-dtype-test truncate-test !truncate truncate :ulp 1e-6)
-  ;; (unary-dtype-test floor-test !floor floor :ulp 1e-6)
-  ;; (unary-dtype-test ceiling-test !ceiling ceiling :ulp 1e-6)
-  )
+  (unary-dtype-test truncate-test !truncate truncate :ulp 1e-6 :max 1e5)
+  (unary-dtype-test floor-test !floor floor :ulp 1e-6 :max 1e5)
+  (unary-dtype-test ceiling-test !ceiling ceiling :ulp 1e-6 :max 1e5))
 ;; [TODO] Binary Ops Test
 ;; [TODO] Reduce Ops Test
 (deftest test-assign
@@ -57,3 +56,26 @@
          (y (!assign x (fconst 1.0))))
     (proceed y)
     (ok (every #'(lambda (elm) (= elm 1.0)) (elements x)))))
+#|
+(deftest test-expt
+  (testing "Power is a scalar and fixnum (-2.5 < n < 2.5), only for VM."
+    (when (= 0 (ctx:getenv :JIT))
+      (let ((failed nil))
+        (loop for n upfrom 0 below 5.0 by 0.1
+              for power = (+ n -2.5)
+              for x = (rand `(50 50))
+              for answer = (proceed (!expt x power))
+              for expected = (map 'list #'(lambda (x) (expt x power)) (change-facet x :simple-array))
+              do (unless (every #'(lambda (x y) (<= (abs (- x y)) 1e-5)) (change-facet answer :simple-array) expected)
+                   (push (cons (apply #'max (map 'list #'- (change-facet answer :simple-array) expected)) power) failed)))
+        (ok (null failed)
+            (when failed
+              (with-output-to-string (out)
+                (loop for (diff . n) in failed do (format out "n=~a, max_atol=~a~%" n diff))))))))
+  (testing "Expt(X, N) where N is a dynamic shape."
+    
+    )
+  (testing "Power is a tensor"
+
+    ))
+|#
