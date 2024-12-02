@@ -161,7 +161,7 @@
           (setf max-abs-diff abs-diff))
         (when (> rel-diff max-rel-diff)
           (setf max-rel-diff rel-diff))))
-    (values max-rel-diff max-abs-diff)))
+    (values max-abs-diff max-rel-diff)))
 
 (defmacro assert-equal ((&key (rtol 1e-7) (atol 0.0)) torch-form lisp-form)
 `(let ((torch ,torch-form) (lisp ,lisp-form))
@@ -171,4 +171,6 @@
      (ok (<= rtol1 ,rtol) (format nil "Satisfying (rtol=~a) <= ~a" rtol1 ,rtol)))))
 
 (defmacro with-given-dtype ((&rest dtypes) &body body)
-  `(loop for (*caten-dtype* . *torch-dtype*) in ',dtypes do (testing (format nil "dtype=~a" *caten-dtype*) ,@body)))
+  `(loop for (*caten-dtype* . *torch-dtype*) in ',dtypes
+         for *default-float* = *caten-dtype*
+         do (testing (format nil "dtype=~a" *caten-dtype*) ,@body)))

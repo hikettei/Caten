@@ -26,7 +26,6 @@ def torch_rope(x):
   (with-given-dtype ((:float32 . "float32"))
     (let ((x (with-manual-seed (0) (rand `(1 10 10 10)))))
       (assert-equal
-          (:atol 1e-2 :rtol 1e-6) ;; fixme atol looks unstable?
+          (:atol 1e-5 :rtol 5e-4) ;; fixme atol looks unstable?
           (with-torch (x) (->caten (torch_rope x)))
           (proceed (!rope x 5))))))
-

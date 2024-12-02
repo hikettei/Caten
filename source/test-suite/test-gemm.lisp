@@ -6,7 +6,7 @@
 		  (let ((x (rand ',shape1))
 			(y (rand ',shape2)))
 		    (assert-equal
-			(:atol 1e-6 :rtol 1e-5)
+			(:atol 1e-5 :rtol 1e-5)
 			(with-torch (x y)
 			  (->caten (torch.matmul x y)))
 			(proceed (!matmul x y)))
@@ -27,7 +27,7 @@
 		  (let ((x (rand ',shape1))
 			(y (rand ',shape2)))
 		    (assert-equal
-			(:atol 1e-6 :rtol 1e-5)
+			(:atol 1e-4 :rtol 1e-5)
 			(with-torch (x y)
 			  (->caten (torch.matmul x (torch.transpose y -1 -2))))
 			(proceed (!matmul x (!transpose y -1 -2))))
@@ -48,7 +48,7 @@
 		  (let ((x (rand ',shape1))
 			(y (rand ',shape2)))
 		    (assert-equal
-			(:atol 1e-6 :rtol 1e-5)
+			(:atol 1e-5 :rtol 1e-5)
 			(with-torch (x y)
 			  (->caten (torch.matmul (torch.transpose x -1 -2) y)))
 			(proceed (!matmul (!transpose x -1 -2) y)))

@@ -49,7 +49,7 @@ def torch_rms_norm(x):
   (with-given-dtype ((:float32 . "float32"))
     (let ((x (rand `(30 40))))
       (assert-equal
-          (:atol 1e-3 :rtol 1e-6)
+          (:atol 1e-5 :rtol 1e-3)
           (with-torch (x) (->caten (f:layer_norm x `(40) :eps 1e-5)))
           (proceed (!layer-norm x `(40) :eps 1e-5))))))
 

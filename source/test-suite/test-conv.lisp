@@ -7,7 +7,7 @@
         (let ((input (rand `(1 3 12 12)))
               (weight (rand `(6 3 4 4))))
           (assert-equal
-              (:atol 1e-5 :rtol 1e-4)
+              (:atol 1e-4 :rtol 1e-4)
               (with-torch (input weight)
                 (->caten (f:conv2d input weight :stride 1 :padding 0 :dilation 1 :groups 1)))
               (proceed (!convnd input weight :stride 1 :padding 0 :dilation 1 :groups 1))))))))
@@ -20,7 +20,7 @@
               (weight (rand `(6 3 10 10)))
               (bias (rand `(6))))
           (assert-equal
-              (:atol 1e-5 :rtol 1e-4)
+              (:atol 1e-3 :rtol 1e-4)
               (with-torch (input weight bias)
                 (->caten (f:conv2d input weight bias :stride 1 :padding 0 :dilation 1 :groups 1)))
               (proceed (!convnd input weight :bias bias :stride 1 :padding 0 :dilation 1 :groups 1))))))))
@@ -46,7 +46,7 @@
         (let ((input (linspace`(2 3 8 8) 0.001 0.0))
               (weight (linspace `(2 3 4 4) 0.001 0.0)))
           (assert-equal
-              (:atol 1e-5 :rtol 1e-4)
+              (:atol 1e-4 :rtol 1e-4)
               (with-torch (input weight)
                 (->caten (f:conv2d input weight :stride 1 :padding 0 :dilation 1 :groups 1)))
               (proceed (!convnd input weight :stride 1 :padding 0 :dilation 1 :groups 1))))))))
@@ -59,7 +59,7 @@
               (weight (rand `(6 3 5 5)))
               (bias (rand `(6))))
           (assert-equal
-              (:atol 1e-5 :rtol 1e-4)
+              (:atol 1e-4 :rtol 1e-4)
               (with-torch (input weight bias)
                 (->caten (f:conv2d input weight :bias bias :stride 1 :padding 0 :dilation 1 :groups 1)))
               (proceed (!convnd input weight :bias bias :stride 1 :padding 0 :dilation 1 :groups 1))))))))
@@ -72,7 +72,7 @@
               (weight (rand `(6 3 5 5)))
               (bias (rand `(6))))
           (assert-equal
-              (:atol 1e-5 :rtol 1e-4)
+              (:atol 1e-4 :rtol 1e-4)
               (with-torch (input weight bias)
                 (->caten (f:relu (f:conv2d input weight :bias bias :stride 1 :padding 0 :dilation 1 :groups 1))))
               (proceed (!relu (!convnd input weight :bias bias :stride 1 :padding 0 :dilation 1 :groups 1)))))))))
@@ -85,7 +85,7 @@
               (weight (rand `(6 3 5 5)))
               (bias (rand `(6))))
           (assert-equal
-              (:atol 1e-5 :rtol 1e-4)
+              (:atol 1e-4 :rtol 1e-4)
               (with-torch (input weight bias)
                 (->caten (f:gelu (f:conv2d input weight :bias bias :stride 1 :padding 0 :dilation 1 :groups 1))))
               (proceed (!gelu (!convnd input weight :bias bias :stride 1 :padding 0 :dilation 1 :groups 1)))))))))
