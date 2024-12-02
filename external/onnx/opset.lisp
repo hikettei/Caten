@@ -32,7 +32,6 @@
 	     (error "Value ~a in attribute \"auto_pad\" of operator Conv is invaild." (gethash "auto_pad" attrs)))))
         
 	(setf (gethash "channels" attrs) (car (gethash "kernel_shapes" attrs)))
-        
 	(when (listp (gethash "pads" attrs))
           (assert (= (mod (length (gethash "pads" attrs)) 2) 0))
 	  (let* ((pads (loop with size = (length (gethash "pads" attrs))
@@ -41,19 +40,7 @@
 			     for j = (+ mid 1)
 			     do (assert (= (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))) () "Conv: Pads must be symmetric (TODO: Support this).")
 			     collect (list (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))))))
-	    (let ((model (caten/nn:ConvND
-		      (nth 1 (caten:shape data))
-		      (nth 0 (caten:shape kernel))
-		      (gethash "kernel_shapes" attrs)
-		      :stride   (gethash "strides" attrs 1)
-		      :padding  (map 'list #'car pads)
-		      :dilation (gethash "dilations" attrs 1)
-		      :groups   (gethash "group" attrs 1)
-		      :bias     (= (length inputs) 3))))
-	      (setf (caten/nn:convnd-weight model) kernel)
-	      (when (= (length inputs) 3)
-	        (setf (caten/nn:convnd-bias model) (third inputs)))
-              (caten:forward model data)))))))
+            (caten/nn:!convnd data kernel :bias (third inputs) :stride (gethash "strides" attrs 1) :padding (map 'list #'car pads) :dilation (gethash "dilations" attrs 1) :groups (gethash "group" attrs 1)))))))
 ;; https://github.com/onnx/onnx/blob/main/docs/Operators.md#MaxPool
 (defop ("MaxPool" 1)
     ((cls inputs attrs)
