@@ -68,7 +68,8 @@
   :pathname "external/onnx"
   :components
   ((:file "package")
-   (:file "onnx")))
+   (:file "helpers")
+   (:file "defop")))
 
 (asdf:defsystem "caten/vision"
   :description "Computer Vision Implementation in Caten"

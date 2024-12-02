@@ -1,2 +1,2 @@
 (defpackage :caten/onnx
-  (:use :cl))
+  (:use :cl :cl-onnx))
