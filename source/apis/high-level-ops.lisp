@@ -183,8 +183,8 @@ Performs matrix multiplication between two tensors `a` and `b`.
                   (neg-base (!where neg-base-map (!const base 1) (!const base 0)))
                   (correct-sign (!add (!const power 1) (!mul neg-base (!- (!cos (!mul power (!const power pi))) (!const base 1)))))
                   (inject-nan (!where (!and neg-base-map (!neq power (!truncate power))) (!const base (nan)) (!const base 1))))
-             (!where (!and (!eq base (!const base 0)) (!eq power (!const power 0))) (!const base 1) (!+ ret correct-sign inject-nan)))))
-;; todo: test
+             (!where (!and (!eq base (!const base 0)) (!eq power (!const power 0))) (!const base 1) (!* ret correct-sign inject-nan)))))
+
 (defun !expt (base power &aux (power (if (and (tensor-p power) (= 0 (ndim power))) (canonicalize-int power) power)))
   "
 ```
@@ -204,7 +204,6 @@ Computes the power of base with power."
        (return-from !expt (!mul (!square (!expt base (floor power 2))) (if (= 0 (mod power 2)) (!const base 1) base))))))
   (let ((power (if (numberp power) (!const base power) power)))
     (apply #'forward (ExptNode) (broadcast-elwise base power))))
-
 ;; ~~ Trunc/Ceil/Floor ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (TruncateNode (()) :where "A[~] -> A[~]")
     ()
