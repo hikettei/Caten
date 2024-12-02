@@ -163,6 +163,7 @@
    #:!xor #:!or #:!and
    ;; utils
    #:!rsqrt #:!square
+   #:!clip 
    )
   ;; from facets.lisp
   (:export

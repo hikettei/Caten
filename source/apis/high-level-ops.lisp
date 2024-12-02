@@ -514,3 +514,26 @@ order is one of :column or :row. Shape is a list consisted of integers, symbols,
     (loop for i downfrom (- num-dims 2) to 0 do
       (setf (nth i strides) (!* (nth (+ i 1) strides) (->iconst (nth (+ i 1) shape)))))
     strides))
+;; ~~ Etc ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmodel (ClipNode () :where "A[~] MIN[~] MAX[~] -> A[~]") ())
+(defcall (clip ClipNode) (A[~] MIN[~] MAX[~])
+  ;; c.f.: https://github.com/onnx/onnx/blob/main/docs/Changelog.md#clip-13
+  (!minimum (!maximum a min) max))
+
+(defun !clip (x min max)
+  "
+```
+(!clip x min max)
+```
+
+!clip limits the given input within an interval. The interval is specified by the inputs 'min' and 'max'. min/max is either a number, a symbol, or a tensor.
+
+The implementation follows the ONNX specification. https://github.com/onnx/onnx/blob/main/docs/Changelog.md#clip-13
+"
+  (declare (type Tensor x)
+           (type (or number symbol tensor) max min))
+  (let ((max (if (tensor-p max) max (!const x max)))
+        (min (if (tensor-p min) min (!const x min))))
+    (multiple-value-bind (x min max)
+        (bc "A[~] MIN[~] MAX[~] -> A[~] MIN[~] MAX[~]" (x min max))
+      (call (ClipNode) x min max))))

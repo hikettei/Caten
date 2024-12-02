@@ -179,6 +179,12 @@
       ;; [TODO] Rename "to" into dtype
       (caten:!cast (car inputs) (gethash "to" attrs))))
 
+(defop ("Clip" 13)
+    ((cls inputs attrs)
+      (declare (ignore attrs))
+      (assert (= 3 (length inputs)) () "Clip expects 3 inputs(input, min, max) but got ~a" inputs)
+      (apply #'caten:!clip inputs)))
+
 (defop ("Range" 11)
     ((cls inputs attrs)
       (declare (ignore inputs))
