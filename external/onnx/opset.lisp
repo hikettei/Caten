@@ -272,7 +272,11 @@
 (defop ("Reshape" 1)
     ((cls inputs attrs)
       (caten:!reshape (car inputs) (gethash "shape" attrs))))
-;; [TODO] Flatten
+
+(defop ("Flatten" 1)
+    ((cls inputs attrs)
+      (let ((axis (or (gethash "axis" attrs) 1)))
+        (caten:!flatten (car inputs) :axis axis))))
 ;; Ref: https://github.com/onnx/onnx/blob/main/docs/Changelog.md#globalaveragepool-1
 (defop ("GlobalAveragePool" 1)
     ((cls inputs attrs)
