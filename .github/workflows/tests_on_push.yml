@@ -85,6 +85,15 @@ jobs:
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Dependencies
         run: sudo apt-get install -y libisl-dev protobuf-compiler cmake libabsl-dev
+      - name: Download and install protobuf
+        run: |
+          git clone --recursive -b 28.x https://github.com/protocolbuffers/protobuf
+          cd protobuf/cmake
+          mkdir build
+          cd build
+          cmake -DCMAKE_CXX_STANDARD=17 -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_ABSL_PROVIDER=package -DCMAKE_INSTALL_PREFIX=/usr/local/ ../..
+          sudo make install -j20
+          sudo ldconfig
       - name: Set up cl-protobufs
         run: |
           git clone https://github.com/qitab/cl-protobufs.git
