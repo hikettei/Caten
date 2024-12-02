@@ -226,7 +226,12 @@
       (declare (ignore attrs))
       (multiple-value-bind (condition x y) (apply #'values inputs)
         (caten:!where condition x y))))
-;; [TODO] Pow
+
+(defop ("Pow" 13)
+    ((cls inputs attrs)
+      (declare (ignore attrs))
+      (caten:!expt (car inputs) (second inputs))))
+
 (defop ("Constant" 9)
     ((cls inputs attrs)
       (declare (ignore inputs))
