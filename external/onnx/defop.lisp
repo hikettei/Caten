@@ -86,7 +86,7 @@
 	 (with-slots ((elem-type cl-onnx::elem-type) (shape cl-onnx::shape)) type
 	   (let* ((dims (tensor-shape-proto-dim shape))
 		  (dims (map 'list #'tensor-shape-proto.dimension->aten dims)))
-	     (caten:make-tensor dims :dtype (int->dtype elem-type) :from (intern name)))))
+	     (caten:make-tensor dims :dtype (int->dtype elem-type) :from (intern (string-upcase name) "KEYWORD")))))
 	(T
 	 (error "[from-onnx] value-info-proto->aten: Not implemented: ~a" type))))))
 ;; [TODO] Optimize them, or replace with caten/air:FastGraph

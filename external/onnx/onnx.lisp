@@ -31,5 +31,9 @@ Converts a cl-onnx model proto into an equivalent caten IR.
 ```
 (from-onnx path &key opset)
 ```
-Constructs a caten ir from an onnx model file at `path`. opset specifies the opset version to use. If not specified, uses the opset version in the file."
+
+Constructs a caten ir from an onnx model file at `path`. opset specifies the opset version to use. If not specified, uses the opset version in the file.
+
+Inputs for `caten` is created as a keyword (so pass the input tensor like `(:input . , (rand (list 3 3)))` ...
+"
   (from-model-proto (cl-onnx:load-model path) :opset opset))
