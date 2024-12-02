@@ -61,6 +61,15 @@
    (:file "bpe")
    (:file "layers")))
 
+(asdf:defsystem "caten/vision"
+  :description "Computer Vision Implementation in Caten"
+  :author "hikettei <ichndm@gmail.com>"
+  :depends-on ("caten")
+  :pathname "external/vision"
+  :components
+  ((:file "package")
+   (:file "mobilenetv2")))
+
 (asdf:defsystem "caten/benchmarks"
   :description "A set of benchmarks for Caten"
   :author "hikettei <ichndm@gmail.com>"
