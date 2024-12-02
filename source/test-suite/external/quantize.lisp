@@ -114,18 +114,23 @@ def write_gguf(filename, tensors):
                 f.write(b\'\\x00\' * padding)
             elif padding < 0:
                 raise ValueError(f\"Metadata for tensor '{metadata['name']}' exceeds 64 bytes. Increase the placeholder size.\")
+")
 
-def generate_dummy_gguf():
+
+(python-exec
+"
+def generate_dummy_gguf(filename, type):
     tensor1 = {
         \"name\": \"tensor1\",
         \"shape\": (64,),
         \"data\": np.arange(0,64,dtype=np.float32).astype(np.float32),
-        \"type\": \"F32\"
+        \"type\": type
     }
-    write_gguf(\"./dummy.gguf\", [tensor1])
+    write_gguf(filename, [tensor1])")
 
+(python-exec
+"
 def read_gguf(filename):
-
   with open(filename, \"rb\") as f:
     magic = f.read(4)
     if magic != b\"GGUF\":
@@ -134,56 +139,42 @@ def read_gguf(filename):
 
     info, tensorinfo = gguf.load_gguf(f)
 
+    print(tensorinfo)
+    results = []
     for name in tensorinfo:
       weights = gguf.load_gguf_tensor(f, tensorinfo, name)
-      print(weights)
+      results.append(weights)
+    return weights
 ")
 
-;; generate a dummy gguf file with a single tensor of shape 64 and with random values from -1 to 1
 (import-function "generate_dummy_gguf")
-
 (import-function "read_gguf")
 
-(generate_dummy_gguf)
-(print (read_gguf "dummy.gguf"))
+;(in-package :caten/gguf)
+
+;; generate a dummy gguf file with a single tensor of shape 64 and with random values from -1 to 1
+(generate_dummy_gguf "dummy1.gguf" "Q8_0")
+
+(print (read_gguf "dummy1.gguf"))
 
 (in-package :caten/gguf)
-
 (defparameter test (load-gguf "dummy.gguf"))
+(print (tensor-info-buffer (car (gguf-tensor-info test))))
 
-(print (gguf-tensor-info test))
+(in-package :caten/test-suite)
 
-(defparameter *scale-factor-bytes*
-  (make-array 2
-              :element-type '(unsigned-byte 8)
-              :initial-contents '(#x00 #x30)))
+(deftest test-dequantization-q8_0
+  (with-given-dtype ((:float32 . "float32"))
+    (assert-equal
+     (:atol 1e-5 :rtol 1e-6))
+    
+    ))
 
-(defparameter *quantized-values*
-  (make-array 32
-              :element-type '(unsigned-byte 8)
-              :initial-contents
-              (let ((values '(1 -1 2 -2 3 -3 4 -4 5 -5 6 -6 7 -7 8 -8
-                              9 -9 10 -10 11 -11 12 -12 13 -13 14 -14 15 -15 16 -16)))
-                    (mapcar (lambda (v)
-                              (if (>= v 0)
-                                  v
-                                  (+ 256 v)))
-                            values))))
+(deftest test-dequantization-f16
+  (with-given-dtype ((:float32 . "float32"))
+    ))
 
-(defparameter *data*
-  (let ((total-length (+ (length *scale-factor-bytes*) (length *quantized-values*))))
-    (make-array total-length
-                :element-type '(unsigned-byte 8)
-                :initial-contents
-                (concatenate 'list *scale-factor-bytes* *quantized-values*))))
 
-(defparameter *input-buffer* (fast-io:make-input-buffer :vector *data*))
-
-(defparameter *test-tensor-info*
-  (make-tensor-info "test-tensor"
-                    1           ;; Number of dimensions
-                    '(32)       ;; Dimensions
-                    :Q8_0       ;; Tensor type
-                    0))         ;; Offset
-
-(print (dequantize :Q8_0 *input-buffer* *test-tensor-info*))
+(deftest test-dequantization-f32
+  (with-given-dtype ((:float32 . "float32"))
+    ))
