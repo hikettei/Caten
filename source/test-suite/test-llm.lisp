@@ -328,20 +328,21 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
     (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
 ;; [TODO] Fix test-attention-large for both JIT=0 and JIT=1
 (deftest test-attention-large
-  (let* ((dim 128)
-         (n-heads 8)
-         (batch-size 10)
-         (seq-len 32)
-         (x (rand `(,batch-size ,seq-len ,dim)))
-         (c_attn.weight  (rand `(,(* 3 dim) ,dim)))
-         (c_attn.bias    (rand`(,(* 3 dim))))
-         (c_procj.weight (rand `(,dim ,dim)))
-         (c_procj.bias   (rand `(,dim))))
-    (assert-equal
-        (:rtol 1e-6 :atol 1e-6) ;; TODO: Rtol in 1e-5
-        (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
-          (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
-        (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))))
+  (with-given-dtype ((:float32 . "float32") (:float64 . "float64"))
+    (let* ((dim 128)
+           (n-heads 8)
+           (batch-size 10)
+           (seq-len 32)
+           (x (rand `(,batch-size ,seq-len ,dim)))
+           (c_attn.weight  (rand `(,(* 3 dim) ,dim)))
+           (c_attn.bias    (rand `(,(* 3 dim))))
+           (c_procj.weight (rand `(,dim ,dim)))
+           (c_procj.bias   (rand `(,dim))))
+      (assert-equal
+          (:rtol 1e-6 :atol 1e-6) ;; TODO: Rtol in 1e-5
+          (with-torch (x c_attn.weight c_attn.bias c_procj.weight c_procj.bias)
+            (->caten (attn_impl_torch x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias)))
+          (proceed (attn-impl x n-heads c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))))
 ;; [TODO] Update test-attention-large-b=1 for both JIT=0 and JIT=1, atol looks unstable
 (deftest test-attention-large-b=1
   (let* ((dim 128)
