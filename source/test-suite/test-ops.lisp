@@ -107,3 +107,11 @@
   (testing "ArgMax(Tensor([1, 1, 10])) conflicts with the loop collapse (only with JIT=1)"
     (let ((input (linspace `(1 1 10) 1 0)))
       (ok (= 9 (aref (change-facet (proceed (!argmax input)) :simple-array) 0))))))
+
+(import-function "torch.erf")
+(deftest test-erf
+  (let ((x (randn `(100 100))))
+    (assert-equal
+        (:atol 1e-5 :rtol 1e-2)
+        (with-torch (x) (->caten (torch.erf x)))
+        (proceed (!erf x)))))

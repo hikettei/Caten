@@ -112,26 +112,7 @@
 (defop ("Erf" 13)
     ((cls inputs attrs)
       (declare (ignore attrs))
-      ;; Approximation of error function.
-      ;; x.sign() * (1 - ((((1.061405429 * t + -1.453152027) * t + 1.421413741) * t + -0.284496736) * t + 0.254829592) * t * (-(x.square())).exp())
-      (let ((t1 (caten:!recip (caten:!+ (caten:fconst 1) (caten:!* (caten:fconst 0.3275911) (caten:!abs (car inputs)))))))
-	(caten:!*
-         (caten:!signum (car inputs))
-	 (caten:!-
-	  (caten:fconst 1.0)
-	  (caten:!*
-	   (caten:!+
-	    (caten:!+
-	     (caten:!*
-	      t1
-	      (caten:!+
-	       (caten:!* (caten:fconst 1.061405429) t1)
-	       (caten:fconst -1.453152027)))
-	     (caten:fconst 1.421413741))
-	    t1
-	    (caten:fconst -0.284496736))
-	   t1
-	   (caten:!exp (caten:!neg (caten:!square (car inputs))))))))))
+      (caten:!erf (car inputs))))
 
 (defop ("Gemm" 1)
     ((cls inputs attrs)

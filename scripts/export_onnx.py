@@ -21,6 +21,7 @@ class Classification(Exporter):
         "resnet18": torchvision.models.resnet18,
         "resnet34": torchvision.models.resnet34,
         "resnet50": torchvision.models.resnet50,
+        "vit_b_16": torchvision.models.vit_b_16,
     }
     def build(self, args) -> bool:
         batch_size = 1
