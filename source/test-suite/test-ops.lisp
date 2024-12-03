@@ -103,4 +103,7 @@
 (deftest argmax-failing-repro
   (testing "ArgMax(Tensor([1, 10])) conflicts with the loop collapse (only with JIT=1)"
     (let ((input (linspace `(1 10) 1 0)))
+      (ok (= 9 (aref (change-facet (proceed (!argmax input)) :simple-array) 0)))))
+  (testing "ArgMax(Tensor([1, 1, 10])) conflicts with the loop collapse (only with JIT=1)"
+    (let ((input (linspace `(1 1 10) 1 0)))
       (ok (= 9 (aref (change-facet (proceed (!argmax input)) :simple-array) 0))))))
