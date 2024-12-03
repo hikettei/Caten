@@ -99,3 +99,8 @@
            (expected (map 'list #'expt (change-facet x :simple-array) (change-facet y :simple-array)))
            (output (proceed (!expt x y))))
       (ok (every #'=~nan (change-facet output :simple-array) expected)))))
+
+(deftest argmax-failing-repro
+  (testing "ArgMax(Tensor([1, 10])) conflicts with the loop collapse (only with JIT=1)"
+    (let ((input (linspace `(1 10) 1 0)))
+      (ok (= 9 (aref (change-facet (proceed (!argmax input)) :simple-array) 0))))))
