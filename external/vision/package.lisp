@@ -1,6 +1,8 @@
 (defpackage :caten/vision
   (:use :cl :caten)
-  (:export #:preprocess-image))
+  (:export
+    #:preprocess-image
+    #:run-classification))
 
 (in-package :caten/vision)
 ;; [TODO] Prepare a decent image processing library which is compatible with transform!!
@@ -54,3 +56,10 @@
          (std #(0.229 0.224 0.225))
          (normalized-tensor (normalize-channels tensor-float mean std)))
     (change-facet normalized-tensor :tensor)))
+
+(defun run-classification (onnx-path image-path expected)
+  (let* ((model (caten (!argmax (car (caten/onnx::from-onnx onnx-path)))))
+         (in-image (preprocess-image image-path))
+         (label (forward model `(:input . ,in-image))))
+    (assert (= expected (aref (change-facet label :simple-array) 0)) () "Predicted ~a, expected ~a" (aref (change-facet label :simple-array) 0) expected)
+    (change-facet label :simple-array)))
