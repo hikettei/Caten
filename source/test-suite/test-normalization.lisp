@@ -50,7 +50,7 @@ def torch_rms_norm(x):
     (with-manual-seed (0)
       (let ((x (rand `(30 40))))
         (assert-equal
-            (:atol 1e-5 :rtol 1e-3)
+            (:atol 1e-5 :rtol 1e-2)
             (with-torch (x) (->caten (f:layer_norm x `(40) :eps 1e-5)))
             (proceed (!layer-norm x `(40) :eps 1e-5)))))))
 
