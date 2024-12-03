@@ -376,6 +376,13 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%mul a b :reduction (func-reduce op) :wrap-around (mul-wrap-around op))))))
 
+(defclass Modulo (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
+(defmethod forward ((op Modulo) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
+(defmethod backward ((op Modulo) &optional prev-grad) (values nil nil))
+(defmethod lower ((op Modulo) &rest inputs)
+  (multiple-value-bind (a b) (apply #'values inputs)
+    (with-context (out (%mod a b :reduction (func-reduce op))))))
+
 (defclass IDiv (Func)
   ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op IDiv) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
@@ -524,6 +531,14 @@ Subtracts `b` from `a`. If `reduce` is T, it will reduce the result. (Broadcast)
 Divides `a` by `b`. If `reduce` is T, it will reduce the result. (Broadcast)
 "
   (!mul a (!recip b) :reduce reduce))
+(defun !mod (a b &key (reduce nil))
+  "
+```
+(!mod a b &key (reduce nil))
+```
+Computes the remainder of the division of `a` by `b`. If `reduce` is T, it will reduce the result. (Broadcast)
+"
+  (apply #'forward (make-instance 'Modulo :reduce reduce) (broadcast-elwise a b)))
 (defun !idiv (a b &key (reduce nil))
   "
 ```

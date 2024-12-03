@@ -9,7 +9,8 @@
   (def-elwise "Add" 1 caten:!add)
   (def-elwise "Sub" 1 caten:!sub)
   (def-elwise "Mul" 1 caten:!mul)
-  (def-elwise "Div" 1 caten:!div))
+  (def-elwise "Div" 1 caten:!div)
+  (def-elwise "Mod" 1 caten:!mod))
 
 (defop ("Conv" 1)
     ((cls inputs attrs)
@@ -217,6 +218,23 @@
   ;; [TODO] ReduceLogSumExp
   )
 
+;; https://github.com/onnx/onnx/blob/main/docs/Changelog.md#layernormalization-17
+;; https://github.com/apache/tvm/blob/main/python/tvm/relay/frontend/onnx.py#L1211
+(defop ("LayerNormalization" 17)
+    ((cls inputs attrs)
+      (let ((axis (gethash "axis" attrs 1))
+            (epsilon (gethash "epsilon" attrs 1e-5))
+            (stash-type (gethash "stash_type" attrs 1)))
+        (assert (= 1 stash-type) () "LayerNormalization-17: Currently only supports float32 as a stash_type, getting ~a" stash-type)
+        (multiple-value-bind (x gamma beta) (apply #'values inputs)
+          (let* ((mean (caten:!mean x :axis axis))
+                 (var  (caten:!variance x :axis axis)) ;; TODO: use mean to compute var and avoid redundant computation.
+                 (invstddev (caten:!rsqrt (caten:!add var (caten:!const var epsilon))))
+                 (x-norm (caten:!* (caten:!- x mean) invstddev))
+                 (ln (caten:!* x-norm gamma))
+                 (ln (if beta (caten:!add ln beta) ln)))
+            (values ln gamma beta))))))
+                 
 (defop ("Less" 9)
     ((cls inputs attrs)
       (declare (ignore attrs))

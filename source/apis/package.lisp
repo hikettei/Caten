@@ -138,6 +138,7 @@
    #:!sub #:!-
    #:!mul #:!*
    #:!div #:!/
+   #:!mod
    #:!idiv
    #:!move
    #:!assign

@@ -115,3 +115,10 @@
         (:atol 1e-5 :rtol 1e-2)
         (with-torch (x) (->caten (torch.erf x)))
         (proceed (!erf x)))))
+
+(deftest test-mod
+  (let* ((x (loop repeat 100 collect (random 100)))
+         (y (loop repeat 100 collect (+ 2 (random 100))))
+         (expected (map 'list #'mod x y))
+         (answer  (change-facet (proceed (!mod (change-facet x :tensor) (change-facet y :tensor))) :simple-array)))
+    (ok (every #'= expected answer))))
