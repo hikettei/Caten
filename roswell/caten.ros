@@ -6,7 +6,7 @@ exec ros -Q -- $0 "$@"
 (progn ;;init forms
   (ros:ensure-asdf)
    #+quicklisp(cl:push (cl:pathname "./") ql:*local-project-directories*)
-   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/llm :caten/benchmarks :caten/apps) :silent t)
+   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/llm :caten/benchmarks :caten/apps))
    (when (and (uiop:getenv "JIT_BACKEND")
 	      (equalp (uiop:getenv "JIT_BACKEND") "METAL"))
      #+quicklisp(ql:quickload '(:caten/metal) :silent nil)))
@@ -67,7 +67,7 @@ exec ros -Q -- $0 "$@"
     (clingon:make-option :integer :description "expected label" :short-name #\l :long-name "label" :key :label))
    :handler
    #'(lambda (cmd)
-       (ql:quickload '(:petalisp.graphviz :caten/onnx :caten/vision)) ;; todo: who on the earth uses petalisp.graphviz?
+       (ql:quickload '(:caten/onnx :caten/vision))
        (let ((model (clingon:getopt cmd :model))
              (image (clingon:getopt cmd :image))
              (label (clingon:getopt cmd :label)))

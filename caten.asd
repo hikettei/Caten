@@ -67,7 +67,7 @@
 (asdf:defsystem "caten/onnx"
   :description "ONNX extension for Caten"
   :author "hikettei <ichndm@gmail.com>"
-  :depends-on ("caten" "cl-onnx" "alexandria" "petalisp.graphviz")
+  :depends-on ("caten" "cl-onnx" "alexandria")
   :pathname "external/onnx"
   :components
   ((:file "package")
