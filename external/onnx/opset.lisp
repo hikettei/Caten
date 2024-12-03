@@ -249,7 +249,7 @@
     ((cls inputs attrs)
       (declare (ignore attrs))
       (multiple-value-bind (condition x y) (apply #'values inputs)
-        (caten:!where condition x y))))
+        (caten:!where condition x (caten:!cast y (caten:dtype-of x))))))
 
 (defop ("Pow" 13)
     ((cls inputs attrs)
@@ -274,7 +274,7 @@
       (let* ((value (or (and (gethash "value" attrs) (aref (gethash "value" attrs) 0)) 0.0))
 	     (shape (coerce (caten:change-facet (car inputs) :simple-array) 'list)))
         (caten:make-tensor shape :initial-element value))))
-;; [TODO] Slice-10
+;; https://github.com/onnx/onnx/blob/main/docs/Changelog.md#slice-10
 (defop ("Transpose" 1)
     ((cls inputs attrs)
       (let ((perm (gethash "perm" attrs)))
