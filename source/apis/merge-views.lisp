@@ -440,7 +440,7 @@ for i in range(3):
               "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invaild simplifier?~%~a" write-to g)
       g)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-#|
+
 ;; [TODO]: Complete this (Post View Fusor)
 (defsimplifier
     (simplify-contiguous :speed 1)
@@ -463,4 +463,3 @@ for i in range(3):
           (let* ((new-tracker (+view (getattr view2 :tr) (getattr view1 :tr))))
             (when new-tracker
               (graph-nodes (%make-view-from-tracker new-tracker (car (node-writes view1)) view2)))))))))
-|#
