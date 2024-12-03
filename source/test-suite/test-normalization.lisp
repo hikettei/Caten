@@ -47,11 +47,12 @@ def torch_rms_norm(x):
 
 (deftest test-layer-norm
   (with-given-dtype ((:float32 . "float32"))
-    (let ((x (rand `(30 40))))
-      (assert-equal
-          (:atol 1e-5 :rtol 1e-3)
-          (with-torch (x) (->caten (f:layer_norm x `(40) :eps 1e-5)))
-          (proceed (!layer-norm x `(40) :eps 1e-5))))))
+    (with-manual-seed (0)
+      (let ((x (rand `(30 40))))
+        (assert-equal
+            (:atol 1e-5 :rtol 1e-3)
+            (with-torch (x) (->caten (f:layer_norm x `(40) :eps 1e-5)))
+            (proceed (!layer-norm x `(40) :eps 1e-5)))))))
 
 (deftest test-rms-norm
   (with-given-dtype ((:float32 . "float32"))
