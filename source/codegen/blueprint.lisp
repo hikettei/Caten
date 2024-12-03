@@ -572,17 +572,26 @@ Depends=~a Reduce=~a Users=~a
                             buffer))))
     blueprints))
 
+(defun gid-n (gid &aux (gid-str (princ-to-string gid)))
+  (assert (equalp (subseq gid-str 0 4) "_gid"))
+  (parse-integer (subseq gid-str 4)))
+
 (defun ctx-padding-loop (ctx)
   "Inserts padding loops to keep the rank of loops same. Polyhedral Compiler should responsible for transforming this, so, caten/codegen should keep the ir untouched."
   (let* ((appeared
            (loop for bp in (ctx-blueprint ctx)
                  if (eql (node-type bp) :FOR)
                    collect bp))
+         (threshold (and appeared (apply #'min (map 'list #'(lambda (x) (gid-n (getattr x :idx))) appeared))))
          (padding-loops
            (loop for gid in (ctx-gids ctx)
                  for size in (ctx-loop-size-list ctx)
-                 if (and (expr-equal-to size 1) (null (find gid appeared :key #'(lambda (x) (getattr x :idx)))))
+                 if (and (expr-equal-to size 1)
+                         (null (find gid appeared :key #'(lambda (x) (getattr x :idx))))
+                         threshold
+                         (< (gid-n gid) threshold)) ;; only the outermost loops are subject.
                    collect (cons (%make-for gid size) (%make-endfor gid)))))
+    (when (null appeared) (return-from ctx-padding-loop (ctx-blueprint ctx)))
     `(,@(map 'list #'car padding-loops)
       ,@(ctx-blueprint ctx)
       ,@(reverse (map 'list #'cdr padding-loops)))))
