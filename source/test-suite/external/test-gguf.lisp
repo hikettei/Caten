@@ -34,6 +34,7 @@ def write_dummy_gguf(quantization_type, filename):
 (python-exec
 "
 from gguf import GGUFReader, GGMLQuantizationType
+from gguf.quants import dequantize
 
 def read_gguf_file(gguf_file_path):
     reader = GGUFReader(gguf_file_path)
