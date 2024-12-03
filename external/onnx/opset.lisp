@@ -66,7 +66,9 @@
   (def-unary "Exp" 1 caten:!exp)
   (def-unary "Sqrt" 1 caten:!sqrt)
   (def-unary "Relu" 1 caten/nn:!relu)
-  (def-unary "Sigmoid" 1 caten/nn:!sigmoid))
+  (def-unary "Sigmoid" 1 caten/nn:!sigmoid)
+  (def-unary "HardSwish" 14 caten/nn:!hardswish) ;; https://github.com/onnx/onnx/blob/main/docs/Changelog.md#hardswish-14
+  )
 
 (defop ("Softmax" 1)
     ((cls inputs attrs)
