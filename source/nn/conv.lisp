@@ -56,9 +56,9 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 	  (apply #'values `(,@(subseq (shape x) 0 2) ,@(subseq (shape weight) 0 2)))
 	;; assert groups*cin == cin_ and len(self.shape) == len(weight.shape)
 	(when (and (numberp groups) (numberp cin) (numberp cin_)))
-	(assert (= cin (* groups cin_))
+	(assert (= cin_ (* groups cin))
 		()
-		"Input Tensor shape ~a do not match the shape of the weights ~a. ~a vs ~a (= cin (* groups cin_))"
+		"Input Tensor shape ~a do not match the shape of the weights ~a. ~a vs ~a (= cin_ (* groups cin))"
 		(shape x) (shape weight) cin (* groups cin_))
 	(assert (= (ndim weight) (ndim x)) () "Input Tensor Shape ~a do not match the shape of the weights ~a" (shape x) (shape weight))
 	;; x = [bs, groups*cin, oy, ox, H, W]
@@ -69,7 +69,7 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 	  ;; x = x.reshape(bs, groups, cin, 1, *oyx, *HW).expand(bs, groups, cin, rcout, *oyx, *HW)
 	  ;; x = x.permute(0,1,3,*[4+i for i in range(len(oyx))],2,*[4+len(oyx)+i for i in range(len(HW))])
 	  (let* ((x (!reshape x (flatten (list bs groups cin 1 oyx hw))))
-		 (x (apply #'!view x (append `(t t t (:~ ,rcout)) (loop for o in oyx collect t) (loop for h in hw collect t))))
+                 (x (!expand x (flatten (list bs groups cin cout oyx hw))))
 		 (x (!permute x (append (list 0 1 3) (map 'list #'(lambda (x) (+ 4 x)) (range 0 (length oyx))) (list 2) (map 'list #'(lambda (x) (+ 4 (length oyx) x)) (range 0 (length hw))))))
 		 ;; x = (x * weight.reshape(1, groups, rcout, *[1] * len(oyx), cin, *HW))
 		 (x (!mul (!reshape (convnd-weight conv) (append (list 1 groups rcout) (loop repeat (length oyx) collect 1) (list cin) hw)) x))

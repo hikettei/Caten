@@ -288,6 +288,20 @@ Returns a tensor with one is inserted at the beginning of the shape of `x` for n
   (declare (type tensor x) (type (integer 0) n))
   (!reshape x (append (loop for i upfrom 0 below n collect 1) (tensor-shape x))))
 
+(defun !flatten (x &key (axis 1))
+  "
+```
+(!flatten x &key (axis 1))
+```
+
+Flattens the input tensor into a 2D matrix. If input tensor has shape (d_0, d_1, ... d_n) then the output will have shape (d_0 X d_1 ... d_(axis-1), d_axis X d_(axis+1) ... X dn).
+"
+  (declare (type tensor x) (type fixnum axis))
+  (let* ((axis (normalize-axis x axis))
+         (s1 (apply #'!* (map 'list #'->iconst (subseq (shape x) 0 axis))))
+         (s2 (apply #'!* (map 'list #'->iconst (subseq (shape x) axis)))))
+    (!reshape x s1 s2)))
+
 (defun !repeat (x &rest repeats)
   "
 ```
@@ -361,6 +375,13 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 (defmethod lower ((op Mul) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%mul a b :reduction (func-reduce op) :wrap-around (mul-wrap-around op))))))
+
+(defclass Modulo (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
+(defmethod forward ((op Modulo) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
+(defmethod backward ((op Modulo) &optional prev-grad) (values nil nil))
+(defmethod lower ((op Modulo) &rest inputs)
+  (multiple-value-bind (a b) (apply #'values inputs)
+    (with-context (out (%mod a b :reduction (func-reduce op))))))
 
 (defclass IDiv (Func)
   ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
@@ -510,6 +531,14 @@ Subtracts `b` from `a`. If `reduce` is T, it will reduce the result. (Broadcast)
 Divides `a` by `b`. If `reduce` is T, it will reduce the result. (Broadcast)
 "
   (!mul a (!recip b) :reduce reduce))
+(defun !mod (a b &key (reduce nil))
+  "
+```
+(!mod a b &key (reduce nil))
+```
+Computes the remainder of the division of `a` by `b`. If `reduce` is T, it will reduce the result. (Broadcast)
+"
+  (apply #'forward (make-instance 'Modulo :reduce reduce) (broadcast-elwise a b)))
 (defun !idiv (a b &key (reduce nil))
   "
 ```

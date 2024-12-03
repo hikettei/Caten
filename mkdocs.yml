@@ -64,3 +64,10 @@ nav:
       - StateDict: packages/caten.apis.state-dict.md
     - caten/avm: packages/caten.avm.md
     - caten/nn: packages/caten.nn.md
+  - Ready to use packages:
+    - Overview: packages/caten.apps.md
+    - caten/apps.gpt2: packages/caten.apps.gpt2.md
+  - External Packages:
+    - caten/gguf: packages/caten.external.gguf.md
+    - caten/oonx: packages/caten.external.onnx.md
+    - caten/llm: packages/caten.external.llm.md

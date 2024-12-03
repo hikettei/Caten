@@ -6,7 +6,7 @@ exec ros -Q -- $0 "$@"
 (progn ;;init forms
   (ros:ensure-asdf)
    #+quicklisp(cl:push (cl:pathname "./") ql:*local-project-directories*)
-   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/benchmarks :caten/apps) :silent t)
+   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/llm :caten/benchmarks :caten/apps))
    (when (and (uiop:getenv "JIT_BACKEND")
 	      (equalp (uiop:getenv "JIT_BACKEND") "METAL"))
      #+quicklisp(ql:quickload '(:caten/metal) :silent nil)))
@@ -46,13 +46,34 @@ exec ros -Q -- $0 "$@"
   (clingon:make-command
    :name "docs"
    :description (maybe-ansi white-bright "Builds the documentation in ./docs folder")
-   :handler #'(lambda (cmd) (declare (ignore cmd)) (caten/common.documentation:build-docs))))
+   :handler #'(lambda (cmd) (declare (ignore cmd))
+                (ql:quickload :caten/onnx)
+                (caten/common.documentation:build-docs))))
 
 (defun caten/benchmark ()
   (clingon:make-command
    :name "benchmark"
    :description (maybe-ansi white-bright "Runs the benchmarks")
    :handler #'(lambda (cmd) (caten/benchmarks:run-benchmarks cmd))))
+
+(defun caten/classification ()
+  (clingon:make-command
+   :name "classification"
+   :description (maybe-ansi white-bright "Runs the onnx classification model")
+   :options
+   (list
+    (clingon:make-option :string :description "onnx model to run" :short-name #\m :long-name "model" :key :model)
+    (clingon:make-option :string :description "image path to classify" :short-name #\i :long-name "image" :key :image)
+    (clingon:make-option :integer :description "expected label" :short-name #\l :long-name "label" :key :label))
+   :handler
+   #'(lambda (cmd)
+       (ql:quickload '(:caten/onnx :caten/vision))
+       (let ((model (clingon:getopt cmd :model))
+             (image (clingon:getopt cmd :image))
+             (label (clingon:getopt cmd :label)))
+         (assert (and model image label) () "Usage: caten run-classification --model <model> --image <image> --label <label>")
+         (ctx:with-contextvar (:JIT 1)
+           (format t "Predicted: ~a~%" (uiop:symbol-call :caten/vision :run-classification model image label)))))))
 
 (defun caten/llm-example/handler (cmd)
   (let* ((model (clingon:getopt cmd :model))
@@ -87,7 +108,7 @@ exec ros -Q -- $0 "$@"
    :options (caten/options)
    :usage (maybe-ansi white (format nil "[COMMAND] [OPTIONS]~%~a" (ctx:help nil)))
    :handler #'identity
-   :sub-commands (list (caten/llm) (caten/test) (caten/docs) (caten/benchmark) (caten/llm-example))))
+   :sub-commands (list (caten/llm) (caten/test) (caten/docs) (caten/benchmark) (caten/llm-example) (caten/classification))))
 
 (defun main (&rest argv &aux (*argv* argv))
   (setf (ctx:getenv :COLOR) 1)

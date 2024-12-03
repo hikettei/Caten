@@ -245,7 +245,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                else
                  collect nil))))
 
-(defun node-reduced-gids (node gids  &aux (axes (node-reduced-axes node)))
+(defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
   (when (null axes) (setf axes (make-list (length gids))))
   (assert (= (length gids) (length axes)) () "the reduction node ~a is not the highest rank tensor." node)
   (when (getattr node :reduction :allow-undefined t)
@@ -358,6 +358,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
       (when (and
              (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes))
         (push -1 insertable-positions))
+      (assert (null (intersection node-depend-axes user-depend-axes))) ;; 100% fails to lower in this case!
       (loop for bp in blueprint
             for nth upfrom 0
             for high-priority-p = nil
@@ -571,6 +572,30 @@ Depends=~a Reduce=~a Users=~a
                             buffer))))
     blueprints))
 
+(defun gid-n (gid &aux (gid-str (princ-to-string gid)))
+  (assert (equalp (subseq gid-str 0 4) "_gid"))
+  (parse-integer (subseq gid-str 4)))
+
+(defun ctx-padding-loop (ctx)
+  "Inserts padding loops to keep the rank of loops same. Polyhedral Compiler should responsible for transforming this, so, caten/codegen should keep the ir untouched."
+  (let* ((appeared
+           (loop for bp in (ctx-blueprint ctx)
+                 if (eql (node-type bp) :FOR)
+                   collect bp))
+         (threshold (and appeared (apply #'min (map 'list #'(lambda (x) (gid-n (getattr x :idx))) appeared))))
+         (padding-loops
+           (loop for gid in (ctx-gids ctx)
+                 for size in (ctx-loop-size-list ctx)
+                 if (and (expr-equal-to size 1)
+                         (null (find gid appeared :key #'(lambda (x) (getattr x :idx))))
+                         threshold
+                         (< (gid-n gid) threshold)) ;; only the outermost loops are subject.
+                   collect (cons (%make-for gid size) (%make-endfor gid)))))
+    (when (null appeared) (return-from ctx-padding-loop (ctx-blueprint ctx)))
+    `(,@(map 'list #'car padding-loops)
+      ,@(ctx-blueprint ctx)
+      ,@(reverse (map 'list #'cdr padding-loops)))))
+
 (defun lower-schedule-item (node base-graph scheduled-graph)
   "
 ```
@@ -609,7 +634,8 @@ Lowers the Schedule-Item into blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
             (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; todo(hikettei) removable?
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph) ; rewrite local buffers as a scalar
-            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph)) ; rewrite jitable nodes -> expr
+            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph) ; rewrite jitable nodes -> expr
+            (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
       ;; Gathering dynamic shapes used in the schedule-item
       (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph (ctx-blueprint ctx)))
       (expr-set-iterations (ctx-blueprint ctx))

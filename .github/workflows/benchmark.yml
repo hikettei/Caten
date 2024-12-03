@@ -1,0 +1,120 @@
+name: Benchmarks
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+      branches:
+        - main
+        - develop
+
+jobs:
+  Compiler_Benchmark:
+    name: Transformer Compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up SBCL via Roswell.
+        run: |
+          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install sbcl-bin
+          ros use sbcl-bin
+          ros install qlot
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Update $PATH
+        run: |
+          echo $PATH
+          export PATH=/home/runner/.roswell/bin:$PATH
+          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+      - name: Installing Dependencies
+        run: |
+          sudo apt-get install -y libisl-dev gnuplot
+          qlot install
+      - name: Transformer Graph Simplification (N<=12, JIT=0, AUTO_SCHEDULER=0)
+        run: PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 36 0 transformer_simplifier_plot.png
+      - name: Transformer Scheduling (N<=12, JIT=1, AUTO_SCHEDULER=0)
+        run: PARALLEL=4 PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=0 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_no_auto_sched_plot.png
+#      - name: Transformer Auto Scheduler (N<=12, JIT=1, AUTO_SCHEDULER=1)
+#        run: PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 24 1 transformer_simplifier_auto_scheduler_plot.png
+  ONNX_Optimization:
+    name: ONNX Optimization
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up SBCL via Roswell.
+        run: |
+          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install sbcl-bin
+          ros use sbcl-bin
+          ros install qlot
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Update $PATH
+        run: |
+          echo $PATH
+          export PATH=/home/runner/.roswell/bin:$PATH
+          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+      - name: Installing Dependencies
+        run: sudo apt-get install -y libisl-dev cmake unzip
+      - name: Download and install Abseil
+        run: |
+          set -ex
+          git clone --recursive -b lts_2024_07_22 https://github.com/abseil/abseil-cpp $GITHUB_WORKSPACE/abseil-cpp
+          cd $GITHUB_WORKSPACE/abseil-cpp
+          sudo cmake .  -DCMAKE_CXX_STANDARD=17 -DABSL_ENABLE_INSTALL=ON
+          sudo make -j20
+          sudo make install
+          sudo ldconfig
+      - name: Download and install protobuf
+        run: |
+          git clone --recursive -b 28.x https://github.com/protocolbuffers/protobuf
+          cd protobuf/cmake
+          mkdir build
+          cd build
+          cmake -DCMAKE_CXX_STANDARD=17 -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_ABSL_PROVIDER=package -DCMAKE_INSTALL_PREFIX=/usr/local/ ../..
+          sudo make install -j20
+          sudo ldconfig
+      - name: Set up cl-protobufs
+        run: |
+          git clone https://github.com/qitab/cl-protobufs.git
+          cd cl-protobufs/protoc
+          cmake . -DCMAKE_CXX_STANDARD=17 -DProtobuf_PROTOC_EXECUTABLE=protoc
+          cmake --build . --target install --parallel 16
+          cd ../../
+      - name: Installing extra dependencies
+        run: |
+          qlot install
+          qlot exec make install_docs
+          pip install torchvision onnx
+      - name: Exporting models
+        run: |
+          python ./scripts/export_onnx.py --task classification --model mobilenet_v2 --weights IMAGENET1K_V1 --output_dir ./models
+          wget https://pub-edba5feea2c145019e8be2a71dbeea81.r2.dev/cat.png
+      - name: Running MobilenetV2
+        run: |
+          ros config set dynamic-space-size 8gb
+          JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/mobilenet_v2.onnx --image ./cat.png --label 282
+  GGUF_Optimization:
+    name: GGUF Optimization
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up SBCL via Roswell.
+        run: |
+          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install sbcl-bin
+          ros use sbcl-bin
+      - name: Installing ISL
+        run: sudo apt-get install -y libisl-dev
+      - name: GPT2
+        run: |
+          ros config set dynamic-space-size 8gb
+          JIT=1 JIT_DEBUG=4 PARALLEL=8 NO_MEMORY_PLANNER=0 NO_SCHEDULE_CACHE=0 ./roswell/caten.ros llm-example --model "gpt2" --prompt "What is the answer to life, the universe, and everything?"
