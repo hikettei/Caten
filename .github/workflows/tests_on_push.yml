@@ -1,4 +1,4 @@
-name: CI
+name: UnitTests
 on:
   push:
     branches:
@@ -12,7 +12,7 @@ jobs:
   UnitTest:
     name: (${{ matrix.backend }}) Unittests on (${{ matrix.lisp }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 30
     strategy:
       matrix:
         lisp: [sbcl-bin, ccl-bin/1.12.2]
@@ -29,7 +29,7 @@ jobs:
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
           ros install ${{ matrix.lisp }}
           ros use ${{ matrix.lisp }}
-          ros install rove
+          ros install rove qlot
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
@@ -73,36 +73,46 @@ jobs:
           curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
           ros install sbcl-bin
           ros use sbcl-bin
+          ros install qlot
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: 3.12
-      - name: Installing ISL
-        run: sudo apt-get install -y libisl-dev
-      - name: Installing requirements
-        run: make install_docs
+      - name: Update $PATH
+        run: |
+          echo $PATH
+          export PATH=/home/runner/.roswell/bin:$PATH
+          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+      - name: Installing Dependencies
+        run: sudo apt-get install -y libisl-dev protobuf-compiler cmake
+      - name: Download and install Abseil
+        run: |
+          set -ex
+          git clone --recursive -b lts_2024_07_22 https://github.com/abseil/abseil-cpp $GITHUB_WORKSPACE/abseil-cpp
+          cd $GITHUB_WORKSPACE/abseil-cpp
+          sudo cmake .  -DCMAKE_CXX_STANDARD=17 -DABSL_ENABLE_INSTALL=ON
+          sudo make -j20
+          sudo make install
+          sudo ldconfig
+      - name: Download and install protobuf
+        run: |
+          git clone --recursive -b 28.x https://github.com/protocolbuffers/protobuf
+          cd protobuf/cmake
+          mkdir build
+          cd build
+          cmake -DCMAKE_CXX_STANDARD=17 -Dprotobuf_BUILD_TESTS=OFF -Dprotobuf_ABSL_PROVIDER=package -DCMAKE_INSTALL_PREFIX=/usr/local/ ../..
+          sudo make install -j20
+          sudo ldconfig
+      - name: Set up cl-protobufs
+        run: |
+          git clone https://github.com/qitab/cl-protobufs.git
+          cd cl-protobufs/protoc
+          cmake . -DCMAKE_CXX_STANDARD=17
+          cmake --build . --target install --parallel 16
+          cd ../../
+      - name: Installing extra dependencies
+        run: |
+          qlot install
+          qlot exec make install_docs
       - name: Building documentations
         run: CI=1 mkdir -p docs/packages && make build_docs
-  Compiler_Benchmark:
-    name: Benchmark
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v1
-      - name: Set up SBCL via Roswell.
-        run: |
-          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
-          ros install sbcl-bin
-          ros use sbcl-bin
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: 3.12
-      - name: Installing Dependencies
-        run: sudo apt-get install -y libisl-dev gnuplot
-      - name: Transformer Simplifiers (N<=12, JIT=0, AUTO_SCHEDULER=0)
-        run: PROFILE_SIMPLIFIER=1 ./roswell/caten.ros benchmark transformer_compile_time 36 0 transformer_simplifier_plot.png
-      - name: Transformer Schedulers (N<=12, JIT=1, AUTO_SCHEDULER=0)
-        run: PARALLEL=4 PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=0 ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_no_auto_sched_plot.png
-#      - name: Transformer Schedulers (N<=12, JIT=1, AUTO_SCHEDULER=1)
-#        run: PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=1 ./roswell/caten.ros benchmark transformer_compile_time 24 1 transformer_simplifier_auto_scheduler_plot.png

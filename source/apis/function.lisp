@@ -288,6 +288,20 @@ Returns a tensor with one is inserted at the beginning of the shape of `x` for n
   (declare (type tensor x) (type (integer 0) n))
   (!reshape x (append (loop for i upfrom 0 below n collect 1) (tensor-shape x))))
 
+(defun !flatten (x &key (axis 1))
+  "
+```
+(!flatten x &key (axis 1))
+```
+
+Flattens the input tensor into a 2D matrix. If input tensor has shape (d_0, d_1, ... d_n) then the output will have shape (d_0 X d_1 ... d_(axis-1), d_axis X d_(axis+1) ... X dn).
+"
+  (declare (type tensor x) (type fixnum axis))
+  (let* ((axis (normalize-axis x axis))
+         (s1 (apply #'!* (map 'list #'->iconst (subseq (shape x) 0 axis))))
+         (s2 (apply #'!* (map 'list #'->iconst (subseq (shape x) axis)))))
+    (!reshape x s1 s2)))
+
 (defun !repeat (x &rest repeats)
   "
 ```

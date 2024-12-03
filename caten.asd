@@ -23,7 +23,8 @@
   :description ""
   :author "hikettei <ichndm@gmail.com>"
   :depends-on (;; More Applications follow ...
-               "caten.apps.gpt2"))
+               "caten.apps.gpt2")
+  :components ((:file "apps/documentation")))
 ;; External system for Caten.
 ;; Systems including non-portable dependencies (e.g.: CUDA, Metal) or systems cannot be guaranteed to be maintained, are separated from caten.
 (asdf:defsystem "caten/metal"
@@ -47,7 +48,8 @@
    (:file "metadata")
    (:file "tensor-info")
    (:file "gguf-file")
-   (:file "dequantize")))
+   (:file "dequantize")
+   (:file "documentation")))
 
 (asdf:defsystem "caten/llm"
   :description "Various Generative Language Model Implementation in Caten"
@@ -59,7 +61,29 @@
    (:file "utils")
    (:file "tokenizers")
    (:file "bpe")
-   (:file "layers")))
+   (:file "layers")
+   (:file "documentation")))
+
+(asdf:defsystem "caten/onnx"
+  :description "ONNX extension for Caten"
+  :author "hikettei <ichndm@gmail.com>"
+  :depends-on ("caten" "cl-onnx" "alexandria")
+  :pathname "external/onnx"
+  :components
+  ((:file "package")
+   (:file "helpers")
+   (:file "defop")
+   (:file "onnx")
+   (:file "opset")
+   (:file "documentation")))
+
+(asdf:defsystem "caten/vision"
+  :description "Computer Vision Implementation in Caten"
+  :author "hikettei <ichndm@gmail.com>"
+  :depends-on ("caten" "opticl")
+  :pathname "external/vision"
+  :components
+  ((:file "package")))
 
 (asdf:defsystem "caten/benchmarks"
   :description "A set of benchmarks for Caten"

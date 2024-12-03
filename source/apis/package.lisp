@@ -130,7 +130,7 @@
    #:lower
    #:!identity
    ;; shaping
-   #:!view #:!view-from-base #:!reshape #:!repeat #:!contiguous #:!copy #:!permute #:!t #:!transpose
+   #:!view #:!view-from-base #:!reshape #:!flatten #:!repeat #:!contiguous #:!copy #:!permute #:!t #:!transpose
    #:!expand
    #:!uprank
    ;; Binary
@@ -151,7 +151,7 @@
    #:!sin #:!cos #:!tan
    #:!exp #:!exp2
    #:!log #:!log2
-   #:!sqrt
+   #:!sqrt #:!expt
    ;; Logical
    #:!< #:!> #:!<= #:!>= #:!eq #:!neq
    ;; TernaryOps
@@ -163,6 +163,7 @@
    #:!xor #:!or #:!and
    ;; utils
    #:!rsqrt #:!square
+   #:!clip 
    )
   ;; from facets.lisp
   (:export

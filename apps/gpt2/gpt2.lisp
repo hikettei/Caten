@@ -1,4 +1,31 @@
 (defpackage :caten/apps.gpt2
+  (:documentation "
+Implements GPT2 text generation from the pre-trained model.
+
+Note: Currently still experimental and may not work as expected!
+
+### [function] make-gpt2
+
+```
+(make-gpt2 model-type &key max-seq-len)
+```
+
+Creates a compiled GPT2 model from the pre-trained gguf file. The `model-type` must be one of `:gpt2`, `:gpt2-medium`, `:gpt2-large`, or `:gpt2-xl`. The `max-seq-len` is the maximum sequence length for the model. Since GPT2 is a heavy model, you should consider `JIT=1` as a prerequisite.
+
+The pretrained model is downloaded from the following HuggingFace repository:
+
+```lisp
+(defun url (model-type) (format nil \"https://huggingface.co/hikettei/gpt2-gguf/resolve/main/~(~a~)-f32.gguf?download=true\" model-type))
+```
+
+### [function] gpt2-inference
+
+```
+(gpt2-inference model input)
+```
+
+Takes a compiled GPT2 model and a string input, and generates a text output.
+")
   (:use :cl :caten/apis :caten/llm :caten/gguf)
   (:export :make-gpt2 :gpt2-generate))
 

@@ -81,8 +81,10 @@ Compute the ~a of the tensor.
 
 Performs matrix multiplication between two tensors `a` and `b`.
 "
-  (multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
-    (forward (make-instance 'Matmul) a b)))
+  (if (= (ndim a) (ndim b))
+      (forward (make-instance 'Matmul) a b)
+      (multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
+        (forward (make-instance 'Matmul) a b))))
 ;; ~~ math ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (SinHNode (()) :where "A[~] -> A[~]")
     ()
@@ -173,11 +175,45 @@ Performs matrix multiplication between two tensors `a` and `b`.
 "
   (forward (Exp2Node) x))
 
+(defmodule (ExptNode (()) :where "Base[~] Power[~] -> Base[~]")
+    ()
+    :documentation "Expt(base power)"
+    :impl ((expt base power)
+           ;; Ref: https://github.com/tinygrad/tinygrad/blob/master/tinygrad/tensor.py#L3132-L3168
+           (let* ((ret (!exp (!mul (!log (!abs base)) power)))
+                  (neg-base-map (!< base (!const base 0)))
+                  (neg-base (!where neg-base-map (!const base 1) (!const base 0)))
+                  (correct-sign (!add (!const power 1) (!mul neg-base (!- (!cos (!mul power (!const power pi))) (!const base 1)))))
+                  (inject-nan (!where (!and neg-base-map (!neq power (!truncate power))) (!const base (nan)) (!const base 1))))
+             (!where (!and (!eq base (!const base 0)) (!eq power (!const power 0))) (!const base 1) (!* ret correct-sign inject-nan)))))
+
+(defun !expt (base power &aux (power (if (and (tensor-p power) (= 0 (ndim power)))
+                                         (let ((folded (canonicalize-int power)))
+                                           (if (numberp folded) folded power))
+                                         power)))
+  "
+```
+(!expt base power)
+```
+Computes the power of base with power."
+  (declare (type tensor base) (type (or number tensor) power))
+  (when (numberp power)
+    (cond
+      ((< power 0)
+       (return-from !expt (!expt (!recip base) (- power))))
+      ((= power 0)
+       (return-from !expt (!add (!const base 1) (!mul base (!const base 0)))))
+      ((= power (+ 0.5 (truncate (- power 0.5))))
+       (return-from !expt (!mul (!sqrt base) (!expt base (truncate (- power 0.5))))))
+      ((= power (truncate power))
+       (return-from !expt (!mul (!square (!expt base (floor power 2))) (if (= 0 (mod power 2)) (!const base 1) base))))))
+  (let ((power (if (numberp power) (!const base power) power)))
+    (apply #'forward (ExptNode) (broadcast-elwise base power))))
 ;; ~~ Trunc/Ceil/Floor ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (TruncateNode (()) :where "A[~] -> A[~]")
     ()
     :documentation "Truncate(x)"
-    :impl ((trunc x) (!cast (!cast x :int32) (dtype-of x))))
+    :impl ((trunc x) (!cast (!cast x *default-int*) (dtype-of x))))
 
 (defun !truncate (x)
   "
@@ -480,3 +516,26 @@ order is one of :column or :row. Shape is a list consisted of integers, symbols,
     (loop for i downfrom (- num-dims 2) to 0 do
       (setf (nth i strides) (!* (nth (+ i 1) strides) (->iconst (nth (+ i 1) shape)))))
     strides))
+;; ~~ Etc ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmodel (ClipNode () :where "A[~] MIN[~] MAX[~] -> A[~]") ())
+(defcall (clip ClipNode) (A[~] MIN[~] MAX[~])
+  ;; c.f.: https://github.com/onnx/onnx/blob/main/docs/Changelog.md#clip-13
+  (!minimum (!maximum a min) max))
+
+(defun !clip (x min max)
+  "
+```
+(!clip x min max)
+```
+
+!clip limits the given input within an interval. The interval is specified by the inputs 'min' and 'max'. min/max is either a number, a symbol, or a tensor.
+
+The implementation follows the ONNX specification. https://github.com/onnx/onnx/blob/main/docs/Changelog.md#clip-13
+"
+  (declare (type Tensor x)
+           (type (or number symbol tensor) max min))
+  (let ((max (if (tensor-p max) max (!const x max)))
+        (min (if (tensor-p min) min (!const x min))))
+    (multiple-value-bind (x min max)
+        (bc "A[~] MIN[~] MAX[~] -> A[~] MIN[~] MAX[~]" (x min max))
+      (call (ClipNode) x min max))))
