@@ -81,7 +81,7 @@ jobs:
         run: |
           git clone https://github.com/qitab/cl-protobufs.git
           cd cl-protobufs/protoc
-          cmake . -DCMAKE_CXX_STANDARD=17
+          cmake . -DCMAKE_CXX_STANDARD=17 -DProtobuf_PROTOC_EXECUTABLE=protoc
           cmake --build . --target install --parallel 16
           cd ../../
       - name: Installing extra dependencies
