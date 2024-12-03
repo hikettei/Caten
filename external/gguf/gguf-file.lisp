@@ -1,13 +1,26 @@
 (in-package :caten/gguf)
-;; [TODO] The fastest gguf parser!
-
 ;; Corresponds to https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
 (defclass GGUF ()
   ((version :type fixnum :initarg :version :accessor gguf-version)
    (tensor-count :type (unsigned-byte 64) :initarg :tensor-count :accessor gguf-tensor-count)
    (metadata-kv-count :type (unsigned-byte 64) :initarg :metadata-kv-count :accessor gguf-metadata-kv-count)
    (metadata :initarg :metadata :accessor gguf-metadata)
-   (tensor-info :initarg :tensor-info :accessor gguf-tensor-info)))
+   (tensor-info :initarg :tensor-info :accessor gguf-tensor-info))
+  (:documentation "
+A class that represents the GGUF file format.
+
+- (gguf-version gguf) returns a fixnum indicating the version of the GGUF file.
+
+- (gguf-tensor-count gguf) returns the number of tensors in the GGUF file.
+
+- (gguf-metadata-kv-count gguf) returns the number of metadata key-value pairs in the GGUF file.
+
+- (gguf-metadata gguf) returns a list of metadata key-value pairs.
+
+- (gguf-tensor-info gguf) returns a list of tensor information.
+
+- (gguf-metadata-get gguf key) to get the corresponding value of the key where key is a string.
+"))
 
 (defmethod gguf-metadata-get ((gguf GGUF) key)
   (find key (gguf-metadata gguf) :key #'metadata-key :test #'equal))
@@ -33,9 +46,18 @@
       (babel:octets-to-string header :encoding :utf-8))))
 
 (defun make-gguf (stream)
-  "GGUF File Structure:
-https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
-[Magic Number (4 Byte)] | [GGUF Version (4 Byte)] | [Tensor_Count (8 Byte)] | [Metadata_KV_Count (8 Byte)] | [Rest_data]"
+  "
+Creates GGUF from the given stream.
+
+The definition is described in the following link:
+
+- https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
+
+In short, this function accepts the following format:
+```
+[Magic Number (4 Byte)] | [GGUF Version (4 Byte)] | [Tensor_Count (8 Byte)] | [Metadata_KV_Count (8 Byte)] | [Rest_data]
+```
+"
   (with-fast-input (buffer nil stream)
     (multiple-value-bind (header version tensor-count metadata-kv-count)
 	(values
@@ -46,7 +68,7 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
       (declare (type string header) (type (unsigned-byte 64) version tensor-count))
       (assert (string= header "GGUF") () "Expecting the header to be GGUF, but got ~a.~%The given stream is not a gguf format.~%~a" header stream)
       (let* ((metadata (parse-metadata-kv buffer metadata-kv-count))
-	     (alignment (find "general.alignment" metadata :key #'metadata-key :test #'equal))
+	     (alignment (find "general.alignment" metadata :key #'metadata-key :test #'equalp))
 	     (alignment (if alignment (metadata-value alignment) 32))
 	     (tensors (parse-tensor-info buffer tensor-count alignment stream))
 	     (gguf (make-instance 'gguf :version version :tensor-count tensor-count :metadata-kv-count metadata-kv-count
@@ -59,17 +81,34 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
 	gguf))))
 
 (defun load-gguf (pathname)
-  "Creates GGUF from pahtname"
+  "
+```
+(load-gguf pathname)
+```
+Creates a gguf file from the given pathname.
+"
   (with-open-file (stream pathname :element-type '(unsigned-byte 8))
     (make-gguf stream)))
 
-(defmethod gguf->state-dict ((gguf GGUF))
+(defun gguf->state-dict (gguf)
+  "
+```
+(gguf->state-dict gguf)
+```
+Creates a caten/state-dict from the given gguf file's tensor-info.
+"
+  (declare (type gguf gguf))
   (let ((dict (make-hash-table :test #'equal)))
     (loop for info in (gguf-tensor-info gguf)
           do (setf (gethash (tensor-info-name info) dict) (tensor-info->tensor info)))
     (caten/apis:make-state-dict :entry dict)))
 
 (defun load-gguf-url (url filename &optional (output-directory "./"))
+  "
+```
+(load-gguf-url url filename &optional output-directory)
+```
+Creates a gguf file from the given URL. The downloaded file will be saved in the output-directory named as filename. If the file already exists, it will not download the file again."
   (let* ((output-path (merge-pathnames filename (pathname output-directory))))
     (unless (probe-file output-path)
       (caten/common.logger:print-info "Downloading ~a to ~a..." url output-path)
@@ -80,6 +119,13 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
                             &key
                               (metadata-tokens "tokenizer.ggml.tokens")
                               (metadata-merges "tokenizer.ggml.merges"))
+  "
+```
+(gguf->bpe-tokenizer gguf &key (metadata-tokens \"tokenizer.ggml.tokens\") (metadata-merges \"tokenizer.ggml.merges\"))
+```
+
+Creates a BPE tokenizer (which is caten/llm:Tokenizer) from the given gguf file's metadata.
+"
   (declare (type gguf gguf))
   (let ((tokens (gguf-metadata-get gguf metadata-tokens))
         (merges (gguf-metadata-get gguf metadata-merges)))

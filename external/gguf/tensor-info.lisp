@@ -41,6 +41,9 @@
 
 (defstruct (Tensor-Info
 	    (:constructor make-tensor-info (name n-dimension dimensions tensor-type offset)))
+  "Tensor-Info stores the information of a tensor in the gguf file.
+(tensor-info-name tensor-info) returns the name of the tensor which is a string, (tensor-info-n-dimension tensor-info) returns the rank of the tensor. (tensor-info-dimensions tensor-info) returns the shape of the tensor. (tensor-info-ggml-type tensor-info) returns the data type of the tensor which is a keyword. (tensor-info-relative-offset tensor-info) returns the offset of the tensor in the gguf file. (tensor-info-absolute-offset tensor-info) returns the absolute offset of the tensor in the stream, (inconviniently buffers are stored with this offset but caten will precompute them). (tensor-info-buffer tensor-info) returns the parsed buffer of the tensor.
+"
   (name name :type string)
   (n-dimension n-dimension :type fixnum)
   (dimensions dimensions :type list)
@@ -54,10 +57,11 @@
 	 (obj (if (>= (length obj) *print-object-omit-threshold*)
 		  (subseq obj 0 *print-object-omit-threshold*)
 		  obj)))
-    (format stream "<Tensor-Info{name=~a, ggml-type=:~a, dimensions=~a}~%  ~a~%>"
+    (format stream "<Tensor-Info{name=~a, ggml-type=:~a, dimensions=~a, absolute-offset=~a}~%  ~a~%>"
 	    (tensor-info-name tensor)
 	    (tensor-info-ggml-type tensor)
 	    (tensor-info-dimensions tensor)
+            (tensor-info-absolute-offset tensor)
 	    (if (null (tensor-info-buffer tensor))
 		(format nil "[Not realized, relative_offset=~a, absolute_offset=~a]"
 			(tensor-info-relative-offset tensor) (tensor-info-absolute-offset tensor))
@@ -67,6 +71,7 @@
   (declare (type input-buffer buffer) (optimize (speed 3)))
   (assert (null (tensor-info-buffer tensor)) () "The given tensor-info is already realized. ~a" tensor)
   (with-fast-input (rest-of-the-file nil stream (tensor-info-absolute-offset tensor))
+    (file-position stream (tensor-info-absolute-offset tensor)) ;; note: fast_io indicates N while stream indicates N+4 ??? force synchronize them.
     (setf (tensor-info-buffer tensor) (dequantize (tensor-info-ggml-type tensor) rest-of-the-file tensor))
     tensor))
 
@@ -88,8 +93,8 @@
     (loop for tensor in tensors
 	  for rel = (tensor-info-relative-offset tensor)
 	  for offset = (+ start rel) do
-	    (incf offset (mod (- alignment (mod offset alignment)) alignment))
-	    (setf (tensor-info-absolute-offset tensor) offset))
+	    (setf (tensor-info-absolute-offset tensor)
+                  (+ offset (mod (- alignment (mod offset alignment)) alignment))))
     (flet ((r (tensor-info) (tensor-info-realize tensor-info buffer stream)))
       (tqdm:with (tqdm (length tensors) :description "Extracting tensors...")
 	(loop for tensor in tensors

@@ -13,6 +13,9 @@ Policy:
    #:Sigmoid
    #:!sigmoid
 
+   #:HardSigmoid
+   #:!hard-sigmoid
+
    #:ReLU
    #:!relu
 
