@@ -1,0 +1,42 @@
+name: Benchmarks
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+      branches:
+        - main
+        - develop
+
+jobs:
+  Compiler_Benchmark:
+    name: Transformer Compilation
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up SBCL via Roswell.
+        run: |
+          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install sbcl-bin
+          ros use sbcl-bin
+          ros install qlot
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Update $PATH
+        run: |
+          echo $PATH
+          export PATH=/home/runner/.roswell/bin:$PATH
+          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+      - name: Installing Dependencies
+        run: |
+          sudo apt-get install -y libisl-dev gnuplot
+          qlot install
+      - name: Transformer Graph Simplification (N<=12, JIT=0, AUTO_SCHEDULER=0)
+        run: PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 36 0 transformer_simplifier_plot.png
+      - name: Transformer Scheduling (N<=12, JIT=1, AUTO_SCHEDULER=0)
+        run: PARALLEL=4 PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=0 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_no_auto_sched_plot.png
+#      - name: Transformer Auto Scheduler (N<=12, JIT=1, AUTO_SCHEDULER=1)
+#        run: PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 24 1 transformer_simplifier_auto_scheduler_plot.png
