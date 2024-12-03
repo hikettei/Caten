@@ -59,7 +59,12 @@ https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure
 	gguf))))
 
 (defun load-gguf (pathname)
-  "Loads GGUF file to memory from pahtname"
+  "
+```
+(load-gguf pathname)
+```
+Creates a gguf file from the given pathname.
+"
   (with-open-file (stream pathname :element-type '(unsigned-byte 8))
     (make-gguf stream)))
 
