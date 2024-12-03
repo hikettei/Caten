@@ -2,6 +2,8 @@
 
 (python-exec
 "
+from gguf import GGUFWriter, GGMLQuantizationType
+
 def write_dummy_gguf(quantization_type, filename):
     data = np.arange(64, dtype=np.float32)
     gguf_writer = GGUFWriter(filename, \"test_arch\")
