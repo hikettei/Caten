@@ -79,6 +79,12 @@
       (let ((alpha (gethash "alpha" attrs)))
 	(caten/nn:!leaky-relu (car inputs) :neg-slope alpha))))
 
+(defop ("HardSigmoid" 22)
+    ((cls inputs attrs)
+      (let ((alpha (gethash "alpha" attrs 0.2))
+            (beta  (gethash "beta" attrs 0.5)))
+        (caten/nn:!hard-sigmoid (car inputs) :alpha alpha :beta beta))))
+
 (defop ("Erf" 13)
     ((cls inputs attrs)
       (declare (ignore attrs))
