@@ -1,4 +1,4 @@
-name: CI
+name: UnitTests
 on:
   push:
     branches:
@@ -110,7 +110,7 @@ jobs:
           cmake . -DCMAKE_CXX_STANDARD=17
           cmake --build . --target install --parallel 16
           cd ../../
-      - name: Installing extra requirements
+      - name: Installing extra dependencies
         run: |
           qlot install
           qlot exec make install_docs
