@@ -3,7 +3,7 @@
 Tests that are not related to the core functionality of Caten or are time-consuming are tested here."
   :author      "hikettei <ichndm@gmail.com>"
   :depends-on
-  ("rove" "trivia" "cl-ppcre" "py4cl")
+  ("rove" "trivia" "cl-ppcre" "py4cl" "caten/gguf")
   :serial t
   :components ((:file "package")
 	       (:file "helpers")
