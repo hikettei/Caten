@@ -92,7 +92,7 @@ jobs:
         run: |
           qlot install
           qlot exec make install_docs
-          pip install torchvision
+          pip install torchvision onnx
       - name: Exporting models
         run: |
           python ./scripts/export_onnx.py --task classification --model mobilenet_v2 --weights IMAGENET1K_V1 --output_dir ./models
@@ -100,7 +100,7 @@ jobs:
       - name: Running MobilenetV2
         run: |
           ros config set dynamic-space-size 8gb
-          JIT_DEBUG=2 JIT=1 ./roswell/caten.ros classification --model ./models/mobilenetv2.onnx --image ./cat.png --label 282
+          JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/mobilenetv2.onnx --image ./cat.png --label 282
   GGUF_Optimization:
     name: GGUF Optimization
     runs-on: ubuntu-latest
