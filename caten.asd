@@ -80,7 +80,7 @@
 (asdf:defsystem "caten/vision"
   :description "Computer Vision Implementation in Caten"
   :author "hikettei <ichndm@gmail.com>"
-  :depends-on ("caten")
+  :depends-on ("caten" "opticl")
   :pathname "external/vision"
   :components
   ((:file "package")))
