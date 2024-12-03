@@ -9,6 +9,13 @@
   (let ((ret (slot-value op 'ret)))
     (!mul (!mul ret (!add (fconst 1 :dtype (dtype-of ret)) (!neg ret))) prev-dout)))
 (defun !sigmoid (x) (forward (Sigmoid) x))
+;; Implements: https://github.com/onnx/onnx/blob/main/docs/Changelog.md#hardsigmoid-22
+(defmodel (HardSigmoid (&key (alpha 0.2) (beta 0.5)) :where "A[~] -> A[~]") ((alpha alpha) (beta beta)))
+(defmethod call ((op HardSigmoid) &rest inputs)
+  (let ((x (car inputs)))
+    (with-slots ((alpha alpha) (beta beta)) op
+      (!maximum (!const x 0) (!minimum (!const x 1) (!add (!mul (!const x alpha) x) (!const x beta)))))))
+(defun !hard-sigmoid (x &key (alpha 0.2) (beta 0.5)) (forward (HardSigmoid :alpha alpha :beta beta) x))
 
 (defmodel (ReLU () :where "A[~] -> A[~]") ())
 (defmethod call ((op ReLU) &rest inputs)
@@ -137,6 +144,17 @@
   :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
   :caten   ((model x) (elements (forward model `(x . ,x))))
   :lisp    ((model x) (elements (proceed (lazy-lisp #'sigmoid-lisp x))))
+  :assert-close ((x y) (every (~= 1e-6) x y))
+  :in-place ((model) (= 2 (n-args `(100 100) model)))
+  :kernel   ((model) (= 1 (n-kernels model))))
+
+(defun hardsigmoid-lisp (x alpha beta) (max 0 (min 1 (+ (* alpha x) beta))))
+(define-nn-test HardSigmoid
+  "Testing w/ HardSigmoid([100, 100])"
+  :compile (caten (!hard-sigmoid (make-tensor `(100 100) :from 'x) :alpha 0.2 :beta 0.5))
+  :inputs  (list (proceed (ax+b `(100 100) -0.001 -10)))
+  :caten   ((model x) (elements (forward model `(x . ,x))))
+  :lisp    ((model x) (elements (proceed (lazy-lisp #'relu-lisp x))))
   :assert-close ((x y) (every (~= 1e-6) x y))
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
