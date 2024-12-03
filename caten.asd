@@ -83,8 +83,7 @@
   :depends-on ("caten")
   :pathname "external/vision"
   :components
-  ((:file "package")
-   (:file "mobilenetv2")))
+  ((:file "package")))
 
 (asdf:defsystem "caten/benchmarks"
   :description "A set of benchmarks for Caten"
