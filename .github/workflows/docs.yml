@@ -41,7 +41,7 @@ jobs:
           sudo ldconfig
       - name: Download and install protobuf
         run: |
-          curl -Lo protoc.zip "https://github.com/protocolbuffers/protobuf/releases/latest/download/protoc-28.0-linux-x86_64.zip"
+          curl -Lo protoc.zip "https://github.com/protocolbuffers/protobuf/releases/download/v28.0/protoc-28.0-linux-x86_64.zip"
           sudo unzip -q protoc.zip bin/protoc 'include/*' -d /usr/local
           sudo chmod a+x /usr/local/bin/protoc
       - name: Set up cl-protobufs
