@@ -1,7 +1,7 @@
 (asdf:defsystem "caten"
   :description "Programmable Deep Learning Framework"
   :author      "hikettei <ichndm@gmail.com>"
-  :version     "0.0"
+  :version     "0.2"
   :licence     "MIT"
   :depends-on
   ("caten.apis" "caten.nn")
