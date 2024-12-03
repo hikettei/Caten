@@ -16,6 +16,10 @@
 		   (push (cons ,tmp ,min-opset-version) (gethash ,opset-name *converter-features*)))))
 	   (setf (gethash ,opset-name *converter-features*) (list (cons ,tmp ,min-opset-version)))))))
 
+(defun ask-for-new-opset ()
+  (format t "Enter the new opset version: ")
+  (multiple-value-list (eval (read))))
+
 (defun get-converter (op-type opset-version)
   "Tries to find a converter for the given op-type and opset-version. If there's no converter for the given opset-version, it will try to find the closest one."
   (declare (type string op-type)
@@ -30,13 +34,14 @@
 	    (loop for (impl . version) in candidates
 		  if (<= version opset-version)
 		    do (return-from get-converter impl)))
-	  (error "get-converter: there's no implementation for ~a satisfying opset=~a.~%Candidates:~a"
+	  (error "get-converter: there's no implementation for ~a satisfying opset=~a.~%But found the following alternatives~%~a"
 		 op-type
 		 opset-version
 		 candidates)))
-    (reload-and-retry-defop ()
-      :report "Reload the (expected to be updated on REPL) converter and restart from the point in the error."
-      (get-converter op-type opset-version))))
+    (unsafe-rewrite-opset-version (new-opset-version)
+      :report "Retrying the operation with specifying the alternative opset version to use."
+      :interactive ask-for-new-opset
+      (get-converter op-type new-opset-version))))
 
 (defun call-converter (converter node-proto graph-proto-helper input attrs)
   (restart-case

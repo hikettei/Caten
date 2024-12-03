@@ -9,7 +9,8 @@
   (def-elwise "Add" 1 caten:!add)
   (def-elwise "Sub" 1 caten:!sub)
   (def-elwise "Mul" 1 caten:!mul)
-  (def-elwise "Div" 1 caten:!div))
+  (def-elwise "Div" 1 caten:!div)
+  (def-elwise "Mod" 1 caten:!mod))
 
 (defop ("Conv" 1)
     ((cls inputs attrs)
@@ -41,7 +42,7 @@
 			     do (assert (= (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))) () "Conv: Pads must be symmetric (TODO: Support this).")
 			     collect (list (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))))))
             (caten/nn:!convnd data kernel :bias (third inputs) :stride (gethash "strides" attrs 1) :padding (map 'list #'car pads) :dilation (gethash "dilations" attrs 1) :groups (gethash "group" attrs 1)))))))
-;; https://github.com/onnx/onnx/blob/main/docs/Operators.md#MaxPool
+;; https://github.com/onnx/onnx/blob/main/docs/Operators.md#MaxPool-1
 (defop ("MaxPool" 1)
     ((cls inputs attrs)
       (let ((pads
@@ -53,7 +54,25 @@
 		      for j = (+ mid 1)
 		      do (assert (= (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))) () "Conv: Pads must be symmetric (TODO: Support this).")
 		      collect (list (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs)))))))
-        (caten:call (caten/nn:MaxPool (gethash "kernel_shape" attrs) :padding (map 'list #'car pads) :stride (gethash "strides" attrs)) (first inputs)))))
+        (caten/nn:!maxpool (car inputs) :kernel-size (gethash "kernel_shape" attrs) :padding (map 'list #'car pads) :stride (gethash "strides" attrs)))))
+;; https://github.com/onnx/onnx/blob/main/docs/Changelog.md#maxpool-10
+(defop ("MaxPool" 10)
+    ((cls inputs attrs)
+      (assert (equalp (gethash "auto_pad" attrs "NOTSET") "NOTSET") () "MaxPool-10: currently only supports auto_pad=NOTSET, getting ~a" (gethash "auto_pad" attrs))
+      (assert (= 0 (gethash "storage_order" attrs 0)) () "MaxPool-10: Currently only supports storage_order=0")
+      (let ((pads
+	      (when (listp (gethash "pads" attrs))
+		(assert (= (mod (length (gethash "pads" attrs)) 2) 0))
+		(loop with size = (length (gethash "pads" attrs))
+		      with mid = (/ size 2)
+		      for i upfrom 0 below size by 2
+		      for j = (+ mid 1)
+		      do (assert (= (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))) () "Conv: Pads must be symmetric (TODO: Support this).")
+		      collect (list (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs)))))))
+        (caten/nn:!maxpool (car inputs)
+                           :ceiling (if (= 0 (gethash "ceil_mode" attrs 0)) #'ceiling #'floor)
+                           :kernel-size (gethash "kernel_shape" attrs) :padding (map 'list #'car pads)
+                           :stride (gethash "strides" attrs) :dilation (gethash "dilations" attrs)))))
 
 (macrolet ((def-unary (name version op)
              `(defop (,name ,version)
@@ -66,7 +85,9 @@
   (def-unary "Exp" 1 caten:!exp)
   (def-unary "Sqrt" 1 caten:!sqrt)
   (def-unary "Relu" 1 caten/nn:!relu)
-  (def-unary "Sigmoid" 1 caten/nn:!sigmoid))
+  (def-unary "Sigmoid" 1 caten/nn:!sigmoid)
+  (def-unary "HardSwish" 14 caten/nn:!hardswish) ;; https://github.com/onnx/onnx/blob/main/docs/Changelog.md#hardswish-14
+  )
 
 (defop ("Softmax" 1)
     ((cls inputs attrs)
@@ -77,29 +98,22 @@
       (let ((alpha (gethash "alpha" attrs)))
 	(caten/nn:!leaky-relu (car inputs) :neg-slope alpha))))
 
+(defop ("HardSigmoid" 1)
+    ((cls inputs attrs)
+      (let ((alpha (gethash "alpha" attrs 0.2))
+            (beta  (gethash "beta" attrs 0.5)))
+        (caten/nn:!hard-sigmoid (car inputs) :alpha alpha :beta beta))))
+
+(defop ("HardSigmoid" 22)
+    ((cls inputs attrs)
+      (let ((alpha (gethash "alpha" attrs 0.2))
+            (beta  (gethash "beta" attrs 0.5)))
+        (caten/nn:!hard-sigmoid (car inputs) :alpha alpha :beta beta))))
+
 (defop ("Erf" 13)
     ((cls inputs attrs)
       (declare (ignore attrs))
-      ;; Approximation of error function.
-      ;; x.sign() * (1 - ((((1.061405429 * t + -1.453152027) * t + 1.421413741) * t + -0.284496736) * t + 0.254829592) * t * (-(x.square())).exp())
-      (let ((t1 (caten:!recip (caten:!+ (caten:fconst 1) (caten:!* (caten:fconst 0.3275911) (caten:!abs (car inputs)))))))
-	(caten:!*
-         (caten:!signum (car inputs))
-	 (caten:!-
-	  (caten:fconst 1.0)
-	  (caten:!*
-	   (caten:!+
-	    (caten:!+
-	     (caten:!*
-	      t1
-	      (caten:!+
-	       (caten:!* (caten:fconst 1.061405429) t1)
-	       (caten:fconst -1.453152027)))
-	     (caten:fconst 1.421413741))
-	    t1
-	    (caten:fconst -0.284496736))
-	   t1
-	   (caten:!exp (caten:!neg (caten:!square (car inputs))))))))))
+      (caten:!erf (car inputs))))
 
 (defop ("Gemm" 1)
     ((cls inputs attrs)
@@ -204,6 +218,23 @@
   ;; [TODO] ReduceLogSumExp
   )
 
+;; https://github.com/onnx/onnx/blob/main/docs/Changelog.md#layernormalization-17
+;; https://github.com/apache/tvm/blob/main/python/tvm/relay/frontend/onnx.py#L1211
+(defop ("LayerNormalization" 17)
+    ((cls inputs attrs)
+      (let ((axis (gethash "axis" attrs 1))
+            (epsilon (gethash "epsilon" attrs 1e-5))
+            (stash-type (gethash "stash_type" attrs 1)))
+        (assert (= 1 stash-type) () "LayerNormalization-17: Currently only supports float32 as a stash_type, getting ~a" stash-type)
+        (multiple-value-bind (x gamma beta) (apply #'values inputs)
+          (let* ((mean (caten:!mean x :axis axis))
+                 (var  (caten:!variance x :axis axis)) ;; TODO: use mean to compute var and avoid redundant computation.
+                 (invstddev (caten:!rsqrt (caten:!add var (caten:!const var epsilon))))
+                 (x-norm (caten:!* (caten:!- x mean) invstddev))
+                 (ln (caten:!* x-norm gamma))
+                 (ln (if beta (caten:!add ln beta) ln)))
+            (values ln gamma beta))))))
+                 
 (defop ("Less" 9)
     ((cls inputs attrs)
       (declare (ignore attrs))
@@ -218,7 +249,7 @@
     ((cls inputs attrs)
       (declare (ignore attrs))
       (multiple-value-bind (condition x y) (apply #'values inputs)
-        (caten:!where condition x y))))
+        (caten:!where condition x (caten:!cast y (caten:dtype-of x))))))
 
 (defop ("Pow" 13)
     ((cls inputs attrs)
@@ -243,7 +274,7 @@
       (let* ((value (or (and (gethash "value" attrs) (aref (gethash "value" attrs) 0)) 0.0))
 	     (shape (coerce (caten:change-facet (car inputs) :simple-array) 'list)))
         (caten:make-tensor shape :initial-element value))))
-;; [TODO] Slice-10
+;; https://github.com/onnx/onnx/blob/main/docs/Changelog.md#slice-10
 (defop ("Transpose" 1)
     ((cls inputs attrs)
       (let ((perm (gethash "perm" attrs)))

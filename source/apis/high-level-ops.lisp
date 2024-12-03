@@ -538,4 +538,26 @@ The implementation follows the ONNX specification. https://github.com/onnx/onnx/
         (min (if (tensor-p min) min (!const x min))))
     (multiple-value-bind (x min max)
         (bc "A[~] MIN[~] MAX[~] -> A[~] MIN[~] MAX[~]" (x min max))
-      (call (ClipNode) x min max))))
+      (forward (ClipNode) x min max))))
+
+(defmodel (ErfNode () :where "A[~] -> A[~]") ())
+(defcall (erf ErfNode) (X[~])
+  ;; erf(x) =~ x.sign() * (1 - ((((1.061405429 * t + -1.453152027) * t + 1.421413741) * t + -0.284496736) * t + 0.254829592) * t * (-(x.square())).exp())
+  ;; Ref: https://stackoverflow.com/questions/457408/is-there-an-easily-available-implementation-of-erf-for-python
+  (flet ((mla (x a b) (!add (!mul x (->fconst a)) (->fconst b))))
+    (let* ((sign (!signum x))
+           (x (!abs x))
+           (t1 (!recip (!+ (!const x 1) (!mul (!const x 0.3275911) x))))
+           (y (mla (mla (mla (mla t1 1.061405429 -1.453152027) t1 1.421413741) t1 -0.284496736) t1 0.254829592))
+           (y (!* y t1 (!exp (!neg (!square x))))))
+      (!mul sign (!- (!const x 1.0) y)))))
+
+(defun !erf (x)
+  "
+```
+(!erf x)
+```
+Computes the error function of x.
+"
+  (declare (type tensor x))
+  (forward (ErfNode) x))

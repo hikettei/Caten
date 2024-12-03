@@ -107,6 +107,7 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
     (def "!sub" #'!sub "(proceed (!sub (ax+b `(10 10) 1 0) (ax+b `(10 10) 1 0)))")
     (def "!mul" #'!mul "(proceed (!mul (ax+b `(10 10) 1 0) (ax+b `(10 10) 1 0)))")
     (def "!div" #'!div "(proceed (!div (ax+b `(10 10) 1 1) (ax+b `(10 10) 1 1)))")
+    (def "!mod" #'!mod "(proceed (!mod (ax+b `(10 10) 1 1 :dtype :int32) (ax+b `(10 10) 1 1 :dtype :int32)))")
     (def "!idiv" #'!idiv "(proceed (!idiv (ax+b `(10 10) 3 1 :dtype :uint32) (ax+b `(10 10) 0 2 :dtype :uint32)))")
     (def "!maximum" #'!maximum "(proceed (!maximum (rand `(3 3)) (randn `(3 3))))")
     (def "!minimum" #'!minimum "(proceed (!minimum (rand `(3 3)) (randn `(3 3))))")
@@ -162,7 +163,8 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
     (def "!tril" #'!tril "(proceed (!tril (rand `(3 3))))")
     (def "!argmax" #'!argmax "(proceed (!argmax (rand `(3 3))))")
     (def "!argmin" #'!argmin "(proceed (!argmin (rand `(3 3))))")
-    (def "!clip" #'!clip "(proceed (!clip (randn `(3 3)) -0.3 0.3))")))
+    (def "!clip" #'!clip "(proceed (!clip (randn `(3 3)) -0.3 0.3))")
+    (def "!erf" #'!erf "(proceed (!erf (randn `(3 3))))")))
 
 (docs:define-page ("Models" "packages/caten.apis.models.md")
   (docs:title "Models")

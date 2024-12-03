@@ -138,6 +138,7 @@
    #:!sub #:!-
    #:!mul #:!*
    #:!div #:!/
+   #:!mod
    #:!idiv
    #:!move
    #:!assign
@@ -163,7 +164,7 @@
    #:!xor #:!or #:!and
    ;; utils
    #:!rsqrt #:!square
-   #:!clip 
+   #:!clip #:!erf
    )
   ;; from facets.lisp
   (:export
