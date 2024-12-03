@@ -41,7 +41,7 @@
 			     do (assert (= (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))) () "Conv: Pads must be symmetric (TODO: Support this).")
 			     collect (list (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))))))
             (caten/nn:!convnd data kernel :bias (third inputs) :stride (gethash "strides" attrs 1) :padding (map 'list #'car pads) :dilation (gethash "dilations" attrs 1) :groups (gethash "group" attrs 1)))))))
-;; https://github.com/onnx/onnx/blob/main/docs/Operators.md#MaxPool
+;; https://github.com/onnx/onnx/blob/main/docs/Operators.md#MaxPool-1
 (defop ("MaxPool" 1)
     ((cls inputs attrs)
       (let ((pads
@@ -53,7 +53,25 @@
 		      for j = (+ mid 1)
 		      do (assert (= (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))) () "Conv: Pads must be symmetric (TODO: Support this).")
 		      collect (list (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs)))))))
-        (caten:call (caten/nn:MaxPool (gethash "kernel_shape" attrs) :padding (map 'list #'car pads) :stride (gethash "strides" attrs)) (first inputs)))))
+        (caten/nn:!maxpool (car inputs) :kernel-size (gethash "kernel_shape" attrs) :padding (map 'list #'car pads) :stride (gethash "strides" attrs)))))
+;; https://github.com/onnx/onnx/blob/main/docs/Changelog.md#maxpool-10
+(defop ("MaxPool" 10)
+    ((cls inputs attrs)
+      (assert (equalp (gethash "auto_pad" attrs "NOTSET") "NOTSET") () "MaxPool-10: currently only supports auto_pad=NOTSET, getting ~a" (gethash "auto_pad" attrs))
+      (assert (= 0 (gethash "storage_order" attrs 0)) () "MaxPool-10: Currently only supports storage_order=0")
+      (let ((pads
+	      (when (listp (gethash "pads" attrs))
+		(assert (= (mod (length (gethash "pads" attrs)) 2) 0))
+		(loop with size = (length (gethash "pads" attrs))
+		      with mid = (/ size 2)
+		      for i upfrom 0 below size by 2
+		      for j = (+ mid 1)
+		      do (assert (= (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs))) () "Conv: Pads must be symmetric (TODO: Support this).")
+		      collect (list (nth i (gethash "pads" attrs)) (nth j (gethash "pads" attrs)))))))
+        (caten/nn:!maxpool (car inputs)
+                           :ceiling (if (= 0 (gethash "ceil_mode" attrs 0)) #'ceiling #'floor)
+                           :kernel-size (gethash "kernel_shape" attrs) :padding (map 'list #'car pads)
+                           :stride (gethash "strides" attrs) :dilation (gethash "dilations" attrs)))))
 
 (macrolet ((def-unary (name version op)
              `(defop (,name ,version)
