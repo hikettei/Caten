@@ -67,7 +67,7 @@ exec ros -Q -- $0 "$@"
     (clingon:make-option :integer :description "expected label" :short-name #\l :long-name "label" :key :label))
    :handler
    #'(lambda (cmd)
-       (ql:quickload '(:caten/onnx :caten/vision))
+       (ql:quickload '(:petalisp.graphviz :caten/onnx :caten/vision)) ;; todo: who on the earth uses petalisp.graphviz?
        (let ((model (clingon:getopt cmd :model))
              (image (clingon:getopt cmd :image))
              (label (clingon:getopt cmd :label)))
