@@ -98,4 +98,23 @@ jobs:
           python ./scripts/export_onnx.py --task classification --model mobilenet_v2 --weights IMAGENET1K_V1 --output_dir ./models
           wget https://pub-edba5feea2c145019e8be2a71dbeea81.r2.dev/cat.png
       - name: Running MobilenetV2
-        run: JIT_DEBUG=2 JIT=1 ./roswell/caten.ros classification --model ./models/mobilenetv2.onnx --image ./cat.png --label 282
+        run: |
+          ros config set dynamic-space-size 8gb
+          JIT_DEBUG=2 JIT=1 ./roswell/caten.ros classification --model ./models/mobilenetv2.onnx --image ./cat.png --label 282
+  GGUF_Optimization:
+    name: GGUF Optimization
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up SBCL via Roswell.
+        run: |
+          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install sbcl-bin
+          ros use sbcl-bin
+      - name: Installing ISL
+        run: sudo apt-get install -y libisl-dev
+      - name: GPT2
+        run: |
+          ros config set dynamic-space-size 8gb
+          JIT=1 JIT_DEBUG=4 PARALLEL=8 NO_MEMORY_PLANNER=0 NO_SCHEDULE_CACHE=0 ./roswell/caten.ros llm-example --model "gpt2" --prompt "What is the answer to life, the universe, and everything?"
