@@ -9,7 +9,7 @@ help:
 
 .PHONY: install_extra
 install_extra: ## Install extra dependencies for testing
-	$(PIP) install --upgrade setuptools wheel
+	$(PIP) install --upgrade pip setuptools wheel
 	$(PIP) install numpy~=1.25.0 torch gguf sentencepiece
 
 .PHONY: test
