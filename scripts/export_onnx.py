@@ -15,7 +15,12 @@ class Exporter(metaclass=ABCMeta):
 
 class Classification(Exporter):
     MODELS = {
-        "mobilenet_v2": torchvision.models.mobilenet_v2
+        "mobilenet_v2": torchvision.models.mobilenet_v2,
+        "mobilenet_v3_large": torchvision.models.mobilenet_v3_large,
+        "mobilenet_v3_small": torchvision.models.mobilenet_v3_small,
+        "resnet18": torchvision.models.resnet18,
+        "resnet34": torchvision.models.resnet34,
+        "resnet50": torchvision.models.resnet50,
     }
     def build(self, args) -> bool:
         batch_size = 1
@@ -43,7 +48,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description="A script to export torchvision models to onnx.")
     parser.add_argument("--task", type=str, required=True, help="Task to export model for. Supported tasks are classification, segmentation, detection.")
     parser.add_argument("--model", type=str, required=True, help="Model to export.")
-    parser.add_argument("--weights", type=str, required=False, help="Weights to load into model.")
+    parser.add_argument("--weights", type=str, default="DEFAULT", required=False, help="Weights to load into model.")
     parser.add_argument("--output_dir", type=str, required=True, help="Directory to save exported model.")
     return parser.parse_args()
 
