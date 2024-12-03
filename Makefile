@@ -9,8 +9,9 @@ help:
 
 .PHONY: install_extra
 install_extra: ## Install extra dependencies for testing
-	$(PIP) install numpy~=1.25.0 torch gguf sentencepiece.PHONY: test
+	$(PIP) install numpy~=1.25.0 torch gguf sentencepiece
 
+.PHONY: test
 test: ## Runs test harness
 	$(ROSWELL) $(QUICKLOAD) --eval '(asdf:test-system "caten")'
 
