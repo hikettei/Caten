@@ -100,7 +100,7 @@ jobs:
       - name: Running MobilenetV2
         run: |
           ros config set dynamic-space-size 8gb
-          JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/mobilenetv2.onnx --image ./cat.png --label 282
+          JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/mobilenet_v2.onnx --image ./cat.png --label 282
   GGUF_Optimization:
     name: GGUF Optimization
     runs-on: ubuntu-latest
