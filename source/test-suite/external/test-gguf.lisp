@@ -3,6 +3,7 @@
 (python-exec
 "
 from gguf import GGUFWriter, GGMLQuantizationType
+from gguf.quants import quantize, GGML_QUANT_SIZES
 
 def write_dummy_gguf(quantization_type, filename):
     data = np.arange(64, dtype=np.float32)
