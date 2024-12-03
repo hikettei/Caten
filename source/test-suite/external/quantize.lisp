@@ -148,34 +148,28 @@ def read_gguf(filename):
 (import-function "generate_dummy_gguf")
 (import-function "read_gguf")
 
-(print (type-of (read_gguf "dummy.gguf"))) ;type simple-vector
-(print (type-of (car (caten/gguf:gguf-tensor-info (caten/gguf:load-gguf "dummy.gguf")))))) ;type tensor-info!
-
-;; generate a dummy gguf file with a single tensor of shape 64 and with random values from -1 to 1
-(generate_dummy_gguf "dummy.gguf" "Q8_0")
-
-(print  (read_gguf "dummy.gguf"))
-
-(in-package :caten/gguf)
-(defparameter test (load-gguf "dummy.gguf"))
-(print (tensor-info-buffer (car (gguf-tensor-info test))))
-
 (in-package :caten/test-suite)
 
 (deftest test-dequantization-q8_0
-  (generate_dummy_gguf "dummy.gguf" "Q8_0")
+(generate_dummy_gguf "dummy.gguf" "Q8_0")
+(with-given-dtype ((:float32 . "float32"))
+  (assert-equal
+   (:atol 1e-5 :rtol 1e-6)
+   (change-facet (read_gguf "dummy.gguf") :tensor)
+   (change-facet (caten/gguf:tensor-info-buffer (car (caten/gguf:gguf-tensor-info (caten/gguf:load-gguf "dummy.gguf")))) :tensor))))
+
+(deftest test-dequantization-f16
+  (generate_dummy_gguf "dummy.gguf" "F16")
   (with-given-dtype ((:float32 . "float32"))
     (assert-equal
      (:atol 1e-5 :rtol 1e-6)
-     (read_gguf "dummy.gguf")
-     (car (caten/gguf:gguf-tensor-info (caten/gguf:load-gguf "dummy.gguf")))) ;fixme: types are different!
-    )))
-
-(deftest test-dequantization-f16
-  (with-given-dtype ((:float32 . "float32"))
-    ))
-
+     (change-facet (read_gguf "dummy.gguf") :tensor)
+     (change-facet (caten/gguf:tensor-info-buffer (car (caten/gguf:gguf-tensor-info (caten/gguf:load-gguf "dummy.gguf")))) :tensor))))
 
 (deftest test-dequantization-f32
-  (with-given-dtype ((:float32 . "float32"))
-    ))
+(generate_dummy_gguf "dummy.gguf" "F32")
+(with-given-dtype ((:float32 . "float32"))
+  (assert-equal
+   (:atol 1e-5 :rtol 1e-6)
+   (change-facet (read_gguf "dummy.gguf") :tensor)
+   (change-facet (caten/gguf:tensor-info-buffer (car (caten/gguf:gguf-tensor-info (caten/gguf:load-gguf "dummy.gguf")))) :tensor))))
