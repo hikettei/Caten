@@ -762,10 +762,32 @@ Computes the ~a of the tensor."
   (def XorNode %xor !xor "logical/bitwise xor")
   (def AndNode %and !and "logical/bitwise and"))
 ;; ~~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun !square (x) (!mul x x))
-(defun !rsqrt (x) (!recip (!sqrt x)))
+(defun !square (x)
+  "
+```
+(!square x)
+```
+Computes the x*x
+"
+  (!mul x x))
+
+(defun !rsqrt (x)
+  "
+```
+(!rsqrt x)
+```
+Computes the reciprocal of sqrt x.
+"
+  (!recip (!sqrt x)))
+
+(defun !gid (tensor rank)
+  "
+```
+(!gid tensor rank)
+```
+Finds the `rank` th index components of the tensor.
+"
+  (declare (type tensor tensor) (type fixnum rank))
+  (let ((axis (normalize-axis tensor rank)))
+    (!index-components `(,@(loop for i upfrom 0 below axis collect 1) ,(nth axis (shape tensor)) ,@(loop repeat (- (ndim tensor) axis 1) collect 1)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] やること一覧
-;; 1. More Low LevelなVIEWを作成する
-;; 2. Tensor Shaped Tensorの作成をサポートする
-;; 3. %tensor->aasmでグラフ作成
