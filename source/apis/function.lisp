@@ -790,8 +790,11 @@ Finds the `rank` th index components of the tensor.
 For example (!gid x 1) for (3 3) tensor is a `(0 1 2). (As a tip) by combining !gid with !where, you can implement pseudo a random accessing of the tensor. For example:
 "
   (declare (type tensor tensor) (type fixnum rank))
-  (let ((axis (normalize-axis tensor rank)))
-    (!index-components `(,@(loop for i upfrom 0 below axis collect 1) ,(nth axis (tr-shape (tensor-tr tensor))) ,@(loop repeat (- (ndim tensor) axis 1) collect 1)))))
+  (let* ((axis (normalize-axis tensor rank))
+         (out (!index-components `(,@(loop for i upfrom 0 below axis collect 1) ,(nth axis (tr-shape (tensor-tr tensor))) ,@(loop repeat (- (ndim tensor) axis 1) collect 1)))))
+    (apply #'!view out (loop for i upfrom 0 below (ndim out)
+                             for s in (tr-shape (tensor-tr tensor))
+                             if (= i axis) collect t else collect `(:~ ,s)))))
 
 (defun !normalize-axis (ndim axis)
   "

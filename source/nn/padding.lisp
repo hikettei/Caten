@@ -32,8 +32,7 @@ out = where(start_0 < index_components[0] < end_0 and start_1 < index_components
 (defmethod backward ((op Padding) &optional prev-dout)
   (multiple-value-bind (_ __ ___ pad-starts pad-ends) (padding-args op (func-variables op))
     (declare (ignore _ __ ___))
-    ;; TODO: Just slicing
-    ))
+    (apply #'!view prev-dout (loop for start in pad-starts for end in pad-ends collect (list start end)))))
 
 (defmethod lower ((op Padding) &rest inputs)
   (multiple-value-bind (padded-tensor* x* index-components padding-starts padding-ends) (padding-args op inputs)
@@ -41,25 +40,29 @@ out = where(start_0 < index_components[0] < end_0 and start_1 < index_components
            (x (second (func-variables op)))
            (shape-graph (map 'list #'tensor-graph (tr-shape (tensor-tr padded-tensor))))
            (stride-graph (map 'list #'tensor-graph (tr-stride (tensor-tr x)))))
-      (labels ((A<=B<C (a b c)
+      (labels ((expand (x)
+                 (let ((shape (map 'list #'graph->id shape-graph))) ;; needs to feed an explicit shape for logical ops
+                   (%view x shape (make-list (length shape) :initial-element 0) shape (make-list (length shape) :initial-element 1) (make-list (length shape)) (make-list (length shape) :initial-element 0))))
+               (A<=B<C (a b c)
                  (let ((shape (map 'list #'graph->id shape-graph)) ;; needs to feed an explicit shape for logical ops
                        (order (tensor-order (car (func-variables op)))))
                    ;; Assumes a/b/c is an integer: A<=B is equivalent to A < B+1 to simplify the graph.
-                   (%and (%< shape order a (%add b (%iconst 1))) (%< shape order b c))))
+                   (%and (%< shape order (expand a) (%add (expand b) (expand (%iconst 1)))) (%< shape order (expand b) (expand c)))))
                (graph->id (graph)
                  (if (graph-p graph)
                      (progn
                        (assert (= 1 (length (graph-outputs graph))))
-                       (car (graph-outputs graph)))
+                       (id->value graph (car (graph-outputs graph))))
                      graph)))
         (with-context-from-parents
             (shape-graph stride-graph)
             (conditions (map 'list #'A<=B<C padding-starts index-components padding-ends))
-            (x (%view x* (map 'list #'graph->id shape-graph)
-                      (map 'list #'%neg padding-starts) padding-ends (loop repeat (length padding-starts) collect 1)
-                      (loop repeat (length padding-starts) collect nil)
-                      (map 'list #'graph->id stride-graph)))
-            (output (%where (reduce #'%and conditions) x* padded-tensor*))))))) ;; todo reverse x and padded tensor
+            (x* (%view x* (map 'list #'graph->id shape-graph)
+                       (map 'list #'%neg padding-starts) padding-ends (loop repeat (length padding-starts) collect 1)
+                       (loop repeat (length padding-starts) collect nil)
+                       (map 'list #'graph->id stride-graph)))
+            ;;(output (%where (%not (reduce #'%and conditions)) padded-tensor* x*))
+            (output (reduce #'%and conditions))))))) ;; padded-tensor* is a first args because it is a returned value and has a larger size than x*.
 ;; Workload
 ;; - [ ] Implement
 ;; - [ ] Replace
@@ -83,17 +86,18 @@ Each start_0 and pad_0 is expected as a positive integer (caten will not check t
   (let* ((x (!contiguous x)) ;; x must be a contiguous tensor because Padding overwrites the view.
          (index-components (map 'list #'(lambda (n) (!gid x n)) (range 0 (ndim x))))
          (new-shape (loop for pad in padding
-                          for shape in (shape x)
+                          for shape in (tr-shape (tensor-tr x))
                           if (eql pad t)
                             collect shape
                           else
                             collect (!+ (caten/apis::->iconst shape) (caten/apis::->iconst (first pad)) (caten/apis::->iconst (second pad)))))
-         (pads (loop for pad in padding ;; normalize to new-shape2
-                     for shape in new-shape
-                     if (eql pad t) collect (caten/apis::->iconst (list 0 shape)) ;; all inputs must be a tensor to pass the forward
-                       else collect (list (caten/apis::->iconst (first pad)) (caten/apis::->iconst (second pad)))))
+         (pad-slice (loop for pad in padding ;; normalize to new-shape2
+                          for shape in new-shape
+                          for base-shape in (tr-shape (tensor-tr x))
+                          if (eql pad t) collect (list (iconst 0) (caten/apis::->iconst shape)) ;; all inputs must be a tensor to pass the forward
+                            else collect (list (caten/apis::->iconst (first pad)) (!+ (caten/apis::->iconst (first pad)) (caten/apis::->iconst base-shape)))))
          (padded-tensor (make-tensor new-shape :dtype (dtype-of x) :initial-element value)))
-    (apply #'forward (make-instance 'Padding) (flatten (list padded-tensor x index-components (map 'list #'first pads) (map 'list #'second pads))))))
+    (apply #'forward (make-instance 'Padding) (flatten (list padded-tensor x index-components (map 'list #'first pad-slice) (map 'list #'second pad-slice))))))
 
 (defun !padding (x padding &key (value 0.0))
   (declare (type list padding)
