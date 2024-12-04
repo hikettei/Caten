@@ -12,6 +12,8 @@ jobs:
   Compiler_Benchmark:
     name: Transformer Compilation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v1
@@ -31,11 +33,11 @@ jobs:
           export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get install -y libisl-dev gnuplot
           qlot install
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Transformer Graph Simplification (N<=12, JIT=0, AUTO_SCHEDULER=0)
         run: PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 36 0 transformer_simplifier_plot.png
       - name: Transformer Scheduling (N<=12, JIT=1, AUTO_SCHEDULER=0)
@@ -46,6 +48,8 @@ jobs:
     name: ONNX Optimization
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v1
       - name: Set up SBCL via Roswell.
@@ -91,12 +95,12 @@ jobs:
           cmake --build . --target install --parallel 16
           cd ../../
       - name: Installing extra dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           qlot install
           qlot exec make install_docs
           pip install torchvision onnx
-          env:
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Exporting models
         run: |
           python ./scripts/export_onnx.py --task classification --model mobilenet_v2 --weights IMAGENET1K_V1 --output_dir ./models
