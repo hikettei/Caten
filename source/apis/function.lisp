@@ -791,7 +791,7 @@ For example (!gid x 1) for (3 3) tensor is a `(0 1 2). (As a tip) by combining !
 "
   (declare (type tensor tensor) (type fixnum rank))
   (let ((axis (normalize-axis tensor rank)))
-    (!index-components `(,@(loop for i upfrom 0 below axis collect 1) ,(nth axis (shape tensor)) ,@(loop repeat (- (ndim tensor) axis 1) collect 1)))))
+    (!index-components `(,@(loop for i upfrom 0 below axis collect 1) ,(nth axis (tr-shape (tensor-tr tensor))) ,@(loop repeat (- (ndim tensor) axis 1) collect 1)))))
 
 (defun !normalize-axis (ndim axis)
   "
