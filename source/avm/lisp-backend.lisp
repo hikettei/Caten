@@ -34,7 +34,10 @@
 		   (buffer-value buffer)
 		   (aref (buffer-value buffer) idx)))
 	     (explore (dim offsets)
-	       (let ((size (nth dim (buffer-shape result))))
+	       (let ((size (if (some (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)
+			       (let ((view (nth dim (buffer-views (find-if (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)))))
+                                 (/ (- (second view) (car view)) (third view)))
+			       (nth dim (buffer-shape result)))))
 		 ;; initial offset
 		 (loop for n upfrom 0
 		       for buff in `(,result ,@buffers)
