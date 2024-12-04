@@ -32,7 +32,7 @@ out = where(start_0 < index_components[0] < end_0 and start_1 < index_components
 (defmethod backward ((op Padding) &optional prev-dout)
   (multiple-value-bind (_ __ ___ pad-starts pad-ends) (padding-args op (func-variables op))
     (declare (ignore _ __ ___))
-    (apply #'!view prev-dout (loop for start in pad-starts for end in pad-ends collect (list start end)))))
+    (values nil (apply #'!view prev-dout (loop for start in pad-starts for end in pad-ends collect (list start end))))))
 
 (defmethod lower ((op Padding) &rest inputs)
   (multiple-value-bind (padded-tensor* x* index-components padding-starts padding-ends) (padding-args op inputs)
@@ -54,7 +54,6 @@ out = where(start_0 < index_components[0] < end_0 and start_1 < index_components
                        (assert (= 1 (length (graph-outputs graph))))
                        (id->value graph (car (graph-outputs graph))))
                      graph)))
-        (print index-components)
         (with-context-from-parents
             (shape-graph stride-graph)
             (conditions (map 'list #'A<=B<C padding-starts index-components padding-ends))
@@ -62,10 +61,9 @@ out = where(start_0 < index_components[0] < end_0 and start_1 < index_components
                        (map 'list #'%neg padding-starts) padding-ends (loop repeat (length padding-starts) collect 1)
                        (loop repeat (length padding-starts) collect nil)
                        (map 'list #'graph->id stride-graph)))
-            ;;(output (%where (%not (reduce #'%and conditions)) padded-tensor* x*))
-            (output (reduce #'%and conditions))))))) ;; padded-tensor* is a first args because it is a returned value and has a larger size than x*.
+            (output (%where (%not (reduce #'%and conditions)) padded-tensor* x*))))))) ;; padded-tensor* is a first args because it is a returned value and has a larger size than x*.
 ;; Workload
-;; - [ ] Implement
+;; - [x] Implement
 ;; - [ ] Replace
 ;; - [ ] Scheduling Test
 ;; - [ ] Merge this standalone
