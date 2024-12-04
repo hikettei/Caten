@@ -148,14 +148,20 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
         (format stream "<html><p><b><font size=\"5\">~a</b></p><body><img src=\"~a.png\"></body></html>" title pathname)
         (uiop:launch-program (list "open" htmlpath) :output t)))))
 
-(defun compute-n-children (graph id &aux (seen nil) (count 0))
-  (labels ((explore (id)
-             (when (find id seen) (return-from explore))
-             (let ((val (id->value graph id)))
-               (when val
-                 (push id seen) (incf count)
-                 (mapc #'explore (node-reads val))))))
-    (explore id)
+(defun compute-n-children (graph id)
+  (let ((seen #+sbcl(make-hash-table :test #'equal :synchronized t :size 2048)
+              #+clozure(make-hash-table :test #'equal :shared t :size 2048)
+              #-(or sbcl clozure)(make-hash-table :test #'equal :size 2048))
+        (count 0))
+    (labels ((explore (id)
+               (when (gethash id seen)
+                 (return-from explore))
+               (let ((val (id->value graph id)))
+                 (when val
+                   (setf (gethash id seen) t)
+                   (incf count)
+                   (mapc #'explore (node-reads val))))))
+      (explore id))
     count))
 ;; [TODO] optimize screen-width automatically
 (defparameter *indent* 0)
