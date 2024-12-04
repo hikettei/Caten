@@ -47,7 +47,7 @@ out = where(start_0 < index_components[0] < end_0 and start_1 < index_components
                  (let ((shape (map 'list #'graph->id shape-graph)) ;; needs to feed an explicit shape for logical ops
                        (order (tensor-order (car (func-variables op)))))
                    ;; Assumes a/b/c is an integer: A<=B is equivalent to A < B+1 to simplify the graph.
-                   (%and (%<= shape order (expand (%sub a (%iconst 1))) b) (%< shape order b (expand c)))))
+                   (%and (%< shape order (expand (%sub a (%iconst 1))) b) (%< shape order b (expand c)))))
                (graph->id (graph)
                  (if (graph-p graph)
                      (progn
@@ -97,7 +97,7 @@ Each start_0 and pad_0 is expected as a positive integer (caten will not check t
                           if (eql pad t) collect (list (iconst 0) (caten/apis::->iconst shape)) ;; all inputs must be a tensor to pass the forward
                             else collect (list (caten/apis::->iconst (first pad)) (!+ (caten/apis::->iconst (first pad)) (caten/apis::->iconst base-shape)))))
          (padded-tensor (make-tensor new-shape :dtype (dtype-of x) :initial-element value))
-         (index-components (map 'list #'(lambda (n) (!gid padded-tensor n)) (range 0 (ndim x)))))
+         (index-components (map 'list #'(lambda (n) (!gid padded-tensor n :dtype *default-int*)) (range 0 (ndim x)))))
     (apply #'forward (make-instance 'Padding) (flatten (list padded-tensor x index-components (map 'list #'first pad-slice) (map 'list #'second pad-slice))))))
 
 (defun !padding (x padding &key (value 0.0))
