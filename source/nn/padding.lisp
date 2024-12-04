@@ -68,7 +68,7 @@ out = where(start_0 < index_components[0] < end_0 and start_1 < index_components
 ;; - [ ] Scheduling Test
 ;; - [ ] Merge this standalone
 ;; - [ ] Polish dynamic shape. Optimize full symbolic padding-new
-(defun !padding-new (x padding &key (value 0.0))
+(defun !padding (x padding &key (value 0.0))
   "
 ```
 (!padding x padding &key (value 0.0))
@@ -98,57 +98,23 @@ Each start_0 and pad_0 is expected as a positive integer (caten will not check t
          (index-components (map 'list #'(lambda (n) (!gid padded-tensor n :dtype *default-int*)) (range 0 (ndim x)))))
     (apply #'forward (make-instance 'Padding) (flatten (list padded-tensor x index-components (map 'list #'first pad-slice) (map 'list #'second pad-slice))))))
 
-(defun !padding (x padding &key (value 0.0))
-  (declare (type list padding)
-	   (type Tensor x))
-  (assert (= (ndim x) (length padding)))
-  (let* ((slc
-	   (loop for pads in padding
-		 for s in (shape x)
-		 if (listp pads)
-		   collect (list (car pads) (!+ (iconst s) (iconst (car pads))))
-		 else
-		   collect t))
-	 (padded-tensor
-	   (make-tensor
-	    (loop for s in (shape x)
-		  for pads in padding
-		  if (listp pads)
-		    collect (!+ (iconst s) (iconst (car pads)) (iconst (second pads)))
-		  else
-		    collect s)
-	    :initial-element value :dtype (dtype-of x)))
-	 (out (!move (apply #'!view padded-tensor slc) x)))
-    (apply #'!view-from-base out (loop for s in (shape padded-tensor) collect `(0 ,s)))))
-
 (defun !padding2d (x padding &key (value 0.0))
-  "padding = (padding_left, padding_right, padding_top, padding_bottom)
-(~ top/bottom left/right)"
+  "
+```
+(!padding2d x padding &key (value 0.0))
+```
+Pads the last two dimension of the tensor `x` with the specified padding and value..
+
+padding is specified as: (padding_left padding_right padding_top padding_bottom)."
   (declare (type Tensor x) (type list padding) (type number value))
-  (assert (= 4 (length padding)))
-  (when (every #'(lambda (x) (and (numberp x) (= 0 x))) padding)
-    (return-from !padding2d x))
-  (let* ((s2 (last (shape x) 2))
-	 (slc
-	   (list
-	    (list (nth 0 padding) (!+ (iconst (first s2)) (iconst (nth 0 padding))))
-	    (list (nth 2 padding) (!+ (iconst (second s2)) (iconst (nth 2 padding))))))
-	 (base
-	   (make-tensor
-	    (append
-	     (butlast (shape x) 2)	     
-	     (list (!+ (iconst (first  s2)) (iconst (nth 0 padding)) (iconst (nth 1 padding))))
-	     (list (!+ (iconst (second s2)) (iconst (nth 2 padding)) (iconst (nth 3 padding)))))
-	    :initial-element value :dtype (dtype-of x)))
-	 (out
-	   (apply
-	    #'!view
-	    base
-	    (append
-	     (loop for i in (butlast (shape x) 2) collect t)
-	     slc)))
-	 (out (!move out x)))
-    (apply #'!view-from-base out (loop for s in (shape base) collect `(0 ,s)))))
+  (assert (= 4 (length padding)) () "!padding2d expects 4 elements in padding: (padding_left, padding_rightm padding_top, padding_bottom), getting ~a" padding)
+  (assert (>= 2 (ndim x)) () "!padding2d: x must have at least 2 dimensions, getting ~a" x)
+  ;; No Pads?
+  (when (every #'(lambda (x) (and (numberp x) (= 0 x))) padding) (return-from !padding2d x))
+  ;; [TODO] Should use !padding-new
+  (let* ((pad-args (list (list (first padding) (second padding)) (list (third padding) (fourth padding))))
+         (noops (make-list (- (ndim x) 2) :initial-element t)))
+    (!padding x (append noops pad-args) :value value)))
 
 (in-package :caten/nn.test)
 
