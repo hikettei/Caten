@@ -27,6 +27,7 @@
   (:export
    #:make-tensor
    #:make-view-internal
+   #:tensor-graph
    #:fconst #:uconst #:iconst
    
    #:Tensor

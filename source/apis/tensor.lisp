@@ -203,6 +203,18 @@ View is a tensor which shares the buffer from the original tensor, but having di
             (setf (tensor-tr buff) (tr-apply-slice base views (map 'list #'vrange-size views))))
         (setf (view-tr (tensor-op buff)) (tensor-tr buff))
 	buff))))
+
+(defun tensor-graph (&rest tensors)
+  "
+```
+(tensor-graph tensor)
+```
+
+Lowers the given tensors into an aasm graph, only the constant folding is applied.
+"
+  (let ((graph (->fast-graph (apply #'%tensor->aasm tensors))))
+    (optimize-aasm graph)
+    graph))
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun inf (&key (dtype *default-float*))
   "

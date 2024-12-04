@@ -20,8 +20,8 @@
   (docs:doc/function "ndim" #'ndim)
   (docs:doc/function "dtype-of" #'dtype-of)
   (docs:doc/function "order" #'order)
-
   (docs:doc/function "caten" #'caten)
+  (docs:doc/function "tensor-graph" #'tensor-graph)
   (docs:body "
 ### [method] forward
 
