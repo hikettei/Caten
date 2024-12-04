@@ -121,7 +121,7 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
     (def "!square" #'!square "(proceed (!square (ax+b `(10 10) 0.01 0.1)))")
     (def "!rsqrt" #'!rsqrt "(proceed (!rsqrt (ax+b `(10 10) 0.01 0.1)))")
     (def "!signum" #'!signum "(proceed (!signum (ax+b `(10 10) 0.02 -0.1)))")
-    (def "!gid" #'!gid "(!gid (make-tensor `(3 3)) -1)")
+    (def "!gid" #'!gid "(proceed (!gid (make-tensor `(3 3)) -1))")
     (def "!normalize-axis" #'!normalize-axis "(proceed (!normalize-axis 3 -1))")
     (def "!abs" #'!abs "(proceed (!abs (ax+b `(10 10) 0.02 -0.1)))")
     (def "!>" #'!> "(proceed (!where (!> (rand `(3 3)) (randn `(3 3))) (iconst 1) (iconst 0)))")

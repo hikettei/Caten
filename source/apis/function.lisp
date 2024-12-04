@@ -786,6 +786,8 @@ Computes the reciprocal of sqrt x.
 (!gid tensor rank)
 ```
 Finds the `rank` th index components of the tensor.
+
+For example (!gid x 1) for (3 3) tensor is a `(0 1 2). (As a tip) by combining !gid with !where, you can implement pseudo a random accessing of the tensor. For example:
 "
   (declare (type tensor tensor) (type fixnum rank))
   (let ((axis (normalize-axis tensor rank)))

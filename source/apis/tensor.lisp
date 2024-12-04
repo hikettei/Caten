@@ -211,7 +211,12 @@ View is a tensor which shares the buffer from the original tensor, but having di
 ```
 
 Lowers the given tensors into an aasm graph, only the constant folding is applied.
+
+For some convenience, this function returns the first tensor if the input is not a tensor.
 "
+  (when (not (tensor-p (car tensors)))
+    (return-from tensor-graph (car tensors)))
+  (assert (every #'tensor-p tensors))
   (let ((graph (->fast-graph (apply #'%tensor->aasm tensors))))
     (optimize-aasm graph)
     graph))
