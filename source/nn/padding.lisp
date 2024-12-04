@@ -58,7 +58,7 @@ out = where(start_0 < index_components[0] < end_0 and start_1 < index_components
             (shape-graph stride-graph)
             (conditions (map 'list #'A<=B<C padding-starts index-components padding-ends))
             (x* (%view x* (map 'list #'graph->id shape-graph)
-                       (map 'list #'%neg padding-starts) padding-ends (loop repeat (length padding-starts) collect 1)
+                       (map 'list #'%neg padding-starts) (map 'list #'%sub padding-ends padding-starts) (loop repeat (length padding-starts) collect 1)
                        (loop repeat (length padding-starts) collect nil)
                        (map 'list #'graph->id stride-graph)))
             (output (%where (%not (reduce #'%and conditions)) padded-tensor* x*))))))) ;; padded-tensor* is a first args because it is a returned value and has a larger size than x*.

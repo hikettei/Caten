@@ -32,8 +32,11 @@
     (labels ((bref (buffer idx)
 	       (if (= (buffer-nrank buffer) 0)
 		   (buffer-value buffer)
-		   (aref (buffer-value buffer) idx)))
+                   (if (>= idx 0)
+		       (aref (buffer-value buffer) idx)
+                       nil))) ;; prevent to aref it because !padding may expect this behaviour
 	     (explore (dim offsets)
+               ;; TODO(hikettei): Always use (nth dim (buffer-shape result)), currently caten/avm.test have an old %view.
 	       (let ((size (if (some (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)
 			       (let ((view (nth dim (buffer-views (find-if (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)))))
                                  (/ (- (second view) (car view)) (third view)))
