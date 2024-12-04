@@ -32,11 +32,14 @@
     (labels ((bref (buffer idx)
 	       (if (= (buffer-nrank buffer) 0)
 		   (buffer-value buffer)
-		   (aref (buffer-value buffer) idx)))
+                   (if (>= idx 0)
+		       (aref (buffer-value buffer) idx)
+                       nil))) ;; prevent to aref it because !padding may expect this behaviour
 	     (explore (dim offsets)
+               ;; TODO(hikettei): Always use (nth dim (buffer-shape result)), currently caten/avm.test have an old %view.
 	       (let ((size (if (some (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)
 			       (let ((view (nth dim (buffer-views (find-if (compose #'identity #'(lambda (x) (nth dim x)) #'buffer-views) buffers)))))
-				 (abs (/ (- (car view) (second view)) (third view))))
+                                 (/ (- (second view) (car view)) (third view)))
 			       (nth dim (buffer-shape result)))))
 		 ;; initial offset
 		 (loop for n upfrom 0
@@ -61,7 +64,7 @@
 				for stride = (nth dim (buffer-stride buff))
 				if (and stride view)
 				  do (if (fourth view)
-					 nil ;; broadcast
+					 nil
 					 (incf (nth n offsets) (* (third view) stride)))
 				else if stride do (incf (nth n offsets) stride))))))
       (explore 0 offsets))))
@@ -146,8 +149,10 @@
 		  (declare (ignore m))
 		  (dtype/cast x (getattr node :dtype))))
   (impl :!= #'(lambda (_ x y) _ (not (= x y)))) ;; input is a boolean
-  (impl :< #'(lambda (_ x y) _ (< x y)))
-  (impl :WHERE #'(lambda (c x y) (if c x y))))
+  (impl :< #'(lambda (_ x y) _ (< x y))))
+
+(defmethod %impl ((device-id (eql :lisp)) (op (eql :where)) graph node args)
+  (map-view (getattr node :reduction :allow-undefined t) #'(lambda (x c y) (if c x y)) (nth 1 args) (nth 0 args) (nth 2 args)))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :view)) graph node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)

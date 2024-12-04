@@ -303,9 +303,7 @@ Returns the upper triangular part of the tensor (>= 2D) or batch of matrices inp
     :impl ((argmax x)
 	   (with-attrs ((axis :axis) (keepdims :keepdims)) argmax
              (let* ((axis (normalize-axis x axis))
-                    (idx (!index-components `(,@(loop for i upfrom 0 below axis collect 1)
-                                              ,(nth axis (shape x))
-                                              ,@(loop repeat (- (ndim x) axis 1) collect 1))))
+                    (idx (!gid x axis))
                     ;; idx = shape-1, shape-2, ..., 2, 1, 0
                     (idx (!add (!- (!const idx (nth axis (shape x))) (!const idx 1)) (!mul idx (!const idx -1))))
                     (map (!where (!eq x (!max x :axis axis :keepdims t)) idx (!const idx 0))))

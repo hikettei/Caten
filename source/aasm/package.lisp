@@ -33,6 +33,7 @@
   (:export
    #:with-context
    #:with-context-nodes
+   #:with-context-from-parents
    #:with-asm
    #:*ctx*
    #:emit)

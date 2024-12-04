@@ -65,8 +65,8 @@
   "Softmax(Softmax(Softmax(x))) is a single kernel"
   (caten (!softmax (!softmax (!softmax (make-tensor `(3 3)))))))
 
-(define-kernel-count-test padding-fusion 3
-  "Sin(Padding) Fusion (TODO: Fuse them in a single kernel!)"
+(define-kernel-count-test padding-fusion 2
+  "Sin(Padding) Fusion. 1 Kernel for Tensor Creation, 1 Kernel For Fused Padding."
   (caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0)))))
 
 (define-kernel-count-test elwise-after-reduction 1
@@ -92,6 +92,10 @@
 (define-kernel-count-test conv-gelu-schedule 2
   "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
+
+(define-kernel-count-test conv-padded-schedule 3
+  "ConvND with padded will create no extra kernel. (TODO: 1 Kernel)"
+  (with-no-grad (caten (!gelu (!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)) :bias (make-tensor `(6)) :stride 1 :padding 2 :dilation 1 :groups 1)))))
 
 (define-kernel-count-test symbolic-conv-schedule 2
   "ConvND = 2 Kernels (TODO: 1 Kernels)"

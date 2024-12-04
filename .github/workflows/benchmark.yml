@@ -12,6 +12,8 @@ jobs:
   Compiler_Benchmark:
     name: Transformer Compilation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v1
@@ -31,6 +33,8 @@ jobs:
           export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get install -y libisl-dev gnuplot
           qlot install
@@ -44,6 +48,8 @@ jobs:
     name: ONNX Optimization
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v1
       - name: Set up SBCL via Roswell.
@@ -89,6 +95,8 @@ jobs:
           cmake --build . --target install --parallel 16
           cd ../../
       - name: Installing extra dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           qlot install
           qlot exec make install_docs

@@ -16,7 +16,7 @@
 	 (last (shape x) (length k_)))
       ;;o_ = [math.ceil((i - d * (k-1))/s) for i,d,k,s in zip(i_, d_, k_, s_)]
       (let ((o_ (loop for i in i_ for d in d_ for k in k_ for s in s_
-		      collect (funcall ceiling (/ (- i (* d (- k 1))) s)))));; TODO: Support symbolic (need !ceiling)
+		      collect (funcall ceiling (/ (- i (* d (- k 1))) s))))) ;; TODO: Support symbolic (need !ceiling)
         (let* ((xup (apply #'!repeat x (append (loop repeat (length noop_) collect 1)
 					       (loop for k in k_ for i in i_ for d in d_
 						     collect (funcall ceiling (/ (* k (+ i d)) i))))))
