@@ -44,7 +44,7 @@ A class that represents the GGUF file format.
        (fast-read-byte buffer))
     (let ((header (make-array 4 :element-type '(unsigned-byte 8) :initial-contents (list g1 g2 u f))))
       (babel:octets-to-string header :encoding :utf-8))))
-
+;; TODO: maybe read-gguf is better naming?
 (defun make-gguf (stream)
   "
 Creates GGUF from the given stream.
