@@ -19,7 +19,7 @@
      ->
      ((node graph)
       (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node)))))))
-
+;; Workload1. Replace this.
 (defun simplify-dynamic-arithmetic (graph &aux (arithmetic `(:ADD :NEG :MUL :RECIP :IDIV)))
   "Consider the following graph structure:
 ```
