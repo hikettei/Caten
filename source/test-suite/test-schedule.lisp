@@ -93,6 +93,10 @@
   "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
 
+(define-kernel-count-test conv-padded-schedule 3
+  "ConvND with padded will create no extra kernel. (TODO: 1 Kernel)"
+  (with-no-grad (caten (!gelu (!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)) :bias (make-tensor `(6)) :stride 1 :padding 2 :dilation 1 :groups 1)))))
+
 (define-kernel-count-test symbolic-conv-schedule 2
   "ConvND = 2 Kernels (TODO: 1 Kernels)"
   (with-no-grad (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(b 3 25 25))))))
