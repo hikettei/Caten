@@ -106,7 +106,9 @@
    ;; dimension manipulation
    #:!split
    #:!chunk
-   #:!concatenate)
+   #:!concatenate
+
+   #:!square #:!rsqrt )
   ;; from helpers.lisp
   (:export
    #:with-no-grad

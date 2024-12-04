@@ -118,6 +118,8 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
     (def "!sqrt" #'!sqrt "(proceed (!sqrt (ax+b `(10 10) 0.01 0.0)))")
     (def "!neg" #'!neg "(proceed (!neg (ax+b `(10 10) 0.01 0.0)))")
     (def "!recip" #'!recip "(proceed (!recip (ax+b `(10 10) 0.01 0.1)))")
+    (def "!square" #'!square "(proceed (!square (ax+b `(10 10) 0.01 0.1)))")
+    (def "!rsqrt" #'!rsqrt "(proceed (!rsqrt (ax+b `(10 10) 0.01 0.1)))")
     (def "!signum" #'!signum "(proceed (!signum (ax+b `(10 10) 0.02 -0.1)))")
     (def "!abs" #'!abs "(proceed (!abs (ax+b `(10 10) 0.02 -0.1)))")
     (def "!>" #'!> "(proceed (!where (!> (rand `(3 3)) (randn `(3 3))) (iconst 1) (iconst 0)))")
