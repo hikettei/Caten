@@ -146,8 +146,10 @@
 		  (declare (ignore m))
 		  (dtype/cast x (getattr node :dtype))))
   (impl :!= #'(lambda (_ x y) _ (not (= x y)))) ;; input is a boolean
-  (impl :< #'(lambda (_ x y) _ (< x y)))
-  (impl :WHERE #'(lambda (c x y) (if c x y))))
+  (impl :< #'(lambda (_ x y) _ (< x y))))
+
+(defmethod %impl ((device-id (eql :lisp)) (op (eql :where)) graph node args)
+  (map-view (getattr node :reduction :allow-undefined t) #'(lambda (x c y) (if c x y)) (nth 1 args) (nth 0 args) (nth 2 args)))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :view)) graph node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)
