@@ -65,8 +65,8 @@
   "Softmax(Softmax(Softmax(x))) is a single kernel"
   (caten (!softmax (!softmax (!softmax (make-tensor `(3 3)))))))
 
-(define-kernel-count-test padding-fusion 3
-  "Sin(Padding) Fusion (TODO: Fuse them in a single kernel!)"
+(define-kernel-count-test padding-fusion 2
+  "Sin(Padding) Fusion. 1 Kernel for Tensor Creation, 1 Kernel For Fused Padding."
   (caten (!cos (!sin (!padding (make-tensor `(10 10) :initial-element 2.0) `((2 2) (2 2)) :value 0.0)))))
 
 (define-kernel-count-test elwise-after-reduction 1
