@@ -790,4 +790,14 @@ Finds the `rank` th index components of the tensor.
   (declare (type tensor tensor) (type fixnum rank))
   (let ((axis (normalize-axis tensor rank)))
     (!index-components `(,@(loop for i upfrom 0 below axis collect 1) ,(nth axis (shape tensor)) ,@(loop repeat (- (ndim tensor) axis 1) collect 1)))))
+
+(defun !normalize-axis (ndim axis)
+  "
+```
+(!normalize-axis ndim axis)
+```
+Creates a tensor graph which normalizes the axis. If the axis is negative, it will be normalized to the positive axis.
+"
+  (let ((ndim (->iconst ndim)) (axis (->iconst axis)))
+    (!where (!< axis (iconst 0)) (!add axis ndim) axis)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

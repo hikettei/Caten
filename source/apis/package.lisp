@@ -108,7 +108,7 @@
    #:!chunk
    #:!concatenate
 
-   #:!square #:!rsqrt )
+   #:!square #:!rsqrt #:!gid #:!normalize-axis)
   ;; from helpers.lisp
   (:export
    #:with-no-grad
