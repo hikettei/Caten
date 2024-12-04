@@ -62,12 +62,6 @@ out = where(start_0 < index_components[0] < end_0 and start_1 < index_components
                        (loop repeat (length padding-starts) collect nil)
                        (map 'list #'graph->id stride-graph)))
             (output (%where (%not (reduce #'%and conditions)) padded-tensor* x*))))))) ;; padded-tensor* is a first args because it is a returned value and has a larger size than x*.
-;; Workload
-;; - [x] Implement
-;; - [ ] Replace
-;; - [ ] Scheduling Test
-;; - [ ] Merge this standalone
-;; - [ ] Polish dynamic shape. Optimize full symbolic padding-new
 (defun !padding (x padding &key (value 0.0))
   "
 ```
@@ -108,10 +102,9 @@ Pads the last two dimension of the tensor `x` with the specified padding and val
 padding is specified as: (padding_left padding_right padding_top padding_bottom)."
   (declare (type Tensor x) (type list padding) (type number value))
   (assert (= 4 (length padding)) () "!padding2d expects 4 elements in padding: (padding_left, padding_rightm padding_top, padding_bottom), getting ~a" padding)
-  (assert (>= 2 (ndim x)) () "!padding2d: x must have at least 2 dimensions, getting ~a" x)
+  (assert (>= (ndim x) 2) () "!padding2d: x must have at least 2 dimensions, getting ~a" x)
   ;; No Pads?
   (when (every #'(lambda (x) (and (numberp x) (= 0 x))) padding) (return-from !padding2d x))
-  ;; [TODO] Should use !padding-new
   (let* ((pad-args (list (list (first padding) (second padding)) (list (third padding) (fourth padding))))
          (noops (make-list (- (ndim x) 2) :initial-element t)))
     (!padding x (append noops pad-args) :value value)))
