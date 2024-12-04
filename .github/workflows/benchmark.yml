@@ -34,6 +34,8 @@ jobs:
         run: |
           sudo apt-get install -y libisl-dev gnuplot
           qlot install
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Transformer Graph Simplification (N<=12, JIT=0, AUTO_SCHEDULER=0)
         run: PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 36 0 transformer_simplifier_plot.png
       - name: Transformer Scheduling (N<=12, JIT=1, AUTO_SCHEDULER=0)
@@ -93,6 +95,8 @@ jobs:
           qlot install
           qlot exec make install_docs
           pip install torchvision onnx
+          env:
+            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Exporting models
         run: |
           python ./scripts/export_onnx.py --task classification --model mobilenet_v2 --weights IMAGENET1K_V1 --output_dir ./models
