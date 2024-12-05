@@ -645,7 +645,7 @@ Lowers the Schedule-Item into blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
             (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; early scalarify
             (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node) ; rewrite local buffers as a scalar
-            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph) ; rewrite jitable nodes -> expr
+            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node) ; rewrite jitable nodes -> expr
             (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
       ;; Gathering dynamic shapes used in the schedule-item
       (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph (ctx-blueprint ctx)))
