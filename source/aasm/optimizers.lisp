@@ -70,9 +70,14 @@
         (dolist (x defined)
           (assert (= 1 (count x (graph-nodes graph) :test #'load-eql-p)) () "~a is used multiple times." x)))
       graph)))
-;; TODO: Add Index-Components, < := etc
-;; - Optimize masking
-;; - Write a test!
+;; - When is ready:
+;; - Complete ability to remove duplicated computation for
+;;  - :< :=
+;;  - :MUL
+;;  - Index-Components
+;; - Optimize Padding/Triu
+;; - Write a test for proving :ALLOCATE is placed at once.
+;; - A*Bはグラフに一つしか存在しないことを保証すると，EXPR-Scalar-Equivalent-Pを削除できる => Complete Symbolic
 (defun simplify-dynamic-arithmetic (graph &aux (arithmetic `(:ADD :NEG :MUL :RECIP :IDIV)))
   "Consider the following graph structure:
 ```
@@ -144,11 +149,12 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
     (if (typep graph 'FastGraph)
         (progn
           (setf (graph-outputs copy-graph) (graph-outputs graph)
-                (graph-seen copy-graph) (graph-seen graph))
-          (->fast-graph copy-graph))
+                (graph-seen copy-graph) (graph-seen graph)
+                copy-graph (->fast-graph copy-graph))
+          copy-graph)
         copy-graph)))
 
-(defun optimize-aasm (graph &key (debug-opt nil) (heavy-opt-threshold 25))
+(defun optimize-aasm (graph &key (debug-opt nil) (heavy-opt-threshold 5))
   (fold-constant graph :debug-opt debug-opt)
   (when (>= (length (graph-nodes graph)) heavy-opt-threshold)
     (setf graph (minimize-duplicated-symbolic-path graph)))
