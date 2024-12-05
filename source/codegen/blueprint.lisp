@@ -553,7 +553,6 @@ Depends=~a Reduce=~a Users=~a
      :key #'car)))
 
 (defun simplify-pointer-and-constant (blueprints)
-  ;; [todo] removable?
   (let ((constants))
     (loop for bp in blueprints
           if (and (not (eql (node-class bp) :Render)) (getattr bp :declare-type)) do
@@ -565,6 +564,7 @@ Depends=~a Reduce=~a Users=~a
                   for is in (relay-read-iters (read-type-relay bp))
                   for nth upfrom 0
                   if (and type is (find read constants)) do
+                    ;; The load to :declare-type is a scalar.
                     (setf (nth nth (relay-reads (read-type-relay bp)))
                           (let ((buffer (caten/avm:copy-buffer type)))
                             (setf (buffer-nrank buffer) -1)
@@ -596,7 +596,7 @@ Depends=~a Reduce=~a Users=~a
       ,@(reverse (map 'list #'cdr padding-loops)))))
 ;; Refactor workload here:
 ;; - 1. Everything is a scalar in default
-;; - 2. For input/output entry point, insert :AREF.
+;; - 2. For input/output entry point, insert :AREF. All strides are determined at this time, early insert them.
 ;; - 3. Remove `scheduled-graph` from the arguments.
 ;; - 4. Simplify Exprify and Scalarify, argument determination, the purpose is:
 ;;   - ResNet18 to work (args inference is stupid)
@@ -643,8 +643,8 @@ Lowers the Schedule-Item into blueprint.
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
-            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; todo(hikettei) removable?
-            (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph) ; rewrite local buffers as a scalar
+            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; early scalarify
+            (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node) ; rewrite local buffers as a scalar
             (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph) ; rewrite jitable nodes -> expr
             (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
       ;; Gathering dynamic shapes used in the schedule-item

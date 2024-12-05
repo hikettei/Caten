@@ -46,27 +46,6 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
       (assert (eql (node-type allocate) :Allocate))
       (if (getattr allocate :from) t nil))))
 
-(defun blueprint-tmp-buffers (blueprints node schedule-graph &key (except-for nil))
-  (declare (ignore node))
-  (setf except-for
-        (append except-for
-                (loop for s in (graph-nodes schedule-graph)
-                      append (node-writes s))))
-  (let ((ids) (seen))
-    (dolist (b blueprints)
-      (let ((out (get-output-to b)))
-        (when (and out (symbolp out))
-          (push out ids)))
-      (dolist (r (node-reads b))
-        (when (symbolp r)
-          (push r seen)))
-      (dolist (w (node-writes b))
-        (when (and (null (find w seen)) (not (force-realize-p b schedule-graph)))
-          (push w ids))))
-    (loop for e in (remove-duplicates ids)
-          if (null (find e except-for))
-            collect e)))
-
 (defun memory-access-local-p (blueprint id)
   (declare (optimize (speed 3))
            (type list blueprint)
@@ -90,17 +69,10 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
           if (< depth 0) do (return-from memory-access-local-p nil))
     t))
 
-(defmethod rewrite-as-scalar ((buffer buffer) wi suffix)
+(defun buffer-scalarify (buffer)
   (let ((buffer (caten/avm:copy-buffer buffer)))
     (setf (buffer-nrank buffer) -1)
     buffer))
-
-(defun schedule-outputs (graph)
-  (let ((outs))
-    (loop for n in (graph-nodes graph)
-          if (null (getattr n :allocate-p))
-            do (setf outs (append outs (node-writes n))))
-    (remove-duplicates outs)))
 
 (defmethod propagate-load-const ((node Node) bp)
   (loop for nth upfrom 0
@@ -121,7 +93,76 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
         if (or (eql (node-class bp) :Render) used-p)
           collect bp))
 
-(defmethod graph-scalarify (blueprint (node Node) (schedule-graph Graph))
+(defmethod graph-scalarify ((blueprint list) (node Node) &aux (seen (make-hash-table)) (io (append (node-reads node) (node-writes node))))
+  "Only the following buffers are realized:
+- appeared in either of (node-reads node) or (node-writes node)
+- the access is not completed in the innermost loop"
+  (flet ((local-p (id)
+           (when (find id io) (return-from local-p nil))
+           (if (gethash id seen)
+               (eql (gethash id seen) :yes)
+               (let ((result (memory-access-local-p blueprint id)))
+                 (setf (gethash id seen) (if result :yes :no))
+                 result))))
+    (loop with idxs = nil
+          for bp in blueprint
+          if (eql (node-type bp) :FOR) do
+            (push (getattr bp :idx) idxs)
+          if (eql (node-type bp) :ENDFOR) do
+            (setf idxs (remove (getattr bp :idx) idxs))
+          if (not (eql (node-class bp) :Render)) do
+            (loop for r in (node-reads bp)
+                  for rt in (relay-reads (read-type-relay bp))
+                  for ri in (relay-read-iters (read-type-relay bp))
+                  for nth upfrom 0
+                  if (and rt ri (local-p r)) do
+                    (setf (nth nth (relay-reads (read-type-relay bp))) (buffer-scalarify rt)))
+            (when (null (getattr bp :reduction :allow-undefined t))
+              (loop for w in (node-writes bp)
+                    for wt in (relay-writes (read-type-relay bp))
+                    for wi in (relay-write-iters (read-type-relay bp))
+                    for nth upfrom 0
+                    if (and wt wi (local-p w)) do
+                      (setf (nth nth (relay-writes (read-type-relay bp))) (buffer-scalarify wt)
+                            (getattr bp :declare-type) (list t)))))
+    (dolist (node blueprint)
+      (propagate-load-const node blueprint))
+    (remove-unused-blueprint blueprint node)))
+;; ~~~ OLD ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun blueprint-tmp-buffers (blueprints node schedule-graph &key (except-for nil))
+  (declare (ignore node))
+  (setf except-for
+        (append except-for
+                (loop for s in (graph-nodes schedule-graph)
+                      append (node-writes s))))
+  (let ((ids) (seen))
+    (dolist (b blueprints)
+      (let ((out (get-output-to b)))
+        (when (and out (symbolp out))
+          (push out ids)))
+      (dolist (r (node-reads b))
+        (when (symbolp r)
+          (push r seen)))
+      (dolist (w (node-writes b))
+        (when (and (null (find w seen)) (not (force-realize-p b schedule-graph)))
+          (push w ids))))
+    (loop for e in (remove-duplicates ids)
+          if (null (find e except-for))
+            collect e)))
+
+(defmethod rewrite-as-scalar ((buffer buffer) wi suffix)
+  (let ((buffer (caten/avm:copy-buffer buffer)))
+    (setf (buffer-nrank buffer) -1)
+    buffer))
+
+(defun schedule-outputs (graph)
+  (let ((outs))
+    (loop for n in (graph-nodes graph)
+          if (null (getattr n :allocate-p))
+            do (setf outs (append outs (node-writes n))))
+    (remove-duplicates outs)))
+            
+(defmethod graph-scalarify-old (blueprint (node Node) (schedule-graph Graph))
   "Rewrite the local buffers as a scalar by setting buffer-nrank to -1."
   (declare (type list blueprint))
   (let* ((ids (blueprint-tmp-buffers blueprint node schedule-graph :except-for (schedule-outputs schedule-graph)))
@@ -151,7 +192,8 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                              do (setf (getattr b :declare-type) (list t))))
     (dolist (node blueprint)
       (propagate-load-const node blueprint))
-    (remove-unused-blueprint blueprint node)))
+    (remove-unused-blueprint blueprint node)
+    ))
 
 (defmethod exprify ((node Node))
   (let ((nth->aref (make-hash-table)))
