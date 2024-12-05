@@ -394,13 +394,14 @@ caten/codegen overview:
           (mapc f list)))))
 
 (defmacro with-printing-as-chunk ((stream) &body body)
+  "Synchronize the stream if the compilation is running in parallel."
   `(if (null lparallel:*kernel*)
        (let ((,stream t)) ,@body)
-       (format t "~a"
-               (with-output-to-string (,stream)
-                 (let ((caten/common.logger:*default-stream* ,stream))
-                   ,@body)))))
-
+       (format t "~a" (with-output-to-string (,stream) (let ((caten/common.logger:*default-stream* ,stream)) ,@body)))))
+;; [TODO]
+;; - 1. Remove unused and ugly funcitons (refactor)
+;; - 2. The returned AVM is still keeping DAG
+;; - 3. 
 (defun jit (avm
             &key
               (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
@@ -410,13 +411,16 @@ caten/codegen overview:
               (auto-scheduler
                (when (= (ctx:getenv :AUTO_SCHEDULER) 1)
                  (or (%renderer-get-auto-scheduler renderer)
-                     (error "Cannot enable auto-scheduler without the renderer support.~%Use define-auto-scheduler and define-hook-auto-scheduler and compilers will recognise it.~%or, set AUTO_SCHEDULER=0 to ignore this error.")))))
-  "Runs the JIT compilation (destructive)"
+                     (error "Cannot enable auto-scheduler without the renderer support.~%Use define-auto-scheduler and define-hook-auto-scheduler and compilers will recognise it.~%or, set AUTO_SCHEDULER=0 to supress this error.")))))
+  "
+```
+(jit avm &key (renderer :clang) (dir nil))
+```
+Runs the JIT compilation for the given AVM."
   (declare (type AVM avm))
   (when (= 2 (ctx:getenv :DOT)) (->dot (avm-graph avm) :title "Base Graph"))
-  ;; 1. Running the shape/offset/type inference
   (run-type-infer avm)
-  ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views, Symbol Loads, ...)
+  ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
   (apply-rewriting-rules avm)
   ;; 3. Running the scheduler
   (let ((base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (avm-graph avm)))))
