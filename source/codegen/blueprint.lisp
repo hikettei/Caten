@@ -27,13 +27,10 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
    #:print-blueprint))
 
 (in-package :caten/codegen/blueprint)
-
+;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %make-for (idx size)
   "Represents for an iteration in the range of [0, size)"
-  (make-node :Render :FOR nil nil :idx idx
-             :upfrom (expr-const 0 :int64)
-             :below (expr-< (expr-const idx :int64) size)
-             :by (expr-const 1 :int64)))
+  (make-node :Render :FOR nil nil :idx idx :upfrom (expr-const 0 :int64) :below (expr-< (expr-const idx :int64) size) :by (expr-const 1 :int64)))
 
 (defun %make-endfor (idx)
   "Represents the end of the iteration."
@@ -97,6 +94,15 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                                 " // :reduction=t"
                                 ""))))))))
 
+(defun node-reduced-axes (node)
+  (let ((is (car (relay-write-iters (read-type-relay node)))))
+    (when is
+      (loop for s in (iteration-space-strides is)
+            if (expr-equal-to s 0)
+              collect t
+            else
+              collect nil))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod get-grouped-dims ((graph Graph) (base-graph Graph))
   "Infers the loop boundaries of the graph by finding the common iteration space."
   (let* ((kernel-rank
@@ -107,6 +113,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                        when r maximize (length (buffer-shape r)))))
          (pid2space (make-hash-table :test #'equal))
          (candidates nil))
+    ;; Assuming all buffers in the graph have reshaped to `kernel-rank` by the scheduler.
     (labels ((broadcastable-p (a b)
                (or (expr-equal-to a 1)
                    (expr-equal-to b 1)
@@ -158,8 +165,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
           new-procedure)
          new-procedure)))))
 
-(defmethod fixup-graph-iteration-space ((graph Graph) found-pair g
-                                        &aux (kernel-rank (apply #'max (alexandria:flatten (cdr found-pair)))))
+(defmethod fixup-graph-iteration-space ((graph Graph) found-pair g &aux (kernel-rank (apply #'max (alexandria:flatten (cdr found-pair)))))
   "Rewrite the all node buffers to have the common iteration space found by the `get-grouped-dims`. All nodes must have the same ranked buffer in advance. (rewritten by scheduler.lisp)"
   (multiple-value-bind (found-space procedure) (values (car found-pair) (cdr found-pair))
     (labels ((merge-list (proc list)
@@ -205,6 +211,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
 
 (defmethod graph-swizzle-space ((graph Graph) (order list))
+  "Permutes all buffers in the graph by the order."
   (flet ((swizzle (id space)
            (when space
              (assert (length (iteration-space-procedure space)) () "graph-swizzle-loop-order: Cannot swizzle the space ~a ~a with ~a" id space order)
@@ -221,9 +228,10 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                                    (type (read-type-relay node))
                                    (shapes (make-list (length gid)))
                                    (strides (make-list (length gid))))
-  "Enumerates a list of gid that the node depends on."
-  (flet ((broadcasted-p (size stride)
-           (or (expr-equal-to size 1) (expr-equal-to stride 0))))
+  "Enumerates a list of gid that the node depends on.
+- If loop size is 1 => the loop is removed with _gidn=0.
+- If stride is 0    => the index space won't use corresponding _gid."
+  (flet ((no-dep-p (size stride) (or (expr-equal-to size 1) (expr-equal-to stride 0))))
     (dolist (space (append (relay-read-iters type) (relay-write-iters type)))
       (when space
         (loop for axis upfrom 0
@@ -233,17 +241,8 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
     (loop for g in gid
           for size in shapes
           for stride in strides
-          if (not (every #'broadcasted-p size stride))
+          if (not (every #'no-dep-p size stride))
             collect g)))
-
-(defun node-reduced-axes (node)
-  (let ((is (car (relay-write-iters (read-type-relay node)))))
-    (and is
-         (loop for s in (iteration-space-strides is)
-               if (expr-equal-to s 0)
-                 collect t
-               else
-                 collect nil))))
 
 (defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
   (when (null axes) (setf axes (make-list (length gids))))
@@ -277,7 +276,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
               else
                 collect p)
       ,@(nreverse stashed))))
-
+;; ~~~ Lowerer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
   "an intermidate object used to debug `recursive-lower-into-bp`"
   graph order blueprint seen gids loop-size-list band2node schedule-graph)
@@ -286,8 +285,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 
 (defmethod initial-bp ((ctx ctx))
   (with-slots ((gids gids) (group-size loop-size-list)) ctx
-    `(,@(map 'list #'%make-for gids group-size)
-      ,@(reverse (map 'list #'%make-endfor gids)))))
+    `(,@(map 'list #'%make-for gids group-size) ,@(reverse (map 'list #'%make-endfor gids)))))
 
 (defmethod reduce-bp ((ctx ctx) something gids key)
   (let* ((sizes (loop for g in gids
@@ -326,6 +324,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
           (every #'(lambda (x) (recursive-scalar-p ctx x)) (node-reads node))))))
 
 (defun try-insert-node (ctx node &aux (changed-p nil))
+  "First this function tries to search all possible insertable position for the node, and then insert the node in the most suitable position. (values new_bp successed_p) is returned."
   (with-slots ((blueprint blueprint)) ctx
     (let* ((node-depend-axes ;; list of gids `node` should depend on
              (node-depend-idx-list node (ctx-gids ctx)))
@@ -440,7 +439,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
     (push id seen)
     (multiple-value-bind (new-bp changed-p)
         (try-insert-node ctx node)
-      (when (null changed-p) ;; if failed -> add the outermost node and retry.
+      (when (null changed-p) ;; if failed -> add the outermost loops and retry. (todo: which is not preferable though...)
         (setf (ctx-blueprint ctx) (append (initial-bp ctx) (ctx-blueprint ctx)))
         (multiple-value-bind (new-bp1 changed-p1)
             (try-insert-node ctx node)
