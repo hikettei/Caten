@@ -140,7 +140,7 @@ Only the :MOVE has an ability to modify this rule. (Or :STORE?)"
              (if (null v) v
                  (list (funcall f (nth 0 v)) (funcall f (nth 1 v)) (funcall f (nth 2 v)) (nth 3 v)))))
       (setf (buffer-views buffer) (map 'list #'sync-view (buffer-views buffer))))))
-;; [TODO] apply-static-gensym == nodes-apply-static-gensym. Remove one of them.
+;; TODO(hikettei): apply-static-gensym == nodes-apply-static-gensym. Remove one of them.
 (defun apply-static-gensym (avm &optional (id2view))
   "Rewrites each read/write symbols to a unique and static symbol, improving the readability of the generated code when debugging."
   (declare (type avm avm))
