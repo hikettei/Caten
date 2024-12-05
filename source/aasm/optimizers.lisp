@@ -72,7 +72,7 @@
       graph)))
 ;; TODO: Add Index-Components, < := etc
 ;; - Optimize masking
-;; - 
+;; - Write a test!
 (defun simplify-dynamic-arithmetic (graph &aux (arithmetic `(:ADD :NEG :MUL :RECIP :IDIV)))
   "Consider the following graph structure:
 ```
@@ -151,5 +151,5 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
 (defun optimize-aasm (graph &key (debug-opt nil) (heavy-opt-threshold 25))
   (fold-constant graph :debug-opt debug-opt)
   (when (>= (length (graph-nodes graph)) heavy-opt-threshold)
-    (setf graph (minimize-duplicated-graph graph)))
+    (setf graph (minimize-duplicated-symbolic-path graph)))
   (fuse-duplicated-store graph))
