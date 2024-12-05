@@ -133,7 +133,7 @@ D = Z
           copy-graph)
         copy-graph)))
 
-(defun optimize-aasm (graph &key (debug-opt nil) (heavy-opt-threshold 5))
+(defun optimize-aasm (graph &key (debug-opt nil) (heavy-opt-threshold 25))
   (fold-constant graph :debug-opt debug-opt)
   (when (>= (length (graph-nodes graph)) heavy-opt-threshold)
     (setf graph (minimize-duplicated-symbolic-path graph)))
