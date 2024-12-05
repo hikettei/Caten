@@ -437,7 +437,7 @@ Runs the JIT compilation for the given AVM."
       ;; 5. Minifying the number of schedules, (reuse kernels)
       (when (not (= 1 (ctx:getenv :NO_SCHEDULE_CACHE)))
         (minify-equivalent-schedule schedule-graph))
-      ;; 6. Start JIT Compilation. (Performing by group)
+      ;; 6. Start JIT Compilation. (Performing group by group)
       (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
