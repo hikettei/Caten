@@ -196,9 +196,7 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                     (setf (gethash id static-gensym) (format nil "~a~a" prefix (hash-table-count static-gensym)))))
               (separate-screen ()
                 (format out "=== [P: ~a] ====" part)
-                (dotimes (i (- screen-width 15))
-                  (princ "=" out))
-                (format out "~%"))
+                (format out "~v@{~c~:*~}~%" (- screen-width 15) #\=))
               (restart-point (node)
                 (format out "[P=~a, ID=~a]:~%" (- part 1) (static-gensym (node-id node))))
               (princ-node (node)
@@ -256,8 +254,7 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                                   for nth upfrom 0
                                   do (explore (car pair) (second pair))))))))))
        (setf stashed (copy-list (graph-outputs graph)))
-       (dotimes (i screen-width) (princ "=" out))
-       (format out "~%")
+       (format out "~v@{~c~:*~}~%" screen-width #\=)
        (loop while stashed
              for ids = stashed do
                (separate-screen)
@@ -269,6 +266,5 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                       (unless (= 0 part) (restart-point (id->value graph x)))
                       (explore x))
                   ids)))
-       (dotimes (i screen-width) (princ "=" out))
-       (format out "~%")))
+       (format out "~v@{~c~:*~}~%" screen-width #\=)))
    stream))
