@@ -727,8 +727,10 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
   (when (every #'jitable-p (group-items group)) ;; this is only the case for jitable kernel
     (loop for predecessor in (group-predecessor group)
           for item = (id->value (ctx-graph ctx) predecessor)
-          if (and item (eql (node-type item) :LOAD)
-                  (= 0 (buffer-nrank (car (relay-writes (read-type-relay item))))))
+          for alloc = (and item (id->value (ctx-graph ctx) (car (node-reads item))))
+          if (and item alloc (eql (node-type item) :LOAD) (eql (node-type alloc) :Allocate)
+                  (= 0 (buffer-nrank (car (relay-writes (read-type-relay item)))))
+                  (= 0 (the fixnum (getattr alloc :nrank))))
             do (setf (group-predecessor group) (remove predecessor (group-predecessor group)))
                (push item (group-items group))))
   group)
