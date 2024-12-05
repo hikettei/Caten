@@ -239,39 +239,6 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
           if (null (getattr n :allocate-p))
             do (setf outs (append outs (node-writes n))))
     (remove-duplicates outs)))
-            
-(defmethod graph-scalarify-old (blueprint (node Node) (schedule-graph Graph))
-  "Rewrite the local buffers as a scalar by setting buffer-nrank to -1."
-  (declare (type list blueprint))
-  (let* ((ids (blueprint-tmp-buffers blueprint node schedule-graph :except-for (schedule-outputs schedule-graph)))
-         (replaceable (loop for i in ids if (memory-access-local-p blueprint i) collect i))
-         (suffix))
-    (loop for b in blueprint
-          if (eql (node-type b) :FOR) do (push (getattr b :idx) suffix)
-            if (eql (node-type b) :ENDFOR) do (setf suffix (remove (getattr b :idx) suffix))
-              if (not (eql (node-class b) :Render)) do
-                (loop for r in (node-reads b)
-                      for rt in (relay-reads (read-type-relay b))
-                      for ri in (relay-read-iters (read-type-relay b))
-                      for nth upfrom 0
-                      if (and (symbolp r) rt ri (find r replaceable))
-                        do (setf (nth nth (relay-reads (read-type-relay b))) (rewrite-as-scalar rt ri (reverse suffix))))
-                (assert (= (length (node-writes b)) 1) () "graph-scalarify accepts only one write node.")
-                (loop for w in (node-writes b)
-                      for wt in (relay-writes (read-type-relay b))
-                      for wi in (relay-write-iters (read-type-relay b))
-                      for nth upfrom 0
-                      if (and (symbolp w) wt wi (find w replaceable))
-                        do (setf (nth nth (relay-writes (read-type-relay b)))
-                                 (rewrite-as-scalar wt wi (reverse suffix))
-                                 (getattr b :declare-type) (list t)
-                                 (node-reads node) (remove w (node-reads node)))
-                      else if (find w replaceable)
-                             do (setf (getattr b :declare-type) (list t))))
-    (dolist (node blueprint)
-      (propagate-load-const node blueprint))
-    (remove-unused-blueprint blueprint node)
-    ))
 
 (defmethod exprify ((node Node))
   (let ((nth->aref (make-hash-table)))
@@ -388,89 +355,6 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                       (relay-reads (read-type-relay node)) (map 'list #'second reads)
                       (relay-read-iters (read-type-relay node)) (map 'list #'third reads))))))
   nodes)
-
-(defmethod graph-exprify-old (blueprint (node Node) (schedule-graph Graph))
-  (declare (type list blueprint))
-  (let* ((ids (blueprint-tmp-buffers blueprint node schedule-graph :except-for (schedule-outputs schedule-graph)))
-         (replaceable (loop for i in ids if (memory-access-local-p blueprint i) collect i)))
-    (let ((new-bp
-            (loop for bp in blueprint
-                  if (eql (node-class bp) :Render) collect bp
-                    else collect (exprify bp))))
-      (labels ((replace-p (id group other-pairs current-pair)
-                 (declare (ignore group))
-                 (if (find id replaceable)
-                     ;; If the id was used by more than two nodes, split them. (not to introduce the extra computation)
-                     (and
-                      (= 1 (apply #'+ (map 'list #'(lambda (node) (count id (node-reads node))) blueprint)))
-                      (or (null current-pair) ;; no parent                          
-                          (null (intersection (expr-writes current-pair) (apply #'append (map 'list #'expr-writes other-pairs))))))
-                     nil))
-               (group->expr-group (group &aux (tops (nodes-write-to group)) (graph (apply #'make-graph group)) (seen nil))
-                 (setf (graph-outputs graph) tops)
-                 (assert (every #'(lambda (x) (eql (node-type x) :EXPR)) group))
-                 (labels ((explore (id &aux (node (id->value graph id)))
-                            (when (and node (null (find (node-id node) seen)))
-                              (push (node-id node) seen)
-                              (let* ((parents
-                                       (loop for r in (node-reads node)
-                                             collect (explore r)))
-                                     (stashes)
-                                     (rewrite-pairs
-                                       (loop with merging-pairs = nil
-                                             for r in (node-reads node)
-                                             for p in parents
-                                             if (and (replace-p r group merging-pairs (car (last p))) p)
-                                               collect (cons r (car (last p))) and do (push (car (last p)) merging-pairs) ;; The symbol r -> graft p from r.
-                                             else
-                                               do (push (car (last p)) stashes))))
-                                `(,@(apply #'append (map 'list #'butlast parents))
-                                  ,@(nreverse stashes)
-                                  ,(merge-and-graft-expr node rewrite-pairs))))))
-                   (loop for e in (apply #'append (map 'list #'explore tops))
-                         if e collect e)))
-               (rewriter (from to &aux (group) (new-region :nothing))
-                 (loop with count = from while (< count to)
-                       for node = (nth count new-bp) do
-                         (ecase (node-type node)
-                           (:FOR
-                            (let* ((endfor
-                                     (find (getattr node :Idx) (nthcdr count new-bp)
-                                           :key #'(lambda (x) (and (eql (node-type x) :ENDFOR) (getattr x :idx)))))
-                                   (_ (when (null endfor) (error "malformed bp ~a" blueprint)))
-                                   (endfor-abs-position (position (node-id endfor) new-bp :key #'node-id)))
-                              (declare (ignore _))
-                              (assert (>= endfor-abs-position count) () "malformed bp ~a" blueprint)
-                              (assert (eql (node-type (nth endfor-abs-position new-bp)) :ENDFOR))
-                              (setf new-region
-                                    `(,@(when (not (eql new-region :nothing))
-                                          new-region)
-                                      ,@(group->expr-group (reverse group))
-                                      ,node
-                                      ,@(rewriter (1+ count) endfor-abs-position)
-                                      ,(nth endfor-abs-position new-bp))
-                                    group nil)
-                              (setf count endfor-abs-position)
-                              (incf count)))
-                           (:ENDFOR
-                            (error "malformed bp ~a" blueprint))
-                           (:EXPR
-                            (push node group)
-                            (incf count))))
-                 (when group
-                   (setf new-region
-                         `(,@(when (not (eql new-region :nothing))
-                               new-region)
-                           ,@(group->expr-group (reverse group)))))
-                 (if (eql new-region :nothing)
-                     nil
-                     new-region)))
-        ;; graph-propagete-function:
-        ;; Shifting to the let binding based IR from DAG
-        ;; C <- A + B
-        ;; =>
-        ;; A += B
-        (rewriter 0 (length new-bp))))))
 ;; [TODO] Clean up this function!
 (defun graph-propagate-pointer-id-type (blueprint schedule-graph)
   (assert *expr-cache*)
