@@ -594,17 +594,29 @@ Depends=~a Reduce=~a Users=~a
     `(,@(map 'list #'car padding-loops)
       ,@(ctx-blueprint ctx)
       ,@(reverse (map 'list #'cdr padding-loops)))))
-
-(defun lower-schedule-item (node base-graph scheduled-graph)
+;; Refactor workload here:
+;; - 1. Everything is a scalar in default
+;; - 2. For input/output entry point, insert :AREF.
+;; - 3. Remove `scheduled-graph` from the arguments.
+;; - 4. Simplify Exprify and Scalarify, argument determination, the purpose is:
+;;   - ResNet18 to work (args inference is stupid)
+;;   - MobileNetV3 to work (pointer inference is failed)
+;;   - ViT Prepreq
+;; - 5. Simplify jit.lisp vmop construction.
+;; - https://github.com/hikettei/Caten/issues/258#issue-2687413580
+(defun lower-schedule-item (node base-graph scheduled-graph) ;; Entry point for lowerer is here :)
   "
 ```
 (lower-schedule-item node base-graph scheduled-graph)
 ```
 
 Lowers the Schedule-Item into blueprint.
-- node is a schedule-item to lower.
-- base-graph is the aasm graph to compile.
-- scheduled-graph is the graph to schedule.
+
+- node is a schedule-item to lower which belongs to scheduled-graph.
+
+- base-graph is the graph you passed to the graph-schedule.
+
+- scheduled-graph is the scheduled graph obtained by graph-schedule.
 "
   (declare (type node node) (type graph base-graph scheduled-graph))
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
@@ -644,7 +656,7 @@ Lowers the Schedule-Item into blueprint.
         (schedule-item-infer-io-buffers node (ctx-blueprint ctx) id-rewrite-map)
         (expr-rewrite-edge-with-pointer-id (ctx-blueprint ctx) id-rewrite-map))
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
-
+;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
   (let ((node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
     (assert node () "find-cache-base-schedule-item: No cache item for ~a" node)
@@ -671,6 +683,7 @@ Lowers the Schedule-Item into blueprint.
     result))
 
 (defmethod lower-cached-schedule-item ((node Node) (schedule-graph Graph))
+  "Lowers the (optimized) blueprint from cached schedule."
   (assert (getattr node :cache-name))
   (assert (getattr node :jitable))
   (let* ((base-item (find-cache-base-schedule-item node schedule-graph))
