@@ -135,6 +135,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
     (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
 
 (defmethod make-unique-schedule-name ((group Group))
+  "Names an unique and readable kernel name for human."
   (let ((names-func)
         (module-names)
         (seen))
@@ -815,5 +816,5 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
     (let ((nodes (map 'list #'node-id (apply #'append (map 'list #'group-items groups)))))
       (dolist (n (graph-nodes graph)) (setf nodes (remove (node-id n) nodes)))
       (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
-    (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph))
+    (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph)) ;; create a unique and readable naming for each kernel.
     schedule-graph))
