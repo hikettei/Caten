@@ -149,7 +149,7 @@
                 for expected = (proceed (!triu (!full `(1 1 ,(+ nn ss) ,ss) 5.0) :diagonal (+ 1 nn)))
                 do (setf (tensor-shape symbolic) (tensor-shape expected))
                    (assert-equal () symbolic expected))))
-;; [TODO] they are failing (due to simplify-dynamic-arithmetic in caten/aasm/optimizers.lisp)
+
 (deftest symbolic-tensor-shaped-two-kernel-test-1
   (loop with n = (iconst 'n)
         with s = (iconst 's)
@@ -159,7 +159,6 @@
                             (!t (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n))))
                    (!sum (!triu (!full `(1 1 ,(!+ n s) ,s) 5.0) :diagonal (!+ (iconst 1) n)))))
         for nn upfrom 10 below 13 do
-          (print (avm-graph m))
           (loop for ss upfrom 10 below 13
                 for symbolic = (forward m `(s . ,ss) `(n . ,nn))
                 for expected = (proceed
