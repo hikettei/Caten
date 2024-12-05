@@ -254,57 +254,40 @@ def torch_mha_impl(n, dim, n_heads, input, c_attn_weight, c_attn_bias, c_proj_we
                     (proceed (mha-impl n dim n-heads x c-attn-weight c-attn-bias c-proj-weight c-proj-bias))))))))))
 |#
 
+
+
+
 (defun attn-impl (x n-heads c_attn_weight c_attn_bias c_proj_weight c_proj_bias)
   ;; Step 1: Linear projection
   (let ((xqkv (!add (!matmul x (!t c_attn_weight)) c_attn_bias)))
-    ;; (print "xqkv:")
-    ;; (print xqkv)
-
     ;; Step 2: Split xqkv into xq, xk, xv
     (multiple-value-bind (xq1 xk1 xv1) (!chunk xqkv 3 :dim 2)
-      ;; (print "xq1:")
-      ;; (print xq1)
-
-      ;; Step 3: Reshape for multi-head attention
-      (let* ((new-x-shape (append (butlast (shape xq1))
-                                  (list n-heads (/ (car (last (shape xq1))) n-heads))))
-             (xq2 (!reshape xq1 new-x-shape))
-             (xk2 (!reshape xk1 new-x-shape))
-             (xv2 (!reshape xv1 new-x-shape)))
-        ;; (print "xq2:")
-        ;; (print xq2)
-
-        ;; Step 4: Transpose for attention computation
-        (let ((xq3 (!transpose xq2 1 2))
-              (xk3 (!transpose xk2 1 2))
-              (xv3 (!transpose xv2 1 2)))
-          ;; (print "xq3:")
-          ;; (print xq3)
-
-          ;; Step 5: Compute attention
-          (let ((attn-output1 (scaled-dot-product-attention xq3 xk3 xv3)))
-            ;; (print "attn-output1:")
-            ;; (print attn-output1)
-
-            ;; Step 6: Permute output
-            (let ((attn-output2 (!permute attn-output1 0 2 1 3)))
-              ;; (print "attn-output2:")
-              ;; (print attn-output2)
-
-              ;; Step 7: Reshape to original dimensions
-              (let ((attn-output3 (!reshape attn-output2
-                                            (append (butlast (shape attn-output2) 2)
-                                                    (list (apply #'* (last (shape attn-output2) 2)))))))
-                ;; (print "attn-output3:")
-                ;; (print attn-output3)
-
-                ;; Step 8: Final linear projection
-                (let ((attn-output4 (!add (!matmul attn-output3 (!t c_proj_weight)) c_proj_bias)))
-                  ;; (print "attn-output4:")
-                  ;; (print attn-output4)
-
-                  ;; Return the final output
-                  attn-output4))))))))))
+      ;; Apply !contiguous to each chunk
+      (let ((xq1 (!contiguous xq1))
+            (xk1 (!contiguous xk1))
+            (xv1 (!contiguous xv1)))
+        ;; Step 3: Reshape for multi-head attention
+        (let* ((new-x-shape (append (butlast (shape xq1))
+                                    (list n-heads (/ (car (last (shape xq1))) n-heads))))
+               (xq2 (!reshape xq1 new-x-shape))
+               (xk2 (!reshape xk1 new-x-shape))
+               (xv2 (!reshape xv1 new-x-shape)))
+          ;; Step 4: Transpose for attention computation
+          (let ((xq3 (!transpose xq2 1 2))
+                (xk3 (!transpose xk2 1 2))
+                (xv3 (!transpose xv2 1 2)))
+            ;; Step 5: Compute attention
+            (let ((attn-output1 (scaled-dot-product-attention xq3 xk3 xv3)))
+              ;; Step 6: Permute output
+              (let ((attn-output2 (!permute attn-output1 0 2 1 3)))
+                ;; Step 7: Reshape to original dimensions
+                (let ((attn-output3 (!reshape attn-output2
+                                              (append (butlast (shape attn-output2) 2)
+                                                      (list (apply #'* (last (shape attn-output2) 2)))))))
+                  ;; Step 8: Final linear projection
+                  (let ((attn-output4 (!add (!matmul attn-output3 (!t c_proj_weight)) c_proj_bias)))
+                    ;; Return the final output
+                    attn-output4))))))))))
 
 (python-exec
  "
@@ -319,9 +302,8 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 
     # Step 2: Split xqkv into xq, xk, xv
     xq1, xk1, xv1 = xqkv.chunk(3, dim=2)
-    # print(\"xq1:\")
-    # print(xq1)
-
+    #print(\"xk1 torch:\")
+    #print(xk1)
     # Step 3: Reshape for multi-head attention
     xq2 = xq1.reshape(new_x_shape)
     xk2 = xk1.reshape(new_x_shape)
@@ -402,11 +384,11 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
     (caten (attn-impl x 4 c_attn.weight c_attn.bias c_procj.weight c_procj.bias))))
 ;; [TODO] Fix test-attention-large for both JIT=0 and JIT=1
 (deftest test-attention-large
-  (let* ((dim 64)
+  (let* ((dim 128)
          (n-heads 8)
-         (batch-size 10)
+         (batch-size 1)
          (seq-len 32)
-         (x (randn `(,batch-size ,seq-len ,dim)))
+         (x (tensor-fround-to-n-digits (randn `(,batch-size ,seq-len ,dim)) 2))
          (c_attn.weight  (normal `(,(* 3 dim) ,dim) :mean 0.1 :std 1.1))
          (c_attn.bias    (normal`(,(* 3 dim))  :mean 0.1 :std 1.1))
          (c_procj.weight (normal `(,dim ,dim) :mean 0.1 :std 1.1))

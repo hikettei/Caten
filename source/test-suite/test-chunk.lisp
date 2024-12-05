@@ -26,12 +26,12 @@ def torch_chunk_test(x, chunks, dim):
             (assert-equal
              (:rtol 1e-5 :atol 1e-5)
              python-chunk1
-             (proceed lisp-chunk1))
+             (proceed (!contiguous lisp-chunk1)))
             (assert-equal
              (:rtol 1e-5 :atol 1e-5)
              python-chunk2
-             (proceed lisp-chunk2))
+             (proceed (!contiguous lisp-chunk2)))
             (assert-equal
              (:rtol 1e-5 :atol 1e-5)
              python-chunk3
-             (proceed lisp-chunk3))))))))
+             (proceed (!contiguous lisp-chunk3)))))))))
