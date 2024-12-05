@@ -19,7 +19,60 @@
      ->
      ((node graph)
       (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node)))))))
-;; Workload1. Replace this.
+
+(defun minify-duplicated-alloc (graph &key (assert-optimized nil))
+  "Minimizes the number of LOAD"
+  (declare (type Graph graph) (optimize (speed 3)))
+  (let ((replaceable-map (make-hash-table)) (defined) (id->node (make-hash-table)))
+    (labels ((load-eql-p (node1 node2)
+               (and (eql (node-type node1) :LOAD) (eql (node-type node2) :LOAD)
+                    (eql (getattr node1 :value) (getattr node2 :value))
+                    (let ((alloc1 (gethash (car (node-reads node1)) replaceable-map))
+                          (alloc2 (gethash (car (node-reads node2)) replaceable-map)))
+                      (and alloc1 alloc2 (eql (the keyword (getattr alloc1 :dtype)) (the keyword (getattr alloc2 :dtype)))))))
+             (c (node)
+               (when (not (= (length (node-writes node)) 1)) (return-from c))
+               (setf (gethash (car (node-writes node)) id->node) node)
+               (case (node-type node)
+                 (:Allocate
+                  (when (= 0 (length (node-reads node)))
+                    (setf (gethash (car (node-writes node)) replaceable-map) node)))
+                 (:Load
+                  (when (gethash (car (node-reads node)) replaceable-map)
+                    (when (not (member node defined :test #'load-eql-p))
+                      (push node defined))))
+                 (otherwise)))
+             (newid (sym)
+               (when (not (symbolp sym)) (return-from newid sym))
+               (let ((node (gethash sym id->node)))
+                 (when (null node) (return-from newid sym))
+                 (let ((c (find node defined :test #'load-eql-p)))
+                   (if c
+                       (car (node-writes c))
+                       sym))))
+             (r (node)
+               (let ((node (copy-node node)))
+                 (setf (node-reads node) (map 'list #'newid (node-reads node)))
+                 node)))
+      (mapc #'c (tpsort-graph graph))
+      (setf (graph-nodes graph) (map 'list #'r (graph-nodes graph)))
+      (if (graph-outputs graph)
+          (progn
+            ;; Optimized path
+            (setf (graph-outputs graph) (graph-outputs graph)
+                  (graph-seen graph) (graph-seen graph)
+                  graph (->fast-graph graph))
+            (verify-graph graph)
+            (setf graph (->graph-with-tpsort graph)))
+          (verify-graph graph))
+      ;; [TODO] Assert is optional
+      (when assert-optimized
+        (dolist (x defined)
+          (assert (= 1 (count x (graph-nodes graph) :test #'load-eql-p)) () "~a is used multiple times." x)))
+      graph)))
+;; TODO: Add Index-Components, < := etc
+;; - Optimize masking
+;; - 
 (defun simplify-dynamic-arithmetic (graph &aux (arithmetic `(:ADD :NEG :MUL :RECIP :IDIV)))
   "Consider the following graph structure:
 ```
@@ -72,11 +125,11 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
 	(etypecase graph
 	  (FastGraph
 	   (insert-nodes graph
-			 (loop for node in (graph-nodes graph)
+			 (loop for node in (tpsort-graph graph)
 			       for new = (read-cache node) if new collect new)))
 	  (Graph
 	   (setf (graph-nodes graph)
-		 (loop for node in (graph-nodes graph)
+		 (loop for node in (tpsort-graph graph)
 		       for new = (read-cache node)
 		       if new collect new))))
 	(dolist (n (graph-nodes graph))
@@ -84,7 +137,19 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
     (verify-graph graph)
     graph))
 
-(defun optimize-aasm (graph &key (debug-opt nil))
+(defun minimize-duplicated-symbolic-path (graph)
+  (let ((copy-graph (->graph graph)))
+    (setf copy-graph (minify-duplicated-alloc copy-graph)
+          copy-graph (simplify-dynamic-arithmetic copy-graph))
+    (if (typep graph 'FastGraph)
+        (progn
+          (setf (graph-outputs copy-graph) (graph-outputs graph)
+                (graph-seen copy-graph) (graph-seen graph))
+          (->fast-graph copy-graph))
+        copy-graph)))
+
+(defun optimize-aasm (graph &key (debug-opt nil) (heavy-opt-threshold 25))
   (fold-constant graph :debug-opt debug-opt)
-  (simplify-dynamic-arithmetic graph) ;; TODO(hikettei) removing this is sometime beneficial for JIT=1 (for dynamic shape loading)
+  (when (>= (length (graph-nodes graph)) heavy-opt-threshold)
+    (setf graph (minimize-duplicated-graph graph)))
   (fuse-duplicated-store graph))

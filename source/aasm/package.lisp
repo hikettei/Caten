@@ -81,5 +81,5 @@
   (:export
    #:%where)
   ;; from optimizers.lisp
-  (:export #:optimize-aasm)
+  (:export #:optimize-aasm #:minimize-duplicated-symbolic-path)
   )
