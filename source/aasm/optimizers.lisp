@@ -20,6 +20,8 @@
      ((node graph)
       (with-context-nodes (_ (%load (%salloc :dtype dtype) x :id (node->id node)))))))
 
+(defparameter *replaceable-ops* `(:ADD :NEG :MUL :RECIP :IDIV))
+;; [TODO] Rewrite to a single function. (which is possible)
 (defun minify-duplicated-alloc (graph &key (assert-optimized nil))
   "Minimizes the number of LOAD"
   (declare (type Graph graph) (optimize (speed 3)))
@@ -70,15 +72,74 @@
         (dolist (x defined)
           (assert (= 1 (count x (graph-nodes graph) :test #'load-eql-p)) () "~a is used multiple times." x)))
       graph)))
-;; - When is ready:
-;; - Complete ability to remove duplicated computation for
-;;  - :< :=
-;;  - :MUL
-;;  - Index-Components
-;; - Optimize Padding/Triu
-;; - Write a test for proving :ALLOCATE is placed at once.
-;; - A*Bはグラフに一つしか存在しないことを保証すると，EXPR-Scalar-Equivalent-Pを削除できる => Complete Symbolic
-(defun simplify-dynamic-arithmetic (graph &aux (arithmetic `(:ADD :NEG :MUL :RECIP :IDIV)))
+
+(defun simplify-dynamic-arithmetic1 (graph &key (arithmetic *replaceable-ops*))
+  "TODO: docs"
+  (declare (type Graph graph) (optimize (speed 3)))
+  (assert (not (typep graph 'FastGraph)))
+  (let ((seen (make-hash-table))) ;; seen records an ID and node which is replaceable.
+    (labels ((trace-seen-graph (id)
+
+               )
+             (apply-cache (node)
+               ;; Scalar Allocation for an entry point of seen
+               (case (node-type node)
+                 (:Allocate
+                  (when (null (node-reads node))
+                    (setf (gethash (car (node-writes node)) seen) node)
+                    (return-from apply-cache)))
+                 (otherwise
+                  (unless (find (node-type node) arithmetic) (return-from apply-cache))
+                  ;; All parents are seen, or number => label as a cacheable node.
+                  (assert (= 1 (length (node-writes node)))) ;; arithmetic == not an custom kernel.
+                  (when (every #'(lambda (x) (or (numberp x) (gethash x seen))) (node-reads node))
+                    ;; In order to remove duplicated computation, 
+                    (setf (gethash (car (node-writes node)) seen) node))))))
+      ;; Labelling a replaceable node in the seen hash table.
+      (mapc #'apply-cache (tpsort-graph graph))
+      
+      (loop for node in (graph-nodes graph)
+            ;; except for seen node
+            ))))
+
+(defun rewrite-unique-computation-path (graph &key (arithmetic *replaceable-ops*))
+  (declare (type Graph graph) (optimize (speed 3)))
+  (assert (not (typep graph 'FastGraph)))
+  (let ((defined) (alias-map (make-hash-table)))
+    (labels ((node-eq (a b)
+               (declare (type node a b))
+               (when (not (eql (node-type a) (node-type b))) (return-from node-eq nil))
+               (case (node-type a)
+                 ;; [TODO] Add :LOAD
+                 ((:ADD :MUL)
+                  ;; Assume BinaryOps ADD/MUL has two operands, so reverse works.
+                  (or (equal (node-reads a) (node-reads b))
+                      (equal (node-reads a) (reverse (node-reads b)))))
+                 ((:NEG :RECIP :IDIV)
+                  (equal (node-reads a) (node-reads b)))
+                 (otherwise nil)))
+             (apply-cache (node)
+               ;; Needs to be a vmop
+               (when (not (= 1 (length (node-writes node)))) (return-from apply-cache node))
+               (when (null (find (node-type node) (the list arithmetic))) (return-from apply-cache node))
+               (let ((prev-defined (find node defined :test #'node-eq)))
+                 (when prev-defined
+                   ;; Rewrite (node-writes node) -> (node-writes pref-defined)
+                   (setf (gethash (car (node-writes node)) alias-map) (car (node-writes prev-defined)))
+                   (return-from apply-cache nil))
+                 (push node defined)
+                 node))
+             (r (sym) (gethash sym alias-map sym)))
+      (setf (graph-nodes graph)
+            (loop for node in (tpsort-graph graph)
+                  for new = (apply-cache node)
+                  if new do
+                    (setf (node-reads new) (map 'list #'r (node-reads new)))
+                    and collect new))
+      graph)))
+;; A*B, A+Bはかかんなのでreverseして等しくてもOK
+;; Nodeのてっぺんを揃えれば連鎖的に解消できる？
+(defun simplify-dynamic-arithmetic (graph &key (arithmetic *replaceable-ops*))
   "Consider the following graph structure:
 ```
 val_1 = a * b
@@ -119,7 +180,7 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
 		 (when (not (= (length (node-writes node)) 1)) (return-from read-cache node))
 		 (let* ((key `(,(node-type node) ,@(map 'list #'(lambda (x) (getattr x :value)) reads)))
 			(del-p (not (null (gethash key cache))))
-			(cache-result (ensure-gethash key cache (car (node-writes node)))))
+			(cache-result (gethash key cache (car (node-writes node)))))
 		   (setf (gethash key cache) cache-result)
 		   (if del-p
 		       (progn
@@ -139,7 +200,7 @@ This may reduce the compilation time of the dynamic kernel dramatically, also si
 		       if new collect new))))
 	(dolist (n (graph-nodes graph))
 	  (setf (node-reads n) (map 'list #'r (node-reads n))))))
-    (verify-graph graph)
+    (rewrite-unique-computation-path graph)
     graph))
 
 (defun minimize-duplicated-symbolic-path (graph)
