@@ -93,6 +93,75 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
         if (or (eql (node-class bp) :Render) used-p)
           collect bp))
 
+(defmethod exprify ((node Node))
+  "Mutates the node into EXPR."
+  (let ((nth->aref (make-hash-table)))
+    (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
+               :reduction (getattr node :reduction :allow-undefined t)
+               :_type_relay (read-type-relay node)
+               :declare-type (getattr node :declare-type)
+               :expr (make-expr
+                      :graph
+                      (apply
+                       #'make-graph
+                       (append
+                        (loop for r in (node-reads node)
+                              for rt in (relay-reads (read-type-relay node))
+                              for ri in (relay-read-iters (read-type-relay node))
+                              for nth upfrom 0
+                              if (symbolp r)
+                                append
+                                (if (= 0 (buffer-nrank rt))
+                                    (let ((nodes (graph-nodes (expr-graph (expr-const r (buffer-dtype rt))))))
+                                      (assert (eql (node-type (car (last nodes))) :LOAD))
+                                      (setf (node-writes (car (last nodes))) (list r))
+                                      nodes)
+                                    (let ((newid (gensym "JIT_AREF_TMP")))
+                                      (setf (gethash nth nth->aref) newid)
+                                      (list (make-aref newid r rt ri)))))
+                        (let ((node (copy-node node)))
+                          (setf (node-reads node)
+                                (loop for i upfrom 0
+                                      for r in (node-reads node)
+                                      collect (or (gethash i nth->aref) r)))
+                          (list node))))
+                      :out node))))
+
+(defun merge-and-graft-expr (node pairs)
+  "NODE <- pairs"
+  (assert (eql (node-type node) :EXPR))
+  (let ((ids) (types) (iters) (writes))
+    (loop for (id . expr-parent) in pairs
+          do (expr-graft-after (getattr node :expr) id (getattr expr-parent :expr))
+             (setf writes (append writes (node-writes expr-parent)))
+             (loop for read in (node-reads expr-parent)
+                   for type in (relay-reads (read-type-relay expr-parent))
+                   for iter in (relay-read-iters (read-type-relay expr-parent))
+                   do (push read ids) (push type types) (push iter iters)))
+    (setf (node-reads node) (append (node-reads node) (reverse ids))
+          (relay-reads (read-type-relay node)) (append (relay-reads (read-type-relay node)) (reverse types))
+          (relay-read-iters (read-type-relay node)) (append (relay-read-iters (read-type-relay node)) (reverse iters)))
+    (let ((gather-map
+            (loop for r in (node-reads node)
+                  for nth upfrom 0
+                  if (find r writes)
+                    collect nil
+                  else
+                    collect t)))
+      (setf (node-reads node)
+            (loop for r in (node-reads node)
+                  for g in gather-map
+                  if g collect r)
+            (relay-reads (read-type-relay node))
+            (loop for r in (relay-reads (read-type-relay node))
+                  for g in gather-map
+                  if g collect r)
+            (relay-read-iters (read-type-relay node))
+            (loop for r in (relay-read-iters (read-type-relay node))
+                  for g in gather-map
+                  if g collect r)))
+    node))
+
 (defmethod graph-scalarify ((blueprint list) (node Node) &aux (seen (make-hash-table)) (io (append (node-reads node) (node-writes node))))
   "Only the following buffers are realized:
 - appeared in either of (node-reads node) or (node-writes node)
@@ -206,107 +275,65 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                      nil
                      new-region)))
         (rewriter 0 (length new-bp))))))
+
+(defun expr-set-iterations (blueprint)
+  (loop with gids = nil
+        for bp in blueprint
+        if (eql (node-type bp) :FOR)
+          do (push (getattr bp :idx) gids)
+        else if (eql (node-type bp) :ENDFOR)
+          do (setf gids (remove (getattr bp :idx) gids))
+        else do
+          (assert (eql (node-type bp) :EXPR))
+          (let* ((is (car (relay-write-iters (read-type-relay bp))))
+                 (required-gids (and is (length (iteration-space-shape is)))))
+            (if (or gids (null is) (= (length gids) required-gids))
+                (setf (getattr bp :iterations) (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids)))
+                (progn
+                  ;; Set gid=0 for ops located in outside of a loop.
+                  (setf (getattr bp :iterations) (loop repeat required-gids collect (expr-const 0 :int64)))))
+            (when is
+              (setf (getattr bp :iterations) (ensure-iteration-space-length is (getattr bp :iterations))))))
+  blueprint)
+;; [TODO] What we are doing here is very simple.
+;; [TODO] Reduction ... MOVEはItem内部で完結する
+;; [TODO] Assignをどうやって実装するか考える. Memory Planne周り・・・
+;; Expr-Realized-Buffersを作成したら，Blueprintにあるnode-reads/node-writesの推論は削除する
+(defun graph-propagate-reduction (blueprint node)
+  "Rewrite the following EXPR e.g.:
+```
+A <- B, C // :reduction=t
+```
+into:
+```
+B <- C // :reduction=t
+```
+
+If each element is broadcasted, otherwise (= assign), register an alias to global variable.
+"
+  (declare (type list blueprint) (type node node))
+  (assert *expr-cache* () "Create an expr-cache first otherwise graph-propagate-reduction cannot communicate the alias of !assign.")
+  ;; Assignの場合は，メモリが余計なコピーを作らないことだけを宣言すればいい
+  ;; 1. Reduction/AssignのBuffer TypeをSchedule Type内部のみでUpdateする (since the output cannot be a reduction rule)
+  ;; ^ LPARALLELで実行順が合わなくなる -> ALIASの遷移先がおかしくなる
+  ;; 2. expr-realized-buffersでIOを確定させる
+  )
+
+(defun graph-finalize-realize (blueprint node)
+
+  )
+
+(defun expr-realized-buffers (expr)
+  (declare (type Expr expr))
+  ;; Return: A list of buffer needs to be realized, since it is expr, it can include symbols for computing stride/view
+  
+  )
+
+(defun node-realized-buffers (node)
+  (if (eql (node-type node) :EXPR)
+      (expr-realized-buffers node)
+      (render-realized-buffers node)))
 ;; ~~~ OLD ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun blueprint-tmp-buffers (blueprints node schedule-graph &key (except-for nil))
-  (declare (ignore node))
-  (setf except-for
-        (append except-for
-                (loop for s in (graph-nodes schedule-graph)
-                      append (node-writes s))))
-  (let ((ids) (seen))
-    (dolist (b blueprints)
-      (let ((out (get-output-to b)))
-        (when (and out (symbolp out))
-          (push out ids)))
-      (dolist (r (node-reads b))
-        (when (symbolp r)
-          (push r seen)))
-      (dolist (w (node-writes b))
-        (when (and (null (find w seen)) (not (force-realize-p b schedule-graph)))
-          (push w ids))))
-    (loop for e in (remove-duplicates ids)
-          if (null (find e except-for))
-            collect e)))
-
-(defmethod rewrite-as-scalar ((buffer buffer) wi suffix)
-  (let ((buffer (caten/avm:copy-buffer buffer)))
-    (setf (buffer-nrank buffer) -1)
-    buffer))
-
-(defun schedule-outputs (graph)
-  (let ((outs))
-    (loop for n in (graph-nodes graph)
-          if (null (getattr n :allocate-p))
-            do (setf outs (append outs (node-writes n))))
-    (remove-duplicates outs)))
-
-(defmethod exprify ((node Node))
-  (let ((nth->aref (make-hash-table)))
-    (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
-               :reduction (getattr node :reduction :allow-undefined t)
-               :_type_relay (read-type-relay node)
-               :declare-type (getattr node :declare-type)
-               :expr (make-expr
-                      :graph
-                      (apply
-                       #'make-graph
-                       (append
-                        (loop for r in (node-reads node)
-                              for rt in (relay-reads (read-type-relay node))
-                              for ri in (relay-read-iters (read-type-relay node))
-                              for nth upfrom 0
-                              if (symbolp r)
-                                append
-                                (if (= 0 (buffer-nrank rt))
-                                    (let ((nodes (graph-nodes (expr-graph (expr-const r (buffer-dtype rt))))))
-                                      (assert (eql (node-type (car (last nodes))) :LOAD))
-                                      (setf (node-writes (car (last nodes))) (list r))
-                                      nodes)
-                                    (let ((newid (gensym "JIT_AREF_TMP")))
-                                      (setf (gethash nth nth->aref) newid)
-                                      (list (make-aref newid r rt ri)))))
-                        (let ((node (copy-node node)))
-                          (setf (node-reads node)
-                                (loop for i upfrom 0
-                                      for r in (node-reads node)
-                                      collect (or (gethash i nth->aref) r)))
-                          (list node))))
-                      :out node))))
-
-(defun merge-and-graft-expr (node pairs)
-  (assert (eql (node-type node) :EXPR))
-  (let ((ids) (types) (iters) (writes))
-    (loop for (id . expr-parent) in pairs
-          do (expr-graft-after (getattr node :expr) id (getattr expr-parent :expr))
-             (setf writes (append writes (node-writes expr-parent)))
-             (loop for read in (node-reads expr-parent)
-                   for type in (relay-reads (read-type-relay expr-parent))
-                   for iter in (relay-read-iters (read-type-relay expr-parent))
-                   do (push read ids) (push type types) (push iter iters)))
-    (setf (node-reads node) (append (node-reads node) (reverse ids))
-          (relay-reads (read-type-relay node)) (append (relay-reads (read-type-relay node)) (reverse types))
-          (relay-read-iters (read-type-relay node)) (append (relay-read-iters (read-type-relay node)) (reverse iters)))
-    (let ((gather-map
-            (loop for r in (node-reads node)
-                  for nth upfrom 0
-                  if (find r writes)
-                    collect nil
-                  else
-                    collect t)))
-      (setf (node-reads node)
-            (loop for r in (node-reads node)
-                  for g in gather-map
-                  if g collect r)
-            (relay-reads (read-type-relay node))
-            (loop for r in (relay-reads (read-type-relay node))
-                  for g in gather-map
-                  if g collect r)
-            (relay-read-iters (read-type-relay node))
-            (loop for r in (relay-read-iters (read-type-relay node))
-                  for g in gather-map
-                  if g collect r)))
-    node))
-
 (defun expr-writes (expr)
   (loop for item in (graph-nodes (expr-graph (getattr expr :expr)))
         if (eql (node-type item) :Aref)
@@ -359,6 +386,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
 (defun graph-propagate-pointer-id-type (blueprint schedule-graph)
   (assert *expr-cache*)
   (let ((rewrite-map (make-hash-table))
+        ;; [TODO] Stop globalize them
         (id->tgt (expr-cache-reduce-alias *expr-cache*))) ;; id -> (list new_id new_type new_is)
     (loop for bp in blueprint
           if (and (eql (node-type bp) :EXPR) (getattr bp :reduction))
@@ -428,23 +456,3 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                 (updt bp :reader node-reads)
                 (updt bp :reader node-writes)
                 (rewrite-expr-aref (expr-graph (getattr bp :expr)) #'newid)))))
-
-(defun expr-set-iterations (blueprint)
-  (loop with gids = nil
-        for bp in blueprint
-        if (eql (node-type bp) :FOR)
-          do (push (getattr bp :idx) gids)
-        else if (eql (node-type bp) :ENDFOR)
-          do (setf gids (remove (getattr bp :idx) gids))
-        else do
-          (assert (eql (node-type bp) :EXPR))
-          (let* ((is (car (relay-write-iters (read-type-relay bp))))
-                 (required-gids (and is (length (iteration-space-shape is)))))
-            (if (or gids (null is) (= (length gids) required-gids))
-                (setf (getattr bp :iterations) (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids)))
-                (progn
-                  ;; Set gid=0 for ops located in outside of a loop.
-                  (setf (getattr bp :iterations) (loop repeat required-gids collect (expr-const 0 :int64)))))
-            (when is
-              (setf (getattr bp :iterations) (ensure-iteration-space-length is (getattr bp :iterations))))))
-  blueprint)
