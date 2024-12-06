@@ -569,6 +569,7 @@ Lowers the Schedule-Item into blueprint.
                 ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
                 (node-writes node) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))
       (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
+      (print node)
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))

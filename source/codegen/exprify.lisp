@@ -294,7 +294,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
   (let ((alias-map (make-hash-table)))
     (loop for bp in blueprint
           ;; 1. val_1[1, 10] += val[10, 10] is a reduction, pointer propagation is effected in the only current blueprint (apply here)
-          ;; 2. val_1[10, 10] += val[10, 10] is an assiggn.
+          ;; 2. val_1[10, 10] += val[10, 10] is an assign. (val_1 and val must indicate the same buffer)
           if (and (eql (node-type bp) :EXPR) (getattr bp :reduction))
             do (if (node-writes-broadcasted-p bp)
                    (setf (gethash (car (node-writes bp)) alias-map)
@@ -458,8 +458,10 @@ B <- C // :reduction=t
   ;; 実装のやり方:
   ;; AREFのIndexを全てappendしたグラフを作ってoptimizeしてgraphを参照元みたいな感じで使う
   )
-;; [TODO] What we are doing here is very simple.
-;; [TODO] Reduction ... MOVEはItem内部で完結する
+;; Memory Plannerは最初のsolvedを認識する
+;; MemoryPlanne refactorは最後にやる
+;; - 
+;; - グラフの再作成
 ;; [TODO] Assignをどうやって実装するか考える. Memory Planne周り・・・
 ;; Expr-Realized-Buffersを作成したら，Blueprintにあるnode-reads/node-writesの推論は削除する
 ;; What if cached? -> Lowererが終わった後に，ALIAS MAPを作成してSynchronizeする
