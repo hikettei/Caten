@@ -495,12 +495,6 @@ Runs the JIT compilation for the given AVM."
             (fresh-line)
             (print-info "Running the memory planner..."))
           (run-memory-planner schedule-graph symbolics base-graph))
-        ;; Clean up the stride computations
-        ;(mapc
-        ; #'(lambda (x)
-        ;     (when (getattr x :blueprint)
-        ;       (schedule-item-finalize-indexing x base-graph schedule-graph)))
-        ; (graph-nodes schedule-graph))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Rendering ..."))

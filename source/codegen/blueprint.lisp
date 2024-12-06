@@ -688,17 +688,24 @@ node is assumed to the lowered blueprint. base-graph is the graph you passed to 
                                id
                                (or (newid (gethash id new-user-map)) (gethash id new-user-map)))
                            id))
-                     (expr-dep-on (expr)
-                       (loop for node in (graph-nodes (expr-graph expr))
-                             if (and (eql (node-type node) :Load) (null (find (getattr node :value) gids)))
-                               collect (getattr node :value)))
+                     (expr-dep-on (expr &key (use-gids nil) &aux (seen) (deps))
+                       (labels ((explore (id)
+                                  (when (find id seen) (return-from explore))
+                                  (push id seen)
+                                  (let ((node (id->value (expr-graph expr) id)))
+                                    (when node
+                                      (when (and (eql (node-type node) :Load) (symbolp (getattr node :value)) (or use-gids (null (find (getattr node :value) gids))))
+                                        (push (getattr node :value) deps))
+                                      (mapc #'explore (node-reads node))))))
+                         (mapc #'explore (node-writes (expr-out expr))))
+                       (remove-duplicates deps))
                      (use (expr &aux (id (gethash (newid (car (node-writes (expr-out expr)))) var-count)))
                        (push (cons id expr) target-exprs)
                        (assert id () "~a is not found in the simplified graph?" (node-writes (expr-out expr)))
                        (push id invocation-at))
                      (lower-positions (bp expr &aux (changed-p nil))
                        (prog1
-                           (loop with defined = nil
+                           (loop with defined = (map 'list #'car (getattr node :dynamic-shapes))
                                  with used = nil
                                  for item in bp
                                  if (eql (node-type item) :FOR) do
@@ -750,8 +757,7 @@ node is assumed to the lowered blueprint. base-graph is the graph you passed to 
                             (if groups (push node (car groups)) (setf groups (list (list node))))))
                 (setf groups (nreverse groups))
                 (loop for group in groups
-                      for nth upfrom 0
-                      for reads = nil do
+                      for nth upfrom 0 do
                         (loop for node in group do
                           (loop for read in (node-reads node)
                                 for def = (find read (nth nth groups) :key #'node-writes :test #'find)
@@ -761,13 +767,13 @@ node is assumed to the lowered blueprint. base-graph is the graph you passed to 
                                   do (push load (nth nth groups)) (push alloc (nth nth groups))
                                 else if (and (null def) load (null alloc) (eql (node-type load) :ALLOCATE))
                                        do (push load (nth nth groups))
-                                else do (when (null def) (push read reads) (push (make-node :Buffer :LOAD (list read) (list (gensym)) :value read) (nth nth groups)))))
-                        (dolist (node (nth nth groups))
-                          (when (and (eql (node-type node) :LOAD) (find (getattr node :value) gids))
-                            (push (getattr node :value) reads)))
+                                else do (when (null def) (push (make-node :Buffer :LOAD (list read) (list (gensym)) :value read) (nth nth groups)))))
                         (let* ((group (nth nth groups))
                                (expr (make-expr :graph (apply #'make-graph group) :out (car (last group))))
-                               (node (make-node :JIT :EXPR (node-writes (car (last group))) reads :EXPR expr :declare-type '(t))))
+                               (node (make-node :JIT :EXPR (node-writes (car (last group))) (expr-dep-on expr :use-gids t) :EXPR expr :declare-type '(t))))
+                          (print (expr-graph expr))
+                          (print node)
+                          (print (node-reads node))
                           (setf (getattr node :_type_relay)
                                 (make-inferred-type nil (relay-writes (read-type-relay (car (last group)))))
                                 (relay-write-iters (read-type-relay node)) (map 'list #'(lambda (x) x (make-iteration-space)) (node-writes node)))
