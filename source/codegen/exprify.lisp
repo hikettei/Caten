@@ -397,7 +397,7 @@ B <- C // :reduction=t
   ;; Return: A list of buffer needs to be realized, since it is expr, it can include symbols for computing stride/view
   (labels ((node-jump-to (node)
              (case (node-type node)
-               ((:MOVE :CAST :!= :!< :INDEX-COMPONENTS :STORE :LOAD) ;; they won't use the first argument
+               ((:MOVE :CAST :!= :< :INDEX-COMPONENTS :STORE :LOAD) ;; they won't use the first argument
                 (append `(nil) (cdr (node-reads node))))
                (otherwise
                 (node-reads node))))
