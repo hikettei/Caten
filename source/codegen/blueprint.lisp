@@ -617,22 +617,26 @@ Lowers the Schedule-Item into blueprint.
 Simplifies the scalar computation for computing the indexing, and minimizes the number of :dynamic-shapes to be loaded.
 
 node is assumed to the lowered blueprint. base-graph is the graph you passed to the graph-schedule.
+
+;; TODO Loop For/IFに対しては適用しないようにする，めんどくさい
 "
   (declare (type node node) (type graph base-graph schedule-graph))
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
   (assert (getattr node :blueprint) () "Lower the schedule item first.")
   ;; (when (null (getattr node :dynamic-shapes)) (return-from schedule-item-finalize-indexing node)) ;; static graph
   (labels ((merge-time (id) (intern (format nil "~(~a~)_~a" id (gethash id id2count))))
-           (bind (id)
+           (bind (id for)
              ;; Creating a lexiographical schedule order
              ;; for(int _gid2=0;...;) { } S(1, _gid2)
              ;; for(int _gid2=0;...;) { } S(2, _gid2)
-             (when (null (gethash id id2count))
+             (when (null (gethash id id2count)) ;; [TODO] If _gidsize is the same -> dont incf them
                (setf (gethash id id2count) 0))
              (setf (gethash id rewrite-alias-map) (merge-time id)
+                   (getattr for :idx) (merge-time id)
                    (gethash (merge-time id) get-original-map) id))
-           (unbind (id)
+           (unbind (id endfor)
              (remhash (merge-time id) rewrite-alias-map)
+             (setf (getattr endfor :idx) (merge-time id))
              (incf (gethash id id2count)))
            (synchronizer (id) (or (gethash id rewrite-alias-map) id))
            (gather (expr)
@@ -644,12 +648,9 @@ node is assumed to the lowered blueprint. base-graph is the graph you passed to 
               #'make-graph
               (loop for bp in (getattr node :blueprint)
                     if (eql (node-type bp) :FOR)
-                      do (bind (getattr bp :idx)) and
-                    append (append (gather (getattr bp :upfrom)) (gather (getattr bp :below)))
+                      do (bind (getattr bp :idx) bp)
                     if (eql (node-type bp) :ENDFOR)
-                      do (unbind (getattr bp :idx))
-                    if (eql (node-type bp) :IF)
-                      append (gather (getattr bp :condition))
+                      do (unbind (getattr bp :idx) bp)
                     if (eql (node-type bp) :EXPR)
                       append
                       (append
@@ -667,51 +668,120 @@ node is assumed to the lowered blueprint. base-graph is the graph you passed to 
                              append (progn
                                       (setf (getattr expr-node :expr)
                                             (apply #'expr-add (iteration-space-expr-aref (getattr expr-node :space) (getattr expr-node :buffer) (getattr bp :iterations))))
-                                      (gather (getattr expr-node :expr)))))))))
+                                      (gather (getattr expr-node :expr))))))))
+           (gids (hash-table-keys get-original-map)))
       ;; Minify the duplicated symbolic computation path
       (setf (graph-outputs unified-symbolic-path) users
             unified-symbolic-path (->fast-graph unified-symbolic-path))
       (caten/air:verify-graph unified-symbolic-path)
-      (setf unified-symbolic-path (caten/aasm:minimize-duplicated-symbolic-path unified-symbolic-path))
-      (dolist (node (graph-nodes unified-symbolic-path))
-        (when (eql (node-type node) :Load)
-          (setf (getattr node :value) (or (gethash (getattr node :value) get-original-map) (getattr node :value)))))
-      ;; Rewriting each expr with the unified symbolic path
-      ;; [TODO] apply static-gensym
-      (print unified-symbolic-path)
-      (multiple-value-bind (_ var-count) (nodes-apply-static-gensym (graph-nodes unified-symbolic-path) :prefix "_idx" :replace-all t)
-        (declare (ignore _))
-        (let ((invocation-at) (target-exprs))
-          (labels ((use (expr &aux (id (gethash (car (node-writes (expr-out expr))) var-count)))
-                     (push expr target-exprs)
-                     (assert id () "~a is not found in the simplified graph?" (node-writes (expr-out expr)))
-                     (push (car (node-writes (expr-out expr))) invocation-at)
-                     (let ((new-expr (expr-const id caten/aasm:*default-int*)))
-                       (setf (expr-graph expr) (expr-graph new-expr)
-                             (expr-out expr) (expr-out new-expr)))))
-            (loop for bp in (getattr node :blueprint)
-                  if (eql (node-type bp) :FOR) do
-                    (use (getattr bp :upfrom)) (use (getattr bp :below))
-                  if (eql (node-type bp) :IF) do
-                    (use (getattr bp :condition))
-                  if (eql (node-type bp) :EXPR)
-                    do (loop for write in (node-writes bp)
-                             for wt in (relay-writes (read-type-relay bp))
-                             for wi in (relay-write-iters (read-type-relay bp))
-                             if (and write wt wi (find write io)) do (use (car (getattr bp :aref-exprs))))
-                       (loop for expr-node in (graph-nodes (expr-graph (getattr bp :EXPR)))
-                             if (and (eql (node-type expr-node) :Aref) (find (getattr expr-node :storage-id) io) (> (buffer-nrank (getattr expr-node :buffer)) 0))
-                               do (assert (getattr bp :iterations)) and do (use (getattr expr-node :expr)))))))
-      
-      ;; Use directly judge
-      
-      ;; 1. Merge unified-symbolic-path to the graph (as an expr)
-      ;; 2. Apply them to the base expr (record them as an invocation point)
-      (print unified-symbolic-path)
-      ;; [TODO] _gid2 wo load de push suru
-      ;; [TODO] Softmaxみたいに_GIDが重複する場合どうする？
-      ;; Blueprint, dynamic-shapesの両方をUpdateしたい
-      )))
+      (multiple-value-bind (unified-symbolic-path new-user-map) (caten/aasm:minimize-duplicated-symbolic-path unified-symbolic-path :rewrite-output t)
+        (setf unified-symbolic-path (->graph unified-symbolic-path))
+        ;; Rewriting each expr with the unified symbolic path
+        (multiple-value-bind (_ var-count) (nodes-apply-static-gensym (graph-nodes unified-symbolic-path) :prefix "_idx" :replace-all t)
+          (declare (ignore _))
+          (setf (graph-outputs unified-symbolic-path) (map 'list #'(lambda (x) (gethash x var-count)) users))
+          (run-type-infer (caten/avm:make-avm unified-symbolic-path :tmprunner nil nil nil))
+          (let ((invocation-at) (target-exprs) (triggers))
+            (labels ((newid (id)
+                       (if (gethash id new-user-map)
+                           (if (eql (gethash id new-user-map) id)
+                               id
+                               (or (newid (gethash id new-user-map)) (gethash id new-user-map)))
+                           id))
+                     (expr-dep-on (expr)
+                       (loop for node in (graph-nodes (expr-graph expr))
+                             if (and (eql (node-type node) :Load) (null (find (getattr node :value) gids)))
+                               collect (getattr node :value)))
+                     (use (expr &aux (id (gethash (newid (car (node-writes (expr-out expr)))) var-count)))
+                       (push (cons id expr) target-exprs)
+                       (assert id () "~a is not found in the simplified graph?" (node-writes (expr-out expr)))
+                       (push id invocation-at))
+                     (lower-positions (bp expr &aux (changed-p nil))
+                       (prog1
+                           (loop with defined = nil
+                                 with used = nil
+                                 for item in bp
+                                 if (eql (node-type item) :FOR) do
+                                   (push (getattr item :idx) defined)
+                                 else if (eql (node-type item) :ENDFOR) do
+                                   (setf defined (remove (getattr item :idx) defined))
+                                 else if (eql (node-type item) :EXPR) do
+                                   (setf defined (append (node-writes item) defined)
+                                         used (append
+                                               used
+                                               (loop for i in (node-reads item) if (null (find i gids)) collect i)
+                                               (loop for write in (node-writes item)
+                                                     for wt in (relay-writes (read-type-relay item))
+                                                     for wi in (relay-write-iters (read-type-relay item))
+                                                     if (and write wt wi (find write io)) append (expr-dep-on (car (getattr item :aref-exprs))))
+                                               (loop for expr-node in (graph-nodes (expr-graph (getattr item :EXPR)))
+                                                     if (and (eql (node-type expr-node) :Aref) (find (getattr expr-node :storage-id) io) (> (buffer-nrank (getattr expr-node :buffer)) 0))
+                                                       append (expr-dep-on (getattr expr-node :expr)))))
+                                 end
+                                 collect item
+                                 if (and (null changed-p)
+                                         (every #'(lambda (x) (find x defined)) (node-reads expr))
+                                         (every #'(lambda (x) (null (find x used))) (node-writes expr)))
+                                   collect expr and do (setf changed-p t))
+                         (assert changed-p))))
+              (loop for bp in (getattr node :blueprint)
+                    if (eql (node-type bp) :EXPR)
+                      do (loop for write in (node-writes bp)
+                               for wt in (relay-writes (read-type-relay bp))
+                               for wi in (relay-write-iters (read-type-relay bp))
+                               if (and write wt wi (find write io)) do (use (car (getattr bp :aref-exprs))))
+                         (loop for expr-node in (graph-nodes (expr-graph (getattr bp :EXPR)))
+                               if (and (eql (node-type expr-node) :Aref) (find (getattr expr-node :storage-id) io) (> (buffer-nrank (getattr expr-node :buffer)) 0))
+                                 do (assert (getattr bp :iterations)) and do (use (getattr expr-node :expr))))
+              (loop for (key . expr) in target-exprs
+                    if (>= (count key invocation-at) 2)
+                      do (let ((new-expr (expr-const key (buffer-dtype (car (relay-writes (read-type-relay (id->value unified-symbolic-path key))))))))
+                           (push key triggers)
+                           (setf (expr-out expr) (expr-out new-expr)
+                                 (expr-graph expr) (expr-graph new-expr))))
+              (let ((groups) (expr-groups))
+                (loop for node in (graph-nodes unified-symbolic-path)
+                      ;; break expr
+                      if (null (find (node-type node) '(:LOAD :ALLOCATE))) do
+                        (if (or
+                             (> (length (id->users unified-symbolic-path (car (node-writes node)))) 1)
+                             (find (car (node-writes node)) triggers))
+                            (push (list node) groups)
+                            (if groups (push node (car groups)) (setf groups (list (list node))))))
+                (setf groups (nreverse groups))
+                (loop for group in groups
+                      for nth upfrom 0
+                      for reads = nil do
+                        (loop for node in group do
+                          (loop for read in (node-reads node)
+                                for def = (find read (nth nth groups) :key #'node-writes :test #'find)
+                                for load = (id->value unified-symbolic-path read)
+                                for alloc = (when load (id->value unified-symbolic-path (car (node-reads load))))
+                                if (and (null def) load alloc (eql (node-type load) :LOAD) (eql (node-type alloc) :ALLOCATE))
+                                  do (push load (nth nth groups)) (push alloc (nth nth groups))
+                                else if (and (null def) load (null alloc) (eql (node-type load) :ALLOCATE))
+                                       do (push load (nth nth groups))
+                                else do (when (null def) (push read reads) (push (make-node :Buffer :LOAD (list read) (list (gensym)) :value read) (nth nth groups)))))
+                        (dolist (node (nth nth groups))
+                          (when (and (eql (node-type node) :LOAD) (find (getattr node :value) gids))
+                            (push (getattr node :value) reads)))
+                        (let* ((group (nth nth groups))
+                               (expr (make-expr :graph (apply #'make-graph group) :out (car (last group))))
+                               (node (make-node :JIT :EXPR (node-writes (car (last group))) reads :EXPR expr :declare-type '(t))))
+                          (setf (getattr node :_type_relay)
+                                (make-inferred-type nil (relay-writes (read-type-relay (car (last group)))))
+                                (relay-write-iters (read-type-relay node)) (map 'list #'(lambda (x) x (make-iteration-space)) (node-writes node)))
+                          (push node expr-groups)))
+                ;; Insert expr to the blueprint
+                (dolist (expr (reverse expr-groups))
+                  (setf (getattr node :blueprint) (lower-positions (getattr node :blueprint) expr)))
+                ;; After the insertion rewrite _gid_0 -> _gid0
+                (dolist (node (append expr-groups (graph-nodes unified-symbolic-path)))
+                  (when (eql (node-type node) :Load)
+                    (setf (getattr node :value) (or (gethash (getattr node :value) get-original-map) (getattr node :value)))))
+                (dolist (bp (getattr node :blueprint))
+                  (case (node-type bp)
+                    ((:FOR :ENDFOR) (setf (getattr bp :idx) (gethash (getattr bp :idx) get-original-map)))))))))))))
 
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))

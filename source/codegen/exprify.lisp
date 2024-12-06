@@ -192,7 +192,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
       (propagate-load-const node blueprint))
     (remove-unused-blueprint blueprint node)))
 
-(defmethod blueprint-exprify ((blueprint list) (node Node) &aux (seen (make-hash-table)) (io (append (node-reads node) (node-writes node))))
+(defun blueprint-exprify (blueprint node &key (seen (make-hash-table)) (io (append (node-reads node) (node-writes node))))
   (flet ((local-p (id)
            (when (find id io) (return-from local-p nil))
            (when (not (symbolp id)) (return-from local-p nil))

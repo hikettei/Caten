@@ -71,7 +71,7 @@ D = Z
           (assert (= 1 (count x (graph-nodes graph) :test #'load-eql-p)) () "~a is used multiple times." x)))
       graph)))
 
-(defun rewrite-unique-computation-path (graph &key (arithmetic *replaceable-ops*) &aux (changed-p nil))
+(defun rewrite-unique-computation-path (graph &key (arithmetic *replaceable-ops*) (rewrite-output nil) (table (make-hash-table)) &aux (changed-p nil))
   "Consider the following graph structure:
 ```
 Z = A * B
@@ -104,7 +104,9 @@ D = Z
                (let ((prev-defined (find node defined :test #'node-eq)))
                  (when prev-defined
                    (when (find (the symbol (car (node-writes node))) (the list (graph-outputs graph)))
-                     (return-from apply-cache node))
+                     (if rewrite-output
+                         (setf (gethash (car (node-writes node)) table) (car (node-writes prev-defined)))
+                         (return-from apply-cache node)))
                    ;; Rewrite (node-writes node) -> (node-writes pref-defined)
                    (setf (gethash (car (node-writes node)) alias-map) (car (node-writes prev-defined))
                          changed-p t)
@@ -119,21 +121,22 @@ D = Z
                     (setf (node-reads new) (map 'list #'r (node-reads new)))
                   and collect new))
       (if changed-p
-          (rewrite-unique-computation-path graph)
-          graph))))
+          (values (rewrite-unique-computation-path graph :rewrite-output rewrite-output :table table) table)
+          (values graph table)))))
 
-(defun minimize-duplicated-symbolic-path (graph)
+(defun minimize-duplicated-symbolic-path (graph &key (rewrite-output nil))
   "An entry point for duplicated graph path optimization."
   (let ((copy-graph (->graph graph)))
-    (setf copy-graph (minify-duplicated-alloc copy-graph) ;; Make equivalent toplevel to be exist only once!
-          copy-graph (rewrite-unique-computation-path copy-graph)) ;; Simply just trace and replace them recursively!
-    (if (typep graph 'FastGraph)
-        (progn
-          (setf (graph-outputs copy-graph) (graph-outputs graph)
-                (graph-seen copy-graph) (graph-seen graph)
-                copy-graph (->fast-graph copy-graph))
-          copy-graph)
-        copy-graph)))
+    (setf copy-graph (minify-duplicated-alloc copy-graph)) ;; Make equivalent toplevel to be exist only once!
+    ;; Simply just trace and replace them recursively!
+    (multiple-value-bind (copy-graph table) (rewrite-unique-computation-path copy-graph :rewrite-output rewrite-output)
+      (if (typep graph 'FastGraph)
+          (progn
+            (setf (graph-outputs copy-graph) (graph-outputs graph)
+                  (graph-seen copy-graph) (graph-seen graph)
+                  copy-graph (->fast-graph copy-graph))
+            (values copy-graph table))
+          (values copy-graph table)))))
 
 (defun optimize-aasm (graph &key (debug-opt nil) (heavy-opt-threshold 25))
   (fold-constant graph :debug-opt debug-opt)
