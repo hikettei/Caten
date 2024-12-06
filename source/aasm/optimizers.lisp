@@ -103,6 +103,8 @@ D = Z
                (when (null (find (node-type node) (the list arithmetic))) (return-from apply-cache node))
                (let ((prev-defined (find node defined :test #'node-eq)))
                  (when prev-defined
+                   (when (find (the symbol (car (node-writes node))) (the list (graph-outputs graph)))
+                     (return-from apply-cache node))
                    ;; Rewrite (node-writes node) -> (node-writes pref-defined)
                    (setf (gethash (car (node-writes node)) alias-map) (car (node-writes prev-defined))
                          changed-p t)
