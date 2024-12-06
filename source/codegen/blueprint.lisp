@@ -555,17 +555,19 @@ Lowers the Schedule-Item into blueprint.
             (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; early scalarify
             (ctx-blueprint ctx) (blueprint-scalarify (ctx-blueprint ctx) node) ; rewrite local buffers as a scalar
             (ctx-blueprint ctx) (blueprint-exprify (ctx-blueprint ctx) node) ; rewrite jitable nodes -> expr
-            (ctx-blueprint ctx) (blueprint-propagate-reduction (ctx-blueprint ctx)) ;; Z = A + B * C => Z += A * B
             (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
-      ;; Synchronize the realized buffers
-      (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
-        (setf (getattr node :read-types) (map 'list #'cdr reads)
-              (getattr node :write-types) (map 'list #'cdr writes)
-              (getattr node :storage-id-src) (map 'list #'car reads)
-              (getattr node :storage-id-dst) (map 'list #'car writes)
-              (getattr node :dynamic-shapes) constants
-              (node-reads node) (map 'list #'car reads)
-              (node-writes node) (map 'list #'car writes)))
+      (multiple-value-bind (new-bp id-as-dag-map) (blueprint-propagate-reduction (ctx-blueprint ctx)) ;; A = B + C * D => B += C * D
+        (setf (ctx-blueprint ctx) new-bp)
+        ;; Synchronize the realized buffers
+        (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
+          (setf (getattr node :read-types) (map 'list #'cdr reads)
+                (getattr node :write-types) (map 'list #'cdr writes)
+                (getattr node :storage-id-src) (map 'list #'car reads)
+                (getattr node :storage-id-dst) (map 'list #'car writes)
+                (getattr node :dynamic-shapes) constants
+                (node-reads node) (map 'list #'car reads)
+                ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
+                (node-writes node) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))
       (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

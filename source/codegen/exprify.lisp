@@ -175,8 +175,10 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
             (loop for r in (node-reads bp)
                   for rt in (relay-reads (read-type-relay bp))
                   for ri in (relay-read-iters (read-type-relay bp))
+                  for parent = (find r blueprint :key #'node-writes :test #'find)
+                  for parent-reduce-p = (and parent (getattr parent :reduction :allow-undefined t))
                   for nth upfrom 0
-                  if (and rt ri (local-p r)) do
+                  if (and rt ri (local-p r) (or (null parent-reduce-p) (getattr parent :declare-type))) do
                     (setf (nth nth (relay-reads (read-type-relay bp))) (buffer-scalarify rt)))
             (when (null (getattr bp :reduction :allow-undefined t))
               (loop for w in (node-writes bp)
@@ -202,6 +204,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
     (let ((new-bp (map 'list #'(lambda (x) (if (eql (node-class x) :Render) x (exprify x))) blueprint)))
       (labels ((replace-p (id other-pairs current-pair)
                  (and
+                  (or (null current-pair) (null (getattr current-pair :reduction))) ;; do not the chain reduction
                   (local-p id) ;; [TODO] is it removable?
                   (= 1 (apply #'+ (map 'list #'(lambda (node) (count id (node-reads node))) blueprint)))
                   (or (null current-pair) ;; no parent                          
@@ -273,7 +276,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
         if (eql (node-type bp) :FOR)
           do (push (getattr bp :idx) gids)
         else if (eql (node-type bp) :ENDFOR)
-          do (setf gids (remove (getattr bp :idx) gids))
+               do (setf gids (remove (getattr bp :idx) gids))
         else do
           (assert (eql (node-type bp) :EXPR))
           (let* ((is (car (relay-write-iters (read-type-relay bp))))
@@ -291,20 +294,13 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
   (let ((alias-map (make-hash-table)))
     (loop for bp in blueprint
           ;; 1. val_1[1, 10] += val[10, 10] is a reduction, pointer propagation is effected in the only current blueprint (apply here)
-          ;; 2. val_1[10, 10] += val[10, 10] is an assign, pointer propagation effects globally, this inference is done after the lowerer.
-          if (and (eql (node-type bp) :EXPR) (getattr bp :reduction) (node-writes-broadcasted-p bp))
-            do (setf (gethash (car (node-writes bp)) alias-map)
-                     (list (car (node-reads bp)) (car (relay-reads (read-type-relay bp))) (car (relay-read-iters (read-type-relay bp))))))
+          ;; 2. val_1[10, 10] += val[10, 10] is an assiggn.
+          if (and (eql (node-type bp) :EXPR) (getattr bp :reduction))
+            do (if (node-writes-broadcasted-p bp)
+                   (setf (gethash (car (node-writes bp)) alias-map)
+                         (list (car (node-reads bp)) (car (relay-reads (read-type-relay bp))) (car (relay-read-iters (read-type-relay bp)))))
+                   (setf (gethash (car (node-writes bp)) alias-map) (list (car (node-reads bp)) nil nil))))
     alias-map))
-
-(defun blueprint-merge-assign-map (blueprint table)
-  (declare (type list blueprint) (type hash-table table))
-  (loop for bp in blueprint
-        ;; 1. val_1[1, 10] += val[10, 10] is a reduction, pointer propagation is effected in the only current blueprint (apply here)
-        ;; 2. val_1[10, 10] += val[10, 10] is an assign, pointer propagation effects globally, this inference is done after the lowerer.
-          if (and (eql (node-type bp) :EXPR) (getattr bp :reduction) (not (node-writes-broadcasted-p bp)))
-            do (setf (gethash (car (node-writes bp)) table) (car (node-reads bp))))
-  table)
 
 (defun rewrite-expr-aref (expr replace)
   (declare (type graph expr))
@@ -312,11 +308,10 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
     (if (eql (node-type n) :AREF)
         (multiple-value-bind (id type is) (funcall replace (getattr n :storage-id) (getattr n :buffer) (getattr n :space))
           (assert (and id type is))
-          (setf (getattr n :storage-id) id  (getattr n :buffer) type  (getattr n :space) is))
-        (setf (node-reads n)
-              (map 'list #'(lambda (x) (or (funcall replace x nil nil) x)) (node-reads n))))))
+          (setf (getattr n :storage-id) id (getattr n :buffer) type  (getattr n :space) is))
+        (setf (node-reads n) (map 'list #'(lambda (x) (or (funcall replace x nil nil) x)) (node-reads n))))))
 
-(defun blueprint-propagate-reduction (blueprint &aux (id->tgt (blueprint-make-alias-map blueprint)))
+(defun blueprint-propagate-reduction (blueprint)
   "Rewrite the following EXPR e.g.:
 ```
 A <- B, C // :reduction=t
@@ -325,32 +320,38 @@ into:
 ```
 B <- C // :reduction=t
 ```
-
-If each element is broadcasted, otherwise (= assign), register an alias to global variable. This won't be done in this function. 
 "
   (declare (type list blueprint))
-  (flet ((new (id type is)
-           (let ((new-id (gethash id id->tgt)))
-             (if (null new-id)
-                 (values id type is)
-                 (apply #'values new-id)))))
-    (macrolet ((updt (expr &key (reader) (ireader) (treader))
-                 `(loop for nth upfrom 0
-                        for read in (,reader ,expr)
-                        for is in (,ireader (read-type-relay ,expr))
-                        for type in (,treader (read-type-relay ,expr))
-                        if (and read is type (symbolp read)) do
-                          (multiple-value-bind (newid new-type new-is) (new read type is)
-                            (assert (and newid new-type new-is))
-                            (setf (nth nth (,reader ,expr)) newid
-                                  (nth nth (,ireader (read-type-relay ,expr))) new-is
-                                  (nth nth (,treader (read-type-relay ,expr))) new-type)))))
-      (loop for bp in blueprint
-            if (eql (node-type bp) :EXPR)
-              do (updt bp :reader node-reads :ireader relay-read-iters :treader relay-reads)
-                 (updt bp :reader node-writes :ireader relay-write-iters :treader relay-writes)
-                 (rewrite-expr-aref (expr-graph (getattr bp :expr)) #'new))
-      blueprint)))
+  (let ((id->tgt (blueprint-make-alias-map blueprint))
+        (id-as-dag (make-hash-table)))
+    (labels ((final-new-id (id)
+               (if (gethash id id->tgt)
+                   (or (final-new-id (car (gethash id id->tgt))) (gethash id id->tgt))
+                   (gethash id id->tgt)))
+             (new (id type is)
+               (let ((new-id (final-new-id id)))
+                 (if (null new-id)
+                     (values id type is)
+                     (progn
+                       (setf (gethash (car new-id) id-as-dag) id)
+                       (values (car new-id) (or (second new-id) type) (or (third new-id) is)))))))
+      (macrolet ((updt (expr &key (reader) (ireader) (treader))
+                   `(loop for nth upfrom 0
+                          for read in (,reader ,expr)
+                          for is in (,ireader (read-type-relay ,expr))
+                          for type in (,treader (read-type-relay ,expr))
+                          if (and read is type (symbolp read)) do
+                            (multiple-value-bind (newid new-type new-is) (new read type is)
+                              (assert (and newid new-type new-is))
+                              (setf (nth nth (,reader ,expr)) newid
+                                    (nth nth (,ireader (read-type-relay ,expr))) new-is
+                                    (nth nth (,treader (read-type-relay ,expr))) new-type)))))
+        (loop for bp in blueprint
+              if (eql (node-type bp) :EXPR)
+                do (updt bp :reader node-reads :ireader relay-read-iters :treader relay-reads)
+                   (updt bp :reader node-writes :ireader relay-write-iters :treader relay-writes)
+                   (rewrite-expr-aref (expr-graph (getattr bp :expr)) #'new))
+        (values blueprint id-as-dag)))))
 
 (defun blueprint-realized-buffers (blueprint sched-item)
   (declare (type list blueprint) (type node sched-item))
@@ -454,7 +455,8 @@ If each element is broadcasted, otherwise (= assign), register an alias to globa
 
 (defun schedule-item-finalize-indexing (node)
   "TODO: Add this to the documentation"
-  
+  ;; 実装のやり方:
+  ;; AREFのIndexを全てappendしたグラフを作ってoptimizeしてgraphを参照元みたいな感じで使う
   )
 ;; [TODO] What we are doing here is very simple.
 ;; [TODO] Reduction ... MOVEはItem内部で完結する
@@ -466,3 +468,6 @@ If each element is broadcasted, otherwise (= assign), register an alias to globa
 ;; 1. Reduction/AssignのBuffer TypeをSchedule Type内部のみでUpdateする (since the output cannot be a reduction rule)
 ;; ^ LPARALLELで実行順が合わなくなる -> ALIASの遷移先がおかしくなる
 ;; 2. expr-realized-buffersでIOを確定させる
+;; Assign ... Memory Plannerに注意
+;; Or: Memory PlannerってReductionの関係をちゃんと捉えてる？そうしたら何もしなくていい。
+;; 後，EXPRのnode-reads node-writesをUpdateしないといけない。
