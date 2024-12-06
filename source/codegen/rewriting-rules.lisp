@@ -177,7 +177,7 @@
               (graph-outputs (avm-graph avm))
               (map 'list #'val-gensym (graph-outputs (avm-graph avm))))))))
 
-(defun nodes-apply-static-gensym (nodes)
+(defun nodes-apply-static-gensym (nodes &key (prefix "val_") (replace-all nil))
   (let ((alias-table (make-hash-table))
         (val-count 0))
     (dolist (node nodes)
@@ -188,14 +188,14 @@
 	       (if (symbolp id)
 		   (or
 		    (gethash id alias-table)
-		    (let ((new-id (intern (format nil "val_~a" val-count))))
+		    (let ((new-id (intern (format nil "~a~a" prefix val-count))))
 		      (setf (gethash id alias-table) new-id)
 		      (incf val-count)
                       (setf (gethash new-id alias-table) new-id)
                       new-id))
 		   id))
              (start-with-tid-p (sym &aux (str (princ-to-string sym)))
-               (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3))))))
+               (or replace-all (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3)))))))
       (dolist (node nodes)
         (when (and (eql (node-type node) :Allocate)
                    (not (start-with-tid-p (car (node-writes node)))))
@@ -203,9 +203,9 @@
           (let ((id (car (node-writes node))))
             (setf (gethash id alias-table) id)))
 	(setf (node-writes node) (map 'list #'val-gensym (node-writes node))
-	      (node-reads node) (map 'list #'val-gensym (node-reads node))))))
-  nodes)
-    
+	      (node-reads node) (map 'list #'val-gensym (node-reads node))))
+      (values nodes alias-table))))
+
 (defun apply-rewriting-rules (avm)
   (declare (type AVM avm))
   (let ((id2view (rewrite-views-as-buffer avm)))

@@ -63,7 +63,8 @@ caten/codegen overview:
    :caten/codegen/blueprint
    #:lower-schedule-item
    #:lower-cached-schedule-item
-   #:print-blueprint)
+   #:print-blueprint
+   #:schedule-item-finalize-indexing)
   (:import-from
    :caten/codegen/scop
    #:scop
@@ -494,6 +495,12 @@ Runs the JIT compilation for the given AVM."
             (fresh-line)
             (print-info "Running the memory planner..."))
           (run-memory-planner schedule-graph symbolics base-graph))
+        ;; Clean up the stride computations
+        (mapc
+         #'(lambda (x)
+             (when (getattr x :blueprint)
+               (schedule-item-finalize-indexing x base-graph schedule-graph)))
+         (graph-nodes schedule-graph))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Rendering ..."))
@@ -505,6 +512,7 @@ Runs the JIT compilation for the given AVM."
           (fresh-line)
           (print-info "Compiling ..."))
         (%compile-kernel renderer (graph-nodes schedule-graph) dir)
+        ;; [TODO] Improve schedule-graph->avm-graph
         (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
           (when (>= (ctx:getenv :JIT_DEBUG) 4)
             (print-info "Final Scheduling Graph:")

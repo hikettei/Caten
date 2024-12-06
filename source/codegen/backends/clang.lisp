@@ -75,19 +75,21 @@
          (labels ((print-aref (name b is &key iterations)
                     (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
                         (format nil "~(~a~)[~(~a~)]" name
-                                (render-expr
-                                 'CStyle-Renderer
-                                 (apply
-                                  #'expr-add
-                                  (map
-                                   'list
-                                   #'(lambda (view stride i)
-                                       (if view
-                                           (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
-                                           (expr-mul stride i)))
-                                   (iteration-space-views is)
-                                   (iteration-space-strides is)
-                                   iterations))))
+                                (if (getattr bp :aref-exprs)
+                                    (render-expr 'CStyle-Renderer (car (getattr bp :aref-exprs)))
+                                    (render-expr
+                                     'CStyle-Renderer
+                                     (apply
+                                      #'expr-add
+                                      (map
+                                       'list
+                                       #'(lambda (view stride i)
+                                           (if view
+                                               (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
+                                               (expr-mul stride i)))
+                                       (iteration-space-views is)
+                                       (iteration-space-strides is)
+                                       iterations)))))
                         (format nil "~(~a~)" name))))
            (format stream "~a~a~a = ~a;~%"
                    (indent)
