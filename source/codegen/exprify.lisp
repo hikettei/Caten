@@ -368,6 +368,9 @@ B <- C // :reduction=t
      constants (remove-duplicates constants :key #'car)) ;; TODO(hikettei) What is one is loaded as a float, while another is loaded as a uint?
     (dolist (io (intersection writes reads :key #'car)) ;; if theres input & output, they are output.
       (setf reads (remove (car io) reads :key #'car)))
+    (assert (every #'caten/avm:buffer-p (map 'list #'cdr writes)))
+    (assert (every #'caten/avm:buffer-p (map 'list #'cdr reads)))
+    (assert (every #'keywordp (map 'list #'cdr constants)))
     (values writes reads constants)))
 
 (defun iterspace-depend-consts (is &key (written))
@@ -460,7 +463,6 @@ B <- C // :reduction=t
   )
 ;; X isnot locked?
 ;; Memory Plannerは最初のsolvedを認識する
-;; MemoryPlanne refactorは最後にやる
 ;; - 
 ;; - グラフの再作成
 ;; [TODO] Assignをどうやって実装するか考える. Memory Planne周り・・・

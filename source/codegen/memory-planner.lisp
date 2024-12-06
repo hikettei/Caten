@@ -112,29 +112,12 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
       (dolist (item (graph-nodes (expr-graph (getattr bp :EXPR))))
         (when (eql (node-type item) :AREF)
           (setf (getattr item :storage-id) (funcall newid (getattr item :storage-id)))))))
-  ;; Remove Duplicated :DEFINE_GLOBAL
-  (setf (getattr item :blueprint)
-        (loop with seen = nil
-              for item in (getattr item :blueprint)
-              if (or (not (eql (node-type item) :DEFINE-GLOBAL))
-                     (null (find (car (node-writes item)) seen)))
-                collect item
-              if (eql (node-type item) :DEFINE-GLOBAL)
-                do (push (car (node-writes item)) seen)))
-  (let* ((reads (map 'list #'cons (getattr item :storage-id-src) (getattr item :read-types)))
-         (writes (map 'list #'cons (getattr item :storage-id-dst) (getattr item :write-types)))
-         (reads (remove-duplicates reads :key (compose newid #'car)))
-         (writes (remove-duplicates writes :key (compose newid #'car)))
-         (seen))
-    (flet ((only-unseen (items)
-             (loop for (id . type) in items
-                   if (null (find (funcall newid id) seen))
-                     do (push (funcall newid id) seen) and collect (cons id type))))
-      (multiple-value-bind (writes reads) (values (only-unseen writes) (only-unseen reads))
-        (setf (getattr item :storage-id-src) (map 'list (compose newid #'car) reads)
-              (getattr item :storage-id-dst) (map 'list (compose newid #'car) writes)
-              (getattr item :read-types) (map 'list #'cdr reads)
-              (getattr item :write-types) (map 'list #'cdr writes))))))
+  ;; val_1, val_2 <- A, B
+  ;; val_1, val_2 <- A, A
+
+  ;; node_writes is unchanged thus node_reads should not be changed
+  (error "TODO")
+  )
 
 (defun apply-memory-planner (schedule-graph symbolics base-graph)
   (declare (type graph schedule-graph))

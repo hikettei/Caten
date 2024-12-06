@@ -634,7 +634,7 @@ Lowers the Schedule-Item into blueprint.
             (getattr node :storage-id-dst) (map 'list #'map-from (getattr base-item :storage-id-dst))
             (getattr node :read-types) (map 'list #'update-buffer (getattr base-item :read-types))
             (getattr node :write-types) (map 'list #'update-buffer (getattr base-item :write-types))
-            (getattr node :dynamic-shapes) (map 'list #'update-buffer (getattr base-item :dynamic-shapes)))
+            (getattr node :dynamic-shapes) (getattr base-item :dynamic-shapes))
       ;; creates a copy of blueprint, expr is also refreshed. Memory Planner will use this.
       (setf (getattr node :blueprint)
             (loop for bp-base in (getattr base-item :blueprint)
