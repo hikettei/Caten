@@ -167,6 +167,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
             (setf stacks (remove (getattr node :idx) stacks :key #'(lambda (x) (getattr x :idx))))
           else
             do (setf (gethash (node-id node) id->depend-loops) stacks))
+    (dolist (node (graph-nodes schedule-graph))
+      (loop for w in (node-writes node)
+            for ws in (getattr node :storage-id-dst)
+            if (not (eql w ws))
+              do (push ws symbolics))) ;; already reserved -> do not change
     (dolist (s symbolics) (setf (gethash s lock-table) t))
     ;; Creating a timestamp table for each node and variable.
     (loop for node in nodes
