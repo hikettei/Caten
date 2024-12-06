@@ -24,7 +24,8 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
   (:export
    #:lower-schedule-item
    #:lower-cached-schedule-item
-   #:print-blueprint))
+   #:print-blueprint
+   #:schedule-item-finalize-indexing))
 
 (in-package :caten/codegen/blueprint)
 ;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -570,6 +571,110 @@ Lowers the Schedule-Item into blueprint.
                 (node-writes node) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))
       (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
+
+(defun expr-gather-scalar-path (expr base-graph schedule-graph synchronizer)
+  ;; The content of expr should not be scheduled
+  ;; [TODO] Use schedule-graph not to involve here also the scheduled item
+  (let ((outputs) (seen (make-hash-table)))
+    (labels ((explore (id)
+               (when (gethash id seen) (return-from explore))
+               (let ((node (or (id->value (expr-graph expr) id) (id->value base-graph id))))
+                 (when node
+                   (setf (gethash id seen) t)
+                   (when (and (eql (node-type node) :AREF) (> (buffer-nrank (getattr node :buffer)) 0))
+                     (return-from explore))
+                   (if (getattr node :_type_relay :allow-undefined t)
+                       (let ((types (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node)))))
+                         (when (every #'(lambda (typ) (or (null typ) (= 0 (buffer-nrank typ)))) types)
+                           (push node outputs)
+                           (mapc #'explore (node-reads node))))
+                       (progn
+                         (push node outputs)
+                         (mapc #'explore (node-reads node))))))))
+      (mapc #'explore (node-writes (expr-out expr))))
+    ;; Pay attention for copying the all returned nodes.
+    (loop for out in outputs
+          for out-copied = (copy-node out)
+          if (eql (node-type out-copied) :Load)
+            do (setf (getattr out-copied :value) (funcall synchronizer (getattr out-copied :value)))
+          end
+          collect out-copied)))
+
+(defun schedule-item-finalize-indexing (node base-graph schedule-graph
+                                        &aux
+                                          (io (append (node-writes node) (node-reads node)))
+                                          (rewrite-alias-map (make-hash-table))
+                                          (get-original-map (make-hash-table))
+                                          (id2count (make-hash-table))
+                                          (users))
+  "
+```
+(schedule-item-finalize-indexing node base-graph schedule-graph)
+```
+
+Simplifies the scalar computation for computing the indexing, and minimizes the number of :dynamic-shapes to be loaded.
+
+node is assumed to the lowered blueprint. base-graph is the graph you passed to the graph-schedule.
+"
+  (declare (type node node) (type graph base-graph schedule-graph))
+  (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
+  (assert (getattr node :blueprint) () "Lower the schedule item first.")
+  (when (null (getattr node :dynamic-shapes)) (return-from schedule-item-finalize-indexing node)) ;; static graph
+  (labels ((merge-time (id) (intern (format nil "~(~a~)_~a" id (gethash id id2count))))
+           (bind (id)
+             ;; Creating a lexiographical schedule order
+             ;; for(int _gid2=0;...;) { } S(1, _gid2)
+             ;; for(int _gid2=0;...;) { } S(2, _gid2)
+             (when (null (gethash id id2count))
+               (setf (gethash id id2count) 0))
+             (setf (gethash id rewrite-alias-map) (merge-time id)
+                   (gethash (merge-time id) get-original-map) id))
+           (unbind (id)
+             (remhash (merge-time id) rewrite-alias-map)
+             (incf (gethash id id2count)))
+           (synchronizer (id) (or (gethash id rewrite-alias-map) id))
+           (gather (expr)
+             (setf users (append users (node-writes (expr-out expr))))
+             (expr-gather-scalar-path expr base-graph schedule-graph #'synchronizer)))
+    (let* ((unified-symbolic-path
+             (apply
+              #'make-graph
+              (loop for bp in (getattr node :blueprint)
+                    if (eql (node-type bp) :FOR)
+                      do (bind (getattr bp :idx)) and
+                    append (append (gather (getattr bp :upfrom)) (gather (getattr bp :below)))
+                    if (eql (node-type bp) :ENDFOR)
+                      do (unbind (getattr bp :idx))
+                         ;;if (eql (node-type bp) :IF)
+                         ;;  append (gather (getattr bp :condition))
+                    if (eql (node-type bp) :EXPR)
+                      append
+                      (append
+                       (loop for write in (node-writes bp)
+                             for wt in (relay-writes (read-type-relay bp))
+                             for wi in (relay-write-iters (read-type-relay bp))
+                             if (and write wt wi (find write io))
+                               do (assert (getattr bp :iterations)) and
+                             append (gather (apply #'expr-add (iteration-space-expr-aref wi wt (getattr bp :iterations)))))
+                       (loop for expr-node in (graph-nodes (expr-graph (getattr bp :EXPR)))
+                             if (and (eql (node-type expr-node) :Aref) (find (getattr expr-node :storage-id) io) (> (buffer-nrank (getattr expr-node :buffer)) 0))
+                               do (assert (getattr bp :iterations)) and
+                             append (gather (apply #'expr-add (iteration-space-expr-aref (getattr expr-node :space) (getattr expr-node :buffer) (getattr bp :iterations))))))))))
+      (setf (graph-outputs unified-symbolic-path) users
+            unified-symbolic-path (->fast-graph unified-symbolic-path))
+      (caten/air:verify-graph unified-symbolic-path)
+      (setf unified-symbolic-path (caten/aasm:minimize-duplicated-symbolic-path unified-symbolic-path))
+      (dolist (node (graph-nodes unified-symbolic-path))
+        (when (eql (node-type node) :Load)
+          (setf (getattr node :value) (or (gethash (getattr node :value) get-original-map) (getattr node :value)))))
+      ;; 1. Merge unified-symbolic-path to the graph
+      ;; 2. Apply them to the base expr
+      (print unified-symbolic-path)
+      ;; [TODO] _gid2 wo load de push suru
+      ;; [TODO] Softmaxみたいに_GIDが重複する場合どうする？
+      ;; Blueprint, dynamic-shapesの両方をUpdateしたい
+      )))
+
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
   (let ((node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
