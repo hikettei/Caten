@@ -63,8 +63,7 @@ caten/codegen overview:
    :caten/codegen/blueprint
    #:lower-schedule-item
    #:lower-cached-schedule-item
-   #:print-blueprint
-   #:schedule-item-finalize-indexing)
+   #:print-blueprint)
   (:import-from
    :caten/codegen/scop
    #:scop
