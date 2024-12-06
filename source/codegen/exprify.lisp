@@ -372,14 +372,14 @@ If each element is broadcasted, otherwise (= assign), register an alias to globa
 (defun iterspace-depend-consts (is &key (written))
   (let ((consts))
     ;; depends on = strides, views
-    (loop for v in (iteration-space-views is)
-          for s in (iteration-space-strides is)
+    (assert (= (length (iteration-space-shape is)) (length (iteration-space-strides is))))
+    (loop for s in (iteration-space-strides is)
+          for v in (iteration-space-views is)
           for offset = (first v)
-          for by = (third v)
-          if (and offset by) do
-            (when (and (symbolp offset) (not (find offset written)))
+          for by = (third v) do
+            (when (and offset (symbolp offset) (not (find offset written)))
               (push (cons offset caten/aasm:*default-int*) consts))
-            (when (and (symbolp by) (not (find by written)))
+            (when (and by (symbolp by) (not (find by written)))
               (push (cons by caten/aasm:*default-int*) consts))
             (multiple-value-bind (rs cs) (expr-realized-buffers s :written written)
               (assert (null rs))
@@ -451,3 +451,7 @@ If each element is broadcasted, otherwise (= assign), register an alias to globa
        (multiple-value-bind (rs2 cs2) (expr-realized-buffers (getattr render :below) :candidates candidates :written written)
          (values nil (append rs1 rs2) (append cs1 cs2)))))
     (:ENDFOR)))
+
+(defun blueprint-assign-aliases (blueprint alias-map)
+
+  )
