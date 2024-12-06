@@ -286,16 +286,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
             (when is
               (setf (getattr bp :iterations) (ensure-iteration-space-length is (getattr bp :iterations))))))
   blueprint)
-;; [TODO] What we are doing here is very simple.
-;; [TODO] Reduction ... MOVEはItem内部で完結する
-;; [TODO] Assignをどうやって実装するか考える. Memory Planne周り・・・
-;; Expr-Realized-Buffersを作成したら，Blueprintにあるnode-reads/node-writesの推論は削除する
-;; What if cached? -> Lowererが終わった後に，ALIAS MAPを作成してSynchronizeする
 
-;; Assignの場合は，メモリが余計なコピーを作らないことだけを宣言すればいい
-;; 1. Reduction/AssignのBuffer TypeをSchedule Type内部のみでUpdateする (since the output cannot be a reduction rule)
-;; ^ LPARALLELで実行順が合わなくなる -> ALIASの遷移先がおかしくなる
-;; 2. expr-realized-buffersでIOを確定させる
 (defun blueprint-make-alias-map (blueprint)
   (let ((alias-map (make-hash-table)))
     (loop for bp in blueprint
@@ -304,7 +295,16 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
           if (and (eql (node-type bp) :EXPR) (getattr bp :reduction) (node-writes-broadcasted-p bp))
             do (setf (gethash (car (node-writes bp)) alias-map)
                      (list (car (node-reads bp)) (car (relay-reads (read-type-relay bp))) (car (relay-read-iters (read-type-relay bp))))))
-    alias-map))          
+    alias-map))
+
+(defun blueprint-merge-assign-map (blueprint table)
+  (declare (type list blueprint) (type hash-table table))
+  (loop for bp in blueprint
+        ;; 1. val_1[1, 10] += val[10, 10] is a reduction, pointer propagation is effected in the only current blueprint (apply here)
+        ;; 2. val_1[10, 10] += val[10, 10] is an assign, pointer propagation effects globally, this inference is done after the lowerer.
+          if (and (eql (node-type bp) :EXPR) (getattr bp :reduction) (not (node-writes-broadcasted-p bp)))
+            do (setf (gethash (car (node-writes bp)) table) (car (node-reads bp))))
+  table)
 
 (defun rewrite-expr-aref (expr replace)
   (declare (type graph expr))
@@ -452,6 +452,17 @@ If each element is broadcasted, otherwise (= assign), register an alias to globa
          (values nil (append rs1 rs2) (append cs1 cs2)))))
     (:ENDFOR)))
 
-(defun blueprint-assign-aliases (blueprint alias-map)
-
+(defun schedule-item-finalize-indexing (node)
+  "TODO: Add this to the documentation"
+  
   )
+;; [TODO] What we are doing here is very simple.
+;; [TODO] Reduction ... MOVEはItem内部で完結する
+;; [TODO] Assignをどうやって実装するか考える. Memory Planne周り・・・
+;; Expr-Realized-Buffersを作成したら，Blueprintにあるnode-reads/node-writesの推論は削除する
+;; What if cached? -> Lowererが終わった後に，ALIAS MAPを作成してSynchronizeする
+
+;; Assignの場合は，メモリが余計なコピーを作らないことだけを宣言すればいい
+;; 1. Reduction/AssignのBuffer TypeをSchedule Type内部のみでUpdateする (since the output cannot be a reduction rule)
+;; ^ LPARALLELで実行順が合わなくなる -> ALIASの遷移先がおかしくなる
+;; 2. expr-realized-buffersでIOを確定させる

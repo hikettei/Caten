@@ -55,7 +55,6 @@ caten/codegen overview:
   (:import-from
    :caten/codegen/rewriting-rules
    #:apply-rewriting-rules
-   #:graph-infer-pointer-address
    #:schedule-item-write-define-global)
   (:import-from
    :caten/codegen/scheduler
@@ -431,7 +430,7 @@ Runs the JIT compilation for the given AVM."
            (loop for node in (graph-nodes (avm-graph avm))
                  if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
                    collect (getattr node :value))))
-        (pointer-map (graph-infer-pointer-address (avm-graph avm))))
+        (pointer-map (make-hash-table)))
     (declare (type Graph schedule-graph))
     (with-expr-cache (:pointer-map pointer-map) ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
       ;; 5. Minifying the number of schedules, (reuse kernels)

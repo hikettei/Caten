@@ -57,22 +57,9 @@
    #:schedule-item-write-define-global
    #:apply-rewriting-rules
    #:nodes-apply-static-gensym
-   #:apply-static-gensym
-   #:graph-infer-pointer-address))
+   #:apply-static-gensym))
 
 (in-package :caten/codegen/rewriting-rules)
-
-(defun graph-infer-pointer-address (graph)
-  "Infer the address of the pointer in the graph.
-Only the :MOVE has an ability to modify this rule. (Or :STORE?)"
-  (declare (type graph graph))
-  (let ((map (make-hash-table)))
-    (dolist (node (graph-nodes graph))
-      (when (eql (node-type node) :MOVE)
-        (assert (symbolp (car (node-reads node))))
-        ;; WRTTE=READ
-        (setf (gethash (car (node-writes node)) map) (car (node-reads node)))))
-    map))
 
 (defun rewrite-views-as-buffer (avm)
   "Rewrite the node :VIEW as an object in the type-relay, so that the code generator can handle view as a buffer."

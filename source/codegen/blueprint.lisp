@@ -511,6 +511,8 @@ Depends=~a Reduce=~a Users=~a
 ;;   - ViT Prepreq
 ;; - 5. Simplify jit.lisp vmop construction.
 ;; - https://github.com/hikettei/Caten/issues/258#issue-2687413580
+;; - 6. 1 simplify-arithmetic-xxx opt
+;; - 7. assign fix
 (defun lower-schedule-item (node base-graph scheduled-graph) ;; Entry point for lowerer is here :)
   "
 ```
@@ -555,7 +557,6 @@ Lowers the Schedule-Item into blueprint.
             (ctx-blueprint ctx) (blueprint-exprify (ctx-blueprint ctx) node) ; rewrite jitable nodes -> expr
             (ctx-blueprint ctx) (blueprint-propagate-reduction (ctx-blueprint ctx)) ;; Z = A + B * C => Z += A * B
             (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
-      (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
       ;; Synchronize the realized buffers
       (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
         (setf (getattr node :read-types) (map 'list #'cdr reads)
@@ -565,6 +566,7 @@ Lowers the Schedule-Item into blueprint.
               (getattr node :dynamic-shapes) constants
               (node-reads node) (map 'list #'car reads)
               (node-writes node) (map 'list #'car writes)))
+      (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
