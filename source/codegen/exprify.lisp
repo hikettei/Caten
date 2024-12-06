@@ -436,7 +436,7 @@ B <- C // :reduction=t
             (loop for w in (node-writes expr-node)
                   for wt in (relay-writes (read-type-relay expr-node))
                   for wi in (relay-write-iters (read-type-relay expr-node))
-                  if (and wt wi (find w candidates))
+                  if (and wt wi (not (= -1 (buffer-nrank wt))))
                     do (setf consts (append consts (iterspace-depend-consts wi :written written))) and
                   collect (cons w wt))))
       (values writes reads consts))))
@@ -458,6 +458,7 @@ B <- C // :reduction=t
   ;; 実装のやり方:
   ;; AREFのIndexを全てappendしたグラフを作ってoptimizeしてgraphを参照元みたいな感じで使う
   )
+;; X isnot locked?
 ;; Memory Plannerは最初のsolvedを認識する
 ;; MemoryPlanne refactorは最後にやる
 ;; - 
