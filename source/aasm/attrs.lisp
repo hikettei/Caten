@@ -293,10 +293,8 @@ for i=0..N
 	 "The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes.
 - Expr[caten/codegen/expr:EXPR] a tree structure comprised of `caten/codegen/expr:EXPR`
 - reduction[boolean]
-- aref-exprs[null or Expr] stores the simplified index computation if specified
 "
 	 :slots ((expr)
-		 (reduction :initform nil)
-                 (aref-exprs :initform nil)))
+		 (reduction :initform nil)))
 
 ) ;; eval-when

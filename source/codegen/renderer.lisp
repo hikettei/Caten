@@ -82,12 +82,10 @@ ID[*space]
 - storage-id[symbol] An index to the reference pointer optimized by the memory-planner.
 - buffer[Buffer] The buffer to be accessed.
 - space[Iteration-Space] The iteration space `:AREF` belongs to.
-- expr[Expr or null] A place to store the optimized stride expression if provided.
 "
          :slots ((storage-id :type symbol)
                  (buffer :type Buffer)
-                 (space :type Iteration-Space)
-                 (expr :type Expr)))
+                 (space :type Iteration-Space)))
 
 (defnode (:Render :DEFINE-GLOBAL) ()
          "
@@ -148,16 +146,14 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
     (if (= -1 (buffer-nrank buffer))
         (format nil "~(~a~)" id)
         (if index-space
-            (if (getattr node :EXPR)
-                (format nil "~(~a~)[~a]" (%render-const renderer id) (render-expr (class-of renderer) (getattr node :EXPR)))
-                (let ((expr (apply #'expr-add (iteration-space-expr-aref space buffer (renderer-index-space renderer)))))
-                  (setf (graph-nodes (renderer-graph renderer))
-                        (append
-                         (graph-nodes (expr-graph expr))
-                         (graph-nodes (renderer-graph renderer))))
-                  (format nil "~(~a~)[~a]"
-                          (%render-const renderer id)
-                          (render-node renderer (car (node-writes (expr-out expr)))))))
+            (let ((expr (apply #'expr-add (iteration-space-expr-aref space buffer (renderer-index-space renderer)))))
+              (setf (graph-nodes (renderer-graph renderer))
+                    (append
+                     (graph-nodes (expr-graph expr))
+                     (graph-nodes (renderer-graph renderer))))
+              (format nil "~(~a~)[~a]"
+                      (%render-const renderer id)
+                      (render-node renderer (car (node-writes (expr-out expr))))))
             (format nil "~(~a~)[?]" id)))))
 
 (defun expr-index-components (renderer node index-space)
