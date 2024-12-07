@@ -11,7 +11,7 @@ help:
 install_extra: ## Install extra dependencies for testing
 	python3.12 -m ensurepip --upgrade
 	python3.12 -m pip install --upgrade pip setuptools wheel
-	python3.12 -m pip install numpy==1.26.4 torch gguf sentencepiece
+	python3.12 -m pip install numpy==1.26.4 torch gguf sentencepiece tiktoken
 
 .PHONY: test
 test: ## Runs test harness

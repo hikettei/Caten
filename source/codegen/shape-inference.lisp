@@ -281,10 +281,17 @@ If the shape inference is successfully done and properly deployed to the target 
     (_ nil)))
 
 (defun %expr-const (graph value dtype)
-  (let ((val (reveal-buffer value)))
+  (let* ((val (reveal-buffer value))
+         (load (id->value graph val))
+         (alloc (when load (id->value graph (car (node-reads load))))))
     (if (or (numberp val) (null (id->value graph val)))
         (expr-const val dtype)
-        (expr-from-graph val graph))))
+        ;; If the value directly represents for the dynamic shape, it is worth to replace it with the node.
+        ;; Otherwise, just a loads the symbol.
+        (if (and alloc load (eql (node-type alloc) :Alloc) (eql (node-type load) :LOAD)
+                 (symbolp (getattr load :value)) (= 0 (getattr alloc :nrank)))           
+            (expr-from-graph val graph)
+            (expr-const val dtype)))))
 
 (defstruct Iteration-Space
   "
@@ -304,11 +311,12 @@ gids corresponds for the loop idx in the kernel.
   (procedure nil :type list))
 
 (defmethod iteration-space-expr-aref ((is Iteration-Space) (type Buffer) gids)
+  "Returns a list of EXPR which (reduce #'+ ...) represents for the index."
   (assert (not (= (buffer-nrank type) -1)) () "buffer-nrank = -1 means the array was mutated to scalar!")
-  (let (;;(size (iteration-space-shape is))
+  (let ((size (iteration-space-shape is))
         (stride (iteration-space-strides is))
         (view (iteration-space-views is)))
-    ;; (assert (= (length gids) (length size)) () "The iteration space and the buffer should have the same rank, getting gids=~a~%~a" gids is)
+    (assert (= (length gids) (length size)) () "The iteration space and the buffer should have the same rank, getting gids=~a~%~a" gids is)
     (loop for s in stride
           for nth upfrom 0
           for i in gids

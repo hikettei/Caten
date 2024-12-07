@@ -50,9 +50,9 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (items :type list) (items-to-cache :type list)
           (rank :type fixnum) (reduce-dims :type list)
           (read-types :type list) (write-types :type list)
-          (reference-counters :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)
+          (return-positions :type list)
           (dynamic-shapes :type list)
           (rendered-object :type string)
           (compiled-object :type list)
@@ -135,6 +135,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
     (assert (= (length (group-items group)) 1) () "Allocate should be scheduled standalone")))
 
 (defmethod make-unique-schedule-name ((group Group))
+  "Names an unique and readable kernel name for human."
   (let ((names-func)
         (module-names)
         (seen))
@@ -340,15 +341,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :storage-id-src reads
                :read-types (map 'list #'(lambda (x) (gethash x id2type)) reads)
                :write-types (map 'list #'(lambda (x) (gethash x id2type)) writes)
-               :reference-counters
-               ;; TODO: Rethink the reference counter
-               (map
-                'list
-                #'(lambda (x)
-                    (if (find x (graph-outputs (ctx-graph ctx)))
-                        -1
-                        (length (ctx-children ctx (id->value (ctx-graph ctx) x)))))
-                (append reads writes))
                :rank rank
                :reduce-dims (group-reduce-dims group)
                :items (group-items group)
@@ -727,8 +719,10 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
   (when (every #'jitable-p (group-items group)) ;; this is only the case for jitable kernel
     (loop for predecessor in (group-predecessor group)
           for item = (id->value (ctx-graph ctx) predecessor)
-          if (and item (eql (node-type item) :LOAD)
-                  (= 0 (buffer-nrank (car (relay-writes (read-type-relay item))))))
+          for alloc = (and item (id->value (ctx-graph ctx) (car (node-reads item))))
+          if (and item alloc (eql (node-type item) :LOAD) (eql (node-type alloc) :Allocate)
+                  (= 0 (buffer-nrank (car (relay-writes (read-type-relay item)))))
+                  (= 0 (the fixnum (getattr alloc :nrank))))
             do (setf (group-predecessor group) (remove predecessor (group-predecessor group)))
                (push item (group-items group))))
   group)
@@ -781,7 +775,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                     (%jstore write-id base-id acc-id (car (relay-writes (read-type-relay node))))
                     (getattr si :items)))))))
     (mapc #'r (graph-nodes schedule-graph))))
-
+;; TODO(hikettei) Create a schedule for forward/backward mode independently to get more prettry schedule graph.
 (defun graph-schedule (graph)
   "
 ```
@@ -813,5 +807,5 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
     (let ((nodes (map 'list #'node-id (apply #'append (map 'list #'group-items groups)))))
       (dolist (n (graph-nodes graph)) (setf nodes (remove (node-id n) nodes)))
       (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
-    (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph))
+    (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph)) ;; create a unique and readable naming for each kernel.
     schedule-graph))

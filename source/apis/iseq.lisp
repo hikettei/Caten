@@ -281,6 +281,8 @@
               (funcall f merged-graph :debug-opt (= 1 (the fixnum (ctx:getenv :PROFILE_SIMPLIFIER)))))
 	    ;; verify and complete
             (verify-graph merged-graph)
+            ;; Finally minify duplicated stride computation subgraph. (forced)
+            (setf merged-graph (minimize-duplicated-symbolic-path merged-graph))
 	    (values (->graph-with-tpsort merged-graph) pause-backward-p)))))))
 ;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %module->iseqfw (session module-node)

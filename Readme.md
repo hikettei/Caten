@@ -52,13 +52,13 @@ Before contributing, please note that there is no linter here. Make an effort to
 ### Supported Models
 
 - **Transformer**
-  - [x] GPT2 (but currently broken!)
+  - [x] GPT2
   - [ ] Llama3 8B
   - [ ] TinyLLAMA
 - **Classification**
   - [x] MobileNetV2
   - [ ] MobileNetV3
-  - [ ] ResNet18/ResNet34/ResNet50
+  - [x] ResNet18/ResNet34/ResNet50
   - [ ] VIT_B_16
 - **Segmentation**
   - [ ] CenterNet

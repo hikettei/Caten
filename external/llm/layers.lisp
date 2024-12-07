@@ -67,7 +67,7 @@
 (defmethod call ((model TransformerBlock) &rest inputs)
   (multiple-value-bind (x mask start-pos) (apply #'values inputs)
     (with-slots ((attn attn) (mlp mlp) (ln_1 ln_1) (ln_2 ln_2)) model
-      (let ((h (forward attn (forward ln_1 x) mask start-pos)))
+      (let ((h (!add x (forward attn (forward ln_1 x) mask start-pos))))
 	(!add h (forward mlp (forward ln_2 h)))))))
 
 (defmodel (Transformer (dim n-heads n-layers norm-eps vocab-size &key (max-seq-len 1024)))
@@ -87,5 +87,4 @@
 	   (_ (dolist (hn h) (setf hi (forward hn hi mask start-pos))))
 	   (logits (forward lm-head (forward ln-f hi))))
       (declare (ignore _))
-      ;; (!argmax (!view logits t -1 t))
-      (!argmax logits))))
+      (!argmax (!view logits t -1 t)))))
