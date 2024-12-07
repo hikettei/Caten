@@ -1,5 +1,5 @@
 (asdf:defsystem "caten.apps.gpt2"
   :description "GPT2 Implementation Using Caten"
-  :depends-on ("caten" "caten/llm" "caten/gguf")
+  :depends-on ("caten" "caten/llm" "caten/gguf" "float-features")
   :serial t
   :components ((:file "gpt2")))
