@@ -543,7 +543,7 @@ Lowers the Schedule-Item into blueprint.
       ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
             (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; early scalarify
-            (ctx-blueprint ctx) (blueprint-scalarify (ctx-blueprint ctx) node) ; rewrite local buffers as a scalar
+            (ctx-blueprint ctx) (blueprint-scalarify (ctx-blueprint ctx) node base-graph) ; rewrite local buffers as a scalar
             (ctx-blueprint ctx) (blueprint-exprify (ctx-blueprint ctx) node) ; rewrite jitable nodes -> expr
             (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
       (multiple-value-bind (new-bp id-as-dag-map) (blueprint-propagate-reduction (ctx-blueprint ctx)) ;; A = B + C * D => B += C * D

@@ -153,7 +153,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                   if g collect r)))
     node))
 
-(defmethod blueprint-scalarify ((blueprint list) (node Node) &aux (seen (make-hash-table)) (io (append (node-reads node) (node-writes node))))
+(defmethod blueprint-scalarify ((blueprint list) (node Node) (base-graph Graph) &aux (seen (make-hash-table)) (io (append (node-reads node) (node-writes node))))
   "Only the following buffers are realized:
 - appeared in either of (node-reads node) or (node-writes node)
 - the access is not completed in the innermost loop"
@@ -177,9 +177,14 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
                   for ri in (relay-read-iters (read-type-relay bp))
                   for parent = (find r blueprint :key #'node-writes :test #'find)
                   for parent-reduce-p = (and parent (getattr parent :reduction :allow-undefined t))
+                  for definition = (id->value base-graph r)
                   for nth upfrom 0
                   if (and rt ri (local-p r) (or (null parent-reduce-p) (getattr parent :declare-type))) do
-                    (setf (nth nth (relay-reads (read-type-relay bp))) (buffer-scalarify rt)))
+                    (setf (nth nth (relay-reads (read-type-relay bp))) (buffer-scalarify rt))
+                  else if (and definition (= 0 (buffer-nrank (car (relay-writes (read-type-relay definition)))))) do
+                    (let ((s (buffer-scalarify rt)))
+                      (setf (buffer-nrank s) 0
+                            (nth nth (relay-reads (read-type-relay bp))) s)))
             (when (null (getattr bp :reduction :allow-undefined t))
               (loop for w in (node-writes bp)
                     for wt in (relay-writes (read-type-relay bp))
