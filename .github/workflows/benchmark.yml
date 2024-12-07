@@ -130,4 +130,4 @@ jobs:
       - name: GPT2
         run: |
           ros config set dynamic-space-size 8gb
-          JIT=1 JIT_DEBUG=4 PARALLEL=8 NO_MEMORY_PLANNER=0 NO_SCHEDULE_CACHE=0 ./roswell/caten.ros llm-example --model "gpt2" --prompt "What is the answer to life, the universe, and everything?"
+          JIT=1 JIT_DEBUG=4 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --expected "Hello, I'm sorry, but I'm not sure" --max-length 10

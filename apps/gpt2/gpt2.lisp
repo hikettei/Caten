@@ -96,13 +96,11 @@ Takes a compiled GPT2 model and a string input, and generates a text output.
 
 (defun ->input (list) (change-facet `(,(map 'list #'(lambda (x) (+ 0.0 x)) list)) :tensor))
 
-(defun gpt2-generate (gpt2 input)
+(defun gpt2-generate (gpt2 input &key (verbose t) (max-length 100) (expected nil))
   (declare (type GPT2 gpt2) (type string input))
   (with-float-traps-masked t
     (with-slots ((model model) (tokenizer tokenizer) (max-seq-len max-seq-len)) gpt2
-      (let* ((tokens (encode tokenizer input))
-             (start-pos 0)
-             (max-length 100))
+      (let* ((tokens (encode tokenizer input)) (start-pos 0))
         (loop for i upfrom 0 below max-length
               for in-tokens = (subseq tokens start-pos)
               for out = (forward model `(x . ,(->input in-tokens)) `(s . ,(length in-tokens)) `(n . ,start-pos)) do
@@ -110,10 +108,8 @@ Takes a compiled GPT2 model and a string input, and generates a text output.
                   (setf start-pos (length tokens)) ;; start_pos = previous_total_seq_len
                   (let ((size (array-total-size out*)))
                     (setf tokens (append tokens (list (aref out* (1- size)))))
-                    (print tokens)
-                    (print "Decode")
-                    (print (decode tokenizer tokens))
-                    
-                    )))
-        (print tokens)
-        (print (decode tokenizer tokens))))))
+                    (when verbose (print (decode tokenizer (last tokens)))))))
+        (let ((decoded (decode tokenizer tokens)))
+          (when expected
+            (assert (string= decoded expected) () "Expected output: ~a, but got: ~a" expected decoded))
+          decoded)))))
