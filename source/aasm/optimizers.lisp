@@ -24,7 +24,11 @@ D = Z
 "
   (declare (type Graph graph) (optimize (speed 3)))
   (let ((replaceable-map (make-hash-table)) (users-map (make-hash-table)) (defined) (id->node (make-hash-table)))
-    (labels ((load-eql-p (node1 node2)
+    (labels ((invalid-load-p (from node)
+               (if (eql (node-type node) :VIEW)
+                   (eql from (the symbol (car (node-reads node))))
+                   nil))
+             (load-eql-p (node1 node2)
                (and (eql (node-type node1) :LOAD) (eql (node-type node2) :LOAD)
                     (eql (getattr node1 :value) (getattr node2 :value))
                     (let ((alloc1 (gethash (car (node-reads node1)) replaceable-map))
@@ -32,7 +36,8 @@ D = Z
                           (users1 (gethash (car (node-writes node1)) users-map))
                           (users2 (gethash (car (node-writes node2)) users-map)))
                       ;; Do not remove LOAD for accumlation
-                      (when (or (find :VIEW (the list users1) :key #'node-type) (find :VIEW (the list users2) :key #'node-type))
+                      (when (or (find-if #'(lambda (x) (invalid-load-p (car (node-writes node1)) x)) (the list users1))
+                                (find-if #'(lambda (x) (invalid-load-p (car (node-writes node2)) x)) (the list users2)))
                         (return-from load-eql-p nil))
                       (and alloc1 alloc2 (eql (the keyword (getattr alloc1 :dtype)) (the keyword (getattr alloc2 :dtype)))))))
              (c (node)
