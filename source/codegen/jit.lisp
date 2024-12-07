@@ -205,10 +205,7 @@ caten/codegen overview:
            ;; Prefer to use the original node, if w is defined in the graph and that's allocate.
            (let ((node (id->value base-graph w)))
              (when (and node (eql (node-type node) :Allocate))
-               (let ((node (copy-node node)))
-                 (incf time)
-                 (setf (car (node-writes node)) (timefy w time))
-                 node)))
+               node))
            ;; Otherwise create it.
            (make-node :Buffer :Allocate (progn (incf time) (list (timefy w time)))
                       (append
