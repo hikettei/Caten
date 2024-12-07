@@ -87,5 +87,4 @@
 	   (_ (dolist (hn h) (setf hi (forward hn hi mask start-pos))))
 	   (logits (forward lm-head (forward ln-f hi))))
       (declare (ignore _))
-      ;; (!argmax (!view logits t -1 t))
-      (!argmax logits))))
+      (!argmax (!view logits t -1 t)))))
