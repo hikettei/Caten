@@ -58,7 +58,7 @@ Before contributing, please note that there is no linter here. Make an effort to
 - **Classification**
   - [x] MobileNetV2
   - [ ] MobileNetV3
-  - [ ] ResNet18/ResNet34/ResNet50
+  - [x] ResNet18/ResNet34/ResNet50
   - [ ] VIT_B_16
 - **Segmentation**
   - [ ] CenterNet
