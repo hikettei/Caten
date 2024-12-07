@@ -106,7 +106,8 @@ caten/codegen overview:
   (caller (error "caller must occur") :type function)
   (raw-caller (error "raw-caller must occur") :type list)
   (device (error "device must occur") :type string)
-  (code (error "code must occur") :type string))
+  (code (error "code must occur") :type string)
+  (out-positions (error "out positions must occur") :type list))
 
 (defnode (:JIT :JIT_KERNEL) ()
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
@@ -119,7 +120,8 @@ caten/codegen overview:
     :caller ,(compiled-kernel-raw-caller jit)
     :raw-caller ',(compiled-kernel-raw-caller jit)
     :device ,(compiled-kernel-device jit)
-    :code ,(compiled-kernel-code jit)))
+    :code ,(compiled-kernel-code jit)
+    :out-positions ,(compiled-kernel-out-positions jit)))
 
 (defmethod print-object ((s Compiled-Kernel) stream)
   (format stream "<~a[~a]>" (compiled-kernel-device s) (compiled-kernel-name s)))
@@ -140,7 +142,8 @@ caten/codegen overview:
      :device (princ-to-string (or (ctx:getenv :JIT_BACKEND) :clang))
      :code (if (getattr si :cache-name)
                (getattr (from-cache si) :rendered-object)
-               (getattr si :rendered-object)))))
+               (getattr si :rendered-object))
+     :out-positions (or (getattr si :return-positions) (loop for i upfrom 0 below (length (node-writes si)) collect i)))))
 
 (defun make-compiled-kernel-node (si graph)
   (make-node :JIT :JIT_KERNEL (node-writes si)
@@ -157,13 +160,12 @@ caten/codegen overview:
              :cached-p (if (getattr si :cache-name) t nil)))
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
-  (let ((info (getattr node :kernel-info))
-        (out-n (getattr node :output-buffer-n)))
+  (let ((info (getattr node :kernel-info)))
     ;; (For details, see coerce-dtyped-buffer)
     (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
       (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
       (apply (compiled-kernel-caller info) args)
-      (apply #'values (subseq args 0 out-n)))))
+      (apply #'values (map 'list #'(lambda (x) (nth x args)) (compiled-kernel-out-positions info))))))
 
 (defun timefy (name time)
   (if (= 0 time) name (intern (format nil "~(~a~)_~a" name time))))

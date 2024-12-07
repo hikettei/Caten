@@ -53,6 +53,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (reference-counters :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)
+          (return-positions :type list)
           (dynamic-shapes :type list)
           (rendered-object :type string)
           (compiled-object :type list)
