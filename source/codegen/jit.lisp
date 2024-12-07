@@ -150,7 +150,7 @@ caten/codegen overview:
              (append
               (getattr si :storage-id-dst) ;; optimized by memory-planner
               (map 'list #'car (getattr si :dynamic-shapes))
-              (getattr si :storage-id-src))
+              (node-reads si))
              :output-buffer-n (length (node-writes si))
              :kernel-info (make-compiled-kernel-from-si si graph)
              :dtypes
