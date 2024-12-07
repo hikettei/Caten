@@ -502,18 +502,7 @@ Depends=~a Reduce=~a Users=~a
     `(,@(map 'list #'car padding-loops)
       ,@(ctx-blueprint ctx)
       ,@(reverse (map 'list #'cdr padding-loops)))))
-;; Refactor workload here:
-;; - 1. Everything is a scalar in default
-;; - 2. For input/output entry point, insert :AREF. All strides are determined at this time, early insert them.
-;; - 3. Remove `scheduled-graph` from the arguments.
-;; - 4. Simplify Exprify and Scalarify, argument determination, the purpose is:
-;;   - ResNet18 to work (args inference is stupid)
-;;   - MobileNetV3 to work (pointer inference is failed)
-;;   - ViT Prepreq
-;; - 5. Simplify jit.lisp vmop construction.
-;; - https://github.com/hikettei/Caten/issues/258#issue-2687413580
-;; - 6. 1 simplify-arithmetic-xxx opt
-;; - 7. assign fix
+
 (defun lower-schedule-item (node base-graph scheduled-graph) ;; Entry point for lowerer is here :)
   "
 ```
