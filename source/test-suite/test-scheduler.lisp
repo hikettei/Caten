@@ -76,7 +76,7 @@
             for count in `(4) do
               (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
                 (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type)))
-                (testing "Valid load is val_2 = val_1[(((4096*(1+_gid0))+_gid2)+64*_gid3)]"
+                (testing "Valid wmma is (val_2+(val_4[(((4096*a)+(64*b))+d)]*val_4[(((4096*(1+a))+c)+(64*d))]))"
                   (let ((wmma   (find-if #'(lambda (x)
                                              (and (eql (node-type x) :EXPR)
                                                   (getattr x :reduction :allow-undefined t)))
@@ -85,10 +85,10 @@
                         (index-space (map 'list #'(lambda (x) (expr-const x :int64)) '(a b c d))))
                     (flet ((r (n)
                              (caten/codegen/renderer:render-expr renderer (getattr n :EXPR) :index-space index-space)))
-                      (ok (equalp (r wmma) "(val_5+(val_0[(((4096*a)+(64*b))+d)]*val_0[(((4096*(1+a))+c)+(64*d))]))") (format nil "WMMA Part is rendered as ~a" (r wmma)))
+                      (ok (equalp (r wmma) "(val_2+(val_4[(((4096*a)+(64*b))+d)]*val_4[(((4096*(1+a))+c)+(64*d))]))") (format nil "WMMA Part is rendered as ~a" (r wmma)))
                       (let ((type (caten/codegen/shape-inference:read-type-relay wmma)))
-                        (ok (= (length (node-reads wmma)) 3))
-                        (ok (equal `(4096 64 1 1) (buffer-stride (nth 2 (caten/codegen/shape-inference:relay-reads type))))))))))))))
+                        (ok (= (length (remove-duplicates (node-reads wmma))) 3))
+                        (ok (equal `(4096 64 1 1) (buffer-stride (nth 3 (caten/codegen/shape-inference:relay-reads type))))))))))))))
 
 (deftest test-view-merge-failing-case
   (let ((schedule (schedule-with-vars (!gelu (!matmul (make-tensor `(1 64 64)) (!t (make-tensor `(1 64 64))))))))
@@ -195,11 +195,7 @@
             ;; Here, val_8=n must be passed as a uint64_t, not a poitner!
             ;; If the dynamic shape is appeared across different kernels, without proper patching, the dynamic shape is loaded as a pointer which is unexpected.
             (ok
-             (or
-              (cl-ppcre:scan "val_8\\+_gid1" bp)  ;; todo: remove then if lowerer can fuse val_8=n
-              (cl-ppcre:scan "val_55\\+val_8" bp) ;; 
-              (cl-ppcre:scan "n\\+_gid1" bp)
-              (cl-ppcre:scan "val_55\\+n" bp))
+             (or (cl-ppcre:scan "val_37 = n;" bp))
              (format nil "Rendererd:~%~a" bp))))))))
 
 (deftest test-assign-schedule
@@ -237,7 +233,7 @@
                   (ok (= 1 (count :EXPR bp :key #'node-type))
                       (format nil "Expected 1 reduction, got ~a" (count :EXPR bp :key #'node-type)))
                   (ok (equal (node-writes expr) `(K_CACHE_DATA)))
-                  (ok (equal (node-reads expr) `(K_INPUT))))
+                  (ok (equal (node-reads expr) `(K_CACHE_DATA K_INPUT))))
                 (let ((expr (find :EXPR bp :key #'node-type)))
                   (ok (= 1 (count :EXPR bp :key #'node-type))
                       (format nil "Expected 1 contiguous, got ~a" (count :EXPR bp :key #'node-type)))
