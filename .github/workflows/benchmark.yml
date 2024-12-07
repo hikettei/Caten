@@ -104,11 +104,16 @@ jobs:
       - name: Exporting models
         run: |
           python ./scripts/export_onnx.py --task classification --model mobilenet_v2 --weights IMAGENET1K_V1 --output_dir ./models
+          python ./scripts/export_onnx.py --task classification --model renset18 --weights IMAGENET1K_V1 --output_dir ./models
           wget https://pub-edba5feea2c145019e8be2a71dbeea81.r2.dev/cat.png
       - name: Running MobilenetV2
         run: |
           ros config set dynamic-space-size 8gb
           JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/mobilenet_v2.onnx --image ./cat.png --label 282
+      - name: Running ResNet18
+        run: |
+          ros config set dynamic-space-size 8gb
+          JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/resnet18.onnx --image ./cat.png --label 281
   GGUF_Optimization:
     name: GGUF Optimization
     runs-on: ubuntu-latest
