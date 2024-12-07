@@ -473,7 +473,7 @@ Splits the tensor into `chunks` number of tensors along the specified dimension.
                 for nth upfrom 0
                 for cat-dim in cat-dims
                 for in in inputs do
-                  (setf cat-tensor (!move (apply #'!view-from-base cat-tensor (~ offset nth)) in))
+                  (setf cat-tensor (!assign (apply #'!view-from-base cat-tensor (~ offset nth)) in))
                   (incf offset cat-dim))
           (apply #'!view-from-base cat-tensor
                  (loop for i upfrom 0 below (ndim cat-tensor)

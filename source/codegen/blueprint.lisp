@@ -550,14 +550,17 @@ Lowers the Schedule-Item into blueprint.
         (setf (ctx-blueprint ctx) new-bp)
         ;; Synchronize the realized buffers
         (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
-          (setf (getattr node :read-types) (map 'list #'cdr reads)
-                (getattr node :write-types) (map 'list #'cdr writes)
-                (getattr node :storage-id-src) (map 'list #'car reads)
-                (getattr node :storage-id-dst) (map 'list #'car writes)
-                (getattr node :dynamic-shapes) constants
-                (node-reads node) (map 'list #'car reads)
-                ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
-                (node-writes node) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))
+          (let ((before-assigned-map (loop for w in writes
+                                           if (gethash (car w) id-as-dag-map)
+                                             collect (car w))))
+            (setf (getattr node :read-types) (map 'list #'cdr reads)
+                  (getattr node :write-types) (map 'list #'cdr writes)
+                  (getattr node :storage-id-src) (map 'list #'car reads)
+                  (getattr node :storage-id-dst) (map 'list #'car writes)
+                  (getattr node :dynamic-shapes) constants
+                  (node-reads node) (append before-assigned-map (map 'list #'car reads))
+                  ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
+                  (node-writes node) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes)))))
       (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
