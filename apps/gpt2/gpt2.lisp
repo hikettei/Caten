@@ -2,8 +2,6 @@
   (:documentation "
 Implements GPT2 text generation from the pre-trained model.
 
-Note: Currently still experimental and may not work as expected!
-
 ### [function] make-gpt2
 
 ```
