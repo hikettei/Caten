@@ -106,13 +106,13 @@
   (let ((buffer
           (caten/avm:make-buffer
            (tensor-info-n-dimension tensor-info)
-           (tensor-info-dimensions tensor-info)
-           (caten/apis::static-compute-strides :row (tensor-info-dimensions tensor-info))
+           (reverse (tensor-info-dimensions tensor-info))
+           (caten/apis::static-compute-strides :row (reverse (tensor-info-dimensions tensor-info)))
            (ggml-type->caten-type (tensor-info-ggml-type tensor-info))
            nil)))
     (setf (caten/avm:buffer-value buffer) (tensor-info-buffer tensor-info))
     (let ((out (caten/apis:make-tensor
-                (tensor-info-dimensions tensor-info)
+                (reverse (tensor-info-dimensions tensor-info))
                 :dtype (ggml-type->caten-type (tensor-info-ggml-type tensor-info))
                 :from buffer)))
       (setf (caten/apis:tensor-buffer out) buffer)
