@@ -104,7 +104,7 @@ jobs:
       - name: Exporting models
         run: |
           python ./scripts/export_onnx.py --task classification --model mobilenet_v2 --weights IMAGENET1K_V1 --output_dir ./models
-          python ./scripts/export_onnx.py --task classification --model renset18 --weights IMAGENET1K_V1 --output_dir ./models
+          python ./scripts/export_onnx.py --task classification --model resnet18 --weights IMAGENET1K_V1 --output_dir ./models
           wget https://pub-edba5feea2c145019e8be2a71dbeea81.r2.dev/cat.png
       - name: Running MobilenetV2
         run: |
