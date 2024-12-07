@@ -455,24 +455,3 @@ B <- C // :reduction=t
        (multiple-value-bind (rs2 cs2) (expr-realized-buffers (getattr render :below) :candidates candidates :written written)
          (values nil (append rs1 rs2) (append cs1 cs2)))))
     (:ENDFOR)))
-
-(defun schedule-item-finalize-indexing (node)
-  "TODO: Add this to the documentation"
-  ;; 実装のやり方:
-  ;; AREFのIndexを全てappendしたグラフを作ってoptimizeしてgraphを参照元みたいな感じで使う
-  )
-;; X isnot locked?
-;; Memory Plannerは最初のsolvedを認識する
-;; - 
-;; - グラフの再作成
-;; [TODO] Assignをどうやって実装するか考える. Memory Planne周り・・・
-;; Expr-Realized-Buffersを作成したら，Blueprintにあるnode-reads/node-writesの推論は削除する
-;; What if cached? -> Lowererが終わった後に，ALIAS MAPを作成してSynchronizeする
-
-;; Assignの場合は，メモリが余計なコピーを作らないことだけを宣言すればいい
-;; 1. Reduction/AssignのBuffer TypeをSchedule Type内部のみでUpdateする (since the output cannot be a reduction rule)
-;; ^ LPARALLELで実行順が合わなくなる -> ALIASの遷移先がおかしくなる
-;; 2. expr-realized-buffersでIOを確定させる
-;; Assign ... Memory Plannerに注意
-;; Or: Memory PlannerってReductionの関係をちゃんと捉えてる？そうしたら何もしなくていい。
-;; 後，EXPRのnode-reads node-writesをUpdateしないといけない。
