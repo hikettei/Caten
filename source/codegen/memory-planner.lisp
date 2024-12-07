@@ -115,13 +115,9 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   ;; Remove Duplicated :DEFINE_GLOBAL
   ;; NEEDS A UPDATE
   (setf (getattr item :blueprint)
-        (loop with seen = nil
-              for item in (getattr item :blueprint)
-              if (or (not (eql (node-type item) :DEFINE-GLOBAL))
-                     (null (find (car (node-writes item)) seen)))
-                collect item
-              if (eql (node-type item) :DEFINE-GLOBAL)
-                do (push (car (node-writes item)) seen)))
+        (loop for item in (getattr item :blueprint)
+              if (not (eql (node-type item) :DEFINE-GLOBAL))
+                collect item))
   (let* ((reads (map 'list #'cons (getattr item :storage-id-src) (getattr item :read-types)))
          (writes (map 'list #'cons (getattr item :storage-id-dst) (getattr item :write-types)))
          (reads (remove-duplicates reads :key (compose newid #'car)))
@@ -137,7 +133,8 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
               (getattr item :storage-id-dst) (map 'list (compose newid #'car) writes)
               (getattr item :read-types) (map 'list #'cdr reads)
               (getattr item :write-types) (map 'list #'cdr writes)
-              (getattr item :return-positions) (map 'list #'(lambda (x) (position (funcall newid x) (getattr item :storage-id-dst))) base-writes))))))
+              (getattr item :return-positions) (map 'list #'(lambda (x) (position (funcall newid x) (getattr item :storage-id-dst))) base-writes)))
+      (caten/codegen/rewriting-rules:schedule-item-write-define-global item))))
 
 (defun apply-memory-planner (schedule-graph symbolics base-graph)
   (declare (type graph schedule-graph))
