@@ -47,6 +47,53 @@ etc...
 
 Before contributing, please note that there is no linter here. Make an effort to adhere to [Google Common Lisp Style Guide](https://google.github.io/styleguide/lispguide.xml). Changes that do not follow this should be rejected by the review.
 
+## Roadmap
+
+### Supported Models
+
+- **Transformer**
+  - [x] GPT2 (but currently broken!)
+  - [ ] Llama3 8B
+  - [ ] TinyLLAMA
+- **Classification**
+  - [x] MobileNetV2
+  - [ ] MobileNetV3
+  - [ ] ResNet18/ResNet34/ResNet50
+  - [ ] VIT_B_16
+- **Segmentation**
+  - [ ] CenterNet
+- **Detection**
+  - [ ] YoLOv3
+  - [ ] YoLOv7
+
+### Supported Formats
+
+- [x] Common Lisp Frontend (caten/apis)
+- [x] ONNX (caten/onnx)
+- [x] GGUF (caten/gguf)
+
+### Quantization
+
+- [x] Support Dequantization from GGUF
+- [ ] Support QOPs
+
+### Training
+
+- [x] Autodiff
+- [ ] Fast Autodiff
+- [ ] Support Training
+- [ ] Distributed Training
+
+### Accelerators
+
+- [x] LISP VM
+- [x] CLANG JIT
+- [ ] CLANG with Auto Scheduler
+- [ ] METAL
+- [ ] CUDA
+- [ ] Vulkan
+- [ ] Auto Scheduler
+
 ## Running tests
 
 You should install python, numpy, pytorch before running the test-suite by using `make install_extra`. If not specified, install the latest one. 
