@@ -112,4 +112,5 @@ Takes a compiled GPT2 model and a string input, and generates a text output.
         (let ((decoded (decode tokenizer tokens)))
           (when expected
             (assert (string= decoded expected) () "Expected output: ~a, but got: ~a" expected decoded))
+          (when verbose (print decoded))
           decoded)))))
