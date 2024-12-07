@@ -8,6 +8,22 @@
 
 Caten is an experimental deep learning compiler. Our goal is to implement a compiler that is as simple as tinygrad, and as flexible as TVM.
 
+## Showcases
+
+Caten is still under development, but it aims to support a wide range of models in the future—from image processing to text generation, and vision language models! Some models are already up and running.
+
+### Running LLMs
+
+```sh
+$ JIT=1 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --max-length 100
+```
+
+Give the GPT2 demo a try! You can pass compilation settings through environment variables.
+
+For example, setting `JIT=1` enables JIT compilation, while `JIT_DEBUG >= 2` allows you to view the schedule and the generated kernels. Setting `PARALLEL=8` divides the ScheduleGraph and compiles it in parallel.
+
+You may still find the token/ms rate slow, but we're not yet at the stage of implementing an AutoScheduler to accelerate kernel performance (as well as GPU support). Once our IR matures enough to handle a wide range of deep learning models, we plan to focus on speeding things up!
+
 ## Getting Started
 
 1. Install [Roswell](https://github.com/roswell/roswell) and suitable IDE. (If unsure, Emacs or [Lem](https://github.com/lem-project/lem) is recommended)
