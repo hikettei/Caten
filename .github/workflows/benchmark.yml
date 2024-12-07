@@ -130,4 +130,4 @@ jobs:
       - name: GPT2
         run: |
           ros config set dynamic-space-size 8gb
-          JIT=1 JIT_DEBUG=4 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --expected "Hello, I'm sorry, but I'm not sure" --max-length 10
+          JIT=1 JIT_DEBUG=4 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --expected "Hello, I'm sorry, but I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you" --max-length 100
