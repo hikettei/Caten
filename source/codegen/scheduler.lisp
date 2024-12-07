@@ -50,7 +50,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (items :type list) (items-to-cache :type list)
           (rank :type fixnum) (reduce-dims :type list)
           (read-types :type list) (write-types :type list)
-          (reference-counters :type list)
           (storage-id-src :type list)
           (storage-id-dst :type list)
           (return-positions :type list)
@@ -342,15 +341,6 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                :storage-id-src reads
                :read-types (map 'list #'(lambda (x) (gethash x id2type)) reads)
                :write-types (map 'list #'(lambda (x) (gethash x id2type)) writes)
-               :reference-counters
-               ;; TODO: Rethink the reference counter
-               (map
-                'list
-                #'(lambda (x)
-                    (if (find x (graph-outputs (ctx-graph ctx)))
-                        -1
-                        (length (ctx-children ctx (id->value (ctx-graph ctx) x)))))
-                (append reads writes))
                :rank rank
                :reduce-dims (group-reduce-dims group)
                :items (group-items group)

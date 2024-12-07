@@ -194,7 +194,6 @@ Compiled with this command: ~a"
 		      append `(:pointer ,(car (node-writes arg))))
             :void))))))
 
-
 (defmethod %compile-kernel ((renderer CStyle-Renderer) items dir)
   (let ((code
           (apply #'concatenate 'string

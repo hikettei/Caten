@@ -127,10 +127,13 @@ caten/codegen overview:
   (format stream "<~a[~a]>" (compiled-kernel-device s) (compiled-kernel-name s)))
 
 (defun make-compiled-kernel-from-si (si graph)
+  (declare (ignore graph))
   (assert (eql (node-type si) :Schedule-Item))
   (flet ((from-cache (node)
-           (or (find (getattr node :cache-name) (graph-nodes graph) :key #'(lambda (x) (getattr x :name)) :test #'equalp)
-               (error "The cache item for ~a was not found." node))))
+           ;;TODO: Reuse the cached compiled function if the number of argument corresponds
+           ;;(or (find (getattr node :cache-name) (graph-nodes graph) :key #'(lambda (x) (getattr x :name)) :test #'equalp)
+           ;;    (error "The cache item for ~a was not found." node))
+           node))
     (make-compiled-kernel
      :name (intern (princ-to-string (or (getattr si :cache-name) (getattr si :name))) "KEYWORD")
      :caller (if (getattr si :cache-name)
@@ -332,10 +335,6 @@ caten/codegen overview:
 
 (defun schedule-item-equal (si1 si2 &aux (items1 (getattr si1 :items-to-cache)) (items2 (getattr si2 :items-to-cache)))
   (and
-   ;; The number of reference counters are the same => memory-planner should produce the same result
-   (equal (getattr si1 :reference-counters) (getattr si2 :reference-counters))
-   (every #'(lambda (x) (>= x 0)) (getattr si1 :reference-counters))
-   (every #'(lambda (x) (>= x 0)) (getattr si2 :reference-counters))
    (= (length items1) (length items2))
    (every
     #'(lambda (x y)
