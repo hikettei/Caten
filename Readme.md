@@ -2,7 +2,7 @@
 
 > **This repository is still in the early stages of development. Additionally, it includes many experimental approaches. Please consider this as a place to experiment with my ideas. Do not use it in a product under any circumstances.**
 
-[![CI](https://github.com/hikettei/Caten/actions/workflows/tests_on_push.yml/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/tests_on_push.yml)
+[![CI](https://github.com/hikettei/Caten/actions/workflows/tests_on_push.yml/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/tests_on_push.yml) [![Benchmarks](https://github.com/hikettei/Caten/actions/workflows/benchmark.yml/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/benchmark.yml) [![pages-build-deployment](https://github.com/hikettei/Caten/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/pages/pages-build-deployment)
 
 `Caten = Compile+AbstracTENsor`
 
