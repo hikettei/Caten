@@ -386,7 +386,7 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 (defclass IDiv (Func)
   ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op IDiv) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op IDiv) &optional prev-grad))
+(defmethod backward ((op IDiv) &optional prev-grad) (values nil nil))
 (defmethod lower ((op IDiv) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%idiv a b :reduction (func-reduce op))))))
@@ -394,8 +394,11 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 (defclass MaxOp (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op MaxOp) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op MaxOp) &optional dout)
-  ;;(warn "WIP: MaxOp")
-  )
+  (let* ((mask (!maximum (first (func-variables op)) (second (func-variables op)))))
+    (values
+     (!where (!eq mask (first (func-variables op))) dout (!const dout 0))
+     (!where (!eq mask (second (func-variables op))) dout (!const dout 0)))))
+  
 (defmethod lower ((op MaxOp) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%max a b :reduction (func-reduce op))))))
