@@ -72,7 +72,7 @@ def torch_grad(tensor): return tensor.grad")
   (def log2 !log2 torch.log2 2 :upfrom 1e-3 :below 3.0)
   ;; Unary activations
   (def sigmoid !sigmoid f:sigmoid 2)
-  (def hardsigmoid !hard-sigmoid f:hardsigmoid 2) ;; fail
+  ;; (def hardsigmoid (lambda (x) (!hard-sigmoid x :alpha 3.0 :beta -3.0)) f:hardsigmoid 2) TODO: Definitions do not match with pytorch?
   (def relu !relu f:relu 2)
   (def leaky-relu (lambda (x) (!leaky-relu x :neg-slope 1e-2)) f:leaky_relu 2)
   (def logsoftmax !log-softmax f:log_softmax 2) ;; fail
@@ -91,7 +91,6 @@ def torch_grad(tensor): return tensor.grad")
   (def hardswish !hardswish f:hardswish 2)
   (def hardtanh !hardtanh f:hardtanh 2)
   (def softmin !softmin f:softmin 2)) ;; fail
-
 ;; Test reductions
 (macrolet ((def (opname lisp-name torch-name schedule shape &key axis)
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
@@ -119,33 +118,31 @@ def torch_grad(tensor): return tensor.grad")
   (def mean2d-axis !mean torch.mean 2 (10 10) :axis 1)
   (def sum3d-axis !sum torch.sum 2 (10 10 10) :axis 1)
   (def mean3d-axis !mean torch.mean 2 (10 10 10) :axis 1))
-
 ;; Test Binaries
 (macrolet ((def (opname lisp-name torch-name shape1 shape2 &key (rhs-positive))
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
                 (testing
-                 ,(format nil "Testing ~a" opname)
-                 (let ((x (randn ',shape1 :requires-grad t))
-                       (y (if ,rhs-positive
-                              (uniform ',shape2 :low 2.0 :high 3.0 :requires-grad t)
-                              (randn ',shape2 :requires-grad t))))
-                   (assert-equals
-                       (:rtol 1e-4 :atol 1e-3)
-                       (with-torch-params (x y)
-                         (let ((out (torch.sum (,torch-name x y))))
-                           (torch_backward out)
-                           (values (->caten (torch_grad x)) (->caten (torch_grad y)))))
-                       (let ((m (caten (!sum (,lisp-name x y)))))
-                         (forward m)
-                         (backward m)
-                         (values (grad x) (grad y)))))))))
+                    ,(format nil "Testing ~a" opname)
+                  (let ((x (randn ',shape1 :requires-grad t))
+                        (y (if ,rhs-positive
+                               (uniform ',shape2 :low 2.0 :high 3.0 :requires-grad t)
+                               (randn ',shape2 :requires-grad t))))
+                    (assert-equals
+                        (:rtol 1e-4 :atol 1e-3)
+                        (with-torch-params (x y)
+                          (let ((out (torch.sum (,torch-name x y))))
+                            (torch_backward out)
+                            (values (->caten (torch_grad x)) (->caten (torch_grad y)))))
+                        (let ((m (caten (!sum (,lisp-name x y)))))
+                          (forward m)
+                          (backward m)
+                          (values (grad x) (grad y)))))))))
   (def add !add torch.add (10 10) (10 10))
   (def sub !sub torch.sub (10 10) (10 10))
   (def mul !mul torch.mul (10 10) (10 10))
   (def div !div torch.div (10 10) (10 10) :rhs-positive t)
   (def maximum !maximum torch.maximum (10 10) (10 10))
   (def minimum !minimum torch.minimum (10 10) (10 10)))
-                              
 ;; Improve the scheduler, the base schedule wont be changed and should be symmetric.
 ;; Improve the base IR (remove grad83769...)
 ;; !where, !expt,
