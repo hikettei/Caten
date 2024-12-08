@@ -63,7 +63,6 @@ def torch_grad(tensor): return tensor.grad")
   (def log !log torch.log 2 :upfrom 1e-3 :below 3.0) ;; wrong
   (def exp2 !exp2 torch.exp2 2) ;; wrong
   (def log2 !log2 torch.log2 2 :upfrom 1e-3 :below 3.0) ;; wrong
-  
   ;; Unary activations
   (def sigmoid !sigmoid f:sigmoid 2)
   (def hardsigmoid !hard-sigmoid f:hardsigmoid 2) ;; fail
@@ -85,9 +84,18 @@ def torch_grad(tensor): return tensor.grad")
   (def hardswish !hardswish f:hardswish 2)
   (def hardtanh !hardtanh f:hardtanh 2)
   (def softmin !softmin f:softmin 2)) ;; fail
+;; !where, !expt,
 
-;; !where, !expt, 
+;; Testing reduction
+;; !sum !mean !max !min !prod !std !var
+
+;; Testing !view backward
+;; !matmul, concatenate, split, convnd, padding, RoPE uses many kind of !view so good to test
+;; Embedding, Normalization, 
+
 ;; (deftest test-matmul
 ;; (deftest test-convnd
 ;; (deftest test-maxpool
+;; If all of above things are tested -> Caten autodiff have an enough coverage
 
+;; Training MNIST?

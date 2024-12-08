@@ -473,7 +473,7 @@ Computes `(sqrt x)`.
 (defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op Recip) &optional dout)
   (let ((ret (!recip (car (func-variables op)))))
-    (values (!mul (!mul (!neg dout) ret) ret)))) ;; -dout / x^2
+    (values (!* ret ret (!neg dout))))) ;; -dout / x^2
 (defmethod lower ((op Recip) &rest inputs) (with-context (a (%recip (car inputs)))))
 
 (defclass Cast (Func)
