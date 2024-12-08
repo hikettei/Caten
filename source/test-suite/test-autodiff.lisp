@@ -7,12 +7,18 @@ def torch_backward(tensor): tensor.backward()
 def torch_grad(tensor): return tensor.grad")
 (import-function "torch_backward")
 (import-function "torch_grad")
-;; unary ops
+;; Ops to compare
 (import-function "torch.neg")
 (import-function "torch.abs")
 (import-function "torch.exp")
+(import-function "torch.exp2")
 (import-function "torch.log")
+(import-function "torch.log2")
 (import-function "torch.sin")
+(import-function "torch.cos")
+(import-function "torch.tan")
+(import-function "torch.sqrt")
+(import-function "torch.reciprocal")
 
 (defmacro with-torch-params ((&rest params) &body body)
   `(with-torch (,@params)
@@ -25,11 +31,13 @@ def torch_grad(tensor): return tensor.grad")
       (ok (= count expected) (format nil "Expected ~a, scheduled ~a" expected count)))))
 ;; ReLU/SigMoid should be tested independently
 ;; Activation Backwards
-(macrolet ((def (opname lisp-name torch-name schedule)
+(macrolet ((def (opname lisp-name torch-name schedule &key (upfrom) (below))
              ;; e.g.: !max autodiff test is defined as !max-backward
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
                 (testing ,(format nil "Testing ~a" opname)
-                  (let* ((x (randn `(10 10) :requires-grad t)))
+                  (let* ((x (if ,(and upfrom below)
+                                (uniform `(10 10) :requires-grad t :low ,upfrom :high ,below)
+                                (randn `(10 10) :requires-grad t))))
                     (assert-equal
                         (:rtol 1e-4 :atol 1e-5)
                         (with-torch-params (x)
@@ -42,11 +50,20 @@ def torch_grad(tensor): return tensor.grad")
                           (backward m)
                           (grad x))))))))
   ;; mathematical functions
+  (def recip !recip torch.reciprocal 2 :upfrom 1e-3 :below 3.0) ;; wrong
   (def neg !neg torch.neg 2)
   (def sin !sin torch.sin 2)
+  (def cos !cos torch.cos 2) ;; unstable
+  (def tan !tan torch.tan 2) ;; unstable
+  (def tanh !tanh f:tanh 2)
+  (def sqrt !sqrt torch.sqrt 2 :upfrom 1e-3 :below 3.0) ;; wrong
+  
   (def abs !abs torch.abs 2)
   (def exp !exp torch.exp 2) ;; wrong
-  ;; (def log !log torch.log 2) todo
+  (def log !log torch.log 2 :upfrom 1e-3 :below 3.0) ;; wrong
+  (def exp2 !exp2 torch.exp2 2) ;; wrong
+  (def log2 !log2 torch.log2 2 :upfrom 1e-3 :below 3.0) ;; wrong
+  
   ;; Unary activations
   (def sigmoid !sigmoid f:sigmoid 2)
   (def hardsigmoid !hard-sigmoid f:hardsigmoid 2) ;; fail
@@ -68,6 +85,8 @@ def torch_grad(tensor): return tensor.grad")
   (def hardswish !hardswish f:hardswish 2)
   (def hardtanh !hardtanh f:hardtanh 2)
   (def softmin !softmin f:softmin 2)) ;; fail
+
+;; !where, !expt, 
 ;; (deftest test-matmul
 ;; (deftest test-convnd
 ;; (deftest test-maxpool
