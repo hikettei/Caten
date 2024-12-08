@@ -417,13 +417,15 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 
 (defclass SinNode (Func) nil)
 (defmethod forward ((op SinNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op SinNode) &optional dout) (values (!mul dout (!cos (car (func-variables op))))))
+(defmethod backward ((op SinNode) &optional dout) (values (!mul (!cos (car (func-variables op))) dout)))
 (defmethod lower ((op SinNode) &rest inputs) (with-context (a (%sin (car inputs)))))
 (defun !sin (x) (forward (make-instance 'SinNode) x))
 
 (defclass ExpNode (Func) nil)
 (defmethod forward ((op ExpNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op ExpNode) &optional dout) (values (!mul (car (func-variables op)) dout)))
+(defmethod backward ((op ExpNode) &optional dout)
+  (let ((e (!exp (car (func-variables op)))))
+    (values (!mul e dout))))
 (defmethod lower ((op ExpNode) &rest inputs)
   (with-context
     (m (%mul (car inputs) (%fconst (/ (log 2)) :dtype (dtype-of (car (func-variables op))))))
@@ -431,7 +433,7 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 
 (defclass LogNode (Func) nil)
 (defmethod forward ((op LogNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op LogNode) &optional dout) (values (!mul dout (!recip (car (func-variables op))))))
+(defmethod backward ((op LogNode) &optional dout) (values (!mul (!recip (car (func-variables op))) dout)))
 (defmethod lower ((op LogNode) &rest inputs)
   (with-context
     (a (%log2 (car inputs)))
@@ -439,7 +441,7 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 
 (defclass SqrtNode (Func) nil)
 (defmethod forward ((op SqrtNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op SqrtNode) &optional prev-grad) (!mul prev-grad (!recip (!mul (!sqrt (car (func-variables op))) (!const prev-grad 2)))))
+(defmethod backward ((op SqrtNode) &optional prev-grad) (!mul (!recip (!mul (!sqrt (car (func-variables op))) (!const prev-grad 2))) prev-grad))
 (defmethod lower ((op SqrtNode) &rest inputs) (with-context (a (%sqrt (car inputs)))))
 
 (defun !exp (x)

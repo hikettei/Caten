@@ -50,37 +50,37 @@ def torch_grad(tensor): return tensor.grad")
                           (backward m)
                           (grad x))))))))
   ;; mathematical functions
-  (def recip !recip torch.reciprocal 2 :upfrom 1e-3 :below 3.0) ;; wrong
+  (def recip !recip torch.reciprocal 2 :upfrom 1e-3 :below 3.0)
   (def neg !neg torch.neg 2)
   (def sin !sin torch.sin 2)
-  (def cos !cos torch.cos 2) ;; unstable
-  (def tan !tan torch.tan 2) ;; unstable
+  (def cos !cos torch.cos 2 :upfrom 1e-5 :below (/ 2 pi))
+  (def tan !tan torch.tan 2 :upfrom 1e-5 :below (/ 2 pi))
   (def tanh !tanh f:tanh 2)
-  (def sqrt !sqrt torch.sqrt 2 :upfrom 1e-3 :below 3.0) ;; wrong
+  (def sqrt !sqrt torch.sqrt 2 :upfrom 1e-3 :below 3.0)
   
   (def abs !abs torch.abs 2)
-  (def exp !exp torch.exp 2) ;; wrong
-  (def log !log torch.log 2 :upfrom 1e-3 :below 3.0) ;; wrong
+  (def exp !exp torch.exp 2)
+  (def log !log torch.log 2 :upfrom 1e-3 :below 3.0)
   (def exp2 !exp2 torch.exp2 2) ;; wrong
-  (def log2 !log2 torch.log2 2 :upfrom 1e-3 :below 3.0) ;; wrong
+  (def log2 !log2 torch.log2 2 :upfrom 1e-3 :below 3.0)
   ;; Unary activations
   (def sigmoid !sigmoid f:sigmoid 2)
   (def hardsigmoid !hard-sigmoid f:hardsigmoid 2) ;; fail
   (def relu !relu f:relu 2)
   (def leaky-relu (lambda (x) (!leaky-relu x :neg-slope 1e-2)) f:leaky_relu 2)
   (def logsoftmax !log-softmax f:log_softmax 2) ;; fail
-  (def elu !elu f:elu 2) ;; fail
+  (def elu !elu f:elu 2)
   (def relu6 !relu6 f:relu6 2)
   (def softmax !softmax f:softmax 2) ;; fail
-  (def softplus !softplus f:softplus 2) ;; fail
+  (def softplus !softplus f:softplus 2)
   (def softsign !softsign f:softsign 2)
   (def softshrink !softshrink f:softshrink 2)
-  (def celu !celu f:celu 2) ;; fail
+  (def celu !celu f:celu 2)
   (def silu !silu f:silu 2)
-  (def logsigmoid !logsigmoid f:logsigmoid 2) ;; fail
+  (def logsigmoid !logsigmoid f:logsigmoid 2)
   (def gelu !gelu f:gelu 2) ;; fail
-  (def selu !selu f:selu 2) ;; fail
-  (def mish !mish f:mish 2) ;; fail
+  (def selu !selu f:selu 2)
+  (def mish !mish f:mish 2)
   (def hardswish !hardswish f:hardswish 2)
   (def hardtanh !hardtanh f:hardtanh 2)
   (def softmin !softmin f:softmin 2)) ;; fail
