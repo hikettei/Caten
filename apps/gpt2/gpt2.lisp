@@ -104,9 +104,8 @@ Takes a compiled GPT2 model and a string input, and generates a text output.
               for out = (forward model `(x . ,(->input in-tokens)) `(s . ,(length in-tokens)) `(n . ,start-pos)) do
                 (with-facet (out* (out :direction :simple-array))
                   (setf start-pos (length tokens)) ;; start_pos = previous_total_seq_len
-                  (let ((size (array-total-size out*)))
-                    (setf tokens (append tokens (list (aref out* (1- size)))))
-                    (when verbose (print (decode tokenizer (last tokens)))))))
+                  (setf tokens (append tokens (list (aref out* 0))))
+                  (when verbose (print (decode tokenizer (last tokens))))))
         (let ((decoded (decode tokenizer tokens)))
           (when expected
             (assert (string= decoded expected) () "Expected output: ~a, but got: ~a" expected decoded))
