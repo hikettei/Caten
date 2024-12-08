@@ -171,14 +171,14 @@
 
 (define-kernel-count-test attention-no-kv-cache 5
   "Attention with KV Cache"
-  (with-no-grad
+  (with-inference-mode ()
     (let ((s (iconst 's))
           (n (iconst 'n)))
       (caten (call (Attention 32 8 32 :use-kv-cache nil) (make-tensor `(1 ,s 32)) (make-tensor `(1 1 ,s ,(!add s n))) n)))))
 
 (define-kernel-count-test attention-kv-cache 7
   "Attention with KV Cache"
-  (with-no-grad
+  (with-inference-mode ()
     (let ((s (iconst 's))
           (n (iconst 'n)))
-      (caten (call (Attention 32 8 32) (make-tensor `(1 ,s 32)) (make-tensor `(1 1 ,s ,(!add s n))) n)))))
+      (caten (call (Attention 32 8 32 :use-kv-cache t) (make-tensor `(1 ,s 32)) (make-tensor `(1 1 ,s ,(!add s n))) n)))))
