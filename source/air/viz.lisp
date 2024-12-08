@@ -148,19 +148,22 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
         (format stream "<html><p><b><font size=\"5\">~a</b></p><body><img src=\"~a.png\"></body></html>" title pathname)
         (uiop:launch-program (list "open" htmlpath) :output t)))))
 
-(defun compute-n-children (graph id &aux (seen nil) (count 0))
-  (labels ((explore (id)
-             (when (find id seen) (return-from explore))
-             (let ((val (id->value graph id)))
-               (when val
-                 (push id seen) (incf count)
-                 (mapc #'explore (node-reads val))))))
-    (explore id)
+(defun compute-n-children (graph id)
+  (let ((seen (make-hash-table :test #'equal))
+        (count 0)
+        (stack (list id)))
+    (loop :while stack :for id = (pop stack)
+          :do (unless (gethash id seen)
+                (let ((val (id->value graph id)))
+                  (when val
+                    (setf (gethash id seen) t)
+                    (incf count)
+                    (setf stack (append (node-reads val) stack))))))
     count))
 ;; [TODO] optimize screen-width automatically
 (defparameter *indent* 0)
 (defun pprint-graph (graph &key (screen-width 140) (stream t)
-                     &aux (seen nil) (preserved (make-hash-table)) (stashed nil) (part 0) (static-gensym (make-hash-table)))
+                     &aux (seen (make-hash-table :test #'equal)) (preserved (make-hash-table)) (stashed nil) (part 0) (static-gensym (make-hash-table)))
   "
 ```
 (pprint-graph graph &key (screen-width 140) (stream t))
@@ -193,9 +196,7 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                     (setf (gethash id static-gensym) (format nil "~a~a" prefix (hash-table-count static-gensym)))))
               (separate-screen ()
                 (format out "=== [P: ~a] ====" part)
-                (dotimes (i (- screen-width 15))
-                  (princ "=" out))
-                (format out "~%"))
+                (format out "~v@{~c~:*~}~%" (- screen-width 15) #\=))
               (restart-point (node)
                 (format out "[P=~a, ID=~a]:~%" (- part 1) (static-gensym (node-id node))))
               (princ-node (node)
@@ -228,13 +229,13 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                   ;; argsort
                   (map 'list #'cdr (sort paired #'< :key #'car))))
               (explore (id &optional (lastp nil))
-                (when (find id seen)
+                (when (gethash id seen)
                   (let ((node (id->value graph id)))
                     (when node
                       (format out "~a ~a~%" (indent lastp) (princ-node node))
                       (remhash (node-id node) preserved))
                     (return-from explore)))
-                (push id seen)
+                (setf (gethash id seen) t)
                 (let ((node (id->value graph id)))
                   (when (null node) (return-from explore))
                   (let ((stash-p (pn node lastp)))
@@ -242,7 +243,8 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                     (if stash-p
                         (let ((*indent* (+ 2 *indent*)))
                           (format out "~a [P=~a, ID=~a]~%" (indent lastp) part (static-gensym (node-id node)))
-                          (setf seen (remove id seen)) (push id stashed))
+                          (remhash id seen)
+                          (push id stashed))
                         (progn
                           (mapc #'preserve (node-reads node))
                           (let ((*indent* (+ 2 *indent*))
@@ -252,8 +254,7 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                                   for nth upfrom 0
                                   do (explore (car pair) (second pair))))))))))
        (setf stashed (copy-list (graph-outputs graph)))
-       (dotimes (i screen-width) (princ "=" out))
-       (format out "~%")
+       (format out "~v@{~c~:*~}~%" screen-width #\=)
        (loop while stashed
              for ids = stashed do
                (separate-screen)
@@ -265,6 +266,5 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                       (unless (= 0 part) (restart-point (id->value graph x)))
                       (explore x))
                   ids)))
-       (dotimes (i screen-width) (princ "=" out))
-       (format out "~%")))
+       (format out "~v@{~c~:*~}~%" screen-width #\=)))
    stream))
