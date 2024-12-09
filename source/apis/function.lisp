@@ -120,6 +120,7 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 (defmethod backward ((op View) &optional dout)
   (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
     (let* ((base (clone-like (car (func-variables op)))))
+      ;; [TODO] If slice -> call nn padding
       (apply #'!view-from-base (!add (apply #'!view base subscripts) dout :reduce t) (loop for s in (shape base) collect `(0 ,s))))))
 
 (defmethod lower ((op View) &rest inputs)
@@ -617,7 +618,7 @@ Returns the least common multiple of `a` and `b`.
 (!signum x)
 ```
 
-Returns the sign of the tensor. If the tensor is positive, it returns 1. If the tensor is negative, it returns -1. If the tensor is zero, it returns 0.
+Returns the sign of the tensor. If the tensor is positive, it returns 1. If the tensor is negative, it returns -1. If the tensor is zero, it returns 0. Note that this function is not differentiable.
 "
   (flet ((->const (val) (make-scalar val :dtype (tensor-dtype x))))
     (let ((zeros (!where (!eq x (->const 0)) (->const 0) (->const 1))))
