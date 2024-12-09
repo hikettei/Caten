@@ -1,6 +1,6 @@
 (in-package :caten/apis)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; iseq.lisp transforms the graph of Tensor into caten/aasm graph by the following steps:
+;; iseq.lisp: Func Level Graph ===> AASM Graph Lowerer.
 ;; 1. (Sort)     Topologically sorting the tensor graph, getting iseq (a list of tensors)
 ;; 2. (Func)     Translate from Tensor into caten/air:node, by using the `lower` method.
 ;; 3. (Optimize) Simplifying the graph with a mixture of :Func and :Module, enabling an ir-level optimization.
@@ -8,6 +8,8 @@
 ;; 5. (Optimize) Simplifying the graph in a level of :Func.
 ;; 6. (Autodiff) Constructing the backward graph from (1.), lowering them in the same way as (2.) ~ (5.)
 ;; ~~ Compiler-Session (Utils) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; TODO(hikettei): It is just sorting tensors with adding a mutation rule to the Module, can't we reimplement it with a simple way?
+;; Current impl is too complex :( and there's a lot of reuse.
 (defparameter *jit-device* nil)
 (defmacro with-jit (device &body body)
   `(let ((*jit-device* ,device)) ,@body))
@@ -91,9 +93,6 @@
   (declare (type Compiler-session session)
 	   (type graph graph)
 	   (optimize (speed 3)))
-  ;; The output of graph must be TGRADxxx
-  ;; The gradient place is named GRADxxx
-  ;; ADD REDUCTIONのOuputが直接TGRAD1063901...ならいい
   (maphash
    #'(lambda (grad-id leaves)
        (multiple-value-bind (final-grad-id rest-grads) (apply #'values leaves)
@@ -123,11 +122,13 @@
 		     (push total (graph-nodes graph)))
 		   (push new-alloc-bw (graph-nodes graph))
 		   (session/assign session grad-id new-alloc-bw))
-		 (let* ((subgrad (session/read session (car rest-grads)))
-			(final-node (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id (node->id subgrad)))))
-                   ;; こっちもAllocateのノードがいらない
-		   (push final-node (graph-nodes graph))
-		   (session/assign session grad-id final-node))))))
+		 (let* ((old-alloc-bw (id->value graph final-grad-id)))
+                   (assert (and old-alloc-bw (eql (node-type old-alloc-bw) :ADD) (getattr old-alloc-bw :reduction :allow-undefined t))
+                           ()
+                           "The leave of backward graph should be :ADD with reduction! but getting ~a" old-alloc-bw)
+                   ;; Rewrites the direction of old-alloc-bw to the expected leaf of node.
+                   (setf (node-writes old-alloc-bw) (list grad-id))
+		   (session/assign session grad-id old-alloc-bw))))))
    (session-grad->grads session)))
 ;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun sync-output-to (tensors nodes)
