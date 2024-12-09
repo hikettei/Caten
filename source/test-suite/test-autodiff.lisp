@@ -53,6 +53,7 @@ def torch_grad(tensor): return tensor.grad")
                             (->caten (torch_grad x))))
                         (let ((m (caten (!sum (funcall #',lisp-name x)))))
                           (check-bw-schedule m ,schedule) ;; 1 for forward, 1 for backward
+                          (print m)
                           (forward m)
                           (backward m)
                           (grad x))))))))
@@ -91,6 +92,8 @@ def torch_grad(tensor): return tensor.grad")
   (def hardswish !hardswish f:hardswish 2)
   (def hardtanh !hardtanh f:hardtanh 2)
   (def softmin !softmin f:softmin 2)) ;; fail
+(python-exec "def torch_max(x, dim=None): return torch.max(x, dim=dim)[0]")
+(import-function "torch_max")
 ;; Test reductions
 (macrolet ((def (opname lisp-name torch-name schedule shape &key axis)
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
@@ -117,7 +120,8 @@ def torch_grad(tensor): return tensor.grad")
   (def sum2d-axis !sum torch.sum 2 (10 10) :axis 1)
   (def mean2d-axis !mean torch.mean 2 (10 10) :axis 1)
   (def sum3d-axis !sum torch.sum 2 (10 10 10) :axis 1)
-  (def mean3d-axis !mean torch.mean 2 (10 10 10) :axis 1))
+  (def mean3d-axis !mean torch.mean 2 (10 10 10) :axis 1)
+  (def max2d !max torch_max 2 (10 10) :axis 1))
 ;; Test Binaries
 (macrolet ((def (opname lisp-name torch-name shape1 shape2 &key (rhs-positive))
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
@@ -134,20 +138,41 @@ def torch_grad(tensor): return tensor.grad")
                             (torch_backward out)
                             (values (->caten (torch_grad x)) (->caten (torch_grad y)))))
                         (let ((m (caten (!sum (,lisp-name x y)))))
+;                          (print m)
                           (forward m)
                           (backward m)
                           (values (grad x) (grad y)))))))))
+  ;; [TODO] Check schedule
   (def add !add torch.add (10 10) (10 10))
   (def sub !sub torch.sub (10 10) (10 10))
   (def mul !mul torch.mul (10 10) (10 10))
   (def div !div torch.div (10 10) (10 10) :rhs-positive t)
   (def maximum !maximum torch.maximum (10 10) (10 10))
-  (def minimum !minimum torch.minimum (10 10) (10 10)))
+  (def minimum !minimum torch.minimum (10 10) (10 10))
+  (def matmul1 !matmul torch.matmul (10 10) (10 10))
+  (def matmul2 !matmul torch.matmul (10 20) (20 30))
+  (def matmul3 !matmul torch.matmul (10 20) (10 20 30))
+  (def matmul4 !matmul torch.matmul (10 10 20) (20 30))
+  )
+;; duplicate of test-chain-rule
+(defun multi-grad-acc-test ()
+  (let ((a (make-tensor `(3 3) :requires-grad t)))
+    (let ((m (caten (!sin (!+ (!neg a) (!neg a) (!neg a))))))
+      m)))
+
+;; 1. Matmul Backward
+;; 2. ConvND
+;; 3. Having Better Schedule for Embedding
+;; 1. VM=1で全部通すのが先g
+;; 2. Schedulerをどうにかする
+;; 3. JIT=1で全部通す
+;; 4. Fix for convnd
+
 ;; Improve the scheduler, the base schedule wont be changed and should be symmetric.
 ;; Improve the base IR (remove grad83769...)
 ;; !where, !expt,
+;; !permute !reshape !slice broadcast !expand !repeat
 
-;; Testing reduction
 ;; !sum !mean !max !min !prod !std !var
 
 ;; Testing !view backward
