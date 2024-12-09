@@ -7,7 +7,7 @@ Policy:
   - Each module should be tested well (we expected to have a ton of regression tests here); 1 file 1 test-suite.
   - TODO: Add test-helpers.lisp")
   (:local-nicknames (:docs :caten/common.documentation))
-  (:use :cl :caten :caten/air :alexandria)
+  (:use :cl :caten :caten/air :alexandria :caten/aasm)
   ;; from activations.lisp
   (:export
    #:Sigmoid

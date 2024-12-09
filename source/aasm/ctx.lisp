@@ -21,3 +21,12 @@
 	 (push out (graph-nodes *ctx*))
 	 out)
        ,form))
+(defmacro with-context-from-parents ((&rest parents) &rest ssa-forms)
+  "Basically the same as with-context, but it is useful when merging another graph into the returned graph."
+  `(let ((g (with-context ,@ssa-forms)))
+     (setf (graph-nodes g)
+           (append 
+            (loop for g in (flatten (list ,@parents))
+                  if (graph-p g) append (graph-nodes g))
+            (graph-nodes g)))
+     g))

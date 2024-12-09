@@ -19,12 +19,10 @@
   (when (null test-with-memory-planner)
     ;; removing all variables
     (setf code (cl-ppcre:regex-replace-all "val_[0-9]+" code "[TMP_SCALAR_VAL]")))
-  (loop for nth upfrom 0
-        for v in (map 'list #'(lambda (x) (compiled-kernel-name (getattr x :kernel-info))) kernels)
-        do (setf code (cl-ppcre:regex-replace-all (format nil "~(~a~)" v) code (format nil "func"))))
-  (loop for nth upfrom 0
-        for v in (append (node-reads node) (node-writes node))
-        do (setf code (cl-ppcre:regex-replace-all (format nil "~(~a~)" v) code (format nil "var~a" nth))))
+  (setf code (cl-ppcre:regex-replace-all "void [a-z|A-Z|0-9|_]+\\(" code "void func("))
+;;  (loop for nth upfrom 0
+;;        for v in (append (node-reads node) (node-writes node))
+;;        do (setf code (cl-ppcre:regex-replace-all (format nil "~(~a~)" v) code (format nil "var~a" nth))))
   (when test-with-memory-planner
     (setf code (cl-ppcre:regex-replace-all "val_[0-9]+" code "[TMP_SCALAR_VAL]")))
   code)
@@ -79,10 +77,11 @@ Code2:
 (deftest transformer-schedule-cache-count-test
   (with-protect-jit
     (loop for i upfrom 1 below 6
+          for expected in `(16 20 23 26 29)
           for tf = (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0) (compile-transformer i)))
           ;; [TODO] The number of kernels should be a constant regardless of layers!!
-          do (ng (= (+ 14 (* 60 i)) (count-compiled-kernels tf))
-                 (format nil "(Currently Failing ...) Compiled ~a kernels (expecting ~a)" (count-compiled-kernels tf) (+ 14 (* 60 i)))))))
+          do (ok (<= (count-compiled-kernels tf) expected)
+                 (format nil "(Currently Failing ...) Compiled ~a kernels (expecting ~a)" (count-compiled-kernels tf) expected)))))
 
 (deftest transformer-schedule-cache-consistency-test
   (with-protect-jit

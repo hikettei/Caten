@@ -57,22 +57,9 @@
    #:schedule-item-write-define-global
    #:apply-rewriting-rules
    #:nodes-apply-static-gensym
-   #:apply-static-gensym
-   #:graph-infer-pointer-address))
+   #:apply-static-gensym))
 
 (in-package :caten/codegen/rewriting-rules)
-
-(defun graph-infer-pointer-address (graph)
-  "Infer the address of the pointer in the graph.
-Only the :MOVE has an ability to modify this rule. (Or :STORE?)"
-  (declare (type graph graph))
-  (let ((map (make-hash-table)))
-    (dolist (node (graph-nodes graph))
-      (when (eql (node-type node) :MOVE)
-        (assert (symbolp (car (node-reads node))))
-        ;; WRTTE=READ
-        (setf (gethash (car (node-writes node)) map) (car (node-reads node)))))
-    map))
 
 (defun rewrite-views-as-buffer (avm)
   "Rewrite the node :VIEW as an object in the type-relay, so that the code generator can handle view as a buffer."
@@ -122,99 +109,6 @@ Only the :MOVE has an ability to modify this rule. (Or :STORE?)"
 	(renew (avm-variables avm)))
       id2view)))
 
-(defmethod create-scalar-replace-pattern ((graph graph))
-  "
-Enumerates the following pattern:
-```
-*val_1 = 1.0;
-val_2[0+0+...+0] = *val_1;
-out[...] = f(val_2[0+0...+0]);
-```
-Storing to the dict in a format of:
-```
-Key:   val_2
-Value: 1.0
-```
-val_2 is broadcasted, but equivalent to using a scalar number, Simplifying the scheduling process.
-"
-  (flet ((pattern1 (val_2)
-	   (declare (type node val_2))
-	   (let* ((val_2 (if (eql (node-type val_2) :MOVE) val_2 nil))
-		  (val_1 (when val_2 (id->value graph (second (node-reads val_2)))))
-		  (val_1 (if (and val_1 (eql (node-type val_1) :LOAD)) val_1 nil)))
-	     (when (and val_1 val_2
-			;; val_2[0+0+0+...] <- write access pattern is all broadcasted
-			(every
-			 #'(lambda (x) (eql x 1))
-			 (buffer-shape (car (relay-writes (read-type-relay val_2)))))
-			(every
-			 #'null
-			 (buffer-views (car (relay-writes (read-type-relay val_2)))))
-			(= 0 (buffer-nrank (car (relay-writes (read-type-relay val_1)))))
-			(eql (buffer-dtype (car (relay-writes (read-type-relay val_1))))
-			     (buffer-dtype (car (relay-writes (read-type-relay val_2))))))
-	       (values (car (node-writes val_2)) val_1))))
-	 (pattern2 (val_2)
-	   (declare (type node val_2))
-	   (let* ((val_2 (if (eql (node-type val_2) :MOVE) val_2 nil))
-		  (val_1 (when val_2 (id->value graph (second (node-reads val_2)))))
-		  (val_1 (if (and val_1 (not (eql (node-type val_1) :LOAD))) val_1 nil)))
-	     (when (and val_1 val_2
-			;; val_2[0+0+0+...] <- write access pattern is all broadcasted
-			(every
-			 #'(lambda (x) (eql x 1))
-			 (buffer-shape (car (relay-writes (read-type-relay val_2)))))
-			(every
-			 #'null
-			 (buffer-views (car (relay-writes (read-type-relay val_2)))))
-			(= 0 (buffer-nrank (car (relay-writes (read-type-relay val_1)))))
-			(eql (buffer-dtype (car (relay-writes (read-type-relay val_1))))
-			     (buffer-dtype (car (relay-writes (read-type-relay val_2))))))
-	       (values (car (node-writes val_2)) val_1)))))
-    (let ((output (make-hash-table)))
-      (dolist (node (graph-nodes graph))
-	(dolist (pattern (list #'pattern1 #'pattern2))
-	  (multiple-value-bind (key value) (funcall pattern node)
-	    (when (and key value)
-	      (setf (gethash key output) value)))))
-      output)))
-
-(defmethod propagate-rebundant-loadp ((graph graph))
-  "Rewrites the pattern:
-```
-*val_1 = 1.0;
-val_2[0+0+...+0] = *val_1;
-out[...] = f(val_2[0+0...+0]);
-```
-Into
-```
-*val_1 = 1.0;
-val_2[0+0+...+0] = *val_1;
-out[...] = f(*val_1);
-```
-`"
-  (let ((patterns (create-scalar-replace-pattern graph)))
-    (setf (graph-nodes graph)
-	  (loop for node in (graph-nodes graph)
-		for read-new = (map 'list #'(lambda (x) (gethash x patterns)) (node-reads node))
-		collect
-		(progn
-		  (setf (node-reads node)
-			(loop for r in (node-reads node)
-			      for n in read-new
-			      for nth upfrom 0
-			      if n
-				collect
-				(progn
-                                  (setf (nth nth (relay-reads (read-type-relay node))) (car (relay-writes (read-type-relay n))))
-				  (if (and (eql (node-type n) :LOAD)
-					   (numberp (getattr n :value)))
-				      (getattr n :value)
-				      (car (node-writes n))))
-			      else
-				collect r))
-		  node)))))
-
 (defun wmma-relay-from (t1 tc nth)
   (make-inferred-type `(,(nth nth (relay-reads tc)) ,@(relay-reads t1)) (relay-writes tc)))
 ;; WMMA (c a b) <=> c = c + a * b (:reduction)
@@ -233,7 +127,7 @@ out[...] = f(*val_1);
              (if (null v) v
                  (list (funcall f (nth 0 v)) (funcall f (nth 1 v)) (funcall f (nth 2 v)) (nth 3 v)))))
       (setf (buffer-views buffer) (map 'list #'sync-view (buffer-views buffer))))))
-
+;; TODO(hikettei): apply-static-gensym == nodes-apply-static-gensym. Remove one of them.
 (defun apply-static-gensym (avm &optional (id2view))
   "Rewrites each read/write symbols to a unique and static symbol, improving the readability of the generated code when debugging."
   (declare (type avm avm))
@@ -283,7 +177,7 @@ out[...] = f(*val_1);
               (graph-outputs (avm-graph avm))
               (map 'list #'val-gensym (graph-outputs (avm-graph avm))))))))
 
-(defun nodes-apply-static-gensym (nodes)
+(defun nodes-apply-static-gensym (nodes &key (prefix "val_") (replace-all nil))
   (let ((alias-table (make-hash-table))
         (val-count 0))
     (dolist (node nodes)
@@ -294,14 +188,14 @@ out[...] = f(*val_1);
 	       (if (symbolp id)
 		   (or
 		    (gethash id alias-table)
-		    (let ((new-id (intern (format nil "val_~a" val-count))))
+		    (let ((new-id (intern (format nil "~a~a" prefix val-count))))
 		      (setf (gethash id alias-table) new-id)
 		      (incf val-count)
                       (setf (gethash new-id alias-table) new-id)
                       new-id))
 		   id))
              (start-with-tid-p (sym &aux (str (princ-to-string sym)))
-               (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3))))))
+               (or replace-all (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3)))))))
       (dolist (node nodes)
         (when (and (eql (node-type node) :Allocate)
                    (not (start-with-tid-p (car (node-writes node)))))
@@ -309,14 +203,13 @@ out[...] = f(*val_1);
           (let ((id (car (node-writes node))))
             (setf (gethash id alias-table) id)))
 	(setf (node-writes node) (map 'list #'val-gensym (node-writes node))
-	      (node-reads node) (map 'list #'val-gensym (node-reads node))))))
-  nodes)
-    
+	      (node-reads node) (map 'list #'val-gensym (node-reads node))))
+      (values nodes alias-table))))
+
 (defun apply-rewriting-rules (avm)
   (declare (type AVM avm))
   (let ((id2view (rewrite-views-as-buffer avm)))
     ;; (wmma-rewriter (avm-graph avm) :no-verify t)
-    (propagate-rebundant-loadp (avm-graph avm))
     (apply-static-gensym avm id2view))
   (setf (avm-graph avm) (->graph (avm-graph avm)))
   avm)

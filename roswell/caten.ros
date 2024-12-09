@@ -85,7 +85,7 @@ exec ros -Q -- $0 "$@"
       ((:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)
        (ctx:with-contextvar (:JIT 1)
          (let ((model (caten/apps.gpt2:make-gpt2 type)))
-           (caten/apps.gpt2:gpt2-generate model prompt)))))))
+           (caten/apps.gpt2:gpt2-generate model prompt :max-length (clingon:getopt cmd :max-length) :expected (clingon:getopt cmd :expected nil))))))))
 
 (defun caten/llm-example ()
   (clingon:make-command
@@ -94,7 +94,9 @@ exec ros -Q -- $0 "$@"
    :options
    (list
     (clingon:make-option :string :description "model to run" :short-name #\m :long-name "model" :key :model)
-    (clingon:make-option :string :description "initial-prompt" :long-name "prompt" :key :prompt))
+    (clingon:make-option :string :description "initial-prompt" :long-name "prompt" :key :prompt)
+    (clingon:make-option :string :description "expected output" :long-name "expected" :key :expected)
+    (clingon:make-option :integer :description "max length" :long-name "max-length" :key :max-length :initial-value 100))
    :handler #'caten/llm-example/handler))
 
 (defun caten/options ()

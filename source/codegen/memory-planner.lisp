@@ -113,18 +113,16 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
         (when (eql (node-type item) :AREF)
           (setf (getattr item :storage-id) (funcall newid (getattr item :storage-id)))))))
   ;; Remove Duplicated :DEFINE_GLOBAL
+  ;; NEEDS A UPDATE
   (setf (getattr item :blueprint)
-        (loop with seen = nil
-              for item in (getattr item :blueprint)
-              if (or (not (eql (node-type item) :DEFINE-GLOBAL))
-                     (null (find (car (node-writes item)) seen)))
-                collect item
-              if (eql (node-type item) :DEFINE-GLOBAL)
-                do (push (car (node-writes item)) seen)))
+        (loop for item in (getattr item :blueprint)
+              if (not (eql (node-type item) :DEFINE-GLOBAL))
+                collect item))
   (let* ((reads (map 'list #'cons (getattr item :storage-id-src) (getattr item :read-types)))
          (writes (map 'list #'cons (getattr item :storage-id-dst) (getattr item :write-types)))
          (reads (remove-duplicates reads :key (compose newid #'car)))
          (writes (remove-duplicates writes :key (compose newid #'car)))
+         (base-writes (getattr item :storage-id-dst))
          (seen))
     (flet ((only-unseen (items)
              (loop for (id . type) in items
@@ -134,7 +132,9 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
         (setf (getattr item :storage-id-src) (map 'list (compose newid #'car) reads)
               (getattr item :storage-id-dst) (map 'list (compose newid #'car) writes)
               (getattr item :read-types) (map 'list #'cdr reads)
-              (getattr item :write-types) (map 'list #'cdr writes))))))
+              (getattr item :write-types) (map 'list #'cdr writes)
+              (getattr item :return-positions) (map 'list #'(lambda (x) (position (funcall newid x) (getattr item :storage-id-dst))) base-writes)))
+      (caten/codegen/rewriting-rules:schedule-item-write-define-global item))))
 
 (defun apply-memory-planner (schedule-graph symbolics base-graph)
   (declare (type graph schedule-graph))
@@ -144,6 +144,10 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
                    append (getattr node :blueprint)
                  else
                    collect node))
+         (realized-ids
+           (remove-duplicates
+            (loop for node in (graph-nodes schedule-graph)
+                  append (append (node-writes node) (node-reads node) (getattr node :storage-id-dst) (getattr node :storage-id-src)))))
          (exprs (apply #'make-graph (loop for n in nodes if (eql (node-type n) :EXPR) collect n)))
          (total-time (length nodes))
          (trace-table (make-hash-table))
@@ -163,6 +167,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
             (setf stacks (remove (getattr node :idx) stacks :key #'(lambda (x) (getattr x :idx))))
           else
             do (setf (gethash (node-id node) id->depend-loops) stacks))
+    (dolist (node (graph-nodes schedule-graph))
+      (loop for w in (node-writes node)
+            for ws in (getattr node :storage-id-dst)
+            if (not (eql w ws))
+              do (push ws symbolics))) ;; already reserved -> do not change
     (dolist (s symbolics) (setf (gethash s lock-table) t))
     ;; Creating a timestamp table for each node and variable.
     (loop for node in nodes
@@ -215,12 +224,12 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 		     for typ in (relay-reads (read-type-relay node))
 		     for time = `(,nth ,@(gethash val trace-table))
                      if (id-is-input-p val base-graph) do (push val outputs)
-                       if (symbolp val)
+                       if (and (symbolp val) (find val realized-ids))
                          do (setf (gethash val id2type) typ (gethash val trace-table) time))
 	       (loop for val in (node-writes node)
 		     for typ in (relay-writes (read-type-relay node))
                      if (id-is-input-p val base-graph) do (push val outputs)
-		       if (and (symbolp val) (null (gethash val trace-table)))
+		       if (and (symbolp val) (null (gethash val trace-table)) (find val realized-ids))
                          ;; ID2Type    -> the variable name and its type
                          ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
                          ;; LockTable  -> Set T to lock (never become in-place)
@@ -292,25 +301,11 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
     ;; (values counter total_size[GB])
     (values tensor-counter (float (/ total-size 8e+9)))))
 
-(defun remove-extra-node-writes-to (schedule-node)
-  (assert (eql (node-type schedule-node) :Schedule-Item))
-  (when (and (getattr schedule-node :jitable)
-             (> (length (node-writes schedule-node))
-                (+ (length (getattr schedule-node :storage-id-dst))
-                   (length (getattr schedule-node :storage-id-src))
-                   (length (getattr schedule-node :dynamic-shapes))))
-             (not (= 0 (length (getattr schedule-node :storage-id-dst)))))
-    (setf (node-writes schedule-node)
-          (loop for d in (getattr schedule-node :storage-id-dst)
-                for id in (node-writes schedule-node)
-                collect id))))
-
 (defmethod run-memory-planner ((schedule-graph Graph) (symbolics list) (base-graph Graph))
   (let ((static-graph-p (null symbolics)))
     (multiple-value-bind (before-count before-size)
         (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate schedule-graph static-graph-p))
       (apply-memory-planner schedule-graph symbolics base-graph)
-      (mapc #'remove-extra-node-writes-to (graph-nodes schedule-graph))
       (multiple-value-bind (after-count after-size)
           (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate schedule-graph static-graph-p))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)

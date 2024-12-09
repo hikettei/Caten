@@ -16,24 +16,22 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
    #:Default-Renderer)
   (:import-from
    :caten/codegen/exprify
-   #:graph-exprify
-   #:graph-scalarify
-   #:expr-set-iterations
-   #:graph-propagate-pointer-id-type
-   #:expr-rewrite-edge-with-pointer-id)
+   #:blueprint-exprify
+   #:blueprint-scalarify
+   #:blueprint-set-iterations
+   #:blueprint-propagate-reduction
+   #:blueprint-realized-buffers)
+  (:import-from :caten/codegen/rewriting-rules #:nodes-apply-static-gensym)
   (:export
    #:lower-schedule-item
    #:lower-cached-schedule-item
    #:print-blueprint))
 
 (in-package :caten/codegen/blueprint)
-
+;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %make-for (idx size)
   "Represents for an iteration in the range of [0, size)"
-  (make-node :Render :FOR nil nil :idx idx
-             :upfrom (expr-const 0 :int64)
-             :below (expr-< (expr-const idx :int64) size)
-             :by (expr-const 1 :int64)))
+  (make-node :Render :FOR (list idx)  nil :idx idx :upfrom (expr-const 0 :int64) :below (expr-< (expr-const idx :int64) size) :by (expr-const 1 :int64)))
 
 (defun %make-endfor (idx)
   "Represents the end of the iteration."
@@ -97,6 +95,15 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                                 " // :reduction=t"
                                 ""))))))))
 
+(defun node-reduced-axes (node)
+  (let ((is (car (relay-write-iters (read-type-relay node)))))
+    (when is
+      (loop for s in (iteration-space-strides is)
+            if (expr-equal-to s 0)
+              collect t
+            else
+              collect nil))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod get-grouped-dims ((graph Graph) (base-graph Graph))
   "Infers the loop boundaries of the graph by finding the common iteration space."
   (let* ((kernel-rank
@@ -107,6 +114,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                        when r maximize (length (buffer-shape r)))))
          (pid2space (make-hash-table :test #'equal))
          (candidates nil))
+    ;; Assuming all buffers in the graph have reshaped to `kernel-rank` by the scheduler.
     (labels ((broadcastable-p (a b)
                (or (expr-equal-to a 1)
                    (expr-equal-to b 1)
@@ -158,8 +166,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
           new-procedure)
          new-procedure)))))
 
-(defmethod fixup-graph-iteration-space ((graph Graph) found-pair g
-                                        &aux (kernel-rank (apply #'max (alexandria:flatten (cdr found-pair)))))
+(defmethod fixup-graph-iteration-space ((graph Graph) found-pair g &aux (kernel-rank (apply #'max (alexandria:flatten (cdr found-pair)))))
   "Rewrite the all node buffers to have the common iteration space found by the `get-grouped-dims`. All nodes must have the same ranked buffer in advance. (rewritten by scheduler.lisp)"
   (multiple-value-bind (found-space procedure) (values (car found-pair) (cdr found-pair))
     (labels ((merge-list (proc list)
@@ -205,6 +212,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
 
 (defmethod graph-swizzle-space ((graph Graph) (order list))
+  "Permutes all buffers in the graph by the order."
   (flet ((swizzle (id space)
            (when space
              (assert (length (iteration-space-procedure space)) () "graph-swizzle-loop-order: Cannot swizzle the space ~a ~a with ~a" id space order)
@@ -221,9 +229,10 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                                    (type (read-type-relay node))
                                    (shapes (make-list (length gid)))
                                    (strides (make-list (length gid))))
-  "Enumerates a list of gid that the node depends on."
-  (flet ((broadcasted-p (size stride)
-           (or (expr-equal-to size 1) (expr-equal-to stride 0))))
+  "Enumerates a list of gid that the node depends on.
+- If loop size is 1 => the loop is removed with _gidn=0.
+- If stride is 0    => the index space won't use corresponding _gid."
+  (flet ((no-dep-p (size stride) (or (expr-equal-to size 1) (expr-equal-to stride 0))))
     (dolist (space (append (relay-read-iters type) (relay-write-iters type)))
       (when space
         (loop for axis upfrom 0
@@ -233,17 +242,8 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
     (loop for g in gid
           for size in shapes
           for stride in strides
-          if (not (every #'broadcasted-p size stride))
+          if (not (every #'no-dep-p size stride))
             collect g)))
-
-(defun node-reduced-axes (node)
-  (let ((is (car (relay-write-iters (read-type-relay node)))))
-    (and is
-         (loop for s in (iteration-space-strides is)
-               if (expr-equal-to s 0)
-                 collect t
-               else
-                 collect nil))))
 
 (defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
   (when (null axes) (setf axes (make-list (length gids))))
@@ -277,7 +277,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
               else
                 collect p)
       ,@(nreverse stashed))))
-
+;; ~~~ Lowerer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct ctx
   "an intermidate object used to debug `recursive-lower-into-bp`"
   graph order blueprint seen gids loop-size-list band2node schedule-graph)
@@ -286,8 +286,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 
 (defmethod initial-bp ((ctx ctx))
   (with-slots ((gids gids) (group-size loop-size-list)) ctx
-    `(,@(map 'list #'%make-for gids group-size)
-      ,@(reverse (map 'list #'%make-endfor gids)))))
+    `(,@(map 'list #'%make-for gids group-size) ,@(reverse (map 'list #'%make-endfor gids)))))
 
 (defmethod reduce-bp ((ctx ctx) something gids key)
   (let* ((sizes (loop for g in gids
@@ -326,6 +325,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
           (every #'(lambda (x) (recursive-scalar-p ctx x)) (node-reads node))))))
 
 (defun try-insert-node (ctx node &aux (changed-p nil))
+  "First this function tries to search all possible insertable position for the node, and then insert the node in the most suitable position. (values new_bp successed_p) is returned."
   (with-slots ((blueprint blueprint)) ctx
     (let* ((node-depend-axes ;; list of gids `node` should depend on
              (node-depend-idx-list node (ctx-gids ctx)))
@@ -440,7 +440,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
     (push id seen)
     (multiple-value-bind (new-bp changed-p)
         (try-insert-node ctx node)
-      (when (null changed-p) ;; if failed -> add the outermost node and retry.
+      (when (null changed-p) ;; if failed -> add the outermost loops and retry. (todo: which is not preferable though...)
         (setf (ctx-blueprint ctx) (append (initial-bp ctx) (ctx-blueprint ctx)))
         (multiple-value-bind (new-bp1 changed-p1)
             (try-insert-node ctx node)
@@ -460,101 +460,7 @@ Depends=~a Reduce=~a Users=~a
       (node-reads node))
       nil)))
 
-(defmethod schedule-item-infer-io-buffers ((node Node) (bp-items list) rewrite-map)
-  (assert (eql (node-type node) :Schedule-Item))
-  (let ((seen) (read-items) (write-items))
-    (loop for item in bp-items
-          if (null (find (node-type item) `(:IF :ENDIF :FOR :ENDFOR))) do
-            (loop for read in (node-reads item)
-                  for rt in (relay-reads (read-type-relay item))
-                  if (and (symbolp read) (null (find read seen)) (not (= -1 (buffer-nrank rt)))) do
-                    (push (cons read rt) read-items) (push read seen))
-            (loop for write in (node-writes item)
-                  for wt in (relay-writes (read-type-relay item))
-                  if (and (symbolp write) (null (find write seen)) (null (car (getattr item :declare-type)))
-                          (not (= (buffer-nrank wt) -1)))
-                    do (push (cons write wt) write-items)
-                  end
-                  do (push write seen)))
-    ;; remote extra read/write dependencies purged by op fusion
-    (setf (node-reads node) (map 'list #'car read-items)
-          (node-writes node) (map 'list #'car write-items)
-          seen nil)
-    (labels ((reduce-address-of (id)
-               (if (gethash id rewrite-map)
-                   (reduce-address-of (gethash id rewrite-map))
-                   id))
-             (address-of (id)
-               (read-ptrid (reduce-address-of id)))
-             (only-unseen (list)
-               (loop for l in list
-                     for id = (address-of (car l))
-                     if (null (find id seen))
-                       do (push id seen) and collect l))
-             (make-pair (list)
-               (only-unseen (remove-duplicates list :key #'(lambda (x) (address-of (car x)))))))
-      (multiple-value-bind (write-items read-items)
-          (values (make-pair write-items) (make-pair read-items))
-        (setf
-         (getattr node :read-types) (map 'list #'cdr read-items)
-         (getattr node :write-types) (map 'list #'cdr write-items)
-         (getattr node :storage-id-src) (map 'list (compose #'reduce-address-of #'car) read-items)
-         (getattr node :storage-id-dst) (map 'list (compose #'reduce-address-of #'car) write-items))))))
-
-(defmethod schedule-item-gather-dynamic-shapes ((node Node) base-graph blueprints)
-  "Returns a list of dynamic shapes used in the schedule-item."
-  (flet ((is-dynamic-shape-p (val)
-           (and (not (null val))
-                (not (eql val t))
-                (find val (graph-nodes base-graph) :key #'(lambda (x) (getattr x :value :allow-undefined t)))))
-         (not-defined-by-bp (val) (null (find val blueprints :key #'node-writes :test #'find))))
-    (remove-duplicates
-     (append
-      ;; From the lowered blueprint
-      (loop for item in (getattr node :items)
-            if (and (eql (node-type item) :LOAD) (symbolp (getattr item :value)))
-              collect (cons (getattr item :value) (buffer-dtype (car (relay-writes (read-type-relay item))))))
-      ;; Fused Dynamic Shape
-      (loop for item in (getattr node :items)
-            append
-            (loop for r in (node-reads item)
-                  for rt in (relay-reads (read-type-relay item))
-                  if (and (symbolp r) (is-dynamic-shape-p r))
-                    collect (cons r (buffer-dtype rt))))
-      ;; :FOR/:IF
-      (loop for item in blueprints
-            if (find (node-type item) `(:FOR :IF))
-              append
-              (loop for node in (ecase (node-type item)
-                                  (:FOR
-                                   (append (graph-nodes (expr-graph (getattr item :upfrom)))
-                                           (graph-nodes (expr-graph (getattr item :below)))
-                                           (graph-nodes (expr-graph (getattr item :by)))))
-                                  (:IF (graph-nodes (expr-graph (getattr item :condition)))))
-                    if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)) (is-dynamic-shape-p (getattr node :value)))
-                      collect (cons (getattr node :value) :int64)))
-      ;; Symbols used to compute the views
-      (nreverse
-       (loop for item in (getattr node :items)
-             append
-             (loop for type in (append (relay-read-iters (read-type-relay item)) (relay-write-iters (read-type-relay item)))
-                   if type
-                     append
-                     (loop for s in (iteration-space-strides type)
-                           for ids = (expr-depends-on s)
-                           append
-                           (loop for i in ids if (is-dynamic-shape-p i)
-                                 collect (cons i caten/aasm:*default-int*)))
-                   if type
-                     append
-                     (loop for s in (append (loop for v in (iteration-space-views type)
-                                                          if v append (list (first v) (third v))))
-                           if (and (symbolp s) (not (eql s t)) (not (eql s nil)) (not-defined-by-bp s))
-                             collect (cons s caten/aasm:*default-int*))))))
-     :key #'car)))
-
 (defun simplify-pointer-and-constant (blueprints)
-  ;; [todo] removable?
   (let ((constants))
     (loop for bp in blueprints
           if (and (not (eql (node-class bp) :Render)) (getattr bp :declare-type)) do
@@ -566,6 +472,7 @@ Depends=~a Reduce=~a Users=~a
                   for is in (relay-read-iters (read-type-relay bp))
                   for nth upfrom 0
                   if (and type is (find read constants)) do
+                    ;; The load to :declare-type is a scalar.
                     (setf (nth nth (relay-reads (read-type-relay bp)))
                           (let ((buffer (caten/avm:copy-buffer type)))
                             (setf (buffer-nrank buffer) -1)
@@ -596,16 +503,19 @@ Depends=~a Reduce=~a Users=~a
       ,@(ctx-blueprint ctx)
       ,@(reverse (map 'list #'cdr padding-loops)))))
 
-(defun lower-schedule-item (node base-graph scheduled-graph)
+(defun lower-schedule-item (node base-graph scheduled-graph) ;; Entry point for lowerer is here :)
   "
 ```
 (lower-schedule-item node base-graph scheduled-graph)
 ```
 
 Lowers the Schedule-Item into blueprint.
-- node is a schedule-item to lower.
-- base-graph is the aasm graph to compile.
-- scheduled-graph is the graph to schedule.
+
+- node is a schedule-item to lower which belongs to scheduled-graph.
+
+- base-graph is the graph you passed to the graph-schedule.
+
+- scheduled-graph is the scheduled graph obtained by graph-schedule.
 "
   (declare (type node node) (type graph base-graph scheduled-graph))
   (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
@@ -632,20 +542,28 @@ Lowers the Schedule-Item into blueprint.
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       ;; Peforming the OpFusion to the lowered blueprint.
       (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
-            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; todo(hikettei) removable?
-            (ctx-blueprint ctx) (graph-scalarify (ctx-blueprint ctx) node scheduled-graph) ; rewrite local buffers as a scalar
-            (ctx-blueprint ctx) (graph-exprify (ctx-blueprint ctx) node scheduled-graph) ; rewrite jitable nodes -> expr
+            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; early scalarify
+            (ctx-blueprint ctx) (blueprint-scalarify (ctx-blueprint ctx) node base-graph) ; rewrite local buffers as a scalar
+            (ctx-blueprint ctx) (blueprint-exprify (ctx-blueprint ctx) node) ; rewrite jitable nodes -> expr
             (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
-      ;; Gathering dynamic shapes used in the schedule-item
-      (setf (getattr node :dynamic-shapes) (schedule-item-gather-dynamic-shapes node base-graph (ctx-blueprint ctx)))
-      (expr-set-iterations (ctx-blueprint ctx))
-      (multiple-value-bind (new-bp id-rewrite-map) (graph-propagate-pointer-id-type (ctx-blueprint ctx) scheduled-graph)
+      (multiple-value-bind (new-bp id-as-dag-map) (blueprint-propagate-reduction (ctx-blueprint ctx)) ;; A = B + C * D => B += C * D
         (setf (ctx-blueprint ctx) new-bp)
-        ;; Infer the input/output buffers again, they can be removed during the op fusion.
-        (schedule-item-infer-io-buffers node (ctx-blueprint ctx) id-rewrite-map)
-        (expr-rewrite-edge-with-pointer-id (ctx-blueprint ctx) id-rewrite-map))
+        ;; Synchronize the realized buffers
+        (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
+          (let ((before-assigned-map (loop for w in writes
+                                           if (gethash (car w) id-as-dag-map)
+                                             collect (car w))))
+            (setf (getattr node :read-types) (map 'list #'cdr reads)
+                  (getattr node :write-types) (map 'list #'cdr writes)
+                  (getattr node :storage-id-src) (map 'list #'car reads)
+                  (getattr node :storage-id-dst) (map 'list #'car writes)
+                  (getattr node :dynamic-shapes) constants
+                  (node-reads node) (append before-assigned-map (map 'list #'car reads))
+                  ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
+                  (node-writes node) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes)))))
+      (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
-
+;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
   (let ((node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
     (assert node () "find-cache-base-schedule-item: No cache item for ~a" node)
@@ -672,6 +590,7 @@ Lowers the Schedule-Item into blueprint.
     result))
 
 (defmethod lower-cached-schedule-item ((node Node) (schedule-graph Graph))
+  "Lowers the (optimized) blueprint from cached schedule."
   (assert (getattr node :cache-name))
   (assert (getattr node :jitable))
   (let* ((base-item (find-cache-base-schedule-item node schedule-graph))

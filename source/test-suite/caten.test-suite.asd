@@ -8,6 +8,7 @@ Tests that are not related to the core functionality of Caten or are time-consum
   :components ((:file "package")
 	       (:file "helpers")
                (:file "test-ops")
+               (:file "test-simplifier")
                (:file "test-view")
                (:file "test-regression-test")
                (:file "test-normalization")
@@ -24,7 +25,8 @@ Tests that are not related to the core functionality of Caten or are time-consum
                (:file "test-memory-planner")
                (:file "test-schedule-cache")
                (:file "test-rope")
-               (:file "external/test-gguf"))
+               (:file "external/test-gguf")
+               (:file "external/test-tokenizer"))
   :perform
   (asdf:test-op
    (o s)

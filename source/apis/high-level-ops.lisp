@@ -12,7 +12,7 @@
 	(setf (tensor-op out) nil (tensor-variables out) nil)
 	out))))
 
-(macrolet ((defreduce (model description op)
+(macrolet ((defreduce (model description op &key (initial-element 0.0))
 	     `(defmodule (,model ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
 		  ()
 		  :documentation ,description
@@ -21,7 +21,7 @@
 		  ((op x)
 		   (with-attrs ((axis :axis) (keepdims :keepdims)) op
 		     (multiple-value-bind (new-shape new-view) (parse-reduce-axes x axis)
-		       (let* ((out (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element 0.0))
+		       (let* ((out (make-tensor new-shape :dtype (dtype-of x) :order (order x) :initial-element ,initial-element))
 			      (out (apply #'!view out new-view))
 			      (out (,op out x :reduce t))
 			      (out (if keepdims
@@ -29,8 +29,8 @@
 				       (apply #'!view out (map 'list #'(lambda (x) (if (and (listp x) (eql (car x) :~)) `(:~ 1) t)) new-view)))))
                          out)))))))
   (defreduce SumNode "Sum tensors along axis" !add)
-  (defreduce MaxReduce "Max" !maximum)
-  (defreduce MinReduce "Min" !minimum))
+  (defreduce MaxReduce "Max" !maximum :initial-element (-inf))
+  (defreduce MinReduce "Min" !minimum :initial-element (inf)))
 
 (defmodule (MeanNode ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
     ()
@@ -303,12 +303,10 @@ Returns the upper triangular part of the tensor (>= 2D) or batch of matrices inp
     :impl ((argmax x)
 	   (with-attrs ((axis :axis) (keepdims :keepdims)) argmax
              (let* ((axis (normalize-axis x axis))
-                    (idx (!index-components `(,@(loop for i upfrom 0 below axis collect 1)
-                                              ,(nth axis (shape x))
-                                              ,@(loop repeat (- (ndim x) axis 1) collect 1))))
+                    (idx (!gid x axis))
                     ;; idx = shape-1, shape-2, ..., 2, 1, 0
                     (idx (!add (!- (!const idx (nth axis (shape x))) (!const idx 1)) (!mul idx (!const idx -1))))
-                    (map (!where (!eq x (!max x :axis axis :keepdims t)) idx (!const idx 0))))
+                    (map (!where (!eq x (!max x :axis axis)) idx (!const idx 0))))
                (!cast (!- (!const idx (nth axis (shape x))) (!max map :axis axis :keepdims keepdims) (!const idx 1)) *default-int*)))))
 
 (defmodule (ArgMinNode ((&key (axis 0) (keepdims nil)) :axis axis :keepdims keepdims))
@@ -475,7 +473,7 @@ Splits the tensor into `chunks` number of tensors along the specified dimension.
                 for nth upfrom 0
                 for cat-dim in cat-dims
                 for in in inputs do
-                  (setf cat-tensor (!move (apply #'!view-from-base cat-tensor (~ offset nth)) in))
+                  (setf cat-tensor (!assign (apply #'!view-from-base cat-tensor (~ offset nth)) in))
                   (incf offset cat-dim))
           (apply #'!view-from-base cat-tensor
                  (loop for i upfrom 0 below (ndim cat-tensor)

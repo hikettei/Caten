@@ -58,6 +58,8 @@ jobs:
       - name: Installing requirements
         run: make install_docs
       - name: Building documentations
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           qlot install
           CI=1 mkdir -p docs/packages && qlot exec make build_docs && echo -e "markdown-katex\nlantana==2.11.2" > docs/requirements.txt

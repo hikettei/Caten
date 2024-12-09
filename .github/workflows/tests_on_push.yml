@@ -66,6 +66,8 @@ jobs:
     name: Test building documentations
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v1
       - name: Set up SBCL via Roswell.
@@ -111,6 +113,8 @@ jobs:
           cmake --build . --target install --parallel 16
           cd ../../
       - name: Installing extra dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           qlot install
           qlot exec make install_docs

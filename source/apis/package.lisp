@@ -27,6 +27,7 @@
   (:export
    #:make-tensor
    #:make-view-internal
+   #:tensor-graph
    #:fconst #:uconst #:iconst
    
    #:Tensor
@@ -37,6 +38,7 @@
    #:tensor-order
    #:tensor-id
    #:tensor-op
+   #:tensor-tr
    #:tensor-views
    #:tensor-requires-grad
    #:tensor-grad
@@ -61,7 +63,14 @@
    #:caten-backward-error)
   ;; from shape-tracker.lisp
   (:export #:st #:bc)
-
+  ;; from merge-views.lisp
+  (:export
+    #:Tracker
+    #:tr-shape #:tr-base-shape #:tr-stride #:tr-order #:tr-broadcast #:tr-mask #:tr-permute #:tr-contiguous
+    #:canonicalize-int
+    #:un1d
+    #:start-tracking
+    #:tr-apply-permute #:tr-apply-reshape #:tr-apply-uprank #:tr-reshapeable-p #:tr-apply-slice #:tr-apply-broadcast)
   ;; from module.lisp
   (:export
    #:Module
@@ -105,7 +114,9 @@
    ;; dimension manipulation
    #:!split
    #:!chunk
-   #:!concatenate)
+   #:!concatenate
+
+   #:!square #:!rsqrt #:!gid #:!normalize-axis)
   ;; from helpers.lisp
   (:export
    #:with-no-grad

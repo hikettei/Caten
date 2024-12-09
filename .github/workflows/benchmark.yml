@@ -12,6 +12,8 @@ jobs:
   Compiler_Benchmark:
     name: Transformer Compilation
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v1
@@ -31,6 +33,8 @@ jobs:
           export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           sudo apt-get install -y libisl-dev gnuplot
           qlot install
@@ -44,6 +48,8 @@ jobs:
     name: ONNX Optimization
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v1
       - name: Set up SBCL via Roswell.
@@ -89,6 +95,8 @@ jobs:
           cmake --build . --target install --parallel 16
           cd ../../
       - name: Installing extra dependencies
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           qlot install
           qlot exec make install_docs
@@ -96,11 +104,16 @@ jobs:
       - name: Exporting models
         run: |
           python ./scripts/export_onnx.py --task classification --model mobilenet_v2 --weights IMAGENET1K_V1 --output_dir ./models
+          python ./scripts/export_onnx.py --task classification --model resnet18 --weights IMAGENET1K_V1 --output_dir ./models
           wget https://pub-edba5feea2c145019e8be2a71dbeea81.r2.dev/cat.png
       - name: Running MobilenetV2
         run: |
           ros config set dynamic-space-size 8gb
           JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/mobilenet_v2.onnx --image ./cat.png --label 282
+      - name: Running ResNet18
+        run: |
+          ros config set dynamic-space-size 8gb
+          JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/resnet18.onnx --image ./cat.png --label 281
   GGUF_Optimization:
     name: GGUF Optimization
     runs-on: ubuntu-latest
@@ -117,4 +130,5 @@ jobs:
       - name: GPT2
         run: |
           ros config set dynamic-space-size 8gb
-          JIT=1 JIT_DEBUG=4 PARALLEL=8 NO_MEMORY_PLANNER=0 NO_SCHEDULE_CACHE=0 ./roswell/caten.ros llm-example --model "gpt2" --prompt "What is the answer to life, the universe, and everything?"
+          : # Reproducing the output from huggingface gpt2
+          JIT=1 JIT_DEBUG=4 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --expected "Hello, I'm sorry, but I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you" --max-length 100

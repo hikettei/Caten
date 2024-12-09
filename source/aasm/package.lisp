@@ -33,6 +33,7 @@
   (:export
    #:with-context
    #:with-context-nodes
+   #:with-context-from-parents
    #:with-asm
    #:*ctx*
    #:emit)
@@ -80,5 +81,5 @@
   (:export
    #:%where)
   ;; from optimizers.lisp
-  (:export #:optimize-aasm)
+  (:export #:optimize-aasm #:minimize-duplicated-symbolic-path)
   )

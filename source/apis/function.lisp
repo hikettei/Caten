@@ -762,5 +762,47 @@ Computes the ~a of the tensor."
   (def XorNode %xor !xor "logical/bitwise xor")
   (def AndNode %and !and "logical/bitwise and"))
 ;; ~~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun !square (x) (!mul x x))
-(defun !rsqrt (x) (!recip (!sqrt x)))
+(defun !square (x)
+  "
+```
+(!square x)
+```
+Computes the x*x
+"
+  (!mul x x))
+
+(defun !rsqrt (x)
+  "
+```
+(!rsqrt x)
+```
+Computes the reciprocal of sqrt x.
+"
+  (!recip (!sqrt x)))
+
+(defun !gid (tensor rank &key (dtype *default-float*))
+  "
+```
+(!gid tensor rank &key (dtype *default-float*))
+```
+Finds the `rank` th index components of the tensor.
+
+For example (!gid x 1) for (3 3) tensor is a `(0 1 2). (As a tip) by combining !gid with !where, you can implement pseudo a random accessing of the tensor. For example:
+"
+  (declare (type tensor tensor) (type fixnum rank))
+  (let* ((axis (normalize-axis tensor rank))
+         (out (!index-components (make-tensor `(,@(loop for i upfrom 0 below axis collect 1) ,(nth axis (tr-shape (tensor-tr tensor))) ,@(loop repeat (- (ndim tensor) axis 1) collect 1)) :dtype dtype))))
+    (apply #'!view out (loop for i upfrom 0 below (ndim out)
+                             for s in (tr-shape (tensor-tr tensor))
+                             if (= i axis) collect t else collect `(:~ ,s)))))
+
+(defun !normalize-axis (ndim axis)
+  "
+```
+(!normalize-axis ndim axis)
+```
+Creates a tensor graph which normalizes the axis. If the axis is negative, it will be normalized to the positive axis.
+"
+  (let ((ndim (->iconst ndim)) (axis (->iconst axis)))
+    (!where (!< axis (iconst 0)) (!add axis ndim) axis)))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

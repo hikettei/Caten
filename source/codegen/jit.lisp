@@ -55,7 +55,6 @@ caten/codegen overview:
   (:import-from
    :caten/codegen/rewriting-rules
    #:apply-rewriting-rules
-   #:graph-infer-pointer-address
    #:schedule-item-write-define-global)
   (:import-from
    :caten/codegen/scheduler
@@ -107,7 +106,8 @@ caten/codegen overview:
   (caller (error "caller must occur") :type function)
   (raw-caller (error "raw-caller must occur") :type list)
   (device (error "device must occur") :type string)
-  (code (error "code must occur") :type string))
+  (code (error "code must occur") :type string)
+  (out-positions (error "out positions must occur") :type list))
 
 (defnode (:JIT :JIT_KERNEL) ()
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
@@ -120,16 +120,20 @@ caten/codegen overview:
     :caller ,(compiled-kernel-raw-caller jit)
     :raw-caller ',(compiled-kernel-raw-caller jit)
     :device ,(compiled-kernel-device jit)
-    :code ,(compiled-kernel-code jit)))
+    :code ,(compiled-kernel-code jit)
+    :out-positions ,(compiled-kernel-out-positions jit)))
 
 (defmethod print-object ((s Compiled-Kernel) stream)
   (format stream "<~a[~a]>" (compiled-kernel-device s) (compiled-kernel-name s)))
 
 (defun make-compiled-kernel-from-si (si graph)
+  (declare (ignore graph))
   (assert (eql (node-type si) :Schedule-Item))
   (flet ((from-cache (node)
-           (or (find (getattr node :cache-name) (graph-nodes graph) :key #'(lambda (x) (getattr x :name)) :test #'equalp)
-               (error "The cache item for ~a was not found." node))))
+           ;;TODO: Reuse the cached compiled function if the number of argument corresponds
+           ;;(or (find (getattr node :cache-name) (graph-nodes graph) :key #'(lambda (x) (getattr x :name)) :test #'equalp)
+           ;;    (error "The cache item for ~a was not found." node))
+           node))
     (make-compiled-kernel
      :name (intern (princ-to-string (or (getattr si :cache-name) (getattr si :name))) "KEYWORD")
      :caller (if (getattr si :cache-name)
@@ -141,14 +145,15 @@ caten/codegen overview:
      :device (princ-to-string (or (ctx:getenv :JIT_BACKEND) :clang))
      :code (if (getattr si :cache-name)
                (getattr (from-cache si) :rendered-object)
-               (getattr si :rendered-object)))))
+               (getattr si :rendered-object))
+     :out-positions (or (getattr si :return-positions) (loop for i upfrom 0 below (length (node-writes si)) collect i)))))
 
 (defun make-compiled-kernel-node (si graph)
   (make-node :JIT :JIT_KERNEL (node-writes si)
              (append
               (getattr si :storage-id-dst) ;; optimized by memory-planner
               (map 'list #'car (getattr si :dynamic-shapes))
-              (getattr si :storage-id-src))
+              (getattr si :storage-id-src)) ;; optimized by memory-planner
              :output-buffer-n (length (node-writes si))
              :kernel-info (make-compiled-kernel-from-si si graph)
              :dtypes
@@ -158,13 +163,15 @@ caten/codegen overview:
              :cached-p (if (getattr si :cache-name) t nil)))
 
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
-  (let ((info (getattr node :kernel-info))
-        (out-n (getattr node :output-buffer-n)))
+  (let ((info (getattr node :kernel-info)))
     ;; (For details, see coerce-dtyped-buffer)
     (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
       (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
       (apply (compiled-kernel-caller info) args)
-      (apply #'values (subseq args 0 out-n)))))
+      (apply #'values (map 'list #'(lambda (x) (nth x args)) (compiled-kernel-out-positions info))))))
+
+(defun timefy (name time)
+  (if (= 0 time) name (intern (format nil "~(~a~)_~a" name time))))
 
 (defun get-subgraph (graph top-id seen &aux (seen (copy-list seen)))
   (labels ((explore (x)
@@ -188,34 +195,22 @@ caten/codegen overview:
           (buffer-orig-buffer-shape wt))
       (buffer-shape wt)))
 
-(defun make-alloc+view-node-from-buffer (wt w base-graph)
+(defun make-alloc+view-node-from-buffer (wt w base-graph &aux (time 0))
   (when (some #'identity (buffer-views wt))
     ;; Consider the case: (NIL NIL (0 3 1 T))
     (setf (buffer-views wt)
           (loop for v in (buffer-views wt)
                 for s in (buffer-shape wt)
                 if v collect v
-                else collect (list 0 s 1 nil))))
-  (let ((view
-          (when (some #'identity (buffer-views wt))
-            (make-node :Buffer :View (list w)
-                       (append
-                        (list w)
-                        (buffer-shape wt)
-                        (map 'list #'first (buffer-views wt))
-                        (map 'list #'second (buffer-views wt))
-                        (map 'list #'third (buffer-views wt))
-                        (buffer-stride wt))
-                       :broadcast (map 'list #'fourth (buffer-views wt))
-                       :nrank (length (buffer-shape wt)))))
-        (alloc
+                  else collect (list 0 s 1 nil))))
+  (let ((alloc
           (or
            ;; Prefer to use the original node, if w is defined in the graph and that's allocate.
            (let ((node (id->value base-graph w)))
              (when (and node (eql (node-type node) :Allocate))
                node))
            ;; Otherwise create it.
-           (make-node :Buffer :Allocate (list w)
+           (make-node :Buffer :Allocate (progn (incf time) (list (timefy w time)))
                       (append
                        (loop for s in (select-output-shape wt)
                              for nth upfrom 0
@@ -223,9 +218,21 @@ caten/codegen overview:
                              if (fourth v) collect 1
                                else collect s)
                        (buffer-stride wt))
-                      :nrank (length (buffer-shape wt)) :dtype (buffer-dtype wt)))))
+                      :nrank (length (buffer-shape wt)) :dtype (buffer-dtype wt))))
+        (view
+          (when (some #'identity (buffer-views wt))
+            (make-node :Buffer :View (progn (incf time) (list (timefy w time)))
+                       (append
+                        (list (timefy w (1- time)))
+                        (buffer-shape wt)
+                        (map 'list #'first (buffer-views wt))
+                        (map 'list #'second (buffer-views wt))
+                        (map 'list #'third (buffer-views wt))
+                        (buffer-stride wt))
+                       :broadcast (map 'list #'fourth (buffer-views wt))
+                       :nrank (length (buffer-shape wt))))))
     (assert (= (length (select-output-shape wt)) (length (buffer-shape wt))))
-    (values view alloc)))
+    (values view alloc time)))
 
 (defun id->output-map (graph)
   (let ((table (make-hash-table)))
@@ -252,53 +259,58 @@ caten/codegen overview:
       (dolist (node (graph-nodes graph))
         (cond
           ((getattr node :allocate-p)
-           (push (car (node-writes node)) allocated)
            (dolist (i (getattr node :items))
-             (push i nodes)
-             (mapc #'merge-id (node-reads i))))
+             (when (null (intersection (node-writes i) allocated))
+               (push i nodes)
+               (mapc #'merge-id (node-reads i))
+               (push (car (node-writes i)) allocated))))
           ((null (getattr node :jitable)) ;; Relocating non-jitable ops
-           (dolist (w (node-writes node)) (push w allocated))
            (dolist (i (getattr node :items))
-             ;; TODO: Ensure that the parents of i is not JITABLE.
-             (mapc #'merge-id (node-reads i))
-             (push i nodes)))
+             (when (null (intersection (node-writes i) allocated))
+               (mapc #'merge-id (node-reads i))
+               (push i nodes)
+               (dolist (w (node-writes i)) (push w allocated)))))
           ((getattr node :jitable)
-           (loop for w in (getattr node :storage-id-dst)
-                 for wt in (getattr node :write-types)
-                 if (null (find w allocated)) do
-                   (multiple-value-bind (view alloc) (make-alloc+view-node-from-buffer wt w base-graph)
-                     (mapc #'merge-id (node-reads alloc))
-                     (push alloc nodes)
-                     (when view
-                       (mapc #'merge-id (cdr (node-reads view)))
-                       (push view nodes)))
-                   (push w allocated))
-           (loop for (s . type) in (getattr node :dynamic-shapes)
-                 if (and (null (find s allocated)) (id->value base-graph s)) do
-                   (merge-id s))
-           (dolist (w (node-writes node)) (push w allocated))
-           (let ((kernel (make-compiled-kernel-node node graph)))
-             ;; Insert view before using variables which is defined as pointer in the kernel but scalar in the vmgraph.
-             (loop for r in (node-reads node)
-                   for rt in (getattr node :read-types)
-                   for nth upfrom (+ (length (node-writes node)) (length (getattr node :dynamic-shapes)))
-                   for d = (find r (reverse nodes) :key #'node-writes :test #'member)
-                   for dt = (and d (getattr d :_type_relay :allow-undefined t) (car (relay-writes (read-type-relay d))))
-                   if (and d dt (or (= 0 (buffer-nrank dt)) (= 0 (buffer-nrank rt))) (not (= (buffer-nrank dt) (buffer-nrank rt))))
-                     do (multiple-value-bind (view _) (make-alloc+view-node-from-buffer rt r base-graph)
-                          (declare (ignore _))
-                          (let ((key (local-gensym r)))
-                            (mapc #'merge-id (cdr (node-reads view)))
-                            (setf (car (node-writes view)) key
-                                  (nth nth (node-reads kernel)) key)
-                            (push view nodes))))
-           (push kernel nodes))
-           ;; Merging view after the JIT_KERNEL invocation
-           (loop for w in (node-writes node)
-                 for out-view = (gethash w map)
-                 if out-view do
-                   (mapc #'merge-id (cdr (node-reads out-view)))
-                   (push out-view nodes)))
+           (let ((replacements (make-hash-table)))
+             (loop for w in (getattr node :storage-id-dst)
+                   for wt in (getattr node :write-types)
+                   if (null (find w allocated)) do
+                     (multiple-value-bind (view alloc time) (make-alloc+view-node-from-buffer wt w base-graph)
+                       (mapc #'merge-id (node-reads alloc))
+                       (push alloc nodes)
+                       (when view
+                         (mapc #'merge-id (cdr (node-reads view)))
+                         (push view nodes))
+                       (setf (gethash w replacements) (timefy w time)))
+                     (push w allocated))
+             (loop for (s . type) in (getattr node :dynamic-shapes)
+                   if (and (null (find s allocated)) (id->value base-graph s)) do
+                     (merge-id s))
+             (dolist (w (node-writes node)) (push w allocated))
+             (let ((kernel (make-compiled-kernel-node node graph)))
+               ;; Insert view before using variables which is defined as pointer in the kernel but scalar in the vmgraph.
+               (loop for r in (node-reads node)
+                     for rt in (getattr node :read-types)
+                     for nth upfrom (+ (length (node-writes node)) (length (getattr node :dynamic-shapes)))
+                     for d = (find r (reverse nodes) :key #'node-writes :test #'member)
+                     for dt = (and d (getattr d :_type_relay :allow-undefined t) (car (relay-writes (read-type-relay d))))
+                     if (and d dt (or (= 0 (buffer-nrank dt)) (= 0 (buffer-nrank rt))) (not (= (buffer-nrank dt) (buffer-nrank rt))))
+                       do (multiple-value-bind (view _ time) (make-alloc+view-node-from-buffer rt r base-graph)
+                            (declare (ignore _))
+                            (let ((key (local-gensym r)))
+                              (mapc #'merge-id (cdr (node-reads view)))
+                              (setf (car (node-writes view)) key
+                                    (nth nth (node-reads kernel)) key)
+                              (push view nodes)
+                              (setf (gethash r replacements) (timefy r time)))))
+               (setf (node-reads kernel) (map 'list #'(lambda (x) (or (gethash x replacements) x)) (node-reads kernel)))
+               (push kernel nodes))
+             ;; Merging view after the JIT_KERNEL invocation
+             (loop for w in (node-writes node)
+                   for out-view = (gethash w map)
+                   if out-view do
+                     (mapc #'merge-id (cdr (node-reads out-view)))
+                     (push out-view nodes))))
           (T (error "schedule-graph->avm-graph: dont know how to merge ~a" node))))
       ;; Clean up nodes
       (dolist (node nodes)
@@ -323,10 +335,6 @@ caten/codegen overview:
 
 (defun schedule-item-equal (si1 si2 &aux (items1 (getattr si1 :items-to-cache)) (items2 (getattr si2 :items-to-cache)))
   (and
-   ;; The number of reference counters are the same => memory-planner should produce the same result
-   (equal (getattr si1 :reference-counters) (getattr si2 :reference-counters))
-   (every #'(lambda (x) (>= x 0)) (getattr si1 :reference-counters))
-   (every #'(lambda (x) (>= x 0)) (getattr si2 :reference-counters))
    (= (length items1) (length items2))
    (every
     #'(lambda (x y)
@@ -394,12 +402,10 @@ caten/codegen overview:
           (mapc f list)))))
 
 (defmacro with-printing-as-chunk ((stream) &body body)
+  "Synchronize the stream if the compilation is running in parallel."
   `(if (null lparallel:*kernel*)
        (let ((,stream t)) ,@body)
-       (format t "~a"
-               (with-output-to-string (,stream)
-                 (let ((caten/common.logger:*default-stream* ,stream))
-                   ,@body)))))
+       (format t "~a" (with-output-to-string (,stream) (let ((caten/common.logger:*default-stream* ,stream)) ,@body)))))
 
 (defun jit (avm
             &key
@@ -410,13 +416,16 @@ caten/codegen overview:
               (auto-scheduler
                (when (= (ctx:getenv :AUTO_SCHEDULER) 1)
                  (or (%renderer-get-auto-scheduler renderer)
-                     (error "Cannot enable auto-scheduler without the renderer support.~%Use define-auto-scheduler and define-hook-auto-scheduler and compilers will recognise it.~%or, set AUTO_SCHEDULER=0 to ignore this error.")))))
-  "Runs the JIT compilation (destructive)"
+                     (error "Cannot enable auto-scheduler without the renderer support.~%Use define-auto-scheduler and define-hook-auto-scheduler and compilers will recognise it.~%or, set AUTO_SCHEDULER=0 to supress this error.")))))
+  "
+```
+(jit avm &key (renderer :clang) (dir nil))
+```
+Runs the JIT compilation for the given AVM."
   (declare (type AVM avm))
   (when (= 2 (ctx:getenv :DOT)) (->dot (avm-graph avm) :title "Base Graph"))
-  ;; 1. Running the shape/offset/type inference
   (run-type-infer avm)
-  ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views, Symbol Loads, ...)
+  ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
   (apply-rewriting-rules avm)
   ;; 3. Running the scheduler
   (let ((base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (avm-graph avm)))))
@@ -427,13 +436,13 @@ caten/codegen overview:
            (loop for node in (graph-nodes (avm-graph avm))
                  if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
                    collect (getattr node :value))))
-        (pointer-map (graph-infer-pointer-address (avm-graph avm))))
+        (pointer-map (make-hash-table)))
     (declare (type Graph schedule-graph))
     (with-expr-cache (:pointer-map pointer-map) ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
       ;; 5. Minifying the number of schedules, (reuse kernels)
       (when (not (= 1 (ctx:getenv :NO_SCHEDULE_CACHE)))
         (minify-equivalent-schedule schedule-graph))
-      ;; 6. Start JIT Compilation. (Performing by group)
+      ;; 6. Start JIT Compilation. (Performing group by group)
       (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
@@ -491,9 +500,6 @@ caten/codegen overview:
             (fresh-line)
             (print-info "Running the memory planner..."))
           (run-memory-planner schedule-graph symbolics base-graph))
-        (dolist (item (graph-nodes schedule-graph))
-          (setf (getattr item :storage-id-src) (map 'list #'read-ptrid (getattr item :storage-id-src))
-                (getattr item :storage-id-dst) (map 'list #'read-ptrid (getattr item :storage-id-dst))))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (fresh-line)
           (print-info "Rendering ..."))
@@ -505,7 +511,9 @@ caten/codegen overview:
           (fresh-line)
           (print-info "Compiling ..."))
         (%compile-kernel renderer (graph-nodes schedule-graph) dir)
+        ;; [TODO] Improve schedule-graph->avm-graph
         (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
+          (setf (graph-outputs new-graph) (graph-outputs schedule-graph))
           (when (>= (ctx:getenv :JIT_DEBUG) 4)
             (print-info "Final Scheduling Graph:")
             (pprint-graph schedule-graph)
