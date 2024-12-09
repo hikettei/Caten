@@ -119,8 +119,10 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 
 (defmethod backward ((op View) &optional dout)
   (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
-    (let* ((base (clone-like (car (func-variables op)))))
-      (apply #'!view-from-base (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect `(0 ,s))))))
+    (let* ((x (car (func-variables op)))
+           (base (make-tensor (shape x) :dtype (dtype-of x) :order (order x) :initial-element 0.0)))
+      ;; [TODO] If slice -> call nn padding
+      (apply #'!view-from-base (!add (apply #'!view base subscripts) dout :reduce t) (loop for s in (shape base) collect `(0 ,s))))))
 
 (defmethod lower ((op View) &rest inputs)
   (%make-view-from-tracker (view-tr op) (gensym "TID") (car inputs)))
@@ -330,7 +332,7 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Move (Func) ((reduction :initarg :reduction :accessor move-reduction)))
 (defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op Move) &optional dout) (values dout dout))
+(defmethod backward ((op Move) &optional dout) (values nil dout))
 (defmethod lower ((op Move) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%move a b :reduction (move-reduction op))))))
@@ -386,7 +388,7 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 (defclass IDiv (Func)
   ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op IDiv) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op IDiv) &optional prev-grad))
+(defmethod backward ((op IDiv) &optional prev-grad) (values nil nil))
 (defmethod lower ((op IDiv) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%idiv a b :reduction (func-reduce op))))))
@@ -394,8 +396,11 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 (defclass MaxOp (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op MaxOp) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op MaxOp) &optional dout)
-  ;;(warn "WIP: MaxOp")
-  )
+  (let* ((mask (!> (first (func-variables op)) (second (func-variables op)))))
+    (values
+     (!where mask dout (!const dout 0))
+     (!where mask (!const dout 0) dout))))
+  
 (defmethod lower ((op MaxOp) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%max a b :reduction (func-reduce op))))))
@@ -414,13 +419,15 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 
 (defclass SinNode (Func) nil)
 (defmethod forward ((op SinNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op SinNode) &optional dout) (values (!mul dout (!cos (car (func-variables op))))))
+(defmethod backward ((op SinNode) &optional dout) (values (!mul (!cos (car (func-variables op))) dout)))
 (defmethod lower ((op SinNode) &rest inputs) (with-context (a (%sin (car inputs)))))
 (defun !sin (x) (forward (make-instance 'SinNode) x))
 
 (defclass ExpNode (Func) nil)
 (defmethod forward ((op ExpNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op ExpNode) &optional dout) (values (!mul (car (func-variables op)) dout)))
+(defmethod backward ((op ExpNode) &optional dout)
+  (let ((e (!exp (car (func-variables op)))))
+    (values (!mul e dout))))
 (defmethod lower ((op ExpNode) &rest inputs)
   (with-context
     (m (%mul (car inputs) (%fconst (/ (log 2)) :dtype (dtype-of (car (func-variables op))))))
@@ -428,7 +435,7 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 
 (defclass LogNode (Func) nil)
 (defmethod forward ((op LogNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op LogNode) &optional dout) (values (!mul dout (!recip (car (func-variables op))))))
+(defmethod backward ((op LogNode) &optional dout) (values (!mul (!recip (car (func-variables op))) dout)))
 (defmethod lower ((op LogNode) &rest inputs)
   (with-context
     (a (%log2 (car inputs)))
@@ -436,7 +443,7 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 
 (defclass SqrtNode (Func) nil)
 (defmethod forward ((op SqrtNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
-(defmethod backward ((op SqrtNode) &optional prev-grad) (!mul prev-grad (!recip (!mul (!sqrt (car (func-variables op))) (!const prev-grad 2)))))
+(defmethod backward ((op SqrtNode) &optional prev-grad) (!mul (!recip (!mul (!sqrt (car (func-variables op))) (!const prev-grad 2))) prev-grad))
 (defmethod lower ((op SqrtNode) &rest inputs) (with-context (a (%sqrt (car inputs)))))
 
 (defun !exp (x)
@@ -470,7 +477,7 @@ Computes `(sqrt x)`.
 (defmethod forward ((op Recip) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op Recip) &optional dout)
   (let ((ret (!recip (car (func-variables op)))))
-    (values (!mul (!mul (!neg dout) ret) ret)))) ;; -dout / x^2
+    (values (!* ret ret (!neg dout))))) ;; -dout / x^2
 (defmethod lower ((op Recip) &rest inputs) (with-context (a (%recip (car inputs)))))
 
 (defclass Cast (Func)
@@ -612,7 +619,7 @@ Returns the least common multiple of `a` and `b`.
 (!signum x)
 ```
 
-Returns the sign of the tensor. If the tensor is positive, it returns 1. If the tensor is negative, it returns -1. If the tensor is zero, it returns 0.
+Returns the sign of the tensor. If the tensor is positive, it returns 1. If the tensor is negative, it returns -1. If the tensor is zero, it returns 0. Note that this function is not differentiable.
 "
   (flet ((->const (val) (make-scalar val :dtype (tensor-dtype x))))
     (let ((zeros (!where (!eq x (->const 0)) (->const 0) (->const 1))))
