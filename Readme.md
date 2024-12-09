@@ -18,11 +18,33 @@ Caten is still under development, but it aims to support a wide range of models 
 $ JIT=1 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --max-length 100
 ```
 
+```lisp
+(ctx:with-contextvar (:JIT 1)
+  (let ((gpt2 (make-gpt2 :gpt2)))
+    (gpt2-generate "What is the answer to life?")))
+```
+
+
 Give the GPT2 demo a try! You can pass compilation settings through environment variables.
 
 For example, setting `JIT=1` enables JIT compilation, while `JIT_DEBUG >= 2` allows you to view the schedule and the generated kernels. Setting `PARALLEL=8` divides the ScheduleGraph and compiles it in parallel.
 
 You may still find the token/ms rate slow, but we're not yet at the stage of implementing an AutoScheduler to accelerate kernel performance (as well as GPU support). Once our IR matures enough to handle a wide range of deep learning models, we plan to focus on speeding things up!
+
+### Laziness
+
+```lisp
+(pprint-graph (tensor-graph (!gelu (!matmul (make-tensor `(10 10)) (make-tensor `(10 10))))))
+;;[P=0, ID=0]:
+;;   :GRAPH/GELU {0}
+;;   └ :GRAPH/MATMUL {N1}
+;;     ├ Allocate[:float32] (10 10)
+;;     └ Allocate[:float32] (10 10)
+
+(ctx:with-contextvar (:JIT 1 :JIT_DEBUG 4)
+  (caten (!matmul (make-tensor `(A B)) (make-tensor `(B C)))) ;; caten/apis:caten to compile
+  (proceed (!rand `(100 100))) ;; caten/apis:proceed to compile and run the graph
+```
 
 ## Getting Started
 
