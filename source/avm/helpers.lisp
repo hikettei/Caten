@@ -47,3 +47,13 @@
   (ecase *default-order*
     (:row (row-major-calc-strides shape))
     (:column (column-major-calc-strides shape))))
+
+(defun make-hash-table-from-params (params)
+  (declare (type list params))
+  (let ((out (make-hash-table :test #'eql)))
+    (loop for (k . v) in params
+	  do (setf (gethash k out) v))
+    ;; Constants
+    (setf (gethash t out) t
+	  (gethash nil out) :nil)
+    out))
