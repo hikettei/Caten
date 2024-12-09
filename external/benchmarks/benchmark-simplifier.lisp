@@ -12,7 +12,7 @@
     (ctx:with-contextvar (:JIT jit)
       (let ((started (get-internal-real-time)))
         ;; TODO: Try full symbolic once we implement a module-wise asm cache
-        (caten (forward model (make-tensor `(1 2)) (iconst 1)))
+        (caten (forward model (make-tensor `(1 s)) (iconst 'n)))
         (let ((finished (get-internal-real-time)))
           (float (/ (- finished started) internal-time-units-per-second)))))))
 
