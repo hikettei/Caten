@@ -47,7 +47,7 @@ def torch_grad(tensor): return tensor.grad")
                 (testing ,(format nil "Testing ~a" opname)
                   (let* ((x (if ,(and upfrom below)
                                 (uniform `(10 10) :requires-grad t :low ,upfrom :high ,below)
-                                (randn `(10 10) :requires-grad t))))
+                                (randn `(100 10) :requires-grad t))))
                     (assert-equal
                         (:rtol 1e-4 :atol 1e-5)
                         (with-torch-params (x)
@@ -69,7 +69,7 @@ def torch_grad(tensor): return tensor.grad")
   (def tan !tan torch.tan 2 :upfrom 1e-5 :below (/ 2 pi))
   (def tanh !tanh f:tanh 2)
   (def sqrt !sqrt torch.sqrt 2 :upfrom 1e-3 :below 3.0)
-  
+
   (def abs !abs torch.abs 2)
   (def exp !exp torch.exp 2)
   (def log !log torch.log 2 :upfrom 1e-3 :below 3.0)
@@ -80,10 +80,10 @@ def torch_grad(tensor): return tensor.grad")
   ;; (def hardsigmoid (lambda (x) (!hard-sigmoid x :alpha 3.0 :beta -3.0)) f:hardsigmoid 2) TODO: Definitions do not match with pytorch?
   (def relu !relu f:relu 2)
   (def leaky-relu (lambda (x) (!leaky-relu x :neg-slope 1e-2)) f:leaky_relu 2)
-  (def logsoftmax !log-softmax f:log_softmax 2) ;; fail
+  (def logsoftmax !log-softmax f:log_softmax 2) ;; fail due to softmax
   (def elu !elu f:elu 2)
   (def relu6 !relu6 f:relu6 2)
-  (def softmax !softmax f:softmax 2) ;; fail
+  (def softmax !softmax f:softmax 2) ;; almost working but unstable due to x*y.recip(), should work with JIT?
   (def softplus !softplus f:softplus 2)
   (def softsign !softsign f:softsign 2)
   (def softshrink !softshrink f:softshrink 2)
@@ -95,7 +95,7 @@ def torch_grad(tensor): return tensor.grad")
   (def mish !mish f:mish 2)
   (def hardswish !hardswish f:hardswish 2)
   (def hardtanh !hardtanh f:hardtanh 2)
-  (def softmin !softmin f:softmin 2)) ;; fail
+  (def softmin !softmin f:softmin 2)) ;; fail due to the same reason for softmax
 (python-exec "def torch_max(x, dim=None): return torch.max(x, dim=dim)[0]")
 (import-function "torch_max")
 ;; Test reductions
@@ -125,7 +125,7 @@ def torch_grad(tensor): return tensor.grad")
   (def mean2d-axis !mean torch.mean 2 (10 10) :axis 1)
   (def sum3d-axis !sum torch.sum 2 (10 10 10) :axis 1)
   (def mean3d-axis !mean torch.mean 2 (10 10 10) :axis 1)
-  (def max2d !max torch_max 2 (10 10) :axis 1))
+  (def max2d !max torch_max 2 (10 10) :axis -1))
 ;; Test Binaries
 (macrolet ((def (opname lisp-name torch-name shape1 shape2 &key (rhs-positive) (transpose-lhs nil) (transpose-rhs nil))
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
