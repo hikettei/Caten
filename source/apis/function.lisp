@@ -396,10 +396,10 @@ Equivalent to doing `(!move a b :reduce t)`. Useful when you want to the value o
 (defclass MaxOp (Func) ((reduce :initarg :reduce :initform nil :accessor func-reduce)))
 (defmethod forward ((op MaxOp) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
 (defmethod backward ((op MaxOp) &optional dout)
-  (let* ((mask (!maximum (first (func-variables op)) (second (func-variables op)))))
+  (let* ((mask (!> (first (func-variables op)) (second (func-variables op)))))
     (values
-     (!where (!eq mask (first (func-variables op))) dout (!const dout 0))
-     (!where (!eq mask (second (func-variables op))) dout (!const dout 0)))))
+     (!where mask dout (!const dout 0))
+     (!where mask (!const dout 0) dout))))
   
 (defmethod lower ((op MaxOp) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
