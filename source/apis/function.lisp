@@ -119,7 +119,8 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 
 (defmethod backward ((op View) &optional dout)
   (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
-    (let* ((base (clone-like (car (func-variables op)))))
+    (let* ((x (car (func-variables op)))
+           (base (make-tensor (shape x) :dtype (dtype-of x) :order (order x) :initial-element 0.0)))
       ;; [TODO] If slice -> call nn padding
       (apply #'!view-from-base (!add (apply #'!view base subscripts) dout :reduce t) (loop for s in (shape base) collect `(0 ,s))))))
 
@@ -331,7 +332,7 @@ Returns a tensor that is expanded to the shape that is specified. Expand can als
 ;; ~~ binary ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Move (Func) ((reduction :initarg :reduction :accessor move-reduction)))
 (defmethod forward ((op Move) &rest tensors) (st "A[~] B[~] -> A[~]" (tensors)))
-(defmethod backward ((op Move) &optional dout) (values dout dout))
+(defmethod backward ((op Move) &optional dout) (values nil dout))
 (defmethod lower ((op Move) &rest inputs)
   (multiple-value-bind (a b) (apply #'values inputs)
     (with-context (out (%move a b :reduction (move-reduction op))))))
