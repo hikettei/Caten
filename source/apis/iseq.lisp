@@ -66,7 +66,10 @@
 	   (type symbol tid)
 	   (type tensor grad))
   (let ((table (session-grad->tensor session)))
-    (setf (gethash tid table) grad)))
+    (if (gethash tid table)
+        (let ((prev (gethash tid table)))
+          (setf (gethash tid table) (!add prev grad)))
+        (setf (gethash tid table) grad))))
 
 (defun session/readgrad (session tid)
   (declare (type Compiler-Session session)
@@ -186,8 +189,8 @@
 		     (handler-bind ((error #'(lambda (cond) (error 'caten-backward-error :c cond :inputs prev-grad :op (tensor-op tensor)))))
 		       (multiple-value-list (backward (tensor-op tensor) prev-grad)))))
 	       (cond
-		 ((null (func-variables (tensor-op tensor)))
-		  ;; The op is an allocation, the top of node.		   
+		 ((or (null (func-variables (tensor-op tensor))) (typep (tensor-op tensor) 'Allocate)) ;; Dynamic shaped allocation will accept variables!
+		  ;; The op is an allocation, the top of node.
 		  (assert (= (length next-grads) 1)
 			  ()
 			  "%make-graph-backward: If Node ~a has no variables, then backward should return only one Tensor."
@@ -203,6 +206,8 @@
 		  (let ((bw (%module->iseqbw session (tensor-op tensor) prev-grad)))
 		    (and bw (%bwgraph bw))))
 		 (T
+                  ;; Consider backward (A -> X Y)
+                  ;; (assert (= (length next-grads) (length (remove-duplicates next-grads))) ())
 		  (loop for next-var in (func-variables (tensor-op tensor))
 			for next-grad in next-grads
 			if next-grad do
@@ -277,7 +282,7 @@
 		    (list (make-node :Special/VM :Pause/Backward toplevel-ids (list (node->id (car (last (graph-nodes forward-graph))))))))
 		   (and backward-graph (graph-nodes backward-graph))))))
 	  ;; Rewrite/Optimize f(A) + f(A) grad accumlation
-          (when (null no-grad) (session/sync-multi-grads session merged-graph))
+          (when (null no-grad) (session/sync-multi-grads session merged-graph)) ;; Mutate grads to have an output like TGRAD000...
 	  ;; If Pause/Backward was generated, use toplevel-ids instead of toplevels because
 	  ;; val_1_1 val_2_1 <- pause/backward(val_1, val_2) was generated.
 	  (if pause-backward-p
