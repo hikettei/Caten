@@ -120,7 +120,7 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 (defmethod backward ((op View) &optional dout)
   (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
     (let* ((base (clone-like (car (func-variables op)))))
-      (apply #'!view-from-base (!move (apply #'!view base subscripts) dout) (loop for s in (shape base) collect `(0 ,s))))))
+      (apply #'!view-from-base (!add (apply #'!view base subscripts) dout :reduce t) (loop for s in (shape base) collect `(0 ,s))))))
 
 (defmethod lower ((op View) &rest inputs)
   (%make-view-from-tracker (view-tr op) (gensym "TID") (car inputs)))
