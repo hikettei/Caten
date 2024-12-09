@@ -91,6 +91,9 @@
   (declare (type Compiler-session session)
 	   (type graph graph)
 	   (optimize (speed 3)))
+  ;; The output of graph must be TGRADxxx
+  ;; The gradient place is named GRADxxx
+  ;; ADD REDUCTIONのOuputが直接TGRAD1063901...ならいい
   (maphash
    #'(lambda (grad-id leaves)
        (multiple-value-bind (final-grad-id rest-grads) (apply #'values leaves)
@@ -107,13 +110,22 @@
 		 (let* ((subgrads (map 'list #'(lambda (x) (session/read session x)) rest-grads))
 			(subgrad-id (gensym "SUBGRAD"))
 			(totals (accumlate-grads subgrads subgrad-id))
-			(final-node (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id subgrad-id))))
+                        (old-alloc-bw (id->value graph final-grad-id))
+                        (new-alloc-bw (and old-alloc-bw (make-node :BinaryOps :MOVE (list grad-id) (list (car (node-reads old-alloc-bw)) subgrad-id) :reduction t))))
+                   (assert (and old-alloc-bw (eql (node-type old-alloc-bw) :ADD) (getattr old-alloc-bw :reduction :allow-undefined t))
+                           ()
+                           "The leave of backward graph should be :ADD with reduction! but getting ~a" old-alloc-bw)
+                   ;; Alloc-bw-old is assumed to the backward of Allocate, and :ADD(reduce=T)
+                   (assert (typep graph 'Graph) () "TODO: Add an implementation for FastGraph!")
+                   ;; FIXME(hikettei): this is my stupid but remnode with Graph requires node-id while with FastGraph requires node-writes.
+                   (remnode graph (node-id old-alloc-bw))
                    (dolist (total totals)
 		     (push total (graph-nodes graph)))
-		   (push final-node (graph-nodes graph))
-		   (session/assign session grad-id final-node))
+		   (push new-alloc-bw (graph-nodes graph))
+		   (session/assign session grad-id new-alloc-bw))
 		 (let* ((subgrad (session/read session (car rest-grads)))
 			(final-node (make-node :BinaryOps :MOVE (list grad-id) (list final-grad-id (node->id subgrad)))))
+                   ;; こっちもAllocateのノードがいらない
 		   (push final-node (graph-nodes graph))
 		   (session/assign session grad-id final-node))))))
    (session-grad->grads session)))
