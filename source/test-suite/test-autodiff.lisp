@@ -169,7 +169,7 @@ def torch_grad(tensor): return tensor.grad")
   (def matmul1 !matmul torch.matmul (10 10) (10 10))
   (def matmul2 !matmul torch.matmul (10 20) (20 30))
   (def matmul3 !matmul torch.matmul (10 20) (10 20 30))
-  (def matmul4 !matmul torch.matmul (10 10 20) (20 30)) ;; Failing!
+  (def matmul4 !matmul torch.matmul (10 10 20) (20 30))
 
   (def matmul1-transpose-1 !matmul torch.matmul (10 10) (10 10) :transpose-lhs t)
   (def matmul2-transpose-1 !matmul torch.matmul (30 10) (30 20) :transpose-lhs t)
@@ -180,18 +180,13 @@ def torch_grad(tensor): return tensor.grad")
   (def matmul2-transpose-2 !matmul torch.matmul (30 10) (20 10) :transpose-rhs t)
   (def matmul3-transpose-2 !matmul torch.matmul (20 10) (30 20 10) :transpose-rhs t)
   (def matmul4-transpose-2 !matmul torch.matmul (10 30 10) (30 10) :transpose-rhs t))
-;; duplicate of test-chain-rule
-(defun multi-grad-acc-test ()
-  (let ((a (make-tensor `(3 3) :requires-grad t)))
-    (let ((m (caten (!sin (!+ (!neg a) (!neg a) (!neg a))))))
-      m)))
-
-;; 1. Matmul Backward
-;; 2. ConvND
+;; [TODO]
+;; 1. Slice/Padding
+;; 2. ConvND (TODO)
 ;; 3. Having Better Schedule for Embedding
 ;; 1. VM=1で全部通すのが先
 ;; 2. Schedulerをどうにかする
-;; 3. JIT=1で全部通す
+;; 3. JIT=1で全部通すg
 ;; 4. Fix for convnd
 
 ;; Improve the scheduler, the base schedule wont be changed and should be symmetric.
