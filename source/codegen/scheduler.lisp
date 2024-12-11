@@ -315,12 +315,21 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (restart-cache (make-hash-table) :type hash-table)
   (restart-cache1 (make-hash-table) :type hash-table))
 
-(defmethod group->schedule-item ((group Group) (ctx Schedule-Context))
-  (let ((reads (group-predecessor group))
-        (writes (group-successor group))
-        (allocate-p (find :Allocate (group-items group) :key #'node-type))
-        (no-symbolic-incremental-p t)
-        (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
+(defmethod group->schedule-item ((group Group) (ctx Schedule-Context) (other-groups list))
+  (let* ((reads (group-predecessor group))
+         (writes (group-successor group))
+         (other-group-requirements
+           (loop for g in other-groups
+                 unless (eql (group-key g) (group-key group))
+                   append (group-predecessor g)))
+         ;; If the symbol is read by other groups, that's also write dependencies
+         (hidden-writes (loop for w in (apply #'append (map 'list #'node-writes (group-items group)))
+                              if (find w other-group-requirements)
+                                collect w))
+         (allocate-p (find :Allocate (group-items group) :key #'node-type))
+         (no-symbolic-incremental-p t)
+         (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
+    (setf writes (remove-duplicates (append writes hidden-writes)))
     ;; Ensure there's no symbolic incremental for the auto scheduler.
     (dolist (node (group-items group))
       (loop for r in (append (node-reads node) (node-writes node))
@@ -332,7 +341,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
               (setf rank (max rank (buffer-nrank rt)))
               (dolist (v (buffer-views rt))
                 (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
-                  (setf no-symbolic-incremental-p nil)))))
+                  (setf no-symbolic-incremental-p nil))))) ;; ISL cannot deal with symbolic incremental!
     (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
                :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
                :allocate-p (when allocate-p t)
@@ -582,6 +591,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
+    
     (let ((reduce-p (identity (or (group-reduce-dims parent-group) (group-reduce-dims tgt-group))))
           (pattern (group-compute-reduce-pattern parent-group tgt-group))
           (r1 (group-rank tgt-group)) (r2 (group-rank parent-group)))
@@ -777,6 +787,8 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
     (mapc #'r (graph-nodes schedule-graph))))
 
 (defun break-graph (graph)
+  (when (= (length (graph-outputs graph)) 1)
+    (return-from break-graph (list graph)))
   (loop for o in (graph-outputs graph)
         for new-graph = (copy-graph graph)
         collect (progn
@@ -807,7 +819,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
               (ctx-graph ctx) more-graph
               groups (graph-breadth-first-schedule ctx))))
     (let ((groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
-          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
+          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx groups)) groups))))
       (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
       (mapc #'verify-group groups)
       (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.

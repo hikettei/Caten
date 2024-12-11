@@ -99,10 +99,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
   (let ((is (car (relay-write-iters (read-type-relay node)))))
     (when is
       (loop for s in (iteration-space-strides is)
-            if (expr-equal-to s 0)
-              collect t
-            else
-              collect nil))))
+            collect (expr-equal-to s 0)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod get-grouped-dims ((graph Graph) (base-graph Graph))
   "Infers the loop boundaries of the graph by finding the common iteration space."
@@ -359,6 +356,10 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
              (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes))
         (push -1 insertable-positions))
       (unless (null (intersection node-depend-axes user-depend-axes))
+        ;; [TODO] I am not sure if this is goind to work.
+        (dolist (u node-depend-users)
+          (let ((axes (node-reduced-gids u (ctx-gids ctx))))
+            (dolist (a axes) (setf node-depend-axes (remove a node-depend-axes)))))
         (warn "(intersection node-depend-axes user-depend-axes) = ~a which expected to be not a nil." (null (intersection node-depend-axes user-depend-axes)))) 
       (loop for bp in blueprint
             for nth upfrom 0
