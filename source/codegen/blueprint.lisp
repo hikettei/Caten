@@ -383,7 +383,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                 (every #'(lambda (x) (find x idx-satisfied)) node-depend-axes)
                 (or
                  (every #'(lambda (x) (null (find x idx-satisfied))) node-reduce-axes)
-                 ;; If node-reduce-axes loops are already introduced by other independant nodes
+                 ;; If node-reduce-axes loops are already introduced by other independent nodes
                  ;; => Set high-priority-positions to the current position, and forcibly insert the node there.
                  (setf high-priority-p (every #'(lambda (x) (find x serialized-reduce-idx)) node-reduce-axes)))
                 (every #'(lambda (x) (null (find x idx-satisfied))) user-depend-axes))
