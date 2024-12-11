@@ -775,7 +775,14 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                     (%jstore write-id base-id acc-id (car (relay-writes (read-type-relay node))))
                     (getattr si :items)))))))
     (mapc #'r (graph-nodes schedule-graph))))
-;; TODO(hikettei) Create a schedule for forward/backward mode independently to get more prettry schedule graph.
+
+(defun break-graph (graph)
+  (loop for o in (graph-outputs graph)
+        for new-graph = (copy-graph graph)
+        collect (progn
+                  (setf (graph-outputs new-graph) (list o))
+                  (->graph (->fast-graph new-graph)))))
+
 (defun graph-schedule (graph)
   "
 ```
@@ -791,21 +798,27 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
   (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 4)
     (format t "[graph-schedule] graph before scheduling:~%")
     (pprint-graph graph))
-  (let* ((ctx (make-schedule-context graph))
-         (groups (graph-breadth-first-schedule ctx))
-         (groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
-         (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
-    (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
-    (mapc #'verify-group groups)
-    (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
-    (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
-      (format t "[graph-schedule] scheduled graph:~%")
-      (pprint-graph schedule-graph))
-    (when (= 2 (the fixnum (ctx:getenv :DOT)))
-      (->dot schedule-graph :title "Schedule Graph"))
-    ;; Assert all nodes in the base-graph was scheduled correctly.
-    (let ((nodes (map 'list #'node-id (apply #'append (map 'list #'group-items groups)))))
-      (dolist (n (graph-nodes graph)) (setf nodes (remove (node-id n) nodes)))
-      (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
-    (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph)) ;; create a unique and readable naming for each kernel.
-    schedule-graph))
+  (let* ((graphs (break-graph graph))
+         (ctx (make-schedule-context (car graphs)))
+         (groups (graph-breadth-first-schedule ctx)))
+    (dolist (more-graph (cdr graphs))
+      (let ((io-degree (make-graph-edge-map more-graph)))
+        (setf (ctx-in-degrees ctx) (car io-degree) (ctx-out-degrees ctx) (second io-degree)
+              (ctx-graph ctx) more-graph
+              groups (graph-breadth-first-schedule ctx))))
+    (let ((groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
+          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
+      (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
+      (mapc #'verify-group groups)
+      (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
+      (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
+        (format t "[graph-schedule] scheduled graph:~%")
+        (pprint-graph schedule-graph))
+      (when (= 2 (the fixnum (ctx:getenv :DOT)))
+        (->dot schedule-graph :title "Schedule Graph"))
+      ;; Assert all nodes in the base-graph was scheduled correctly.
+      (let ((nodes (map 'list #'node-id (apply #'append (map 'list #'group-items groups)))))
+        (dolist (n (graph-nodes graph)) (setf nodes (remove (node-id n) nodes)))
+        (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
+      (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph)) ;; create a unique and readable naming for each kernel.
+      schedule-graph)))
