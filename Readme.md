@@ -8,6 +8,8 @@
 
 Caten is an experimental deep learning compiler. Our goal is to implement a compiler that is as simple as tinygrad, and as flexible as TVM.
 
+**We're looking for collaborators! Please join our Discord and let me know if you'd like to contribute!**
+
 ## Showcases
 
 Caten is still under development, but it aims to support a wide range of models in the future—from image processing to text generation, and vision language models! Some models are already up and running.
