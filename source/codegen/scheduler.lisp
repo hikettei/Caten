@@ -304,7 +304,8 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                  
 (defstruct (Schedule-Context
             (:conc-name ctx-)
-            (:constructor make-schedule-context (graph &aux (io-degree (make-graph-edge-map graph)))))
+            (:constructor make-schedule-context (base-graph graph &aux (io-degree (make-graph-edge-map graph)))))
+  (base-graph base-graph :type Graph)
   (graph graph :type graph)
   (in-degrees (car io-degree) :type hash-table)
   (out-degrees (second io-degree) :type hash-table)
@@ -359,7 +360,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 (defmethod ctx-sync-queue ((ctx Schedule-Context))
   (declare (optimize (speed 3)))
   (setf (ctx-queue ctx)
-        (loop for node in (graph-nodes (ctx-graph ctx))
+        (loop for node in (graph-nodes (ctx-base-graph ctx))
               if (and
                   (null (ctx-realize-p ctx node)) ;; node is not realized and all parents are realized
                   (every #'(lambda (x) (ctx-realize-p ctx x)) (ctx-parents ctx node)))
@@ -401,9 +402,13 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
                     append (node-reads node)))))
         (write-set (remove-duplicates (apply #'append (map 'list #'node-writes group-items)))))
     (declare (type list read-except-for-items write-set))
+    (print "+++++")
+    (print write-set)
+    (print read-except-for-items)
+    (print
     (loop for w of-type symbol in write-set
           if (find w read-except-for-items)
-            collect w)))
+            collect w))))
 
 (defmethod ctx-node-force-realize-p ((ctx Schedule-Context) (a node) (b node))
   "Detects the following pattern in the DAG. In order to merge a and b in the same group, c must be grouped to a or b.
@@ -445,7 +450,7 @@ Otherwise, returns NIL. (= not fusable)"
   "Chace down until found reduction is succeed => return T"
   (let ((successor (group-successor group)))
     (loop for succ in successor
-          for node = (id->value (ctx-graph ctx) succ)
+          for node = (id->value (ctx-base-graph ctx) succ)
           if node do
             (loop for child in (ctx-children ctx node)
                   for child-group = (ctx-try-get-group ctx child)
@@ -608,7 +613,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
             ->ng))
         (when (and (eql pattern :case3) (groups-reduce-permute-p tgt-group parent-group)) ->ng) ;; Reduce -> Permute -> Reduce is not fusable.
         (if (= r1 r2)
-            (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
+            (when (buffer-mergeable-p (ctx-base-graph ctx) (group-get-type tgt-group) (group-get-type parent-group))
               ;; [TODO] apply-view-fusor here?
               ->ok)
             (let ((optimal-p
@@ -622,7 +627,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
       ;; fuse/rewrite _read_views and buffers sometime.
       ;; 1. Injective + Same Ranks
       (when (= r1 r2)
-        (when (buffer-mergeable-p (ctx-graph ctx) (group-get-type parent-group) (group-get-type tgt-group))
+        (when (buffer-mergeable-p (ctx-base-graph ctx) (group-get-type parent-group) (group-get-type tgt-group))
           ;; Reject :MOVE+:MOVE fusion if view is provided.
           (when (and view (= (length (group-items parent-group)) (length (group-items tgt-group)) 1)
                      (eql :MOVE (node-type (car (group-items parent-group))))
@@ -633,7 +638,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
           ->ok)
         ->ng)
       ;; 2. Injective + Different Ranks
-      (when (group-chase-down-reduction-p ctx tgt-group restart-point)->ng) ; If tgt-group is used by the reduction => better to merge it with that.
+      (when (group-chase-down-reduction-p ctx tgt-group restart-point) ->ng) ; If tgt-group is used by the reduction => better to merge it with that.
       ;; Needed to fuse (!add (10 10 10) (sin (10 10)))
       (if (groups-rewrite-views-in-the-same-space parent-group tgt-group view)
           ->ok
@@ -681,7 +686,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
                                                 for p in (append (group-predecessor parent-group) (group-predecessor tgt-group))
                                                 unless (find (the symbol p) (the list write-set)) ; p is not written by tgt-group => p is written by other group.
                                                   collect p))
-                                         (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-graph ctx))))
+                                         (group-successor tgt-group) (compute-group-write-to (group-items tgt-group) (ctx-base-graph ctx))))
                                  (unless (and force-realize-p injective-p) ;; waiting until other scheduling processes are finished.
                                    (when (null (find (the symbol (node-id tgt)) stashed :key #'node-id))
                                      ;; stash until descendant scheduling are completed
@@ -718,8 +723,8 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
   (declare (type group group) (type Schedule-Context ctx) (optimize (speed 3)))
   (when (every #'jitable-p (group-items group)) ;; this is only the case for jitable kernel
     (loop for predecessor in (group-predecessor group)
-          for item = (id->value (ctx-graph ctx) predecessor)
-          for alloc = (and item (id->value (ctx-graph ctx) (car (node-reads item))))
+          for item = (id->value (ctx-base-graph ctx) predecessor)
+          for alloc = (and item (id->value (ctx-base-graph ctx) (car (node-reads item))))
           if (and item alloc (eql (node-type item) :LOAD) (eql (node-type alloc) :Allocate)
                   (= 0 (buffer-nrank (car (relay-writes (read-type-relay item)))))
                   (= 0 (the fixnum (getattr alloc :nrank))))
@@ -778,12 +783,15 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
 
 (defun break-graph (graph)
   (let ((point (position :PAUSE/BACKWARD (graph-nodes graph) :key #'node-type)))
-    (if point
+    (if (and point (not (= point (- (length (graph-nodes graph)) 2))))
         (let ((outs (list (apply #'make-graph (subseq (graph-nodes graph) 0 (1+ point))) (apply #'make-graph (subseq (graph-nodes graph) (1+ point))))))
-          (dolist (o outs) (setf (graph-outputs o) (graph-outputs graph)))
+          (dolist (o outs)
+            (setf (graph-outputs o) ;; select only relevant outputs
+                  (loop with writes = (apply #'append (map 'list #'node-writes (graph-nodes o)))
+                        for out in (graph-outputs graph) if (find out writes) collect out)))
           outs)
         (list graph))))
-
+;; Lowerer Backwardがおかしい？特にEmbedding
 (defun graph-schedule (graph)
   "
 ```
@@ -800,16 +808,18 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
     (format t "[graph-schedule] graph before scheduling:~%")
     (pprint-graph graph))
   (let* ((graphs (break-graph graph))
-         (ctx (make-schedule-context (car graphs)))
+         (ctx (make-schedule-context graph (car graphs)))
          (groups (graph-breadth-first-schedule ctx)))
     (dolist (more-graph (cdr graphs))
       (setf (graph-nodes (ctx-graph ctx)) (append (graph-nodes (ctx-graph ctx)) (graph-nodes more-graph)))
       (let ((io-degrees (make-graph-edge-map (ctx-graph ctx))))
         (setf (ctx-in-degrees ctx) (car io-degrees) (ctx-out-degrees ctx) (second io-degrees)
-              groups (append groups (graph-breadth-first-schedule ctx)))))
+              groups (graph-breadth-first-schedule ctx))))
     (let* ((groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
            (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
+      (print schedule-graph)
       (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
+      (print schedule-graph)
       (mapc #'verify-group groups)
       (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
       (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
