@@ -552,9 +552,10 @@ Lowers the Schedule-Item into blueprint.
         (setf (ctx-blueprint ctx) new-bp)
         ;; Synchronize the realized buffers
         (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
-          (let ((before-assigned-map (loop for w in writes
-                                           if (gethash (car w) id-as-dag-map)
-                                             collect (car w))))
+          (let ((before-assigned-map
+                  (loop for w in writes
+                        if (gethash (car w) id-as-dag-map)
+                          collect (car w))))
             (setf (getattr node :read-types) (map 'list #'cdr reads)
                   (getattr node :write-types) (map 'list #'cdr writes)
                   (getattr node :storage-id-src) (map 'list #'car reads)

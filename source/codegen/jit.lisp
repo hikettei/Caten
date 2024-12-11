@@ -58,7 +58,8 @@ caten/codegen overview:
    #:schedule-item-write-define-global)
   (:import-from
    :caten/codegen/scheduler
-   #:graph-schedule)
+   #:graph-schedule
+   #:insert-realizes)
   (:import-from
    :caten/codegen/blueprint
    #:lower-schedule-item
@@ -492,6 +493,7 @@ Runs the JIT compilation for the given AVM."
                  (print-info "Copying cache ~a => ~a" (getattr x :name) (getattr x :cache-name)))
                (lower-cached-schedule-item x schedule-graph)))
          (graph-nodes schedule-graph))
+        (insert-realizes base-graph schedule-graph)
         ;; 10. Running memory-planner, update the storage-id
         (setf schedule-graph (->graph-with-tpsort schedule-graph))
         (verify-graph schedule-graph) ;; Sort the graph for memory planner

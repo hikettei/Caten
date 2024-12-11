@@ -8,7 +8,7 @@ The function `graph-schedule` is an entry point, and takes a shape-inferred aasm
 One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure that each item is merged only within the bounds that can be lowered into a single kernel.")
   (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
   (:import-from :caten/aasm #:JITAble)
-  (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule))
+  (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule #:insert-realizes))
 
 (in-package #:caten/codegen/scheduler)
 
@@ -67,7 +67,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
              (loop for nth upfrom 0 below (max (length x) (length y))
                    for x1 = (nth nth x)
                    for y1 = (nth nth y)
-                   if (or (eql x1 y1) (null y1))
+                   if t;;(or (eql x1 y1) (null y1)) dont display the output of memory planner for now.
                      append (list (format nil "~a" x1) ", ")
                    else
                      append (list (format nil "~a[~a]" x1 y1) ", "))))))
@@ -315,7 +315,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (restart-cache (make-hash-table) :type hash-table)
   (restart-cache1 (make-hash-table) :type hash-table))
 
-(defmethod group->schedule-item ((group Group) (ctx Schedule-Context) (other-groups list))
+(defmethod group->schedule-item ((group Group) (base-graph Graph) (other-groups list))
   (let* ((reads (group-predecessor group))
          (writes (group-successor group))
          (other-group-requirements
@@ -342,18 +342,24 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
               (dolist (v (buffer-views rt))
                 (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
                   (setf no-symbolic-incremental-p nil))))) ;; ISL cannot deal with symbolic incremental!
-    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
-               :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
-               :allocate-p (when allocate-p t)
-               :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
-               :storage-id-dst writes
-               :storage-id-src reads
-               :read-types (map 'list #'(lambda (x) (gethash x id2type)) reads)
-               :write-types (map 'list #'(lambda (x) (gethash x id2type)) writes)
-               :rank rank
-               :reduce-dims (group-reduce-dims group)
-               :items (group-items group)
-               :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
+    (flet ((get-type (symbol)
+             (or
+              (gethash symbol id2type)
+              (let ((node (id->value base-graph symbol)))
+                (assert node)
+                (car (relay-writes (read-type-relay node)))))))
+      (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
+                 :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
+                 :allocate-p (when allocate-p t)
+                 :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
+                 :storage-id-dst writes
+                 :storage-id-src reads
+                 :read-types (map 'list #'get-type reads)
+                 :write-types (map 'list #'get-type writes)
+                 :rank rank
+                 :reduce-dims (group-reduce-dims group)
+                 :items (group-items group)
+                 :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group)))))))
 
 (defmethod ctx-children ((ctx Schedule-Context) (node node)) (gethash (node-id node) (ctx-out-degrees ctx)))
 (defmethod ctx-parents ((ctx Schedule-Context) (node node)) (map 'list #'car (gethash (node-id node) (ctx-in-degrees ctx))))
@@ -819,7 +825,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
               (ctx-graph ctx) more-graph
               groups (graph-breadth-first-schedule ctx))))
     (let ((groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
-          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx groups)) groups))))
+          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x graph groups)) groups))))
       (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
       (mapc #'verify-group groups)
       (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
@@ -834,3 +840,21 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
         (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
       (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph)) ;; create a unique and readable naming for each kernel.
       schedule-graph)))
+
+(defun buffer-make-alloc (id buffer)
+  (make-group
+   :predecessor (remove-duplicates (loop for s in (append (buffer-shape buffer) (buffer-stride buffer)) if (symbolp s) collect s))
+   :successor (list id)
+   :items (list (make-node :Buffer :Allocate (list id) (append (buffer-shape buffer) (buffer-stride buffer)) :dtype (buffer-dtype buffer) :nrank (buffer-nrank buffer)
+                           :_type_relay (make-inferred-type nil (list buffer))))))
+
+(defun insert-realizes (base-graph schedule-graph)
+  (declare (type graph schedule-graph))
+  (let ((writes (apply #'append (map 'list #'node-writes (graph-nodes schedule-graph)))))
+    (loop for node in (graph-nodes schedule-graph)
+          do (loop for read in (node-reads node)
+                   for read-def = (id->value base-graph read)
+                   for read-type = (and read-def (car (relay-writes (read-type-relay read-def))))
+                   if (and (symbolp read) read-def read-type (null (find read writes))) do
+                     (push read writes)
+                     (insert-nodes schedule-graph (list (group->schedule-item (buffer-make-alloc read read-type) base-graph nil)))))))
