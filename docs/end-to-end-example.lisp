@@ -57,15 +57,6 @@
 (defun !sincos (tensor)
   (forward (make-instance 'SinCos) tensor))
 
-;;; Utils definition
-
-(defparameter *width* 120)
-
-(defun saying (number title object)
-  (dotimes (i *width*) (princ "="))
-  (fresh-line)
-  (format t "~a. ~a~%~a~%" number title object)
-  object)
 
 ;; First of all, let's intialize the module we just defined !sincos
 
@@ -149,11 +140,10 @@
 ;; 3. Finally the fast graph is generated. A fast graph is a more optimized data structure for the final scheduler graph, it assumes a Directed Acyclic Graph structure and uses hash-table-based lookup for nodes to speed up further operations.
 ;;   3.1 The final FastGraph is a cleaner, more optimized representation of the computation.
 ;;   3.2 It contains fewer more meaninful nodes, for instance, SIN operations are combined into a single kernel. It's also easier and more efficient to traverse and manupulate, which makes it suitable for code generation.
+
 (defparameter scheduled-graph (graph-schedule (avm-graph graph)))
 
-
 (print scheduled-graph)
-
 
 ;; FastGraph[seen=NIL, outputs=(val_7)] {
 ;; { Allocate } : [ val_0 <- (1) where lowered-p=nil ]
@@ -166,8 +156,120 @@
 ;; We had a sequence LOAD -> ADD -> SIN -> SIN that is converted into { KERNEL } : [ val_6 <- val_2, val_0 ... :name=FUSED_SIN_SIN_ADD_LOAD_LOAD1669]
 ;; The identifiers we had in the graph were converted to val_X: TID1421 (original) -> val_0 (rewritten)
 
+;;; Now we can extract each graph node from the FastGraph, this is where it gets really interesting, and where the actual code generation happens
 
+;;; First we extract the nodes from the FastGraph we had previously created
+;;; graph-nodes is a method from FastGraph, it returns a list of unique nodes from FastGraph.
+(defparameter list-of-graph-nodes (graph-nodes scheduled-graph))
+
+(print list-of-graph-nodes)
+
+;processing (PRINT LIST-OF-GRAPH-NODES)
+;; ({ Allocate } : [ val_0 <- (1) where lowered-p=nil ]
+;; {  KERNEL  } : [ val_6 <- val_2, val_0 where lowered-p=nil :name=FUSED_SIN_SIN_ADD_LOAD_LOAD964]
+;; { Allocate } : [ val_2 <- NIL where lowered-p=nil ]
+;; {   VMOP   } : [ val_7 <- val_6 where lowered-p=nil :name=FUSED_BACKWARD960])
+
+;;Here we test whether an item of the FastGraph is jitable or not, jitable items are the ones lowered.
+(dolist (item list-of-graph-nodes)
+(print item)
+(format t "~A~%" (getattr item :jitable)))
+
+;; jitable items (which at this point we can call them schedule-items) are items in the computation graph that can be just-in-time compiled.
+
+;; jit compilation is the process of translating intermediate representations into lower level optimized machine code (in this case blueprint code and later C kernels).
+
+;; A schedule-item that is jitable meets the criteria for being compiled into a kernel or blueprint suitable code.
+
+;; In this case, the only schedule-item that has jitable set to true is the fused kernel!
+;; {  KERNEL  } : [ val_6 <- val_2, val_0 where lowered-p=nil :name=FUSED_SIN_SIN_ADD_LOAD_LOAD964] T
+
+;; now, we can take the schedule-item and lower it
+
+
+;; Retrieve the second node in the list of graph nodes
+(defparameter item1 (nth 1 list-of-graph-nodes))
+
+;; Print the node to see what it is before lowering.
+;; At this stage, `item1` is a scheduled graph node—likely a kernel node 
+;; that can be lowered into a blueprint.
+(print item1)
+
+;; What does lower-schedule-item do?
+;; ---------------------------------
+;; `lower-schedule-item` takes a Schedule-Item node and:
+;; 1. Checks if it is jitable (i.e., suitable for JIT compilation).
+;; 2. If yes, it performs a process called 'lowering':
+;;    - Extracts the computation graph within this schedule-item.
+;;    - Determines iteration spaces and common loop structures for the operations inside it.
+;;    - Converts the fused operations into a low-level blueprint representation that shows all loops,
+;;      array indices, arithmetic operations, and potential reductions.
+;;    - This blueprint is then suitable for final code generation (e.g., translating into C code).
+;; In other words, `lower-schedule-item` turns a high-level fused kernel node into a fully described,
+;; low-level intermediate form (the blueprint) that can be compiled into efficient machine code or C code.
+
+;; Here we lower `item1` using the `lower-schedule-item` function. The `base-graph` is given by `(avm-graph graph)`,
+;; and `scheduled-graph` is the optimized graph after scheduling. This will mutate `item1` so that it
+;; now has a `:blueprint` attribute containing the lowered form.
+
+(defparameter lowered-item1 (lower-schedule-item item1 (avm-graph graph) scheduled-graph))
+
+;; After this, `lowered-item1` (which should be the same as `item1` but now lowered)
+;; will hold the blueprint. Printing it might show a node with `:expr` indicating
+;; a fully lowered representation of the computation (e.g., `sin(sin(x + pi/2))`).
+
+
+(print lowered-item1)
+
+;; processing (PRINT LOWERED-ITEM1)
+;; (<Node[JIT] EXPR(NID1505) : val_6* <- (1.5707964, val_0) where :expr=#<EXPR sin(sin((1.0+1.5707964)))> :_type_relay=#<INFERRED-TYPE ((1)) <- (NIL(1))>>)
+
+;; The :expr attribute describes the blueprint code repersented as a low-level computation
+
+;; print-blueprint allows us to see the blueprinted code before the code-gen step
+
+(print (print-blueprint (getattr item1 :blueprint) nil))
+
+;;blueprint code generated by print-blueprint
+;;{
+;;  val_6[0] = sin(sin((1.0+1.5707964)));
+;;}
+
+;; Now after all these intermediate steps, it's time to generate the actual kernel!
+;; the function below makes sure parameters and other necessary variables are properly initialized and declared.
+(schedule-item-write-define-global item1)
+
+;; render-kernel is responsible for taking the previously generated C code for all jitable items, compiling it into a shared library or native code, and then making the resulting functions callable from Lisp.
+(let ((c-kernel (%render-kernel renderer item1)))
+  (format t "Generated C code:~%~a~%" c-kernel)
+  (setf (getattr item1 :rendered-object) c-kernel))
+
+;; we can visualize the generated kernel for our high level function we defined previously, called sincos!
+;; Generated C code:
+;; void fused_sin_sin_add_load_load964(float* val_6);
+;; void fused_sin_sin_add_load_load964(float* val_6) {
+;; val_6[0] = sin(sin((1.0+1.5707964)));
+;; }
+
+;;TODO: What is a renderer?
 (defparameter renderer (make-instance 'CStyle-Renderer))
 
 (print renderer)
+;; %compile-kernel transforms the high-level Lisp IR (intermediate representation) into optimized native code, loads that code, and provides a way for Lisp to call it directly—completing the JIT compilation pipeline
 
+(defparameter compiled-kernel (%compile-kernel renderer (graph-nodes scheduled-graph) nil))
+
+
+(setf (avm-graph graph) (schedule-graph->avm-graph (avm-graph graph) scheduled-graph))
+
+
+
+(avm-reset graph) ;; ensure the graph is reset
+
+
+(let ((result (%run graph (cons 'val_0 mytensor))))
+  (print result))
+
+(print graph)
+
+(print (%run graph (cons 'tensor 1.0)))
