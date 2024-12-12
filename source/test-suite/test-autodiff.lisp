@@ -47,7 +47,7 @@ def torch_grad(tensor): return tensor.grad")
                 (testing ,(format nil "Testing ~a" opname)
                   (let* ((x (if ,(and upfrom below)
                                 (uniform `(10 10) :requires-grad t :low ,upfrom :high ,below)
-                                (randn `(100 10) :requires-grad t))))
+                                (randn `(10 10) :requires-grad t))))
                     (assert-equal
                         (:rtol 1e-4 :atol 1e-5)
                         (with-torch-params (x)
@@ -146,7 +146,6 @@ def torch_grad(tensor): return tensor.grad")
                           (forward m)
                           (backward m)
                           (values (grad x) (grad y)))))))))
-  ;; [TODO] Check schedule
   (def add !add torch.add (10 10) (10 10))
   (def add-broadcast-1 !add torch.add (10 10) (10 10 10))
   (def add-broadcast-2 !add torch.add (10 10 10) (10 10))
@@ -184,25 +183,4 @@ def torch_grad(tensor): return tensor.grad")
 ;; 1. Slice/Padding
 ;; 2. ConvND (TODO)
 ;; 3. Having Better Schedule for Embedding
-;; 1. VM=1で全部通すのが先
-;; 2. Schedulerをどうにかする
-;; 3. JIT=1で全部通すg
-;; 4. Fix for convnd
-
-;; Improve the scheduler, the base schedule wont be changed and should be symmetric.
-;; Improve the base IR (remove grad83769...)
-;; !where, !expt,
-;; !permute !reshape !slice broadcast !expand !repeat
-
-;; !sum !mean !max !min !prod !std !var
-
-;; Testing !view backward
-;; !matmul, concatenate, split, convnd, padding, RoPE uses many kind of !view so good to test
-;; Embedding, Normalization, 
-
-;; (deftest test-matmul
-;; (deftest test-convnd
-;; (deftest test-maxpool
-;; If all of above things are tested -> Caten autodiff have an enough coverage
-
-;; Training MNIST?
+;; 4. Fix for JIT

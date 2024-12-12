@@ -120,8 +120,9 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
 (defmethod backward ((op View) &optional dout)
   (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
     (let* ((x (car (func-variables op)))
-           (base (make-tensor (shape x) :dtype (dtype-of x) :order (order x) :initial-element 0.0)))
-      ;; [TODO] If slice -> call nn padding
+           (base (if broadcast-mode
+                     (make-tensor (shape x) :dtype (dtype-of x) :order (order x) :initial-element 0.0)
+                     (clone-like x))))
       (apply #'!view-from-base (!add (apply #'!view base subscripts) dout :reduce t) (loop for s in (shape base) collect `(0 ,s))))))
 
 (defmethod lower ((op View) &rest inputs)
