@@ -36,7 +36,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          sudo apt-get install -y libisl-dev gnuplot
+          sudo apt-get install -y libisl-dev gnuplot --fix-missing
           qlot install
       - name: Transformer Graph Simplification (N<=12, JIT=0, AUTO_SCHEDULER=0)
         run: PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 36 0 transformer_simplifier_plot.png
