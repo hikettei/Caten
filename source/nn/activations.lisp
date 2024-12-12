@@ -30,9 +30,9 @@
 (defun !leaky-relu (x &key (neg-slope 1e-3)) (forward (LeakyReLU :neg-slope neg-slope) x))
 
 (defun _softmax (x &key (axis -1))
-  (let* ((m (!sub x (!max x :axis axis :keepdims t)))
+  (let* ((m (!sub x (!max x :axis axis)))
 	 (e (!exp m)))
-    (values m e (!sum e :axis axis :keepdims t))))
+    (values m e (!sum e :axis axis))))
 
 (defmodel (LogSoftmax (&key (axis -1)) :where "A[~] -> A[~]") ((axis axis)))
 (defmethod call ((op LogSoftmax) &rest inputs)
