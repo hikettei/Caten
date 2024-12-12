@@ -122,8 +122,10 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
     (let* ((x (car (func-variables op)))
            (base (if broadcast-mode
                      (make-tensor (shape x) :dtype (dtype-of x) :order (order x) :initial-element 0.0)
-                     (clone-like x))))
-      (apply #'!view-from-base (!add (apply #'!view base subscripts) dout :reduce t) (loop for s in (shape base) collect `(0 ,s))))))
+                     (clone-like x)))
+           (place (apply #'!view base subscripts))
+           (reduce-p (not (every #'(lambda (x) (eql x 1)) (shape place)))))
+      (apply #'!view-from-base (!add place dout :reduce reduce-p) (loop for s in (shape base) collect `(0 ,s))))))
 
 (defmethod lower ((op View) &rest inputs)
   (%make-view-from-tracker (view-tr op) (gensym "TID") (car inputs)))
