@@ -14,6 +14,13 @@ Caten is an experimental deep learning compiler. Our goal is to implement a comp
 
 Caten is still under development, but it aims to support a wide range of models in the future—from image processing to text generation, and vision language models! Some models are already up and running.
 
+### Examples
+
+We have two doc files that explain how the Caten compilation pipeline works:
+
+- [End-to-End Example](docs/end-to-end-example.lisp) Which how the end-to-end compilation pipeline works.
+- [Getting Started](docs/getting-started.lisp) An intro to Caten.
+
 ### Running LLMs
 
 ```sh
