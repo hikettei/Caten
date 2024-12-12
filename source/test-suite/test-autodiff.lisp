@@ -98,21 +98,23 @@ def torch_grad(tensor): return tensor.grad")
 (python-exec "def torch_max(x, dim=None): return torch.max(x, dim=dim)[0]")
 (import-function "torch_max")
 ;; Test reductions
-(macrolet ((def (opname lisp-name torch-name schedule shape &key axis)
+(macrolet ((def (opname lisp-name torch-name schedule shape &key axis use-linspace)
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
                 (testing ,(format nil "Testing ~a" opname)
-                  (let* ((x (randn ',shape :requires-grad t)))
+                  (let* ((x (if ,use-linspace
+                                (linspace ',shape 0 1 :requires-grad t)
+                                (randn ',shape :requires-grad t))))
                     (assert-equal
                         (:rtol 1e-4 :atol 1e-5)
                         (with-torch-params (x)
                           (let ((y (torch.sum (,torch-name x :dim ,axis))))
                             (torch_backward y)
-                            (->caten (torch_grad x))))
+                            (print (->caten (torch_grad x)))))
                         (let ((m (caten (!sum (,lisp-name x :axis (or ,axis t))))))
                           (check-bw-schedule m ,schedule) ;; 1 for forward, 1 for backward
                           (forward m)
                           (backward m)
-                          (grad x))))))))
+                          (print (grad x)))))))))
   (def sum1d !sum torch.sum 2 (10))
   (def mean1d !mean torch.mean 2 (10))
   (def sum2d !sum torch.sum 2 (10 10))
@@ -124,16 +126,22 @@ def torch_grad(tensor): return tensor.grad")
   (def mean2d-axis !mean torch.mean 2 (10 10) :axis 1)
   (def sum3d-axis !sum torch.sum 2 (10 10 10) :axis 1)
   (def mean3d-axis !mean torch.mean 2 (10 10 10) :axis 1)
-  (def max2d !max torch_max 2 (10 10) :axis -1))
+  (def max2d !max torch_max 2 (10 10) :axis -1)
+  ;; MAX(1, 1) -> only the first location can be chosen
+  (def max2d-same-points !max torch_max 2 (10 10) :axis -1 :use-linspace t))
 ;; Test Binaries
-(macrolet ((def (opname lisp-name torch-name shape1 shape2 &key (rhs-positive) (transpose-lhs nil) (transpose-rhs nil))
+(macrolet ((def (opname lisp-name torch-name shape1 shape2 &key (rhs-positive) (transpose-lhs nil) (transpose-rhs nil) (same-point nil))
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
                 (testing
                     ,(format nil "Testing ~a" opname)
-                  (let ((x (randn ',shape1 :requires-grad t))
+                  (let ((x (if ,same-point
+                               (linspace ',shape1 0 1 :requires-grad t)
+                               (randn ',shape1 :requires-grad t)))
                         (y (if ,rhs-positive
                                (uniform ',shape2 :low 2.0 :high 3.0 :requires-grad t)
-                               (randn ',shape2 :requires-grad t))))
+                               (if ,same-point
+                                   (linspace ',shape2 0 1 :requires-grad t)
+                                   (randn ',shape2 :requires-grad t)))))
                     (assert-equals
                         (:rtol 1e-4 :atol 1e-3)
                         (with-torch-params (x y)
@@ -162,6 +170,7 @@ def torch_grad(tensor): return tensor.grad")
   (def div-broadcast-2 !div torch.div (10 10 10) (10 10) :rhs-positive t)
   
   (def maximum !maximum torch.maximum (10 10) (10 10))
+  (def maximum-same-point !maximum torch.maximum (10 10) (10 10) :same-point t)
   (def minimum !minimum torch.minimum (10 10) (10 10))
   
   (def matmul1 !matmul torch.matmul (10 10) (10 10))
