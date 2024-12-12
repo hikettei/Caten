@@ -8,7 +8,7 @@ The function `graph-schedule` is an entry point, and takes a shape-inferred aasm
 One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure that each item is merged only within the bounds that can be lowered into a single kernel.")
   (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
   (:import-from :caten/aasm #:JITAble)
-  (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule #:insert-realizes))
+  (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule))
 
 (in-package #:caten/codegen/scheduler)
 
@@ -67,7 +67,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
              (loop for nth upfrom 0 below (max (length x) (length y))
                    for x1 = (nth nth x)
                    for y1 = (nth nth y)
-                   if t;;(or (eql x1 y1) (null y1)) dont display the output of memory planner for now.
+                   if (or (eql x1 y1) (null y1))
                      append (list (format nil "~a" x1) ", ")
                    else
                      append (list (format nil "~a[~a]" x1 y1) ", "))))))
@@ -315,21 +315,12 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
   (restart-cache (make-hash-table) :type hash-table)
   (restart-cache1 (make-hash-table) :type hash-table))
 
-(defmethod group->schedule-item ((group Group) (base-graph Graph) (other-groups list))
-  (let* ((reads (group-predecessor group))
-         (writes (group-successor group))
-         (other-group-requirements
-           (loop for g in other-groups
-                 unless (eql (group-key g) (group-key group))
-                   append (group-predecessor g)))
-         ;; If the symbol is read by other groups, that's also write dependencies
-         (hidden-writes (loop for w in (apply #'append (map 'list #'node-writes (group-items group)))
-                              if (find w other-group-requirements)
-                                collect w))
-         (allocate-p (find :Allocate (group-items group) :key #'node-type))
-         (no-symbolic-incremental-p t)
-         (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
-    (setf writes (remove-duplicates (append writes hidden-writes)))
+(defmethod group->schedule-item ((group Group) (ctx Schedule-Context))
+  (let ((reads (group-predecessor group))
+        (writes (group-successor group))
+        (allocate-p (find :Allocate (group-items group) :key #'node-type))
+        (no-symbolic-incremental-p t)
+        (full-scalar-p t) (rank 0) (id2type (make-hash-table)))
     ;; Ensure there's no symbolic incremental for the auto scheduler.
     (dolist (node (group-items group))
       (loop for r in (append (node-reads node) (node-writes node))
@@ -341,25 +332,19 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
               (setf rank (max rank (buffer-nrank rt)))
               (dolist (v (buffer-views rt))
                 (when (and v (third v) (symbolp (third v))) ;; v=(upfrom below by broadcast_p)
-                  (setf no-symbolic-incremental-p nil))))) ;; ISL cannot deal with symbolic incremental!
-    (flet ((get-type (symbol)
-             (or
-              (gethash symbol id2type)
-              (let ((node (id->value base-graph symbol)))
-                (assert node)
-                (car (relay-writes (read-type-relay node)))))))
-      (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
-                 :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
-                 :allocate-p (when allocate-p t)
-                 :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
-                 :storage-id-dst writes
-                 :storage-id-src reads
-                 :read-types (map 'list #'get-type reads)
-                 :write-types (map 'list #'get-type writes)
-                 :rank rank
-                 :reduce-dims (group-reduce-dims group)
-                 :items (group-items group)
-                 :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group)))))))
+                  (setf no-symbolic-incremental-p nil)))))
+    (make-node :GRAPH :Schedule-Item writes reads :name (make-unique-schedule-name group)
+               :jitable (and (every #'jitable-p (group-items group)) (null full-scalar-p))
+               :allocate-p (when allocate-p t)
+               :auto-schedule-p (and no-symbolic-incremental-p (null full-scalar-p))
+               :storage-id-dst writes
+               :storage-id-src reads
+               :read-types (map 'list #'(lambda (x) (gethash x id2type)) reads)
+               :write-types (map 'list #'(lambda (x) (gethash x id2type)) writes)
+               :rank rank
+               :reduce-dims (group-reduce-dims group)
+               :items (group-items group)
+               :items-to-cache (nodes-apply-static-gensym (map 'list #'copy-node (group-items group))))))
 
 (defmethod ctx-children ((ctx Schedule-Context) (node node)) (gethash (node-id node) (ctx-out-degrees ctx)))
 (defmethod ctx-parents ((ctx Schedule-Context) (node node)) (map 'list #'car (gethash (node-id node) (ctx-in-degrees ctx))))
@@ -597,7 +582,6 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
-    
     (let ((reduce-p (identity (or (group-reduce-dims parent-group) (group-reduce-dims tgt-group))))
           (pattern (group-compute-reduce-pattern parent-group tgt-group))
           (r1 (group-rank tgt-group)) (r2 (group-rank parent-group)))
@@ -791,16 +775,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                     (%jstore write-id base-id acc-id (car (relay-writes (read-type-relay node))))
                     (getattr si :items)))))))
     (mapc #'r (graph-nodes schedule-graph))))
-
-(defun break-graph (graph)
-  (when (= (length (graph-outputs graph)) 1)
-    (return-from break-graph (list graph)))
-  (loop for o in (graph-outputs graph)
-        for new-graph = (copy-graph graph)
-        collect (progn
-                  (setf (graph-outputs new-graph) (list o))
-                  (->graph (->fast-graph new-graph)))))
-
+;; TODO(hikettei) Create a schedule for forward/backward mode independently to get more prettry schedule graph.
 (defun graph-schedule (graph)
   "
 ```
@@ -816,45 +791,21 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
   (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 4)
     (format t "[graph-schedule] graph before scheduling:~%")
     (pprint-graph graph))
-  (let* ((graphs (break-graph graph))
-         (ctx (make-schedule-context (car graphs)))
-         (groups (graph-breadth-first-schedule ctx)))
-    (dolist (more-graph (cdr graphs))
-      (let ((io-degree (make-graph-edge-map more-graph)))
-        (setf (ctx-in-degrees ctx) (car io-degree) (ctx-out-degrees ctx) (second io-degree)
-              (ctx-graph ctx) more-graph
-              groups (graph-breadth-first-schedule ctx))))
-    (let ((groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
-          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x graph groups)) groups))))
-      (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
-      (mapc #'verify-group groups)
-      (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
-      (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
-        (format t "[graph-schedule] scheduled graph:~%")
-        (pprint-graph schedule-graph))
-      (when (= 2 (the fixnum (ctx:getenv :DOT)))
-        (->dot schedule-graph :title "Schedule Graph"))
-      ;; Assert all nodes in the base-graph was scheduled correctly.
-      (let ((nodes (map 'list #'node-id (apply #'append (map 'list #'group-items groups)))))
-        (dolist (n (graph-nodes graph)) (setf nodes (remove (node-id n) nodes)))
-        (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
-      (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph)) ;; create a unique and readable naming for each kernel.
-      schedule-graph)))
-
-(defun buffer-make-alloc (id buffer)
-  (make-group
-   :predecessor (remove-duplicates (loop for s in (append (buffer-shape buffer) (buffer-stride buffer)) if (symbolp s) collect s))
-   :successor (list id)
-   :items (list (make-node :Buffer :Allocate (list id) (append (buffer-shape buffer) (buffer-stride buffer)) :dtype (buffer-dtype buffer) :nrank (buffer-nrank buffer)
-                           :_type_relay (make-inferred-type nil (list buffer))))))
-
-(defun insert-realizes (base-graph schedule-graph)
-  (declare (type graph schedule-graph))
-  (let ((writes (apply #'append (map 'list #'node-writes (graph-nodes schedule-graph)))))
-    (loop for node in (graph-nodes schedule-graph)
-          do (loop for read in (node-reads node)
-                   for read-def = (id->value base-graph read)
-                   for read-type = (and read-def (car (relay-writes (read-type-relay read-def))))
-                   if (and (symbolp read) read-def read-type (null (find read writes))) do
-                     (push read writes)
-                     (insert-nodes schedule-graph (list (group->schedule-item (buffer-make-alloc read read-type) base-graph nil)))))))
+  (let* ((ctx (make-schedule-context graph))
+         (groups (graph-breadth-first-schedule ctx))
+         (groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
+         (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
+    (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
+    (mapc #'verify-group groups)
+    (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
+    (when (>= (the fixnum (ctx:getenv :JIT_DEBUG)) 3)
+      (format t "[graph-schedule] scheduled graph:~%")
+      (pprint-graph schedule-graph))
+    (when (= 2 (the fixnum (ctx:getenv :DOT)))
+      (->dot schedule-graph :title "Schedule Graph"))
+    ;; Assert all nodes in the base-graph was scheduled correctly.
+    (let ((nodes (map 'list #'node-id (apply #'append (map 'list #'group-items groups)))))
+      (dolist (n (graph-nodes graph)) (setf nodes (remove (node-id n) nodes)))
+      (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
+    (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph)) ;; create a unique and readable naming for each kernel.
+    schedule-graph))
