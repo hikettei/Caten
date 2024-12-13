@@ -493,7 +493,13 @@ Runs the JIT compilation for the given AVM."
                (lower-cached-schedule-item x schedule-graph)))
          (graph-nodes schedule-graph))
         ;; 10. Running memory-planner, update the storage-id
-        (setf schedule-graph (->graph-with-tpsort schedule-graph))
+        (setf schedule-graph (->graph-with-tpsort schedule-graph)
+              (graph-nodes schedule-graph)
+              (let ((stack))
+                `(,@(loop for node in (graph-nodes schedule-graph)
+                          if (getattr node :backward-p) do (push node stack)
+                            else collect node)
+                  ,@(nreverse stack))))
         (verify-graph schedule-graph) ;; Sort the graph for memory planner
         (when (not (= 1 (ctx:getenv :NO_MEMORY_PLANNER)))
           (when (>= (ctx:getenv :JIT_DEBUG) 2)

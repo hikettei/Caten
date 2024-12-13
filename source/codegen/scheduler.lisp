@@ -45,6 +45,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (polyhedral)
           (jitable :type boolean)
           (allocate-p :type boolean)
+          (backward-p :type boolean :initform nil)
           (auto-schedule-p :type boolean)
           (name :type symbol) (cache-name :type symbol)
           (items :type list) (items-to-cache :type list)
@@ -582,6 +583,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
+    ;; Add(LOAD(10, 10, 10), Y[10, 10, 10], reduce=T) should be separated.
     (when (group-reduce-dims tgt-group)
       (let ((typ (group-get-type parent-group)))
         (when (and
@@ -820,4 +822,12 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
       (dolist (n (graph-nodes graph)) (setf nodes (remove (node-id n) nodes)))
       (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
     (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph)) ;; create a unique and readable naming for each kernel.
+    (let ((backward-nodes
+            (loop with seen-backward-p = nil
+                    for node in (graph-nodes graph)
+                    if seen-backward-p collect (node-id node)
+                      if (eql (node-type node) :PAUSE/BACKWARD) do (setf seen-backward-p t))))
+      (loop for item in (graph-nodes schedule-graph)
+            if (some #'(lambda (x) (find (node-id x) backward-nodes)) (getattr item :items))
+              do (setf (getattr item :backward-p) t)))
     schedule-graph))
