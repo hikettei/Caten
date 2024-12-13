@@ -358,6 +358,8 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
       (when (and
              (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes))
         (push -1 insertable-positions))
+      (when (intersection node-depend-axes user-depend-axes)
+        (warn "(intersection node-depend-axes user-depend-axes) == nil failed, the lowering may fail."))
       (loop for bp in blueprint
             for nth upfrom 0
             for high-priority-p = nil

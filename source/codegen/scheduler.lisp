@@ -582,6 +582,18 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
+    (when (group-reduce-dims tgt-group)
+      (let ((typ (group-get-type parent-group)))
+        (when (and
+               (= (buffer-nrank typ) (length (group-reduce-dims tgt-group)))
+               (= (length (group-items parent-group)) 1)
+               (eql :LOAD (node-type (car (group-items parent-group)))))
+          (loop for shape in (buffer-shape typ)
+                for nth upfrom 0
+                for dim in (group-reduce-dims tgt-group)
+                for view = (nth nth (buffer-views typ))
+                if (and dim (not (eql 1 shape))) do
+                  (progn ->ng)))))
     (let ((reduce-p (identity (or (group-reduce-dims parent-group) (group-reduce-dims tgt-group))))
           (pattern (group-compute-reduce-pattern parent-group tgt-group))
           (r1 (group-rank tgt-group)) (r2 (group-rank parent-group)))
