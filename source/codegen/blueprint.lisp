@@ -288,15 +288,16 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
   (with-slots ((gids gids) (group-size loop-size-list)) ctx
     `(,@(map 'list #'%make-for gids group-size) ,@(reverse (map 'list #'%make-endfor gids)))))
 
-(defmethod reduce-bp ((ctx ctx) something gids key)
-  (let* ((sizes (loop for g in gids
+(defmethod reduce-bp ((ctx ctx) (something node) gids key)
+  (let* ((sizes (loop with size = (iteration-space-shape (car (relay-write-iters (read-type-relay something))))
+                      for g in gids
                       for p = (position g (ctx-gids ctx))
-                      collect (nth p (ctx-loop-size-list ctx))))
+                      collect (nth p size)))
          (loops (map 'list #'%make-for gids sizes)))
     (dolist (l loops)
       (setf (gethash (node-id l) (ctx-band2node ctx)) key))
     `(,@loops
-      ,@something
+      ,something
       ,@(reverse (map 'list #'%make-endfor gids)))))
 
 (defun recursive-scalar-p (ctx id)
@@ -416,7 +417,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                   (setf (getattr node :declare-type) (list t))))))
         (return-from try-insert-node
           (if node-reduce-axes
-              (values `(,@(reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))) ,@blueprint) t)
+              (values `(,@(reduce-bp ctx node node-reduce-axes (car (node-writes node))) ,@blueprint) t)
               (values `(,node ,@blueprint) t))))
       (values
        (loop with insert-at = (if high-priority-positions
@@ -431,7 +432,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                do (setf changed-p t) and collect node
              if (and (null changed-p) (= nth insert-at) node-reduce-axes)
                ;; Merging loops w/ introducing extra inner reduce loops
-               do (setf changed-p t) and append (reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))))
+               do (setf changed-p t) and append (reduce-bp ctx node node-reduce-axes (car (node-writes node))))
        changed-p))))
 
 (defun recursive-lower-into-bp (ctx id &aux (node (id->value (ctx-graph ctx) id)))
