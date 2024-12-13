@@ -192,3 +192,4 @@ def torch_grad(tensor): return tensor.grad")
 ;; 2. ConvND (TODO)
 ;; 3. Having Better Schedule for Embedding
 ;; 4. Fix for JIT
+;; 5. Enable Kernel Fusion

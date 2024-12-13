@@ -195,6 +195,17 @@ caten/codegen overview:
           (buffer-orig-buffer-shape wt))
       (buffer-shape wt)))
 
+(defun explore-alloc (id graph &aux (seen nil))
+  (labels ((explore (x)
+             (when (find x seen) (return-from explore))
+             (let ((node (id->value graph x)))
+               (when (null node) (return-from explore))
+               (push x seen)
+               (when (eql (node-type node) :Allocate)
+                 (return-from explore-alloc (copy-node node)))
+               (explore (get-output-to node)))))
+    (explore id)))
+
 (defun make-alloc+view-node-from-buffer (wt w base-graph &aux (time 0))
   (when (some #'identity (buffer-views wt))
     ;; Consider the case: (NIL NIL (0 3 1 T))
@@ -209,6 +220,10 @@ caten/codegen overview:
            (let ((node (id->value base-graph w)))
              (when (and node (eql (node-type node) :Allocate))
                node))
+           (let ((o (explore-alloc w base-graph)))
+             (when o
+               (setf (node-writes o) (list w))
+               o))
            ;; Otherwise create it.
            (make-node :Buffer :Allocate (progn (incf time) (list (timefy w time)))
                       (append
