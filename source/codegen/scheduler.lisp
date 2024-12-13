@@ -775,7 +775,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                     (%jstore write-id base-id acc-id (car (relay-writes (read-type-relay node))))
                     (getattr si :items)))))))
     (mapc #'r (graph-nodes schedule-graph))))
-;; TODO(hikettei) Create a schedule for forward/backward mode independently to get more prettry schedule graph.
+
 (defun graph-schedule (graph)
   "
 ```
