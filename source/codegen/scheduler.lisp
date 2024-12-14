@@ -60,28 +60,22 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (namespace :type list)))
 
 (defmethod print-node (node (id (eql :Schedule-Item)))
-  (flet ((r (x y)
+  (flet ((r (x)
            (apply
             #'concatenate
             'string
             (butlast
-             (loop for nth upfrom 0 below (min (length x) (length y))
-                   for x1 = (nth nth x)
-                   for y1 = (nth nth y)
-                   if t;(or (eql x1 y1) (null y1)) ;; (length x) is not equal to (length y), it is misleading
-                     append (list (format nil "~a" x1) ", ")
-                   else
-                     append (list (format nil "~a[~a]" x1 y1) ", "))))))
+             (loop for x1 in x append (list (format nil "~a" x1) ", "))))))
     (format nil "{ ~a } : [ ~a <- ~a where lowered-p=~a ~a]"
             (if (getattr node :allocate-p)
                 "Allocate"
                 (if (getattr node :jitable)
                     " KERNEL "
                     "  VMOP  "))
-            (r (node-writes node) (getattr node :storage-id-dst))
+            (r (node-writes node))
             (if (getattr node :allocate-p)
                 (subseq (node-reads (car (getattr node :items))) 0 (getattr (car (getattr node :items)) :nrank))
-                (r (node-reads node) (getattr node :storage-id-src)))
+                (r (node-reads node)))
             (if (getattr node :blueprint)
                 "t" "nil")
             (if (getattr node :allocate-p)
@@ -804,7 +798,6 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
          (groups (graph-breadth-first-schedule ctx))
          (groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
-    (print schedule-graph)
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
     (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
