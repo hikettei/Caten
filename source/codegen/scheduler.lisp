@@ -438,9 +438,9 @@ Otherwise, returns NIL. (= not fusable)"
            else
              do (return-from ctx-node-force-realize-p nil)))))
 
-(defmethod groups-are-injective-p ((tgt-group Group) (parent-group Group))
+(defmethod groups-are-injective-p ((ctx Schedule-Context) (tgt-group Group) (parent-group Group))
   ;; If the output of parent-group is also used by other groups, don't merge it.
-  (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group)))
+  (every #'(lambda (x) (or (find x (group-predecessor tgt-group)) (find x (graph-outputs (ctx-graph ctx))))) (group-successor parent-group)))
 
 (defmethod group-chase-down-reduction-p ((ctx Schedule-Context) (group Group) (restart-point Node))
   "Chace down until found reduction is succeed => return T"
@@ -681,7 +681,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
                          for tgt-group = (ctx-get-group ctx tgt) ;; tgt-group would be updated if tgt is merged
                          unless (eql (group-key parent-group) (group-key tgt-group)) do
                            (let ((force-realize-p (ctx-node-force-realize-p ctx p tgt))
-                                 (injective-p (groups-are-injective-p tgt-group parent-group)))
+                                 (injective-p (groups-are-injective-p ctx tgt-group parent-group)))
                              (if (and no-serialize-p force-realize-p injective-p (group-mergeable-p ctx tgt tgt-group parent-group parent-view))
                                  (progn
                                    ;; remove(parent_group) and tgt_group += parent-group
@@ -790,12 +790,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                     (getattr si :items)))))))
     (mapc #'r (graph-nodes schedule-graph))))
 
-(defun graph-schedule (graph)
-  "
-```
-(graph-schedule graph)
-```
-Creates a schedule-graph(FastGraph) from the given `graph`."
+(defun %graph-schedule (graph)
   (declare (type Graph graph) (optimize (speed 3)))
   (assert (graph-nodes graph) () "graph-schedule: Nothing to schedule?")
   (assert (graph-shape-inferred-p graph) () "graph-schedule: Run the shape inference first!")
@@ -831,3 +826,35 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
             if (some #'(lambda (x) (find (node-id x) backward-nodes)) (getattr item :items))
               do (setf (getattr item :backward-p) t)))
     schedule-graph))
+
+(defun break-graph (graph)
+  (let ((pos (position :PAUSE/BACKWARD (graph-nodes graph) :key #'node-type)))
+    (if (and pos (nthcdr (1+ pos) (graph-nodes graph)))
+        (list (apply #'make-graph (subseq (graph-nodes graph) 0 (1+ pos))) (apply #'make-graph (subseq (graph-nodes graph) (1+ pos))))
+        (list graph))))
+
+(defun graph-schedule (graph)
+  "
+```
+(graph-schedule graph)
+```
+Creates a schedule-graph(FastGraph) from the given `graph`."
+  (declare (type Graph graph))
+  (let ((graph-by-phase (break-graph graph)))
+    ;; Phase(t+1) depends on the intersection of Phase(t+0)
+    (labels ((select-graph-outputs (total-writes &key (not nil))
+               (loop for o in (graph-outputs graph)
+                     for reverse = (if not #'null #'identity)
+                     if (funcall reverse (find o total-writes)) collect o))
+             (rel (t+0 t+1)
+               (let* ((total-writes (remove-duplicates (apply #'append (map 'list #'node-writes (graph-nodes t+0)))))
+                      (total-reads  (remove-duplicates (apply #'append (map 'list #'node-reads (graph-nodes t+1)))))
+                      (save-for-backward (intersection total-writes total-reads)))
+                 (setf (graph-outputs t+0) (remove-duplicates (append (select-graph-outputs total-writes) save-for-backward))
+                       (graph-seen t+1) save-for-backward
+                       (graph-outputs t+1) (remove-duplicates (select-graph-outputs total-writes :not t))))))
+      (when (= (length graph-by-phase) 2) (rel (car graph-by-phase) (second graph-by-phase)))
+      (let ((out (apply #'make-graph (apply #'append (map 'list (alexandria:compose #'graph-nodes #'%graph-schedule) graph-by-phase)))))
+        (setf (graph-outputs out) (graph-outputs graph))
+        ;; [TODO] Update assign relations
+        (->fast-graph out)))))
