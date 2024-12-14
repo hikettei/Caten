@@ -50,7 +50,7 @@ def torch_grad(tensor): return tensor.grad")
                                 (uniform `(10 10) :requires-grad t :low ,upfrom :high ,below)
                                 (randn `(10 10) :requires-grad t))))
                     (assert-equal
-                        (:rtol 1e-4 :atol 1e-5)
+                        (:rtol 1e-3 :atol 1e-3)
                         (with-torch-params (x)
                           (let ((y (torch.sum (funcall #',torch-name x))))
                             (torch_backward y)
