@@ -827,13 +827,13 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
         (list (apply #'make-graph (subseq (graph-nodes graph) 0 (1+ pos))) (apply #'make-graph (subseq (graph-nodes graph) (1+ pos))))
         (list graph))))
 
-(defun graph-schedule (graph &key (allow-recompute-grads nil))
+(defun graph-schedule (graph) ;; TOOD(hikettei): &key (allow-recompute-grads nil))
   "
 ```
 (graph-schedule graph)
 ```
 Creates a schedule-graph(FastGraph) from the given `graph`."
-  (declare (type Graph graph) (ignore allow-recompute-grads))
+  (declare (type Graph graph))
   (let ((graph-by-phase (break-graph graph)))
     ;; Phase(t+1) depends on the intersection of Phase(t+0)
     (labels ((select-graph-outputs (total-writes &key (not nil))
