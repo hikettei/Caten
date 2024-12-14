@@ -847,7 +847,10 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                  (setf (graph-outputs t+0) (remove-duplicates (append (select-graph-outputs total-writes) save-for-backward))
                        (graph-seen t+1) save-for-backward
                        (graph-outputs t+1) (remove-duplicates (select-graph-outputs total-writes :not t))))))
-      ;; [TODO] Reduce the number of allocation by recomputing the gradient.
+      ;; [TODO]
+      ;; - 1. Reduce the number of allocation by recomputing the gradient.
+      ;; - 2. If the save-for-backward is :bool, force recomputing the gradient (SoftShrink/Embedding backward should work)
+      ;; - 3. Gradient Recomputation = Just inserting a copy of forward graph nodes into backward graph nodes.
       (when (= (length graph-by-phase) 2) (rel (car graph-by-phase) (second graph-by-phase)))
       (let ((out (apply #'make-graph (apply #'append (map 'list (alexandria:compose #'graph-nodes #'%graph-schedule) graph-by-phase)))))
         (setf (graph-outputs out) (graph-outputs graph))

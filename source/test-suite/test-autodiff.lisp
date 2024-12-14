@@ -199,4 +199,5 @@ def torch_min(x, dim=None): return torch.min(x, dim=dim)[0]")
 ;; 2. ConvND (TODO)
 ;; 3. Having Better Schedule for Embedding
 ;; 4. Fix for JIT
-;; 5. Enable Kernel Fusion
+;; 5. Smol Allocation for Matmul
+;; 6. Enable Kernel Fusion
