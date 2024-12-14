@@ -195,6 +195,17 @@ caten/codegen overview:
           (buffer-orig-buffer-shape wt))
       (buffer-shape wt)))
 
+(defun explore-alloc (id graph &aux (seen nil))
+  (labels ((explore (x)
+             (when (find x seen) (return-from explore))
+             (let ((node (id->value graph x)))
+               (when (null node) (return-from explore))
+               (push x seen)
+               (when (eql (node-type node) :Allocate)
+                 (return-from explore-alloc (copy-node node)))
+               (explore (get-output-to node)))))
+    (explore id)))
+
 (defun make-alloc+view-node-from-buffer (wt w base-graph &aux (time 0))
   (when (some #'identity (buffer-views wt))
     ;; Consider the case: (NIL NIL (0 3 1 T))
@@ -209,6 +220,11 @@ caten/codegen overview:
            (let ((node (id->value base-graph w)))
              (when (and node (eql (node-type node) :Allocate))
                node))
+           (let ((o (explore-alloc w base-graph)))
+             (when o
+               (setf (node-writes o) (list w)
+                     (getattr o :from) nil) ;; it is not an original node, but a new allocation!
+               o))
            ;; Otherwise create it.
            (make-node :Buffer :Allocate (progn (incf time) (list (timefy w time)))
                       (append
@@ -493,7 +509,13 @@ Runs the JIT compilation for the given AVM."
                (lower-cached-schedule-item x schedule-graph)))
          (graph-nodes schedule-graph))
         ;; 10. Running memory-planner, update the storage-id
-        (setf schedule-graph (->graph-with-tpsort schedule-graph))
+        (setf schedule-graph (->graph-with-tpsort schedule-graph)
+              (graph-nodes schedule-graph)
+              (let ((stack))
+                `(,@(loop for node in (graph-nodes schedule-graph)
+                          if (getattr node :backward-p) do (push node stack)
+                            else collect node)
+                  ,@(nreverse stack))))
         (verify-graph schedule-graph) ;; Sort the graph for memory planner
         (when (not (= 1 (ctx:getenv :NO_MEMORY_PLANNER)))
           (when (>= (ctx:getenv :JIT_DEBUG) 2)

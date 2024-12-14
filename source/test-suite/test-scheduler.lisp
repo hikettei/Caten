@@ -40,7 +40,7 @@
     (check-kernel schedule 3)
     (caten/codegen/expr-cache:with-expr-cache () ;; Test LayerNorm is not fused with Matmul
       (loop for item in (gather-kernels schedule)
-            for count in `(3 3 4) do ;; LayerNorm -> Matmul -> Matmul
+            for count in `(4 3 3) do ;; LayerNorm -> Matmul -> Matmul
               (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
                 (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type))))))))
 

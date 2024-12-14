@@ -170,6 +170,16 @@
      (ok (<= atol1 ,atol) (format nil "Satisfying (atol=~a) <= ~a" atol1 ,atol))
      (ok (<= rtol1 ,rtol) (format nil "Satisfying (rtol=~a) <= ~a" rtol1 ,rtol)))))
 
+(defmacro assert-equals ((&key (rtol 1e-7) (atol 0.0)) torch-form lisp-form)
+  `(let ((torch (multiple-value-list ,torch-form)) (lisp (multiple-value-list ,lisp-form)))
+     (assert (= (length torch) (length lisp)) () "assert-equals: The number of tensors does not match.")
+     (ok (every #'(lambda (x y) (equal (shape x) (shape y))) torch lisp) "Shapes match")
+     (loop for torchi in torch
+           for lispi in lisp do
+             (multiple-value-bind (atol1 rtol1) (compute-rtol-atol (buffer-value (tensor-buffer (sync-visible-size torchi))) (buffer-value (tensor-buffer (sync-visible-size lispi))))
+               (ok (<= atol1 ,atol) (format nil "Satisfying (atol=~a) <= ~a" atol1 ,atol))
+               (ok (<= rtol1 ,rtol) (format nil "Satisfying (rtol=~a) <= ~a" rtol1 ,rtol))))))
+
 (defmacro with-given-dtype ((&rest dtypes) &body body)
   `(loop for (*caten-dtype* . *torch-dtype*) in ',dtypes
          for *default-float* = *caten-dtype*

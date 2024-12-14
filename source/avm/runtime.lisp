@@ -108,7 +108,7 @@
   (let ((current-tape (nth (avm-pc avm) (graph-nodes (avm-graph avm)))))
     (when (null current-tape) (return-from vm/backward))
     (assert (eql (node-type current-tape) :Pause/backward) ()
-	    "vm/backward: invaild pc counter; run forward first.")
+	    "vm/backward: invaild pc counter. Before doing (backward avm), you should run the forward pass first.")
     (incf (avm-pc avm)))
   (loop while (< (avm-pc avm) (avm-tape-length avm)) do (vm/step avm))
   t)
