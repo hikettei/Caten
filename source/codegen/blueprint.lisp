@@ -556,15 +556,15 @@ Lowers the Schedule-Item into blueprint.
           (let ((before-assigned-map) (cycle))
             (loop for w in writes
                   if (and (gethash (car w) id-as-dag-map)) do
-                    (if (find (car w) (node-writes node)) (push (car w) cycle) (push (car w) before-assigned-map)))
+                    (if (find (car w) (node-writes node)) (push w cycle) (push (car w) before-assigned-map)))
             (setf (getattr node :read-types) (map 'list #'cdr reads)
-                  (getattr node :write-types) (map 'list #'cdr writes)
+                  (getattr node :write-types) (append (map 'list #'cdr cycle) (map 'list #'cdr writes))
                   (getattr node :storage-id-src) (map 'list #'car reads)
-                  (getattr node :storage-id-dst) (map 'list #'car writes)
+                  (getattr node :storage-id-dst) (append (map 'list #'cdr cycle) (map 'list #'car writes))
                   (getattr node :dynamic-shapes) constants
                   (node-reads node) (append before-assigned-map (map 'list #'car reads))
                   ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
-                  (node-writes node) (append cycle (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))))
+                  (node-writes node) (append (map 'list #'car cycle) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))))
       (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
