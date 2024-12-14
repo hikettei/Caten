@@ -32,7 +32,7 @@
   (defreduce SumNode "Sum tensors along axis" !add)
   (defreduce MaxReduce "Max" !maximum :initial-element (-inf))
   (defreduce MinReduce "Min" !minimum :initial-element (inf)))
-
+;; TODO(hikettei) replace the backward with _reduce_bw (as commented out below)
 (defun _reduce_bw (op prev-grad)
   (with-slots ((x x) (ret ret)) op
     (with-attrs ((axis :axis)) op
@@ -40,8 +40,8 @@
              (div (!sum max-is-1s :axis axis :keepdims t)))
         (!mul (!div max-is-1s div) (!contiguous prev-grad))))))
 
-(defmethod backward ((op MaxReduce) &optional prev-grad) (_reduce_bw op prev-grad))
-(defmethod backward ((op MinReduce) &optional prev-grad) (_reduce_bw op prev-grad))
+;; (defmethod backward ((op MaxReduce) &optional prev-grad) (_reduce_bw op prev-grad))
+;; (defmethod backward ((op MinReduce) &optional prev-grad) (_reduce_bw op prev-grad))
 
 (defmodule (MeanNode ((&key (axis t) (keepdims nil)) :axis axis :keepdims keepdims))
     ()

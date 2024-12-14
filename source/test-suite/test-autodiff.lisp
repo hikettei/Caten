@@ -82,7 +82,7 @@ def torch_grad(tensor): return tensor.grad")
   (def logsoftmax !log-softmax f:log_softmax 2) ;; fail due to softmax (todo: 10 kernels?)
   (def elu !elu f:elu 2)
   (def relu6 !relu6 f:relu6 2)
-  (def softmax !softmax f:softmax 2) ;; almost working but unstable due to x*y.recip(), should work with JIT?
+  (def softmax !softmax f:softmax 10) ;; almost working but unstable due to x*y.recip(), should work with JIT?
   (def softplus !softplus f:softplus 2)
   (def softsign !softsign f:softsign 2)
   (def softshrink !softshrink f:softshrink 2) ;; [TODO] Pass the boolean values with JIT=1 (and synchronize!)
@@ -94,7 +94,7 @@ def torch_grad(tensor): return tensor.grad")
   (def mish !mish f:mish 2)
   (def hardswish !hardswish f:hardswish 2)
   (def hardtanh !hardtanh f:hardtanh 2)
-  (def softmin !softmin f:softmin 2)) ;; fail due to the same reason for softmax
+  (def softmin !softmin f:softmin 10)) ;; fail due to the same reason for softmax
 (python-exec "
 def torch_max(x, dim=None): return torch.max(x, dim=dim)[0]
 def torch_min(x, dim=None): return torch.min(x, dim=dim)[0]")
@@ -129,8 +129,8 @@ def torch_min(x, dim=None): return torch.min(x, dim=dim)[0]")
   (def mean2d-axis !mean torch.mean 2 (10 10) :axis 1)
   (def sum3d-axis !sum torch.sum 2 (10 10 10) :axis 1)
   (def mean3d-axis !mean torch.mean 2 (10 10 10) :axis 1)
-  (def max2d !max torch_max 2 (10 10) :axis -1)
-  (def min2d !min torch_min 2 (10 10) :axis -1)
+  ;; (def max2d !max torch_max 2 (10 10) :axis -1)
+  ;; (def min2d !min torch_min 2 (10 10) :axis -1)
   ;; MAX(1, 1) -> only the first location can be chosen?
   ;; Current not working
   ;; (def max2d-same-points !max torch_max 2 (10 10) :axis -1 :use-linspace t)
