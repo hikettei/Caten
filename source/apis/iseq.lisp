@@ -526,7 +526,8 @@ Compiles the given tensors, returning an AVM struct.
 Compiles the given tensors, returning an evaluated tensors.
 "
   (declare (type list tensors))
-  (forward (caten tensors)))
+  (with-no-grad
+    (forward (caten tensors))))
 
 (defun %tensor->aasm (&rest tensors)
   (let* ((sess (make-compiler-session :name :tensor->aasm))
