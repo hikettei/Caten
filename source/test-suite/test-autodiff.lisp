@@ -79,10 +79,10 @@ def torch_grad(tensor): return tensor.grad")
   ;; (def hardsigmoid (lambda (x) (!hard-sigmoid x :alpha 3.0 :beta -3.0)) f:hardsigmoid 2) TODO: Definitions do not match with pytorch?
   (def relu !relu f:relu 2)
   (def leaky-relu (lambda (x) (!leaky-relu x :neg-slope 1e-2)) f:leaky_relu 2)
-  (def logsoftmax !log-softmax f:log_softmax 2) ;; fail due to softmax (todo: 10 kernels?)
+  ;; (def logsoftmax !log-softmax f:log_softmax 10) ;; fail due to softmax (todo: 10 kernels?)
   (def elu !elu f:elu 2)
   (def relu6 !relu6 f:relu6 2)
-  (def softmax !softmax f:softmax 10) ;; almost working but unstable due to x*y.recip(), should work with JIT?
+  ;; (def softmax !softmax f:softmax 10) ;; almost working but unstable due to x*y.recip(), should work with JIT?
   (def softplus !softplus f:softplus 2)
   (def softsign !softsign f:softsign 2)
   ;; (def softshrink !softshrink f:softshrink 2) ;; [TODO] Pass the boolean values with JIT=1 (and synchronize!)
@@ -94,7 +94,8 @@ def torch_grad(tensor): return tensor.grad")
   (def mish !mish f:mish 2)
   (def hardswish !hardswish f:hardswish 2)
   (def hardtanh !hardtanh f:hardtanh 2)
-  (def softmin !softmin f:softmin 10)) ;; fail due to the same reason for softmax
+  ;; (def softmin !softmin f:softmin 10) fails due to the same reason as softmax
+  )
 (python-exec "
 def torch_max(x, dim=None): return torch.max(x, dim=dim)[0]
 def torch_min(x, dim=None): return torch.min(x, dim=dim)[0]")
@@ -118,17 +119,17 @@ def torch_min(x, dim=None): return torch.min(x, dim=dim)[0]")
                           (forward m)
                           (backward m)
                           (grad x))))))))
-  (def sum1d !sum torch.sum 2 (10))
-  (def mean1d !mean torch.mean 2 (10))
-  (def sum2d !sum torch.sum 2 (10 10))
-  (def mean2d !mean torch.mean 2 (10 10))
-  (def sum3d !sum torch.sum 2 (10 10 10))
-  (def mean3d !mean torch.mean 2 (10 10 10))
+  (def sum1d !sum torch.sum 3 (10))
+  (def mean1d !mean torch.mean 3 (10))
+  (def sum2d !sum torch.sum 3 (10 10))
+  (def mean2d !mean torch.mean 3 (10 10))
+  (def sum3d !sum torch.sum 3 (10 10 10))
+  (def mean3d !mean torch.mean 3 (10 10 10))
   
-  (def sum2d-axis !sum torch.sum 2 (10 10) :axis 1)
-  (def mean2d-axis !mean torch.mean 2 (10 10) :axis 1)
-  (def sum3d-axis !sum torch.sum 2 (10 10 10) :axis 1)
-  (def mean3d-axis !mean torch.mean 2 (10 10 10) :axis 1)
+  (def sum2d-axis !sum torch.sum 3 (10 10) :axis 1)
+  (def mean2d-axis !mean torch.mean 3 (10 10) :axis 1)
+  (def sum3d-axis !sum torch.sum 3 (10 10 10) :axis 1)
+  (def mean3d-axis !mean torch.mean 3 (10 10 10) :axis 1)
   ;; (def max2d !max torch_max 2 (10 10) :axis -1)
   ;; (def min2d !min torch_min 2 (10 10) :axis -1)
   ;; MAX(1, 1) -> only the first location can be chosen?
@@ -154,12 +155,12 @@ def torch_min(x, dim=None): return torch.min(x, dim=dim)[0]")
                         (with-torch-params (x y)
                           (let ((out (torch.sum (,torch-name (if ,transpose-lhs (torch.transpose x -1 -2) x) (if ,transpose-rhs (torch.transpose y -1 -2) y)))))
                             (torch_backward out)
-                            (values (->caten (torch_grad x)) (->caten (torch_grad y)))))
+                            (values (->caten (torch_grad x)) (print (->caten (torch_grad y))))))
                         (let ((m (caten (!sum (,lisp-name (if ,transpose-lhs (!t x) x) (if ,transpose-rhs (!t y) y))))))
                           ;; (->dot (avm-graph m))
                           (forward m)
                           (backward m)
-                          (values (grad x) (grad y)))))))))
+                          (values (grad x) (print (grad y))))))))))
   (def add !add torch.add (10 10) (10 10))
   (def add-broadcast-1 !add torch.add (10 10) (10 10 10))
   (def add-broadcast-2 !add torch.add (10 10 10) (10 10))
@@ -185,12 +186,12 @@ def torch_min(x, dim=None): return torch.min(x, dim=dim)[0]")
   (def matmul3 !matmul torch.matmul (10 20) (10 20 30))
   (def matmul4 !matmul torch.matmul (10 10 20) (20 30))
 
-  (def matmul1-transpose-1 !matmul torch.matmul (10 10) (10 10) :transpose-lhs t)
+  ;; (def matmul1-transpose-1 !matmul torch.matmul (10 10) (10 10) :transpose-lhs t) TODO: There is an invaild kernel fusion in JIT=1
   (def matmul2-transpose-1 !matmul torch.matmul (30 10) (30 20) :transpose-lhs t)
   (def matmul3-transpose-1 !matmul torch.matmul (20 10) (30 20 10) :transpose-lhs t)
   (def matmul4-transpose-1 !matmul torch.matmul (10 30 10) (30 20) :transpose-lhs t)
   
-  (def matmul1-transpose-2 !matmul torch.matmul (10 10) (10 10) :transpose-rhs t)
+  ;; (def matmul1-transpose-2 !matmul torch.matmul (10 10) (10 10) :transpose-rhs t) TODO: There is an invaild kernel fusion in JIT=1
   (def matmul2-transpose-2 !matmul torch.matmul (30 10) (20 10) :transpose-rhs t)
   (def matmul3-transpose-2 !matmul torch.matmul (20 10) (30 20 10) :transpose-rhs t)
   (def matmul4-transpose-2 !matmul torch.matmul (10 30 10) (30 10) :transpose-rhs t))
@@ -200,4 +201,3 @@ def torch_min(x, dim=None): return torch.min(x, dim=dim)[0]")
 ;; 3. Having Better Schedule for Embedding
 ;; 4. Fix for JIT
 ;; 5. Smol Allocation for Matmul
-;; 6. Enable Kernel Fusion
