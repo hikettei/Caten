@@ -28,6 +28,7 @@
    #:make-tensor
    #:make-view-internal
    #:tensor-graph
+   #:tensor-lowered-graph
    #:fconst #:uconst #:iconst
    
    #:Tensor

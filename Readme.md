@@ -33,6 +33,46 @@ For example, setting `JIT=1` enables JIT compilation, while `JIT_DEBUG >= 2` all
 
 You may still find the token/ms rate slow, but we're not yet at the stage of implementing an AutoScheduler to accelerate kernel performance (as well as GPU support). Once our IR matures enough to handle a wide range of deep learning models, we plan to focus on speeding things up!
 
+### Lazy Evaluation
+
+Caten is capable of generating the necessary kernels independently!
+
+Instead of relying on OpenBLAS bindings or hand-optimized CUDA kernels, Caten avoids abstractions that would restrict us to specific libraries.
+
+Let’s take `Matmul+Activation` Fusion as an example to illustrate this approach:
+
+```lisp
+(in-package :caten-user)
+
+(pprint-graph
+  (tensor-graph (!relu (!matmul (make-tensor `(a b)) (make-tensor `(b c))))))
+```
+
+When you set `JIT=1`, the graph is compiled to an external language. You can view the generated code by specifying `JIT_DEBUG >= 2`.
+
+Give it a try in your REPL!
+
+```lisp
+(in-package :caten-user)
+;; (setf (ctx:getenv :JIT) 1) to set globally
+(ctx:with-contextvar (:JIT 1 :JIT_DEBUG 4)
+  (caten (!relu (!matmul (make-tensor `(a b)) (make-tensor `(b c))))))
+```
+
+We’ve adopted a RISC-style architecture. Ultimately, everything in Caten boils down to [just 25 composable primitive ops](https://github.com/hikettei/Caten/blob/main/source/aasm/attrs.lisp).
+
+When you replace `tensor-graph` with `tensor-lowered-graph`, you’ll see exactly what we mean! And by using `->dot` instead of `pprint-graph`, you can visualize that graph right in your browser!
+
+Finally, our lazy evaluation doesn’t make debugging any harder. If you want to check an intermediate result, just insert `proceed` at any point—it won’t break the computation graph!
+
+```lisp
+;; They are the equivalent
+(proceed (!sin (cos (ax+b `(3 3) 1 0))))
+(proceed (!sin (proceed (!cos (ax+b `(3 3) 1 0)))))
+```
+
+### Training Models (Coming Soon)
+
 ## Getting Started
 
 1. Install [Roswell](https://github.com/roswell/roswell) and suitable IDE. (If unsure, Emacs or [Lem](https://github.com/lem-project/lem) is recommended)
@@ -106,7 +146,7 @@ Before contributing, please note that there is no linter here. Make an effort to
 
 - [x] Autodiff
 - [ ] Fast Autodiff
-- [ ] Support Training
+- [x] Support Training (But still limited)
 - [ ] Distributed Training
 
 ### Accelerators

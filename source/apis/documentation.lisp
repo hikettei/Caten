@@ -22,6 +22,7 @@
   (docs:doc/function "order" #'order)
   (docs:doc/function "caten" #'caten)
   (docs:doc/function "tensor-graph" #'tensor-graph)
+  (docs:doc/function "tensor-lowered-graph" #'tensor-lowered-graph)
   (docs:body "
 ### [method] forward
 
