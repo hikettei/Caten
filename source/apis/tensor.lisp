@@ -220,6 +220,19 @@ For some convenience, this function returns the first tensor if the input is not
   (let ((graph (->fast-graph (apply #'%tensor->aasm tensors))))
     (optimize-aasm graph)
     graph))
+
+(defun tensor-lowered-graph (&rest tensors)
+  "
+```
+(tensor-lowered-graph &rest tensors)
+
+Creates a lowered graph from the given tensors. (= an input grpah to JIT=1)
+"
+  (when (not (tensor-p (car tensors)))
+    (return-from tensor-lowered-graph (car tensors)))
+  (assert (every #'tensor-p tensors))
+  (ctx:with-contextvar (:JIT 0)
+    (avm-graph (caten tensors))))
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun inf (&key (dtype *default-float*))
   "
