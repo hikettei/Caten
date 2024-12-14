@@ -77,3 +77,17 @@ A macro to write `defmethod call` in a more concise way.
              (let (,@(loop for key in keys collect `(,(intern (princ-to-string key)) (gethash ,key ,solved))))
                (declare (ignorable ,@(map 'list (compose #'intern #'princ-to-string) keys)))
                ,@body)))))))
+
+
+(defmacro defsequence (name (&rest args) &rest nodes)
+  "
+```lisp
+(defsequence (name (&rest args) &optional docstring &rest nodes))
+```
+
+Defines a model which the definition is given as a sequence of nodes.
+"
+  
+  )
+
+(defun asnode (function &rest rest-args))
