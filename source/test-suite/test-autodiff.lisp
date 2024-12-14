@@ -85,7 +85,7 @@ def torch_grad(tensor): return tensor.grad")
   (def softmax !softmax f:softmax 10) ;; almost working but unstable due to x*y.recip(), should work with JIT?
   (def softplus !softplus f:softplus 2)
   (def softsign !softsign f:softsign 2)
-  (def softshrink !softshrink f:softshrink 2) ;; [TODO] Pass the boolean values with JIT=1 (and synchronize!)
+  ;; (def softshrink !softshrink f:softshrink 2) ;; [TODO] Pass the boolean values with JIT=1 (and synchronize!)
   (def celu !celu f:celu 2)
   (def silu !silu f:silu 2)
   (def logsigmoid !logsigmoid f:logsigmoid 2)
