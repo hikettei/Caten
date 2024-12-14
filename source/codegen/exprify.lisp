@@ -423,7 +423,9 @@ B <- C // :reduction=t
                     (when (and (symbolp (getattr val :value)) (null (find (getattr val :value) written)))
                       (if (getattr val :_type_relay :allow-undefined t)
                           (push (cons (getattr val :value) (buffer-dtype (car (relay-writes (read-type-relay val))))) constants)
-                          (push (cons (getattr val :value) caten/aasm:*default-int*) constants))))
+                          (let ((alloc (id->value graph (car (node-reads val)))))
+                            (assert (and alloc (eql (node-type alloc) :Allocate)))
+                            (push (cons (getattr val :value) (getattr alloc :dtype)) constants)))))
                    (:AREF
                     (when (find (getattr val :storage-id) candidates)
                       (setf constants (append constants (iterspace-depend-consts (getattr val :space) :written written)))
