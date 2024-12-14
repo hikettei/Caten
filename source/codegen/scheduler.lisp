@@ -68,7 +68,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
              (loop for nth upfrom 0 below (min (length x) (length y))
                    for x1 = (nth nth x)
                    for y1 = (nth nth y)
-                   if nil;(or (eql x1 y1) (null y1)) ;; (length x) is not equal to (length y), it is misleading
+                   if t;(or (eql x1 y1) (null y1)) ;; (length x) is not equal to (length y), it is misleading
                      append (list (format nil "~a" x1) ", ")
                    else
                      append (list (format nil "~a[~a]" x1 y1) ", "))))))
