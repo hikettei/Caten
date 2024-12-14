@@ -56,6 +56,7 @@ def torch_grad(tensor): return tensor.grad")
                             (->caten (torch_grad x))))
                         (let ((m (caten (!sum (funcall #',lisp-name x)))))
                           ;; (check-bw-schedule m ,schedule) ;; 1 for forward, 1 for backward
+                          (forward m)
                           (backward m)
                           (grad x))))))))
   ;; mathematical functions
