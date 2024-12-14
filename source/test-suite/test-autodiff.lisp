@@ -41,6 +41,7 @@ def torch_grad(tensor): return tensor.grad")
     (let ((count (count :JIT_KERNEL (graph-nodes (avm-graph model)) :key #'node-type)))
       (ok (= count expected) (format nil "Expected ~a, scheduled ~a" expected count)))))
 ;; Testing Unary Backwards
+;; [TODO] Test the number of allocations (after implementing gradient recomputation)
 (macrolet ((def (opname lisp-name torch-name schedule &key (upfrom) (below))
              ;; e.g.: !max autodiff test is defined as !max-backward
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
@@ -55,7 +56,7 @@ def torch_grad(tensor): return tensor.grad")
                             (torch_backward y)
                             (->caten (torch_grad x))))
                         (let ((m (caten (!sum (funcall #',lisp-name x)))))
-                          ;; (check-bw-schedule m ,schedule) ;; 1 for forward, 1 for backward
+                          (check-bw-schedule m ,schedule) ;; 1 for forward, 1 for backward
                           (forward m)
                           (backward m)
                           (grad x))))))))
