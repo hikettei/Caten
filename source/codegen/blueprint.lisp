@@ -560,7 +560,7 @@ Lowers the Schedule-Item into blueprint.
             (setf (getattr node :read-types) (map 'list #'cdr reads)
                   (getattr node :write-types) (append (map 'list #'cdr cycle) (map 'list #'cdr writes))
                   (getattr node :storage-id-src) (map 'list #'car reads)
-                  (getattr node :storage-id-dst) (append (map 'list #'cdr cycle) (map 'list #'car writes))
+                  (getattr node :storage-id-dst) (append (map 'list #'car cycle) (map 'list #'car writes))
                   (getattr node :dynamic-shapes) constants
                   (node-reads node) (append before-assigned-map (map 'list #'car reads))
                   ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
