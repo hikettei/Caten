@@ -65,10 +65,10 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
             #'concatenate
             'string
             (butlast
-             (loop for nth upfrom 0 below (max (length x) (length y))
+             (loop for nth upfrom 0 below (min (length x) (length y))
                    for x1 = (nth nth x)
                    for y1 = (nth nth y)
-                   if (or (eql x1 y1) (null y1))
+                   if nil;(or (eql x1 y1) (null y1)) ;; (length x) is not equal to (length y), it is misleading
                      append (list (format nil "~a" x1) ", ")
                    else
                      append (list (format nil "~a[~a]" x1 y1) ", "))))))
@@ -804,6 +804,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
          (groups (graph-breadth-first-schedule ctx))
          (groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
          (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
+    (print schedule-graph)
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
     (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.
@@ -833,13 +834,13 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
         (list (apply #'make-graph (subseq (graph-nodes graph) 0 (1+ pos))) (apply #'make-graph (subseq (graph-nodes graph) (1+ pos))))
         (list graph))))
 
-(defun graph-schedule (graph)
+(defun graph-schedule (graph &key (allow-recompute-grads nil))
   "
 ```
 (graph-schedule graph)
 ```
 Creates a schedule-graph(FastGraph) from the given `graph`."
-  (declare (type Graph graph))
+  (declare (type Graph graph) (ignore allow-recompute-grads))
   (let ((graph-by-phase (break-graph graph)))
     ;; Phase(t+1) depends on the intersection of Phase(t+0)
     (labels ((select-graph-outputs (total-writes &key (not nil))
@@ -853,8 +854,8 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                  (setf (graph-outputs t+0) (remove-duplicates (append (select-graph-outputs total-writes) save-for-backward))
                        (graph-seen t+1) save-for-backward
                        (graph-outputs t+1) (remove-duplicates (select-graph-outputs total-writes :not t))))))
+      ;; [TODO] Reduce the number of allocation by recomputing the gradient.
       (when (= (length graph-by-phase) 2) (rel (car graph-by-phase) (second graph-by-phase)))
       (let ((out (apply #'make-graph (apply #'append (map 'list (alexandria:compose #'graph-nodes #'%graph-schedule) graph-by-phase)))))
         (setf (graph-outputs out) (graph-outputs graph))
-        ;; [TODO] Update assign relations
         (->fast-graph out)))))
