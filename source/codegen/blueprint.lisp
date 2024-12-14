@@ -288,15 +288,16 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
   (with-slots ((gids gids) (group-size loop-size-list)) ctx
     `(,@(map 'list #'%make-for gids group-size) ,@(reverse (map 'list #'%make-endfor gids)))))
 
-(defmethod reduce-bp ((ctx ctx) something gids key)
-  (let* ((sizes (loop for g in gids
+(defmethod reduce-bp ((ctx ctx) (something node) gids key)
+  (let* ((sizes (loop with size = (iteration-space-shape (car (relay-write-iters (read-type-relay something))))
+                      for g in gids
                       for p = (position g (ctx-gids ctx))
-                      collect (nth p (ctx-loop-size-list ctx))))
+                      collect (nth p size)))
          (loops (map 'list #'%make-for gids sizes)))
     (dolist (l loops)
       (setf (gethash (node-id l) (ctx-band2node ctx)) key))
     `(,@loops
-      ,@something
+      ,something
       ,@(reverse (map 'list #'%make-endfor gids)))))
 
 (defun recursive-scalar-p (ctx id)
@@ -358,7 +359,8 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
       (when (and
              (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes))
         (push -1 insertable-positions))
-      (assert (null (intersection node-depend-axes user-depend-axes))) ;; 100% fails to lower in this case!
+      (when (intersection node-depend-axes user-depend-axes)
+        (warn "(intersection node-depend-axes user-depend-axes) == nil failed, the lowering may fail."))
       (loop for bp in blueprint
             for nth upfrom 0
             for high-priority-p = nil
@@ -415,7 +417,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                   (setf (getattr node :declare-type) (list t))))))
         (return-from try-insert-node
           (if node-reduce-axes
-              (values `(,@(reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))) ,@blueprint) t)
+              (values `(,@(reduce-bp ctx node node-reduce-axes (car (node-writes node))) ,@blueprint) t)
               (values `(,node ,@blueprint) t))))
       (values
        (loop with insert-at = (if high-priority-positions
@@ -430,7 +432,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                do (setf changed-p t) and collect node
              if (and (null changed-p) (= nth insert-at) node-reduce-axes)
                ;; Merging loops w/ introducing extra inner reduce loops
-               do (setf changed-p t) and append (reduce-bp ctx (list node) node-reduce-axes (car (node-writes node))))
+               do (setf changed-p t) and append (reduce-bp ctx node node-reduce-axes (car (node-writes node))))
        changed-p))))
 
 (defun recursive-lower-into-bp (ctx id &aux (node (id->value (ctx-graph ctx) id)))
@@ -547,20 +549,22 @@ Lowers the Schedule-Item into blueprint.
             (ctx-blueprint ctx) (blueprint-exprify (ctx-blueprint ctx) node) ; rewrite jitable nodes -> expr
             (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
       (multiple-value-bind (new-bp id-as-dag-map) (blueprint-propagate-reduction (ctx-blueprint ctx)) ;; A = B + C * D => B += C * D
+        ;; id-as-dag-map: subsequent kernels will recognise the key as value
         (setf (ctx-blueprint ctx) new-bp)
         ;; Synchronize the realized buffers
         (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
-          (let ((before-assigned-map (loop for w in writes
-                                           if (gethash (car w) id-as-dag-map)
-                                             collect (car w))))
+          (let ((before-assigned-map) (cycle))
+            (loop for w in writes
+                  if (and (gethash (car w) id-as-dag-map)) do
+                    (if (find (car w) (node-writes node)) (push w cycle) (push (car w) before-assigned-map)))
             (setf (getattr node :read-types) (map 'list #'cdr reads)
-                  (getattr node :write-types) (map 'list #'cdr writes)
+                  (getattr node :write-types) (append (map 'list #'cdr cycle) (map 'list #'cdr writes))
                   (getattr node :storage-id-src) (map 'list #'car reads)
-                  (getattr node :storage-id-dst) (map 'list #'car writes)
+                  (getattr node :storage-id-dst) (append (map 'list #'car cycle) (map 'list #'car writes))
                   (getattr node :dynamic-shapes) constants
                   (node-reads node) (append before-assigned-map (map 'list #'car reads))
                   ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
-                  (node-writes node) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes)))))
+                  (node-writes node) (append (map 'list #'car cycle) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))))
       (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
       (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

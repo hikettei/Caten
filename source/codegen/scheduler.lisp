@@ -45,6 +45,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (polyhedral)
           (jitable :type boolean)
           (allocate-p :type boolean)
+          (backward-p :type boolean :initform nil)
           (auto-schedule-p :type boolean)
           (name :type symbol) (cache-name :type symbol)
           (items :type list) (items-to-cache :type list)
@@ -59,28 +60,22 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
           (namespace :type list)))
 
 (defmethod print-node (node (id (eql :Schedule-Item)))
-  (flet ((r (x y)
+  (flet ((r (x)
            (apply
             #'concatenate
             'string
             (butlast
-             (loop for nth upfrom 0 below (max (length x) (length y))
-                   for x1 = (nth nth x)
-                   for y1 = (nth nth y)
-                   if (or (eql x1 y1) (null y1))
-                     append (list (format nil "~a" x1) ", ")
-                   else
-                     append (list (format nil "~a[~a]" x1 y1) ", "))))))
+             (loop for x1 in x append (list (format nil "~a" x1) ", "))))))
     (format nil "{ ~a } : [ ~a <- ~a where lowered-p=~a ~a]"
             (if (getattr node :allocate-p)
                 "Allocate"
                 (if (getattr node :jitable)
                     " KERNEL "
                     "  VMOP  "))
-            (r (node-writes node) (getattr node :storage-id-dst))
+            (r (node-writes node))
             (if (getattr node :allocate-p)
                 (subseq (node-reads (car (getattr node :items))) 0 (getattr (car (getattr node :items)) :nrank))
-                (r (node-reads node) (getattr node :storage-id-src)))
+                (r (node-reads node)))
             (if (getattr node :blueprint)
                 "t" "nil")
             (if (getattr node :allocate-p)
@@ -437,9 +432,9 @@ Otherwise, returns NIL. (= not fusable)"
            else
              do (return-from ctx-node-force-realize-p nil)))))
 
-(defmethod groups-are-injective-p ((tgt-group Group) (parent-group Group))
+(defmethod groups-are-injective-p ((ctx Schedule-Context) (tgt-group Group) (parent-group Group))
   ;; If the output of parent-group is also used by other groups, don't merge it.
-  (every #'(lambda (x) (find x (group-predecessor tgt-group))) (group-successor parent-group)))
+  (every #'(lambda (x) (or (find x (group-predecessor tgt-group)) (find x (graph-outputs (ctx-graph ctx))))) (group-successor parent-group)))
 
 (defmethod group-chase-down-reduction-p ((ctx Schedule-Context) (group Group) (restart-point Node))
   "Chace down until found reduction is succeed => return T"
@@ -582,6 +577,19 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
     (when (and (group-reduce-dims tgt-group) (group-reduce-dims parent-group))
       (when (not (equal (group-reduce-dims tgt-group) (group-reduce-dims parent-group)))
         ->ng))
+    ;; Add(LOAD(10, 10, 10), Y[10, 10, 10], reduce=T) should be separated.
+    (when (group-reduce-dims tgt-group)
+      (let ((typ (group-get-type parent-group)))
+        (when (and
+               (= (buffer-nrank typ) (length (group-reduce-dims tgt-group)))
+               (= (length (group-items parent-group)) 1)
+               (eql :LOAD (node-type (car (group-items parent-group)))))
+          (loop for shape in (buffer-shape typ)
+                for nth upfrom 0
+                for dim in (group-reduce-dims tgt-group)
+                for view = (nth nth (buffer-views typ))
+                if (and dim (not (eql 1 shape))) do
+                  (progn ->ng)))))
     (let ((reduce-p (identity (or (group-reduce-dims parent-group) (group-reduce-dims tgt-group))))
           (pattern (group-compute-reduce-pattern parent-group tgt-group))
           (r1 (group-rank tgt-group)) (r2 (group-rank parent-group)))
@@ -667,7 +675,7 @@ Returns T if merging parent-group and tgt-group is possible. Sometime rewrites v
                          for tgt-group = (ctx-get-group ctx tgt) ;; tgt-group would be updated if tgt is merged
                          unless (eql (group-key parent-group) (group-key tgt-group)) do
                            (let ((force-realize-p (ctx-node-force-realize-p ctx p tgt))
-                                 (injective-p (groups-are-injective-p tgt-group parent-group)))
+                                 (injective-p (groups-are-injective-p ctx tgt-group parent-group)))
                              (if (and no-serialize-p force-realize-p injective-p (group-mergeable-p ctx tgt tgt-group parent-group parent-view))
                                  (progn
                                    ;; remove(parent_group) and tgt_group += parent-group
@@ -775,13 +783,8 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                     (%jstore write-id base-id acc-id (car (relay-writes (read-type-relay node))))
                     (getattr si :items)))))))
     (mapc #'r (graph-nodes schedule-graph))))
-;; TODO(hikettei) Create a schedule for forward/backward mode independently to get more prettry schedule graph.
-(defun graph-schedule (graph)
-  "
-```
-(graph-schedule graph)
-```
-Creates a schedule-graph(FastGraph) from the given `graph`."
+
+(defun %graph-schedule (graph)
   (declare (type Graph graph) (optimize (speed 3)))
   (assert (graph-nodes graph) () "graph-schedule: Nothing to schedule?")
   (assert (graph-shape-inferred-p graph) () "graph-schedule: Run the shape inference first!")
@@ -808,4 +811,47 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
       (dolist (n (graph-nodes graph)) (setf nodes (remove (node-id n) nodes)))
       (assert (null nodes) () "graph-schedule: Nodes ~a are not scheduled." nodes))
     (mapc #'schedule-item-initialize-namespace (graph-nodes schedule-graph)) ;; create a unique and readable naming for each kernel.
+    (let ((backward-nodes
+            (loop with seen-backward-p = nil
+                    for node in (graph-nodes graph)
+                    if seen-backward-p collect (node-id node)
+                      if (eql (node-type node) :PAUSE/BACKWARD) do (setf seen-backward-p t))))
+      (loop for item in (graph-nodes schedule-graph)
+            if (some #'(lambda (x) (find (node-id x) backward-nodes)) (getattr item :items))
+              do (setf (getattr item :backward-p) t)))
     schedule-graph))
+
+(defun break-graph (graph)
+  (let ((pos (position :PAUSE/BACKWARD (graph-nodes graph) :key #'node-type)))
+    (if (and pos (nthcdr (1+ pos) (graph-nodes graph)))
+        (list (apply #'make-graph (subseq (graph-nodes graph) 0 (1+ pos))) (apply #'make-graph (subseq (graph-nodes graph) (1+ pos))))
+        (list graph))))
+
+(defun graph-schedule (graph) ;; TOOD(hikettei): &key (allow-recompute-grads nil))
+  "
+```
+(graph-schedule graph)
+```
+Creates a schedule-graph(FastGraph) from the given `graph`."
+  (declare (type Graph graph))
+  (let ((graph-by-phase (break-graph graph)))
+    ;; Phase(t+1) depends on the intersection of Phase(t+0)
+    (labels ((select-graph-outputs (total-writes &key (not nil))
+               (loop for o in (graph-outputs graph)
+                     for reverse = (if not #'null #'identity)
+                     if (funcall reverse (find o total-writes)) collect o))
+             (rel (t+0 t+1)
+               (let* ((total-writes (remove-duplicates (apply #'append (map 'list #'node-writes (graph-nodes t+0)))))
+                      (total-reads  (remove-duplicates (apply #'append (map 'list #'node-reads (graph-nodes t+1)))))
+                      (save-for-backward (intersection total-writes total-reads)))
+                 (setf (graph-outputs t+0) (remove-duplicates (append (select-graph-outputs total-writes) save-for-backward))
+                       (graph-seen t+1) save-for-backward
+                       (graph-outputs t+1) (remove-duplicates (select-graph-outputs total-writes :not t))))))
+      ;; [TODO]
+      ;; - 1. Reduce the number of allocation by recomputing the gradient.
+      ;; - 2. If the save-for-backward is :bool, force recomputing the gradient (SoftShrink/Embedding backward should work)
+      ;; - 3. Gradient Recomputation = Just inserting a copy of forward graph nodes into backward graph nodes.
+      (when (= (length graph-by-phase) 2) (rel (car graph-by-phase) (second graph-by-phase)))
+      (let ((out (apply #'make-graph (apply #'append (map 'list (alexandria:compose #'graph-nodes #'%graph-schedule) graph-by-phase)))))
+        (setf (graph-outputs out) (graph-outputs graph))
+        (->fast-graph out)))))
