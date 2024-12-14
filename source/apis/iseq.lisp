@@ -505,10 +505,12 @@ Compiles the given tensors, returning an AVM struct.
 (proceed &rest tensors)
 ```
 
-Compiles the given tensors, returning an evaluated tensors.
+Compiles the given tensors, returning evaluated tensors.
+
+This function is convenient for examining the intermediate values in a lazily evaluated computation graph. In this case, the computation graph remains intact. (i.e.: you can insert `(print (proceed ...))` anywhere!)
 "
   (declare (type list tensors))
-  (forward (caten tensors)))
+  (with-no-grad (forward (caten tensors))))
 
 (defun %tensor->aasm (&rest tensors)
   (let* ((sess (make-compiler-session :name :tensor->aasm))
