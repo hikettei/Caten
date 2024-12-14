@@ -79,13 +79,13 @@ def torch_grad(tensor): return tensor.grad")
   ;; (def hardsigmoid (lambda (x) (!hard-sigmoid x :alpha 3.0 :beta -3.0)) f:hardsigmoid 2) TODO: Definitions do not match with pytorch?
   (def relu !relu f:relu 2)
   (def leaky-relu (lambda (x) (!leaky-relu x :neg-slope 1e-2)) f:leaky_relu 2)
-  (def logsoftmax !log-softmax f:log_softmax 2) ;; fail due to softmax
+  (def logsoftmax !log-softmax f:log_softmax 2) ;; fail due to softmax (todo: 10 kernels?)
   (def elu !elu f:elu 2)
   (def relu6 !relu6 f:relu6 2)
   (def softmax !softmax f:softmax 2) ;; almost working but unstable due to x*y.recip(), should work with JIT?
   (def softplus !softplus f:softplus 2)
   (def softsign !softsign f:softsign 2)
-  (def softshrink !softshrink f:softshrink 2)
+  (def softshrink !softshrink f:softshrink 2) ;; [TODO] Pass the boolean values with JIT=1 (and synchronize!)
   (def celu !celu f:celu 2)
   (def silu !silu f:silu 2)
   (def logsigmoid !logsigmoid f:logsigmoid 2)
@@ -95,8 +95,11 @@ def torch_grad(tensor): return tensor.grad")
   (def hardswish !hardswish f:hardswish 2)
   (def hardtanh !hardtanh f:hardtanh 2)
   (def softmin !softmin f:softmin 2)) ;; fail due to the same reason for softmax
-(python-exec "def torch_max(x, dim=None): return torch.max(x, dim=dim)[0]")
+(python-exec "
+def torch_max(x, dim=None): return torch.max(x, dim=dim)[0]
+def torch_min(x, dim=None): return torch.min(x, dim=dim)[0]")
 (import-function "torch_max")
+(import-function "torch_min")
 ;; Test reductions
 (macrolet ((def (opname lisp-name torch-name schedule shape &key axis use-linspace)
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
@@ -109,12 +112,12 @@ def torch_grad(tensor): return tensor.grad")
                         (with-torch-params (x)
                           (let ((y (torch.sum (,torch-name x :dim ,axis))))
                             (torch_backward y)
-                            (print (->caten (torch_grad x)))))
+                            (->caten (torch_grad x))))
                         (let ((m (caten (!sum (,lisp-name x :axis (or ,axis t))))))
                           (check-bw-schedule m ,schedule) ;; 1 for forward, 1 for backward
                           (forward m)
                           (backward m)
-                          (print (grad x)))))))))
+                          (grad x))))))))
   (def sum1d !sum torch.sum 2 (10))
   (def mean1d !mean torch.mean 2 (10))
   (def sum2d !sum torch.sum 2 (10 10))
@@ -127,8 +130,12 @@ def torch_grad(tensor): return tensor.grad")
   (def sum3d-axis !sum torch.sum 2 (10 10 10) :axis 1)
   (def mean3d-axis !mean torch.mean 2 (10 10 10) :axis 1)
   (def max2d !max torch_max 2 (10 10) :axis -1)
-  ;; MAX(1, 1) -> only the first location can be chosen
-  (def max2d-same-points !max torch_max 2 (10 10) :axis -1 :use-linspace t))
+  (def min2d !min torch_min 2 (10 10) :axis -1)
+  ;; MAX(1, 1) -> only the first location can be chosen?
+  ;; Current not working
+  ;; (def max2d-same-points !max torch_max 2 (10 10) :axis -1 :use-linspace t)
+  ;; (def min2d-same-points !min torch_min 2 (10 10) :axis -1 :use-linspace t)
+  )
 ;; Test Binaries
 (macrolet ((def (opname lisp-name torch-name shape1 shape2 &key (rhs-positive) (transpose-lhs nil) (transpose-rhs nil) (same-point nil))
              `(deftest ,(intern (string-upcase (format nil "~a-backward" opname)))
