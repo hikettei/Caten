@@ -35,18 +35,43 @@ You may still find the token/ms rate slow, but we're not yet at the stage of imp
 
 ### Lazy Evaluation
 
+Caten is capable of generating the necessary kernels independently!
+
+Instead of relying on OpenBLAS bindings or hand-optimized CUDA kernels, Caten avoids abstractions that would restrict us to specific libraries.
+
+Let’s take `Matmul+Activation` Fusion as an example to illustrate this approach:
+
 ```lisp
 (in-package :caten-user)
-(ctx:with-contextvar (:JIT 1 :JIT_DEBUG 2)
-  
-  )
+
+(pprint-graph
+  (tensor-graph (!relu (!matmul (make-tensor `(a b)) (make-tensor `(b c))))))
 ```
 
-### Training Models (Experimental)
+When you set `JIT=1`, the graph is compiled to an external language. You can view the generated code by specifying `JIT_DEBUG >= 2`.
+
+Give it a try in your REPL!
 
 ```lisp
-
+(in-package :caten-user)
+;; (setf (ctx:getenv :JIT) 1) to set globally
+(ctx:with-contextvar (:JIT 1 :JIT_DEBUG 4)
+  (caten (!relu (!matmul (make-tensor `(a b)) (make-tensor `(b c))))))
 ```
+
+We’ve adopted a RISC-style architecture. Ultimately, everything in Caten boils down to [just 25 composable primitive ops](https://github.com/hikettei/Caten/blob/main/source/aasm/attrs.lisp).
+
+When you replace `tensor-graph` with `tensor-lowered-graph`, you’ll see exactly what we mean! And by using `->dot` instead of `pprint-graph`, you can visualize that graph right in your browser!
+
+Finally, our lazy evaluation doesn’t make debugging any harder. If you want to check an intermediate result, just insert `proceed` at any point—it won’t break the computation graph!
+
+```lisp
+;; They are the equivalent
+(proceed (!sin (cos (ax+b `(3 3) 1 0))))
+(proceed (!sin (proceed (!cos (ax+b `(3 3) 1 0)))))
+```
+
+### Training Models (Coming Soon)
 
 ## Getting Started
 
