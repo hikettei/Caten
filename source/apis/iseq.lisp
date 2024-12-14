@@ -507,7 +507,7 @@ Compiles the given tensors, returning an AVM struct.
 
 Compiles the given tensors, returning evaluated tensors.
 
-This function is convenient for examining the intermediate values in a lazily evaluated computation graph. In this case, the computation graph remains intact. (i.e.: you can insert `(print (proceed ...))` anywhere!)
+This function is convenient for examining the intermediate values in a lazily evaluated computation graph. In this case, the computation graph remains intact. (i.e.: you can insert `(print (proceed ...))` anywhere for debugging purpose)
 "
   (declare (type list tensors))
   (let ((*no-grad* t)) (forward (caten tensors))))
