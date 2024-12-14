@@ -33,6 +33,21 @@ For example, setting `JIT=1` enables JIT compilation, while `JIT_DEBUG >= 2` all
 
 You may still find the token/ms rate slow, but we're not yet at the stage of implementing an AutoScheduler to accelerate kernel performance (as well as GPU support). Once our IR matures enough to handle a wide range of deep learning models, we plan to focus on speeding things up!
 
+### Lazy Evaluation
+
+```lisp
+(in-package :caten-user)
+(ctx:with-contextvar (:JIT 1 :JIT_DEBUG 2)
+  
+  )
+```
+
+### Training Models (Experimental)
+
+```lisp
+
+```
+
 ## Getting Started
 
 1. Install [Roswell](https://github.com/roswell/roswell) and suitable IDE. (If unsure, Emacs or [Lem](https://github.com/lem-project/lem) is recommended)
@@ -106,7 +121,7 @@ Before contributing, please note that there is no linter here. Make an effort to
 
 - [x] Autodiff
 - [ ] Fast Autodiff
-- [ ] Support Training
+- [x] Support Training (But still limited)
 - [ ] Distributed Training
 
 ### Accelerators
