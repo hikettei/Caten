@@ -56,8 +56,6 @@ def torch_grad(tensor): return tensor.grad")
                             (->caten (torch_grad x))))
                         (let ((m (caten (!sum (funcall #',lisp-name x)))))
                           ;; (check-bw-schedule m ,schedule) ;; 1 for forward, 1 for backward
-                          (forward m)
-                          ;; (->dot (avm-graph m))
                           (backward m)
                           (grad x))))))))
   ;; mathematical functions
@@ -85,7 +83,7 @@ def torch_grad(tensor): return tensor.grad")
   (def softmax !softmax f:softmax 2) ;; almost working but unstable due to x*y.recip(), should work with JIT?
   (def softplus !softplus f:softplus 2)
   (def softsign !softsign f:softsign 2)
-  ;; (def softshrink !softshrink f:softshrink 2) Failing
+  (def softshrink !softshrink f:softshrink 2)
   (def celu !celu f:celu 2)
   (def silu !silu f:silu 2)
   (def logsigmoid !logsigmoid f:logsigmoid 2)

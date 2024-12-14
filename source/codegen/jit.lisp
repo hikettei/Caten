@@ -222,7 +222,8 @@ caten/codegen overview:
                node))
            (let ((o (explore-alloc w base-graph)))
              (when o
-               (setf (node-writes o) (list w))
+               (setf (node-writes o) (list w)
+                     (getattr o :from) nil) ;; it is not an original node, but a new allocation!
                o))
            ;; Otherwise create it.
            (make-node :Buffer :Allocate (progn (incf time) (list (timefy w time)))
