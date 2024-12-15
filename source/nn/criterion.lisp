@@ -2,7 +2,7 @@
 
 (deftype reduce-specifier-t ()  `(member :mean :sum))
 
-(defmodel (L1NormLoss (&key (reduction :mean)) :where "A[~] B[~] -> A[~]" :documentation "
+(defmodel (L1NormLoss (&key (reduction :mean)) :documentation "
 ```
 (L1NormLoss &key (reduction :mean))
 ```
@@ -19,7 +19,7 @@ reduction is one of :mean or :sum.
 
 (defcall (loss L1NormLoss) (A[~] B[~])
   (let ((out (!sub a b)))
-    (ecase (slot-value loss 'redution)
+    (ecase (slot-value loss 'reduction)
       (:mean (!mean (!abs out)))
       (:sum (!sum (!abs out))))))
 
@@ -33,7 +33,7 @@ Computes L1Norm
 "
   (forward (L1NormLoss :reduction reduction) a b))
 
-(defmodel (MSELoss (&key (reduction :mean)) :where "A[~] B[~] -> A[~]" :documentation "
+(defmodel (MSELoss (&key (reduction :mean)) :documentation "
 ```
 (MSELoss &key (reduction :mean))
 ```
@@ -50,7 +50,7 @@ reduction is one of :mean or :sum.
 
 (defcall (loss MSELoss) (A[~] B[~])
   (let ((out (!square (!sub a b))))
-    (ecase (slot-value loss 'redution)
+    (ecase (slot-value loss 'reduction)
       (:mean (!mean out))
       (:sum  (!sum out)))))
 
