@@ -113,7 +113,8 @@ Policy:
   ;; from optimizers.lisp
   (:export
    #:AbstractOptimizer #:optimizer-param #:param
-   #:step-optimize)
+   #:hook-optimizers
+   #:step-optimizer)
   ;; from linear.lisp
   (:export
    #:Linear))
