@@ -6,7 +6,7 @@
 
 `Caten = Compile+AbstracTENsor`
 
-Caten is an experimental deep learning compiler. Our goal is to implement a compiler that is as simple as tinygrad, and as flexible as TVM.
+Caten is an experimental deep learning compiler. Our goal is to create a solution that’s as simple as tinygrad yet as flexible as TVM—all while extending the possibilities of interactive programming into the realm of AI.
 
 **We're looking for collaborators! Please join our Discord and let me know if you'd like to contribute!**
 
