@@ -51,8 +51,17 @@ Param_{new}\\gets{Param - Param_{grad}\\times{lr}}
 where the initarg `:lr` is the learning rate.
 "))
 
+(defun SGD (&key (lr 1e-3))
+  "
+```
+(SGD :lr 1e-3)
+```
+Returns a lambda function that takes one argument, which is the parameter tensor, and returns an instance of SGD optimizer.
+"
+  #'(lambda (x) (make-instance 'SGD :param x :lr lr)))
+
 (caten/defun[float] (sgd-impl "sgd-impl") (n param grad lr)
-  (!sub (make-tensor `(n) :from param) (!mul (make-tensor `(n) :from grad) (fconst lr)) :reduce t))
+  (!sub (make-tensor `(,n) :from param) (!mul (make-tensor `(,n) :from grad) (fconst lr)) :reduce t))
 
 (defmethod step-optimizer ((optimizer SGD))
   (with-slots ((param param) (lr lr)) optimizer
