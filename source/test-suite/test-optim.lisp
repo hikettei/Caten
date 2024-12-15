@@ -24,6 +24,7 @@
              (let ((loss (forward runner `(:x . ,x) `(:y . ,y))))
                (backward runner)
                (mapc #'step-optimizer optimizers)
+               (mapc #'zero-grad optimizers)
                loss)))
       (let ((losses (loop repeat 10 collect (run-step))))
         (ok (> (aref (elements (first losses)) 0) (aref (elements (car (last losses))) 0)) (format nil "losses: ~a" (map 'list #'elements losses)))))))

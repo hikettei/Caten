@@ -490,12 +490,6 @@ Compiles the given tensors, returning an AVM struct.
    #'(lambda (k v)
        (let ((var (gethash k (avm-variables avm))))
 	 (when var
-           ;; Note: (forward model), (forward model) ... each outputs may share the same buffer. so the output needs to be copied.
-           (setf var (copy-buffer var))
-           (when (and (buffer-shape var) (buffer-value var))
-             (assert (arrayp (buffer-value var)) () "Note(hikettei): avm/sync-tensors only expected an array to be tensor-buffer.
-Please create a method here to copy a sequence for different hardware. (This should be the only point you have to add a patch)")
-             (setf (buffer-value var) (copy-seq (buffer-value var))))
 	   (setf (tensor-buffer v) var))))
    (avm-id2tensor avm)))
 
@@ -509,6 +503,12 @@ Please create a method here to copy a sequence for different hardware. (This sho
     (flet ((ap (x &aux (tensor (or (gethash x (avm-id2tensor avm)))))
 	     (assert (tensor-p tensor) () "Forward: Attempted to reference the output variable ~a, but it is not defined in the avm id2tensor table: ~a~%~a"
 		     x (hash-table-keys (avm-id2tensor avm)) avm)
+             ;; Note: (forward model), (forward model) ... each outputs may share the same buffer. so the output needs to be copied.
+             (when (and (shape tensor) (buffer-value (tensor-buffer tensor)))
+               (assert (arrayp (buffer-value (tensor-buffer tensor))) () "Note(hikettei): avm/sync-tensors only expected an array to be tensor-buffer.
+Please create a method here to copy a sequence for different hardware. (This should be the only point you have to add a patch)")
+               (setf (tensor-buffer tensor) (copy-buffer (tensor-buffer tensor))
+                     (buffer-value (tensor-buffer tensor)) (copy-seq (buffer-value (tensor-buffer tensor)))))
 	     (%apply-proceed tensor)))
       (apply #'values (map 'list #'ap (avm-fw-outputs avm))))))
 

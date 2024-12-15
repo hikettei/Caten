@@ -115,6 +115,7 @@ Policy:
    #:AbstractOptimizer #:optimizer-param #:param
    #:hook-optimizers
    #:step-optimizer
+   #:zero-grad
    #:SGD)
   ;; from linear.lisp
   (:export

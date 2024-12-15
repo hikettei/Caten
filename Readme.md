@@ -95,7 +95,8 @@ Finally, our lazy evaluation doesn’t make debugging any harder. If you want to
     (dotimes (i 10)
       (forward runner `(:x . ,(rand `(10 64))) `(:y . ,(rand `(10 16))) `(b . 10)) ;; replace with mnist dataloader
       (backward runner)
-      (mapc #'step-optimizer optimizers))))
+      (mapc #'step-optimizer optimizers)
+      (mapc #'zero-grad optimizers))))
 ```
 
 Though our focus is still on the inference, we will support training models. (Still Experimental, Unstable.) I am not sure our backward scheduler can be expanded into more large and complicated graphs. :(

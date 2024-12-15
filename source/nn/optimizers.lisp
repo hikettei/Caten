@@ -32,10 +32,20 @@ A list of created optimizers are returned.
     hooker)
    (caten/avm:avm-params-to-optimize avm)))
 
-(defun flatten-buffer (tensor)
-  (if (= (ctx:getenv :JIT) 0)
-      (proceed (!reshape tensor (apply #'* (shape tensor))))
-      tensor))
+(caten/defun[float] (zero-grad-impl "zero_grad_impl") (n param)
+  (!assign (make-tensor `(,n) :from param) (fconst 0)))
+
+(defun zero-grad (optimizer)
+  "
+```
+(zero-grad optimizer)
+```
+Fills the gradient of the optimizer with zeros.
+"
+  (declare (type AbstractOptimizer optimizer))
+  (let ((grad (grad (optimizer-param optimizer))))
+    (when (and grad (tensor-buffer grad))
+      (zero-grad-impl (dtype-of grad) (apply #'* (shape grad)) grad))))
 
 (defclass SGD (AbstractOptimizer)
   ((lr :initarg :lr))
@@ -63,4 +73,4 @@ Returns a lambda function that takes one argument, which is the parameter tensor
 
 (defmethod step-optimizer ((optimizer SGD))
   (with-slots ((param param) (lr lr)) optimizer
-    (sgd-impl (dtype-of param) (apply #'* (shape param)) (flatten-buffer param) (flatten-buffer (grad param)) lr)))
+    (sgd-impl (dtype-of param) (apply #'* (shape param)) param (grad param) lr)))
