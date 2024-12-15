@@ -1,8 +1,5 @@
 (in-package :caten/nn)
 
-(docs:define-page ("caten/nn" "packages/caten.nn.md")
-  (docs:title "caten/nn"))
-
 (docs:define-page ("Activations" "packages/caten.nn.activations.md")
   (docs:title "Activations")
   (docs:doc/function "!sigmoid" #'!sigmoid)

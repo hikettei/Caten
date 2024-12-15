@@ -63,7 +63,7 @@ nav:
       - Facet APIs: packages/caten.apis.facet_apis.md
       - StateDict: packages/caten.apis.state-dict.md
     - caten/avm: packages/caten.avm.md
-    - caten/nn: packages/caten.nn.md
+    - caten/nn:
       - Activation: packages/caten.nn.activations.md
       - Convolution: packages/caten.nn.convolutions.md
       - Criterion: packages/caten.nn.criterion.md

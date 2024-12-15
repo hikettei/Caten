@@ -3,9 +3,7 @@
 (defclass AbstractOptimizer ()
   ((param :initarg :param :type Tensor :reader optimizer-param))
   (:documentation "
-`AbstractOptimizer` is the base class for all optimizers. User defined optimizers can be defined by using `(defoptimizer ...)` macro.
-
-One `AbstractOptimizer` corresponds to one `Tensor` class with `:requires-grad=T`. `(optimizer-param optimizer)` to get the corresponding tensor.
+`AbstractOptimizer` is the base class for all optimizers. One `AbstractOptimizer` corresponds to one `Tensor` class with `:requires-grad=T`. `(optimizer-param optimizer)` to get the corresponding tensor.
 "))
 
 (defgeneric step-optimizer (optimizer) (:documentation "
