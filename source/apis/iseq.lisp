@@ -488,10 +488,11 @@ Compiles the given tensors, returning an AVM struct.
   (declare (type caten/avm:avm avm))
   (maphash
    #'(lambda (k v)
-       (let ((var (copy-buffer (gethash k (avm-variables avm)))))
+       (let ((var (gethash k (avm-variables avm))))
 	 (when var
-           (when (buffer-shape var)
-             (assert (arrayp (buffer-value var)) () "Note(hikettei): avm/sync-tensors only expected an array to be tensor-buffer.
+           (setf var (copy-buffer var))
+           (when (and (buffer-shape var) (buffer-value var))
+             (assert (arrayp (buffer-value var)) () "gNote(hikettei): avm/sync-tensors only expected an array to be tensor-buffer.
 Please create a method here to copy a sequence for different hardware. (This should be the only point you have to add a patch)")
              (setf (buffer-value var) (copy-seq (buffer-value var))))
 	   (setf (tensor-buffer v) var))))

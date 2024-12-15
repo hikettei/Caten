@@ -99,9 +99,8 @@
     (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))
       (let ((memory-pool (getattr node :pool))) ;; the second run of :Allocation?
         (when (and (buffer-p memory-pool) shape)
-          (when (> (apply #'* (buffer-shape memory-pool)) 1) ;; not an scalar?
-            (when (equal (map 'list #'->number shape) (buffer-shape memory-pool)) ;; dynamic shape can changed the demanded size.
-              (return-from %impl memory-pool)))
+          (when (equal (map 'list #'->number shape) (buffer-shape memory-pool)) ;; dynamic shape can changed the demanded size.
+            (return-from %impl memory-pool))
           ;; TODO(hikettei) free the old memory allocation
           ))
       (setf (getattr node :pool)
