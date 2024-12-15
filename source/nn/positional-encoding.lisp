@@ -1,9 +1,11 @@
 (in-package :caten/nn)
 
-;; RoPE
-;; PositionalEncoding
-
-(defmodel (RoPE (dim &key (base 10000)))
+(defmodel (RoPE (dim &key (base 10000)) :documentation "
+```
+(RoPE dim &key (base 10000))
+```
+Implements Rotation Positional Encoding (RoPE).
+")
     ((dim dim :type fixnum)
      (base base :type fixnum)))
 
@@ -16,8 +18,6 @@
           (apply #'values (shape x))
         ;; Validate that dim matches head-dim / 2
         (assert (= dim (/ head-dim 2)) () "Mismatch: Provided dim (~A) does not match head-dim / 2 (~A)" dim (/ head-dim 2))
-
-        ;; Computations
         (let* ((indices (!mul (!const x 2) (!index-components (list dim))))  ; Shape: (dim)
                (exponents (!div indices (!const x head-dim)))                ; Shape: (dim)
                (base (!const x base))
@@ -37,7 +37,6 @@
                (x1-subscripts (make-list num-dimensions :initial-element t)))
           (setf (nth (- num-dimensions 1) x0-subscripts) '(0 1)) ; Select index 0
           (setf (nth (- num-dimensions 1) x1-subscripts) '(1 2)) ; Select index 1
-
           (let* ((x0 (apply #'!view xshaped x0-subscripts))
                  (x1 (apply #'!view xshaped x1-subscripts))
                  (rotated0 (!sub (!mul x0 cosine-reshaped) (!mul x1 sine-reshaped)))
@@ -54,6 +53,12 @@
                             (!concatenate -1 x-out-final last-elem))))))
               (!reshape final-result (shape x)))))))))
 
-(defun !rope (x dim)
+(defun !rope (x dim &key (base 10000))
+  "
+```
+(!rope x dim &key (base 10000))
+```
+Applies Rotation Positional Encoding (RoPE) to the input tensor `x` with the specified `dim`.
+"
   (declare (type tensor x))
-  (forward (rope dim) x))
+  (forward (rope dim :base base) x))

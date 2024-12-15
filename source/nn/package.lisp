@@ -91,8 +91,17 @@ Policy:
    #:!convnd
    #:convnd-weight
    #:convnd-bias)
+  ;; from criterion.lisp
+  (:export
+   #:L1NormLoss
+   #:!l1norm
+   #:MSELoss
+   #:!mse
+   #:CrossEntropyLoss
+   #:!cross-entropy)
   ;; from padding.lisp
   (:export
+   #:Padding
    #:!padding
    #:!padding2d)
   ;; from pool.lisp
@@ -101,6 +110,13 @@ Policy:
    #:!avgpool
    #:MaxPool
    #:!maxpool)
+  ;; from optimizers.lisp
+  (:export
+   #:AbstractOptimizer #:optimizer-param #:param
+   #:hook-optimizers
+   #:step-optimizer
+   #:zero-grad
+   #:SGD)
   ;; from linear.lisp
   (:export
    #:Linear))

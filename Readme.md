@@ -71,7 +71,35 @@ Finally, our lazy evaluation doesn’t make debugging any harder. If you want to
 (proceed (!sin (proceed (!cos (ax+b `(3 3) 1 0)))))
 ```
 
-### Training Models (Coming Soon)
+### Training Models (Experimental)
+
+```lisp
+(in-package :caten-user)
+
+(defsequence MLP (in-features hidden-dim out-features &key (activation #'!relu))
+	     (Linear in-features hidden-dim)
+	     (asnode activation)
+	     (Linear hidden-dim hidden-dim)
+	     (asnode activation)
+	     (Linear hidden-dim out-features))
+
+(defun build-mlp-model ()
+  (let* ((model (MLP 64 32 16))
+         (outputs (call model (make-tensor `(b 64) :from :x)))
+         (loss (!cross-entropy (!softmax outputs) (make-tensor `(b 16) :from :y)))
+         (runner (caten loss)))
+    (values runner (hook-optimizers runner (SGD :lr 1e-3)))))
+
+(defun train ()
+  (multiple-value-bind (runner optimizers) (build-mlp-model)
+    (dotimes (i 10)
+      (forward runner `(:x . ,(rand `(10 64))) `(:y . ,(rand `(10 16))) `(b . 10)) ;; replace with mnist dataloader
+      (backward runner)
+      (mapc #'step-optimizer optimizers)
+      (mapc #'zero-grad optimizers))))
+```
+
+Though our focus is still on the inference, we will support training models. (Still Experimental, Unstable.) I am not sure our backward scheduler can be expanded into more large and complicated graphs. :(
 
 ## Getting Started
 

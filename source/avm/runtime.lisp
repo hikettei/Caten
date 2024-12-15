@@ -27,6 +27,7 @@
   (tape-length (length (graph-nodes graph)) :type fixnum)
   (pc 0 :type fixnum)
   (variables (make-hash-table-from-params params) :type hash-table)
+  (params-to-optimize nil :type list)
   (dumped dumped :type boolean)) ;; If dumped: CLOS objects are removed which is unnecessary to reconstruct the executable graph.
 
 (defmethod make-load-form ((avm AVM) &optional env)

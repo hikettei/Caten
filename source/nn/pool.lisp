@@ -1,5 +1,4 @@
 (in-package :caten/nn)
-
 ;; Ref: https://github.com/tinygrad/tinygrad/blob/master/tinygrad/tensor.py#L1672
 (defun _pool (x k_ stride dilation &key (ceiling #'ceiling))
   (declare (type Tensor x))
@@ -45,7 +44,11 @@
          (reduced-shape (butlast (shape x) (length k_))))
     (!reshape (funcall f x :axis axis) reduced-shape)))
 ;; ~~ apis ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmodel (AvgPool (kernel-size &key (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling)))
+(defmodel (AvgPool (kernel-size &key (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling)) :documentation "
+```
+(AvgPool kernel-size &key (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling))
+```
+Implements Average Pooling layer.")
     ((kernel-size kernel-size)
      (stride stride)
      (dilation dilation)
@@ -57,11 +60,19 @@
     (make-pooling (car inputs) #'!mean kernel-size :stride stride :dilation dilation :padding padding :ceiling ceiling)))
 
 (defun !avgpool (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling))
-  "Applies average pooling over the tensor."
+  "
+```
+(!avgpool x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling))
+```
+Applies average pooling over the tensor."
   (declare (type list kernel-size))
   (forward (AvgPool kernel-size :stride stride :dilation dilation :padding padding :ceiling ceiling) x))
 
-(defmodel (MaxPool (kernel-size &key (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling)))
+(defmodel (MaxPool (kernel-size &key (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling)) :documentation "
+```
+(MaxPool kernel-size &key (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling))
+```
+Implements Max Pooling layer.")
     ((kernel-size kernel-size)
      (stride stride)
      (dilation dilation)
@@ -73,7 +84,11 @@
     (make-pooling (car inputs) #'!max kernel-size :stride stride :dilation dilation :padding padding :ceiling ceiling :pad-value (-inf))))
 
 (defun !maxpool (x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling))
-  "Applies max pooling over the tensor."
+  "
+```
+(!maxpool x &key (kernel-size `(2 2)) (stride nil) (dilation 1) (padding 0) (ceiling #'ceiling))
+```
+Applies max pooling over the tensor."
   (declare (type list kernel-size))
   (forward (MaxPool kernel-size :stride stride :dilation dilation :padding padding :ceiling ceiling) x))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -97,9 +97,17 @@
   (multiple-value-bind (shape stride)
       (parse-allocate-node node args)
     (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))
-      (realize-buffer graph (node->id node)
-		      :shape1 (map 'list #'->number shape)
-		      :stride1 (map 'list #'->number stride)))))
+      (let ((memory-pool (getattr node :pool))) ;; the second run of :Allocation?
+        (when (and (buffer-p memory-pool) shape)
+          (when (equal (map 'list #'->number shape) (buffer-shape memory-pool)) ;; dynamic shape can changed the demanded size.
+            (return-from %impl memory-pool))
+          ;; TODO(hikettei) free the old memory allocation
+          ))
+      (setf (getattr node :pool)
+            (realize-buffer graph (node->id node)
+	                    :shape1 (map 'list #'->number shape)
+		            :stride1 (map 'list #'->number stride)))
+      (getattr node :pool))))
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Load)) graph node args)
   (let* ((tgt (car args))

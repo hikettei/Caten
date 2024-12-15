@@ -447,12 +447,17 @@ The iseq obtained by lowering the Module must match the output destination speci
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
 	;; If the graph was created from FastGraph, the time-series order should be broken.
 	;; call verify-graph to sort them.
-	(make-avm graph (session-name session)
-		  (session-tid->tensor session)
-		  (if pause-backward-p
-		      toplevel-ids
-		      (map 'list #'std->lid (session-fw-out-ids session)))
-		  (when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session))))))))
+	(let ((avm (make-avm graph (session-name session)
+		             (session-tid->tensor session)
+		             (if pause-backward-p
+		                 toplevel-ids
+		                 (map 'list #'std->lid (session-fw-out-ids session)))
+		             (when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session))))))
+          (setf (avm-params-to-optimize avm)
+                (loop for i in iseq
+                      if (tensor-requires-grad i)
+                        collect i))
+          avm)))))
 
 (defun caten (tensors
 	      &key
@@ -498,6 +503,12 @@ Compiles the given tensors, returning an AVM struct.
     (flet ((ap (x &aux (tensor (or (gethash x (avm-id2tensor avm)))))
 	     (assert (tensor-p tensor) () "Forward: Attempted to reference the output variable ~a, but it is not defined in the avm id2tensor table: ~a~%~a"
 		     x (hash-table-keys (avm-id2tensor avm)) avm)
+             ;; Note: (forward model), (forward model) ... each outputs may share the same buffer. so the output needs to be copied.
+             (when (and (shape tensor) (buffer-value (tensor-buffer tensor)))
+               (assert (arrayp (buffer-value (tensor-buffer tensor))) () "Note(hikettei): avm/sync-tensors only expected an array to be tensor-buffer.
+Please create a method here to copy a sequence for different hardware. (This should be the only point you have to add a patch)")
+               (setf (tensor-buffer tensor) (copy-buffer (tensor-buffer tensor))
+                     (buffer-value (tensor-buffer tensor)) (copy-seq (buffer-value (tensor-buffer tensor)))))
 	     (%apply-proceed tensor)))
       (apply #'values (map 'list #'ap (avm-fw-outputs avm))))))
 

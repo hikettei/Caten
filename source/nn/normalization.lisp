@@ -1,8 +1,11 @@
 (in-package :caten/nn)
-;; must be compatible with: https://github.com/ml-explore/mlx/blob/main/python/mlx/nn/layers/normalization.py
-;; Batch Layer Group Norm
-;; RMSNorm
-(defmodel (BatchNorm (dims &key (eps 1e-5) (affine t) (bias t)))
+
+(defmodel (BatchNorm (dims &key (eps 1e-5) (affine t) (bias t)) :documentation "
+```
+(BatchNorm dims &key (eps 1e-5) (affine t) (bias t))
+```
+Batch Normalization Layer
+")
     ((affine (if (eql affine t) (linspace `(,@dims) 0 1 :requires-grad t) affine))
      (bias   (if (eql bias t)   (linspace `(,@dims) 0 0 :requires-grad t) bias))
      (eps eps)
@@ -18,8 +21,14 @@
              (x (if gamma (!mul x gamma) x))
              (ret (!mul x running-invstd)))
         (if beta (!add ret beta) ret)))))
-;; [FIXME] Currently BatchNorm is not working
+
 (defun !batch-norm (x &optional weight bias mean invstd (axis 1) (eps 1e-5))
+  "
+```
+(!batch-norm x &optional weight bias mean invstd (axis 1) (eps 1e-5))
+```
+Computes the batch normalization of a tensor `x` with optional `weight` and `bias` tensors.
+"
   (declare (type tensor x)
            (type (or null tensor) weight bias mean invstd))
   (let* ((axes (normalize-axes x axis))
@@ -27,7 +36,12 @@
          (model (BatchNorm dims :eps eps :affine weight :bias bias)))
     (forward model x mean invstd)))
 
-(defmodel (LayerNorm (dims &key (eps 1e-5) (affine t) (bias t)))
+(defmodel (LayerNorm (dims &key (eps 1e-5) (affine t) (bias t)) :documentation "
+```
+(LayerNorm dims &key (eps 1e-5) (affine t) (bias t))
+```
+Layer Normalization Layer
+")
     ((affine (if (eql affine t) (linspace `(,@dims) 0 1 :requires-grad t) affine))
      (bias   (if (eql bias t) (linspace `(,@dims) 0 0 :requires-grad t) bias))
      (eps eps)))
@@ -43,11 +57,22 @@
 	     (x (if beta  (!add x beta) x)))
 	x))))
 (defun !layer-norm (x normalized-shape &key (weight) (bias) (eps 1e-5))
+  "
+```
+(!layer-norm x normalized-shape &key (weight) (bias) (eps 1e-5))
+```
+Computes the layer normalization of a tensor `x` with optional `weight` and `bias` tensors.
+"
   (declare (type tensor x)
            (type (or null tensor) weight bias))
   (forward (LayerNorm normalized-shape :eps eps :affine weight :bias bias) x))
 
-(defmodel (RMSNorm (dims &key (eps 1e-5) (weight t)))
+(defmodel (RMSNorm (dims &key (eps 1e-5) (weight t)) :documentation "
+```
+(RMSNorm dims &key (eps 1e-5) (weight t))
+```
+Root Mean Square Normalization Layer
+")
     ((weight (if (eql weight t) (linspace `(,@dims) 0 1 :requires-grad t) weight))
      (eps eps)))
 (defmethod call ((op RMSNorm) &rest inputs)
@@ -59,7 +84,12 @@
           (!mul norm weight)
           norm))))
 (defun !rms-norm (x normalized-shape &key (weight) (eps 1e-5))
-  ""
+  "
+```
+(!rms-norm x normalized-shape &key (weight) (eps 1e-5))
+```
+Computes the root mean square normalization of a tensor `x` with optional `weight` tensor.
+"
   (declare (type tensor x)
            (type (or null tensor) weight))
   (forward (RMSNorm normalized-shape :eps eps :weight weight) x))

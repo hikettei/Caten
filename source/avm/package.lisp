@@ -32,7 +32,7 @@
   (:export
    #:AVM
    #:make-avm #:avm-graph #:avm-name #:avm-fw-outputs #:avm-bw-outputs #:copy-avm #:deepcopy-avm
-   #:avm-id2tensor #:avm-tape-length #:avm-pc #:avm-variables
+   #:avm-id2tensor #:avm-tape-length #:avm-pc #:avm-variables #:avm-params-to-optimize
    #:*vm*
    #:%realize
    #:vm/readvar

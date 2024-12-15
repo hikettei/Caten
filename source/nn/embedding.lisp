@@ -1,6 +1,11 @@
 (in-package :caten/nn)
-;; TODO: FlashAttention2
-(defmodel (Embedding (vocab-size embedding-dim))
+
+(defmodel (Embedding (vocab-size embedding-dim) :documentation "
+```
+(Embedding vocab-size embedding-dim)
+```
+Implements an embedding layer.
+")
     ((vocab-size vocab-size)
      (embedding-dim embedding-dim)
      (weight (normal `(,vocab-size ,embedding-dim) :mean 0 :std 1 :requires-grad t))))
@@ -20,7 +25,7 @@
 	  (!reshape out shp))))))
 
 (in-package :caten/nn.test)
-;; Fuse Index-Components in Multiexpr
+
 (deftest test-embedding
   (with-no-grad
     (let* ((*default-order* :row)

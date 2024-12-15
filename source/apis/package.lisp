@@ -57,7 +57,7 @@
    #:float-type-of
    )
   ;; from model.lisp
-  (:export #:defmodel #:call #:defcall)
+  (:export #:defmodel #:call #:defcall #:defsequence #:asnode)
   ;; from conditions.lisp
   (:export
    #:caten-forward-error

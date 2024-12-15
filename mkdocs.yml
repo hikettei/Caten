@@ -63,7 +63,17 @@ nav:
       - Facet APIs: packages/caten.apis.facet_apis.md
       - StateDict: packages/caten.apis.state-dict.md
     - caten/avm: packages/caten.avm.md
-    - caten/nn: packages/caten.nn.md
+    - caten/nn:
+      - Activation: packages/caten.nn.activations.md
+      - Convolution: packages/caten.nn.convolutions.md
+      - Criterion: packages/caten.nn.criterion.md
+      - Embedding: packages/caten.nn.embeddings.md
+      - Linear: packages/caten.nn.linears.md
+      - Normalization: packages/caten.nn.normalizations.md
+      - Padding: packages/caten.nn.padding.md
+      - Pooling: packages/caten.nn.pooling.md
+      - Encoding: packages/caten.nn.encoding.md
+      - Optimizers: packages/caten.nn.optimizers.md
   - Ready to use packages:
     - Overview: packages/caten.apps.md
     - caten/apps.gpt2: packages/caten.apps.gpt2.md
