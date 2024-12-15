@@ -43,10 +43,11 @@ markdown_extensions:
 site_name: Caten Documentation
 
 nav:
-  - Home: index.md
-  - Quickstart: quickstart.md
-  - Development: development.md
-  - API Reference:
+  - Home:
+    - Overview: index.md
+    - Quickstart: quickstart.md
+    - Developer: developer.md
+  - API References:
     - caten/air: packages/caten.air.md
     - caten/aasm: packages/caten.aasm.md
     - caten/codegen: packages/caten.codegen.md
@@ -64,10 +65,10 @@ nav:
       - StateDict: packages/caten.apis.state-dict.md
     - caten/avm: packages/caten.avm.md
     - caten/nn: packages/caten.nn.md
-  - Ready to use packages:
+  - Applications:
     - Overview: packages/caten.apps.md
     - caten/apps.gpt2: packages/caten.apps.gpt2.md
-  - External Packages:
+  - Extensions:
     - caten/gguf: packages/caten.external.gguf.md
     - caten/oonx: packages/caten.external.onnx.md
     - caten/llm: packages/caten.external.llm.md
