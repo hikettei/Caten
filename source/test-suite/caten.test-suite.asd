@@ -9,6 +9,7 @@ Tests that are not related to the core functionality of Caten or are time-consum
 	       (:file "helpers")
                (:file "test-ops")
                (:file "test-autodiff")
+               (:file "test-optim")
                (:file "test-simplifier")
                (:file "test-view")
                (:file "test-regression-test")
