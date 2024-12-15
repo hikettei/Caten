@@ -110,6 +110,10 @@ Policy:
    #:!avgpool
    #:MaxPool
    #:!maxpool)
+  ;; from optimizers.lisp
+  (:export
+   #:AbstractOptimizer #:optimizer-param #:param
+   #:step-optimize)
   ;; from linear.lisp
   (:export
    #:Linear))
