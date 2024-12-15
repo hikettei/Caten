@@ -78,7 +78,6 @@ A macro to write `defmethod call` in a more concise way.
                (declare (ignorable ,@(map 'list (compose #'intern #'princ-to-string) keys)))
                ,@body)))))))
 
-
 (defmacro defsequence (name (&rest args) &rest nodes)
   "
 ```lisp
@@ -86,8 +85,49 @@ A macro to write `defmethod call` in a more concise way.
 ```
 
 Defines a model which the definition is given as a sequence of nodes.
-"
-  
-  )
 
-(defun asnode (function &rest rest-args))
+### Example
+
+```lisp
+(defsequence MLP (in-features hidden-dim out-features &key (activation #'!relu))
+	     (Linear in-features hidden-dim)
+	     (asnode activation)
+	     (Linear hidden-dim hidden-dim)
+	     (asnode activation)
+	     (Linear hidden-dim out-features))
+```
+"
+  (flet ((nth-layer (n) (intern (string-upcase (format nil "~a.~a" name n)))))
+    `(progn
+       (defmodel (,name (,@args))
+           (,@(loop for node in nodes
+                    for nth upfrom 0
+                    for name = (nth-layer nth)
+                    collect `(,name ,node))))
+       (defmethod call ((model ,name) &rest inputs)
+         (let ((out (car inputs)))
+           ,@(loop for nth upfrom 0
+                   for node in nodes
+                   for name = (nth-layer nth)
+                   collect `(setf out (forward (slot-value model ',name) out)))
+           out)))))
+
+(defmodel (Lambda-Node (function rest-args))
+    ((function function) (rest-args rest-args)))
+
+(defmethod call ((model Lambda-Node) &rest inputs)
+  (assert (= (length inputs) 1) () "asnode only accepts one input!")
+  (apply (slot-value model 'function) inputs (slot-value model 'rest-args)))
+
+(defun asnode (function &rest rest-args)
+  "
+```
+(asnode function &rest rest-args)
+```
+
+Wraps the function as a callable node by `(forward ...)`
+
+rest-args is a place to pass additional arguments like: `(asnode #'!leaky-relu :neg-slope 1e-2)`
+"
+  (declare (type function function))
+  (Lambda-Node function rest-args))
