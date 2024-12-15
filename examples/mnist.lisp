@@ -56,17 +56,12 @@ X: Visible Elements, =: Invisible Elements"
 (caten/air:pprint-graph (tensor-lowered-graph *loss*)) ;; To see the lowered graph in REPL
 (caten/air:->dot (tensor-graph *loss*))                ;; To see the network architecture in REPL (graphviz is required)
 
-(defun run-epoch (runner optimizer &key (batch-size 100) (data-size (nth 0 (shape *train-data*))))
+(defun run-epoch (runner optimizers &key (batch-size 100) (data-size (nth 0 (shape *train-data*))))
   (loop for from upfrom 0 below data-size by batch-size
         for to = (min data-size (+ from batch-size)) do
           (format t "from=~a, to=~a~%" from to)
-          (forward runner `(from . ,from) `(to . ,to))
-          (error "STOP")))
-
-;; (run-epoch *runner* *optimizer*)
-;; TODO
-;; - [ ] Fix exceessive memory usage
-;; - [ ] commit ./mnist_data
-;; - [ ] commit this file
-;; - [ ] add this file to Readme.MD
-
+          (forward runner `(from . ,from) `(to . ,to)) ;; Without AutoScheduler it is ridiculously slow. Currently not usable
+          (backward runner)
+          (mapc #'step-optimizer optimizers)
+          (mapc #'zero-grad optimizers)))
+;; (run-epoch *runner* *optimizer*) Currently broken
