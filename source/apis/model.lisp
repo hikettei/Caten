@@ -110,7 +110,8 @@ Defines a model which the definition is given as a sequence of nodes. Note that 
            ,@(loop for nth upfrom 0
                    for node in nodes
                    for name = (nth-layer nth)
-                   collect `(setf out (forward (slot-value model ',name) out)))
+                   ;; TODO(hikettei) Replace call with forward once if we resolved a bug in nested forward autodiff.
+                   collect `(setf out (call (slot-value model ',name) out)))
            out)))))
 
 (defmodel (Lambda-Node (function rest-args))
