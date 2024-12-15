@@ -15,6 +15,7 @@
    (:file "embedding")
    (:file "linear")
    (:file "positional-encoding")
+   (:file "optimizers")
    (:file "documentation"))
   :perform (test-op (o s) (let ((result (uiop:symbol-call (find-package :rove) :run s :style :spec)))
 			    (assert (or (null (uiop:getenv "CI")) result)))))
