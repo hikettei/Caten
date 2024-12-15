@@ -5,7 +5,7 @@
 						 &key
 						   (dtype *default-float*) (order *default-order*) (id (gensym "TID"))
 						   (variables nil) (views nil) (requires-grad nil)
-						   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD") :initial-element 0.0)))
+						   (grad (when requires-grad (make-tensor shape :dtype dtype :order order :requires-grad nil :id (gensym "GRAD"))))
 						   (grad-id (when requires-grad (gensym "TGRAD")))
                                                    (tracker (start-tracking shape :order order)))))
   "
