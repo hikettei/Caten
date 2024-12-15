@@ -28,18 +28,25 @@
 
 (docs:define-page ("Convolutions" "packages/caten.nn.convolutions.md")
   (docs:title "Convolutions")
-  (docs:body "TODO"))
+  (docs:doc/class "ConvND" 'convnd)
+  (docs:doc/function "!convnd" #'!convnd))
 
 (docs:define-page ("Embeddings" "packages/caten.nn.embeddings.md")
   (docs:title "Embeddings")
-  (docs:body "TODO"))
+  (docs:doc/class "Embedding" 'embedding))
 
 (docs:define-page ("Linear" "packages/caten.nn.linears.md")
-  (docs:title "Linear"))
+  (docs:title "Linear")
+  (docs:doc/class "Linear" 'linear))
 
 (docs:define-page ("Normalizations" "packages/caten.nn.normalizations.md")
   (docs:title "Normalizations")
-  (docs:body "TODO"))
+  (docs:doc/class "BatchNorm" 'batchnorm)
+  (docs:doc/function "!batch-norm" #'!batch-norm)
+  (docs:doc/class "LayerNorm" 'layernorm)
+  (docs:doc/function "!layer-norm" #'!layer-norm)
+  (docs:doc/class "RMSNorm" 'rmsnorm)
+  (docs:doc/function "!rms-norm" #'!rms-norm))
 
 (docs:define-page ("Padding" "packages/caten.nn.padding.md")
   (docs:title "Padding")

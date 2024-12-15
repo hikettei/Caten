@@ -24,7 +24,12 @@
 		    :bias bias))
     ((weight :initform nil :accessor convnd-weight)
      (bias :initform nil :accessor convnd-bias))
-    :documentation "Applies a convolution over a tensor with a given `weight` and optional `bias`.
+    :documentation "
+```
+(ConvND in-channels out-channels kernel-size &key (groups 1) (stride 1) (dilation 1) (padding 0) (bias t))
+```
+
+Applies a convolution over a tensor with a given `weight` and optional `bias`.
 NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions and instead works for any number of dimensions.
 "
     :impl impl/conv
