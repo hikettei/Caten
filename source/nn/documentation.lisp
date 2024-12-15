@@ -50,13 +50,19 @@
 
 (docs:define-page ("Padding" "packages/caten.nn.padding.md")
   (docs:title "Padding")
-  (docs:body "TODO"))
+  (docs:doc/class "Padding" 'padding)
+  (docs:doc/function "!padding" #'!padding)
+  (docs:doc/function "!padding2d" #'!padding2d))
 
 (docs:define-page ("Pooling" "packages/caten.nn.pooling.md")
   (docs:title "Pooling")
-  (docs:body "TODO"))
+  (docs:doc/class "AvgPool" 'avgpool)
+  (docs:doc/function "!avgpool" #'!avgpool)
+  (docs:doc/class "MaxPool" 'maxpool)
+  (docs:doc/function "!maxpool" #'!maxpool))
 
 (docs:define-page ("Encoding" "packages/caten.nn.encoding.md")
   (docs:title "Encoding")
-  (docs:body "TODO"))
+  (docs:doc/class "RoPE" 'RoPE)
+  (docs:doc/function "!rope" #'!rope))
 

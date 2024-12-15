@@ -93,6 +93,7 @@ Policy:
    #:convnd-bias)
   ;; from padding.lisp
   (:export
+   #:Padding
    #:!padding
    #:!padding2d)
   ;; from pool.lisp
