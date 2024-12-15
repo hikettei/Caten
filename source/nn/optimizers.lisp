@@ -22,19 +22,22 @@ A trigger to update the parameters of the optimizer. It is not recommended to co
 (hook-optimizers avm hooker)
 ```
 
-This function searches for all Allocate node in the avm-graph, and if there is a tensor that requires-grad=T, it will call the function `hooker` with the tensor as the argument.
+This function is used to hook the optimizers in the recognised parameters in avm-params-to-optimize. hooker is an function that takes one argument, which is the tensor that requires-grad=T, returns the AbstractOptimizer.
 
 A list of created optimizers are returned.
-
-hooker is an function that takes one argument, which is the tensor that requires-grad=T, returns the AbstractOptimizer.
 "
   (declare (type caten/avm:avm avm) (type function hooker))
   (map
    'list
-   #'(lambda (x) (assert (subtypep x 'AbstractOptimizer) () "hook-optimizers: ~a is not an AbstractOptimizer!" x) x)
-   (loop for node in (graph-nodes (caten/avm:avm-graph avm))
-         if (and (eql (node-type node) :Allocate) (getattr node :from) (tensor-requires-grad (getattr node :from)))
-           collect (funcall hooker (getattr node :from)))))
+   (compose
+    #'(lambda (x) (assert (subtypep (class-of x) 'AbstractOptimizer) () "hook-optimizers: ~a is not an AbstractOptimizer!" x) x)
+    hooker)
+   (caten/avm:avm-params-to-optimize avm)))
+
+(defun flatten-buffer (tensor)
+  (if (= (ctx:getenv :JIT) 0)
+      (proceed (!reshape tensor (apply #'* (shape tensor))))
+      tensor))
 
 (defclass SGD (AbstractOptimizer)
   ((lr :initarg :lr))
@@ -53,6 +56,7 @@ where the initarg `:lr` is the learning rate.
 
 (defmethod step-optimizer ((optimizer SGD))
   (with-slots ((param param) (lr lr)) optimizer
-    (sgd-impl (dtype-of param) (apply #'* (shape param)) param (grad param) lr)))
+    (sgd-impl (dtype-of param) (apply #'* (shape param)) (flatten-buffer param) (flatten-buffer (grad param)) lr)))
 ;; [TODO] Adam
 ;; [TODO] End-to-end training example
+;; [TODO] Doc

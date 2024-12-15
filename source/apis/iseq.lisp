@@ -447,12 +447,17 @@ The iseq obtained by lowering the Module must match the output destination speci
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
 	;; If the graph was created from FastGraph, the time-series order should be broken.
 	;; call verify-graph to sort them.
-	(make-avm graph (session-name session)
-		  (session-tid->tensor session)
-		  (if pause-backward-p
-		      toplevel-ids
-		      (map 'list #'std->lid (session-fw-out-ids session)))
-		  (when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session))))))))
+	(let ((avm (make-avm graph (session-name session)
+		             (session-tid->tensor session)
+		             (if pause-backward-p
+		                 toplevel-ids
+		                 (map 'list #'std->lid (session-fw-out-ids session)))
+		             (when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session))))))
+          (setf (avm-params-to-optimize avm)
+                (loop for i in iseq
+                      if (tensor-requires-grad i)
+                        collect i))
+          avm)))))
 
 (defun caten (tensors
 	      &key
