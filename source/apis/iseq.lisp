@@ -490,9 +490,10 @@ Compiles the given tensors, returning an AVM struct.
    #'(lambda (k v)
        (let ((var (gethash k (avm-variables avm))))
 	 (when var
+           ;; Note: (forward model), (forward model) ... each outputs may share the same buffer. so the output needs to be copied.
            (setf var (copy-buffer var))
            (when (and (buffer-shape var) (buffer-value var))
-             (assert (arrayp (buffer-value var)) () "gNote(hikettei): avm/sync-tensors only expected an array to be tensor-buffer.
+             (assert (arrayp (buffer-value var)) () "Note(hikettei): avm/sync-tensors only expected an array to be tensor-buffer.
 Please create a method here to copy a sequence for different hardware. (This should be the only point you have to add a patch)")
              (setf (buffer-value var) (copy-seq (buffer-value var))))
 	   (setf (tensor-buffer v) var))))
