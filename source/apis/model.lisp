@@ -84,7 +84,7 @@ A macro to write `defmethod call` in a more concise way.
 (defsequence (name (&rest args) &optional docstring &rest nodes))
 ```
 
-Defines a model which the definition is given as a sequence of nodes.
+Defines a model which the definition is given as a sequence of nodes. Note that models defined by this macro only accept one input.
 
 ### Example
 
@@ -105,6 +105,7 @@ Defines a model which the definition is given as a sequence of nodes.
                     for name = (nth-layer nth)
                     collect `(,name ,node))))
        (defmethod call ((model ,name) &rest inputs)
+         (assert (= (length inputs) 1) () "defsequence only accepts one input!")
          (let ((out (car inputs)))
            ,@(loop for nth upfrom 0
                    for node in nodes
@@ -117,7 +118,7 @@ Defines a model which the definition is given as a sequence of nodes.
 
 (defmethod call ((model Lambda-Node) &rest inputs)
   (assert (= (length inputs) 1) () "asnode only accepts one input!")
-  (apply (slot-value model 'function) inputs (slot-value model 'rest-args)))
+  (apply (slot-value model 'function) (car inputs) (slot-value model 'rest-args)))
 
 (defun asnode (function &rest rest-args)
   "
@@ -125,7 +126,7 @@ Defines a model which the definition is given as a sequence of nodes.
 (asnode function &rest rest-args)
 ```
 
-Wraps the function as a callable node by `(forward ...)`
+Wraps the function as a callable node by `(forward ...)`. function is a function which takes one argument and returns one value.
 
 rest-args is a place to pass additional arguments like: `(asnode #'!leaky-relu :neg-slope 1e-2)`
 "
