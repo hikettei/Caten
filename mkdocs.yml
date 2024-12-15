@@ -73,6 +73,7 @@ nav:
       - Padding: packages/caten.nn.padding.md
       - Pooling: packages/caten.nn.pooling.md
       - Encoding: packages/caten.nn.encoding.md
+      - Optimizers: packages/caten.nn.optimizers.md
   - Ready to use packages:
     - Overview: packages/caten.apps.md
     - caten/apps.gpt2: packages/caten.apps.gpt2.md

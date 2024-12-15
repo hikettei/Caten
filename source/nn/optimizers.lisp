@@ -66,6 +66,3 @@ Returns a lambda function that takes one argument, which is the parameter tensor
 (defmethod step-optimizer ((optimizer SGD))
   (with-slots ((param param) (lr lr)) optimizer
     (sgd-impl (dtype-of param) (apply #'* (shape param)) (flatten-buffer param) (flatten-buffer (grad param)) lr)))
-;; [TODO] Adam
-;; [TODO] End-to-end training example
-;; [TODO] Doc

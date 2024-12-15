@@ -88,7 +88,7 @@ Finally, our lazy evaluation doesn’t make debugging any harder. If you want to
          (outputs (call model (make-tensor `(b 64) :from :x)))
          (loss (!cross-entropy (!softmax outputs) (make-tensor `(b 16) :from :y)))
          (runner (caten loss)))
-     (values runner (hook-optimizers runner (SGD :lr 1e-3)))))
+    (values runner (hook-optimizers runner (SGD :lr 1e-3)))))
 
 (defun train ()
   (multiple-value-bind (runner optimizers) (build-mlp-model)

@@ -75,3 +75,11 @@
   (docs:doc/class "RoPE" 'RoPE)
   (docs:doc/function "!rope" #'!rope))
 
+(docs:define-page ("Optimizers" "packages/caten.nn.optimizers.md")
+  (docs:title "Optimizers")
+  (docs:doc/class "AbstractOptimizer" 'abstractoptimizer)
+  (docs:doc/generic "step-optimizer" 'step-optimizer)
+  (docs:doc/function "hook-optimizers" 'hook-optimizers)
+  (docs:doc/class "SGD" 'sgd)
+  (docs:doc/function "SGD" 'sgd))
+
