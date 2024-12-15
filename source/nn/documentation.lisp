@@ -38,7 +38,7 @@
   (docs:doc/class "MSELoss" 'mseloss)
   (docs:doc/function "!mse" #'!mse)
   (docs:doc/class "CrossEntropyLoss" 'crossentropyloss)
-  (docs:doc/class "!cross-entropy" #'!cross-entropy))
+  (docs:doc/function "!cross-entropy" #'!cross-entropy))
 
 (docs:define-page ("Embeddings" "packages/caten.nn.embeddings.md")
   (docs:title "Embeddings")
