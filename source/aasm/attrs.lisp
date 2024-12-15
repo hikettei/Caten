@@ -235,10 +235,12 @@ out = allocate(*shape, *stride)
 - dtype[dtype-t] dtype to allocate.
 - nrank[(unsigned-byte 32)] a rank of tensor. If set to 0, allocates a scalar.
 - from[symbol or buffer or null] If specified, instead of allocating, an already allocated Buffer is used. If a symbol is specified, a buffer is already defined in the variable table of AVM. If buffer is specified, use the buffer directly.
+- pool[null or Buffer] A place to store the result of the previous allocation. Allocation will be performed only after this slot is set to nil, or size are different due to dynamic shape.
 "
 	 :slots ((nrank :type (unsigned-byte 32))
 		 (dtype :type dtype-t)
-		 (from :initform nil)))
+		 (from :initform nil)
+                 (pool :initform nil :type (or null Buffer))))
 
 (defnode (:Buffer :LOAD) (BufferOps JITAble)
 	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
