@@ -8,6 +8,7 @@
   ((:file "package")
    (:file "activations")
    (:file "conv")
+   (:file "criterion")
    (:file "padding")
    (:file "pool")
    (:file "normalization")
