@@ -31,6 +31,15 @@
   (docs:doc/class "ConvND" 'convnd)
   (docs:doc/function "!convnd" #'!convnd))
 
+(docs:define-page ("Criterion" "packages/caten.nn.criterion.md")
+  (docs:title "Criterion")
+  (docs:doc/class "L1NormLoss" 'l1normloss)
+  (docs:doc/function "!l1norm" #'!l1norm)
+  (docs:doc/class "MSELoss" 'mseloss)
+  (docs:doc/function "!mse" #'!mse)
+  (docs:doc/class "CrossEntropyLoss" 'crossentropyloss)
+  (docs:doc/class "!cross-entropy" #'!cross-entropy))
+
 (docs:define-page ("Embeddings" "packages/caten.nn.embeddings.md")
   (docs:title "Embeddings")
   (docs:doc/class "Embedding" 'embedding))

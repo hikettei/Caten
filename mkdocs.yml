@@ -66,6 +66,7 @@ nav:
     - caten/nn: packages/caten.nn.md
       - Activation: packages/caten.nn.activations.md
       - Convolution: packages/caten.nn.convolutions.md
+      - Criterion: packages/caten.nn.criterion.md
       - Embedding: packages/caten.nn.embeddings.md
       - Linear: packages/caten.nn.linears.md
       - Normalization: packages/caten.nn.normalizations.md

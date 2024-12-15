@@ -91,6 +91,14 @@ Policy:
    #:!convnd
    #:convnd-weight
    #:convnd-bias)
+  ;; from criterion.lisp
+  (:export
+   #:L1NormLoss
+   #:!l1norm
+   #:MSELoss
+   #:!mse
+   #:CrossEntropyLoss
+   #:!cross-entropy)
   ;; from padding.lisp
   (:export
    #:Padding
