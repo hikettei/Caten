@@ -483,7 +483,7 @@ Runs the JIT compilation for the given AVM."
                        (print-blueprint (getattr x :blueprint) stream))
                      ;; 8. Lower into Polyhedral IR
                      (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
-                       (format stream "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
+                       (format stream "=====> Skipping Auto Scheduler (The memory access pattern is not an affine, or scalar kernel)~%"))
                      (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
                        (when (>= (ctx:getenv :JIT_DEBUG) 2)
                          (format stream "=====> Lowering to Polyhedral IR~%"))
