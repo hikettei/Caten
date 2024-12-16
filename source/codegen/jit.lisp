@@ -47,8 +47,7 @@ caten/codegen overview:
    #:buffer-stride
    #:buffer-dtype
    #:buffer-inferred-permute
-   #:buffer-orig-buffer-shape
-   #:%impl)
+   #:buffer-orig-buffer-shape)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer)
@@ -98,7 +97,8 @@ caten/codegen overview:
    #:compiled-kernel-caller
    #:compiled-kernel-raw-caller
    #:compiled-kernel-device
-   #:compiled-kernel-code))
+   #:compiled-kernel-code
+   #:compiled-kernel-out-positions))
 
 (in-package :caten/codegen/jit)
 ;; ~~ Compiledop instruction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
