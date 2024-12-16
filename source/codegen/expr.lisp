@@ -9,6 +9,7 @@
    #:expr-depends-on
    #:expr-graft-after
    #:expr-graph
+   #:copy-expr
    #:Expr
    #:expr-out
    #:make-expr

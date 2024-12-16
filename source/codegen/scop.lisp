@@ -36,6 +36,23 @@
 (defun expr-affine-p (expr)
   (every #'(lambda (x) (find (node-type x) `(:< :ALLOCATE :LOAD :ADD :NEG))) (graph-nodes (expr-graph expr))))
 
+(defun expr-detach-loop-bound (expr)
+  "If :below is this format
+```
+_gid < BOUND
+```
+This function returns the BOUND, otherwise returns error.
+"
+  (declare (type expr expr))
+  (assert (eql :< (node-type (expr-out expr))) () "Cannot dump the loop bound from the expression ~a" expr)
+  (let ((gid (id->value (expr-graph expr) (nth 1 (node-reads (expr-out expr)))))
+        (bound (id->value (expr-graph expr) (nth 2 (node-reads (expr-out expr))))))
+    ;; TODO(hikettei): wanna assert (getattr gid :value) starts with _gid_xx?
+    (assert (eql (node-type gid) :LOAD) () "The first argument of the loop bound must be a LOAD node.")
+    (let ((new-expr (copy-expr expr)))
+      (setf (expr-out new-expr) bound)
+      new-expr)))
+
 (defmethod render-domain-body-from-group ((node Node) symbolics
                                           &aux
                                             (idx2domain (make-hash-table))
@@ -74,7 +91,7 @@
                                       collect
                                       (if (expr-affine-p (getattr dom :below))
                                           (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
-                                          (multiple-value-bind (expr-id new-p) (stash-expr (getattr dom :below))
+                                          (multiple-value-bind (expr-id new-p) (stash-expr (expr-detach-loop-bound (getattr dom :below)))
                                             (when new-p (push expr-id extra-symbolics))
                                             (format nil "0 <= ~(~a~) < ~(~a~)" (getattr dom :idx) expr-id)))
                                       collect " and ")
@@ -99,7 +116,7 @@
                       collect
                       (if (expr-affine-p (getattr dom :below))
                           (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
-                          (multiple-value-bind (expr-id new-p) (stash-expr (getattr dom :below))
+                          (multiple-value-bind (expr-id new-p) (stash-expr (expr-detach-loop-bound (getattr dom :below)))
                             (assert (null new-p) () "~a was not cached in the initial run of the function render-domain-body-from-group?" (getattr dom :below))
                             (format nil "0 <= ~(~a~) < ~(~a~)" (getattr dom :idx) expr-id)))
                       collect " and "))))
