@@ -415,8 +415,7 @@ caten/codegen overview:
                     (lparallel:make-kernel PARALLEL
                                            :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)
                                                        (caten/common.logger::*progress* . ,caten/common.logger::*progress*)
-                                                       (caten/isl::*isl-object-table* . ,caten/isl::*isl-object-table*)
-                                                       (caten/isl::*context* . ,caten/isl::*context*)))))
+                                                       (caten/isl::*isl-object-table* . ,caten/isl::*isl-object-table*)))))
               (%isl-safe-pmapc PARALLEL f list-to-lower)
               (mapc f list-not-to-lower))
             (mapc f list))))))

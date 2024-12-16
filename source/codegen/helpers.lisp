@@ -130,7 +130,9 @@ Otherwise -> they are passed as a buffer."
         append (node-reads node)))
 
 (defun %isl-safe-pmapc (n-cores f list)
-  (flet ((op (obj) (mapc f obj)))
+  (flet ((op (obj)
+           (caten/isl:with-isl-context
+             (mapc f obj))))
     (assert (>= (length list) n-cores) () "%isl-safe-pmapc: Insufficient number of list.")
     (let* ((elements-per-core (floor (length list) n-cores))
            (reminder (mod (length list) n-cores)))
