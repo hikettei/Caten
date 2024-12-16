@@ -163,14 +163,6 @@ caten/codegen overview:
                      collect (getattr item :dtype))
              :cached-p (if (getattr si :cache-name) t nil)))
 
-(defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
-  (let ((info (getattr node :kernel-info)))
-    ;; (For details, see coerce-dtyped-buffer)
-    (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
-      (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
-      (apply (compiled-kernel-caller info) args)
-      (apply #'values (map 'list #'(lambda (x) (nth x args)) (compiled-kernel-out-positions info))))))
-
 (defun timefy (name time)
   (if (= 0 time) name (intern (format nil "~(~a~)_~a" name time))))
 
