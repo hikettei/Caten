@@ -41,9 +41,9 @@ jobs:
       - name: Transformer Graph Simplification (N<=12, JIT=0, AUTO_SCHEDULER=0)
         run: PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 36 0 transformer_simplifier_plot.png
       - name: Transformer Scheduling (N<=12, JIT=1, AUTO_SCHEDULER=0)
-        run: PARALLEL=4 PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=0 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_no_auto_sched_plot.png
+        run: PARALLEL=4 PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_no_auto_sched_plot.png
 #      - name: Transformer Auto Scheduler (N<=12, JIT=1, AUTO_SCHEDULER=1)
-#        run: PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 24 1 transformer_simplifier_auto_scheduler_plot.png
+#        run: PROFILE_SIMPLIFIER=1 AUTO_SCHEDULER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 24 1 transformer_simplifier_auto_scheduler_plot.png
   ONNX_Optimization:
     name: ONNX Optimization
     runs-on: ubuntu-latest
