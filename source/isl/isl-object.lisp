@@ -75,7 +75,8 @@ of type OBJECT-NAME."
                                              (when (= 1 (ctx:getenv :DEBUG_GC))
                                                (format t "DEBUG_GC=1 | (caten/isl) %free [~a] ~a~%" ',name (cffi:pointer-address handle)))
 					     (remhash (cffi:pointer-address handle) *isl-object-table*)
-					     (,%free handle))))))))
+					     ;; (,%free handle)
+                                             )))))))
        ,@(when %copy
            `((defmethod copy ((,name ,name))
                (,%make (,%copy (isl-object-handle ,name)))))))))
