@@ -10,8 +10,8 @@
 	(progn
 	  (assert (or (symbolp from) (buffer-p from)) () ":from attribute for ~a must be a realized buffer! (check the graph construction process.)" node)
 	  (if (buffer-p from)
-	      from
+	      (progn (report-allocation t (buffer-dtype from) (buffer-shape from)) from)
 	      (let ((val (vm/readvar *vm* from)))
 		(if (buffer-p val)
-		    val
+		    (progn (report-allocation t (buffer-dtype val) (buffer-shape val)) val)
 		    (error "When Processing ~a, the variable ~a should be declared in the VM, and it should be a variable, getting ~a." node from val))))))))

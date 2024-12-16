@@ -84,10 +84,20 @@
 		for write in writes
 		do (vm/setvar avm write (vm/readvar avm read)))
 	  (return-from vm/step))	  
-        (let ((out (multiple-value-list
+        (let ((t1 (get-internal-real-time))
+              (out (multiple-value-list
 		    (handler-bind ((error #'(lambda (cond) (error 'avm-runtime-error :avm avm :cond cond))))
-		      (%impl *device* type (avm-graph avm) node (map 'list #'->real reads))))))
+		      (%impl *device* type (avm-graph avm) node (map 'list #'->real reads)))))
+              (t2 (get-internal-real-time)))
 	  (assert (or (null writes) (= (length out) (length writes))) () "The length of output ~a does not match ~a" out node)
+          (when (= 1 (ctx:getenv :PROFILE))
+            (let ((sec (float (/ (- t2 t1) internal-time-units-per-second))))
+              (case (node-type node)
+                (:Allocate (incf *allocate-time* sec))
+                (:JIT_KERNEL nil)
+                (otherwise
+                 (incf *vm-time* sec)
+                 (format t "~a |    VM    | ~,6fs | ~a ~%" (render-avm-position avm) sec (node-type node))))))
 	  (loop for real in out
 		for place in writes
 		do (vm/setvar avm place real))
@@ -95,23 +105,27 @@
 	  (incf (avm-pc avm))))))
   t)
 
-(defun vm/forward (avm)
+(defun vm/forward (avm &aux (*jit-time* 0.0) (*vm-time* 0.0) (*allocate-time* 0.0))
   (declare (type avm avm))
   (setf (avm-pc avm) 0)
+  (start-profile)
   (flet ((finish ()
+           (report-profile-result)
 	   (return-from vm/forward (apply #'values (map 'list #'(lambda (x) (vm/readvar avm x)) (avm-fw-outputs avm))))))
     (loop while (< (avm-pc avm) (avm-tape-length avm)) do
       (unless (vm/step avm) (finish)))
     (finish)))
 
-(defun vm/backward (avm)
+(defun vm/backward (avm &aux (*jit-time* 0.0) (*vm-time* 0.0) (*allocate-time* 0.0))
   (declare (type avm avm))
   (let ((current-tape (nth (avm-pc avm) (graph-nodes (avm-graph avm)))))
     (when (null current-tape) (return-from vm/backward))
     (assert (eql (node-type current-tape) :Pause/backward) ()
 	    "vm/backward: invaild pc counter. Before doing (backward avm), you should run the forward pass first.")
     (incf (avm-pc avm)))
+  (start-profile)
   (loop while (< (avm-pc avm) (avm-tape-length avm)) do (vm/step avm))
+  (report-profile-result)
   t)
 
 (defun vm/set-params (avm params)
