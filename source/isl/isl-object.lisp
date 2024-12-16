@@ -25,8 +25,7 @@ of type OBJECT-NAME."
   `(getf (symbol-plist ,object-name) '%free))
 
 (defun isl-object-name-p (x)
-  (and (symbolp x)
-       (not (null (isl-object-%make x)))))
+  (and (symbolp x) (not (null (isl-object-%make x)))))
 
 ;;; This hash table is used in each ISL object constructor to ensure that
 ;;; each handle has exactly one corresponding wrapper object.
@@ -75,7 +74,8 @@ of type OBJECT-NAME."
                                            (lambda ()
                                              ;; (format t "Free: [~a] ~a~%" ',name (cffi:pointer-address handle))
 					     (remhash (cffi:pointer-address handle) *isl-object-table*)
-					     (,%free handle))))))))
+					     ;; (,%free handle)
+                                             )))))))
        ,@(when %copy
            `((defmethod copy ((,name ,name))
                (,%make (,%copy (isl-object-handle ,name)))))))))
