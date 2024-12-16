@@ -136,7 +136,7 @@ Usage:
      0 :int identity
      "Set to 1 to indicate that it runs on GitHub Actions.")
     (:AUTO_SCHEDULER
-     0 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
+     1 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
      "Set to 1 to optimize using caten/codegen/polyhedral during JIT execution.")
     (:JIT
      0 :int identity
