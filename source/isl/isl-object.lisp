@@ -30,10 +30,13 @@ of type OBJECT-NAME."
 ;;; This hash table is used in each ISL object constructor to ensure that
 ;;; each handle has exactly one corresponding wrapper object.
 (defvar *isl-object-table* (trivial-garbage:make-weak-hash-table :weakness :value))
+(defun %free-objects-in-context () (mapc #'funcall (alexandria:hash-table-values *isl-object-table*)))
 (defmacro with-isl-context (&body body)
-  "Assumes under the body is a thread-safe"
-  `(let* ((*context* (make-context)))
-     ,@body))
+  "Assumes ISL Objects created under this context will be freed when the context is closed.
+== ISL Objects created under this context will not be shared or cached by other compiler session."
+  `(let* ((*isl-object-table* (make-hash-table))
+          (*context* (make-context)))
+     (unwind-protect (progn ,@body) (%free-objects-in-context))))
 
 (defmacro define-isl-object
     (name &key (abstract nil)
@@ -66,16 +69,14 @@ of type OBJECT-NAME."
        ,@(unless abstract
            `((defun ,%make (handle)
                (when (cffi:null-pointer-p handle) (isl-error))
-               (values
-                (alexandria:ensure-gethash
-                 (cffi:pointer-address handle)
-		 *isl-object-table*
-                 (trivial-garbage:finalize (,%%make handle)
-                                           (lambda ()
-                                             (when (= 1 (ctx:getenv :DEBUG_GC))
-                                               (format t "DEBUG_GC=1 | (caten/isl) %free [~a] ~a~%" ',name (cffi:pointer-address handle)))
-					     (remhash (cffi:pointer-address handle) *isl-object-table*)
-					     (,%free handle))))))))
+               (when (null (gethash (cffi:pointer-address handle) *isl-object-table*))
+                 (setf (gethash (cffi:pointer-address handle) *isl-object-table*)
+                       #'(lambda ()
+                           (when (= 1 (ctx:getenv :DEBUG_GC))
+                             (format t "DEBUG_GC=1 | (caten/isl) %free [~a] ~a~%" ',name (cffi:pointer-address handle)))
+			   (remhash (cffi:pointer-address handle) *isl-object-table*)
+			   (,%free handle))))
+               (,%%make handle))))
        ,@(when %copy
            `((defmethod copy ((,name ,name))
                (,%make (,%copy (isl-object-handle ,name)))))))))
