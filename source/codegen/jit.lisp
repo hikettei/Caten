@@ -502,6 +502,7 @@ Runs the JIT compilation for the given AVM."
                        (format stream "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))
                      (schedule-item-write-define-global x)))))
            (graph-nodes schedule-graph)))
+        (when (= 1 (ctx:getenv :AUTO_SCHEDULER)) (trivial-garbage:gc :full t)) ;; Collect garbage for all isl objects
         (mapc
          #'(lambda (x)
              (when (getattr x :cache-name)
