@@ -70,7 +70,8 @@ caten/codegen overview:
    #:auto-schedule)
   (:import-from
    :caten/codegen/helpers
-   #:coerce-dtyped-buffer)
+   #:coerce-dtyped-buffer
+   #:%isl-safe-pmapc)
   (:import-from
    :caten/common.logger
    #:print-info
@@ -399,23 +400,25 @@ caten/codegen overview:
 (defun maybe-pmapc (f list &key (slope 1))
   (flet ((is-heavy-p (x)
            (and (getattr x :jitable) (null (getattr x :cache-name)))))
-    (let ((list-to-lower
-            (loop for x in list
-                  ;; pick up the elements which takes a long time to compile
-                  if (is-heavy-p x)
-                    collect x))
-          (list-not-to-lower
-            (loop for x in list
-                  if (Not (is-heavy-p x))
-                    collect x)))
-      (if (and (> (ctx:getenv :PARALLEL) 1) (>= (length list-to-lower) (* (ctx:getenv :PARALLEL) slope)))
-          (let ((lparallel:*kernel*
-                  (lparallel:make-kernel (ctx:getenv :PARALLEL)
-                                         :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)
-                                                     (caten/common.logger::*progress* . ,caten/common.logger::*progress*)))))
-            (lparallel:pmapc f list-to-lower)
-            (mapc f list-not-to-lower))
-          (mapc f list)))))
+    (symbol-macrolet ((PARALLEL (ctx:getenv :PARALLEL)))
+      (let ((list-to-lower
+              (loop for x in list
+                    ;; pick up the elements which takes a long time to compile
+                    if (is-heavy-p x)
+                      collect x))
+            (list-not-to-lower
+              (loop for x in list
+                    if (Not (is-heavy-p x))
+                      collect x)))
+        (if (and (> PARALLEL 1) (>= (length list-to-lower) (* PARALLEL slope)))
+            (let ((lparallel:*kernel*
+                    (lparallel:make-kernel PARALLEL
+                                           :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)
+                                                       (caten/common.logger::*progress* . ,caten/common.logger::*progress*)
+                                                       (caten/isl::*isl-object-table* . ,caten/isl::*isl-object-table*)))))
+              (%isl-safe-pmapc PARALLEL f list-to-lower)
+              (mapc f list-not-to-lower))
+            (mapc f list))))))
 
 (defmacro with-printing-as-chunk ((stream) &body body)
   "Synchronize the stream if the compilation is running in parallel."
@@ -446,7 +449,6 @@ Runs the JIT compilation for the given AVM."
   ;; 3. Running the scheduler
   (let ((base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (avm-graph avm)))))
         (schedule-graph (graph-schedule (avm-graph avm)))
-        ;; 4. Gathering the dynamic shapes used in the graph.
         (symbolics
           (remove-duplicates
            (loop for node in (graph-nodes (avm-graph avm))
@@ -482,11 +484,11 @@ Runs the JIT compilation for the given AVM."
                        (print-blueprint (getattr x :blueprint) stream))
                      ;; 8. Lower into Polyhedral IR
                      (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
-                       (format stream "=====> Skipping Auto Scheduler (Symbolic incremental or scalar kernel)~%"))
+                       (format stream "=====> Skipping Auto Scheduler (The memory access pattern is not an affine, or scalar kernel)~%"))
                      (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
                        (when (>= (ctx:getenv :JIT_DEBUG) 2)
                          (format stream "=====> Lowering to Polyhedral IR~%"))
-                       (scop x symbolics)
+                       (scop x)
                        (when (>= (ctx:getenv :JIT_DEBUG) 2)
                          (format stream "=====> Auto Scheduler~%"))
                        ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
@@ -500,6 +502,7 @@ Runs the JIT compilation for the given AVM."
                        (format stream "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))
                      (schedule-item-write-define-global x)))))
            (graph-nodes schedule-graph)))
+        (when (= 1 (ctx:getenv :AUTO_SCHEDULER)) (trivial-garbage:gc :full t)) ;; Collect garbage for all isl objects
         (mapc
          #'(lambda (x)
              (when (getattr x :cache-name)

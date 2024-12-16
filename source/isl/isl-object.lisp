@@ -25,8 +25,7 @@ of type OBJECT-NAME."
   `(getf (symbol-plist ,object-name) '%free))
 
 (defun isl-object-name-p (x)
-  (and (symbolp x)
-       (not (null (isl-object-%make x)))))
+  (and (symbolp x) (not (null (isl-object-%make x)))))
 
 ;;; This hash table is used in each ISL object constructor to ensure that
 ;;; each handle has exactly one corresponding wrapper object.
@@ -73,7 +72,8 @@ of type OBJECT-NAME."
 		 *isl-object-table*
                  (trivial-garbage:finalize (,%%make handle)
                                            (lambda ()
-                                             ;; (format t "Free: [~a] ~a~%" ',name (cffi:pointer-address handle))
+                                             (when (= 1 (ctx:getenv :DEBUG_GC))
+                                               (format t "DEBUG_GC=1 | (caten/isl) %free [~a] ~a~%" ',name (cffi:pointer-address handle)))
 					     (remhash (cffi:pointer-address handle) *isl-object-table*)
 					     (,%free handle))))))))
        ,@(when %copy

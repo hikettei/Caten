@@ -52,7 +52,8 @@
    #:relay-write-iters)
   (:import-from
    :caten/codegen/helpers
-   #:nodes-depends-on)
+   #:nodes-depends-on
+   #:ensure-string-as-compilable)
   (:export
    #:schedule-item-write-define-global
    #:apply-rewriting-rules
@@ -148,7 +149,13 @@
                       new-id))
 		   id))
              (start-with-tid-p (sym &aux (str (princ-to-string sym)))
-               (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3))))))
+               (or
+                (and (>= (length str) 3) (or (equalp "TID" (subseq str 0 3)) (equalp "SID" (subseq str 0 3))))
+                ;; Setting AUTO_SCHEDULER=1 also requires variable names to be in camel_snake format. (due to ISL format)
+                ;; If a variable is in kebab_snake format, you must rename it to a unique name.
+                (when (and (= (ctx:getenv :AUTO_SCHEDULER) 1) (not (string= str (ensure-string-as-compilable str))))
+                  (warn "AUTO_SCHEDULER=1 | Kebab case is renamed: ~a -> ~a. Please consider using camel case for the variable or shape name." str (val-gensym sym))
+                  t))))
       (dolist (node (append (graph-nodes (avm-graph avm)) (when id2view (alexandria:hash-table-values id2view))))
         (when (and (eql (node-type node) :Allocate)
                    (not (start-with-tid-p (car (node-writes node)))))
