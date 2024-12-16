@@ -24,4 +24,4 @@
 
 (defun report-profile-result (&key (width 80))
   (when (= 1 (ctx:getenv :PROFILE))
-    (format t "~a~%Total: JIT=~as, VM=~as, Alloc=~as Σ=~as~%~a~%" (make-string width :initial-element #\=) *jit-time* *vm-time* *allocate-time* (+ *jit-time* *vm-time* *allocate-time*) (make-string width :initial-element #\=))))
+    (format t "~a~%Total: KERNEL=~as, VM=~as, ALLOCATE=~as Σ=~as~%~a~%" (make-string width :initial-element #\=) *jit-time* *vm-time* *allocate-time* (+ *jit-time* *vm-time* *allocate-time*) (make-string width :initial-element #\=))))
