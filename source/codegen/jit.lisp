@@ -412,7 +412,9 @@ caten/codegen overview:
           (let ((lparallel:*kernel*
                   (lparallel:make-kernel (ctx:getenv :PARALLEL)
                                          :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)
-                                                     (caten/common.logger::*progress* . ,caten/common.logger::*progress*)))))
+                                                     (caten/common.logger::*progress* . ,caten/common.logger::*progress*)
+                                                     (caten/isl::*isl-object-table* . ,caten/isl::*isl-object-table*)
+                                                     (caten/isl::*context* . ,caten/isl::*context*)))))
             (lparallel:pmapc f list-to-lower)
             (mapc f list-not-to-lower))
           (mapc f list)))))
