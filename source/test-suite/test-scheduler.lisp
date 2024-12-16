@@ -240,6 +240,23 @@
                   (let* ((read-type (car (caten/codegen/shape-inference:relay-read-iters (caten/codegen/shape-inference:read-type-relay expr)))))
                     (ok (every #'(lambda (x) (or (null x) (eql 0 (car x)))) (caten/codegen/shape-inference:iteration-space-views read-type))
                         "The second kernel should not create a offset for rhs."))))))))))
+(deftest test-loop-collapse
+  (macrolet ((def (shape axis expected-loops)
+               `(multiple-value-bind (schedule avm) (schedule-with-vars (!sum (make-tensor ',shape) :axis ,axis))
+                  (assert (= 0 (ctx:getenv :NOOPT)))
+                  (check-kernel schedule 1)
+                  (caten/codegen/expr-cache:with-expr-cache ()
+                    (loop for item in (gather-kernels schedule) do
+                      (let ((bounds (loop for node in (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)
+                                          if (eql (node-type node) :FOR)
+                                            collect (caten/codegen/scop::expr-detach-loop-bound (getattr node :below)))))
+                        (ok (= (length bounds) ,(length expected-loops)) (format nil "Collapsed to ~a loops" (length bounds)))
+                        (ok (every #'caten/codegen/expr:expr-scalar-equivalent-p bounds (map 'list #'(lambda (x) (caten/codegen/expr:expr-const x :int64)) ',expected-loops))
+                            (format nil "Scheduled loops: ~a, Expected loops: ~a" bounds ',expected-loops))))))))
+    (def (3 3 3) t (27))
+    (def (3 3 3) 0 (9 3))
+    (def (3 3 3) 1 (3 3 3))
+    (def (3 3 3) 2 (9 3))))
 ;;TODO:  ConvND batch_size=1
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;
