@@ -190,6 +190,9 @@ Usage:
     (:PROFILE_SIMPLIFIER
      0 :int #.(oneof "PROFILE_SIMPLIFIER" 0 `(0 1))
      "Set 1 to profile the simplifier during the %make-graph-from-iseq execution.")
+    (:DEBUG_GC
+     0 :int #.(oneof "DEBUG_GC" 0 `(0 1))
+     "Set 1 to print the debug information when caten/isl wants to collect the garbage.")
     (:NO_SCHEDULE_CACHE
      0 :int #.(oneof "NO_SCHEDULE_CACHE" 0 `(0 1))
      "Set 1 to disable the schedule cache by the codegen.")
