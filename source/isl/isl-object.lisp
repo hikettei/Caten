@@ -73,7 +73,7 @@ of type OBJECT-NAME."
                  (trivial-garbage:finalize (,%%make handle)
                                            (lambda ()
                                              (when (= 1 (ctx:getenv :DEBUG_GC))
-                                               (format t "DEBUG_GC=1 | Free: [~a] ~a~%" ',name (cffi:pointer-address handle)))
+                                               (format t "DEBUG_GC=1 | (caten/isl) %free [~a] ~a~%" ',name (cffi:pointer-address handle)))
 					     (remhash (cffi:pointer-address handle) *isl-object-table*)
 					     (,%free handle))))))))
        ,@(when %copy
