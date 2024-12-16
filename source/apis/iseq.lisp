@@ -409,7 +409,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 	   (make-tensor
 	    (tensor-shape (car tensors))
 	    :dtype (tensor-dtype (car tensors)) :order (tensor-order (car tensors))
-	    :id 'prev-grad :initial-element 1))
+	    :id 'prev_grad :initial-element 1))
 	 (toplevel-ids (map 'list #'(lambda (x) (intern (format nil "~a_1" (tensor-id x)))) tensors)))
     (multiple-value-bind (graph pause-backward-p)
 	(%make-graph-from-iseq
