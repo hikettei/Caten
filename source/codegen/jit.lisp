@@ -47,8 +47,7 @@ caten/codegen overview:
    #:buffer-stride
    #:buffer-dtype
    #:buffer-inferred-permute
-   #:buffer-orig-buffer-shape
-   #:%impl)
+   #:buffer-orig-buffer-shape)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer)
@@ -98,7 +97,8 @@ caten/codegen overview:
    #:compiled-kernel-caller
    #:compiled-kernel-raw-caller
    #:compiled-kernel-device
-   #:compiled-kernel-code))
+   #:compiled-kernel-code
+   #:compiled-kernel-out-positions))
 
 (in-package :caten/codegen/jit)
 ;; ~~ Compiledop instruction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -162,14 +162,6 @@ caten/codegen overview:
                    if (eql (node-type item) :DEFINE-GLOBAL)
                      collect (getattr item :dtype))
              :cached-p (if (getattr si :cache-name) t nil)))
-
-(defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
-  (let ((info (getattr node :kernel-info)))
-    ;; (For details, see coerce-dtyped-buffer)
-    (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
-      (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
-      (apply (compiled-kernel-caller info) args)
-      (apply #'values (map 'list #'(lambda (x) (nth x args)) (compiled-kernel-out-positions info))))))
 
 (defun timefy (name time)
   (if (= 0 time) name (intern (format nil "~(~a~)_~a" name time))))

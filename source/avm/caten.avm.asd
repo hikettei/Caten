@@ -9,6 +9,7 @@
    (:file "opset")
    (:file "helpers")
    (:file "buffer")
+   (:file "profile")
    (:file "runtime")
    (:file "conditions")
    (:file "lisp-backend")
