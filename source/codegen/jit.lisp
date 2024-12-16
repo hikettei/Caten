@@ -70,7 +70,8 @@ caten/codegen overview:
    #:auto-schedule)
   (:import-from
    :caten/codegen/helpers
-   #:coerce-dtyped-buffer)
+   #:coerce-dtyped-buffer
+   #:%isl-safe-pmapc)
   (:import-from
    :caten/common.logger
    #:print-info
@@ -399,25 +400,26 @@ caten/codegen overview:
 (defun maybe-pmapc (f list &key (slope 1))
   (flet ((is-heavy-p (x)
            (and (getattr x :jitable) (null (getattr x :cache-name)))))
-    (let ((list-to-lower
-            (loop for x in list
-                  ;; pick up the elements which takes a long time to compile
-                  if (is-heavy-p x)
-                    collect x))
-          (list-not-to-lower
-            (loop for x in list
-                  if (Not (is-heavy-p x))
-                    collect x)))
-      (if (and (> (ctx:getenv :PARALLEL) 1) (>= (length list-to-lower) (* (ctx:getenv :PARALLEL) slope)))
-          (let ((lparallel:*kernel*
-                  (lparallel:make-kernel (ctx:getenv :PARALLEL)
-                                         :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)
-                                                     (caten/common.logger::*progress* . ,caten/common.logger::*progress*)
-                                                     (caten/isl::*isl-object-table* . ,caten/isl::*isl-object-table*)
-                                                     (caten/isl::*context* . ,caten/isl::*context*)))))
-            (lparallel:pmapc f list-to-lower)
-            (mapc f list-not-to-lower))
-          (mapc f list)))))
+    (symbol-macrolet ((PARALLEL (ctx:getenv :PARALLEL)))
+      (let ((list-to-lower
+              (loop for x in list
+                    ;; pick up the elements which takes a long time to compile
+                    if (is-heavy-p x)
+                      collect x))
+            (list-not-to-lower
+              (loop for x in list
+                    if (Not (is-heavy-p x))
+                      collect x)))
+        (if (and (> PARALLEL 1) (>= (length list-to-lower) (* PARALLEL slope)))
+            (let ((lparallel:*kernel*
+                    (lparallel:make-kernel PARALLEL
+                                           :bindings `((caten/codegen/expr-cache:*expr-cache* . ,caten/codegen/expr-cache:*expr-cache*)
+                                                       (caten/common.logger::*progress* . ,caten/common.logger::*progress*)
+                                                       (caten/isl::*isl-object-table* . ,caten/isl::*isl-object-table*)
+                                                       (caten/isl::*context* . ,caten/isl::*context*)))))
+              (%isl-safe-pmapc PARALLEL f list-to-lower)
+              (mapc f list-not-to-lower))
+            (mapc f list))))))
 
 (defmacro with-printing-as-chunk ((stream) &body body)
   "Synchronize the stream if the compilation is running in parallel."

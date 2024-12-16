@@ -13,7 +13,8 @@
    #:->cdtype
    #:float-type-of
    #:coerce-dtyped-buffer
-   #:nodes-create-namespace))
+   #:nodes-create-namespace
+   #:%isl-safe-pmapc))
 
 (in-package :caten/codegen/helpers)
 
@@ -127,3 +128,14 @@ Otherwise -> they are passed as a buffer."
   (loop for node in nodes
         append (node-writes node)
         append (node-reads node)))
+
+(defun %isl-safe-pmapc (n-cores f list)
+  (flet ((op (obj) (mapc f obj)))
+    (assert (>= (length list) n-cores) () "%isl-safe-pmapc: Insufficient number of list.")
+    (let* ((elements-per-core (floor (length list) n-cores))
+           (reminder (mod (length list) n-cores)))
+      (assert (= (length list) (+ (* elements-per-core n-cores) reminder)))
+      (let ((tasks (loop for i upfrom 0 below n-cores
+                         for lastp = (= (1+ i) n-cores)
+                         collect (subseq list (* i elements-per-core) (+ (* (1+ i) elements-per-core) (if lastp reminder 0))))))
+        (lparallel:pmapc #'op tasks)))))
