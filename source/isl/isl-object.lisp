@@ -33,10 +33,10 @@ of type OBJECT-NAME."
 (defun %free-objects-in-context () (mapc #'funcall (alexandria:hash-table-values *isl-object-table*)))
 (defmacro with-isl-context (&body body)
   "Assumes ISL Objects created under this context will be freed when the context is closed.
-== ISL Objects created under this context will not be shared or cached by other compiler session."
+= ISL Objects created under this context will not be shared or cached by other compiler session."
   `(let* ((*isl-object-table* (make-hash-table))
           (*context* (make-context)))
-     (unwind-protect (progn ,@body) (%free-objects-in-context))))
+     (unwind-protect (progn ,@body) (%free-objects-in-context)))) ;; Note(hikettei): *context* has always have a younger ID? and %free is called last?
 
 (defmacro define-isl-object
     (name &key (abstract nil)

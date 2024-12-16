@@ -442,7 +442,7 @@ caten/codegen overview:
 ```
 Runs the JIT compilation for the given AVM."
   (declare (type AVM avm))
-  (caten/isl:with-isl-context
+  (caten/isl:with-isl-context ;; Note: Need this to ensure isl objected allocated here are not cached and not used by other compiling sessions.
     (when (= 2 (ctx:getenv :DOT)) (->dot (avm-graph avm) :title "Base Graph"))
     (run-type-infer avm)
     ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
