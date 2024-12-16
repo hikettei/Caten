@@ -282,11 +282,11 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
          (render-access-rep #'node-writes #'relay-writes #'relay-write-iters node idx2domain render-nodes symbolics)
          (explore-schedule-tree 0 (length render-nodes)))))))
 
-(defmethod scop ((node Node) symbolics)
+(defmethod scop ((node Node))
   (when (null (getattr node :allocate-p :allow-undefined t))
     (assert (eql (node-type node) :Schedule-Item))
     (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
-    (multiple-value-bind (domain read write schedule) (analyze-scop node symbolics)
+    (multiple-value-bind (domain read write schedule) (analyze-scop node (map 'list #'car (Getattr node :dynamic-shapes)))
       (setf (getattr node :polyhedral) (make-polyhedral-ir domain read write schedule))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (format t "~a~%" (getattr node :polyhedral)))

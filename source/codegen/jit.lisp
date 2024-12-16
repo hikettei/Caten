@@ -446,7 +446,6 @@ Runs the JIT compilation for the given AVM."
   ;; 3. Running the scheduler
   (let ((base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (avm-graph avm)))))
         (schedule-graph (graph-schedule (avm-graph avm)))
-        ;; 4. Gathering the dynamic shapes used in the graph.
         (symbolics
           (remove-duplicates
            (loop for node in (graph-nodes (avm-graph avm))
@@ -486,7 +485,7 @@ Runs the JIT compilation for the given AVM."
                      (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
                        (when (>= (ctx:getenv :JIT_DEBUG) 2)
                          (format stream "=====> Lowering to Polyhedral IR~%"))
-                       (scop x symbolics)
+                       (scop x)
                        (when (>= (ctx:getenv :JIT_DEBUG) 2)
                          (format stream "=====> Auto Scheduler~%"))
                        ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
