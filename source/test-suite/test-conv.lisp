@@ -151,31 +151,53 @@
     (i (%index-components m (%shape shape)))
     (alpha (%load (%salloc :dtype dtype) a))
     (beta  (%load (%salloc :dtype dtype) b))
-    ;; a = alpha * i + b
     (t1 (%mul i alpha))
     (t2 (%add t1 beta))
     (c  (%store m t2 :id 'out))))
 
-;; Step 1: Use %arange to generate a tensor
 (defparameter aranged-tensor
-  (%arange '(4) 1 0 :dtype :float32 :order :row))
+  (%arange '(4) 1 0 :dtype :float32 :order :row)) ;; Shape: (4)
 
-;; Step 2: Realize the tensor (force computation)
 (defparameter realized-tensor (%realize aranged-tensor))
 
-;; Step 3: Wrap the tensor into a higher-level tensor with a buffer
 (defparameter tensor-with-buffer
   (make-tensor '(4) :dtype :float32 :order :row :from realized-tensor))
 
-;; Step 4: Apply !view to manipulate the tensor
+(defparameter reshaped-tensor
+  (!reshape tensor-with-buffer '(2 2))) ;; Shape: (2, 2)
+
 (defparameter viewed-tensor
-  (apply #'!view tensor-with-buffer `((0 4)))) ;; Viewing the full range [0:4]
+  (!view reshaped-tensor '(0 2) '(0 2)))
 
-;; Step 5: Access tracker for the viewed tensor
-(defparameter tracker (tensor-tr viewed-tensor))
+(format t "Original Tensor Proceeded:~%")
+(print (proceed tensor-with-buffer))
 
-;; Print results
+(format t "Reshaped Tensor Proceeded (2D):~%")
+(print (proceed reshaped-tensor))
+
+(format t "Viewed Tensor Proceeded (2D View):~%")
+(print (proceed viewed-tensor))
+
+
+
+
+;; broadcast example
+(defparameter tensor
+  (make-tensor '(4) :dtype :float32 :order :row :initial-element 1.0))
+
+(defparameter broadcast-test (!add tensor (!const tensor 1)))
+
+(defparameter broadcast-tracker (tensor-tr broadcast-test))
+
+(defparameter broadcasted-tensor (proceed (!add tensor (!reshape (!const tensor 1) '(1)))))
+
+
+
+(print (tr-broadcast (tensor-tr broadcasted-tensor)))
+(format t "Broadcasted Tensor Proceeded:~%")
+(print (proceed broadcast-test))
+
+(format t "Broadcast Metadata: ~A~%" (tr-broadcast broadcast-tracker))
+
 (format t "Type of realized tensor: ~a~%" (type-of realized-tensor))
-(format t "Viewed Tensor Tracker: ~a~%" tracker)
-(format t "Tracker Mask: ~a~%" (tr-mask tracker))
-(format t "Tracker Broadcast: ~a~%" (tr-broadcast tracker))
+;;metadata isn't showing :(
