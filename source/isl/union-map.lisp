@@ -71,6 +71,10 @@
   (:give union-set)
   (:take union-map domain))
 
+(define-isl-function union-map-deltas %isl-union-map-deltas
+  (:give union-set)
+  (:take union-map))
+
 (define-isl-function union-map-range %isl-union-map-range
   (:give union-set)
   (:take union-map range))
@@ -123,3 +127,7 @@
   (:give union-map)
   (:take union-map)
   (:take union-map domain))
+
+(define-isl-function union-map-is-empty %isl-union-map-is-empty
+  (:give boolean)
+  (:take union-map))
