@@ -7,7 +7,7 @@
    #:Metal))
 
 (in-package :caten/metal)
-
+;; [TODO] Remove or move to backends?
 (defclass Metal (Device)
   ((device-id :initform 0 :initarg :id :accessor metal-device-id)))
 (defmethod initialize-instance :after ((metal Metal) &rest initargs &key &allow-other-keys)
