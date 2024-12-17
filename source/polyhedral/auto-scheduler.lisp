@@ -40,7 +40,8 @@
 ;; - [TODO] JIT_DEBUG>=3 to log, compare the speed before/after scheduling, see the actions.
 ;; - Final goals here is to get a list of commands.
 ;; Stage1 (Minimal Things)
-;; - [ ] Parallelism
+;; - [x] Parallelism
+;; - [x] Interchange
 ;; - [ ] Unrolling
 ;; - [ ] Tiling
 ;; Stage2 (Advanced Kernel Fusion)
@@ -61,12 +62,7 @@ An entrypoint for auto-scheduling.
   ;; we may want isl scheduler to judge loop interchange?
   ;; (caten/polyhedral/transforms::polyir-loop-interchange poly 0)
   ;; Tile First?
-  (let ((n-coincidence (caten/polyhedral/transforms:polyir-set-coincident poly)))
-    ;; When Loop Interchange is required?
-    ;; Just sorting non-reduce loops by size is enough, isn't it?
-    (when (>= n-coincidence (auto-scheduler-n-global-loops scheduler))
-      ;; Scheduler have to pick up n-global-loops loops
-      ))
+  (caten/polyhedral/transforms:polyir-set-coincident poly (auto-scheduler-n-global-loops scheduler))
   ;; (caten/polyhedral/tiling:tile-bands scheduler poly) ;; segv
   ;;  Mark unroll/vectorize/parallel
   ;; (caten/polyhedral/packing:packing scheduler poly)

@@ -62,12 +62,13 @@ Returns T if the current schedule does not break any dependences in dep."
          (when (check-legality-parallel band (poly-dependencies poly)) band)))
    poly))
 
-(defun polyir-set-coincident (poly)
+(defun polyir-set-coincident (poly level)
   (declare (type Polyhedral-IR poly))
   ;; TODO(hikettei) there should be more clever way to do this:
   (let ((insertable-points (get-coincident-points poly)))
     (dotimes (i (length insertable-points))
-      (setf (poly-schedule poly) (isl:schedule-node-get-schedule (insert-parallel (nth i (get-coincident-points poly))))))
+      (when (<= i level)
+        (setf (poly-schedule poly) (isl:schedule-node-get-schedule (insert-parallel (nth i (get-coincident-points poly)))))))
     (length insertable-points)))
 
 (defun %loop-interchange (schedule-node)
@@ -93,7 +94,7 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; Interchange the largest loop to the outermost
 ;; If symbolic, insert IF
 ;; (defun insert-mark (band))
-(defun packing (config ir)
-  (declare (type polyhedral-ir ir))
-  ;; [TODO]
+;; - [ ] Packing
+(defun polyir-unroll (poly)
+
   )
