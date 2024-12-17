@@ -182,7 +182,7 @@ Before contributing, please note that there is no linter here. Make an effort to
 - [x] LISP VM
 - [x] CLANG JIT
 - [ ] CLANG with Auto Scheduler
-- [ ] METAL
+- [x] METAL (Run `(ql:quickload :caten/metal)` and set `JIT=METAL`)
 - [ ] CUDA
 - [ ] Vulkan
 - [ ] Auto Scheduler
