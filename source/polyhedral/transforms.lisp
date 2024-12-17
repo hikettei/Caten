@@ -75,26 +75,19 @@ Returns T if the current schedule does not break any dependences in dep."
   (declare (type isl::schedule-node schedule-node))
   (let* ((mupa (isl:schedule-node-band-get-partial-schedule schedule-node))
          (node (isl:schedule-node-delete schedule-node))
+         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
+         (_ (when (= 0 n-child) (return-from %loop-interchange nil)))
          (node (isl:schedule-node-first-child node))
          (node (isl:schedule-node-insert-partial-schedule node mupa)))
+    (declare (ignore _))
     node))
 
 (defun polyir-loop-interchange (poly nth)
   (declare (type polyhedral-ir poly) (type fixnum nth))
   (let ((bands (map-schedule-nodes #'(lambda (type band) (when (eql type :schedule-node-band) band)) poly)))
     (unless (<= nth (length bands)) (return-from polyir-loop-interchange nil))
-    (let ((new-sched (isl:schedule-node-get-schedule (%loop-interchange (nth nth bands)))))
-      (if (check-legality new-sched (poly-dependencies poly))
+    (let* ((new-sched (%loop-interchange (nth nth bands)))
+           (new-sched (when new-sched (isl:schedule-node-get-schedule new-sched))))
+      (if (and new-sched (check-legality new-sched (poly-dependencies poly)))
           (progn (setf (poly-schedule poly) new-sched) t)
           nil))))
-;; (defun polyir-set-parallel (poly)
-;; [TODO] Integrate Packing/Unroll/Tiling/Parallel into commands.lisp
-;; [TODO] Using WMMA
-;; [TODO] Vectorized CLANG
-;; Interchange the largest loop to the outermost
-;; If symbolic, insert IF
-;; (defun insert-mark (band))
-;; - [ ] Packing
-(defun polyir-unroll (poly)
-
-  )

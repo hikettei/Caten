@@ -65,7 +65,10 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
          (loop with indent = 2
 	       for node in nodes
 	       if (eql (node-type node) :FOR)
-	         do (format out "~afor (int ~(~a~)=~(~a~);~(~a~);~(~a~)+=~(~a~)) {~%" (indent indent) (getattr node :idx) (render-expr 'Default-Renderer (getattr node :upfrom)) (render-expr 'Default-Renderer (getattr node :below)) (getattr node :idx) (render-expr 'Default-Renderer (getattr node :by)))
+	         do (format out "~a~afor (int ~(~a~)=~(~a~);~(~a~);~(~a~)+=~(~a~)) {~%"
+                            (indent indent) (if (eql (getattr node :scope) :global) "parallel " "") (getattr node :idx)
+                            (render-expr 'Default-Renderer (getattr node :upfrom)) (render-expr 'Default-Renderer (getattr node :below))
+                            (getattr node :idx) (render-expr 'Default-Renderer (getattr node :by)))
                     (push (getattr node :idx) gids)
 		    (incf indent 2)
 	       else if (eql (node-type node) :ENDFOR)
