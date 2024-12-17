@@ -186,7 +186,8 @@ Corresponds to the position of the subgraph in the parent schedule.
                                     #'concatenate
                                     'string
                                     (butlast
-                                     (when (and typ (not (= -1 (caten/avm:buffer-nrank buf))))
+                                     ;; Note(hikettei) how to tell polyhedral compiler that `buf` must be a scalar?
+                                     (when (and typ) ;; (not (= -1 (caten/avm:buffer-nrank buf))))
                                        (loop for stride in (iteration-space-strides typ)
                                              for nth upfrom 0
                                              for view = (nth nth (iteration-space-views typ))
