@@ -24,7 +24,7 @@
          (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
-
+;; [Note] Deprecated?
 (defmethod schedule ((config Auto-Scheduler-Config) (pg Polyhedral-IR))
   (apply-schedule-options-global (auto-scheduler-schedule-options config))
   (let ((schedule-constraints (isl:schedule-constraints-on-domain (poly-domain pg))))
@@ -38,12 +38,16 @@
          (setf schedule-constraints (isl:schedule-constraints-set-validity schedule-constraints (poly-dependencies pg))))))
     (isl:schedule-constraints-compute-schedule schedule-constraints)))
 
-(defmethod auto-schedule ((scheduler Auto-Scheduler-Config) (poly Polyhedral-IR))
-  "An entrypoint for auto-scheduling"
-  ;; Getting the initial schedule
-  (setf (poly-schedule poly) (schedule scheduler poly))
+(defun auto-schedule (scheduler poly)
+  "
+```
+(auto-schedule scheduler poly)
+```
+An entrypoint for auto-scheduling"
+  (declare (type Auto-Scheduler-Config scheduler) (type Polyhedral-IR poly))
+  ;; (setf (poly-schedule poly) (schedule scheduler poly)) ;; Getting an intial schedule, extracting parallelism
   ;; Tiling
-  ;;(caten/polyhedral/tiling:tile-bands scheduler poly)
-  ;; Mark unroll/vectorize/parallel
-  ;;(caten/polyhedral/packing:packing scheduler poly)
+  ;; (caten/polyhedral/tiling:tile-bands scheduler poly)
+  ;;  Mark unroll/vectorize/parallel
+  ;; (caten/polyhedral/packing:packing scheduler poly)
   poly)

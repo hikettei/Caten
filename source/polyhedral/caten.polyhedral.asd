@@ -9,6 +9,7 @@
    (:file "config")
    (:file "tiling")
    (:file "packing")
+   (:file "parallelism")
    (:file "auto-scheduler")
    (:file "package")
    (:file "documentation")))
