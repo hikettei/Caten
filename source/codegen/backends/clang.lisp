@@ -8,7 +8,7 @@
 
 (in-package :caten/codegen/backends/clang)
 
-(define-auto-scheduler (Clang-Auto-Scheduler (&key (fuse-softmax 0) (n-global-loop (ctx:getenv :OMP))))
+(define-auto-scheduler (Clang-Auto-Scheduler (&key (fuse-softmax 0) (n-global-loop (1- (ctx:getenv :OMP)))))
     ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
     :schedule-option (make-schedule-options :schedule-outer-coincidence fuse-softmax)
     :cost-functions '(:validity :proximity :coincidence)
@@ -49,15 +49,24 @@
             (render-bp out bp)))
         (format out "}~%")))))
 
+(defun trim-brackets (str)
+  (let ((len (length str)))
+    (if (and (>= len 2) (char= #\( (aref str 0)) (char= #\ (aref str (1- len))))
+        (subseq str 1 (1- len))
+        str)))
+
 (defun render-bp (stream bp)
   (flet ((indent () (make-string *indent* :initial-element #\space)))
     (ecase (node-type bp)
       (:FOR
-       (format stream "~afor (int ~(~a~)=~(~a~); ~(~a~); ~(~a~)+=~(~a~)) {~%"
+       (format stream "~a~afor (int ~(~a~)=~(~a~); ~(~a~); ~(~a~)+=~(~a~)) {~%"
                (indent)
+               (if (eql (getattr bp :scope) :global)
+                   (format nil "#pragma omp parallel for~%~a" (indent))
+                   "")
                (getattr bp :idx)
                (render-expr 'CStyle-Renderer (getattr bp :upfrom))
-               (render-expr 'CStyle-Renderer (getattr bp :below))
+               (trim (render-expr 'CStyle-Renderer (getattr bp :below)))
                (getattr bp :idx)
                (render-expr 'CStyle-Renderer (getattr bp :by)))
        (incf *indent* 2))
@@ -116,6 +125,8 @@
 
 (defun load-foreign-function (source &key (compiler "gcc") (lang "c") (compiler-flags) (dir nil))
   (declare (type string source compiler))
+  (when (= 1 (ctx:getenv :OMP))
+    (push "-fopenmp" compiler-flags))
   (uiop:with-temporary-file (:pathname sharedlib :type "so" :keep t :directory dir)
     nil
     :close-stream
