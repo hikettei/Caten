@@ -46,11 +46,14 @@
 ```
 for(int idx=upfrom, below, by)
 ```
+
+- scope[keyword] If `:global`, the loop is parallelizable. One of :global, :local.
 "
          :slots ((idx :type symbol)
                  (upfrom :type Expr)
                  (below :type Expr)
-                 (by :type Expr)))
+                 (by :type Expr)
+                 (scope :initform :local :type (member :global :local))))
 
 (defnode (:Render :ENDFOR) ()
          "

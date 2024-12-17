@@ -9,7 +9,8 @@
    #:Polyhedral-IR
    #:poly-schedule
    #:poly-domain
-   #:poly-dependencies))
+   #:poly-dependencies
+   #:map-schedule-nodes))
 
 (in-package :caten/polyhedral/ir)
 
@@ -134,10 +135,35 @@
                            collect (format nil "~%")))))
                       (format out ")")))
                    ((or (string= key "permutable") (string= key "coincident"))
-                    (format out "~%~a~a(~a)" (indent indent) key (gethash key schedule)))                 
+                    (format out "~%~a~a(~a)" (indent indent) key (gethash key schedule)))
+                   ((or (string= key "mark"))
+                    (format out "~amark(~a)" (indent indent) (gethash key schedule)))
                    (t (warn "pprint: the key ~a is not implemented." key)))))
         (mapc #'(lambda (x) (explore schedule x)) (reverse (alexandria:hash-table-keys schedule)))))))
 
 (defmethod print-object ((pg Polyhedral-IR) stream)
   (print-unreadable-object (pg stream :type t)
     (format stream "~a~%[Kernel]:~%~a" (pprint-schedule (copy (poly-schedule pg))) (debug-render-to-clang pg))))
+
+(defun map-schedule-nodes (f polyhedral-ir)
+  "
+```
+(map-schedule-nodes f polyhedral-ir)
+```
+Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda function which takes (type[keyword] node[schedule-node]) as an argument.
+This function returns a list of the results of applying f to each node. NIL is excluded in the list."
+  (declare (type Polyhedral-IR polyhedral-ir) (type function f))
+  (let* ((node (schedule-get-root (poly-schedule polyhedral-ir)))
+         (next-nodes)
+         (outputs))
+    (loop named map-search
+          for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
+          while (>= n-children 0) do
+            (loop for nth upfrom 0 below n-children
+                  for band = (schedule-node-get-child node nth)
+                  for type = (schedule-node-get-type band) do
+                    (let ((out (funcall f type band))) (when out (push out outputs)))
+                    (push band next-nodes))
+            (when (= (length next-nodes) 0) (return-from map-search))
+            (setf node (pop next-nodes)))
+    (nreverse outputs)))
