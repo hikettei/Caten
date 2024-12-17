@@ -49,7 +49,7 @@ https://github.com/Tiramisu-Compiler/tiramisu/blob/master/src/auto_scheduler/tir
 "
   (declare (type Auto-Scheduler-Config scheduler) (type Polyhedral-IR poly))
   ;; [TODO] Creating smth like tiramisu
-  (caten/polyhedral/parallelism::polyir-set-parallel poly 0)
+  (caten/polyhedral/transforms::polyir-set-parallel poly 0)
   ;; 1. start by implementing simple case
   ;; (setf (poly-schedule poly) (schedule scheduler poly)) ;; Getting an intial schedule, extracting parallelism
   ;; Tiling
