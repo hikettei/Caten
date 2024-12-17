@@ -46,7 +46,7 @@
   (let ((args (loop for item in (getattr si :blueprint)
                     if (eql (node-type item) :DEFINE-GLOBAL)
                       collect item)))
-    `(define-kernel (,(intern (getattr si :name))
+    `(define-kernel (,(intern (princ-to-string (getattr si :name)))
                      :threadgroup-position-in-grid gid :thread-position-in-threadgroup lid :style :metal :stream ,(>= (ctx:getenv :JIT_DEBUG) 4))
 	 (void (,@(loop for arg in args
 			collect `(,(intern (string-upcase (format nil "~a~a" (car (node-writes arg)) (if (getattr arg :pointer-p) "*" ""))))
@@ -54,7 +54,7 @@
 				  ,(io->metal (getattr arg :type))))))
          ,(with-output-to-string (out)
             (let ((*indent* 2) (*depth* 0) (*global-idx-list*))
-              (dotimes (node (getattr si :items))
+              (dolist (node (getattr si :blueprint))
                 (render-bp node out)))))))
 
 (defun render-bp (bp stream)
@@ -63,11 +63,11 @@
       (:FOR
        (if (eql (getattr bp :scope) :global)
            (progn
-             (format stream "~auint ~(~a~) = lid.~a;" (indent) (getattr bp :idx) (case *depth* (0 "x") (1 "y") (2 "z") (otherwise (error "Exceecive loop depth"))))
+             (format stream "~auint ~(~a~) = lid.~a;~%" (indent) (getattr bp :idx) (case *depth* (0 "x") (1 "y") (2 "z") (otherwise (error "Exceecive loop depth"))))
              (push (getattr bp :idx) *global-idx-list*)
              (incf *depth*))
            (progn
-             (format stream "~afor(int ~(~a~)=~a;~a;~a+=~a)" (indent)
+             (format stream "~afor(int ~(~a~)=~a;~a;~a+=~a) {~%" (indent)
                      (getattr bp :idx)
                      (render-expr 'CStyle-Renderer (getattr bp :upfrom))
                      (render-expr 'CStyle-Renderer (getattr bp :below))
@@ -77,7 +77,7 @@
       (:ENDFOR
        (if (find (getattr bp :idx) *global-idx-list*)
            nil
-           (progn (decf *indent* 2) (format stream "~a}" (indent)))))
+           (progn (decf *indent* 2) (format stream "~a}~%" (indent)))))
       (:IF
        (format stream "~aif(~a){~%" (indent) (render-expr 'CStyle-Renderer (getattr bp :condition)))
        (incf *indent* 2))
@@ -114,8 +114,22 @@
                    (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
       (:DEFINE-GLOBAL))))
 
+(defun maybe-buffer-value (x)
+  (if (buffer-p x)
+      (buffer-value x)
+      x))
+
+(defun make-kernel-caller (name)
+  `(lambda (&rest args)
+     (%funcall-metal
+      (get-kernel ',(intern (princ-to-string name)))
+      :args (map 'list #'maybe-buffer-value args)
+      :global-size `(1 1 1)
+      :local-size `(1 1 1))))
+
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
   (dolist (item items)
     (when (getattr item :rendered-object)
-      (setf (getattr item :compiled-object)
-            (compile nil (getattr item :rendered-object))))))
+      (eval (getattr item :rendered-object))
+      (setf (getattr item :rendered-object) (princ-to-string (getattr item :rendered-object))
+            (getattr item :compiled-object) (make-kernel-caller (getattr item :name))))))
