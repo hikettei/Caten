@@ -51,7 +51,7 @@
 
 (defun trim-brackets (str)
   (let ((len (length str)))
-    (if (and (>= len 2) (char= #\( (aref str 0)) (char= #\ (aref str (1- len))))
+    (if (and (>= len 2) (char= #\( (aref str 0)) (char= #\) (aref str (1- len))))
         (subseq str 1 (1- len))
         str)))
 
@@ -66,7 +66,7 @@
                    "")
                (getattr bp :idx)
                (render-expr 'CStyle-Renderer (getattr bp :upfrom))
-               (trim (render-expr 'CStyle-Renderer (getattr bp :below)))
+               (trim-brackets (render-expr 'CStyle-Renderer (getattr bp :below)))
                (getattr bp :idx)
                (render-expr 'CStyle-Renderer (getattr bp :by)))
        (incf *indent* 2))
