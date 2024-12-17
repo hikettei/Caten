@@ -8,7 +8,7 @@
   ((:file "ir")
    (:file "config")
    (:file "tiling")
-   (:file "packing")
+   (:file "transforms")
    (:file "auto-scheduler")
    (:file "package")
    (:file "documentation")))

@@ -18,6 +18,7 @@
    (:file "polyhedral-ast")
    (:file "scop")
    (:file "jit")
+   (:file "runner")
    (:file "backends/clang")
    (:file "package")
    (:file "documentation")))

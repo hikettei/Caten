@@ -80,6 +80,8 @@
    #:create-space-set
    #:create-space-map
    #:space-dim
+   #:multi-aff-zero
+   #:set-from-multi-aff
    ;; Local Space
    #:local-space
    #:local-space-p
@@ -120,6 +122,8 @@
    #:union-access-info-set-schedule-map
    ;; Set
    #:set
+   #:set-from-union-set
+   #:set-get-space
    ;;#:setp
    #:set-from-str
    #:set-empty
@@ -157,10 +161,12 @@
    ;; Union set
    #:union-set
    #:union-set-p
+   #:union-set-is-empty
    #:union-set-from-str
    #:union-set-empty
    #:union-set-universe
    #:basic-set-union-set
+   #:union-set-from-set
    #:set-union-set
    #:union-set-intersect
    #:union-set-union
@@ -200,6 +206,8 @@
    #:basic-map-union-map
    #:map-union-map
    #:union-map-reverse
+   #:union-map-is-empty
+   #:union-map-deltas
    #:union-map-intersect
    #:union-map-union
    #:union-map-subtract
@@ -337,6 +345,7 @@
    #:ast-build-set-iterators
    ;; Schedule
    #:schedule
+   #:schedule-get-map
    #:schedulep
    #:schedule-constraints-compute-schedule
 
@@ -358,6 +367,9 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-node-delete
+   #:schedule-node-first-child
+   #:schedule-node-insert-mark
    #:schedule-node-graft-after
    #:schedule-node-graft-before
    #:schedule-insert-partial-schedule
@@ -366,6 +378,7 @@
    #:schedule-node-get-children
    #:schedule-node-get-type
    #:schedule-node-insert-partial-schedule
+   #:schedule-node-band-get-partial-schedule-union-map
    #:schedule-node-get-schedule-depth
    #:schedule-node-get-child
    #:schedule-insert-sequence

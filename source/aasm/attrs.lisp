@@ -165,7 +165,7 @@ where move(x, y) is x = y
 out <- max(x, y)
 ```")
 
-(defnode (:BinaryOps :GCD) (BinaryOps JITAble)
+(defnode (:BinaryOps :GCD) (BinaryOps)
 	 "Computes the greatest common divisor of two integer tensors in read, writing the result to the first write.
 
 (Note: This computation should only applied to scalar tensors, and used for only computing the dynamic shaped tensor indexing.)

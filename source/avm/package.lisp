@@ -1,4 +1,3 @@
-(cl:in-package :cl-user)
 (defpackage :caten/avm
   (:use :cl :caten/aasm :caten/air :alexandria)
   (:local-nicknames (:docs :caten/common.documentation))
@@ -7,6 +6,10 @@
    #:dtype-t
    #:dtype->lisp
    #:dtype/cast)
+  ;; from profile.lisp
+  (:export
+   :with-real-time
+   :render-avm-position)
   ;; from buffer.lisp
   (:export
    #:*device*

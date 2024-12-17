@@ -21,6 +21,10 @@
   (:give string)
   (:keep schedule))
 
+(define-isl-function schedule-get-map %isl-schedule-get-map
+  (:give union-map)
+  (:keep schedule))
+
 (define-isl-function schedule-set %isl-schedule-set
   (:give schedule)
   (:take schedule)

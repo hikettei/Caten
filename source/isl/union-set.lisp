@@ -26,6 +26,10 @@
   (:give union-set)
   (:take basic-set))
 
+(define-isl-function union-set-from-set %isl-union-set-from-set
+  (:give union-set)
+  (:take set))
+
 (define-isl-function set-union-set %isl-set-from-basic-set
   (:give union-set)
   (:take set))
@@ -61,3 +65,11 @@
   (:give union-set)
   (:take union-set)
   (:take set params))
+
+(define-isl-function union-set-is-empty %isl-union-set-is-empty
+  (:give boolean)
+  (:take union-set))
+
+(define-isl-function set-from-union-set %isl-set-from-union-set
+  (:give set)
+  (:take union-set))

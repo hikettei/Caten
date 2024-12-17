@@ -76,6 +76,10 @@
   (:give multi-union-pw-aff)
   (:keep schedule-node))
 
+(define-isl-function schedule-node-band-get-partial-schedule-union-map %isl-schedule-node-band-get-partial-schedule-union-map
+  (:give union-map)
+  (:keep schedule-node))
+
 (define-isl-function schedule-node-get-domain %isl-schedule-node-get-domain
   (:give union-set)
   (:keep schedule-node))
@@ -85,8 +89,7 @@
   (:keep schedule-node))
 
 (defun schedule-node-get-child (schedule-node n)
-  (let ((x (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
-    (%make-schedule-node (%isl-schedule-node-copy x))))
+  (%make-schedule-node (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
 
 (defun schedule-node-get-children (schedule-node)
   (declare (type schedule-node schedule-node))
@@ -103,3 +106,16 @@
   (:give schedule-node)
   (:take schedule-node)
   (:take union-set-list))
+
+(define-isl-function schedule-node-insert-mark %isl-schedule-node-insert-mark
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take identifier))
+
+(define-isl-function schedule-node-delete %isl-schedule-node-delete
+  (:give schedule-node)
+  (:take schedule-node))
+
+(define-isl-function schedule-node-first-child %isl-schedule-node-first-child
+  (:give schedule-node)
+  (:take schedule-node))
