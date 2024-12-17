@@ -24,10 +24,6 @@
   (:give set)
   (:take basic-set))
 
-(define-isl-function set-from-union-set %isl-set-from-union-set
-  (:give set)
-  (:take union-set))
-
 (define-isl-function set-get-space %isl-set-get-space
   (:give space)
   (:take set))

@@ -156,7 +156,7 @@ Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda functi
          (outputs))
     (loop named map-search
           for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
-          while (> n-children 0) do
+          while (>= n-children 0) do
             (loop for nth upfrom 0 below n-children
                   for band = (schedule-node-get-child node nth)
                   for type = (schedule-node-get-type band) do
@@ -165,4 +165,3 @@ Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda functi
             (when (= (length next-nodes) 0) (return-from map-search))
             (setf node (pop next-nodes)))
     (nreverse outputs)))
-              

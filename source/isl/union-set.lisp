@@ -69,3 +69,7 @@
 (define-isl-function union-set-is-empty %isl-union-set-is-empty
   (:give boolean)
   (:take union-set))
+
+(define-isl-function set-from-union-set %isl-set-from-union-set
+  (:give set)
+  (:take union-set))
