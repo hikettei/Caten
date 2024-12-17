@@ -61,7 +61,7 @@
   (flet ((indent () (make-string *indent* :initial-element #\space)))
     (ecase (node-type bp)
       (:FOR
-       (if (eql (getattr bp :scope) :global)
+       (if nil;(eql (getattr bp :scope) :global)
            (progn
              (format stream "~auint ~(~a~) = lid.~a;~%" (indent) (getattr bp :idx) (case *depth* (0 "x") (1 "y") (2 "z") (otherwise (error "Exceecive loop depth"))))
              (push (getattr bp :idx) *global-idx-list*)
@@ -75,7 +75,7 @@
                      (render-expr 'CStyle-Renderer (getattr bp :by)))
              (incf *indent* 2))))
       (:ENDFOR
-       (if (find (getattr bp :idx) *global-idx-list*)
+       (if nil;(find (getattr bp :idx) *global-idx-list*)
            nil
            (progn (decf *indent* 2) (format stream "~a}~%" (indent)))))
       (:IF
