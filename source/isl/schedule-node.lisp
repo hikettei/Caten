@@ -106,3 +106,8 @@
   (:give schedule-node)
   (:take schedule-node)
   (:take union-set-list))
+
+(define-isl-function schedule-node-insert-mark %isl-schedule-node-insert-mark
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take identifier))

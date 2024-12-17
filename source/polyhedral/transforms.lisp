@@ -29,49 +29,27 @@ Reference: https://github.com/hikettei/tadashi/blob/main/src/legality.c#L91-L122
     (declare (ignore _))
     (and retval (isl:union-set-is-empty cmp))))
 
-;; not working?
-(defun insert-parallel (node)
-  (isl::%isl-schedule-node-insert-mark (isl::schedule-node-handle node) (isl::identifier-handle (isl::make-id-from-str "parallel"))))
+(defun insert-parallel (band)
+  (isl:schedule-node-insert-mark band (isl::make-id-from-str "parallel")))
 ;; [TODO] Integrate Packing/Unroll/Tiling/Parallel into commands.lisp
 ;; [TODO] Using WMMA
 ;; [TODO] Vectorized CLANG
-(defun polyir-set-parallel (poly level)
-  ""
-  (declare (type Polyhedral-IR poly))
-  (let ((deps (poly-dependencies poly)))
-    (map-schedule-nodes
-     #'(lambda (type band)
-         (when (eql type :schedule-node-band)
-           (print "+++++++++++++")
-           (print band)
-           (when (check-legality-parallel band deps)
-             (print "COINCIDENT=1"))))
-     poly)))
+(defun get-coincident-points (poly)
+  (map-schedule-nodes
+   #'(lambda (type band)
+       (when (eql type :schedule-node-band)
+         (when (check-legality-parallel band (poly-dependencies poly)) band)))
+   poly))
 
-(defun get-mark-insertable-bands (schedule)
-  (declare (type schedule schedule))
-  (let ((node (schedule-get-root schedule))
-        (next-nodes)
-        (tileable-bands))
-    ;; Enumerate all tilable bands
-    (loop named tiling-search
-          for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
-          while (> n-children 0) do
-            ;; Reached to the maximum tile band size => Stop
-            (loop named search-for-children
-                  for nth upfrom 0 below n-children
-                  for band = (schedule-node-get-child node nth)
-                  for type = (schedule-node-get-type band)
-                  if (eql type :schedule-node-band)
-                    do (push band tileable-bands)
-                       (push (schedule-node-get-child band 0) next-nodes)
-                       (return-from search-for-children)
-                  else
-                    do (push band next-nodes))
-            (when (= (length next-nodes) 0)
-              (return-from tiling-search))
-            (setf node (pop next-nodes)))
-    tileable-bands))
+(defun polyir-set-coincident (poly)
+  (declare (type Polyhedral-IR poly))
+  ;; TODO(hikettei) there should be more clever way to do this:
+  (let ((insertable-points (get-coincident-points poly)))
+    (dotimes (i (length insertable-points))
+      (setf (poly-schedule poly) (isl:schedule-node-get-schedule (insert-parallel (nth i (print (get-coincident-points poly)))))))))
+;; (defun polyir-set-parallel (poly)
+;; Interchange the largest loop to the outermost
+;; If symbolic, insert IF
 ;; (defun insert-mark (band))
 (defun packing (config ir)
   (declare (type polyhedral-ir ir))

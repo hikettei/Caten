@@ -39,7 +39,7 @@
       (:ast-node-for   (parse-isl-ast-for ast))
       (:ast-node-if    (parse-isl-ast-if ast))
       (:ast-node-block (parse-isl-ast-block ast))
-      (:ast-node-mark  (error ":isl_ast_node_mark is not supported"))
+      (:ast-node-mark  (parse-isl-ast-mark ast))
       (:ast-node-user  (parse-isl-ast-user ast)))))
 
 (declaim (ftype (function (cffi:foreign-pointer) ASTBlock) parse-isl-ast-block))
@@ -65,6 +65,17 @@
 			     collect
 			     (parse-isl-expr (isl::%isl-ast-expr-op-get-arg expr i)))))
       (make-user name args))))
+
+(declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast-mark))
+(defun parse-isl-ast-mark (ast)
+  (let* ((mark (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast))))
+         (user (parse-isl-ast (isl::%isl-ast-node-mark-get-node ast))))
+    (typecase user
+      (AstFor
+       )
+      (otherwise
+       (warn "mark: ignored the mark ~a for ~a" mark user)))
+    user))
 
 (declaim (ftype (function ((or cffi:foreign-pointer isl:ast-node)) (values Expr &optional)) parse-isl-expr))
 (defun parse-isl-expr (ast)

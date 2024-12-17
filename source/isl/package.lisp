@@ -366,6 +366,7 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-node-insert-mark
    #:schedule-node-graft-after
    #:schedule-node-graft-before
    #:schedule-insert-partial-schedule

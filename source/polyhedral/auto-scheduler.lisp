@@ -44,16 +44,13 @@
 (auto-schedule scheduler poly)
 ```
 An entrypoint for auto-scheduling.
-
-https://github.com/Tiramisu-Compiler/tiramisu/blob/master/src/auto_scheduler/tiramisu_schedules_generator.cpp#L465
 "
   (declare (type Auto-Scheduler-Config scheduler) (type Polyhedral-IR poly))
   ;; [TODO] Creating smth like tiramisu
-  (caten/polyhedral/transforms::polyir-set-parallel poly 0)
+  (caten/polyhedral/transforms::polyir-set-coincident poly)
   ;; 1. start by implementing simple case
   ;; (setf (poly-schedule poly) (schedule scheduler poly)) ;; Getting an intial schedule, extracting parallelism
-  ;; Tiling
-  ;; (caten/polyhedral/tiling:tile-bands scheduler poly)
+  ;; (caten/polyhedral/tiling:tile-bands scheduler poly) ;; segv
   ;;  Mark unroll/vectorize/parallel
   ;; (caten/polyhedral/packing:packing scheduler poly)
   poly)

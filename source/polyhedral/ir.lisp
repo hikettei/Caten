@@ -135,7 +135,9 @@
                            collect (format nil "~%")))))
                       (format out ")")))
                    ((or (string= key "permutable") (string= key "coincident"))
-                    (format out "~%~a~a(~a)" (indent indent) key (gethash key schedule)))                 
+                    (format out "~%~a~a(~a)" (indent indent) key (gethash key schedule)))
+                   ((or (string= key "mark"))
+                    (format out "~amark(~a)" (indent indent) (gethash key schedule)))
                    (t (warn "pprint: the key ~a is not implemented." key)))))
         (mapc #'(lambda (x) (explore schedule x)) (reverse (alexandria:hash-table-keys schedule)))))))
 
@@ -148,10 +150,10 @@
 ```
 (map-schedule-nodes f polyhedral-ir)
 ```
-Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda function which takes (type[keyword] node[schedule-node]) as an argument."
+Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda function which takes (type[keyword] node[schedule-node]) as an argument.
+This function returns a list of the results of applying f to each node. NIL is excluded in the list."
   (declare (type Polyhedral-IR polyhedral-ir) (type function f))
-  (let* ((schedule (poly-schedule polyhedral-ir))
-         (node (schedule-get-root schedule))
+  (let* ((node (schedule-get-root (poly-schedule polyhedral-ir)))
          (next-nodes)
          (outputs))
     (loop named map-search
@@ -160,7 +162,7 @@ Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda functi
             (loop for nth upfrom 0 below n-children
                   for band = (schedule-node-get-child node nth)
                   for type = (schedule-node-get-type band) do
-                    (push (funcall f type band) outputs)
+                    (let ((out (funcall f type band))) (when out (push out outputs)))
                     (push band next-nodes))
             (when (= (length next-nodes) 0) (return-from map-search))
             (setf node (pop next-nodes)))
