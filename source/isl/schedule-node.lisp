@@ -111,3 +111,11 @@
   (:give schedule-node)
   (:take schedule-node)
   (:take identifier))
+
+(define-isl-function schedule-node-delete %isl-schedule-node-delete
+  (:give schedule-node)
+  (:take schedule-node))
+
+(define-isl-function schedule-node-first-child %isl-schedule-node-first-child
+  (:give schedule-node)
+  (:take schedule-node))

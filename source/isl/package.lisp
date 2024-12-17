@@ -345,6 +345,7 @@
    #:ast-build-set-iterators
    ;; Schedule
    #:schedule
+   #:schedule-get-map
    #:schedulep
    #:schedule-constraints-compute-schedule
 
@@ -366,6 +367,8 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-node-delete
+   #:schedule-node-first-child
    #:schedule-node-insert-mark
    #:schedule-node-graft-after
    #:schedule-node-graft-before
