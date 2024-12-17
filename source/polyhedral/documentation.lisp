@@ -19,4 +19,11 @@ This package will also provide the following advanced auto scheduling algorithm 
 ...
 
 To enable this, set `AUTO_SCHEDULER=1`.
+")
+  (title "References")
+  (body "
+- TODO: More (PolyTOPS, TensorComprehensions, AKG, Tiramisu etc...)
+- https://www.slideshare.net/slideshow/introduction-to-polyhedral-compilation/70482946
+- https://inria.hal.science/hal-01253322v1/document
+- https://repository.dl.itc.u-tokyo.ac.jp/record/6112/files/48136454.pdf
 "))
