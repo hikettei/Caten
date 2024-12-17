@@ -144,3 +144,38 @@
               (proceed (!relu (!convnd input weight :bias bias :stride 2 :padding 0 :dilation 1 :groups 1)))))))))
 
 ;; Conv Schedule Test [TODO: Single Kernel]
+(defun %arange (shape a b &key (dtype :float32) (order :row))
+  "Creates a tensor where each element is generated using alpha * i + beta."
+  (with-context
+      (m (%make-tensor shape :dtype dtype :order order))
+    (i (%index-components m (%shape shape)))
+    (alpha (%load (%salloc :dtype dtype) a))
+    (beta  (%load (%salloc :dtype dtype) b))
+    ;; a = alpha * i + b
+    (t1 (%mul i alpha))
+    (t2 (%add t1 beta))
+    (c  (%store m t2 :id 'out))))
+
+;; Step 1: Use %arange to generate a tensor
+(defparameter aranged-tensor
+  (%arange '(4) 1 0 :dtype :float32 :order :row))
+
+;; Step 2: Realize the tensor (force computation)
+(defparameter realized-tensor (%realize aranged-tensor))
+
+;; Step 3: Wrap the tensor into a higher-level tensor with a buffer
+(defparameter tensor-with-buffer
+  (make-tensor '(4) :dtype :float32 :order :row :from realized-tensor))
+
+;; Step 4: Apply !view to manipulate the tensor
+(defparameter viewed-tensor
+  (apply #'!view tensor-with-buffer `((0 4)))) ;; Viewing the full range [0:4]
+
+;; Step 5: Access tracker for the viewed tensor
+(defparameter tracker (tensor-tr viewed-tensor))
+
+;; Print results
+(format t "Type of realized tensor: ~a~%" (type-of realized-tensor))
+(format t "Viewed Tensor Tracker: ~a~%" tracker)
+(format t "Tracker Mask: ~a~%" (tr-mask tracker))
+(format t "Tracker Broadcast: ~a~%" (tr-broadcast tracker))
