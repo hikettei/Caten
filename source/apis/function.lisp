@@ -67,6 +67,25 @@ save-for-backward is determined automatically, so you do not have to consider ab
           do (setf (tensor-nth-output o) nth))
     (apply #'values outs)))
 ;; ~~ differentiable ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Unfold (Func)
+  ((window-size :initarg :window-size :type integer :accessor unfold-window-size)
+   (stride :initarg :stride :type integer :accessor unfold-stride)
+   (tr :accessor unfold-tr))
+  (:documentation "Unfolding operation for 1D tensors."))
+
+;;should forward be applied to a list of tensors?
+(defmethod forward ((op Unfold) &rest tensors)
+  "Forward pass for Unfold. Only works for 1D tensors for now."
+  (let* ((tensor (first tensors))
+         (window-size (unfold-window-size op))
+         (stride (unfold-stride op))
+         (rows (/ (car (shape tensor)) window-size))
+         (reshaped (!reshape tensor `(,rows ,window-size))))
+    (!view reshaped `(0 ,rows ,stride) t)))
+
+(defun !unfold (tensor window-size stride)
+  (forward (make-instance 'Unfold :window-size window-size :stride stride) tensor))
+
 (defclass IdentityNode (Func) nil)
 (defmethod forward ((op IdentityNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
 (defmethod backward ((op IdentityNode) &optional prev-grad) (values prev-grad))
