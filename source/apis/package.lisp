@@ -142,7 +142,7 @@
    #:lower
    #:!identity
    ;; shaping
-   #:!view #:!view-from-base #:!reshape #:!flatten #:!repeat #:!contiguous #:!copy #:!permute #:!t #:!transpose
+   #:!view #:!view-from-base #:!reshape #:!flatten #:!repeat #:!contiguous #:!copy #:!permute #:!t #:!transpose #:!unfold
    #:!expand
    #:!uprank
    ;; Binary
