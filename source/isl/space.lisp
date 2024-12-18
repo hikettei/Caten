@@ -4,6 +4,10 @@
   :free %isl-space-free
   :copy %isl-space-copy)
 
+(define-isl-object multi-aff
+  :free %isl-multi-aff-free
+  :copy %isl-multi-aff-copy)
+
 (defmethod print-object ((value space) stream)
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-space-to-str (space-handle value)) stream)))
@@ -33,3 +37,7 @@
 
 (defun space-dim (space dim-type)
   (%isl-space-dim (space-handle space) dim-type))
+
+(define-isl-function multi-aff-zero %isl-multi-aff-zero
+  (:give multi-aff)
+  (:take space))

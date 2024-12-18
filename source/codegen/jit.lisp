@@ -47,8 +47,7 @@ caten/codegen overview:
    #:buffer-stride
    #:buffer-dtype
    #:buffer-inferred-permute
-   #:buffer-orig-buffer-shape
-   #:%impl)
+   #:buffer-orig-buffer-shape)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer)
@@ -98,7 +97,8 @@ caten/codegen overview:
    #:compiled-kernel-caller
    #:compiled-kernel-raw-caller
    #:compiled-kernel-device
-   #:compiled-kernel-code))
+   #:compiled-kernel-code
+   #:compiled-kernel-out-positions))
 
 (in-package :caten/codegen/jit)
 ;; ~~ Compiledop instruction ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -162,14 +162,6 @@ caten/codegen overview:
                    if (eql (node-type item) :DEFINE-GLOBAL)
                      collect (getattr item :dtype))
              :cached-p (if (getattr si :cache-name) t nil)))
-
-(defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
-  (let ((info (getattr node :kernel-info)))
-    ;; (For details, see coerce-dtyped-buffer)
-    (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
-      (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
-      (apply (compiled-kernel-caller info) args)
-      (apply #'values (map 'list #'(lambda (x) (nth x args)) (compiled-kernel-out-positions info))))))
 
 (defun timefy (name time)
   (if (= 0 time) name (intern (format nil "~(~a~)_~a" name time))))
@@ -442,111 +434,111 @@ caten/codegen overview:
 ```
 Runs the JIT compilation for the given AVM."
   (declare (type AVM avm))
-  (when (= 2 (ctx:getenv :DOT)) (->dot (avm-graph avm) :title "Base Graph"))
-  (run-type-infer avm)
-  ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
-  (apply-rewriting-rules avm)
-  ;; 3. Running the scheduler
-  (let ((base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (avm-graph avm)))))
-        (schedule-graph (graph-schedule (avm-graph avm)))
-        (symbolics
-          (remove-duplicates
-           (loop for node in (graph-nodes (avm-graph avm))
-                 if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
-                   collect (getattr node :value))))
-        (pointer-map (make-hash-table)))
-    (declare (type Graph schedule-graph))
-    (with-expr-cache (:pointer-map pointer-map) ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
-      ;; 5. Minifying the number of schedules, (reuse kernels)
-      (when (not (= 1 (ctx:getenv :NO_SCHEDULE_CACHE)))
-        (minify-equivalent-schedule schedule-graph))
-      ;; 6. Start JIT Compilation. (Performing group by group)
-      (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
-        (when (>= (ctx:getenv :JIT_DEBUG) 2)
-          (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
-        (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
-          (maybe-pmapc
-           #'(lambda (x &aux (start (get-internal-real-time)))
-               (with-printing-as-chunk
-                   (stream)
-                 (when (and (getattr x :jitable) (getattr x :cache-name))
-                   (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                     (print-progress "~a" (getattr x :name))
-                     (format stream "=====> (Skipped) redirect to ~a~%" (getattr x :cache-name))))
-                 (when (getattr x :jitable)
-                   (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :cache-name)))
-                     (print-progress "~a" (getattr x :name))
-                     (format stream "=====> Lowering to blueprint~%"))
-                   (when (null (getattr x :cache-name))
-                     ;; 7. Running Lowerer
-                     (lower-schedule-item x (avm-graph avm) schedule-graph)
+  (caten/isl:with-isl-context ;; Note: Need this to ensure isl objected allocated here are not cached and not used by other compiling sessions.
+    (when (= 2 (ctx:getenv :DOT)) (->dot (avm-graph avm) :title "Base Graph"))
+    (run-type-infer avm)
+    ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
+    (apply-rewriting-rules avm)
+    ;; 3. Running the scheduler
+    (let ((base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (avm-graph avm)))))
+          (schedule-graph (graph-schedule (avm-graph avm)))
+          (symbolics
+            (remove-duplicates
+             (loop for node in (graph-nodes (avm-graph avm))
+                   if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
+                     collect (getattr node :value))))
+          (pointer-map (make-hash-table)))
+      (declare (type Graph schedule-graph))
+      (with-expr-cache (:pointer-map pointer-map) ;; Initialize a cache to treat (EXPR: a*b) as a symbolic and make symbolic collapsed loops as an affine loop.
+        ;; 5. Minifying the number of schedules, (reuse kernels)
+        (when (not (= 1 (ctx:getenv :NO_SCHEDULE_CACHE)))
+          (minify-equivalent-schedule schedule-graph))
+        ;; 6. Start JIT Compilation. (Performing group by group)
+        (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
+          (when (>= (ctx:getenv :JIT_DEBUG) 2)
+            (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
+          (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
+            (maybe-pmapc
+             #'(lambda (x &aux (start (get-internal-real-time)))
+                 (with-printing-as-chunk
+                     (stream)
+                   (when (and (getattr x :jitable) (getattr x :cache-name))
                      (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                       (print-blueprint (getattr x :blueprint) stream))
-                     ;; 8. Lower into Polyhedral IR
-                     (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
-                       (format stream "=====> Skipping Auto Scheduler (The memory access pattern is not an affine, or scalar kernel)~%"))
-                     (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
+                       (print-progress "~a" (getattr x :name))
+                       (format stream "=====> (Skipped) redirect to ~a~%" (getattr x :cache-name))))
+                   (when (getattr x :jitable)
+                     (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :cache-name)))
+                       (print-progress "~a" (getattr x :name))
+                       (format stream "=====> Lowering to blueprint~%"))
+                     (when (null (getattr x :cache-name))
+                       ;; 7. Running Lowerer
+                       (lower-schedule-item x (avm-graph avm) schedule-graph)
                        (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                         (format stream "=====> Lowering to Polyhedral IR~%"))
-                       (scop x)
+                         (print-blueprint (getattr x :blueprint) stream))
+                       ;; 8. Lower into Polyhedral IR
+                       (when (and (>= (ctx:getenv :JIT_DEBUG) 2) (null (getattr x :auto-schedule-p)) (>= (ctx:getenv :AUTO_SCHEDULER) 1))
+                         (format stream "=====> Skipping Auto Scheduler (The memory access pattern is not an affine, or scalar kernel)~%"))
+                       (when (and (>= (ctx:getenv :AUTO_SCHEDULER) 1) (getattr x :auto-schedule-p))
+                         (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                           (format stream "=====> Lowering to Polyhedral IR~%"))
+                         (scop x)
+                         (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                           (format stream "=====> Auto Scheduler~%"))
+                         ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
+                         (auto-schedule auto-scheduler x)
+                         (when (>= (ctx:getenv :JIT_DEBUG) 2)
+                           (print (getattr x :polyhedral) stream)
+                           (fresh-line stream)
+                           (format stream "=====> Optimized kernel~%")
+                           (print-blueprint (getattr x :blueprint) t)))
                        (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                         (format stream "=====> Auto Scheduler~%"))
-                       ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
-                       (auto-schedule auto-scheduler x)
-                       (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                         (print (getattr x :polyhedral) stream)
-                         (fresh-line stream)
-                         (format stream "=====> Optimized kernel~%")
-                         (print-blueprint (getattr x :blueprint) t)))
-                     (when (>= (ctx:getenv :JIT_DEBUG) 2)
-                       (format stream "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))
-                     (schedule-item-write-define-global x)))))
-           (graph-nodes schedule-graph)))
-        (when (= 1 (ctx:getenv :AUTO_SCHEDULER)) (trivial-garbage:gc :full t)) ;; Collect garbage for all isl objects
-        (mapc
-         #'(lambda (x)
-             (when (getattr x :cache-name)
-               (when (>= (ctx:getenv :JIT_DEBUG) 4)
-                 (fresh-line)
-                 (print-info "Copying cache ~a => ~a" (getattr x :name) (getattr x :cache-name)))
-               (lower-cached-schedule-item x schedule-graph)))
-         (graph-nodes schedule-graph))
-        ;; 10. Running memory-planner, update the storage-id
-        (setf schedule-graph (->graph-with-tpsort schedule-graph)
-              (graph-nodes schedule-graph)
-              (let ((stack))
-                `(,@(loop for node in (graph-nodes schedule-graph)
-                          if (getattr node :backward-p) do (push node stack)
-                            else collect node)
-                  ,@(nreverse stack))))
-        (verify-graph schedule-graph) ;; Sort the graph for memory planner
-        (when (not (= 1 (ctx:getenv :NO_MEMORY_PLANNER)))
+                         (format stream "Compilation Time : ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))
+                       (schedule-item-write-define-global x)))))
+             (graph-nodes schedule-graph)))
+          (mapc
+           #'(lambda (x)
+               (when (getattr x :cache-name)
+                 (when (>= (ctx:getenv :JIT_DEBUG) 4)
+                   (fresh-line)
+                   (print-info "Copying cache ~a => ~a" (getattr x :name) (getattr x :cache-name)))
+                 (lower-cached-schedule-item x schedule-graph)))
+           (graph-nodes schedule-graph))
+          ;; 10. Running memory-planner, update the storage-id
+          (setf schedule-graph (->graph-with-tpsort schedule-graph)
+                (graph-nodes schedule-graph)
+                (let ((stack))
+                  `(,@(loop for node in (graph-nodes schedule-graph)
+                            if (getattr node :backward-p) do (push node stack)
+                              else collect node)
+                    ,@(nreverse stack))))
+          (verify-graph schedule-graph) ;; Sort the graph for memory planner
+          (when (not (= 1 (ctx:getenv :NO_MEMORY_PLANNER)))
+            (when (>= (ctx:getenv :JIT_DEBUG) 2)
+              (fresh-line)
+              (print-info "Running the memory planner..."))
+            (run-memory-planner schedule-graph symbolics base-graph))
           (when (>= (ctx:getenv :JIT_DEBUG) 2)
             (fresh-line)
-            (print-info "Running the memory planner..."))
-          (run-memory-planner schedule-graph symbolics base-graph))
-        (when (>= (ctx:getenv :JIT_DEBUG) 2)
-          (fresh-line)
-          (print-info "Rendering ..."))
-        (dolist (s (graph-nodes schedule-graph))
-          (when (and (getattr s :jitable) (getattr s :blueprint))
-            (setf (getattr s :rendered-object) (%render-kernel renderer s))))
-        ;; 11. Complete (Render by the renderer)
-        (when (>= (ctx:getenv :JIT_DEBUG) 2)
-          (fresh-line)
-          (print-info "Compiling ..."))
-        (%compile-kernel renderer (graph-nodes schedule-graph) dir)
-        ;; [TODO] Improve schedule-graph->avm-graph
-        (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
-          (setf (graph-outputs new-graph) (graph-outputs schedule-graph))
-          (when (>= (ctx:getenv :JIT_DEBUG) 4)
-            (print-info "Final Scheduling Graph:")
-            (pprint-graph schedule-graph)
-            (when (= (ctx:getenv :DOT) 2) (->dot schedule-graph :title "Schedule Graph (Final)"))
-            (print-info "Final VM Graph:")
-            (print new-graph))
-          (setf (avm-graph avm) new-graph
-                (avm-tape-length avm) (length (graph-nodes new-graph))
-                (avm-pc avm) 0
-                (avm-variables avm) (make-hash-table)))
-        avm))))
+            (print-info "Rendering ..."))
+          (dolist (s (graph-nodes schedule-graph))
+            (when (and (getattr s :jitable) (getattr s :blueprint))
+              (setf (getattr s :rendered-object) (%render-kernel renderer s))))
+          ;; 11. Complete (Render by the renderer)
+          (when (>= (ctx:getenv :JIT_DEBUG) 2)
+            (fresh-line)
+            (print-info "Compiling ..."))
+          (%compile-kernel renderer (graph-nodes schedule-graph) dir)
+          ;; [TODO] Improve schedule-graph->avm-graph
+          (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
+            (setf (graph-outputs new-graph) (graph-outputs schedule-graph))
+            (when (>= (ctx:getenv :JIT_DEBUG) 4)
+              (print-info "Final Scheduling Graph:")
+              (pprint-graph schedule-graph)
+              (when (= (ctx:getenv :DOT) 2) (->dot schedule-graph :title "Schedule Graph (Final)"))
+              (print-info "Final VM Graph:")
+              (print new-graph))
+            (setf (avm-graph avm) new-graph
+                  (avm-tape-length avm) (length (graph-nodes new-graph))
+                  (avm-pc avm) 0
+                  (avm-variables avm) (make-hash-table)))
+          avm)))))

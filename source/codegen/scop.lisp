@@ -186,7 +186,8 @@ Corresponds to the position of the subgraph in the parent schedule.
                                     #'concatenate
                                     'string
                                     (butlast
-                                     (when (and typ (not (= -1 (caten/avm:buffer-nrank buf))))
+                                     ;; Note(hikettei) how to tell polyhedral compiler that `buf` must be a scalar?
+                                     (when (and typ) ;; (not (= -1 (caten/avm:buffer-nrank buf))))
                                        (loop for stride in (iteration-space-strides typ)
                                              for nth upfrom 0
                                              for view = (nth nth (iteration-space-views typ))
@@ -311,7 +312,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
 
 (defmethod auto-schedule (auto-scheduler (node Node))
   (assert (getattr node :polyhedral))
-  ;; (caten/polyhedral:auto-schedule auto-scheduler (getattr node :polyhedral))
+  (caten/polyhedral:auto-schedule auto-scheduler (getattr node :polyhedral))
   ;; Load blueprint from optimized polyhedral IR
   (setf (getattr node :blueprint)
         (lower-into-bp-from-polyhedral

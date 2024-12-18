@@ -41,9 +41,9 @@ jobs:
       - name: Transformer Graph Simplification (N<=12, JIT=0, AUTO_SCHEDULER=0)
         run: PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 36 0 transformer_simplifier_plot.png
       - name: Transformer Scheduling (N<=12, JIT=1, AUTO_SCHEDULER=0)
-        run: PARALLEL=4 PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=0 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_no_auto_sched_plot.png
+        run: PARALLEL=4 PROFILE_SIMPLIFIER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 12 1 transformer_simplifier_no_auto_sched_plot.png
 #      - name: Transformer Auto Scheduler (N<=12, JIT=1, AUTO_SCHEDULER=1)
-#        run: PROFILE_SIMPLIFIER=1 JIT_DEBUG=2 AUTO_SCHEDULER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 24 1 transformer_simplifier_auto_scheduler_plot.png
+#        run: PROFILE_SIMPLIFIER=1 AUTO_SCHEDULER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 24 1 transformer_simplifier_auto_scheduler_plot.png
   ONNX_Optimization:
     name: ONNX Optimization
     runs-on: ubuntu-latest
@@ -109,11 +109,11 @@ jobs:
       - name: Running MobilenetV2
         run: |
           ros config set dynamic-space-size 8gb
-          JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/mobilenet_v2.onnx --image ./cat.png --label 282
+          PROFILE=1 JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/mobilenet_v2.onnx --image ./cat.png --label 282
       - name: Running ResNet18
         run: |
           ros config set dynamic-space-size 8gb
-          JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/resnet18.onnx --image ./cat.png --label 281
+          PROFILE=1 JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/resnet18.onnx --image ./cat.png --label 281
   GGUF_Optimization:
     name: GGUF Optimization
     runs-on: ubuntu-latest
@@ -131,4 +131,4 @@ jobs:
         run: |
           ros config set dynamic-space-size 8gb
           : # Reproducing the output from huggingface gpt2
-          JIT=1 JIT_DEBUG=4 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --expected "Hello, I'm sorry, but I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you" --max-length 100
+          PROFILE=1 JIT=1 JIT_DEBUG=4 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --expected "Hello, I'm sorry, but I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you" --max-length 100

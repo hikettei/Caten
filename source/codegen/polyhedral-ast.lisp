@@ -22,7 +22,8 @@
     (from from :type Expr)
     (to to :type Expr)
     (by by :type Expr)
-    (body body :type (or ASTBlock User ASTFor ASTIF)))
+    (body body :type (or ASTBlock User ASTFor ASTIF))
+    (scope :local :type (member :local :global)))
 
   (defstruct (AstIf
               (:constructor make-if (condition then-node else-node)))
@@ -39,7 +40,7 @@
       (:ast-node-for   (parse-isl-ast-for ast))
       (:ast-node-if    (parse-isl-ast-if ast))
       (:ast-node-block (parse-isl-ast-block ast))
-      (:ast-node-mark  (error ":isl_ast_node_mark is not supported"))
+      (:ast-node-mark  (parse-isl-ast-mark ast))
       (:ast-node-user  (parse-isl-ast-user ast)))))
 
 (declaim (ftype (function (cffi:foreign-pointer) ASTBlock) parse-isl-ast-block))
@@ -65,6 +66,18 @@
 			     collect
 			     (parse-isl-expr (isl::%isl-ast-expr-op-get-arg expr i)))))
       (make-user name args))))
+
+(declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast-mark))
+(defun parse-isl-ast-mark (ast)
+  (let* ((mark (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast))))
+         (user (parse-isl-ast (isl::%isl-ast-node-mark-get-node ast))))
+    (typecase user
+      (AstFor
+       (when (string= mark "parallel")
+         (setf (astfor-scope user) :global)))
+      (otherwise
+       (warn "mark: ignored the mark ~a for ~a" mark user)))
+    user))
 
 (declaim (ftype (function ((or cffi:foreign-pointer isl:ast-node)) (values Expr &optional)) parse-isl-expr))
 (defun parse-isl-expr (ast)
@@ -159,8 +172,8 @@
 	     (parse-isl-ast (isl::%isl-ast-node-if-get-else-node ast)))))
     (make-if condition then-node else-node)))
 ;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun r/for (idx upfrom below by)
-  (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by))
+(defun r/for (idx upfrom below by scope)
+  (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by :scope scope))
 
 (defun r/endfor (idx)
   (make-node :Render :ENDFOR nil nil :idx idx))
@@ -191,8 +204,8 @@
 	       (when (listp object) (return-from lower (map 'list #'lower object)))
 	       (ematch object
 		 ((ASTBlock :body body) (map 'list #'lower body))
-		 ((AstFor :idx idx :from upfrom :to to :by by :body body)
-		  (push (r/for idx upfrom to by) new-graph)
+		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
+		  (push (r/for idx upfrom to by scope) new-graph)
 		  (lower body)
 		  (push (r/endfor idx) new-graph))
 		 ((User :name name :args args)
