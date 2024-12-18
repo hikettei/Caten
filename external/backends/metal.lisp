@@ -60,6 +60,7 @@
 (defun render-bp (bp stream)
   (flet ((indent () (make-string *indent* :initial-element #\space)))
     (ecase (node-type bp)
+      ;; [TODO] Optimize Global Loops once we've finished implementing polyhedral compiler
       (:FOR
        (if nil;(eql (getattr bp :scope) :global)
            (progn
