@@ -10,6 +10,7 @@
    (:file "tiling")
    (:file "transforms")
    (:file "search")
+   (:file "methods/parallelize")
    (:file "auto-scheduler")
    (:file "package")
    (:file "documentation")))
