@@ -145,10 +145,12 @@ Before contributing, please note that there is no linter here. Make an effort to
 
 ### Supported Models
 
-- **Transformer**
+- **Generative AI**
   - [x] GPT2
-  - [ ] Llama3 8B
+  - [ ] Llama3
   - [ ] TinyLLAMA
+  - [ ] StableDiffusion
+  - [ ] QwenVL2
 - **Classification**
   - [x] MobileNetV2
   - [ ] MobileNetV3
@@ -184,9 +186,9 @@ Before contributing, please note that there is no linter here. Make an effort to
 - [x] CLANG JIT
 - [ ] CLANG with Auto Scheduler
 - [ ] METAL
+- [ ] WebGPU
 - [ ] CUDA
-- [ ] Vulkan
-- [ ] Auto Scheduler
+- [ ] AutoScheduler
 
 ## Running tests
 
