@@ -5,7 +5,8 @@
    #:check-legality-parallel
    #:check-legality
    #:polyir-set-coincident
-   #:polyir-loop-interchange))
+   #:polyir-loop-interchange
+   #:polyir-loop-permutable-bands))
 
 (in-package :caten/polyhedral/transforms)
 
@@ -78,8 +79,9 @@ Returns T if the current schedule does not break any dependences in dep."
          (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
          (_ (when (= 0 n-child) (return-from %loop-interchange nil)))
          (node (isl:schedule-node-first-child node))
+         (__   (when (find (isl:schedule-node-get-type node) `(:schedule-node-filter)) (return-from %loop-interchange nil)))
          (node (isl:schedule-node-insert-partial-schedule node mupa)))
-    (declare (ignore _))
+    (declare (ignore _ __))
     node))
 
 (defun polyir-loop-interchange (poly nth)
@@ -91,3 +93,11 @@ Returns T if the current schedule does not break any dependences in dep."
       (if (and new-sched (check-legality new-sched (poly-dependencies poly)))
           (progn (setf (poly-schedule poly) new-sched) t)
           nil))))
+
+(defun polyir-loop-permutable-bands (poly)
+  (declare (type polyhedral-ir poly))
+  (let ((bands (map-schedule-nodes #'(lambda (type band) (when (eql type :schedule-node-band) band)) poly)))
+    (loop for nth upfrom 0 for band in bands
+          if (let ((s (%loop-interchange band)))
+               (when s (check-legality (isl:schedule-node-get-schedule s) (poly-dependencies poly))))
+            collect nth)))
