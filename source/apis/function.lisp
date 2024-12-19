@@ -67,24 +67,48 @@ save-for-backward is determined automatically, so you do not have to consider ab
           do (setf (tensor-nth-output o) nth))
     (apply #'values outs)))
 ;; ~~ differentiable ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 (defclass Unfold (Func)
   ((window-size :initarg :window-size :type integer :accessor unfold-window-size)
-   (stride :initarg :stride :type integer :accessor unfold-stride)
-   (tr :accessor unfold-tr))
-  (:documentation "Unfolding operation for 1D tensors."))
-
-;;should forward be applied to a list of tensors?
-(defmethod forward ((op Unfold) &rest tensors)
-  "Forward pass for Unfold. Only works for 1D tensors for now."
-  (let* ((tensor (first tensors))
-         (window-size (unfold-window-size op))
-         (stride (unfold-stride op))
-         (rows (/ (car (shape tensor)) window-size))
-         (reshaped (!reshape tensor `(,rows ,window-size))))
-    (!view reshaped `(0 ,rows ,stride) t)))
+   (stride :initarg :stride :type integer :accessor unfold-stride))
+  (:documentation "Unfold operation for 1D tensors.
+Given a 1D input `(N)`, produces `(num-windows, W)` views,
+where `num-windows = floor((N - W)/S) + 1`, and output[i,j] = input[i*S + j]."))
 
 (defun !unfold (tensor window-size stride)
+  "
+(!unfold tensor window-size stride)
+
+Symbolically creates an unfold operation on a 1D tensor.
+Produces a 2D view of shape (num-windows, window-size).
+"
   (forward (make-instance 'Unfold :window-size window-size :stride stride) tensor))
+
+(defmethod forward ((op Unfold) &rest tensors)
+  "Forward pass: compute the output shape, create a symbolic tensor, set op and variables."
+  (let* ((input (car tensors))
+         (N (car (tensor-shape input)))
+         (W (unfold-window-size op))
+         (S (unfold-stride op)))
+    (assert (>= N W) () "Unfold: window-size (~a) too large for input length (~a)." W N)
+    (let ((num-windows (max 0 (+ 1 (floor (/ (- N W) S))))))
+      ;; Create a symbolic output tensor with the correct shape
+      (let ((out (make-tensor (list num-windows W)
+                              :dtype (tensor-dtype input)
+                              :order (tensor-order input))))
+        (setf (tensor-op out) op
+              (tensor-variables out) (list input))
+        out))))
+
+(defmethod backward ((op Unfold) &optional dout)
+  "Backward pass: not defined here for simplicity."
+  (declare (ignore dout))
+  (values nil))
+
+
+(defmethod lower ((op Unfold) &rest inputs)
+  (print "hello")  
+  )
 
 (defclass IdentityNode (Func) nil)
 (defmethod forward ((op IdentityNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
@@ -137,7 +161,7 @@ Equivalent to #'identity, but it is used to create a lazy computation node.
    (tr :accessor view-tr)))
 
 (defmethod backward ((op View) &optional dout)
-  (with-slots ((nrank nrank) (broadcast-mode broadcast-mode) (views views) (subscripts subscripts)) op
+  (with-slots ((nrank nrank) (broadcast-mode broadc-mode) (views views) (subscripts subscripts)) op
     (let* ((x (car (func-variables op)))
            (base (if broadcast-mode
                      (make-tensor (shape x) :dtype (dtype-of x) :order (order x) :initial-element 0.0)
