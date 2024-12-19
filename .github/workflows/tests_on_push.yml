@@ -10,7 +10,7 @@ on:
 
 jobs:
   UnitTest:
-    name: (🎰💥💸${{ matrix.backend }})💥💸Unittests on (${{ matrix.lisp }})
+    name: 🎰💥💸${{ matrix.backend }}💥💸Unittests on (${{ matrix.lisp }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
