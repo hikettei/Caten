@@ -6,6 +6,7 @@
   :serial t
   :components
   ((:file "ir")
+   (:file "ast")
    (:file "config")
    (:file "tiling")
    (:file "transforms")
