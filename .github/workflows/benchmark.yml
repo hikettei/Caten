@@ -1,4 +1,4 @@
-name: Benchmarks
+name: "🎰💥💸 7️⃣7️⃣7️⃣ Benchmarks 7️⃣7️⃣7️⃣"
 on:
   push:
     branches:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   Compiler_Benchmark:
-    name: Transformer Compilation
+    name: "🎰💥💸 7️⃣7️⃣7️⃣ Transformer Compilation 7️⃣7️⃣7️⃣ 💥💸"
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -45,7 +45,7 @@ jobs:
 #      - name: Transformer Auto Scheduler (N<=12, JIT=1, AUTO_SCHEDULER=1)
 #        run: PROFILE_SIMPLIFIER=1 AUTO_SCHEDULER=1 qlot exec ./roswell/caten.ros benchmark transformer_compile_time 24 1 transformer_simplifier_auto_scheduler_plot.png
   ONNX_Optimization:
-    name: ONNX Optimization
+    name: "🎰💥💸 7️⃣7️⃣7️⃣ ONNX Optimization 7️⃣7️⃣7️⃣ 💥💸"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -115,7 +115,7 @@ jobs:
           ros config set dynamic-space-size 8gb
           PROFILE=1 JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/resnet18.onnx --image ./cat.png --label 281
   GGUF_Optimization:
-    name: GGUF Optimization
+    name: "🎰💥💸 7️⃣7️⃣7️⃣ GGUF Optimization 7️⃣7️⃣7️⃣ 💥💸"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
