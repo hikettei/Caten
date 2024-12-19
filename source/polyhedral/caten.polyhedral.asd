@@ -9,6 +9,7 @@
    (:file "config")
    (:file "tiling")
    (:file "transforms")
+   (:file "search")
    (:file "auto-scheduler")
    (:file "package")
    (:file "documentation")))
