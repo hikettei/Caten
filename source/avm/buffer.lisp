@@ -9,6 +9,11 @@
 
 (defstruct (Buffer
 	    (:constructor make-buffer (nrank shape stride dtype views)))
+  "
+```
+(make-buffer nrank shape stride type view)
+```
+"
   (value nil)
   (nrank nrank :type fixnum)
   (shape shape :type list)
