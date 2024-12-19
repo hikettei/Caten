@@ -5,8 +5,8 @@
   :depends-on ("cffi" "caten.isl" "caten.common" "cl-yaml")
   :serial t
   :components
-  ((:file "ir")
-   (:file "ast")
+  ((:file "ast")
+   (:file "ir")
    (:file "config")
    (:file "tiling")
    (:file "transforms")
