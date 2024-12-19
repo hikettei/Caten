@@ -1,4 +1,4 @@
-name: UnitTests
+name: "🎰💥💸 7️⃣7️⃣7️⃣ UnitTests 7️⃣7️⃣7️⃣ 💸💥🎰"
 on:
   push:
     branches:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   UnitTest:
-    name: 🎰💥💸${{ matrix.backend }}💥💸Unittests on (${{ matrix.lisp }})
+    name: "🎰💥💸 7️⃣7️⃣7️⃣${{ matrix.backend }}7️⃣7️⃣7️⃣ 💥💸 Unittests on (${{ matrix.lisp }})"
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -63,7 +63,7 @@ jobs:
           ros -e '(ql:register-local-projects)' -q
           CI=1 JIT=1 JIT_BACKEND=CLANG AVM=LISP rove caten.asd
   Documentation:
-    name: Test building documentations
+    name: "🎰📚💸 Test Building Docs 🎰📚💸"
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
