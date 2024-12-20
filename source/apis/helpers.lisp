@@ -230,3 +230,20 @@ Reads and binds attributes from module.
     (setf (nth idx list) value)))
 
 (defmethod permute-list ((op list) list) (loop for nth in op collect (nth nth list)))
+
+(defun sym-eql (a b)
+  (if (and (tensor-p a) (tensor-p b))
+      (or
+       (eql a b)
+       (let* ((g1 (with-no-grad (tensor-lowered-graph a)))
+              (g2 (with-no-grad (tensor-lowered-graph b)))
+              (g1 (caten/codegen/expr:make-expr :graph g1 :out (car (last (graph-nodes g1)))))
+              (g2 (caten/codegen/expr:make-expr :graph g2 :out (car (last (graph-nodes g2))))))
+         ;; Note(hikettei) this could be ridiculously slow if the shape is determined by the tensor!
+         ;; Especially in the ViT Graph
+         (caten/codegen/expr:expr-scalar-equivalent-p g1 g2)))
+      (equal a b)))
+
+(defun sym-equal (a b)
+  (declare (type list a b))
+  (and (= (length a) (length b)) (every #'sym-eql a b)))
