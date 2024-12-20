@@ -6,11 +6,12 @@
 #include <arm_neon.h>
 
 // Optimized by AutoScheduler
-#define MB 16
 #define NB 16
 #define KB 16
-
-void gemm_naive_tiled(int M, int N, int K,
+// [TODO] Can't we achieve 90 GFlops with only using gcc?
+// Supporting SIMD Intrinsic beyonds the compiler.
+// 20~30 GFlops
+void gemm(int M, int N, int K,
           const float * __restrict A,
           const float * __restrict B,
           float * __restrict C)
@@ -25,6 +26,7 @@ void gemm_naive_tiled(int M, int N, int K,
         int nMax = (n0 + NB < N) ? (n0 + NB) : N;
         for (int j = j0; j < jMax; j++) {
           float sum = 0.0f;
+          #pragma omp simd reduction(+:sum)
           for (int n = n0; n < nMax; n++) {
             sum += A[i*N + n] * B[n*K + j];
           }
@@ -34,8 +36,8 @@ void gemm_naive_tiled(int M, int N, int K,
     }
   }
 }
-
-void gemm(int M, int N, int K,
+// 20~80 GFlops
+void gemm_hand_optimized(int M, int N, int K,
           const float * __restrict A,
           const float * __restrict B,
           float * __restrict C)
