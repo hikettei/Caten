@@ -329,7 +329,7 @@ for i in range(3):
           (loop for m in (make-broadcast-mask (tr-shape tracker) new-shape)
                 for s in new-shape
                 if m collect s)))
-    (when (equal shape-w/o-one (tr-shape tracker))
+    (when (sym-equal shape-w/o-one (tr-shape tracker))
       (return-from tr-reshapeable-p t)))
   (when (apply-masked-reshape tracker new-shape)
     (return-from tr-reshapeable-p t))
@@ -351,7 +351,7 @@ for i in range(3):
            (loop for m in mask
                  for s in new-shape
                  if m collect s)))
-    (when (equal shape-w/o-one (tr-shape tracker))
+    (when (sym-equal shape-w/o-one (tr-shape tracker))
       (return-from tr-apply-reshape (tr-apply-uprank tracker mask))))
   (assert (equal (tr-permute tracker) (range 0 (length (tr-shape tracker)))) () "Trying to reshape the permuted tracker!")
   (let ((r (apply-masked-reshape tracker new-shape)))

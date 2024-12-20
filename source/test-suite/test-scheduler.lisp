@@ -62,6 +62,22 @@
         (loop for item in (gather-kernels schedule)
               for count in `(1) do
                 (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+                  (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type))))))))
+  (testing "Softmax Batch=Tensor"
+    (multiple-value-bind (schedule avm) (schedule-with-vars (!softmax (make-tensor `(,(!add (iconst 'n) (iconst 's)) n s))))
+      (check-kernel schedule 1)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (loop for item in (gather-kernels schedule)
+              for count in `(4) do
+                (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+                  (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type))))))))
+  (testing "Matmul Batch=Tensor"
+    (multiple-value-bind (schedule avm) (schedule-with-vars (!matmul (make-tensor `(,(!add (iconst 'a) (iconst 'b)) 512 256)) (make-tensor `(256 1024))))
+      (check-kernel schedule 1)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (loop for item in (gather-kernels schedule)
+              for count in `(3) do
+                (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
                   (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type)))))))))
 
 (deftest test-serialize-reduction-loop
