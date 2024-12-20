@@ -15,7 +15,7 @@ void gemm(int M, int N, int K,
     for (int j0 = 0; j0 < K; j0 += KB) {
       int jMax = (j0 + KB < K) ? (j0 + KB) : K;
       int validK = jMax - j0;
-      int kBlocks = validK / 16; 
+      int kBlocks = validK / 16;
       int kRemain = validK % 16;
       for (int n0 = 0; n0 < N; n0 += NB) {
         int nMax = (n0 + NB < N) ? (n0 + NB) : N;
@@ -64,9 +64,9 @@ int main() {
   float max = 0.0f;
   int best_kb = 0;
   int best_mb = 0;
-  for (int kb = 1; kb < 33; kb+=2){
-    for (int mb = 1; mb < 33; mb+=2){
-      int M = 512;
+  for (int kb = 1; kb < 33; kb+=1){
+    for (int mb = 1; mb < 33; mb+=1){
+      int M = 10;
       int N = 768;
       int K = 1024;
       int n_sample = 10;
