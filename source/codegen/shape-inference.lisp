@@ -289,7 +289,7 @@ If the shape inference is successfully done and properly deployed to the target 
     (if (or (numberp val) (null (id->value graph val)))
         (expr-const val dtype)
         ;; Merge only scalar path!
-        (expr-from-graph val (apply #'caten/air:make-graph (graph-nodes graph))))))
+        (expr-from-graph val (apply #'caten/air:make-graph (gather-only-scalars (graph-nodes graph)))))))
 
 (defstruct Iteration-Space
   "
