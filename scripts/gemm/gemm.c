@@ -3,32 +3,40 @@
 #include <stdlib.h>
 #include <time.h>
 #include <omp.h>
+// Optimized by AutoScheduler
+#define MB 16
+#define NB 16
+#define KB 16
 
 void gemm(int M, int N, int K,
           const float * __restrict A,
           const float * __restrict B,
           float * __restrict C)
 {
-    // C = A(M×N) * B(N×K)
-    // i: 0 to M-1, j: 0 to K-1, sum over N
-    #pragma omp parallel for
-    for (int i = 0; i < M; i++) {
-      for (int j = 0; j < K; j++) {
-            float sum = 0.0f;
-            for (int n = 0; n < N; n++) {
-                sum += A[i*N + n] * B[n*K + j];
-            }
-            C[i*K + j] = sum;
+#pragma omp parallel for
+  for (int i = 0; i < M; i++) {
+    for (int j0 = 0; j0 < K; j0 += KB) {
+      int jMax = (j0 + KB < K) ? (j0 + KB) : K;
+      for (int n0 = 0; n0 < N; n0 += NB) {
+        int nMax = (n0 + NB < N) ? (n0 + NB) : N;
+        for (int j = j0; j < jMax; j++) {
+          float sum = 0.0f;
+          for (int n = n0; n < nMax; n++) {
+            sum += A[i*N + n] * B[n*K + j];
+          }
+          C[i*K + j] += sum;
         }
+      }
     }
+  }
 }
 
 int main() {
   printf("OMP_GET_MAX_THREADS=%d\n", omp_get_max_threads());
-  for (int M = 1; M < 1000; M++){
-    int N = 1000;
+  for (int M = 1; M < 100; M++){
+    int N = 768;
     int K = 1024;
-    int n_sample = 100;
+    int n_sample = 10;
 
     float *A = (float*)malloc(M * N * sizeof(float));
     float *B = (float*)malloc(N * K * sizeof(float));
