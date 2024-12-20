@@ -16,6 +16,8 @@
    (:file "exprify")
    (:file "blueprint")
    (:file "polyhedral-ast")
+   (:file "auto-scheduler/measurer")
+   (:file "auto-scheduler/package")
    (:file "scop")
    (:file "jit")
    (:file "runner")

@@ -88,6 +88,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                            (if (getattr node :reduction :allow-undefined t)
                                " // :reduction=t"
                                "")))
+               else if (eql (node-type node) :DEFINE-GLOBAL) do (identity node)
                else
 	         do (format out "~a~a = ~(~a~)(~a);~a~%"
                             (indent indent)
