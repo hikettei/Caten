@@ -269,13 +269,14 @@ If the shape inference is successfully done and properly deployed to the target 
 	(when (null (getattr n :_type_relay :allow-undefined t))
 	  (setf (getattr n :_type_relay) type))))))
 ;; ~~ Loop Collase ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun mergeable-view-p (view shape &aux (shape (if (typep shape 'Expr) shape (expr-const (reveal-buffer shape) :int64))))
+(defun mergeable-view-p (g view shape &aux (shape (if (typep shape 'Expr) shape (expr-const (reveal-buffer shape) :int64))))
   "Mergeable axis = view is not created."
   (when (null view) (return-from mergeable-view-p t))
   (when (expr-equal-to shape 1) (return-from mergeable-view-p (fourth view))) ;; Always collapse one as long as they are broadcasted.
   (trivia:ematch view
-    ;; antyhing for broadcast, because the strides of broadcasted axes are replaced w/ 0
     ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (expr-const x :int64) shape)) (eql 1) _) t)
+    ;; considering the case: X = |val_15|, shape=a*b (a little heavy, so separated)
+    ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (%expr-const g x :int64) shape)) (eql 1) _) t)
     (_ nil)))
 
 (defun gather-only-scalars (nodes)
@@ -353,8 +354,8 @@ gids corresponds for the loop idx in the kernel.
             (multiple-value-bind (last-size last-stride last-view last-pd) (apply #'values (car (last ret)))
               (if (and
                    (null no-collapse)
-                   (mergeable-view-p last-view last-size)
-                   (mergeable-view-p view size)
+                   (mergeable-view-p g last-view last-size)
+                   (mergeable-view-p g view size)
                    (or
                     (when (expr-equal-to last-stride 0) (eql stride 0))
                     (expr-scalar-equivalent-p
@@ -365,7 +366,7 @@ gids corresponds for the loop idx in the kernel.
                   (setf ret
                         (append
                          ret
-                         (list (list (%expr-const g size :int64) (%expr-const g stride :int64) (if (mergeable-view-p view size) nil view) (list nth))))))))
+                         (list (list (%expr-const g size :int64) (%expr-const g stride :int64) (if (mergeable-view-p g view size) nil view) (list nth))))))))
     (iteration-space-sync-broadcast
      (make-iteration-space
       :shape
