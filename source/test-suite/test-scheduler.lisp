@@ -44,6 +44,26 @@
               (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
                 (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type))))))))
 
+(deftest test-symbolic-loop-merge-dims
+  (testing "B and 10 is merged:"
+    (multiple-value-bind (schedule avm)
+        (with-inference-mode ()
+          (schedule-with-vars (!add (call (Embedding 10 10) (make-tensor `(b 10))) (call (Embedding 10 10) (make-tensor `(b 10))))))
+      (check-kernel schedule 1)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (loop for item in (gather-kernels schedule)
+              for count in `(3) do
+                (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+                  (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type))))))))
+  (testing "Elementwise is 1D"
+    (multiple-value-bind (schedule avm) (schedule-with-vars (!relu (make-tensor `(a b c d))))
+      (check-kernel schedule 1)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (loop for item in (gather-kernels schedule)
+              for count in `(1) do
+                (let ((bp (caten/codegen/blueprint:lower-schedule-item item (avm-graph avm) schedule)))
+                  (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type)))))))))
+
 (deftest test-serialize-reduction-loop
   (with-no-grad
     (testing "Serialized Reductions should belong to the same loop. (not creating a new inner loop!)"
