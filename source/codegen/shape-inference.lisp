@@ -278,18 +278,17 @@ If the shape inference is successfully done and properly deployed to the target 
     ((list (eql 0) (trivia:guard x (expr-scalar-equivalent-p (expr-const x :int64) shape)) (eql 1) _) t)
     (_ nil)))
 
+(defun gather-only-scalars (nodes)
+  (loop for n in nodes
+        if (and (= 0 (buffer-nrank (car (relay-writes (read-type-relay n))))))
+          collect n))
+
 (defun %expr-const (graph value dtype)
-  (let* ((val (reveal-buffer value))
-         (load (id->value graph val))
-         (alloc (when load (id->value graph (car (node-reads load))))))
+  (let* ((val (reveal-buffer value)))
     (if (or (numberp val) (null (id->value graph val)))
         (expr-const val dtype)
-        ;; If the value directly represents for the dynamic shape, it is worth to replace it with the node.
-        ;; Otherwise, just a loads the symbol.
-        (if (and alloc load (eql (node-type alloc) :Alloc) (eql (node-type load) :LOAD)
-                 (symbolp (getattr load :value)) (= 0 (getattr alloc :nrank)))           
-            (expr-from-graph val graph)
-            (expr-const val dtype)))))
+        ;; Merge only scalar path!
+        (expr-from-graph val (apply #'caten/air:make-graph (graph-nodes graph))))))
 
 (defstruct Iteration-Space
   "
@@ -356,9 +355,11 @@ gids corresponds for the loop idx in the kernel.
                    (null no-collapse)
                    (mergeable-view-p last-view last-size)
                    (mergeable-view-p view size)
-                   (expr-scalar-equivalent-p
-                    last-stride
-                    (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64))))
+                   (or
+                    (when (expr-equal-to last-stride 0) (eql stride 0))
+                    (expr-scalar-equivalent-p
+                     last-stride
+                     (expr-mul (%expr-const g size :int64) (%expr-const g stride :int64)))))
                   (setf (nth (1- (length ret)) ret)
                         (list (expr-mul last-size (%expr-const g size :int64)) (%expr-const g stride :int64) nil (append last-pd (list nth))))
                   (setf ret
