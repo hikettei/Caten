@@ -227,6 +227,11 @@
   (assert (eql (node-type schedule-item) :Schedule-Item))
   (assert (= (length (getattr schedule-item :storage-id-src)) (length (getattr schedule-item :read-types))))
   (assert (= (length (getattr schedule-item :storage-id-dst)) (length (getattr schedule-item :write-types))))
+  ;; Removing previous DEFINE_GLOBAL
+  (setf (getattr schedule-item :blueprint)
+        (loop for item in (getattr schedule-item :blueprint)
+              unless (eql (node-type item) :DEFINE-GLOBAL)
+                collect item))
   (setf (getattr schedule-item :blueprint)
         (append
          ;; writes
