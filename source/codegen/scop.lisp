@@ -91,8 +91,8 @@ This function returns the BOUND, otherwise returns error.
                                       collect
                                       (if (expr-affine-p (getattr dom :below))
                                           (format nil "0 <= ~(~a~) and ~(~a~)" (getattr dom :idx) (render-expr device (getattr dom :below)))
-                                          (multiple-value-bind (expr-id new-p) (stash-expr (expr-detach-loop-bound (getattr dom :below)))
-                                            (when new-p (push expr-id extra-symbolics))
+                                          (multiple-value-bind (expr-id) (stash-expr (expr-detach-loop-bound (getattr dom :below)))
+                                            (push expr-id extra-symbolics)
                                             (format nil "0 <= ~(~a~) < ~(~a~)" (getattr dom :idx) expr-id)))
                                       collect " and ")
                                 (loop for s in (append symbolics extra-symbolics)
@@ -101,7 +101,7 @@ This function returns the BOUND, otherwise returns error.
                       (format out "  ~a[];~%" (node-id node)))))))
      (format out "}"))
    idx2domain
-   extra-symbolics))
+   (remove-duplicates extra-symbolics :test #'equalp)))
 
 (defun render-domain-from-loops (node domains &aux (device 'Default-Renderer))
   (if domains
