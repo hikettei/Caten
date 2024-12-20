@@ -1,7 +1,7 @@
 /*
   A playground for GEMM optimization.
   Compile:
-    gcc-14 -O3 -fopenmp gemm.c -ffast-math -fopenmp -march=native
+    gcc-14 -O3 -fopenmp ./scripts/gemm/gemm.c -ffast-math -fopenmp -march=native
   Disassemble:
     gcc-14 -fopenmp -O3  -ffast-math -fopenmp -march=native -fopenmp-simd -fstrict-aliasing -ftree-vectorize -S ./scripts/gemm/gemm.c ./gemm.s
 */
