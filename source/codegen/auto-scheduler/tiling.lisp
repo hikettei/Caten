@@ -1,14 +1,18 @@
-(defpackage :caten/polyhedral/tiling
+(defpackage :caten/codegen/tiling
+  (:documentation "
+To apply tiling to a reduce dim, use apply-tiling.
+```
+(apply-tile polyhedral-ir `(16 16))
+```
+
+[TODO]
+- Tiling sizes can be automatically optimized by the measurer.
+")
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/isl :caten/polyhedral/ir :caten/polyhedral/config)
-  (:export #:tile-bands)
-  (:documentation "Provides an auto-tuner for tiling dims and params
-- References
-  - https://speakerdeck.com/ideininc/pldi-21lun-wen-du-mihui-akg-automatic-kernel-generation-for-neural-processing-units-using-polyhedral-transformations?slide=11
-"))
+  (:use :cl :caten/isl :caten/codegen/polyhedral))
 
-(in-package :caten/polyhedral/tiling)
+(in-package :caten/codegen/tiling)
 
 (defun tiling-sizes (band &key (size-default 32) (dims))
   (declare (type list dims) (type fixnum size-default))
@@ -60,17 +64,18 @@
 
 (defun get-tileable-bands (poly)
   (map-schedule-nodes #'(lambda (type node) (when (eql type :schedule-node-band) node)) poly))
-
-(defun tile-bands (scheduler ir)
+;; [TODO]
+;; - the tiling sizes are 2D, optimized by measuring the computation
+;; - Create a heatmap on the tiling sizes for debugging
+(defun apply-tile (ir size)
   "`tile-bands` helps you execute the computation tile by tile over the two axes"
   (declare (type Polyhedral-IR ir))
   ;; [NOTE] Tile last 2d reductions
   (let* ((bands (get-tileable-bands ir)))
-    (when (not (= 0 (auto-scheduler-tile-size scheduler)))
-      ;; Tile all bands
-      (dotimes (i (length bands))
-        (let ((i (- (1- (length bands)) i)))
+    ;; Tile all bands
+    (dotimes (i (length bands))
+      (let ((i (- (1- (length bands)) i)))
         (setf (poly-schedule ir)
               (schedule-tile-band
                (nth i (get-tileable-bands ir))
-               :size-default (auto-scheduler-tile-size scheduler))))))))
+               :size-default size))))))

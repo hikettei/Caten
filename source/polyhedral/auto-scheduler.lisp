@@ -68,6 +68,7 @@ An entrypoint for auto-scheduling.
   ;; But if (in the future) we implement more advanced Fusion Rules like Matmul+Softmax+Matmul, ConvND+Activation+Pooling
   ;; we may want isl scheduler to judge loop interchange?
   (apply-parallelize scheduler poly)
+  (caten/polyhedral/tiling:tile-bands scheduler poly)
   ;; Unroll
   ;; Array Packing
   ;; 2D WMMA (8x8)
