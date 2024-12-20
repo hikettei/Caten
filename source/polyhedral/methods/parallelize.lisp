@@ -2,7 +2,7 @@
   (:use :cl :caten/polyhedral/search :caten/polyhedral/ir :caten/polyhedral/config :caten/polyhedral/ast)
   (:import-from :caten/polyhedral/transforms #:polyir-loop-permutable-bands #:polyir-set-coincident #:polyir-loop-interchange)
   (:export
-   ))
+   #:apply-parallelize))
 
 (in-package :caten/polyhedral/parallelize)
 
