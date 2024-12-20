@@ -1,4 +1,10 @@
-// gcc-14 -O3 -fopenmp gemm.c -ffast-math -fopenmp -march=native
+/*
+  A playground for GEMM optimization.
+  Compile:
+    gcc-14 -O3 -fopenmp gemm.c -ffast-math -fopenmp -march=native
+  Disassemble:
+    gcc-14 -fopenmp -O3  -ffast-math -fopenmp -march=native -fopenmp-simd -fstrict-aliasing -ftree-vectorize -S ./scripts/gemm/gemm.c ./gemm.s
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -8,10 +14,10 @@
 // Optimized by AutoScheduler
 #define NB 16
 #define KB 16
-// [TODO] Can't we achieve 90 GFlops with only using gcc?
+// [TODO] Can't we achieve 150 GFlops with only using gcc?
 // Supporting SIMD Intrinsic beyonds the compiler.
 // 20~30 GFlops
-void gemm(int M, int N, int K,
+void gemm_naive_tailed(int M, int N, int K,
           const float * __restrict A,
           const float * __restrict B,
           float * __restrict C)
@@ -36,8 +42,9 @@ void gemm(int M, int N, int K,
     }
   }
 }
-// 20~80 GFlops
-void gemm_hand_optimized(int M, int N, int K,
+// 20~100 GFlops (while OpenBLAS achieves 100~200 GFlops)
+// with M <= 60 almost the same speed as OpenBLAS...
+void gemm(int M, int N, int K,
           const float * __restrict A,
           const float * __restrict B,
           float * __restrict C)
@@ -70,9 +77,9 @@ void gemm_hand_optimized(int M, int N, int K,
             c_vec3 = vmlaq_f32(c_vec3, a_vec, b_vec3);
           }
           float tmpC[16];
-          vst1q_f32(&tmpC[0],  c_vec0);
-          vst1q_f32(&tmpC[4],  c_vec1);
-          vst1q_f32(&tmpC[8],  c_vec2);
+          vst1q_f32(&tmpC[0], c_vec0);
+          vst1q_f32(&tmpC[4], c_vec1);
+          vst1q_f32(&tmpC[8], c_vec2);
           vst1q_f32(&tmpC[12], c_vec3);
           for (int x = 0; x < 16; x++) {
             C[i*K + (jBase + x)] += tmpC[x];
@@ -93,10 +100,10 @@ void gemm_hand_optimized(int M, int N, int K,
 
 int main() {
   printf("OMP_GET_MAX_THREADS=%d\n", omp_get_max_threads());
-  for (int M = 1; M < 30; M++){
+  for (int M = 1; M < 100; M++){
     int N = 768;
     int K = 1024;
-    int n_sample = 1000;
+    int n_sample = 100;
 
     float *A = (float*)malloc(M * N * sizeof(float));
     float *B = (float*)malloc(N * K * sizeof(float));
