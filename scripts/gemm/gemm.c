@@ -1,4 +1,4 @@
-// gcc-14 -O3 -fopenmp gemm.c
+// gcc-14 -O3 -fopenmp gemm.c -ffast-math -fopenmp -march=native
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -10,7 +10,7 @@
 #define NB 16
 #define KB 16
 
-void gemm(int M, int N, int K,
+void gemm_naive_tiled(int M, int N, int K,
           const float * __restrict A,
           const float * __restrict B,
           float * __restrict C)
@@ -24,6 +24,60 @@ void gemm(int M, int N, int K,
       for (int n0 = 0; n0 < N; n0 += NB) {
         int nMax = (n0 + NB < N) ? (n0 + NB) : N;
         for (int j = j0; j < jMax; j++) {
+          float sum = 0.0f;
+          for (int n = n0; n < nMax; n++) {
+            sum += A[i*N + n] * B[n*K + j];
+          }
+          C[i*K + j] += sum;
+        }
+      }
+    }
+  }
+}
+
+void gemm(int M, int N, int K,
+          const float * __restrict A,
+          const float * __restrict B,
+          float * __restrict C)
+{
+#pragma omp parallel for collapse(2)
+  for (int i = 0; i < M; i++) {
+    for (int j0 = 0; j0 < K; j0 += KB) {
+      int jMax = (j0 + KB < K) ? (j0 + KB) : K;
+      int validK = jMax - j0;
+      int kBlocks = validK / 16; 
+      int kRemain = validK % 16;
+      for (int n0 = 0; n0 < N; n0 += NB) {
+        int nMax = (n0 + NB < N) ? (n0 + NB) : N;
+        for (int kb = 0; kb < kBlocks; kb++) {
+          int jBase = j0 + kb*16;
+          float32x4_t c_vec0 = vdupq_n_f32(0.0f);
+          float32x4_t c_vec1 = vdupq_n_f32(0.0f);
+          float32x4_t c_vec2 = vdupq_n_f32(0.0f);
+          float32x4_t c_vec3 = vdupq_n_f32(0.0f);
+          for (int n = n0; n < nMax; n++) {
+            float a_val = A[i*N + n];
+            float32x4_t b_vec0 = vld1q_f32(&B[n*K + jBase +  0]);
+            float32x4_t b_vec1 = vld1q_f32(&B[n*K + jBase +  4]);
+            float32x4_t b_vec2 = vld1q_f32(&B[n*K + jBase +  8]);
+            float32x4_t b_vec3 = vld1q_f32(&B[n*K + jBase + 12]);
+            float32x4_t a_vec = vdupq_n_f32(a_val);
+            c_vec0 = vmlaq_f32(c_vec0, a_vec, b_vec0);
+            c_vec1 = vmlaq_f32(c_vec1, a_vec, b_vec1);
+            c_vec2 = vmlaq_f32(c_vec2, a_vec, b_vec2);
+            c_vec3 = vmlaq_f32(c_vec3, a_vec, b_vec3);
+          }
+          float tmpC[16];
+          vst1q_f32(&tmpC[0],  c_vec0);
+          vst1q_f32(&tmpC[4],  c_vec1);
+          vst1q_f32(&tmpC[8],  c_vec2);
+          vst1q_f32(&tmpC[12], c_vec3);
+          for (int x = 0; x < 16; x++) {
+            C[i*K + (jBase + x)] += tmpC[x];
+          }
+        }
+        // Reminder
+        for (int j = j0 + kBlocks*16; j < jMax; j++) {
           float sum = 0.0f;
           for (int n = n0; n < nMax; n++) {
             sum += A[i*N + n] * B[n*K + j];
