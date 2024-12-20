@@ -81,7 +81,7 @@ Code2:
           for tf = (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0) (compile-transformer i)))
           ;; [TODO] The number of kernels should be a constant regardless of layers!!
           do (ok (<= (count-compiled-kernels tf) expected)
-                 (format nil "(Currently Failing ...) Compiled ~a kernels (expecting ~a)" (count-compiled-kernels tf) expected)))))
+                 (format nil "Compiled ~a kernels (expecting ~a)" (count-compiled-kernels tf) expected)))))
 
 (deftest transformer-schedule-cache-consistency-test
   (with-protect-jit
