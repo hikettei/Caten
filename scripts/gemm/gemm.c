@@ -13,7 +13,8 @@ void gemm(int M, int N, int K,
           const float * __restrict B,
           float * __restrict C)
 {
-#pragma omp parallel for
+  // Collapse is effective for smaller M
+  #pragma omp parallel for collapse(2)
   for (int i = 0; i < M; i++) {
     for (int j0 = 0; j0 < K; j0 += KB) {
       int jMax = (j0 + KB < K) ? (j0 + KB) : K;
@@ -33,10 +34,10 @@ void gemm(int M, int N, int K,
 
 int main() {
   printf("OMP_GET_MAX_THREADS=%d\n", omp_get_max_threads());
-  for (int M = 1; M < 100; M++){
+  for (int M = 1; M < 10; M++){
     int N = 768;
     int K = 1024;
-    int n_sample = 10;
+    int n_sample = 100;
 
     float *A = (float*)malloc(M * N * sizeof(float));
     float *B = (float*)malloc(N * K * sizeof(float));
