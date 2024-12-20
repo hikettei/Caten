@@ -310,7 +310,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
         (format t "~a~%" (getattr node :polyhedral)))
       node)))
 
-(defmethod auto-schedule (auto-scheduler (node Node))
+(defmethod auto-schedule (auto-scheduler (node Node) renderer)
   (assert (getattr node :polyhedral))
   ;; (caten/polyhedral:auto-schedule auto-scheduler (getattr node :polyhedral))
   ;; Load blueprint from optimized polyhedral IR
