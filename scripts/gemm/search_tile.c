@@ -31,10 +31,10 @@ int main() {
   printf("OMP_GET_MAX_THREADS=%d\n", omp_get_max_threads());
   for (int kb = 1; kb < 64; kb+=4){
     for (int mb = 1; mb < 64; mb+=4){
-      int M = 10;
+      int M = 100;
       int N = 768;
       int K = 1024;
-      int n_sample = 100;
+      int n_sample = 10;
 
       float *A = (float*)malloc(M * N * sizeof(float));
       float *B = (float*)malloc(N * K * sizeof(float));

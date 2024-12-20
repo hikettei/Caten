@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <time.h>
 #include <omp.h>
+#include <arm_neon.h>
+
 // Optimized by AutoScheduler
 #define MB 16
 #define NB 16
@@ -13,7 +15,8 @@ void gemm(int M, int N, int K,
           const float * __restrict B,
           float * __restrict C)
 {
-  // Collapse is effective for smaller M
+  // Note(hikettei) I didn't know loop collapse is effective for smaller M
+  // Loop Interchange doesn't look effective than I expected, memory layouts have a big impact?
   #pragma omp parallel for collapse(2)
   for (int i = 0; i < M; i++) {
     for (int j0 = 0; j0 < K; j0 += KB) {
@@ -34,10 +37,10 @@ void gemm(int M, int N, int K,
 
 int main() {
   printf("OMP_GET_MAX_THREADS=%d\n", omp_get_max_threads());
-  for (int M = 1; M < 10; M++){
+  for (int M = 1; M < 30; M++){
     int N = 768;
     int K = 1024;
-    int n_sample = 100;
+    int n_sample = 1000;
 
     float *A = (float*)malloc(M * N * sizeof(float));
     float *B = (float*)malloc(N * K * sizeof(float));
