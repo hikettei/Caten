@@ -91,6 +91,8 @@ caten/codegen overview:
    #:%renderer-get-auto-scheduler)
   (:export
    #:jit
+   #:make-compiled-kernel-from-si
+   #:make-compiled-kernel-node
    #:schedule-graph->avm-graph
    #:Compiled-Kernel
    #:compiled-kernel-name
@@ -127,8 +129,7 @@ caten/codegen overview:
 (defmethod print-object ((s Compiled-Kernel) stream)
   (format stream "<~a[~a]>" (compiled-kernel-device s) (compiled-kernel-name s)))
 
-(defun make-compiled-kernel-from-si (si graph)
-  (declare (ignore graph))
+(defun make-compiled-kernel-from-si (si)
   (assert (eql (node-type si) :Schedule-Item))
   (flet ((from-cache (node)
            ;;TODO: Reuse the cached compiled function if the number of argument corresponds
@@ -149,14 +150,14 @@ caten/codegen overview:
                (getattr si :rendered-object))
      :out-positions (or (getattr si :return-positions) (loop for i upfrom 0 below (length (node-writes si)) collect i)))))
 
-(defun make-compiled-kernel-node (si graph)
+(defun make-compiled-kernel-node (si)
   (make-node :JIT :JIT_KERNEL (node-writes si)
              (append
               (getattr si :storage-id-dst) ;; optimized by memory-planner
               (map 'list #'car (getattr si :dynamic-shapes))
               (getattr si :storage-id-src)) ;; optimized by memory-planner
              :output-buffer-n (length (node-writes si))
-             :kernel-info (make-compiled-kernel-from-si si graph)
+             :kernel-info (make-compiled-kernel-from-si si)
              :dtypes
              (loop for item in (getattr si :blueprint)
                    if (eql (node-type item) :DEFINE-GLOBAL)
@@ -296,7 +297,7 @@ caten/codegen overview:
                    if (and (null (find s allocated)) (id->value base-graph s)) do
                      (merge-id s))
              (dolist (w (node-writes node)) (push w allocated))
-             (let ((kernel (make-compiled-kernel-node node graph)))
+             (let ((kernel (make-compiled-kernel-node node)))
                ;; Insert view before using variables which is defined as pointer in the kernel but scalar in the vmgraph.
                (loop for r in (node-reads node)
                      for rt in (getattr node :read-types)
