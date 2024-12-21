@@ -22,6 +22,8 @@
   (some #'node-writes-broadcasted-p (getattr node :items)))
 
 (defun has-data-reuse-p (node)
+  ;; [TODO] There should be much better way to determine this
+  ;; LayerNorm/Embedding has no data reuse
   (flet ((node-has-data-reuse-p (item)
            (let ((broadcasts
                    (loop for r in (relay-read-iters (read-type-relay item))
@@ -53,13 +55,16 @@
   )
 
 (defun optimize-reduction-kernel (auto-scheduler node)
-  "Optimization for LayerNorm/Softmax/Argmax/Sum is here"
+  "Optimization for LayerNorm/Softmax/Argmax/Sum is here."
   (print "SOFTMAX")
   )
 
 (defun optimize-data-reuse-kernel (auto-scheduler node)
-  "Optimization for Conv/Gemm is here"
+  "Optimization for Conv/Gemm is here. We assume kernels labelled here has a large impact on the end-to-end performance.
+So we are going to apply an optiimzation method which takes a long time to search for the optimal schedule."
   (print "REUSE")
+  ;; Data Reuse kernel has a chance to apply the tiling
+  ;; And Tuning the tiling size tested by the measurer
   )
 
 (defun auto-schedule (auto-scheduler node)
