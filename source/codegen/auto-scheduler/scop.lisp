@@ -4,7 +4,7 @@ Transforms a Caten Blueprint IR into a Polyhedral IR.
 ```
 [Caten Blueprint IR] ===> <Scop> ===> [Polyhedral IR]
 ```
-polyhedral-ast.lisp for the opposite thing.
+ast-parser.lisp for the opposite thing.
 ")
   (:import-from
    :caten/codegen/helpers
@@ -30,7 +30,7 @@ polyhedral-ast.lisp for the opposite thing.
    :caten/codegen/expr-cache
    :stash-expr)
   (:import-from
-   :caten/codegen/polyhedral-ast
+   :caten/codegen/ast-parser
    :lower-into-bp-from-polyhedral)
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
@@ -320,7 +320,7 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
   (assert (eql (node-type node) :Schedule-Item))
   (assert (getattr node :polyhedral) () "Cannot sync blueprint w/o polyhedral")
   (setf (getattr node :blueprint)
-        (caten/codegen/polyhedral-ast:lower-into-bp-from-polyhedral
+        (caten/codegen/ast-parser:lower-into-bp-from-polyhedral
          (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank)) node)))
 
 (defmacro with-polyhedral-space ((node) &body body)

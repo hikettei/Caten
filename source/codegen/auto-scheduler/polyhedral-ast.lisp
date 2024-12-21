@@ -1,11 +1,5 @@
 (defpackage :caten/codegen/polyhedral-ast
-  (:documentation "
-Transform the Polyhedral IR into the Blueprint IR.
-```
-[ISL Polyhedral IR] ==> <Polyhedral-AST> ===> Caten Blueprint IR
-```
-scop.lisp for the opposite things.
-")
+  (:documentation "An intermidate AST to parse ISL AST into Blueprint.")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia)
   (:export
    #:ASTBlock
