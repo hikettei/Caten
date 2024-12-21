@@ -15,6 +15,7 @@
    (:file "scheduler")
    (:file "exprify")
    (:file "blueprint")
+   (:file "auto-scheduler/directive")
    (:file "polyhedral-ast")
    (:file "auto-scheduler/polyhedral")
    (:file "scop")

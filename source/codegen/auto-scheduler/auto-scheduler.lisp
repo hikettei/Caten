@@ -13,9 +13,10 @@
 ;; Purpose: get a list of optimal scheduling commands
 ;; Note: 積極的にISL ASTとBlueprintを変換しながら変形を施していく
 ;; [TODO] JIT_DEBUG >= 2 to see optimized schedule sequence by BEAM (todo: search tiramisu)
+;; BEAM Search
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
-  (caten/codegen/unroll::apply-packed-funcall node nil 4)
+  
   ;; Load blueprint from optimized polyhedral IR
   (setf (getattr node :blueprint)
         (caten/codegen/polyhedral-ast:lower-into-bp-from-polyhedral
