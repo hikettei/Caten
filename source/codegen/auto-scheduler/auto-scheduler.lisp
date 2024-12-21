@@ -16,7 +16,7 @@
 ;; BEAM Search
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
-  
+  (caten/codegen/unroll:apply-unroll node 4)
   ;; Load blueprint from optimized polyhedral IR
   (setf (getattr node :blueprint)
         (caten/codegen/polyhedral-ast:lower-into-bp-from-polyhedral

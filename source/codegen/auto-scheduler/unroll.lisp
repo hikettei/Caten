@@ -3,7 +3,7 @@
   (:import-from
    :caten/codegen/tiling
    #:tiling-sizes)
-  (:import-from :caten/codegen/scop #:scop)
+  (:import-from :caten/codegen/scop #:with-polyhedral-space)
 ;;  (:improt-form :caten/codegen/polyhedral-ast #:polyhedral->bp)
   (:export #:apply-packed-funcall #:apply-unroll))
 
@@ -61,5 +61,5 @@ The unrolled loop is marked as directive, so the final transformation processes 
 
 (defun apply-unroll (schedule-node unroll-by)
   (declare (type node schedule-node) (type integer unroll-by))
-  (scop 
-  )
+  (with-polyhedral-space (schedule-node)
+    (apply-packed-funcall schedule-node unroll-by "UNROLL")))
