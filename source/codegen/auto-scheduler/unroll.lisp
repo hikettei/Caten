@@ -1,14 +1,25 @@
 (defpackage :caten/codegen/unroll
   (:use :cl :caten/aasm :caten/air :caten/codegen/polyhedral)
+  (:import-from
+   :caten/codegen/tiling
+   #:tiling-sizes)
   (:export #:apply-packed-funcall))
 
 (in-package :caten/codegen/unroll)
 
+(defun schedule-node-band-apply-unroll (schedule-node)
+  (declare (type isl::schedule-node schedule-node))
+  (print "UNROLL")
+  (let* ((tiled-schedule (isl:schedule-node-band-tile schedule-node (tiling-sizes schedule-node :size-default 16)))
+         (tiled-schedule (isl:schedule-node-get-child tiled-schedule 0))
+         (tiled-schedule (isl:schedule-node-band-set-ast-build-options tiled-schedule (isl:union-set-from-str "{ unroll[4] }"))))
+    (isl:schedule-node-get-schedule schedule-node)))
+
 (defun schedule-apply-schedule-option (si idx)
   (declare (type Polyhedral-IR si))
   (let ((bands (map-schedule-nodes #'(lambda (type node) (when (eql type :schedule-node-band) node)) si)))
-    (print bands)
-    ))
+    (when bands
+      (setf (poly-schedule si) (schedule-node-band-apply-unroll (first bands))))))
 
 (defun apply-packed-funcall (schedule-node gid unroll-by)
   "Groups the iteration into several packed-funcall.

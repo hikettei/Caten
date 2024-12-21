@@ -154,5 +154,5 @@
 	 (ls (%make-value-list (%isl-val-list-alloc (context-handle *context*) n))))
     (loop for value in value-list
 	  for nth upfrom 0
-	  do (%isl-val-list-add (value-list-handle ls) (value-handle value)))
+	  do (%isl-val-list-add (value-list-handle ls) (value-handle (copy value))))
     ls))

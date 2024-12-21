@@ -124,3 +124,8 @@
   (:give schedule-node)
   (:take schedule-node)
   (:take union-set))
+
+(define-isl-function schedule-node-band-tile %isl-schedule-node-band-tile
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))

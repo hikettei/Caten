@@ -54,13 +54,14 @@ To apply tiling to a reduce dim, use apply-tiling.
     partial-schedule))
 
 (defun schedule-tile-band (band &key (size-default 32) (dims))
+  "Tiling sizes can be given by either of size-default or dims. If dims is set to nil, size-default is used.
+dims is used to specify the tiling sizes for each dimension."
   (multiple-value-bind (partial-schedule shift)
       (shift-band-zero band)
     (let* ((tiling-sizes (tiling-sizes band :size-default size-default :dims dims))
            (partial-schedule (tile-partial-schedule partial-schedule tiling-sizes))
            (tiled-sched (multi-union-pw-aff-add partial-schedule shift)))
-      (schedule-node-get-schedule
-       (schedule-node-insert-partial-schedule band tiled-sched)))))
+      (schedule-node-insert-partial-schedule band tiled-sched))))
 
 (defun get-tileable-bands (poly)
   (map-schedule-nodes #'(lambda (type node) (when (eql type :schedule-node-band) node)) poly))
@@ -76,6 +77,7 @@ To apply tiling to a reduce dim, use apply-tiling.
     (dotimes (i (length bands))
       (let ((i (- (1- (length bands)) i)))
         (setf (poly-schedule ir)
-              (schedule-tile-band
-               (nth i (get-tileable-bands ir))
-               :size-default size))))))
+              (schedule-node-get-schedule
+               (schedule-tile-band
+                (nth i (get-tileable-bands ir))
+                :size-default size)))))))
