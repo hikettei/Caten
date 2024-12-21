@@ -305,16 +305,17 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
     (assert (eql (node-type node) :Schedule-Item))
     (assert (getattr node :blueprint) () "Cannot create a domain w/o lowered blueprint")
     (multiple-value-bind (domain read write schedule) (analyze-scop node (map 'list #'car (Getattr node :dynamic-shapes)))
-      (setf (getattr node :polyhedral) (make-polyhedral-ir domain read write schedule))
+      (setf (getattr node :polyhedral) (caten/codegen/polyhedral:make-polyhedral-ir domain read write schedule))
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (format t "~a~%" (getattr node :polyhedral)))
       node)))
 
 (defmethod auto-schedule (auto-scheduler (node Node))
   (assert (getattr node :polyhedral))
-  (caten/polyhedral:auto-schedule auto-scheduler (getattr node :polyhedral))
+  ;;(caten/polyhedral:auto-schedule auto-scheduler (getattr node :polyhedral))
+  ;; (caten/codegen/unroll::apply-packed-funcall node nil 4)
   ;; Load blueprint from optimized polyhedral IR
   (setf (getattr node :blueprint)
         (lower-into-bp-from-polyhedral
-         (caten/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank))
+         (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank))
          node)))

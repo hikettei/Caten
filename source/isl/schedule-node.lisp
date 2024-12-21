@@ -119,3 +119,8 @@
 (define-isl-function schedule-node-first-child %isl-schedule-node-first-child
   (:give schedule-node)
   (:take schedule-node))
+
+(define-isl-function schedule-node-band-set-ast-build-options %isl-schedule-node-band-set-ast-build-options
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set))
