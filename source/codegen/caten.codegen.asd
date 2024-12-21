@@ -18,7 +18,7 @@
    (:file "auto-scheduler/directive")
    (:file "auto-scheduler/polyhedral-ast")
    (:file "auto-scheduler/polyhedral")
-   (:file "scop")
+   (:file "auto-scheduler/scop")
    (:file "auto-scheduler/auto-scheduler")
    (:file "auto-scheduler/config")
    (:file "auto-scheduler/coincidence")

@@ -1,5 +1,11 @@
 (defpackage :caten/codegen/polyhedral-ast
-  (:documentation "ISL Polyhedral IR ==> Caten Blueprint IR")
+  (:documentation "
+Transform the Polyhedral IR into the Blueprint IR.
+```
+[ISL Polyhedral IR] ==> <Polyhedral-AST> ===> Caten Blueprint IR
+```
+scop.lisp for the opposite things.
+")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia)
   (:export #:lower-into-bp-from-polyhedral))
 
@@ -114,7 +120,7 @@
 	      (op-type (isl::%isl-ast-expr-op-get-type ast)))
 	 (flet ((->expr (lhs rhs)
 		  (assert (not (eql op-type :ast-expr-op-error)) () ":isl_ast_expr_op_error")
-		  (ecase op-type
+		  (ecase op-typeg
 		    (:ast-expr-op-and (expr-and lhs rhs))
 		    (:ast-expr-op-and-then (expr-and lhs rhs))
 		    (:ast-expr-op-or (expr-or lhs rhs))

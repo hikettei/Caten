@@ -1,5 +1,11 @@
 (defpackage :caten/codegen/scop
-  (:documentation "Lowers the schedule-item into Polyhedral IR")
+  (:documentation "
+Transforms a Caten Blueprint IR into a Polyhedral IR.
+```
+[Caten Blueprint IR] ===> <Scop> ===> [Polyhedral IR]
+```
+polyhedral-ast.lisp for the opposite thing.
+")
   (:import-from
    :caten/codegen/helpers
    #:render-list
