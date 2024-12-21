@@ -65,13 +65,11 @@ scop.lisp for the opposite things.
               (return-from parse-isl-ast-mark user))
             (let* ((n-unroll (parse-unroll-directive mark))
                    (user     (copy-astfor user))
-                   (unrolled (map 'list #'(lambda (n) (caten/codegen/directive:make-unrolled-body body n)) (alexandria:iota n-unroll)))
-                   (reminder (caten/codegen/directive:compute-reminder-for-unroll user body n-unroll))
-                   (new-body (make-block (list (make-block unrolled) reminder))))
+                   (unrolled (make-block (map 'list #'(lambda (n) (caten/codegen/directive:make-unrolled-body body n)) (alexandria:iota n-unroll))))
+                   (reminder (caten/codegen/directive:compute-reminder-for-unroll user body)))
               ;; TODO_1, define a variable name followed by the unroll dims for scalar.
-              ;; (setf (astfor-body user) (make-block unrolled))
-              
-              )))
+              (setf (astfor-body user) unrolled)
+              (return-from parse-isl-ast-mark (make-block (list user reminder))))))
          ((mark-unroll-body-p mark)
           ;; UNROLL_BODY is triggered by the UNROLL_PARENT. Without it the form is ignored.
           (assert (null (astfor-marks user)) () "UNROLL_BODY should be orthogonal with other directives.")

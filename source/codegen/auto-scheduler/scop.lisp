@@ -35,7 +35,7 @@ ast-parser.lisp for the opposite thing.
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/air :caten/codegen/expr :caten/isl)
-  (:export #:scop #:with-polyhedral-space #:sync-blueprint-from-polyhedral))
+  (:export #:scop #:with-polyhedral-space #:sync-blueprint-from-polyhedral #:expr-detach-loop-bound))
 
 (in-package :caten/codegen/scop)
 

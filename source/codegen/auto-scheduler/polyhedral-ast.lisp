@@ -77,7 +77,7 @@
        (funcall f ast new-body)))))
                
 (defun copy-and-assign-expr (expr idx value)
-  (declare (type string idx) (type fixnum value) (type expr expr))
+  (declare (type string idx) (type expr expr))
   (let* ((new-expr (make-expr :graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (expr-graph expr)))) :out (copy-node (expr-out expr)))))
     (loop for node in (graph-nodes (expr-graph new-expr))
           if (and (eql (node-type node) :Load)
@@ -87,7 +87,7 @@
     new-expr))
 
 (defun copy-and-assign-ast-tree (ast idx value)
-  (declare (type string idx) (type fixnum value))
+  (declare (type string idx))
   (flet ((e (expr) (copy-and-assign-expr expr idx value)))
     (map-ast-tree
      #'(lambda (ast &rest forms)
