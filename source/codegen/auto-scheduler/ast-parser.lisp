@@ -9,6 +9,8 @@ scop.lisp for the opposite things.
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia :caten/codegen/polyhedral-ast)
   (:export #:lower-into-bp-from-polyhedral))
 
+(in-package :caten/codegen/ast-parser)
+
 (declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast))
 (defun parse-isl-ast (ast)
   (declare (type cffi:foreign-pointer ast))
