@@ -65,7 +65,7 @@ scop.lisp for the opposite things.
               (return-from parse-isl-ast-mark user))
             (let* ((n-unroll (parse-unroll-directive mark))
                    (user     (copy-astfor user))
-                   (unrolled (make-block (map 'list #'(lambda (n) (caten/codegen/directive:make-unrolled-body body n)) (alexandria:iota n-unroll))))
+                   (unrolled (make-block (map 'list #'(lambda (n) (caten/codegen/directive:make-unrolled-body user body n)) (alexandria:iota n-unroll))))
                    (reminder (caten/codegen/directive:compute-reminder-for-unroll user body)))
               (setf (astfor-body user) unrolled)
               (return-from parse-isl-ast-mark (make-block (list user reminder))))))
@@ -184,7 +184,7 @@ scop.lisp for the opposite things.
 (defun r/endif ()
   (make-node :Render :ENDIF nil nil))
 
-(defun create-rendering-graph-nodes (lisp-ast items)
+(defun create-rendering-graph-nodes (lisp-ast items &aux (space))
   (let ((new-graph))
     (labels ((find-user (node-id args)
                (let ((node (find (princ-to-string node-id) items
@@ -206,11 +206,13 @@ scop.lisp for the opposite things.
 	       (ematch object
 		 ((ASTBlock :body body) (map 'list #'lower body))
 		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
+                  (push idx space)
 		  (push (r/for idx upfrom to by scope) new-graph)
 		  (lower body)
+                  (setf space (remove idx space :test #'string=))
 		  (push (r/endfor idx) new-graph))
 		 ((User :name name :args args)
-                  (push (find-user name args) new-graph))
+                  (push (caten/codegen/directive:unroll-expr (reverse space) (find-user name args) object) new-graph))
 		 ((AstIf :condition cond :then-node then :else-node else)
 		  (push (r/if cond) new-graph)
 		  (lower then)

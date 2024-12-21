@@ -10,7 +10,8 @@
    #:make-user
    #:user-name
    #:user-args
-
+   #:user-unroll
+   
    #:ASTFor
    #:make-for
    #:copy-astfor
@@ -42,7 +43,7 @@
   (defstruct (User
               (:constructor make-user (name args)))
     "T_name(index)"
-    (name name :type string) (args args :type list))
+    (name name :type string) (args args :type list) (unroll nil :type list))
 
   (defstruct (ASTFor
               (:constructor make-for (idx from to by body)))
@@ -86,7 +87,7 @@
             do (setf (getattr node :value) value))
     new-expr))
 
-(defun copy-and-assign-ast-tree (ast idx value)
+(defun copy-and-assign-ast-tree (ast idx value &key (unroll-at nil))
   (declare (type string idx))
   (flet ((e (expr) (copy-and-assign-expr expr idx value)))
     (map-ast-tree
@@ -96,7 +97,11 @@
             (assert (= (length forms) 1))
             (make-block (first forms)))
            (User
-            (make-user (user-name ast) (map 'list #'e (user-args ast))))
+            (let ((user (copy-user ast)))
+              (setf (user-args user) (map 'list #'e (user-args user))
+                    (user-unroll user) (copy-list (user-unroll user)))
+              (when unroll-at (push (cons unroll-at value) (user-unroll user)))
+              user))
            (AstFor
             (assert (= (length forms) 1))
             (let ((new-for (copy-astfor ast)))
