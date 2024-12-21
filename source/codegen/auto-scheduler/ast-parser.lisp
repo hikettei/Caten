@@ -67,7 +67,6 @@ scop.lisp for the opposite things.
                    (user     (copy-astfor user))
                    (unrolled (make-block (map 'list #'(lambda (n) (caten/codegen/directive:make-unrolled-body body n)) (alexandria:iota n-unroll))))
                    (reminder (caten/codegen/directive:compute-reminder-for-unroll user body)))
-              ;; TODO_1, define a variable name followed by the unroll dims for scalar.
               (setf (astfor-body user) unrolled)
               (return-from parse-isl-ast-mark (make-block (list user reminder))))))
          ((mark-unroll-body-p mark)
@@ -193,6 +192,7 @@ scop.lisp for the opposite things.
                                  :test #'equalp)))
                  (assert node () "~a is not found in ~a" node-id items)
                  (assert (eql (node-type node) :EXPR))
+                 (setf node (copy-node node))
                  (let ((base (getattr node :iterations)))
                    (setf (getattr node :iterations) args)
                    (if (and (null args) (> (length base) 0))

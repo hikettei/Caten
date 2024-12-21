@@ -29,4 +29,4 @@
      (expr-add (astfor-from body) (expr-sub size reminder))
      (expr-< (expr-const (intern (astfor-idx body)) :int64) (expr-add (astfor-from body) size))
      (expr-const 1 :int64)
-     (copy-and-assign-ast-tree (astfor-body body) "nil" nil))))
+     (copy-and-assign-ast-tree (astfor-body body) (astfor-idx user) 0))))
