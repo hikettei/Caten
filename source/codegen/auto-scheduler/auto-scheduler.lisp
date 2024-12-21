@@ -1,5 +1,6 @@
 (defpackage :caten/codegen/auto-scheduler
-  (:use :cl))
+  (:use :cl :caten/air)
+  (:export #:auto-schedule))
 
 (in-package :caten/codegen/auto-scheduler)
 ;; Scheduling commands
@@ -11,6 +12,12 @@
 ;; - [ ] apply-vectorize
 ;; Purpose: get a list of optimal scheduling commands
 ;; Note: 積極的にISL ASTとBlueprintを変換しながら変形を施していく
-(defun auto-schedule (item)
-
-  )
+;; [TODO] JIT_DEBUG >= 2 to see optimized schedule sequence by BEAM (todo: search tiramisu)
+(defun auto-schedule (auto-scheduler node)
+  (assert (getattr node :polyhedral))
+  (caten/codegen/unroll::apply-packed-funcall node nil 4)
+  ;; Load blueprint from optimized polyhedral IR
+  (setf (getattr node :blueprint)
+        (caten/codegen/polyhedral-ast:lower-into-bp-from-polyhedral
+         (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank))
+         node)))

@@ -29,7 +29,7 @@
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/air :caten/codegen/expr :caten/isl)
-  (:export #:scop #:auto-schedule))
+  (:export #:scop))
 
 (in-package :caten/codegen/scop)
 
@@ -309,13 +309,3 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (format t "~a~%" (getattr node :polyhedral)))
       node)))
-
-(defmethod auto-schedule (auto-scheduler (node Node))
-  (assert (getattr node :polyhedral))
-  ;;(caten/polyhedral:auto-schedule auto-scheduler (getattr node :polyhedral))
-  ;; (caten/codegen/unroll::apply-packed-funcall node nil 4)
-  ;; Load blueprint from optimized polyhedral IR
-  (setf (getattr node :blueprint)
-        (lower-into-bp-from-polyhedral
-         (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank))
-         node)))
