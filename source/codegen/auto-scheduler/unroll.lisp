@@ -5,13 +5,16 @@
    #:tiling-sizes)
   (:import-from :caten/codegen/scop #:with-polyhedral-space)
 ;;  (:improt-form :caten/codegen/polyhedral-ast #:polyhedral->bp)
-  (:export #:apply-packed-funcall #:apply-unroll #:mark-unroll-p #:make-unroll #:parse-unroll-directive))
+  (:export #:apply-packed-funcall #:apply-unroll #:mark-unroll-p #:make-unroll #:parse-unroll-directive #:mark-unroll-body-p #:mark-unroll-parent-p))
 
 (in-package :caten/codegen/unroll)
 
 (defun mark-unroll-p (mark)
   (declare (type string mark))
   (scan "UNROLL" (string-upcase mark)))
+
+(defun mark-unroll-body-p (mark) (scan "UNROLL_BODY" (string-upcase mark)))
+(defun mark-unroll-parent-p (mark) (scan "UNROLL_PARENT" (string-upcase mark)))
 
 (defun make-unroll (name n-unroll)
   (declare (type integer n-unroll))
@@ -20,7 +23,10 @@
 (defun parse-unroll-directive (directive)
   (declare (type string directive))
   (assert (mark-unroll-p directive) () "The directive ~a is not an unroll" directive)
-  (parse-integer (subseq directive 7 (1- (length directive)))))
+  (let ((start (position #\[ directive))
+        (end   (position #\] directive)))
+    (assert (and start end) () "The directive ~a is not an unroll" directive)
+    (parse-integer (subseq directive (1+ start) end))))
 
 (defun schedule-node-band-apply-unroll (schedule-node parent-directive inner-directive n-unroll)
   (declare (type isl::schedule-node schedule-node))

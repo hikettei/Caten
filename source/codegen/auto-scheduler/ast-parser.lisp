@@ -7,6 +7,7 @@ Transform the Polyhedral IR into the Blueprint IR.
 scop.lisp for the opposite things.
 ")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia :caten/codegen/polyhedral-ast)
+  (:import-from :caten/codegen/unroll :mark-unroll-parent-p :mark-unroll-body-p :parse-unroll-directive)
   (:export #:lower-into-bp-from-polyhedral))
 
 (in-package :caten/codegen/ast-parser)
@@ -54,14 +55,27 @@ scop.lisp for the opposite things.
     (typecase user
       (AstFor
        (cond
-         ((string= mark "parallel")
+         ((equalp mark "parallel")
           (setf (astfor-scope user) :global))
-         ((string= mark "unroll")
-          ;; The next AstFor will be removed by unrolling the body. Pay attention for piecewise.
-          ;; If the form is complicated, that is ok, let's believe our simplifier.
-          ;; Always produce a "general-purpose" form.
-          
-          )
+         ((mark-unroll-parent-p mark)
+          (let ((body (astfor-body user)))
+            (when (or
+                   (not (typep body 'ASTFor))
+                   (null (and (astfor-marks body) (every #'mark-unroll-body-p (astfor-marks body)))))
+              (return-from parse-isl-ast-mark user))
+            (let* ((n-unroll (parse-unroll-directive mark))
+                   (user     (copy-astfor user))
+                   (unrolled (map 'list #'(lambda (n) (caten/codegen/directive:make-unrolled-body body n)) (alexandria:iota n-unroll)))
+                   (reminder (caten/codegen/directive:compute-reminder-for-unroll user body n-unroll))
+                   (new-body (make-block (list (make-block unrolled) reminder))))
+              ;; TODO_1, define a variable name followed by the unroll dims for scalar.
+              ;; (setf (astfor-body user) (make-block unrolled))
+              
+              )))
+         ((mark-unroll-body-p mark)
+          ;; UNROLL_BODY is triggered by the UNROLL_PARENT. Without it the form is ignored.
+          (assert (null (astfor-marks user)) () "UNROLL_BODY should be orthogonal with other directives.")
+          (setf (astfor-marks user) (list mark)))
          (T
           (warn "mark: ignored the mark ~a for ~a" mark user))))
       (otherwise

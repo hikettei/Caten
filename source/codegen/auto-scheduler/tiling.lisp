@@ -64,7 +64,7 @@ dims is used to specify the tiling sizes for each dimension."
       (schedule-node-insert-partial-schedule band tiled-sched))))
 
 (defun get-tileable-bands (poly)
-  (map-schedule-nodes #'(lambda (type node) (when (eql type :schedule-node-band) node)) poly))
+  (map-schedule-nodes #'(lambda (type node mark) (when (eql type :schedule-node-band) node)) poly))
 ;; [TODO]
 ;; - the tiling sizes are 2D, optimized by measuring the computation
 ;; - Create a heatmap on the tiling sizes for debugging
