@@ -369,6 +369,8 @@
    #:schedule-get-root
    #:schedule-node-band-set-ast-build-options
    #:schedule-node-delete
+   #:schedule-node-mark-get-id
+   #:schedule-node-band-get-ast-isolate-option
    #:schedule-node-first-child
    #:schedule-node-band-tile
    #:schedule-node-insert-mark

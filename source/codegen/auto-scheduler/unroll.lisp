@@ -7,19 +7,28 @@
 
 (in-package :caten/codegen/unroll)
 
-(defun schedule-node-band-apply-unroll (schedule-node)
+(defun schedule-node-band-apply-unroll (schedule-node &key (n-unroll 4))
   (declare (type isl::schedule-node schedule-node))
-  (print "UNROLL")
-  (let* ((tiled-schedule (isl:schedule-node-band-tile schedule-node (tiling-sizes schedule-node :size-default 16)))
-         (tiled-schedule (isl:schedule-node-get-child tiled-schedule 0))
-         (tiled-schedule (isl:schedule-node-band-set-ast-build-options tiled-schedule (isl:union-set-from-str "{ unroll[4] }"))))
-    (isl:schedule-node-get-schedule schedule-node)))
+  (let* ((tiled-schedule (isl:schedule-node-band-tile schedule-node (tiling-sizes schedule-node :size-default n-unroll)))
+         (tiled-schedule
+           (isl:schedule-node-insert-mark
+            (isl:schedule-node-get-child tiled-schedule 0)
+            (isl::make-id-from-str "unroll"))))
+    (isl:schedule-node-get-schedule tiled-schedule)))
 
-(defun schedule-apply-schedule-option (si idx)
+(defun get-packable-bands (si)
+  (map-schedule-nodes
+   #'(lambda (type node mark)
+       (when (and (eql type :schedule-node-band)
+                  (or (null mark) (not (equalp "UNROLL" (princ-to-string mark)))))
+         node))
+   si))
+
+(defun schedule-apply-schedule-option (si n-unroll)
   (declare (type Polyhedral-IR si))
-  (let ((bands (map-schedule-nodes #'(lambda (type node) (when (eql type :schedule-node-band) node)) si)))
-    (when bands
-      (setf (poly-schedule si) (schedule-node-band-apply-unroll (first bands))))))
+  (let ((bands (get-packable-bands si)))
+    (dotimes (nth (length bands))
+      (setf (poly-schedule si) (schedule-node-band-apply-unroll (nth nth (get-packable-bands si)) :n-unroll n-unroll)))))
 
 (defun apply-packed-funcall (schedule-node gid unroll-by)
   "Groups the iteration into several packed-funcall.
@@ -45,6 +54,6 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 ```
 "
   (declare (type node schedule-node) (type integer unroll-by) (type symbol gid))
-  (schedule-apply-schedule-option (getattr schedule-node :polyhedral) nil)
-  
+  ;; [TODO] Only unroll dims that has a data reuse
+  (schedule-apply-schedule-option (getattr schedule-node :polyhedral) 4)
   )

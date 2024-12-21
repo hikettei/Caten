@@ -44,10 +44,8 @@
       pg)))
 
 (defmethod debug-render-to-clang ((pg Polyhedral-IR))
-  (let* ((schedule (schedule-set-options (copy (poly-schedule pg)) :separate))
-         (build (ast-build-from-context (set-from-str "{:}")))
-         (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-         (ast   (ast-build-node-from-schedule build schedule))
+  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+         (ast   (->ast pg 0))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
          (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
          (str   (isl::%isl-printer-get-str q)))
@@ -150,7 +148,7 @@
 ```
 (map-schedule-nodes f polyhedral-ir)
 ```
-Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda function which takes (type[keyword] node[schedule-node]) as an argument.
+Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda function which takes (type[keyword] node[schedule-node] mark[string]) as an argument.
 This function returns a list of the results of applying f to each node. NIL is excluded in the list."
   (declare (type Polyhedral-IR polyhedral-ir) (type function f))
   (let* ((node (schedule-get-root (poly-schedule polyhedral-ir)))
@@ -160,9 +158,10 @@ This function returns a list of the results of applying f to each node. NIL is e
           for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
           while (>= n-children 0) do
             (loop for nth upfrom 0 below n-children
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
                   for band = (schedule-node-get-child node nth)
                   for type = (schedule-node-get-type band) do
-                    (let ((out (funcall f type band))) (when out (push out outputs)))
+                    (let ((out (funcall f type band mark))) (when out (push out outputs)))
                     (push band next-nodes))
             (when (= (length next-nodes) 0) (return-from map-search))
             (setf node (pop next-nodes)))
@@ -176,8 +175,9 @@ This function returns a list of the results of applying f to each node. NIL is e
 				 :pointer (isl::context-handle isl::*context*)
 				 :int ,level
 				 :void)))
-    (set-option "ast_build_exploit_nested_bounds" 1)
+    (set-option "ast_build_atomic_upper_bound" 1)
     (set-option "ast_build_detect_min_max" 1)
+    (set-option "ast_build_exploit_nested_bounds" 1)
     (set-option "ast_build_scale_strides" 1)
     (set-option "ast_build_allow_else" 0)
     (set-option "ast_build_allow_or" 0))

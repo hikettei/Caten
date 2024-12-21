@@ -73,8 +73,14 @@
          (user (parse-isl-ast (isl::%isl-ast-node-mark-get-node ast))))
     (typecase user
       (AstFor
-       (when (string= mark "parallel")
-         (setf (astfor-scope user) :global)))
+       (cond
+         ((string= mark "parallel")
+          (setf (astfor-scope user) :global))
+         ((string= mark "unroll")
+          ;; The next AstFor will be removed by unrolling the body. Pay attention for piecewise.
+          )
+         (T
+          (warn "mark: ignored the mark ~a for ~a" mark user))))
       (otherwise
        (warn "mark: ignored the mark ~a for ~a" mark user)))
     user))
