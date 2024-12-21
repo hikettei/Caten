@@ -98,7 +98,7 @@ scop.lisp for the opposite things.
 	      (op-type (isl::%isl-ast-expr-op-get-type ast)))
 	 (flet ((->expr (lhs rhs)
 		  (assert (not (eql op-type :ast-expr-op-error)) () ":isl_ast_expr_op_error")
-		  (ecase op-typeg
+		  (ecase op-type
 		    (:ast-expr-op-and (expr-and lhs rhs))
 		    (:ast-expr-op-and-then (expr-and lhs rhs))
 		    (:ast-expr-op-or (expr-or lhs rhs))
