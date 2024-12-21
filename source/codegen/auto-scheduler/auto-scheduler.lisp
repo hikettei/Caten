@@ -15,7 +15,6 @@
 ;; Note: 積極的にISL ASTとBlueprintを変換しながら変形を施していく
 ;; [TODO] JIT_DEBUG >= 2 to see optimized schedule sequence by BEAM (todo: search tiramisu)
 ;; BEAM Search
-
 ;; ~~~ Schedule Templates ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun has-reduction-p (node)
   "Returns a list of gids that have data reuse"

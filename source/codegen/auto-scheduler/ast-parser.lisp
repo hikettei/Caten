@@ -8,6 +8,7 @@ scop.lisp for the opposite things.
 ")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia :caten/codegen/polyhedral-ast)
   (:import-from :caten/codegen/unroll :mark-unroll-parent-p :mark-unroll-body-p :parse-unroll-directive)
+  (:import-from :caten/codegen/scop #:expr-detach-loop-bound)
   (:export #:lower-into-bp-from-polyhedral))
 
 (in-package :caten/codegen/ast-parser)
@@ -206,11 +207,14 @@ scop.lisp for the opposite things.
 	       (ematch object
 		 ((ASTBlock :body body) (map 'list #'lower body))
 		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
-                  (push idx space)
-		  (push (r/for idx upfrom to by scope) new-graph)
-		  (lower body)
-                  (setf space (remove idx space :test #'string=))
-		  (push (r/endfor idx) new-graph))
+                  ;; remove an empty loop
+                  (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
+                    (push idx space)
+		    (push (r/for idx upfrom to by scope) new-graph)
+                    (print body)
+		    (lower body)
+                    (setf space (remove idx space :test #'string=))
+		    (push (r/endfor idx) new-graph)))
 		 ((User :name name :args args)
                   (push (caten/codegen/directive:unroll-expr (reverse space) (find-user name args) object) new-graph))
 		 ((AstIf :condition cond :then-node then :else-node else)
