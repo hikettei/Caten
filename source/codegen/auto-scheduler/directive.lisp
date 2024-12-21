@@ -35,26 +35,41 @@
 
 (defun make-suffix (space user)
   (flet ((s (idx &aux (val (find idx (user-unroll user) :key #'car :test #'string=)))
-           (if val (cdr val) 0)))
-    (format nil "_~a" (apply #'concatenate 'string (butlast (loop for s in space append (list (princ-to-string (s s)) "_")))))))
+           (if val (cdr val) nil)))
+    (let ((suffix
+            (apply #'concatenate 'string
+                   (butlast (loop for s in space
+                                  for id = (s s)
+                                  if id append (list (princ-to-string id) "_"))))))
+      (if (string= suffix "")
+          ""
+          (format nil "_~a" suffix)))))
 
-(defun unroll-node (node suffix)
+(defun make-suffix-for-is (name iteration-space space user)
+  (let ((space (loop for s in space
+                     for stride in (iteration-space-strides iteration-space)
+                     unless (expr-equal-to stride 0) collect s)))
+    (intern (string-upcase (format nil "~a~a" name (make-suffix space user))))))
+
+(defun unroll-node (node space user)
   (when (eql (node-type node) :Aref)
     (when (= -1 (caten/avm:buffer-nrank (getattr node :buffer)))
-      (setf (getattr node :storage-id) (intern (string-upcase (format nil "~a~a" (getattr node :storage-id) suffix)))))
+      (setf (getattr node :storage-id) (make-suffix-for-is (getattr node :storage-id) (getattr node :space) space user)))
     (return-from unroll-node node))
   (when (null (getattr node :_type_relay :allow-undefined t))
     (return-from unroll-node node))
   (loop for write in (relay-writes (read-type-relay node))
         for w in (node-writes node)
+        for wi in (relay-write-iters (read-type-relay node))
         for nth upfrom 0
         if (= (caten/avm:buffer-nrank write) -1)
-          do (setf (nth nth (node-writes node)) (intern (string-upcase (format nil "~a~a" w suffix)))))
+          do (setf (nth nth (node-writes node)) (make-suffix-for-is w wi space user)))
   (loop for read in (relay-reads (read-type-relay node))
         for r in (node-reads node)
+        for ri in (relay-read-iters (read-type-relay node))
         for nth upfrom 0
-        if (and read (= 0 (caten/avm:buffer-nrank read)))
-          do (setf (nth nth (node-reads node)) (intern (string-upcase (format nil "~a~a" r suffix)))))
+        if (and read ri (= 0 (caten/avm:buffer-nrank read)))
+          do (setf (nth nth (node-reads node)) (make-suffix-for-is r ri space user)))
   node)
 
 (defun unroll-expr (space expr user)
@@ -71,6 +86,6 @@
           (make-expr :graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (expr-graph (getattr expr :EXPR)))))
                      :out (copy-node (expr-out (getattr expr :EXPR))))
           (node-id expr) (intern (string-upcase (format nil "~a~a" (node-id expr) suffix))))
-    (unroll-node expr suffix)
-    (map 'list #'(lambda (node) (when (eql (node-type node) :AREF) (unroll-node node suffix))) (graph-nodes (expr-graph (getattr expr :EXPR))))
+    (unroll-node expr space user)
+    (map 'list #'(lambda (node) (when (eql (node-type node) :AREF) (unroll-node node space user))) (graph-nodes (expr-graph (getattr expr :EXPR))))
     expr))
