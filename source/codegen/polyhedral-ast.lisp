@@ -5,7 +5,6 @@
 
 (in-package :caten/codegen/polyhedral-ast)
 ;; ~~ ISL AST <-> Lisp Intermidate Object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 (eval-when (:execute :compile-toplevel :load-toplevel)
   (defstruct (ASTBlock
               (:constructor make-block (body)))

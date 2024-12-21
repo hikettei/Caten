@@ -3,7 +3,9 @@
   (:import-from
    :caten/codegen/tiling
    #:tiling-sizes)
-  (:export #:apply-packed-funcall))
+  (:import-from :caten/codegen/scop #:scop)
+;;  (:improt-form :caten/codegen/polyhedral-ast #:polyhedral->bp)
+  (:export #:apply-packed-funcall #:apply-unroll))
 
 (in-package :caten/codegen/unroll)
 
@@ -29,7 +31,7 @@
   (let ((bands (get-packable-bands si directive)))
     (dotimes (nth (length bands))
       (setf (poly-schedule si) (schedule-node-band-apply-unroll (nth nth (get-packable-bands si directive)) directive :n-unroll n-unroll)))))
-
+;; Generic Implementation which can be applied for UNROLL, VECTORIZE
 (defun apply-packed-funcall (schedule-node unroll-by directive)
   "Groups the iteration into several packed-funcall.
 Packed-Funcall can be also transformed into Unrolling, or Vectorizing.
@@ -55,5 +57,9 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 The unrolled loop is marked as directive, so the final transformation processes can be placed in polyhedral-ast.lisp
 "
   (declare (type node schedule-node) (type integer unroll-by) (type string directive))
-  (schedule-apply-schedule-option (getattr schedule-node :polyhedral) unroll-by directive)
+  (schedule-apply-schedule-option (getattr schedule-node :polyhedral) unroll-by directive))
+
+(defun apply-unroll (schedule-node unroll-by)
+  (declare (type node schedule-node) (type integer unroll-by))
+  (scop 
   )
