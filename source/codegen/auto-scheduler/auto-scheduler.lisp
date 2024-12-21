@@ -19,6 +19,6 @@
   (caten/codegen/unroll:apply-unroll node 4)
   ;; Load blueprint from optimized polyhedral IR
   (setf (getattr node :blueprint)
-        (caten/codegen/polyhedral-ast:lower-into-bp-from-polyhedral
+        (caten/codegen/ast-parser:lower-into-bp-from-polyhedral
          (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank))
          node)))

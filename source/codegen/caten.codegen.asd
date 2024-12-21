@@ -17,6 +17,7 @@
    (:file "blueprint")
    (:file "auto-scheduler/directive")
    (:file "auto-scheduler/polyhedral-ast")
+   (:file "auto-scheduler/ast-parser")
    (:file "auto-scheduler/polyhedral")
    (:file "auto-scheduler/scop")
    (:file "auto-scheduler/auto-scheduler")

@@ -1,13 +1,26 @@
 (defpackage :caten/codegen/unroll
-  (:use :cl :caten/aasm :caten/air :caten/codegen/polyhedral)
+  (:use :cl :caten/aasm :caten/air :caten/codegen/polyhedral :cl-ppcre)
   (:import-from
    :caten/codegen/tiling
    #:tiling-sizes)
   (:import-from :caten/codegen/scop #:with-polyhedral-space)
 ;;  (:improt-form :caten/codegen/polyhedral-ast #:polyhedral->bp)
-  (:export #:apply-packed-funcall #:apply-unroll))
+  (:export #:apply-packed-funcall #:apply-unroll #:mark-unroll-p #:make-unroll #:parse-unroll-directive))
 
 (in-package :caten/codegen/unroll)
+
+(defun mark-unroll-p (mark)
+  (declare (type string mark))
+  (scan "UNROLL\\[" (string-upcase mark)))
+
+(defun make-unroll (n-unroll)
+  (declare (type integer n-unroll))
+  (format nil "UNROLL[~D]" n-unroll))
+
+(defun parse-unroll-directive (directive)
+  (declare (type string directive))
+  (assert (mark-unroll-p directive) () "The directive ~a is not an unroll" directive)
+  (parse-integer (subseq directive 7 (1- (length directive)))))
 
 (defun schedule-node-band-apply-unroll (schedule-node directive &key (n-unroll 4))
   (declare (type isl::schedule-node schedule-node))
@@ -61,5 +74,4 @@ The unrolled loop is marked as directive, so the final transformation processes 
 
 (defun apply-unroll (schedule-node unroll-by)
   (declare (type node schedule-node) (type integer unroll-by))
-  (with-polyhedral-space (schedule-node)
-    (apply-packed-funcall schedule-node unroll-by "UNROLL")))
+  (apply-packed-funcall schedule-node unroll-by "UNROLL"))
