@@ -211,7 +211,6 @@ scop.lisp for the opposite things.
                   (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
                     (push idx space)
 		    (push (r/for idx upfrom to by scope) new-graph)
-                    (print body)
 		    (lower body)
                     (setf space (remove idx space :test #'string=))
 		    (push (r/endfor idx) new-graph)))

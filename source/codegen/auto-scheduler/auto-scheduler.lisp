@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/auto-scheduler
-  (:use :cl :caten/air :caten/codegen/shape-inference :caten/codegen/expr)
+  (:use :cl :caten/air :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/config)
   (:export #:auto-schedule))
 
 (in-package :caten/codegen/auto-scheduler)
@@ -48,6 +48,9 @@
   ;; Unroll the loop in order to find the vectorize
   ;; [TODO] Optimize the unroll-by is automatically adjusted based on the simd register size (if vectorize is allowed or possible)
   (caten/codegen/unroll:apply-unroll node 4)
+  (caten/codegen/coincidence:apply-parallel
+   (getattr node :polyhedral)
+   (auto-scheduler-n-global-loops auto-scheduler))
   ;; [TODO] Parallelize the outermost loop
   ;; [TODO] Unroll the loop again, if possible, remove the small loop
   (print "ELEMWISE")
@@ -64,6 +67,8 @@ So we are going to apply an optiimzation method which takes a long time to searc
   (print "REUSE")
   ;; Data Reuse kernel has a chance to apply the tiling
   ;; And Tuning the tiling size tested by the measurer
+  (caten/codegen/tiling::apply-tile (getattr node :polyhedral) 16)
+  ;; (caten/codegen/unroll::apply-unroll node 4)
   )
 
 (defun auto-schedule (auto-scheduler node)
