@@ -10,11 +10,12 @@
 #include <time.h>
 #include <omp.h>
 #include <arm_neon.h>
-
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#define max(a, b) ((a) > (b) ? (a) : (b))
 // Optimized by AutoScheduler
 #define NB 16
 #define KB 16
-// [TODO] Can't we achieve 150 GFlops with only using gcc?
+// Implementations are copied from (caten (!matmul (make-tensor `(M N)) (make-tensor `(N K))))
 // Supporting SIMD Intrinsic beyonds the compiler.
 // 20~30 GFlops
 void gemm_naive_tailed(int M, int N, int K,
@@ -42,8 +43,9 @@ void gemm_naive_tailed(int M, int N, int K,
     }
   }
 }
-
+// (TODO) Apply Unroll+Tile => 130Gflops on M3 Pro?
 void gemm(const int64_t m, const int64_t n, const int64_t k, const float* restrict val_19, const float* restrict val_16, float* val_22) {
+  #pragma omp parallel for
   for (int _gid0=0; _gid0<(m+-((m%4))); _gid0+=4) {
     for (int _gid2=0; _gid2<(k+-((k%4))); _gid2+=4) {
       float val_7_0_0 = 0.0;
@@ -248,9 +250,8 @@ void gemm(const int64_t m, const int64_t n, const int64_t k, const float* restri
     }
   }
 }
-// 20~100 GFlops (while OpenBLAS achieves 100~200 GFlops)
-// with M <= 60 almost the same speed as OpenBLAS...
-void gemm1(int M, int N, int K,
+// Can autovectorize generate this code?
+void gemm_hand_optimized(int M, int N, int K,
           const float * __restrict A,
           const float * __restrict B,
           float * __restrict C)
