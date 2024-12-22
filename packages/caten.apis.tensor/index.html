@@ -1,0 +1,995 @@
+
+<!DOCTYPE html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../css/bootstrap.min.css">
+  
+
+  
+    <meta http-equiv="content-language" content="en">
+  
+  
+
+  
+  <title>Tensor | Caten Documentation</title>
+  
+
+  
+
+  <link rel="stylesheet" href="../../css/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/default.min.css">
+  <link rel="stylesheet" href="../../css/vs.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  
+  
+  
+  <script async>var base_url = '../..';</script>
+  <script src="../../js/jquery-3.6.1.slim.min.js"></script>
+  <script src="../../js/bootstrap.bundle.min.js"></script>
+  <script async src="../../js/highlight.min.js"></script>
+
+  
+  
+</head>
+<body>
+  
+  
+    
+    <header>
+      <nav class="navbar navbar-expand-sm navbar-toggleable-sm  border-bottom box-shadow mb-3 ">
+        <div class="container">
+            <a class="navbar-brand text-body" asp-area="" href="/">
+              
+              
+                Caten Documentation
+              
+            </a>
+            <div class="print-hide">
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="d-none d-md-flex input-group mb-3">
+                
+                    <input class="form-control" type="search" id="searchbox" accesskey="/" placeholder="Search in here" aria-label="Search" aria-describedby="search-btn"/>
+                    <button class="btn btn-outline-secondary" type="button" id="search-btn" onclick="search(false);">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    
+                </div>
+            </div>
+            </div>
+        </div>
+    </nav>
+    <nav class="navbar border-bottom box-shadow mb-3 d-md-none print-hide">
+      <div class="container">
+          <div class="navbar-collapse d-flex">
+            <p>
+              <div class="d-flex input-group mb-3">
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_nav(this);" type="button" data-bs-toggle="collapse" data-bs-target="#nav" title="Show Navigation"><i class="bi bi-book"></i></button>
+                
+                
+                <input class="form-control" type="search" id="searchbox_mobile" accesskey="/" placeholder="Search in here" aria-label="Search">
+                <button class="btn btn-outline-secondary" type="button" onclick="search(true);"><i class="bi bi-search"></i></button>
+                
+                
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_toc(this);" type="button" data-bs-toggle="collapse" data-bs-target="#tol"><i class="bi bi-list-ul"></i></button>
+                
+                
+            </div>
+            </p>
+          </div>
+      </div>
+    </nav>
+  </header>
+    
+  
+  
+  
+  <div class="container">
+    <main role="main" class="pb-3">
+      <div class="row">
+        
+        
+    
+    <div class="col-12 col-md-2 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="nav"  style="overflow-x:scroll;">
+        <ul class="list-group list-group-flush">
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../..">Home</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../quickstart/">Quickstart</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../development/">Development</a></li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >API Reference</a>
+          <ul class="collapse list-group list-group-flush show ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.air/">caten/air</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.aasm/">caten/aasm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.codegen/">caten/codegen</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/apis</a>
+              <ul class="collapse list-group list-group-flush show">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-body" href="./">Tensor</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.differentiable_ops/">Func</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.module/">Module</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.models/">Model</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.aot/">AOT</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.initializers/">Initializers</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.shapetracker/">ShapeTracker</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.facet_apis/">Facet APIs</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apis.state-dict/">StateDict</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.avm/">caten/avm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/nn</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.activations/">Activation</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.convolutions/">Convolution</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.criterion/">Criterion</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.embeddings/">Embedding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.linears/">Linear</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.normalizations/">Normalization</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.padding/">Padding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.pooling/">Pooling</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.encoding/">Encoding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.optimizers/">Optimizers</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >Ready to use packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps.gpt2/">caten/apps.gpt2</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >External Packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.gguf/">caten/gguf</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.onnx/">caten/oonx</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.llm/">caten/llm</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+      </ul>
+      </div>
+    </div>
+    
+       
+
+
+
+<div class="col-12 col-md-2 order-md-3 print-hide">
+  <div class="collapse d-md-block text-nowrap" id="tol" style="overflow-x:scroll;">
+    <span>In this article</span>
+    <hr />
+    <ul class="list-group list-group-flush">
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#tensor">Tensor</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#struct-tensor" >[struct] Tensor</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-make-tensor" >[function] make-tensor</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-make-scalar" >[function] make-scalar</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-grad" >[function] grad</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-shape" >[function] shape</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-ndim" >[function] ndim</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-dtype-of" >[function] dtype-of</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-order" >[function] order</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-caten" >[function] caten</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-tensor-graph" >[function] tensor-graph</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-tensor-lowered-graph" >[function] tensor-lowered-graph</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#method-backward" >[method] backward</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-proceed" >[function] proceed</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#macro-with-no-grad" >[macro] with-no-grad</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#variable-inference-mode" >[variable] inference-mode</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#macro-with-inference-mode" >[macro] with-inference-mode</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#examples" >Examples</a>
+    
+        <ul class="list-group list-group-flush">
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#tensor-creation" >Tensor Creation</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#realize" >Realize</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#creating-a-computational-graph-lazy" >Creating a computational graph (Lazy)</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#evaluating-a-computational-graph" >Evaluating a computational graph.</a>
+    
+    </li>
+
+        
+        </ul>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#floating-features" >Floating Features</a>
+    
+        <ul class="list-group list-group-flush">
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-inf" >[function] inf</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-inf_1" >[function] -inf</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-nan" >[function] nan</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-float-type-of" >[function] float-type-of</a>
+    
+    </li>
+
+        
+        </ul>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<div class="col-12 col-md-8 print-main">
+  
+  <h1>Tensor</h1>
+  
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item active" aria-current="page">Caten Documentation</li>
+      
+      
+      
+      
+      
+      
+      
+      
+      <li class="breadcrumb-item active" aria-current="page">API Reference</li>
+      
+      
+        
+
+        
+
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">caten/apis</li>
+        
+        
+        
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">Tensor</li>
+        
+        
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+        
+
+        
+
+        
+
+      
+      
+      
+      
+      
+      
+      
+    </ol>
+  </nav>
+  
+  
+  <div class="container ml-0">
+    <div class="row">
+      
+      <div class="col-2 px-0" style="text-wrap: nowrap;">
+        
+        <a class="btn text-primary print-hide" href="../caten.apis/"
+          title="Overview"><i class="bi bi-chevron-left"></i></a>
+        
+        
+        <a class="btn text-primary print-hide" href="../caten.apis.differentiable_ops/" title="Func"><i
+            class="bi bi-chevron-right"></i></a>
+        
+      </div>
+      <div class="col px-0" style="text-align: right;">
+        
+        
+        <small><span class='git-page-authors git-authors'></span></small>
+        <span>|</span>
+        
+        
+        
+        
+        
+      </div>
+      <div class="col-1 col-sm-2 px-0" style="text-align: right;text-wrap: nowrap;">
+        <button class="btn print-block d-none d-lg-inline" title="Print this article"
+          onclick="window.print();"><i class="bi bi-printer"></i></button>
+        <button class="btn print-visible d-none" onclick="print_normal();"
+          title="Open NewTab"><i class="bi bi-arrow-up-right-square"></i></button>
+        
+        
+        <a class="btn disabled print-hide d-none d-sm-inline"><i class="bi bi-pencil"></i></a>
+        
+        
+        <span class="dropdown print-hide">
+          <button class="btn btn" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown"
+            aria-expanded="false"><i class="bi bi-list"></i></button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
+            <li>
+              <h6 class="dropdown-header">Share via</h6>
+            </li>
+            <li><button class="btn dropdown-item"
+                onclick="share_to_twitter('Tensor | Caten Documentation','');"><i
+                  class="bi bi-twitter-x"></i>&nbsp;X.com</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_facebook();"><i
+                  class="bi bi-facebook"></i>&nbsp;Facebook</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_line();"><i
+                  class="bi bi-line"></i>&nbsp;LINE</button></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li><button class="btn dropdown-item" onclick="window.print();"><i class="bi bi-printer"></i>&nbsp;Print</button></li>
+            <li><button class="btn dropdown-item" id="page-url-copy-btn"><i class="bi bi-clipboard"></i>&nbsp;Copy Url to clipboard</button></li>
+            <li>
+              
+              
+              <a class="btn dropdown-item disabled"><i class="bi bi-pencil"></i>&nbsp;Edit this article</a>
+              
+              
+            </li>
+            <li><button class="btn dropdown-item" onclick="print_view();"><i
+                  class="bi bi-file-earmark-text"></i>&nbsp;View in EmbedMode</button></li>
+          </ul>
+        </span>
+      </div>
+    </div>
+  </div>
+  
+  <hr />
+  
+  
+  <h1 id="tensor">Tensor</h1>
+<h3 id="struct-tensor">[struct] Tensor</h3>
+<p>A struct <code>tensor</code> is a multi-dimensional, and strided matrix (and nrank=0 to scalar value) containing elements of the single dtype.
+Also the tensor has following slots:</p>
+<ul>
+<li>shape[list] A list of number, symbol, or <code>Tensor</code>.</li>
+<li>buffer[Buffer] A buffer of the tensor. Realized arrays are stored here.</li>
+<li>dtype[keyword] A dtype of the tensor.</li>
+<li>order[order] A memory layout of the tensor, selected from either of :row or :column.</li>
+<li>id[symbol] A unique identifier of the tensor. (usually created by gensym)</li>
+<li>op[Func] <code>Func</code> object that represents the operation of the tensor.</li>
+<li>views[list] A list of <code>ViewRange</code> objects, determining the bound of loops.</li>
+<li>requires-grad[boolean] A flag to determine whether the tensor requires a gradient.</li>
+<li>grad[Tensor] A gradient and realized tensor of the tensor.</li>
+<li>grad-id[symbol] A unique identifier of the gradient tensor.</li>
+<li>variables[list] A list of <code>Tensor</code> objects that are used in the operation of the tensor. Tensors listed here are involved in the compilation.</li>
+</ul>
+<h3 id="function-make-tensor">[function] make-tensor</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>(make-tensor shape &amp;key (dtype *default-float*) (order *default-order*) (id (gensym &quot;TID&quot;)) (requires-grad nil) (initial-element nil) (views nil) (from nil))
+</code></pre></div>
+Create a new lazy tensor.</p>
+<ul>
+<li>shape[list] A list of number, symbol, or <code>Tensor</code>.</li>
+<li>dtype[keyword] A dtype of the tensor.</li>
+<li>order[order] A memory layout of the tensor, selected from either of :row or :column.</li>
+<li>id[symbol] A unique identifier of the tensor. (usually created by gensym)</li>
+<li>requires-grad[boolean] A flag to determine whether the tensor requires a gradient.</li>
+<li>initial-element[null|number|symbol|ScalarTensor] An initial value of the tensor.</li>
+<li>views[list] A list of <code>ViewRange</code> objects, determining the bound of loops.</li>
+<li>from[null|Buffer|Symbol] A buffer used to initialize the tensor. If symbol is given, the buffer is taken from the variable table.</li>
+</ul>
+<h3 id="function-make-scalar">[function] make-scalar</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>(make-scalar value &amp;key (dtype *default-float*) (order *default-order*) (id (gensym &quot;SID&quot;)) (requires-grad nil))
+</code></pre></div>
+Create a new scalar tensor. ScalarTensor in Caten is a tensor with a rank of 0.</p>
+<ul>
+<li>value[number|symbol] A value of the scalar tensor.</li>
+<li>dtype[keyword] A dtype of the tensor.</li>
+<li>order[order] A memory layout of the tensor, selected from either of :row or :column.</li>
+<li>id[symbol] A unique identifier of the tensor. (usually created by gensym)</li>
+<li>requires-grad[boolean] A flag to determine whether the tensor requires a gradient.</li>
+</ul>
+<p>Tips: You can use <code>fconst</code>, <code>uconst</code>, and <code>iconst</code> to create a scalar tensor with a default dtype. (arguments are the same as <code>make-scalar</code>.)</p>
+<h3 id="function-grad">[function] grad</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>(grad tensor)
+</code></pre></div>
+Returns a gradient of the tensor</p>
+<h3 id="function-shape">[function] shape</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>(shape tensor)
+</code></pre></div>
+Returns a copy of the shape of the tensor</p>
+<h3 id="function-ndim">[function] ndim</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>(ndim tensor)
+</code></pre></div>
+Returns a rank of the tensor</p>
+<h3 id="function-dtype-of">[function] dtype-of</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>(dtype-of tensor)
+</code></pre></div>
+Returns a dtype of the tensor</p>
+<h3 id="function-order">[function] order</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>(order tensor)
+</code></pre></div>
+Returns a memory-layout of the tensor.</p>
+<h3 id="function-caten">[function] caten</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="p">(</span><span class="nv">caten</span><span class="w"> </span><span class="nv">tensors</span><span class="w"> </span><span class="k">&amp;key</span><span class="w"> </span><span class="p">(</span><span class="nv">jit</span><span class="w"> </span><span class="p">(</span><span class="nb">=</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="p">(</span><span class="nv">ctx:getenv</span><span class="w"> </span><span class="ss">:JIT</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">name</span><span class="w"> </span><span class="ss">:main</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">simplifiers</span><span class="w"> </span><span class="vg">*external-simplifiers*</span><span class="p">))</span>
+</code></pre></div>
+<p>Compiles the given tensors, returning an AVM struct.</p>
+<ul>
+<li>tensor[Tensor|List] toplevel tensors.</li>
+<li>jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls <code>%jit</code> to generate the fast kernel supported by <code>caten/codegen</code>. This parameter should be specified using the <code>(ctx:with-contextvar)</code> macro.</li>
+<li>name[keyword] the name of compiled avm.</li>
+<li>rewriters[list] a list of graph rewriters called each time the compiler will lower the module.</li>
+<li>simplifiers[list] a list of external simplifiers used in the graph-level compilation. (defined by defsimplifier) Pass the function name.</li>
+</ul>
+<h3 id="function-tensor-graph">[function] tensor-graph</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>(tensor-graph tensor)
+</code></pre></div>
+<p>Lowers the given tensors into an aasm graph, only the constant folding is applied.</p>
+<p>For some convenience, this function returns the first tensor if the input is not a tensor.</p>
+<h3 id="function-tensor-lowered-graph">[function] tensor-lowered-graph</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>(tensor-lowered-graph &amp;rest tensors)
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>Creates a lowered graph from the given tensors. (= an input grpah to JIT=1)
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>### [method] forward
+</code></pre></div>
+(forward AVM &amp;rest params)
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>Compute the forward pass of the compiled computational graph (AVM). The params are additional parameters that are used to initialize the AVM variable table, passed in the following format:
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>- `(symbol . number)` Loaded as a `*default-int*` scalar tensor, used to determine the shape of dynamic shaped tensors.
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>- `(symbol . buffer)` or `(symbol . tensor)` Used to assign the initial elements of the tensor specified by the name in `form` in `(make-tensor ... :from x)`
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>Here&#39;s an example.
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>#### Examples
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>
+<a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a>```lisp title=&quot;Example of forward with dynamic shaped&quot;
+<a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>
+<a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>(let ((model (caten (!randn `(a b)))))
+<a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a>  (forward model `(a . 10) `(b . 10)))
+</code></pre></div></p>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>{Tensor[float32] :shape (A B) :id STC98223
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>   ((-0.61595285  -0.031014156 2.2868037    -0.8684415   -0.56618977  -0.7328551   -0.2807455   2.3028476    0.79900587   1.8557153)
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>    (-1.7908674   -0.46563956  -0.20578465  -0.35169426  -1.4918212   0.11561119   0.30114642   1.7040857    -2.916635    -1.5369263)
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>    (0.9987553    0.45711854   1.0495216    -1.0601267   -0.54998857  0.22259901   0.15503313   -0.9351286   2.9082751    -0.12879859)
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>    (0.49433577   0.56157786   0.4193139    0.72080606   0.19486764   0.35958967   0.46794757   -0.8435187   0.09039084   -0.88607216)
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a>    (0.239293     -0.3790358   0.439364     -0.10819176  -0.07170133  -2.9237595   -0.10269515  -0.3924638   -1.0511456   -0.93730205)
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    (-0.2857653   0.6431336    0.47663587   1.4265004    0.37391514   -0.8274696   -0.39017528  0.31971508   0.06125845   0.13821441)
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a>    (0.9454282    -1.7564898   0.09252599   0.7165159    0.775417     -0.00204291  0.99140173   0.1647516    0.77457863   0.6881668)
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a>    (0.5833384    -1.8209114   0.37789294   0.030298902  -0.2962195   2.3168423    0.72732586   -0.20335685  0.8696461    0.38297242)
+<a id="__codelineno-11-10" name="__codelineno-11-10" href="#__codelineno-11-10"></a>    (1.1594744    -0.035024546 1.1469852    0.55789834   2.0441046    -1.1500646   -0.091196336 0.8264797    0.7891973    0.112303734)
+<a id="__codelineno-11-11" name="__codelineno-11-11" href="#__codelineno-11-11"></a>    (-1.1058131   0.29724032   0.5923294    -0.1579682   0.18783261   0.33747807   -0.026869688 -0.4813399   0.6008693    -0.69397247))
+<a id="__codelineno-11-12" name="__codelineno-11-12" href="#__codelineno-11-12"></a>  :op #&lt;PROCEEDNODE {1002457753}&gt;
+<a id="__codelineno-11-13" name="__codelineno-11-13" href="#__codelineno-11-13"></a>  :requires-grad NIL
+<a id="__codelineno-11-14" name="__codelineno-11-14" href="#__codelineno-11-14"></a>  :variables (STC76067)
+<a id="__codelineno-11-15" name="__codelineno-11-15" href="#__codelineno-11-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(A B) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="method-backward">[method] backward</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>(forward AVM &amp;optional prev-dout)
+</code></pre></div>
+<p>Compute the backward pass of the compiled computational graph (AVM). Note that the <code>prev-dout</code> is ignored. Forward pass must be computed first. Gradients are automatically reset to zero before the forward pass.</p>
+<h3 id="function-proceed">[function] proceed</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>(proceed &amp;rest tensors)
+</code></pre></div>
+<p>Compiles the given tensors, returning an evaluated tensors.</p>
+<h3 id="macro-with-no-grad">[macro] with-no-grad</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>(with-no-grad &amp;body body)
+</code></pre></div>
+<p>Under the scope of <code>with-no-grad</code>, the gradient computation is disabled. This parameter should be set during inference, and the compiler will generate a more efficient code.</p>
+<h3 id="variable-inference-mode">[variable] <em>inference-mode</em></h3>
+<p>When <code>*inference-mode*</code> is set to T, it explicitly indicates that the code is being executed in inference mode. Additionally, it has the following effects:</p>
+<ul>
+<li>
+<p>Static Random Generation (e.g., rand) with <code>:requires-grad=T</code> does nothing (it is expected to load a parameter from the state dictionary).</p>
+</li>
+<li>
+<p>The behavior of certain NN operations, such as BatchNorm and Dropout, changes.</p>
+</li>
+</ul>
+<h3 id="macro-with-inference-mode">[macro] with-inference-mode</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>(with-inference-mode (() &amp;body body))
+</code></pre></div>
+Sets <code>*inference-mode*=T</code> and <code>*no-grad*=T</code> within the scope of the body.</p>
+<h3 id="examples">Examples</h3>
+<h4 id="tensor-creation">Tensor Creation</h4>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">30</span><span class="w"> </span><span class="mi">30</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>{Tensor[float32] :shape (30 30) :id TID98224
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>  :buffer nil
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>  :op #&lt;ALLOCATE {1002577EF3}&gt;
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a>  :requires-grad NIL
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>  :variables NIL
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(30 30) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h4 id="realize">Realize</h4>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">30</span><span class="w"> </span><span class="mi">30</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>{Tensor[float32] :shape (30 30) :id STC98288
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>   ((0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>                     ...
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0))
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a>  :op #&lt;PROCEEDNODE {1002714CF3}&gt;
+<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a>  :requires-grad NIL
+<a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a>  :variables (TID98228)
+<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(30 30) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h4 id="creating-a-computational-graph-lazy">Creating a computational graph (Lazy)</h4>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">!add</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">1</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>{Tensor[float32] :shape (3 3) :id STC98303
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>  :buffer nil
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>  :op #&lt;ADD {100274C533}&gt;
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>  :requires-grad NIL
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>  :variables (STC98295 STC98302)
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h4 id="evaluating-a-computational-graph">Evaluating a computational graph.</h4>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!add</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">1</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>{Tensor[float32] :shape (3 3) :id STC98469
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a>   ((2.0 2.0 2.0)
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a>    (2.0 2.0 2.0)
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a>    (2.0 2.0 2.0))
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a>  :op #&lt;PROCEEDNODE {10029021C3}&gt;
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a>  :requires-grad NIL
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a>  :variables (STC98318)
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h2 id="floating-features">Floating Features</h2>
+<h3 id="function-inf">[function] inf</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>(inf &amp;key (dtype *default-float*))
+</code></pre></div>
+Returns a positive infinity of the dtype for the current Common Lisp implementation.</p>
+<p>This feature is supported by <a href="https://shinmera.github.io/float-features/">float-features</a></p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">inf</span><span class="p">)</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>#.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!full</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">inf</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>{Tensor[float32] :shape (3 3) :id STC98532
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>   ((#.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY)
+<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>    (#.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY)
+<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a>    (#.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-POSITIVE-INFINITY))
+<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a>  :op #&lt;PROCEEDNODE {100291A323}&gt;
+<a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a>  :requires-grad NIL
+<a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a>  :variables (TID98470)
+<a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-inf_1">[function] -inf</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>(-inf &amp;key (dtype *default-float*))
+</code></pre></div>
+<p>Returns a negative infinity of the dtype for the current Common Lisp implementation.</p>
+<p>This feature is supported by <a href="https://shinmera.github.io/float-features/">float-features</a></p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">-inf</span><span class="p">)</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>#.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!full</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">-inf</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>{Tensor[float32] :shape (3 3) :id STC98595
+<a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>   ((#.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY)
+<a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>    (#.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY)
+<a id="__codelineno-33-4" name="__codelineno-33-4" href="#__codelineno-33-4"></a>    (#.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY #.SB-EXT:SINGLE-FLOAT-NEGATIVE-INFINITY))
+<a id="__codelineno-33-5" name="__codelineno-33-5" href="#__codelineno-33-5"></a>  :op #&lt;PROCEEDNODE {100292A463}&gt;
+<a id="__codelineno-33-6" name="__codelineno-33-6" href="#__codelineno-33-6"></a>  :requires-grad NIL
+<a id="__codelineno-33-7" name="__codelineno-33-7" href="#__codelineno-33-7"></a>  :variables (TID98533)
+<a id="__codelineno-33-8" name="__codelineno-33-8" href="#__codelineno-33-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-nan">[function] nan</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>(nan &amp;key (dtype *default-float*))
+</code></pre></div>
+<p>Returns a NaN of the dtype for the current Common Lisp implementation.</p>
+<p>This feature is supported by <a href="https://shinmera.github.io/float-features/">float-features</a></p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">nan</span><span class="p">)</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>#&lt;SINGLE-FLOAT quiet NaN&gt;
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!full</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">nan</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a>{Tensor[float32] :shape (3 3) :id STC98658
+<a id="__codelineno-38-2" name="__codelineno-38-2" href="#__codelineno-38-2"></a>   ((#&lt;SINGLE-FLOAT quiet NaN&gt; #&lt;SINGLE-FLOAT quiet NaN&gt; #&lt;SINGLE-FLOAT quiet NaN&gt;)
+<a id="__codelineno-38-3" name="__codelineno-38-3" href="#__codelineno-38-3"></a>    (#&lt;SINGLE-FLOAT quiet NaN&gt; #&lt;SINGLE-FLOAT quiet NaN&gt; #&lt;SINGLE-FLOAT quiet NaN&gt;)
+<a id="__codelineno-38-4" name="__codelineno-38-4" href="#__codelineno-38-4"></a>    (#&lt;SINGLE-FLOAT quiet NaN&gt; #&lt;SINGLE-FLOAT quiet NaN&gt; #&lt;SINGLE-FLOAT quiet NaN&gt;))
+<a id="__codelineno-38-5" name="__codelineno-38-5" href="#__codelineno-38-5"></a>  :op #&lt;PROCEEDNODE {1002942583}&gt;
+<a id="__codelineno-38-6" name="__codelineno-38-6" href="#__codelineno-38-6"></a>  :requires-grad NIL
+<a id="__codelineno-38-7" name="__codelineno-38-7" href="#__codelineno-38-7"></a>  :variables (TID98596)
+<a id="__codelineno-38-8" name="__codelineno-38-8" href="#__codelineno-38-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-float-type-of">[function] float-type-of</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>(float-type-of x)
+</code></pre></div>
+<p>Returns <code>:INF</code> if the number is a negative infinity, <code>:-INF</code> if the number is a negative infinity, <code>:nan</code> if the number is NaN, or T otherwise.</p>
+  
+
+  
+      </div>
+      </div>
+      <script src="../../js/theme.js"></script>
+      
+      
+      
+    <script async src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    <script async src="../../search/main.js"></script>
+      
+      
+    </main>
+  </div>
+  
+  
+  
+  
+  
+  <footer class="border-top footer text-muted .position-absolute.bottom-0.start-50.translate-middle-x" style="padding-top:15px;">
+    <div class="container">
+      <div class="row">
+        <div class="col-md">
+          
+        </div>
+        
+      </div>
+    </div>
+  </footer>
+  
+  
+
+<div class="modal fade" id="searchModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="searchModal" aria-hidden="true">
+  <div class="modal-dialog modal-lg print-hide">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">Search</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input id="mkdocs-search-query" type="text" class="form-control" aria-label="Search" aria-describedby="inputGroup-sizing-default">
+        </div>
+        <div id="mkdocs-search-results">
+          Enter a keyword to search.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
