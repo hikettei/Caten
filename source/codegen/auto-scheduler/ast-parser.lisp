@@ -66,7 +66,7 @@ scop.lisp for the opposite things.
               (return-from parse-isl-ast-mark user))
             (let* ((n-unroll (parse-unroll-directive mark))
                    (user     (copy-astfor user))
-                   (unrolled (make-block (map 'list #'(lambda (n) (caten/codegen/directive:make-unrolled-body user body n)) (alexandria:iota n-unroll))))
+                   (unrolled (caten/codegen/directive:make-unrolled-body user body n-unroll))
                    (reminder (caten/codegen/directive:compute-reminder-for-unroll user body)))
               (setf (astfor-body user) unrolled)
               (return-from parse-isl-ast-mark (make-block (list user reminder))))))

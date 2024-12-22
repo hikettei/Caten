@@ -51,14 +51,14 @@
   (caten/codegen/coincidence:apply-parallel
    (getattr node :polyhedral)
    (auto-scheduler-n-global-loops auto-scheduler))
-  ;; [TODO] Parallelize the outermost loop
-  ;; [TODO] Unroll the loop again, if possible, remove the small loop
+  ;; [TODO] Unroll the loop again, if possible, remove away for the small loop
   (print "ELEMWISE")
   )
 
 (defun optimize-reduction-kernel (auto-scheduler node)
   "Optimization for LayerNorm/Softmax/Argmax/Sum is here."
   (print "SOFTMAX")
+  (caten/codegen/unroll:apply-unroll node 2)
   )
 
 (defun optimize-data-reuse-kernel (auto-scheduler node)

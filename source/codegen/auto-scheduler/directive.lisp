@@ -10,10 +10,10 @@
 
 (in-package :caten/codegen/directive)
 
-(defun make-unrolled-body (user body nth)
+(defun make-unrolled-body (user body n-unroll)
   "Creates a copy of ASTFor body with the idx is set to nth."
-  (declare (type ASTFor body) (type fixnum nth))
-  (copy-and-assign-ast-tree (astfor-body body) (astfor-idx body) nth :unroll-at (astfor-idx user)))
+  (declare (type ASTFor body) (type fixnum n-unroll))
+  (unroll-ast (astfor-body body) (astfor-idx body) (astfor-idx user) n-unroll))
 
 (defmethod astfor-compute-reminder ((astfor ASTFor))
   (let ((below (expr-detach-loop-bound (astfor-to astfor)))

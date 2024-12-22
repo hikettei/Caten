@@ -31,7 +31,8 @@
 
    #:map-ast-tree
    #:copy-and-assign-expr
-   #:copy-and-assign-ast-tree))
+   #:copy-and-assign-ast-tree
+   #:unroll-ast))
 
 (in-package :caten/codegen/polyhedral-ast)
 ;; ~~ ISL AST <-> Lisp Intermidate Object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -117,3 +118,31 @@
                     (astif-condition new-if) (e (astif-condition new-if)))
               new-if))))
      ast)))
+
+(defun unroll-ast (ast idx unroll-at n-unroll)
+  (map-ast-tree
+   #'(lambda (ast &rest forms)
+       (etypecase ast
+         (AstBlock
+          (assert (= (length forms) 1))
+          (make-block (first forms)))
+         (User
+          (let ((users
+                  (map 'list #'(lambda (n) (copy-and-assign-ast-tree ast idx n :unroll-at unroll-at)) (alexandria:iota n-unroll))))
+            (make-block users)))
+         (AstFor
+          (assert (= (length forms) 1))
+          (let ((new-for (copy-astfor ast)))
+            (setf (astfor-body new-for) (first forms)
+                  (astfor-from new-for) (astfor-from new-for)
+                  (astfor-to new-for) (astfor-to new-for)
+                  (astfor-by new-for) (astfor-by new-for))
+            new-for))
+         (AstIf
+          (assert (= (length forms) 1))
+          (let ((new-if (copy-astif ast)))
+            (setf (astif-then-node new-if) (first forms)
+                  (astif-condition new-if) (astif-condition new-if))
+            new-if))))
+   ast))
+
