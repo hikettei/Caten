@@ -24,7 +24,7 @@ ast-parser.lisp for the opposite thing.
    #:iteration-space-strides
    #:iteration-space-views)
   (:import-from
-   :caten/polyhedral/ir
+   :caten/codegen/polyhedral
    #:make-polyhedral-ir)
   (:import-from
    :caten/codegen/expr-cache
