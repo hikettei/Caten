@@ -1,35 +1,16 @@
-(defpackage :caten/codegen/polyhedral-ast
-  (:documentation "ISL Polyhedral IR ==> Caten Blueprint IR")
-  (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia)
+(defpackage :caten/codegen/ast-parser
+  (:documentation "
+Transform the Polyhedral IR into the Blueprint IR.
+```
+[ISL Polyhedral IR] ==> <Polyhedral-AST> ===> Caten Blueprint IR
+```
+scop.lisp for the opposite things.
+")
+  (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia :caten/codegen/polyhedral-ast)
+  (:import-from :caten/codegen/unroll :mark-unroll-parent-p :mark-unroll-body-p :parse-unroll-directive)
   (:export #:lower-into-bp-from-polyhedral))
 
-(in-package :caten/codegen/polyhedral-ast)
-;; ~~ ISL AST <-> Lisp Intermidate Object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-(eval-when (:execute :compile-toplevel :load-toplevel)
-  (defstruct (ASTBlock
-              (:constructor make-block (body)))
-    (body body :type list))
-
-  (defstruct (User
-              (:constructor make-user (name args)))
-    "T_name(index)"
-    (name name :type string) (args args :type list))
-
-  (defstruct (ASTFor
-              (:constructor make-for (idx from to by body)))
-    (idx idx :type string)
-    (from from :type Expr)
-    (to to :type Expr)
-    (by by :type Expr)
-    (body body :type (or ASTBlock User ASTFor ASTIF))
-    (scope :local :type (member :local :global)))
-
-  (defstruct (AstIf
-              (:constructor make-if (condition then-node else-node)))
-    (condition condition :type Expr)
-    (then-node then-node :type (or ASTBlock User ASTFOR ASTIF))
-    (else-node else-node :type (or ASTBlock User ASTFOR ASTIF null))))
+(in-package :caten/codegen/ast-parser)
 
 (declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast))
 (defun parse-isl-ast (ast)
@@ -73,10 +54,33 @@
          (user (parse-isl-ast (isl::%isl-ast-node-mark-get-node ast))))
     (typecase user
       (AstFor
-       (when (string= mark "parallel")
-         (setf (astfor-scope user) :global)))
+       (cond
+         ((equalp mark "parallel")
+          (setf (astfor-scope user) :global))
+         ((mark-unroll-parent-p mark)
+          (let ((body (astfor-body user)))
+            (when (or
+                   (not (typep body 'ASTFor))
+                   (null (and (astfor-marks body) (every #'mark-unroll-body-p (astfor-marks body)))))
+              (return-from parse-isl-ast-mark user))
+            (let* ((n-unroll (parse-unroll-directive mark))
+                   (user     (copy-astfor user))
+                   (unrolled (caten/codegen/directive:make-unrolled-body user body n-unroll))
+                   (reminder (caten/codegen/directive:compute-reminder-for-unroll user body n-unroll)))
+              (setf (astfor-body user) unrolled)
+              (return-from parse-isl-ast-mark (make-block (list user reminder))))))
+         ((mark-unroll-body-p mark)
+          ;; UNROLL_BODY is triggered by the UNROLL_PARENT. Without it the form is ignored.
+          (assert (null (astfor-marks user)) () "UNROLL_BODY should be orthogonal with other directives.")
+          (setf (astfor-marks user) (list mark)))
+         ((equalp mark "TILE_BAND")
+          (push "TILE_BAND" (astfor-marks user)))
+         (T
+          ;(warn "mark: ignored the mark ~a for ~a" mark user)
+          )))
       (otherwise
-       (warn "mark: ignored the mark ~a for ~a" mark user)))
+       ;(warn "mark: ignored the mark ~a for ~a" mark user)
+       ))
     user))
 
 (declaim (ftype (function ((or cffi:foreign-pointer isl:ast-node)) (values Expr &optional)) parse-isl-expr))
@@ -184,7 +188,7 @@
 (defun r/endif ()
   (make-node :Render :ENDIF nil nil))
 
-(defun create-rendering-graph-nodes (lisp-ast items)
+(defun create-rendering-graph-nodes (lisp-ast items &aux (space))
   (let ((new-graph))
     (labels ((find-user (node-id args)
                (let ((node (find (princ-to-string node-id) items
@@ -192,6 +196,7 @@
                                  :test #'equalp)))
                  (assert node () "~a is not found in ~a" node-id items)
                  (assert (eql (node-type node) :EXPR))
+                 (setf node (copy-node node))
                  (let ((base (getattr node :iterations)))
                    (setf (getattr node :iterations) args)
                    (if (and (null args) (> (length base) 0))
@@ -205,11 +210,16 @@
 	       (ematch object
 		 ((ASTBlock :body body) (map 'list #'lower body))
 		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
-		  (push (r/for idx upfrom to by scope) new-graph)
-		  (lower body)
-		  (push (r/endfor idx) new-graph))
+                  ;; remove an empty loop
+                  (let ((is-tile-band (find "TILE_BAND" (astfor-marks object) :test #'equalp)))
+                    (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
+                      (when (null is-tile-band) (push idx space))
+		      (push (r/for idx upfrom to by scope) new-graph)
+		      (lower body)
+                      (when (null is-tile-band) (setf space (remove idx space :test #'string=)))
+		      (push (r/endfor idx) new-graph))))
 		 ((User :name name :args args)
-                  (push (find-user name args) new-graph))
+                  (push (caten/codegen/directive:unroll-expr (reverse space) (find-user name args) object) new-graph))
 		 ((AstIf :condition cond :then-node then :else-node else)
 		  (push (r/if cond) new-graph)
 		  (lower then)

@@ -569,7 +569,8 @@ Lowers the Schedule-Item into blueprint.
                   ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
                   (node-writes node) (append (map 'list #'car cycle) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))))
       (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
-      (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
+      (setf (getattr node :blueprint) (ctx-blueprint ctx)
+            (getattr node :blueprint-base) (copy-list (ctx-blueprint ctx))))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
   (let ((node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
@@ -636,42 +637,44 @@ Lowers the Schedule-Item into blueprint.
             (getattr node :write-types) (map 'list #'update-buffer (getattr base-item :write-types))
             (getattr node :dynamic-shapes) (getattr base-item :dynamic-shapes))
       ;; creates a copy of blueprint, expr is also refreshed. Memory Planner will use this.
-      (setf (getattr node :blueprint)
-            (loop for bp-base in (getattr base-item :blueprint)
-                  for bp = (copy-node bp-base)
-                  if (eql (node-class bp) :Render)
-                    do (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
-                             (node-writes bp) (map 'list #'map-from (node-writes bp)))
-                       (assert (not (eql (node-type bp) :AREF)))
-                    and
-                      collect bp
-                  else
-                    if (eql (node-type bp) :EXPR)
-                      collect
-                      (let ((expr-out-node (copy-node (expr-out (getattr bp :EXPR)))))
-                        (when (eql (node-type expr-out-node) :Aref)
-                          (setf (getattr expr-out-node :storage-id) (map-from (getattr expr-out-node :storage-id))))
-                        (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
-                              (node-writes bp) (map 'list #'map-from (node-writes bp))
-                              (node-reads expr-out-node) (map 'list #'map-from (node-reads expr-out-node))
-                              (node-writes expr-out-node) (map 'list #'map-from (node-writes expr-out-node))
-                              (getattr bp :EXPR)
-                              (make-expr
-                               :graph
-                               (apply
-                                #'make-graph
-                                (loop for expr-node-base in (graph-nodes (expr-graph (getattr bp :EXPR)))
-                                      for expr-node = (copy-node expr-node-base)
-                                      do (setf (node-reads expr-node) (map 'list #'map-from (node-reads expr-node))
-                                               (node-writes expr-node) (map 'list #'map-from (node-writes expr-node)))
-                                         (when (getattr expr-node :_type_relay :allow-undefined t)
-                                           (setf
-                                            (relay-reads (read-type-relay expr-node)) (map 'list #'update-buffer (relay-reads (read-type-relay expr-node)))
-                                            (relay-writes (read-type-relay expr-node)) (map 'list #'update-buffer (relay-writes (read-type-relay expr-node)))))
-                                         (when (eql (node-type expr-node) :Aref)
-                                           (setf (getattr expr-node :storage-id) (map-from (getattr expr-node :storage-id))))
-                                      collect expr-node))
-                               :out expr-out-node))
-                        bp)
-                  else
-                    do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))))
+      (flet ((make-copy-of-bp (bp)
+               (loop for bp-base in bp
+                     for bp = (copy-node bp-base)
+                     if (eql (node-class bp) :Render)
+                       do (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
+                                (node-writes bp) (map 'list #'map-from (node-writes bp)))
+                          (assert (not (eql (node-type bp) :AREF)))
+                       and
+                         collect bp
+                     else
+                       if (eql (node-type bp) :EXPR)
+                         collect
+                         (let ((expr-out-node (copy-node (expr-out (getattr bp :EXPR)))))
+                           (when (eql (node-type expr-out-node) :Aref)
+                             (setf (getattr expr-out-node :storage-id) (map-from (getattr expr-out-node :storage-id))))
+                           (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
+                                 (node-writes bp) (map 'list #'map-from (node-writes bp))
+                                 (node-reads expr-out-node) (map 'list #'map-from (node-reads expr-out-node))
+                                 (node-writes expr-out-node) (map 'list #'map-from (node-writes expr-out-node))
+                                 (getattr bp :EXPR)
+                                 (make-expr
+                                  :graph
+                                  (apply
+                                   #'make-graph
+                                   (loop for expr-node-base in (graph-nodes (expr-graph (getattr bp :EXPR)))
+                                         for expr-node = (copy-node expr-node-base)
+                                         do (setf (node-reads expr-node) (map 'list #'map-from (node-reads expr-node))
+                                                  (node-writes expr-node) (map 'list #'map-from (node-writes expr-node)))
+                                            (when (getattr expr-node :_type_relay :allow-undefined t)
+                                              (setf
+                                               (relay-reads (read-type-relay expr-node)) (map 'list #'update-buffer (relay-reads (read-type-relay expr-node)))
+                                               (relay-writes (read-type-relay expr-node)) (map 'list #'update-buffer (relay-writes (read-type-relay expr-node)))))
+                                            (when (eql (node-type expr-node) :Aref)
+                                              (setf (getattr expr-node :storage-id) (map-from (getattr expr-node :storage-id))))
+                                         collect expr-node))
+                                  :out expr-out-node))
+                           bp)
+                     else
+                       do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))
+        (setf (getattr node :blueprint) (make-copy-of-bp (getattr base-item :blueprint))
+              (getattr node :blueprint-base) (make-copy-of-bp (getattr base-item :blueprint-base)))))))

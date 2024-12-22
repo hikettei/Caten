@@ -42,6 +42,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 "
          :slots
          ((blueprint :type list :initform nil)
+          (blueprint-base :type list :initform nil)
           (polyhedral)
           (jitable :type boolean)
           (allocate-p :type boolean)

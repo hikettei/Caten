@@ -1,13 +1,11 @@
-(defpackage :caten/polyhedral/transforms
-  (:use :cl :caten/polyhedral/ir :caten/polyhedral/config)
+(defpackage :caten/codegen/coincidence
+  (:use :cl :caten/codegen/polyhedral)
   (:export
-   #:get-zeros-on-union-set
    #:check-legality-parallel
    #:check-legality
-   #:polyir-set-coincident
-   #:polyir-loop-interchange))
+   #:apply-parallel))
 
-(in-package :caten/polyhedral/transforms)
+(in-package :caten/codegen/coincidence)
 
 (defun get-zeros-on-union-set (delta-uset)
   (declare (type isl::union-set delta-uset))
@@ -57,19 +55,18 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defun get-coincident-points (poly)
   (map-schedule-nodes
-   #'(lambda (type band)
-       (when (eql type :schedule-node-band)
+   #'(lambda (type band mark)
+       (when (and (eql type :schedule-node-band) (not (equalp (princ-to-string mark) "PARALLEL")))
          (when (check-legality-parallel band (poly-dependencies poly)) band)))
    poly))
 
-(defun polyir-set-coincident (poly level)
+(defun apply-parallel (poly level &aux (c 0))
   (declare (type Polyhedral-IR poly))
-  ;; TODO(hikettei) there should be more clever way to do this:
-  (let ((insertable-points (get-coincident-points poly)))
-    (dotimes (i (length insertable-points))
-      (when (<= i level)
-        (setf (poly-schedule poly) (isl:schedule-node-get-schedule (insert-parallel (nth i (get-coincident-points poly)))))))
-    (length insertable-points)))
+  (loop for bands = (get-coincident-points poly)
+        while bands do
+          (when (> c level) (return-from apply-parallel))
+          (incf c)
+          (setf (poly-schedule poly) (isl:schedule-node-get-schedule (insert-parallel (car (get-coincident-points poly)))))))
 
 (defun %loop-interchange (schedule-node)
   (declare (type isl::schedule-node schedule-node))
@@ -78,13 +75,14 @@ Returns T if the current schedule does not break any dependences in dep."
          (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
          (_ (when (= 0 n-child) (return-from %loop-interchange nil)))
          (node (isl:schedule-node-first-child node))
+         (__   (when (find (isl:schedule-node-get-type node) `(:schedule-node-filter)) (return-from %loop-interchange nil)))
          (node (isl:schedule-node-insert-partial-schedule node mupa)))
-    (declare (ignore _))
+    (declare (ignore _ __))
     node))
 
 (defun polyir-loop-interchange (poly nth)
   (declare (type polyhedral-ir poly) (type fixnum nth))
-  (let ((bands (map-schedule-nodes #'(lambda (type band) (when (eql type :schedule-node-band) band)) poly)))
+  (let ((bands (map-schedule-nodes #'(lambda (type band mark) (when (eql type :schedule-node-band) band)) poly)))
     (unless (<= nth (length bands)) (return-from polyir-loop-interchange nil))
     (let* ((new-sched (%loop-interchange (nth nth bands)))
            (new-sched (when new-sched (isl:schedule-node-get-schedule new-sched))))

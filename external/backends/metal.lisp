@@ -2,9 +2,8 @@
   (:use :cl :caten/air :cffi :caten/codegen/renderer :caten/codegen/helpers
    :caten/codegen/shape-inference :caten/avm :caten/codegen/expr :cl-metal)
   (:import-from
-   :caten/polyhedral
-   #:define-auto-scheduler
-   #:make-schedule-options))
+   :caten/codegen/config
+   #:define-auto-scheduler))
 
 (in-package :caten/metal)
 
@@ -17,7 +16,6 @@
 
 (define-auto-scheduler
     (Metal-Auto-Scheduler ())
-    :cost-functions '(:validity :proximity :coincidence)
     :n-global-loop 3)
 (define-hook-auto-scheduler (Metal-Renderer Metal-Auto-Scheduler))
 (defmethod initialize-instance :after ((metal Metal-Renderer) &rest initargs &key &allow-other-keys)

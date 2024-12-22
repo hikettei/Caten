@@ -54,23 +54,23 @@
   (:take value))
 
 (defun multi-union-pw-aff-get-union-pw-aff (mupa int)
-  (%make-union-pw-aff (%isl-multi-union-pw-aff-get-union-pw-aff (multi-union-pw-aff-handle mupa) int)))
+  (%make-union-pw-aff (%isl-multi-union-pw-aff-get-union-pw-aff (multi-union-pw-aff-handle (copy mupa)) int)))
 
 (defun multi-union-pw-aff-size (mupa)
-  (%isl-multi-union-pw-aff-size (multi-union-pw-aff-handle mupa)))
+  (%isl-multi-union-pw-aff-size (multi-union-pw-aff-handle (copy mupa))))
 
 (define-isl-function multi-union-pw-aff-min-multi-val %isl-multi-union-pw-aff-min-multi-val
   (:give multi-val)
   (:take multi-union-pw-aff))
 
 (defun multi-val-get-val (mval nth)
-  (%make-value (%isl-multi-val-get-val (multi-val-handle mval) nth)))
+  (%make-value (%isl-multi-val-get-val (multi-val-handle (copy mval)) nth)))
 
 (defun multi-val-set-val (mval nth val)
-  (%make-multi-val (%isl-multi-val-set-val (multi-val-handle mval) nth (value-handle val))))
+  (%make-multi-val (%isl-multi-val-set-val (multi-val-handle (copy mval)) nth (value-handle (copy val)))))
 
 (defun multi-union-pw-aff-set-union-pw-aff (mupa pos upa)
-  (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-set-union-pw-aff (multi-union-pw-aff-handle mupa) pos (union-pw-aff-handle upa))))
+  (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-set-union-pw-aff (multi-union-pw-aff-handle (copy mupa)) pos (union-pw-aff-handle (copy upa)))))
 
 (define-isl-function multi-union-pw-aff-multi-val-on-domain %isl-multi-union-pw-aff-multi-val-on-domain
   (:give multi-union-pw-aff)

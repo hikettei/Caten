@@ -65,8 +65,7 @@ caten/codegen overview:
    #:print-blueprint)
   (:import-from
    :caten/codegen/scop
-   #:scop
-   #:auto-schedule)
+   #:scop)
   (:import-from
    :caten/codegen/helpers
    #:coerce-dtyped-buffer
@@ -485,7 +484,7 @@ Runs the JIT compilation for the given AVM."
                          (when (>= (ctx:getenv :JIT_DEBUG) 2)
                            (format stream "=====> Auto Scheduler~%"))
                          ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
-                         (auto-schedule auto-scheduler x)
+                         (caten/codegen/auto-scheduler:auto-schedule auto-scheduler x)
                          (when (>= (ctx:getenv :JIT_DEBUG) 2)
                            (print (getattr x :polyhedral) stream)
                            (fresh-line stream)
