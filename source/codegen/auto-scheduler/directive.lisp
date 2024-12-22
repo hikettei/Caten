@@ -2,7 +2,6 @@
   (:documentation "Provides various hand-written blueprint rewriting rule for marks.")
   (:use :cl :caten/codegen/expr :caten/codegen/polyhedral-ast :caten/codegen/unroll :caten/air
         :caten/codegen/shape-inference)
-  (:import-from :caten/codegen/scop #:expr-detach-loop-bound)
   (:export
    #:make-unrolled-body
    #:compute-reminder-for-unroll

@@ -8,7 +8,6 @@ scop.lisp for the opposite things.
 ")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia :caten/codegen/polyhedral-ast)
   (:import-from :caten/codegen/unroll :mark-unroll-parent-p :mark-unroll-body-p :parse-unroll-directive)
-  (:import-from :caten/codegen/scop #:expr-detach-loop-bound)
   (:export #:lower-into-bp-from-polyhedral))
 
 (in-package :caten/codegen/ast-parser)

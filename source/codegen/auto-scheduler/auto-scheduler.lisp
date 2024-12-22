@@ -68,6 +68,7 @@ So we are going to apply an optiimzation method which takes a long time to searc
   ;; Data Reuse kernel has a chance to apply the tiling
   ;; And Tuning the tiling size tested by the measurer
   (caten/codegen/tiling::apply-tile (getattr node :polyhedral) 16)
+  ;; (caten/codegen/unroll:apply-unroll node 4)
   ;; (caten/codegen/unroll::apply-unroll node 4)
   )
 

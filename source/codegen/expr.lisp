@@ -35,7 +35,8 @@
    #:expr-where
    #:expr-neg
    #:expr-not
-   #:with-expr-cache))
+   #:with-expr-cache
+   #:expr-detach-loop-bound))
 
 (in-package :caten/codegen/expr)
 
@@ -245,5 +246,20 @@ Only supports the scalar computation because it is intended to identify the same
   (declare (type Expr condition then else))
   (let ((grh (with-context (_ (%where (expr-out condition) (expr-out then) (expr-out else) :id out)))))
     (%connect-expr grh (list condition then else) out)))
-  
 
+(defun expr-detach-loop-bound (expr)
+  "If :below is this format
+```
+_gid < BOUND
+```
+This function returns the BOUND, otherwise returns error.
+"
+  (declare (type expr expr))
+  (assert (eql :< (node-type (expr-out expr))) () "Cannot dump the loop bound from the expression ~a" expr)
+  (let ((gid (id->value (expr-graph expr) (nth 1 (node-reads (expr-out expr)))))
+        (bound (id->value (expr-graph expr) (nth 2 (node-reads (expr-out expr))))))
+    ;; TODO(hikettei): wanna assert (getattr gid :value) starts with _gid_xx?
+    (assert (eql (node-type gid) :LOAD) () "The first argument of the loop bound must be a LOAD node.")
+    (let ((new-expr (copy-expr expr)))
+      (setf (expr-out new-expr) bound)
+      new-expr)))

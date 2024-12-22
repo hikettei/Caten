@@ -35,29 +35,12 @@ ast-parser.lisp for the opposite thing.
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/air :caten/codegen/expr :caten/isl)
-  (:export #:scop #:with-polyhedral-space #:sync-blueprint-from-polyhedral #:expr-detach-loop-bound))
+  (:export #:scop #:with-polyhedral-space #:sync-blueprint-from-polyhedral))
 
 (in-package :caten/codegen/scop)
 
 (defun expr-affine-p (expr)
   (every #'(lambda (x) (find (node-type x) `(:< :ALLOCATE :LOAD :ADD :NEG))) (graph-nodes (expr-graph expr))))
-
-(defun expr-detach-loop-bound (expr)
-  "If :below is this format
-```
-_gid < BOUND
-```
-This function returns the BOUND, otherwise returns error.
-"
-  (declare (type expr expr))
-  (assert (eql :< (node-type (expr-out expr))) () "Cannot dump the loop bound from the expression ~a" expr)
-  (let ((gid (id->value (expr-graph expr) (nth 1 (node-reads (expr-out expr)))))
-        (bound (id->value (expr-graph expr) (nth 2 (node-reads (expr-out expr))))))
-    ;; TODO(hikettei): wanna assert (getattr gid :value) starts with _gid_xx?
-    (assert (eql (node-type gid) :LOAD) () "The first argument of the loop bound must be a LOAD node.")
-    (let ((new-expr (copy-expr expr)))
-      (setf (expr-out new-expr) bound)
-      new-expr)))
 
 (defmethod render-domain-body-from-group ((node Node) symbolics
                                           &aux

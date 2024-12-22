@@ -3,8 +3,6 @@
   (:import-from
    :caten/codegen/tiling
    #:tiling-sizes)
-  (:import-from :caten/codegen/scop #:with-polyhedral-space)
-;;  (:improt-form :caten/codegen/polyhedral-ast #:polyhedral->bp)
   (:export #:apply-packed-funcall #:apply-unroll #:mark-unroll-p #:make-unroll #:parse-unroll-directive #:mark-unroll-body-p #:mark-unroll-parent-p))
 
 (in-package :caten/codegen/unroll)
