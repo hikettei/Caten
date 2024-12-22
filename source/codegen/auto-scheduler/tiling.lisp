@@ -70,15 +70,11 @@ dims is used to specify the tiling sizes for each dimension."
                   (or (null mark)))
          node))
    poly))
-;; [TODO]
-;; - the tiling sizes are 2D, optimized by measuring the computation
-;; - Create a heatmap on the tiling sizes for debugging
+
 (defun apply-tile (ir size)
   "`tile-bands` helps you execute the computation tile by tile over the two axes"
   (declare (type Polyhedral-IR ir))
-  ;; [NOTE] Tile last 2d reductions
   (let* ((bands (get-tileable-bands ir)))
-    ;; Tile all bands
     (dotimes (i (length bands))
       (let ((i (- (1- (length bands)) i)))
         (setf (poly-schedule ir)
