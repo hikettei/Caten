@@ -2,7 +2,8 @@
   :description "Caten Code Generator Engine"
   :author "hikettei <ichndm@gmail.com>"
   :licence "MIT"
-  :depends-on ("caten.avm" "caten.aasm" "caten.air" "caten.isl" "cl-ppcre" "alexandria" "lparallel" "cl-yaml" "cffi")
+  :depends-on ("caten.avm" "caten.aasm" "caten.air" "caten.isl" "cl-ppcre" "alexandria" "lparallel" "cl-yaml" "cffi"
+               "cl-pack" "babel")
   :serial t
   :components
   ((:file "helpers")
