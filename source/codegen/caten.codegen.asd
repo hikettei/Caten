@@ -30,5 +30,6 @@
    (:file "jit")
    (:file "runner")
    (:file "backends/clang")
+   (:file "backends/metal")
    (:file "package")
    (:file "documentation")))

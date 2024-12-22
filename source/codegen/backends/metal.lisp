@@ -3,9 +3,14 @@
         :caten/codegen/shape-inference :caten/avm :caten/codegen/expr)
   (:import-from
    :caten/codegen/config
-   #:define-auto-scheduler))
+   #:define-auto-scheduler)
+  (:export #:use-metal #:with-metal))
 
 (in-package :caten/codegen/backends/metal)
+
+(defun use-metal () (setf (ctx:getenv :JIT) 1 (ctx:getenv :JIT_BACKEND) "METAL"))
+(defmacro with-metal (() &body body)
+  `(ctx:with-contextvar (:JIT 1 :JIT_BACKEND "METAL") ,@body))
 
 (defclass Metal-Renderer (CStyle-Renderer) nil)
 (defmethod get-default-renderer ((id (eql :metal))) (make-instance 'Metal-Renderer))
@@ -15,46 +20,46 @@
 (define-hook-auto-scheduler (Metal-Renderer Metal-Auto-Scheduler))
 ;; Ref: https://github.com/tinygrad/tinygrad/blob/master/tinygrad/runtime/ops_metal.py
 (defparameter *request-type-compile* 13)
-(define-foreign-library libobjc (:default "/usr/lib/libobjc.dylib"))
-(define-foreign-library libmetal (:default "/System/Library/Frameworks/Metal.framework/Metal"))
-(define-foreign-library compiler (:default "/System/Library/PrivateFrameworks/MTLCompiler.framework/MTLCompiler"))
-(define-foreign-library core-graphics (:default "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics"))
-(define-foreign-library libdispatch (:default "/usr/lib/libSystem.dylib"))
 
 (defun ensure-metal-compiler ()
-  (load-foreign-library 'libobjc)
-  (load-foreign-library 'libmetal)
-  (load-foreign-library 'core-graphics)
-  (load-foreign-library 'libdispatch)
-  (load-foreign-library 'compiler))
+  (load-foreign-library "/usr/lib/libobjc.dylib")
+  (load-foreign-library "/System/Library/Frameworks/Metal.framework/Metal")
+  (load-foreign-library "/System/Library/PrivateFrameworks/MTLCompiler.framework/MTLCompiler")
+  (load-foreign-library "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
+  (load-foreign-library "/usr/lib/libSystem.dylib"))
 
 (defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
-(defcfun "MTLCodeGenServiceBuildRequest" :void (cfgs :pointer) (x :pointer) (request-type :int) (request :pointer) (request-len :int) (callback :pointer))
+(defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
 
-(defclass MetalCompiler () ((cfg :accessor mc-cfg)))
-
+(defclass MetalCompiler () ((device :accessor mc-cgs)))
 (defmethod initialize-instance :after ((compiler MetalCompiler) &key &allow-other-keys)
-  (ensure-metal-compiler)
-  (setf (mc-cfg compiler) (MTLCodeGenServiceCreate "caten")))
+  (setf (mc-cgs compiler) (MTLCodeGenServiceCreate "caten")))
 
 (defparameter *ret* nil)
-
 (defcallback callback :void
-    ((blockptr :pointer) (error :int) (data :pointer) (datalen :int) (errormsg :string))
-  (print error)
+    ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
   nil)
 
 (defmethod mc-compile-request ((compiler MetalCompiler) request)
   ;; [TODO] How to tell callbacks?
-  (MTLCodeGenServiceBuildRequest (mc-cfg compiler) nil *request-type-compile* request (length request) (callback callback)))
+  (with-foreign-string (*request request)
+    (print *request)
+    (print "A")
+    (print request)
+    (print (mc-cgs compiler))
+    (print (length request))
+    (MTLCodeGenServiceBuildRequest
+     (mc-cgs compiler) (null-pointer) *request-type-compile* *request (length request)
+     (mem-ref (callback callback) :pointer -16))
+    (print "B")))
 
 (defun round-up (n multiple)
   (multiple-value-bind (quotient remainder) (truncate n multiple)
     (if (zerop remainder) n (* (1+ quotient) multiple))))
 
-(defun make-request (src params)
+(defun make-request-form (src params)
   (let* ((src-encoded (babel:string-to-octets src :encoding :utf-8))
-         (src-padded-len (round-up (+ (length src-encoded) 1) 4))
+         (src-padded-len (round-up (1+ (length src-encoded)) 4))
          (src-padding-len (- src-padded-len (length src-encoded)))
          (src-padded (concatenate
                       '(vector (unsigned-byte 8))
@@ -64,13 +69,11 @@
          (header (cl-pack:pack "<QQ" (length src-padded) (length params-padded)))
          (request (concatenate 'string header (babel:octets-to-string src-padded) (babel:octets-to-string params-padded))))
     request))
-
 ;; [TODO] -fmodules-cache-dir
 (defun compile-metal-code (mc source &aux (params "-fno-fast-math -std=metal3.1 --driver-mode=metal -x metal"))
-  (let ((request (make-request source params)))
+  (let ((request (make-request-form source params)))
     (mc-compile-request mc request)))
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 (defun dtype->mtype (dtype)
   (ecase dtype
     (:bool 'boolean)
@@ -177,6 +180,6 @@ using namespace metal;
                                     if (getattr item :rendered-object) collect (getattr item :rendered-object))))))
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
-    (error "not ready!")
-
+    (compile-metal-code session code)
+    (error "STOP")
     ))
