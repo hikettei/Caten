@@ -12,9 +12,7 @@
 ;; - [x] apply-vectorize
 ;; - [ ] apply-unroll
 ;; Purpose: get a list of optimal scheduling commands
-;; Note: 積極的にISL ASTとBlueprintを変換しながら変形を施していく
-;; [TODO] JIT_DEBUG >= 2 to see optimized schedule sequence by BEAM (todo: search tiramisu)
-;; BEAM Search
+;; [TODO] JIT_DEBUG >= 2 to see optimized schedule sequence by BEAM (TODO: Searching method like tiramisu)
 ;; ~~~ Schedule Templates ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun has-reduction-p (node)
   "Returns a list of gids that have data reuse"
@@ -52,7 +50,6 @@
    (getattr node :polyhedral)
    (auto-scheduler-n-global-loops auto-scheduler))
   ;; [TODO] Unroll the loop again, if possible, remove away for the small loop
-  (print "ELEMWISE")
   )
 
 (defun optimize-reduction-kernel (auto-scheduler node)
@@ -66,7 +63,6 @@
 (defun optimize-data-reuse-kernel (auto-scheduler node)
   "Optimization for Conv/Gemm is here. We assume kernels labelled here has a large impact on the end-to-end performance.
 So we are going to apply an optiimzation method which takes a long time to search for the optimal schedule."
-  ;;(print "REUSE")
   ;; Data Reuse kernel has a chance to apply the tiling
   ;; And Tuning the tiling size tested by the measurer
   ;(caten/codegen/tiling::apply-tile (getattr node :polyhedral) 16) ;; Tile_Size = Optimal_Tile_Size * N_UNROLL
@@ -80,15 +76,16 @@ So we are going to apply an optiimzation method which takes a long time to searc
 
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
-  (cond
-    ((is-elementwise-p node)
-     (optimize-elementwise-kernel auto-scheduler node))
-    ((has-data-reuse-p node)
-     (optimize-data-reuse-kernel auto-scheduler node))
-    ((has-reduction-p node)
-     (optimize-reduction-kernel auto-scheduler node))
-    (T
-     (warn "Skipped the auto-scheduler for ~a, we have to add more sketch templates" node)))
+  ; Experimental
+  ;(cond
+  ;  ((is-elementwise-p node)
+  ;   (optimize-elementwise-kernel auto-scheduler node))
+  ;  ((has-data-reuse-p node)
+  ;   (optimize-data-reuse-kernel auto-scheduler node))
+  ;  ((has-reduction-p node)
+  ;   (optimize-reduction-kernel auto-scheduler node))
+  ;  (T
+  ;   (warn "Skipped the auto-scheduler for ~a, we have to add more sketch templates" node)))
   ;; Load blueprint from optimized polyhedral IR
   (setf (getattr node :blueprint)
         (caten/codegen/ast-parser:lower-into-bp-from-polyhedral
