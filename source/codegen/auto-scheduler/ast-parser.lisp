@@ -76,9 +76,11 @@ scop.lisp for the opposite things.
          ((equalp mark "TILE_BAND")
           (push "TILE_BAND" (astfor-marks user)))
          (T
-          (warn "mark: ignored the mark ~a for ~a" mark user))))
+          ;(warn "mark: ignored the mark ~a for ~a" mark user)
+          )))
       (otherwise
-       (warn "mark: ignored the mark ~a for ~a" mark user)))
+       ;(warn "mark: ignored the mark ~a for ~a" mark user)
+       ))
     user))
 
 (declaim (ftype (function ((or cffi:foreign-pointer isl:ast-node)) (values Expr &optional)) parse-isl-expr))

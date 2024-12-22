@@ -66,10 +66,10 @@
 (defun optimize-data-reuse-kernel (auto-scheduler node)
   "Optimization for Conv/Gemm is here. We assume kernels labelled here has a large impact on the end-to-end performance.
 So we are going to apply an optiimzation method which takes a long time to search for the optimal schedule."
-  (print "REUSE")
+  ;;(print "REUSE")
   ;; Data Reuse kernel has a chance to apply the tiling
   ;; And Tuning the tiling size tested by the measurer
-  (caten/codegen/tiling::apply-tile (getattr node :polyhedral) 64) ;; Tile_Size = Optimal_Tile_Size * N_UNROLL
+  ;(caten/codegen/tiling::apply-tile (getattr node :polyhedral) 16) ;; Tile_Size = Optimal_Tile_Size * N_UNROLL
   (caten/codegen/unroll:apply-unroll node 4)
   ;; (caten/codegen/unroll::apply-unroll node 4)
   ;; [TODO] After Tiling, Unroll the outermost tile band.

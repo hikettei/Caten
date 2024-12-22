@@ -676,5 +676,5 @@ Lowers the Schedule-Item into blueprint.
                            bp)
                      else
                        do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))
-        (setf (getattr node :blueprint) (make-copy-of-bp (getattr node :blueprint))
-              (getattr node :blueprint-base) (make-copy-of-bp (getattr node :blueprint-base)))))))
+        (setf (getattr node :blueprint) (make-copy-of-bp (getattr base-item :blueprint))
+              (getattr node :blueprint-base) (make-copy-of-bp (getattr base-item :blueprint-base)))))))
