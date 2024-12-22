@@ -14,17 +14,18 @@
   (declare (type ASTFor body) (type fixnum n-unroll))
   (unroll-ast (astfor-body body) (astfor-idx body) (astfor-idx user) n-unroll))
 
-(defmethod astfor-compute-reminder ((astfor ASTFor))
+(defmethod astfor-compute-reminder ((astfor ASTFor) unroll-by)
   (let ((below (expr-detach-loop-bound (astfor-to astfor)))
         (incremental (astfor-by astfor)))
     (assert (eql :Load (node-type (expr-out incremental))) () "The AstFor is not an SCOP.")
     ;; TODO(hikettei): wanna assert below > from
     (values (expr-mod (expr-sub below (astfor-from astfor)) incremental) below)))
 
-(defun compute-reminder-for-unroll (user body)
+(defun compute-reminder-for-unroll (user body n-unroll)
   "Creates an AstFor for the reminder part of the unrolled directive."
   (declare (type ASTFor body))
-  (multiple-value-bind (reminder size) (astfor-compute-reminder user)
+  (multiple-value-bind (reminder size) (astfor-compute-reminder user n-unroll)
+    (setf (astfor-to user) (expr-< (expr-const (intern (astfor-idx user)) :int64) (expr-add (astfor-from body) (expr-sub size reminder))))
     (make-for
      (astfor-idx body)
      (expr-add (astfor-from body) (expr-sub size reminder))

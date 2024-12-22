@@ -42,9 +42,215 @@ void gemm_naive_tailed(int M, int N, int K,
     }
   }
 }
+
+void gemm(const int64_t m, const int64_t n, const int64_t k, const float* restrict val_19, const float* restrict val_16, float* val_22) {
+  for (int _gid0=0; _gid0<(m+-((m%4))); _gid0+=4) {
+    for (int _gid2=0; _gid2<(k+-((k%4))); _gid2+=4) {
+      float val_7_0_0 = 0.0;
+      float val_7_1_0 = 0.0;
+      float val_7_2_0 = 0.0;
+      float val_7_3_0 = 0.0;
+      float val_7_0_1 = 0.0;
+      float val_7_1_1 = 0.0;
+      float val_7_2_1 = 0.0;
+      float val_7_3_1 = 0.0;
+      float val_7_0_2 = 0.0;
+      float val_7_1_2 = 0.0;
+      float val_7_2_2 = 0.0;
+      float val_7_3_2 = 0.0;
+      float val_7_0_3 = 0.0;
+      float val_7_1_3 = 0.0;
+      float val_7_2_3 = 0.0;
+      float val_7_3_3 = 0.0;
+      for (int _gid4=0; _gid4<(n+-((n%4))); _gid4+=4) {
+        val_7_0_0 = (val_7_0_0+(val_16[((n*_gid0)+_gid4)]*val_19[(_gid2+(k*_gid4))]));
+        val_7_1_0 = (val_7_1_0+(val_16[((n*(_gid0+1))+_gid4)]*val_19[(_gid2+(k*_gid4))]));
+        val_7_2_0 = (val_7_2_0+(val_16[((n*(_gid0+2))+_gid4)]*val_19[(_gid2+(k*_gid4))]));
+        val_7_3_0 = (val_7_3_0+(val_16[((n*(_gid0+3))+_gid4)]*val_19[(_gid2+(k*_gid4))]));
+        val_7_0_1 = (val_7_0_1+(val_16[((n*_gid0)+_gid4)]*val_19[((_gid2+1)+(k*_gid4))]));
+        val_7_1_1 = (val_7_1_1+(val_16[((n*(_gid0+1))+_gid4)]*val_19[((_gid2+1)+(k*_gid4))]));
+        val_7_2_1 = (val_7_2_1+(val_16[((n*(_gid0+2))+_gid4)]*val_19[((_gid2+1)+(k*_gid4))]));
+        val_7_3_1 = (val_7_3_1+(val_16[((n*(_gid0+3))+_gid4)]*val_19[((_gid2+1)+(k*_gid4))]));
+        val_7_0_2 = (val_7_0_2+(val_16[((n*_gid0)+_gid4)]*val_19[((_gid2+2)+(k*_gid4))]));
+        val_7_1_2 = (val_7_1_2+(val_16[((n*(_gid0+1))+_gid4)]*val_19[((_gid2+2)+(k*_gid4))]));
+        val_7_2_2 = (val_7_2_2+(val_16[((n*(_gid0+2))+_gid4)]*val_19[((_gid2+2)+(k*_gid4))]));
+        val_7_3_2 = (val_7_3_2+(val_16[((n*(_gid0+3))+_gid4)]*val_19[((_gid2+2)+(k*_gid4))]));
+        val_7_0_3 = (val_7_0_3+(val_16[((n*_gid0)+_gid4)]*val_19[((_gid2+3)+(k*_gid4))]));
+        val_7_1_3 = (val_7_1_3+(val_16[((n*(_gid0+1))+_gid4)]*val_19[((_gid2+3)+(k*_gid4))]));
+        val_7_2_3 = (val_7_2_3+(val_16[((n*(_gid0+2))+_gid4)]*val_19[((_gid2+3)+(k*_gid4))]));
+        val_7_3_3 = (val_7_3_3+(val_16[((n*(_gid0+3))+_gid4)]*val_19[((_gid2+3)+(k*_gid4))]));
+        val_7_0_0 = (val_7_0_0+(val_16[((n*_gid0)+(_gid4+1))]*val_19[(_gid2+(k*(_gid4+1)))]));
+        val_7_1_0 = (val_7_1_0+(val_16[((n*(_gid0+1))+(_gid4+1))]*val_19[(_gid2+(k*(_gid4+1)))]));
+        val_7_2_0 = (val_7_2_0+(val_16[((n*(_gid0+2))+(_gid4+1))]*val_19[(_gid2+(k*(_gid4+1)))]));
+        val_7_3_0 = (val_7_3_0+(val_16[((n*(_gid0+3))+(_gid4+1))]*val_19[(_gid2+(k*(_gid4+1)))]));
+        val_7_0_1 = (val_7_0_1+(val_16[((n*_gid0)+(_gid4+1))]*val_19[((_gid2+1)+(k*(_gid4+1)))]));
+        val_7_1_1 = (val_7_1_1+(val_16[((n*(_gid0+1))+(_gid4+1))]*val_19[((_gid2+1)+(k*(_gid4+1)))]));
+        val_7_2_1 = (val_7_2_1+(val_16[((n*(_gid0+2))+(_gid4+1))]*val_19[((_gid2+1)+(k*(_gid4+1)))]));
+        val_7_3_1 = (val_7_3_1+(val_16[((n*(_gid0+3))+(_gid4+1))]*val_19[((_gid2+1)+(k*(_gid4+1)))]));
+        val_7_0_2 = (val_7_0_2+(val_16[((n*_gid0)+(_gid4+1))]*val_19[((_gid2+2)+(k*(_gid4+1)))]));
+        val_7_1_2 = (val_7_1_2+(val_16[((n*(_gid0+1))+(_gid4+1))]*val_19[((_gid2+2)+(k*(_gid4+1)))]));
+        val_7_2_2 = (val_7_2_2+(val_16[((n*(_gid0+2))+(_gid4+1))]*val_19[((_gid2+2)+(k*(_gid4+1)))]));
+        val_7_3_2 = (val_7_3_2+(val_16[((n*(_gid0+3))+(_gid4+1))]*val_19[((_gid2+2)+(k*(_gid4+1)))]));
+        val_7_0_3 = (val_7_0_3+(val_16[((n*_gid0)+(_gid4+1))]*val_19[((_gid2+3)+(k*(_gid4+1)))]));
+        val_7_1_3 = (val_7_1_3+(val_16[((n*(_gid0+1))+(_gid4+1))]*val_19[((_gid2+3)+(k*(_gid4+1)))]));
+        val_7_2_3 = (val_7_2_3+(val_16[((n*(_gid0+2))+(_gid4+1))]*val_19[((_gid2+3)+(k*(_gid4+1)))]));
+        val_7_3_3 = (val_7_3_3+(val_16[((n*(_gid0+3))+(_gid4+1))]*val_19[((_gid2+3)+(k*(_gid4+1)))]));
+        val_7_0_0 = (val_7_0_0+(val_16[((n*_gid0)+(_gid4+2))]*val_19[(_gid2+(k*(_gid4+2)))]));
+        val_7_1_0 = (val_7_1_0+(val_16[((n*(_gid0+1))+(_gid4+2))]*val_19[(_gid2+(k*(_gid4+2)))]));
+        val_7_2_0 = (val_7_2_0+(val_16[((n*(_gid0+2))+(_gid4+2))]*val_19[(_gid2+(k*(_gid4+2)))]));
+        val_7_3_0 = (val_7_3_0+(val_16[((n*(_gid0+3))+(_gid4+2))]*val_19[(_gid2+(k*(_gid4+2)))]));
+        val_7_0_1 = (val_7_0_1+(val_16[((n*_gid0)+(_gid4+2))]*val_19[((_gid2+1)+(k*(_gid4+2)))]));
+        val_7_1_1 = (val_7_1_1+(val_16[((n*(_gid0+1))+(_gid4+2))]*val_19[((_gid2+1)+(k*(_gid4+2)))]));
+        val_7_2_1 = (val_7_2_1+(val_16[((n*(_gid0+2))+(_gid4+2))]*val_19[((_gid2+1)+(k*(_gid4+2)))]));
+        val_7_3_1 = (val_7_3_1+(val_16[((n*(_gid0+3))+(_gid4+2))]*val_19[((_gid2+1)+(k*(_gid4+2)))]));
+        val_7_0_2 = (val_7_0_2+(val_16[((n*_gid0)+(_gid4+2))]*val_19[((_gid2+2)+(k*(_gid4+2)))]));
+        val_7_1_2 = (val_7_1_2+(val_16[((n*(_gid0+1))+(_gid4+2))]*val_19[((_gid2+2)+(k*(_gid4+2)))]));
+        val_7_2_2 = (val_7_2_2+(val_16[((n*(_gid0+2))+(_gid4+2))]*val_19[((_gid2+2)+(k*(_gid4+2)))]));
+        val_7_3_2 = (val_7_3_2+(val_16[((n*(_gid0+3))+(_gid4+2))]*val_19[((_gid2+2)+(k*(_gid4+2)))]));
+        val_7_0_3 = (val_7_0_3+(val_16[((n*_gid0)+(_gid4+2))]*val_19[((_gid2+3)+(k*(_gid4+2)))]));
+        val_7_1_3 = (val_7_1_3+(val_16[((n*(_gid0+1))+(_gid4+2))]*val_19[((_gid2+3)+(k*(_gid4+2)))]));
+        val_7_2_3 = (val_7_2_3+(val_16[((n*(_gid0+2))+(_gid4+2))]*val_19[((_gid2+3)+(k*(_gid4+2)))]));
+        val_7_3_3 = (val_7_3_3+(val_16[((n*(_gid0+3))+(_gid4+2))]*val_19[((_gid2+3)+(k*(_gid4+2)))]));
+        val_7_0_0 = (val_7_0_0+(val_16[((n*_gid0)+(_gid4+3))]*val_19[(_gid2+(k*(_gid4+3)))]));
+        val_7_1_0 = (val_7_1_0+(val_16[((n*(_gid0+1))+(_gid4+3))]*val_19[(_gid2+(k*(_gid4+3)))]));
+        val_7_2_0 = (val_7_2_0+(val_16[((n*(_gid0+2))+(_gid4+3))]*val_19[(_gid2+(k*(_gid4+3)))]));
+        val_7_3_0 = (val_7_3_0+(val_16[((n*(_gid0+3))+(_gid4+3))]*val_19[(_gid2+(k*(_gid4+3)))]));
+        val_7_0_1 = (val_7_0_1+(val_16[((n*_gid0)+(_gid4+3))]*val_19[((_gid2+1)+(k*(_gid4+3)))]));
+        val_7_1_1 = (val_7_1_1+(val_16[((n*(_gid0+1))+(_gid4+3))]*val_19[((_gid2+1)+(k*(_gid4+3)))]));
+        val_7_2_1 = (val_7_2_1+(val_16[((n*(_gid0+2))+(_gid4+3))]*val_19[((_gid2+1)+(k*(_gid4+3)))]));
+        val_7_3_1 = (val_7_3_1+(val_16[((n*(_gid0+3))+(_gid4+3))]*val_19[((_gid2+1)+(k*(_gid4+3)))]));
+        val_7_0_2 = (val_7_0_2+(val_16[((n*_gid0)+(_gid4+3))]*val_19[((_gid2+2)+(k*(_gid4+3)))]));
+        val_7_1_2 = (val_7_1_2+(val_16[((n*(_gid0+1))+(_gid4+3))]*val_19[((_gid2+2)+(k*(_gid4+3)))]));
+        val_7_2_2 = (val_7_2_2+(val_16[((n*(_gid0+2))+(_gid4+3))]*val_19[((_gid2+2)+(k*(_gid4+3)))]));
+        val_7_3_2 = (val_7_3_2+(val_16[((n*(_gid0+3))+(_gid4+3))]*val_19[((_gid2+2)+(k*(_gid4+3)))]));
+        val_7_0_3 = (val_7_0_3+(val_16[((n*_gid0)+(_gid4+3))]*val_19[((_gid2+3)+(k*(_gid4+3)))]));
+        val_7_1_3 = (val_7_1_3+(val_16[((n*(_gid0+1))+(_gid4+3))]*val_19[((_gid2+3)+(k*(_gid4+3)))]));
+        val_7_2_3 = (val_7_2_3+(val_16[((n*(_gid0+2))+(_gid4+3))]*val_19[((_gid2+3)+(k*(_gid4+3)))]));
+        val_7_3_3 = (val_7_3_3+(val_16[((n*(_gid0+3))+(_gid4+3))]*val_19[((_gid2+3)+(k*(_gid4+3)))]));
+      }
+      for (int _gid5=(n+-((n%4))); _gid5<n; _gid5+=1) {
+        val_7_0_0 = (val_7_0_0+(val_16[((n*_gid0)+_gid5)]*val_19[(_gid2+(k*_gid5))]));
+        val_7_1_0 = (val_7_1_0+(val_16[((n*(_gid0+1))+_gid5)]*val_19[(_gid2+(k*_gid5))]));
+        val_7_2_0 = (val_7_2_0+(val_16[((n*(_gid0+2))+_gid5)]*val_19[(_gid2+(k*_gid5))]));
+        val_7_3_0 = (val_7_3_0+(val_16[((n*(_gid0+3))+_gid5)]*val_19[(_gid2+(k*_gid5))]));
+        val_7_0_1 = (val_7_0_1+(val_16[((n*_gid0)+_gid5)]*val_19[((_gid2+1)+(k*_gid5))]));
+        val_7_1_1 = (val_7_1_1+(val_16[((n*(_gid0+1))+_gid5)]*val_19[((_gid2+1)+(k*_gid5))]));
+        val_7_2_1 = (val_7_2_1+(val_16[((n*(_gid0+2))+_gid5)]*val_19[((_gid2+1)+(k*_gid5))]));
+        val_7_3_1 = (val_7_3_1+(val_16[((n*(_gid0+3))+_gid5)]*val_19[((_gid2+1)+(k*_gid5))]));
+        val_7_0_2 = (val_7_0_2+(val_16[((n*_gid0)+_gid5)]*val_19[((_gid2+2)+(k*_gid5))]));
+        val_7_1_2 = (val_7_1_2+(val_16[((n*(_gid0+1))+_gid5)]*val_19[((_gid2+2)+(k*_gid5))]));
+        val_7_2_2 = (val_7_2_2+(val_16[((n*(_gid0+2))+_gid5)]*val_19[((_gid2+2)+(k*_gid5))]));
+        val_7_3_2 = (val_7_3_2+(val_16[((n*(_gid0+3))+_gid5)]*val_19[((_gid2+2)+(k*_gid5))]));
+        val_7_0_3 = (val_7_0_3+(val_16[((n*_gid0)+_gid5)]*val_19[((_gid2+3)+(k*_gid5))]));
+        val_7_1_3 = (val_7_1_3+(val_16[((n*(_gid0+1))+_gid5)]*val_19[((_gid2+3)+(k*_gid5))]));
+        val_7_2_3 = (val_7_2_3+(val_16[((n*(_gid0+2))+_gid5)]*val_19[((_gid2+3)+(k*_gid5))]));
+        val_7_3_3 = (val_7_3_3+(val_16[((n*(_gid0+3))+_gid5)]*val_19[((_gid2+3)+(k*_gid5))]));
+      }
+      val_22[((k*_gid0)+_gid2)] = val_7_0_0;
+      val_22[((k*(_gid0+1))+_gid2)] = val_7_1_0;
+      val_22[((k*(_gid0+2))+_gid2)] = val_7_2_0;
+      val_22[((k*(_gid0+3))+_gid2)] = val_7_3_0;
+      val_22[((k*_gid0)+(_gid2+1))] = val_7_0_1;
+      val_22[((k*(_gid0+1))+(_gid2+1))] = val_7_1_1;
+      val_22[((k*(_gid0+2))+(_gid2+1))] = val_7_2_1;
+      val_22[((k*(_gid0+3))+(_gid2+1))] = val_7_3_1;
+      val_22[((k*_gid0)+(_gid2+2))] = val_7_0_2;
+      val_22[((k*(_gid0+1))+(_gid2+2))] = val_7_1_2;
+      val_22[((k*(_gid0+2))+(_gid2+2))] = val_7_2_2;
+      val_22[((k*(_gid0+3))+(_gid2+2))] = val_7_3_2;
+      val_22[((k*_gid0)+(_gid2+3))] = val_7_0_3;
+      val_22[((k*(_gid0+1))+(_gid2+3))] = val_7_1_3;
+      val_22[((k*(_gid0+2))+(_gid2+3))] = val_7_2_3;
+      val_22[((k*(_gid0+3))+(_gid2+3))] = val_7_3_3;
+    }
+    for (int _gid3=(k+-((k%4))); _gid3<k; _gid3+=1) {
+      float val_7_0 = 0.0;
+      float val_7_1 = 0.0;
+      float val_7_2 = 0.0;
+      float val_7_3 = 0.0;
+      for (int _gid4=0; _gid4<(n+-((n%4))); _gid4+=4) {
+        val_7_0 = (val_7_0+(val_16[((n*_gid0)+_gid4)]*val_19[(_gid3+(k*_gid4))]));
+        val_7_1 = (val_7_1+(val_16[((n*(_gid0+1))+_gid4)]*val_19[(_gid3+(k*_gid4))]));
+        val_7_2 = (val_7_2+(val_16[((n*(_gid0+2))+_gid4)]*val_19[(_gid3+(k*_gid4))]));
+        val_7_3 = (val_7_3+(val_16[((n*(_gid0+3))+_gid4)]*val_19[(_gid3+(k*_gid4))]));
+        val_7_0 = (val_7_0+(val_16[((n*_gid0)+(_gid4+1))]*val_19[(_gid3+(k*(_gid4+1)))]));
+        val_7_1 = (val_7_1+(val_16[((n*(_gid0+1))+(_gid4+1))]*val_19[(_gid3+(k*(_gid4+1)))]));
+        val_7_2 = (val_7_2+(val_16[((n*(_gid0+2))+(_gid4+1))]*val_19[(_gid3+(k*(_gid4+1)))]));
+        val_7_3 = (val_7_3+(val_16[((n*(_gid0+3))+(_gid4+1))]*val_19[(_gid3+(k*(_gid4+1)))]));
+        val_7_0 = (val_7_0+(val_16[((n*_gid0)+(_gid4+2))]*val_19[(_gid3+(k*(_gid4+2)))]));
+        val_7_1 = (val_7_1+(val_16[((n*(_gid0+1))+(_gid4+2))]*val_19[(_gid3+(k*(_gid4+2)))]));
+        val_7_2 = (val_7_2+(val_16[((n*(_gid0+2))+(_gid4+2))]*val_19[(_gid3+(k*(_gid4+2)))]));
+        val_7_3 = (val_7_3+(val_16[((n*(_gid0+3))+(_gid4+2))]*val_19[(_gid3+(k*(_gid4+2)))]));
+        val_7_0 = (val_7_0+(val_16[((n*_gid0)+(_gid4+3))]*val_19[(_gid3+(k*(_gid4+3)))]));
+        val_7_1 = (val_7_1+(val_16[((n*(_gid0+1))+(_gid4+3))]*val_19[(_gid3+(k*(_gid4+3)))]));
+        val_7_2 = (val_7_2+(val_16[((n*(_gid0+2))+(_gid4+3))]*val_19[(_gid3+(k*(_gid4+3)))]));
+        val_7_3 = (val_7_3+(val_16[((n*(_gid0+3))+(_gid4+3))]*val_19[(_gid3+(k*(_gid4+3)))]));
+      }
+      for (int _gid5=(n+-((n%4))); _gid5<n; _gid5+=1) {
+        val_7_0 = (val_7_0+(val_16[((n*_gid0)+_gid5)]*val_19[(_gid3+(k*_gid5))]));
+        val_7_1 = (val_7_1+(val_16[((n*(_gid0+1))+_gid5)]*val_19[(_gid3+(k*_gid5))]));
+        val_7_2 = (val_7_2+(val_16[((n*(_gid0+2))+_gid5)]*val_19[(_gid3+(k*_gid5))]));
+        val_7_3 = (val_7_3+(val_16[((n*(_gid0+3))+_gid5)]*val_19[(_gid3+(k*_gid5))]));
+      }
+      val_22[((k*_gid0)+_gid3)] = val_7_0;
+      val_22[((k*(_gid0+1))+_gid3)] = val_7_1;
+      val_22[((k*(_gid0+2))+_gid3)] = val_7_2;
+      val_22[((k*(_gid0+3))+_gid3)] = val_7_3;
+    }
+  }
+  for (int _gid1=(m+-((m%4))); _gid1<m; _gid1+=1) {
+    for (int _gid2=0; _gid2<(k+-((k%4))); _gid2+=4) {
+      float val_7_0 = 0.0;
+      float val_7_1 = 0.0;
+      float val_7_2 = 0.0;
+      float val_7_3 = 0.0;
+      for (int _gid4=0; _gid4<(n+-((n%4))); _gid4+=4) {
+        val_7_0 = (val_7_0+(val_16[((n*_gid1)+_gid4)]*val_19[(_gid2+(k*_gid4))]));
+        val_7_1 = (val_7_1+(val_16[((n*_gid1)+_gid4)]*val_19[((_gid2+1)+(k*_gid4))]));
+        val_7_2 = (val_7_2+(val_16[((n*_gid1)+_gid4)]*val_19[((_gid2+2)+(k*_gid4))]));
+        val_7_3 = (val_7_3+(val_16[((n*_gid1)+_gid4)]*val_19[((_gid2+3)+(k*_gid4))]));
+        val_7_0 = (val_7_0+(val_16[((n*_gid1)+(_gid4+1))]*val_19[(_gid2+(k*(_gid4+1)))]));
+        val_7_1 = (val_7_1+(val_16[((n*_gid1)+(_gid4+1))]*val_19[((_gid2+1)+(k*(_gid4+1)))]));
+        val_7_2 = (val_7_2+(val_16[((n*_gid1)+(_gid4+1))]*val_19[((_gid2+2)+(k*(_gid4+1)))]));
+        val_7_3 = (val_7_3+(val_16[((n*_gid1)+(_gid4+1))]*val_19[((_gid2+3)+(k*(_gid4+1)))]));
+        val_7_0 = (val_7_0+(val_16[((n*_gid1)+(_gid4+2))]*val_19[(_gid2+(k*(_gid4+2)))]));
+        val_7_1 = (val_7_1+(val_16[((n*_gid1)+(_gid4+2))]*val_19[((_gid2+1)+(k*(_gid4+2)))]));
+        val_7_2 = (val_7_2+(val_16[((n*_gid1)+(_gid4+2))]*val_19[((_gid2+2)+(k*(_gid4+2)))]));
+        val_7_3 = (val_7_3+(val_16[((n*_gid1)+(_gid4+2))]*val_19[((_gid2+3)+(k*(_gid4+2)))]));
+        val_7_0 = (val_7_0+(val_16[((n*_gid1)+(_gid4+3))]*val_19[(_gid2+(k*(_gid4+3)))]));
+        val_7_1 = (val_7_1+(val_16[((n*_gid1)+(_gid4+3))]*val_19[((_gid2+1)+(k*(_gid4+3)))]));
+        val_7_2 = (val_7_2+(val_16[((n*_gid1)+(_gid4+3))]*val_19[((_gid2+2)+(k*(_gid4+3)))]));
+        val_7_3 = (val_7_3+(val_16[((n*_gid1)+(_gid4+3))]*val_19[((_gid2+3)+(k*(_gid4+3)))]));
+      }
+      for (int _gid5=(n+-((n%4))); _gid5<n; _gid5+=1) {
+        val_7_0 = (val_7_0+(val_16[((n*_gid1)+_gid5)]*val_19[(_gid2+(k*_gid5))]));
+        val_7_1 = (val_7_1+(val_16[((n*_gid1)+_gid5)]*val_19[((_gid2+1)+(k*_gid5))]));
+        val_7_2 = (val_7_2+(val_16[((n*_gid1)+_gid5)]*val_19[((_gid2+2)+(k*_gid5))]));
+        val_7_3 = (val_7_3+(val_16[((n*_gid1)+_gid5)]*val_19[((_gid2+3)+(k*_gid5))]));
+      }
+      val_22[((k*_gid1)+_gid2)] = val_7_0;
+      val_22[((k*_gid1)+(_gid2+1))] = val_7_1;
+      val_22[((k*_gid1)+(_gid2+2))] = val_7_2;
+      val_22[((k*_gid1)+(_gid2+3))] = val_7_3;
+    }
+    for (int _gid3=(k+-((k%4))); _gid3<k; _gid3+=1) {
+      float val_7 = 0.0;
+      for (int _gid4=0; _gid4<(n+-((n%4))); _gid4+=4) {
+        val_7 = (val_7+(val_16[((n*_gid1)+_gid4)]*val_19[(_gid3+(k*_gid4))]));
+        val_7 = (val_7+(val_16[((n*_gid1)+(_gid4+1))]*val_19[(_gid3+(k*(_gid4+1)))]));
+        val_7 = (val_7+(val_16[((n*_gid1)+(_gid4+2))]*val_19[(_gid3+(k*(_gid4+2)))]));
+        val_7 = (val_7+(val_16[((n*_gid1)+(_gid4+3))]*val_19[(_gid3+(k*(_gid4+3)))]));
+      }
+      for (int _gid5=(n+-((n%4))); _gid5<n; _gid5+=1) {
+        val_7 = (val_7+(val_16[((n*_gid1)+_gid5)]*val_19[(_gid3+(k*_gid5))]));
+      }
+      val_22[((k*_gid1)+_gid3)] = val_7;
+    }
+  }
+}
 // 20~100 GFlops (while OpenBLAS achieves 100~200 GFlops)
 // with M <= 60 almost the same speed as OpenBLAS...
-void gemm(int M, int N, int K,
+void gemm1(int M, int N, int K,
           const float * __restrict A,
           const float * __restrict B,
           float * __restrict C)

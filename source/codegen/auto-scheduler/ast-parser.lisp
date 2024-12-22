@@ -66,7 +66,7 @@ scop.lisp for the opposite things.
             (let* ((n-unroll (parse-unroll-directive mark))
                    (user     (copy-astfor user))
                    (unrolled (caten/codegen/directive:make-unrolled-body user body n-unroll))
-                   (reminder (caten/codegen/directive:compute-reminder-for-unroll user body)))
+                   (reminder (caten/codegen/directive:compute-reminder-for-unroll user body n-unroll)))
               (setf (astfor-body user) unrolled)
               (return-from parse-isl-ast-mark (make-block (list user reminder))))))
          ((mark-unroll-body-p mark)
