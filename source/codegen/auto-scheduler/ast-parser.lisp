@@ -73,6 +73,7 @@ scop.lisp for the opposite things.
           ;; UNROLL_BODY is triggered by the UNROLL_PARENT. Without it the form is ignored.
           (assert (null (astfor-marks user)) () "UNROLL_BODY should be orthogonal with other directives.")
           (setf (astfor-marks user) (list mark)))
+         ((equalp mark "TILE_BAND"))
          (T
           (warn "mark: ignored the mark ~a for ~a" mark user))))
       (otherwise
@@ -207,7 +208,7 @@ scop.lisp for the opposite things.
 		 ((ASTBlock :body body) (map 'list #'lower body))
 		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
                   ;; remove an empty loop
-                  (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
+g                  (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
                     (push idx space)
 		    (push (r/for idx upfrom to by scope) new-graph)
 		    (lower body)

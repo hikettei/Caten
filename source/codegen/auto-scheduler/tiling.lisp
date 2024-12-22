@@ -60,8 +60,10 @@ dims is used to specify the tiling sizes for each dimension."
       (shift-band-zero band)
     (let* ((tiling-sizes (tiling-sizes band :size-default size-default :dims dims))
            (partial-schedule (tile-partial-schedule partial-schedule tiling-sizes))
-           (tiled-sched (multi-union-pw-aff-add partial-schedule shift)))
-      (schedule-node-insert-partial-schedule band tiled-sched))))
+           (tiled-sched (multi-union-pw-aff-add partial-schedule shift))
+           (tiled-sched (schedule-node-insert-partial-schedule band tiled-sched))
+           (tiled-sched (schedule-node-insert-mark tiled-sched (isl::make-id-from-str "TILE_BAND"))))
+      tiled-sched)))
 
 (defun get-tileable-bands (poly)
   (map-schedule-nodes

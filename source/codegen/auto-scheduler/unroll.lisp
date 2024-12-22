@@ -9,7 +9,9 @@
 
 (defun mark-unroll-p (mark)
   (declare (type string mark))
-  (scan "UNROLL" (string-upcase mark)))
+  (or
+   (scan "TILE_BAND" (string-upcase mark))
+   (scan "UNROLL" (string-upcase mark))))
 
 (defun mark-unroll-body-p (mark) (scan "UNROLL_BODY" (string-upcase mark)))
 (defun mark-unroll-parent-p (mark) (scan "UNROLL_PARENT" (string-upcase mark)))

@@ -69,10 +69,11 @@ So we are going to apply an optiimzation method which takes a long time to searc
   (print "REUSE")
   ;; Data Reuse kernel has a chance to apply the tiling
   ;; And Tuning the tiling size tested by the measurer
-  ;; (caten/codegen/tiling::apply-tile (getattr node :polyhedral) 16)
+  (caten/codegen/tiling::apply-tile (getattr node :polyhedral) 64) ;; Tile_Size = Optimal_Tile_Size * N_UNROLL
   (caten/codegen/unroll:apply-unroll node 4)
   ;; (caten/codegen/unroll::apply-unroll node 4)
   ;; [TODO] After Tiling, Unroll the outermost tile band.
+  ;; [TODO] If the outermost loop is a tile -> #pragma omp parallel for collapse(2)
   (caten/codegen/coincidence:apply-parallel
    (getattr node :polyhedral)
    (auto-scheduler-n-global-loops auto-scheduler)))
