@@ -62,28 +62,19 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (assert (tensor-p o) ())
       (setf (tensor-variables o) tensors
 	    (tensor-op o) op))
+    (print "After func-variables set")
+    (print (func-variables op))    
     (loop for o in outs
           for nth upfrom 0
           do (setf (tensor-nth-output o) nth))
     (apply #'values outs)))
 ;; ~~ differentiable ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
 (defclass Unfold (Func)
   ((window-size :initarg :window-size :type integer :accessor unfold-window-size)
    (stride :initarg :stride :type integer :accessor unfold-stride))
   (:documentation "Unfold operation for 1D tensors.
 Given a 1D input `(N)`, produces `(num-windows, W)` views,
 where `num-windows = floor((N - W)/S) + 1`, and output[i,j] = input[i*S + j]."))
-
-(defun !unfold (tensor window-size stride)
-  "
-(!unfold tensor window-size stride)
-
-Symbolically creates an unfold operation on a 1D tensor.
-Produces a 2D view of shape (num-windows, window-size).
-"
-  (forward (make-instance 'Unfold :window-size window-size :stride stride) tensor))
-
 (defmethod forward ((op Unfold) &rest tensors)
   "Forward pass: compute the output shape, create a symbolic tensor, set op and variables."
   (let* ((input (car tensors))
@@ -98,17 +89,51 @@ Produces a 2D view of shape (num-windows, window-size).
                               :order (tensor-order input))))
         (setf (tensor-op out) op
               (tensor-variables out) (list input))
-        out))))
-
-(defmethod backward ((op Unfold) &optional dout)
-  "Backward pass: not defined here for simplicity."
-  (declare (ignore dout))
-  (values nil))
-
-
+        out
+        (print "func variables")
+        (print (func-variables op))
+        (print "out")
+        (print out)
+        ))))
 (defmethod lower ((op Unfold) &rest inputs)
-  (print "hello")  
-  )
+  ;; Print debugging info
+  (format t "~%=== Debugging Lower (Unfold) ===~%")
+  (format t "  Inputs to Lower: ~a~%" inputs)
+  (format t "  Input Types: ~{~a~^, ~}~%" (mapcar #'type-of inputs))
+  (format t "  Func-Variables (Original Tensors): ~a~%" (func-variables op))
+  (format t "  Op: ~a~%"  op)
+  ;; Retrieve original input tensor from forward-time
+  (let* ((orig-tensor (car (func-variables op))) ; original high-level tensor
+         (N (car (tensor-shape orig-tensor)))
+         (W (unfold-window-size op))
+         (S (unfold-stride op))
+         (num-windows (max 0 (+ 1 (floor (/ (- N W) S))))))
+    
+    (format t "  Unfold Parameters from original tensor:~%")
+    (format t "    N=~a, W=~a, S=~a, num-windows=~a~%" N W S num-windows)
+
+    ;; Now that we have N,W,S and num-windows, build the tracker
+    ;; `inputs` is a list of nodes. (car inputs) is the lowered node representing the input.
+    (let ((tr (copy-tracker (tensor-tr orig-tensor))))
+      (setf (tr-shape tr) (list num-windows W)
+            (tr-base-shape tr) (list num-windows W)
+            (tr-stride tr) (list S 1)
+            (tr-mask tr) (list (list 0 num-windows 1) (list 0 W 1))
+            (tr-broadcast tr) (list nil nil)
+            (tr-permute tr) (list 0 1))
+      (format t "  Tracker Created: ~a~%" tr)
+      ;; Pass the lowered node `(car inputs)` to %make-view-from-tracker as base
+      (let ((view-result (%make-view-from-tracker tr (gensym "UNFOLD") (car inputs))))
+        (format t "  Result from %make-view-from-tracker: ~a~%" view-result)
+        view-result)))))
+(defun !unfold (tensor window-size stride)
+"
+(!unfold tensor window-size stride)
+
+Symbolically creates an unfold operation on a 1D tensor.
+Produces a 2D view of shape (num-windows, window-size).
+"
+(forward (make-instance 'Unfold :window-size window-size :stride stride) tensor))
 
 (defclass IdentityNode (Func) nil)
 (defmethod forward ((op IdentityNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
@@ -306,6 +331,12 @@ Creates a copy of the tensor. In Caten, the in-place operations are automaticall
 (defmethod backward ((op Reshape) &optional prev-grad) (!reshape prev-grad (reshape-shape-bf op)))
 
 (defmethod lower ((op Reshape) &rest nodes)
+  
+  (format t "~%=== Debugging Lower (Reshape) ===~%")
+
+  (format t "  Inputs to Lower: ~a~%" nodes)
+  (format t "  Input Types: ~{~a~^, ~}~%" (mapcar #'type-of nodes))
+  (format t "  Func-Variables (Original Tensors): ~a~%" (func-variables op))
   (%make-view-from-tracker (reshape-tr op) (gensym "RESHAPE") (car nodes)))
 
 (defun !reshape (x &rest shape)

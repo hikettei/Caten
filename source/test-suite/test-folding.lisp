@@ -24,21 +24,27 @@
 (defparameter proceeded-tensor (proceed tensor-with-buffer))
 (print proceeded-tensor)
 
+(print )
 
+(defparameter t3 (make-tensor '(8) :initial-element 1.0))
+(print (caten t3))
+(print (!unfold proceeded-tensor 1 1))
+
+
+
+
+(print (caten (!unfold tensor 3 1)))
 
 
 (defparameter tensor (make-tensor `(8) :initial-element 1.0))
-(print tensor)
-(print (!unfold tensor 3 1))
+(defparameter reshaped-tensor (!reshape tensor '(4 2)))
 
+(print (proceed reshaped-tensor))
 
-(proceed (!unfold tensor 3 1))
+(defparameter tensor1 (make-tensor '(1) :initial-element 1))
 
-
-
-
-
-
+(print (caten tensor1))
+(untrace caten proceed forward lower)
 
 (defparameter contiguous-tensor (!contiguous (make-tensor `(8) :initial-element 1.0)))
 
@@ -53,3 +59,6 @@
 (defparameter proceeded-unfolded (proceed unfolded-tensor))
 
 (print proceeded-unfolded)
+
+
+
