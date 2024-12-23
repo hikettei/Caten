@@ -125,7 +125,7 @@ where `num-windows = floor((N - W)/S) + 1`, and output[i,j] = input[i*S + j]."))
       ;; Pass the lowered node `(car inputs)` to %make-view-from-tracker as base
       (let ((view-result (%make-view-from-tracker tr (gensym "UNFOLD") (car inputs))))
         (format t "  Result from %make-view-from-tracker: ~a~%" view-result)
-        view-result)))))
+        view-result))))
 (defun !unfold (tensor window-size stride)
 "
 (!unfold tensor window-size stride)
