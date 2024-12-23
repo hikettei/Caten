@@ -2,16 +2,13 @@
   (:use :cl :caten/air :cffi :caten/codegen/renderer :caten/codegen/helpers
    :caten/codegen/shape-inference :caten/avm :caten/codegen/expr)
   (:import-from
-   :caten/polyhedral
-   #:define-auto-scheduler
-   #:make-schedule-options))
+   :caten/codegen/config
+   #:define-auto-scheduler))
 
 (in-package :caten/codegen/backends/clang)
 
-(define-auto-scheduler (Clang-Auto-Scheduler (&key (fuse-softmax 0) (n-global-loop (1- (ctx:getenv :OMP)))))
+(define-auto-scheduler (Clang-Auto-Scheduler (&key (n-global-loop (1- (ctx:getenv :OMP)))))
     ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
-    :schedule-option (make-schedule-options :schedule-outer-coincidence fuse-softmax)
-    :cost-functions '(:validity :proximity :coincidence)
     :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
     :tile-size 32 ;; [TODO] Automatic Parameter Tuning
     )

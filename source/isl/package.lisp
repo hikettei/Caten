@@ -367,8 +367,12 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-node-band-set-ast-build-options
    #:schedule-node-delete
+   #:schedule-node-mark-get-id
+   #:schedule-node-band-get-ast-isolate-option
    #:schedule-node-first-child
+   #:schedule-node-band-tile
    #:schedule-node-insert-mark
    #:schedule-node-graft-after
    #:schedule-node-graft-before

@@ -1,14 +1,18 @@
-(defpackage :caten/polyhedral/tiling
+(defpackage :caten/codegen/tiling
+  (:documentation "
+To apply tiling to a reduce dim, use apply-tiling.
+```
+(apply-tile polyhedral-ir `(16 16))
+```
+
+[TODO]
+- Tiling sizes can be automatically optimized by the measurer.
+")
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/isl :caten/polyhedral/ir :caten/polyhedral/config)
-  (:export #:tile-bands)
-  (:documentation "Provides an auto-tuner for tiling dims and params
-- References
-  - https://speakerdeck.com/ideininc/pldi-21lun-wen-du-mihui-akg-automatic-kernel-generation-for-neural-processing-units-using-polyhedral-transformations?slide=11
-"))
+  (:use :cl :caten/isl :caten/codegen/polyhedral))
 
-(in-package :caten/polyhedral/tiling)
+(in-package :caten/codegen/tiling)
 
 (defun tiling-sizes (band &key (size-default 32) (dims))
   (declare (type list dims) (type fixnum size-default))
@@ -50,47 +54,33 @@
     partial-schedule))
 
 (defun schedule-tile-band (band &key (size-default 32) (dims))
+  "Tiling sizes can be given by either of size-default or dims. If dims is set to nil, size-default is used.
+dims is used to specify the tiling sizes for each dimension."
   (multiple-value-bind (partial-schedule shift)
       (shift-band-zero band)
     (let* ((tiling-sizes (tiling-sizes band :size-default size-default :dims dims))
            (partial-schedule (tile-partial-schedule partial-schedule tiling-sizes))
-           (tiled-sched (multi-union-pw-aff-add partial-schedule shift)))
-      (schedule-node-get-schedule
-       (schedule-node-insert-partial-schedule band tiled-sched)))))
+           (tiled-sched (multi-union-pw-aff-add partial-schedule shift))
+           (tiled-sched (schedule-node-insert-partial-schedule band tiled-sched))
+           (tiled-sched (schedule-node-insert-mark tiled-sched (isl::make-id-from-str "TILE_BAND"))))
+      tiled-sched)))
 
-(defun get-tileable-bands (schedule)
-  (declare (type schedule schedule))
-  (let ((node (schedule-get-root schedule))
-        (next-nodes)
-        (tileable-bands))
-    ;; Enumerate all tilable bands
-    (loop named tiling-search
-          for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
-          while (> n-children 0) do
-            ;; Reached to the maximum tile band size => Stop
-            (loop named search-for-children
-                  for nth upfrom 0 below n-children
-                  for band = (schedule-node-get-child node nth)
-                  for type = (schedule-node-get-type band)
-                  if (eql type :schedule-node-band)
-                    do (push band tileable-bands)
-                       (push (schedule-node-get-child band 0) next-nodes)
-                       (return-from search-for-children)
-                  else
-                    do (push band next-nodes))
-            (when (= (length next-nodes) 0)
-              (return-from tiling-search))
-            (setf node (pop next-nodes)))
-    tileable-bands))
+(defun get-tileable-bands (poly)
+  (map-schedule-nodes
+   #'(lambda (type node mark)
+       (when (and (eql type :schedule-node-band)
+                  (or (null mark)))
+         node))
+   poly))
 
-(defun tile-bands (scheduler ir)
+(defun apply-tile (ir size)
   "`tile-bands` helps you execute the computation tile by tile over the two axes"
   (declare (type Polyhedral-IR ir))
-  (let* ((schedule (poly-schedule ir))
-         (bands (get-tileable-bands schedule)))
-    (when (not (= 0 (auto-scheduler-tile-size scheduler)))
-      (dotimes (i (length bands))
+  (let* ((bands (get-tileable-bands ir)))
+    (dotimes (i (length bands))
+      (let ((i (- (1- (length bands)) i)))
         (setf (poly-schedule ir)
-              (schedule-tile-band
-               (nth i (get-tileable-bands (poly-schedule ir)))
-               :size-default (auto-scheduler-tile-size scheduler)))))))
+              (schedule-node-get-schedule
+               (schedule-tile-band
+                (nth i (get-tileable-bands ir))
+                :size-default size)))))))

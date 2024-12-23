@@ -119,3 +119,24 @@
 (define-isl-function schedule-node-first-child %isl-schedule-node-first-child
   (:give schedule-node)
   (:take schedule-node))
+
+(define-isl-function schedule-node-band-set-ast-build-options %isl-schedule-node-band-set-ast-build-options
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take union-set))
+
+(define-isl-function schedule-node-band-tile %isl-schedule-node-band-tile
+  (:give schedule-node)
+  (:take schedule-node)
+  (:take multi-val))
+
+(define-isl-function schedule-node-band-get-ast-isolate-option %isl-schedule-node-band-get-ast-isolate-option
+  (:give set)
+  (:keep schedule-node))
+
+(defun schedule-node-band-member-set-isolate-ast-loop-type (schedule-node-band pos type)
+  (%make-schedule-node (%isl-schedule-node-band-member-set-isolate-ast-loop-type (schedule-node-handle (copy schedule-node-band)) pos type)))
+
+(define-isl-function schedule-node-mark-get-id %isl-schedule-node-mark-get-id
+  (:give identifier)
+  (:keep schedule-node))

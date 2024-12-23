@@ -1,4 +1,4 @@
-(defpackage :caten/polyhedral/ir
+(defpackage :caten/codegen/polyhedral
   (:import-from :cffi #:foreign-funcall)
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
@@ -10,15 +10,15 @@
    #:poly-schedule
    #:poly-domain
    #:poly-dependencies
-   #:map-schedule-nodes))
+   #:map-schedule-nodes
+   #:->ast))
 
-(in-package :caten/polyhedral/ir)
+(in-package :caten/codegen/polyhedral)
 
 (defclass Polyhedral-IR ()
   ((schedule :accessor poly-schedule)
    (domain   :accessor poly-domain)
-   (dependencies :accessor poly-dependencies))
-  (:documentation ""))
+   (dependencies :accessor poly-dependencies)))
 
 (defun make-polyhedral-ir (domain read write schedule)
   (let ((pg (make-instance 'Polyhedral-IR)))
@@ -44,10 +44,8 @@
       pg)))
 
 (defmethod debug-render-to-clang ((pg Polyhedral-IR))
-  (let* ((schedule (schedule-set-options (copy (poly-schedule pg)) :separate))
-         (build (ast-build-from-context (set-from-str "{:}")))
-         (p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-         (ast   (ast-build-node-from-schedule build schedule))
+  (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+         (ast   (->ast pg 0))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
          (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
          (str   (isl::%isl-printer-get-str q)))
@@ -150,7 +148,7 @@
 ```
 (map-schedule-nodes f polyhedral-ir)
 ```
-Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda function which takes (type[keyword] node[schedule-node]) as an argument.
+Iterates over the schedule nodes of a polyhedral-ir object. f is a lambda function which takes (type[keyword] node[schedule-node] mark[string]) as an argument.
 This function returns a list of the results of applying f to each node. NIL is excluded in the list."
   (declare (type Polyhedral-IR polyhedral-ir) (type function f))
   (let* ((node (schedule-get-root (poly-schedule polyhedral-ir)))
@@ -160,10 +158,33 @@ This function returns a list of the results of applying f to each node. NIL is e
           for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
           while (>= n-children 0) do
             (loop for nth upfrom 0 below n-children
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
                   for band = (schedule-node-get-child node nth)
                   for type = (schedule-node-get-type band) do
-                    (let ((out (funcall f type band))) (when out (push out outputs)))
+                    (let ((out (funcall f type band mark))) (when out (push out outputs)))
                     (push band next-nodes))
             (when (= (length next-nodes) 0) (return-from map-search))
             (setf node (pop next-nodes)))
     (nreverse outputs)))
+
+(defun gid (n) (intern (format nil "_gid~a" n)))
+
+(defmethod ->ast ((poly Polyhedral-IR) rank)
+  (macrolet ((set-option (name level)
+	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
+				 :pointer (isl::context-handle isl::*context*)
+				 :int ,level
+				 :void)))
+    (set-option "ast_build_atomic_upper_bound" 1)
+    (set-option "ast_build_detect_min_max" 1)
+    (set-option "ast_build_exploit_nested_bounds" 1)
+    (set-option "ast_build_scale_strides" 1)
+    (set-option "ast_build_allow_else" 0)
+    (set-option "ast_build_allow_or" 0))
+  (let* ((schedule (isl:schedule-set-options (isl:copy (poly-schedule poly)) :separate))
+	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
+         (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
+         (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
+         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
+	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
+    ast-build-node))

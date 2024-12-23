@@ -141,7 +141,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (let* ((nodes
            (loop for node in (graph-nodes schedule-graph)
                  if (getattr node :jitable)
-                   append (getattr node :blueprint)
+                   append (getattr node :blueprint-base)
                  else
                    collect node))
          (realized-ids
