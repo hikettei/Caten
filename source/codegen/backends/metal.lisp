@@ -211,6 +211,10 @@ using namespace metal;
       ;; [TODO] compute elapsed_time
       )))
 
+(defun make-metal-caller (mp)
+  `(lambda (&rest args)
+     (apply #'invoke ,mp args)))
+
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
   (ensure-foreign-library)
   (float-features:with-float-traps-masked t
@@ -225,7 +229,5 @@ using namespace metal;
              (mtl-queue (msg device "newCommandQueueWithMaxCommandBufferCount:" :pointer :int 1024)))
         (loop for item in items
               if (getattr item :rendered-object)
-                do (setf (getattr item :rendered-object) (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue)
-                         (getattr item :compiled-object) nil));; [todo]
-        ;; [TODO] Use cl-metal
-        (error "STOP")))))
+                do (let ((caller (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue)))
+                     (setf (getattr item :compiled-object) (make-metal-caller caller))))))))
