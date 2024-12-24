@@ -28,11 +28,11 @@
 (defcfun "MTLCreateSystemDefaultDevice" :pointer)
 (defcfun "sel_registerName" :pointer (name :pointer))
 (defcfun "dispatch_data_create" :pointer (data :pointer) (offset :size) (x :pointer) (y :pointer))
+(defcfun "objc_getClass" :pointer (name :string))
 (defun sel (name) (with-foreign-string (*name name) (sel-registername *name)))
 (defmacro msg (ptr selector restype &rest args)
-  `(foreign-funcall "objc_msgSend" :pointer ,ptr :pointer (sel ,selector)
-                    ,@(loop for arg in args append `(:pointer ,arg))
-                    ,restype))
+  `(foreign-funcall "objc_msgSend" :pointer ,ptr :pointer (sel ,selector) ,@args ,restype))
+(defun to-ns-str (str) (with-foreign-string (*str str) (msg (objc-getclass "NSString") "stringWithUTF8String:" :pointer :pointer *str)))
 
 (defun mtl-compile-source (source)
   (flet ((run-cmd (cmd input)
@@ -54,11 +54,8 @@ Compiled with this command: ~a"
              (alexandria:read-stream-content-into-byte-vector (uiop:process-info-output process-info)))))
     (let* ((air (run-cmd '("xcrun" "-sdk" "macosx" "metal" "-x" "metal" "-c" "-" "-o" "-") source))
            (lib (run-cmd '("xcrun" "-sdk" "macosx" "metallib" "-" "-o" "-") air)))
+      (assert (string= "MTLB" (flexi-streams:octets-to-string (subseq lib 0 4))) () "Invalid Metal library. Corrupt XCode?")
       lib)))
-
-(defun compile-metal-code (source)
-  (let ((request (make-request-form source params)))
-    (mc-compile-request mc request)))
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun dtype->mtype (dtype)
   (ecase dtype
@@ -161,12 +158,25 @@ using namespace metal;
   ((lib :initarg :lib :accessor mp-lib)
    (device :initarg :device :accessor mp-device)
    (name :initarg :name :accessor mp-name)
+   (library :accessor mp-library)
+   (fxn :accessor mp-fxn)
    (pipeline-state :accessor mp-pipeline-state)))
 
-
 (defmethod initialize-instance :after ((mp Metal-Program) &key)
-  (let ((data (dispatch-data-create (mp-lib mp) (length (mp-lib mp)) (null-pointer) (null-pointer))))
-    (print data)))
+  (assert (string= "MTLB" (flexi-streams:octets-to-string (subseq (mp-lib mp) 0 4))) () "Invalid Metal library. Corrupt XCode?")
+  (with-pointer-to-vector-data (*lib (mp-lib mp))
+    (let ((data (dispatch-data-create *lib (length (mp-lib mp)) (null-pointer) (null-pointer)))
+          (error-ptr (null-pointer)))
+      (setf (mp-library mp) (msg (mp-device mp) "newLibraryWithData:error:" :pointer :pointer data :pointer error-ptr))
+      (assert (null-pointer-p error-ptr) () "Failed to create a Metal library: ~a" (msg error-ptr "localizedDescription" :pointer))
+      (setf (mp-fxn mp) (msg (mp-library mp) "newFunctionWithName:" :pointer :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp))))))
+      (let ((descriptor (msg (objc-getclass "MTLComputePipelineDescriptor") "new" :pointer)))
+        (print descriptor)
+;;        (msg descriptor "setComputeFunction:" :void :pointer (mp-fxn mp))
+;;        (msg descriptor "setSupportIndirectCommandBuffers:" :void :bool 1)
+;;        (print descriptor)
+        
+        ))))
 
 (defmethod invoke ((mp Metal-Program) &rest buffers)
   
@@ -174,16 +184,17 @@ using namespace metal;
 
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
   (ensure-foreign-library)
-  (let* ((code (apply #'concatenate 'string
-                      (append (list (header))
-                              (loop for item in items
-                                    if (getattr item :rendered-object) collect (getattr item :rendered-object))))))
-    (when (>= (ctx:getenv :JIT_DEBUG) 3)
-      (format t "[Final Code]:~%~a~%" code))
-    (let* ((lib (mtl-compile-source code))
-           (device (MTLCreateSystemDefaultDevice))
-           (callers
-             (loop for item in items
-                   collect (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device))))
-      ;; [TODO] Use cl-metal
-      (error "STOP"))))
+  (float-features:with-float-traps-masked t
+    (let* ((code (apply #'concatenate 'string
+                        (append (list (header))
+                                (loop for item in items
+                                      if (getattr item :rendered-object) collect (getattr item :rendered-object))))))
+      (when (>= (ctx:getenv :JIT_DEBUG) 3)
+        (format t "[Final Code]:~%~a~%" code))
+      (let* ((lib (mtl-compile-source code))
+             (device (MTLCreateSystemDefaultDevice))
+             (callers
+               (loop for item in items
+                     collect (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device))))
+        ;; [TODO] Use cl-metal
+        (error "STOP")))))
