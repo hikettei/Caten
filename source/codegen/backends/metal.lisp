@@ -157,9 +157,12 @@ using namespace metal;
 (defclass Metal-Program ()
   ((lib :initarg :lib :accessor mp-lib)
    (device :initarg :device :accessor mp-device)
+   (mtl-queue :initarg :mtl-queue :accessor mp-mtl-queue)
    (name :initarg :name :accessor mp-name)
    (library :accessor mp-library)
    (fxn :accessor mp-fxn)
+   (global-size :initform `(1 1 1) :accessor mp-global-size)
+   (local-size :initform `(1 1 1) :accessor mp-local-size)
    (pipeline-state :accessor mp-pipeline-state)))
 
 (defmethod initialize-instance :after ((mp Metal-Program) &key)
@@ -177,10 +180,36 @@ using namespace metal;
           (setf (mp-pipeline-state mp) (msg (mp-device mp) "newComputePipelineStateWithDescriptor:options:reflection:error:" :pointer :pointer descriptor :int 1 :pointer (null-pointer) :pointer error-ptr))
           (assert (null-pointer-p error-ptr) () "Failed to create a Metal pipeline state: ~a" (msg error-ptr "localizedDescription" :pointer)))))))
 
+(defcstruct MTLSize (width :int) (height :int) (depth :int))
+(defun load-size (mtl-size width height depth)
+  (setf (foreign-slot-value mtl-size '(:struct mtlsize) 'width) width
+        (foreign-slot-value mtl-size '(:struct mtlsize) 'height) height
+        (foreign-slot-value mtl-size '(:struct mtlsize) 'depth) depth))
+
 (defmethod invoke ((mp Metal-Program) &rest buffers)
-  
-  
-  )
+  (let ((total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
+    (when (> (apply #'* (mp-local-size mp)) total-max-threads)
+      (error "Error: TODO"))
+    (let* ((command-buffer (msg (mp-mtl-queue mp) "commandBuffer" :pointer))
+           (encoder (msg command-buffer "computeCommandEncoder" :pointer)))
+      (msg encoder "setComputePipelineState:" :void :pointer (mp-pipeline-state mp))
+      (loop for buf in buffers
+            for nth upfrom 0 do
+              (with-pointer-to-vector-data (*b buf)
+                (msg encoder "setBuffer:offset:atIndex:" :void :pointer *b :int 0 :int nth)))
+      (loop for buf in buffers
+            for nth upfrom 0 do
+              (with-pointer-to-vector-data (*b buf)
+                (msg encoder "setBytes:length:atIndex:" :void :pointer *b :int 4 :int nth)))
+      (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
+        (apply #'load-size gs (mp-global-size mp))
+        (apply #'load-size ls (mp-local-size mp))
+        (msg encoder "dispatchThreadgroups:threadsPerThreadgroup:" :void :pointer gs :pointer ls))
+      (msg encoder "endEncoding" :void)
+      (msg command-buffer "commit" :void)
+      (msg command-buffer "waitUntilCompleted" :void)
+      ;; [TODO] compute elapsed_time
+      )))
 
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
   (ensure-foreign-library)
@@ -193,9 +222,10 @@ using namespace metal;
         (format t "[Final Code]:~%~a~%" code))
       (let* ((lib (mtl-compile-source code))
              (device (MTLCreateSystemDefaultDevice))
-             (callers
-               (loop for item in items
-                     if (getattr item :rendered-object)
-                       collect (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device))))
+             (mtl-queue (msg device "newCommandQueueWithMaxCommandBufferCount:" :pointer :int 1024)))
+        (loop for item in items
+              if (getattr item :rendered-object)
+                do (setf (getattr item :rendered-object) (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue)
+                         (getattr item :compiled-object) nil));; [todo]
         ;; [TODO] Use cl-metal
         (error "STOP")))))
