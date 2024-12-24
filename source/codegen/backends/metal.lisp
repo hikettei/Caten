@@ -171,14 +171,14 @@ using namespace metal;
       (assert (null-pointer-p error-ptr) () "Failed to create a Metal library: ~a" (msg error-ptr "localizedDescription" :pointer))
       (setf (mp-fxn mp) (msg (mp-library mp) "newFunctionWithName:" :pointer :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp))))))
       (let ((descriptor (msg (objc-getclass "MTLComputePipelineDescriptor") "new" :pointer)))
-        (print descriptor)
-;;        (msg descriptor "setComputeFunction:" :void :pointer (mp-fxn mp))
-;;        (msg descriptor "setSupportIndirectCommandBuffers:" :void :bool 1)
-;;        (print descriptor)
-        
-        ))))
+        (msg descriptor "setComputeFunction:" :void :pointer (mp-fxn mp))
+        (msg descriptor "setSupportIndirectCommandBuffers:" :void :bool 1)
+        (let ((error-ptr (null-pointer)))
+          (setf (mp-pipeline-state mp) (msg (mp-device mp) "newComputePipelineStateWithDescriptor:options:reflection:error:" :pointer :pointer descriptor :int 1 :pointer (null-pointer) :pointer error-ptr))
+          (assert (null-pointer-p error-ptr) () "Failed to create a Metal pipeline state: ~a" (msg error-ptr "localizedDescription" :pointer)))))))
 
 (defmethod invoke ((mp Metal-Program) &rest buffers)
+  
   
   )
 
@@ -195,6 +195,7 @@ using namespace metal;
              (device (MTLCreateSystemDefaultDevice))
              (callers
                (loop for item in items
-                     collect (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device))))
+                     if (getattr item :rendered-object)
+                       collect (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device))))
         ;; [TODO] Use cl-metal
         (error "STOP")))))
