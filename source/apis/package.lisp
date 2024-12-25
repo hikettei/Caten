@@ -143,6 +143,7 @@
    #:!identity
    ;; shaping
    #:!view #:!view-from-base #:!reshape #:!flatten #:!repeat #:!contiguous #:!copy #:!permute #:!t #:!transpose #:!unfold
+   #:!fold
    #:!expand
    #:!uprank
    ;; Binary
