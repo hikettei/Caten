@@ -1,6 +1,6 @@
 (in-package :caten/avm)
-(defparameter *vm* nil)
-(defgeneric %impl (device op graph node args) (:documentation "Peforms the corresponding nodes"))
+
+(defparameter *vm* nil "Binds to the AVM object currently running.")
 
 (defun make-hash-table-from-params (params)
   (declare (type list params))
@@ -11,6 +11,7 @@
     (setf (gethash t out) t
 	  (gethash nil out) :nil)
     out))
+
 (defstruct (AVM
 	    (:constructor make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil)
                                           &aux

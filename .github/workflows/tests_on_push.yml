@@ -119,4 +119,4 @@ jobs:
           qlot install
           qlot exec make install_docs
       - name: Building documentations
-        run: CI=1 mkdir -p docs/packages && make build_docs
+        run: CI=1 JIT=0 mkdir -p docs/packages && make build_docs
