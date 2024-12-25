@@ -6,7 +6,8 @@
 (defmacro with-device (device &body body)
   "declares the device to use"
   `(let ((*device* ,device)) ,@body))
-
+;; [TODO]
+;; make-buffer?
 (defstruct (Buffer
 	    (:constructor make-buffer (nrank shape stride dtype views)))
   (value nil)
