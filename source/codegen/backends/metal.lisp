@@ -96,7 +96,7 @@ Compiled with this command: ~a"
     (ecase (node-type bp)
       ;; [TODO] Optimize Global Loops once we've finished implementing polyhedral compiler
       (:FOR
-       (if nil;(eql (getattr bp :scope) :global)
+       (if (eql (getattr bp :scope) :global)
            (progn
              (format stream "~auint ~(~a~) = lid.~a;~%" (indent) (getattr bp :idx) (case *depth* (0 "x") (1 "y") (2 "z") (otherwise (error "Exceecive loop depth"))))
              (push (getattr bp :idx) *global-idx-list*)
@@ -110,7 +110,7 @@ Compiled with this command: ~a"
                      (render-expr 'CStyle-Renderer (getattr bp :by)))
              (incf *indent* 2))))
       (:ENDFOR
-       (if nil;(find (getattr bp :idx) *global-idx-list*)
+       (if (find (getattr bp :idx) *global-idx-list*)
            nil
            (progn (decf *indent* 2) (format stream "~a}~%" (indent)))))
       (:IF
@@ -193,13 +193,16 @@ using namespace metal;
     (let* ((command-buffer (msg (mp-mtl-queue mp) "commandBuffer" :pointer))
            (encoder (msg command-buffer "computeCommandEncoder" :pointer)))
       (msg encoder "setComputePipelineState:" :void :pointer (mp-pipeline-state mp))
+      ;; [TODO] Segv during setting the buffer.
       (loop for buf in buffers
             for nth upfrom 0 do
-              (with-pointer-to-vector-data (*b buf)
+              (with-pointer-to-vector-data (*b (buffer-value buf))
+                ;; Pointer *Bが怪しい
+                ;; *b should be MTLBuffer
                 (msg encoder "setBuffer:offset:atIndex:" :void :pointer *b :int 0 :int nth)))
       (loop for buf in buffers
             for nth upfrom 0 do
-              (with-pointer-to-vector-data (*b buf)
+              (with-pointer-to-vector-data (*b (buffer-value buf))
                 (msg encoder "setBytes:length:atIndex:" :void :pointer *b :int 4 :int nth)))
       (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
         (apply #'load-size gs (mp-global-size mp))
