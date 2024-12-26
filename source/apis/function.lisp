@@ -74,7 +74,6 @@ save-for-backward is determined automatically, so you do not have to consider ab
 Given a 1D input `(N)`, produces `(num-windows, W)` views,
 where `num-windows = floor((N - W)/S) + 1`, and output[i,j] = input[i*S + j]."))
 
-
 (defmethod forward ((op Unfold) &rest tensors)
   (let* ((input (car tensors))
          (N (car (tensor-shape input)))
@@ -90,20 +89,17 @@ where `num-windows = floor((N - W)/S) + 1`, and output[i,j] = input[i*S + j]."))
               (tensor-variables out) (list input))
         out))))
 
-
 (defmethod lower ((op Unfold) &rest inputs)
   (let* ((orig-tensor (car (func-variables op)))
          (N (car (tensor-shape orig-tensor)))
          (W (unfold-window-size op))
          (S (unfold-stride op))
          (num-windows (max 0 (+ 1 (floor (/ (- N W) S))))))
-    
     (format t "~%Debug info:~%")
     (format t "N: ~a~%" N)
     (format t "W: ~a~%" W)
     (format t "S: ~a~%" S)
     (format t "num-windows: ~a~%" num-windows)
-    
     (let ((tr (copy-tracker (tensor-tr orig-tensor))))
       (setf (tr-shape tr) (list W num-windows)
             (tr-base-shape tr) (list W num-windows)
@@ -121,24 +117,6 @@ where `num-windows = floor((N - W)/S) + 1`, and output[i,j] = input[i*S + j]."))
       (format t "mask: ~a~%" (tr-mask tr))
       
       (%make-view-from-tracker tr (gensym "UNFOLD") (car inputs)))))
-
-(defmethod forward ((op Unfold) &rest tensors)
-  (let* ((input (car tensors))
-         (N (car (tensor-shape input)))
-         (W (unfold-window-size op))
-         (S (unfold-stride op)))
-    (assert (>= N W) () "Unfold: window-size (~a) too large for input length (~a)." W N)
-    (let ((num-windows (max 0 (+ 1 (floor (/ (- N W) S))))))
-      ;; Create output tensor with shape (num-windows, W)
-      (let ((out (make-tensor (list num-windows W)
-                              :dtype (tensor-dtype input)
-                              :order (tensor-order input))))
-        (setf (tensor-op out) op
-              (tensor-variables out) (list input))
-        out))))
-
-
-
 (defun !unfold (tensor window-size stride)
 "
 (!unfold tensor window-size stride)
@@ -147,77 +125,6 @@ Symbolically creates an unfold operation on a 1D tensor.
 Produces a 2D view of shape (num-windows, window-size).
 "
 (forward (make-instance 'Unfold :window-size window-size :stride stride) tensor))
-
-
-(defclass Fold (Func)
-  ((window-size :initarg :window-size :type integer :accessor fold-window-size)
-   (stride :initarg :stride :type integer :accessor fold-stride))
-  (:documentation "Fold operation for 1D tensors.
-Given a 2D input `(num_windows, W)`, reconstructs the original 1D tensor of size `N = (num_windows - 1) * S + W`,
-where `S` is the stride. Each window is placed at position `i * S` and overlapping regions are summed."))
-
-(defmethod forward ((op Fold) &rest tensors)
-  "Forward pass: compute the output shape, create a symbolic tensor, set op and variables."
-  (let* ((windows (car tensors)) ; The input 2D tensor (num_windows, W)
-         (num-windows (car (tensor-shape windows)))
-         (W (fold-window-size op))
-         (S (fold-stride op))
-         (N (+ (* (1- num-windows) S) W))) ; N = (num_windows -1)*S + W
-    ;; Create a symbolic output tensor with the correct shape
-    (let ((out (make-tensor (list N)
-                            :dtype (tensor-dtype windows)
-                            :order (tensor-order windows))))
-      (setf (tensor-op out) op
-            (tensor-variables out) (list windows))
-      out
-      (print "func variables")
-      (print (func-variables op))
-      (print "out")
-      (print out))))
-
-(defmethod lower ((op Fold) &rest inputs)
-  "Lowering Fold operation: reconstruct the original tensor from windows."
-  ;; Print debugging info
-  (format t "~%=== Debugging Lower (Fold) ===~%")
-  (format t "  Inputs to Lower: ~a~%" inputs)
-  (format t "  Input Types: ~{~a~^, ~}~%" (mapcar #'type-of inputs))
-  (format t "  Func-Variables (Windows): ~a~%" (func-variables op))
-  (format t "  Op: ~a~%" op)
-  
-  ;; Retrieve the windows tensor
-  (let* ((windows (car (func-variables op))) ; (num_windows, W)
-         (num-windows (car (tensor-shape windows)))
-         (W (fold-window-size op))
-         (S (fold-stride op))
-         (N (+ (* (1- num-windows) S) W))
-         ;; Initialize output tensor with zeros
-         (output (make-tensor (list N)
-                              :dtype (tensor-dtype windows)
-                              :order (tensor-order windows))))
-    ;; Initialize output to zeros
-    (setf (tensor-data output) (make-array N :initial-element 0.0))
-    ;; Iterate over each window and place its elements
-    (dotimes (i num-windows)
-      (dotimes (j W)
-        (let ((pos (+ (* i S) j)))
-          (when (< pos N) ; Ensure within bounds
-            (setf (aref (tensor-data output) pos)
-                  (+ (aref (tensor-data output) pos)
-                     (aref windows i j))))))
-      )
-    ;; Set the output tensor's data
-    (format t "  Folded Tensor: ~a~%" output)
-    output))
-
-(defun !fold (windows window-size stride)
-  "
-  (!fold windows window-size stride)
-  
-  Symbolically creates a fold operation on a 1D tensor.
-  Reconstructs a 1D tensor from a 2D view of (num_windows, window_size).
-  "
-  (forward (make-instance 'Fold :window-size window-size :stride stride) windows))
-
 
 (defclass IdentityNode (Func) nil)
 (defmethod forward ((op IdentityNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
