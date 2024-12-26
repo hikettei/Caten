@@ -13,9 +13,8 @@
    (variables :initform (make-hash-table) :initarg :variables :accessor avm-variables)
    (params-to-optimize :initform nil :accessor avm-params-to-optimize)
    (dumped :initform nil :initarg :dumped :accessor avm-dumped)
-   (device :initform 'AVM :accessor avm-device)))
-
-(defclass Relay-Checker (AVM) nil)
+   (device :initarg :device :accessor avm-device)
+   (backend :initform nil :accessor avm-backend)))
 
 (defun make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil) (device 'AVM))
   (when (null (graph-outputs graph))
@@ -26,7 +25,7 @@
    :fw-outputs fw-outputs :bw-outputs bw-outputs
    :tape-length (length (graph-nodes graph))
    :variables (make-hash-table-from-params params)
-   :dumped dumped))
+   :dumped dumped :device device))
 
 (defmethod avm-gather-args ((avm avm))
   (remove-duplicates
@@ -38,7 +37,7 @@
 
 (defmethod print-object ((avm AVM) stream &aux (n-indent 4))
   (print-unreadable-object (avm stream :type t)
-    (format stream "{~a: ~(~a~) -> (~(~a~), ~(~a~))}~%" (avm-name avm) (avm-gather-args avm) (avm-fw-outputs avm) (avm-bw-outputs avm))
+    (format stream "{~a[~a]: ~(~a~) -> (~(~a~), ~(~a~))}~%" (avm-name avm) (or (avm-backend avm) *device*) (avm-gather-args avm) (avm-fw-outputs avm) (avm-bw-outputs avm))
     (macrolet ((indent (n) `(with-output-to-string (out) (dotimes (i ,n) (princ " " out)))))
       (loop for node in (graph-nodes (avm-graph avm))
             if (eql (Node-type node) :Allocate) do
