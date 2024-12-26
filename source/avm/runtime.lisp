@@ -1,35 +1,78 @@
 (in-package :caten/avm)
-(defparameter *vm* nil)
-(defgeneric %impl (device op graph node args) (:documentation "Peforms the corresponding nodes"))
 
-(defun make-hash-table-from-params (params)
-  (declare (type list params))
-  (let ((out (make-hash-table :test #'eql)))
-    (loop for (k . v) in params
-	  do (setf (gethash k out) v))
-    ;; Constants
-    (setf (gethash t out) t
-	  (gethash nil out) :nil)
-    out))
-(defstruct (AVM
-	    (:constructor make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil)
-                                          &aux
-                                          (id2tensor (or id2tensor (make-hash-table)))
-                                            (_
-                                             (when (null (graph-outputs graph))
-                                               (setf (graph-outputs graph) (append fw-outputs bw-outputs)))))))
-  "Tape based iseq executor"
-  (graph graph :type graph)
-  (name name :type keyword)
-  (fw-outputs fw-outputs :type list)
-  (bw-outputs bw-outputs :type list)
-  (id2tensor id2tensor :type hash-table)
-  (tape-length (length (graph-nodes graph)) :type fixnum)
-  (pc 0 :type fixnum)
-  (variables (make-hash-table-from-params params) :type hash-table)
-  (params-to-optimize nil :type list)
-  (dumped dumped :type boolean)) ;; If dumped: CLOS objects are removed which is unnecessary to reconstruct the executable graph.
+(defparameter *vm* nil "Binds to the AVM object currently running.")
 
+(defclass AVM ()
+  ((graph :initarg :graph :accessor avm-graph)
+   (name :initarg :name :accessor avm-name)
+   (fw-outputs :initarg :fw-outputs :accessor avm-fw-outputs)
+   (bw-outputs :initarg :bw-outputs :accessor avm-bw-outputs)
+   (id2tensor :initarg :id2tensor :accessor avm-id2tensor) ;; Node ID -> Tensor
+   (tape-length :initarg :tape-length :accessor avm-tape-length)
+   (pc :initform 0 :accessor avm-pc)
+   (variables :initform (make-hash-table) :initarg :variables :accessor avm-variables)
+   (params-to-optimize :initform nil :accessor avm-params-to-optimize)
+   (dumped :initform nil :initarg :dumped :accessor avm-dumped)
+   (device :initarg :device :accessor avm-device)
+   (backend :initform nil :accessor avm-backend)))
+
+(defun make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil) (device 'AVM))
+  (when (null (graph-outputs graph))
+    (setf (graph-outputs graph) (append fw-outputs bw-outputs)))
+  (make-instance
+   device
+   :graph graph :name name :id2tensor (or id2tensor (make-hash-table))
+   :fw-outputs fw-outputs :bw-outputs bw-outputs
+   :tape-length (length (graph-nodes graph))
+   :variables (make-hash-table-from-params params)
+   :dumped dumped :device device))
+
+(defmethod avm-gather-args ((avm avm))
+  (remove-duplicates
+   (loop for node in (graph-nodes (avm-graph avm))
+	 if (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)))
+	   collect (getattr node :value)
+         else if (and (eql (node-type node) :Allocate) (getattr node :from) (symbolp (getattr node :from)))
+                collect (getattr node :from))))
+
+(defmethod print-object ((avm AVM) stream &aux (n-indent 4))
+  (print-unreadable-object (avm stream :type t)
+    (format stream "{~a[~a]: ~(~a~) -> (~(~a~), ~(~a~))}~%" (avm-name avm) (or (avm-backend avm) *device*) (avm-gather-args avm) (avm-fw-outputs avm) (avm-bw-outputs avm))
+    (macrolet ((indent (n) `(with-output-to-string (out) (dotimes (i ,n) (princ " " out)))))
+      (loop for node in (graph-nodes (avm-graph avm))
+            if (eql (Node-type node) :Allocate) do
+              (let ((nrank (getattr node :nrank)))
+                (format stream "~a~(~a~) = ~(~a~)(shape=(~a), stride=(~a)~a);~%" (indent n-indent) (render-list (node-writes node))
+			(node-type node) (render-list (subseq (node-reads node) 0 nrank)) (render-list (subseq (node-reads node) nrank))
+                        (if (getattr node :from)
+                            (if (symbolp (getattr node :from)) (format nil ", from=~a" (getattr node :from)) (format nil ", from=<Realized Buffer>"))
+                            "")))
+ 	    else if (eql (Node-type node) :View) do
+	      (let ((nrank (getattr node :nrank)))
+		(flet ((subseq1p (x y z) (subseq x (1+ y) (1+ z))))
+		  (format stream "~a~(~a~) = ~(~a~)(~(~a~), shape=(~a), views=(~a), stride=(~a)~a);~%"
+			  (indent n-indent)
+			  (render-list (node-writes node))
+			  (node-type node)
+			  (car (node-reads node))
+			  (render-list (subseq1p (node-reads node) 0 nrank))
+			  (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
+				(below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
+				(by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
+				(bc (getattr node :broadcast)))
+			    (render-list
+			     (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
+			  (render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank)))
+			  (if (getattr node :permute)
+			      (format nil ", permute=~a" (getattr node :permute))
+			      ""))))
+	    else
+	      do (format stream "~a~(~a~)~a~(~a~)(~(~a~));~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "")
+                         (if (eql (node-type node) :JIT_KERNEL)
+                             (uiop:symbol-call :caten/codegen/jit :compiled-kernel-name (getattr node :kernel-info))
+                             (node-type node))
+                         (render-list (node-reads node)))))))
+;; [TODO] Remove AOT
 (defmethod make-load-form ((avm AVM) &optional env)
   (declare (ignore env))
   `(make-avm
@@ -41,13 +84,7 @@
     ,(avm-id2tensor avm)
     ',(avm-fw-outputs avm)
     ',(avm-bw-outputs avm)
-    nil t))
-
-(defun deepcopy-avm (avm &aux (avm (copy-avm avm)))
-  (declare (type avm avm))
-  (setf (avm-graph avm) (copy-graph (avm-graph avm)))
-  (setf (graph-nodes (avm-graph avm)) (map 'list #'copy-node (graph-nodes (avm-graph avm))))
-  avm)
+    nil t ',(avm-device avm)))
 
 (defmethod avm-reset ((avm AVM))
   (setf (avm-pc avm) 0
@@ -70,7 +107,7 @@
 
 (defun vm/step (avm &aux (*vm* avm))
   (declare (type avm avm))
-  (let ((node (nth (avm-pc avm) (graph-nodes (avm-graph avm)))))
+  (let ((node (nth (avm-pc avm) (graph-nodes (avm-graph avm)))) (*device* (or (avm-backend avm) *device*)))
     (declare (type node node))
     (flet ((->real (x)
 	     (if (symbolp x)
