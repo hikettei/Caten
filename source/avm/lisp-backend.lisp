@@ -145,25 +145,3 @@
 
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :where)) graph node args)
   (map-view (getattr node :reduction :allow-undefined t) #'(lambda (x c y) (if c x y)) (nth 1 args) (nth 0 args) (nth 2 args)))
-
-(defmethod %impl ((device-id (eql :lisp)) (op (eql :view)) graph node args)
-  (multiple-value-bind (shape v1 v2 v3 stride bc)
-      (parse-view-node node args)
-    (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))
-      (let ((buffer (copy-buffer (car args))))
-        ;; Casting from scalar -> array
-        (when (and (or (typep (buffer-value buffer) 'boolean) (numberp (buffer-value buffer))) (> (getattr node :nrank) 0))
-          (setf (buffer-value buffer)
-                (make-array (apply #'* (loop for b in (getattr node :broadcast)
-                                             for s in shape
-                                             if b collect 1 else collect (->number s)))
-	                    :element-type (dtype->lisp (buffer-dtype buffer))
-	                    :initial-element (buffer-value buffer))))
-	(setf (buffer-shape buffer) (map 'list #'->number shape)
-	      (buffer-stride buffer)
-              (map 'list #'->number stride)
-	      (buffer-views buffer)
-	      (loop for i upfrom 0 below (length v1)
-		    collect (list (->number (nth i v1)) (->number (nth i v2)) (->number (nth i v3)) (nth i bc)))
-	      (buffer-nrank buffer) (length shape))
-	buffer))))

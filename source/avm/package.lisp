@@ -21,6 +21,7 @@
    #:buffer-inferred-permute
    #:%vm/allocate-buffer
    #:%vm/read-index
+   #:%vm/transfer-array
    #:realize-buffer
    #:pprint-buffer)
   ;; from helpers.lisp

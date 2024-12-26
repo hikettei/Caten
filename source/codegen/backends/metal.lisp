@@ -33,9 +33,15 @@
         (setf (buffer-value buffer) value)))
   buffer)
 
+(defmethod %vm/transfer-array ((device (eql :metal)) buffer)
+  (let ((val (msg (buffer-value buffer) "contents" :pointer))
+        (placeholder (make-array (apply #'* (buffer-shape buffer)) :element-type (caten/common.dtype:dtype->lisp (buffer-dtype buffer)))))
+    (dotimes (i (apply #'* (buffer-shape buffer)) placeholder)
+      (setf (aref placeholder i) (mem-aref val (->cffi-dtype (buffer-dtype buffer)) i)))))
+
 (defmethod %vm/read-index ((device (eql :metal)) buffer nth)
-  ;; [TODO]
-  )
+  ;; [TODO] Needtest
+  (mem-aref (msg (buffer-value buffer) "contents" :pointer) (buffer-dtype buffer) nth))
 
 (defclass Metal-Renderer (CStyle-Renderer) nil)
 (defmethod get-default-renderer ((id (eql :metal))) (make-instance 'Metal-Renderer))
@@ -219,7 +225,6 @@ using namespace metal;
     (let* ((command-buffer (msg (mp-mtl-queue mp) "commandBuffer" :pointer))
            (encoder (msg command-buffer "computeCommandEncoder" :pointer)))
       (msg encoder "setComputePipelineState:" :void :pointer (mp-pipeline-state mp))
-      ;; [TODO] Segv during setting the buffer.
       (loop for buf in buffers
             for nth upfrom 0 do
               (msg encoder "setBuffer:offset:atIndex:" :void :pointer (buffer-value buf) :int 0 :int nth))
