@@ -3,11 +3,11 @@
 (defparameter *device* :lisp "a keyword to indicate the device (being dispatched)")
 (defparameter *max-display-matrix* 2)
 (defparameter *max-display-len* 10)
+
 (defmacro with-device (device &body body)
   "declares the device to use"
   `(let ((*device* ,device)) ,@body))
-;; [TODO]
-;; make-buffer?
+
 (defstruct (Buffer
 	    (:constructor make-buffer (nrank shape stride dtype views)))
   (value nil)
@@ -23,7 +23,6 @@
   ;;  orig-buffer-shape ...
   (depend-idx-list nil :type list) ;; Stores a list of depend _gids to unroll the buffer
   (orig-buffer-shape nil :type list))
-
 ;; methods start with % = users need to override it to implement new backends.
 (defgeneric %vm/allocate-buffer (device-id buffer)
   (:documentation "This method allocates new array/scalar based on buffer, modifying buffer-value, returning buffer."))
@@ -66,10 +65,11 @@
     (%vm/read-index *device* buffer (apply #'+ (map 'list #'->idx (range 0 (buffer-nrank buffer)))))))
 
 (defun indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o))))
+
 (defun pprint-buffer (buffer &key (indent 0) (max *max-display-len*) (comma " ") (bracket-start "(") (bracket-end ")") (omit1 "~") (omit2 "..."))
   (handler-bind ((error
 		   #'(lambda (c)
-		       (warn "Failed to render the buffer due to~%~a" c)
+		       (warn "Failed to render the buffer due to~%~a~%Invaild strides?" c)
 		       (let* ((condition (format nil "~a" c))
 			      (trim (subseq condition 0 (min (length condition) 70))))
 			 (return-from pprint-buffer (format nil "~a<<Error during rendering: ~a...>>" (indent indent) trim))))))
@@ -79,7 +79,7 @@
 
 (defun %pprint-buffer (buffer &key (indent-with 0) (max *max-display-len*) (comma " ") (bracket-start "(") (bracket-end ")") (omit1 "~") (omit2 "..."))
   (declare (type buffer buffer) (type fixnum indent-with max))
-  ;; Scalars
+
   (when (= (buffer-nrank buffer) 0)
     (return-from %pprint-buffer (format nil "~a~a" (indent indent-with) (buffer-value buffer))))
 
@@ -137,4 +137,3 @@
 			     (format stream bracket-end)
 			     (unless lastp (format stream "~%~a" (indent indent)))))))))
 	(pprint-helper 0 (make-list (buffer-nrank buffer) :initial-element nil) t indent-with)))))
-
