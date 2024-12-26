@@ -57,3 +57,5 @@
     (setf (gethash t out) t
 	  (gethash nil out) :nil)
     out))
+
+(defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
