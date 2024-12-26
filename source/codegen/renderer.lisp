@@ -22,19 +22,24 @@
    #:expr-index-components
    #:make-aref
    #:make-define-global
-
+   #:get-default-avm
    #:%renderer-get-auto-scheduler
    #:define-hook-auto-scheduler))
 
 (in-package :caten/codegen/renderer)
 
 (defgeneric get-default-renderer (id))
+(defgeneric get-default-avm (id))
 (defgeneric %render-node (renderer node-dispatcher node) (:documentation ""))
 (defgeneric %render-const (renderer obj) (:documentation ""))
 
 (defgeneric %render-kernel (renderer schedule-item))
 (defgeneric %compile-kernel (renderer schedule-items dir))
 (defgeneric %renderer-get-auto-scheduler (renderer) (:documentation "Gets the auto-scheduler for the renderer."))
+
+(defmethod get-default-avm (id)
+  ;; If not specified, AVM
+  (if (next-method-p) (call-next-method) 'caten/avm:AVM))
 
 (defmacro define-hook-auto-scheduler ((renderer-name auto-scheduler-name) &rest args)
   "Defines a hook for auto-scheduler for the renderer."

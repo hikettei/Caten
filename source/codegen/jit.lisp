@@ -31,7 +31,7 @@ caten/codegen overview:
                   [Deep Learning Models (Compiled AVM)]
 --------------------------------------------------------------------------------------------------------------------
 ```")
-  (:use :cl :caten/air :caten/codegen/shape-inference)
+  (:use :cl :caten/air :caten/codegen/shape-inference :caten/avm)
   (:import-from
    :caten/avm
    #:AVM
@@ -85,6 +85,7 @@ caten/codegen overview:
   (:import-from
    :caten/codegen/renderer
    #:get-default-renderer
+   #:get-default-avm
    #:%compile-kernel
    #:%render-kernel
    #:%renderer-get-auto-scheduler)
@@ -422,6 +423,7 @@ caten/codegen overview:
               (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
               (dir nil)
             &aux
+              (default-avm (get-default-avm renderer))
               (renderer (if (keywordp renderer) (get-default-renderer renderer) renderer))
               (auto-scheduler
                (when (= (ctx:getenv :AUTO_SCHEDULER) 1)
@@ -433,6 +435,7 @@ caten/codegen overview:
 ```
 Runs the JIT compilation for the given AVM."
   (declare (type AVM avm))
+  (assert (symbolp default-avm) () "get-default-avm must return a symbol, getting ~a" default-avm)
   (caten/isl:with-isl-context ;; Note: Need this to ensure isl objected allocated here are not cached and not used by other compiling sessions.
     (when (= 2 (ctx:getenv :DOT)) (->dot (avm-graph avm) :title "Base Graph"))
     (run-type-infer avm)
@@ -536,8 +539,4 @@ Runs the JIT compilation for the given AVM."
               (when (= (ctx:getenv :DOT) 2) (->dot schedule-graph :title "Schedule Graph (Final)"))
               (print-info "Final VM Graph:")
               (print new-graph))
-            (setf (avm-graph avm) new-graph
-                  (avm-tape-length avm) (length (graph-nodes new-graph))
-                  (avm-pc avm) 0
-                  (avm-variables avm) (make-hash-table)))
-          avm)))))
+            (make-avm new-graph (avm-name avm) (avm-id2tensor avm) (avm-fw-outputs avm) (avm-bw-outputs avm) nil nil default-avm)))))))

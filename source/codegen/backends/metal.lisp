@@ -11,9 +11,35 @@
 (defun use-metal () (setf (ctx:getenv :JIT) 1 (ctx:getenv :JIT_BACKEND) "METAL"))
 (defmacro with-metal (() &body body)
   `(ctx:with-contextvar (:JIT 1 :JIT_BACKEND "METAL") ,@body))
+;; ~~ Runtime ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass MetalVM (AVM) ((mtldevice :accessor metal-vm-mtldevice)))
+
+(defmethod initialize-instance :after ((avm MetalVM) &key)
+  (float-features:with-float-traps-masked t
+    (setf (avm-backend avm) :metal
+          (metal-vm-mtldevice avm) (MTLCreateSystemDefaultDevice))))
+
+(defmethod %impl :around ((device (eql :metal)) op graph node args)
+  (if (next-method-p)
+      (call-next-method)
+      (%impl :lisp op graph node args)))
+
+(defmethod %vm/allocate-buffer ((device (eql :metal)) buffer)
+  (if (= (buffer-nrank buffer) 0)
+      (%vm/allocate-buffer :lisp buffer)
+      (let* ((size (* (apply #'* (buffer-shape buffer)) (caten/common.dtype:dtype/size-of (buffer-dtype buffer))))
+             (value (msg (metal-vm-mtldevice *vm*) "newBufferWithLength:options:" :pointer :ulong size :int 0)))
+        (assert (not (null-pointer-p value)) () "Metal OOM while allocating size=~a" size)
+        (setf (buffer-value buffer) value)))
+  buffer)
+
+(defmethod %vm/read-index ((device (eql :metal)) buffer nth)
+  ;; [TODO]
+  )
 
 (defclass Metal-Renderer (CStyle-Renderer) nil)
 (defmethod get-default-renderer ((id (eql :metal))) (make-instance 'Metal-Renderer))
+(defmethod get-default-avm ((id (eql :metal))) 'MetalVM)
 (define-auto-scheduler
     (Metal-Auto-Scheduler ())
     :n-global-loop 3)
@@ -196,14 +222,10 @@ using namespace metal;
       ;; [TODO] Segv during setting the buffer.
       (loop for buf in buffers
             for nth upfrom 0 do
-              (with-pointer-to-vector-data (*b (buffer-value buf))
-                ;; Pointer *Bが怪しい
-                ;; *b should be MTLBuffer
-                (msg encoder "setBuffer:offset:atIndex:" :void :pointer *b :int 0 :int nth)))
+              (msg encoder "setBuffer:offset:atIndex:" :void :pointer (buffer-value buf) :int 0 :int nth))
       (loop for buf in buffers
             for nth upfrom 0 do
-              (with-pointer-to-vector-data (*b (buffer-value buf))
-                (msg encoder "setBytes:length:atIndex:" :void :pointer *b :int 4 :int nth)))
+              (msg encoder "setBytes:length:atIndex:" :void :pointer (buffer-value buf) :int 4 :int nth))
       (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
         (apply #'load-size gs (mp-global-size mp))
         (apply #'load-size ls (mp-local-size mp))
