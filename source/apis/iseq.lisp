@@ -505,7 +505,7 @@ Compiles the given tensors, returning an AVM struct.
 		     x (hash-table-keys (avm-id2tensor avm)) avm)
              ;; Note: (forward model), (forward model) ... each outputs may share the same buffer. so the output needs to be copied.
              (when (and (shape tensor) (buffer-value (tensor-buffer tensor)))
-               (when (not (arrayp tensor))
+               (when (not (arrayp (buffer-value (tensor-buffer tensor))))
                  (setf (buffer-value (tensor-buffer tensor)) (%vm/transfer-array (avm-backend avm) (tensor-buffer tensor))))
                (setf (tensor-buffer tensor) (copy-buffer (tensor-buffer tensor))
                      (buffer-value (tensor-buffer tensor)) (copy-seq (buffer-value (tensor-buffer tensor)))))
