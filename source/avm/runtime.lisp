@@ -107,7 +107,7 @@
 
 (defun vm/step (avm &aux (*vm* avm))
   (declare (type avm avm))
-  (let ((node (nth (avm-pc avm) (graph-nodes (avm-graph avm)))))
+  (let ((node (nth (avm-pc avm) (graph-nodes (avm-graph avm)))) (*device* (or (avm-backend avm) *device*)))
     (declare (type node node))
     (flet ((->real (x)
 	     (if (symbolp x)
