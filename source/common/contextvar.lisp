@@ -139,7 +139,7 @@ Usage:
      1 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
      "Set to 1 to optimize using caten/codegen/polyhedral during JIT execution.")
     (:JIT
-     0 :int identity
+     1 :int identity
      "Set to 1 to run the graph with the JIT codegen.")
     (:JIT_BACKEND
      "CLANG" :string
