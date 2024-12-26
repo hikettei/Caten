@@ -125,7 +125,7 @@
         (let ((t1 (get-internal-real-time))
               (out (multiple-value-list
 		    (handler-bind ((error #'(lambda (cond) (error 'avm-runtime-error :avm avm :cond cond))))
-		      (%impl avm type (avm-graph avm) node (map 'list #'->real reads)))))
+		      (%impl *device* type (avm-graph avm) node (map 'list #'->real reads)))))
               (t2 (get-internal-real-time)))
 	  (assert (or (null writes) (= (length out) (length writes))) () "The length of output ~a does not match ~a" out node)
           (when (= 1 (ctx:getenv :PROFILE))
