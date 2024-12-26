@@ -12,17 +12,21 @@
    (pc :initform 0 :accessor avm-pc)
    (variables :initform (make-hash-table) :initarg :variables :accessor avm-variables)
    (params-to-optimize :initform nil :accessor avm-params-to-optimize)
-   (dumped :initform nil :initarg :dumped :accessor avm-dumped)))
+   (dumped :initform nil :initarg :dumped :accessor avm-dumped)
+   (device :initform 'AVM :accessor avm-device)))
 
-(defun make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil))
+(defclass Relay-Checker (AVM) nil)
+
+(defun make-avm (graph name id2tensor fw-outputs bw-outputs &optional params (dumped nil) (device 'AVM))
   (when (null (graph-outputs graph))
     (setf (graph-outputs graph) (append fw-outputs bw-outputs)))
-  (make-instance 'AVM ;; TODO: Different Backend uses different AVM
-                 :graph graph :name name :id2tensor (or id2tensor (make-hash-table))
-                 :fw-outputs fw-outputs :bw-outputs bw-outputs
-                 :tape-length (length (graph-nodes graph))
-                 :variables (make-hash-table-from-params params)
-                 :dumped dumped))
+  (make-instance
+   device
+   :graph graph :name name :id2tensor (or id2tensor (make-hash-table))
+   :fw-outputs fw-outputs :bw-outputs bw-outputs
+   :tape-length (length (graph-nodes graph))
+   :variables (make-hash-table-from-params params)
+   :dumped dumped))
 
 (defmethod avm-gather-args ((avm avm))
   (remove-duplicates
@@ -31,8 +35,6 @@
 	   collect (getattr node :value)
          else if (and (eql (node-type node) :Allocate) (getattr node :from) (symbolp (getattr node :from)))
                 collect (getattr node :from))))
-
-(defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
 
 (defmethod print-object ((avm AVM) stream &aux (n-indent 4))
   (print-unreadable-object (avm stream :type t)
@@ -49,29 +51,29 @@
  	    else if (eql (Node-type node) :View) do
 	      (let ((nrank (getattr node :nrank)))
 		(flet ((subseq1p (x y z) (subseq x (1+ y) (1+ z))))
-		   (format stream "~a~(~a~) = ~(~a~)(~(~a~), shape=(~a), views=(~a), stride=(~a)~a);~%"
-			   (indent n-indent)
-			   (render-list (node-writes node))
-			   (node-type node)
-			   (car (node-reads node))
-			   (render-list (subseq1p (node-reads node) 0 nrank))
-			   (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
-				 (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
-				 (by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
-				 (bc (getattr node :broadcast)))
-			     (render-list
-			      (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
-			   (render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank)))
-			   (if (getattr node :permute)
-			       (format nil ", permute=~a" (getattr node :permute))
-			       ""))))
-	     else
-	       do (format stream "~a~(~a~)~a~(~a~)(~(~a~));~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "")
-                          (if (eql (node-type node) :JIT_KERNEL)
-                              (uiop:symbol-call :caten/codegen/jit :compiled-kernel-name (getattr node :kernel-info))
-                              (node-type node))
-                          (render-list (node-reads node)))))))
-;; ~~~ TODO:Refactor~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+		  (format stream "~a~(~a~) = ~(~a~)(~(~a~), shape=(~a), views=(~a), stride=(~a)~a);~%"
+			  (indent n-indent)
+			  (render-list (node-writes node))
+			  (node-type node)
+			  (car (node-reads node))
+			  (render-list (subseq1p (node-reads node) 0 nrank))
+			  (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
+				(below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
+				(by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
+				(bc (getattr node :broadcast)))
+			    (render-list
+			     (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
+			  (render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank)))
+			  (if (getattr node :permute)
+			      (format nil ", permute=~a" (getattr node :permute))
+			      ""))))
+	    else
+	      do (format stream "~a~(~a~)~a~(~a~)(~(~a~));~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "")
+                         (if (eql (node-type node) :JIT_KERNEL)
+                             (uiop:symbol-call :caten/codegen/jit :compiled-kernel-name (getattr node :kernel-info))
+                             (node-type node))
+                         (render-list (node-reads node)))))))
+;; [TODO] Remove AOT
 (defmethod make-load-form ((avm AVM) &optional env)
   (declare (ignore env))
   `(make-avm
@@ -83,13 +85,7 @@
     ,(avm-id2tensor avm)
     ',(avm-fw-outputs avm)
     ',(avm-bw-outputs avm)
-    nil t))
-
-(defun deepcopy-avm (avm &aux (avm (copy-avm avm)))
-  (declare (type avm avm))
-  (setf (avm-graph avm) (copy-graph (avm-graph avm)))
-  (setf (graph-nodes (avm-graph avm)) (map 'list #'copy-node (graph-nodes (avm-graph avm))))
-  avm)
+    nil t ',(avm-device avm)))
 
 (defmethod avm-reset ((avm AVM))
   (setf (avm-pc avm) 0
@@ -129,7 +125,7 @@
         (let ((t1 (get-internal-real-time))
               (out (multiple-value-list
 		    (handler-bind ((error #'(lambda (cond) (error 'avm-runtime-error :avm avm :cond cond))))
-		      (%impl *device* type (avm-graph avm) node (map 'list #'->real reads)))))
+		      (%impl avm type (avm-graph avm) node (map 'list #'->real reads)))))
               (t2 (get-internal-real-time)))
 	  (assert (or (null writes) (= (length out) (length writes))) () "The length of output ~a does not match ~a" out node)
           (when (= 1 (ctx:getenv :PROFILE))
