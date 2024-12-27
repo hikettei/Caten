@@ -26,7 +26,7 @@ Sets `*inference-mode*=T` and `*no-grad*=T` within the scope of the body.
        ,@body)))
 ;; ~~ randomness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-rng-counter ()
-  (ctx:with-contextvar (:jit 0)
+  (ctx:with-contextvar (:BACKEND "LISP")
     (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter))))
 (defparameter *manual-seed* 0)
 (defparameter *rng-counter* (make-rng-counter))

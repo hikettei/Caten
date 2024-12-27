@@ -231,8 +231,8 @@ Creates a lowered graph from the given tensors. (= an input grpah to JIT=1)
   (when (not (tensor-p (car tensors)))
     (return-from tensor-lowered-graph (car tensors)))
   (assert (every #'tensor-p tensors))
-  (ctx:with-contextvar (:JIT 0)
-    (avm-graph (caten tensors))))
+  (ctx:with-contextvar (:BACKEND "LISP")
+    (runtime-graph (caten tensors))))
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun inf (&key (dtype *default-float*))
   "
