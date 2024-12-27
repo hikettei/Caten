@@ -7,7 +7,7 @@
 - Merge View Solver
 - ASM Bindings
 - Graph Caller")
-  (:use :cl :alexandria :trivia :cl-ppcre :caten/aasm :caten/air :caten/avm)
+  (:use :cl :alexandria :trivia :cl-ppcre :caten/aasm :caten/air :caten/runtime)
   (:local-nicknames (:docs :caten/common.documentation))
   (:import-from
    :caten/common.dtype
@@ -130,9 +130,7 @@
    #:caten
    #:forward
    #:backward
-   #:proceed
-   #:%run
-   #:with-jit)
+   #:proceed)
 
   ;; from function.lisp
   (:export

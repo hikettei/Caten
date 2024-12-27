@@ -1,5 +1,5 @@
 (defpackage :caten/runtime
-  (:use :cl :caten/runtime/buffer)
+  (:use :cl :caten/runtime/buffer :caten/runtime/runtime)
   ;; Buffer
   (:export
    #:AbstractBuffer
@@ -16,9 +16,29 @@
    #:transfer-from-array
    #:transfer-into-array
    #:bref
+   #:copy-buffer-value
    #:buffer-ref
    #:pprint-buffer)
   ;; Runtime
-  
+  (:export
+   #:*supress-allocate-mode*
+   #:GraphRuntime
+   #:runtime-graph
+   #:runtime-id2tensor
+   #:runtime-fw-outputs
+   #:runtime-bw-outputs
+   #:runtime-pc
+   #:runtime-variables
+   #:runtime-params
+   
+   #:make-runtime
+   #:free-runtime
+   #:runtime-gather-args
+   #:runtime-setvar
+   #:runtime-getvar
+   #:runtime-step
+   #:realize-node
+   #:runtime-forward
+   #:runtime-backward)
   ;; Profile
   )

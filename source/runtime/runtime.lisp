@@ -8,6 +8,7 @@ This package provides GraphRuntime, which is a class to run an air graph.
    #:*supress-allocate-mode*
    #:GraphRuntime
    #:runtime-graph
+   #:runtime-id2tensor
    #:runtime-fw-outputs
    #:runtime-bw-outputs
    #:runtime-pc
@@ -21,7 +22,8 @@ This package provides GraphRuntime, which is a class to run an air graph.
    #:runtime-getvar
    #:runtime-step
    #:realize-node
-   ))
+   #:runtime-forward
+   #:runtime-backward))
 
 (in-package :caten/runtime/runtime)
 
@@ -29,6 +31,7 @@ This package provides GraphRuntime, which is a class to run an air graph.
 
 (defclass GraphRuntime ()
   ((graph :accessor runtime-graph :type Graph)
+   (id2tensor :accessor runtime-id2tensor :initarg :id2tensor)
    (fw-outputs :initarg :fw-outputs :accessor runtime-fw-outputs :initform nil)
    (bw-outputs :initarg :bw-outputs :accessor runtime-bw-outputs :initform nil)
    (pc :initform 0 :accessor runtime-pc)
@@ -39,12 +42,12 @@ This package provides GraphRuntime, which is a class to run an air graph.
 (defgeneric realize-node (node-type runtime node args)
   (:documentation ""))
 
-(defun make-runtime (graph &key (fw-outputs nil) (bw-outputs nil) (variables (make-hash-table)) (params (make-hash-table)) (runtime 'GraphRuntime))
-  (make-instance runtime :graph graph :fw-outputs fw-outputs :bw-outputs bw-outputs :variables variables :params params))
+(defun make-runtime (graph &key (fw-outputs nil) (bw-outputs nil) (variables (make-hash-table)) (params nil) (id2tensor (make-hash-table)) (runtime 'GraphRuntime))
+  (make-instance runtime :graph graph :fw-outputs fw-outputs :bw-outputs bw-outputs :variables variables :params params :id2tensor id2tensor))
 
 (defmethod free-runtime ((runtime GraphRuntime))
   "Frees all allocations in the runtime"
-  (mapc #'close-buffer (alexandria:hash-table-values (runtime-variables runtime))))
+  (mapc #'(lambda (x) (close-buffer runtime x)) (alexandria:hash-table-values (runtime-variables runtime))))
 
 (defmethod runtime-gather-args ((runtime GraphRuntime))
   (remove-duplicates
@@ -112,6 +115,14 @@ disassemble:
         (loop for value in out for place in (node-writes node)
               do (runtime-setvar runtime place value))
         (incf (runtime-pc runtime))))))
+
+(defmethod runtime-forward ((runtime GraphRuntime))
+
+  )
+
+(defmethod runtime-backward ((runtime GraphRuntime))
+
+  )
 ;; ~~~~ print-object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
 (defmethod print-object ((runtime GraphRuntime) stream &aux (n-indent 4))
