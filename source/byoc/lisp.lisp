@@ -1,5 +1,5 @@
 (defpackage :caten/byoc/lisp
-  (:use :cl :caten/runtime/buffer :caten/common.dtype)
+  (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/codegen/backend)
   (:export :LispBuffer))
 
 (in-package :caten/byoc/lisp)
@@ -19,4 +19,4 @@
 (defmethod transfer-into-array (runtime (buffer LispBuffer)) (buffer-value buffer))
 (defmethod bref ((buffer LispBuffer) idx) (aref (buffer-value buffer) idx))
 
-
+(define-backend :lisp LispBuffer GraphRunner nil nil)

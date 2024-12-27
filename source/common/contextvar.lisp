@@ -117,6 +117,9 @@ Usage:
 		     ,@body)))))
   (defcontext
       ;; (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
+    (:BACKEND
+     "LISP" :string (lambda (x) (intern x "KEYWORD"))
+     "A name to the keyword defined by the macro `defbackend`")
     (:DEBUG
      0 :int #.(oneof "DEBUG" 0 `(-1 0))
      "Select either 0 or -1. Set -1 to supress the caten/common.logger.")
@@ -138,13 +141,16 @@ Usage:
     (:AUTO_SCHEDULER
      1 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
      "Set to 1 to optimize using caten/codegen/polyhedral during JIT execution.")
+    ;; [TODO] Remove
     (:JIT
      1 :int identity
      "Set to 1 to run the graph with the JIT codegen.")
+    ;; [TODO] Remove
     (:JIT_BACKEND
      "CLANG" :string
      (lambda (x) (intern x "KEYWORD"))
      "The backend used during JIT execution.")
+    ;; [TODO] Remove
     (:AVM
      "LISP" :string
      (lambda (x) (intern x "KEYWORD"))

@@ -96,7 +96,7 @@
 (defmethod %impl ((device-id (eql :lisp)) (op (eql :Allocate)) graph node args)
   (multiple-value-bind (shape stride)
       (parse-allocate-node node args)
-    (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))
+    (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))g
       (let ((memory-pool (getattr node :pool))) ;; the second run of :Allocation?
         (when (and (buffer-p memory-pool) shape)
           (when (equal (map 'list #'->number shape) (buffer-shape memory-pool)) ;; dynamic shape can changed the demanded size.

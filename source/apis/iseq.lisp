@@ -461,19 +461,17 @@ The iseq obtained by lowering the Module must match the output destination speci
 
 (defun caten (tensors
 	      &key
-		(jit (= 1 (ctx:getenv :JIT)))
 		(name (intern (symbol-name (gensym "MAIN")) "KEYWORD"))
                 (rewriters nil)
 		(simplifiers *external-simplifiers*))
   "
 ```lisp
-(caten tensors &key (jit (= 1 (ctx:getenv :JIT))) (name :main) (simplifiers *external-simplifiers*))
+(caten tensors &key (name :main) (simplifiers *external-simplifiers*))
 ```
 
 Compiles the given tensors, returning an AVM struct.
 
 - tensor[Tensor|List] toplevel tensors.
-- jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls `%jit` to generate the fast kernel supported by `caten/codegen`. This parameter should be specified using the `(ctx:with-contextvar)` macro.
 - name[keyword] the name of compiled avm.
 - rewriters[list] a list of graph rewriters called each time the compiler will lower the module.
 - simplifiers[list] a list of external simplifiers used in the graph-level compilation. (defined by defsimplifier) Pass the function name.
@@ -481,7 +479,7 @@ Compiles the given tensors, returning an AVM struct.
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
   (let ((avm (%compile-toplevel tensors :name name :rewriters rewriters :external-simplifiers simplifiers)))
-    (if jit (caten/codegen:jit avm :renderer (or *jit-device* (ctx:getenv :jit_backend))) avm)))
+    (caten/codegen:jit avm :renderer (or *jit-device* (ctx:getenv :jit_backend)))))
 
 (defun avm/sync-tensors (avm)
   "Synchronize buffer and tensor (but limited to the end of nodes, and grads)"

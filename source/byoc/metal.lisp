@@ -1,5 +1,5 @@
 (defpackage :caten/byoc/metal
-  (:use :cl :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :cffi :flexi-streams :float-features))
+  (:use :cl :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features))
 
 (in-package :caten/byoc/metal)
 
@@ -39,6 +39,7 @@
 
 (defmethod transfer-from-array ((runtime MetalRuntime) (buffer MetalBuffer) array)
   ;; [TODO] contents are setfable?
+  ;; [TODO] Optimize (there's an api to do the same thing)
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
     (dotimes (i (apply #'* (buffer-shape buffer)))
       (setf (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i) (aref array i)))))
@@ -52,3 +53,5 @@
 (defmethod bref ((buffer MetalBuffer) idx)
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
+
+(define-backend :metal MetalBuffer MetalRuntime nil t)
