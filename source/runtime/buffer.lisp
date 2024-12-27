@@ -51,6 +51,11 @@ Buffer expects the following methods to be implemented:
    (value :accessor buffer-value :initarg :value :initform nil))
   (:documentation ""))
 
+(defmethod print-object ((obj AbstractBuffer) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (format stream ":shape ~a :stride ~a :dtype ~a :views ~a :nrank ~a :value ~a"
+            (buffer-shape obj) (buffer-stride obj) (buffer-dtype obj) (buffer-views obj) (buffer-nrank obj) (buffer-value obj))))
+
 (defun buffer-p (object) (typep object 'AbstractBuffer))
 (defun copy-buffer (buffer)
   (declare (type AbstractBuffer buffer))

@@ -360,7 +360,7 @@ disassemble:
     to))
 
 (defmethod realize-node ((node-id (eql :Index-Components)) (runtime GraphRuntime) node args)
-  (map-view nil #'index-components args))
+  (apply #'map-view nil #'index-components args))
 
 (defun wrap-around (x max min)
   (if (= min 0)
