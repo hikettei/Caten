@@ -30,13 +30,13 @@ This package provides GraphRuntime, which is a class to run an air graph.
 (defparameter *supress-allocate-mode* nil "Set T to supress the allocation of the buffers in the realize-node. (Useful for tracing the JIT graph)")
 
 (defclass GraphRuntime ()
-  ((graph :accessor runtime-graph :type Graph)
+  ((graph :accessor runtime-graph :initarg :graph :type Graph)
    (id2tensor :accessor runtime-id2tensor :initarg :id2tensor)
    (fw-outputs :initarg :fw-outputs :accessor runtime-fw-outputs :initform nil)
    (bw-outputs :initarg :bw-outputs :accessor runtime-bw-outputs :initform nil)
    (pc :initform 0 :accessor runtime-pc)
-   (variables :initform nil :accessor runtime-variables)
-   (params :initform nil :accessor runtime-params))
+   (variables :initform nil :accessor runtime-variables :initarg :variables)
+   (params :initform nil :accessor runtime-params :initarg :params))
   (:documentation ""))
 
 (defgeneric realize-node (node-type runtime node args)

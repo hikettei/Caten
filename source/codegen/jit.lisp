@@ -521,4 +521,4 @@ Applies the JIT compilation for the given Runtime. backend is a keyword defined 
               (when (= (ctx:getenv :DOT) 2) (->dot schedule-graph :title "Schedule Graph (Final)"))
               (print-info "Final VM Graph:")
               (print new-graph))
-            (make-runtime new-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-id)))))))
+            (make-runtime new-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-id :id2tensor (runtime-id2tensor runtime))))))))
