@@ -112,7 +112,7 @@ Buffer expects the following methods to be implemented:
   (when (= (buffer-nrank buffer) 0) (return-from %pprint-buffer (format nil "~a~a" (indent indent-with) (buffer-value buffer))))
   (let ((sample-size
 	  (loop for i upfrom 0 below (min 1000 (apply #'* (map 'list #'(lambda (x v) (if (fourth v) 1 x)) (buffer-shape buffer) (or (buffer-views buffer) (loop for s in (buffer-shape buffer) collect nil)))))
-                maximize (length (format nil "~a" (buffer-ref buffer i))))))
+                maximize (length (format nil "~a" (bref buffer i))))))
     (with-output-to-string (stream)
       (format stream " ~a" (indent indent-with))
       (labels ((pprint-helper (dim subscripts lastp indent &aux (max (if (and (>= (buffer-nrank buffer) 3) (<= dim (- (buffer-nrank buffer) 3))) *max-display-matrix* max)))
