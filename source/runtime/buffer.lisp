@@ -48,14 +48,14 @@ Buffer expects following the methods to be implemented:
    (value :accessor buffer-value :initarg :value :initform nil))
   (:documentation ""))
 
-(defgeneric open-buffer (buffer)
+(defgeneric open-buffer (runtime buffer)
   (:documentation "Fills the (buffer-value buffer) with zero the given shape and dtype."))
 
-(defgeneric close-buffer (buffer) (:documentation "Frees the buffer."))
+(defgeneric close-buffer (runtime buffer) (:documentation "Frees the buffer."))
 
-(defgeneric transfer-from-array (buffer array) (:documentation "array is a simple-array"))
+(defgeneric transfer-from-array (runtime buffer array) (:documentation "array is a simple-array"))
 
-(defgeneric transfer-into-array (buffer) (:documentation "Returns a storage array (flatten simple array)"))
+(defgeneric transfer-into-array (runtime buffer) (:documentation "Returns a storage array (flatten simple array)"))
 
 (defgeneric bref (buffer index) (:documentation ""))
 

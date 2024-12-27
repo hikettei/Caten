@@ -14,7 +14,8 @@
    #:float-type-of
    #:coerce-dtyped-buffer
    #:nodes-create-namespace
-   #:%isl-safe-pmapc))
+   #:%isl-safe-pmapc
+   #:->cffi-dtype))
 
 (in-package :caten/codegen/helpers)
 
@@ -141,3 +142,17 @@ Otherwise -> they are passed as a buffer."
                          for lastp = (= (1+ i) n-cores)
                          collect (subseq list (* i elements-per-core) (+ (* (1+ i) elements-per-core) (if lastp reminder 0))))))
         (lparallel:pmapc #'op tasks)))))
+
+(defun ->cffi-dtype (dtype)
+  (ecase dtype
+    (:bool :bool)
+    (:float64 :double)
+    (:float32 :float)
+    (:uint64 :uint64)
+    (:int64 :int64)
+    (:int32 :int32)
+    (:uint32 :uint32)
+    (:int16 :int16)
+    (:uint16 :uint16)
+    (:uint8 :uint8)
+    (:int8 :int8)))
