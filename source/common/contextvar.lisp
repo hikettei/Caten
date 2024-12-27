@@ -141,20 +141,6 @@ Usage:
     (:AUTO_SCHEDULER
      1 :int #.(oneof "AUTO_SCHEDULER" 1 `(0 1))
      "Set to 1 to optimize using caten/codegen/polyhedral during JIT execution.")
-    ;; [TODO] Remove
-    (:JIT
-     1 :int identity
-     "Set to 1 to run the graph with the JIT codegen.")
-    ;; [TODO] Remove
-    (:JIT_BACKEND
-     "CLANG" :string
-     (lambda (x) (intern x "KEYWORD"))
-     "The backend used during JIT execution.")
-    ;; [TODO] Remove
-    (:AVM
-     "LISP" :string
-     (lambda (x) (intern x "KEYWORD"))
-     "The backend used during AVM execution.")
     (:DEFAULT_FLOAT
      "FLOAT32" :string
      #.(oneof-kw "DEFAULT_FLOAT" :float32 `(:float64 :float32 :float16 :bfloat16))
@@ -181,12 +167,15 @@ Usage:
     (:OMP
      0 :int #.(oneof "OMP" 0 `(0 1))
      "Set 1 to use OpenMP by the CLANG backend.")
+    ;; [TODO] Remove
     (:AOT_VERBOSE
      0 :int #.(oneof "AOT_VERBOSE" 0 `(0 1))
      "Set to 1 to debug the AIR dump during AOT compilation.")
+    ;; [TODO] Remove
     (:AOT
      "" :string parse-list->kw
      "Declare all JIT device names capable of performing AOT compilation (e.g.: AOT=CLANG,METAL).")
+    ;; [TODO] remove
     (:AOT_VM
      "" :string parse-list->kw
      "Declare all VM device names capable of performing AOT compilation (e.g.: AOT_VM=LISP).")
