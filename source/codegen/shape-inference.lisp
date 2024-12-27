@@ -253,7 +253,7 @@ gids corresponds for the loop idx in the kernel.
   (views nil :type list)
   (procedure nil :type list))
 
-(defmethod iteration-space-expr-aref ((is Iteration-Space) (type Buffer) gids)
+(defmethod iteration-space-expr-aref ((is Iteration-Space) (type RelayBuffer) gids)
   "Returns a list of EXPR which (reduce #'+ ...) represents for the index."
   (assert (not (= (buffer-nrank type) -1)) () "buffer-nrank = -1 means the array was mutated to scalar!")
   (let ((size (iteration-space-shape is))
@@ -323,7 +323,7 @@ gids corresponds for the loop idx in the kernel.
       :procedure
       (loop for s in ret collect (fourth s))))))
 
-(defmethod buffer-merge-dims ((graph Graph) (buffer Buffer))
+(defmethod buffer-merge-dims ((graph Graph) (buffer RelayBuffer))
   (let ((viewed-shape (buffer-shape buffer))
         (strides (buffer-stride buffer))
         (views (buffer-views buffer)))
@@ -342,7 +342,7 @@ gids corresponds for the loop idx in the kernel.
       (when (some #'identity views) views)
       (loop repeat (buffer-nrank buffer) collect nil)))))
 
-(defmethod buffer-iteration-space ((graph Graph) (buffer Buffer))
+(defmethod buffer-iteration-space ((graph Graph) (buffer RelayBuffer))
   (let ((viewed-shape (buffer-shape buffer))
         (strides      (buffer-stride buffer))
         (views        (buffer-views buffer)))
