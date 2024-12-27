@@ -4,5 +4,5 @@
   :license "MIT"
   :depends-on ("caten.air" "caten.aasm")
   :serial t
-  :components ((:file "package")))
-  
+  :components ((:file "buffer")
+               (:file "package")))
