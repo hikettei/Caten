@@ -6,6 +6,7 @@
   :serial t
   :components
   ((:file "helpers")
+   (:file "backend")
    (:file "expr")
    (:file "shape-inference")
    (:file "renderer")
