@@ -7,7 +7,7 @@ Buffer: Abstraction for the multiple facet of storage object.
  ClangBuffer  MetalBuffer CUDABuffer etc...
 ```
 
-Buffer expects following the methods to be implemented:
+Buffer expects the following methods to be implemented:
 
 - open-buffer
 - close-buffer
@@ -25,6 +25,7 @@ Buffer expects following the methods to be implemented:
    #:buffer-nrank
    #:buffer-value
    #:make-buffer
+   #:buffer-p
    
    #:open-buffer
    #:close-buffer
@@ -47,6 +48,9 @@ Buffer expects following the methods to be implemented:
    (nrank :accessor buffer-nrank :initarg :nrank :initform 0 :type fixnum)
    (value :accessor buffer-value :initarg :value :initform nil))
   (:documentation ""))
+
+(defun buffer-p (object) (typep object 'AbstractBuffer))
+;; [TODO] copy-buffer
 
 (defgeneric open-buffer (runtime buffer)
   (:documentation "Fills the (buffer-value buffer) with zero the given shape and dtype."))

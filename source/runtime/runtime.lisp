@@ -7,6 +7,13 @@ This package provides GraphRuntime, which is a class to run an air graph.
   (:export
    #:*supress-allocate-mode*
    #:GraphRuntime
+   #:runtime-graph
+   #:runtime-fw-outputs
+   #:runtime-bw-outputs
+   #:runtime-pc
+   #:runtime-variables
+   #:runtime-params
+   
    #:make-runtime
    #:free-runtime
    #:runtime-gather-args
