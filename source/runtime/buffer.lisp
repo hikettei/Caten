@@ -53,9 +53,9 @@ Buffer expects following the methods to be implemented:
 
 (defgeneric close-buffer (buffer) (:documentation "Frees the buffer."))
 
-(defgeneric transfer-from-array (buffer array) (:documentation ""))
+(defgeneric transfer-from-array (buffer array) (:documentation "array is a simple-array"))
 
-(defgeneric transfer-into-array (buffer array) (:documentation ""))
+(defgeneric transfer-into-array (buffer) (:documentation "Returns a storage array (flatten simple array)"))
 
 (defgeneric bref (buffer index) (:documentation ""))
 
