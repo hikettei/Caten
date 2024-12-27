@@ -15,7 +15,7 @@ Buffer expects the following methods to be implemented:
 - transfer-into-array
 - bref
 ")
-  (:use :cl :alexandria :c2mop)
+  (:use :cl :alexandria)
   (:export
    #:AbstractBuffer
    #:buffer-shape

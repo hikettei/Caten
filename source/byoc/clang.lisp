@@ -1,5 +1,5 @@
 (defpackage :caten/byoc/clang
-  (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime :caten/codegen/backend)
+  (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime :caten/codegen/backend :caten/codegen/renderer)
   (:import-from
    :caten/codegen/config
    #:define-auto-scheduler)
@@ -14,4 +14,4 @@
                        :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
                        :tile-size 32) ;; [TODO] Autotune
 
-(define-backend :clang ClangBuffer ClangRuntime Clang-Auto-Scheduler t)
+(define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer Clang-Auto-Scheduler t)

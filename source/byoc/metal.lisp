@@ -54,4 +54,4 @@
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
 
-(define-backend :metal MetalBuffer MetalRuntime nil t)
+(define-backend :metal MetalBuffer MetalRuntime nil nil t)

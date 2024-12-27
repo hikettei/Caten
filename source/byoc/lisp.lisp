@@ -19,4 +19,4 @@
 (defmethod transfer-into-array (runtime (buffer LispBuffer)) (buffer-value buffer))
 (defmethod bref ((buffer LispBuffer) idx) (aref (buffer-value buffer) idx))
 
-(define-backend :lisp LispBuffer GraphRunner nil nil)
+(define-backend :lisp LispBuffer GraphRunner nil nil nil)

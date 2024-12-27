@@ -190,7 +190,7 @@ disassemble:
            
            )))))
 
-(defmethod realize-node ((node-id (eql :View)) (runtime GraphRunner) node args)
+(defmethod realize-node ((node-id (eql :View)) (runtime GraphRuntime) node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)
       (parse-view-node node args)
     (flet ((->number (x) (if (typep x 'abstractbuffer) (buffer-value x) x)))
@@ -346,5 +346,5 @@ disassemble:
   (impl :!= #'(lambda (_ x y) _ (not (= x y)))) ;; input is a boolean
   (impl :< #'(lambda (_ x y) _ (< x y))))
 
-(defmethod realize-node ((node-id (eql :Where)) (runtime GraphRunner) node args)
+(defmethod realize-node ((node-id (eql :Where)) (runtime GraphRuntime) node args)
   (map-view (getattr node :reduction :allow-undefined t) #'(lambda (x c y) (if c x y)) (nth 1 args) (nth 0 args) (nth 2 args)))

@@ -3,7 +3,7 @@
   :author      "hikettei <ichndm@gmail.com>"
   :depends-on
   ("rove" "trivia" "cl-ppcre" "float-features"
-   "caten.common" "caten.air" "caten.aasm" "caten.avm" "caten.codegen")
+   "caten.common" "caten.air" "caten.aasm" "caten.runtime" "caten.codegen" "caten.byoc")
   :serial t
   :components ((:file "package")
 	       (:file "attrs")
@@ -25,7 +25,6 @@
   ((test-op
     (asdf:test-op "caten.air")
     (asdf:test-op "caten.aasm")
-    (asdf:test-op "caten.avm")
     (asdf:test-op "caten.apis/test"))))
 
 (asdf:defsystem "caten.apis/test"
