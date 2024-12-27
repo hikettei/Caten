@@ -67,64 +67,130 @@ save-for-backward is determined automatically, so you do not have to consider ab
           do (setf (tensor-nth-output o) nth))
     (apply #'values outs)))
 ;; ~~ differentiable ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Unfold (Func)
-  ((window-size :initarg :window-size :type integer :accessor unfold-window-size)
-   (stride :initarg :stride :type integer :accessor unfold-stride))
-  (:documentation "Unfold operation for 1D tensors.
-Given a 1D input `(N)`, produces `(num-windows, W)` views,
-where `num-windows = floor((N - W)/S) + 1`, and output[i,j] = input[i*S + j]."))
+(defclass Unfold4D (Func)
+  ((kernel-size :initarg :kernel-size :type list :accessor unfold-kernel-size)
+   (stride      :initarg :stride      :type list :accessor unfold-stride)
 
-(defmethod forward ((op Unfold) &rest tensors)
+   (n :initarg :n :accessor unfold-n :initform nil)
+   (c :initarg :c :accessor unfold-c :initform nil)
+   (h :initarg :h :accessor unfold-h :initform nil)
+   (w :initarg :w :accessor unfold-w :initform nil)
+
+   (out-h :initarg :out-h :accessor unfold-out-h :initform nil)
+   (out-w :initarg :out-w :accessor unfold-out-w :initform nil))
+  (:documentation "A minimal 4D Unfold that stores numeric NCHW and out-h/out-w in slots."))
+
+(defmethod forward ((op Unfold4D) &rest tensors)
   (let* ((input (car tensors))
-         (N (car (tensor-shape input)))
-         (W (unfold-window-size op))
-         (S (unfold-stride op)))
-    (assert (>= N W) () "Unfold: window-size (~a) too large for input length (~a)." W N)
-    (let ((num-windows (max 0 (+ 1 (floor (/ (- N W) S))))))
-      ;; Create output tensor with shape (W, num-windows) instead of (num-windows, W)
-      (let ((out (make-tensor (list W num-windows)
+         (N (first  (tensor-shape input)))
+         (C (second (tensor-shape input)))
+         (H (third  (tensor-shape input)))
+         (W (fourth (tensor-shape input)))
+         
+         (kH (first (unfold-kernel-size op)))
+         (kW (second (unfold-kernel-size op)))
+         (sH (first (unfold-stride op)))
+         (sW (second (unfold-stride op))))
+    
+    (assert (integerp N) () "Unfold4D: N (~a) is not numeric." N)
+    (assert (integerp C) () "Unfold4D: C (~a) is not numeric." C)
+    (assert (integerp H) () "Unfold4D: H (~a) is not numeric." H)
+    (assert (integerp W) () "Unfold4D: W (~a) is not numeric." W)
+    (assert (integerp kH) () "Unfold4D: kH (~a) is not numeric." kH)
+    (assert (integerp kW) () "Unfold4D: kW (~a) is not numeric." kW)
+    (assert (integerp sH) () "Unfold4D: sH (~a) is not numeric." sH)
+    (assert (integerp sW) () "Unfold4D: sW (~a) is not numeric." sW)
+
+    (when (or (< H kH) (< W kW))
+      (error "Unfold4D: Kernel size (~ax~a) exceeds input dimensions (~ax~a)."
+             kH kW H W))
+
+    (let* ((out-h (max 0 (1+ (floor (/ (- H kH) sH)))))
+           (out-w (max 0 (1+ (floor (/ (- W kW) sW))))))
+
+      (assert (> out-h 0) () "Unfold4D: Computed out-h (~a) is not positive." out-h)
+      (assert (> out-w 0) () "Unfold4D: Computed out-w (~a) is not positive." out-w)
+      
+      (setf (unfold-n op) N
+            (unfold-c op) C
+            (unfold-h op) H
+            (unfold-w op) W
+            (unfold-out-h op) out-h
+            (unfold-out-w op) out-w)
+      
+      (let* ((out-shape (list N (* C kH kW) (* out-h out-w)))
+            (out (make-tensor out-shape
                               :dtype (tensor-dtype input)
                               :order (tensor-order input))))
+        (format t "~% shape ~a ~%" (shape out) )
         (setf (tensor-op out) op
               (tensor-variables out) (list input))
         out))))
 
-(defmethod lower ((op Unfold) &rest inputs)
-  (let* ((orig-tensor (car (func-variables op)))
-         (N (car (tensor-shape orig-tensor)))
-         (W (unfold-window-size op))
-         (S (unfold-stride op))
-         (num-windows (max 0 (+ 1 (floor (/ (- N W) S))))))
-    (format t "~%Debug info:~%")
-    (format t "N: ~a~%" N)
-    (format t "W: ~a~%" W)
-    (format t "S: ~a~%" S)
-    (format t "num-windows: ~a~%" num-windows)
-    (let ((tr (copy-tracker (tensor-tr orig-tensor))))
-      (setf (tr-shape tr) (list W num-windows)
-            (tr-base-shape tr) (list W num-windows)
-            (tr-stride tr) (list 1 1)
-            (tr-mask tr) (list 
-                          (list 0 W 1)
-                          (list 0 num-windows S))
-            (tr-broadcast tr) (list nil nil)
-            (tr-permute tr) (list 0 1))
-      
-      (format t "~%Tracker after setup:~%")
-      (format t "shape: ~a~%" (tr-shape tr))
-      (format t "base-shape: ~a~%" (tr-base-shape tr))
-      (format t "stride: ~a~%" (tr-stride tr))
-      (format t "mask: ~a~%" (tr-mask tr))
-      
-      (%make-view-from-tracker tr (gensym "UNFOLD") (car inputs)))))
-(defun !unfold (tensor window-size stride)
-"
-(!unfold tensor window-size stride)
 
-Symbolically creates an unfold operation on a 1D tensor.
-Produces a 2D view of shape (num-windows, window-size).
-"
-(forward (make-instance 'Unfold :window-size window-size :stride stride) tensor))
+(defmethod lower ((op Unfold4D) &rest inputs)
+  (let* ((orig-tensor (car (func-variables op)))
+
+         (N (unfold-n op))
+         (C (unfold-c op))
+         (H (unfold-h op))
+         (W (unfold-w op))
+         (out-h (unfold-out-h op))
+         (out-w (unfold-out-w op))
+         (kH (first (unfold-kernel-size op)))
+         (kW (second (unfold-kernel-size op)))
+         (sH (first (unfold-stride op)))
+         (sW (second (unfold-stride op))))
+
+    (format t "~%kH is: ~a~%" kH)
+    (format t "kW is: ~a~%" kW)
+    (format t "~%sH is: ~a~%" sH)
+    (format t "sW is: ~a~%" sW)
+    (format t "~%out-h is: ~a~%" out-h)
+    (format t "~%out-w is: ~a~%" out-w)
+    
+    (assert (integerp N) () "Lower: N (~a) is not numeric." N)
+    (assert (integerp C) () "Lower: C (~a) is not numeric." C)
+    (assert (> out-h 0) () "Lower: out-h (~a) must be positive." out-h)
+    (assert (> out-w 0) () "Lower: out-w (~a) must be positive." out-w)
+
+
+    (let ((tr (copy-tracker (tensor-tr orig-tensor))))
+      (format t "~%Debug - Input dimensions: N=~a C=~a H=~a W=~a~%" N C H W)
+      (format t "Debug - Kernel size: kH=~a kW=~a~%" kH kW)
+      (format t "Debug - Output dims: out-h=~a out-w=~a~%" out-h out-w)
+  
+      (let ((total-patches (* out-h out-w))
+            (patch-size (* kH kW)))
+    
+        (format t "Debug - Total patches: ~a Patch size: ~a~%" total-patches patch-size)
+    
+        (setf (tr-shape tr) (list N C total-patches patch-size)
+              (tr-base-shape tr) (list N C H W)
+              (tr-stride tr) (list (* C H W)    ; batch stride
+                                   (* H W)
+                                   W             ; move to next row's start
+                                   1)            ; move within row
+              (tr-broadcast tr) (list nil nil t nil)
+              (tr-mask tr) (list (list 0 N 1)
+                                 (list 0 C 1) ; batch dimension
+                                 (list 0 total-patches 1)      ; patch index
+                                 (list 0 patch-size 1))))      ; elements within patch
+    
+      (format t "~%Debug - Final tracker:~%")
+      (format t "Shape: ~a~%" (tr-shape tr))
+      (format t "Base shape: ~a~%" (tr-base-shape tr))
+      (format t "Stride: ~a~%" (tr-stride tr))
+      (format t "Mask: ~a~%" (tr-mask tr))
+    
+      (%make-view-from-tracker tr (gensym "UNFOLD4D") (car inputs)))))
+    
+(defun !unfold (tensor kernel-size &optional (stride kernel-size))
+  "Minimal function to create an Unfold4D op and do forward."
+  (forward (make-instance 'Unfold4D
+                          :kernel-size kernel-size
+                          :stride stride)
+           tensor))
 
 (defclass IdentityNode (Func) nil)
 (defmethod forward ((op IdentityNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
