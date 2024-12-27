@@ -24,12 +24,12 @@ We have two doc files that explain how the Caten compilation pipeline works:
 ### Running LLMs
 
 ```sh
-$ JIT=1 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --max-length 100
+$ BACKEND=CLANG PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --max-length 100
 ```
 
 Give the GPT2 demo a try! You can pass compilation settings through environment variables.
 
-For example, setting `JIT=1` enables JIT compilation, while `JIT_DEBUG >= 2` allows you to view the schedule and the generated kernels. Setting `PARALLEL=8` divides the ScheduleGraph and compiles it in parallel.
+For example, setting `BACKEND=CLANG` enables JIT compilation, while `JIT_DEBUG >= 2` allows you to view the schedule and the generated kernels. Setting `PARALLEL=8` divides the ScheduleGraph and compiles it in parallel.
 
 You may still find the token/ms rate slow, but we're not yet at the stage of implementing an AutoScheduler to accelerate kernel performance (as well as GPU support). Once our IR matures enough to handle a wide range of deep learning models, we plan to focus on speeding things up!
 
@@ -48,14 +48,14 @@ Let’s take `Matmul+Activation` Fusion as an example to illustrate this approac
   (tensor-graph (!relu (!matmul (make-tensor `(a b)) (make-tensor `(b c))))))
 ```
 
-When you set `JIT=1`, the graph is compiled to an external language. You can view the generated code by specifying `JIT_DEBUG >= 2`.
+When you set `BACKEND=CLANG`, the graph is compiled to an external language. You can view the generated code by specifying `JIT_DEBUG >= 2`.
 
 Give it a try in your REPL!
 
 ```lisp
 (in-package :caten-user)
-;; (setf (ctx:getenv :JIT) 1) to set globally
-(ctx:with-contextvar (:JIT 1 :JIT_DEBUG 4)
+;; (setf (ctx:getenv :BACKEND) "CLANG") to set globally
+(ctx:with-contextvar (:BACKEND "CLANG")
   (caten (!relu (!matmul (make-tensor `(a b)) (make-tensor `(b c))))))
 ```
 
@@ -67,7 +67,7 @@ Finally, our lazy evaluation doesn’t make debugging any harder. If you want to
 
 ```lisp
 ;; They are the equivalent
-(proceed (!sin (cos (ax+b `(3 3) 1 0))))
+(proceed (!sin (!cos (ax+b `(3 3) 1 0))))
 (proceed (!sin (proceed (!cos (ax+b `(3 3) 1 0)))))
 ```
 
