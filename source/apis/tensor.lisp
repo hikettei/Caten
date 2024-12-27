@@ -93,12 +93,15 @@ Returns a memory-layout of the tensor."
   (tensor-order tensor))
 
 (defmethod print-object ((tensor Tensor) stream)
-  (format stream "{Tensor[~(~a~)] :shape ~a :id ~a
+  (format stream "{Tensor~a[~(~a~)] :shape ~a :id ~a
 ~a
   :op ~a
   :requires-grad ~a
   :variables ~a
   :tracker ~a}"
+          (if (tensor-buffer tensor)
+              (format nil "{~a}" (class-name (class-of (tensor-buffer tensor))))
+              "")
 	  (tensor-dtype tensor)
 	  (loop for s in (tensor-shape tensor) collect (if (tensor-p s) (tensor-id s) s))
 	  (tensor-id tensor)
