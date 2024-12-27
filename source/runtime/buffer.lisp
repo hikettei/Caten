@@ -15,7 +15,7 @@ Buffer expects the following methods to be implemented:
 - transfer-into-array
 - bref
 ")
-  (:use :cl :alexandria)
+  (:use :cl :alexandria :c2mop)
   (:export
    #:AbstractBuffer
    #:buffer-shape
@@ -26,6 +26,7 @@ Buffer expects the following methods to be implemented:
    #:buffer-value
    #:make-buffer
    #:buffer-p
+   #:copy-buffer
    
    #:open-buffer
    #:close-buffer
@@ -50,7 +51,15 @@ Buffer expects the following methods to be implemented:
   (:documentation ""))
 
 (defun buffer-p (object) (typep object 'AbstractBuffer))
-;; [TODO] copy-buffer
+(defun copy-buffer (buffer)
+  (declare (type AbstractBuffer buffer))
+  (let* ((class (class-of buffer))
+         (copy (allocate-instance class)))
+    (dolist (slot (mapcar #'slot-definition-name (class-slots class)))
+      (when (slot-boundp buffer slot)
+        (setf (slot-value copy slot)
+              (slot-value buffer slot))))
+    copy))
 
 (defgeneric open-buffer (runtime buffer)
   (:documentation "Fills the (buffer-value buffer) with zero the given shape and dtype."))

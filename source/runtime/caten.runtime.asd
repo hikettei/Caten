@@ -2,7 +2,7 @@
   :description "A compiled air graph runner for multiple hardwares"
   :author "hikettei <ichndm@gmail.com>"
   :license "MIT"
-  :depends-on ("caten.air" "caten.aasm")
+  :depends-on ("caten.air" "caten.aasm" "closer-mop")
   :serial t
   :components ((:file "buffer")
                (:file "profile")
