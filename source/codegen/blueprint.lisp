@@ -404,7 +404,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
             (let ((users (id->users (ctx-schedule-graph ctx) (car (node-writes node)))))
               (if (some #'(lambda (x) (getattr x :jitable)) users) ;; If the scalar is used in another jitable kernel?
                   (let* ((dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
-                         (buffer (caten/avm:make-buffer 1 `(1) `(0) dtype `((0 1 1 t))))
+                         (buffer (make-buffer 1 `(1) `(0) dtype `((0 1 1 t)) :device 'RelayBuffer))
                          (space (buffer-merge-dims (ctx-schedule-graph ctx) buffer)))
                     (setf (car (relay-write-iters (read-type-relay node))) space
                           (car (relay-writes (read-type-relay node))) buffer))
@@ -611,7 +611,7 @@ Lowers the Schedule-Item into blueprint.
                          (error "map-from: the id ~a is not found." x)))))
              (update-buffer (buffer)
                (when buffer
-                 (let ((buffer (caten/avm:copy-buffer buffer)))
+                 (let ((buffer (copy-buffer buffer)))
                    (setf (buffer-shape buffer) (map 'list #'map-from (buffer-shape buffer))
                          (buffer-stride buffer) (map 'list #'map-from (buffer-stride buffer))
                          (buffer-views buffer)
