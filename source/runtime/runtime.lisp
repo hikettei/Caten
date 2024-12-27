@@ -4,15 +4,20 @@ This package provides GraphRuntime, which is a class to run an air graph.
 ")
   (:use :cl :caten/air :caten/aasm :caten/runtime/buffer :caten/runtime/profile)
   (:export
+   #:*supress-allocate-mode*
    #:GraphRuntime
    #:make-runtime
    #:free-runtime
    #:runtime-gather-args
    #:runtime-setvar
    #:runtime-getvar
+   #:runtime-step
+   #:realize-node
    ))
 
 (in-package :caten/runtime/runtime)
+
+(defparameter *supress-allocate-mode* nil "Set T to supress the allocation of the buffers in the realize-node. (Useful for tracing the JIT graph)")
 
 (defclass GraphRuntime ()
   ((graph :accessor runtime-graph :type Graph)
@@ -21,6 +26,9 @@ This package provides GraphRuntime, which is a class to run an air graph.
    (pc :initform 0 :accessor runtime-pc)
    (variables :initform nil :accessor runtime-variables)
    (params :initform nil :accessor runtime-params))
+  (:documentation ""))
+
+(defgeneric realize-node (node-type runtime node args)
   (:documentation ""))
 
 (defun make-runtime (graph &key (fw-outputs nil) (bw-outputs nil) (variables (make-hash-table)) (params (make-hash-table)) (runtime 'GraphRuntime))
@@ -47,7 +55,7 @@ This package provides GraphRuntime, which is a class to run an air graph.
   (check-type var symbol)
   (let ((val (gethash var (runtime-variables runtime))))
     (if (eql val :nil) nil (or val (error "Runtime: the variable ~a is not defined in the graph." var)))))
-;; ~~~~ Runner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~ Runner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-condition runtime-error ()
   ((runtime :initarg :runtime)
    (cond :initarg :cond))
@@ -82,7 +90,7 @@ disassemble:
       (let ((t1 (get-internal-real-time))
             (out (multiple-value-list
                   (handler-bind ((error #'(lambda (c) (error 'runtime-error :runtime runtime :cond c))))
-                    nil)))
+                    (apply #'realize-node (node-type node) runtime node (map 'list #'preprocess-argument (node-reads node))))))
             (t2 (get-internal-real-time)))
         (assert (or (null (node-writes node)) (= (length out) (length (node-writes node)))) () "Runtime: the number of outputs does not match the number of writes.")
         (when (= 1 (ctx:getenv :PROFILE))
@@ -96,7 +104,7 @@ disassemble:
         (loop for value in out for place in (node-writes node)
               do (runtime-setvar runtime place value))
         (incf (runtime-pc runtime))))))
-;; ~~~~ print-object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~ print-object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
 (defmethod print-object ((runtime GraphRuntime) stream &aux (n-indent 4))
   (print-unreadable-object (runtime stream :type t)
@@ -135,3 +143,40 @@ disassemble:
                              (uiop:symbol-call :caten/codegen/jit :compiled-kernel-name (getattr node :kernel-info))
                              (node-type node))
                          (render-list (node-reads node)))))))
+;; ~~~~ Helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun parse-allocate-node (alloc-node args)
+  "Return: (values shape stride)"
+  (declare (type node alloc-node))
+  (assert (eql (node-type alloc-node) :allocate))
+  (let ((nrank (getattr alloc-node :nrank)))
+    (values (subseq args 0 nrank) (subseq args nrank))))
+
+(defun parse-view-node (view-node args)
+  (declare (type node view-node))
+  (assert (eql (node-type view-node) :view))
+  (flet ((subseq1p (list from to) (subseq list (1+ from) (1+ to))))
+    (let ((nrank (getattr view-node :nrank)))
+      (values (subseq1p args 0 nrank) ;; shape
+	      (subseq1p args nrank (* 2 nrank)) ;;view1
+	      (subseq1p args (* 2 nrank) (* 3 nrank)) ;;view2
+	      (subseq1p args (* 3 nrank) (* 4 nrank)) ;;view3
+	      (subseq1p args (* 4 nrank) (* 5 nrank)) ;; stride
+	      (getattr view-node :broadcast))))) ;; broadcast
+;; ~~~~ Default Implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Special treatments for :Allocate with (getattr node :from)
+(defmethod realize-node :around ((node-type (eql :Allocate)) runtime node args)
+  (let ((from (getattr node :from)))
+    ;; [TODO] caching treatments
+    (if (or (null from) *supress-allocate-mode*)
+        (call-next-method) ;; Tmp buffer allocation etc
+        ;; [TODO]
+        (typecase from
+          (symbol
+           
+           )
+          (AbstractBuffer
+           ;; Insert the transfer
+           )
+          (otherwise
+           
+           )))))        
