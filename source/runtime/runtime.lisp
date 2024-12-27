@@ -21,6 +21,7 @@ This package provides GraphRuntime, which is a class to run an air graph.
    #:runtime-gather-args
    #:runtime-setvar
    #:runtime-getvar
+   #:runtime-buffer-type
    #:runtime-step
    #:realize-node
    #:runtime-forward
@@ -37,14 +38,15 @@ This package provides GraphRuntime, which is a class to run an air graph.
    (bw-outputs :initarg :bw-outputs :accessor runtime-bw-outputs :initform nil)
    (pc :initform 0 :accessor runtime-pc)
    (variables :initform nil :accessor runtime-variables :initarg :variables)
-   (params :initform nil :accessor runtime-params :initarg :params))
+   (params :initform nil :accessor runtime-params :initarg :params)
+   (buffer-type :initarg :buffer-type :initform 'AbstractBuffer :accessor runtime-buffer-type))
   (:documentation ""))
 
 (defgeneric realize-node (node-type runtime node args)
   (:documentation ""))
 
-(defun make-runtime (graph &key (fw-outputs nil) (bw-outputs nil) (variables (make-hash-table)) (params nil) (id2tensor (make-hash-table)) (runtime 'GraphRuntime))
-  (make-instance runtime :graph graph :fw-outputs fw-outputs :bw-outputs bw-outputs :variables variables :params params :id2tensor id2tensor))
+(defun make-runtime (graph &key (fw-outputs nil) (bw-outputs nil) (variables (make-hash-table)) (params nil) (id2tensor (make-hash-table)) (runtime 'GraphRuntime) (buffer-type 'AbstractBuffer))
+  (make-instance runtime :graph graph :fw-outputs fw-outputs :bw-outputs bw-outputs :variables variables :params params :id2tensor id2tensor :buffer-type buffer-type))
 
 (defmethod free-runtime ((runtime GraphRuntime))
   "Frees all allocations in the runtime"
@@ -102,7 +104,7 @@ disassemble:
       (let ((t1 (get-internal-real-time))
             (out (multiple-value-list
                   (handler-bind ((error #'(lambda (c) (error 'runtime-error :runtime runtime :cond c))))
-                    (apply #'realize-node (node-type node) runtime node (map 'list #'preprocess-argument (node-reads node))))))
+                    (realize-node (node-type node) runtime node (map 'list #'preprocess-argument (node-reads node))))))
             (t2 (get-internal-real-time)))
         (assert (or (null (node-writes node)) (= (length out) (length (node-writes node)))) () "Runtime: the number of outputs does not match the number of writes.")
         (when (= 1 (ctx:getenv :PROFILE))
@@ -211,14 +213,32 @@ disassemble:
         ;; [TODO]
         (typecase from
           (symbol
-           
+           (error "TODO")
            )
           (AbstractBuffer
            ;; Insert the transfer
+           (error "TODO")
            )
           (otherwise
+           (error "TODO")
            
            )))))
+
+(defmethod realize-node ((node-id (eql :Allocate)) (runtime GraphRuntime) node args)
+  (multiple-value-bind (shape stride) (parse-allocate-node node args)
+    (flet ((->number (x) (if (buffer-p x) (buffer-value x) x)))
+      (let ((memory-pool (getattr node :pool))) ;; the second run of :Allocation?
+        (when (and (buffer-p memory-pool) shape)
+          (when (equal (map 'list #'->number shape) (buffer-shape memory-pool)) ;; dynamic shape can changed the demanded size.
+             (report-allocation runtime t (buffer-dtype memory-pool) (buffer-shape memory-pool))
+             (return-from realize-node memory-pool))
+          ;; TODO(hikettei) free the old memory allocation
+          ))
+      (let ((buffer (make-buffer (map 'list #'->number shape) (map 'list #'->number stride) (getattr node :dtype) nil :device (runtime-buffer-type runtime))))
+        (open-buffer runtime buffer)
+        (setf (getattr node :pool) buffer)
+        (report-allocation runtime nil (buffer-dtype (getattr node :pool)) (buffer-shape (getattr node :pool)))
+        (getattr node :pool)))))
 
 (defmethod realize-node ((node-id (eql :View)) (runtime GraphRuntime) node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)
@@ -322,10 +342,11 @@ disassemble:
 	      (apply #'map-into/buffer out op buffers))))
     out))
 ;; ~~~~ Implementations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun reveal-buffer (obj) (if (buffer-p obj) (buffer-value obj) obj))
 (defmethod realize-node ((node-id (eql :Load)) (runtime GraphRuntime) node args)
   (let* ((tgt (car args))
 	 (val (getattr node :value))
-	 (val (reveal-buffer (if (numberp val) val (runtime-readvar runtime val))))
+	 (val (reveal-buffer (if (numberp val) val (runtime-getvar runtime val))))
 	 (val (dtype/cast val (buffer-dtype tgt))))
     (if (= (buffer-nrank (car args)) 0)
 	(let ((out (copy-buffer tgt)))

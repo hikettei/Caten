@@ -56,10 +56,9 @@ Buffer expects the following methods to be implemented:
   (declare (type AbstractBuffer buffer))
   (let* ((class (class-of buffer))
          (copy (allocate-instance class)))
-    (dolist (slot (mapcar #'slot-definition-name (class-slots class)))
+    (dolist (slot (mapcar #'closer-mop:slot-definition-name (closer-mop:class-slots class)))
       (when (slot-boundp buffer slot)
-        (setf (slot-value copy slot)
-              (slot-value buffer slot))))
+        (setf (slot-value copy slot) (slot-value buffer slot))))
     copy))
 
 (defgeneric open-buffer (runtime buffer)
@@ -91,6 +90,7 @@ Buffer expects the following methods to be implemented:
 
 (defun make-buffer (shape stride dtype views &key (value nil) (device 'AbstractBuffer))
   (declare (type list shape stride views))
+  (when (null views) (setf views (loop for s in shape collect nil)))
   (assert (= (length views) (length shape) (length stride)))
   (make-instance device :nrank (length shape) :shape shape :stride stride :dtype dtype :views views :value value))
 ;; ~~~~~ pprint-buffer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

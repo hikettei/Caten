@@ -406,7 +406,7 @@ caten/codegen overview:
               (backend (ctx:getenv :BACKEND))
               (dir nil)
             &aux
-              ;; (buffer-class (caten/codegen/backend:get-backend-buffer backend))
+              (buffer-class (caten/codegen/backend:get-backend-buffer backend))
               (runtime-id      (caten/codegen/backend:get-backend-runtime backend))
               (renderer     (caten/codegen/backend:get-backend-renderer backend))
               (auto-scheduler (caten/codegen/backend:get-backend-auto-scheduler backend))
@@ -417,7 +417,9 @@ caten/codegen overview:
 ```
 Applies the JIT compilation for the given Runtime. backend is a keyword defined by `caten/codegen/backend:define-backend` macro."
   (declare (type GraphRuntime runtime))
-  (when (null is-jit) (return-from jit runtime))
+  (when (null is-jit)
+    (setf (runtime-buffer-type runtime) buffer-class)
+    (return-from jit runtime))
   (caten/isl:with-isl-context ;; Note: Need this to ensure isl objected allocated here are not cached and not used by other compiling sessions.
     (when (= 2 (ctx:getenv :DOT)) (->dot (runtime-graph runtime) :title "Base Graph"))
     (run-type-infer runtime)
@@ -521,4 +523,4 @@ Applies the JIT compilation for the given Runtime. backend is a keyword defined 
               (when (= (ctx:getenv :DOT) 2) (->dot schedule-graph :title "Schedule Graph (Final)"))
               (print-info "Final VM Graph:")
               (print new-graph))
-            (make-runtime new-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-id :id2tensor (runtime-id2tensor runtime))))))))
+            (make-runtime new-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-id :id2tensor (runtime-id2tensor runtime) :buffer-type buffer-class)))))))

@@ -39,6 +39,7 @@
    #:runtime-step
    #:realize-node
    #:runtime-forward
-   #:runtime-backward)
+   #:runtime-backward
+   #:runtime-buffer-type)
   ;; Profile
   )

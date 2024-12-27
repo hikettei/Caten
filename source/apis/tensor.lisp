@@ -13,7 +13,7 @@ A struct `tensor` is a multi-dimensional, and strided matrix (and nrank=0 to sca
 Also the tensor has following slots:
 
 - shape[list] A list of number, symbol, or `Tensor`.
-- buffer[Buffer] A buffer of the tensor. Realized arrays are stored here.
+- buffer[AbstractBuffer] A buffer of the tensor. Realized arrays are stored here.
 - dtype[keyword] A dtype of the tensor.
 - order[order] A memory layout of the tensor, selected from either of :row or :column.
 - id[symbol] A unique identifier of the tensor. (usually created by gensym)
@@ -26,7 +26,7 @@ Also the tensor has following slots:
 "
   (shape shape :type list)
   (tr tracker :type Tracker)
-  (buffer nil :type (or null Buffer))
+  (buffer nil :type (or null AbstractBuffer))
   (dtype dtype :type dtype-t)
   (order order :type (member :row :column))
   (id id :type symbol)
