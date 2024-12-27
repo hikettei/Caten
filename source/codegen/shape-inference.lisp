@@ -123,14 +123,13 @@
 
 (defmethod realize-node ((node-id (eql :Where)) (runtime RelayChecker) node args) (copy-buffer (second args)))
 
-(declaim (ftype (function (Graph) Type-Reporter) run-type-infer))
-(defun run-type-infer (graph)
+(declaim (ftype (function (GraphRuntime) Type-Reporter) run-type-infer))
+(defun run-type-infer (runtime &aux (graph (runtime-graph runtime)))
   "
 ```
-(run-type-infer graph)
+(run-type-infer runtime)
 ```
-Runs the shape inference to the given Graph, returning `Type-Reporter`."
-  (declare (type Graph graph))
+Runs the shape inference to the given GraphRuntime, returning `Type-Reporter`."
   (let ((*supress-allocate-mode* t) (*type-reporter* (make-type-reporter))
         (runtime (make-runtime graph :runtime 'RelayRuntime)))
     (runtime-forward runtime)

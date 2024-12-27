@@ -13,7 +13,7 @@
                   if (buffer-p x) do (format out "~a " (buffer-shape x))))
           (compiled-kernel-device info)
           (compiled-kernel-name info)))
-
+;; [TODO]
 (defmethod %impl (device (op (eql :JIT_KERNEL)) graph node args)
   (let ((info (getattr node :kernel-info)))
     (let ((args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))

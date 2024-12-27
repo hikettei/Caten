@@ -1,23 +1,5 @@
 (defpackage :caten/codegen/rewriting-rules
-  (:use :cl)
-  (:import-from
-   :caten/avm
-   #:AVM
-   #:avm-graph
-   #:avm-fw-outputs
-   #:avm-bw-outputs
-   #:avm-id2tensor
-   #:avm-variables
-
-   #:Buffer
-   #:copy-buffer
-   #:buffer-shape
-   #:buffer-nrank
-   #:buffer-dtype
-   #:buffer-stride
-   #:buffer-views
-   #:buffer-orig-buffer-shape
-   #:buffer-inferred-permute)
+  (:use :cl :caten/runtime)
   (:import-from
    :caten/codegen/renderer
    #:make-define-global)
@@ -62,12 +44,12 @@
 
 (in-package :caten/codegen/rewriting-rules)
 
-(defun rewrite-views-as-buffer (avm)
+(defun rewrite-views-as-buffer (runtime)
   "Rewrite the node :VIEW as an object in the type-relay, so that the code generator can handle view as a buffer."
-  (declare (type avm avm))
+  (declare (type GraphRuntime runtime))
   (let ((rewrite-map (make-hash-table))
         (id2view (make-hash-table)))
-    (loop for node in (graph-nodes (avm-graph avm))
+    (loop for node in (graph-nodes (runtime-graph runtime))
 	  if (eql (node-type node) :View) do
 	    (setf (gethash (car (node-writes node)) rewrite-map) (car (node-reads node))
                   (gethash (car (node-writes node)) id2view) node))
@@ -79,8 +61,8 @@
                (if (gethash id id2view)
                    (append (list (gethash id id2view)) (v (car (node-reads (gethash id id2view)))))
                    nil)))
-      (setf (graph-nodes (avm-graph avm))
-	    (loop for n in (graph-nodes (avm-graph avm))
+      (setf (graph-nodes (runtime-graph runtime))
+	    (loop for n in (graph-nodes (runtime-graph runtime))
 		  unless (eql (node-type n) :View)
 		    collect
 		    (progn
@@ -89,13 +71,13 @@
 			    (node-writes n) (map 'list #'r (node-writes n)))
 		      n)))
       ;; Gather views for avm-fw-outputs and avm-bw-outputs, storing them in the :_output_type
-      (let ((views (map 'list #'v (append (avm-fw-outputs avm) (avm-bw-outputs avm)))))
-        (setf (avm-fw-outputs avm) (map 'list #'r (avm-fw-outputs avm))
-	      (avm-bw-outputs avm) (map 'list #'r (avm-bw-outputs avm))
-              (graph-outputs (avm-graph avm)) (map 'list #'r (graph-outputs (avm-graph avm))))
-        (loop for id in (append (avm-fw-outputs avm) (avm-bw-outputs avm))
+      (let ((views (map 'list #'v (append (avm-fw-outputs runtime) (avm-bw-outputs runtime)))))
+        (setf (runtime-fw-outputs runtime) (map 'list #'r (runtime-fw-outputs runtime))
+	      (runtime-bw-outputs runtime) (map 'list #'r (runtime-bw-outputs runtime))
+              (graph-outputs (runtime-graph runtime)) (map 'list #'r (graph-outputs (runtime-graph runtime))))
+        (loop for id in (append (runtime-fw-outputs runtime) (runtime-bw-outputs runtime))
               for view in views
-              for node = (id->value (avm-graph avm) id) do
+              for node = (id->value (runtime-graph runtime) id) do
                 (when (null node) (warn "The output ~a is not found in the graph." id))
                 (when (> (length view) 1) (warn "(No simplifier?) Detected multiple views in a single buffer: ~a~%Using the first one ~a~%" views (car view)))
                 (when node (setf (getattr node :_output_type) (car view)))))
@@ -106,8 +88,8 @@
 			   (setf (gethash (r k) new-table) v))
 		       ,accessor)
 		      (setf ,accessor new-table))))
-	(renew (avm-id2tensor avm))
-	(renew (avm-variables avm)))
+	(renew (runtime-id2tensor runtime))
+	(renew (runtime-variables runtime)))
       id2view)))
 
 (defun wmma-relay-from (t1 tc nth)
@@ -129,12 +111,12 @@
                  (list (funcall f (nth 0 v)) (funcall f (nth 1 v)) (funcall f (nth 2 v)) (nth 3 v)))))
       (setf (buffer-views buffer) (map 'list #'sync-view (buffer-views buffer))))))
 ;; TODO(hikettei): apply-static-gensym == nodes-apply-static-gensym. Remove one of them.
-(defun apply-static-gensym (avm &optional (id2view))
+(defun apply-static-gensym (runtime &optional (id2view))
   "Rewrites each read/write symbols to a unique and static symbol, improving the readability of the generated code when debugging."
-  (declare (type avm avm))
+  (declare (type GraphRuntime runtime))
   (let ((alias-table (make-hash-table))
 	(val-count 0))
-    (dolist (node (graph-nodes (avm-graph avm)))
+    (dolist (node (graph-nodes (runtime-graph runtime)))
       (when (eql (node-type node) :Load)
         (when (symbolp (getattr node :value))
           (setf (gethash (getattr node :value) alias-table) (getattr node :value)))))
@@ -156,7 +138,7 @@
                 (when (and (= (ctx:getenv :AUTO_SCHEDULER) 1) (not (string= str (ensure-string-as-compilable str))))
                   (warn "AUTO_SCHEDULER=1 | Kebab case is renamed: ~a -> ~a. Please consider using camel case for the variable or shape name." str (val-gensym sym))
                   t))))
-      (dolist (node (append (graph-nodes (avm-graph avm)) (when id2view (alexandria:hash-table-values id2view))))
+      (dolist (node (append (graph-nodes (runtime-graph runtime)) (when id2view (alexandria:hash-table-values id2view))))
         (when (and (eql (node-type node) :Allocate)
                    (not (start-with-tid-p (car (node-writes node)))))
           ;; If :Allocate is labelled with a unique ID by user, keep using it.
@@ -167,22 +149,22 @@
         (dolist (r (append (relay-reads (read-type-relay node)) (relay-writes (read-type-relay node))))
           (when r
             (sync-buffer r #'val-gensym))))
-      (setf (avm-fw-outputs avm) (map 'list #'val-gensym (avm-fw-outputs avm))
-	    (avm-bw-outputs avm) (map 'list #'val-gensym (avm-bw-outputs avm)))
+      (setf (runtime-fw-outputs runtime) (map 'list #'val-gensym (runtime-fw-outputs runtime))
+	    (runtime-bw-outputs runtime) (map 'list #'val-gensym (runtime-bw-outputs runtime)))
       (let ((new-id2tensor (make-hash-table)))
 	(maphash
 	 #'(lambda (k v)
 	     (setf (gethash (val-gensym k) new-id2tensor) v))
-	 (avm-id2tensor avm))
-	(setf (avm-id2tensor avm) new-id2tensor))
+	 (runtime-id2tensor runtime))
+	(setf (runtime-id2tensor runtime) new-id2tensor))
       (let ((new-variables (make-hash-table)))
 	(maphash
 	 #'(lambda (k v)
 	     (setf (gethash (val-gensym k) new-variables) v))
-	 (avm-variables avm))
-	(setf (avm-variables avm) new-variables
-              (graph-outputs (avm-graph avm))
-              (map 'list #'val-gensym (graph-outputs (avm-graph avm))))))))
+	 (runtime-variables runtime))
+	(setf (runtime-variables runtime) new-variables
+              (graph-outputs (runtime-graph runtime))
+              (map 'list #'val-gensym (graph-outputs (runtime-graph runtime))))))))
 
 (defun nodes-apply-static-gensym (nodes &key (prefix "val_") (replace-all nil))
   (let ((alias-table (make-hash-table))
@@ -213,13 +195,13 @@
 	      (node-reads node) (map 'list #'val-gensym (node-reads node))))
       (values nodes alias-table))))
 
-(defun apply-rewriting-rules (avm)
-  (declare (type AVM avm))
-  (let ((id2view (rewrite-views-as-buffer avm)))
+(defun apply-rewriting-rules (runtime)
+  (declare (type GraphRuntime runtime))
+  (let ((id2view (rewrite-views-as-buffer runtime)))
     ;; (wmma-rewriter (avm-graph avm) :no-verify t)
-    (apply-static-gensym avm id2view))
-  (setf (avm-graph avm) (->graph (avm-graph avm)))
-  avm)
+    (apply-static-gensym runtime id2view))
+  (setf (runtime-graph runtime) (->graph (runtime-graph runtime)))
+  runtime)
 
 (defmethod schedule-item-write-define-global ((schedule-item Node))
   "Inserts DEFINE_GLOBAL to the top of graph"
