@@ -10,6 +10,7 @@
    #:buffer-nrank
    #:buffer-value
    #:make-buffer
+   #:copy-buffer
    
    #:open-buffer
    #:close-buffer
