@@ -30,7 +30,7 @@
    #:runtime-pc
    #:runtime-variables
    #:runtime-params
-   
+   #:realize-graph
    #:make-runtime
    #:free-runtime
    #:runtime-gather-args

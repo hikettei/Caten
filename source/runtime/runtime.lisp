@@ -14,7 +14,8 @@ This package provides GraphRuntime, which is a class to run an air graph.
    #:runtime-pc
    #:runtime-variables
    #:runtime-params
-   
+
+   #:realize-graph
    #:make-runtime
    #:free-runtime
    #:runtime-gather-args
@@ -137,6 +138,10 @@ disassemble:
           do (runtime-step runtime))
     (report-profile-result)
     t))
+
+(defun realize-graph (graph &key (outs nil) (runtime 'GraphRuntime))
+  (let ((outs (or outs (node-writes (car (last (graph-nodes graph)))))))
+    (runtime-forward (make-runtime graph :fw-outputs outs :runtime runtime))))
 ;; ~~~~ print-object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
 (defmethod print-object ((runtime GraphRuntime) stream &aux (n-indent 4))
