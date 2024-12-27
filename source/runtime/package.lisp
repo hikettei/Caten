@@ -1,5 +1,6 @@
 (defpackage :caten/runtime
   (:use :cl :caten/runtime/buffer)
+  ;; Buffer
   (:export
    #:AbstractBuffer
    #:buffer-shape
@@ -14,4 +15,10 @@
    #:close-buffer
    #:transfer-from-array
    #:transfer-into-array
-   #:bref))
+   #:bref
+   #:buffer-ref
+   #:pprint-buffer)
+  ;; Runtime
+  
+  ;; Profile
+  )

@@ -5,4 +5,6 @@
   :depends-on ("caten.air" "caten.aasm")
   :serial t
   :components ((:file "buffer")
+               (:file "runtime")
+               (:file "profile")
                (:file "package")))
