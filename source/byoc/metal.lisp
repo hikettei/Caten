@@ -48,3 +48,7 @@
         (placeholder (make-array (apply #'* (buffer-shape buffer)) :element-type (dtype->lisp (buffer-dtype buffer)))))
     (dotimes (i (apply #'* (buffer-shape buffer)) placeholder)
       (setf (aref placeholder i) (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i)))))
+
+(defmethod bref ((buffer MetalBuffer) idx)
+  (let ((val (msg (buffer-value buffer) "contents" :pointer)))
+    (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
