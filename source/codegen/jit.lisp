@@ -3,7 +3,7 @@
 caten/codegen overview:
 ```
 --- [Step1] Scheduling ---------------------------------------------------------------------------------------------
-                          [Deep Learning Models (AVM)]
+                          [Deep Learning Models (Runtime)]
                                        | Partitioning into subgraphs (scheduler.lisp)
  [Embedding_Embedding_ADD], [LayerNorm], [Matmul+GELU], [Attention1], [Attention2 (Cached)] ..., (Nx Schedule-Item)
                                        |
@@ -28,7 +28,7 @@ caten/codegen overview:
                                  |
                          [Render the kernel]
                                  |
-                  [Deep Learning Models (Compiled AVM)]
+                  [Deep Learning Models (Runtime)]
 --------------------------------------------------------------------------------------------------------------------
 ```")
   (:use :cl :caten/air :caten/codegen/shape-inference :caten/runtime/buffer :caten/runtime/runtime)

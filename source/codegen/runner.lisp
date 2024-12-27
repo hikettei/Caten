@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/runner
   (:documentation "Provides the jit-compiled kernel runner and benchmarking tools.")
-  (:use :cl :caten/codegen/jit :caten/codegen/helpers :caten/air :caten/avm))
+  (:use :cl :caten/codegen/jit :caten/codegen/helpers :caten/air :caten/runtime))
 
 (in-package :caten/codegen/runner)
 

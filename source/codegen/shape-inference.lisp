@@ -42,7 +42,8 @@
    #:inferred-type-vizualize-to-dot
    #:node-writes-broadcasted-p
    #:buffer-inferred-permute
-   #:buffer-orig-buffer-shape))
+   #:buffer-orig-buffer-shape
+   #:buffer-depend-idx-list))
 
 (in-package :caten/codegen/shape-inference)
 
@@ -66,7 +67,8 @@
 
 (defclass RelayBuffer (AbstractBuffer)
   ((inferred-permute :accessor buffer-inferred-permute :initform nil)
-   (orig-buffer-shape :accessor buffer-orig-buffer-shape :initform nil))
+   (orig-buffer-shape :accessor buffer-orig-buffer-shape :initform nil)
+   (depend-idx-list :accessor buffer-depend-idx-list :initform nil))
   (:documentation "A buffer just used to report the shape/type/strides ... of buffer during jit compilation"))
 
 (defmethod open-buffer ((runtime RelayChecker) buffer) buffer)

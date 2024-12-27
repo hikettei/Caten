@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/memory-planner
   (:documentation "`Memory Planner` is a data structure that abstracts the allocation and freeing of memory over time.
 It is responsible for optimizing memory allocation by overlapping allocation to minimize the maximum memory usage (heap_size) required for all the time `t`.")
-  (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr :alexandria)
+  (:use :cl :caten/air :caten/runtime/buffer :caten/codegen/shape-inference :caten/codegen/expr :alexandria)
   (:export
    #:run-memory-planner))
 (in-package :caten/codegen/memory-planner)
@@ -95,7 +95,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 	(apply-release time)
 	(apply-creation time))
       I)))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun id-is-input-p (id graph)
   (let ((node (id->value graph id)))
     (when (and node (eql (node-type node) :Allocate))

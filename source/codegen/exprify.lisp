@@ -2,25 +2,7 @@
   (:documentation "
 The package `caten/codegen/exprify` is responsible for providing a rewriting-rule targeting the EXPR node.
 ")
-  (:use :cl :caten/air :caten/codegen/expr :caten/codegen/expr-cache)
-  (:import-from
-   :caten/codegen/shape-inference
-   #:read-type-relay
-   #:relay-reads
-   #:relay-writes
-   #:relay-read-iters
-   #:relay-write-iters
-   #:iteration-space-shape
-   #:iteration-space-strides
-   #:iteration-space-views
-   #:ensure-iteration-space-length
-   #:node-writes-broadcasted-p)
-  (:import-from
-   :caten/avm
-   #:Buffer
-   #:Buffer-depend-idx-list
-   #:buffer-nrank
-   #:buffer-dtype)
+  (:use :cl :caten/air :caten/codegen/expr :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/runtime/buffer)
   (:import-from
    :caten/codegen/renderer
    #:make-aref)
@@ -61,7 +43,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
     t))
 
 (defun buffer-scalarify (buffer)
-  (let ((buffer (caten/avm:copy-buffer buffer)))
+  (let ((buffer (copy-buffer buffer)))
     (setf (buffer-nrank buffer) -1)
     buffer))
 
@@ -380,8 +362,8 @@ B <- C // :reduction=t
      constants (remove-duplicates constants :key #'car)) ;; TODO(hikettei) What is one is loaded as a float, while another is loaded as a uint?
     (dolist (io (intersection writes reads :key #'car)) ;; if theres input & output, they are output.
       (setf reads (remove (car io) reads :key #'car)))
-    (assert (every #'caten/avm:buffer-p (map 'list #'cdr writes)))
-    (assert (every #'caten/avm:buffer-p (map 'list #'cdr reads)))
+    (assert (every #'buffer-p (map 'list #'cdr writes)))
+    (assert (every #'buffer-p (map 'list #'cdr reads)))
     (assert (every #'keywordp (map 'list #'cdr constants)))
     (values writes reads constants)))
 

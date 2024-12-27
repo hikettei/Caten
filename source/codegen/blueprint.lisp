@@ -1,15 +1,7 @@
 (defpackage :caten/codegen/blueprint
   (:documentation "The package `caten/codegen/blueprint` is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
 The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers)
-  (:import-from
-   :caten/avm
-   #:buffer-dtype
-   #:buffer-nrank
-   #:buffer-shape
-   #:buffer-stride
-   #:buffer-views
-   #:buffer-orig-buffer-shape)
+  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers :caten/runtime/runtime)
   (:import-from
    :caten/codegen/renderer
    #:render-expr
