@@ -24,7 +24,7 @@ Users can extend this method if needed.
   (make-array dimensions :element-type (dtype->lisp dtype) :displaced-to array :displaced-index-offset 0))
 
 (defmethod change-facet ((obj number) (direction (eql :tensor)))
-  (ctx:with-contextvar (:JIT 0)
+  (ctx:with-contextvar (:BACKEND "LISP")
     (proceed (make-scalar obj :dtype (obj-dtype-of obj)))))
 
 (defmethod change-facet ((obj list) direction)
