@@ -63,7 +63,7 @@
       id
       (or (gethash id (rp-id2buffer type-reporter)) (error "map/type-of: ~a cannot be inferred from the graph" id))))
 
-(defclass RelayChecker (GraphRunner) nil)
+(defclass RelayChecker (GraphRuntime) nil)
 
 (defclass RelayBuffer (AbstractBuffer)
   ((inferred-permute :accessor buffer-inferred-permute :initform nil)
@@ -131,7 +131,7 @@
 ```
 Runs the shape inference to the given GraphRuntime, returning `Type-Reporter`."
   (let ((*supress-allocate-mode* t) (*type-reporter* (make-type-reporter))
-        (runtime (make-runtime graph :runtime 'RelayRuntime)))
+        (runtime (make-runtime graph :runtime 'RelayChecker :buffer-type 'RelayBuffer)))
     (runtime-forward runtime)
     ;; Infer type for PAUSE/BACKWARD
     (let ((pause/bw (nth (runtime-pc runtime) (graph-nodes graph))))

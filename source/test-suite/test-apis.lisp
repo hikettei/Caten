@@ -94,7 +94,7 @@
 	  (ok (and (every (equal-to 6) (elements a)) (= (length (elements a)) 8))))))))
 
 (defun runtime-check-schedule (runtime count &aux (graph (runtime-graph runtime)))
-  (declare (type GraphRunner runtime)
+  (declare (type GraphRuntime runtime)
 	   (type fixnum count))
   (let ((sched (optimize-aasm graph)))
     ;; Only checked on VM Mode
