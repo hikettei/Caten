@@ -15,9 +15,6 @@
    #:dtype->lisp)
   ;; from aot-compilation.lisp
   (:export
-   #:*aot-jit*
-   #:*aot-vm*
-   #:*invoke-aot-function*
    #:caten/defun[t]
    #:caten/defun[all]
    #:caten/defun[float]

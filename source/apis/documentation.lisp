@@ -179,11 +179,6 @@ Compute the backward pass of the compiled computational graph (AVM). Note that t
   (docs:doc/function "asnode" 'asnode)
   )
 
-(docs:define-page ("AOT" "packages/caten.apis.aot.md")
-  (docs:title "AOT")
-  (docs:body "TODO")
-  )
-
 (docs:define-page ("Initializers" "packages/caten.apis.initializers.md")
   (docs:title "Initializers")
   (docs:doc/function "set-manual-seed" #'set-manual-seed)

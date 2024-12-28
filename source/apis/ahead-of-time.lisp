@@ -2,7 +2,6 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *cached-functions* (make-hash-table :test #'equal))
-  (defgeneric invoke-aot-function (device-id default-dtype default-order op &rest args))
   (defun find-from-cache-function (backend op dtype order) (gethash (list backend op dtype order) *cached-functions*))
   (defun register-cached-function (backend op dtype order runtime) (setf (gethash (list backend op dtype order) *cached-functions*) runtime))
   (defun create-blueprint-from-body (dtype order lambda-list graph-f &aux (*default-order* order))

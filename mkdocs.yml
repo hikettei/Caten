@@ -56,7 +56,6 @@ nav:
       - Func: packages/caten.apis.differentiable_ops.md
       - Module: packages/caten.apis.module.md
       - Model: packages/caten.apis.models.md
-      - AOT: packages/caten.apis.aot.md
       - Initializers: packages/caten.apis.initializers.md
       - ShapeTracker: packages/caten.apis.shapetracker.md
       - Facet APIs: packages/caten.apis.facet_apis.md
