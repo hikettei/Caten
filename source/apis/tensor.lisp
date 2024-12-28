@@ -39,19 +39,6 @@ Also the tensor has following slots:
   (cache-canonicalize nil)
   (nth-output 0 :type fixnum))
 
-(defmethod make-load-form ((tensor Tensor) &optional env &aux (debug-p (= 1 (ctx:getenv :AOT_VERBOSE))))
-  (declare (ignore env))
-  (when (and (tensor-buffer tensor) debug-p)
-    (warn "Removing the buffer of ~a when dumping it." tensor))
-  (values
-   `(%internal-make-tensor
-     nil ',(tensor-shape tensor)
-     :dtype ,(tensor-dtype tensor) :order ',(tensor-order tensor)
-     :id ',(tensor-id tensor) :variables ',(tensor-variables tensor)
-     :views nil :requires-grad ,(tensor-requires-grad tensor)
-     :tracker (start-tracking ',(tensor-shape tensor) :order ',(tensor-order tensor))
-     :grad ,(tensor-grad tensor) :grad-id ',(tensor-grad-id tensor))))
-
 (defun grad (tensor)
   "
 ```

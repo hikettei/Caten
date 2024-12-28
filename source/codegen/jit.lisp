@@ -97,16 +97,6 @@ caten/codegen overview:
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
 	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list) (cached-p :type boolean)))
 
-(defmethod make-load-form ((jit Compiled-Kernel) &optional env)
-  (declare (ignore env))
-  `(make-compiled-kernel
-    :name ,(compiled-kernel-name jit)
-    :caller ,(compiled-kernel-raw-caller jit)
-    :raw-caller ',(compiled-kernel-raw-caller jit)
-    :device ,(compiled-kernel-device jit)
-    :code ,(compiled-kernel-code jit)
-    :out-positions ,(compiled-kernel-out-positions jit)))
-
 (defmethod print-object ((s Compiled-Kernel) stream)
   (format stream "<~a[~a]>" (compiled-kernel-device s) (compiled-kernel-name s)))
 
