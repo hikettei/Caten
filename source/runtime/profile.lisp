@@ -23,7 +23,7 @@
        (let ((,end-time (get-internal-real-time)))
          (float (/ (- ,end-time ,start-time) internal-time-units-per-second))))))
 
-(defun render-runtime-position (runtime &aux (pc (uiop:symbol-call :caten/runtime/runtime :runtime-pc runtime)) (total (uiop:symbol-call :caten/runtime/runtime :runtime-tape-length runtime)))
+(defun render-runtime-position (runtime &aux (pc (uiop:symbol-call :caten/runtime/runtime :runtime-pc runtime)) (total (length (caten/air:graph-nodes (uiop:symbol-call :caten/runtime/runtime :runtime-graph runtime)))))
   (format nil " [~a]~a" pc (make-string (abs (- (length (princ-to-string total)) (length (princ-to-string pc)))) :initial-element #\space)))
 
 (defun report-allocation (runtime skipped-p dtype shape)

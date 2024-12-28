@@ -343,7 +343,7 @@ disassemble:
   (close-buffer runtime base-buffer)
   (open-buffer runtime base-buffer)
   base-buffer)
-;; ~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun map-view (runtime reduction-p op &rest buffers)
   "Note: In a special case where op is #'index-components, map-view writes (car buffer) <- index-component."
   (let ((out (copy-buffer (car buffers))))
