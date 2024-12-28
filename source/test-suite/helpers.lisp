@@ -1,5 +1,7 @@
 (in-package :caten/test-suite)
 
+(defmacro range (from below &optional (by 1)) `(loop for i from ,from below ,below by ,by collect i))
+
 (defparameter *torch-dtype* "float32")
 (defparameter *caten-dtype* :float32)
 
