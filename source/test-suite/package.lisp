@@ -9,11 +9,15 @@
 
 (in-package :caten/test-suite)
 
+;; running the tests requires something like "pip install torch", "pip install gguf"
+;; and of course a runnable python ...
+
 (python-exec "import torch
 import struct
 import gguf
 import torch.nn.functional as f
 import numpy as np")
+
 (import-module "numpy" :as "np" :reload t)
 (import-module "struct" :reload t)
 (import-module "gguf" :as "gguf" :reload t)

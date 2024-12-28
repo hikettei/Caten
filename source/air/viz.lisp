@@ -22,7 +22,7 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
 	 (butlast (loop for n in list
 			append (list (format nil "~a" n) ", ")))))
 
-(defmethod ->dot ((graph Graph) &key (pathname "/tmp/graph.dot") (open t) (title "node"))
+(defmethod ->dot ((graph Graph) &key (pathname "~/tmp/graph.dot") (open t) (title "node"))
   (with-open-file (stream pathname :direction :output :if-exists :supersede :if-does-not-exist :create)
     (format stream "digraph computation_node {
   node[charset=\"UTF-8\"
@@ -142,11 +142,11 @@ Visualizes the graph using graphviz(requirement). Set open=t to open the resulti
     (format stream "}"))
   (format t "(DOT=1) ->dot: Saving the graph \"~a\" at ~a, ~a.png, ~a.html.~%" title pathname pathname pathname)
   (when open
-    (uiop:launch-program (list "dot" "-Tpng" pathname "-o" (format nil "~a.png" pathname)) :output t)
+    (uiop:launch-program (format nil "dot -Tpng ~a -o ~a" pathname (format nil "~a.png" pathname)))
     (let ((htmlpath (format nil "~a.html" pathname)))
       (with-open-file (stream htmlpath :direction :output :if-exists :supersede :if-does-not-exist :create)
         (format stream "<html><p><b><font size=\"5\">~a</b></p><body><img src=\"~a.png\"></body></html>" title pathname)
-        (uiop:launch-program (list "open" htmlpath) :output t)))))
+        (uiop:launch-program (list "open" htmlpath))))))
 
 (defun compute-n-children (graph id &aux (seen nil) (count 0))
   (labels ((explore (id)
