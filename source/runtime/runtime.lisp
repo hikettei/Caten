@@ -315,8 +315,36 @@ disassemble:
 					 (incf (nth n offsets) (* (third view) stride)))
 				else if stride do (incf (nth n offsets) stride))))))
       (explore 0 offsets))))
+;; ~~~ Helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun column-major-calc-strides (shape)
+  (declare (type list shape))
+  (let* ((num-dims (length shape))
+         (strides (make-list num-dims :initial-element 1)))
+    (loop for i from 1 to (- num-dims 1) do
+      (setf (nth i strides) (* (nth (- i 1) strides) (nth (- i 1) shape))))
+    strides))
 
-(defun map-view (reduction-p op &rest buffers)
+(defun row-major-calc-strides (shape)
+  (declare (type list shape))
+  (let* ((num-dims (length shape))
+         (strides (make-list num-dims :initial-element 1)))
+    (loop for i downfrom (- num-dims 2) to 0 do
+      (setf (nth i strides) (* (nth (+ i 1) strides) (nth (+ i 1) shape))))
+    strides))
+
+(defun compute-strides (shape)
+  (ecase *default-order*
+    (:row (row-major-calc-strides shape))
+    (:column (column-major-calc-strides shape))))
+
+(defun make-contiguous-buffer (runtime base-buffer)
+  (setf (buffer-stride base-buffer) (compute-strides (buffer-shape base-buffer))
+        (buffer-views base-buffer) (loop for i upfrom 0 below (buffer-nrank base-buffer) collect nil))
+  (close-buffer runtime base-buffer)
+  (open-buffer runtime base-buffer)
+  base-buffer)
+;; ~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun map-view (runtime reduction-p op &rest buffers)
   "Note: In a special case where op is #'index-components, map-view writes (car buffer) <- index-component."
   (let ((out (copy-buffer (car buffers))))
     (if (= 0 (buffer-nrank (car buffers)))
@@ -329,13 +357,14 @@ disassemble:
                 (dotimes (i (array-total-size base-elms)) ;; synchronize the reduction to the original buffer.
                   (setf (aref base-elms i) (aref (buffer-value out) i)))))
             (progn
+              ;; [TODO] BACKEND=LISP specific so we should only consider for the case where BACKEND=LISP
               ;; If not reduced and the `out` is broadcasted?
               ;; In that case the output tensor should be a contiguous. (e.g: out[10, 10] = x[1] + y[10, 10])
               (if (and (some #'identity (buffer-views out))
                        (arrayp (buffer-value out))
                        ;; But when all buffers have the same sized array -> no need to make contiguous.
                        (some #'(lambda (x) (when (arrayp (buffer-value x)) (> (array-total-size (buffer-value x)) (array-total-size (buffer-value out))))) (cdr buffers)))
-                  (setf out (make-contiguous-buffer :lisp out)) ;; Initializing a new contiguous array for the output
+                  (setf out (make-contiguous-buffer runtime out)) ;; Initializing a new contiguous array for the output
                   (setf (buffer-value out) (copy-seq (buffer-value out))))
 	      (apply #'map-into/buffer out op buffers))))
     out))
@@ -350,7 +379,7 @@ disassemble:
 	(let ((out (copy-buffer tgt)))
 	  (setf (buffer-value out) val)
 	  out)
-	(map-view nil #'(lambda (x) x val) (car args)))))
+	(map-view runtime nil #'(lambda (x) x val) (car args)))))
 
 (defmethod realize-node ((node-id (eql :Store)) (runtime GraphRuntime) node args)
   (let ((to (copy-buffer (car args))))
@@ -358,7 +387,7 @@ disassemble:
     to))
 
 (defmethod realize-node ((node-id (eql :Index-Components)) (runtime GraphRuntime) node args)
-  (map-view nil #'index-components (car args)))
+  (map-view runtime nil #'index-components (car args)))
 
 (defun wrap-around (x max min)
   (if (= min 0)
@@ -372,7 +401,7 @@ disassemble:
                       (max (dtype/max (buffer-dtype (car args))))
                       (wrap-around (getattr node :wrap-around :allow-undefined t)))
                   (declare (ignorable min max wrap-around))
-                  (apply #'map-view (getattr node :reduction :allow-undefined t) ,op args)))))
+                  (apply #'map-view runtime (getattr node :reduction :allow-undefined t) ,op args)))))
   (impl :add #'(lambda (&rest args &aux (out (apply #'+ args))) (if wrap-around (wrap-around out max min) out)))
   (impl :mul #'(lambda (&rest args &aux (out (apply #'* args))) (if wrap-around (wrap-around out max min) out)))
   (impl :idiv #'floor)
@@ -397,4 +426,4 @@ disassemble:
   (impl :< #'(lambda (_ x y) _ (< x y))))
 
 (defmethod realize-node ((node-id (eql :Where)) (runtime GraphRuntime) node args)
-  (map-view (getattr node :reduction :allow-undefined t) #'(lambda (x c y) (if c x y)) (nth 1 args) (nth 0 args) (nth 2 args)))
+  (map-view runtime (getattr node :reduction :allow-undefined t) #'(lambda (x c y) (if c x y)) (nth 1 args) (nth 0 args) (nth 2 args)))
