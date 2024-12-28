@@ -471,7 +471,7 @@ Depends=~a Reduce=~a Users=~a
                   if (and type is (find read constants)) do
                     ;; The load to :declare-type is a scalar.
                     (setf (nth nth (relay-reads (read-type-relay bp)))
-                          (let ((buffer (caten/avm:copy-buffer type)))
+                          (let ((buffer (caten/runtime:copy-buffer type)))
                             (setf (buffer-nrank buffer) -1)
                             buffer))))
     blueprints))

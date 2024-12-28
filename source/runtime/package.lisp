@@ -43,4 +43,12 @@
    #:runtime-backward
    #:runtime-buffer-type)
   ;; Profile
-  )
+  (:export
+   #:*jit-time*
+   #:*vm-time*
+   #:*allocate-time*
+   #:with-real-time
+   #:render-runtime-position
+   #:report-allocation
+   #:start-profile
+   #:report-profile-result))
