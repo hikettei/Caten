@@ -29,6 +29,5 @@
    (:file "auto-scheduler/auto-scheduler")
    (:file "jit")
    (:file "runner")
-   (:file "backends/clang")
    (:file "package")
    (:file "documentation")))
