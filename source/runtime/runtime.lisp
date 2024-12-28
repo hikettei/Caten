@@ -207,6 +207,7 @@ disassemble:
 ;; Special treatments for :Allocate with (getattr node :from)
 (defmethod realize-node :around ((node-type (eql :Allocate)) runtime node args)
   (let ((from (getattr node :from)))
+    ;; [TOOD] Insert transfer-buffer if the buffers on the different devices.
     (if (or (null from) *supress-allocate-mode*)
         (call-next-method) ;; Tmp buffer allocation etc
         (typecase from
@@ -214,10 +215,8 @@ disassemble:
            (let ((val (runtime-getvar runtime from)))
              (assert (buffer-p val) () "The :from attribute in the ~a node should be a buffer or a symbol." node)
              (report-allocation runtime t (buffer-dtype val) (buffer-shape val))
-             ;; [TODO] Insert Transfer?
              val))             
           (AbstractBuffer
-           ;; [TODO] Insert Transfer?
            (report-allocation runtime t (buffer-dtype from) (buffer-shape from))
            from)
           (otherwise
@@ -364,13 +363,14 @@ disassemble:
 (defun wrap-around (x max min)
   (if (= min 0)
       (mod x (1+ max))
-      (mod x (1+ max)))) ;; TODO: This case?
+      ;; [TODO] Wrap-around for the underflow?
+      (mod x (1+ max))))
 
 (macrolet ((impl (kw op)
              `(defmethod realize-node ((node-id (eql ,kw)) (runtime GraphRuntime) node args)
                 (let ((min (dtype/min (buffer-dtype (car args))))
                       (max (dtype/max (buffer-dtype (car args))))
-                      (wrap-around (getattr node :wrap-round :allow-undefined t)))
+                      (wrap-around (getattr node :wrap-around :allow-undefined t)))
                   (declare (ignorable min max wrap-around))
                   (apply #'map-view (getattr node :reduction :allow-undefined t) ,op args)))))
   (impl :add #'(lambda (&rest args &aux (out (apply #'+ args))) (if wrap-around (wrap-around out max min) out)))
