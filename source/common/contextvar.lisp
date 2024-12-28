@@ -167,18 +167,6 @@ Usage:
     (:OMP
      0 :int #.(oneof "OMP" 0 `(0 1))
      "Set 1 to use OpenMP by the CLANG backend.")
-    ;; [TODO] Remove
-    (:AOT_VERBOSE
-     0 :int #.(oneof "AOT_VERBOSE" 0 `(0 1))
-     "Set to 1 to debug the AIR dump during AOT compilation.")
-    ;; [TODO] Remove
-    (:AOT
-     "" :string parse-list->kw
-     "Declare all JIT device names capable of performing AOT compilation (e.g.: AOT=CLANG,METAL).")
-    ;; [TODO] remove
-    (:AOT_VM
-     "" :string parse-list->kw
-     "Declare all VM device names capable of performing AOT compilation (e.g.: AOT_VM=LISP).")
     (:COLOR
      0 :int #.(oneof "COLOR" 0 `(0 1))
      "Set 1 to use cl-ansi-color.")
