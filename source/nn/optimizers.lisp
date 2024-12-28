@@ -24,13 +24,13 @@ This function is used to hook the optimizers in the recognised parameters in avm
 
 A list of created optimizers are returned.
 "
-  (declare (type caten/avm:avm avm) (type function hooker))
+  (declare (type caten/runtime:GraphRuntime avm) (type function hooker))
   (map
    'list
    (compose
     #'(lambda (x) (assert (subtypep (class-of x) 'AbstractOptimizer) () "hook-optimizers: ~a is not an AbstractOptimizer!" x) x)
     hooker)
-   (caten/avm:avm-params-to-optimize avm)))
+   (caten/runtime:runtime-params avm)))
 
 (caten/defun[float] (zero-grad-impl "zero_grad_impl") (n param)
   (!assign (make-tensor `(,n) :from param) (fconst 0)))
