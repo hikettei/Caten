@@ -207,22 +207,21 @@ disassemble:
 ;; Special treatments for :Allocate with (getattr node :from)
 (defmethod realize-node :around ((node-type (eql :Allocate)) runtime node args)
   (let ((from (getattr node :from)))
-    ;; [TODO] caching treatments
     (if (or (null from) *supress-allocate-mode*)
         (call-next-method) ;; Tmp buffer allocation etc
-        ;; [TODO]
         (typecase from
           (symbol
-           (error "TODO")
-           )
+           (let ((val (runtime-getvar runtime from)))
+             (assert (buffer-p val) () "The :from attribute in the ~a node should be a buffer or a symbol." node)
+             (report-allocation runtime t (buffer-dtype val) (buffer-shape val))
+             ;; [TODO] Insert Transfer?
+             val))             
           (AbstractBuffer
-           ;; Insert the transfer
-           (error "TODO")
-           )
+           ;; [TODO] Insert Transfer?
+           (report-allocation runtime t (buffer-dtype from) (buffer-shape from))
+           from)
           (otherwise
-           (error "TODO")
-           
-           )))))
+           (error "The :from attribute in the ~a node should be a buffer or a symbol." node))))))
 
 (defmethod realize-node ((node-id (eql :Allocate)) (runtime GraphRuntime) node args)
   (multiple-value-bind (shape stride) (parse-allocate-node node args)
@@ -232,8 +231,8 @@ disassemble:
           (when (equal (map 'list #'->number shape) (buffer-shape memory-pool)) ;; dynamic shape can changed the demanded size.
              (report-allocation runtime t (buffer-dtype memory-pool) (buffer-shape memory-pool))
              (return-from realize-node memory-pool))
-          ;; TODO(hikettei) free the old memory allocation
-          ))
+          ;; Overwritting the old memory pool
+          (when (buffer-p memory-pool) (close-buffer runtime memory-pool))))
       (let ((buffer (make-buffer (map 'list #'->number shape) (map 'list #'->number stride) (getattr node :dtype) nil :device (runtime-buffer-type runtime))))
         (open-buffer runtime buffer)
         (setf (getattr node :pool) buffer)
