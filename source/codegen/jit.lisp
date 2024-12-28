@@ -398,7 +398,7 @@ caten/codegen overview:
             &aux
               (buffer-class (caten/codegen/backend:get-backend-buffer backend))
               (runtime-id   (caten/codegen/backend:get-backend-runtime backend))
-              (renderer     (make-instance (caten/codegen/backend:get-backend-renderer backend)))
+              (renderer     (caten/codegen/backend:get-backend-renderer backend))
               (auto-scheduler (caten/codegen/backend:get-backend-auto-scheduler backend))
               (is-jit         (caten/codegen/backend:get-backend-jit-p backend)))
   "
@@ -416,7 +416,8 @@ Applies the JIT compilation for the given Runtime. backend is a keyword defined 
     ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
     (apply-rewriting-rules runtime)
     ;; 3. Running the scheduler
-    (let ((base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (runtime-graph runtime)))))
+    (let ((renderer (make-instance renderer))
+          (base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (runtime-graph runtime)))))
           (schedule-graph (graph-schedule (runtime-graph runtime)))
           (symbolics
             (remove-duplicates

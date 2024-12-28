@@ -1,5 +1,5 @@
 (defpackage :caten/byoc/clang
-  (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime :caten/codegen/backend :caten/codegen/renderer :caten/air
+  (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime :caten/codegen/backend :caten/codegen/renderer :caten/air
         :caten/codegen/expr :caten/codegen/helpers :caten/codegen/shape-inference)
   (:import-from
    :caten/codegen/config
