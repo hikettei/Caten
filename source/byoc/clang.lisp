@@ -154,20 +154,6 @@ Compiled with this command: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
-(defun ->cffi-dtype (dtype)
-  (ecase dtype
-    (:bool :bool)
-    (:float64 :double)
-    (:float32 :float)
-    (:uint64 :uint64)
-    (:int64 :int64)
-    (:int32 :int32)
-    (:uint32 :uint32)
-    (:int16 :int16)
-    (:uint16 :uint16)
-    (:uint8 :uint8)
-    (:int8 :int8)))
-
 (defun make-foreign-function-caller (name defglobals &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
