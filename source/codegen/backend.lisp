@@ -6,7 +6,8 @@
    #:get-backend-runtime
    #:get-backend-renderer
    #:get-backend-auto-scheduler
-   #:get-backend-jit-p))
+   #:get-backend-jit-p
+   #:jit-mode-p))
 
 (in-package :caten/codegen/backend)
 
@@ -29,3 +30,7 @@ Registers a new backend.
      (defmethod get-backend-renderer ((backend (eql ,name))) ',renderer-class)
      (defmethod get-backend-auto-scheduler ((backend (eql ,name))) ',auto-scheduler-class)
      (defmethod get-backend-jit-p ((backend (eql ,name))) ,is-jit-p)))
+
+(defun jit-mode-p (&key (backend (ctx:getenv :BACKEND)))
+  "Returns T if the current device uses JIT compilation."
+  (get-backend-jit-p backend))

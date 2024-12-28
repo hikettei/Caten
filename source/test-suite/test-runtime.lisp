@@ -8,18 +8,6 @@
 (defun %eval (evaluated-to graph &key (test #'=))
   (ok (every test evaluated-to (buffer-value (%realize (optimize-aasm graph))))))
 
-;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %arange (shape a b &key (dtype :float32) (order :row))
-  (with-asm
-    (m (%make-tensor shape :dtype dtype :order order))
-    (i (%index-components m (%shape shape)))
-    (alpha (%load (%salloc :dtype dtype) a))
-    (beta  (%load (%salloc :dtype dtype) b))
-    ;; a = alpha * i + b
-    (t1 (%mul i alpha))
-    (t2 (%add t1 beta))
-    (c  (%store m t2))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Note: keep in mind that other backends may use this test
 ;; dtype tests should be moved to outside of source
 (defparameter *dtypes* `(:float64 :float32));; :uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8))
