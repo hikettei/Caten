@@ -138,7 +138,7 @@ Policy:
   `(loop for i from ,from below ,below by ,by collect i))
 
 (defpackage :caten/nn.test
-  (:use :cl :caten :caten/aasm :caten/nn :caten/avm :caten/air :rove :alexandria))
+  (:use :cl :caten :caten/aasm :caten/nn :caten/runtime :caten/air :rove :alexandria))
 ;; ~~ Unittest ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (in-package :caten/nn.test)
 
