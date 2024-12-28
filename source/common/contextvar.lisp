@@ -118,7 +118,7 @@ Usage:
   (defcontext
       ;; (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
     (:BACKEND
-     "LISP" :string (lambda (x) (intern x "KEYWORD"))
+     "LISP" :string (lambda (x) (intern (string-upcase (princ-to-string x)) "KEYWORD"))
      "A name to the keyword defined by the macro `defbackend`")
     (:DEBUG
      0 :int #.(oneof "DEBUG" 0 `(-1 0))
