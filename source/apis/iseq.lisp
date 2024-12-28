@@ -477,6 +477,7 @@ Compiles the given tensors, returning an AVM struct.
 
 (defun runtime-set-params (runtime params)
   (cond
+    ((null params))
     ((every #'consp params)
      (warn "The format (format avm `(id . value) ...) will be deprecated in the future. Use (format avm key1 value1 key2 value2 ...) instead.")
      (loop for (place . value) in params

@@ -11,6 +11,7 @@
    #:buffer-value
    #:make-buffer
    #:copy-buffer
+   #:buffer-p
    
    #:open-buffer
    #:close-buffer
