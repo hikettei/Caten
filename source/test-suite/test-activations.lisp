@@ -1,5 +1,18 @@
 (in-package :caten/test-suite)
 ;; TODO: Implement Assert Close, printing atol/rtol
+;; ~~ Custom Kernel for calling element-wise lisp kernel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defnode (:Testing :Test/Lisp-Lazy-Apply) () "" :slots ((f)))
+(defclass Custom/LazyApply (Func) ((f :initarg :f :accessor lazyapply-f))
+  (:documentation "This custom op is dedicated to testing, only supported in Lisp VM"))
+(defmethod forward ((op Func) &rest tensors) (st "A[~] -> A[~]" (tensors)))
+(defmethod backward ((op Func) &optional dout) (declare (ignore dout)) nil)
+(defmethod lower ((op Func) &rest nodes)
+  (with-context (_ (emit (make-node :Testing :Test/Lisp-Lazy-Apply (list (gensym)) (map 'list #'node->id nodes) :f (lazyapply-f op))))))
+(defmethod realize-node ((node-id (eql :Test/Lisp-Lazy-Apply)) runtime node args) (apply #'caten/runtime/runtime::map-view nil (getattr node :f) args))
+(defun lazy-lisp (f tensor)
+  (declare (type function f) (type tensor tensor))
+  (forward (make-instance 'Custom/LazyApply :f f) tensor))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun sigmoid-lisp (x) (/ (+ 1 (expt 2 (* x (/ -1 (log 2)))))))
 (define-nn-test Sigmoid
   "Testing w/ Sigmoid([100, 100])"
