@@ -93,5 +93,3 @@ Computes the root mean square normalization of a tensor `x` with optional `weigh
   (declare (type tensor x)
            (type (or null tensor) weight))
   (forward (RMSNorm normalized-shape :eps eps :weight weight) x))
-
-(in-package :caten/nn.test)

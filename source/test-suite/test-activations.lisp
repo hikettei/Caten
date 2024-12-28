@@ -1,6 +1,4 @@
 (in-package :caten/test-suite)
-
-
 ;; TODO: Implement Assert Close, printing atol/rtol
 (defun sigmoid-lisp (x) (/ (+ 1 (expt 2 (* x (/ -1 (log 2)))))))
 (define-nn-test Sigmoid

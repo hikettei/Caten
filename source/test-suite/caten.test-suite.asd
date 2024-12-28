@@ -19,6 +19,7 @@ Tests that are not related to the core functionality of Caten or are time-consum
 	       (:file "test-randomness")
 	       (:file "test-iseq-lowerer")
 	       (:file "test-gemm")
+               (:file "test-padding")
 	       (:file "test-conv")
                (:file "test-pool")
                (:file "test-shape-tracker")
