@@ -14,10 +14,7 @@
   :description "Test suites for Caten"
   :depends-on ("caten" "caten/llm" "caten.test-suite")
   :in-order-to
-  ((test-op
-    (asdf:test-op "caten.apis")
-    (asdf:test-op "caten.nn")
-    (asdf:test-op "caten.test-suite"))))
+  ((test-op (asdf:test-op "caten.test-suite"))))
 
 (asdf:defsystem "caten/apps"
   :description ""
