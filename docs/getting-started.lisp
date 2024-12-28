@@ -154,7 +154,7 @@
   object)
 
 (defun try-codegen! (graph outputs)
-  "Util for visualzing the process of compiling the `graph`."
+  "Utility for visualizing the process of compiling the `graph`."
   (optimize-aasm graph)
   (let ((vm (make-avm graph :main nil outputs nil)))
     (fresh-line)
@@ -180,7 +180,7 @@
       (setf (avm-graph vm) (schedule-graph->avm-graph (avm-graph vm) schedule-graph))
       (avm-reset vm))))
 
-;; Example 1. Lowering two matries addition into the C kernel.
+;; Example 1. Lowering two matrices' addition into the C kernel.
 (let* ((graph
          ;; This is a graph to compile: Z(3 3) = X(3 3) + Y(3 3)
          (with-context
