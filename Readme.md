@@ -103,10 +103,11 @@ Though our focus is still on the inference, we will support training models. (St
 
 ## Getting Started
 
-1. Install [Roswell](https://github.com/roswell/roswell) and suitable IDE. (If unsure, Emacs or [Lem](https://github.com/lem-project/lem) is recommended)
+1. Install [Roswell](https://github.com/roswell/roswell) and a suitable IDE. (If unsure, Emacs or [Lem](https://github.com/lem-project/lem) is recommended)
 2. Install [ISL (Integer Set Library)](https://github.com/Meinersbur/isl) for the fast kernel generation.
-3. Install [Qlot](https://github.com/fukamachi/qlot)
-4. Check out [getting-started.lisp](./docs/getting-started.lisp)
+3. If not already installed, then install [libyaml](https://github.com/yaml/libyaml) for YAML parsing and emitting.
+4. Install [Qlot](https://github.com/fukamachi/qlot)
+5. Check out [getting-started.lisp](./docs/getting-started.lisp)
 
 ```sh
 $ git clone git@github.com:hikettei/Caten.git
