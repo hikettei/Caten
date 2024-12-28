@@ -114,14 +114,14 @@ Create a new lazy tensor.
 - requires-grad[boolean] A flag to determine whether the tensor requires a gradient.
 - initial-element[null|number|symbol|ScalarTensor] An initial value of the tensor.
 - views[list] A list of `ViewRange` objects, determining the bound of loops.
-- from[null|Buffer|Symbol] A buffer used to initialize the tensor. If symbol is given, the buffer is taken from the variable table.
+- from[null|AbstractBuffer|Symbol] A buffer used to initialize the tensor. If symbol is given, the buffer is taken from the variable table.
 "
   (declare (type list shape)
 	   (type dtype-t dtype)
 	   (type (member :column :row) order)
 	   (type symbol id)
 	   (type (or null number symbol) initial-element)
-	   (type (or null symbol Buffer) from))
+	   (type (or null symbol AbstractBuffer) from))
   (dolist (s shape)
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()
