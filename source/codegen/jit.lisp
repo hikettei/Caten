@@ -116,7 +116,7 @@ caten/codegen overview:
      :raw-caller (if (getattr si :cache-name)
                      (getattr (from-cache si) :compiled-object)
                      (getattr si :compiled-object))
-     :device (princ-to-string (or (ctx:getenv :JIT_BACKEND) :clang))
+     :device (princ-to-string (ctx:getenv :BACKEND))
      :code (if (getattr si :cache-name)
                (getattr (from-cache si) :rendered-object)
                (getattr si :rendered-object))
@@ -397,8 +397,8 @@ caten/codegen overview:
               (dir nil)
             &aux
               (buffer-class (caten/codegen/backend:get-backend-buffer backend))
-              (runtime-id      (caten/codegen/backend:get-backend-runtime backend))
-              (renderer     (caten/codegen/backend:get-backend-renderer backend))
+              (runtime-id   (caten/codegen/backend:get-backend-runtime backend))
+              (renderer     (make-instance (caten/codegen/backend:get-backend-renderer backend)))
               (auto-scheduler (caten/codegen/backend:get-backend-auto-scheduler backend))
               (is-jit         (caten/codegen/backend:get-backend-jit-p backend)))
   "

@@ -31,7 +31,8 @@
    #:relay-reads
    #:relay-writes
    #:relay-read-iters
-   #:relay-write-iters)
+   #:relay-write-iters
+   #:buffer-orig-buffer-shape)
   (:import-from
    :caten/codegen/helpers
    #:nodes-depends-on
@@ -71,7 +72,7 @@
 			    (node-writes n) (map 'list #'r (node-writes n)))
 		      n)))
       ;; Gather views for avm-fw-outputs and avm-bw-outputs, storing them in the :_output_type
-      (let ((views (map 'list #'v (append (avm-fw-outputs runtime) (avm-bw-outputs runtime)))))
+      (let ((views (map 'list #'v (append (runtime-fw-outputs runtime) (runtime-bw-outputs runtime)))))
         (setf (runtime-fw-outputs runtime) (map 'list #'r (runtime-fw-outputs runtime))
 	      (runtime-bw-outputs runtime) (map 'list #'r (runtime-bw-outputs runtime))
               (graph-outputs (runtime-graph runtime)) (map 'list #'r (graph-outputs (runtime-graph runtime))))

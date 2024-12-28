@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/blueprint
   (:documentation "The package `caten/codegen/blueprint` is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
 The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers :caten/runtime/runtime)
+  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers :caten/runtime/runtime :caten/runtime/buffer)
   (:import-from
    :caten/codegen/renderer
    #:render-expr
@@ -404,7 +404,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
             (let ((users (id->users (ctx-schedule-graph ctx) (car (node-writes node)))))
               (if (some #'(lambda (x) (getattr x :jitable)) users) ;; If the scalar is used in another jitable kernel?
                   (let* ((dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
-                         (buffer (make-buffer 1 `(1) `(0) dtype `((0 1 1 t)) :device 'RelayBuffer))
+                         (buffer (make-buffer `(1) `(0) dtype `((0 1 1 t)) :device 'RelayBuffer))
                          (space (buffer-merge-dims (ctx-schedule-graph ctx) buffer)))
                     (setf (car (relay-write-iters (read-type-relay node))) space
                           (car (relay-writes (read-type-relay node))) buffer))

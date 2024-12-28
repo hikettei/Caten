@@ -18,7 +18,7 @@ It is responsible for optimizing memory allocation by overlapping allocation to 
 MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (id id :type symbol)
   (answer nil :type symbol)
-  (type type :type buffer)
+  (type type :type AbstractBuffer)
   (create create :type fixnum)
   (release release :type fixnum)
   (lifetime (- release create) :type (integer 0))
@@ -35,7 +35,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
 
 (defun buffer-orig-shape (buffer)
   "Returns a shape of the buffer, which is not VIEWED."
-  (declare (type buffer buffer))
+  (declare (type AbstractBuffer buffer))
   (or
    (buffer-orig-buffer-shape buffer) ;; non-viewed-size
    (buffer-shape buffer)))

@@ -81,22 +81,22 @@
           object)
       object))
 
+(defun propagate-inference (args)
+  ;; [TODO] The position of output should be :nth-out, not car.
+  (let ((buff
+          (make-buffer (buffer-shape (car args)) (buffer-stride (car args)) (buffer-dtype (car args)) (buffer-views (car args)) :device 'RelayBuffer)))
+    (setf (buffer-inferred-permute buff) (buffer-inferred-permute (car args))
+	  (buffer-orig-buffer-shape buff) (buffer-orig-buffer-shape (car args)))
+    buff))
+
+(defparameter *special-nodes* `(:Allocate :View :Load :Where))
 (defmethod realize-node :around (node-id (runtime RelayChecker) node args)
-  (let ((out (multiple-value-list (if (next-method-p) (call-next-method) (car args)))))
+  (let ((out (multiple-value-list (if (find node-id *special-nodes*) (call-next-method) (propagate-inference args)))))
     (loop for n in (node-writes node)
           for o in out
           do (assert (buffer-p o) () "relay-checker: ~a should return a buffer" node)
              (setf (gethash n (rp-id2buffer *type-reporter*)) o))
     (apply #'values out)))
-
-(defmethod realize-node (node-id (runtime RelayChecker) node args)
-  (if (next-method-p)
-      (call-next-method)
-      (let ((buff
-              (make-buffer (buffer-shape (car args)) (buffer-stride (car args)) (buffer-dtype (car args)) (buffer-views (car args)) :device 'RelayBuffer)))
-	(setf (buffer-inferred-permute buff) (buffer-inferred-permute (car args))
-	      (buffer-orig-buffer-shape buff) (buffer-orig-buffer-shape (car args)))
-	buff)))
 
 (defmethod realize-node ((node-id (eql :Allocate)) (runtime RelayChecker) node args)
   (multiple-value-bind (shape stride) (parse-allocate-node node (map 'list #'reveal-buffer args))
