@@ -54,7 +54,7 @@ Users can extend this method if needed.
          (dtype (if (eql t (array-element-type obj))
                     (obj-dtype-of (aref storage 0))
                     (caten/common.dtype:lisp->dtype (array-element-type obj))))
-         (buffer (make-buffer (array-rank obj) (array-dimensions obj) (static-compute-strides *default-order* (array-dimensions obj)) dtype nil))
+         (buffer (make-buffer (array-dimensions obj) (static-compute-strides *default-order* (array-dimensions obj)) dtype nil :device (caten/codegen/backend:get-buffer-type)))
          (_ (setf (buffer-value buffer) storage))
          (place (make-tensor (array-dimensions obj) :dtype dtype :from buffer)))
     (declare (ignore _))
