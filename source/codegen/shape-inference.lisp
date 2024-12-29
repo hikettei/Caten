@@ -81,6 +81,15 @@
           object)
       object))
 
+(defun merge-with-initial-value (node-reads realized-args)
+  (assert (= (length node-reads) (length realized-args)))
+  (loop for nr in node-reads
+        for rr in realized-args
+        if (and (buffer-p rr) (buffer-value rr) (= 0 (buffer-nrank rr)))
+          collect (buffer-value rr)
+        else
+          collect nr))
+
 (defun propagate-inference (args)
   ;; [TODO] The position of output should be :nth-out, not car.
   (let ((buff
@@ -99,11 +108,11 @@
     (apply #'values out)))
 
 (defmethod realize-node ((node-id (eql :Allocate)) (runtime RelayChecker) node args)
-  (multiple-value-bind (shape stride) (parse-allocate-node node (map 'list #'reveal-buffer args))
+  (multiple-value-bind (shape stride) (parse-allocate-node node (merge-with-initial-value (node-reads node) args))
     (make-buffer shape stride (getattr node :dtype) nil :device 'RelayBuffer)))
 
 (defmethod realize-node ((node-id (eql :View)) (runtime RelayChecker) node args)
-  (multiple-value-bind (shape v1 v2 v3 stride bc) (parse-view-node node (map 'list #'reveal-buffer args))
+  (multiple-value-bind (shape v1 v2 v3 stride bc) (parse-view-node node (merge-with-initial-value (node-reads node) args))
     (let ((buffer (copy-buffer (car args))))
       (setf (buffer-shape buffer) shape
 	    (buffer-stride buffer) stride
