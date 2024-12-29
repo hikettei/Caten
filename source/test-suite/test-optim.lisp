@@ -12,7 +12,7 @@
 	     (Linear hidden-dim out-features))
 
 (deftest test-end-to-end-training
-  (when (= 1 (ctx:getenv :JIT))
+  (when (caten/codegen/backend:jit-mode-p)
     (let* ((model (Simple-Test-MLP 64 32 16))
            (output (call model (make-tensor `(10 64) :from :x)))
            (loss  (!cross-entropy (!softmax output) (make-tensor `(10 16) :from :y)))

@@ -2,10 +2,11 @@
   :description "Caten Code Generator Engine"
   :author "hikettei <ichndm@gmail.com>"
   :licence "MIT"
-  :depends-on ("caten.avm" "caten.aasm" "caten.air" "caten.isl" "cl-ppcre" "alexandria" "lparallel" "cl-yaml" "cffi")
+  :depends-on ("caten.runtime" "caten.aasm" "caten.air" "caten.isl" "cl-ppcre" "alexandria" "lparallel" "cl-yaml" "cffi")
   :serial t
   :components
   ((:file "helpers")
+   (:file "backend")
    (:file "expr")
    (:file "shape-inference")
    (:file "renderer")
@@ -28,6 +29,5 @@
    (:file "auto-scheduler/auto-scheduler")
    (:file "jit")
    (:file "runner")
-   (:file "backends/clang")
    (:file "package")
    (:file "documentation")))

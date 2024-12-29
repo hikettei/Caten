@@ -1,9 +1,4 @@
-(in-package :cl-user)
-
-(defpackage :caten/aasm.test
-  (:use :cl :rove :caten/air :caten/aasm))
-
-(in-package :caten/aasm.test)
+(in-package :caten/test-suite)
 
 (defun check-schedule (graph count outputs)
   (declare (type graph graph)

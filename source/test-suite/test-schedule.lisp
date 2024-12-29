@@ -2,7 +2,7 @@
 
 (defmacro with-protect-jit (&body body)
   "Ensures the body is only executed under JIT=1"
-  `(if (= 1 (ctx:getenv :JIT))
+  `(if (caten/codegen/backend:jit-mode-p)
        (progn ,@body)
        (skip "NEED JIT")))
 
@@ -10,7 +10,7 @@
   (with-no-grad
     (with-protect-jit
       (let* ((m (caten (!matmul (make-tensor `(3 10)) (make-tensor `(10 20)))))
-	     (allocs (loop for node in (graph-nodes (avm-graph m))
+	     (allocs (loop for node in (graph-nodes (runtime-graph m))
 			   if (eql (node-type node) :Allocate) collect node)))
 	(ok (= (length allocs) 3) "gemm(a, b, c)")
 	(ok (every #'(lambda (x) (if (= (getattr x :nrank) 2)

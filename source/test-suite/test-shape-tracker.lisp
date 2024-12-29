@@ -154,7 +154,7 @@
 #+(or nil)(setf rove::*debug-on-error* t) ;; <- C-c C-c to abort on the error
 ;; You can see the graph by doing:
 ;; - Disabling compose-views-from-graph (insert nil for the last line)
-;; - Running: (->dot (avm-graph (caten (forward (ConvND 3 2 `(4 4)) (make-tensor `(2 3 8 8))))))
+;; - Running: (->dot (runtime-graph (caten (forward (ConvND 3 2 `(4 4)) (make-tensor `(2 3 8 8))))))
 
 (define-view-binary-test (convnd-failing-1 (2 3 4 4) (1 2 1 3 2 4 2 4))
     ((:reshape   1 2 1 3 1 4 1 4)

@@ -1,18 +1,20 @@
-(defpackage :caten/codegen/backends/clang
-  (:use :cl :caten/air :cffi :caten/codegen/renderer :caten/codegen/helpers
-   :caten/codegen/shape-inference :caten/avm :caten/codegen/expr)
+(defpackage :caten/byoc/clang
+  (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime :caten/codegen/backend :caten/codegen/renderer :caten/air
+        :caten/codegen/expr :caten/codegen/helpers :caten/codegen/shape-inference)
   (:import-from
    :caten/codegen/config
-   #:define-auto-scheduler))
+   #:define-auto-scheduler)
+  (:import-from :caten/byoc/lisp #:LispBuffer))
 
-(in-package :caten/codegen/backends/clang)
+(in-package :caten/byoc/clang)
 
+(defclass ClangBuffer (LispBuffer) nil)
+(defclass ClangRuntime (GraphRuntime) nil)
 (define-auto-scheduler (Clang-Auto-Scheduler (&key (n-global-loop (1- (ctx:getenv :OMP)))))
-    ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
-    :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
-    :tile-size 32 ;; [TODO] Automatic Parameter Tuning
-    )
-(define-hook-auto-scheduler (CStyle-Renderer Clang-Auto-Scheduler))
+                       ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
+                       :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
+                       :tile-size 32) ;; [TODO] Autotuned
+(define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer Clang-Auto-Scheduler t)
 
 (defvar *indent*)
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)
@@ -45,7 +47,7 @@
           (dolist (bp (getattr si :blueprint))
             (render-bp out bp)))
         (format out "}~%")))))
-
+;; OpenMP requires the brackets to be removed in the for loop.
 (defun trim-brackets (str)
   (let ((len (length str)))
     (if (and (>= len 2) (char= #\( (aref str 0)) (char= #\) (aref str (1- len))))
@@ -151,20 +153,6 @@ Compiled with this command: ~a"
 	       (with-output-to-string (out)
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
-
-(defun ->cffi-dtype (dtype)
-  (ecase dtype
-    (:bool :bool)
-    (:float64 :double)
-    (:float32 :float)
-    (:uint64 :uint64)
-    (:int64 :int64)
-    (:int32 :int32)
-    (:uint32 :uint32)
-    (:int16 :int16)
-    (:uint16 :uint16)
-    (:uint8 :uint8)
-    (:int8 :int8)))
 
 (defun make-foreign-function-caller (name defglobals &aux (tmps))
   (labels ((expand (rest-forms body)

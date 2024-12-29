@@ -1,8 +1,7 @@
 (defpackage :caten/codegen/renderer
-  (:use :cl :caten/codegen/shape-inference)
+  (:use :cl :caten/codegen/shape-inference :caten/runtime/buffer)
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
   (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p #:expr-from-graph)
-  (:import-from :caten/avm :Buffer #:buffer-nrank)
   (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code #:->cdtype #:float-type-of)
   (:export
    #:get-default-renderer
@@ -22,24 +21,15 @@
    #:expr-index-components
    #:make-aref
    #:make-define-global
-
-   #:%renderer-get-auto-scheduler
-   #:define-hook-auto-scheduler))
+   #:%renderer-get-auto-scheduler))
 
 (in-package :caten/codegen/renderer)
 
 (defgeneric get-default-renderer (id))
 (defgeneric %render-node (renderer node-dispatcher node) (:documentation ""))
 (defgeneric %render-const (renderer obj) (:documentation ""))
-
 (defgeneric %render-kernel (renderer schedule-item))
 (defgeneric %compile-kernel (renderer schedule-items dir))
-(defgeneric %renderer-get-auto-scheduler (renderer) (:documentation "Gets the auto-scheduler for the renderer."))
-
-(defmacro define-hook-auto-scheduler ((renderer-name auto-scheduler-name) &rest args)
-  "Defines a hook for auto-scheduler for the renderer."
-  `(defmethod %renderer-get-auto-scheduler ((renderer ,renderer-name))
-     (,auto-scheduler-name ,@args)))
 
 (defnode (:Render :FOR) ()
          "
@@ -83,11 +73,11 @@ ID[*space]
 ```
 
 - storage-id[symbol] An index to the reference pointer optimized by the memory-planner.
-- buffer[Buffer] The buffer to be accessed.
+- buffer[AbstractBuffer] The buffer to be accessed.
 - space[Iteration-Space] The iteration space `:AREF` belongs to.
 "
          :slots ((storage-id :type symbol)
-                 (buffer :type Buffer)
+                 (buffer :type caten/runtime:AbstractBuffer)
                  (space :type Iteration-Space)))
 
 (defnode (:Render :DEFINE-GLOBAL) ()
@@ -107,7 +97,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 
 (defun make-aref (idx storage-id buffer space)
   (declare (type symbol storage-id)
-           (type buffer buffer)
+           (type caten/runtime:AbstractBuffer buffer)
            (type Iteration-Space space))
   (make-node :Render :Aref (list idx) nil :buffer buffer :space space :storage-id storage-id))
 
@@ -144,7 +134,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
         (space  (getattr node :space))
         (index-space (renderer-index-space renderer))
         (id (getattr node :storage-id)))
-    (when (and (null index-space) (> (buffer-nrank buffer) 0))
+    (when (and (null index-space) (> (caten/runtime:buffer-nrank buffer) 0))
       (warn "render-aref: Cannot render :AREF for ~a without providing :index-space, thus replaced with ?." id))
     (if (= -1 (buffer-nrank buffer))
         (format nil "~(~a~)" id)
@@ -315,7 +305,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (def :SQRT "sqrt"))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :RECIP)) node)
-  (let ((dtype (caten/avm:buffer-dtype (car (relay-writes (read-type-relay node))))))
+  (let ((dtype (caten/runtime:buffer-dtype (car (relay-writes (read-type-relay node))))))
     (if (caten/common.dtype:dtype/floatp dtype)
         (format nil "1.0/(~a)" (render-node renderer (nth 0 (node-reads node))))
         (format nil "1/(~a)" (render-node renderer (nth 0 (node-reads node)))))))

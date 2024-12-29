@@ -31,7 +31,7 @@ Takes a compiled GPT2 model and a string input, and generates a text output.
 
 (defstruct (GPT2
             (:constructor %make-gpt2 (model tokenizer max-seq-len)))
-  (model model :type caten/avm:AVM) (tokenizer tokenizer :type Tokenizer) (max-seq-len max-seq-len :type fixnum))
+  (model model :type caten/runtime:GraphRuntime) (tokenizer tokenizer :type Tokenizer) (max-seq-len max-seq-len :type fixnum))
 
 (defstruct Params n-layers n-heads dim (norm-eps 1e-5) (vocab-size 50257))
 

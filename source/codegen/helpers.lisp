@@ -14,7 +14,8 @@
    #:float-type-of
    #:coerce-dtyped-buffer
    #:nodes-create-namespace
-   #:%isl-safe-pmapc))
+   #:%isl-safe-pmapc
+   #:->cffi-dtype))
 
 (in-package :caten/codegen/helpers)
 
@@ -116,9 +117,9 @@
 (defun coerce-dtyped-buffer (arg type)
   "If buffer-nrank=0 -> the arg is passed by the value, not a buffer.
 Otherwise -> they are passed as a buffer."
-  (if (caten/avm:buffer-p arg)
-      (if (= (caten/avm:buffer-nrank arg) 0)
-          (caten/common.dtype:dtype/cast (caten/avm:buffer-value arg) type)
+  (if (caten/runtime/buffer:buffer-p arg)
+      (if (= (caten/runtime/buffer:buffer-nrank arg) 0)
+          (caten/common.dtype:dtype/cast (caten/runtime/buffer:buffer-value arg) type)
 	  arg)
       (caten/common.dtype:dtype/cast arg type)))
 
@@ -141,3 +142,17 @@ Otherwise -> they are passed as a buffer."
                          for lastp = (= (1+ i) n-cores)
                          collect (subseq list (* i elements-per-core) (+ (* (1+ i) elements-per-core) (if lastp reminder 0))))))
         (lparallel:pmapc #'op tasks)))))
+
+(defun ->cffi-dtype (dtype)
+  (ecase dtype
+    (:bool :bool)
+    (:float64 :double)
+    (:float32 :float)
+    (:uint64 :uint64)
+    (:int64 :int64)
+    (:int32 :int32)
+    (:uint32 :uint32)
+    (:int16 :int16)
+    (:uint16 :uint16)
+    (:uint8 :uint8)
+    (:int8 :int8)))

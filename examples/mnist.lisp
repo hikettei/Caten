@@ -16,8 +16,8 @@
 (in-package :mnist-example)
 ;; Note: we have created a dataset from the MNIST using the following scripts:
 ;; - ./mnist_data/train_data.py
-;; JIT=1 to enable JIT, JIT_DEBUG=2 to see what's going on.
-(setf (ctx:getenv :JIT) 1 (ctx:getenv :JIT_DEBUG) 2)
+;; BACKEND=CLANG to enable JIT JIT_DEBUG=2 to see what's going on.
+(setf (ctx:getenv :BACKEND) "CLANG" (ctx:getenv :JIT_DEBUG) 2)
 (defun load-npy (path) (change-facet (load-array path) :tensor))
 (defun scale (tensor) (proceed (!reshape (!div tensor (fconst 255.0)) (nth 0 (shape tensor)) (* 28 28))))
 

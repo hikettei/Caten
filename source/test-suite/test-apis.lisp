@@ -1,8 +1,5 @@
-(in-package :cl-user)
-(defpackage :caten/apis.test (:use :cl :rove :caten :caten/avm :caten/aasm :caten/air :caten/common.dtype))
-(in-package :caten/apis.test)
-(defmacro range (from below &optional (by 1)) `(loop for i from ,from below ,below by ,by collect i))
-(defmacro skip-if-jit () `(when (= 1 (ctx:getenv :JIT)) (skip "Requires VM Mode!")))
+(in-package :caten/test-suite)
+
 (deftest test-shape-tracker
   (ok
    (let ((a (make-tensor `(5 3 5)))
@@ -41,7 +38,7 @@
   (flet ((test (list from1 to1 by1 broadcast1)
 	   (with-slots ((from caten::from) (to caten::to) (by caten::by) (broadcast caten::broadcast))
 	       (caten::parse-view-subscript 100 list)
-	     (flet ((r (x) (caten/avm:buffer-value (caten/avm:%realize (caten::%tensor->aasm x)))))
+	     (flet ((r (x) (caten/runtime:buffer-value (caten/runtime:realize-graph (caten::%tensor->aasm x) :buffer-type 'caten/byoc/lisp:LispBuffer))))
 	       (ok (and (equal (r from) from1) (equal (r to) to1) (equal (r by) by1) (equal broadcast broadcast1)))))))
     ;; A[0]
     (test 0 0 1 1 nil) (test 3 3 4 1 nil)
@@ -54,7 +51,7 @@
 
 (deftest test-auto-cast
   (flet ((test (dtype il)
-	   (caten/avm:%realize (caten::%tensor->aasm (!add (make-tensor `(3 3) :dtype dtype) (make-tensor `(3 3) :dtype dtype :initial-element il))))))
+	   (caten/runtime:realize-graph (caten::%tensor->aasm (!add (make-tensor `(3 3) :dtype dtype) (make-tensor `(3 3) :dtype dtype :initial-element il))) :buffer-type 'caten/byoc/lisp:LispBuffer)))
     (testing "fconst(1) should be valid, iconst(1.0) should be invaild"
       (test :float16 1)
       (ok (test :float32 1))
@@ -63,10 +60,11 @@
 	(signals (test dtype 1.0))))))
 
 (defun equal-to (a) #'(lambda (x) (= x a)))
+
 (defun pproceed (params tensor)
   (let ((mdl (caten tensor)))
     (apply #'forward mdl params)))
-(defun elements (tensor) (buffer-value (tensor-buffer tensor)))
+
 (deftest test-make-tensor
   (testing "Fixed MakeTensor"
     (ok (every (equal-to 0) (elements (proceed (make-tensor `(10 10))))))
@@ -95,12 +93,12 @@
 	(let ((a (pproceed `((a . 4) (b . 2)) (!add (make-tensor `(a b) :initial-element 'a :dtype :uint32) (iconst 'b)))))
 	  (ok (and (every (equal-to 6) (elements a)) (= (length (elements a)) 8))))))))
 
-(defun check-schedule (avm count &aux (graph (avm-graph avm)))
-  (declare (type avm avm)
+(defun runtime-check-schedule (runtime count &aux (graph (runtime-graph runtime)))
+  (declare (type GraphRuntime runtime)
 	   (type fixnum count))
   (let ((sched (optimize-aasm graph)))
     ;; Only checked on VM Mode
-    (when (= 0 (ctx:getenv :JIT))
+    (when (caten/codegen/backend:jit-mode-p)
       (assert
        (= (length (graph-nodes sched)) count)
        ()
@@ -109,45 +107,41 @@
 
 (deftest test-simplifier-no-grad
   (with-no-grad
-    (ok (check-schedule (caten (!neg (!add (iconst 0) (iconst 'a)))) 3))
-    (ok (check-schedule (caten (!neg (!add (iconst 'a) (iconst 0)))) 3))
-    (ok (check-schedule (caten (!neg (!mul (iconst 0) (iconst 'a)))) 2))
-    (ok (check-schedule (caten (!neg (!mul (iconst 'a) (iconst 0)))) 2))
-    (ok (check-schedule (caten (!neg (!mul (iconst 1) (iconst 'a)))) 3))
-    (ok (check-schedule (caten (!neg (!mul (iconst 'a) (iconst 1)))) 3))
-
+    (ok (runtime-check-schedule (caten (!neg (!add (iconst 0) (iconst 'a)))) 3))
+    (ok (runtime-check-schedule (caten (!neg (!add (iconst 'a) (iconst 0)))) 3))
+    (ok (runtime-check-schedule (caten (!neg (!mul (iconst 0) (iconst 'a)))) 2))
+    (ok (runtime-check-schedule (caten (!neg (!mul (iconst 'a) (iconst 0)))) 2))
+    (ok (runtime-check-schedule (caten (!neg (!mul (iconst 1) (iconst 'a)))) 3))
+    (ok (runtime-check-schedule (caten (!neg (!mul (iconst 'a) (iconst 1)))) 3))
     ;; the top should not folded
-    (ok (check-schedule (caten (!add (iconst 0) (iconst 'a))) 2))
-    (ok (check-schedule (caten (!mul (iconst 0) (iconst 'a))) 1))
-    
+    (ok (runtime-check-schedule (caten (!add (iconst 0) (iconst 'a))) 2))
+    (ok (runtime-check-schedule (caten (!mul (iconst 0) (iconst 'a))) 1))
     (ok (= 1 (elements (pproceed `((a . 1)) (!add (iconst 0) (iconst 'a))))))
     (ok (= -1 (elements (pproceed `((a . 1)) (!neg (!add (iconst 0) (iconst 'a)))))))
     (ok (= 0 (elements (pproceed `((a . 1)) (!mul (iconst 0) (iconst 'a))))))
     (ok (= 0 (elements (pproceed `((a . 1)) (!neg (!mul (iconst 0) (iconst 'a)))))))
     ;; still depends on 'a
-    (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'avm-runtime-error))
+    (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'runtime-error))
     ;; a dependency is purged
     ;; failing
     (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a)))))))))
 
 (deftest test-simplifier
-  (ok (check-schedule (caten (!neg (!add (iconst 0) (iconst 'a)))) 4))
-  (ok (check-schedule (caten (!neg (!add (iconst 'a) (iconst 0)))) 4))
-  (ok (check-schedule (caten (!neg (!mul (iconst 0) (iconst 'a)))) 3))
-  (ok (check-schedule (caten (!neg (!mul (iconst 'a) (iconst 0)))) 3))
-  (ok (check-schedule (caten (!neg (!mul (iconst 1) (iconst 'a)))) 4))
-  (ok (check-schedule (caten (!neg (!mul (iconst 'a) (iconst 1)))) 4))
-
+  (ok (runtime-check-schedule (caten (!neg (!add (iconst 0) (iconst 'a)))) 4))
+  (ok (runtime-check-schedule (caten (!neg (!add (iconst 'a) (iconst 0)))) 4))
+  (ok (runtime-check-schedule (caten (!neg (!mul (iconst 0) (iconst 'a)))) 3))
+  (ok (runtime-check-schedule (caten (!neg (!mul (iconst 'a) (iconst 0)))) 3))
+  (ok (runtime-check-schedule (caten (!neg (!mul (iconst 1) (iconst 'a)))) 4))
+  (ok (runtime-check-schedule (caten (!neg (!mul (iconst 'a) (iconst 1)))) 4))
   ;; the top should not folded
-  (ok (check-schedule (caten (!add (iconst 0) (iconst 'a))) 3))
-  (ok (check-schedule (caten (!mul (iconst 0) (iconst 'a))) 2))
-  
+  (ok (runtime-check-schedule (caten (!add (iconst 0) (iconst 'a))) 3))
+  (ok (runtime-check-schedule (caten (!mul (iconst 0) (iconst 'a))) 2))
   (ok (= 1 (elements (pproceed `((a . 1)) (!add (iconst 0) (iconst 'a))))))
   (ok (= -1 (elements (pproceed `((a . 1)) (!neg (!add (iconst 0) (iconst 'a)))))))
   (ok (= 0 (elements (pproceed `((a . 1)) (!mul (iconst 0) (iconst 'a))))))
   (ok (= 0 (elements (pproceed `((a . 1)) (!neg (!mul (iconst 0) (iconst 'a)))))))
   ;; still depends on 'a
-  (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'avm-runtime-error))
+  (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'runtime-error))
   ;; a dependency is purged
   ;; failing
   (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a))))))))
@@ -470,7 +464,7 @@
 	(let* ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
 	       (one (make-tensor `(3 3) :initial-element 2 :dtype dtype))
 	       (val (proceed (!add max one))))
-	  (if (= (ctx:getenv :JIT) 1)
+	  (if (caten/codegen/backend:jit-mode-p)
 	      (ok (every (equal-to ans) (elements val)) (format nil "[~a] got ~a, expected ~a." dtype (elements val) ans))
 	      (ok (every #'(lambda (x) (not (= x 0))) (elements val)) (format nil "[~a+VM] got ~a, != 0" dtype (elements val)))))))))
 
@@ -489,9 +483,9 @@
 (defmethod forward ((op TestIndexComponents) &rest inputs) (st "A[~] -> A[~]" ((car inputs))))
 (defmethod backward ((op TestIndexComponents) &optional dout) dout)
 (defmethod lower ((op TestIndexComponents) &rest inputs)
-  (with-context
-      (_ (%index-components (car inputs) (cdr inputs)))))
+  (with-context (_ (%index-components (car inputs) (cdr inputs)))))
 (defun test-ic (tensor) (apply #'forward (make-instance 'TestIndexComponents) tensor (map 'list #'iconst (shape tensor))))
+
 (deftest regression-test-index-component-lazy-shaped
   (let ((*default-order* :row))
     (ok (every #'= #(0 1 2 3 4 5 6 7 8) (elements (proceed (test-ic (make-tensor `(3 3))))))
@@ -519,7 +513,7 @@
 	(ok (< (abs (- avg2 0.5)) 0.01))
 	(ok (< (abs (- avg3 0.5)) 0.01))
 	(ng (some #'= first-rand scnd-rand third-rand))
-	(testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
+	(testing "Multiple %threefry2x32 in a single runtime (i.e.: confirm is there really no duplicates in a single compilation.)"
 	  (with-manual-seed (0)
 	    (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
 	      (testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."
@@ -565,13 +559,12 @@
   (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob))))
 
 (deftest call-aot
-  (let ((a (with-device :lisp (proceed (ax+b `(3 3) 1 1)))) (b (with-device :lisp (proceed (ax+b `(3 3) 1 1)))))
+  (let ((a (proceed (ax+b `(3 3) 1 1))) (b (proceed (ax+b `(3 3) 1 1))))
     (ok (every #'= #(2 4 6 8 10 12 14 16 18) (elements (axpy :float32 a b 9 0 9 0 9))))))
 
 (deftest shape-infer-failing-case
   (let ((a (make-tensor `(5 5) :dtype :uint32)))
     (ok (every (equal-to 2) (elements (proceed (!add (!add (iconst 1) (!view a `(0 2) `(0 2))) (!add (iconst 1) (!view a `(2 4) `(2 4))))))))))
-
 ;; [TODO] Precision Test
 (deftest randn-compile-test
   (ok (proceed (!randn `(10 10)))))
@@ -642,3 +635,4 @@
     (ok (eql (tensor-dtype x) *default-int*))
     (ok (equal (tensor-shape x) '(5)))
     (ok (every #'= (elements x) '(1 2 3 4 5)))))
+

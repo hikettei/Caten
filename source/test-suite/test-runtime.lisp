@@ -1,28 +1,13 @@
-(in-package :cl-user)
-
-(defpackage :caten/avm.test
-  (:use :cl :rove :caten/air :caten/aasm :caten/avm :caten/common.dtype))
-(in-package :caten/avm.test)
-
+(in-package :caten/test-suite)
+;; [TODO] Update this test
+;; - TODO: Testing transfer, open-buffer, etc.
 (defun =~ (x y) (< (abs (- x y)) 1e-6))
 (defun %seval (evaluated-to graph &key (test #'=))
-  (ok (funcall test evaluated-to (buffer-value (%realize (optimize-aasm graph))))))
+  (ok (funcall test evaluated-to (buffer-value (realize-graph (optimize-aasm graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))))
 
 (defun %eval (evaluated-to graph &key (test #'=))
-  (ok (every test evaluated-to (buffer-value (%realize (optimize-aasm graph))))))
+  (ok (every test evaluated-to (buffer-value (realize-graph (optimize-aasm graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))))
 
-;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %arange (shape a b &key (dtype :float32) (order :row))
-  (with-asm
-    (m (%make-tensor shape :dtype dtype :order order))
-    (i (%index-components m (%shape shape)))
-    (alpha (%load (%salloc :dtype dtype) a))
-    (beta  (%load (%salloc :dtype dtype) b))
-    ;; a = alpha * i + b
-    (t1 (%mul i alpha))
-    (t2 (%add t1 beta))
-    (c  (%store m t2))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Note: keep in mind that other backends may use this test
 ;; dtype tests should be moved to outside of source
 (defparameter *dtypes* `(:float64 :float32));; :uint64 :int64 :uint32 :int32 :uint16 :int16 :uint8 :int8))
@@ -115,12 +100,22 @@
 				27.0 47.0 12.0 32.0 52.0 17.0 37.0 57.0 3.0 23.0 43.0 8.0 28.0 48.0
 				13.0 33.0 53.0 18.0 38.0 58.0 4.0 24.0 44.0 9.0 29.0 49.0 14.0 34.0
 				54.0 19.0 39.0 59.0))))
+(defun %arange1 (shape a b &key (dtype :float32) (order :row))
+  (with-asm
+    (m (%make-tensor shape :dtype dtype :order order))
+    (i (%index-components m (%shape shape)))
+    (alpha (%load (%salloc :dtype dtype) a))
+    (beta  (%load (%salloc :dtype dtype) b))
+    ;; a = alpha * i + b
+    (t1 (%mul i alpha))
+    (t2 (%add t1 beta))
+    (c  (%store m t2))))
 
 (deftest test-arange
   (macrolet ((testwhen (order shape a b ans)
 	       `(%eval
 		 ,ans
-		 (with-context (_ (%arange ',shape ,a ,b :order ,order))))))
+		 (with-context (_ (%arange1 ',shape ,a ,b :order ,order))))))
     ;; constant folding
     (testwhen :column (2 2) 0 0 #(0 0 0 0))
     (testwhen :column (2 2) 0 1 #(1 1 1 1))
@@ -146,11 +141,11 @@
   (%eval
    #(0 0 1 0 0 0 0 0 0)
    (with-context
-     (a (%arange `(3 3) 1 0 :order :row))
-     (b (%arange `(3 3) 0 2 :order :row))
+     (a (%arange1 `(3 3) 1 0 :order :row))
+     (b (%arange1 `(3 3) 0 2 :order :row))
      (c (%= `(3 3) :row a b))
-     (m1 (%arange `(3 3) 0 1 :order :row))
-     (m2 (%arange `(3 3) 0 0 :order :row))
+     (m1 (%arange1 `(3 3) 0 1 :order :row))
+     (m2 (%arange1 `(3 3) 0 0 :order :row))
      (d (%where c m1 m2)))))
 
 (deftest test-view
@@ -158,72 +153,72 @@
     (%eval
      #(5 6 9 10)
      (with-context
-       (a (%arange `(4 4) 1 0 :order :row))
-       (b (%arange `(2 2) 0 0 :order :row))
+       (a (%arange1 `(4 4) 1 0 :order :row))
+       (b (%arange1 `(2 2) 0 0 :order :row))
        (v (%view a `(2 2) `(1 1) `(3 3) `(1 1) `(nil nil) (%stride `(4 4) :row)))
        (out (%add b v)))))
   (testing "Slicing tensors, -1 indexing"
     (%eval
      #(10 9 6 5)
      (with-context
-       (a (%arange `(4 4) 1 0 :order :row))
-       (b (%arange `(2 2) 0 0 :order :row))
+       (a (%arange1 `(4 4) 1 0 :order :row))
+       (b (%arange1 `(2 2) 0 0 :order :row))
        (v (%view a `(2 2) `(2 2) `(0 0) `(-1 -1) `(nil nil) (%stride `(4 4) :row)))
        (out (%add b v)))))
   (testing "Slicing tensors, read by 3"
     (%eval
      #(0 3 18 21)
      (with-context
-       (a (%arange `(6 6) 1 0 :order :row))
-       (b (%arange `(2 2) 0 0 :order :row))
+       (a (%arange1 `(6 6) 1 0 :order :row))
+       (b (%arange1 `(2 2) 0 0 :order :row))
        (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) :row)))
        (out (%add b v)))))
   (testing "Slicing tensors, read by -3"
     (%eval
      #(0 3 18 21)
      (with-context
-       (a (%arange `(6 6) 1 0 :order :row))
-       (b (%arange `(2 2) 0 0 :order :row))
+       (a (%arange1 `(6 6) 1 0 :order :row))
+       (b (%arange1 `(2 2) 0 0 :order :row))
        (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) :row)))
        (out (%add b v)))))
   (testing "Transpose"
     (%eval
      #(0.0 4.0 8.0 4.0 8.0 12.0 8.0 12.0 16.0)
      (with-context
-       (a (%arange `(3 3) 1 0 :order :row))
+       (a (%arange1 `(3 3) 1 0 :order :row))
        (b1 (%view a `(3 3) `(0 0) `(3 3) `(1 1) `(nil nil) (%stride `(3 3) :column)))
-       (b2 (%arange `(3 3) 1 0 :order :column))
+       (b2 (%arange1 `(3 3) 1 0 :order :column))
        (c (%add b1 b2)))))
   (testing "Broadcasting (all-reduce along all axes)"
     (%eval
      #(630.0)
      (with-context
-       (a (%arange `(6 6) 1 0 :order :row))
-       (b (%arange `(1 1) 0 0 :order :row))
+       (a (%arange1 `(6 6) 1 0 :order :row))
+       (b (%arange1 `(1 1) 0 0 :order :row))
        (b (%view b `(6 6) `(0 0) `(6 6) `(1 1) `(t t) (%stride `(6 6) :row)))
        (b (%add b a :reduction t)))))
   (testing "Broadcasting (all-reduce where axis=1)"
     (%eval
      #(3 3 3)
      (with-context
-       (a (%arange `(3 3) 0 1 :order :column))
-       (b (%arange `(3 1) 0 0 :order :column))
+       (a (%arange1 `(3 3) 0 1 :order :column))
+       (b (%arange1 `(3 1) 0 0 :order :column))
        (b (%view b `(3 3) `(0 0) `(3 3) `(1 1) `(nil t) (%stride `(3 3) :column)))
        (b (%add b a :reduction t)))))
   (testing "Broadcasting (all-reduce where axis=0 ndim=3)"
     (%eval
      #(3 3 3 3 3 3 3 3 3)
      (with-context
-       (a (%arange `(3 3 3) 0 1 :order :column))
-       (b (%arange `(3 3 1) 0 0 :order :column))
+       (a (%arange1 `(3 3 3) 0 1 :order :column))
+       (b (%arange1 `(3 3 1) 0 0 :order :column))
        (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(nil nil t) (%stride `(3 3 3) :column)))
        (b (%add b a :reduction t)))))
   (testing "Broadcasting (all-scatter)"
     (%eval
      #(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
      (with-context
-       (a (%arange `(3 3 3) 0 0 :order :column))
-       (b (%arange `(1 1 1) 0 1 :order :column))
+       (a (%arange1 `(3 3 3) 0 0 :order :column))
+       (b (%arange1 `(1 1 1) 0 1 :order :column))
        (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(t t t) (%stride `(3 3 3) :column)))
        (c (%add a b :reduction t))))))
 
@@ -245,7 +240,7 @@
 
 (deftest test-squared-gemm
   (macrolet ((testcase (ans x y n)
-	       `(ok (every #'(lambda (x) (= x ,ans)) (buffer-value (%realize (make-squared-gemm ,x ,y ,n)))))))
+	       `(ok (every #'(lambda (x) (= x ,ans)) (buffer-value (realize-graph (make-squared-gemm ,x ,y ,n) :buffer-type 'caten/byoc/lisp:LispBuffer))))))
     (testcase 3 1.0 1.0 3)
     (testcase 6 1.0 1.0 6)
     (testcase 9 1.0 1.0 9)
@@ -255,10 +250,3 @@
     (testcase 120 10.0 2.0 6)
     (testcase 120 2.0 10.0 6)
     (testcase 600 10.0 10.0 6)))
-
-;; [TODO]
-;; - Composed View and infer-tensor-info testing
-;;   (im not sure if it works and the direction is right)
-;; - reshape testing
-;; - (arange x 0 0) into a single kernel (Store 0=0 fusion)
-;; - implement a frontend (Tensor, Function, Print etc)
