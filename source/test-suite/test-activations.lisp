@@ -60,7 +60,7 @@
 (define-nn-test Softmax
   "Testing w/ Softmax([512, 256])"
   :compile (caten (!softmax (make-tensor `(512 256) :from 'x)))
-  :inputs (ctx:with-contextvar (:jit 0 :avm :lisp)
+  :inputs (ctx:with-contextvar (:BACKEND "LISP")
 	    (list (proceed (!rand `(512 256)))))
   :caten ((model x) (forward model `(x . ,x)))
   :lisp  ((model x) (proceed (!softmax x)))
@@ -76,7 +76,7 @@
 (define-nn-test LogSoftmax
   "Testing w/ LogSoftmax([512, 256])"
   :compile (caten (!log-softmax (make-tensor `(512 256) :from 'x)))
-  :inputs (ctx:with-contextvar (:jit 0 :avm :lisp)
+  :inputs (ctx:with-contextvar (:BACKEND "LISP")
 	    (list (proceed (!rand `(512 256)))))
   :caten ((model x) (forward model `(x . ,x)))
   :lisp  ((model x) (proceed (!log-softmax x)))
@@ -219,7 +219,6 @@
   :in-place ((model) (= 2 (n-args `(100 100) model)))
   :kernel   ((model) (= 1 (n-kernels model))))
 
-
 (defun hardtanh-lisp (x &aux (min_val -1.0) (max_val 1.0)) (cond ((> x max_val) max_val) ((< x min_val) min_val) (t x)))
 (define-nn-test HardTanh
   "Testing w/ HardTanh([100, 100])"
@@ -234,7 +233,7 @@
 (define-nn-test Softmin
   "Testing w/ Softmin([512, 256])"
   :compile (caten (!softmin (make-tensor `(512 256) :from 'x)))
-  :inputs (ctx:with-contextvar (:jit 0 :avm :lisp)
+  :inputs (ctx:with-contextvar (:BACKEND "LISP")
             (list (proceed (!rand `(512 256)))))
   :caten ((model x) (forward model `(x . ,x)))
   :lisp  ((model x) (proceed (!softmin x)))
