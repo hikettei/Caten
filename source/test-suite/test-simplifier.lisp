@@ -5,8 +5,8 @@
 ;; [TODO] Doing the same test for JIT.
 (deftest stride-reuse-is-working-p
   (testing "Introducing a new symbolic reshape won't create a new node for computing strides."
-    (let ((graph-large (ctx:with-contextvar (:JIT 0) (avm-graph (caten (!reshape (!matmul (make-tensor `(n a b)) (make-tensor `(n b c))) `(c b n))))))
-          (graph-small (ctx:with-contextvar (:JIT 0) (avm-graph (caten (!matmul (make-tensor `(n a b)) (make-tensor `(n b c))))))))
+    (let ((graph-large (ctx:with-contextvar (:BACKEND "LISP") (runtime-graph (caten (!reshape (!matmul (make-tensor `(n a b)) (make-tensor `(n b c))) `(c b n))))))
+          (graph-small (ctx:with-contextvar (:BACKEND "LISP") (runtime-graph (caten (!matmul (make-tensor `(n a b)) (make-tensor `(n b c))))))))
       (ok (= (length (graph-nodes graph-large)) (1+ (length (graph-nodes graph-small)))) "Only the difference is :VIEW.")
       (dolist (sym `(a b c n))
         ;; [TODO] Remove :UINT64 allocation
