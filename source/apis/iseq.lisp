@@ -425,7 +425,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 	      for toplevel-id in toplevel-ids
 	      for sid = (std->lid tid)
 	      for tensor = (tid->tensor tid)
-	      ;; A pair of {ID in AVM} {Actual Tensor}
+	      ;; A pair of {ID in GraphRuntime} {Actual Tensor}
 	      if tensor do (session/set-tid session (if pause-backward-p toplevel-id sid) tensor))
 	;; as well as backward
 	(when (null no-grad)
@@ -462,7 +462,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 (caten tensors &key (backend (ctx:getenv :BACKEND)) (rewriters nil) (simplifiers *external-simplifiers*))
 ```
 
-Compiles the given tensors, returning an AVM struct.
+An entry point for compiling the give tensors, returning GraphRuntime.
 
 - tensor[Tensor|List] toplevel tensors.
 - backend[keyword] a keyword of the backend to use. (assumed to be defined by define-backend)
@@ -479,7 +479,7 @@ Compiles the given tensors, returning an AVM struct.
   (cond
     ((null params))
     ((every #'consp params)
-     (warn "The format (format avm `(id . value) ...) will be deprecated in the future. Use (format avm key1 value1 key2 value2 ...) instead.")
+     ;; (warn "The format (format runtime `(id . value) ...) will be deprecated in the future. Use (format runtime key1 value1 key2 value2 ...) instead.")
      (loop for (place . value) in params
            for value-buffer = (if (tensor-p value)
                                   (progn
