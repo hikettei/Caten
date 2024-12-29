@@ -28,7 +28,7 @@ It has a unique `name`, and `cache-name`. If `cache-name` was assigned, the comp
 
 In order to lowering the computation graph as the foreign language, `items` must be consisted of JITAble operations (except for special irs and :allocate). If it qualifies, `jitable` is set to T.
 
-Otherwise, the scheduled items are relocated to the compiled avm directly. Specifially, if the item was :ALLOCATE, :allocated-p is set to T.
+Otherwise, the scheduled items are relocated to the compiled GraphRuntime directly. Specifially, if the item was :ALLOCATE, :allocated-p is set to T.
 
 - blueprint[list] is a lowered schedule-item
 - polyhedral[list] is a Polyhedral IR obtained by lowering blueprint

@@ -37,7 +37,7 @@ def torch_grad(tensor): return tensor.grad")
        ,@body)))
 
 (defun check-bw-schedule (model expected)
-  (when (= 1 (ctx:getenv :JIT))
+  (when (caten/codegen/backend:jit-mode-p)
     (let ((count (count :JIT_KERNEL (graph-nodes (runtime-graph model)) :key #'node-type)))
       (ok (= count expected) (format nil "Expected ~a, scheduled ~a" expected count)))))
 ;; Testing Unary Backwards
