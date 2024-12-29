@@ -127,7 +127,8 @@
    #:caten
    #:forward
    #:backward
-   #:proceed)
+   #:proceed
+   #:%run)
 
   ;; from function.lisp
   (:export

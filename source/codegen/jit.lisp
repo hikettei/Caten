@@ -228,6 +228,8 @@ caten/codegen overview:
 
 (defun schedule-graph->avm-graph (base-graph graph &aux (map (id->output-map graph)) (local-gensym-table (make-hash-table)))
   (declare (type Graph graph base-graph))
+  (when (typep graph 'FastGraph)
+    (setf graph (->graph-with-tpsort graph)))
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
              (multiple-value-bind (deps new-seen) (get-subgraph base-graph id allocated)

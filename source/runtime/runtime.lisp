@@ -49,6 +49,8 @@ This package provides GraphRuntime, which is a class to run an air graph.
   (:documentation ""))
 
 (defun make-runtime (graph &key (fw-outputs nil) (bw-outputs nil) (variables (make-hash-table)) (params nil) (id2tensor (make-hash-table)) (runtime 'GraphRuntime) (buffer-type 'AbstractBuffer))
+  (when (null (graph-outputs graph))
+    (setf (graph-outputs graph) (append fw-outputs bw-outputs)))
   (make-instance runtime :graph graph :fw-outputs fw-outputs :bw-outputs bw-outputs :variables variables :params params :id2tensor id2tensor :buffer-type buffer-type))
 
 (defmethod free-runtime ((runtime GraphRuntime))

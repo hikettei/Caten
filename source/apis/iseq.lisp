@@ -531,6 +531,14 @@ An entry point for compiling the give tensors, returning GraphRuntime.
   (runtime-sync-tensors runtime)
   t)
 
+(defmethod %run ((runtime GraphRuntime) &rest params)
+  (let ((params (loop for (key . val) in params collect (cons key (if (tensor-p val) (tensor-buffer val) val)))))
+    (runtime-set-params runtime params)
+    (runtime-forward runtime)
+    (runtime-sync-tensors runtime)
+    (flet ((ap (x) (gethash x (runtime-variables runtime))))
+      (apply #'values (map 'list #'ap (runtime-fw-outputs runtime))))))
+
 (defun proceed (&rest tensors)
   "
 ```
