@@ -66,7 +66,7 @@
 ;; [TODO] CL returns complex number while caten returns NaN
 (deftest test-expt
   (testing "Power is a scalar and fixnum (-2.5 < n < 2.5), only for VM."
-    (when (= 0 (ctx:getenv :JIT))
+    (when (null (caten/codegen/backend:jit-mode-p))
       (let ((failed nil))
         (loop for n upfrom 0 below 5.0 by 0.1
               for power = (+ n 0.0) ;; TODO: n < 0

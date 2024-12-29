@@ -362,7 +362,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 ;; Segfault Test (occurs with use_kv_cache=T, and n_layers > 1)
 (deftest test-symbolic-regression-test
   (with-no-grad
-    (when (= 1 (ctx:getenv :JIT))
+    (when (caten/codegen/backend:jit-mode-p)
       (let* ((model (Transformer 32 4 0 1e-5 32))
              (x (forward model (make-tensor `(b s)) (iconst 'n)))
              (model (caten x)))
@@ -370,7 +370,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 
 (deftest test-symbolic-transformer-forward-test-no-kv-cache-1-layer
   (with-no-grad
-    (when (= 1 (ctx:getenv :JIT))
+    (when (caten/codegen/backend:jit-mode-p)
       (let* ((caten/llm::*use-kv-cache* nil)
              (model (Transformer 32 4 1 1e-5 32))
              (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
@@ -380,7 +380,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 
 (deftest test-symbolic-transformer-forward-test-no-kv-cache-2-layer
   (with-no-grad
-    (when (= 1 (ctx:getenv :JIT))
+    (when (caten/codegen/backend:jit-mode-p)
       (testing "No Segv?"
         (let* ((caten/llm::*use-kv-cache* nil)
                (model (Transformer 32 4 2 1e-5 32))
@@ -392,7 +392,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 #|
 (deftest test-symbolic-transformer-forward-test-1-layer
   (with-no-grad
-    (when (= 1 (ctx:getenv :JIT))
+    (when (caten/codegen/backend:jit-mode-p)
       (let* ((caten/llm::*use-kv-cache* t)
              (model (Transformer 32 4 1 1e-5 32))
              (x (forward model (make-tensor `(1 s) :from 'x) (iconst 'n)))
@@ -402,7 +402,7 @@ def attn_impl_torch(x, n_heads, c_attn_weight, c_attn_bias, c_proj_weight, c_pro
 
 (deftest test-symbolic-transformer-forward-test-2-layer
   (with-no-grad
-    (when (= 1 (ctx:getenv :JIT))
+    (when (caten/codegen/backend:jit-mode-p)
       (testing "No Segv?"
         (let* ((caten/llm::*use-kv-cache* t)
                (model (Transformer 32 4 2 1e-5 32))
