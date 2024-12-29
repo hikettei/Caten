@@ -6,7 +6,7 @@
 
 (defun profile-report (runtime info elapsed-time args)
   (format t "~a |  KERNEL  | ~,6fs | ~a| ~a | ~a~%" ;; [TODO] Compute GFLOPS
-          (render-runtime-position runtime)
+          (caten/runtime/profile:render-runtime-position runtime)
           elapsed-time
           (with-output-to-string (out)
             (loop for x in args
