@@ -60,7 +60,6 @@ nav:
       - ShapeTracker: packages/caten.apis.shapetracker.md
       - Facet APIs: packages/caten.apis.facet_apis.md
       - StateDict: packages/caten.apis.state-dict.md
-    - caten/avm: packages/caten.avm.md
     - caten/nn:
       - Activation: packages/caten.nn.activations.md
       - Convolution: packages/caten.nn.convolutions.md
