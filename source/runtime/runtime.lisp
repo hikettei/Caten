@@ -65,7 +65,7 @@ This package provides GraphRuntime, which is a class to run an air graph.
 
 (defmethod runtime-setvar ((runtime GraphRuntime) var value)
   (check-type var symbol)
-  (assert (typep value 'AbstractBuffer) () "Runtime: the value ~a is not a buffer." value)
+  (assert (or (numberp value) (find value `(t :nil)) (typep value 'AbstractBuffer)) () "Runtime: the value ~a is not a one of AbstractBuffer, number, boolean.." value)
   (setf (gethash var (runtime-variables runtime)) value))
 
 (defmethod runtime-getvar ((runtime GraphRuntime) var)
@@ -125,6 +125,9 @@ disassemble:
 
 (defmethod runtime-forward ((runtime GraphRuntime) &aux (*jit-time* 0.0) (*vm-time* 0.0) (*allocate-time* 0.0))
   (setf (runtime-pc runtime) 0)
+  ;; Two constants: T=T, NIL=:NIL (replaced as nil by the runtime-getvar function)
+  (runtime-setvar runtime t t)
+  (runtime-setvar runtime nil :nil)
   (start-profile)
   (flet ((finish ()
            (report-profile-result)
