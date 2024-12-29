@@ -237,7 +237,7 @@ out = allocate(*shape, *stride)
 
 - dtype[dtype-t] dtype to allocate.
 - nrank[(unsigned-byte 32)] a rank of tensor. If set to 0, allocates a scalar.
-- from[symbol or buffer or null] If specified, instead of allocating, an already allocated Buffer is used. If a symbol is specified, a buffer is already defined in the variable table of AVM. If buffer is specified, use the buffer directly.
+- from[symbol or buffer or null] If specified, instead of allocating, an already allocated Buffer is used. If a symbol is specified, a buffer is already defined in the variable table of GraphRuntime. If buffer is specified, use the buffer directly.
 - pool[null or Buffer] A place to store the result of the previous allocation. Allocation will be performed only after this slot is set to nil, or size are different due to dynamic shape.
 "
 	 :slots ((nrank :type (unsigned-byte 32))
