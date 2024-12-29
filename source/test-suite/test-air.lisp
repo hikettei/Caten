@@ -1,11 +1,5 @@
-(in-package :cl-user)
+(in-package :caten/test-suite)
 
-(defpackage :caten/air.test
-  (:use :cl :rove :caten/air :trivia))
-
-(in-package :caten/air.test)
-
-;; ~~ helpers ~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun <node> (type writes reads &rest attrs) (apply #'make-node :Testing type writes reads attrs))
 (defun compare (graph expected
 		&key

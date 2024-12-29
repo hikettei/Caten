@@ -53,7 +53,7 @@
 
 (defun unroll-node (node space user)
   (when (eql (node-type node) :Aref)
-    (when (= -1 (caten/avm:buffer-nrank (getattr node :buffer)))
+    (when (= -1 (caten/runtime:buffer-nrank (getattr node :buffer)))
       (setf (getattr node :storage-id) (make-suffix-for-is (getattr node :storage-id) (getattr node :space) space user)))
     (return-from unroll-node node))
   (when (null (getattr node :_type_relay :allow-undefined t))
@@ -62,13 +62,13 @@
         for w in (node-writes node)
         for wi in (relay-write-iters (read-type-relay node))
         for nth upfrom 0
-        if (= (caten/avm:buffer-nrank write) -1)
+        if (= (caten/runtime:buffer-nrank write) -1)
           do (setf (nth nth (node-writes node)) (make-suffix-for-is w wi space user)))
   (loop for read in (relay-reads (read-type-relay node))
         for r in (node-reads node)
         for ri in (relay-read-iters (read-type-relay node))
         for nth upfrom 0
-        if (and read ri (= 0 (caten/avm:buffer-nrank read)))
+        if (and read ri (= 0 (caten/runtime:buffer-nrank read)))
           do (setf (nth nth (node-reads node)) (make-suffix-for-is r ri space user)))
   node)
 

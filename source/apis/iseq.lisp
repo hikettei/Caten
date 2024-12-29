@@ -10,10 +10,6 @@
 ;; ~~ Compiler-Session (Utils) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; TODO(hikettei): It is just sorting tensors with adding a mutation rule to the Module, can't we reimplement it with a simple way?
 ;; Current impl is too complex :( and there's a lot of reuse.
-(defparameter *jit-device* nil)
-(defmacro with-jit (device &body body)
-  `(let ((*jit-device* ,device)) ,@body))
-
 (defstruct (Compiler-Session
 	    (:conc-name session-)
 	    (:constructor make-compiler-session (&key (name :main))))
@@ -429,7 +425,7 @@ The iseq obtained by lowering the Module must match the output destination speci
 	      for toplevel-id in toplevel-ids
 	      for sid = (std->lid tid)
 	      for tensor = (tid->tensor tid)
-	      ;; A pair of {ID in AVM} {Actual Tensor}
+	      ;; A pair of {ID in GraphRuntime} {Actual Tensor}
 	      if tensor do (session/set-tid session (if pause-backward-p toplevel-id sid) tensor))
 	;; as well as backward
 	(when (null no-grad)
@@ -447,86 +443,101 @@ The iseq obtained by lowering the Module must match the output destination speci
 			     do (%make-tensor (tensor-shape tensor) :dtype (tensor-dtype tensor) :order (tensor-order tensor) :id sid))))))
 	;; If the graph was created from FastGraph, the time-series order should be broken.
 	;; call verify-graph to sort them.
-	(let ((avm (make-avm graph (session-name session)
-		             (session-tid->tensor session)
-		             (if pause-backward-p
-		                 toplevel-ids
-		                 (map 'list #'std->lid (session-fw-out-ids session)))
-		             (when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session))))))
-          (setf (avm-params-to-optimize avm)
-                (loop for i in iseq
-                      if (tensor-requires-grad i)
-                        collect i))
-          avm)))))
+        (make-runtime
+         graph
+         :fw-outputs (if pause-backward-p toplevel-ids (map 'list #'std->lid (session-fw-out-ids session)))
+         :bw-outputs (when (null no-grad) (map 'list #'std->lid (session-bw-out-ids session)))
+         :params (loop for i in iseq
+                       if (tensor-requires-grad i)
+                         collect i)
+         :id2tensor (session-tid->tensor session))))))
 
 (defun caten (tensors
 	      &key
-		(jit (= 1 (ctx:getenv :JIT)))
-		(name (intern (symbol-name (gensym "MAIN")) "KEYWORD"))
+                (backend (ctx:getenv :BACKEND))
                 (rewriters nil)
 		(simplifiers *external-simplifiers*))
   "
 ```lisp
-(caten tensors &key (jit (= 1 (ctx:getenv :JIT))) (name :main) (simplifiers *external-simplifiers*))
+(caten tensors &key (backend (ctx:getenv :BACKEND)) (rewriters nil) (simplifiers *external-simplifiers*))
 ```
 
-Compiles the given tensors, returning an AVM struct.
+An entry point for compiling the give tensors, returning GraphRuntime.
 
 - tensor[Tensor|List] toplevel tensors.
-- jit[boolean] If set to 0, caten only applies the graph-level compilation. If set to 1, caten calls `%jit` to generate the fast kernel supported by `caten/codegen`. This parameter should be specified using the `(ctx:with-contextvar)` macro.
-- name[keyword] the name of compiled avm.
+- backend[keyword] a keyword of the backend to use. (assumed to be defined by define-backend)
 - rewriters[list] a list of graph rewriters called each time the compiler will lower the module.
 - simplifiers[list] a list of external simplifiers used in the graph-level compilation. (defined by defsimplifier) Pass the function name.
 "
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
-  (let ((avm (%compile-toplevel tensors :name name :rewriters rewriters :external-simplifiers simplifiers)))
-    (if jit (caten/codegen:jit avm :renderer (or *jit-device* (ctx:getenv :jit_backend))) avm)))
+  (caten/codegen:jit
+   (%compile-toplevel tensors :rewriters rewriters :external-simplifiers simplifiers)
+   :backend backend))
 
-(defun avm/sync-tensors (avm)
-  "Synchronize buffer and tensor (but limited to the end of nodes, and grads)"
-  (declare (type caten/avm:avm avm))
+(defun runtime-set-params (runtime params)
+  (cond
+    ((null params))
+    ((every #'consp params)
+     ;; (warn "The format (format runtime `(id . value) ...) will be deprecated in the future. Use (format runtime key1 value1 key2 value2 ...) instead.")
+     (loop for (place . value) in params
+           for value-buffer = (if (tensor-p value)
+                                  (progn
+                                    (assert (buffer-value (tensor-buffer value)) () "make-params-table: The tensor ~a is not realized." value)
+                                    (tensor-buffer value))
+                                  (progn
+                                    (assert (and (symbolp place) (or (numberp value) (buffer-p value))) () "make-params-table: Only buffer, tensor, and numbers are allowed.")
+                                    value))
+           do (setf (gethash place (runtime-variables runtime)) value-buffer)))
+    (T
+     (assert (= 0 (mod (length params) 2)) () "The number of parameters should be even.")
+     (loop for nth upfrom 0 below (length params) by 2
+           for place = (nth nth params)
+           for value = (nth (1+ nth) params)
+           for value-buffer = (if (tensor-p value)
+                                  (progn
+                                    (assert (buffer-value (tensor-buffer value)) () "make-params-table: The tensor ~a is not realized." value)
+                                    (tensor-buffer value))
+                                  (progn
+                                    (assert (and (symbolp place) (or (numberp value) (buffer-p value))) () "make-params-table: Only buffer, tensor, and numbers are allowed.")
+                                    value))
+           do (setf (gethash place (runtime-variables runtime)) value-buffer)))))
+
+(defun runtime-sync-tensors (runtime)
+  (declare (type GraphRuntime runtime))
   (maphash
    #'(lambda (k v)
-       (let ((var (gethash k (avm-variables avm))))
-	 (when var
-	   (setf (tensor-buffer v) var))))
-   (avm-id2tensor avm)))
+       (let ((var (gethash k (runtime-variables runtime))))
+         (when var (setf (tensor-buffer v) var))))
+   (runtime-id2tensor runtime)))
+  
+(defmethod forward ((runtime GraphRuntime) &rest params)
+  (runtime-set-params runtime params)
+  (runtime-forward runtime)
+  (runtime-sync-tensors runtime)
+  (flet ((ap (x &aux (tensor (or (gethash x (runtime-id2tensor runtime)))))
+	   (assert (tensor-p tensor) () "Forward: Attempted to reference the output variable ~a, but it is not defined in the runtime id2tensor table: ~a~%~a"
+	           x (hash-table-keys (runtime-id2tensor runtime)) runtime)
+           ;; Note: (forward model), (forward model) ... each outputs may share the same buffer. so the output needs to be copied.
+           (when (and (shape tensor) (buffer-value (tensor-buffer tensor)))
+             (setf (tensor-buffer tensor) (copy-buffer (tensor-buffer tensor))
+                   (buffer-value (tensor-buffer tensor)) (copy-buffer-value runtime (tensor-buffer tensor))))
+	   (%apply-proceed tensor)))
+    (apply #'values (map 'list #'ap (runtime-fw-outputs runtime)))))
 
-(defmethod forward ((avm caten/avm:AVM) &rest params)
-  (let ((*device* (ctx:getenv :AVM))
-	(params (loop for (key . val) in params
-		      collect (cons key (if (tensor-p val) (tensor-buffer val) val)))))
-    (vm/set-params avm params)
-    (vm/forward avm)
-    (avm/sync-tensors avm)
-    (flet ((ap (x &aux (tensor (or (gethash x (avm-id2tensor avm)))))
-	     (assert (tensor-p tensor) () "Forward: Attempted to reference the output variable ~a, but it is not defined in the avm id2tensor table: ~a~%~a"
-		     x (hash-table-keys (avm-id2tensor avm)) avm)
-             ;; Note: (forward model), (forward model) ... each outputs may share the same buffer. so the output needs to be copied.
-             (when (and (shape tensor) (buffer-value (tensor-buffer tensor)))
-               (assert (arrayp (buffer-value (tensor-buffer tensor))) () "Note(hikettei): avm/sync-tensors only expected an array to be tensor-buffer.
-Please create a method here to copy a sequence for different hardware. (This should be the only point you have to add a patch)")
-               (setf (tensor-buffer tensor) (copy-buffer (tensor-buffer tensor))
-                     (buffer-value (tensor-buffer tensor)) (copy-seq (buffer-value (tensor-buffer tensor)))))
-	     (%apply-proceed tensor)))
-      (apply #'values (map 'list #'ap (avm-fw-outputs avm))))))
+(defmethod backward ((runtime GraphRuntime) &optional prev-dout)
+  (assert (null prev-dout) () "(backward GraphRuntime) does not accept prev-dout")
+  (runtime-backward runtime)
+  (runtime-sync-tensors runtime)
+  t)
 
-(defmethod %run ((avm caten/avm:AVM) &rest params)
-  (let ((*device* (ctx:getenv :AVM))
-	(params (loop for (key . val) in params collect (cons key (if (tensor-p val) (tensor-buffer val) val)))))
-    (vm/set-params avm params)
-    (vm/forward avm)
-    (avm/sync-tensors avm)
-    (flet ((ap (x) (gethash x (avm-variables avm))))
-      (apply #'values (map 'list #'ap (avm-fw-outputs avm))))))
-
-(defmethod backward ((avm caten/avm:AVM) &optional prev-dout)
-  (declare (ignore prev-dout))
-  (let ((*device* (ctx:getenv :AVM)))
-    (vm/backward avm)
-    (avm/sync-tensors avm)
-    t))
+(defmethod %run ((runtime GraphRuntime) &rest params)
+  (let ((params (loop for (key . val) in params collect (cons key (if (tensor-p val) (tensor-buffer val) val)))))
+    (runtime-set-params runtime params)
+    (runtime-forward runtime)
+    (runtime-sync-tensors runtime)
+    (flet ((ap (x) (gethash x (runtime-variables runtime))))
+      (apply #'values (map 'list #'ap (runtime-fw-outputs runtime))))))
 
 (defun proceed (&rest tensors)
   "

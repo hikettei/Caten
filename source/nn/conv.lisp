@@ -104,4 +104,3 @@ Applies a convolutional layer over a tensor `x` with a given `weight` and option
       (setf (convnd-weight convnd) weight (convnd-bias convnd) bias)
       (forward convnd x))))
 ;; TODO: (defmethod export-to-onnx ((conv ConvND) x) ...)
-(in-package :caten/nn.test)

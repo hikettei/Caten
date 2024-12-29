@@ -109,11 +109,11 @@ jobs:
       - name: Running MobilenetV2
         run: |
           ros config set dynamic-space-size 8gb
-          PROFILE=1 JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/mobilenet_v2.onnx --image ./cat.png --label 282
+          PROFILE=1 JIT_DEBUG=2 BACKEND=CLANG qlot exec ./roswell/caten.ros classification --model ./models/mobilenet_v2.onnx --image ./cat.png --label 282
       - name: Running ResNet18
         run: |
           ros config set dynamic-space-size 8gb
-          PROFILE=1 JIT_DEBUG=2 JIT=1 qlot exec ./roswell/caten.ros classification --model ./models/resnet18.onnx --image ./cat.png --label 281
+          PROFILE=1 JIT_DEBUG=2 BACKEND=CLANG qlot exec ./roswell/caten.ros classification --model ./models/resnet18.onnx --image ./cat.png --label 281
   GGUF_Optimization:
     name: GGUF Optimization
     runs-on: ubuntu-latest
@@ -131,4 +131,4 @@ jobs:
         run: |
           ros config set dynamic-space-size 8gb
           : # Reproducing the output from huggingface gpt2
-          PROFILE=1 JIT=1 JIT_DEBUG=4 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --expected "Hello, I'm sorry, but I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you" --max-length 100
+          PROFILE=1 BACKEND=CLANG JIT_DEBUG=4 PARALLEL=8 ./roswell/caten.ros llm-example --model "gpt2" --prompt "Hello" --expected "Hello, I'm sorry, but I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you're aware of this. I'm not sure if you" --max-length 100

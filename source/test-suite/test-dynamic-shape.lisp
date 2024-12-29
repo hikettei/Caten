@@ -2,7 +2,7 @@
 
 (deftest symbolic-function-args-test
   (with-protect-jit
-    (let ((kernel (find :JIT_KERNEL (graph-nodes (avm-graph (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))) :key #'node-type)))
+    (let ((kernel (find :JIT_KERNEL (graph-nodes (runtime-graph (caten (!add (!view (make-tensor `(n)) `(froma toa bya)) (!view (make-tensor `(n)) `(fromb tob byb)))))) :key #'node-type)))
       (assert kernel () "axpy is not scheduled")
       (let ((args (node-reads kernel)))
         (ok (every #'(lambda (x) (find x args)) `(BYB FROMB BYA FROMA)))))))

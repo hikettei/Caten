@@ -1,15 +1,7 @@
 (defpackage :caten/codegen/blueprint
   (:documentation "The package `caten/codegen/blueprint` is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
 The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers)
-  (:import-from
-   :caten/avm
-   #:buffer-dtype
-   #:buffer-nrank
-   #:buffer-shape
-   #:buffer-stride
-   #:buffer-views
-   #:buffer-orig-buffer-shape)
+  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers :caten/runtime/runtime :caten/runtime/buffer)
   (:import-from
    :caten/codegen/renderer
    #:render-expr
@@ -412,7 +404,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
             (let ((users (id->users (ctx-schedule-graph ctx) (car (node-writes node)))))
               (if (some #'(lambda (x) (getattr x :jitable)) users) ;; If the scalar is used in another jitable kernel?
                   (let* ((dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
-                         (buffer (caten/avm:make-buffer 1 `(1) `(0) dtype `((0 1 1 t))))
+                         (buffer (make-buffer `(1) `(0) dtype `((0 1 1 t)) :device 'RelayBuffer))
                          (space (buffer-merge-dims (ctx-schedule-graph ctx) buffer)))
                     (setf (car (relay-write-iters (read-type-relay node))) space
                           (car (relay-writes (read-type-relay node))) buffer))
@@ -479,7 +471,7 @@ Depends=~a Reduce=~a Users=~a
                   if (and type is (find read constants)) do
                     ;; The load to :declare-type is a scalar.
                     (setf (nth nth (relay-reads (read-type-relay bp)))
-                          (let ((buffer (caten/avm:copy-buffer type)))
+                          (let ((buffer (caten/runtime:copy-buffer type)))
                             (setf (buffer-nrank buffer) -1)
                             buffer))))
     blueprints))
@@ -619,7 +611,7 @@ Lowers the Schedule-Item into blueprint.
                          (error "map-from: the id ~a is not found." x)))))
              (update-buffer (buffer)
                (when buffer
-                 (let ((buffer (caten/avm:copy-buffer buffer)))
+                 (let ((buffer (copy-buffer buffer)))
                    (setf (buffer-shape buffer) (map 'list #'map-from (buffer-shape buffer))
                          (buffer-stride buffer) (map 'list #'map-from (buffer-stride buffer))
                          (buffer-views buffer)
