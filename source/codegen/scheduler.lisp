@@ -740,7 +740,6 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
   (declare (type graph schedule-graph) (optimize (speed 3)))
   (labels ((%newtype (buffer)
              (make-buffer
-              (buffer-nrank buffer)
               (loop for s in (buffer-shape buffer)
                     for nth fixnum upfrom 0
                     for v = (nth nth (buffer-views buffer))
@@ -757,7 +756,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                       collect `(0 1 1 t)
                     else
                       collect v)
-              :device 'RelayBuffer))
+              :device 'caten/codegen/shape-inference::RelayBuffer))
            (%jstore (w a b base-type)
              (make-node :Buffer :MOVE (list w) (list a b)
                         :_type_relay
