@@ -124,7 +124,7 @@
 		      (lisp  (testing "4. Computing the kernel in Lisp"  (apply #'test/compute-in-lisp ,name model inputs)))
 		      (accuracy (testing "5. Comparing the two results..." (test/assert-close ,name caten lisp))))
 		 (ok accuracy "Satisfying the accuracy.")
-		 (if (= 0 (ctx:getenv :JIT))
+		 (if (null (caten/codegen/backend:jit-mode-p))
 		     (skip "Requires JIT")
 		     (let ((in-place (testing "5. Testing the in-place mutation" (test/in-place ,name model))))
 		       (ok in-place "Satisfying the in-place test.")
