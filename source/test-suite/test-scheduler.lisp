@@ -55,6 +55,17 @@
               for count in `(3) do
                 (let ((bp (caten/codegen/blueprint:lower-schedule-item item (runtime-graph runtime) schedule)))
                   (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type))))))))
+  (testing "Embedding but batch size is a tensor"
+    (multiple-value-bind (schedule runtime)
+        (with-inference-mode ()
+          (let ((b (!add (iconst 'm) (iconst 'n))) (c (!add (iconst 'm) (iconst 'n))))
+            (schedule-with-vars (!add (call (Embedding 10 10) (make-tensor `(,b 10))) (call (Embedding 10 10) (make-tensor `(,c 10)))))))
+      (check-kernel schedule 1)
+      (caten/codegen/expr-cache:with-expr-cache ()
+        (loop for item in (gather-kernels schedule)
+              for count in `(3) do
+                (let ((bp (caten/codegen/blueprint:lower-schedule-item item (runtime-graph runtime) schedule)))
+                  (ok (= count (count :FOR bp :key #'node-type)) (format nil "Expected ~a loops, got ~a" count (count :FOR bp :key #'node-type))))))))
   (testing "Elementwise is 1D"
     (multiple-value-bind (schedule runtime) (schedule-with-vars (!relu (make-tensor `(a b c d))))
       (check-kernel schedule 1)
