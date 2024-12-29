@@ -115,7 +115,7 @@ Compute the backward pass of the compiled computational graph (GraphRuntime). No
     (def "!maximum" #'!maximum "(proceed (!maximum (rand `(3 3)) (randn `(3 3))))")
     (def "!minimum" #'!minimum "(proceed (!minimum (rand `(3 3)) (randn `(3 3))))")
     (def "!gcd" #'!gcd "(ctx:with-contextvar (:backend \"lisp\") (proceed (!gcd (iconst 8) (iconst 4))))")
-    (def "!lcm" #'!lcm "(ctx:with-contextvar (:backendt \"lisp\") (proceed (!lcm (iconst 8) (iconst 4))))")
+    (def "!lcm" #'!lcm "(ctx:with-contextvar (:backend \"lisp\") (proceed (!lcm (iconst 8) (iconst 4))))")
     (def "!exp" #'!exp "(proceed (!exp (ax+b `(10 10) 0.01 0.0)))")
     (def "!log" #'!log "(proceed (!log (ax+b `(10 10) 0.01 0.001)))")
     (def "!sqrt" #'!sqrt "(proceed (!sqrt (ax+b `(10 10) 0.01 0.0)))")
