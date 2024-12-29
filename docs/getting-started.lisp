@@ -156,7 +156,7 @@
 (defun try-codegen! (graph outputs)
   "Utility for visualizing the process of compiling the `graph`."
   (optimize-aasm graph)
-  (let ((vm (make-runtime graph)))
+  (let ((vm (make-runtime graph :fw-outputs outputs)))
     (fresh-line)
     (saying 1 "Compiling the following initial computation graph:" graph)
     (saying 2 "Created AVM (Abstract VM) with the computation graph:" vm)
@@ -178,7 +178,7 @@
       (%compile-kernel renderer (graph-nodes schedule-graph) nil)
       ;; Overwrite the base graph with compiled graph
       (let ((optimized-graph (schedule-graph->avm-graph (runtime-graph vm) schedule-graph)))
-        (make-runtime optimized-graph :fw-outputs outputs :buffer-type 'caten/byoc/lisp:LispBuffer)))))
+        (make-runtime optimized-graph :fw-outputs (graph-outputs schedule-graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))))
 
 ;; Example 1. Lowering two matrices' addition into the C kernel.
 (let* ((graph
@@ -255,14 +255,13 @@
 ;;; Caten provides APIs that use the aforementioned JIT by default.
 ;;; - Set JIT=1 to enable it.
 ;;; - By setting JIT_DEBUG>=2, you can access a debugger similar to the previous one.
-(defun present-beautiful (tensor &key (auto-scheduler 0))
-  (ctx:with-contextvar (:JIT 1 :JIT_DEBUG 3 :AUTO_SCHEDULER auto-scheduler)
+(defun present-beautiful (tensor)
+  (ctx:with-contextvar (:BACKEND "clang" :JIT_DEBUG 4)
     (with-no-grad (caten tensor))))
 
 ;; auto-scheduler is WIP as of this writing!
 (present-beautiful
- (!matmul (make-tensor `(128 512)) (make-tensor `(512 1024)))
- :auto-scheduler 1)
+ (!matmul (make-tensor `(128 512)) (make-tensor `(512 1024))))
 
 (present-beautiful
  (!matmul (make-tensor `(a b)) (make-tensor `(b c))))
