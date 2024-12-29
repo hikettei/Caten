@@ -38,7 +38,7 @@
   (flet ((test (list from1 to1 by1 broadcast1)
 	   (with-slots ((from caten::from) (to caten::to) (by caten::by) (broadcast caten::broadcast))
 	       (caten::parse-view-subscript 100 list)
-	     (flet ((r (x) (caten/runtime:buffer-value (caten/runtime:realize-graph (caten::%tensor->aasm x)))))
+	     (flet ((r (x) (caten/runtime:buffer-value (caten/runtime:realize-graph (caten::%tensor->aasm x) :buffer-type 'caten/byoc/lisp:LispBuffer))))
 	       (ok (and (equal (r from) from1) (equal (r to) to1) (equal (r by) by1) (equal broadcast broadcast1)))))))
     ;; A[0]
     (test 0 0 1 1 nil) (test 3 3 4 1 nil)
@@ -51,7 +51,7 @@
 
 (deftest test-auto-cast
   (flet ((test (dtype il)
-	   (caten/runtime:realize-graph (caten::%tensor->aasm (!add (make-tensor `(3 3) :dtype dtype) (make-tensor `(3 3) :dtype dtype :initial-element il))))))
+	   (caten/runtime:realize-graph (caten::%tensor->aasm (!add (make-tensor `(3 3) :dtype dtype) (make-tensor `(3 3) :dtype dtype :initial-element il))) :buffer-type 'caten/byoc/lisp:LispBuffer)))
     (testing "fconst(1) should be valid, iconst(1.0) should be invaild"
       (test :float16 1)
       (ok (test :float32 1))
@@ -559,7 +559,7 @@
   (!add (!view (make-tensor `(,n) :from x) `(,froma ,toa)) (!view (make-tensor `(,n) :from y) `(,fromb ,tob))))
 
 (deftest call-aot
-  (let ((a (with-device :lisp (proceed (ax+b `(3 3) 1 1)))) (b (with-device :lisp (proceed (ax+b `(3 3) 1 1)))))
+  (let ((a (proceed (ax+b `(3 3) 1 1))) (b (proceed (ax+b `(3 3) 1 1))))
     (ok (every #'= #(2 4 6 8 10 12 14 16 18) (elements (axpy :float32 a b 9 0 9 0 9))))))
 
 (deftest shape-infer-failing-case

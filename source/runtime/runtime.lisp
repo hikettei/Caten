@@ -144,9 +144,9 @@ disassemble:
     (report-profile-result)
     t))
 
-(defun realize-graph (graph &key (outs nil) (runtime 'GraphRuntime))
+(defun realize-graph (graph &key (outs nil) (runtime 'GraphRuntime) (buffer-type 'AbstractBuffer))
   (let ((outs (or outs (node-writes (car (last (graph-nodes graph)))))))
-    (runtime-forward (make-runtime graph :fw-outputs outs :runtime runtime))))
+    (runtime-forward (make-runtime graph :fw-outputs outs :runtime runtime :buffer-type buffer-type))))
 ;; ~~~~ print-object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
 (defmethod print-object ((runtime GraphRuntime) stream &aux (n-indent 4))
