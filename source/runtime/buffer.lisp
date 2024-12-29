@@ -94,6 +94,11 @@ Buffer expects the following methods to be implemented:
     (bref buffer (apply #'+ (map 'list #'->idx (iota (buffer-nrank buffer)))))))
 
 (defun make-buffer (shape stride dtype views &key (value nil) (device 'AbstractBuffer))
+  "
+```
+(make-buffer shape stride dtype views &key (value nil) (device 'AbstractBuffer))
+```
+"
   (declare (type list shape stride views))
   (when (null views) (setf views (loop for s in shape collect nil)))
   (assert (= (length views) (length shape) (length stride)))
