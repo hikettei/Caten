@@ -71,7 +71,7 @@
                             (node-reads n) (map 'list #'r (node-reads n))
 			    (node-writes n) (map 'list #'r (node-writes n)))
 		      n)))
-      ;; Gather views for avm-fw-outputs and avm-bw-outputs, storing them in the :_output_type
+      ;; Gather views for runtime-fw-outputs and runtime-bw-outputs, storing them in the :_output_type
       (let ((views (map 'list #'v (append (runtime-fw-outputs runtime) (runtime-bw-outputs runtime)))))
         (setf (runtime-fw-outputs runtime) (map 'list #'r (runtime-fw-outputs runtime))
 	      (runtime-bw-outputs runtime) (map 'list #'r (runtime-bw-outputs runtime))
@@ -199,7 +199,7 @@
 (defun apply-rewriting-rules (runtime)
   (declare (type GraphRuntime runtime))
   (let ((id2view (rewrite-views-as-buffer runtime)))
-    ;; (wmma-rewriter (avm-graph avm) :no-verify t)
+    ;; (wmma-rewriter (runtime-graph runtime) :no-verify t)
     (apply-static-gensym runtime id2view))
   (setf (runtime-graph runtime) (->graph (runtime-graph runtime)))
   runtime)

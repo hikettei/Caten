@@ -136,7 +136,7 @@ disassemble:
 (defmethod runtime-backward ((runtime GraphRuntime) &aux (*jit-time* 0.0) (*vm-time* 0.0) (*allocate-time* 0.0))
   (let ((current-tape (nth (runtime-pc runtime) (graph-nodes (runtime-graph runtime)))))
     (when (null current-tape) (return-from runtime-backward))
-    (assert (eql (node-type current-tape) :Pause/Backward) () "runtime-backward: invaild pc counter. Before doing (backward avm), you should run the forward pass first.")
+    (assert (eql (node-type current-tape) :Pause/Backward) () "runtime-backward: invaild pc counter. Before doing (backward runtime), you should run the forward pass first.")
     (incf (runtime-pc runtime))
     (start-profile)
     (loop while (< (runtime-pc runtime) (length (graph-nodes (runtime-graph runtime))))
