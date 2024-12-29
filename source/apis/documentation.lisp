@@ -27,30 +27,32 @@
 ### [method] forward
 
 ```
-(forward AVM &rest params)
+(forward runtime &rest params)
 ```
 
-Compute the forward pass of the compiled computational graph (AVM). The params are additional parameters that are used to initialize the AVM variable table, passed in the following format:
+Compute the forward pass of the compiled computational graph (GraphRuntime). The params are additional parameters that are used to initialize the GraphRuntime variable table, passed in the following format:
 
 
 - `(symbol . number)` Loaded as a `*default-int*` scalar tensor, used to determine the shape of dynamic shaped tensors.
 - `(symbol . buffer)` or `(symbol . tensor)` Used to assign the initial elements of the tensor specified by the name in `form` in `(make-tensor ... :from x)`
 
+or `(forward runtime place1 value1 place2 value2 ...)` is added recently.
+
 Here's an example.
 ")
   (docs:subsection "Examples")
   (docs:example-code "
-(let ((model (caten (!randn `(a b)))))
-  (forward model `(a . 10) `(b . 10)))"
+(let ((model (caten (!randn `(:a :b)))))
+  (forward model :a 10 :b 10))"
                      :title "Example of forward with dynamic shaped")
   
   (docs:body "
 ### [method] backward
 ```
-(forward AVM &optional prev-dout)
+(forward runtime &optional prev-dout)
 ```
 
-Compute the backward pass of the compiled computational graph (AVM). Note that the `prev-dout` is ignored. Forward pass must be computed first. Gradients are automatically reset to zero before the forward pass.
+Compute the backward pass of the compiled computational graph (GraphRuntime). Note that the `prev-dout` is ignored. Forward pass must be computed first. Gradients are automatically reset to zero before the forward pass.
 ")
   (docs:doc/function "proceed" #'proceed)
   (docs:doc/macro "with-no-grad" 'with-no-grad)
