@@ -100,12 +100,22 @@
 				27.0 47.0 12.0 32.0 52.0 17.0 37.0 57.0 3.0 23.0 43.0 8.0 28.0 48.0
 				13.0 33.0 53.0 18.0 38.0 58.0 4.0 24.0 44.0 9.0 29.0 49.0 14.0 34.0
 				54.0 19.0 39.0 59.0))))
+(defun %arange1 (shape a b &key (dtype :float32) (order :row))
+  (with-asm
+    (m (%make-tensor shape :dtype dtype :order order))
+    (i (%index-components m (%shape shape)))
+    (alpha (%load (%salloc :dtype dtype) a))
+    (beta  (%load (%salloc :dtype dtype) b))
+    ;; a = alpha * i + b
+    (t1 (%mul i alpha))
+    (t2 (%add t1 beta))
+    (c  (%store m t2))))
 
 (deftest test-arange
   (macrolet ((testwhen (order shape a b ans)
 	       `(%eval
 		 ,ans
-		 (with-context (_ (%arange ',shape ,a ,b :order ,order))))))
+		 (with-context (_ (%arange1 ',shape ,a ,b :order ,order))))))
     ;; constant folding
     (testwhen :column (2 2) 0 0 #(0 0 0 0))
     (testwhen :column (2 2) 0 1 #(1 1 1 1))
@@ -131,11 +141,11 @@
   (%eval
    #(0 0 1 0 0 0 0 0 0)
    (with-context
-     (a (%arange `(3 3) 1 0 :order :row))
-     (b (%arange `(3 3) 0 2 :order :row))
+     (a (%arange1 `(3 3) 1 0 :order :row))
+     (b (%arange1 `(3 3) 0 2 :order :row))
      (c (%= `(3 3) :row a b))
-     (m1 (%arange `(3 3) 0 1 :order :row))
-     (m2 (%arange `(3 3) 0 0 :order :row))
+     (m1 (%arange1 `(3 3) 0 1 :order :row))
+     (m2 (%arange1 `(3 3) 0 0 :order :row))
      (d (%where c m1 m2)))))
 
 (deftest test-view
@@ -143,72 +153,72 @@
     (%eval
      #(5 6 9 10)
      (with-context
-       (a (%arange `(4 4) 1 0 :order :row))
-       (b (%arange `(2 2) 0 0 :order :row))
+       (a (%arange1 `(4 4) 1 0 :order :row))
+       (b (%arange1 `(2 2) 0 0 :order :row))
        (v (%view a `(2 2) `(1 1) `(3 3) `(1 1) `(nil nil) (%stride `(4 4) :row)))
        (out (%add b v)))))
   (testing "Slicing tensors, -1 indexing"
     (%eval
      #(10 9 6 5)
      (with-context
-       (a (%arange `(4 4) 1 0 :order :row))
-       (b (%arange `(2 2) 0 0 :order :row))
+       (a (%arange1 `(4 4) 1 0 :order :row))
+       (b (%arange1 `(2 2) 0 0 :order :row))
        (v (%view a `(2 2) `(2 2) `(0 0) `(-1 -1) `(nil nil) (%stride `(4 4) :row)))
        (out (%add b v)))))
   (testing "Slicing tensors, read by 3"
     (%eval
      #(0 3 18 21)
      (with-context
-       (a (%arange `(6 6) 1 0 :order :row))
-       (b (%arange `(2 2) 0 0 :order :row))
+       (a (%arange1 `(6 6) 1 0 :order :row))
+       (b (%arange1 `(2 2) 0 0 :order :row))
        (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) :row)))
        (out (%add b v)))))
   (testing "Slicing tensors, read by -3"
     (%eval
      #(0 3 18 21)
      (with-context
-       (a (%arange `(6 6) 1 0 :order :row))
-       (b (%arange `(2 2) 0 0 :order :row))
+       (a (%arange1 `(6 6) 1 0 :order :row))
+       (b (%arange1 `(2 2) 0 0 :order :row))
        (v (%view a `(2 2) `(0 0) `(6 6) `(3 3) `(nil nil) (%stride `(6 6) :row)))
        (out (%add b v)))))
   (testing "Transpose"
     (%eval
      #(0.0 4.0 8.0 4.0 8.0 12.0 8.0 12.0 16.0)
      (with-context
-       (a (%arange `(3 3) 1 0 :order :row))
+       (a (%arange1 `(3 3) 1 0 :order :row))
        (b1 (%view a `(3 3) `(0 0) `(3 3) `(1 1) `(nil nil) (%stride `(3 3) :column)))
-       (b2 (%arange `(3 3) 1 0 :order :column))
+       (b2 (%arange1 `(3 3) 1 0 :order :column))
        (c (%add b1 b2)))))
   (testing "Broadcasting (all-reduce along all axes)"
     (%eval
      #(630.0)
      (with-context
-       (a (%arange `(6 6) 1 0 :order :row))
-       (b (%arange `(1 1) 0 0 :order :row))
+       (a (%arange1 `(6 6) 1 0 :order :row))
+       (b (%arange1 `(1 1) 0 0 :order :row))
        (b (%view b `(6 6) `(0 0) `(6 6) `(1 1) `(t t) (%stride `(6 6) :row)))
        (b (%add b a :reduction t)))))
   (testing "Broadcasting (all-reduce where axis=1)"
     (%eval
      #(3 3 3)
      (with-context
-       (a (%arange `(3 3) 0 1 :order :column))
-       (b (%arange `(3 1) 0 0 :order :column))
+       (a (%arange1 `(3 3) 0 1 :order :column))
+       (b (%arange1 `(3 1) 0 0 :order :column))
        (b (%view b `(3 3) `(0 0) `(3 3) `(1 1) `(nil t) (%stride `(3 3) :column)))
        (b (%add b a :reduction t)))))
   (testing "Broadcasting (all-reduce where axis=0 ndim=3)"
     (%eval
      #(3 3 3 3 3 3 3 3 3)
      (with-context
-       (a (%arange `(3 3 3) 0 1 :order :column))
-       (b (%arange `(3 3 1) 0 0 :order :column))
+       (a (%arange1 `(3 3 3) 0 1 :order :column))
+       (b (%arange1 `(3 3 1) 0 0 :order :column))
        (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(nil nil t) (%stride `(3 3 3) :column)))
        (b (%add b a :reduction t)))))
   (testing "Broadcasting (all-scatter)"
     (%eval
      #(1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1)
      (with-context
-       (a (%arange `(3 3 3) 0 0 :order :column))
-       (b (%arange `(1 1 1) 0 1 :order :column))
+       (a (%arange1 `(3 3 3) 0 0 :order :column))
+       (b (%arange1 `(1 1 1) 0 1 :order :column))
        (b (%view b `(3 3 3) `(0 0 0) `(3 3 3) `(1 1 1) `(t t t) (%stride `(3 3 3) :column)))
        (c (%add a b :reduction t))))))
 
