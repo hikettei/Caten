@@ -75,7 +75,7 @@
 ;;; 2. Intermediate Representation
 (defparameter *graph* (caten *sincos*))
 
-;;; This will generate an AVM graph as seen in the REPL output.
+;;; This will generate a runtime graph as seen in the REPL output.
 ;;; The graph generated is an intermediate representation.
 (print *graph*)
 
@@ -104,7 +104,7 @@
 (print (run-type-infer *graph*))
 
 ;;; The goal is to transform and rename parts of the graph to improve readability, consistency or prepare it for code generation and optimizations.
-;;; It takes the raw AVM graph, rewrites certain references, applies stable naming conventions and returns a more uniform and readable graph representation.
+;;; It takes the raw runtime graph, rewrites certain references, applies stable naming conventions and returns a more uniform and readable graph representation.
 (print (apply-rewriting-rules *graph*))
 
 ;;; The resulting graph after run-type-infer and apply-rewriting-rules is the following:
@@ -126,7 +126,7 @@
 ;;; It simplifies the IR for debugging and inspection. To make it easier in the code generation step.
 
 ;;; graph-schedule generates a fast graph from the runtime-graph, which is a wrapper around the graph we had earlier.
-;;; 1. First of all, we wrap the graph around an AVM graph.
+;;; 1. First of all, we wrap the graph around a runtime graph.
 ;;; 2. Then the graph-schedule function is called over it.
 ;;;    graph-schedule does:
 ;;;    1. Creates a schedule context and calls graph-breadth-first-schedule
@@ -205,7 +205,7 @@
 ;;; In other words, `lower-schedule-item` turns a high-level fused kernel node into a fully described,
 ;;; low-level intermediate form (the blueprint) that can be compiled into efficient machine code or C code.
 
-;;; Here we lower `item1` using the `lower-schedule-item` function. The `base-graph` is given by `(avm-graph graph)`,
+;;; Here we lower `item1` using the `lower-schedule-item` function. The `base-graph` is given by `(runtime-graph graph)`,
 ;;; and `scheduled-graph` is the optimized graph after scheduling. This will mutate `item1` so that it
 ;;; now has a `:blueprint` attribute containing the lowered form.
 (defparameter *lowered-item1* (lower-schedule-item *item1* (runtime-graph graph) *scheduled-graph*))
@@ -283,7 +283,7 @@
 
 ;;; 4. Execution Explanation
 
-;;; The `%run` method orchestrates the execution of the compiled kernel within the AVM context. Here's how it works:
+;;; The `%run` method orchestrates the execution of the compiled kernel within the runtime context. Here's how it works:
 
 
 ;;; (defmethod %run ((runtime GraphRuntime) &rest params)
@@ -297,7 +297,7 @@
 ;;;
 ;;; 5. Final Summary
 
-;;; In this end-to-end tutorial, we've explored the complete pipeline of defining, compiling, and executing a computation graph using Caten's AVM. Here's what we've covered:
+;;; In this end-to-end tutorial, we've explored the complete pipeline of defining, compiling, and executing a computation graph using Caten's GraphRuntime. Here's what we've covered:
 
 ;;; 1. **High-Level Definition:**
 ;;;    - Defined a `SinCos` function that computes `sin(cos(x))` using a high-level class structure similar to modules in deep learning frameworks.
@@ -317,10 +317,9 @@
 ;;; 5. **Kernel Lowering and Compilation:**
 ;;;    - Lowered the scheduled kernel into a blueprint, a low-level representation suitable for code generation.
 ;;;    - Rendered the blueprint into C code and compiled it into a native kernel using `%render-kernel` and `%compile-kernel`.
-;;;    - Integrated the compiled kernel back into the AVM graph using `schedule-graph->avm-graph`, replacing high-level nodes with the optimized kernel.
+;;;    - Integrated the compiled kernel back into the runtime graph using `schedule-graph->avm-graph`, replacing high-level nodes with the optimized kernel.
 
-;;; 6. **Execution with AVM:**
-;;;    - Reset the AVM to ensure a clean execution state.
+;;; 6. **Execution with GraphRuntime:**
 ;;;    - Executed the computation graph using the `%run` method, which set input parameters, ran the forward pass, synchronized tensors, and retrieved the results.
 ;;;    - Leveraged the compiled kernel for efficient computation, resulting in the final output of `sin(sin(1.0 + π/2))`.
 

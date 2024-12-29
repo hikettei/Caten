@@ -141,9 +141,9 @@
 (in-package :codegen-example)
 
 ;; Defining Some utils ...
-(defun run-shape-inference (avm)
-  (run-type-infer avm)
-  (apply-rewriting-rules avm))
+(defun run-shape-inference (runtime)
+  (run-type-infer runtime)
+  (apply-rewriting-rules runtime))
 
 (defparameter *width* 120)
 
@@ -159,7 +159,7 @@
   (let ((vm (make-runtime graph :fw-outputs outputs)))
     (fresh-line)
     (saying 1 "Compiling the following initial computation graph:" graph)
-    (saying 2 "Created AVM (Abstract VM) with the computation graph:" vm)
+    (saying 2 "Created GraphRuntime with the computation graph:" vm)
     (run-shape-inference vm)
     (let ((schedule-graph (graph-schedule (runtime-graph vm)))
           (*expr-cache* (make-expr-cache))
@@ -199,7 +199,7 @@
   ;; caten/codegen requires the shape of all computation nodes to be known!
   (run-shape-inference vm)
   ;; Ready for running the scheduler. `graph-schedule` to partition the input graph.
-  ;; Pass the wrapped avm graph into the `graph-schedule` which divides the graph into smaller units called `schedule-items`
+  ;; Pass the wrapped runtime graph into the `graph-schedule` which divides the graph into smaller units called `schedule-items`
   (let ((schedule-graph (graph-schedule (runtime-graph vm)))
         (*expr-cache* (make-expr-cache))
         (renderer (make-instance 'CStyle-Renderer)))
