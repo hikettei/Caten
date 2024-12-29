@@ -38,7 +38,7 @@
   (flet ((test (list from1 to1 by1 broadcast1)
 	   (with-slots ((from caten::from) (to caten::to) (by caten::by) (broadcast caten::broadcast))
 	       (caten::parse-view-subscript 100 list)
-	     (flet ((r (x) (caten/avm:buffer-value (caten/avm:%realize (caten::%tensor->aasm x)))))
+	     (flet ((r (x) (caten/runtime:buffer-value (caten/runtime:realize-graph (caten::%tensor->aasm x)))))
 	       (ok (and (equal (r from) from1) (equal (r to) to1) (equal (r by) by1) (equal broadcast broadcast1)))))))
     ;; A[0]
     (test 0 0 1 1 nil) (test 3 3 4 1 nil)
@@ -51,7 +51,7 @@
 
 (deftest test-auto-cast
   (flet ((test (dtype il)
-	   (caten/avm:%realize (caten::%tensor->aasm (!add (make-tensor `(3 3) :dtype dtype) (make-tensor `(3 3) :dtype dtype :initial-element il))))))
+	   (caten/runtime:realize-graph (caten::%tensor->aasm (!add (make-tensor `(3 3) :dtype dtype) (make-tensor `(3 3) :dtype dtype :initial-element il))))))
     (testing "fconst(1) should be valid, iconst(1.0) should be invaild"
       (test :float16 1)
       (ok (test :float32 1))
@@ -121,7 +121,7 @@
     (ok (= 0 (elements (pproceed `((a . 1)) (!mul (iconst 0) (iconst 'a))))))
     (ok (= 0 (elements (pproceed `((a . 1)) (!neg (!mul (iconst 0) (iconst 'a)))))))
     ;; still depends on 'a
-    (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'avm-runtime-error))
+    (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'runtime-error))
     ;; a dependency is purged
     ;; failing
     (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a)))))))))
@@ -141,7 +141,7 @@
   (ok (= 0 (elements (pproceed `((a . 1)) (!mul (iconst 0) (iconst 'a))))))
   (ok (= 0 (elements (pproceed `((a . 1)) (!neg (!mul (iconst 0) (iconst 'a)))))))
   ;; still depends on 'a
-  (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'avm-runtime-error))
+  (ok (signals (proceed (!neg (!add (iconst 0) (iconst 'a)))) 'runtime-error))
   ;; a dependency is purged
   ;; failing
   (ok (= 0 (elements (proceed (!neg (!mul (iconst 0) (iconst 'a))))))))
@@ -513,7 +513,7 @@
 	(ok (< (abs (- avg2 0.5)) 0.01))
 	(ok (< (abs (- avg3 0.5)) 0.01))
 	(ng (some #'= first-rand scnd-rand third-rand))
-	(testing "Multiple %threefry2x32 in a single avm (i.e.: confirm is there really no duplicates in a single compilation.)"
+	(testing "Multiple %threefry2x32 in a single runtime (i.e.: confirm is there really no duplicates in a single compilation.)"
 	  (with-manual-seed (0)
 	    (let* ((first-rand1 (elements (proceed (!rand `(,n ,n))))))
 	      (testing "First, confirm that when we fix *manual-seed* and *rng-counter*, the randomness should be reproduced."

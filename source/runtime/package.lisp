@@ -42,7 +42,8 @@
    #:realize-node
    #:runtime-forward
    #:runtime-backward
-   #:runtime-buffer-type)
+   #:runtime-buffer-type
+   #:runtime-error)
   ;; Profile
   (:export
    #:*jit-time*

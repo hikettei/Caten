@@ -27,7 +27,8 @@ This package provides GraphRuntime, which is a class to run an air graph.
    #:runtime-forward
    #:runtime-backward
    #:parse-allocate-node
-   #:parse-view-node))
+   #:parse-view-node
+   #:runtime-error))
 
 (in-package :caten/runtime/runtime)
 
