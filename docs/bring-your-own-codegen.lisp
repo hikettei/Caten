@@ -5,14 +5,12 @@
 (defpackage :byoc-example
   (:use :cl))
 (in-package :byoc-example)
-
 ;; draft:
 ;; Mainly consisted of the following components
 
 ;; 1. AbstractBuffer
-;; 2. GraphRunner
+;; 2. GraphRunner. One program corresponds to one Graph Runner
 ;; 3. Renderer
-;; 4. Auto-Scheduler
-
+;; 4. Auto-Scheduler (Caten provides Reinforcement Learning based algorithm to optimize the lowered schedule into target hardware)
 
 ;; define-backend
