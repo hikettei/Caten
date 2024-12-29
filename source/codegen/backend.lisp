@@ -7,7 +7,8 @@
    #:get-backend-renderer
    #:get-backend-auto-scheduler
    #:get-backend-jit-p
-   #:jit-mode-p))
+   #:jit-mode-p
+   #:get-buffer-type))
 
 (in-package :caten/codegen/backend)
 
@@ -34,3 +35,7 @@ Registers a new backend.
 (defun jit-mode-p (&key (backend (ctx:getenv :BACKEND)))
   "Returns T if the current device uses JIT compilation."
   (get-backend-jit-p backend))
+
+(defun get-buffer-type (&key (backend (ctx:getenv :BACKEND)))
+  "Returns the buffer type for the current device."
+  (get-backend-buffer backend))

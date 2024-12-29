@@ -5,11 +5,11 @@
 (in-package :caten/external/benchmarks/simplifier)
 
 (defun initialize-transformer (n-layers)
-  (ctx:with-contextvar (:JIT 1) (Transformer 128 8 n-layers 1e-5 32)))
+  (ctx:with-contextvar (:BACKEND "CLANG") (Transformer 128 8 n-layers 1e-5 32)))
 
 (defun measure-simplify-time (model jit)
   (with-inference-mode ()
-    (ctx:with-contextvar (:JIT jit)
+    (ctx:with-contextvar (:BACKEND (if (= jit 1) "CLANG" "LISP"))
       (let ((started (get-internal-real-time)))
         ;; TODO: Try full symbolic once we implement a module-wise asm cache
         (caten (forward model (make-tensor `(1 2)) (iconst 1)))
