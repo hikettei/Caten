@@ -182,13 +182,13 @@ Before contributing, please note that there is no linter here. Make an effort to
 
 ### Accelerators
 
-- [x] LISP VM
-- [x] CLANG JIT
-- [ ] CLANG with Auto Scheduler
-- [ ] METAL
+- [x] LISP VM (BACKEND=LISP)
+- [ ] LISP JIT
+- [x] CLANG JIT (BACKEND=CLANG)
+- [ ] METAL (BACKEND=METAL)
 - [ ] WebGPU
 - [ ] CUDA
-- [ ] AutoScheduler
+- [ ] Finish AutoScheduler
 
 ## Running tests
 
