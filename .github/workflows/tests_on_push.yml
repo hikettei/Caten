@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        lisp: [sbcl-bin, ccl-bin/1.12.2]
+        lisp: [sbcl-bin]
         backend: [lisp, clang]
         os: [ubuntu-latest]
         target:
