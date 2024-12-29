@@ -29,7 +29,7 @@
   (testing "ConvND(1.0, bias=nil)"
     (with-given-dtype ((:float32 . "float32"))
       (with-no-grad
-        (if (= (ctx:getenv :JIT) 1)
+        (if (caten/codegen/backend:jit-mode-p)
             (skip "[TODO: Fix] InputShape==KernelSize is failing for JIT...")
             (let ((input (linspace`(10 3 4 4) 0.001 0.0))
                   (weight (linspace `(6 3 4 4) 0.001 0.0)))
