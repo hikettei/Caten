@@ -29,7 +29,8 @@
 (defun ->caten (tensor &key (dtype *caten-dtype*))
   (let* ((size (coerce (torch-shape tensor) 'list))
  	 (buffer (remote-objects* (chain tensor (detach) (cpu) (flatten) (numpy))))
-	 (buffer-out (make-buffer (length size) size (caten/apis::row-major-calc-strides size) dtype nil)))
+	 (buffer-out (make-buffer size (caten/apis::row-major-calc-strides size) dtype nil :device (caten/codegen/backend:get-buffer-type))))
+    ;; [TODO] Use Transfer Array
     (setf (buffer-value buffer-out) buffer)
     (let ((new (make-tensor (coerce size 'list) :dtype dtype :order :row)))
       (setf (tensor-buffer new) buffer-out)
@@ -38,16 +39,16 @@
 ;; Utils for testing the generated kernel
 (defun elements (tensor) (buffer-value (tensor-buffer tensor)))
 
-(defun n-kernels (avm)
-  (declare (type avm avm))
-  (count :JIT_KERNEL (graph-nodes (avm-graph avm)) :key #'node-type))
+(defun n-kernels (runtime)
+  (declare (type GraphRuntime runtime))
+  (count :JIT_KERNEL (graph-nodes (runtime-graph runtime)) :key #'node-type))
 
-(defun n-args (shape avm)
+(defun n-args (shape runtime)
   ;; shape ... (t t) specify t to match w/ anything
   ;; shape = t to any shape
   ;; shape = :tensor to enumerate tensors
-  (declare (type avm avm))
-  (count :Allocate (graph-nodes (avm-graph avm))
+  (declare (type GraphRuntime runtime))
+  (count :Allocate (graph-nodes (runtime-graph runtime))
 	 :test
 	 #'(lambda (id node)
 	     (and
@@ -64,29 +65,29 @@
 		      #'(lambda (x y) (or (eql x t) (equal x y)))
 		      shape s1))))))))
 
-(defun check-kernels (n avm)
-  (if (= 1 (ctx:getenv :JIT))
-      (ok (= n (n-kernels avm)) (format nil "got nkernels=~a (expected ~a)" (n-kernels avm) n))
+(defun check-kernels (n runtime)
+  (if (caten/codegen/backend:jit-mode-p)
+      (ok (= n (n-kernels runtime)) (format nil "got nkernels=~a (expected ~a)" (n-kernels runtime) n))
       (skip "Needs JIT")))
 
-(defun check-args (n shape avm)
-  (if (= 1 (ctx:getenv :JIT))
-      (ok (= n (n-args shape avm)) (format nil "got nargs=~a (expected ~a)" (n-args shape avm) n))
+(defun check-args (n shape runtime)
+  (if (caten/codegen/backend:jit-mode-p)
+      (ok (= n (n-args shape runtime)) (format nil "got nargs=~a (expected ~a)" (n-args shape runtime) n))
       (skip "Needs JIT")))
 
 (defun ~= (error) #'(lambda (x y) (<= (abs (- x y)) error)))
 
 (defgeneric test/compile (op) (:documentation "Return a target compiled kernel."))
 (defgeneric test/inputs  (op) (:documentation "Generate an array for testing"))
-(defgeneric test/compute-in-caten (op avm &rest inputs) (:documentation "Compute the avm, and test the accuracy."))
-(defgeneric test/compute-in-lisp  (op avm &rest inputs) (:documentation ""))
-(defgeneric test/in-place         (op avm))
-(defgeneric test/kernel-count     (op avm))
+(defgeneric test/compute-in-caten (op runtime &rest inputs) (:documentation "Compute the runtime, and test the accuracy."))
+(defgeneric test/compute-in-lisp  (op runtime &rest inputs) (:documentation ""))
+(defgeneric test/in-place         (op runtime))
+(defgeneric test/kernel-count     (op runtime))
 (defgeneric test/assert-close (op result1 result2))
 (defgeneric test/run (op))
 (defun make-copy (tensor)
   (declare (type tensor tensor))
-  (ctx:with-contextvar (:JIT 0)
+  (ctx:with-contextvar (:BACKEND "LISP")
     ;; [Note] Assuming JIT will not perform in-place mutation
     (proceed (!add tensor (fconst 0 :dtype (dtype-of tensor))))))
 (defmacro define-nn-test (name description
@@ -97,26 +98,26 @@
 			    (assert-close) (in-place) (kernel)
 			  &aux
 			    (name (intern (symbol-name name) "KEYWORD")))
-  (with-gensyms (op avm args result1 result2)
+  (with-gensyms (op runtime args result1 result2)
     `(progn
        (defmethod test/compile ((,op (eql ,name))) ,compile)
        (defmethod test/inputs ((,op (eql ,name))) ,inputs)
-       (defmethod test/compute-in-caten ((,op (eql ,name)) ,avm &rest ,args)
-	 (multiple-value-bind (,@(car caten)) (apply #'values ,avm ,args) ,@(cdr caten)))
-       (defmethod test/compute-in-lisp ((,op (eql ,name)) ,avm &rest ,args)
-	 (ctx:with-contextvar (:jit 0 :avm :lisp) ;; Allowed to use Custom/LazyApply if element-wise
-	   (multiple-value-bind (,@(car lisp)) (apply #'values ,avm ,args)
+       (defmethod test/compute-in-caten ((,op (eql ,name)) ,runtime &rest ,args)
+	 (multiple-value-bind (,@(car caten)) (apply #'values ,runtime ,args) ,@(cdr caten)))
+       (defmethod test/compute-in-lisp ((,op (eql ,name)) ,runtime &rest ,args)
+	 (ctx:with-contextvar (:BACKEND "LISP") ;; Allowed to use Custom/LazyApply if element-wise
+	   (multiple-value-bind (,@(car lisp)) (apply #'values ,runtime ,args)
 	     (declare (ignorable ,@(car lisp)))
 	     ,@(cdr lisp))))
-       (defmethod test/in-place     ((,op (eql ,name)) ,avm) (let ((,(caar in-place) ,avm)) ,@(cdr in-place)))
-       (defmethod test/kernel-count ((,op (eql ,name)) ,avm) (let ((,(caar kernel) ,avm)) ,@(cdr kernel)))
+       (defmethod test/in-place     ((,op (eql ,name)) ,runtime) (let ((,(caar in-place) ,runtime)) ,@(cdr in-place)))
+       (defmethod test/kernel-count ((,op (eql ,name)) ,runtime) (let ((,(caar kernel) ,runtime)) ,@(cdr kernel)))
        (defmethod test/assert-close ((,op (eql ,name)) ,result1 ,result2)
 	 (multiple-value-bind (,@(car assert-close)) (values ,result1 ,result2)
 	   ,@(cdr assert-close)))
        (defmethod test/run ((,op (eql ,name)))
 	 (testing ,description
 	   (let ((model (testing "1. Compiling the kernel..." (test/compile ,name))))
-	     (ok model "Getting a compiled avm")
+	     (ok model "Getting a compiled runtime")
 	     (let ((inputs (testing "2. Generating the input..." (test/inputs ,name))))
 	       (ok inputs "Prepared for inputs")
 	       (let* ((caten (testing "3. Computing the kernel in Caten" (apply #'test/compute-in-caten ,name model (map 'list #'make-copy inputs))))
