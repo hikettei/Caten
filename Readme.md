@@ -183,11 +183,12 @@ Before contributing, please note that there is no linter here. Make an effort to
 ### Accelerators
 
 - [x] LISP VM (BACKEND=LISP)
-- [ ] LISP JIT
+- [x] LISP JIT (BACKEND=NATIVE)
 - [x] CLANG JIT (BACKEND=CLANG)
 - [ ] METAL (BACKEND=METAL)
 - [ ] WebGPU
 - [ ] CUDA
+- [ ] LLVM
 - [ ] Finish AutoScheduler
 
 ## Running tests
