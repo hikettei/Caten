@@ -55,7 +55,10 @@
     (format t "[Final Code]:~%")
     (dolist (item items)
       (when (getattr item :rendered-object)
-        (format t "~%~A:~%~A~%" (getattr item :name) (getattr item :rendered-object)))))
+        (format t "~a"
+                (with-output-to-string (tmp)
+                  (format tmp "~%~A:~%~A~%Disassemble:~%" (getattr item :name) (getattr item :rendered-object))
+                  (disassemble (compile nil (getattr item :rendered-object)) :stream tmp))))))
   (dolist (item items)
     (when (getattr item :rendered-object)
       (setf (getattr item :compiled-object) (wrap-with-caller (getattr item :rendered-object))
