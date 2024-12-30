@@ -24,7 +24,7 @@
 (defmacro msg (ptr selector restype &rest args)
   `(foreign-funcall "objc_msgSend" :pointer ,ptr :pointer (sel ,selector) ,@args ,restype))
 (defun to-ns-str (str) (with-foreign-string (*str str) (msg (objc-getclass "NSString") "stringWithUTF8String:" :pointer :pointer *str)))
-
+;; [TODO] Use MTLCompiler directly to gain signifcant improvement on the compilation time
 (defun mtl-compile-source (source)
   (flet ((run-cmd (cmd input)
            (let* ((process-info (uiop:launch-program cmd :input :stream :output :stream :error-output :stream))
@@ -83,9 +83,7 @@ Compiled with this command: ~a"
     (dotimes (i (apply #'* (buffer-shape buffer)) placeholder)
       (setf (aref placeholder i) (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i)))))
 ;; [TODO] Copy contents
-(defmethod copy-buffer-value ((runtime MetalRuntime) (buffer MetalBuffer))
-  (print (transfer-into-array runtime buffer))
-  (buffer-value buffer))
+(defmethod copy-buffer-value ((runtime MetalRuntime) (buffer MetalBuffer)) (buffer-value buffer))
 
 (defmethod bref ((buffer MetalBuffer) idx)
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
@@ -214,7 +212,7 @@ using namespace metal;
       (setf (mp-fxn mp) (msg (mp-library mp) "newFunctionWithName:" :pointer :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp))))))
       (let ((descriptor (msg (objc-getclass "MTLComputePipelineDescriptor") "new" :pointer)))
         (msg descriptor "setComputeFunction:" :void :pointer (mp-fxn mp))
-        (msg descriptor "setSupportIndirectCommandBuffers:" :void :bool 1)
+        (msg descriptor "setSupportIndirectCommandBuffers:" :void :bool t)
         (let ((error-ptr (null-pointer)))
           (setf (mp-pipeline-state mp) (msg (mp-device mp) "newComputePipelineStateWithDescriptor:options:reflection:error:" :pointer :pointer descriptor :int 1 :pointer (null-pointer) :pointer error-ptr))
           (assert (null-pointer-p error-ptr) () "Failed to create a Metal pipeline state: ~a" (msg error-ptr "localizedDescription" :pointer)))))))
@@ -235,9 +233,6 @@ using namespace metal;
       (loop for buf in buffers
             for nth upfrom 0 do
               (msg encoder "setBuffer:offset:atIndex:" :void :pointer (buffer-value buf) :int 0 :int nth))
-      (loop for buf in buffers
-            for nth upfrom 0 do
-              (msg encoder "setBytes:length:atIndex:" :void :pointer (buffer-value buf) :int 4 :int nth))
       (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
         (apply #'load-size gs (mp-global-size mp))
         (apply #'load-size ls (mp-local-size mp))
