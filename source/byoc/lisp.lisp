@@ -42,16 +42,20 @@
 
 (defmethod %render-kernel ((renderer LispStyle-Renderer) schedule-item)
   (let* ((args (schedule-item-args schedule-item)))
-    (print
     `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) args))
        (declare (optimize (speed 3) (safety 1)) ,@(map 'list #'global-type-spec args))
-       ,(recursive-render-bp (getattr schedule-item :blueprint))))))
+       ,(recursive-render-bp (getattr schedule-item :blueprint)))))
 
 (defun wrap-with-caller (body &aux (args (gensym)))
   `(lambda (&rest ,args)
      (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args))))
 
 (defmethod %compile-kernel ((renderer LispStyle-Renderer) items dir)
+  (when (>= (ctx:getenv :JIT_DEBUG) 3)
+    (format t "[Final Code]:~%")
+    (dolist (item items)
+      (when (getattr item :rendered-object)
+        (format t "~%~A:~%~A~%" (getattr item :name) (getattr item :rendered-object)))))
   (dolist (item items)
     (when (getattr item :rendered-object)
       (setf (getattr item :compiled-object) (wrap-with-caller (getattr item :rendered-object))
