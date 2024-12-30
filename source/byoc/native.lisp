@@ -11,7 +11,8 @@
 (in-package :caten/byoc/native)
 ;; ~~~~ Lisp JIT ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-auto-scheduler (Native-Auto-Scheduler ()) :n-global-loop 1)
-(define-backend :native LispBuffer GraphRuntime LispStyle-Renderer Native-Auto-Scheduler t)
+(defclass NativeRuntime (GraphRuntime) nil)
+(define-backend :native LispBuffer NativeRuntime LispStyle-Renderer Native-Auto-Scheduler t)
 (defclass LispStyle-Renderer (Renderer) nil)
 
 (defun global-type-spec (node)
@@ -40,7 +41,7 @@
       (when (getattr item :rendered-object)
         (format t "~a"
                 (with-output-to-string (tmp)
-                  (format tmp "~%[Kernel: ~A]:~%~A~%Disassembly for ~a:~%```~%" (getattr item :name) (getattr item :rendered-object) (getattr item :name))
+                  (format tmp "~%[Blueprint: ~A]:~%~A~%Disassembly for ~a:~%```~%" (getattr item :name) (getattr item :rendered-object) (getattr item :name))
                   (disassemble (compile nil (getattr item :rendered-object)) :stream tmp)
                   (format tmp "~%```~%"))))))
   (dolist (item items)
