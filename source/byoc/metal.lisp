@@ -118,14 +118,12 @@ Compiled with this command: ~a"
 (defvar *global-idx-list*)
 
 (defmethod %render-kernel ((renderer Metal-Renderer) si)
-  (let ((args (loop for item in (getattr si :blueprint)
-                    if (eql (node-type item) :DEFINE-GLOBAL)
-                      collect item)))
+  (let ((args (schedule-item-args si)))
     (with-output-to-string (out)
       (format out "kernel void ~(~a~)(" (getattr si :name))
       (dolist (item args)
         (format out "device~a ~(~a~) ~a~(~a~), " (if (eql (getattr item :type) :output) "" " const") (dtype->mtype (getattr item :dtype))
-                (if (getattr item :pointer-p) "*" "") (car (node-writes item))))
+                (if (getattr item :pointer-p) "*" "&") (car (node-writes item))))
       (format out "uint3 gid [[threadgroup_position_in_grid]], uint3 lid [[thread_position_in_threadgroup]]) {~%")
       (let ((*indent* 2) (*depth* 0) (*global-idx-list*))
         (dolist (node (getattr si :blueprint))
@@ -203,6 +201,7 @@ using namespace metal;
    (fxn :accessor mp-fxn)
    (global-size :initform `(1 1 1) :accessor mp-global-size)
    (local-size :initform `(1 1 1) :accessor mp-local-size)
+   (argtypes :initarg :argtypes :accessor mp-argtypes)
    (pipeline-state :accessor mp-pipeline-state)))
 
 (defmethod initialize-instance :after ((mp Metal-Program) &key)
@@ -227,6 +226,7 @@ using namespace metal;
         (foreign-slot-value mtl-size '(:struct mtlsize) 'depth) depth))
 
 (defmethod invoke ((mp Metal-Program) &rest buffers)
+  (assert (= (length buffers) (length (mp-argtypes mp))) () "Metal: The number of arguments does not match the number of arguments in the Metal program.")
   (let ((total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
     (when (> (apply #'* (mp-local-size mp)) total-max-threads)
       (error "Error: TODO"))
@@ -234,8 +234,19 @@ using namespace metal;
            (encoder (msg command-buffer "computeCommandEncoder" :pointer)))
       (msg encoder "setComputePipelineState:" :void :pointer (mp-pipeline-state mp))
       (loop for buf in buffers
+            for argtyp in (mp-argtypes mp)
             for nth upfrom 0 do
-              (msg encoder "setBuffer:offset:atIndex:" :void :pointer (buffer-value buf) :int 0 :int nth))
+              (if (typep buf 'MetalBuffer)
+                  (msg encoder "setBuffer:offset:atIndex:" :void :pointer (buffer-value buf) :int 0 :int nth)
+                  (if (and (buffer-p buf) (arrayp (buffer-value buf)))
+                      (with-pointer-to-vector-data (*p (buffer-value buf))
+                        ;; [TODO] RNG_COUNTERは更新されない...
+                        (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))
+                      (let ((buf (if (and (buffer-p buf) (numberp (buffer-value buf))) (buffer-value buf) buf)))
+                        (assert (numberp buf) () "Metal: Please transfer the buffe ~a into metal." buf)
+                        (with-foreign-object (*p (->cffi-dtype argtyp))
+                          (setf (mem-ref *p (->cffi-dtype argtyp)) buf)
+                          (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))))))
       (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
         (apply #'load-size gs (mp-global-size mp))
         (apply #'load-size ls (mp-local-size mp))
@@ -264,5 +275,6 @@ using namespace metal;
         (setf (metal-renderer-device renderer) device)
         (loop for item in items
               if (getattr item :rendered-object)
-                do (let ((caller (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue)))
+                do (let* ((argtypes (map 'list #'(lambda (x) (getattr x :dtype)) (schedule-item-args item)))
+                          (caller (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue :argtypes argtypes)))
                      (setf (getattr item :compiled-object) (make-metal-caller caller))))))))
