@@ -57,8 +57,9 @@
       (when (getattr item :rendered-object)
         (format t "~a"
                 (with-output-to-string (tmp)
-                  (format tmp "~%~A:~%~A~%Disassemble:~%" (getattr item :name) (getattr item :rendered-object))
-                  (disassemble (compile nil (getattr item :rendered-object)) :stream tmp))))))
+                  (format tmp "~%[Kernel: ~A]:~%~A~%Disassembly for ~a:~%```~%" (getattr item :name) (getattr item :rendered-object) (getattr item :name))
+                  (disassemble (compile nil (getattr item :rendered-object)) :stream tmp)
+                  (format tmp "~%```~%"))))))
   (dolist (item items)
     (when (getattr item :rendered-object)
       (setf (getattr item :compiled-object) (wrap-with-caller (getattr item :rendered-object))
