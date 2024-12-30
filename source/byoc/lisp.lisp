@@ -74,6 +74,8 @@
                   (list ',op lhs rhs)))))
   (def :ADD +)
   (def :MUL *)
+  (def :IDIV floor)
+  (def :MOD mod)
   (def :MAX max)
   (def :< < 1)) ;; < is a TernaryOps where <(out_placeholder, x, y)
 
@@ -118,7 +120,7 @@
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Store)) node) (render-node renderer (second (node-reads node))))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Allocate)) node) nil)
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Cast)) node)
-  (let ((x (render-node renderer (car (node-reads node)))))
+  (let ((x (render-node renderer (second (node-reads node)))))
     ;; [TODO] Inline dtype/cast
     `(dtype/cast ,x ,(getattr node :dtype))))
 (defmethod  %render-node ((renderer LispStyle-Renderer) (id (eql :Index-Components)) node)
