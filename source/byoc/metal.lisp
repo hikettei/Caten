@@ -52,8 +52,9 @@ Compiled with this command: ~a"
 
 (defmethod initialize-instance :after ((runtime MetalRuntime) &key)
   (ensure-foreign-library)
+  (assert (runtime-renderer runtime))
   (with-float-traps-masked t
-    (setf (metal-runtime-device runtime) (MTLCreateSystemDefaultDevice))))
+    (setf (metal-runtime-device runtime) (metal-renderer-device (runtime-renderer runtime)))))
 
 (defmethod open-buffer ((runtime MetalRuntime) (buffer MetalBuffer))
   (let ((initial-value (if (eql (buffer-dtype buffer) :bool)
@@ -77,16 +78,22 @@ Compiled with this command: ~a"
       (setf (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i) (aref array i)))))
 
 (defmethod transfer-into-array ((runtime MetalRuntime) (buffer MetalBuffer))
+
   (let ((val (msg (buffer-value buffer) "contents" :pointer))
         (placeholder (make-array (apply #'* (buffer-shape buffer)) :element-type (dtype->lisp (buffer-dtype buffer)))))
     (dotimes (i (apply #'* (buffer-shape buffer)) placeholder)
       (setf (aref placeholder i) (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i)))))
 
+(defmethod copy-buffer-value ((runtime MetalRuntime) (buffer MetalBuffer))
+  (buffer-value buffer))
+
 (defmethod bref ((buffer MetalBuffer) idx)
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
+    (print (buffer-value buffer))
+    (print idx)
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
 
-(defclass Metal-Renderer (CStyle-Renderer) nil)
+(defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
 
 (define-auto-scheduler (Metal-Auto-Scheduler ()) :n-global-loop 3)
 
@@ -129,7 +136,6 @@ Compiled with this command: ~a"
 (defun render-bp (bp stream)
   (flet ((indent () (make-string *indent* :initial-element #\space)))
     (ecase (node-type bp)
-      ;; [TODO] Optimize Global Loops once we've finished implementing polyhedral compiler
       (:FOR
        (if (eql (getattr bp :scope) :global)
            (progn
@@ -239,10 +245,11 @@ using namespace metal;
         (apply #'load-size ls (mp-local-size mp))
         (msg encoder "dispatchThreadgroups:threadsPerThreadgroup:" :void :pointer gs :pointer ls))
       (msg encoder "endEncoding" :void)
+      (msg command-buffer "setLabel:" :void :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp)))))
       (msg command-buffer "commit" :void)
       (msg command-buffer "waitUntilCompleted" :void)
-      ;; [TODO] compute elapsed_time
-      )))
+      (let ((err (msg command-buffer "error" :pointer)))
+        (assert (null-pointer-p err) () "Failed to execute a Metal command buffer: ~a" (msg err "localizedDescription" :pointer))))))
 
 (defun make-metal-caller (mp) `(lambda (&rest args) (apply #'invoke ,mp args)))
 
@@ -258,6 +265,7 @@ using namespace metal;
       (let* ((lib (mtl-compile-source code))
              (device (MTLCreateSystemDefaultDevice))
              (mtl-queue (msg device "newCommandQueueWithMaxCommandBufferCount:" :pointer :int 1024)))
+        (setf (metal-renderer-device renderer) device)
         (loop for item in items
               if (getattr item :rendered-object)
                 do (let ((caller (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue)))
