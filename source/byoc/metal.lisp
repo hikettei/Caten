@@ -8,7 +8,7 @@
    #:define-auto-scheduler))
 
 (in-package :caten/byoc/metal)
-;; [Note] Currently not tested :(
+
 (defun ensure-foreign-library ()
   (load-foreign-library "/usr/lib/libobjc.dylib")
   (load-foreign-library "/System/Library/Frameworks/Metal.framework/Metal")
@@ -69,21 +69,24 @@ Compiled with this command: ~a"
   (when (pointerp (buffer-value buffer))
     (msg (buffer-value buffer) "release" :void)
     (setf (buffer-value buffer) nil)))
-
+;; [TODO] Optimize Transfer
 (defmethod transfer-from-array ((runtime MetalRuntime) (buffer MetalBuffer) array)
-  ;; [TODO] contents are setfable?
-  ;; [TODO] Optimize (there's an api to do the same thing)
+  ;; CPU -> METAL
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
     (dotimes (i (apply #'* (buffer-shape buffer)))
       (setf (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i) (aref array i)))))
 
 (defmethod transfer-into-array ((runtime MetalRuntime) (buffer MetalBuffer))
+  ;; METAL -> CPU
   (let ((val (msg (buffer-value buffer) "contents" :pointer))
         (placeholder (make-array (apply #'* (buffer-shape buffer)) :element-type (dtype->lisp (buffer-dtype buffer)))))
     (dotimes (i (apply #'* (buffer-shape buffer)) placeholder)
       (setf (aref placeholder i) (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i)))))
-;; [TODO] Copy contents
-(defmethod copy-buffer-value ((runtime MetalRuntime) (buffer MetalBuffer)) (buffer-value buffer))
+
+(defmethod copy-buffer-value ((runtime MetalRuntime) (buffer MetalBuffer))
+  (let ((buffer (copy-buffer buffer)))
+    (transfer-from-array runtime buffer (transfer-into-array runtime buffer))
+    (buffer-value buffer)))
 
 (defmethod bref ((buffer MetalBuffer) idx)
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
