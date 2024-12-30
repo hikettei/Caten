@@ -3,7 +3,7 @@
 caten/codegen overview:
 ```
 --- [Step1] Scheduling ---------------------------------------------------------------------------------------------
-                          [Deep Learning Models (AVM)]
+                          [Deep Learning Models (Runtime)]
                                        | Partitioning into subgraphs (scheduler.lisp)
  [Embedding_Embedding_ADD], [LayerNorm], [Matmul+GELU], [Attention1], [Attention2 (Cached)] ..., (Nx Schedule-Item)
                                        |
@@ -28,26 +28,10 @@ caten/codegen overview:
                                  |
                          [Render the kernel]
                                  |
-                  [Deep Learning Models (Compiled AVM)]
+                  [Deep Learning Models (Runtime)]
 --------------------------------------------------------------------------------------------------------------------
 ```")
-  (:use :cl :caten/air :caten/codegen/shape-inference)
-  (:import-from
-   :caten/avm
-   #:AVM
-   #:Buffer
-   #:avm-graph
-   #:avm-name
-   #:avm-tape-length
-   #:avm-pc
-   #:avm-variables
-   #:buffer-nrank
-   #:buffer-shape
-   #:buffer-views
-   #:buffer-stride
-   #:buffer-dtype
-   #:buffer-inferred-permute
-   #:buffer-orig-buffer-shape)
+  (:use :cl :caten/air :caten/codegen/shape-inference :caten/runtime/buffer :caten/runtime/runtime)
   (:import-from
    :caten/codegen/shape-inference
    #:run-type-infer)
@@ -65,8 +49,7 @@ caten/codegen overview:
    #:print-blueprint)
   (:import-from
    :caten/codegen/scop
-   #:scop
-   #:auto-schedule)
+   #:scop)
   (:import-from
    :caten/codegen/helpers
    #:coerce-dtyped-buffer
@@ -114,16 +97,6 @@ caten/codegen overview:
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
 	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list) (cached-p :type boolean)))
 
-(defmethod make-load-form ((jit Compiled-Kernel) &optional env)
-  (declare (ignore env))
-  `(make-compiled-kernel
-    :name ,(compiled-kernel-name jit)
-    :caller ,(compiled-kernel-raw-caller jit)
-    :raw-caller ',(compiled-kernel-raw-caller jit)
-    :device ,(compiled-kernel-device jit)
-    :code ,(compiled-kernel-code jit)
-    :out-positions ,(compiled-kernel-out-positions jit)))
-
 (defmethod print-object ((s Compiled-Kernel) stream)
   (format stream "<~a[~a]>" (compiled-kernel-device s) (compiled-kernel-name s)))
 
@@ -143,7 +116,7 @@ caten/codegen overview:
      :raw-caller (if (getattr si :cache-name)
                      (getattr (from-cache si) :compiled-object)
                      (getattr si :compiled-object))
-     :device (princ-to-string (or (ctx:getenv :JIT_BACKEND) :clang))
+     :device (princ-to-string (ctx:getenv :BACKEND))
      :code (if (getattr si :cache-name)
                (getattr (from-cache si) :rendered-object)
                (getattr si :rendered-object))
@@ -255,6 +228,9 @@ caten/codegen overview:
 
 (defun schedule-graph->avm-graph (base-graph graph &aux (map (id->output-map graph)) (local-gensym-table (make-hash-table)))
   (declare (type Graph graph base-graph))
+  (when (typep graph 'FastGraph)
+    (verify-graph graph)
+    (setf graph (->graph-with-tpsort graph)))
   (let ((nodes) (allocated))
     (flet ((merge-id (id)
              (multiple-value-bind (deps new-seen) (get-subgraph base-graph id allocated)
@@ -333,7 +309,7 @@ caten/codegen overview:
 (defun buffer-equal (a b)
   (declare (optimize (speed 3)))
   (and
-   (caten/avm:buffer-p a) (caten/avm:buffer-p b)
+   (buffer-p a) (buffer-p b)
    (equal (buffer-shape a) (buffer-shape b))
    (equal (buffer-stride a) (buffer-stride b))
    (equal (buffer-views a) (buffer-views b))
@@ -418,33 +394,37 @@ caten/codegen overview:
        (let ((,stream t)) ,@body)
        (format t "~a" (with-output-to-string (,stream) (let ((caten/common.logger:*default-stream* ,stream)) ,@body)))))
 
-(defun jit (avm
+(defun jit (runtime
             &key
-              (renderer (or (ctx:getenv :JIT_BACKEND) :clang))
+              (backend (ctx:getenv :BACKEND))
               (dir nil)
             &aux
-              (renderer (if (keywordp renderer) (get-default-renderer renderer) renderer))
-              (auto-scheduler
-               (when (= (ctx:getenv :AUTO_SCHEDULER) 1)
-                 (or (%renderer-get-auto-scheduler renderer)
-                     (error "Cannot enable auto-scheduler without the renderer support.~%Use define-auto-scheduler and define-hook-auto-scheduler and compilers will recognise it.~%or, set AUTO_SCHEDULER=0 to supress this error.")))))
+              (buffer-class (caten/codegen/backend:get-backend-buffer backend))
+              (runtime-id   (caten/codegen/backend:get-backend-runtime backend))
+              (renderer     (caten/codegen/backend:get-backend-renderer backend))
+              (auto-scheduler (caten/codegen/backend:get-backend-auto-scheduler backend))
+              (is-jit         (caten/codegen/backend:get-backend-jit-p backend)))
   "
 ```
-(jit avm &key (renderer :clang) (dir nil))
+(jit runtime  &key (backend (ctx:getenv :BACKEND)) (dir nil))
 ```
-Runs the JIT compilation for the given AVM."
-  (declare (type AVM avm))
+Applies the JIT compilation for the given Runtime. backend is a keyword defined by `caten/codegen/backend:define-backend` macro."
+  (declare (type GraphRuntime runtime))
+  (when (null is-jit)
+    (setf (runtime-buffer-type runtime) buffer-class)
+    (return-from jit runtime))
   (caten/isl:with-isl-context ;; Note: Need this to ensure isl objected allocated here are not cached and not used by other compiling sessions.
-    (when (= 2 (ctx:getenv :DOT)) (->dot (avm-graph avm) :title "Base Graph"))
-    (run-type-infer avm)
+    (when (= 2 (ctx:getenv :DOT)) (->dot (runtime-graph runtime) :title "Base Graph"))
+    (run-type-infer runtime)
     ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
-    (apply-rewriting-rules avm)
+    (apply-rewriting-rules runtime)
     ;; 3. Running the scheduler
-    (let ((base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (avm-graph avm)))))
-          (schedule-graph (graph-schedule (avm-graph avm)))
+    (let ((renderer (make-instance renderer))
+          (base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (runtime-graph runtime)))))
+          (schedule-graph (graph-schedule (runtime-graph runtime)))
           (symbolics
             (remove-duplicates
-             (loop for node in (graph-nodes (avm-graph avm))
+             (loop for node in (graph-nodes (runtime-graph runtime))
                    if (and (eql (node-type node) :LOAD) (symbolp (getattr node :value)))
                      collect (getattr node :value))))
           (pointer-map (make-hash-table)))
@@ -456,7 +436,7 @@ Runs the JIT compilation for the given AVM."
         ;; 6. Start JIT Compilation. (Performing group by group)
         (let ((total-kernels (count-if #'(lambda (x) (getattr x :jitable)) (graph-nodes schedule-graph))))
           (when (>= (ctx:getenv :JIT_DEBUG) 2)
-            (print-info "JIT Compilation Start (AVM=~a)" (avm-name avm)))
+            (print-info "JIT Compilation Start"))
           (with-progress (total-kernels :debug (if (>= (ctx:getenv :JIT_DEBUG) 2) 1 -1) :timeit nil)
             (maybe-pmapc
              #'(lambda (x &aux (start (get-internal-real-time)))
@@ -472,7 +452,7 @@ Runs the JIT compilation for the given AVM."
                        (format stream "=====> Lowering to blueprint~%"))
                      (when (null (getattr x :cache-name))
                        ;; 7. Running Lowerer
-                       (lower-schedule-item x (avm-graph avm) schedule-graph)
+                       (lower-schedule-item x (runtime-graph runtime) schedule-graph)
                        (when (>= (ctx:getenv :JIT_DEBUG) 2)
                          (print-blueprint (getattr x :blueprint) stream))
                        ;; 8. Lower into Polyhedral IR
@@ -485,7 +465,7 @@ Runs the JIT compilation for the given AVM."
                          (when (>= (ctx:getenv :JIT_DEBUG) 2)
                            (format stream "=====> Auto Scheduler~%"))
                          ;; 9. Optimizing: Tiles, Parallelizing, Vectorizing, Unrolling
-                         (auto-schedule auto-scheduler x)
+                         (caten/codegen/auto-scheduler:auto-schedule auto-scheduler x)
                          (when (>= (ctx:getenv :JIT_DEBUG) 2)
                            (print (getattr x :polyhedral) stream)
                            (fresh-line stream)
@@ -528,7 +508,7 @@ Runs the JIT compilation for the given AVM."
             (fresh-line)
             (print-info "Compiling ..."))
           (%compile-kernel renderer (graph-nodes schedule-graph) dir)
-          ;; [TODO] Improve schedule-graph->avm-graph
+          
           (let ((new-graph (schedule-graph->avm-graph base-graph schedule-graph)))
             (setf (graph-outputs new-graph) (graph-outputs schedule-graph))
             (when (>= (ctx:getenv :JIT_DEBUG) 4)
@@ -537,8 +517,4 @@ Runs the JIT compilation for the given AVM."
               (when (= (ctx:getenv :DOT) 2) (->dot schedule-graph :title "Schedule Graph (Final)"))
               (print-info "Final VM Graph:")
               (print new-graph))
-            (setf (avm-graph avm) new-graph
-                  (avm-tape-length avm) (length (graph-nodes new-graph))
-                  (avm-pc avm) 0
-                  (avm-variables avm) (make-hash-table)))
-          avm)))))
+            (make-runtime new-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-id :id2tensor (runtime-id2tensor runtime) :buffer-type buffer-class :params (runtime-params runtime))))))))

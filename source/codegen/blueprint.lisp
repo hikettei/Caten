@@ -1,15 +1,7 @@
 (defpackage :caten/codegen/blueprint
   (:documentation "The package `caten/codegen/blueprint` is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
 The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers)
-  (:import-from
-   :caten/avm
-   #:buffer-dtype
-   #:buffer-nrank
-   #:buffer-shape
-   #:buffer-stride
-   #:buffer-views
-   #:buffer-orig-buffer-shape)
+  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers :caten/runtime/runtime :caten/runtime/buffer)
   (:import-from
    :caten/codegen/renderer
    #:render-expr
@@ -412,7 +404,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
             (let ((users (id->users (ctx-schedule-graph ctx) (car (node-writes node)))))
               (if (some #'(lambda (x) (getattr x :jitable)) users) ;; If the scalar is used in another jitable kernel?
                   (let* ((dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
-                         (buffer (caten/avm:make-buffer 1 `(1) `(0) dtype `((0 1 1 t))))
+                         (buffer (make-buffer `(1) `(0) dtype `((0 1 1 t)) :device 'RelayBuffer))
                          (space (buffer-merge-dims (ctx-schedule-graph ctx) buffer)))
                     (setf (car (relay-write-iters (read-type-relay node))) space
                           (car (relay-writes (read-type-relay node))) buffer))
@@ -479,7 +471,7 @@ Depends=~a Reduce=~a Users=~a
                   if (and type is (find read constants)) do
                     ;; The load to :declare-type is a scalar.
                     (setf (nth nth (relay-reads (read-type-relay bp)))
-                          (let ((buffer (caten/avm:copy-buffer type)))
+                          (let ((buffer (caten/runtime:copy-buffer type)))
                             (setf (buffer-nrank buffer) -1)
                             buffer))))
     blueprints))
@@ -569,7 +561,8 @@ Lowers the Schedule-Item into blueprint.
                   ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
                   (node-writes node) (append (map 'list #'car cycle) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))))
       (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
-      (setf (getattr node :blueprint) (ctx-blueprint ctx)))))
+      (setf (getattr node :blueprint) (ctx-blueprint ctx)
+            (getattr node :blueprint-base) (copy-list (ctx-blueprint ctx))))))
 ;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
   (let ((node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
@@ -618,7 +611,7 @@ Lowers the Schedule-Item into blueprint.
                          (error "map-from: the id ~a is not found." x)))))
              (update-buffer (buffer)
                (when buffer
-                 (let ((buffer (caten/avm:copy-buffer buffer)))
+                 (let ((buffer (copy-buffer buffer)))
                    (setf (buffer-shape buffer) (map 'list #'map-from (buffer-shape buffer))
                          (buffer-stride buffer) (map 'list #'map-from (buffer-stride buffer))
                          (buffer-views buffer)
@@ -636,42 +629,44 @@ Lowers the Schedule-Item into blueprint.
             (getattr node :write-types) (map 'list #'update-buffer (getattr base-item :write-types))
             (getattr node :dynamic-shapes) (getattr base-item :dynamic-shapes))
       ;; creates a copy of blueprint, expr is also refreshed. Memory Planner will use this.
-      (setf (getattr node :blueprint)
-            (loop for bp-base in (getattr base-item :blueprint)
-                  for bp = (copy-node bp-base)
-                  if (eql (node-class bp) :Render)
-                    do (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
-                             (node-writes bp) (map 'list #'map-from (node-writes bp)))
-                       (assert (not (eql (node-type bp) :AREF)))
-                    and
-                      collect bp
-                  else
-                    if (eql (node-type bp) :EXPR)
-                      collect
-                      (let ((expr-out-node (copy-node (expr-out (getattr bp :EXPR)))))
-                        (when (eql (node-type expr-out-node) :Aref)
-                          (setf (getattr expr-out-node :storage-id) (map-from (getattr expr-out-node :storage-id))))
-                        (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
-                              (node-writes bp) (map 'list #'map-from (node-writes bp))
-                              (node-reads expr-out-node) (map 'list #'map-from (node-reads expr-out-node))
-                              (node-writes expr-out-node) (map 'list #'map-from (node-writes expr-out-node))
-                              (getattr bp :EXPR)
-                              (make-expr
-                               :graph
-                               (apply
-                                #'make-graph
-                                (loop for expr-node-base in (graph-nodes (expr-graph (getattr bp :EXPR)))
-                                      for expr-node = (copy-node expr-node-base)
-                                      do (setf (node-reads expr-node) (map 'list #'map-from (node-reads expr-node))
-                                               (node-writes expr-node) (map 'list #'map-from (node-writes expr-node)))
-                                         (when (getattr expr-node :_type_relay :allow-undefined t)
-                                           (setf
-                                            (relay-reads (read-type-relay expr-node)) (map 'list #'update-buffer (relay-reads (read-type-relay expr-node)))
-                                            (relay-writes (read-type-relay expr-node)) (map 'list #'update-buffer (relay-writes (read-type-relay expr-node)))))
-                                         (when (eql (node-type expr-node) :Aref)
-                                           (setf (getattr expr-node :storage-id) (map-from (getattr expr-node :storage-id))))
-                                      collect expr-node))
-                               :out expr-out-node))
-                        bp)
-                  else
-                    do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))))
+      (flet ((make-copy-of-bp (bp)
+               (loop for bp-base in bp
+                     for bp = (copy-node bp-base)
+                     if (eql (node-class bp) :Render)
+                       do (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
+                                (node-writes bp) (map 'list #'map-from (node-writes bp)))
+                          (assert (not (eql (node-type bp) :AREF)))
+                       and
+                         collect bp
+                     else
+                       if (eql (node-type bp) :EXPR)
+                         collect
+                         (let ((expr-out-node (copy-node (expr-out (getattr bp :EXPR)))))
+                           (when (eql (node-type expr-out-node) :Aref)
+                             (setf (getattr expr-out-node :storage-id) (map-from (getattr expr-out-node :storage-id))))
+                           (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
+                                 (node-writes bp) (map 'list #'map-from (node-writes bp))
+                                 (node-reads expr-out-node) (map 'list #'map-from (node-reads expr-out-node))
+                                 (node-writes expr-out-node) (map 'list #'map-from (node-writes expr-out-node))
+                                 (getattr bp :EXPR)
+                                 (make-expr
+                                  :graph
+                                  (apply
+                                   #'make-graph
+                                   (loop for expr-node-base in (graph-nodes (expr-graph (getattr bp :EXPR)))
+                                         for expr-node = (copy-node expr-node-base)
+                                         do (setf (node-reads expr-node) (map 'list #'map-from (node-reads expr-node))
+                                                  (node-writes expr-node) (map 'list #'map-from (node-writes expr-node)))
+                                            (when (getattr expr-node :_type_relay :allow-undefined t)
+                                              (setf
+                                               (relay-reads (read-type-relay expr-node)) (map 'list #'update-buffer (relay-reads (read-type-relay expr-node)))
+                                               (relay-writes (read-type-relay expr-node)) (map 'list #'update-buffer (relay-writes (read-type-relay expr-node)))))
+                                            (when (eql (node-type expr-node) :Aref)
+                                              (setf (getattr expr-node :storage-id) (map-from (getattr expr-node :storage-id))))
+                                         collect expr-node))
+                                  :out expr-out-node))
+                           bp)
+                     else
+                       do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))
+        (setf (getattr node :blueprint) (make-copy-of-bp (getattr base-item :blueprint))
+              (getattr node :blueprint-base) (make-copy-of-bp (getattr base-item :blueprint-base)))))))

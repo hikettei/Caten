@@ -19,10 +19,6 @@
   ((attr-module-key :initarg :attr-module-key :type keyword :reader attr-module-key)
    (attr-type-key :initarg :attr-type-key :type keyword :reader attr-type-key)))
 
-(defmethod make-load-form ((attr Attribute) &optional (env))
-  (declare (ignore env))
-  `(make-attr ,(attr-type-key attr) ,@(dump-into-list attr)))
-
 (defun rewrite-slot (slot)
   (assert (null (find :initarg slot)) () "defattr: do not specify :initarg")
   (assert (listp slot) () "defattr: ~a is not a list." slot)

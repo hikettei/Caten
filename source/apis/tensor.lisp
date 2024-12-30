@@ -13,7 +13,7 @@ A struct `tensor` is a multi-dimensional, and strided matrix (and nrank=0 to sca
 Also the tensor has following slots:
 
 - shape[list] A list of number, symbol, or `Tensor`.
-- buffer[Buffer] A buffer of the tensor. Realized arrays are stored here.
+- buffer[AbstractBuffer] A buffer of the tensor. Realized arrays are stored here.
 - dtype[keyword] A dtype of the tensor.
 - order[order] A memory layout of the tensor, selected from either of :row or :column.
 - id[symbol] A unique identifier of the tensor. (usually created by gensym)
@@ -26,7 +26,7 @@ Also the tensor has following slots:
 "
   (shape shape :type list)
   (tr tracker :type Tracker)
-  (buffer nil :type (or null Buffer))
+  (buffer nil :type (or null AbstractBuffer))
   (dtype dtype :type dtype-t)
   (order order :type (member :row :column))
   (id id :type symbol)
@@ -38,19 +38,6 @@ Also the tensor has following slots:
   (variables variables :type list)
   (cache-canonicalize nil)
   (nth-output 0 :type fixnum))
-
-(defmethod make-load-form ((tensor Tensor) &optional env &aux (debug-p (= 1 (ctx:getenv :AOT_VERBOSE))))
-  (declare (ignore env))
-  (when (and (tensor-buffer tensor) debug-p)
-    (warn "Removing the buffer of ~a when dumping it." tensor))
-  (values
-   `(%internal-make-tensor
-     nil ',(tensor-shape tensor)
-     :dtype ,(tensor-dtype tensor) :order ',(tensor-order tensor)
-     :id ',(tensor-id tensor) :variables ',(tensor-variables tensor)
-     :views nil :requires-grad ,(tensor-requires-grad tensor)
-     :tracker (start-tracking ',(tensor-shape tensor) :order ',(tensor-order tensor))
-     :grad ,(tensor-grad tensor) :grad-id ',(tensor-grad-id tensor))))
 
 (defun grad (tensor)
   "
@@ -93,12 +80,15 @@ Returns a memory-layout of the tensor."
   (tensor-order tensor))
 
 (defmethod print-object ((tensor Tensor) stream)
-  (format stream "{Tensor[~(~a~)] :shape ~a :id ~a
+  (format stream "{Tensor~a[~(~a~)] :shape ~a :id ~a
 ~a
   :op ~a
   :requires-grad ~a
   :variables ~a
   :tracker ~a}"
+          (if (tensor-buffer tensor)
+              (format nil "{~a}" (class-name (class-of (tensor-buffer tensor))))
+              "")
 	  (tensor-dtype tensor)
 	  (loop for s in (tensor-shape tensor) collect (if (tensor-p s) (tensor-id s) s))
 	  (tensor-id tensor)
@@ -124,14 +114,14 @@ Create a new lazy tensor.
 - requires-grad[boolean] A flag to determine whether the tensor requires a gradient.
 - initial-element[null|number|symbol|ScalarTensor] An initial value of the tensor.
 - views[list] A list of `ViewRange` objects, determining the bound of loops.
-- from[null|Buffer|Symbol] A buffer used to initialize the tensor. If symbol is given, the buffer is taken from the variable table.
+- from[null|AbstractBuffer|Symbol] A buffer used to initialize the tensor. If symbol is given, the buffer is taken from the variable table.
 "
   (declare (type list shape)
 	   (type dtype-t dtype)
 	   (type (member :column :row) order)
 	   (type symbol id)
 	   (type (or null number symbol) initial-element)
-	   (type (or null symbol Buffer) from))
+	   (type (or null symbol AbstractBuffer) from))
   (dolist (s shape)
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()
@@ -231,8 +221,8 @@ Creates a lowered graph from the given tensors. (= an input grpah to JIT=1)
   (when (not (tensor-p (car tensors)))
     (return-from tensor-lowered-graph (car tensors)))
   (assert (every #'tensor-p tensors))
-  (ctx:with-contextvar (:JIT 0)
-    (avm-graph (caten tensors))))
+  (ctx:with-contextvar (:BACKEND "LISP")
+    (runtime-graph (caten tensors))))
 ;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun inf (&key (dtype *default-float*))
   "

@@ -12,11 +12,14 @@
 
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
-   (_read_views :initform nil :initarg :_read_views)
-   (_output_type :initform nil :initarg :_output_type)
+   (_read_views :initform nil :initarg :_read_views) ;; [TODO] Removable
+   (_output_type :initform nil :initarg :_output_type) ;; [TODO] Removable
    (declare-type :initarg :declare-type :initform nil)
    (iterations :initarg :iterations :initform nil)
-   (_lowering_history :initform nil :initarg :_lowering_history))
+   (_lowering_history :initform nil :initarg :_lowering_history)
+   ;; Metadata for Vectorize
+   (parent-node-id :initform nil :initarg :parent-node-id)
+   (unroll-history :initform nil :initarg :unroll-history))
   (:documentation "This node is jitable.
 - declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:
 ```
@@ -234,7 +237,7 @@ out = allocate(*shape, *stride)
 
 - dtype[dtype-t] dtype to allocate.
 - nrank[(unsigned-byte 32)] a rank of tensor. If set to 0, allocates a scalar.
-- from[symbol or buffer or null] If specified, instead of allocating, an already allocated Buffer is used. If a symbol is specified, a buffer is already defined in the variable table of AVM. If buffer is specified, use the buffer directly.
+- from[symbol or buffer or null] If specified, instead of allocating, an already allocated Buffer is used. If a symbol is specified, a buffer is already defined in the variable table of GraphRuntime. If buffer is specified, use the buffer directly.
 - pool[null or Buffer] A place to store the result of the previous allocation. Allocation will be performed only after this slot is set to nil, or size are different due to dynamic shape.
 "
 	 :slots ((nrank :type (unsigned-byte 32))

@@ -40,9 +40,9 @@ def torch_rms_norm(x):
           (proceed (!batch-norm x nil nil (linspace `(40 40) 0 1) (linspace `(40 40) 0 1)))))))
 
 (deftest test-batch-norm-1
-  (when (= 1 (ctx:getenv :JIT))
+  (when (caten/codegen/backend:jit-mode-p)
     (let* ((jit (proceed (!batch-norm (ax+b `(10 10) 0.01 0.01))))
-           (vm  (ctx:with-contextvar (:JIT 0) (proceed (!batch-norm (ax+b `(10 10) 0.01 0.01))))))
+           (vm  (ctx:with-contextvar (:BACKEND "LISP") (proceed (!batch-norm (ax+b `(10 10) 0.01 0.01))))))
       (assert-equal (:atol 1e-3 :rtol 1e-3) jit vm))))
 
 (deftest test-layer-norm

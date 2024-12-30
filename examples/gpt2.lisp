@@ -8,7 +8,7 @@
   (:use :cl :caten/apps.gpt2))
 (in-package :gpt2-inference)
 
-(setf (ctx:getenv :JIT) 1 (ctx:getenv :JIT_DEBUG) 4)
+(setf (ctx:getenv :BACKEND) "CLANG" (ctx:getenv :JIT_DEBUG) 4)
 
 (defparameter *gpt2* (make-gpt2 :gpt2)) ;; we also have :gpt2-medium and :gpt2-large, :gpt2-xl
 

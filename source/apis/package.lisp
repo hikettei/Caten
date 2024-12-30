@@ -7,7 +7,7 @@
 - Merge View Solver
 - ASM Bindings
 - Graph Caller")
-  (:use :cl :alexandria :trivia :cl-ppcre :caten/aasm :caten/air :caten/avm)
+  (:use :cl :alexandria :trivia :cl-ppcre :caten/aasm :caten/air :caten/runtime)
   (:local-nicknames (:docs :caten/common.documentation))
   (:import-from
    :caten/common.dtype
@@ -15,9 +15,6 @@
    #:dtype->lisp)
   ;; from aot-compilation.lisp
   (:export
-   #:*aot-jit*
-   #:*aot-vm*
-   #:*invoke-aot-function*
    #:caten/defun[t]
    #:caten/defun[all]
    #:caten/defun[float]
@@ -122,7 +119,6 @@
   (:export
    #:with-no-grad
    #:with-attrs
-   #:print-avm
    #:normalize-axis
    #:normalize-axes)
   ;; from iseq.lisp
@@ -132,8 +128,7 @@
    #:forward
    #:backward
    #:proceed
-   #:%run
-   #:with-jit)
+   #:%run)
 
   ;; from function.lisp
   (:export

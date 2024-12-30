@@ -15,6 +15,7 @@ def tiktoken_decode(list):
 (import-function "tiktoken_tokenize")
 (import-function "tiktoken_decode")
 
+;; assuming M-x slime-cd to be the root of the project.
 (defun make-bpe-gpt2 ()
   (make-bpe-tokenizer
    (uiop:read-file-string "./source/test-suite/external/assets/gpt2_tokenizer/tokens.txt")

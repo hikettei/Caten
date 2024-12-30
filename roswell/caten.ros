@@ -6,10 +6,7 @@ exec ros -Q -- $0 "$@"
 (progn ;;init forms
   (ros:ensure-asdf)
    #+quicklisp(cl:push (cl:pathname "./") ql:*local-project-directories*)
-   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/llm :caten/benchmarks :caten/apps))
-   (when (and (uiop:getenv "JIT_BACKEND")
-	      (equalp (uiop:getenv "JIT_BACKEND") "METAL"))
-     #+quicklisp(ql:quickload '(:caten/metal) :silent nil)))
+   #+quicklisp(ql:quickload '(:caten :clingon :cl-ansi-text :caten/gguf :caten/llm :caten/benchmarks :caten/apps)))
 
 (defpackage :caten/cli
   (:use :cl :log :cl-ansi-text))
@@ -71,9 +68,9 @@ exec ros -Q -- $0 "$@"
        (let ((model (clingon:getopt cmd :model))
              (image (clingon:getopt cmd :image))
              (label (clingon:getopt cmd :label)))
+         (assert (caten/codegen/backend:jit-mode-p) () "Please run the model with JITAble device (e.g.: BACKEND=CLANG)")
          (assert (and model image label) () "Usage: caten run-classification --model <model> --image <image> --label <label>")
-         (ctx:with-contextvar (:JIT 1)
-           (format t "Predicted: ~a~%" (uiop:symbol-call :caten/vision :run-classification model image label)))))))
+         (format t "Predicted: ~a~%" (uiop:symbol-call :caten/vision :run-classification model image label))))))
 
 (defun caten/llm-example/handler (cmd)
   (let* ((model (clingon:getopt cmd :model))
@@ -83,9 +80,9 @@ exec ros -Q -- $0 "$@"
     (assert prompt () "--prompt <text> is required")
     (ecase type
       ((:gpt2 :gpt2-medium :gpt2-large :gpt2-xl)
-       (ctx:with-contextvar (:JIT 1)
-         (let ((model (caten/apps.gpt2:make-gpt2 type)))
-           (caten/apps.gpt2:gpt2-generate model prompt :max-length (clingon:getopt cmd :max-length) :expected (clingon:getopt cmd :expected nil))))))))
+       (assert (caten/codegen/backend:jit-mode-p) () "Please run the model with JITAble device (e.g.: BACKEND=CLANG)")
+       (let ((model (caten/apps.gpt2:make-gpt2 type)))
+         (caten/apps.gpt2:gpt2-generate model prompt :max-length (clingon:getopt cmd :max-length) :expected (clingon:getopt cmd :expected nil)))))))
 
 (defun caten/llm-example ()
   (clingon:make-command

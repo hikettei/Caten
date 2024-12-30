@@ -4,7 +4,7 @@
 (ql:quickload :caten)
 
 (defpackage :getting-started
-  (:use :cl :caten/air :caten/aasm :caten/apis :caten/avm))
+  (:use :cl :caten/air :caten/aasm :caten/apis :caten/runtime))
 
 (in-package :getting-started)
 ;;; [Introduction]
@@ -13,11 +13,12 @@
 ;;; Our ultimate goal is to generate a fast deep learning model inference runtime across a wide range of devices with the minimal cost.
 ;;;
 ;;; We need contributors. This document was created to help new contributors to quickly understand the design of Caten.
-;;; To learn how Caten works, you first need to understand the following three main systems:
+;;; To learn how Caten works, you first need to understand the following 4 main components:
 
 ;;; - 1. caten/apis    | High-Level Graph Interface
 ;;; - 2. caten/air     | Low-Level  Graph Interface
 ;;; - 3. caten/codegen | AIR Graph => Kernel Generator
+;;; - 4. caten/runtime | AIR Graph Runner + Buffer managements
 ;;; **All other systems are built on top of these packages.**
 (defun present (&rest tensors)
   "Present compiles and executes the given tensor, then prints the result."
@@ -39,12 +40,12 @@
 
 (defparameter *tensor2* (make-tensor `(3 3) :initial-element 1.0))
 
-;; To execute a previously compiled graph without recompiling, create an `AVM` using the `caten` function, then execute it with forward.
+;; To execute a previously compiled graph without recompiling, create an `GraphRuntime` using the `caten` function, then execute it with forward.
 ;; The graph created consists of a matrix multiplication, passing two tensors
 ;; The caten function creates the low-level graph, that is a compiled (low level) version of the matmul as an AST
 (print (caten (!matmul *tensor1* *tensor2*)))
 ;; Proceed computes the lower level AST
-(print (proceed (!matmul *tensor1* *tensor2* )))
+(print (proceed (!matmul *tensor1* *tensor2*)))
 
 ;; Of course, Caten is designed so that all graphs can be compiled with dynamic shapes. There's no need to recompile every time the batch_size changes.
 
@@ -62,9 +63,8 @@
 
 ;;; Any functions starting with `%` represents low level operations for the air node creation.
 ;;; By wrapping such graph constructions with the with-context macro, Caten automatically organizes them into an executable graph.
-;;; - caten/avm:%realize to run the graph in AVM
+;;; - caten/runtime:realize-graph to run the graph in GraphRuntime
 ;;; - caten/aasm:->dot to open the graph in your browser
-
 
 ;; Example:
 ;; The graph defines a low level graph that performs addition, two constants are defined and added together
@@ -75,13 +75,13 @@
           (y (%fconst 2.0))
           (out (%add x y)))))
   (print graph)
-  (print (%realize graph))
+  (print (realize-graph graph :buffer-type 'caten/byoc/lisp:LispBuffer))
   ;;(->dot graph)
   )
 
 ;;; - Nodes can be defined using defnode.
 ;;; - Pattern Matcher can be defined using `defsimplifier`
-;;; - `caten/aasm` provides a set of instruction used in AVM
+;;; - `caten/aasm` provides a set of instruction used in GraphRuntime
 ;;; ~~~[A Bridge between AIR and APIs]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;; In this section, we will explain the mechanism of lowering the high-level interface(APIs) to the low-level interface(AIR Graph).
 
@@ -114,7 +114,7 @@
  (!sincos (make-tensor `(3 3) :initial-element 1.0))) ;; = 0.51439524
 ;;; ~~~~[caten/codegen]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpackage :codegen-example
-  (:use :cl :caten/air :caten/aasm :caten/apis :caten/avm :caten/codegen/expr-cache)
+  (:use :cl :caten/air :caten/aasm :caten/apis :caten/runtime :caten/codegen/expr-cache)
   ;; Import some low-level apis
   (:import-from
    :caten/codegen/scheduler
@@ -141,9 +141,9 @@
 (in-package :codegen-example)
 
 ;; Defining Some utils ...
-(defun run-shape-inference (avm)
-  (run-type-infer avm)
-  (apply-rewriting-rules avm))
+(defun run-shape-inference (runtime)
+  (run-type-infer runtime)
+  (apply-rewriting-rules runtime))
 
 (defparameter *width* 120)
 
@@ -154,21 +154,21 @@
   object)
 
 (defun try-codegen! (graph outputs)
-  "Util for visualzing the process of compiling the `graph`."
+  "Utility for visualizing the process of compiling the `graph`."
   (optimize-aasm graph)
-  (let ((vm (make-avm graph :main nil outputs nil)))
+  (let ((vm (make-runtime graph :fw-outputs outputs)))
     (fresh-line)
     (saying 1 "Compiling the following initial computation graph:" graph)
-    (saying 2 "Created AVM (Abstract VM) with the computation graph:" vm)
+    (saying 2 "Created GraphRuntime with the computation graph:" vm)
     (run-shape-inference vm)
-    (let ((schedule-graph (graph-schedule (avm-graph vm)))
+    (let ((schedule-graph (graph-schedule (runtime-graph vm)))
           (*expr-cache* (make-expr-cache))
           (renderer (make-instance 'CStyle-Renderer)))
       (saying 3 "Generated schedule-graph with the computation graph" schedule-graph)
       (dolist (item (graph-nodes schedule-graph))
         ;; If schedule-item was labelled as jitable, you can lower this
         (when (getattr item :jitable)
-          (lower-schedule-item item (avm-graph vm) schedule-graph)
+          (lower-schedule-item item (runtime-graph vm) schedule-graph)
           (saying 4 "Lowered schedule item to a blueprint suitable for code generation:" (print-blueprint (getattr item :blueprint) nil))
           (schedule-item-write-define-global item)
           (let ((c-kernel (%render-kernel renderer item)))
@@ -177,10 +177,10 @@
       ;; Invoking gcc ...
       (%compile-kernel renderer (graph-nodes schedule-graph) nil)
       ;; Overwrite the base graph with compiled graph
-      (setf (avm-graph vm) (schedule-graph->avm-graph (avm-graph vm) schedule-graph))
-      (avm-reset vm))))
+      (let ((optimized-graph (schedule-graph->avm-graph (runtime-graph vm) schedule-graph)))
+        (make-runtime optimized-graph :fw-outputs (graph-outputs schedule-graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))))
 
-;; Example 1. Lowering two matries addition into the C kernel.
+;; Example 1. Lowering two matrices' addition into the C kernel.
 (let* ((graph
          ;; This is a graph to compile: Z(3 3) = X(3 3) + Y(3 3)
          (with-context
@@ -189,18 +189,18 @@
            (c (%add x y :id 'z))))
        ;; Simplifying the input graph
        (_ (optimize-aasm graph))
-       ;; Wrap the graph as an instance of AVM to manage allocations
-       (vm (make-avm graph :axpy-demo nil (list 'z) nil)))
+       ;; Wrap the graph as an instance of GraphRuntime to manage allocations
+       (vm (make-runtime graph :fw-outputs (list 'z))))
   (declare (ignore _))
   (fresh-line)
   (saying 1 "Compiling the following initial
  computation graph:" graph)
-  (saying 2 "Created AVM (Abstract VM) with the computation graph:" vm)
+  (saying 2 "Created GraphRunner with the computation graph:" vm)
   ;; caten/codegen requires the shape of all computation nodes to be known!
   (run-shape-inference vm)
   ;; Ready for running the scheduler. `graph-schedule` to partition the input graph.
-  ;; Pass the wrapped avm graph into the `graph-schedule` which divides the graph into smaller units called `schedule-items`
-  (let ((schedule-graph (graph-schedule (avm-graph vm)))
+  ;; Pass the wrapped runtime graph into the `graph-schedule` which divides the graph into smaller units called `schedule-items`
+  (let ((schedule-graph (graph-schedule (runtime-graph vm)))
         (*expr-cache* (make-expr-cache))
         (renderer (make-instance 'CStyle-Renderer)))
     (saying 3 "Generated schedule-graph with the computation graph" schedule-graph)
@@ -209,7 +209,7 @@
       ;; If schedule-item was labelled as jitable, you can lower this
       (when (getattr item :jitable)
         ;;Each item from the AST is lowered using the lower-schedule-item function
-        (lower-schedule-item item (avm-graph vm) schedule-graph)
+        (lower-schedule-item item (runtime-graph vm) schedule-graph)
         (saying 4 "Lowered schedule item to a blueprint suitable for code generation:" (print-blueprint (getattr item :blueprint) nil))
         (schedule-item-write-define-global item)
         ;; With the blueprint code, a C kernel is generated
@@ -219,13 +219,13 @@
     ;; Invoking gcc ...
     (%compile-kernel renderer (graph-nodes schedule-graph) nil)
     ;; Overwrite the base graph with compiled graph
-    (setf (avm-graph vm) (schedule-graph->avm-graph (avm-graph vm) schedule-graph))
-    (avm-reset vm)
-    ;; Try axpy!
-    ;; Finally, the C code is executed
-    (saying
-     6 "Running the computation X(3x3) + Y(3x3), the result is:"
-     (%run vm (cons 'x (linspace `(3 3) 1 0)) (cons 'y (linspace `(3 3) 1 0))))))
+    (let* ((optimized-graph (schedule-graph->avm-graph (runtime-graph vm) schedule-graph))
+           (vm (make-runtime optimized-graph :fw-outputs (graph-outputs schedule-graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))
+      ;; Try axpy!
+      ;; Finally, the C code is executed
+      (saying
+       6 "Running the computation X(3x3) + Y(3x3), the result is:"
+       (%run vm `(x . ,(linspace `(3 3) 1 0)) `(y . ,(linspace `(3 3) 1 0)))))))
 ;; Example 2. Lowering two squared matrix multiplying into the C kernel.
 (defun %make-squared-gemm (N out)
   "a @ b.T"
@@ -255,14 +255,13 @@
 ;;; Caten provides APIs that use the aforementioned JIT by default.
 ;;; - Set JIT=1 to enable it.
 ;;; - By setting JIT_DEBUG>=2, you can access a debugger similar to the previous one.
-(defun present-beautiful (tensor &key (auto-scheduler 0))
-  (ctx:with-contextvar (:JIT 1 :JIT_DEBUG 3 :AUTO_SCHEDULER auto-scheduler)
+(defun present-beautiful (tensor)
+  (ctx:with-contextvar (:BACKEND "clang" :JIT_DEBUG 4)
     (with-no-grad (caten tensor))))
 
 ;; auto-scheduler is WIP as of this writing!
 (present-beautiful
- (!matmul (make-tensor `(128 512)) (make-tensor `(512 1024)))
- :auto-scheduler 1)
+ (!matmul (make-tensor `(128 512)) (make-tensor `(512 1024))))
 
 (present-beautiful
  (!matmul (make-tensor `(a b)) (make-tensor `(b c))))

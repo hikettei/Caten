@@ -91,5 +91,3 @@ Implements Max Pooling layer.")
 Applies max pooling over the tensor."
   (declare (type list kernel-size))
   (forward (MaxPool kernel-size :stride stride :dilation dilation :padding padding :ceiling ceiling) x))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(in-package :caten/nn.test)

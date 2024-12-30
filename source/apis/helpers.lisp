@@ -124,65 +124,6 @@ Reads and binds attributes from module.
 (defmacro range (from below &optional (by 1))
   `(loop for i from ,from below ,below by ,by collect i))
 
-(defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
-
-(defun render-attrs (node)
-  (let ((attr (dump-into-list (node-attr node) :allow-unbound nil)))
-    (if attr
-	(with-output-to-string (out)
-	  (dolist (k (getattrs node))
-	    (when k
-	      (format out ", ~(~a~)=~a" k (getattr node k)))))
-	"")))
-
-(defun avm-gather-args (avm)
-  (declare (type avm avm))
-  (remove-duplicates
-   (loop for node in (graph-nodes (avm-graph avm))
-	 if (and (eql (node-type node) :Load) (getattr node :value) (symbolp (getattr node :value)))
-	   collect (getattr node :value))))
-
-(defun print-avm (avm &key (stream t) (n-indent 4) (args nil) &aux (graph (avm-graph avm)))
-  "Utils for debugging the graph on the repl."
-  (declare (type avm avm))
-  (macrolet ((indent (n) `(with-output-to-string (out) (dotimes (i ,n) (princ " " out)))))
-    (format
-     stream
-     "~a"
-     (with-output-to-string (out)
-       (format out "~%~adefun ~(~a~)(~(~a~))~%" (indent (- n-indent 4)) (avm-name avm) (render-list (append args (reverse (avm-gather-args avm)))))
-       (loop for node in (graph-nodes graph)
-	     if (eql (node-type node) :Allocate) do
-	       (let ((nrank (getattr node :nrank)))
-		 (format out "~a~(~a~) = ~(~a~)(shape=(~a), stride=(~a)~a);~%"
-			 (indent n-indent)
-			 (render-list (node-writes node))
-			 (node-type node)
-			 (render-list (subseq (node-reads node) 0 nrank))
-			 (render-list (subseq (node-reads node) nrank))
-			 (render-attrs node)))
-	     else if (eql (Node-type node) :View) do
-	       (let ((nrank (getattr node :nrank)))
-		 (flet ((subseq1p (x y z) (subseq x (1+ y) (1+ z))))
-		   (format out "~a~(~a~) = ~(~a~)(~(~a~), shape=(~a), views=(~a), stride=(~a)~a);~%"
-			   (indent n-indent)
-			   (render-list (node-writes node))
-			   (node-type node)
-			   (car (node-reads node))
-			   (render-list (subseq1p (node-reads node) 0 nrank))
-			   (let ((upfrom (subseq1p (node-reads node) nrank (* 2 nrank)))
-				 (below (subseq1p (node-reads node) (* 2 nrank) (* 3 nrank)))
-				 (by (subseq1p (node-reads node) (* 3 nrank) (* 4 nrank)))
-				 (bc (getattr node :broadcast)))
-			     (render-list
-			      (map 'list #'(lambda (x y z l) (format nil "(~a)" (render-list (list x y z l)))) upfrom below by bc)))
-			   (render-list (subseq1p (node-reads node) (* 4 nrank) (* 5 nrank)))
-			   (if (getattr node :permute)
-			       (format nil ", permute=~a" (getattr node :permute))
-			       ""))))
-	     else
-	       do (format out "~a~(~a~)~a~(~a~)(~(~a~)~a);~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "") (node-type node) (render-list (node-reads node)) (render-attrs node)))))))
-
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defun collect-initargs-names (args)
     (loop for a in args
@@ -230,3 +171,20 @@ Reads and binds attributes from module.
     (setf (nth idx list) value)))
 
 (defmethod permute-list ((op list) list) (loop for nth in op collect (nth nth list)))
+
+(defun sym-eql (a b)
+  (if (and (tensor-p a) (tensor-p b))
+      (or
+       (eql a b)
+       (let* ((g1 (with-no-grad (tensor-lowered-graph a)))
+              (g2 (with-no-grad (tensor-lowered-graph b)))
+              (g1 (caten/codegen/expr:make-expr :graph g1 :out (car (last (graph-nodes g1)))))
+              (g2 (caten/codegen/expr:make-expr :graph g2 :out (car (last (graph-nodes g2))))))
+         ;; Note(hikettei) this could be ridiculously slow if the shape is determined by the tensor!
+         ;; Especially in the ViT Graph
+         (caten/codegen/expr:expr-scalar-equivalent-p g1 g2)))
+      (equal a b)))
+
+(defun sym-equal (a b)
+  (declare (type list a b))
+  (and (= (length a) (length b)) (every #'sym-eql a b)))

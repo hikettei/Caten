@@ -62,7 +62,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           qlot install
-          CI=1 mkdir -p docs/packages && qlot exec make build_docs && echo -e "markdown-katex\nlantana==2.11.2" > docs/requirements.txt
+          mkdir -p docs/packages && CI=1 BACKEND=LISP qlot exec make build_docs && echo -e "markdown-katex\nlantana==2.11.2" > docs/requirements.txt
       - name: Deploy docs
         uses: mhausenblas/mkdocs-deploy-gh-pages@master
         env:

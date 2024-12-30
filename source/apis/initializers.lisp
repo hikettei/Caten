@@ -26,7 +26,7 @@ Sets `*inference-mode*=T` and `*no-grad*=T` within the scope of the body.
        ,@body)))
 ;; ~~ randomness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-rng-counter ()
-  (ctx:with-contextvar (:jit 0)
+  (ctx:with-contextvar (:BACKEND "LISP")
     (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter))))
 (defparameter *manual-seed* 0)
 (defparameter *rng-counter* (make-rng-counter))
@@ -226,7 +226,7 @@ There is a `randint` function for the same purpose, but it is not lazy.
 (caten/defun[float] ($randn "randn") (n) (!randn `(,n)))
 (caten/defun[float] ($normal "normal") (n mean std) (!normal `(,n) :mean mean :std std))
 (caten/defun[int] ($randint "randint") (n low high) (!randint `(,n) :low low :high high))
-(caten/defun[int] ($ax+b "linspace") (n a b) (ax+b `(,n) a b))
+(caten/defun[all] ($ax+b "linspace") (n a b) (ax+b `(,n) a b))
 (caten/defun[float] ($xavier-uniform "xavier_uniform") (n infeatures outfeatures)
   (let ((coeff (!sqrt (!div (fconst 6) (!+ (fconst infeatures) (fconst outfeatures))))))
     (!mul (!uniform `(,n) :low 0.0 :high 1.0) coeff)))

@@ -6,7 +6,7 @@ Occasionally they merges or rewrites a view in order to schedule multiple nodes 
 The function `graph-schedule` is an entry point, and takes a shape-inferred aasm graph as input, performs scheduling, and returns a schedule graph (called Schedule-Graph) whose each node is composed of Schedule-Item.
 
 One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure that each item is merged only within the bounds that can be lowered into a single kernel.")
-  (:use :cl :caten/air :caten/avm :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
+  (:use :cl :caten/air :caten/runtime :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
   (:import-from :caten/aasm #:JITAble)
   (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule))
 
@@ -28,7 +28,7 @@ It has a unique `name`, and `cache-name`. If `cache-name` was assigned, the comp
 
 In order to lowering the computation graph as the foreign language, `items` must be consisted of JITAble operations (except for special irs and :allocate). If it qualifies, `jitable` is set to T.
 
-Otherwise, the scheduled items are relocated to the compiled avm directly. Specifially, if the item was :ALLOCATE, :allocated-p is set to T.
+Otherwise, the scheduled items are relocated to the compiled GraphRuntime directly. Specifially, if the item was :ALLOCATE, :allocated-p is set to T.
 
 - blueprint[list] is a lowered schedule-item
 - polyhedral[list] is a Polyhedral IR obtained by lowering blueprint
@@ -42,6 +42,7 @@ Otherwise, the scheduled items are relocated to the compiled avm directly. Speci
 "
          :slots
          ((blueprint :type list :initform nil)
+          (blueprint-base :type list :initform nil)
           (polyhedral)
           (jitable :type boolean)
           (allocate-p :type boolean)
@@ -738,8 +739,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
 (defun apply-move-after-reduction (schedule-graph)
   (declare (type graph schedule-graph) (optimize (speed 3)))
   (labels ((%newtype (buffer)
-             (caten/avm:make-buffer
-              (buffer-nrank buffer)
+             (make-buffer
               (loop for s in (buffer-shape buffer)
                     for nth fixnum upfrom 0
                     for v = (nth nth (buffer-views buffer))
@@ -755,7 +755,8 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                     if (and (listp v) (fourth v))
                       collect `(0 1 1 t)
                     else
-                      collect v)))
+                      collect v)
+              :device 'caten/codegen/shape-inference::RelayBuffer))
            (%jstore (w a b base-type)
              (make-node :Buffer :MOVE (list w) (list a b)
                         :_type_relay

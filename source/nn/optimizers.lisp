@@ -14,23 +14,23 @@
 A trigger to update the parameters of the optimizer. It is not recommended to compile a new lazy function in this method because it will be called multiple times in the training loop. Use cacheable function instead (e.g.: `caten/defun`)
 "))
 
-(defun hook-optimizers (avm hooker)
+(defun hook-optimizers (runtime hooker)
   "
 ```
-(hook-optimizers avm hooker)
+(hook-optimizers runtime hooker)
 ```
 
-This function is used to hook the optimizers in the recognised parameters in avm-params-to-optimize. hooker is an function that takes one argument, which is the tensor that requires-grad=T, returns the AbstractOptimizer.
+This function is used to hook the optimizers in the recognised parameters in runtime-params. hooker is an function that takes one argument, which is the tensor that requires-grad=T, returns the AbstractOptimizer.
 
 A list of created optimizers are returned.
 "
-  (declare (type caten/avm:avm avm) (type function hooker))
+  (declare (type caten/runtime:GraphRuntime runtime) (type function hooker))
   (map
    'list
    (compose
     #'(lambda (x) (assert (subtypep (class-of x) 'AbstractOptimizer) () "hook-optimizers: ~a is not an AbstractOptimizer!" x) x)
     hooker)
-   (caten/avm:avm-params-to-optimize avm)))
+   (caten/runtime:runtime-params runtime)))
 
 (caten/defun[float] (zero-grad-impl "zero_grad_impl") (n param)
   (!assign (make-tensor `(,n) :from param) (fconst 0)))

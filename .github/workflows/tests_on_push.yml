@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       matrix:
-        lisp: [sbcl-bin, ccl-bin/1.12.2]
+        lisp: [sbcl-bin]
         backend: [lisp, clang]
         os: [ubuntu-latest]
         target:
@@ -54,14 +54,14 @@ jobs:
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          CI=1 JIT=0 AVM=LISP rove caten.asd
+          CI=1 BACKEND=LISP rove caten.asd
       - name: (Clang) rove caten.asd
         if: ${{ matrix.backend == 'clang' && matrix.lisp != 'ccl-bin/1.12.2' }}
         run: |
           ulimit -n 8192
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          CI=1 JIT=1 JIT_BACKEND=CLANG AVM=LISP rove caten.asd
+          CI=1 BACKEND=CLANG rove caten.asd
   Documentation:
     name: Test building documentations
     runs-on: ubuntu-latest
@@ -119,4 +119,4 @@ jobs:
           qlot install
           qlot exec make install_docs
       - name: Building documentations
-        run: CI=1 mkdir -p docs/packages && make build_docs
+        run: mkdir -p docs/packages && CI=1 BACKEND=LISP make build_docs

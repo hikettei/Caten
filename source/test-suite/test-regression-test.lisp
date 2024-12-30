@@ -1,6 +1,5 @@
 (in-package :caten/test-suite)
 ;; Add more and more failing scheduling case
-
 (python-exec
  "
 def test_linear(x, weight, bias):

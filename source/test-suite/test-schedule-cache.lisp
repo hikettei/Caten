@@ -77,19 +77,19 @@ Code2:
 (deftest transformer-schedule-cache-count-test
   (with-protect-jit
     (loop for i upfrom 1 below 6
-          for expected in `(16 20 23 26 29)
-          for tf = (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0) (compile-transformer i)))
+          for expected in `(14 18 21 24 27)
+          for tf = (runtime-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0) (compile-transformer i)))
           ;; [TODO] The number of kernels should be a constant regardless of layers!!
           do (ok (<= (count-compiled-kernels tf) expected)
-                 (format nil "(Currently Failing ...) Compiled ~a kernels (expecting ~a)" (count-compiled-kernels tf) expected)))))
+                 (format nil "Compiled ~a kernels (expecting ~a)" (count-compiled-kernels tf) expected)))))
 
 (deftest transformer-schedule-cache-consistency-test
   (with-protect-jit
     (dolist (no-mp `(0 1))
       (testing (format nil "Running with NO_MEMORY_PLANNER=~a" no-mp)
         (let* ((n-layers 3)
-               (tf1 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp) (compile-transformer n-layers))))
-               (tf2 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 1 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp) (compile-transformer n-layers))))
+               (tf1 (runtime-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp) (compile-transformer n-layers))))
+               (tf2 (runtime-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 1 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp) (compile-transformer n-layers))))
                (kernels
                  (loop for item in (append (graph-nodes tf1) (graph-nodes tf2))
                        if (eql (node-type item) :JIT_KERNEL)
@@ -125,8 +125,8 @@ Code2:
         (dolist (no-mp `(0 1))
           (testing (format nil "Running with NO_MEMORY_PLANNER=~a" no-mp)
             (let* ((n-layers 6)
-                   (tf1 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 4) (compile-transformer n-layers))))
-                   (tf2 (avm-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 0) (compile-transformer n-layers))))
+                   (tf1 (runtime-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 4) (compile-transformer n-layers))))
+                   (tf2 (runtime-graph (ctx:with-contextvar (:NO_SCHEDULE_CACHE 0 :AUTO_SCHEDULER 0 :NO_MEMORY_PLANNER no-mp :parallel 0) (compile-transformer n-layers))))
                    (kernels
                      (loop for item in (append (graph-nodes tf1) (graph-nodes tf2))
                            if (eql (node-type item) :JIT_KERNEL)
