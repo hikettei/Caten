@@ -156,6 +156,12 @@ Compiled with this command: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
+(defmacro x86-with-invalid-float-traps-masked (body)
+  #+:x86-64 `(org.shirakumo.float-features:with-float-traps-masked (:invalid)
+	    ,body)
+  #-:x86-64 `(progn
+	    ,body))
+
 (defun make-foreign-function-caller (name defglobals &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
@@ -180,17 +186,27 @@ Compiled with this command: ~a"
 			    for type = (->cffi-dtype (getattr node :dtype))
 			    collect `(setf (buffer-value ,buffer) (mem-ref ,cffi ,type)))))))
     `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) defglobals))
-       ,(expand
-	 defglobals
-	 `((cffi:foreign-funcall
-            ,(format nil "~(~a~)" name)
-            ,@(loop for arg in defglobals
-		    for is-pointer = (getattr arg :pointer-p)
-		    if (not is-pointer)
-		      append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg)))
-		    else
-		      append `(:pointer ,(car (node-writes arg))))
-            :void))))))
+       ;; atzmueller: unstable/experimental workaround for X86-64 & clang
+       ;; just ignore the "invalid" float trap, raised by the generated C code
+       ;;
+       ;; otherwise, e.g., running the test "caten/test-suite::threefry2x32", or
+       ;; (ctx:with-contextvar (:BACKEND "CLANG") (caten:rand `(7)))
+       ;; cause an "arithmetic error FLOATING-POINT-INVALID-OPERATION"
+       ;;
+       ;; this seems to be due to the (implicit and/or float/int) conversions
+       ;; in the code generated for example, for threefry2x32
+       (x86-with-invalid-float-traps-masked
+	,(expand
+	  defglobals
+	  `((cffi:foreign-funcall
+             ,(format nil "~(~a~)" name)
+             ,@(loop for arg in defglobals
+		     for is-pointer = (getattr arg :pointer-p)
+		     if (not is-pointer)
+		       append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg)))
+		     else
+		       append `(:pointer ,(car (node-writes arg))))
+             :void)))))))
 
 (defmethod %compile-kernel ((renderer CStyle-Renderer) items dir)
   (let ((code
