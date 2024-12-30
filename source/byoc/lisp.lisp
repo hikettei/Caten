@@ -44,8 +44,14 @@
   (let* ((args (schedule-item-args schedule-item)))
     (print
     `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) args))
-       (declare (optimize (speed 3) (safety 0)) ,@(map 'list #'global-type-spec args))
+       (declare (optimize (speed 3) (safety 1)) ,@(map 'list #'global-type-spec args))
        ,(recursive-render-bp (getattr schedule-item :blueprint))))))
+
+(defmethod %compile-kernel ((renderer LispStyle-Renderer) items dir)
+  (dolist (item items)
+    (when (getattr item :rendered-object)
+      (setf (getattr item :compiled-object) (getattr item :rendered-object)
+            (getattr item :rendered-object) (princ-to-string (getattr item :rendered-object))))))
 
 (defmethod %render-const ((renderer LispStyle-Renderer) object) object)
 ;; Binary
@@ -140,10 +146,13 @@
        (error "LispStyle Renderer currently does not support IF statement."))
       (:EXPR
        (let ((write-index (render-index 'LispStyle-Renderer bp :nth 0))
-             (id (car (node-writes bp))))
-         `(progn
-            (setf ,(if write-index `(aref ,id ,write-index) id)
-                  ,(render-expr 'LispStyle-Renderer (getattr bp :EXPR) :index-space (getattr bp :iterations)))
-            ,(recursive-render-bp (cdr rest-blueprints)))))
+             (id (car (node-writes bp)))
+             (dtype (buffer-dtype (car (relay-writes (read-type-relay bp)))))
+             (decl-p (car (getattr bp :declare-type))))
+         `(,@(if decl-p `(let ((,id ,(render-expr 'LispStyle-Renderer (getattr bp :EXPR) :index-space (getattr bp :iterations))))) '(progn))
+           ,@(if decl-p `((declare (type ,(dtype->lisp dtype) ,id))))
+           ,(when (null decl-p)
+              `(setf ,(if write-index `(aref ,id ,write-index) id) ,(render-expr 'LispStyle-Renderer (getattr bp :EXPR) :index-space (getattr bp :iterations))))
+           ,(recursive-render-bp (cdr rest-blueprints)))))
       (:DEFINE-GLOBAL
        (recursive-render-bp (cdr rest-blueprints))))))
