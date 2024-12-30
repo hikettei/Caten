@@ -171,14 +171,14 @@ save-for-backward is determined automatically, so you do not have to consider ab
         (setf (tr-shape tr) (list N patch-size total-patches)    ; (1, 4, 4)
               (tr-base-shape tr) (list N C H W)                  ; (1, 1, 3, 3)
               (tr-stride tr) (list 1        ; batch
-                                   W         ; stride of W (3) to move to next row
-                                   kW)       ; stride of kW (2) to move within window
+                                   1         ; stride of W (3) to move to next row
+                                   1)       ; stride of kW (2) to move within window
               (tr-order tr) :row           ; row-major order
               (tr-broadcast tr) (list nil nil nil)
               (tr-mask tr) (list (list 0 N 1)           ; batch
-                                 (list 0 2 1)            ; row in window (0,1)
-                                 (list 0 2 1))           ; col in window (0,1)
-              (tr-permute tr) (list 0 1 2)))      ; window positions
+                                 (list 0 total-patches 1)            ; row in window (0,1)
+                                 (list 0 patch-size 1))           ; col in window (0,1)
+              ))      ; window positions
       
     
       (format t "~%Debug - Final tracker:~%")
