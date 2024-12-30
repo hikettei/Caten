@@ -70,7 +70,7 @@
 (macrolet ((def (id op &optional (offset 0))
              `(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql ,id)) node)
                 (let ((lhs (render-node renderer (nth ,(+ 0 offset) (node-reads node))))
-                      (rhs (render-node renderer (nth ,(+ 1 offset) (node-reads node)))))
+                      (rhs (render-node renderer (nth ,(+ 1 offset) (node-rgeads node)))))
                   (list ',op lhs rhs)))))
   (def :ADD +)
   (def :MUL *)
@@ -121,8 +121,9 @@
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Allocate)) node) nil)
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Cast)) node)
   (let ((x (render-node renderer (second (node-reads node)))))
-    ;; [TODO] Inline dtype/cast
+    ;; [TODO] Inline dtype/cast properly (from compilation-time know information like dtype)
     `(dtype/cast ,x ,(getattr node :dtype))))
+
 (defmethod  %render-node ((renderer LispStyle-Renderer) (id (eql :Index-Components)) node)
   (render-expr 'LispStyle-Renderer (expr-index-components renderer node (renderer-index-space renderer))))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :WHERE)) node)
