@@ -36,7 +36,7 @@
                       (loop for i across input do (write-byte i input-stream)))
                (close input-stream))
              (unless (zerop (uiop:wait-process process-info))
-	       (error "Caten[Clang]: Failed to compile a shared library:~%~a~%
+	       (error "Caten[Metal]: Failed to create a metal library:~%~a~%
 Compiled with this command: ~a"
 	              (alexandria:read-stream-content-into-string error-output)
 	              (with-output-to-string (out)
