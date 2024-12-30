@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         lisp: [sbcl-bin]
-        backend: [lisp, clang]
+        backend: [lisp, clang] # native, metal
         os: [ubuntu-latest]
         target:
         - normal
@@ -62,6 +62,12 @@ jobs:
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
           CI=1 BACKEND=CLANG rove caten.asd
+      - name: (Native JIT) rove caten.asd
+        if: ${{ matrix.backend == 'native' }}
+        run: |
+          ros config set dynamic-space-size 8gb
+          ros -e '(ql:register-local-projects)' -q
+          CI=1 BACKEND=NATIVE rove caten.asd
   Documentation:
     name: Test building documentations
     runs-on: ubuntu-latest

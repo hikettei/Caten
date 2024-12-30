@@ -14,7 +14,8 @@ This package provides GraphRuntime, which is a class to run an air graph.
    #:runtime-pc
    #:runtime-variables
    #:runtime-params
-
+   #:runtime-renderer
+   
    #:realize-graph
    #:make-runtime
    #:free-runtime
@@ -42,16 +43,17 @@ This package provides GraphRuntime, which is a class to run an air graph.
    (pc :initform 0 :accessor runtime-pc)
    (variables :initform nil :accessor runtime-variables :initarg :variables)
    (params :initform nil :accessor runtime-params :initarg :params)
-   (buffer-type :initarg :buffer-type :initform 'AbstractBuffer :accessor runtime-buffer-type))
+   (buffer-type :initarg :buffer-type :initform 'AbstractBuffer :accessor runtime-buffer-type)
+   (renderer :initarg :renderer :accessor runtime-renderer))
   (:documentation ""))
 
 (defgeneric realize-node (node-type runtime node args)
   (:documentation ""))
 
-(defun make-runtime (graph &key (fw-outputs nil) (bw-outputs nil) (variables (make-hash-table)) (params nil) (id2tensor (make-hash-table)) (runtime 'GraphRuntime) (buffer-type 'AbstractBuffer))
+(defun make-runtime (graph &key (fw-outputs nil) (bw-outputs nil) (variables (make-hash-table)) (params nil) (id2tensor (make-hash-table)) (runtime 'GraphRuntime) (buffer-type 'AbstractBuffer) (renderer nil))
   (when (null (graph-outputs graph))
     (setf (graph-outputs graph) (append fw-outputs bw-outputs)))
-  (make-instance runtime :graph graph :fw-outputs fw-outputs :bw-outputs bw-outputs :variables variables :params params :id2tensor id2tensor :buffer-type buffer-type))
+  (make-instance runtime :graph graph :fw-outputs fw-outputs :bw-outputs bw-outputs :variables variables :params params :id2tensor id2tensor :buffer-type buffer-type :renderer renderer))
 
 (defmethod free-runtime ((runtime GraphRuntime))
   "Frees all allocations in the runtime"

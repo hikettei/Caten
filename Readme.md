@@ -180,14 +180,15 @@ Before contributing, please note that there is no linter here. Make an effort to
 - [x] Support Training (But still limited)
 - [ ] Distributed Training
 
-### Accelerators
+### Accelerators (caten/byoc)
 
 - [x] LISP VM (BACKEND=LISP)
-- [ ] LISP JIT
+- [x] LISP JIT (BACKEND=NATIVE)
 - [x] CLANG JIT (BACKEND=CLANG)
 - [ ] METAL (BACKEND=METAL)
 - [ ] WebGPU
 - [ ] CUDA
+- [ ] LLVM
 - [ ] Finish AutoScheduler
 
 ## Running tests

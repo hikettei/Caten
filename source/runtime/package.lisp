@@ -43,6 +43,7 @@
    #:runtime-forward
    #:runtime-backward
    #:runtime-buffer-type
+   #:runtime-renderer
    #:runtime-error)
   ;; Profile
   (:export
