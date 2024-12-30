@@ -1,4 +1,5 @@
 (defpackage :caten/byoc/native
+  (:documentation "BACKEND=NATIVE to use Lisp JIT")
   (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
    :caten/codegen/backend :caten/codegen/renderer :caten/air
    :caten/codegen/expr :caten/codegen/helpers :caten/codegen/shape-inference)
@@ -9,7 +10,7 @@
    :caten/byoc/lisp
    #:LispBuffer))
 (in-package :caten/byoc/native)
-;; ~~~~ Lisp JIT ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 (define-auto-scheduler (Native-Auto-Scheduler ()) :n-global-loop 1)
 (defclass NativeRuntime (GraphRuntime) nil)
 (define-backend :native LispBuffer NativeRuntime LispStyle-Renderer Native-Auto-Scheduler t)
@@ -26,9 +27,11 @@
 
 (defmethod %render-kernel ((renderer LispStyle-Renderer) schedule-item)
   (let* ((args (schedule-item-args schedule-item)))
-    `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) args))
-       (declare (optimize (speed 3) (safety 1)) ,@(map 'list #'global-type-spec args))
-       ,(recursive-render-bp (getattr schedule-item :blueprint)))))
+    (read-from-string
+     (princ-to-string
+      `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) args))
+         (declare (optimize (speed 3) (safety 1)) ,@(map 'list #'global-type-spec args))
+         ,(recursive-render-bp (getattr schedule-item :blueprint)))))))
 
 (defun wrap-with-caller (body &aux (args (gensym)))
   `(lambda (&rest ,args)
@@ -70,7 +73,7 @@
                       (ph (gensym)))
                   ;; [TODO] Dispatch at compilation time...
                   `(let ((,ph ,lhs))
-                     (if (numberp ,ph)
+                     (if (integerp ,ph)
                          (,',op-number ,ph ,rhs)
                          (,',op-boolean ,ph ,rhs)))))))
   (def :AND logand and)
@@ -129,6 +132,7 @@
          (when (eql (getattr bp :scope) :global)
            (warn "LispStyle-Renderer: global loop is not supported yet."))
          ;; [TODO] Simplify the loop code and to use lparallel
+         ;; [TODO] There is useful macro from scop
          `(progn
             (loop with ,(intern (getattr bp :idx)) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
                   while ,(render-expr 'LispStyle-Renderer (getattr bp :below))
@@ -136,7 +140,7 @@
                      (incf ,(intern (getattr bp :idx)) ,(render-expr 'LispStyle-Renderer (getattr bp :by))))
             ,(recursive-render-bp (subseq rest-blueprints (1+ endfor))))))
       (:ENDFOR
-       (warn "ENDFOR SHOULD BE SKIPPED?"))
+       (error ":ENDFOR should not be appeared here. Malformed blueprint?"))
       (:IF
        ;; [TODO] ENDIF does not have :idx so cannot determine the pair of :IF and :ENDIF
        ;; This is why LispStyle Renderer does not support IF statement yet.
