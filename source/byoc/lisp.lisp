@@ -67,15 +67,15 @@
 
 (defmethod %render-const ((renderer LispStyle-Renderer) object) object)
 ;; Binary
-(macrolet ((def (id op)
+(macrolet ((def (id op &optional (offset 0))
              `(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql ,id)) node)
-                (let ((lhs (render-node renderer (nth 0 (node-reads node))))
-                      (rhs (render-node renderer (nth 1 (node-reads node)))))
+                (let ((lhs (render-node renderer (nth ,(+ 0 offset) (node-reads node))))
+                      (rhs (render-node renderer (nth ,(+ 1 offset) (node-reads node)))))
                   (list ',op lhs rhs)))))
   (def :ADD +)
   (def :MUL *)
   (def :MAX max)
-  (def :< <))
+  (def :< < 1)) ;; < is a TernaryOps where <(out_placeholder, x, y)
 
 (macrolet ((def (id op-number op-boolean)
              `(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql ,id)) node)
