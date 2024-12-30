@@ -159,23 +159,27 @@ save-for-backward is determined automatically, so you do not have to consider ab
       (format t "~%Debug - Input dimensions: N=~a C=~a H=~a W=~a~%" N C H W)
       (format t "Debug - Kernel size: kH=~a kW=~a~%" kH kW)
       (format t "Debug - Output dims: out-h=~a out-w=~a~%" out-h out-w)
-  
-      (let ((total-patches (* out-h out-w))
-            (patch-size (* kH kW)))
-    
+
+
+
+      (let ((total-patches (* out-h out-w))      ; 4 patches total
+            (patch-size (* C kH kW)))            ; 4 elements per patch (1*2*2)
+
         (format t "Debug - Total patches: ~a Patch size: ~a~%" total-patches patch-size)
-    
-        (setf (tr-shape tr) (list N C total-patches patch-size)
-              (tr-base-shape tr) (list N C H W)
-              (tr-stride tr) (list (* C H W)    ; batch stride
-                                   (* H W)
-                                   W             ; move to next row's start
-                                   1)            ; move within row
-              (tr-broadcast tr) (list nil nil t nil)
-              (tr-mask tr) (list (list 0 N 1)
-                                 (list 0 C 1) ; batch dimension
-                                 (list 0 total-patches 1)      ; patch index
-                                 (list 0 patch-size 1))))      ; elements within patch
+
+
+        (setf (tr-shape tr) (list N patch-size total-patches)    ; (1, 4, 4)
+              (tr-base-shape tr) (list N C H W)                  ; (1, 1, 3, 3)
+              (tr-stride tr) (list 1        ; batch
+                                   W         ; stride of W (3) to move to next row
+                                   kW)       ; stride of kW (2) to move within window
+              (tr-order tr) :row           ; row-major order
+              (tr-broadcast tr) (list nil nil nil)
+              (tr-mask tr) (list (list 0 N 1)           ; batch
+                                 (list 0 2 1)            ; row in window (0,1)
+                                 (list 0 2 1))           ; col in window (0,1)
+              (tr-permute tr) (list 0 1 2)))      ; window positions
+      
     
       (format t "~%Debug - Final tracker:~%")
       (format t "Shape: ~a~%" (tr-shape tr))

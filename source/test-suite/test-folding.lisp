@@ -14,14 +14,13 @@
 (defparameter aranged-tensor
   (%arange '(1 1 3 3) 1 0 :dtype :float32 :order :row))
 
-(defparameter realized-tensor (%realize aranged-tensor))
+
+(defparameter realized-tensor (realize-graph aranged-tensor :buffer-type 'caten/byoc/lisp:LispBuffer))
 
 (defparameter tensor-with-buffer
   (make-tensor '(1 1 3 3) :dtype :float32 :order :row :from realized-tensor))
 
-
 (defparameter input-tensor (proceed tensor-with-buffer))
-
 
 ;; (1 2 3
 ;; 4 5 6
@@ -29,7 +28,7 @@
 
 (print input-tensor)
 
-(defparameter unfolded-tensor (!unfold input-tensor '(2 2) '(1 1)))
+(defparameter unfolded-tensor  (!copy (!unfold input-tensor '(2 2) '(1 1)))))
 
 (print unfolded-tensor)
 
