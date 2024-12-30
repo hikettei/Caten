@@ -75,18 +75,29 @@ This package provides GraphRuntime, which is a class to run an air graph.
   (let ((val (gethash var (runtime-variables runtime))))
     (if (eql val :nil) nil (or val (error "Runtime: the variable ~a is not defined in the graph." var)))))
 ;; ~~~~ Runner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun make-ordinal-suffix (n)
+  (let ((ordinal-suffix (cond ((or (= (mod n 100) 11)
+                           (= (mod n 100) 12)
+                           (= (mod n 100) 13))
+		       "th")
+                      ((= (mod n 10) 1) "st")
+                      ((= (mod n 10) 2) "nd")
+                      ((= (mod n 10) 3) "rd")
+                      (t "th"))))
+    (format nil "~A~A" n ordinal-suffix)))
+
 (define-condition runtime-error ()
   ((runtime :initarg :runtime)
    (cond :initarg :cond))
   (:report
    (lambda (c s)
      (with-slots ((runtime runtime) (cond cond)) c
-       (format s "Runtime-Error: Encountered the runtime error at ~ath instruction.
+       (format s "Runtime-Error: Encountered the runtime error at the ~a instruction.
 condition:
   ~a
 disassemble:
 ~a"
-	       (runtime-pc runtime)
+	       (make-ordinal-suffix (runtime-pc runtime))
 	       cond
 	       (with-output-to-string (out)
 		 (loop for nth upfrom 0
