@@ -10,7 +10,9 @@
    :caten/byoc/lisp
    #:LispBuffer))
 (in-package :caten/byoc/native)
-
+;; Currently CI is failing due to following the two reason:
+;; - wrap-around (which %threefry2x32 expects)
+;; - (caten (make-tensor `(N) :INITIAL-ELEMENT 'N)) fails (while the one is defined as N another is defined as |n|)
 (define-auto-scheduler (Native-Auto-Scheduler ()) :n-global-loop 1)
 (defclass NativeRuntime (GraphRuntime) nil)
 (define-backend :native LispBuffer NativeRuntime LispStyle-Renderer Native-Auto-Scheduler t)
@@ -28,7 +30,7 @@
 (defmethod %render-kernel ((renderer LispStyle-Renderer) schedule-item)
   (let* ((args (schedule-item-args schedule-item)))
     `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) args))
-       (declare (optimize (speed 0) (safety 1)) ,@(map 'list #'global-type-spec args))
+       (declare (optimize (speed 3) (safety 1)) ,@(map 'list #'global-type-spec args))
        ,(recursive-render-bp (getattr schedule-item :blueprint)))))
 
 (defun wrap-with-caller (body &aux (args (gensym)))
