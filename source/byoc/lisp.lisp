@@ -47,10 +47,14 @@
        (declare (optimize (speed 3) (safety 1)) ,@(map 'list #'global-type-spec args))
        ,(recursive-render-bp (getattr schedule-item :blueprint))))))
 
+(defun wrap-with-caller (body &aux (args (gensym)))
+  `(lambda (&rest ,args)
+     (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args))))
+
 (defmethod %compile-kernel ((renderer LispStyle-Renderer) items dir)
   (dolist (item items)
     (when (getattr item :rendered-object)
-      (setf (getattr item :compiled-object) (getattr item :rendered-object)
+      (setf (getattr item :compiled-object) (wrap-with-caller (getattr item :rendered-object))
             (getattr item :rendered-object) (princ-to-string (getattr item :rendered-object))))))
 
 (defmethod %render-const ((renderer LispStyle-Renderer) object) object)
