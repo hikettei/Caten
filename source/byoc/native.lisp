@@ -27,11 +27,9 @@
 
 (defmethod %render-kernel ((renderer LispStyle-Renderer) schedule-item)
   (let* ((args (schedule-item-args schedule-item)))
-    (read-from-string
-     (princ-to-string
-      `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) args))
-         (declare (optimize (speed 3) (safety 1)) ,@(map 'list #'global-type-spec args))
-         ,(recursive-render-bp (getattr schedule-item :blueprint)))))))
+    `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) args))
+       (declare (optimize (speed 0) (safety 1)) ,@(map 'list #'global-type-spec args))
+       ,(recursive-render-bp (getattr schedule-item :blueprint)))))
 
 (defun wrap-with-caller (body &aux (args (gensym)))
   `(lambda (&rest ,args)
