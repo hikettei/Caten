@@ -78,13 +78,13 @@ Compiled with this command: ~a"
       (setf (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i) (aref array i)))))
 
 (defmethod transfer-into-array ((runtime MetalRuntime) (buffer MetalBuffer))
-
   (let ((val (msg (buffer-value buffer) "contents" :pointer))
         (placeholder (make-array (apply #'* (buffer-shape buffer)) :element-type (dtype->lisp (buffer-dtype buffer)))))
     (dotimes (i (apply #'* (buffer-shape buffer)) placeholder)
       (setf (aref placeholder i) (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i)))))
-
+;; [TODO] Copy contents
 (defmethod copy-buffer-value ((runtime MetalRuntime) (buffer MetalBuffer))
+  (print (transfer-into-array runtime buffer))
   (buffer-value buffer))
 
 (defmethod bref ((buffer MetalBuffer) idx)
@@ -219,7 +219,7 @@ using namespace metal;
           (setf (mp-pipeline-state mp) (msg (mp-device mp) "newComputePipelineStateWithDescriptor:options:reflection:error:" :pointer :pointer descriptor :int 1 :pointer (null-pointer) :pointer error-ptr))
           (assert (null-pointer-p error-ptr) () "Failed to create a Metal pipeline state: ~a" (msg error-ptr "localizedDescription" :pointer)))))))
 
-(defcstruct MTLSize (width :int) (height :int) (depth :int))
+(defcstruct MTLSize (width :ulong) (height :ulong) (depth :ulong))
 (defun load-size (mtl-size width height depth)
   (setf (foreign-slot-value mtl-size '(:struct mtlsize) 'width) width
         (foreign-slot-value mtl-size '(:struct mtlsize) 'height) height
