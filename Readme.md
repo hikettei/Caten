@@ -180,7 +180,7 @@ Before contributing, please note that there is no linter here. Make an effort to
 - [x] Support Training (But still limited)
 - [ ] Distributed Training
 
-### Accelerators
+### Accelerators (caten/byoc)
 
 - [x] LISP VM (BACKEND=LISP)
 - [x] LISP JIT (BACKEND=NATIVE)
