@@ -240,7 +240,7 @@ using namespace metal;
                   (msg encoder "setBuffer:offset:atIndex:" :void :pointer (buffer-value buf) :int 0 :int nth)
                   (if (and (buffer-p buf) (arrayp (buffer-value buf)))
                       (with-pointer-to-vector-data (*p (buffer-value buf))
-                        ;; [TODO] RNG_COUNTERは更新されない...
+                        ;; [TODO] METAL cannot update *rng_counter* ...
                         (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))
                       (let ((buf (if (and (buffer-p buf) (numberp (buffer-value buf))) (buffer-value buf) buf)))
                         (assert (numberp buf) () "Metal: Please transfer the buffe ~a into metal." buf)
