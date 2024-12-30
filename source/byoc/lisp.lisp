@@ -70,7 +70,7 @@
 (macrolet ((def (id op &optional (offset 0))
              `(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql ,id)) node)
                 (let ((lhs (render-node renderer (nth ,(+ 0 offset) (node-reads node))))
-                      (rhs (render-node renderer (nth ,(+ 1 offset) (node-rgeads node)))))
+                      (rhs (render-node renderer (nth ,(+ 1 offset) (node-reads node)))))
                   (list ',op lhs rhs)))))
   (def :ADD +)
   (def :MUL *)
@@ -144,7 +144,7 @@
          (assert endfor () "recursive-render-bp: :FOR without :ENDFOR is not allowed. Malformed blueprint?")
          (when (eql (getattr bp :scope) :global)
            (warn "LispStyle-Renderer: global loop is not supported yet."))
-         ;; [TODO] Simplify the loop code and use lparallel
+         ;; [TODO] Simplify the loop code and to use lparallel
          `(progn
             (loop with ,(intern (getattr bp :idx)) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
                   while ,(render-expr 'LispStyle-Renderer (getattr bp :below))
