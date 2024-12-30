@@ -4,6 +4,7 @@
   :license "MIT"
   :depends-on ("caten.codegen" "caten.runtime" "cffi" "flexi-streams" "float-features")
   :components ((:file "lisp")
+               (:file "native")
                (:file "clang")
                (:file "metal")
                (:file "cuda")
