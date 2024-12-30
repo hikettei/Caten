@@ -15,7 +15,8 @@
    #:coerce-dtyped-buffer
    #:nodes-create-namespace
    #:%isl-safe-pmapc
-   #:->cffi-dtype))
+   #:->cffi-dtype
+   #:schedule-item-args))
 
 (in-package :caten/codegen/helpers)
 
@@ -156,3 +157,9 @@ Otherwise -> they are passed as a buffer."
     (:uint16 :uint16)
     (:uint8 :uint8)
     (:int8 :int8)))
+
+(defmethod schedule-item-args ((node Node))
+  (assert (eql (node-type node) :Schedule-Item) () "Node is not a schedule-item!")
+  (loop for item in (getattr node :blueprint)
+        if (eql (node-type item) :DEFINE-GLOBAL)
+          collect item))
