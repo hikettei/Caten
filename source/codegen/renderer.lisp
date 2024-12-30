@@ -21,7 +21,9 @@
    #:expr-index-components
    #:make-aref
    #:make-define-global
-   #:%renderer-get-auto-scheduler))
+   #:%renderer-get-auto-scheduler
+   #:render-index
+   #:render-aref-index))
 
 (in-package :caten/codegen/renderer)
 
@@ -128,6 +130,25 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
      ;; Purged from the graph -> replace w/ 0 (TODO: Fix this)
      (%render-const renderer 0))))
 
+(defun render-aref-index (renderer node)
+  (assert (eql (node-type node) :AREF))
+  (let ((buffer (getattr node :buffer))
+        (space  (getattr node :space))
+        (index-space (renderer-index-space renderer))
+        (id (getattr node :storage-id)))
+    (when (and (null index-space) (> (caten/runtime:buffer-nrank buffer) 0))
+      (warn "render-aref: Cannot render :AREF for ~a without providing :index-space, thus replaced with ?." id))
+    (if (= -1 (buffer-nrank buffer))
+        nil
+        (if index-space
+            (let ((expr (apply #'expr-add (iteration-space-expr-aref space buffer (renderer-index-space renderer)))))
+              (setf (graph-nodes (renderer-graph renderer))
+                    (append
+                     (graph-nodes (expr-graph expr))
+                     (graph-nodes (renderer-graph renderer))))
+              (render-node renderer (car (node-writes (expr-out expr)))))
+            (error "render-aref-index: Cannot render the node ~a without providing proper index-space." id)))))
+
 (defun render-aref (renderer node)
   (assert (eql (node-type node) :AREF))
   (let ((buffer (getattr node :buffer))
@@ -148,6 +169,26 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
                       (%render-const renderer id)
                       (render-node renderer (car (node-writes (expr-out expr))))))
             (format nil "~(~a~)[?]" id)))))
+
+(defun render-index (renderer bp &key (nth 0))
+  "Returns the renderer object for the nth write of the given bp. If that were scalar, returns nil."
+  (let ((iterations (getattr bp :iterations))
+        (is (nth nth (relay-write-iters (read-type-relay bp))))
+        (b (nth nth (relay-writes (read-type-relay bp)))))
+    (when (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
+      (render-expr
+       renderer
+       (apply
+        #'expr-add
+        (map
+         'list
+         #'(lambda (view stride i)
+             (if view
+                 (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
+                 (expr-mul stride i)))
+         (iteration-space-views is)
+         (iteration-space-strides is)
+         iterations))))))
 
 (defun expr-index-components (renderer node index-space)
   (assert (eql (node-type node) :INDEX-COMPONENTS))

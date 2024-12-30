@@ -1,5 +1,6 @@
 (defpackage :caten/byoc/clang
-  (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime :caten/codegen/backend :caten/codegen/renderer :caten/air
+  (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
+        :caten/codegen/backend :caten/codegen/renderer :caten/air
         :caten/codegen/expr :caten/codegen/helpers :caten/codegen/shape-inference)
   (:import-from
    :caten/codegen/config
@@ -79,6 +80,7 @@
        (decf *indent* 2)
        (format stream "~a}~%" (indent)))
       (:EXPR
+       ;; [TODO] Use render-index for simplicity
        (let ((pre-iterations (getattr bp :iterations)))
          (labels ((print-aref (name b is &key iterations)
                     (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))

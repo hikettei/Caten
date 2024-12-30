@@ -8,7 +8,7 @@
    #:define-auto-scheduler))
 
 (in-package :caten/byoc/metal)
-
+;; [Note] Currently not tested :(
 (defun ensure-foreign-library ()
   (load-foreign-library "/usr/lib/libobjc.dylib")
   (load-foreign-library "/System/Library/Frameworks/Metal.framework/Metal")
@@ -89,8 +89,6 @@ Compiled with this command: ~a"
 
 (defmethod bref ((buffer MetalBuffer) idx)
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
-    (print (buffer-value buffer))
-    (print idx)
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
 
 (defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
