@@ -698,7 +698,12 @@ Lowers the Schedule-Item into blueprint.
   (loop with bounds = nil
         for node in (getattr node :blueprint-base)
         if (eql (node-type node) :FOR)
-          do (let ((size (expr-detach-loop-bound node :allow-failed t)))
+          do (let ((size (expr-detach-loop-bound (getattr node :below) :allow-failed t)))
+               ;; The loop must be affine
+               (when (not (expr-equal-to (getattr node :upfrom) 0))
+                 (return-from schedule-item-flops (cannot-compute-flop)))
+               (when (not (expr-equal-to (getattr node :by) 1))
+                 (return-from schedule-item-flops (cannot-compute-flop)))
                (when (null size) (return-from schedule-item-flops (cannot-compute-flop)))
                (push (cons node size) bounds))
         else if (eql (node-type node) :ENDFOR)
