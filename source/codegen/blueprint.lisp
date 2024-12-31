@@ -17,7 +17,14 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
   (:export
    #:lower-schedule-item
    #:lower-cached-schedule-item
-   #:print-blueprint))
+   #:print-blueprint)
+  ;; GFlops Mesaurer
+  (:export
+   #:GFlops-Measurer
+   #:GFlops-Measurer-ops
+   #:GFlops-Measurer-succeed-p
+   #:measure-gflops
+   #:schedule-item-gflops))
 
 (in-package :caten/codegen/blueprint)
 ;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -670,18 +677,20 @@ Lowers the Schedule-Item into blueprint.
                        do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))
         (setf (getattr node :blueprint) (make-copy-of-bp (getattr base-item :blueprint))
               (getattr node :blueprint-base) (make-copy-of-bp (getattr base-item :blueprint-base)))))))
-
+;;; ~~~~ GFlops Measurements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct GFlops-Measurer
   "A helper object to compute GFlops"
-  (flops (error "flops must occur") :type (or null Expr))
+  (ops (error "flops must occur") :type (or null Expr))
   (succeed-p t :type boolean))
-(defun cannot-compute-flop () (make-gflops-measurer :flops nil :succeed-p nil))
-(defmethod measure-gflops ((gfm GFlops-Measurer) time params)
-  (declare (type single-float time))
+(defun cannot-compute-flop () (make-gflops-measurer :ops nil :succeed-p nil))
+(defmethod measure-gflops ((gfm GFlops-Measurer) elapsed params)
   (when (null (gflops-measurer-succeed-p gfm)) (return-from measure-gflops nil))
-  
-  )
-
+  (assert (gflops-measurer-ops gfm))
+  (let* ((ops (gflops-measurer-ops gfm))
+         (gflops (expr-div ops (expr-mul (expr-const elapsed :float32) (expr-const 1e9 :float32))))
+         (gflops (apply #'expr-realize gflops params)))
+    (assert (numberp (buffer-value gflops)) () "measure-gflops: the result is not a number.")
+    (buffer-value gflops)))
 (defmethod schedule-item-flops (node &aux (total-flops))
   (declare (type node node))
   (assert (eql (node-type node) :Schedule-Item) () "schedule-item-flops: the node is not a Schedule-Item.")
@@ -700,4 +709,4 @@ Lowers the Schedule-Item into blueprint.
             (push (expr-mul (expr-const flop :int64) volume) total-flops))
         else
           do (return-from schedule-item-flops (cannot-compute-flop)))
-  (make-gflops-measurer :flops (reduce #'expr-add total-flops) :succeed-p t))
+  (make-gflops-measurer :ops (reduce #'expr-add total-flops) :succeed-p t))
