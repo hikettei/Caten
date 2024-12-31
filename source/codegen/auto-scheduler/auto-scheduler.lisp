@@ -54,7 +54,6 @@
 
 (defun optimize-reduction-kernel (auto-scheduler node)
   "Optimization for LayerNorm/Softmax/Argmax/Sum is here."
-  (print "SOFTMAX")
   (caten/codegen/unroll:apply-unroll node 2)
   (caten/codegen/coincidence:apply-parallel
    (getattr node :polyhedral)
