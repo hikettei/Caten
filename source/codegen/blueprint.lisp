@@ -24,7 +24,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
    #:GFlops-Measurer-ops
    #:GFlops-Measurer-elapsed-times
    #:GFlops-Measurer-succeed-p
-   #:measure-gflops
+   #:compute-gflops
    #:schedule-item-gflops))
 
 (in-package :caten/codegen/blueprint)
@@ -685,9 +685,10 @@ Lowers the Schedule-Item into blueprint.
   (elapsed-times nil :type list)
   (succeed-p t :type boolean))
 (defun cannot-compute-flop () (make-gflops-measurer :ops nil :succeed-p nil))
-(defmethod measure-gflops ((gfm GFlops-Measurer) elapsed params)
-  (when (null (gflops-measurer-succeed-p gfm)) (return-from measure-gflops nil))
+(defmethod compute-gflops ((gfm GFlops-Measurer) elapsed params)
+  (when (null (gflops-measurer-succeed-p gfm)) (return-from compute-gflops nil))
   (assert (gflops-measurer-ops gfm))
+  (when (zerop elapsed) (return-from compute-gflops nil)) ;; Elapsed Time = 0.0
   (let* ((ops (apply #'expr-realize (gflops-measurer-ops gfm) params))
          (_ (assert (numberp (buffer-value ops)) () "measure-gflpos: the result is not a number."))
          (gflops (/ (buffer-value ops) (* elapsed 1e9))))

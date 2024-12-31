@@ -16,7 +16,7 @@
              (kernel (find :JIT_KERNEL (graph-nodes (runtime-graph gemm)) :key #'node-type)))
         (assert kernel () "Gemm is not found?")
         (let* ((flops (compiled-kernel-flops (getattr kernel :kernel-info)))
-               (ops-computed (measure-gflops flops 1.0 nil)))
+               (ops-computed (compute-gflops flops 1.0 nil)))
           (ok (gflops-measurer-succeed-p flops))
           (ok (= ops-computed (/ ops 1e9)))))))
   (testing "Dynamic Matmul FLOP Computation ..."
@@ -26,6 +26,6 @@
              (kernel (find :JIT_KERNEL (graph-nodes (runtime-graph gemm)) :key #'node-type)))
         (assert kernel () "Gemm is not found?")
         (let* ((flops (compiled-kernel-flops (getattr kernel :kernel-info)))
-               (ops-computed (measure-gflops flops 1.0 `(A 512 B 256 C 1024))))
+               (ops-computed (compute-gflops flops 1.0 `(A 512 B 256 C 1024))))
           (ok (gflops-measurer-succeed-p flops))
           (ok (= ops-computed (/ ops 1e9))))))))
