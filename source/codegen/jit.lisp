@@ -103,7 +103,7 @@ caten/codegen overview:
 	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list) (cached-p :type boolean)))
 
 (defmethod print-object ((s Compiled-Kernel) stream)
-  (format stream "<~a[~a] (~a FLOP)>" (compiled-kernel-device s) (compiled-kernel-name s) (gflops-measurer-ops (compiled-kernel-flops s))))
+  (format stream "<~a[~a] : ~aFLOP>" (compiled-kernel-device s) (compiled-kernel-name s) (gflops-measurer-ops (compiled-kernel-flops s))))
 
 (defun make-compiled-kernel-from-si (si graph)
   (declare (ignore graph))
