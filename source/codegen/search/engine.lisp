@@ -8,9 +8,12 @@ Provides an abstraction for the auto scheduler:
   (:use :cl))
 
 (in-package :caten/codegen/engine)
-
 ;; ~~ Opt ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Opt () nil)
+(defclass Opt () ((id :accessor opt-id) (degree :accessor opt-degree))
+  (:documentation "
+- ID[symbol] is an id of the target :FOR loop
+- degree[integer] represents the optimization degree."))
+
 (defgeneric apply-opt (opt node schedule-item))
 
 (defclass SearchMethod () nil)
