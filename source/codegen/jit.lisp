@@ -46,7 +46,10 @@ caten/codegen overview:
    :caten/codegen/blueprint
    #:lower-schedule-item
    #:lower-cached-schedule-item
-   #:print-blueprint)
+   #:print-blueprint
+   #:GFlops-Measurer
+   #:schedule-item-flops
+   #:gflops-measurer-ops)
   (:import-from
    :caten/codegen/scop
    #:scop)
@@ -81,6 +84,7 @@ caten/codegen overview:
    #:compiled-kernel-raw-caller
    #:compiled-kernel-device
    #:compiled-kernel-code
+   #:compiled-kernel-flops
    #:compiled-kernel-out-positions))
 
 (in-package :caten/codegen/jit)
@@ -91,14 +95,15 @@ caten/codegen overview:
   (raw-caller (error "raw-caller must occur") :type list)
   (device (error "device must occur") :type string)
   (code (error "code must occur") :type string)
-  (out-positions (error "out positions must occur") :type list))
+  (out-positions (error "out positions must occur") :type list)
+  (flops (error "flops must occur") :type GFlops-Measurer))
 
 (defnode (:JIT :JIT_KERNEL) ()
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
 	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list) (cached-p :type boolean)))
 
 (defmethod print-object ((s Compiled-Kernel) stream)
-  (format stream "<~a[~a]>" (compiled-kernel-device s) (compiled-kernel-name s)))
+  (format stream "<~a[~a] : ~aFLOP>" (compiled-kernel-device s) (compiled-kernel-name s) (gflops-measurer-ops (compiled-kernel-flops s))))
 
 (defun make-compiled-kernel-from-si (si graph)
   (declare (ignore graph))
@@ -120,7 +125,8 @@ caten/codegen overview:
      :code (if (getattr si :cache-name)
                (getattr (from-cache si) :rendered-object)
                (getattr si :rendered-object))
-     :out-positions (or (getattr si :return-positions) (loop for i upfrom 0 below (length (node-writes si)) collect i)))))
+     :out-positions (or (getattr si :return-positions) (loop for i upfrom 0 below (length (node-writes si)) collect i))
+     :flops (schedule-item-flops si))))
 
 (defun make-compiled-kernel-node (si graph)
   (make-node :JIT :JIT_KERNEL (node-writes si)
@@ -517,4 +523,4 @@ Applies the JIT compilation for the given Runtime. backend is a keyword defined 
               (when (= (ctx:getenv :DOT) 2) (->dot schedule-graph :title "Schedule Graph (Final)"))
               (print-info "Final VM Graph:")
               (print new-graph))
-            (make-runtime new-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-id :id2tensor (runtime-id2tensor runtime) :buffer-type buffer-class :params (runtime-params runtime))))))))
+            (make-runtime new-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-id :id2tensor (runtime-id2tensor runtime) :buffer-type buffer-class :params (runtime-params runtime) :renderer renderer)))))))

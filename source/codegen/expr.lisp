@@ -36,7 +36,9 @@
    #:expr-neg
    #:expr-not
    #:with-expr-cache
-   #:expr-detach-loop-bound))
+   #:expr-detach-loop-bound
+   #:expr-flops
+   #:expr-realize))
 
 (in-package :caten/codegen/expr)
 
@@ -82,6 +84,7 @@
       (setf (graph-nodes (expr-graph expr)) (append (graph-nodes (expr-graph new-expr)) (graph-nodes (expr-graph expr)))))))
 
 (defmethod run-expr-with-vars ((expr Expr) vars)
+  (declare (type hash-table vars))
   (let ((graph
            (apply
             #'make-graph
@@ -247,7 +250,7 @@ Only supports the scalar computation because it is intended to identify the same
   (let ((grh (with-context (_ (%where (expr-out condition) (expr-out then) (expr-out else) :id out)))))
     (%connect-expr grh (list condition then else) out)))
 
-(defun expr-detach-loop-bound (expr)
+(defun expr-detach-loop-bound (expr &key (allow-failed nil))
   "If :below is this format
 ```
 _gid < BOUND
@@ -255,11 +258,54 @@ _gid < BOUND
 This function returns the BOUND, otherwise returns error.
 "
   (declare (type expr expr))
-  (assert (eql :< (node-type (expr-out expr))) () "Cannot dump the loop bound from the expression ~a" expr)
+  (unless (eql :< (node-type (expr-out expr)))
+    (if allow-failed
+        (return-from expr-detach-loop-bound)
+        (error "Cannot dump the loop bound from the expression ~a" expr)))
   (let ((gid (id->value (expr-graph expr) (nth 1 (node-reads (expr-out expr)))))
         (bound (id->value (expr-graph expr) (nth 2 (node-reads (expr-out expr))))))
     ;; TODO(hikettei): wanna assert (getattr gid :value) starts with _gid_xx?
-    (assert (eql (node-type gid) :LOAD) () "The first argument of the loop bound must be a LOAD node.")
+    (unless (eql (node-type gid) :LOAD)
+      (if allow-failed
+          (return-from expr-detach-loop-bound)
+          (error "The first argument of the loop bound must be a LOAD node.")))
     (let ((new-expr (copy-expr expr)))
       (setf (expr-out new-expr) bound)
       new-expr)))
+
+(defun expr-flops (expr)
+  "Computes the number of floating-operations in the expression"
+  (declare (type node expr))
+  (assert (eql :expr (node-type expr)))
+  (let ((flops 0)
+        (graph (copy-graph (expr-graph (getattr expr :EXPR)))))
+    (verify-graph graph) ;; Copy and verify the graph to prevent unused ops to be counted.
+    (loop for node in (graph-nodes graph) do
+      (incf
+       flops
+       (case (node-type node)
+         (:WMMA 2)
+         ((:NEG :RECIP :SIN :EXP2 :LOG2 :SQRT :NOT :ADD :MUL :IDIV :AND :OR :XOR :MAX :GCD :!= :< :CAST) 1)
+         ((:ALLOCATE :WHERE :MOVE :AREF :INDEX-COMPONENTS :LOAD :STORE :VIEW) 0)
+         (otherwise
+          (warn "expr-flops: Cannot compute the number of flop for the node ~a. Counted as zero." node)
+          0))))
+    flops))
+
+(defun expr-realize (expr &rest params)
+  "
+```
+(expr-realize expr &rest params)
+```
+
+Runs the expr with given params.
+"
+  (declare (type Expr expr))
+  ;; Note: caten/apis depends on caten/codegen, caten/byoc/lisp also depends on caten/codegen.
+  ;; Pay attention for uiop:symbol-call and find-symbol!
+  (apply
+   #'uiop:symbol-call
+   :caten/apis :%run
+   (caten/runtime:make-runtime
+    (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :buffer-type (find-symbol "LISPBUFFER" (find-package :caten/byoc/lisp)))
+   params))

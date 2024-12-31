@@ -17,7 +17,14 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
   (:export
    #:lower-schedule-item
    #:lower-cached-schedule-item
-   #:print-blueprint))
+   #:print-blueprint)
+  ;; GFlops Mesaurer
+  (:export
+   #:GFlops-Measurer
+   #:GFlops-Measurer-ops
+   #:GFlops-Measurer-succeed-p
+   #:compute-gflops
+   #:schedule-item-gflops))
 
 (in-package :caten/codegen/blueprint)
 ;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -129,17 +136,17 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                                         (if (is-one (gethash p pid2space))
                                             s
                                             (gethash p pid2space))))
-                              (when (and (= 1 (ctx:getenv :NOOPT)) (not (broadcastable-p (gethash p pid2space) s)))
+                              (when (and (= 0 (ctx:getenv :OPTIMIZE)) (not (broadcastable-p (gethash p pid2space) s)))
                                 (warn "Detected invaild scheduling: ~a vs ~a are not broadcastable." (gethash p pid2space) s)))))))
              (explore (node &key (noopt t))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
-      (if (= 1 (ctx:getenv :NOOPT))
+      (if (= 0 (ctx:getenv :OPTIMIZE))
           (progn
             (mapc #'explore (graph-nodes graph))
             (setf candidates (hash-table-keys pid2space)))
           (progn
-            ;; NOOPT is not set to 1: also register the collapsed axis
+            ;; OPTIMIZE is not set to 0: also register the collapsed axis
             (mapc #'(lambda (x) (explore x :noopt nil)) (graph-nodes graph))
             (setf candidates (hash-table-keys pid2space))
             (mapc #'explore (graph-nodes graph))))
@@ -670,3 +677,44 @@ Lowers the Schedule-Item into blueprint.
                        do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))
         (setf (getattr node :blueprint) (make-copy-of-bp (getattr base-item :blueprint))
               (getattr node :blueprint-base) (make-copy-of-bp (getattr base-item :blueprint-base)))))))
+;;; ~~~~ GFlops Measurements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct GFlops-Measurer
+  "A helper object to compute GFlops"
+  (ops (error "flops must occur") :type (or null Expr))
+  (succeed-p t :type boolean))
+(defun cannot-compute-flop () (make-gflops-measurer :ops nil :succeed-p nil))
+(defmethod compute-gflops ((gfm GFlops-Measurer) elapsed params)
+  (when (null (gflops-measurer-succeed-p gfm)) (return-from compute-gflops nil))
+  (assert (gflops-measurer-ops gfm))
+  (when (zerop elapsed) (return-from compute-gflops nil)) ;; Elapsed Time = 0.0
+  (let* ((ops (apply #'expr-realize (gflops-measurer-ops gfm) params))
+         (_ (assert (numberp (buffer-value ops)) () "measure-gflpos: the result is not a number."))
+         (gflops (/ (buffer-value ops) (* elapsed 1e9))))
+    (declare (ignore _))
+    gflops))
+(defmethod schedule-item-flops (node &aux (total-flops))
+  (declare (type node node))
+  (assert (eql (node-type node) :Schedule-Item) () "schedule-item-flops: the node is not a Schedule-Item.")
+  (assert (getattr node :blueprint-base) () ":blueprint-base must be provided!")
+  (loop with bounds = nil
+        for node in (getattr node :blueprint-base)
+        if (eql (node-type node) :FOR)
+          do (let ((size (expr-detach-loop-bound (getattr node :below) :allow-failed t)))
+               ;; The loop must be affine
+               (when (not (expr-equal-to (getattr node :upfrom) 0))
+                 (return-from schedule-item-flops (cannot-compute-flop)))
+               (when (not (expr-equal-to (getattr node :by) 1))
+                 (return-from schedule-item-flops (cannot-compute-flop)))
+               (when (null size) (return-from schedule-item-flops (cannot-compute-flop)))
+               (push (cons node size) bounds))
+        else if (eql (node-type node) :ENDFOR)
+               do (setf bounds (remove (getattr node :idx) bounds :key #'(lambda (x) (getattr (car x) :idx)) :test #'equal))
+        else if (eql (node-type node) :EXPR) do
+          (let ((flop (expr-flops node))
+                (volume (reduce #'expr-mul (map 'list #'cdr bounds))))
+            (push (expr-mul (expr-const flop :int64) volume) total-flops))
+        else
+          do (return-from schedule-item-flops (cannot-compute-flop)))
+  (let ((ops (reduce #'expr-add total-flops)))
+    (setf (expr-graph ops) (->graph-with-tpsort (->fast-graph (expr-graph ops))))
+    (make-gflops-measurer :ops ops :succeed-p t)))
