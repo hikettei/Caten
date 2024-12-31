@@ -36,7 +36,8 @@
    #:expr-neg
    #:expr-not
    #:with-expr-cache
-   #:expr-detach-loop-bound))
+   #:expr-detach-loop-bound
+   #:expr-flops))
 
 (in-package :caten/codegen/expr)
 
@@ -263,3 +264,20 @@ This function returns the BOUND, otherwise returns error.
     (let ((new-expr (copy-expr expr)))
       (setf (expr-out new-expr) bound)
       new-expr)))
+
+(defun expr-flops (expr)
+  "Computes the number of floating-operations in the expression"
+  (declare (type node expr))
+  (assert (eql :expr (node-type expr)))
+  (let ((flops 0))
+    (loop for node in (graph-nodes (expr-graph (getattr expr :EXPR))) do
+      (incf
+       flops
+       (case (node-type node)
+         (:WMMA 2)
+         ((:NEG :RECIP :SIN :EXP2 :LOG2 :SQRT :NOT :ADD :MUL :IDIV :AND :OR :XOR :MAX :GCD :!= :<) 1)
+         ((:ALLOCATE :WHERE :MOVE :AREF :INDEX-COMPONENTS :LOAD :STORE :VIEW) 0)
+         (otherwise
+          (warn "expr-flops: Cannot compute the number of flop for the node ~a. Counted as zero." node)
+          0))))
+    flops))
