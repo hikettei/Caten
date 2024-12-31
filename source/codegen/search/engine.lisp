@@ -5,7 +5,10 @@ Provides an abstraction for the auto scheduler:
 - Search (A optimizing strategy)
 - CostModel
 ")
-  (:use :cl))
+  (:use :cl)
+  (:export
+   #:Opt #:opt-id #:opt-degree
+   #:apply-opt #:opt-applicable-p))
 
 (in-package :caten/codegen/engine)
 ;; ~~ Opt ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -14,10 +17,12 @@ Provides an abstraction for the auto scheduler:
 - ID[symbol] is an id of the target :FOR loop
 - degree[integer] represents the optimization degree."))
 
-(defgeneric apply-opt (opt node schedule-item))
-
+(defgeneric apply-opt (opt node schedule-item) (:documentation "Returns a new schedule-item with the current opt is applied."))
+(defgeneric opt-applicable-p (opt node schedule-item) (:documentation "Returns T if the current opt is applicable to the schedule-item."))
+(defmethod print-object ((opt Opt) stream)
+  (print-unreadable-object (opt stream :type t :identity nil)
+    (format stream "ID=~a, DEGREE=~a" (opt-id opt) (opt-degree opt))))
 (defclass SearchMethod () nil)
-
 (defclass CostModel () nil)
 ;; [TODO] Try with various cost models:
 ;; - Random Forest
