@@ -76,18 +76,12 @@ So we are going to apply an optiimzation method which takes a long time to searc
 
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
-  ; Experimental
-  ;(cond
-  ;  ((is-elementwise-p node)
-  ;   (optimize-elementwise-kernel auto-scheduler node))
-  ;  ((has-data-reuse-p node)
-  ;   (optimize-data-reuse-kernel auto-scheduler node))
-  ;  ((has-reduction-p node)
-  ;   (optimize-reduction-kernel auto-scheduler node))
-  ;  (T
-  ;   (warn "Skipped the auto-scheduler for ~a, we have to add more sketch templates" node)))
-  ;; Load blueprint from optimized polyhedral IR
-  (setf (getattr node :blueprint)
-        (caten/codegen/ast-parser:lower-into-bp-from-polyhedral
-         (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank))
-         node)))
+  (symbol-macrolet ((OPTIMIZE (the (integer 0 2) (ctx:getenv :OPTIMIZE))))
+    (when (>= OPTIMIZE 1)
+
+      )
+    (when (>= OPTIMIZE 2)
+
+      )
+    ;; Load blueprint from optimized polyhedral IR
+    (setf (getattr node :blueprint) (caten/codegen/ast-parser:lower-into-bp-from-polyhedral (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank)) node))))
