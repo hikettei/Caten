@@ -131,7 +131,7 @@ Usage:
      "Choose a value from 0 to 5. Gradually specifies the level of debugging when executing with JIT=1 (If unsure, setting JIT_DEBUG >= 2 is recommended).")
     (:OPTIMIZE
      1 :int #.(oneof "OPTIMIZE" 0 `(0 1 2))
-     "Controls the degree of optimization allowed for the JIT Codegen. OPTIMIZE=0 does nothing (safety mode), OPTIMIZE=1 is a default behaviour and only one or few shot optimizations are applied (balanced), and OPTIMIZE=2 takes the longest time to compile but generates the best kernel.")
+     "Controls the degree of optimization methods allowed for the JIT Codegen. OPTIMIZE=0 does nothing (safety mode), OPTIMIZE=1 uses only one or few shot methods (balanced), and OPTIMIZE=2 takes the longest time to compile but generates fully optimized kernels.")
     (:DOT
      0 :int #.(oneof "DOT" 0 `(0 1 2))
      "Choose from 0, 1, or 2. Setting it to 1 opens the computation graph in a default browser when lowering the AST; setting it to 2 does so when running the scheduler (Requirement: graphviz).")
