@@ -139,18 +139,19 @@
 (run-type-infer runtime)
 ```
 Runs the shape inference to the given GraphRuntime, returning `Type-Reporter`."
-  (let ((*supress-allocate-mode* t) (*type-reporter* (make-type-reporter))
-        (runtime (make-runtime graph :runtime 'RelayChecker :buffer-type 'RelayBuffer)))
-    (runtime-forward runtime)
-    ;; Infer type for PAUSE/BACKWARD
-    (let ((pause/bw (nth (runtime-pc runtime) (graph-nodes graph))))
-      (when (and pause/bw (eql (node-type pause/bw) :PAUSE/BACKWARD))
-	(loop for r in (node-reads pause/bw)
-	      for w in (node-writes pause/bw)
-	      do (setf (gethash w (rp-id2buffer *type-reporter*)) (runtime-getvar runtime r)))))
-    (runtime-backward runtime)
-    (deploy-type-infer-results graph *type-reporter*)
-    *type-reporter*))
+  (ctx:with-contextvar (:PROFILE 0)
+    (let ((*supress-allocate-mode* t) (*type-reporter* (make-type-reporter))
+          (runtime (make-runtime graph :runtime 'RelayChecker :buffer-type 'RelayBuffer)))
+      (runtime-forward runtime)
+      ;; Infer type for PAUSE/BACKWARD
+      (let ((pause/bw (nth (runtime-pc runtime) (graph-nodes graph))))
+        (when (and pause/bw (eql (node-type pause/bw) :PAUSE/BACKWARD))
+	  (loop for r in (node-reads pause/bw)
+	        for w in (node-writes pause/bw)
+	        do (setf (gethash w (rp-id2buffer *type-reporter*)) (runtime-getvar runtime r)))))
+      (runtime-backward runtime)
+      (deploy-type-infer-results graph *type-reporter*)
+      *type-reporter*)))
 
 (defstruct (Inferred-Type
 	    (:conc-name relay-)
