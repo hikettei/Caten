@@ -54,20 +54,20 @@ jobs:
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          CI=1 BACKEND=LISP rove caten.asd
+          CI=1 BACKEND=LISP OPTIMIZE=1 rove caten.asd
       - name: (Clang) rove caten.asd
         if: ${{ matrix.backend == 'clang' && matrix.lisp != 'ccl-bin/1.12.2' }}
         run: |
           ulimit -n 8192
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          CI=1 BACKEND=CLANG rove caten.asd
+          CI=1 BACKEND=CLANG OPTIMIZE=1 rove caten.asd
       - name: (Native JIT) rove caten.asd
         if: ${{ matrix.backend == 'native' }}
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          CI=1 BACKEND=NATIVE rove caten.asd
+          CI=1 BACKEND=NATIVE OPTIMIZE=1 rove caten.asd
   Documentation:
     name: Test building documentations
     runs-on: ubuntu-latest
