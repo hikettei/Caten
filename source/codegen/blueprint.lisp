@@ -717,4 +717,6 @@ Lowers the Schedule-Item into blueprint.
             (push (expr-mul (expr-const flop :int64) volume) total-flops))
         else
           do (return-from schedule-item-flops (cannot-compute-flop)))
-  (make-gflops-measurer :ops (reduce #'expr-add total-flops) :succeed-p t))
+  (let ((ops (reduce #'expr-add total-flops)))
+    (setf (expr-graph ops) (->graph-with-tpsort (->fast-graph (expr-graph ops))))
+    (make-gflops-measurer :ops ops :succeed-p t)))
