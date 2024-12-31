@@ -290,7 +290,7 @@
 (deftest test-loop-collapse
   (macrolet ((def (shape axis expected-loops)
                `(multiple-value-bind (schedule runtime) (schedule-with-vars (!sum (make-tensor ',shape) :axis ,axis))
-                  (assert (not (= 0 (ctx:getenv :OPT))))
+                  (assert (not (= 0 (ctx:getenv :OPTIMIZE))))
                   (check-kernel schedule 1)
                   (caten/codegen/expr-cache:with-expr-cache ()
                     (loop for item in (gather-kernels schedule) do
