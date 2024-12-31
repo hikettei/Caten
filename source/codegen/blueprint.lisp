@@ -136,17 +136,17 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                                         (if (is-one (gethash p pid2space))
                                             s
                                             (gethash p pid2space))))
-                              (when (and (= 1 (ctx:getenv :NOOPT)) (not (broadcastable-p (gethash p pid2space) s)))
+                              (when (and (= 0 (ctx:getenv :OPT)) (not (broadcastable-p (gethash p pid2space) s)))
                                 (warn "Detected invaild scheduling: ~a vs ~a are not broadcastable." (gethash p pid2space) s)))))))
              (explore (node &key (noopt t))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-reads (read-type-relay node)))
                (mapc #'(lambda (x) (check x :noopt noopt)) (relay-writes (read-type-relay node)))))
-      (if (= 1 (ctx:getenv :NOOPT))
+      (if (= 0 (ctx:getenv :OPT))
           (progn
             (mapc #'explore (graph-nodes graph))
             (setf candidates (hash-table-keys pid2space)))
           (progn
-            ;; NOOPT is not set to 1: also register the collapsed axis
+            ;; OPT is not set to 0: also register the collapsed axis
             (mapc #'(lambda (x) (explore x :noopt nil)) (graph-nodes graph))
             (setf candidates (hash-table-keys pid2space))
             (mapc #'explore (graph-nodes graph))))

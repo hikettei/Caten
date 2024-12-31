@@ -116,22 +116,22 @@ Usage:
 								,name))))))
 		     ,@body)))))
   (defcontext
-      ;; (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
+    ;; Format: (ENV_NAME DEFAULT_VALUE DTYPE DESCRIPTION)
     (:BACKEND
      "CLANG" :string (lambda (x) (intern (string-upcase (princ-to-string x)) "KEYWORD"))
      "A name to the keyword defined by the macro `defbackend`")
     (:DEBUG
      0 :int #.(oneof "DEBUG" 0 `(-1 0))
      "Select either 0 or -1. Set -1 to supress the caten/common.logger.")
-    (:JIT_DEBUG
+    (:JIT_DEBUG ;; [TODO] Reanem JIT_DEBUG -> DEBUG
      0 :int
      (lambda (x)
        (when (not (typep x '(integer 0 5))) (warn "JIT_DEBUG should be an integer from 0 to 5, got ~a, setting 0." x) (setf x 0))
        x)
      "Choose a value from 0 to 5. Gradually specifies the level of debugging when executing with JIT=1 (If unsure, setting JIT_DEBUG >= 2 is recommended).")
-    (:NOOPT
-     0 :int #.(oneof "NOOPT" 0 `(0 1))
-     "Select either 0 or 1. Disables Loop Collapse during JIT execution.")
+    (:OPT
+     1 :int #.(oneof "OPT" 0 `(0 1 2))
+     "Controls the degree of optimization level allowed for the JIT Codegen. OPT=0 does nothing (safe mode), OPT=1 is a default behaviour and only one or few shot optimizations are applied (balanced), and OPT=2 takes the longest time to compile but generates the best kernel.")
     (:DOT
      0 :int #.(oneof "DOT" 0 `(0 1 2))
      "Choose from 0, 1, or 2. Setting it to 1 opens the computation graph in a default browser when lowering the AST; setting it to 2 does so when running the scheduler (Requirement: graphviz).")
