@@ -12,6 +12,7 @@ Tests that are not related to the core functionality of Caten or are time-consum
                (:file "test-apis")
                (:file "test-runtime")
                (:file "test-ops")
+               (:file "test-gflops")
                (:file "test-autodiff")
                (:file "test-activations")
                (:file "test-optim")
