@@ -670,3 +670,34 @@ Lowers the Schedule-Item into blueprint.
                        do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))
         (setf (getattr node :blueprint) (make-copy-of-bp (getattr base-item :blueprint))
               (getattr node :blueprint-base) (make-copy-of-bp (getattr base-item :blueprint-base)))))))
+
+(defstruct GFlops-Measurer
+  "A helper object to compute GFlops"
+  (flops (error "flops must occur") :type (or null Expr))
+  (succeed-p t :type boolean))
+(defun cannot-compute-flop () (make-gflops-measurer :flops nil :succeed-p nil))
+(defmethod measure-gflops ((gfm GFlops-Measurer) time params)
+  (declare (type single-float time))
+  (when (null (gflops-measurer-succeed-p gfm)) (return-from measure-gflops nil))
+  
+  )
+
+(defmethod schedule-item-flops (node &aux (total-flops))
+  (declare (type node node))
+  (assert (eql (node-type node) :Schedule-Item) () "schedule-item-flops: the node is not a Schedule-Item.")
+  (assert (getattr node :blueprint-base) () ":blueprint-base must be provided!")
+  (loop with bounds = nil
+        for node in (getattr node :blueprint-base)
+        if (eql (node-type node) :FOR)
+          do (let ((size (expr-detach-loop-bound node :allow-failed t)))
+               (when (null size) (return-from schedule-item-flops (cannot-compute-flop)))
+               (push (cons node size) bounds))
+        else if (eql (node-type node) :ENDFOR)
+               do (setf bounds (remove (getattr node :idx) bounds :key #'(lambda (x) (getattr (car x) :idx)) :test #'equal))
+        else if (eql (node-type node) :EXPR) do
+          (let ((flop (expr-flops node))
+                (volume (reduce #'expr-mul (map 'list #'cdr bounds))))
+            (push (expr-mul (expr-const flop :int64) volume) total-flops))
+        else
+          do (return-from schedule-item-flops (cannot-compute-flop)))
+  (make-gflops-measurer :flops (reduce #'expr-add total-flops) :succeed-p t))
