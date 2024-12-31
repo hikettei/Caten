@@ -167,6 +167,11 @@ disassemble:
     (runtime-forward (make-runtime graph :fw-outputs outs :runtime runtime :buffer-type buffer-type))))
 ;; ~~~~ print-object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun render-list (list) (apply #'concatenate 'string (butlast (loop for n in list append (list (format nil "~a" n) ", ")))))
+(defun render-comment (node)
+  (case (node-type node)
+    (:LOAD (format nil " // :value = ~a" (getattr node :value)))
+    (:JIT_KERNEL (format nil "// JIT: ~a" (getattr node :kernel-info)))
+    (otherwise "")))
 (defmethod print-object ((runtime GraphRuntime) stream &aux (n-indent 4))
   (print-unreadable-object (runtime stream :type t)
     (format stream "{~(~a~) -> (~(~a~), ~(~a~))}~%" (runtime-gather-args runtime) (runtime-fw-outputs runtime) (runtime-bw-outputs runtime))
@@ -199,11 +204,12 @@ disassemble:
 			      (format nil ", permute=~a" (getattr node :permute))
 			      ""))))
 	    else
-	      do (format stream "~a~(~a~)~a~(~a~)(~(~a~));~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "")
+	      do (format stream "~a~(~a~)~a~(~a~)(~(~a~));~a~%" (indent n-indent) (render-list (node-writes node)) (if (node-writes node) " = " "")
                          (if (eql (node-type node) :JIT_KERNEL)
                              (uiop:symbol-call :caten/codegen/jit :compiled-kernel-name (getattr node :kernel-info))
                              (node-type node))
-                         (render-list (node-reads node)))))))
+                         (render-list (node-reads node))
+                         (render-comment node))))))
 ;; ~~~~ Helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun parse-allocate-node (alloc-node args)
   "Return: (values shape stride)"
