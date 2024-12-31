@@ -277,8 +277,10 @@ This function returns the BOUND, otherwise returns error.
   "Computes the number of floating-operations in the expression"
   (declare (type node expr))
   (assert (eql :expr (node-type expr)))
-  (let ((flops 0))
-    (loop for node in (graph-nodes (expr-graph (getattr expr :EXPR))) do
+  (let ((flops 0)
+        (graph (copy-graph (expr-graph (getattr expr :EXPR)))))
+    (verify-graph graph) ;; Copy and verify the graph to prevent unused ops to be counted.
+    (loop for node in (graph-nodes graph) do
       (incf
        flops
        (case (node-type node)
