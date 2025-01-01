@@ -156,7 +156,7 @@ Compiled with this command: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
-(defmacro with-kludge-if-needed-fo-darwin-x86-64-with-invalid-float-traps-masked (form)
+(defmacro with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked (form)
   #+(and :darwin :x86-64) `(org.shirakumo.float-features:with-float-traps-masked (:invalid) ,form)
   #-(and :darwin :x86-64) `(progn ,form))
 
@@ -192,7 +192,7 @@ Compiled with this command: ~a"
        ;;
        ;; This might be due to the (implicit and/or float/int) conversions
        ;; in the code generated for example, for threefry2x32
-       (with-kludge-if-needed-fo-darwin-x86-64-with-invalid-float-traps-masked
+       (with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked
 	,(expand
 	  defglobals
 	  `((cffi:foreign-funcall
