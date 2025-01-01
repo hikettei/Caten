@@ -184,14 +184,13 @@ Compiled with this command: ~a"
 			    for type = (->cffi-dtype (getattr node :dtype))
 			    collect `(setf (buffer-value ,buffer) (mem-ref ,cffi ,type)))))))
     `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) defglobals))
-       ;; atzmueller: unstable/experimental workaround for Mac OS/X86-64/clang
+       ;; atzmueller: unstable/experimental workaround for MacOS/X86-64/clang
        ;; just ignore the "invalid" float trap, raised by the generated C code
+       ;; Otherwise, e.g., running the test "caten/test-suite::threefry2x32",
+       ;; (or: (ctx:with-contextvar (:BACKEND "CLANG") (caten:rand `(7))) )
+       ;; causes an "arithmetic error FLOATING-POINT-INVALID-OPERATION".
        ;;
-       ;; otherwise, e.g., running the test "caten/test-suite::threefry2x32", or
-       ;; (ctx:with-contextvar (:BACKEND "CLANG") (caten:rand `(7)))
-       ;; cause an "arithmetic error FLOATING-POINT-INVALID-OPERATION"
-       ;;
-       ;; this seems to be due to the (implicit and/or float/int) conversions
+       ;; This might be due to the (implicit and/or float/int) conversions
        ;; in the code generated for example, for threefry2x32
        (with-potential-kludge-darwin-x86-64-with-invalid-float-traps-masked
 	,(expand
