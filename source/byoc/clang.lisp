@@ -156,11 +156,9 @@ Compiled with this command: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
-(defmacro x86-with-invalid-float-traps-masked (body)
-  #+:x86-64 `(org.shirakumo.float-features:with-float-traps-masked (:invalid)
-	    ,body)
-  #-:x86-64 `(progn
-	    ,body))
+(defmacro with-potential-kludge-darwin-x86-64-with-invalid-float-traps-masked (form)
+  #+(and :darwin :x86-64) `(org.shirakumo.float-features:with-float-traps-masked (:invalid) ,form)
+  #-(and :darwin :x86-64) `(progn ,form))
 
 (defun make-foreign-function-caller (name defglobals &aux (tmps))
   (labels ((expand (rest-forms body)
@@ -186,7 +184,7 @@ Compiled with this command: ~a"
 			    for type = (->cffi-dtype (getattr node :dtype))
 			    collect `(setf (buffer-value ,buffer) (mem-ref ,cffi ,type)))))))
     `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) defglobals))
-       ;; atzmueller: unstable/experimental workaround for X86-64 & clang
+       ;; atzmueller: unstable/experimental workaround for Mac OS/X86-64/clang
        ;; just ignore the "invalid" float trap, raised by the generated C code
        ;;
        ;; otherwise, e.g., running the test "caten/test-suite::threefry2x32", or
@@ -195,7 +193,7 @@ Compiled with this command: ~a"
        ;;
        ;; this seems to be due to the (implicit and/or float/int) conversions
        ;; in the code generated for example, for threefry2x32
-       (x86-with-invalid-float-traps-masked
+       (with-potential-kludge-darwin-x86-64-with-invalid-float-traps-masked
 	,(expand
 	  defglobals
 	  `((cffi:foreign-funcall
