@@ -12,7 +12,7 @@ Provides an abstraction for the auto scheduler:
 
 (in-package :caten/codegen/engine)
 ;; ~~ Opt ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Opt () ((id :accessor opt-id) (degree :accessor opt-degree))
+(defclass Opt () ((id :initarg :id :accessor opt-id) (degree :accessor opt-degree :initform nil))
   (:documentation "
 - ID[symbol] is an id of the target :FOR loop
 - degree[integer] represents the optimization degree."))
