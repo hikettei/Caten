@@ -28,9 +28,7 @@
        (defclass ,name (Auto-Scheduler-Config)
          nil
          (:documentation ,documentation))
-       (defun ,name (,@args)
-         (let ((,instance (make-instance ',name)))
-           (setf
-            (auto-scheduler-n-global-loops ,instance) ,n-global-loop
-            (auto-scheduler-tile-size ,instance) ,tile-size)
-           ,instance)))))
+       (defmethod initialize-instance :after ((,instance ,name) ,@(or args '(&key)))
+         (setf
+          (auto-scheduler-n-global-loops ,instance) ,n-global-loop
+          (auto-scheduler-tile-size ,instance) ,tile-size)))))

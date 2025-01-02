@@ -426,6 +426,7 @@ Applies the JIT compilation for the given Runtime. backend is a keyword defined 
     (apply-rewriting-rules runtime)
     ;; 3. Running the scheduler
     (let ((renderer (make-instance renderer))
+          (auto-scheduler (when auto-scheduler (make-instance auto-scheduler)))
           (base-graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (runtime-graph runtime)))))
           (schedule-graph (graph-schedule (runtime-graph runtime)))
           (symbolics
