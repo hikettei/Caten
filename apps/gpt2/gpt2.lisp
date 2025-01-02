@@ -96,7 +96,7 @@ Takes a compiled GPT2 model and a string input, and generates a text output.
 
 (defun gpt2-generate (gpt2 input &key (verbose t) (max-length 100) (expected nil))
   (declare (type GPT2 gpt2) (type string input))
-  (with-float-traps-masked (:invalid)
+  (with-float-traps-masked (:inexact)
     (with-slots ((model model) (tokenizer tokenizer) (max-seq-len max-seq-len)) gpt2
       (let* ((tokens (encode tokenizer input)) (start-pos 0))
         (loop for i upfrom 0 below max-length
