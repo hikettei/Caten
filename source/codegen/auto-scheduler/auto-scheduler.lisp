@@ -8,19 +8,17 @@
 (in-package :caten/codegen/auto-scheduler)
 ;; ~~~ Possible Optiimzations  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass OptTile (Opt) nil)
-(defmethod apply-opt ((opt OptTile) node si)
-  
-  )
-(defmethod opt-applicable-p ((opt OptTile) node si)
-  ;; HasDataReuse? => ElementWiseじゃないReduction is data reuse
-  ;; Coincident?
-  ;; HasReduction?
-  )
+(defmethod apply-opt ((opt OptTile) node-id si)
+  ;; [TODO] AutoTune the tiling size
+  (caten/codegen/tiling:apply-tile node-id (getattr si :polyhedral) 32))
+(defmethod opt-applicable-p ((opt OptTile) node-id si)
+  (caten/codegen/tiling:get-tileable-band (getattr si :polyhedral) node-id))
+
 (defclass OptUnroll (Opt) nil) ;; vertical unroll (used to remove away small :FOR)
-(defmethod apply-opt ((opt OptUnroll) node si)
+(defmethod apply-opt ((opt OptUnroll) node-id si)
 
   )
-(defmethod opt-applicable-p ((opt OptUnroll) node si)
+(defmethod opt-applicable-p ((opt OptUnroll) node-id si)
   
   )
 
@@ -34,10 +32,10 @@
 ;; ~~~ Schedule Templates ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun gensketch (schedule-item &key (actions '(OptTile OptUnroll)) &aux (collected-sketchgen))
   (loop for bp in (getattr schedule-item :blueprint)
-        if (eql (node-type bp) :FOR) do
+        if (eql (node-type bp) :EXPR) do
           (loop for act in actions
                 for opt = (make-instance act :id (node-id bp))
-                when (opt-applicable-p opt bp schedule-item)
+                when (opt-applicable-p opt (princ-to-string (node-id bp)) schedule-item)
                   do (push opt collected-sketchgen)))
   collected-sketchgen)
 
@@ -46,6 +44,7 @@
   (symbol-macrolet ((OPTIMIZE (the (integer 0 2) (ctx:getenv :OPTIMIZE))))
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
     (let ((sketch (gensketch node)))
+      (print "OPTIMIZATION CANDIDATES")
       (print sketch)
       ;; generating sketch
       (when (>= OPTIMIZE 2)
