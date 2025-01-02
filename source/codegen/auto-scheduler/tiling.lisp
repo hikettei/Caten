@@ -65,22 +65,18 @@ dims is used to specify the tiling sizes for each dimension."
            (tiled-sched (schedule-node-insert-mark tiled-sched (isl::make-id-from-str "TILE_BAND"))))
       tiled-sched)))
 
-(defun get-tileable-bands (poly)
+(defun get-tileable-band (poly node-id)
   (map-schedule-nodes
    #'(lambda (type node mark)
        (when (and (eql type :schedule-node-band)
-                  (or (null mark)))
-         node))
-   poly))
+                  (or (null mark))
+                  (string= (partial-schedule-node-id (schedule-node-band-get-partial-schedule node)) node-id))
+         (return-from get-tileable-band node)))
+   poly)
+  nil)
 
-(defun apply-tile (ir size)
-  "`tile-bands` helps you execute the computation tile by tile over the two axes"
-  (declare (type Polyhedral-IR ir))
-  (let* ((bands (get-tileable-bands ir)))
-    (dotimes (i (length bands))
-      (let ((i (- (1- (length bands)) i)))
-        (setf (poly-schedule ir)
-              (schedule-node-get-schedule
-               (schedule-tile-band
-                (nth i (get-tileable-bands ir))
-                :size-default size)))))))
+(defun apply-tile (band-node-id ir size)
+  (declare (type Polyhedral-IR ir) (type string band-node-id))
+  (let ((band (get-tileable-band ir band-node-id)))
+    (assert band () "apply-tile: The band ~a not found." band-node-id)
+    (setf (poly-schedule ir) (schedule-node-get-schedule (schedule-tile-band band :size-default size)))))

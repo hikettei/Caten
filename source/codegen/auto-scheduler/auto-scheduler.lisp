@@ -12,13 +12,11 @@
   
   )
 (defmethod opt-applicable-p ((opt OptTile) node si)
-  ;; HasDataReuse?
+  ;; HasDataReuse? => ElementWiseじゃないReduction is data reuse
   ;; Coincident?
   ;; HasReduction?
   )
-
 (defclass OptParallel (Opt) nil)
-
 (defclass OptUnroll (Opt) nil) ;; vertical unroll (used to remove away small :FOR)
 (defclass OptPacking (Opt) nil) ;; horizontal unroll (used to float4 grouping, simd transformation, reduce, etc)
 ;; (defclass OptGroup (Opt) nil) Implement decent GPU Support First.
