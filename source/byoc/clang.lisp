@@ -157,7 +157,7 @@ Compiled with this command: ~a"
     (cffi:load-foreign-library sharedlib)))
 
 (defmacro with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked (form)
-  #+(and :darwin :x86-64) `(org.shirakumo.float-features:with-float-traps-masked (:invalid) ,form)
+  #+(and :darwin :x86-64) `(float-features:with-float-traps-masked (:invalid) ,form)
   #-(and :darwin :x86-64) `(progn ,form))
 
 (defun make-foreign-function-caller (name defglobals &aux (tmps))
