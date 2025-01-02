@@ -13,8 +13,9 @@
 ;; - [ ] Temporal Spatial Loop Set: LOAD=0.0するとこ
 ;; - [ ] Temporal Reduction Loop Set: reduce=T
 ;; - [ ] 各 rKernelは，N-1のrKERNEL, LOAD, STOREを保有する
-;; - [ ] 
+;; - [ ] どこまでがOffline/Onlineかちゃんと考えながら書く
 ;; - Goal is: Map into low level intrinsics
+;; generating a set of micro kernels 
 (deftype loop-type-t () `(member :pl :tsl :trl))
 
 (defstruct rKernel
@@ -40,10 +41,14 @@
       (dolist (tr (nth L TRL))
         ;; LOAD_FUNC
         ;; rKERNEL
+        ;; これを実行すると メモリの依存関係がわかる
         (rKernel (1- L) PL TSL TRL LF SF))
       ;; STORE_FUNC
       )))
-
-
-
-
+;; - [ ] kekkyoku candidates　って何？
+(defun rkernels-from-blueprint (blueprint)
+  (declare (type list blueprint))
+  ;; ReductionとLOADがあることを仮定する。
+  ;; Blueprint must be consisted of only :FOR :ENDFOR and :EXPR
+  (loop for bp in blueprint)
+          
