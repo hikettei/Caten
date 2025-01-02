@@ -16,11 +16,11 @@
 
 (defclass OptUnroll (Opt) nil) ;; vertical unroll (used to remove away small :FOR)
 (defmethod apply-opt ((opt OptUnroll) node-id si)
-
-  )
+  ;; TODO:
+  ;; - [ ] Remove away small loops by adjusting the unroll factor
+  (caten/codegen/unroll:apply-unroll si 4 node-id))
 (defmethod opt-applicable-p ((opt OptUnroll) node-id si)
-  
-  )
+  (caten/codegen/unroll:get-packable-band node-id (getattr si :polyhedral) #'caten/codegen/unroll:mark-unroll-p))
 
 (defclass OptPacking (Opt) nil) ;; horizontal unroll (used to float4 grouping, simd transformation, reduce, etc)
 ;; (defclass OptInterchange (Opt) nil)
