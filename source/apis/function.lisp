@@ -854,8 +854,10 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, it wi
                 shape (loop repeat (* 2 n) collect (%iconst 1)) (loop repeat (* 2 n) collect nil) stride
                 :id (gensym "ROLL")))))))
 
-(defun !window (x windows-shape) ;; using stride hacks
-  (let ((out (forward (make-instance 'Rolling :window-shape windows-shape) (!contiguous x))))
+(defun !window (x window-shape) ;; using stride hacks
+  (declare (type tensor x) (type list window-shape))
+  (assert (= (length (shape x)) (length window-shape)))
+  (let ((out (forward (make-instance 'Rolling :window-shape window-shape) (!contiguous x))))
     (setf (tensor-variables out) (rolling-args (tensor-op out))
           (func-variables (tensor-op out)) (rolling-args (tensor-op out)))
     out))
