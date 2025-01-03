@@ -119,7 +119,11 @@ Policy:
    #:SGD)
   ;; from linear.lisp
   (:export
-   #:Linear))
+   #:Linear)
+  ;; from unfold.lisp
+  (:export
+   #:Unfold
+   #:!unfold))
 
 (in-package :caten/nn)
 
