@@ -7,8 +7,12 @@
 ;;   - [ ] Dilation
 ;;   - [ ] Stride
 ;; - [ ] Export
-;; - [ ] (with-no-grad (caten (!copy (caten/apis::!window (!padding (ax+b `(10 3 21 21) 1 0) `((0 0) (0 0) (2 2) (2 2))) `(1 1 5 5)))))
+;; - [ ] (with-no-grad (caten (!copy (caten/apis::!window (!padding (ax+b `(10 3 21 21) 1 0) `((0 0) (0 0) (2 2) (2 2))) `(1 1 5 5))))
+;; - [ ] ;; Padded ConvND=1Kernel
 ;; - [ ] Move to caten/nn and implement as fold/unfold?
+(defun compute-filter-size (in dilation kernel stride &key (ceiling #'ceiling))
+   (funcall ceiling (/ (- in (* dilation (- kernel 1))) stride)))
+
 (defclass Unfold (Func)
   ((kernel-size :initarg :kernel-size :accessor unfold-kernel-size)
    (strides :initarg :strides :accessor unfold-strides)
@@ -24,7 +28,7 @@
            for w in window-shape
            for d in dilation
            for stride in strides
-           collect (->iconst (conv-out-size s 0 d w stride :ceiling ceiling)))
+           collect (->iconst (compute-filter-size s d w stride :ceiling ceiling)))
      (map 'list #'->iconst window-shape))))
 
 (defmethod unfold-stride ((op Unfold) stride)
@@ -49,8 +53,8 @@
     out))
 
 (defmethod backward ((op Unfold) &optional prev-grad)
-  ;; [TODO] Differentiable Unfold
-  (warn "Unfold is not differentiable. Please use _pool if you need gradients."))
+  (declare (ignore prev-grad))
+  (error "Unfold is not differentiable. Please use _pool instead if you need gradients. (This error should not appeared if you are using with-no-grad and !unfold?)"))
 
 (defmethod lower ((op Unfold) &rest inputs)
   ;; Inputs: (tensor *shape *stride)
@@ -64,9 +68,7 @@
                   (loop repeat n collect (%iconst 0))
                   shape (loop repeat n collect (%iconst 1))
                   (loop repeat n collect nil) stride :id (gensym "UNFOLD")))))))
-;; kernel-size stride dilationがあればOK
-;; [TODO] Fuse with Padding2D,
-;; Padded ConvND=1Kernel
+
 (defun !unfold (x kernel-size &key (dilation 1) (stride 1) (ceiling #'ceiling))
   "Unfold
 ```
