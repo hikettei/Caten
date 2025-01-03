@@ -816,21 +816,29 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, it wi
 "
   (let ((ndim (->iconst ndim)) (axis (->iconst axis)))
     (!where (!< axis (iconst 0)) (!add axis ndim) axis)))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; - [ ] Make it differentiable?
-;; - [ ] Support Padding/Group inside rolling?
-;; - [ ] Rename Rolling -> Unfold?
+;; ~~~~~ Movements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; - [ ] Rolling -> Unfold
+;;   - [ ] Make it differentiable
+;;   - [ ] Padding
+;;   - [ ] Group
+;;   - [ ] Dilation
+;;   - [ ] Stride
 ;; - [ ] Export
+;; - [ ] (with-no-grad (caten (!copy (caten/apis::!window (!padding (ax+b `(10 3 21 21) 1 0) `((0 0) (0 0) (2 2) (2 2))) `(1 1 5 5)))))
+;; - [ ] Move to caten/nn and implement as fold/unfold?
 (defclass Rolling (Func)
   ((window-shape :initarg :window-shape :accessor rolling-window-shape)
    (args :accessor rolling-args)))
+
 (defmethod rolling-shape ((op Rolling) shape window-shape)
   (assert (= (length shape) (length window-shape)))
   (append
    (loop for s in shape for w in window-shape
          collect (!add (!- (->iconst s) (->iconst w)) (iconst 1)))
    (map 'list #'->iconst window-shape)))
+
 (defmethod rolling-stride ((op Rolling) stride) (map 'list #'->iconst (append stride stride)))
+
 (defmethod forward ((op Rolling) &rest tensors)
   (assert (= 1 (length tensors)))
   (assert (tr-contiguous (tensor-tr (car tensors))))
@@ -841,7 +849,9 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, it wi
           (tr-contiguous (tensor-tr out)) nil
           (rolling-args op) (append tensors shape stride))
     out))
+
 (defmethod backward ((op Rolling) &optional prev-grad) (declare (ignore prev-grad)) (error "Rolling is not differentiable. Try with (with-no-grad ...)"))
+
 (defmethod lower ((op Rolling) &rest inputs)
   ;; Inputs: (tensor *shape *stride)
   (let ((n (length (rolling-window-shape op))))
