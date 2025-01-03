@@ -12,7 +12,6 @@
 (defclass Unfold (Func)
   ((kernel-size :initarg :kernel-size :accessor unfold-kernel-size)
    (strides :initarg :strides :accessor unfold-strides)
-   (padding :initarg :padding :accessor unfold-padding)
    (dilation :initarg :dilation :accessor unfold-dilation)
    (args :accessor unfold-args)))
 
@@ -43,32 +42,40 @@
 
 (defmethod backward ((op Unfold) &optional prev-grad)
   ;; [TODO] Differentiable Unfold
-  (warn "Unfold is not differentiable. Please use alternative implementation for now."))
+  (warn "Unfold is not differentiable. Please use _pool if you need gradients."))
 
 (defmethod lower ((op Unfold) &rest inputs)
   ;; Inputs: (tensor *shape *stride)
-  (let ((n (length (unfold-kernel-size op))))
-    (with-slots ((kernel-size kernel-size) (strides strides) (padding padding) (dilation dilation) (args args)) op
+  (let ((n (+ (ndim (car (func-variables op))) (length (unfold-kernel-size op)))))
+    (with-slots ((kernel-size kernel-size) (strides strides) (dilation dilation) (args args)) op
       (multiple-value-bind (op shape stride)
-          (values (car inputs) (subseq inputs 1 (1+ (* 2 n))) (subseq inputs (1+ (* 2 n))))
-        (assert (= (length shape) (length stride) (* 2 n)))
+          (values (car inputs) (subseq inputs 1 (1+ n)) (subseq inputs (1+ n)))
+        (assert (= (length shape) (length stride) n))
         (with-context
             (out
              (%view op shape
-                    (loop repeat (* 2 n) collect (%iconst 0))
-                    shape (loop repeat (* 2 n) collect (%iconst 1))
-                    (loop repeat (* 2 n) collect nil) stride :id (gensym "UNFOLD"))))))))
-
-(defun !unfold (x kernel-size &key (dilation 1) (padding 0) (stride 1))
+                    (loop repeat n collect (%iconst 0))
+                    shape (loop repeat n collect (%iconst 1))
+                    (loop repeat n collect nil) stride :id (gensym "UNFOLD"))))))))
+;; kernel-size stride dilationがあればOK
+(defun !unfold (x kernel-size &key (dilation 1) (stride 1))
   (declare (type tensor x) (type list kernel-size))
+  ;; TODO: call _pool if *no-grad* is not T
+  ;; TODO: Fusable with padding2d
   (let ((out (forward
               (make-instance
                'Unfold
                :kernel-size kernel-size
                :dilation (maybe-list dilation kernel-size)
-               :padding (maybe-list padding kernel-size)
                :strides (maybe-list stride kernel-size))
               (!contiguous x))))
     (setf (tensor-variables out) (unfold-args (tensor-op out))
           (func-variables (tensor-op out)) (unfold-args (tensor-op out)))
     out))
+
+(defun pool-out ()
+  (caten (!copy (_pool (ax+b `(10) 1 0) `(5) 1 1))))
+;; (with-no-grad
+;;   (caten (caten/nn::!unfold (!padding2d (make-tensor `(10 3 23 23)) `(1 1 1 1)) `(5 5))))
+(defun unfold-out ()
+  (caten (!copy (!unfold (ax+b `(10) 1 0) `(5)))))
