@@ -1,6 +1,6 @@
 (in-package :caten/nn)
 
-(defun conv-out-size (in padding dilation kernel-size stride &key (ceiling #'ceiling))
+(defun conv-out-size (in padding dilation kernel-size stride &key (ceiling #'floor))
   ;; TODO: Support Symbolic (needs !floor function)
   (funcall ceiling (+ 1 (/ (+ in (* 2 padding) (* (- dilation) (- kernel-size 1)) -1) stride))))
 
