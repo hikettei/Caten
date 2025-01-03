@@ -1,8 +1,8 @@
 (in-package :caten/nn)
 
-(defun conv-out-size (in padding dilation kernel-size stride)
+(defun conv-out-size (in padding dilation kernel-size stride &key (ceiling #'floor))
   ;; TODO: Support Symbolic (needs !floor function)
-  (floor (+ 1 (/ (+ in (* 2 padding) (* (- dilation) (- kernel-size 1)) -1) stride))))
+  (funcall ceiling (+ 1 (/ (+ in (* 2 padding) (* (- dilation) (- kernel-size 1)) -1) stride))))
 
 (defun maybe-list (value kernel-size)
   (if (numberp value)
@@ -67,7 +67,7 @@ NOTE: unlike PyTorch, this implementation is not limited to only 2d convolutions
 		(shape x) (shape weight) cin (* groups cin_))
 	(assert (= (ndim weight) (ndim x)) () "Input Tensor Shape ~a do not match the shape of the weights ~a" (shape x) (shape weight))
 	;; x = [bs, groups*cin, oy, ox, H, W]
-	(let* ((x (_pool (!padding2d x (padding2d-shape padding (length hw))) hw stride dilation))
+	(let* ((x (!unfold (!padding2d x (padding2d-shape padding (length hw))) hw :dilation dilation :stride stride))
 	       (rcout (floor (/ cout groups)))
 	       (oyx   (slice (shape x) 2 (- (length hw)))))
 	  ;; TODO: use winograd when fails to satisfy (or (not (some #'(lambda (x) (= x 3)) hw)) (not (eql stride 1)) (not (eql dilation 1)))

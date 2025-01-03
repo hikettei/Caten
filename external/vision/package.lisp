@@ -58,7 +58,7 @@
     (change-facet normalized-tensor :tensor)))
 
 (defun run-classification (onnx-path image-path expected)
-  (caten:with-inference-mode ()
+  (progn ;;caten:with-inference-mode ()
     (let* ((model (caten (!argmax (car (caten/onnx::from-onnx onnx-path)))))
            (in-image (preprocess-image image-path))
            (label (forward model `(:input . ,in-image))))
