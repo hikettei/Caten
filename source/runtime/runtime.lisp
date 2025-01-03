@@ -83,12 +83,12 @@ This package provides GraphRuntime, which is a class to run an air graph.
   (:report
    (lambda (c s)
      (with-slots ((runtime runtime) (cond cond)) c
-       (format s "Runtime-Error: Encountered the runtime error at ~ath instruction.
+       (format s "Runtime-Error: Encountered the runtime error at the ~a instruction.
 condition:
   ~a
 disassemble:
 ~a"
-	       (runtime-pc runtime)
+	       (caten/common.logger:make-ordinal-suffix (runtime-pc runtime))
 	       cond
 	       (with-output-to-string (out)
 		 (loop for nth upfrom 0

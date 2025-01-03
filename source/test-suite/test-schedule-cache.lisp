@@ -13,6 +13,7 @@
 
 (defun hide-vars (code node kernels &key (test-with-memory-planner nil))
   (declare (type string code)) ;; set test-with-memory-planner=t when using memory-planner
+  (declare (ignorable node kernels))
   (setf code (string-downcase code))
   ;; [TODO] Maybe the args of :JIT_KERNEL does not reflects what the actual kernel args are.
   ;; bcuz they are updated by the memory planner.

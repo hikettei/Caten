@@ -5,12 +5,13 @@
   (:use :cl :cl-ansi-text)
   (:export
    #:*default-stream*
-   #:print-info
-   #:with-progress
-   #:print-progress
-   #:print-error
+   #:make-ordinal-suffix
    #:maybe-ansi
-   #:white-bright))
+   #:print-error
+   #:print-info
+   #:print-progress
+   #:white-bright
+   #:with-progress))
 
 (in-package :caten/common.logger)
 
@@ -93,3 +94,14 @@
 		  (if (= (progress-n *progress*) (progress-total *progress*))
 		      (format nil " ~a~%" (render-time))
 		      "")))))))
+
+(defun make-ordinal-suffix (n)
+  (let ((ordinal-suffix (cond ((or (= (mod n 100) 11)
+                           (= (mod n 100) 12)
+                           (= (mod n 100) 13))
+		       "th")
+                      ((= (mod n 10) 1) "st")
+                      ((= (mod n 10) 2) "nd")
+                      ((= (mod n 10) 3) "rd")
+                      (t "th"))))
+    (format nil "~A~A" n ordinal-suffix)))

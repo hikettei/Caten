@@ -3,7 +3,7 @@
 ;; How randomness should be implemented under the nature of laziness:
 ;;   All computational nodes that exhibit random behavior must depend on `RandNode`.
 ;;   it implements PRNG Generator based on threefry2x32.
-;;   *rng-counter* and *manual-seed* should be depended upon commonly by all graphs.
+;;   *rng-counter* and *manual-seed* should commonly be relied upon by all graphs.
 ;; ~~ Configurations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *inference-mode* nil
   "

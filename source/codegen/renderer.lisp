@@ -241,11 +241,17 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (def :XOR " xor "))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :WMMA)) node)
-  (format nil "~a+~a*~a" (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node))) (render-node renderer (nth 2 (node-reads node)))))
+  (format nil "~a+~a*~a"
+	  (render-node renderer (nth 0 (node-reads node)))
+	  (render-node renderer (nth 1 (node-reads node)))
+	  (render-node renderer (nth 2 (node-reads node)))))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
-                (format nil "~a(~a, ~a)" ,op (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node)))))))
+                (format nil "~a(~a, ~a)"
+			,op
+			(render-node renderer (nth 0 (node-reads node)))
+			(render-node renderer (nth 1 (node-reads node)))))))
   (def :MAX "max"))
 
 (macrolet ((def (id op)
@@ -261,7 +267,10 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
-                (format nil "(~a~a~a)" (render-node renderer (nth 1 (node-reads node))) ,op (render-node renderer (nth 2 (node-reads node)))))))
+                (format nil "(~a~a~a)"
+			(render-node renderer (nth 1 (node-reads node)))
+			,op
+			(render-node renderer (nth 2 (node-reads node)))))))
   (def :!= "!=")
   (def :< "<"))
 
@@ -318,7 +327,10 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
-                (simplify-arithmetic-code (format nil "(~a~a~a)" (render-node renderer (nth 0 (node-reads node))) ,op (render-node renderer (nth 1 (node-reads node))))))))
+                (simplify-arithmetic-code (format nil "(~a~a~a)"
+						  (render-node renderer (nth 0 (node-reads node)))
+						  ,op
+						  (render-node renderer (nth 1 (node-reads node))))))))
   (def :ADD "+")
   (def :MUL "*")
   (def :MOD "%")
@@ -328,11 +340,17 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (def :XOR " ^ "))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :WMMA)) node)
-  (format nil "~a+~a*~a" (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node))) (render-node renderer (nth 2 (node-reads node)))))
+  (format nil "~a+~a*~a"
+	  (render-node renderer (nth 0 (node-reads node)))
+	  (render-node renderer (nth 1 (node-reads node)))
+	  (render-node renderer (nth 2 (node-reads node)))))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
-                (format nil "~a(~a, ~a)" ,op (render-node renderer (nth 0 (node-reads node))) (render-node renderer (nth 1 (node-reads node)))))))
+                (format nil "~a(~a, ~a)"
+			,op
+			(render-node renderer (nth 0 (node-reads node)))
+			(render-node renderer (nth 1 (node-reads node)))))))
   (def :MAX "max"))
 
 (macrolet ((def (id op)
@@ -353,7 +371,10 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer CStyle-Renderer) (id (eql ,id)) node)
-                (format nil "(~a~a~a)" (render-node renderer (nth 1 (node-reads node))) ,op (render-node renderer (nth 2 (node-reads node)))))))
+                (format nil "(~a~a~a)"
+			(render-node renderer (nth 1 (node-reads node)))
+			,op
+			(render-node renderer (nth 2 (node-reads node)))))))
   (def :!= "!=")
   (def :< "<"))
 

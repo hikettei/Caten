@@ -9,7 +9,9 @@
   (:import-from
    :caten/byoc/lisp
    #:LispBuffer))
+
 (in-package :caten/byoc/native)
+
 ;; Currently CI is failing due to following the two reason:
 ;; - wrap-around (which %threefry2x32 expects)
 ;; - (caten (make-tensor `(N) :INITIAL-ELEMENT 'N)) fails (while the one is defined as N another is defined as |n|)
