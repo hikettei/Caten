@@ -10,6 +10,7 @@
 ;; - [ ] (with-no-grad (caten (!copy (caten/apis::!window (!padding (ax+b `(10 3 21 21) 1 0) `((0 0) (0 0) (2 2) (2 2))) `(1 1 5 5))))
 ;; - [ ] ;; Padded ConvND=1Kernel
 ;; - [ ] Move to caten/nn and implement as fold/unfold?
+;; (with-no-grad (caten (caten/nn::!unfold (!padding2d (make-tensor `(10 3 23 23)) `(1 1 1 1)) `(5 5))))
 (defun compute-filter-size (in dilation kernel stride &key (ceiling #'ceiling))
    (funcall ceiling (/ (- in (* dilation (- kernel 1))) stride)))
 
@@ -70,16 +71,19 @@
                   (loop repeat n collect nil) stride :id (gensym "UNFOLD")))))))
 
 (defun !unfold (x kernel-size &key (dilation 1) (stride 1) (ceiling #'ceiling))
-  "Unfold
+  "
+Extracts sliding local blocks from a batched input tensor.
+
 ```
 (!unfold x kernel-size &key (dilation 1) (stride 1) (ceiling #'ceiling))
 ```
-Note: this function has two implementation ...
+
+Note: this function has two implementations depending on whether the gradients are required or not. With *no-grad*=T, the function will use `Unfold` which is not differentiable but faster. Otherwise, it will use `_pool` which is differentiable but requires extra copying.
 "
   (declare (type tensor x) (type list kernel-size))
   (let ((dilation (maybe-list dilation kernel-size))
         (stride (maybe-list stride kernel-size)))
-    ;; [todo] assert for c h w is static
+    (assert (every #'numberp (slice (shape x) (- (length kernel-size)))) () "!unfold: the shape intersecting with kernel_size must be static, getting ~a with kernel-size=~a" (shape x) kernel-size)
     ;; Note: !unfold is not differentiable so we are going to use an alternative implementation.
     (when (null caten/apis::*no-grad*)
       (return-from !unfold (_pool x kernel-size stride dilation :ceiling ceiling)))
@@ -87,10 +91,3 @@ Note: this function has two implementation ...
       (setf (tensor-variables out) (unfold-args (tensor-op out))
             (func-variables (tensor-op out)) (unfold-args (tensor-op out)))
       out)))
-;; [todo] clean up
-(defun pool-out ()
-  (caten (!copy (_pool (ax+b `(10) 1 0) `(5) 1 1))))
-;; (with-no-grad
-;;   (caten (caten/nn::!unfold (!padding2d (make-tensor `(10 3 23 23)) `(1 1 1 1)) `(5 5))))
-(defun unfold-out ()
-  (caten (!copy (!unfold (ax+b `(10) 1 0) `(5)))))
