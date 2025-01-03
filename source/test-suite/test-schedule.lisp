@@ -81,44 +81,44 @@
   "Embedding is a single kernel"
   (with-no-grad (caten (call (Embedding 10 10) (make-tensor `(b c))))))
 
-(define-kernel-count-test conv-schedule 2
-  "ConvND = 2 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test conv-schedule 1
+  "ConvND = 1 Kernel"
   (with-no-grad (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25))))))
 
-(define-kernel-count-test conv-relu-schedule 2
-  "ConvND+ReLU = 2 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test conv-relu-schedule 1
+  "ConvND+ReLU = 1 Kernel"
   (with-no-grad (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
 
-(define-kernel-count-test conv-gelu-schedule 2
-  "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test conv-gelu-schedule 1
+  "ConvND+GeLU = 1 Kernel"
   (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
 
-(define-kernel-count-test conv-padded-schedule 3
-  "ConvND with padded will create no extra kernel. (TODO: 1 Kernel)"
+(define-kernel-count-test conv-padded-schedule 2
+  "ConvND with padded will create no extra kernel. (TODO: 2 -> 1 Kernel)"
   (with-no-grad (caten (!gelu (!convnd (make-tensor `(10 3 25 25)) (make-tensor `(6 3 5 5)) :bias (make-tensor `(6)) :stride 1 :padding 2 :dilation 1 :groups 1)))))
 
-(define-kernel-count-test symbolic-conv-schedule 2
-  "ConvND = 2 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test symbolic-conv-schedule 1
+  "ConvND = 1 Kernel"
   (with-no-grad (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(b 3 25 25))))))
 
-(define-kernel-count-test symbolic-conv-relu-schedule 2
-  "ConvND+ReLU = 2 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test symbolic-conv-relu-schedule 1
+  "ConvND+ReLU = 1 Kernel"
   (with-no-grad (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(b 3 25 25)))))))
 
-(define-kernel-count-test symbolic-conv-gelu-schedule 2
-  "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test symbolic-conv-gelu-schedule 1
+  "ConvND+GeLU = 1 Kernel"
   (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(b 3 25 25)))))))
 
-(define-kernel-count-test singleconv-schedule 2
-  "ConvND = 2 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test singleconv-schedule 1
+  "ConvND = 1 Kernel"
   (with-no-grad (caten (forward (ConvND 3 6 `(5 5)) (make-tensor `(1 3 25 25))))))
 
-(define-kernel-count-test single-conv-relu-schedule 2
-  "ConvND+ReLU = 2 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test single-conv-relu-schedule 1
+  "ConvND+ReLU = 1 Kernel"
   (with-no-grad (caten (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(1 3 25 25)))))))
 
-(define-kernel-count-test single-conv-gelu-schedule 2
-  "ConvND+GeLU = 2 Kernels (TODO: 1 Kernels)"
+(define-kernel-count-test single-conv-gelu-schedule 1
+  "ConvND+GeLU = 1 Kernel"
   (with-no-grad (caten (!gelu (forward (ConvND 3 6 `(5 5)) (make-tensor `(1 3 25 25)))))))
 
 (define-kernel-count-test tril-triu-matmul 4

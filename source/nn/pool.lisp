@@ -1,5 +1,6 @@
 (in-package :caten/nn)
 ;; Ref: https://github.com/tinygrad/tinygrad/blob/master/tinygrad/tensor.py#L1672
+;; TODO: Remove _pool once our unfold become differentiable (unfold is much faster)
 (defun _pool (x k_ stride dilation &key (ceiling #'ceiling))
   (declare (type Tensor x))
   (assert (>= (ndim x) (length k_)))
@@ -39,7 +40,7 @@
   (declare (type Tensor x) (type function f))
   (let* ((k_ (if (integerp kernel-size) (list kernel-size kernel-size) kernel-size))
          (x (!padding2d x (padding2d-shape padding (length k_)) :value pad-value))
-         (x (_pool x k_ (or stride k_) dilation :ceiling ceiling))
+         (x (!unfold x k_ :stride (or stride k_) :dilation dilation :ceiling ceiling))
          (axis (map 'list #'- (range 1 (1+ (length k_)))))
          (reduced-shape (butlast (shape x) (length k_))))
     (!reshape (funcall f x :axis axis) reduced-shape)))

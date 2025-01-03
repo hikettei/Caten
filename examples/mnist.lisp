@@ -3,9 +3,16 @@
 ;;;; If you are using Emacs/Lem, you can simply press `C-C C-c` while your cursor is hovering over an expression
 
 ;; A end-to-end MNIST Example
-(ql:quickload '(:caten :numpy-file-format))
+
+(unless (find-package :caten)
+  (ql:quickload :caten))
+
+(unless (find-package :numpy-file-format)
+  (ql:quickload :numpy-file-format))
+
 (defpackage :mnist-example
   (:use :cl :caten :caten/nn :numpy-file-format))
+
 (in-package :mnist-example)
 ;; Note: we have created a dataset from the MNIST using the following scripts:
 ;; - ./mnist_data/train_data.py

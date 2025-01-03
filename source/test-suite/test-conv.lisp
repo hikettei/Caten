@@ -143,4 +143,15 @@
                 (->caten (f:relu (f:conv2d input weight :bias bias :stride 2 :padding 0 :dilation 1 :groups 1))))
               (proceed (!relu (!convnd input weight :bias bias :stride 2 :padding 0 :dilation 1 :groups 1)))))))))
 
-;; Conv Schedule Test [TODO: Single Kernel]
+(deftest test-convnd-dilation
+  (testing "ConvND([10, 3, 25, 25], in_channel=3, out_channel=6, kernel_size=[5, 5], padding=1, groups=1, stride=2, dilation=2)"
+    (with-given-dtype ((:float32 . "float32"))
+      (with-no-grad
+        (let ((input (rand `(10 3 25 25)))
+              (weight (rand `(6 3 5 5)))
+              (bias (rand `(6))))
+          (assert-equal
+              (:atol 1e-4 :rtol 1e-4)
+              (with-torch (input weight bias)
+                (->caten (f:relu (f:conv2d input weight :bias bias :stride 2 :padding 0 :dilation 2 :groups 1))))
+              (proceed (!relu (!convnd input weight :bias bias :stride 2 :padding 0 :dilation 2 :groups 1)))))))))

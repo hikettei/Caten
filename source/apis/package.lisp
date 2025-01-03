@@ -27,6 +27,7 @@
    #:tensor-graph
    #:tensor-lowered-graph
    #:fconst #:uconst #:iconst
+   #:->iconst #:->fconst #:->uconst
    
    #:Tensor
    #:tensor-p

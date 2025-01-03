@@ -816,4 +816,3 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, it wi
 "
   (let ((ndim (->iconst ndim)) (axis (->iconst axis)))
     (!where (!< axis (iconst 0)) (!add axis ndim) axis)))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

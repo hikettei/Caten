@@ -60,4 +60,16 @@
             (with-torch (input)
               (->caten (f:max_pool2d input `(4 4) :stride 2)))
             (proceed (!maxpool input :kernel-size `(4 4) :stride 2)))))))
+#|
+;; KernelSize == HW is failing?...
+(deftest test-avg-pool-fail
+  (with-given-dtype ((:float32 . "float32"))
+    (with-no-grad
+      (let ((input (rand `(1 512 7 7))))
+        (assert-equal
+            (:atol 1e-5 :rtol 1e-5)
+            (with-torch (input)
+              (->caten (f:max_pool2d input `(7 7) :stride 7 :dilation 1)))
+        (proceed (!maxpool input :kernel-size `(7 7) :stride 7 :dilation 1)))))))
+|#
 ;; [TODO] Scheduling Test: Max/Avg Pooling should be a single kernel
