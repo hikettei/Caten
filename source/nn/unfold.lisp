@@ -81,8 +81,7 @@ Note: this function has two implementations depending on whether the gradients a
         (stride (maybe-list stride kernel-size)))
     (assert (every #'numberp (slice (shape x) (- (length kernel-size)))) () "!unfold: the shape intersecting with kernel_size must be static, getting ~a with kernel-size=~a" (shape x) kernel-size)
     ;; Note: !unfold is not differentiable so we are going to use an alternative implementation.
-    ;; Note: KernelSize == HW fails with JIT=1
-    (when (or (null caten/apis::*no-grad*) (equal kernel-size (slice (shape x) (- (length kernel-size)))))
+    (when (null caten/apis::*no-grad*)
       (return-from !unfold (_pool x kernel-size stride dilation :ceiling ceiling)))
     (let ((out (forward (make-instance 'Unfold :kernel-size kernel-size :dilation dilation :strides stride :ceiling ceiling) (!contiguous x))))
       (setf (tensor-variables out) (unfold-args (tensor-op out))
