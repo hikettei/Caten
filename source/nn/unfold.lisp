@@ -1,16 +1,12 @@
 (in-package :caten/nn)
-;; ~~~~~ Movements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; - [ ] Rolling -> Unfold
-;;   - [ ] Make it differentiable
-;;   - [ ] Padding
-;;   - [ ] Group
-;;   - [ ] Dilation
-;;   - [ ] Stride
-;; - [ ] Export
-;; - [ ] (with-no-grad (caten (!copy (caten/apis::!window (!padding (ax+b `(10 3 21 21) 1 0) `((0 0) (0 0) (2 2) (2 2))) `(1 1 5 5))))
-;; - [ ] ;; Padded ConvND=1Kernel
-;; - [ ] Move to caten/nn and implement as fold/unfold?
-;; (with-no-grad (caten (caten/nn::!unfold (!padding2d (make-tensor `(10 3 23 23)) `(1 1 1 1)) `(5 5))))
+;; [TODO]
+;; - [ ] Make Unfold differentiable (currently it uses _pool as an alternative)
+;; - [ ] Fuse Padding+Unfold with JIT
+;;   - Repro:
+;;    ```
+;;    (with-no-grad (caten (!copy (caten/nn::!unfold (!padding2d (make-tensor `(10 3 23 23)) `(1 1 1 1)) `(5 5)))))
+;;    ```
+;;   - something related to shape comparison during caten/codegen should be the cause of the issue.
 (defun compute-filter-size (in dilation kernel stride &key (ceiling #'ceiling))
    (funcall ceiling (/ (- in (* dilation (- kernel 1))) stride)))
 
