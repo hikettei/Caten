@@ -817,18 +817,19 @@ Creates a tensor graph which normalizes the axis. If the axis is negative, it wi
   (let ((ndim (->iconst ndim)) (axis (->iconst axis)))
     (!where (!< axis (iconst 0)) (!add axis ndim) axis)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; - [ ] Make it differentiable?
+;; - [ ] Support Padding/Group inside rolling?
+;; - [ ] Rename Rolling -> Unfold?
+;; - [ ] Export
 (defclass Rolling (Func)
   ((window-shape :initarg :window-shape :accessor rolling-window-shape)
    (args :accessor rolling-args)))
 (defmethod rolling-shape ((op Rolling) shape window-shape)
   (assert (= (length shape) (length window-shape)))
-  (map
-   'list
-   #'->iconst
-   (append
-    (loop for s in shape for w in window-shape
-          collect (!add (!- (->iconst s) (->iconst w)) (iconst 1)))
-    window-shape)))
+  (append
+   (loop for s in shape for w in window-shape
+         collect (!add (!- (->iconst s) (->iconst w)) (iconst 1)))
+   (map 'list #'->iconst window-shape)))
 (defmethod rolling-stride ((op Rolling) stride) (map 'list #'->iconst (append stride stride)))
 (defmethod forward ((op Rolling) &rest tensors)
   (assert (= 1 (length tensors)))
