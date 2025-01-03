@@ -83,7 +83,7 @@ Note: this function has two implementations depending on whether the gradients a
     ;; Note: !unfold is not differentiable so we are going to use an alternative implementation.
     (when (null caten/apis::*no-grad*)
       (return-from !unfold (_pool x kernel-size stride dilation :ceiling ceiling)))
-    (let ((out (forward (make-instance 'UnFold :kernel-size kernel-size :dilation dilation :strides stride :ceiling ceiling) (!contiguous x))))
+    (let ((out (forward (make-instance 'Unfold :kernel-size kernel-size :dilation dilation :strides stride :ceiling ceiling) (!contiguous x))))
       (setf (tensor-variables out) (unfold-args (tensor-op out))
             (func-variables (tensor-op out)) (unfold-args (tensor-op out)))
       out)))

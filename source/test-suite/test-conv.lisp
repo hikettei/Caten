@@ -155,5 +155,3 @@
               (with-torch (input weight bias)
                 (->caten (f:relu (f:conv2d input weight :bias bias :stride 2 :padding 0 :dilation 2 :groups 1))))
               (proceed (!relu (!convnd input weight :bias bias :stride 2 :padding 0 :dilation 2 :groups 1)))))))))
-
-;; Conv Schedule Test [TODO: Single Kernel]
