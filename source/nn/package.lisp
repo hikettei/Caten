@@ -123,7 +123,7 @@ Policy:
 
 (in-package :caten/nn)
 
-(defmacro slice (list upfrom &optional (below (length list)) (by 1))
+(defmacro slice (list upfrom &optional (below `(length ,list)) (by 1))
   (with-gensyms (upfrom1 below1)
     `(let* ((redirect (signum ,by))
 	    (,upfrom1 (if (>= ,upfrom 0) ,upfrom (+ (length ,list) ,upfrom)))
