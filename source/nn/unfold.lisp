@@ -13,21 +13,29 @@
   ((kernel-size :initarg :kernel-size :accessor unfold-kernel-size)
    (strides :initarg :strides :accessor unfold-strides)
    (dilation :initarg :dilation :accessor unfold-dilation)
+   (ceiling :initarg :ceiling :accessor unfold-ceiling)
    (args :accessor unfold-args)))
 
 (defmethod unfold-shape ((op Unfold) shape window-shape)
-  (append
-   (map 'list #'->iconst (slice shape 0 (- (length window-shape))))
-   (loop for s in (slice shape (- (length window-shape))) for w in window-shape
-         collect (!add (!- (->iconst s) (->iconst w)) (iconst 1)))
-   (map 'list #'->iconst window-shape)))
+  (with-slots ((ceiling ceiling) (strides strides) (dilation dilation)) op
+    (append
+     (map 'list #'->iconst (slice shape 0 (- (length window-shape))))
+     (loop for s in (slice shape (- (length window-shape)))
+           for w in window-shape
+           for d in dilation
+           for stride in strides
+           collect (->iconst (conv-out-size s 0 d w stride :ceiling ceiling)))
+     (map 'list #'->iconst window-shape))))
 
 (defmethod unfold-stride ((op Unfold) stride)
-  (let ((n (length (unfold-kernel-size op))))
-    (append
-     (map 'list #'->iconst (slice stride 0 (- n)))
-     (map 'list #'->iconst (slice stride (- n)))
-     (map 'list #'->iconst (slice stride (- n))))))
+  (with-slots ((ceiling ceiling) (strides strides) (dilation dilation)) op
+    (let ((n (length (unfold-kernel-size op))))
+      (append
+       (map 'list #'->iconst (slice stride 0 (- n)))
+       (loop for s1 in (slice stride (- n)) for s2 in strides
+             collect (!mul (->iconst s1) (->iconst s2)))
+       (loop for s1 in (slice stride (- n)) for s2 in dilation
+             collect (!mul (->iconst s1) (->iconst s2)))))))
 
 (defmethod forward ((op Unfold) &rest tensors)
   (assert (= 1 (length tensors)))
@@ -47,32 +55,37 @@
 (defmethod lower ((op Unfold) &rest inputs)
   ;; Inputs: (tensor *shape *stride)
   (let ((n (+ (ndim (car (func-variables op))) (length (unfold-kernel-size op)))))
-    (with-slots ((kernel-size kernel-size) (strides strides) (dilation dilation) (args args)) op
-      (multiple-value-bind (op shape stride)
-          (values (car inputs) (subseq inputs 1 (1+ n)) (subseq inputs (1+ n)))
-        (assert (= (length shape) (length stride) n))
-        (with-context
-            (out
-             (%view op shape
-                    (loop repeat n collect (%iconst 0))
-                    shape (loop repeat n collect (%iconst 1))
-                    (loop repeat n collect nil) stride :id (gensym "UNFOLD"))))))))
+    (multiple-value-bind (op shape stride)
+        (values (car inputs) (subseq inputs 1 (1+ n)) (subseq inputs (1+ n)))
+      (assert (= (length shape) (length stride) n))
+      (with-context
+          (out
+           (%view op shape
+                  (loop repeat n collect (%iconst 0))
+                  shape (loop repeat n collect (%iconst 1))
+                  (loop repeat n collect nil) stride :id (gensym "UNFOLD")))))))
 ;; kernel-size stride dilationがあればOK
-(defun !unfold (x kernel-size &key (dilation 1) (stride 1))
+;; [TODO] Fuse with Padding2D,
+;; Padded ConvND=1Kernel
+(defun !unfold (x kernel-size &key (dilation 1) (stride 1) (ceiling #'ceiling))
+  "Unfold
+```
+(!unfold x kernel-size &key (dilation 1) (stride 1) (ceiling #'ceiling))
+```
+Note: this function has two implementation ...
+"
   (declare (type tensor x) (type list kernel-size))
-  ;; TODO: call _pool if *no-grad* is not T
-  ;; TODO: Fusable with padding2d
-  (let ((out (forward
-              (make-instance
-               'Unfold
-               :kernel-size kernel-size
-               :dilation (maybe-list dilation kernel-size)
-               :strides (maybe-list stride kernel-size))
-              (!contiguous x))))
-    (setf (tensor-variables out) (unfold-args (tensor-op out))
-          (func-variables (tensor-op out)) (unfold-args (tensor-op out)))
-    out))
-
+  (let ((dilation (maybe-list dilation kernel-size))
+        (stride (maybe-list stride kernel-size)))
+    ;; [todo] assert for c h w is static
+    ;; Note: !unfold is not differentiable so we are going to use an alternative implementation.
+    (when (null caten/apis::*no-grad*)
+      (return-from !unfold (_pool x kernel-size stride dilation :ceiling ceiling)))
+    (let ((out (forward (make-instance 'UnFold :kernel-size kernel-size :dilation dilation :strides stride :ceiling ceiling) (!contiguous x))))
+      (setf (tensor-variables out) (unfold-args (tensor-op out))
+            (func-variables (tensor-op out)) (unfold-args (tensor-op out)))
+      out)))
+;; [todo] clean up
 (defun pool-out ()
   (caten (!copy (_pool (ax+b `(10) 1 0) `(5) 1 1))))
 ;; (with-no-grad
