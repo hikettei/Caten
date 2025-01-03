@@ -124,6 +124,13 @@
         (z (render-node renderer (nth 2 (node-reads node)))))
     `(+ ,x (* ,y ,z))))
 
+(defun extract-scop-from-loop (for)
+  (declare (type node for))
+  (assert (eql (node-type for) :FOR))
+  (let ((below (expr-detach-loop-bound (getattr for :below) :allow-failed t)))
+    (when (and below (expr-equal-to (getattr for :upfrom) 0) (expr-equal-to (getattr for :by) 1))
+      below)))
+
 (defun recursive-render-bp (rest-blueprints)
   (let ((bp (car rest-blueprints)))
     (when (null bp) (return-from recursive-render-bp nil))
@@ -131,16 +138,20 @@
       (:FOR
        (let* ((endfor (position-if #'(lambda (x) (and (eql (node-type x) :ENDFOR) (equal (getattr x :idx) (getattr bp :idx)))) rest-blueprints)))
          (assert endfor () "recursive-render-bp: :FOR without :ENDFOR is not allowed. Malformed blueprint?")
-         (when (eql (getattr bp :scope) :global)
-           (warn "LispStyle-Renderer: global loop is not supported yet."))
-         ;; [TODO] Simplify the loop code and to use lparallel
-         ;; [TODO] There is useful macro from scop
-         `(progn
-            (loop with ,(intern (getattr bp :idx)) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
-                  while ,(render-expr 'LispStyle-Renderer (getattr bp :below))
-                  do ,(recursive-render-bp (subseq rest-blueprints 1 endfor))
-                     (incf ,(intern (getattr bp :idx)) ,(render-expr 'LispStyle-Renderer (getattr bp :by))))
-            ,(recursive-render-bp (subseq rest-blueprints (1+ endfor))))))
+         (let ((below (extract-scop-from-loop bp)))
+           (if below
+               `(progn
+                  (,(if (eql (getattr bp :scope) :local) 'dotimes 'lparallel:pdotimes) (,(intern (getattr bp :idx)) ,(render-expr 'LispStyle-Renderer below))
+                    ,(recursive-render-bp (subseq rest-blueprints 1 endfor)))
+                  ,(recursive-render-bp (subseq rest-blueprints (1+ endfor))))
+               (progn
+                 (when (eql (getattr bp :scope) :global) (warn "recursive-render-bp: The node ~a is scheduled as global but the upfrom/below/by is too complicated to handle.~%Thus this loop is not parallelized." bp))
+                 `(progn
+                    (loop with ,(intern (getattr bp :idx)) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
+                          while ,(render-expr 'LispStyle-Renderer (getattr bp :below))
+                          do ,(recursive-render-bp (subseq rest-blueprints 1 endfor))
+                             (incf ,(intern (getattr bp :idx)) ,(render-expr 'LispStyle-Renderer (getattr bp :by))))
+                    ,(recursive-render-bp (subseq rest-blueprints (1+ endfor)))))))))
       (:ENDFOR
        (error ":ENDFOR should not be appeared here. Malformed blueprint?"))
       (:IF

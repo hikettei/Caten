@@ -11,7 +11,8 @@
    #:poly-domain
    #:poly-dependencies
    #:map-schedule-nodes
-   #:->ast))
+   #:->ast
+   #:partial-schedule-node-id))
 
 (in-package :caten/codegen/polyhedral)
 
@@ -188,3 +189,11 @@ This function returns a list of the results of applying f to each node. NIL is e
          (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
+
+(defun partial-schedule-node-id (mupa)
+  "Extracts NID6722 (node-id) from mupa: [{ NID6772[_gid0] -> [(_gid0)] }].
+(TODO: Find a way to do this without using print object)"
+  (let ((id (isl::%isl-multi-union-pw-aff-to-str (isl::multi-union-pw-aff-handle mupa))))
+    (when (<= (length id) 3) (error "Invaild mupa ~a" mupa))
+    (let ((id (subseq id 3)))
+      (subseq id 0 (position #\[ id)))))

@@ -26,6 +26,8 @@
    (:file "auto-scheduler/ast-parser")
    (:file "auto-scheduler/scop")
    (:file "auto-scheduler/config")
+   (:file "search/engine")
+   (:file "search/sketch")
    (:file "auto-scheduler/auto-scheduler")
    (:file "jit")
    (:file "runner")

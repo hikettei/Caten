@@ -64,7 +64,7 @@ Returns T if the current schedule does not break any dependences in dep."
   (declare (type Polyhedral-IR poly))
   (loop for bands = (get-coincident-points poly)
         while bands do
-          (when (> c level) (return-from apply-parallel))
+          (when (>= c level) (return-from apply-parallel))
           (incf c)
           (setf (poly-schedule poly) (isl:schedule-node-get-schedule (insert-parallel (car (get-coincident-points poly)))))))
 

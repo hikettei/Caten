@@ -3,7 +3,7 @@
   (:import-from
    :caten/codegen/tiling
    #:tiling-sizes)
-  (:export #:apply-packed-funcall #:apply-unroll #:mark-unroll-p #:make-unroll #:parse-unroll-directive #:mark-unroll-body-p #:mark-unroll-parent-p))
+  (:export #:apply-packed-funcall #:apply-unroll #:mark-unroll-p #:make-unroll #:parse-unroll-directive #:mark-unroll-body-p #:mark-unroll-parent-p #:get-packable-band))
 
 (in-package :caten/codegen/unroll)
 
@@ -36,21 +36,19 @@
          (tiled-schedule (isl::schedule-node-insert-mark (isl::schedule-node-get-child tiled-schedule 0) (isl::make-id-from-str inner-directive))))
     (isl:schedule-node-get-schedule tiled-schedule)))
 
-(defun get-packable-bands (si directive-p)
-  (declare (type function directive-p))
+(defun get-packable-band (node-id si directive-p)
+  (declare (type function directive-p) (type string node-id))
   (map-schedule-nodes
    #'(lambda (type node mark)
-       (when (and (eql type :schedule-node-band) (or (null mark) (not (funcall directive-p (princ-to-string mark)))))
-         node))
-   si))
-
-(defun schedule-apply-schedule-option (si n-unroll parent-directive inner-directive directive-p)
-  (declare (type Polyhedral-IR si))
-  (loop for bands = (get-packable-bands si directive-p)
-        while bands do
-          (setf (poly-schedule si) (schedule-node-band-apply-unroll (car bands) parent-directive inner-directive n-unroll))))
+       (when (and
+              (eql type :schedule-node-band)
+              (or (null mark) (not (funcall directive-p (princ-to-string mark))))
+              (equalp node-id (partial-schedule-node-id (isl:schedule-node-band-get-partial-schedule node))))
+         (return-from get-packable-band node)))
+   si)
+  nil)
 ;; Generic Implementation which can be applied for UNROLL, VECTORIZE
-(defun apply-packed-funcall (schedule-node unroll-by parent-directive inner-directive directive-p)
+(defun apply-packed-funcall (schedule-node n-unroll node-id parent-directive inner-directive directive-p)
   "Groups the iteration into several packed-funcall. Packed-Funcall can be also transformed into Unrolling, or Vectorizing.
 For example, the following code:
 ```
@@ -82,10 +80,12 @@ for (int i=a - (mod a UNROLL_BY); i<a; i+=1) {
 }
 ```
 "
-  (declare (type node schedule-node) (type integer unroll-by) (type string inner-directive) (type function directive-p))
+  (declare (type node schedule-node) (type integer n-unroll) (type string inner-directive) (type function directive-p) (type string node-id))
   (assert (and (funcall directive-p parent-directive) (funcall directive-p inner-directive)) () "directive-p should detect both parent and inner directive")
-  (schedule-apply-schedule-option (getattr schedule-node :polyhedral) unroll-by parent-directive inner-directive directive-p))
+  (let* ((si (getattr schedule-node :polyhedral))
+         (band (get-packable-band node-id si directive-p)))
+    (setf (poly-schedule si) (schedule-node-band-apply-unroll band parent-directive inner-directive n-unroll))))
 
-(defun apply-unroll (schedule-node unroll-by)
+(defun apply-unroll (schedule-node unroll-by node-id)
   (declare (type node schedule-node) (type integer unroll-by))
-  (apply-packed-funcall schedule-node unroll-by (make-unroll "UNROLL_PARENT" unroll-by) (make-unroll "UNROLL_BODY" unroll-by) #'mark-unroll-p))
+  (apply-packed-funcall schedule-node unroll-by node-id (make-unroll "UNROLL_PARENT" unroll-by) (make-unroll "UNROLL_BODY" unroll-by) #'mark-unroll-p))
