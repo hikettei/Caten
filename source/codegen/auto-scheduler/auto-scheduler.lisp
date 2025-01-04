@@ -27,6 +27,7 @@
 ;; - [ ] Loop Tilingした後にInterchangeができるようにScheduleする
 ;; - [ ]  TODO: Cache the result from OPTIMIZE=2
 ;; - [ ] ParallelLevel: ignore the count from visible-p=NIL
+;; - [ ] Unroll_BODY without Unroll_PARENT -> Unroll away BODY
 ;; ~~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Opt () ((id :initarg :id :initform nil :accessor opt-id) (amount :initarg :amount :initform nil :accessor opt-amount)))
 (defgeneric apply-opt (opt schedule-node item config) (:documentation "Returns a new isl:schedule-node with current optimization was applied."))
@@ -124,7 +125,11 @@ for (int i=0; i<10; i+=amount) {
   (dolist (tile-size (auto-scheduler-tile-sizes config))
     (push (make-instance 'TileBand :amount tile-size) actions))
   ;; Pack(Vectorize)
+  ;; [TODO] Feed the simd width by auto scheduler config
+  (dolist (width `(4 8)) (push (make-instance 'Packing :amount width) actions))
   ;; Unroll
+  ;; [TODO] Unroll_Limit=16?
+  (push (make-instance 'Unroll :amount 16) actions)
   actions)
 ;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
 (defmethod optimize-band ((auto-scheduler AutoScheduler) schedule-node-band item)
