@@ -159,12 +159,10 @@ for (int i=0; i<10; i+=amount) {
 ;; [TODO] Cache or Trainingするために，Outputはsequence of Opt, Cacheできるようなデータ構造にする
 (defmethod minimize-cost ((auto-scheduler AutoScheduler) item)
   (declare (optimize (speed 3)))
-  (labels ((optimize-children (node &key (return-ancestor-p t) (directives nil))
+  (labels ((optimize-children (node &key (return-ancestor-p t))
+             (when (eql (isl:schedule-node-get-type node) :schedule-node-filter)
+               (return-from optimize-children node))
              (setf node (optimize-band auto-scheduler node item))
-             (when (eql (isl:schedule-node-get-type node) :schedule-node-mark)
-               (push
-                (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::identifier-handle (isl:schedule-node-mark-get-id node)))))
-                directives))
              (let ((n-children (the fixnum (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))))
                (dotimes (nth n-children) (setf node (optimize-children (isl:schedule-node-get-child node nth))))
                (if return-ancestor-p

@@ -133,7 +133,8 @@ Returns T if the current schedule does not break any dependences in dep."
          (tiled-schedule (schedule-node-get-child tiled-schedule 0))
          (tiled-schedule (schedule-node-band-tile tiled-schedule (tiling-sizes band :size-default amount)))
          (tiled-schedule (schedule-node-insert-mark (schedule-node-get-child tiled-schedule 0) (directive->id directive-child))))
-    tiled-schedule))
+    ;; Do not reschedule mark/tiled band
+    (schedule-node-get-child (schedule-node-get-child tiled-schedule 0) 0)))
 
 (defun apply-tile (band tile-size)
   (declare (type isl::schedule-node band) (type fixnum tile-size))
