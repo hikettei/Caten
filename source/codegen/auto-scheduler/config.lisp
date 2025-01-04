@@ -5,7 +5,7 @@
    #:define-auto-scheduler
    #:auto-scheduler-n-global-loops
    #:auto-scheduler-tile-size))
-   
+
 (in-package :caten/codegen/config)
 
 (defclass Auto-Scheduler-Config ()

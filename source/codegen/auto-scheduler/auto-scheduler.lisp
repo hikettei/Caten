@@ -37,20 +37,42 @@
   
   )
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun beam (schedule-node)
-  (declare (type isl:schedule-node-domain schedule-node)
-           (optimize (speed 3)))
-  (let ((best-schedule schedule-node))
-    
-    (isl:schedule-node-get-schedule best-schedule)))
+(defclass AutoScheduler ()
+  ((best-schedule :initarg :schedule :type isl:schedule-node-domain :accessor autoscheduler-best-schedule)
+   (config :initarg :config :type Auto-Scheduler-Config :accessor autoscheduler-config)))
+
+(defgeneric cost (auto-scheduler schedule-nodes))
+
+(defmethod optimize-band ((auto-scheduler AutoScheduler) schedule-node-band)
+  "Applies all possible optimizations and returns the best one."
+  ;; Only interested in the schedule-node-band
+  (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
+    (return-from optimize-band schedule-node-band))
+  ;; 元の場所に対応する必要がある
+  ;; (print schedule-node-band)
+  schedule-node-band)
+
+(defmethod minimize-cost ((auto-scheduler AutoScheduler))
+  (declare (optimize (speed 3)))
+  (labels ((optimize-children (node &key (return-ancestor-p t))
+             (setf node (optimize-band auto-scheduler node))
+             (let ((n-children (the fixnum (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))))
+               (dotimes (nth n-children) (setf node (optimize-children (isl:schedule-node-get-child node nth))))
+               (if return-ancestor-p
+                   (isl:schedule-node-get-ancestor node 1)
+                   node))))
+    (optimize-children (autoscheduler-best-schedule auto-scheduler) :return-ancestor-p nil)))
 
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
   (symbol-macrolet ((OPTIMIZE (the (integer 0 2) (ctx:getenv :OPTIMIZE))))
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
-    ;; generating sketch
-    (when (>= OPTIMIZE 2)
-      (beam (isl:schedule-get-root (poly-schedule (getattr node :polyhedral)))))
+    ;; どっちもBEAM Search but...
+    ;; OPTIMIZE=1 : Parallel, Unroll, Vectorizeなど，ルールと優先度から
+    ;; OPTIMIZE=2 : PROFILINGする，その代わりthreadbarrierなどを使える
+    (when (>= OPTIMIZE 1)
+      (let ((auto-scheduler (make-instance 'AutoScheduler :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler)))
+        (minimize-cost auto-scheduler)))
     ;; [TODO] Final BEAM Search for local/global size, or tiling size.
     ;; Load blueprint from optimized polyhedral IR
     (setf (getattr node :blueprint) (caten/codegen/ast-parser:lower-into-bp-from-polyhedral (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank)) node))))
