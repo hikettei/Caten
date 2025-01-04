@@ -5,7 +5,8 @@
     #:auto-schedule
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
     #:AutoScheduler #:autoscheduler-best-schedule #:autoscheduler-config
-    #:get-possible-opts))
+    #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing
+    #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs))
 
 (in-package :caten/codegen/auto-scheduler)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -101,7 +102,7 @@ for (int i=0; i<10; i+=amount) {
   ((best-schedule :initarg :schedule :type isl:schedule-node-domain :accessor autoscheduler-best-schedule)
    (config :initarg :config :type Auto-Scheduler-Config :accessor autoscheduler-config)))
 
-(defgeneric compute-cost (auto-scheduler schedule-nodes) (:documentation "This method receives a list of candidate schedules, returning a same-lengthed list whose elements are type of float. (the higher the better)"))
+(defgeneric compute-costs (auto-scheduler schedule-nodes) (:documentation "This method receives a list of candidate schedules, returning a same-lengthed list whose elements are type of float. (the higher the better)"))
 
 (defmethod get-possible-opts ((auto-scheduler AutoScheduler) schedule-node-band config &aux (actions))
   "Returns a list of possible optimization candidates."
@@ -111,7 +112,7 @@ for (int i=0; i<10; i+=amount) {
           (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
     (dotimes (amount undernearth-band-count)
       (push (make-instance 'Interchange :amount amount) actions)))
-  ;; Parallel Directive
+  ;; Parallel Directive (Parallel or GLOBAL/LOCAL)
   (case (auto-scheduler-n-global-loops config)
     (0 nil)
     (1 (push (make-instance 'Parallel) actions))
@@ -122,6 +123,8 @@ for (int i=0; i<10; i+=amount) {
   ;; Tile
   (dolist (tile-size (auto-scheduler-tile-sizes config))
     (push (make-instance 'TileBand :amount tile-size) actions))
+  ;; Pack(Vectorize)
+  ;; Unroll
   actions)
 ;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
 (defmethod optimize-band ((auto-scheduler AutoScheduler) schedule-node-band item)
