@@ -1,7 +1,6 @@
 (defpackage :caten/codegen/directive
   (:documentation "Provides various hand-written blueprint rewriting rule for marks.")
-  (:use :cl :caten/codegen/expr :caten/codegen/polyhedral-ast :caten/codegen/unroll :caten/air
-        :caten/codegen/shape-inference)
+  (:use :cl :caten/codegen/expr :caten/codegen/polyhedral-ast :caten/air :caten/codegen/shape-inference)
   (:export
    #:make-unrolled-body
    #:compute-reminder-for-unroll

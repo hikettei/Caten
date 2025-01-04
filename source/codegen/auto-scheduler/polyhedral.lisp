@@ -11,7 +11,12 @@
    #:poly-domain
    #:poly-dependencies
    #:map-schedule-nodes
-   #:->ast))
+   #:->ast
+   #:partial-schedule-node-id
+   #:map-schedule-node-children
+   #:schedule-node-get-undernearth-bands
+   #:schedule-node-get-band-from-relative-idx
+   #:render-schedule-node))
 
 (in-package :caten/codegen/polyhedral)
 
@@ -167,6 +172,30 @@ This function returns a list of the results of applying f to each node. NIL is e
             (setf node (pop next-nodes)))
     (nreverse outputs)))
 
+(defun map-schedule-node-children (f schedule-node)
+  (declare (type function f) (type isl::schedule-node schedule-node))
+  (let* ((node schedule-node) (next-nodes) (outputs))
+    (loop named map-search
+          for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
+          while (>= n-children 0) do
+            (loop for nth upfrom 0 below n-children
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
+                  for band = (schedule-node-get-child node nth)
+                  for type = (schedule-node-get-type band) do
+                    (let ((out (funcall f type band mark))) (when out (push out outputs)))
+                    (push band next-nodes))
+            (when (= (length next-nodes) 0) (return-from map-search))
+            (setf node (pop next-nodes)))
+    (nreverse outputs)))
+
+(defun schedule-node-get-undernearth-bands (schedule-node)
+  (declare (type isl::schedule-node schedule-node))
+  (map-schedule-node-children #'(lambda (type band mark) (declare (ignore mark)) (when (eql type :schedule-node-band) band)) schedule-node))
+
+(defun schedule-node-get-band-from-relative-idx (schedule-node idx)
+  (declare (type isl::schedule-node schedule-node) (type fixnum idx))
+  (nth idx (schedule-node-get-undernearth-bands schedule-node)))
+
 (defun gid (n) (intern (format nil "_gid~a" n)))
 
 (defmethod ->ast ((poly Polyhedral-IR) rank)
@@ -188,3 +217,14 @@ This function returns a list of the results of applying f to each node. NIL is e
          (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
+
+(defun render-schedule-node (schedule-node)
+  (let* ((schedule (isl:copy schedule-node))
+         (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
+         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
+         (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule))
+         (p (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+         (p (isl::%isl-printer-set-output-format p 4))
+         (q (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast-build-node)))
+         (str (isl::%isl-printer-get-str q)))
+    str))

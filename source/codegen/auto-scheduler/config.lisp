@@ -4,13 +4,13 @@
    #:Auto-Scheduler-Config
    #:define-auto-scheduler
    #:auto-scheduler-n-global-loops
-   #:auto-scheduler-tile-size))
-   
+   #:auto-scheduler-tile-sizes))
+
 (in-package :caten/codegen/config)
 
 (defclass Auto-Scheduler-Config ()
   ((n-global-loops :type fixnum :accessor auto-scheduler-n-global-loops)
-   (auto-scheduler-tile-size :type fixnum :accessor auto-scheduler-tile-size))
+   (auto-scheduler-tile-sizes :type list :accessor auto-scheduler-tile-sizes))
   (:documentation ""))
 
 (defmethod print-object ((config Auto-Scheduler-Config) stream)
@@ -20,7 +20,7 @@
 (defmacro define-auto-scheduler ((name (&rest args))
                                  &key
                                    (n-global-loop 0)
-                                   (tile-size 0)
+                                   (tile-sizes nil)
                                    (documentation ""))
   "define-auto-scheduler"
   (let ((instance (gensym)))
@@ -28,9 +28,7 @@
        (defclass ,name (Auto-Scheduler-Config)
          nil
          (:documentation ,documentation))
-       (defun ,name (,@args)
-         (let ((,instance (make-instance ',name)))
-           (setf
-            (auto-scheduler-n-global-loops ,instance) ,n-global-loop
-            (auto-scheduler-tile-size ,instance) ,tile-size)
-           ,instance)))))
+       (defmethod initialize-instance :after ((,instance ,name) ,@(or args '(&key)))
+         (setf
+          (auto-scheduler-n-global-loops ,instance) ,n-global-loop
+          (auto-scheduler-tile-sizes ,instance) ,tile-sizes)))))

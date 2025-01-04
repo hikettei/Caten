@@ -367,6 +367,8 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-node-get-schedule-depth
+   #:schedule-node-get-ancestor
    #:schedule-node-band-set-ast-build-options
    #:schedule-node-delete
    #:schedule-node-mark-get-id

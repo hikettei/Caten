@@ -11,10 +11,10 @@
 
 (defclass ClangBuffer (LispBuffer) nil)
 (defclass ClangRuntime (GraphRuntime) nil)
-(define-auto-scheduler (Clang-Auto-Scheduler (&key (n-global-loop (1- (ctx:getenv :OMP)))))
+(define-auto-scheduler (Clang-Auto-Scheduler (&key (n-global-loop (ctx:getenv :OMP))))
                        ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
                        :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
-                       :tile-size 32) ;; [TODO] Autotuned
+                       :tile-sizes `(2 4 8 16 32))
 (define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer Clang-Auto-Scheduler t)
 
 (defvar *indent*)
