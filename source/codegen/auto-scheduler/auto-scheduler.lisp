@@ -120,6 +120,8 @@ for (int i=0; i<10; i+=amount) {
     (otherwise
      (warn "Currently Caten does not support n_global_loops=~a and thus the code is not parallelized." (auto-scheduler-n-global-loops config))))
   ;; Tile
+  (dolist (tile-size (auto-scheduler-tile-sizes config))
+    (push (make-instance 'TileBand :amount tile-size) actions))
   actions)
 ;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
 (defmethod optimize-band ((auto-scheduler AutoScheduler) schedule-node-band item)
