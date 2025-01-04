@@ -1,30 +1,8 @@
 (defpackage :caten/codegen/auto-scheduler
   (:use :cl :caten/air :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/config)
-  (:import-from
-   :caten/codegen/engine
-   #:Opt #:apply-opt #:opt-applicable-p)
   (:export #:auto-schedule))
 
 (in-package :caten/codegen/auto-scheduler)
-;; ~~~ Possible Optiimzations  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass OptTile (Opt) nil)
-(defmethod apply-opt ((opt OptTile) node-id si)
-  ;; [TODO] AutoTune the tiling size
-  (caten/codegen/tiling:apply-tile node-id (getattr si :polyhedral) 32))
-(defmethod opt-applicable-p ((opt OptTile) node-id si)
-  (caten/codegen/tiling:get-tileable-band (getattr si :polyhedral) node-id))
-
-(defclass OptUnroll (Opt) nil) ;; vertical unroll (used to remove away small :FOR)
-(defmethod apply-opt ((opt OptUnroll) node-id si)
-  ;; TODO:
-  ;; - [ ] Remove away small loops by adjusting the unroll factor
-  (caten/codegen/unroll:apply-unroll si 4 node-id))
-(defmethod opt-applicable-p ((opt OptUnroll) node-id si)
-  (caten/codegen/unroll:get-packable-band node-id (getattr si :polyhedral) #'caten/codegen/unroll:mark-unroll-p))
-
-(defclass OptPacking (Opt) nil) ;; horizontal unroll (used to float4 grouping, simd transformation, reduce, etc)
-(defclass OptInterchange (Opt) nil)
-(defclass OptGrouptop (Opt) nil) ;; Implement decent GPU Support First.
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Purpose: get a list of optimal scheduling commands
 ;; [TODO] JIT_DEBUG >= 2 to see optimized schedule sequence by BEAM (TODO: Searching method like tiramisu)
@@ -42,6 +20,7 @@
 ;; - [ ] Loop Tilingした後にInterchangeができるようにScheduleする
 ;; TODO: Cache the result from OPTIMIZE=2
 ;; BEAM Search: ISL Schedule Treeで実施する
+;; remove tiling, unroll
 (defun beam (schedule-node)
   
   )

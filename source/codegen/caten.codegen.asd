@@ -20,7 +20,6 @@
    (:file "auto-scheduler/polyhedral-ast")
    (:file "auto-scheduler/tiling")
    (:file "auto-scheduler/coincidence")
-   (:file "auto-scheduler/vectorize")
    (:file "auto-scheduler/unroll")
    (:file "auto-scheduler/directive")
    (:file "auto-scheduler/ast-parser")
