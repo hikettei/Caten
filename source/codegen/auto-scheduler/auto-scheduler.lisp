@@ -110,7 +110,7 @@ for (int i=0; i<10; i+=amount) {
 
 (defmethod get-possible-opts ((auto-scheduler AutoScheduler) schedule-node-band config &aux (actions))
   "Returns a list of possible optimization candidates."
-  ;(push (make-instance 'NoOpt) actions)
+  (push (make-instance 'NoOpt) actions)
   ;; Interchange
   (let ((undernearth-band-count
           (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
@@ -126,10 +126,10 @@ for (int i=0; i<10; i+=amount) {
     (otherwise
      (warn "Currently Caten does not support n_global_loops=~a and thus the code is not parallelized." (auto-scheduler-n-global-loops config))))
   ;; Tile
- ; (dolist (tile-size (auto-scheduler-tile-sizes config)) (push (make-instance 'TileBand :amount tile-size) actions))
+  (dolist (tile-size (auto-scheduler-tile-sizes config)) (push (make-instance 'TileBand :amount tile-size) actions))
   ;; Pack(Vectorize)
   ;; [TODO] Feed the simd width by auto scheduler config
- ; (dolist (width `(4 8)) (push (make-instance 'Packing :amount width) actions))
+  (dolist (width `(4 8)) (push (make-instance 'Packing :amount width) actions))
   ;; Unroll
   ;; [TODO] Unroll_Limit=16?
   (push (make-instance 'Unroll :amount 16) actions)
