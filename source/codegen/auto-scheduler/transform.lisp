@@ -163,7 +163,7 @@ Returns T if the current schedule does not break any dependences in dep."
          (node (schedule-node-insert-partial-schedule node mupa)))
     (declare (ignore _ __))
     (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
-      ;; ??? where to return?
+      ;(schedule-node-insert-mark node (directive->id (directive "INTERCHANGE" idx t)))
       node)))
 ;; ~~ Insert Marks ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-parallel (schedule-node)

@@ -110,13 +110,12 @@ for (int i=0; i<10; i+=amount) {
 
 (defmethod get-possible-opts ((auto-scheduler AutoScheduler) schedule-node-band config &aux (actions))
   "Returns a list of possible optimization candidates."
-  (push (make-instance 'NoOpt) actions)
+  (push (make-instance 'NoOpt) actions) ;; note: if you remove this line and all band is assigned any directive
   ;; Interchange
   (let ((undernearth-band-count
           (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
     (dotimes (amount undernearth-band-count)
-      ;(push (make-instance 'Interchange :amount amount) actions)
-      ))
+      (push (make-instance 'Interchange :amount amount) actions)))
   ;; Parallel Directive (Parallel or GLOBAL/LOCAL)
   (case (auto-scheduler-n-global-loops config)
     (0 nil)
@@ -173,7 +172,7 @@ for (int i=0; i<10; i+=amount) {
                (let ((selected (if (and (or (null selected) (typep selected 'NoOpt)) (not (eql (isl:schedule-node-get-type node) :schedule-node-mark)))
                                    nil ;; move to next band
                                    (append prev-selected (list selected))))
-                     (n-children (the fixnum (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))))
+                     (n-children (the fixnum (isl::%isl-schedule-node-n-children (isl::schedule-node-handle (get-absolute-pos node history))))))
                  (dotimes (nth n-children)
                    (setf node (optimize-children (isl:schedule-node-get-child (get-absolute-pos node history) nth) :prev-selected selected :history (append history (list nth)))))
                  node))))
