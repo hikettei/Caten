@@ -6,8 +6,7 @@ Transform the Polyhedral IR into the Blueprint IR.
 ```
 scop.lisp for the opposite things.
 ")
-  (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia :caten/codegen/polyhedral-ast)
-  (:import-from :caten/codegen/unroll :mark-unroll-parent-p :mark-unroll-body-p :parse-unroll-directive)
+  (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia :caten/codegen/polyhedral-ast :caten/codegen/transform)
   (:export #:lower-into-bp-from-polyhedral))
 
 (in-package :caten/codegen/ast-parser)
@@ -50,31 +49,30 @@ scop.lisp for the opposite things.
 
 (declaim (ftype (function (cffi:foreign-pointer) t) parse-isl-ast-mark))
 (defun parse-isl-ast-mark (ast)
-  (let* ((mark (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast))))
+  (let* ((directive (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast)))))
          (user (parse-isl-ast (isl::%isl-ast-node-mark-get-node ast))))
     (typecase user
+      ;; Mark(Nested?)
       (AstFor
        (cond
-         ((equalp mark "parallel")
+         ((equalp (directive-type directive) "GLOBAL")
           (setf (astfor-scope user) :global))
-         ((mark-unroll-parent-p mark)
+         ((equalp (directive-type directive) "UNROLL_PARENT")
           (let ((body (astfor-body user)))
             (when (or
                    (not (typep body 'ASTFor))
-                   (null (and (astfor-marks body) (every #'mark-unroll-body-p (astfor-marks body)))))
+                   (null (and (astfor-marks body) (every #'(lambda (x) (equalp (directive-type x) "UNROLL_BODY")) (astfor-marks body)))))
               (return-from parse-isl-ast-mark user))
-            (let* ((n-unroll (parse-unroll-directive mark))
+            (let* ((n-unroll (directive-amount directive))
                    (user     (copy-astfor user))
                    (unrolled (caten/codegen/directive:make-unrolled-body user body n-unroll))
                    (reminder (caten/codegen/directive:compute-reminder-for-unroll user body n-unroll)))
               (setf (astfor-body user) unrolled)
               (return-from parse-isl-ast-mark (make-block (list user reminder))))))
-         ((mark-unroll-body-p mark)
+         ((equalp (directive-type directive) "UNROLL_BODY")
           ;; UNROLL_BODY is triggered by the UNROLL_PARENT. Without it the form is ignored.
           (assert (null (astfor-marks user)) () "UNROLL_BODY should be orthogonal with other directives.")
-          (setf (astfor-marks user) (list mark)))
-         ((equalp mark "TILE_BAND")
-          (push "TILE_BAND" (astfor-marks user)))
+          (setf (astfor-marks user) (list directive)))
          (T
           ;(warn "mark: ignored the mark ~a for ~a" mark user)
           )))
@@ -210,7 +208,8 @@ scop.lisp for the opposite things.
 	       (ematch object
 		 ((ASTBlock :body body) (map 'list #'lower body))
 		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
-                  ;; remove an empty loop
+                  ;; [TODO] Generalize this
+                  ;; TILE_BAND is not an unroll idx?
                   (let ((is-tile-band (find "TILE_BAND" (astfor-marks object) :test #'equalp)))
                     (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
                       (when (null is-tile-band) (push idx space))

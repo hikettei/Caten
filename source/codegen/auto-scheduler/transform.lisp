@@ -7,7 +7,7 @@
   ;; Directive
   (:export
     #:Directive #:directive-type #:directive-amount #:directive-visible
-    #:directive->str #:directive->id)
+    #:directive->str #:directive->id #:str->directive)
   ;; Transforms
   (:export
     #:apply-interchange #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile))
@@ -136,7 +136,7 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defun apply-unroll (band unroll-by)
   (declare (type isl::schedule-node band) (type fixnum unroll-by))
-  (%apply-tile band unroll-by (directive "UNROLL" unroll-by t) (directive "UNROLL" unroll-by nil)))
+  (%apply-tile band unroll-by (directive "UNROLL_PARENT" unroll-by t) (directive "UNROLL_BODY" unroll-by nil)))
 
 (defun apply-pack (band pack-by)
   (declare (type isl::schedule-node band) (type fixnum pack-by))
@@ -156,5 +156,8 @@ Returns T if the current schedule does not break any dependences in dep."
     (declare (ignore _ __))
     (when (check-legality (isl:schedule-node-get-schedule node) (poly-dependencies poly))
       node)))
+;; ~~ Insert Marks ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO]
+;; - apply-parallel (for CPU)
+;; - apply-parallel (for GPU, it is equivalent to do tile)
 ;; - apply-group (just inserting a mark)
