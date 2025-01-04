@@ -1,5 +1,6 @@
 (defpackage :caten/codegen/auto-scheduler
-  (:use :cl :caten/air :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/config)
+  (:use :cl :caten/air :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/config
+        :caten/codegen/polyhedral)
   (:export #:auto-schedule))
 
 (in-package :caten/codegen/auto-scheduler)
@@ -21,9 +22,27 @@
 ;; TODO: Cache the result from OPTIMIZE=2
 ;; BEAM Search: ISL Schedule Treeで実施する
 ;; remove tiling, unroll
-(defun beam (schedule-node)
+
+
+;; ~~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Opt () ((id :initarg :id :accessor opt-id) (amount :initarg :amount :accessor opt-amount)))
+(defgeneric apply-opt (opt schedule-node config) (:documentation "Returns a new isl:schedule-node with current optimization was applied."))
+(defgeneric opt-applicable-p (opt schedule-node config) (:documentation "Returns T if the current optimization is applicable to the given schedule-node"))
+
+(defclass Parallel (Opt) nil (:documentation "Tiles the current schedule-band by amount"))
+(defmethod apply-opt ((opt Parallel) schedule-node config)
+
+  )
+(defmethod opt-applicable-p ((opt Parallel) schedule-node config)
   
   )
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun beam (schedule-node)
+  (declare (type isl:schedule-node-domain schedule-node)
+           (optimize (speed 3)))
+  (let ((best-schedule schedule-node))
+    
+    (isl:schedule-node-get-schedule best-schedule)))
 
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
@@ -31,13 +50,7 @@
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
     ;; generating sketch
     (when (>= OPTIMIZE 2)
-      
-      )
-    (when (>= OPTIMIZE 1)
-      ;; Finally applies the outermost n loop parallelization for the interchanged loops.
-      (caten/codegen/coincidence:apply-parallel
-       (getattr node :polyhedral)
-       (auto-scheduler-n-global-loops auto-scheduler)))
+      (beam (isl:schedule-get-root (poly-schedule (getattr node :polyhedral)))))
     ;; [TODO] Final BEAM Search for local/global size, or tiling size.
     ;; Load blueprint from optimized polyhedral IR
     (setf (getattr node :blueprint) (caten/codegen/ast-parser:lower-into-bp-from-polyhedral (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank)) node))))
