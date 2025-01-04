@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/auto-scheduler
   (:use :cl :caten/air :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/config
-        :caten/codegen/polyhedral)
+        :caten/codegen/polyhedral :caten/codegen/transform)
   (:export
     #:auto-schedule
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
@@ -44,13 +44,13 @@
   
   )
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
-  (caten/codegen/coincidence:check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral))))
+  (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral))))
 
 (defclass Interchange (Opt) nil (:documentation "Swaps the loop with `amount` th band node in the current schedule."))
 (defmethod apply-opt ((opt Interchange) schedule-node item config)
   (opt-applicable-p opt schedule-node item config))
 (defmethod opt-applicable-p ((Opt Interchange) schedule-node item config)
-  (caten/codegen/coincidence:apply-interchange (getattr item :polyhedral) schedule-node (opt-amount opt)))
+  (apply-interchange (getattr item :polyhedral) schedule-node (opt-amount opt)))
 
 (defclass TileBand (Opt) nil (:documentation "Tiles the given schedule-node-band with the size"))
 (defmethod apply-opt ((opt TileBand) schedule-node item config)

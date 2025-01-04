@@ -4,7 +4,12 @@
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/aasm :caten/air :caten/codegen/polyhedral :cl-ppcre :caten/isl)
   (:export
-    #:get-zeros-on-union-set #:check-legality-parallel #:check-legality))
+    #:get-zeros-on-union-set #:check-legality-parallel #:check-legality
+    #:apply-interchange)
+  ;; Directive
+  (:export
+    #:Directive #:directive-type #:directive-amount #:directive-visible
+    #:directive->str #:directive->id))
 
 (in-package :caten/codegen/transform)
 ;; ~~ Legality Computations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -67,12 +72,47 @@ Returns T if the current schedule does not break any dependences in dep."
       node)))
 ;; ~~ Tile Based Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Directive ()
-  ((visible :initarg :visible :accessor visible-p :initform t)))
+  ((type :initarg :type :accessor directive-type)
+   (amount :initarg :amount :accessor directive-amount)
+   (visible :initarg :visible :accessor directive-visible))
+  (:documentation "Directive is a dataclass which is dumpable to a string."))
 
-(defmethod directive->id ((directive Directive))
+(defmethod print-object ((directive Directive) stream)
+  (print-unreadable-object (directive stream)
+    (format stream "~a" (directive->str directive))))
 
-  )
+(defmethod directive->str ((directive Directive))
+  (with-output-to-string (out)
+    (format out "@DIRECTIVE(")
+    (loop with slots = (c2mop:class-slots (class-of directive))
+          for slot-def in slots
+          for slot-name = (c2mop:slot-definition-name slot-def)
+          for value     = (slot-value directive slot-name)
+          for idx upfrom 0 do
+            (format out "~a=~a" (string-upcase (princ-to-string slot-name)) value)
+            (when (< idx (1- (length slots))) (format out ",")))
+    (format out ")")))
 
-(defmethod id->directive ((string string))
-  
-  )
+(defmethod directive->id ((directive directive)) (isl::make-id-from-str (directive->str directive)))
+
+(defun split-key-and-value (str)
+  (let ((pos (position #\= str)))
+    (assert pos)
+    (cons (intern (subseq str 0 pos) "KEYWORD") (subseq str (1+ pos)))))
+
+(defun split-directive-string (str)
+  (let ((res '()) (start 0) (len (length str)))
+    (loop for pos = (position #\, str :start start)
+          do (cond
+               ((null pos)
+                (push (subseq str start len) res)
+                (return-from split-directive-string (map 'list #'split-key-and-value (nreverse res))))
+               (t
+                (push (subseq str start pos) res)
+                (setf start (1+ pos)))))))
+
+(defmethod str->directive ((string string))
+  ;; @DIRECTIVE(...) is a valid format.
+  (unless (and (uiop:string-prefix-p "@DIRECTIVE(" string) (char= (char string (1- (length string))) #\))) (error "Invalid directive string: ~S" string))
+  (let* ((content (subseq string #.(length "@DIRECTIVE(") (1- (length string)))))
+    (apply #'make-instance 'Directive (alexandria:flatten (split-directive-string content)))))
