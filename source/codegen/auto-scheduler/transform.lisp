@@ -3,13 +3,14 @@
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/aasm :caten/air :caten/codegen/polyhedral :cl-ppcre :caten/isl)
-  (:export
-    #:get-zeros-on-union-set #:check-legality-parallel #:check-legality
-    #:apply-interchange)
+  (:export #:get-zeros-on-union-set #:check-legality-parallel #:check-legality)
   ;; Directive
   (:export
     #:Directive #:directive-type #:directive-amount #:directive-visible
-    #:directive->str #:directive->id))
+    #:directive->str #:directive->id)
+  ;; Transforms
+  (:export
+    #:apply-interchange #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile))
 
 (in-package :caten/codegen/transform)
 ;; ~~ Legality Computations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -55,27 +56,16 @@ Returns T if the current schedule does not break any dependences in dep."
          (le (union-set-lex-le-union-set delta zeros))
          (retval (union-set-is-empty le)))
     retval))
-;; ~~ Legality Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun apply-interchange (poly band1 idx)
-  "Returns a new schedule of band1 with band1 and idx'th band node interchanged. Returns nil if the operation breaks the dependencies."
-  (declare (type polyhedral-ir poly) (type isl::schedule-node band1) (type fixnum idx))
-  (assert (eql (isl:schedule-node-get-type band1) :schedule-node-band))
-  (let* ((mupa (isl:schedule-node-band-get-partial-schedule band1))
-         (node (isl:schedule-node-delete band1))
-         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
-         (_ (when (= 0 n-child) (return-from apply-interchange nil))) ;; Nothing to interchange
-         (node (schedule-node-get-band-from-relative-idx node idx))
-         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" idx band1))
-         (node (isl:schedule-node-insert-partial-schedule node mupa)))
-    (declare (ignore _ __))
-    (when (check-legality (isl:schedule-node-get-schedule node) (poly-dependencies poly))
-      node)))
-;; ~~ Tile Based Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Directive ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Directive ()
   ((type :initarg :type :accessor directive-type)
    (amount :initarg :amount :accessor directive-amount)
    (visible :initarg :visible :accessor directive-visible))
-  (:documentation "Directive is a dataclass which is dumpable to a string."))
+  (:documentation "Directive is an instruction to schedule-node-band. This class is dumpable as a string to interoperate with ISL."))
+
+(defun directive (type amount visible)
+  (declare (type string type) (type fixnum amount) (type boolean visible))
+  (make-instance 'Directive :type type :amount amount :visible visible))
 
 (defmethod print-object ((directive Directive) stream)
   (print-unreadable-object (directive stream)
@@ -98,7 +88,13 @@ Returns T if the current schedule does not break any dependences in dep."
 (defun split-key-and-value (str)
   (let ((pos (position #\= str)))
     (assert pos)
-    (cons (intern (subseq str 0 pos) "KEYWORD") (subseq str (1+ pos)))))
+    (let ((key (intern (subseq str 0 pos) "KEYWORD"))
+          (value (subseq str (1+ pos))))
+      (case key
+        (:TYPE value)
+        (:AMOUNT (parse-integer value))
+        (:VISIBLE (string= (string-upcase value) "T"))
+        (otherwise value)))))
 
 (defun split-directive-string (str)
   (let ((res '()) (start 0) (len (length str)))
@@ -116,3 +112,49 @@ Returns T if the current schedule does not break any dependences in dep."
   (unless (and (uiop:string-prefix-p "@DIRECTIVE(" string) (char= (char string (1- (length string))) #\))) (error "Invalid directive string: ~S" string))
   (let* ((content (subseq string #.(length "@DIRECTIVE(") (1- (length string)))))
     (apply #'make-instance 'Directive (alexandria:flatten (split-directive-string content)))))
+;; ~~ Tile Based Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun tiling-sizes (band &key (size-default 32) (dims))
+  (declare (type list dims) (type fixnum size-default))
+  (let* ((band-space (schedule-node-band-get-space band))
+         (dim (space-dim band-space 3)))
+    (multi-val-from-val-list
+     band-space
+     (apply #'make-value-list (loop for i upfrom 0 below dim collect (or (nth i dims) size-default))))))
+
+(defun %apply-tile (band amount directive-parent directive-child)
+  (declare (type isl::schedule-node band) (type Directive directive-parent directive-child))
+  (assert (eql (schedule-node-get-type band) :schedule-node-band))
+  (let* ((tiled-schedule (schedule-node-insert-mark band (directive->id directive-parent)))
+         (tiled-schedule (schedule-node-get-child tiled-schedule 0))
+         (tiled-schedule (schedule-node-band-tile tiled-schedule (tiling-sizes band :size-default amount)))
+         (tiled-schedule (schedule-node-insert-mark (schedule-node-get-child tiled-schedule 0) (directive->id directive-child))))
+    tiled-schedule))
+
+(defun apply-tile (band tile-size)
+  (declare (type isl::schedule-node band) (type fixnum tile-size))
+  (%apply-tile band tile-size (directive "TILE" tile-size t) (directive "TILE" tile-size t)))
+
+(defun apply-unroll (band unroll-by)
+  (declare (type isl::schedule-node band) (type fixnum unroll-by))
+  (%apply-tile band unroll-by (directive "UNROLL" unroll-by t) (directive "UNROLL" unroll-by nil)))
+
+(defun apply-pack (band pack-by)
+  (declare (type isl::schedule-node band) (type fixnum pack-by))
+  (%apply-tile band pack-by (directive "PACKED" pack-by t) (directive "PACKED" pack-by nil)))
+;; ~~ Legality Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun apply-interchange (poly band1 idx)
+  "Returns a new schedule of band1 with band1 and idx'th band node interchanged. Returns nil if the operation breaks the dependencies."
+  (declare (type polyhedral-ir poly) (type isl::schedule-node band1) (type fixnum idx))
+  (assert (eql (isl:schedule-node-get-type band1) :schedule-node-band))
+  (let* ((mupa (isl:schedule-node-band-get-partial-schedule band1))
+         (node (isl:schedule-node-delete band1))
+         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
+         (_ (when (= 0 n-child) (return-from apply-interchange nil))) ;; Nothing to interchange
+         (node (schedule-node-get-band-from-relative-idx node idx))
+         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" idx band1))
+         (node (isl:schedule-node-insert-partial-schedule node mupa)))
+    (declare (ignore _ __))
+    (when (check-legality (isl:schedule-node-get-schedule node) (poly-dependencies poly))
+      node)))
+;; [TODO]
+;; - apply-group (just inserting a mark)
