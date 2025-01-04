@@ -143,3 +143,7 @@
 (define-isl-function schedule-node-mark-get-id %isl-schedule-node-mark-get-id
   (:give identifier)
   (:keep schedule-node))
+
+(defun schedule-node-get-schedule-depth (node)
+  (declare (type schedule-node node))
+  (%isl-schedule-node-get-schedule-depth (schedule-node-handle node)))

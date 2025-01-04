@@ -80,7 +80,7 @@
     (dotimes (amount undernearth-band-count)
       (push (make-instance 'Interchange :amount amount) actions)))
   actions)
-
+;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
 (defmethod optimize-band ((auto-scheduler AutoScheduler) schedule-node-band item)
   "Applies all possible optimizations to the given band, returning the best one."
   ;; Only interested in the schedule-node-band
@@ -94,6 +94,7 @@
                    collect opt))
          (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions)))
     (print "=====GENERATION=============")
+    (print (isl:schedule-node-get-schedule-depth schedule-node-band))
     (print schedule-node-band)
     (print next-actions)
     ;; Interchange: Scalar Loadの依存を壊さないか見る必要がある (壊したらapplicable-p=NIL)
