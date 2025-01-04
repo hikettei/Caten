@@ -181,6 +181,10 @@ for (int i=0; i<10; i+=amount) {
     (when (>= OPTIMIZE 1)
       (let ((auto-scheduler (make-instance 'AutoScheduler :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler)))
         (minimize-cost auto-scheduler node)))
-    ;; [TODO] Final BEAM Search for local/global size, or tiling size.
+    ;; [TODO] BEAM report
+    ;; n-trial
+    ;; n-generation
+    ;; found-sequence
+    ;; total-time-consumed
     ;; Load blueprint from optimized polyhedral IR
     (setf (getattr node :blueprint) (caten/codegen/ast-parser:lower-into-bp-from-polyhedral (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank)) node))))
