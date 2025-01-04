@@ -159,7 +159,7 @@ disassemble:
 (defun render-comment (node)
   (case (node-type node)
     (:LOAD (format nil " // :value = ~a" (getattr node :value)))
-    (:JIT_KERNEL (format nil "// JIT: ~a" (getattr node :kernel-info)))
+    (:JIT_KERNEL (format nil " // JIT: ~a" (getattr node :kernel-info)))
     (otherwise "")))
 (defmethod print-object ((runtime GraphRuntime) stream &aux (n-indent 4))
   (print-unreadable-object (runtime stream :type t)
