@@ -106,7 +106,7 @@ for (int i=0; i<10; i+=amount) {
    (gen2act :initform (make-hash-table) :accessor autoscheduler-gen2act)
    (config :initarg :config :type Auto-Scheduler-Config :accessor autoscheduler-config)))
 
-(defgeneric compute-costs (auto-scheduler schedule-nodes) (:documentation "This method receives a list of candidate schedules, returning a same-lengthed list whose elements are type of float. (the higher the better)"))
+(defgeneric compute-costs (auto-scheduler schedule-nodes item) (:documentation "This method receives a list of candidate schedules, returning a same-lengthed list whose elements are type of float. (the higher the better)"))
 
 (defmethod get-possible-opts ((auto-scheduler AutoScheduler) schedule-node-band config &aux (actions))
   "Returns a list of possible optimization candidates."
@@ -145,14 +145,15 @@ for (int i=0; i<10; i+=amount) {
            (loop for opt in (get-possible-opts auto-scheduler schedule-node-band config)
                  if (opt-applicable-p opt schedule-node-band item config)
                    collect opt))
-         (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions)))
+         (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions))
+         (sorted (sort (map 'list #'cons (compute-costs auto-scheduler next-kernels item) next-kernels) #'> :key #'car)))
     (format t "~%DEBUG: Generation=~a:~%" (autoscheduler-n-generation auto-scheduler))
     (print (isl:schedule-node-get-schedule-depth schedule-node-band))
     (print schedule-node-band)
     (print next-actions)
     ;; Interchange: Scalar Loadの依存を壊さないか見る必要がある (壊したらapplicable-p=NIL)
     (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
-    
+    (format t "Selected:~%~a" (render-schedule-node (isl:schedule-node-get-schedule (cdr (car sorted)))))
     (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) t)
     (incf (autoscheduler-n-generation auto-scheduler))
     schedule-node-band))
@@ -167,11 +168,21 @@ for (int i=0; i<10; i+=amount) {
                    (isl:schedule-node-get-ancestor node 1)
                    node))))
     (optimize-children (autoscheduler-best-schedule auto-scheduler) :return-ancestor-p nil)))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Reconfigurable AutoScheduler
 ;; - [ ] Minimize the actual execution time
 ;; - [ ] Minimize Proximity Coincidence
 ;; - [ ] RandomForest
 ;; - [ ] Rule Based
+(defclass BogoScheduler (AutoScheduler) nil)
+(defmethod compute-costs ((s BogoScheduler) schedule-nodes item) (loop repeat (length schedule-nodes) collect (random 1.0)))
+
+(defclass ProfileScheduler (AutoScheduler) nil) ;; TODO
+
+(defclass ILPScheduler (AutoScheduler) nil) ;; TODO
+
+(defclass RandomForestScheduler (AutoScheduler) nil) ;; TODO
+
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
   (symbol-macrolet ((OPTIMIZE (the (integer 0 2) (ctx:getenv :OPTIMIZE))))
@@ -179,7 +190,8 @@ for (int i=0; i<10; i+=amount) {
     ;; OPTIMIZE=1 : Parallel, Unroll, Vectorizeなど，ルールと優先度から
     ;; OPTIMIZE=2 : PROFILINGする，その代わりthreadbarrierなどを使える
     (when (>= OPTIMIZE 1)
-      (let ((auto-scheduler (make-instance 'AutoScheduler :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler)))
+      (let* ((strategy 'BogoScheduler) ;; TODO
+             (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler)))
         (minimize-cost auto-scheduler node)))
     ;; [TODO] BEAM report
     ;; n-trial
