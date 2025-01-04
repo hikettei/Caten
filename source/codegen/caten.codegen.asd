@@ -18,6 +18,7 @@
    (:file "blueprint")
    (:file "auto-scheduler/polyhedral")
    (:file "auto-scheduler/polyhedral-ast")
+   (:file "auto-scheduler/transform")
    (:file "auto-scheduler/tiling")
    (:file "auto-scheduler/coincidence")
    (:file "auto-scheduler/unroll")
