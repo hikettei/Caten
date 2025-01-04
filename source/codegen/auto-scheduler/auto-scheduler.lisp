@@ -133,7 +133,7 @@ for (int i=0; i<10; i+=amount) {
       (format t "~%DEBUG: Generation=~a ============~%" (autoscheduler-n-generation auto-scheduler))
       ;; (print next-actions)
       ;; [TODO] How to verify the validity of loop interchange without providing scalar info?
-      ;; (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
+       (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
       (format t "Selected:~%~a" (render-schedule-node (isl:schedule-node-get-schedule (second (car sorted)))))
       (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) (third (car sorted)))
       (incf (autoscheduler-n-generation auto-scheduler))
@@ -168,14 +168,15 @@ for (int i=0; i<10; i+=amount) {
 (defclass RandomForestScheduler (AutoScheduler) nil) ;; TODO
 
 (defclass LispScheduler (AutoScheduler) nil) ;; [Experimental] Execution time in lisp is propotional to the same time in gcc?
-;; [TODO] Remember Mark
+
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
-  (symbol-macrolet ((OPTIMIZE (the (integer 0 2) (ctx:getenv :OPTIMIZE))))
+  (symbol-macrolet ((OPTIMIZE (the integer (ctx:getenv :OPTIMIZE))))
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
     ;; OPTIMIZE=1 : Parallel, Unroll, Vectorize, GLOCAL, LOCAL
     ;; OPTIMIZE=2 : Interchange, Tile(Interchange is required!), GROUPTOP
-    (when (>= OPTIMIZE 1)
+    (when (>= OPTIMIZE 2)
+      (warn "OPTIMIZE=2 is still under development. Do not use this.")
       (let* ((strategy 'BogoScheduler) ;; TODO: Configurable
              (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler)))
         (minimize-cost auto-scheduler node)))
