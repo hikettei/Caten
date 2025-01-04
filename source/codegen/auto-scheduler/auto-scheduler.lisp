@@ -24,10 +24,8 @@
 ;; - [ ] (caten x :variables (list (variable 'b 0 10 2))) -> 全部に対してSampleする
 ;; - [ ] Unroll/Tiling/Parallelizeを全部Tileで実装する
 ;; - [ ] Loop Tilingした後にInterchangeができるようにScheduleする
-;; TODO: Cache the result from OPTIMIZE=2
-;; BEAM Search: ISL Schedule Treeで実施する
-;; Tiling+Interchangeは必須 (Tile Dimsを一番下に移動したい。。。)
-;; remove tiling, unroll, coincidence -> transform.lisp
+;; - [ ]  TODO: Cache the result from OPTIMIZE=2
+;; - [ ] ParallelLevel: ignore the count from visible-p=NIL
 ;; ~~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Opt () ((id :initarg :id :initform nil :accessor opt-id) (amount :initarg :amount :initform nil :accessor opt-amount)))
 (defgeneric apply-opt (opt schedule-node item config) (:documentation "Returns a new isl:schedule-node with current optimization was applied."))
@@ -39,13 +37,16 @@
 (defclass NoOpt (Opt) nil (:documentation "Nothing applied"))
 (defmethod apply-opt ((opt Noopt) schedule-node item config) (isl:copy schedule-node))
 (defmethod opt-applicable-p ((opt Noopt) schedule-node item config) t)
-
+;; Note: Parallel vs Global/Local is orthogonal
 (defclass Parallel (Opt) nil (:documentation "Tiles the current schedule-band by amount"))
-(defmethod apply-opt ((opt Parallel) schedule-node item config)
-  
-  )
+(defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
-  (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral))))
+  (and
+   (< (isl:schedule-node-get-schedule-depth schedule-node) (auto-scheduler-n-global-loops config)) ;; Located in the parallel level
+   (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
+
+(defclass Global (Opt) nil) ;; blockIdx
+(defclass Local (Opt) nil)  ;; threadIdx
 
 (defclass Interchange (Opt) nil (:documentation "Swaps the loop with `amount` th band node in the current schedule."))
 (defmethod apply-opt ((opt Interchange) schedule-node item config)
@@ -71,7 +72,7 @@
 
 (defgeneric cost (auto-scheduler schedule-nodes))
 
-(defmethod get-possible-opts ((auto-scheduler AutoScheduler) schedule-node-band &aux (actions))
+(defmethod get-possible-opts ((auto-scheduler AutoScheduler) schedule-node-band config &aux (actions))
   "Returns a list of possible optimization candidates."
   (push (make-instance 'NoOpt) actions)
   ;; Interchange
@@ -79,6 +80,13 @@
           (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
     (dotimes (amount undernearth-band-count)
       (push (make-instance 'Interchange :amount amount) actions)))
+  (case (auto-scheduler-n-global-loops config)
+    (0 nil)
+    (1 (push (make-instance 'Parallel) actions))
+    (3 ;; Block/Thread Parallelism
+     (warn "TODO: Block/Thread Parallelism"))
+    (otherwise
+     (warn "Currently Caten does not support n_global_loops=~a and thus the code is not parallelized." (auto-scheduler-n-global-loops config))))
   actions)
 ;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
 (defmethod optimize-band ((auto-scheduler AutoScheduler) schedule-node-band item)
@@ -86,10 +94,9 @@
   ;; Only interested in the schedule-node-band
   (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
     (return-from optimize-band schedule-node-band))
-  ;; 無限ループしないように注意？
   (let* ((config (autoscheduler-config auto-scheduler))
          (next-actions
-           (loop for opt in (get-possible-opts auto-scheduler schedule-node-band)
+           (loop for opt in (get-possible-opts auto-scheduler schedule-node-band config)
                  if (opt-applicable-p opt schedule-node-band item config)
                    collect opt))
          (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions)))

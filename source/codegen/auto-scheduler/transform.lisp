@@ -10,7 +10,10 @@
     #:directive->str #:directive->id #:str->directive)
   ;; Transforms
   (:export
-    #:apply-interchange #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile))
+    #:apply-interchange #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile)
+  ;; Marks
+  (:export
+    #:apply-parallel))
 
 (in-package :caten/codegen/transform)
 ;; ~~ Legality Computations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -145,19 +148,22 @@ Returns T if the current schedule does not break any dependences in dep."
 (defun apply-interchange (poly band1 idx)
   "Returns a new schedule of band1 with band1 and idx'th band node interchanged. Returns nil if the operation breaks the dependencies."
   (declare (type polyhedral-ir poly) (type isl::schedule-node band1) (type fixnum idx))
-  (assert (eql (isl:schedule-node-get-type band1) :schedule-node-band))
-  (let* ((mupa (isl:schedule-node-band-get-partial-schedule band1))
-         (node (isl:schedule-node-delete band1))
+  (assert (eql (schedule-node-get-type band1) :schedule-node-band))
+  (let* ((mupa (schedule-node-band-get-partial-schedule band1))
+         (node (schedule-node-delete band1))
          (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
          (_ (when (= 0 n-child) (return-from apply-interchange nil))) ;; Nothing to interchange
          (node (schedule-node-get-band-from-relative-idx node idx))
          (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" idx band1))
-         (node (isl:schedule-node-insert-partial-schedule node mupa)))
+         (node (schedule-node-insert-partial-schedule node mupa)))
     (declare (ignore _ __))
-    (when (check-legality (isl:schedule-node-get-schedule node) (poly-dependencies poly))
+    (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
       node)))
 ;; ~~ Insert Marks ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO]
-;; - apply-parallel (for CPU)
-;; - apply-parallel (for GPU, it is equivalent to do tile)
-;; - apply-group (just inserting a mark)
+(defun apply-parallel (schedule-node)
+  (schedule-node-insert-mark schedule-node (directive->id (directive "PARALLEL" 0 T))))
+;; [TODO] They are just inserting marks.
+;; - apply-parallel (for OpenMP)
+;; [TODO] Mark+Tile 
+;; - apply-global (blockIdx in CUDA)
+;; - apply-local (threadIdx in CUDA)
