@@ -3,7 +3,8 @@
   (:export
    #:check-legality-parallel
    #:check-legality
-   #:apply-parallel))
+   #:apply-parallel
+   #:apply-interchange))
 
 (in-package :caten/codegen/coincidence)
 
@@ -68,24 +69,17 @@ Returns T if the current schedule does not break any dependences in dep."
           (incf c)
           (setf (poly-schedule poly) (isl:schedule-node-get-schedule (insert-parallel (car (get-coincident-points poly)))))))
 
-(defun %loop-interchange (schedule-node)
-  (declare (type isl::schedule-node schedule-node))
-  (let* ((mupa (isl:schedule-node-band-get-partial-schedule schedule-node))
-         (node (isl:schedule-node-delete schedule-node))
+(defun apply-interchange (poly band1 idx)
+  "Returns a new schedule of band1 with band1 and idx'th band node interchanged. Returns nil if the operation breaks the dependencies."
+  (declare (type polyhedral-ir poly) (type isl::schedule-node band1) (type fixnum idx))
+  (assert (eql (isl:schedule-node-get-type band1) :schedule-node-band))
+  (let* ((mupa (isl:schedule-node-band-get-partial-schedule band1))
+         (node (isl:schedule-node-delete band1))
          (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
-         (_ (when (= 0 n-child) (return-from %loop-interchange nil)))
-         (node (isl:schedule-node-first-child node))
-         (__   (when (find (isl:schedule-node-get-type node) `(:schedule-node-filter)) (return-from %loop-interchange nil)))
+         (_ (when (= 0 n-child) (return-from apply-interchange nil))) ;; Nothing to interchange
+         (node (schedule-node-get-band-from-relative-idx node idx))
+         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" idx band1))
          (node (isl:schedule-node-insert-partial-schedule node mupa)))
     (declare (ignore _ __))
-    node))
-
-(defun polyir-loop-interchange (poly nth)
-  (declare (type polyhedral-ir poly) (type fixnum nth))
-  (let ((bands (map-schedule-nodes #'(lambda (type band mark) (when (eql type :schedule-node-band) band)) poly)))
-    (unless (<= nth (length bands)) (return-from polyir-loop-interchange nil))
-    (let* ((new-sched (%loop-interchange (nth nth bands)))
-           (new-sched (when new-sched (isl:schedule-node-get-schedule new-sched))))
-      (if (and new-sched (check-legality new-sched (poly-dependencies poly)))
-          (progn (setf (poly-schedule poly) new-sched) t)
-          nil))))
+    (when (check-legality (isl:schedule-node-get-schedule node) (poly-dependencies poly))
+      node)))

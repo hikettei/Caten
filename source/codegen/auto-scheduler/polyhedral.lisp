@@ -12,7 +12,10 @@
    #:poly-dependencies
    #:map-schedule-nodes
    #:->ast
-   #:partial-schedule-node-id))
+   #:partial-schedule-node-id
+   #:map-schedule-node-children
+   #:schedule-node-get-undernearth-bands
+   #:schedule-node-get-band-from-relative-idx))
 
 (in-package :caten/codegen/polyhedral)
 
@@ -168,6 +171,30 @@ This function returns a list of the results of applying f to each node. NIL is e
             (setf node (pop next-nodes)))
     (nreverse outputs)))
 
+(defun map-schedule-node-children (f schedule-node)
+  (declare (type function f) (type isl::schedule-node schedule-node))
+  (let* ((node schedule-node) (next-nodes) (outputs))
+    (loop named map-search
+          for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
+          while (>= n-children 0) do
+            (loop for nth upfrom 0 below n-children
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
+                  for band = (schedule-node-get-child node nth)
+                  for type = (schedule-node-get-type band) do
+                    (let ((out (funcall f type band mark))) (when out (push out outputs)))
+                    (push band next-nodes))
+            (when (= (length next-nodes) 0) (return-from map-search))
+            (setf node (pop next-nodes)))
+    (nreverse outputs)))
+
+(defun schedule-node-get-undernearth-bands (schedule-node)
+  (declare (type isl::schedule-node schedule-node))
+  (map-schedule-node-children #'(lambda (type band mark) (declare (ignore mark)) (when (eql type :schedule-node-band) band)) schedule-node))
+
+(defun schedule-node-get-band-from-relative-idx (schedule-node idx)
+  (declare (type isl::schedule-node schedule-node) (type fixnum idx))
+  (nth idx (schedule-node-get-undernearth-bands schedule-node)))
+
 (defun gid (n) (intern (format nil "_gid~a" n)))
 
 (defmethod ->ast ((poly Polyhedral-IR) rank)
@@ -189,11 +216,3 @@ This function returns a list of the results of applying f to each node. NIL is e
          (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
-
-(defun partial-schedule-node-id (mupa)
-  "Extracts NID6722 (node-id) from mupa: [{ NID6772[_gid0] -> [(_gid0)] }].
-(TODO: Find a way to do this without using print object)"
-  (let ((id (isl::%isl-multi-union-pw-aff-to-str (isl::multi-union-pw-aff-handle mupa))))
-    (when (<= (length id) 3) (error "Invaild mupa ~a" mupa))
-    (let ((id (subseq id 3)))
-      (subseq id 0 (position #\[ id)))))
