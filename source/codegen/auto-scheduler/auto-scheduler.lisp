@@ -20,7 +20,6 @@
 ;; ^ i.e.: parallelize = Tiling with size
 ;; Implementation:
 ;; - [ ] Everything is TILE, find the best tile from polyhedron!
-;; - [ ] ISL Schedule Nodeに対してBEAM Searchを実施する
 ;; - [ ] OPTIMIZE=2 will cache the optimized sequence of Opt
 ;; - [ ] GPU: gid.x * local_size + lid.xこれをFirst Class Supportにする
 ;; - [ ] (caten x :variables (list (variable 'b 0 10 2))) -> 全部に対してSampleする
@@ -148,7 +147,7 @@ for (int i=0; i<10; i+=amount) {
                      collect opt))
            (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions))
            (sorted (sort (map 'list #'list (compute-costs auto-scheduler next-kernels item) next-kernels next-actions) #'> :key #'car)))
-      (format t "~%DEBUG: Generation=~a:~%" (autoscheduler-n-generation auto-scheduler))
+      (format t "~%DEBUG: Generation=~a ============~%" (autoscheduler-n-generation auto-scheduler))
       (print next-actions)
       ;; Interchange: Scalar Loadの依存を壊さないか見る必要がある (壊したらapplicable-p=NIL)
       (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
@@ -170,11 +169,7 @@ for (int i=0; i<10; i+=amount) {
                    node))))
     (optimize-children (autoscheduler-best-schedule auto-scheduler) :return-ancestor-p nil)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Reconfigurable AutoScheduler
-;; - [ ] Minimize the actual execution time
-;; - [ ] Minimize Proximity Coincidence
-;; - [ ] RandomForest
-;; - [ ] Rule Based
+;; [TODO] Make metrics configurable
 (defclass BogoScheduler (AutoScheduler) nil)
 (defmethod compute-costs ((s BogoScheduler) schedule-nodes item) (loop repeat (length schedule-nodes) collect (random 1.0)))
 
@@ -188,7 +183,7 @@ for (int i=0; i<10; i+=amount) {
   (assert (getattr node :polyhedral))
   (symbol-macrolet ((OPTIMIZE (the (integer 0 2) (ctx:getenv :OPTIMIZE))))
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
-    ;; OPTIMIZE=1 : Parallel, Unroll, Vectorizeなど，ルールと優先度から
+    ;; OPTIMIZE=1 : Delete Interchange, Parallel, Unroll, Vectorizeなど，ルールと優先度から
     ;; OPTIMIZE=2 : PROFILINGする，その代わりthreadbarrierなどを使える
     (when (>= OPTIMIZE 1)
       (let* ((strategy 'BogoScheduler) ;; TODO
