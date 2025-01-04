@@ -140,23 +140,22 @@ for (int i=0; i<10; i+=amount) {
   ;; Only interested in the schedule-node-band
   (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
     (return-from optimize-band schedule-node-band))
-  (let* ((config (autoscheduler-config auto-scheduler))
-         (next-actions
-           (loop for opt in (get-possible-opts auto-scheduler schedule-node-band config)
-                 if (opt-applicable-p opt schedule-node-band item config)
-                   collect opt))
-         (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions))
-         (sorted (sort (map 'list #'cons (compute-costs auto-scheduler next-kernels item) next-kernels) #'> :key #'car)))
-    (format t "~%DEBUG: Generation=~a:~%" (autoscheduler-n-generation auto-scheduler))
-    (print (isl:schedule-node-get-schedule-depth schedule-node-band))
-    (print schedule-node-band)
-    (print next-actions)
-    ;; Interchange: Scalar Loadの依存を壊さないか見る必要がある (壊したらapplicable-p=NIL)
-    (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
-    (format t "Selected:~%~a" (render-schedule-node (isl:schedule-node-get-schedule (cdr (car sorted)))))
-    (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) t)
-    (incf (autoscheduler-n-generation auto-scheduler))
-    schedule-node-band))
+  (symbol-macrolet ((JIT_DEBUG (ctx:getenv :JIT_DEBUG)))
+    (let* ((config (autoscheduler-config auto-scheduler))
+           (next-actions
+             (loop for opt in (get-possible-opts auto-scheduler schedule-node-band config)
+                   if (opt-applicable-p opt schedule-node-band item config)
+                     collect opt))
+           (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions))
+           (sorted (sort (map 'list #'list (compute-costs auto-scheduler next-kernels item) next-kernels next-actions) #'> :key #'car)))
+      (format t "~%DEBUG: Generation=~a:~%" (autoscheduler-n-generation auto-scheduler))
+      (print next-actions)
+      ;; Interchange: Scalar Loadの依存を壊さないか見る必要がある (壊したらapplicable-p=NIL)
+      (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
+      (format t "Selected:~%~a" (render-schedule-node (isl:schedule-node-get-schedule (second (car sorted)))))
+      (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) (third (car sorted)))
+      (incf (autoscheduler-n-generation auto-scheduler))
+      (second (car sorted)))))
 ;; [TODO] Cache or Trainingするために，Outputはsequence of Opt, Cacheできるようなデータ構造にする
 (defmethod minimize-cost ((auto-scheduler AutoScheduler) item)
   (declare (optimize (speed 3)))
@@ -182,7 +181,7 @@ for (int i=0; i<10; i+=amount) {
 (defclass ILPScheduler (AutoScheduler) nil) ;; TODO
 
 (defclass RandomForestScheduler (AutoScheduler) nil) ;; TODO
-
+;; [TODO] Remember Mark
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
   (symbol-macrolet ((OPTIMIZE (the (integer 0 2) (ctx:getenv :OPTIMIZE))))
