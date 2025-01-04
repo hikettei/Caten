@@ -27,25 +27,38 @@
 ;; TODO: Cache the result from OPTIMIZE=2
 ;; BEAM Search: ISL Schedule Treeで実施する
 ;; Tiling+Interchangeは必須 (Tile Dimsを一番下に移動したい。。。)
-;; remove tiling, unroll, coincidence
+;; remove tiling, unroll, coincidence -> transform.lisp
+;; Mark: 二つの属性を追加する:
+;; - [ ] <VISIBLE>
+;; - [ ] <INVISIBLE> interchangeの対象にならない？
 ;; ~~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Opt () ((id :initarg :id :accessor opt-id) (amount :initarg :amount :accessor opt-amount)))
+(defclass Opt () ((id :initarg :id :initform nil :accessor opt-id) (amount :initarg :amount :accessor opt-amount)))
 (defgeneric apply-opt (opt schedule-node item config) (:documentation "Returns a new isl:schedule-node with current optimization was applied."))
 (defgeneric opt-applicable-p (opt schedule-node item config) (:documentation "Returns T if the current optimization is applicable to the given schedule-node"))
+(defmethod print-object ((opt Opt) stream)
+  (print-unreadable-object (opt stream :type t)
+    (format stream ":id ~a :amount ~a" (opt-id opt) (opt-amount opt))))
 
 (defclass Parallel (Opt) nil (:documentation "Tiles the current schedule-band by amount"))
 (defmethod apply-opt ((opt Parallel) schedule-node item config)
   
   )
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
-  
-  )
+  (caten/codegen/coincidence:check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral))))
+
 (defclass Interchange (Opt) nil (:documentation "Swaps the loop with `amount` th band node in the current schedule."))
 (defmethod apply-opt ((opt Interchange) schedule-node item config)
-  
-  )
+  (opt-applicable-p opt schedule-node item config))
 (defmethod opt-applicable-p ((Opt Interchange) schedule-node item config)
   (caten/codegen/coincidence:apply-interchange (getattr item :polyhedral) schedule-node (opt-amount opt)))
+
+(defclass TileBand (Opt) nil (:documentation "Tiles the given schedule-node-band with the size"))
+(defmethod apply-opt ((opt TileBand) schedule-node item config)
+
+  )
+(defmethod opt-applicable-p ((opt TileBand) schedule-node item config)
+
+  )
 
 (defclass Unroll (Opt) nil (:documentation "Unrolls the loop with amount"))
 (defclass Packing (Opt) nil (:documentation "Packs the array with amount"))
