@@ -29,12 +29,16 @@
 ;; Tiling+Interchangeは必須 (Tile Dimsを一番下に移動したい。。。)
 ;; remove tiling, unroll, coincidence -> transform.lisp
 ;; ~~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass Opt () ((id :initarg :id :initform nil :accessor opt-id) (amount :initarg :amount :accessor opt-amount)))
+(defclass Opt () ((id :initarg :id :initform nil :accessor opt-id) (amount :initarg :amount :initform nil :accessor opt-amount)))
 (defgeneric apply-opt (opt schedule-node item config) (:documentation "Returns a new isl:schedule-node with current optimization was applied."))
 (defgeneric opt-applicable-p (opt schedule-node item config) (:documentation "Returns T if the current optimization is applicable to the given schedule-node"))
 (defmethod print-object ((opt Opt) stream)
   (print-unreadable-object (opt stream :type t)
     (format stream ":id ~a :amount ~a" (opt-id opt) (opt-amount opt))))
+
+(defclass NoOpt (Opt) nil (:documentation "Nothing applied"))
+(defmethod apply-opt ((opt Noopt) schedule-node item config) (isl:copy schedule-node))
+(defmethod opt-applicable-p ((opt Noopt) schedule-node item config) t)
 
 (defclass Parallel (Opt) nil (:documentation "Tiles the current schedule-band by amount"))
 (defmethod apply-opt ((opt Parallel) schedule-node item config)
@@ -69,6 +73,7 @@
 
 (defmethod get-possible-opts ((auto-scheduler AutoScheduler) schedule-node-band &aux (actions))
   "Returns a list of possible optimization candidates."
+  (push (make-instance 'NoOpt) actions)
   ;; Interchange
   (let ((undernearth-band-count
           (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
@@ -92,8 +97,7 @@
     (print schedule-node-band)
     (print next-actions)
     ;; Interchange: Scalar Loadの依存を壊さないか見る必要がある (壊したらapplicable-p=NIL)
-    (dolist (k next-kernels)
-      (print (render-schedule-node (isl:schedule-node-get-schedule k))))
+    (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
     schedule-node-band))
 ;; [TODO] Cache or Trainingするために，Outputはsequence of Opt, Cacheできるようなデータ構造にする
 (defmethod minimize-cost ((auto-scheduler AutoScheduler) item)
