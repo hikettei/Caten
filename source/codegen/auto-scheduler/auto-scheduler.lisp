@@ -10,25 +10,6 @@
     #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs))
 
 (in-package :caten/codegen/auto-scheduler)
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; Purpose: get a list of optimal scheduling commands
-;; [TODO] JIT_DEBUG >= 2 to see optimized schedule sequence by BEAM (TODO: Searching method like tiramisu)
-;; ~~~ Schedule Templates ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Parallelize == apply-tile 100あるループを4分割とかする
-;; CPU=local_size(1, 1, 1)
-;; GPU=local_size(32, 1, 1) global_size=(32, ...) -> gidx gidy gidz lidx lidy lid3
-;; ^ i.e.: parallelize = Tiling with size
-;; Implementation:
-;; - [ ] Everything is TILE, find the best tile from polyhedron!
-;; - [ ] OPTIMIZE=2 will cache the optimized sequence of Opt
-;; - [ ] GPU: gid.x * local_size + lid.xこれをFirst Class Supportにする
-;; - [ ] (caten x :variables (list (variable 'b 0 10 2))) -> 全部に対してSampleする
-;; - [ ] Unroll/Tiling/Parallelizeを全部Tileで実装する
-;; - [ ] Loop Tilingした後にInterchangeができるようにScheduleする
-;; - [ ]  TODO: Cache the result from OPTIMIZE=2
-;; - [ ] ParallelLevel: ignore the count from visible-p=NIL
-;; - [ ] Unroll_BODY without Unroll_PARENT -> Unroll away BODY
-;; - [ ] UNROLL_INNER -> UNROLL_INNERになるケースをどうにかする
 ;; ~~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Opt () ((id :initarg :id :initform nil :accessor opt-id) (amount :initarg :amount :initform nil :accessor opt-amount)))
 (defgeneric apply-opt (opt schedule-node item config) (:documentation "Returns a new isl:schedule-node with current optimization was applied."))
@@ -126,7 +107,7 @@ for (int i=0; i<10; i+=amount) {
      (warn "Currently Caten does not support n_global_loops=~a and thus the code is not parallelized." (auto-scheduler-n-global-loops config))))
   ;; Tile
   (dolist (tile-size (auto-scheduler-tile-sizes config)) (push (make-instance 'TileBand :amount tile-size) actions))
-  ;; Pack(Vectorize)
+  ;; Pack (Vectorize)
   ;; [TODO] Feed the simd width by auto scheduler config
   (dolist (width `(4 8)) (push (make-instance 'Packing :amount width) actions))
   ;; Unroll
@@ -149,17 +130,15 @@ for (int i=0; i<10; i+=amount) {
            (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions))
            (sorted (sort (map 'list #'list (compute-costs auto-scheduler next-kernels item) next-kernels next-actions) #'> :key #'car)))
       (when (null sorted) (return-from optimize-band schedule-node-band))
-      ;(format t "~%DEBUG: Generation=~a ============~%" (autoscheduler-n-generation auto-scheduler))
-      ;(print next-actions)
-      ;; Interchange: Scalar Loadの依存を壊さないか見る必要がある (壊したらapplicable-p=NIL)
-      ;(dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
+      (format t "~%DEBUG: Generation=~a ============~%" (autoscheduler-n-generation auto-scheduler))
+      ;; (print next-actions)
+      ;; [TODO] How to verify the validity of loop interchange without providing scalar info?
+      ;; (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
       (format t "Selected:~%~a" (render-schedule-node (isl:schedule-node-get-schedule (second (car sorted)))))
       (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) (third (car sorted)))
       (incf (autoscheduler-n-generation auto-scheduler))
       (values (second (car sorted)) (third (car sorted))))))
-;; [TODO] Cache or Trainingするために，Outputはsequence of Opt, Cacheできるようなデータ構造にする
-;; [TODO] !rand !matmul ryouhou umaku schedule sitaiga?...
-;; [TODO] Vectorize -> Inner VectorizeがScheduleされてることをTestする(e.g.:INNER_TILE+INNER_UNROLL is possible?) 
+
 (defmethod minimize-cost ((auto-scheduler AutoScheduler) item)
   (labels ((get-absolute-pos (node history &aux (node (isl:schedule-get-root (isl:schedule-node-get-schedule node))))
              (dolist (h history)
@@ -197,7 +176,7 @@ for (int i=0; i<10; i+=amount) {
     ;; OPTIMIZE=1 : Parallel, Unroll, Vectorize, GLOCAL, LOCAL
     ;; OPTIMIZE=2 : Interchange, Tile(Interchange is required!), GROUPTOP
     (when (>= OPTIMIZE 1)
-      (let* ((strategy 'BogoScheduler) ;; TODO: Configurable?
+      (let* ((strategy 'BogoScheduler) ;; TODO: Configurable
              (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler)))
         (minimize-cost auto-scheduler node)))
     ;; [TODO] BEAM report
