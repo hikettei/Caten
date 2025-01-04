@@ -34,17 +34,17 @@
   (print-unreadable-object (opt stream :type t)
     (format stream ":id ~a :amount ~a" (opt-id opt) (opt-amount opt))))
 
-(defclass NoOpt (Opt) nil (:documentation "Nothing applied"))
+(defclass NoOpt (Opt) nil (:documentation "Nothing applied."))
 (defmethod apply-opt ((opt Noopt) schedule-node item config) (isl:copy schedule-node))
 (defmethod opt-applicable-p ((opt Noopt) schedule-node item config) t)
 ;; Note: Parallel vs Global/Local is orthogonal
-(defclass Parallel (Opt) nil (:documentation "Tiles the current schedule-band by amount"))
+(defclass Parallel (Opt) nil (:documentation "Parallelizes the given schedule-node"))
 (defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
   (and
-   (< (isl:schedule-node-get-schedule-depth schedule-node) (auto-scheduler-n-global-loops config)) ;; Located in the parallel level
+   (< (isl:schedule-node-get-schedule-depth schedule-node) (auto-scheduler-n-global-loops config)) ;; Located in the parallel level?
    (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
-
+;; TODO (Add Global/Local Support in Caten)
 (defclass Global (Opt) nil) ;; blockIdx
 (defclass Local (Opt) nil)  ;; threadIdx
 
@@ -55,22 +55,53 @@
   (apply-interchange (getattr item :polyhedral) schedule-node (opt-amount opt)))
 
 (defclass TileBand (Opt) nil (:documentation "Tiles the given schedule-node-band with the size"))
-(defmethod apply-opt ((opt TileBand) schedule-node item config)
-  
-  )
+(defmethod apply-opt ((opt TileBand) schedule-node item config) (apply-tile schedule-node (opt-amount opt)))
 (defmethod opt-applicable-p ((opt TileBand) schedule-node item config)
-  ;; TODO: How to judge has data reuse?
-  ;; TODO: get loop size?
+  ;; [TODO] Only applicable after the band has a data reuse. but how do we know that?
   t)
 
-(defclass Unroll (Opt) nil (:documentation "Unrolls the loop with amount"))
-(defclass Packing (Opt) nil (:documentation "Packs the array with amount"))
+(defclass Unroll (Opt) nil (:documentation "Unroll the loop with `amount`
+```
+for (int i=0; i<10; i++) {
+   T1(i)
+}
+```
+=>
+```
+for (int i=0; i<10; i+=amount) {
+  T1(i)
+  T2(i+1)
+  ...
+  T_amount(i+amount)
+}
+```"))
+;; More chances to find vectorize by gcc, but takes longer compilation time and no improvements on the speed.
+(defmethod apply-opt ((opt Unroll) schedule-node item config) (apply-unroll schedule-node (opt-amount opt)))
+(defmethod opt-applicable-p ((opt Unroll) schedule-node item config) t)
+
+(defclass Packing (Opt) nil (:documentation "Packs the task with `amount`.
+```
+for (int i=0; i<10; i++) {
+   T1(i)
+}
+```
+=>
+```
+for (int i=0; i<10; i+=amount) {
+  T1_PACKED(T1(i+0), T1(i+1), ..., T1(i+amount))
+}
+```
+"))
+(defmethod apply-opt ((opt Packing) schedule-node item config) (apply-pack schedule-node (opt-amount opt)))
+(defmethod opt-applicable-p ((opt Packing) schedule-node item config)
+  ;; [TODO] Usually vectorize-level parallelism is located in the innnermost loop. how to judge this?
+  t)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass AutoScheduler ()
   ((best-schedule :initarg :schedule :type isl:schedule-node-domain :accessor autoscheduler-best-schedule)
    (config :initarg :config :type Auto-Scheduler-Config :accessor autoscheduler-config)))
 
-(defgeneric cost (auto-scheduler schedule-nodes))
+(defgeneric compute-cost (auto-scheduler schedule-nodes) (:documentation "This method receives a list of candidate schedules, returning a same-lengthed list whose elements are type of float. (the higher the better)"))
 
 (defmethod get-possible-opts ((auto-scheduler AutoScheduler) schedule-node-band config &aux (actions))
   "Returns a list of possible optimization candidates."
@@ -80,6 +111,7 @@
           (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
     (dotimes (amount undernearth-band-count)
       (push (make-instance 'Interchange :amount amount) actions)))
+  ;; Parallel Directive
   (case (auto-scheduler-n-global-loops config)
     (0 nil)
     (1 (push (make-instance 'Parallel) actions))
@@ -87,6 +119,7 @@
      (warn "TODO: Block/Thread Parallelism"))
     (otherwise
      (warn "Currently Caten does not support n_global_loops=~a and thus the code is not parallelized." (auto-scheduler-n-global-loops config))))
+  ;; Tile
   actions)
 ;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
 (defmethod optimize-band ((auto-scheduler AutoScheduler) schedule-node-band item)
