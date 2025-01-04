@@ -57,11 +57,11 @@ scop.lisp for the opposite things.
        (cond
          ((equalp (directive-type directive) "GLOBAL")
           (setf (astfor-scope user) :global))
-         ((equalp (directive-type directive) "UNROLL_PARENT")
+         ((equalp (directive-type directive) "UNROLL_OUTER")
           (let ((body (astfor-body user)))
             (when (or
                    (not (typep body 'ASTFor))
-                   (null (and (astfor-marks body) (every #'(lambda (x) (equalp (directive-type x) "UNROLL_BODY")) (astfor-marks body)))))
+                   (null (and (astfor-marks body) (every #'(lambda (x) (equalp (directive-type x) "UNROLL_INNER")) (astfor-marks body)))))
               (return-from parse-isl-ast-mark user))
             (let* ((n-unroll (directive-amount directive))
                    (user     (copy-astfor user))
@@ -69,9 +69,9 @@ scop.lisp for the opposite things.
                    (reminder (caten/codegen/directive:compute-reminder-for-unroll user body n-unroll)))
               (setf (astfor-body user) unrolled)
               (return-from parse-isl-ast-mark (make-block (list user reminder))))))
-         ((equalp (directive-type directive) "UNROLL_BODY")
+         ((equalp (directive-type directive) "UNROLL_INNER")
           ;; UNROLL_BODY is triggered by the UNROLL_PARENT. Without it the form is ignored.
-          (assert (null (astfor-marks user)) () "UNROLL_BODY should be orthogonal with other directives.")
+          (assert (null (astfor-marks user)) () "UNROLL_INNER should be orthogonal with other directives.")
           (setf (astfor-marks user) (list directive)))
          (T
           ;(warn "mark: ignored the mark ~a for ~a" mark user)

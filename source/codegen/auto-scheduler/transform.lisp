@@ -138,15 +138,15 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defun apply-tile (band tile-size)
   (declare (type isl::schedule-node band) (type fixnum tile-size))
-  (%apply-tile band tile-size (directive "TILE" tile-size t) (directive "TILE" tile-size t)))
+  (%apply-tile band tile-size (directive "TILE_OUTER" tile-size t) (directive "TILE_INNER" tile-size t)))
 
 (defun apply-unroll (band unroll-by)
   (declare (type isl::schedule-node band) (type fixnum unroll-by))
-  (%apply-tile band unroll-by (directive "UNROLL_PARENT" unroll-by t) (directive "UNROLL_BODY" unroll-by nil)))
+  (%apply-tile band unroll-by (directive "UNROLL_INNER" unroll-by t) (directive "UNROLL_INNER" unroll-by nil)))
 
 (defun apply-pack (band pack-by)
   (declare (type isl::schedule-node band) (type fixnum pack-by))
-  (%apply-tile band pack-by (directive "PACKED" pack-by t) (directive "PACKED" pack-by nil)))
+  (%apply-tile band pack-by (directive "PACKED_OUTER" pack-by t) (directive "PACKED_INNER" pack-by nil)))
 ;; ~~ Legality Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-interchange (poly band1 idx)
   "Returns a new schedule of band1 with band1 and idx'th band node interchanged. Returns nil if the operation breaks the dependencies."

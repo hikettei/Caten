@@ -114,7 +114,8 @@ for (int i=0; i<10; i+=amount) {
   (let ((undernearth-band-count
           (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
     (dotimes (amount undernearth-band-count)
-      (push (make-instance 'Interchange :amount amount) actions)))
+      (push (make-instance 'Interchange :amount amount) actions)
+      ))
   ;; Parallel Directive (Parallel or GLOBAL/LOCAL)
   (case (auto-scheduler-n-global-loops config)
     (0 nil)
