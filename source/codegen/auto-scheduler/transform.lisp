@@ -93,11 +93,13 @@ Returns T if the current schedule does not break any dependences in dep."
     (assert pos)
     (let ((key (intern (subseq str 0 pos) "KEYWORD"))
           (value (subseq str (1+ pos))))
-      (case key
-        (:TYPE value)
-        (:AMOUNT (parse-integer value))
-        (:VISIBLE (string= (string-upcase value) "T"))
-        (otherwise value)))))
+      (list
+       key
+       (case key
+         (:TYPE value)
+         (:AMOUNT (parse-integer value))
+         (:VISIBLE (string= (string-upcase value) "T"))
+         (otherwise value))))))
 
 (defun split-directive-string (str)
   (let ((res '()) (start 0) (len (length str)))
@@ -114,7 +116,7 @@ Returns T if the current schedule does not break any dependences in dep."
   ;; @DIRECTIVE(...) is a valid format.
   (unless (and (uiop:string-prefix-p "@DIRECTIVE(" string) (char= (char string (1- (length string))) #\))) (error "Invalid directive string: ~S" string))
   (let* ((content (subseq string #.(length "@DIRECTIVE(") (1- (length string)))))
-    (apply #'make-instance 'Directive (alexandria:flatten (split-directive-string content)))))
+    (apply #'make-instance 'Directive (apply #'append (split-directive-string content)))))
 ;; ~~ Tile Based Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun tiling-sizes (band &key (size-default 32) (dims))
   (declare (type list dims) (type fixnum size-default))
