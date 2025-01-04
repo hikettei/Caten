@@ -28,9 +28,6 @@
 ;; BEAM Search: ISL Schedule Treeで実施する
 ;; Tiling+Interchangeは必須 (Tile Dimsを一番下に移動したい。。。)
 ;; remove tiling, unroll, coincidence -> transform.lisp
-;; Mark: 二つの属性を追加する:
-;; - [ ] <VISIBLE>
-;; - [ ] <INVISIBLE> interchangeの対象にならない？
 ;; ~~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Opt () ((id :initarg :id :initform nil :accessor opt-id) (amount :initarg :amount :accessor opt-amount)))
 (defgeneric apply-opt (opt schedule-node item config) (:documentation "Returns a new isl:schedule-node with current optimization was applied."))
@@ -54,11 +51,12 @@
 
 (defclass TileBand (Opt) nil (:documentation "Tiles the given schedule-node-band with the size"))
 (defmethod apply-opt ((opt TileBand) schedule-node item config)
-
+  
   )
 (defmethod opt-applicable-p ((opt TileBand) schedule-node item config)
-
-  )
+  ;; TODO: How to judge has data reuse?
+  ;; TODO: get loop size?
+  t)
 
 (defclass Unroll (Opt) nil (:documentation "Unrolls the loop with amount"))
 (defclass Packing (Opt) nil (:documentation "Packs the array with amount"))
@@ -84,13 +82,18 @@
   (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
     (return-from optimize-band schedule-node-band))
   ;; 無限ループしないように注意？
-  (let ((next-actions
-          (loop for opt in (get-possible-opts auto-scheduler schedule-node-band)
-                if (opt-applicable-p opt schedule-node-band item (autoscheduler-config auto-scheduler))
-                  collect opt)))
+  (let* ((config (autoscheduler-config auto-scheduler))
+         (next-actions
+           (loop for opt in (get-possible-opts auto-scheduler schedule-node-band)
+                 if (opt-applicable-p opt schedule-node-band item config)
+                   collect opt))
+         (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions)))
     (print "=====GENERATION=============")
     (print schedule-node-band)
     (print next-actions)
+    ;; Interchange: Scalar Loadの依存を壊さないか見る必要がある (壊したらapplicable-p=NIL)
+    (dolist (k next-kernels)
+      (print (render-schedule-node (isl:schedule-node-get-schedule k))))
     schedule-node-band))
 ;; [TODO] Cache or Trainingするために，Outputはsequence of Opt, Cacheできるようなデータ構造にする
 (defmethod minimize-cost ((auto-scheduler AutoScheduler) item)

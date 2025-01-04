@@ -15,7 +15,8 @@
    #:partial-schedule-node-id
    #:map-schedule-node-children
    #:schedule-node-get-undernearth-bands
-   #:schedule-node-get-band-from-relative-idx))
+   #:schedule-node-get-band-from-relative-idx
+   #:render-schedule-node))
 
 (in-package :caten/codegen/polyhedral)
 
@@ -216,3 +217,14 @@ This function returns a list of the results of applying f to each node. NIL is e
          (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
 	 (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule)))
     ast-build-node))
+
+(defun render-schedule-node (schedule-node)
+  (let* ((schedule (isl:copy schedule-node))
+         (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
+         (ast-build (isl:ast-build-set-options ast-build (isl:union-map-from-str "{}")))
+         (ast-build-node (isl:ast-build-node-from-schedule ast-build schedule))
+         (p (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
+         (p (isl::%isl-printer-set-output-format p 4))
+         (q (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast-build-node)))
+         (str (isl::%isl-printer-get-str q)))
+    str))
