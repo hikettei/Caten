@@ -5,6 +5,7 @@
     #:auto-schedule
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
     #:AutoScheduler #:autoscheduler-best-schedule #:autoscheduler-config
+    #:autoscheduler-n-generation #:autoscheduler-gen2act
     #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing
     #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs))
 
@@ -101,6 +102,8 @@ for (int i=0; i<10; i+=amount) {
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass AutoScheduler ()
   ((best-schedule :initarg :schedule :type isl:schedule-node-domain :accessor autoscheduler-best-schedule)
+   (n-generation :initform 0 :accessor autoscheduler-n-generation)
+   (gen2act :initform (make-hash-table) :accessor autoscheduler-gen2act)
    (config :initarg :config :type Auto-Scheduler-Config :accessor autoscheduler-config)))
 
 (defgeneric compute-costs (auto-scheduler schedule-nodes) (:documentation "This method receives a list of candidate schedules, returning a same-lengthed list whose elements are type of float. (the higher the better)"))
@@ -143,12 +146,15 @@ for (int i=0; i<10; i+=amount) {
                  if (opt-applicable-p opt schedule-node-band item config)
                    collect opt))
          (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions)))
-    (print "=====GENERATION=============")
+    (format t "~%DEBUG: Generation=~a:~%" (autoscheduler-n-generation auto-scheduler))
     (print (isl:schedule-node-get-schedule-depth schedule-node-band))
     (print schedule-node-band)
     (print next-actions)
     ;; Interchange: Scalar Loadの依存を壊さないか見る必要がある (壊したらapplicable-p=NIL)
     (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
+    
+    (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) t)
+    (incf (autoscheduler-n-generation auto-scheduler))
     schedule-node-band))
 ;; [TODO] Cache or Trainingするために，Outputはsequence of Opt, Cacheできるようなデータ構造にする
 (defmethod minimize-cost ((auto-scheduler AutoScheduler) item)
@@ -170,7 +176,6 @@ for (int i=0; i<10; i+=amount) {
   (assert (getattr node :polyhedral))
   (symbol-macrolet ((OPTIMIZE (the (integer 0 2) (ctx:getenv :OPTIMIZE))))
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
-    ;; どっちもBEAM Search but...
     ;; OPTIMIZE=1 : Parallel, Unroll, Vectorizeなど，ルールと優先度から
     ;; OPTIMIZE=2 : PROFILINGする，その代わりthreadbarrierなどを使える
     (when (>= OPTIMIZE 1)
