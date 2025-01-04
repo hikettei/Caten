@@ -134,7 +134,9 @@ Returns T if the current schedule does not break any dependences in dep."
          (tiled-schedule (schedule-node-band-tile tiled-schedule (tiling-sizes band :size-default amount)))
          (tiled-schedule (schedule-node-insert-mark (schedule-node-get-child tiled-schedule 0) (directive->id directive-child))))
     ;; Do not reschedule mark/tiled band
-    (schedule-node-get-child tiled-schedule 0)))
+    (if (directive-visible directive-child)
+        tiled-schedule ;; applying further optimizations ...
+        (schedule-node-get-child tiled-schedule 0))))
 
 (defun apply-tile (band tile-size)
   (declare (type isl::schedule-node band) (type fixnum tile-size))
@@ -142,7 +144,7 @@ Returns T if the current schedule does not break any dependences in dep."
 
 (defun apply-unroll (band unroll-by)
   (declare (type isl::schedule-node band) (type fixnum unroll-by))
-  (%apply-tile band unroll-by (directive "UNROLL_INNER" unroll-by t) (directive "UNROLL_INNER" unroll-by nil)))
+  (%apply-tile band unroll-by (directive "UNROLL_OUTER" unroll-by t) (directive "UNROLL_INNER" unroll-by nil)))
 
 (defun apply-pack (band pack-by)
   (declare (type isl::schedule-node band) (type fixnum pack-by))
@@ -161,6 +163,7 @@ Returns T if the current schedule does not break any dependences in dep."
          (node (schedule-node-insert-partial-schedule node mupa)))
     (declare (ignore _ __))
     (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
+      ;; ??? where to return?
       node)))
 ;; ~~ Insert Marks ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-parallel (schedule-node)
