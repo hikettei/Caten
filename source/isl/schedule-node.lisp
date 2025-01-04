@@ -91,6 +91,9 @@
 (defun schedule-node-get-child (schedule-node n)
   (%make-schedule-node (%isl-schedule-node-get-child (schedule-node-handle schedule-node) n)))
 
+(defun schedule-node-get-ancestor (schedule-node generation)
+  (%make-schedule-node (%isl-schedule-node-ancestor (schedule-node-handle schedule-node) generation)))
+
 (defun schedule-node-get-children (schedule-node)
   (declare (type schedule-node schedule-node))
   (when (eql :bool-true (isl::%isl-schedule-node-has-children (schedule-node-handle schedule-node)))
