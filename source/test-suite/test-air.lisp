@@ -1,6 +1,7 @@
 (in-package :caten/test-suite)
 
 (defun <node> (type writes reads &rest attrs) (apply #'make-node :Testing type writes reads attrs))
+
 (defun compare (graph expected
 		&key
 		  (slots `(caten/air::writes caten/air::reads caten/air::type caten/air::class))
@@ -13,13 +14,14 @@
 	(loop for node in (graph-nodes graph)
 	      for x = (find node expected :test #'eq-node)
 	      if (null x)
-		do (error "The node ~a is not appeared in the expected list." node)
+		do (error "The node ~a has not appeared in the expected list." node)
 	      else
 		do (setf expected (remove x expected :test #'eq-node)))
 	(return-from compare (every #'eq-node (graph-nodes graph) expected)))
     (if (null expected)
 	t
-	(error "Nodes ~a is not appeared in the simplified list." expected))))
+	(error "Nodes ~a has not appeared in the simplified list." expected))))
+
 (defmacro check-simplify (simplifier-name before after &key (shuffle-order t))
   `(compare
     (,simplifier-name
@@ -35,6 +37,7 @@
 (defnode (:Testing :Test-Sub1) () "")
 (defnode (:Testing :Test-X) () "")
 (defnode (:Testing :Test-L) () "")
+
 ;; ~~ tests ~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defsimplifier
