@@ -8,7 +8,7 @@
   (ok (= 1 (buffer-value (expr-realize (expr-add (expr-const 1 :int64) (expr-const 0 :int64)))))))
 
 (defun test-ceil (a)
-  (= (ceiling (/ a 3.0)) (buffer-value (expr-realize (expr-ceiling (expr-div (expr-const a :float32) (expr-const 3 :float32)) :float32)))))
+  (= (ceiling (/ a 3.0)) (buffer-value (expr-realize (expr-ceiling (expr-div (expr-const a :float32) (expr-const 3 :float32)) :int32)))))
 
 (deftest test-integer-arithmetic
   (ok (every #'test-ceil (alexandria:iota 50 :start 2))))
