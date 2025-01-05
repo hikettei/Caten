@@ -5,10 +5,11 @@
 ;; 2. (Func)     Translate from Tensor into caten/air:node, by using the `lower` method.
 ;; 3. (Optimize) Simplifying the graph with a mixture of :Func and :Module, enabling an ir-level optimization.
 ;; 4. (Module)   Translate from Tensor into Tensor, by using the `impl` method, proceeding to (2.) until :Module was purged.
-;; 5. (Optimize) Simplifying the graph in a level of :Func.
+;; 5. (Optimize) Simplifying the graph into a level of :Func.
 ;; 6. (Autodiff) Constructing the backward graph from (1.), lowering them in the same way as (2.) ~ (5.)
+
 ;; ~~ Compiler-Session (Utils) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; TODO(hikettei): It is just sorting tensors with adding a mutation rule to the Module, can't we reimplement it with a simple way?
+;; TODO(hikettei): It is just sorting tensors with adding a mutation rule to the Module, can't we reimplement it in a simple way?
 ;; Current impl is too complex :( and there's a lot of reuse.
 (defstruct (Compiler-Session
 	    (:conc-name session-)
@@ -18,7 +19,7 @@
   (write->node (make-hash-table :test #'eql) :type hash-table)  ;; (forward-time) tensor_id -> lowered_node table.
   (grad->tensor (make-hash-table :test #'eql) :type hash-table) ;; grad_id vs grad_tensor table. 
   (tid->tensor (make-hash-table :test #'eql) :type hash-table)  ;; a pair of toplevel_node and lowered_node
-  (grad->grads (make-hash-table :test #'eql) :type hash-table)  ;; multi-grad accumlation table.
+  (grad->grads (make-hash-table :test #'eql) :type hash-table)  ;; multi-grad accumulation table.
   (fw-out-ids nil :type list)  ;; list of tensor ids at the end of the graph.
   (bw-out-ids nil :type list)) ;; a list of grads (as well as fw-out-ids)
 
@@ -27,7 +28,7 @@
   (setf (gethash tid (session-tid->tensor session)) tensor))
 
 (defun session/update-outputs (session graph &key (alias))
-  "This should occur just after make-graph was happened."
+  "This should occur just after make-graph has happened."
   (declare (type compiler-session session)
 	   (type graph graph)
 	   (optimize (speed 3)))
@@ -55,7 +56,7 @@
   (let ((table (session-write->node session)))
     (or (gethash tid table)
 	default
-	(error "Session/read: The tensor ~a should be appeared in the graph first. (make sure that the top of node is an allocation.)" tid))))
+	(error "Session/read: The tensor ~a should have appeared in the graph first. (make sure that the top of node is an allocation.)" tid))))
 
 (defun session/setgrad (session tid grad)
   (declare (type Compiler-Session session)
@@ -85,7 +86,7 @@
 		  (list (first form) (nconc (list tid) (second form))))))
       (setf (gethash grad-id (session-grad->grads session)) (if alloc (list tid nil) (list nil (list tid))))))
 
-(defun accumlate-grads (subgrads last-id)
+(defun accumulate-grads (subgrads last-id)
   (graph-nodes (with-context (_ (%add (reduce #'%add (butlast subgrads)) (car (last subgrads)) :id last-id)))))
 
 (defun session/sync-multi-grads (session graph)
@@ -96,7 +97,7 @@
    #'(lambda (grad-id leaves)
        (multiple-value-bind (final-grad-id rest-grads) (apply #'values leaves)
 	 (declare (type list rest-grads))
-	 ;; [TODO] Since we intentionally detached the gradient accumlation
+	 ;; [TODO] Since we intentionally detached the gradient accumulation
 	 ;; we got a lot of additional change here to optimize/inline zero_grad/accum_grad
 	 ;; e.g.: rewriting ADD -> MOVE
 	 (if (= (length rest-grads) 0)
@@ -107,7 +108,7 @@
 	     (if (>= (length rest-grads) 2)
 		 (let* ((subgrads (map 'list #'(lambda (x) (session/read session x)) rest-grads))
 			(subgrad-id (gensym "SUBGRAD"))
-			(totals (accumlate-grads subgrads subgrad-id))
+			(totals (accumulate-grads subgrads subgrad-id))
                         (old-alloc-bw (id->value graph final-grad-id))
                         (new-alloc-bw (and old-alloc-bw (make-node :BinaryOps :MOVE (list grad-id) (list (car (node-reads old-alloc-bw)) subgrad-id) :reduction t))))
                    (assert (and old-alloc-bw (eql (node-type old-alloc-bw) :ADD) (getattr old-alloc-bw :reduction :allow-undefined t))
@@ -129,7 +130,8 @@
                    (setf (node-writes old-alloc-bw) (list grad-id))
 		   (session/assign session grad-id old-alloc-bw))))))
    (session-grad->grads session)))
-;; ~~ compilations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+;; ~~ compilation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun sync-output-to (tensors nodes)
   (assert (= (length tensors) (length nodes)))
   (loop for tensor in tensors
@@ -153,8 +155,8 @@
 		"Every tensor ~a should be appeared in the graph first. (make sure that the top of nodes is allocation)"
 		(func-variables (tensor-op tensor)))
 	(let ((low-graph (apply #'lower (tensor-op tensor) (sync-output-to (func-variables (tensor-op tensor)) (map 'list #'t->id (func-variables (tensor-op tensor)))))))
-	  (assert (graph-p low-graph) () "%tensor->asm: lower(~a, ...) should return a graph, butgot ~a" (tensor-op tensor) low-graph)
-	  (assert (every #'node-p (graph-nodes low-graph)) () "%tensor->asm: received invaild nodes. all elements should be a node. ~a" low-graph)
+	  (assert (graph-p low-graph) () "%tensor->asm: lower(~a, ...) should return a graph, but got ~a" (tensor-op tensor) low-graph)
+	  (assert (every #'node-p (graph-nodes low-graph)) () "%tensor->asm: received invalid nodes. All elements should be a node. ~a" low-graph)
 	  (assert (>= (length (the list (graph-nodes low-graph))) 1) () "Assertion Failed with (>= (length (graph-nodes low-graph)) 1)")
           (when simplifiers
             (setf (graph-outputs low-graph) (nconc (graph-outputs low-graph) (copy-list (node-writes (car (last (graph-nodes low-graph))))))
@@ -277,7 +279,7 @@
 		    (setf pause-backward-p t)
 		    (list (make-node :Special/VM :Pause/Backward toplevel-ids (list (node->id (car (last (graph-nodes forward-graph))))))))
 		   (and backward-graph (graph-nodes backward-graph))))))
-	  ;; Rewrite/Optimize f(A) + f(A) grad accumlation
+	  ;; Rewrite/Optimize f(A) + f(A) grad accumulation
           (when (null no-grad) (session/sync-multi-grads session merged-graph)) ;; Mutate grads to have an output like TGRAD000...
 	  ;; If Pause/Backward was generated, use toplevel-ids instead of toplevels because
 	  ;; val_1_1 val_2_1 <- pause/backward(val_1, val_2) was generated.
@@ -298,6 +300,7 @@
             ;; Finally minify duplicated stride computation subgraph. (forced)
             (setf merged-graph (minimize-duplicated-symbolic-path merged-graph))
 	    (values (->graph-with-tpsort merged-graph) pause-backward-p)))))))
+
 ;; ~~ module lowering utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %module->iseqfw (session module-node)
   "Lowers the given module.
@@ -462,12 +465,12 @@ The iseq obtained by lowering the Module must match the output destination speci
 (caten tensors &key (backend (ctx:getenv :BACKEND)) (rewriters nil) (simplifiers *external-simplifiers*))
 ```
 
-An entry point for compiling the give tensors, returning GraphRuntime.
+An entry point for compiling the given tensors, returning GraphRuntime.
 
 - tensor[Tensor|List] toplevel tensors.
 - backend[keyword] a keyword of the backend to use. (assumed to be defined by define-backend)
 - rewriters[list] a list of graph rewriters called each time the compiler will lower the module.
-- simplifiers[list] a list of external simplifiers used in the graph-level compilation. (defined by defsimplifier) Pass the function name.
+- simplifiers[list] a list of external simplifiers used in the graph-level compilation (defined by defsimplifier). Pass the function name.
 "
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
