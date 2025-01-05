@@ -18,7 +18,7 @@ Usage:
   (defun oneof (name default &rest options)
     `(lambda (x)
        (when (null (find x ',@options))
-	 (warn "ContextVar: ~a expects one of ~a butgot ~a, setting ~a" ',name ',options x ',default)
+	 (warn "ContextVar: ~a expects one of ~a but got ~a, setting ~a" ',name ',options x ',default)
 	 (setf x ',default))
        x))
   (defun oneof-kw (name default &rest options)
