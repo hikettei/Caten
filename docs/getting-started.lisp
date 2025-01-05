@@ -1,16 +1,18 @@
 ;;;; Note: This file is not intended to be loaded directly from Lisp,
 ;;;; but to be executed expression by expression.
 ;;;; If you are using Emacs/Lem, you can simply press `C-C C-c` while your cursor is hovering over an expression
-(ql:quickload :caten)
+(unless (find-package :caten)
+  (ql:quickload :caten))
 
 (defpackage :getting-started
   (:use :cl :caten/air :caten/aasm :caten/apis :caten/runtime))
 
 (in-package :getting-started)
+
 ;;; [Introduction]
 ;;; Welcome to Caten.
 ;;; Caten is a tensor library written in Common Lisp.
-;;; Our ultimate goal is to generate a fast deep learning model inference runtime across a wide range of devices with the minimal cost.
+;;; Our ultimate goal is to generate a fast deep learning model inference runtime across a wide range of devices with minimal cost.
 ;;;
 ;;; We need contributors. This document was created to help new contributors to quickly understand the design of Caten.
 ;;; To learn how Caten works, you first need to understand the following 4 main components:
@@ -20,31 +22,33 @@
 ;;; - 3. caten/codegen | AIR Graph => Kernel Generator
 ;;; - 4. caten/runtime | AIR Graph Runner + Buffer managements
 ;;; **All other systems are built on top of these packages.**
-(defun present (&rest tensors)
-  "Present compiles and executes the given tensor, then prints the result."
-  (format t "~{~& =>~% ~A~}" (multiple-value-list (apply #'proceed tensors))))
+
+
 ;;; ~~~[1. High Level Interface (caten/apis)]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;; The main role of `caten/apis` is to provide matrix operation APIs **with the same interface as Numpy/PyTorch**.
 ;;; Like Petalisp/tinygrad, Caten uses lazy evaluation.
 
-;; For example, creating a 3x3 matrix initialized with 1.0 using make-tensor doesn't trigger any computation, that's what we call lazy evaluation.
+;; For example, creating a 3x3 matrix initialized with 1.0 using make-tensor does not trigger any computation, that is what we call lazy evaluation.
 (defparameter *tensor1* (make-tensor `(3 3) :initial-element 1.0))
 
-(print *tensor1*) ;; Getting nothing! The tensor isn't evaluated. This is called lazy evaluation.
+(print *tensor1*) ;; Getting nothing! The tensor is not evaluated. This is called lazy evaluation.
 
 ;; If you want to see the result, you have to compile the kernel using the function `proceed`.
 (print (proceed  *tensor1*))
-
 
 ;; Let's define another tensor for the next experiments
 
 (defparameter *tensor2* (make-tensor `(3 3) :initial-element 1.0))
 
-;; To execute a previously compiled graph without recompiling, create an `GraphRuntime` using the `caten` function, then execute it with forward.
+;; To execute a previously compiled graph without recompiling, create a `GraphRuntime` using the `caten` function, then execute it with forward.
 ;; The graph created consists of a matrix multiplication, passing two tensors
 ;; The caten function creates the low-level graph, that is a compiled (low level) version of the matmul as an AST
 (print (caten (!matmul *tensor1* *tensor2*)))
-;; Proceed computes the lower level AST
+
+;; this is being executed with forward
+(print (forward (caten (!matmul *tensor1* *tensor2*))))
+
+;; Proceed evaluates by computing the lower level AST and executes it with forward
 (print (proceed (!matmul *tensor1* *tensor2*)))
 
 ;; Of course, Caten is designed so that all graphs can be compiled with dynamic shapes. There's no need to recompile every time the batch_size changes.
@@ -52,6 +56,7 @@
 ;;; The goal of `caten/apis` is to prevent bugs by wrapping the low-level interface commands (described later) in a high-level API.
 ;;; You can use various optimizations by lowering the AST in `caten/apis` into `caten/air`!
 ;;; => In the next section, we will learn about `caten/air`.
+
 
 ;;; ~~~[Low Level Interface (caten/air)]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;; In general, a deep learning compiler is a program that lowers transformations and operations on a DAG (Directed Acyclic Graph).
@@ -61,7 +66,7 @@
 (print (make-node :BinaryOps :ADD (list 'a) (list 'b 'c) :reduction t))
 (print (make-graph (make-node :BinaryOps :ADD (list 'a) (list 'b 'c))))
 
-;;; Any functions starting with `%` represents low level operations for the air node creation.
+;;; Any function starting with `%` represents low level operations for the air node creation.
 ;;; By wrapping such graph constructions with the with-context macro, Caten automatically organizes them into an executable graph.
 ;;; - caten/runtime:realize-graph to run the graph in GraphRuntime
 ;;; - caten/aasm:->dot to open the graph in your browser
@@ -82,8 +87,15 @@
 ;;; - Nodes can be defined using defnode.
 ;;; - Pattern Matcher can be defined using `defsimplifier`
 ;;; - `caten/aasm` provides a set of instruction used in GraphRuntime
+
+
 ;;; ~~~[A Bridge between AIR and APIs]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;; In this section, we will explain the mechanism of lowering the high-level interface(APIs) to the low-level interface(AIR Graph).
+
+;; utility function for presentation
+(defun present (&rest tensors)
+  "Present compiles and executes the given tensor, then prints the result."
+  (format t "~{~& =>~% ~A~}" (multiple-value-list (apply #'proceed tensors))))
 
 ;;; To lower `caten/apis` to a Graph, implement the lower method in the computation graph `Func` of `Caten/apis` and describe the lowered computation graph there.
 ;;; Let’s try defining a `Func` to compute `Sin(Cos(x))` as an example.
@@ -102,7 +114,7 @@
       (a (%sin (%add x (%fconst (/ pi 2)))))
       (b (%sin a)))))
 
-;; You can create the next lazy tensor using forward method.
+;; You can create the next lazy tensor using the forward method.
 ;; Let's define a function doing this as a utility named !sincos.
 (defun !sincos (tensor)
   (forward (make-instance 'SinCos) tensor))
@@ -112,6 +124,7 @@
 ;; Running SinCos
 (present
  (!sincos (make-tensor `(3 3) :initial-element 1.0))) ;; = 0.51439524
+
 ;;; ~~~~[caten/codegen]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpackage :codegen-example
   (:use :cl :caten/air :caten/aasm :caten/apis :caten/runtime :caten/codegen/expr-cache)
@@ -138,9 +151,10 @@
   (:import-from
    :caten/codegen/jit
    #:schedule-graph->avm-graph))
+
 (in-package :codegen-example)
 
-;; Defining Some utils ...
+;; Defining some utils ...
 (defun run-shape-inference (runtime)
   (run-type-infer runtime)
   (apply-rewriting-rules runtime))
@@ -176,7 +190,7 @@
             (setf (getattr item :rendered-object) c-kernel))))
       ;; Invoking gcc ...
       (%compile-kernel renderer (graph-nodes schedule-graph) nil)
-      ;; Overwrite the base graph with compiled graph
+      ;; Overwrite the base graph with the compiled graph
       (let ((optimized-graph (schedule-graph->avm-graph (runtime-graph vm) schedule-graph)))
         (make-runtime optimized-graph :fw-outputs (graph-outputs schedule-graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))))
 
@@ -226,6 +240,7 @@
       (saying
        6 "Running the computation X(3x3) + Y(3x3), the result is:"
        (%run vm `(x . ,(linspace `(3 3) 1 0)) `(y . ,(linspace `(3 3) 1 0)))))))
+
 ;; Example 2. Lowering two squared matrix multiplying into the C kernel.
 (defun %make-squared-gemm (N out)
   "a @ b.T"
@@ -251,6 +266,7 @@
   ;; your code follows ...
   )
  (list ... ))
+
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;;; Caten provides APIs that use the aforementioned JIT by default.
 ;;; - Set JIT=1 to enable it.
