@@ -8,13 +8,13 @@
 [Func] -> <Lower> -> [FastGraph] -> <Simplifier> -> [Completed]
 ```
 
-`Func` is a syntax-sugar for generating lowered instructions defined in the `caten/aasm` package.
+`Func` (as the base class) is syntactic sugar for generating lowered instructions defined in the `caten/aasm` package.
 
-To properly lower the `Func`, You need to implement the following three methods:
+To properly lower the respective `Func`, you need to implement the following three methods:
 
 - lower: Lower the `Func` into a list of `caten/air:node`. This should return `caten/air:graph`.
-- forward: Create the type for the Tensor after computation. Be mindful of its lazy evaluation nature; do not perform the actual computation. `ShapeTracker` might help you. (use the `st` macro)
-- backward: Create the graph for backward of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`."))
+- forward: Create the type for the Tensor after computation. Be aware of its lazy evaluation nature; do not perform the actual computation. `ShapeTracker` might help you. (use the `st` macro)
+- backward: Create the graph for the backward computation of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`."))
 
 (defgeneric lower (op &rest nodes)
   (:documentation "
@@ -33,7 +33,7 @@ Lowers the Func into a list of `caten/air:node`. This should return caten/air:gr
 (forward op &rest tensors)
 ```
 
-Create the type for the Tensor after computation. Be mindful of its lazy evaluation nature; do not perform the actual computation. Use the `st` macro to create a new tensor.
+Create the type for the Tensor after computation. Be aware of its lazy evaluation nature; do not perform the actual computation. Use the `st` macro to create a new tensor.
 
 - op[Func] Func to forward.
 - tensors[list] list of input tensors."))
@@ -44,7 +44,7 @@ Create the type for the Tensor after computation. Be mindful of its lazy evaluat
 (backward op &optional prev-grad)
 ```
 
-Create the graph for backward of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`.
+Create the graph for the backward computation of op given prev-grad. Return: `(values input_1.grad input_2.grad ...)`.
 save-for-backward is determined automatically, so you do not have to consider about in-place operation.
 
 - op[Func] Func to backward.
@@ -66,6 +66,7 @@ save-for-backward is determined automatically, so you do not have to consider ab
           for nth upfrom 0
           do (setf (tensor-nth-output o) nth))
     (apply #'values outs)))
+
 ;; ~~ differentiable ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass IdentityNode (Func) nil)
 (defmethod forward ((op IdentityNode) &rest tensors) (st "A[~] -> A[~]" (tensors)))
@@ -148,7 +149,7 @@ Subscripts has the following notation:
 - `(a b c)` slices in the range of `[a, b)` with step `c`. `c` can be negative. In that case, b must be larger than a. For example: `(10 0 -1)` to reverse the elements in the axis.
 - `(:~ n)` to broadcast the axis, with the size of `n`
 
-It is supported to compose mutliple views; the viewed tensors can be created from the viewed tensors.
+It is supported to compose multiple views; the viewed tensors can be created from the viewed tensors.
 "
   (make-view-internal base subscripts))
 
@@ -211,7 +212,7 @@ Transposes the last two axes of the tensor
 (!transpose tensor &optional (dim0 1) (dim1 0))
 ```
 
-Transposes the `dim0` and `dim1`.
+Transposes `dim0` and `dim1`.
 "
   (declare (type tensor tensor))
   (let* ((range (range 0 (ndim tensor)))
@@ -226,7 +227,7 @@ Transposes the `dim0` and `dim1`.
 (!contiguous x &key (force nil))
 ```
 
-If the tensor is viewed, creates a copy of tensor with contiguous memory. Otherwise, returns the original tensor. If `force` is set to T, it always creates a copy.
+If the tensor is viewed, then creates a copy of tensor with contiguous memory. Otherwise, return the original tensor. If `force` is set to T, it always creates a copy.
 "
   (declare (type tensor x))
   (if (or force (tensor-views x))
@@ -798,7 +799,7 @@ Computes the reciprocal of sqrt x.
 ```
 Finds the `rank` th index components of the tensor.
 
-For example (!gid x 1) for (3 3) tensor is a `(0 1 2). (As a tip) by combining !gid with !where, you can implement pseudo a random accessing of the tensor. For example:
+For example (!gid x 1) for (3 3) tensor is a `(0 1 2). (As a hint) by combining !gid with !where, you can implement a pseudo random access of the tensor. For example:
 "
   (declare (type tensor tensor) (type fixnum rank))
   (let* ((axis (normalize-axis tensor rank))
@@ -812,7 +813,7 @@ For example (!gid x 1) for (3 3) tensor is a `(0 1 2). (As a tip) by combining !
 ```
 (!normalize-axis ndim axis)
 ```
-Creates a tensor graph which normalizes the axis. If the axis is negative, it will be normalized to the positive axis.
+Creates a tensor graph which normalizes the axis. If the axis is negative, then it will be normalized to the positive axis.
 "
   (let ((ndim (->iconst ndim)) (axis (->iconst axis)))
     (!where (!< axis (iconst 0)) (!add axis ndim) axis)))
