@@ -451,3 +451,25 @@ B <- C // :reduction=t
        (multiple-value-bind (rs2 cs2) (expr-realized-buffers (getattr render :below) :candidates candidates :written written)
          (values nil (append rs1 rs2) (append cs1 cs2)))))
     (:ENDFOR)))
+
+(defun mutate-for-as-space (for rank global-size local-size)
+  "Returns a new expr consisted of :EXPR, which is equivalent to run :FOR in the gpu kernel.
+Return: (values new-for-replacements if-statement[optional])"
+  (declare (type node for) (type fixnum rank) (type fixnum global-size local-size))
+  (assert (eql (node-type for) :FOR))
+  ;; If mod has a reminder -> insert if
+  (let* ((upfrom (getattr for :upfrom)) (below (getattr for :by)) (size (expr-detach-loop-bound (getattr for :below)))
+         (block-size (expr-ceildiv size global-size))
+         (idx (expr-add (expr-mul idx) upfrom))
+         (reminder))
+
+    ))
+
+(defun test ()
+  (mutate-for-as-space
+   (make-node :RENDER :FOR nil nil
+              :idx "x"
+              :upfrom (expr-const 0 :int64)
+              :below (expr-< (expr-const 'x :int64) (expr-const 'm :int64))
+              :by (expr-const 1 :int64))
+   16 1))

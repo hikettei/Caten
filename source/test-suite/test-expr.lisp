@@ -2,11 +2,16 @@
   (:documentation "A test suite for caten/codegen/expr and gflops computation.")
   (:use :cl :rove :caten/codegen/expr :caten/runtime :caten/apis :caten/air :caten/codegen/blueprint :caten/codegen/jit))
 (in-package :caten/test-suite/expr)
-;; 1. expr-realize
-;; 2. gflops test from the matmul schedule
+
 (deftest test-expr-simplification
   ;; [TODO] More Simplification case if exists
   (ok (= 1 (buffer-value (expr-realize (expr-add (expr-const 1 :int64) (expr-const 0 :int64)))))))
+
+(defun test-ceil (a)
+  (= (ceiling (/ a 3.0)) (buffer-value (expr-realize (expr-ceiling (expr-div (expr-const a :float32) (expr-const 3 :float32)) :float32)))))
+
+(deftest test-integer-arithmetic
+  (ok (every #'test-ceil (alexandria:iota 50 :start 2))))
 
 (deftest test-gemm-gflops
   (testing "Static Matmul FLOP Computation ..."

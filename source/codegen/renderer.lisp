@@ -229,6 +229,11 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
   (%render-const renderer (getattr node :value)))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :SPACE)) node)
+  (let ((lv (ecase (getattr node :level) (:block "blockIdx") (:thread "threadIdx")))
+        (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))
+    (format nil "~a.~a" lv dim)))
+
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)
                 (let ((lhs (render-node renderer (nth 0 (node-reads node))))
