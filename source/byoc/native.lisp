@@ -27,11 +27,11 @@
     ,(if (getattr node :pointer-p)
          `(simple-array ,(dtype->lisp (getattr node :dtype)) (*))
          (dtype->lisp (getattr node :dtype)))
-    ,(car (node-writes node))))
+    ,(const (car (node-writes node)))))
 
 (defmethod %render-kernel ((renderer LispStyle-Renderer) schedule-item)
   (let* ((args (schedule-item-args schedule-item)))
-    `(lambda (,@(map 'list #'(lambda (x) (car (node-writes x))) args))
+    `(lambda (,@(map 'list #'(lambda (x) (const (car (node-writes x)))) args))
        (declare (optimize (speed 3) (safety 1)) ,@(map 'list #'global-type-spec args))
        ,(recursive-render-bp (getattr schedule-item :blueprint)))))
 
@@ -54,7 +54,13 @@
       (setf (getattr item :compiled-object) (wrap-with-caller (getattr item :rendered-object))
             (getattr item :rendered-object) (princ-to-string (getattr item :rendered-object))))))
 
-(defmethod %render-const ((renderer LispStyle-Renderer) object) object)
+(defun const (obj)
+  (if (symbolp obj)
+      (intern (string-upcase (princ-to-string obj)))
+      ;; [TODO] INF/-INF
+      obj))
+
+(defmethod %render-const ((renderer LispStyle-Renderer) object) (const object))
 ;; Binary
 (macrolet ((def (id op &optional (offset 0))
              `(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql ,id)) node)
@@ -101,12 +107,12 @@
   (def :RECIP /)
   (def :sqrt sqrt))
 
-(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :LOAD)) node) (getattr node :value))
+(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :LOAD)) node) (const (getattr node :value)))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Aref)) node)
   (let ((idx (render-aref-index renderer node)))
     (if idx
-        `(aref ,(getattr node :storage-id) ,idx)
-        (getattr node :storage-id))))
+        `(aref ,(const (getattr node :storage-id)) ,idx)
+        (const (getattr node :storage-id)))))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Move)) node) (render-node renderer (second (node-reads node))))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Store)) node) (render-node renderer (second (node-reads node))))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Allocate)) node) nil)
@@ -127,6 +133,7 @@
 
 (defmethod  %render-node ((renderer LispStyle-Renderer) (id (eql :Index-Components)) node)
   (render-expr 'LispStyle-Renderer (expr-index-components renderer node (renderer-index-space renderer))))
+
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :WHERE)) node)
   `(if ,(render-node renderer (nth 0 (node-reads node))) ,(render-node renderer (nth 1 (node-reads node))) ,(render-node renderer (nth 2 (node-reads node)))))
 
@@ -153,16 +160,16 @@
          (let ((below (extract-scop-from-loop bp)))
            (if below
                `(progn
-                  (,(if (eql (getattr bp :scope) :local) 'dotimes 'lparallel:pdotimes) (,(intern (getattr bp :idx)) ,(render-expr 'LispStyle-Renderer below))
+                  (,(if (eql (getattr bp :scope) :local) 'dotimes 'lparallel:pdotimes) (,(const (intern (getattr bp :idx))) ,(render-expr 'LispStyle-Renderer below))
                     ,(recursive-render-bp (subseq rest-blueprints 1 endfor)))
                   ,(recursive-render-bp (subseq rest-blueprints (1+ endfor))))
                (progn
                  (when (eql (getattr bp :scope) :global) (warn "recursive-render-bp: The node ~a is scheduled as global but the upfrom/below/by is too complicated to handle.~%Thus this loop is not parallelized." bp))
                  `(progn
-                    (loop with ,(intern (getattr bp :idx)) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
+                    (loop with ,(const (intern (getattr bp :idx))) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
                           while ,(render-expr 'LispStyle-Renderer (getattr bp :below))
                           do ,(recursive-render-bp (subseq rest-blueprints 1 endfor))
-                             (incf ,(intern (getattr bp :idx)) ,(render-expr 'LispStyle-Renderer (getattr bp :by))))
+                             (incf ,(const (intern (getattr bp :idx))) ,(render-expr 'LispStyle-Renderer (getattr bp :by))))
                     ,(recursive-render-bp (subseq rest-blueprints (1+ endfor)))))))))
       (:ENDFOR
        (error ":ENDFOR should not be appeared here. Malformed blueprint?"))
@@ -175,7 +182,7 @@
       (:EXPR
        (caten/codegen/shape-inference:expr-infer-type (getattr bp :EXPR))
        (let ((write-index (render-index 'LispStyle-Renderer bp :nth 0))
-             (id (car (node-writes bp)))
+             (id (const (car (node-writes bp))))
              (dtype (buffer-dtype (car (relay-writes (read-type-relay bp)))))
              (decl-p (car (getattr bp :declare-type))))
          `(,@(if decl-p `(let ((,id ,(render-expr 'LispStyle-Renderer (getattr bp :EXPR) :index-space (getattr bp :iterations))))) '(progn))
