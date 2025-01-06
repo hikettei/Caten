@@ -10,7 +10,7 @@
 (deftest tensor-shaped-tensor-test-1
   (let* ((size1 (!add (iconst 'a) (iconst 'a)))
          (size2 (!add (iconst 'b) (iconst 'b)))
-         (tensor (caten (make-tensor `(,size1 ,size2) :initial-element 'a)))
+         (tensor (caten (make-tensor `(,size1 ,size2) :initial-element 'a :dtype :int32)))
          (out (elements (forward tensor `(a . 4) `(b . 8)))))
     (ok (= (length out) 128))
     (ok (every #'(lambda (x) (= x 4)) out))))
@@ -18,10 +18,10 @@
 (deftest tensor-shaped-tensor-test-2
   (let* ((size1 (!add (iconst 'a) (iconst 'a)))
   	 (size2 (!add (iconst 'b) (iconst 'b)))
-  	 (tensor (caten (!sin (make-tensor `(,size1 ,size2) :initial-element 'a))))
+  	 (tensor (caten (!mul (iconst 2) (make-tensor `(,size1 ,size2) :initial-element 'a :dtype :int32))))
   	 (out (elements (forward tensor `(a . 4) `(b . 8)))))
     (ok (= (length out) 128))
-    (ok (every #'(lambda (x) (= x (sin 4))) out))))
+    (ok (every #'(lambda (x) (= x (* 2 4))) out))))
 
 (deftest tensor-view-tensor-test-1
   (testing "Upfrom"
