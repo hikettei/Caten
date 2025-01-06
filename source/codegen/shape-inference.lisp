@@ -47,8 +47,6 @@
 
 (in-package :caten/codegen/shape-inference)
 
-(defparameter *type-reporter* nil)
-
 (defstruct (Type-Reporter
 	    (:conc-name rp-)
 	    (:constructor make-type-reporter ()))
@@ -63,7 +61,7 @@
       id
       (or (gethash id (rp-id2buffer type-reporter)) (error "map/type-of: ~a cannot be inferred from the graph" id))))
 
-(defclass RelayChecker (GraphRuntime) nil)
+(defclass RelayChecker (GraphRuntime) ((type-reporter :initarg :type-reporter :accessor runtime-type-reporter)))
 
 (defclass RelayBuffer (AbstractBuffer)
   ((inferred-permute :accessor buffer-inferred-permute :initform nil)
@@ -104,7 +102,7 @@
     (loop for n in (node-writes node)
           for o in out
           do (assert (buffer-p o) () "relay-checker: ~a should return a buffer" node)
-             (setf (gethash n (rp-id2buffer *type-reporter*)) o))
+             (setf (gethash n (rp-id2buffer (runtime-type-reporter runtime))) o))
     (apply #'values out)))
 
 (defmethod realize-node ((node-id (eql :Allocate)) (runtime RelayChecker) node args)
@@ -140,18 +138,20 @@
 ```
 Runs the shape inference to the given GraphRuntime, returning `Type-Reporter`."
   (ctx:with-contextvar (:PROFILE 0)
-    (let ((*supress-allocate-mode* t) (*type-reporter* (make-type-reporter))
+    (let ((*supress-allocate-mode* t)
+          (type-reporter (make-type-reporter))
           (runtime (make-runtime graph :runtime 'RelayChecker :buffer-type 'RelayBuffer)))
+      (setf (runtime-type-reporter runtime) type-reporter)
       (runtime-forward runtime)
       ;; Infer type for PAUSE/BACKWARD
       (let ((pause/bw (nth (runtime-pc runtime) (graph-nodes graph))))
         (when (and pause/bw (eql (node-type pause/bw) :PAUSE/BACKWARD))
 	  (loop for r in (node-reads pause/bw)
 	        for w in (node-writes pause/bw)
-	        do (setf (gethash w (rp-id2buffer *type-reporter*)) (runtime-getvar runtime r)))))
+	        do (setf (gethash w (rp-id2buffer type-reporter)) (runtime-getvar runtime r)))))
       (runtime-backward runtime)
-      (deploy-type-infer-results graph *type-reporter*)
-      *type-reporter*)))
+      (deploy-type-infer-results graph type-reporter)
+      type-reporter)))
 
 (defstruct (Inferred-Type
 	    (:conc-name relay-)
@@ -223,6 +223,12 @@ If the shape inference is successfully done and properly deployed to the target 
 	  (assert (null (getattr n :_type_relay :allow-undefined t)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
 	(when (null (getattr n :_type_relay :allow-undefined t))
 	  (setf (getattr n :_type_relay) type))))))
+
+(defun expr-infer-type (expr)
+  "Running TypeRelay Inference for the expr graph."
+  (declare (type expr expr))
+
+  )
 ;; ~~ Loop Collase ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun mergeable-view-p (g view shape &aux (shape (if (typep shape 'Expr) shape (expr-const (reveal-buffer shape) :int64))))
   "Mergeable axis = view is not created."
