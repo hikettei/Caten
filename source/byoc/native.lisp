@@ -177,7 +177,6 @@
       (:ENDIF
        (error "LispStyle Renderer currently does not support IF statement."))
       (:EXPR
-       (expr-infer-type (getattr bp :EXPR))
        (let ((write-index (render-index 'LispStyle-Renderer bp :nth 0))
              (id (const (car (node-writes bp))))
              (dtype (buffer-dtype (car (relay-writes (read-type-relay bp)))))

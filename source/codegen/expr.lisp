@@ -156,6 +156,7 @@ Only supports the scalar computation because it is intended to identify the same
 (defmethod simplify-expr ((expr Expr))
   ;; [TODO] Use FastGraph
   (optimize-aasm (expr-graph expr))
+  (uiop:symbol-call :caten/codegen/shape-inference :expr-infer-type expr)
   expr)
 
 (defun %connect-expr (grh args out)
