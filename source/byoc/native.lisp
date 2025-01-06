@@ -128,7 +128,11 @@
        `(coerce ,x ',dtype-to-lisp)))))
 
 (defmethod  %render-node ((renderer LispStyle-Renderer) (id (eql :Index-Components)) node)
-  (render-expr 'LispStyle-Renderer (expr-index-components renderer node (renderer-index-space renderer))))
+  (let ((out-dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
+        (components (render-expr 'LispStyle-Renderer (expr-index-components renderer node (renderer-index-space renderer)))))
+    (case out-dtype
+      ((:float64 :float32) `(coerce ,components ',(dtype->lisp out-dtype)))
+      (otherwise components))))
 
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :WHERE)) node)
   `(if ,(render-node renderer (nth 0 (node-reads node))) ,(render-node renderer (nth 1 (node-reads node))) ,(render-node renderer (nth 2 (node-reads node)))))
