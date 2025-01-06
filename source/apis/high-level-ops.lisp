@@ -49,10 +49,10 @@
     :forward st/reduction
     :impl ((mean x)
 	   (with-attrs ((axis :axis) (keepdims :keepdims)) mean
-	     (let ((total (fconst 1)))
+	     (let ((total (iconst 1)))
 	       (loop for new-axis in (parse-reduce-axes x axis)
 		     for base in (shape x)
-		     if (eql new-axis 1) do (setf total (!* total (->fconst base))))
+		     if (eql new-axis 1) do (setf total (!* total (->iconst base))))
                (!div (!sum x :axis axis :keepdims keepdims) (!cast total (dtype-of x)))))))
 
 (macrolet ((defreduce (f model doc)

@@ -93,8 +93,9 @@
 ;; Unary
 (macrolet ((def (id op &rest args)
              `(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql ,id)) node)
-                (let ((x (render-node renderer (nth 0 (node-reads node)))))
-                  (list ',op x ,@args)))))
+                (let ((x (render-node renderer (nth 0 (node-reads node))))
+                      (wt (dtype->lisp (buffer-dtype (car (relay-writes (read-type-relay node)))))))
+                  (list 'the wt (list ',op x ,@args))))))
   (def :NEG -)
   (def :NOT not)
   (def :SIN sin)
