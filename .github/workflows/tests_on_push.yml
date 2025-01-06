@@ -14,6 +14,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         lisp: [sbcl-bin]
         backend: [lisp, clang, native] #todo: metal
