@@ -54,7 +54,6 @@
 (defun const (obj)
   (if (symbolp obj)
       (intern (string-upcase (princ-to-string obj)))
-      ;; [TODO] INF/-INF
       obj))
 
 (defmethod %render-const ((renderer LispStyle-Renderer) object) (const object))
