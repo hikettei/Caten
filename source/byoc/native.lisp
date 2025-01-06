@@ -88,8 +88,8 @@
   (def :XOR logxor alexandria:xor))
 
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :!=)) node)
-  (let ((lhs (render-node renderer (nth 0 (node-reads node))))
-        (rhs (render-node renderer (nth 1 (node-reads node)))))
+  (let ((lhs (render-node renderer (nth 1 (node-reads node))))
+        (rhs (render-node renderer (nth 2 (node-reads node)))))
     `(not (= ,lhs ,rhs))))
 ;; Unary
 (macrolet ((def (id op &rest args)
