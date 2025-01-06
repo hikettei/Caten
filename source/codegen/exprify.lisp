@@ -462,8 +462,7 @@ Return: (values new-for-replacements if-statement[optional])"
          (global-idx (if (= global-size 1) (expr-const 1 :int64) (expr-grid :block rank)))
          (local-idx (if (= local-size 1) (expr-const 1 :int64) (expr-grid :thread rank)))
          (griddim (expr-ceiling (expr-div (expr-cast size :float32) (expr-const global-size :float32)) :int64))
-         (idx (expr-add (expr-mul global-idx griddim) local-idx)))
-    (print griddim)
+         (idx (expr-add (expr-mul global-idx (expr-idiv griddim (expr-const local-size :int64))) local-idx)))
     idx
 
     ))
@@ -473,7 +472,7 @@ Return: (values new-for-replacements if-statement[optional])"
    (make-node :RENDER :FOR nil nil
               :idx "x"
               :upfrom (expr-const 0 :int64)
-              :below (expr-< (expr-const 'x :int64) (expr-const 30 :int64))
+              :below (expr-< (expr-const 'x :int64) (expr-const 128 :int64))
               :by (expr-const 1 :int64))
    0
-   2 1))
+   32 2))
