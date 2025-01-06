@@ -311,6 +311,7 @@ Corresponds to:
 ```
 "
          :slots ((level :type (member :block :thread))
-                 (rank  :type (integer 0 3))))
+                 (rank  :type (integer 0 3))
+                 (dtype :type keyword)))
 
 ) ;; eval-when

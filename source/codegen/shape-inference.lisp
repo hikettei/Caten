@@ -96,7 +96,7 @@
 	  (buffer-orig-buffer-shape buff) (buffer-orig-buffer-shape (car args)))
     buff))
 
-(defparameter *special-nodes* `(:Allocate :View :Load :Where :AREF))
+(defparameter *special-nodes* `(:Allocate :View :Load :Where :AREF :SPACE))
 (defmethod realize-node :around (node-id (runtime RelayChecker) node args)
   (when (getattr node :_type_relay :allow-undefined t)
     (loop for n in (node-writes node)
@@ -129,6 +129,9 @@
 
 (defmethod realize-node ((node-id (eql :AREF)) (runtime RelayChecker) node args)
   (make-buffer nil nil (buffer-dtype (getattr node :buffer)) nil :device 'RelayBuffer))
+
+(defmethod realize-node ((node-id (eql :SPACE)) (runtime RelayChecker) node args)
+  (make-buffer nil nil (getattr node :dtype) nil :device 'RelayBuffer))
 
 (defmethod realize-node ((node-id (eql :Load)) (runtime RelayChecker) node args)
   (let* ((tgt (car args)) (val (getattr node :value)) (out (copy-buffer tgt)))
