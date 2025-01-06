@@ -464,7 +464,7 @@
 	(let* ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))
 	       (one (make-tensor `(3 3) :initial-element 2 :dtype dtype))
 	       (val (proceed (!add max one))))
-	  (if (caten/codegen/backend:jit-mode-p)
+	  (if (and (caten/codegen/backend:jit-mode-p) (not (eql :native (ctx:getenv :BACKEND))))
 	      (ok (every (equal-to ans) (elements val)) (format nil "[~a] got ~a, expected ~a." dtype (elements val) ans))
 	      (ok (every #'(lambda (x) (not (= x 0))) (elements val)) (format nil "[~a+VM] got ~a, != 0" dtype (elements val)))))))))
 

@@ -107,6 +107,7 @@
 (defsimplifier
     (apply-fold-constant :speed 1)
     ((:Mod ((Const x dtype) (Const y _))) -> (Const (mod x y) dtype))
+    ((:Cast (_ (Const x _)) :dtype dtype) -> (Const (caten/common.dtype:dtype/cast x dtype) dtype))
     ((:Add ((Const x dtype) (Const y _))) -> (Const (+ x y) dtype))
     ((:Mul ((Const x dtype) (Const y _))) -> (Const (* x y) dtype))
     ((:Mul ((Const x dtype) (:Recip ((Const y _))))) -> (Const (/ x y) dtype))

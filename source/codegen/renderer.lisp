@@ -113,6 +113,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (apply #'make-instance renderer-name :graph graph :index-space index-space initargs))
 
 (defun render-expr (renderer-id expr &key (index-space) (initargs))
+  (declare (type expr expr))
   (assert (every #'expr-p index-space) () "index-space is a list of exprs!")
   (render-node
    (apply #'make-instance renderer-id :graph (expr-graph expr) :index-space index-space initargs)
@@ -228,6 +229,11 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
   (%render-const renderer (getattr node :value)))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :SPACE)) node)
+  (let ((lv (ecase (getattr node :level) (:block "blockIdx") (:thread "threadIdx")))
+        (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))
+    (format nil "~a.~a" lv dim)))
 
 (macrolet ((def (id op)
              `(defmethod %render-node ((renderer Default-Renderer) (id (eql ,id)) node)

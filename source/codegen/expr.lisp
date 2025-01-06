@@ -32,9 +32,14 @@
    #:expr->
    #:expr->=
    #:expr-=
+   #:expr-cast
+   #:expr-truncate
+   #:expr-ceiling
    #:expr-where
    #:expr-neg
    #:expr-not
+   #:make-grid
+   #:expr-grid
    #:with-expr-cache
    #:expr-detach-loop-bound
    #:expr-flops
@@ -151,6 +156,7 @@ Only supports the scalar computation because it is intended to identify the same
 (defmethod simplify-expr ((expr Expr))
   ;; [TODO] Use FastGraph
   (optimize-aasm (expr-graph expr))
+  (uiop:symbol-call :caten/codegen/shape-inference :expr-infer-type expr)
   expr)
 
 (defun %connect-expr (grh args out)
@@ -250,6 +256,25 @@ Only supports the scalar computation because it is intended to identify the same
   (let ((grh (with-context (_ (%where (expr-out condition) (expr-out then) (expr-out else) :id out)))))
     (%connect-expr grh (list condition then else) out)))
 
+(defun make-grid (id level rank) (emit (make-node :JIT :SPACE (list id) nil :level level :rank rank)))
+(defun expr-grid (level rank &aux (out (gensym "GRID")))
+  (let ((grh (with-context (_ (make-grid out level rank)))))
+    (%connect-expr grh nil out)))
+
+(defun expr-cast (x dtype &aux (out-id (gensym "w")))
+  (declare (type Expr x))
+  (let ((grh (with-context (r (%cast (%salloc :dtype dtype) (expr-out x) dtype :id out-id)))))
+    (%connect-expr grh (list x) out-id)))
+
+(defun expr-truncate (x out-dtype)
+  (declare (type Expr x))
+  (expr-cast (expr-cast x *default-int*) out-dtype))
+
+(defun expr-ceiling (x out-dtype)
+  (declare (type Expr x))
+  (let ((b (expr-truncate x out-dtype)))
+    (expr-where (expr-> x b) (expr-add b (expr-const 1 out-dtype)) b)))
+  
 (defun expr-detach-loop-bound (expr &key (allow-failed nil))
   "If :below is this format
 ```

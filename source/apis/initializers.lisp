@@ -121,7 +121,10 @@ Sets the seed for random operations within the scope of the body.
 (defmethod call ((op Uniform-Random) &rest inputs)
   (st "A[~] Upfrom[] Below[] -> A[~]" (inputs))
   (multiple-value-bind (x upfrom below) (apply #'values inputs)
-    (!add (!cast (!mul (!sub below upfrom) (!rand (shape x) :dtype (dtype-of x) :order (order x) :out x)) (dtype-of x)) upfrom)))
+    (let ((dtype (if (caten/common.dtype:dtype/integerp (dtype-of x))
+                     :float32
+                     (dtype-of x))))
+      (!add (!cast (!mul (!cast (!sub below upfrom) dtype) (!rand (shape x) :dtype dtype :order (order x) :out x)) (dtype-of x)) upfrom))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Linspace (Func) nil
   (:documentation "Generates an array sampled from this formula: x_i = a * index_components(i) + b"))
