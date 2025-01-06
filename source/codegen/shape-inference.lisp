@@ -169,7 +169,10 @@ Runs the shape inference to the given GraphRuntime, returning `Type-Reporter`."
 (defun expr-infer-type (expr)
   "Running TypeRelay Inference for the expr graph."
   (declare (type expr expr))
-  (caten/air:verify-graph (expr-graph expr)) ;; verify-graph could be slow
+  (assert (caten/air:graph-outputs (expr-graph expr)))
+  ;; Sort the graph by execution order
+  (setf (expr-graph expr) (caten/air:->fast-graph (expr-graph expr))
+        (expr-graph expr) (caten/air:->graph-with-tpsort (expr-graph expr)))
   (run-type-infer (make-runtime (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :runtime 'RelayChecker) :allow-overwrite t)
   expr)
 
