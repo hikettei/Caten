@@ -16,7 +16,7 @@ jobs:
     strategy:
       matrix:
         lisp: [sbcl-bin]
-        backend: [lisp, clang] # native, metal
+        backend: [lisp, clang, native] #todo: metal
         os: [ubuntu-latest]
         target:
         - normal
