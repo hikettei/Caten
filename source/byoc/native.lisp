@@ -12,9 +12,6 @@
 
 (in-package :caten/byoc/native)
 
-;; Currently CI is failing due to following the two reason:
-;; - wrap-around (which %threefry2x32 expects)
-;; - (caten (make-tensor `(N) :INITIAL-ELEMENT 'N)) fails (while the one is defined as N another is defined as |n|)
 (define-auto-scheduler (Native-Auto-Scheduler ()) :n-global-loop 1)
 (defclass NativeRuntime (GraphRuntime) nil)
 (define-backend :native LispBuffer NativeRuntime LispStyle-Renderer Native-Auto-Scheduler t)
@@ -180,7 +177,7 @@
       (:ENDIF
        (error "LispStyle Renderer currently does not support IF statement."))
       (:EXPR
-       (caten/codegen/shape-inference:expr-infer-type (getattr bp :EXPR))
+       (expr-infer-type (getattr bp :EXPR))
        (let ((write-index (render-index 'LispStyle-Renderer bp :nth 0))
              (id (const (car (node-writes bp))))
              (dtype (buffer-dtype (car (relay-writes (read-type-relay bp)))))
