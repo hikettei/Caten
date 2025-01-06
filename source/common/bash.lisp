@@ -9,15 +9,12 @@
 (defparameter *service* (uiop:launch-program "bash" :input :stream :output :stream))
 
 (defun %async-launch (command)
-  ;; read all streams from the previous command
-  (let ((stream (uiop:process-info-output *service*)))
-    (loop while (listen stream) do (read-line stream)))
   (write-line command (uiop:process-info-input *service*))
   (force-output (uiop:process-info-input *service*))
-  (let* ((string (read-line (uiop:process-info-output *service*)))
-         (stream (uiop:process-info-output *service*)))
-    (loop while (listen stream) do (setf string (concatenate 'string string '(#\Newline) (read-line stream))))
-    string))
+  (with-output-to-string (out)
+    (loop with stream = (uiop:process-info-output *service*)
+          for line = (and (listen stream) (read-line (uiop:process-info-output *service*) nil))
+          while line do (princ line out) (princ #\newline out))))
 
 (defun async-run-with-input (command input)
   "Return: (values return-code outputs)"
@@ -31,5 +28,3 @@
      (with-output-to-string (out)
        (dolist (o (butlast outputs))
          (princ o out) (princ #\newline out))))))
-                
-      
