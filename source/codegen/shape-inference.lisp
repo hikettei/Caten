@@ -91,6 +91,7 @@
 
 (defun propagate-inference (args)
   ;; [TODO] The position of output should be :nth-out, not car.
+  (assert (numberp (car args)) () "propagate-inference: Failed to infer the node-write from ~a.~%Hint: Do not propagate constants without providing :_type_relay." args)
   (let ((buff
           (make-buffer (buffer-shape (car args)) (buffer-stride (car args)) (buffer-dtype (car args)) (buffer-views (car args)) :device 'RelayBuffer)))
     (setf (buffer-inferred-permute buff) (buffer-inferred-permute (car args))
