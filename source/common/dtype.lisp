@@ -155,6 +155,7 @@
     (:int8 8)
     (:bool 1)))
 
+(declaim (inline caten/common.dtype:encode-float64 caten/common.dtype:decode-float32 caten/common.dtype:encode-float64 caten/common.dtype:decode-float64))
 (ieee-floats:make-float-converters encode-float64 decode-float64 11 52 t)
 (ieee-floats:make-float-converters encode-float32 decode-float32 8 23 t)
 (ieee-floats:make-float-converters encode-float16 decode-float16 5 10 t)

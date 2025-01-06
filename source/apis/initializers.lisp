@@ -4,6 +4,7 @@
 ;;   All computational nodes that exhibit random behavior must depend on `RandNode`.
 ;;   it implements PRNG Generator based on threefry2x32.
 ;;   *rng-counter* and *manual-seed* should commonly be relied upon by all graphs.
+
 ;; ~~ Configurations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defparameter *inference-mode* nil
   "
@@ -24,6 +25,7 @@ Sets `*inference-mode*=T` and `*no-grad*=T` within the scope of the body.
   `(with-no-grad
      (let ((*inference-mode* t))
        ,@body)))
+
 ;; ~~ randomness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun make-rng-counter ()
   (ctx:with-contextvar (:BACKEND "LISP")
@@ -46,6 +48,7 @@ Sets the seed for random operations.
 Sets the seed for random operations within the scope of the body.
 "
   `(let ((*manual-seed* ,seed) (*rng-counter* (make-rng-counter))) ,@body))
+
 ;; ~~~~ threefry2x32 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun !idiv1 (x divisor) (!mul (!cast x :float32) (fconst (/ divisor))))
 (defun !shr (x shift dtype) (!cast (!idiv1 x (expt 2 shift)) dtype))
@@ -131,6 +134,7 @@ Sets the seed for random operations within the scope of the body.
       (t1 (%mul i a))
       (t2 (%add t1 b))
       (c  (%store x t2)))))
+
 ;; ~~ callers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ax+b (shape a b &key (out nil) (dtype *default-float*) (order *default-order*))
   "

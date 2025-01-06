@@ -60,7 +60,7 @@ If you need to record Tensors for the backward process, now is the time to do so
 - tensors[List] a list of the input tensor.
 
 In the forward method, describe the operation to create a Tensor after computation.
-Be mindful of its lazy evaluation nature; do not perform the actual computation at this stage.
+Be aware of its lazy evaluation nature; do not perform the actual computation at this stage.
 The `st` macro in ShapeTracker is quite useful for creating the Tensor after the operation. If necessary, you may also include checks for additional attributes or slots here.
 If you specify ShapeTracker in `:where`, the defmodule macro will automatically generate the forward.
 Therefore, you must describe either `:where` or `:forward`.
@@ -174,6 +174,7 @@ The provided form does not match any of them:~%~a" method method method method f
 		 (map 'list #'tensor-id (module-outputs op))
 		 (map 'list #'node->id inputs) (append (module-attrs op) (list :metadata op)))))
        (defun ,name (,@constructor-args) (make-instance ',name :attrs (list ,@attrs))))))
+
 ;; ~~ State Dict ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct State-Dict
   "

@@ -10,14 +10,14 @@
                                                    (tracker (start-tracking shape :order order)))))
   "
 A struct `tensor` is a multi-dimensional, and strided matrix (and nrank=0 to scalar value) containing elements of the single dtype.
-Also the tensor has following slots:
+Also, the tensor has the following slots:
 
-- shape[list] A list of number, symbol, or `Tensor`.
-- buffer[AbstractBuffer] A buffer of the tensor. Realized arrays are stored here.
-- dtype[keyword] A dtype of the tensor.
-- order[order] A memory layout of the tensor, selected from either of :row or :column.
-- id[symbol] A unique identifier of the tensor. (usually created by gensym)
-- op[Func] `Func` object that represents the operation of the tensor.
+- shape[list] The shape as a list of elements of: number, symbol, or `Tensor`.
+- buffer[AbstractBuffer] The buffer of the tensor. Realized arrays are stored here.
+- dtype[keyword] The dtype of the tensor.
+- order[order] The memory layout of the tensor, selected from either :row or :column.
+- id[symbol] The unique identifier of the tensor. (usually created via gensym)
+- op[Func] The `Func` object that represents the operation of the tensor.
 - views[list] A list of `ViewRange` objects, determining the bound of loops.
 - requires-grad[boolean] A flag to determine whether the tensor requires a gradient.
 - grad[Tensor] A gradient and realized tensor of the tensor.
@@ -107,14 +107,14 @@ Returns a memory-layout of the tensor."
 ```
 Create a new lazy tensor.
 
-- shape[list] A list of number, symbol, or `Tensor`.
-- dtype[keyword] A dtype of the tensor.
-- order[order] A memory layout of the tensor, selected from either of :row or :column.
-- id[symbol] A unique identifier of the tensor. (usually created by gensym)
+- shape[list] The shape as a list of elements of: number, symbol, or `Tensor`.
+- dtype[keyword] The dtype of the tensor.
+- order[order] The memory layout of the tensor, selected from either :row or :column.
+- id[symbol] The unique identifier of the tensor. (usually created by gensym)
 - requires-grad[boolean] A flag to determine whether the tensor requires a gradient.
 - initial-element[null|number|symbol|ScalarTensor] An initial value of the tensor.
 - views[list] A list of `ViewRange` objects, determining the bound of loops.
-- from[null|AbstractBuffer|Symbol] A buffer used to initialize the tensor. If symbol is given, the buffer is taken from the variable table.
+- from[null|AbstractBuffer|Symbol] A buffer used to initialize the tensor. If a symbol is given, then the buffer is taken from the variable table.
 "
   (declare (type list shape)
 	   (type dtype-t dtype)
@@ -125,31 +125,32 @@ Create a new lazy tensor.
   (dolist (s shape)
     (assert (or (and (integerp s) (>= s 1)) (tensor-p s) (symbolp s))
 	    ()
-	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  Butgot: ~a~%  Shape=~a" s shape))
-  (let ((buff (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views :tracker (or tr (start-tracking shape :order order)))))
-    (setf (tensor-op buff) (make-instance 'Allocate :buffer buff :initial-element initial-element :from from)
-          (tensor-shape buff) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape buff))
-          (tensor-variables buff) (loop for s in (tensor-shape buff) if (tensor-p s) collect s)
-          (func-variables (tensor-op buff)) (tensor-variables buff))
-    buff))
+	    "make-tensor: Cannot initialize a tensor.~%~%Shape should be specified as an integer (>1), tensor, or symbol.~%  But got: ~a~%  Shape=~a" s shape))
+  (let ((lazy-tensor (%internal-make-tensor nil shape :dtype dtype :order order :id id :requires-grad requires-grad :views views :tracker (or tr (start-tracking shape :order order)))))
+    (setf (tensor-op lazy-tensor) (make-instance 'Allocate :buffer lazy-tensor :initial-element initial-element :from from)
+          (tensor-shape lazy-tensor) (map 'list #'(lambda (x) (if (tensor-p x) (or (try-fold-constant x) x) x)) (tensor-shape lazy-tensor))
+          (tensor-variables lazy-tensor) (loop for s in (tensor-shape lazy-tensor) if (tensor-p s) collect s)
+          (func-variables (tensor-op lazy-tensor)) (tensor-variables lazy-tensor))
+    lazy-tensor))
 
 (defun make-scalar (value &key (dtype *default-float*) (order *default-order*) (id (gensym "SID")) (requires-grad nil))
   "
 ```
 (make-scalar value &key (dtype *default-float*) (order *default-order*) (id (gensym \"SID\")) (requires-grad nil))
 ```
-Create a new scalar tensor. ScalarTensor in Caten is a tensor with a rank of 0.
+Create a new scalar tensor. A ScalarTensor in Caten is a tensor with a rank of 0.
 
-- value[number|symbol] A value of the scalar tensor.
-- dtype[keyword] A dtype of the tensor.
-- order[order] A memory layout of the tensor, selected from either of :row or :column.
-- id[symbol] A unique identifier of the tensor. (usually created by gensym)
+- value[number|symbol] The value of the scalar tensor.
+- dtype[keyword] The dtype of the tensor.
+- order[order] The memory layout of the tensor, selected from either of :row or :column.
+- id[symbol] A unique identifier of the tensor (usually created by gensym).
 - requires-grad[boolean] A flag to determine whether the tensor requires a gradient.
 
-Tips: You can use `fconst`, `uconst`, and `iconst` to create a scalar tensor with a default dtype. (arguments are the same as `make-scalar`.)
+Hint: You can use `fconst`, `uconst`, and `iconst` to create a scalar tensor with a default dtype (arguments are the same as `make-scalar`.)
 "
   (make-tensor nil :dtype dtype :order order :id id :requires-grad requires-grad :initial-element value))
 
+;; create some defaults
 (macrolet ((def (name dtype)
 	     `(defun ,name (value &key (dtype ,dtype) (order *default-order*) (id (gensym "SID")) (requires-grad nil))
 		(if (tensor-p value)
@@ -162,7 +163,7 @@ Tips: You can use `fconst`, `uconst`, and `iconst` to create a scalar tensor wit
 (defun make-view-internal (base subscripts &key (allow-merge t) (dtype (tensor-dtype base)) (order (tensor-order base)) (id (gensym "VID")) (stride nil))
   "
 An internal function for making a view from tensor.
-View is a tensor which shares the buffer from the original tensor, but having different shapes, strides, offsets, or dtype
+View is a tensor which shares the buffer of the original tensor, but features different shapes, strides, offsets, or dtype.
 "
   (declare (type Tensor base)
 	   (type list subscripts)
@@ -200,7 +201,7 @@ View is a tensor which shares the buffer from the original tensor, but having di
 (tensor-graph tensor)
 ```
 
-Lowers the given tensors into an aasm graph, only the constant folding is applied.
+Lowers the given tensors into an aasm graph, only constant folding is applied.
 
 For some convenience, this function returns the first tensor if the input is not a tensor.
 "
@@ -216,20 +217,21 @@ For some convenience, this function returns the first tensor if the input is not
 ```
 (tensor-lowered-graph &rest tensors)
 
-Creates a lowered graph from the given tensors. (= an input grpah to JIT=1)
+Creates a lowered graph from the given tensors (i.e., an input graph to JIT=1).
 "
   (when (not (tensor-p (car tensors)))
     (return-from tensor-lowered-graph (car tensors)))
   (assert (every #'tensor-p tensors))
   (ctx:with-contextvar (:BACKEND "LISP")
     (runtime-graph (caten tensors))))
-;; ~~ Floating Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+;; ~~ Floating Point Features ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun inf (&key (dtype *default-float*))
   "
 ```
 (inf &key (dtype *default-float*))
 ```
-Returns a positive infinity of the dtype for the current Common Lisp implementation.
+Returns positive infinity of the dtype for the current Common Lisp implementation.
 
 This feature is supported by [float-features](https://shinmera.github.io/float-features/)
 "
@@ -245,7 +247,7 @@ This feature is supported by [float-features](https://shinmera.github.io/float-f
 (-inf &key (dtype *default-float*))
 ```
 
-Returns a negative infinity of the dtype for the current Common Lisp implementation.
+Returns negative infinity of the dtype for the current Common Lisp implementation.
 
 This feature is supported by [float-features](https://shinmera.github.io/float-features/)
 "
@@ -261,7 +263,7 @@ This feature is supported by [float-features](https://shinmera.github.io/float-f
 (nan &key (dtype *default-float*))
 ```
 
-Returns a NaN of the dtype for the current Common Lisp implementation.
+Returns NaN of the dtype for the current Common Lisp implementation.
 
 This feature is supported by [float-features](https://shinmera.github.io/float-features/)
 "
@@ -293,7 +295,7 @@ This feature is supported by [float-features](https://shinmera.github.io/float-f
 (float-type-of x)
 ```
 
-Returns `:INF` if the number is a negative infinity, `:-INF` if the number is a negative infinity, `:nan` if the number is NaN, or T otherwise.
+Returns `:INF` if the number is negative infinity, `:-INF` if the number is negative infinity, `:nan` if the number is NaN, or T otherwise.
 "
   (declare (type (or symbol number) x))
   (cond

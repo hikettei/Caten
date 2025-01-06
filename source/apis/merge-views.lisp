@@ -437,5 +437,5 @@ for i in range(3):
       (optimize-aasm g :heavy-opt-threshold 0) ;; simplify the symbolic path by setting heavy-opt-threshold=0
       (assert (find write-to (graph-nodes g) :key #'node-writes :test #'find)
               ()
-              "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invaild simplifier?~%~a" write-to g)
+              "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invalid simplifier?~%~a" write-to g)
       g)))

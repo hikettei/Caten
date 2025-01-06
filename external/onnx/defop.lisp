@@ -145,7 +145,7 @@
       
       (assert (= (length output) (length out-in-tensors))
 	      ()
-	      "Assertion Failed: Converter for (~a opset=~a) expected to return ~a tensors butgot ~a."
+	      "Assertion Failed: Converter for (~a opset=~a) expected to return ~a tensors but got ~a."
 	      (node-proto-op-type node-proto)
 	      (gp-opset-version graph-proto-helper)
 	      (length output)
