@@ -11,7 +11,9 @@
    #:LispBuffer))
 
 (in-package :caten/byoc/native)
-
+;; [TODO]
+;; - [ ] Inline all mathematical functions! (compile nil generated-code) will produce no errors. (PRs are welcome)
+;;   - [ ] Add proper type declarations in %render-node, from given read-type-relay.
 (define-auto-scheduler (Native-Auto-Scheduler ()) :n-global-loop 1)
 (defclass NativeRuntime (GraphRuntime) nil)
 (define-backend :native LispBuffer NativeRuntime LispStyle-Renderer Native-Auto-Scheduler t)
@@ -167,16 +169,16 @@
          (let ((below (extract-scop-from-loop bp)))
            (if below
                `(progn
-                  (,(if (eql (getattr bp :scope) :local) 'dotimes 'lparallel:pdotimes) (,(const (intern (getattr bp :idx))) ,(render-expr 'LispStyle-Renderer below))
+                  (,(if (eql (getattr bp :scope) :local) 'dotimes 'lparallel:pdotimes) (,(const (intern (princ-to-string (getattr bp :idx)))) ,(render-expr 'LispStyle-Renderer below))
                     ,(recursive-render-bp (subseq rest-blueprints 1 endfor)))
                   ,(recursive-render-bp (subseq rest-blueprints (1+ endfor))))
                (progn
                  (when (eql (getattr bp :scope) :global) (warn "recursive-render-bp: The node ~a is scheduled as global but the upfrom/below/by is too complicated to handle.~%Thus this loop is not parallelized." bp))
                  `(progn
-                    (loop with ,(const (intern (getattr bp :idx))) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
+                    (loop with ,(const (intern (princ-to-string (getattr bp :idx)))) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
                           while ,(render-expr 'LispStyle-Renderer (getattr bp :below))
                           do ,(recursive-render-bp (subseq rest-blueprints 1 endfor))
-                             (incf ,(const (intern (getattr bp :idx))) ,(render-expr 'LispStyle-Renderer (getattr bp :by))))
+                             (incf ,(const (intern (princ-to-string (getattr bp :idx)))) ,(render-expr 'LispStyle-Renderer (getattr bp :by))))
                     ,(recursive-render-bp (subseq rest-blueprints (1+ endfor)))))))))
       (:ENDFOR
        (error ":ENDFOR should not be appeared here. Malformed blueprint?"))
