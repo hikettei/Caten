@@ -71,7 +71,7 @@ The package `caten/codegen/exprify` is responsible for providing a rewriting-rul
   (let ((nth->aref (make-hash-table)))
     (make-node :JIT :EXPR (copy-list (node-writes node)) (copy-list (node-reads node))
                :reduction (getattr node :reduction :allow-undefined t)
-               :_type_relay (read-type-relay node)
+               :_type_relay (caten/codegen/shape-inference::copy-inferred-type (read-type-relay node))
                :declare-type (getattr node :declare-type)
                :expr (make-expr
                       :graph
