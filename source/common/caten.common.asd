@@ -8,4 +8,5 @@
    (:file "documentation")
    (:file "contextvar")
    (:file "tqdm")
-   (:file "dtype")))
+   (:file "dtype")
+   (:file "bash")))
