@@ -1,7 +1,8 @@
 ;;;; Note: This file is not intended to be loaded directly from Lisp,
 ;;;; but to be executed expression by expression.
 ;;;; If you are using Emacs/Lem, you can simply press `C-C C-c` while your cursor is hovering over an expression
-(ql:quickload :caten)
+(unless (find-package :caten)
+  (ql:quickload :caten))
 
 (defpackage :end-to-end
   (:use :cl :caten/air :caten/aasm :caten/apis :caten/runtime :caten/codegen/expr-cache)
@@ -28,15 +29,18 @@
   (:import-from
    :caten/codegen/jit
    #:schedule-graph->avm-graph))
+
 (in-package :end-to-end)
 
+;; configuration => backend = :lisp
 (setf (ctx:getenv :BACKEND) "LISP") ;; Ensure you can see the raw input graph by disabling JIT
+
 ;;; 1. High-Level API
 
 ;;; In this example, we will show an end-to-end example of how the overall process of code generation works, starting from Caten's
 ;;; High-Level Interface (caten/apis)
 
-;;; Let's first define a class (similar torch.autograd.Function) for the function sin(cos(x))
+;;; Let's first define a class (similar to torch.autograd.Function) for the function sin(cos(x))
 ;;; It will be the same class used in getting-started.lisp
 (defclass SinCos (Func) nil
   (:documentation "The func SinCos computes sin(cos(x))"))
@@ -51,7 +55,7 @@
   nil)
 
 (defmethod lower ((op SinCos) &rest inputs)
-  ;; Lowers the high-level operation into intermediate representation
+  ;; Lowers the high-level operation into the intermediate representation
   (let ((x (car inputs)))
     (with-context
       (a (%sin (%add x (%fconst (/ pi 2)))))
@@ -69,8 +73,9 @@
 
 ;;; If we print, we will see what the contents of sincos are.
 (print *sincos*)
-;;; It might surprise you that there is nothing, the reason is that Caten is lazy, we have to compile the expression into
-;;; an abstract syntax tree. In order to compile, we can use the caten function as follows:
+;;; It might surprise you that there is nothing, the reason is that Caten is lazy,
+;;; i.e., using lazy evaluation. Therefore, we have to compile the expression into
+;;; an abstract syntax tree. In order to compile, we can use the `caten` function:
 
 ;;; 2. Intermediate Representation
 (defparameter *graph* (caten *sincos*))
@@ -208,7 +213,7 @@
 ;;; Here we lower `item1` using the `lower-schedule-item` function. The `base-graph` is given by `(runtime-graph graph)`,
 ;;; and `scheduled-graph` is the optimized graph after scheduling. This will mutate `item1` so that it
 ;;; now has a `:blueprint` attribute containing the lowered form.
-(defparameter *lowered-item1* (lower-schedule-item *item1* (runtime-graph graph) *scheduled-graph*))
+(defparameter *lowered-item1* (lower-schedule-item *item1* (runtime-graph *graph*) *scheduled-graph*))
 
 ;;; After this, `lowered-item1` (which should be the same as `item1` but now lowered)
 ;;; will hold the blueprint. Printing it might show a node with `:expr` indicating
@@ -249,7 +254,10 @@
 ;;; We make a copy of the original graph without modifications
 (defparameter *original-graph* (copy-graph (runtime-graph *graph*)))
 
-(%compile-kernel *renderer* (graph-nodes *scheduled-graph*) nil) ;; Calling gcc to compile the generated kernel
+(ctx:with-contextvar (:BACKEND "clang" :JIT_DEBUG 4)
+  ;; Calling gcc to compile the generated kernel
+  (%compile-kernel *renderer* (graph-nodes *scheduled-graph*) nil))
+  
 ;;; Replace the compiled kernels in the graph
 (defparameter *compiled-graph* (schedule-graph->avm-graph (runtime-graph *graph*) *scheduled-graph*))
 
@@ -322,4 +330,3 @@
 ;;; 6. **Execution with GraphRuntime:**
 ;;;    - Executed the computation graph using the `%run` method, which set input parameters, ran the forward pass, synchronized tensors, and retrieved the results.
 ;;;    - Leveraged the compiled kernel for efficient computation, resulting in the final output of `sin(sin(1.0 + π/2))`.
-

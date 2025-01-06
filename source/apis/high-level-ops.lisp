@@ -71,6 +71,7 @@ Compute the ~a of the tensor.
   (defreduce !mean MeanNode "mean")
   (defreduce !max MaxReduce "maximum")
   (defreduce !min MinReduce "minimum"))
+
 ;; ~~~ gemm ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (Matmul (()) :where "A[~ i j] B[~ j k] -> A[~ i k]")
     ()
@@ -90,12 +91,13 @@ Compute the ~a of the tensor.
 (!matmul a b)
 ```
 
-Performs matrix multiplication between two tensors `a` and `b`.
+Performs matrix multiplication between the two tensors `a` and `b`.
 "
   (if (= (ndim a) (ndim b))
       (forward (make-instance 'Matmul) a b)
       (multiple-value-bind (a b) (bc "A[~ i j] B[~ j k] -> A[~ i j] B[~ j k]" (a b))
         (forward (make-instance 'Matmul) a b))))
+
 ;; ~~ math ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (SinHNode (()) :where "A[~] -> A[~]")
     ()
@@ -220,6 +222,7 @@ Computes the power of base with power."
        (return-from !expt (!mul (!square (!expt base (floor power 2))) (if (= 0 (mod power 2)) (!const base 1) base))))))
   (let ((power (if (numberp power) (!const base power) power)))
     (apply #'forward (ExptNode) (broadcast-elwise base power))))
+
 ;; ~~ Trunc/Ceil/Floor ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (TruncateNode (()) :where "A[~] -> A[~]")
     ()
@@ -258,6 +261,7 @@ Computes the power of base with power."
 ```
 "
   (forward (FloorNode) x))
+
 ;; ~~ Linalg ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (TrilNode ((&key (diagonal 0)) :diagonal diagonal) :where "A[~ n m] -> A[~ n m]")
     ()
@@ -347,6 +351,7 @@ Returns the indices of the maximum values along an axis.
 Returns the indices of the minimum values along an axis.
 "
   (forward (ArgMinNode :axis axis :keepdims keepdims) x))
+
 ;; ~~~ Statical Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodule (VarianceNode ((&key (axis -1) (keepdims nil) (correction 1)) :axis axis :keepdims keepdims :correction correction))
     ()
@@ -389,6 +394,7 @@ Returns the standard deviation of the tensor elements along an axis.
 "
   (declare (type tensor x))
   (forward (StdNode :axis axis :keepdims keepdims :correction correction) x))
+
 ;; ~~~ Dimension Manipulation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodel (SplitNode (sizes &key (dim 0)))
     ((sizes sizes :type (or fixnum list))
@@ -429,8 +435,8 @@ Returns the standard deviation of the tensor elements along an axis.
 
 Splits the tensor into multiple tensors along the specified dimension.
 
-If `sizes` is an integer, it splits into equally sized chunks if possible, otherwise the last chunk will be smaller.
-If `sizes` is a list, it splits into `(length sizes)` chunks with size in `dim` according to `size`.
+If `sizes` is an integer, then it splits into equally sized chunks if possible, otherwise the last chunk will be smaller.
+If `sizes` is a list, then it splits into `(length sizes)` chunks with size in `dim` according to `size`.
 
 Note: The dimension to split must be an integer.
 "
@@ -525,6 +531,7 @@ order is one of :column or :row. Shape is a list consisted of integers, symbols,
     (loop for i downfrom (- num-dims 2) to 0 do
       (setf (nth i strides) (!* (nth (+ i 1) strides) (->iconst (nth (+ i 1) shape)))))
     strides))
+
 ;; ~~ Etc ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmodel (ClipNode () :where "A[~] MIN[~] MAX[~] -> A[~]") ())
 (defcall (clip ClipNode) (A[~] MIN[~] MAX[~])

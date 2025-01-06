@@ -52,7 +52,7 @@
 		   "ShapeTracker: Infinite rank can be used only once. ~a" subscript)
 	   (assert (= (or (position :~ subscripts) 0) 0)
 		   ()
-		   "ShapeTracker: Infinite rank must be placed at 0th axis.~%e.g.: A[~~ m n k]~%butgot: ~a" subscript)
+		   "ShapeTracker: Infinite rank must be placed at 0th axis.~%e.g.: A[~~ m n k]~%but got: ~a" subscript)
 	 (values (make-at (intern (symbol-name name) "KEYWORD") (- (length subscripts) count) subscripts) rest))))))
   (defun %parse-st (st)
     (declare (type string st))
@@ -191,7 +191,7 @@
 		      for shape in (nthcdr offset (tensor-shape tensor))
 		      if (gethash place solved)
 			do (when (and (numberp shape) (numberp (gethash place solved)))
-			     (assert (= shape (gethash place solved)) () "ShapeTracker: ~a. Invaild Shape Error.~% ~a should be ~a butgot ~a" (st-base st) place (gethash place solved) shape))
+			     (assert (= shape (gethash place solved)) () "ShapeTracker: ~a. Invalid Shape Error.~% ~a should be ~a but got ~a" (st-base st) place (gethash place solved) shape))
 		      else do
 			(setf (gethash place solved) shape))))
       (assert (every #'identity infinite-part)
@@ -226,10 +226,11 @@
                                             nil))))))
         (when return-solved (return-from %solve-st solved))
 	(apply #'values (map 'list #'make-new-tensor (st-aft st))))))
+  
   (defun parse-where (where)
     "Verifies the where form"
     (assert (every #'consp where) () "~a: Each element of where must be cons." where)
-    (assert (every (compose #'keywordp #'car) where) () "Invaild Syntax: WHERE = (KEYWORD . VALUE)~%in the ~a" where)
+    (assert (every (compose #'keywordp #'car) where) () "Invalid Syntax: WHERE = (KEYWORD . VALUE)~%in the ~a" where)
     `(list ,@(loop for (key . value) in where  collect `(cons ,key ,value)))))
 
 (defmacro st (st-notation (&rest input-tensors) &rest where)
@@ -245,7 +246,7 @@ Based on the notation of ShapeTracker, automatically generate the Tensor after f
 
 ### Infinite-Rank Notation
 
-`~` represents an inifinite-rank.
+`~` represents an infinite-rank.
 Positioned only in the first rank, and the rank height becomes infinite.
 Within this range, if there is a mismatch in shape, broadcasting is automatically applied.
 TODO: Add LazyAssertion which applies shape check even for symbols

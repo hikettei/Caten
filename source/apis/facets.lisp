@@ -9,7 +9,7 @@
 `change-facet` converts `obj` to the data type specified by direction.
 During the conversion process, it attempts to synchronize the Buffer (i.e., no copying is performed).
 
-In default, `:direction` could be one of :tensor, :simple-array, :array.
+By default, `:direction` could be one of :tensor, :simple-array, :array.
 
 Users can extend this method if needed.
 "))

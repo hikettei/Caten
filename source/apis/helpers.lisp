@@ -71,7 +71,7 @@
 (with-no-grad &body body)
 ```
 
-Under the scope of `with-no-grad`, the gradient computation is disabled. This parameter should be set during inference, and the compiler will generate a more efficient code."
+Within the scope of `with-no-grad`, gradient computation is disabled. This parameter should be set during inference, such that the compiler will generate more efficient code."
   `(let ((*no-grad* t)) ,@body))
 
 (defun getattr-from-list (attrs id)
@@ -94,7 +94,7 @@ Reads and binds attributes from module.
 
 (defun normalize-axis (x n)
   (declare (type tensor x))
-  (assert (integerp n) () "axes should be designed as a number. butgot ~A" n)
+  (assert (integerp n) () "axes should be designed as a number, but got ~A" n)
   (if (< n 0) (+ (ndim x) n) n))
 
 (defun normalize-axes (x axes)

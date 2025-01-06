@@ -109,7 +109,7 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
 	   (type (member :row :column) order))
   (assert (every #'(lambda (x) (or (symbolp x) (integerp x) (node-p x))) shape)
 	  ()
-	  "%make-tensor: Shape is designed as symbol (existing in the graph), integer or node.~%butgot ~a" shape)
+	  "%make-tensor: Shape is designed as symbol (existing in the graph), integer or node.~%but got ~a" shape)
   (when (= 0 (length shape))
     (assert (null from) () ":from for a scalar creation is ignored. Use %load instead.")
     (return-from %make-tensor (%salloc :dtype dtype :id id)))
