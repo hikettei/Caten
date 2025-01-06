@@ -43,7 +43,8 @@
    #:node-writes-broadcasted-p
    #:buffer-inferred-permute
    #:buffer-orig-buffer-shape
-   #:buffer-depend-idx-list))
+   #:buffer-depend-idx-list
+   #:expr-infer-type))
 
 (in-package :caten/codegen/shape-inference)
 
@@ -167,8 +168,7 @@ Runs the shape inference to the given GraphRuntime, returning `Type-Reporter`."
 (defun expr-infer-type (expr)
   "Running TypeRelay Inference for the expr graph."
   (declare (type expr expr))
-  (let ((type-map (run-type-infer (make-runtime (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :runtime 'RelayChecker) :allow-overwrite t)))
-    expr))
+  (run-type-infer (make-runtime (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :runtime 'RelayChecker) :allow-overwrite t))
 
 (defstruct (Inferred-Type
 	    (:conc-name relay-)
