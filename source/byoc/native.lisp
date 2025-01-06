@@ -72,12 +72,10 @@
              `(defmethod %render-node ((renderer LispStyle-Renderer) (id (eql ,id)) node)
                 (let ((lhs (render-node renderer (nth 0 (node-reads node))))
                       (rhs (render-node renderer (nth 1 (node-reads node))))
-                      (ph (gensym)))
-                  ;; [TODO] Dispatch at compilation time...
-                  `(let ((,ph ,lhs))
-                     (if (integerp ,ph)
-                         (,',op-number ,ph ,rhs)
-                         (,',op-boolean ,ph ,rhs)))))))
+                      (dtype (buffer-dtype (car (relay-writes (read-type-relay node))))))
+                  (if (eql dtype :bool)
+                      `(,',op-boolean ,lhs ,rhs)
+                      `(,',op-number ,lhs ,rhs))))))
   (def :AND logand and)
   (def :OR logior or)
   (def :XOR logxor alexandria:xor))
@@ -109,9 +107,19 @@
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Store)) node) (render-node renderer (second (node-reads node))))
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Allocate)) node) nil)
 (defmethod %render-node ((renderer LispStyle-Renderer) (id (eql :Cast)) node)
-  (let ((x (render-node renderer (second (node-reads node)))))
-    ;; [TODO] Inline dtype/cast properly (from compilation-time know information like dtype)
-    `(dtype/cast ,x ,(getattr node :dtype))))
+  (let ((dtype-from (buffer-dtype (second (relay-reads (read-type-relay node)))))
+        (dtype-to (getattr node :dtype))
+        (dtype-to-lisp (caten/common.dtype:dtype->lisp (getattr node :dtype)))
+        (x (render-node renderer (second (node-reads node)))))
+    (ecase dtype-from
+      (:bool `(if ,x ,(coerce 1 dtype-to-lisp) ,(coerce 0 dtype-to-lisp))) ;; bool -> int/float
+      ((:float64 :float32)
+       (if (find dtype-to `(:float64 :float32))
+           `(coerce ,x ',dtype-to-lisp) ;; float -> float
+           `(coerce (truncate ,x) ',dtype-to-lisp))) ;; float -> int
+      ((:int64 :int32 :int16 :int8 :uint64 :uint32 :uint16 :uint8)
+       ;; int -> float/int
+       `(coerce ,x ',dtype-to-lisp)))))
 
 (defmethod  %render-node ((renderer LispStyle-Renderer) (id (eql :Index-Components)) node)
   (render-expr 'LispStyle-Renderer (expr-index-components renderer node (renderer-index-space renderer))))
@@ -161,6 +169,7 @@
       (:ENDIF
        (error "LispStyle Renderer currently does not support IF statement."))
       (:EXPR
+       (caten/codegen/shape-inference:expr-infer-type (getattr bp :EXPR))
        (let ((write-index (render-index 'LispStyle-Renderer bp :nth 0))
              (id (car (node-writes bp)))
              (dtype (buffer-dtype (car (relay-writes (read-type-relay bp)))))
