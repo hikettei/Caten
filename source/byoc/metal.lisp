@@ -9,9 +9,12 @@
 
 (in-package :caten/byoc/metal)
 
+(defconstant +request-type-compile+ 13)
+
 (defun ensure-foreign-library ()
   (load-foreign-library "/usr/lib/libobjc.dylib")
   (load-foreign-library "/System/Library/Frameworks/Metal.framework/Metal")
+  (load-foreign-library "/System/Library/PrivateFrameworks/MTLCompiler.framework/MTLCompiler")
   (load-foreign-library "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
   (load-foreign-library "/usr/lib/libSystem.dylib"))
 
@@ -24,7 +27,58 @@
 (defmacro msg (ptr selector restype &rest args)
   `(foreign-funcall "objc_msgSend" :pointer ,ptr :pointer (sel ,selector) ,@args ,restype))
 (defun to-ns-str (str) (with-foreign-string (*str str) (msg (objc-getclass "NSString") "stringWithUTF8String:" :pointer :pointer *str)))
-;; [TODO] Use MTLCompiler directly to gain signifcant improvement on the compilation time
+;; ~~ MTLCompiler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
+(defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
+
+(defcallback callback :void
+    ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
+  nil)
+
+(defun round-up (n multiple)
+  (multiple-value-bind (quotient remainder) (truncate n multiple)
+    (if (zerop remainder) n (* (1+ quotient) multiple))))
+
+(defun make-request-form (src params)
+  (let* ((src-encoded (babel:string-to-octets src :encoding :utf-8))
+         (src-padded-len (round-up (1+ (length src-encoded)) 4))
+         (src-padding-len (- src-padded-len (length src-encoded)))
+         (src-padded (concatenate
+                      '(vector (unsigned-byte 8))
+                      src-encoded (make-array src-padding-len :element-type '(unsigned-byte 8) :initial-element 0)))
+         (params-encoded (babel:string-to-octets params :encoding :utf-8))
+         (params-padded (concatenate '(vector (unsigned-byte 8)) params-encoded (make-array 1 :element-type '(unsigned-byte 8) :initial-element 0)))
+         (header (cl-pack:pack "<QQ" (length src-padded) (length params-padded)))
+         (request (concatenate 'string header (babel:octets-to-string src-padded) (babel:octets-to-string params-padded))))
+    request))
+
+(defun mtl-compile-source (source &aux (source (MTLCodeGenServiceCreate "caten")) (params "-fno-fast-math -std=metal3.1 --driver-mode=metal -x metal"))
+  (declare (type foreign-pointer service) (type string source params))
+  (ERROR "STOP")
+  (let ((request (make-request-form source params)))
+    (with-foreign-string (*request request)
+      (MTLCodeGenServiceBuildRequest
+       service (null-pointer) +request-type-compile+
+       *request (length request) (mem-ref (callback callback) :pointer -16))
+      (error "STOP"))))
+
+(defparameter *async-shell* (uiop:launch-program "bash" :input :stream :output :stream))
+
+(defun async-run (command)
+  (write-line command (uiop:process-info-input *async-shell*))
+  (force-output (uiop:process-info-input *async-shell*))
+  (let* ((output-string (read-line (uiop:process-info-output *async-shell*)))
+         (stream (uiop:process-info-output *async-shell*)))
+    (if (listen stream)
+        (loop while (listen stream)
+              do (setf output-string (concatenate 'string
+                                                  output-string
+                                                  '(#\Newline)
+                                                  (read-line stream)))))
+    output-string))
+
+(print (time (async-run "ls")))
+
 (defun mtl-compile-source (source)
   (flet ((run-cmd (cmd input)
            (let* ((process-info (uiop:launch-program cmd :input :stream :output :stream :error-output :stream))
@@ -36,14 +90,13 @@
                       (loop for i across input do (write-byte i input-stream)))
                (close input-stream))
              (unless (zerop (uiop:wait-process process-info))
-	       (error "Caten[Metal]: Failed to create a metal library:~%~a~%
+              (error "Caten[Metal]: Failed to create a metal library:~%~a~%
 Compiled with this command: ~a"
-	              (alexandria:read-stream-content-into-string error-output)
-	              (with-output-to-string (out)
-		        (dolist (c cmd) (princ c out) (princ " " out)))))
+                     (alexandria:read-stream-content-into-string error-output)
+                     cmd))
              (alexandria:read-stream-content-into-byte-vector (uiop:process-info-output process-info)))))
-    (let* ((air (run-cmd '("xcrun" "-sdk" "macosx" "metal" "-x" "metal" "-c" "-" "-o" "-") source))
-           (lib (run-cmd '("xcrun" "-sdk" "macosx" "metallib" "-" "-o" "-") air)))
+    (let* ((air (time (run-cmd "xcrun -sdk macosx metal -x metal -c - -o -" source)))
+           (lib (time (run-cmd "xcrun -sdk macosx metallib - -o -" air))))
       (assert (string= "MTLB" (flexi-streams:octets-to-string (subseq lib 0 4))) () "Invalid Metal library. Corrupt XCode?")
       lib)))
 ;; ~~ Extension ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

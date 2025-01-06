@@ -2,7 +2,7 @@
   :description "BYOC (Bring Your Own Codegen) implements an extension of caten/codegen targeting multiple devices."
   :author "hikettei <ichndm@gmail.com>"
   :license "MIT"
-  :depends-on ("caten.codegen" "caten.runtime" "cffi" "flexi-streams" "float-features")
+  :depends-on ("caten.codegen" "caten.runtime" "cffi" "flexi-streams" "float-features" "babel" "cl-pack")
   :components ((:file "lisp")
                (:file "native")
                (:file "clang")
