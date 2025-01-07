@@ -52,53 +52,20 @@
          (request (concatenate 'string header (babel:octets-to-string src-padded) (babel:octets-to-string params-padded))))
     request))
 
-(defun mtl-compile-source (source &aux (source (MTLCodeGenServiceCreate "caten")) (params "-fno-fast-math -std=metal3.1 --driver-mode=metal -x metal"))
+(defun mtl-compile-source (source
+                           &key
+                             (fmodules-cache-path "./.caten_cache/metal/")
+                           &aux
+                             (service (MTLCodeGenServiceCreate "caten"))
+                             (params (format nil "-fno-fast-math -std=metal3.1 --driver-mode=metal -x metal -fmodules-cache-path~a" fmodules-cache-path)))
   (declare (type foreign-pointer service) (type string source params))
-  (ERROR "STOP")
   (let ((request (make-request-form source params)))
     (with-foreign-string (*request request)
+      (print "C")
       (MTLCodeGenServiceBuildRequest
        service (null-pointer) +request-type-compile+
        *request (length request) (mem-ref (callback callback) :pointer -16))
       (error "STOP"))))
-
-(defparameter *async-shell* (uiop:launch-program "bash" :input :stream :output :stream))
-
-(defun async-run (command)
-  (write-line command (uiop:process-info-input *async-shell*))
-  (force-output (uiop:process-info-input *async-shell*))
-  (let* ((output-string (read-line (uiop:process-info-output *async-shell*)))
-         (stream (uiop:process-info-output *async-shell*)))
-    (if (listen stream)
-        (loop while (listen stream)
-              do (setf output-string (concatenate 'string
-                                                  output-string
-                                                  '(#\Newline)
-                                                  (read-line stream)))))
-    output-string))
-
-(print (time (async-run "ls")))
-
-(defun mtl-compile-source (source)
-  (flet ((run-cmd (cmd input)
-           (let* ((process-info (uiop:launch-program cmd :input :stream :output :stream :error-output :stream))
-                  (error-output (uiop:process-info-error-output process-info))
-                  (input-stream (uiop:process-info-input process-info)))
-             (unwind-protect
-                  (if (stringp input)
-                      (princ input input-stream)
-                      (loop for i across input do (write-byte i input-stream)))
-               (close input-stream))
-             (unless (zerop (uiop:wait-process process-info))
-              (error "Caten[Metal]: Failed to create a metal library:~%~a~%
-Compiled with this command: ~a"
-                     (alexandria:read-stream-content-into-string error-output)
-                     cmd))
-             (alexandria:read-stream-content-into-byte-vector (uiop:process-info-output process-info)))))
-    (let* ((air (time (run-cmd "xcrun -sdk macosx metal -x metal -c - -o -" source)))
-           (lib (time (run-cmd "xcrun -sdk macosx metallib - -o -" air))))
-      (assert (string= "MTLB" (flexi-streams:octets-to-string (subseq lib 0 4))) () "Invalid Metal library. Corrupt XCode?")
-      lib)))
 ;; ~~ Extension ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass MetalBuffer (AbstractBuffer) nil)
 (defclass MetalRuntime (GraphRuntime) ((device :accessor metal-runtime-device)))
