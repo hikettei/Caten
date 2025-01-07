@@ -8,7 +8,7 @@
    #:define-auto-scheduler))
 
 (in-package :caten/byoc/metal)
-
+;; [TODO] Assert PARALLEL == 0
 (defconstant +request-type-compile+ 13)
 
 (defun ensure-foreign-library ()
@@ -30,9 +30,14 @@
 ;; ~~ MTLCompiler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
 (defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
+(defcfun "closure_cffi_callback" :pointer (callback :pointer))
 
 (defcallback callback :void
     ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
+  (print error)
+  (print data)
+  (print datalen)
+  (print errormsg)
   nil)
 
 (defun round-up (n multiple)
@@ -61,11 +66,9 @@
   (declare (type foreign-pointer service) (type string source params))
   (let ((request (make-request-form source params)))
     (with-foreign-string (*request request)
-      (print "C")
       (MTLCodeGenServiceBuildRequest
        service (null-pointer) +request-type-compile+
-       *request (length request) (mem-ref (callback callback) :pointer -16))
-      (error "STOP"))))
+       *request (length request) (closure-cffi-callback (get-callback 'callback))))))
 ;; ~~ Extension ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass MetalBuffer (AbstractBuffer) nil)
 (defclass MetalRuntime (GraphRuntime) ((device :accessor metal-runtime-device)))
@@ -113,9 +116,7 @@
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
 
 (defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
-
 (define-auto-scheduler (Metal-Auto-Scheduler ()) :n-global-loop 3)
-
 (define-backend :metal MetalBuffer MetalRuntime Metal-Renderer Metal-Auto-Scheduler t)
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun dtype->mtype (dtype)

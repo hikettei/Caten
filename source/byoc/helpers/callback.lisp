@@ -6,7 +6,7 @@
 typedef void (*callback_t)(void);
 static callback_t stored_cb = NULL;
 
-void* create_callback(void (*lisp_callback)(void)) {
+void* closure_cffi_callback(void (*lisp_callback)(void)) {
   stored_cb = lisp_callback;      
   return (^{ stored_cb(); });
 }
