@@ -32,12 +32,20 @@
 (defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
 (defcfun "closure_cffi_callback" :pointer (callback :pointer))
 
+(defvar *callback-handler*)
+
 (defcallback callback :void
     ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
-  (print error)
-  (print data)
-  (print datalen)
-  (print errormsg)
+  (declare (ignore blockptr))
+  (assert (eql :ready *callback-handler*) () "*call-back-handler* is not set to :ready.")
+  (case error
+    (0
+     ;; offset from beginning to data = header size + warning size
+     (let* ((octets (loop for i upfrom 0 below datalen collect (mem-aref data :char i)))
+            (offsets (cl-pack:unpack "<LL" (with-output-to-string (out) (map 'list #'(lambda (x) (princ (code-char x) out)) (subseq octets 8 16))))))
+       (setf *callback-handler* (cons :succeed (subseq octets offsets)))))
+    (otherwise
+     (setf *callback-handler* (cons :failed (foreign-string-to-lisp errormsg)))))
   nil)
 
 (defun round-up (n multiple)
@@ -62,13 +70,24 @@
                              (fmodules-cache-path "./.caten_cache/metal/")
                            &aux
                              (service (MTLCodeGenServiceCreate "caten"))
-                             (params (format nil "-fno-fast-math -std=metal3.1 --driver-mode=metal -x metal -fmodules-cache-path~a" fmodules-cache-path)))
+                             (params (format nil "-fno-fast-math -std=metal3.1 --driver-mode=metal -x metal -fmodules-cache-path=~a -fno-caret-diagnostics" fmodules-cache-path))
+                             (*callback-handler* :ready))
   (declare (type foreign-pointer service) (type string source params))
   (let ((request (make-request-form source params)))
     (with-foreign-string (*request request)
       (MTLCodeGenServiceBuildRequest
        service (null-pointer) +request-type-compile+
-       *request (length request) (closure-cffi-callback (get-callback 'callback))))))
+       *request (length request) (closure-cffi-callback (get-callback 'callback))))
+    (assert (consp *callback-handler*) () "*callback-handler* did not receive anything!")
+    (case (car *callback-handler*)
+      (:succeed
+       (let* ((len (length (cdr *callback-handler*)))
+              (octets (make-array len :element-type '(signed-byte 8) :initial-contents (cdr *callback-handler*))))
+         (assert (string= "MTLB" (flexi-streams:octets-to-string (subseq octets 0 4))) () "Invalid Metal library. Corrupt XCode?")
+         (assert (string= "ENDT" (flexi-streams:octets-to-string (subseq octets (- len 4)))) () "Invalid Metal library. Corrupt XCode?")
+         octets))
+      (:failed
+       (error "Failed to compile a metallib:~%~a~%Compiled with this command: ~a" (cdr *callback-handler*) params)))))
 ;; ~~ Extension ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass MetalBuffer (AbstractBuffer) nil)
 (defclass MetalRuntime (GraphRuntime) ((device :accessor metal-runtime-device)))
