@@ -419,6 +419,9 @@ Applies the JIT compilation for the given Runtime. backend is a keyword defined 
   (when (null is-jit)
     (setf (runtime-buffer-type runtime) buffer-class)
     (return-from jit runtime))
+  ;; METAL does not parallel compilation
+  (when (eql backend :metal)
+    (assert (<= (ctx:getenv :PARALLEL) 1) () "METAL does not support parallel compilation. Set PARALLEL=0"))
   (caten/isl:with-isl-context ;; Note: Need this to ensure isl objected allocated here are not cached and not used by other compiling sessions.
     (when (= 2 (ctx:getenv :DOT)) (->dot (runtime-graph runtime) :title "Base Graph"))
     (run-type-infer runtime)

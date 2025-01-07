@@ -8,7 +8,7 @@
    #:define-auto-scheduler))
 
 (in-package :caten/byoc/metal)
-;; [TODO] Assert PARALLEL == 0
+
 (defconstant +request-type-compile+ 13)
 
 (defun ensure-foreign-library ()
@@ -75,6 +75,7 @@
                              (params (format nil "-fno-fast-math -std=metal3.1 --driver-mode=metal -x metal -fmodules-cache-path=~a -fno-caret-diagnostics" fmodules-cache-path))
                              (*callback-handler* :ready))
   (declare (type foreign-pointer service) (type string source params))
+  (assert (<= (ctx:getenv :PARALLEL) 1) () "METAL does not support parallel compilation.")
   (let ((request (make-request-form source params)))
     (with-foreign-string (*request request)
       (MTLCodeGenServiceBuildRequest
