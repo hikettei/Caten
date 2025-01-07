@@ -1,4 +1,4 @@
-(in-package :caten/apis)
+(in-package :caten/api)
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (defparameter *cached-functions* (make-hash-table :test #'equal))

@@ -1,4 +1,4 @@
-(in-package :caten/apis)
+(in-package :caten/api)
 
 (defclass Model () nil)
 (defgeneric call (model &rest inputs))

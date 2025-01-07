@@ -1,6 +1,6 @@
-(in-package :caten/apis)
+(in-package :caten/api)
 
-(docs:define-page ("caten/apis" "packages/caten.apis.md")
+(docs:define-page ("caten/api" "packages/caten.api.md")
   (docs:title "Overview")
   (docs:body "Welcome to Caten/APIs")
   (docs:body "WIP")
@@ -10,7 +10,7 @@
   (docs:example-repl "(ctx:with-contextvar (:BACKEND \"CLANG\" :jit_debug 4 :dot 0)
   (caten (forward (Embedding 10 10) (make-tensor `(b c)))))"))
 
-(docs:define-page ("Tensor" "packages/caten.apis.tensor.md")
+(docs:define-page ("Tensor" "packages/caten.api.tensor.md")
   (docs:title "Tensor")
   (docs:doc/struct "Tensor" 'Tensor)
   (docs:doc/function "make-tensor" #'make-tensor)
@@ -80,7 +80,7 @@ Compute the backward pass of the compiled computational graph (GraphRuntime). No
   (docs:example-repl "(proceed (!full `(3 3) (nan)))")
   (docs:doc/function "float-type-of" #'float-type-of))
 
-(docs:define-page ("Differentiable Ops" "packages/caten.apis.differentiable_ops.md")
+(docs:define-page ("Differentiable Ops" "packages/caten.api.differentiable_ops.md")
   (docs:title "Func")
   (docs:section "Func Class")
   (docs:doc/class "Func" 'Func)
@@ -142,7 +142,7 @@ Compute the backward pass of the compiled computational graph (GraphRuntime). No
   (docs:example-repl "(proceed (!index-components (make-tensor `(3 3))))")
   (docs:example-repl "(proceed (!index-components `(1 3)))"))
 
-(docs:define-page ("Module" "packages/caten.apis.module.md")
+(docs:define-page ("Module" "packages/caten.api.module.md")
   (docs:title "Module")
   (docs:doc/macro "defmodule" 'defmodule)
   (docs:section "Modules (built_in)")
@@ -173,7 +173,7 @@ Compute the backward pass of the compiled computational graph (GraphRuntime). No
     (def "!clip" #'!clip "(proceed (!clip (randn `(3 3)) -0.3 0.3))")
     (def "!erf" #'!erf "(proceed (!erf (randn `(3 3))))")))
 
-(docs:define-page ("Models" "packages/caten.apis.models.md")
+(docs:define-page ("Models" "packages/caten.api.models.md")
   (docs:title "Models")
   (docs:body "TODO")
   (docs:doc/macro "defcall" 'defcall)
@@ -181,7 +181,7 @@ Compute the backward pass of the compiled computational graph (GraphRuntime). No
   (docs:doc/function "asnode" 'asnode)
   )
 
-(docs:define-page ("Initializers" "packages/caten.apis.initializers.md")
+(docs:define-page ("Initializers" "packages/caten.api.initializers.md")
   (docs:title "Initializers")
   (docs:doc/function "set-manual-seed" #'set-manual-seed)
   (docs:doc/macro "with-manual-seed" 'with-manual-seed)
@@ -201,7 +201,7 @@ Compute the backward pass of the compiled computational graph (GraphRuntime). No
   (docs:doc/function "xavier-uniform" #'xavier-uniform)
   (docs:doc/function "xavier-gaussian" #'xavier-gaussian))
 
-(docs:define-page ("Facet API" "packages/caten.apis.facet_apis.md")
+(docs:define-page ("Facet API" "packages/caten.api.facet_apis.md")
   (docs:title "Facet APIs")
   (docs:body "We are going to see how to access the Tensor as a lisp object.")
   (docs:doc/generic "change-facet" #'change-facet)
@@ -220,12 +220,12 @@ Compute the backward pass of the compiled computational graph (GraphRuntime). No
           (aref a 2 2) 0.0))
   (print x))"))
 
-(docs:define-page ("ShapeTracker" "packages/caten.apis.shapetracker.md")
+(docs:define-page ("ShapeTracker" "packages/caten.api.shapetracker.md")
   (docs:title "ShapeTracker")
   (docs:body "TODO")
   )
 
-(docs:define-page ("State Dict" "packages/caten.apis.state-dict.md")
+(docs:define-page ("State Dict" "packages/caten.api.state-dict.md")
   (docs:title "State-Dict")
   (docs:doc/struct "State-Dict" 'State-Dict)
   (docs:doc/generic "->state-dict" #'->state-dict)

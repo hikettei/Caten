@@ -1,4 +1,4 @@
-(in-package :caten/apis)
+(in-package :caten/api)
 
 (defun %tpsort-tensors (session &rest tensors)
   "Destructive to session-seen"
@@ -188,3 +188,6 @@ Reads and binds attributes from module.
 (defun sym-equal (a b)
   (declare (type list a b))
   (and (= (length a) (length b)) (every #'sym-eql a b)))
+
+(defun dotted-pair-p (list)
+  (and (consp list) (not (consp (cdr list))) (not (null (cdr list)))))

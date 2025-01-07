@@ -164,7 +164,7 @@ Before contributing, please note that there is no linter here. Make an effort to
 
 ### Supported Formats
 
-- [x] Common Lisp Frontend (caten/apis)
+- [x] Common Lisp Frontend (caten/api)
 - [x] ONNX (caten/onnx)
 - [x] GGUF (caten/gguf)
 

@@ -50,16 +50,16 @@ nav:
     - caten/air: packages/caten.air.md
     - caten/aasm: packages/caten.aasm.md
     - caten/codegen: packages/caten.codegen.md
-    - caten/apis:
-      - Overview: packages/caten.apis.md
-      - Tensor: packages/caten.apis.tensor.md
-      - Func: packages/caten.apis.differentiable_ops.md
-      - Module: packages/caten.apis.module.md
-      - Model: packages/caten.apis.models.md
-      - Initializers: packages/caten.apis.initializers.md
-      - ShapeTracker: packages/caten.apis.shapetracker.md
-      - Facet APIs: packages/caten.apis.facet_apis.md
-      - StateDict: packages/caten.apis.state-dict.md
+    - caten/api:
+      - Overview: packages/caten.api.md
+      - Tensor: packages/caten.api.tensor.md
+      - Func: packages/caten.api.differentiable_ops.md
+      - Module: packages/caten.api.module.md
+      - Model: packages/caten.api.models.md
+      - Initializers: packages/caten.api.initializers.md
+      - ShapeTracker: packages/caten.api.shapetracker.md
+      - Facet API: packages/caten.api.facet_api.md
+      - StateDict: packages/caten.api.state-dict.md
     - caten/nn:
       - Activation: packages/caten.nn.activations.md
       - Convolution: packages/caten.nn.convolutions.md

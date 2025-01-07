@@ -1,7 +1,7 @@
 (in-package :cl-user)
-(defpackage :caten/apis
+(defpackage :caten/api
   (:nicknames :caten)
-  (:documentation "Frontends for ASM/VM/JIT etc, including:
+  (:documentation "API frontend for ASM/VM/JIT etc, including:
 - AbstractTensor Frontend
 - Shape Tracker
 - Merge View Solver
@@ -13,6 +13,7 @@
    :caten/common.dtype
    #:dtype-t
    #:dtype->lisp)
+  
   ;; from aot-compilation.lisp
   (:export
    #:caten/defun[t]
@@ -20,6 +21,7 @@
    #:caten/defun[float]
    #:caten/defun[int]
    #:caten/defun[uint])
+  
   ;; from tensor.lisp
   (:export
    #:make-tensor
@@ -52,16 +54,26 @@
    #:proceed
 
    #:inf #:-inf #:nan
-   #:float-type-of
-   )
+   #:float-type-of)
+  
   ;; from model.lisp
-  (:export #:defmodel #:call #:defcall #:defsequence #:asnode)
+  (:export
+   #:defmodel
+   #:call
+   #:defcall
+   #:defsequence
+   #:asnode)
+  
   ;; from conditions.lisp
   (:export
    #:caten-forward-error
    #:caten-backward-error)
+  
   ;; from shape-tracker.lisp
-  (:export #:st #:bc)
+  (:export
+   #:st
+   #:bc)
+  
   ;; from merge-views.lisp
   (:export
     #:Tracker
@@ -70,6 +82,7 @@
     #:un1d
     #:start-tracking
     #:tr-apply-permute #:tr-apply-reshape #:tr-apply-uprank #:tr-reshapeable-p #:tr-apply-slice #:tr-apply-broadcast)
+  
   ;; from module.lisp
   (:export
    #:Module
@@ -87,6 +100,7 @@
    #:->state-dict
    #:get-state-dict
    #:load-state-dict)
+  
   ;; from high-level-ops.lisp
   (:export
    ;; reductions
@@ -116,12 +130,14 @@
    #:!concatenate
 
    #:!square #:!rsqrt #:!gid #:!normalize-axis)
+  
   ;; from helpers.lisp
   (:export
    #:with-no-grad
    #:with-attrs
    #:normalize-axis
    #:normalize-axes)
+  
   ;; from iseq.lisp
   (:export
    #:%compile-toplevel
@@ -174,11 +190,13 @@
    #:!rsqrt #:!square
    #:!clip #:!erf
    )
+  
   ;; from facets.lisp
   (:export
    #:change-facet
    #:with-facet
    #:with-facets)
+  
   ;; from initializers.lisp
   (:export
    #:*inference-mode*

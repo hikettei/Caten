@@ -1,4 +1,4 @@
-(in-package :caten/apis)
+(in-package :caten/api)
 
 (defgeneric change-facet (obj direction)
   (:documentation "

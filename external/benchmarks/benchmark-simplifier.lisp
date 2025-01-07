@@ -1,5 +1,5 @@
 (defpackage :caten/external/benchmarks/simplifier
-  (:use :cl :caten/llm :caten/apis :clgplot)
+  (:use :cl :caten/llm :caten/api :clgplot)
   (:export #:run))
 
 (in-package :caten/external/benchmarks/simplifier)

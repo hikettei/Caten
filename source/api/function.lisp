@@ -1,5 +1,6 @@
-(in-package :caten/apis)
-;; Function creating a lazy computation node, should start with the prefix !.
+(in-package :caten/api)
+
+;; Functions creating a lazy computation node, should start with the prefix !.
 
 (defclass Func () ((variables :initarg :variables :initform nil :accessor func-variables))
   (:documentation "A CLOS class that represents a computation.

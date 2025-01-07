@@ -101,7 +101,7 @@ Creates a caten/state-dict from the given gguf file's tensor-info.
   (let ((dict (make-hash-table :test #'equal)))
     (loop for info in (gguf-tensor-info gguf)
           do (setf (gethash (tensor-info-name info) dict) (tensor-info->tensor info)))
-    (caten/apis:make-state-dict :entry dict)))
+    (caten/api:make-state-dict :entry dict)))
 
 (defun load-gguf-url (url filename &optional (output-directory "./"))
   "

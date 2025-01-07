@@ -1,6 +1,6 @@
 (defpackage :caten/test-suite/expr
   (:documentation "A test suite for caten/codegen/expr and gflops computation.")
-  (:use :cl :rove :caten/codegen/expr :caten/runtime :caten/apis :caten/air :caten/codegen/blueprint :caten/codegen/jit))
+  (:use :cl :rove :caten/codegen/expr :caten/runtime :caten/api :caten/air :caten/codegen/blueprint :caten/codegen/jit))
 (in-package :caten/test-suite/expr)
 
 (deftest test-expr-simplification
