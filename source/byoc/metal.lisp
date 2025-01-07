@@ -67,7 +67,9 @@
 
 (defun mtl-compile-source (source
                            &key
-                             (fmodules-cache-path "./.caten_cache/metal/")
+                             (fmodules-cache-path
+                              #+darwin(progn "~/Library/Caches")
+                              #-darwin(progn "~/.cache"))
                            &aux
                              (service (MTLCodeGenServiceCreate "caten"))
                              (params (format nil "-fno-fast-math -std=metal3.1 --driver-mode=metal -x metal -fmodules-cache-path=~a -fno-caret-diagnostics" fmodules-cache-path))
