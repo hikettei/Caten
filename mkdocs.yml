@@ -58,7 +58,7 @@ nav:
       - Model: packages/caten.api.models.md
       - Initializers: packages/caten.api.initializers.md
       - ShapeTracker: packages/caten.api.shapetracker.md
-      - Facet API: packages/caten.api.facet_apis.md
+      - Facet API: packages/caten.api.facet_api.md
       - StateDict: packages/caten.api.state-dict.md
     - caten/nn:
       - Activation: packages/caten.nn.activations.md

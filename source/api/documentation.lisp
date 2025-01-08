@@ -201,8 +201,8 @@ Compute the backward pass of the compiled computational graph (GraphRuntime). No
   (docs:doc/function "xavier-uniform" #'xavier-uniform)
   (docs:doc/function "xavier-gaussian" #'xavier-gaussian))
 
-(docs:define-page ("Facet API" "packages/caten.api.facet_apis.md")
-  (docs:title "Facet APIs")
+(docs:define-page ("Facet API" "packages/caten.api.facet_api.md")
+  (docs:title "Facet API")
   (docs:body "We are going to see how to access the Tensor as a lisp object.")
   (docs:doc/generic "change-facet" #'change-facet)
   (docs:example-repl "(change-facet 1 :tensor)")
