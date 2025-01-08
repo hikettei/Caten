@@ -113,7 +113,7 @@
     (:int8 "int8_t")))
 
 (defun float-type-of (value)
-  (uiop:symbol-call :caten/apis :float-type-of value))
+  (uiop:symbol-call :caten/api :float-type-of value))
 
 (defun coerce-dtyped-buffer (arg type)
   "If buffer-nrank=0 -> the arg is passed by the value, not a buffer.

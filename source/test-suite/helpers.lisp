@@ -29,7 +29,7 @@
 (defun ->caten (tensor &key (dtype *caten-dtype*))
   (let* ((size (coerce (torch-shape tensor) 'list))
  	 (buffer (remote-objects* (chain tensor (detach) (cpu) (flatten) (numpy))))
-	 (buffer-out (make-buffer size (caten/apis::row-major-calc-strides size) dtype nil :device (caten/codegen/backend:get-buffer-type))))
+	 (buffer-out (make-buffer size (caten/api::row-major-calc-strides size) dtype nil :device (caten/codegen/backend:get-buffer-type))))
     ;; [TODO] Use Transfer Array
     (setf (buffer-value buffer-out) buffer)
     (let ((new (make-tensor (coerce size 'list) :dtype dtype :order :row)))

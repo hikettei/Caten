@@ -192,7 +192,7 @@ Otherwise, the scheduled items are relocated to the compiled GraphRuntime direct
 (defun merge-permute-from-mask (permute mask)
   (when (>= (length permute) (length mask))
     (return-from merge-permute-from-mask permute))
-  (let ((val (uiop:symbol-call :caten/apis :compute-new-permute permute mask)))
+  (let ((val (uiop:symbol-call :caten/api :compute-new-permute permute mask)))
     (assert (= (length val) (length mask)) () "permute=~a mask=~a val=~a" permute mask val)
     val))
 

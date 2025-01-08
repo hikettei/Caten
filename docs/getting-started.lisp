@@ -5,7 +5,7 @@
   (ql:quickload :caten))
 
 (defpackage :getting-started
-  (:use :cl :caten/air :caten/aasm :caten/apis :caten/runtime))
+  (:use :cl :caten/air :caten/aasm :caten/api :caten/runtime))
 
 (in-package :getting-started)
 
@@ -17,15 +17,15 @@
 ;;; We need contributors. This document was created to help new contributors to quickly understand the design of Caten.
 ;;; To learn how Caten works, you first need to understand the following 4 main components:
 
-;;; - 1. caten/apis    | High-Level Graph Interface
+;;; - 1. caten/api     | High-Level Graph Interface (API)
 ;;; - 2. caten/air     | Low-Level  Graph Interface
 ;;; - 3. caten/codegen | AIR Graph => Kernel Generator
 ;;; - 4. caten/runtime | AIR Graph Runner + Buffer managements
 ;;; **All other systems are built on top of these packages.**
 
 
-;;; ~~~[1. High Level Interface (caten/apis)]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;;; The main role of `caten/apis` is to provide matrix operation APIs **with the same interface as Numpy/PyTorch**.
+;;; ~~~[1. High Level Interface (caten/api)]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; The main role of `caten/api` is to provide a matrix operation API **with the same interface as Numpy/PyTorch**.
 ;;; Like Petalisp/tinygrad, Caten uses lazy evaluation.
 
 ;; For example, creating a 3x3 matrix initialized with 1.0 using make-tensor does not trigger any computation, that is what we call lazy evaluation.
@@ -53,8 +53,8 @@
 
 ;; Of course, Caten is designed so that all graphs can be compiled with dynamic shapes. There's no need to recompile every time the batch_size changes.
 
-;;; The goal of `caten/apis` is to prevent bugs by wrapping the low-level interface commands (described later) in a high-level API.
-;;; You can use various optimizations by lowering the AST in `caten/apis` into `caten/air`!
+;;; The goal of `caten/api` is to prevent bugs by wrapping the low-level interface commands (described later) in a high-level API.
+;;; You can use various optimizations by lowering the AST in `caten/api` into `caten/air`!
 ;;; => In the next section, we will learn about `caten/air`.
 
 
@@ -89,15 +89,15 @@
 ;;; - `caten/aasm` provides a set of instruction used in GraphRuntime
 
 
-;;; ~~~[A Bridge between AIR and APIs]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;;; In this section, we will explain the mechanism of lowering the high-level interface(APIs) to the low-level interface(AIR Graph).
+;;; ~~~[A Bridge between AIR and API]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; In this section, we will explain the mechanism of lowering the high-level interface(API) to the low-level interface(AIR Graph).
 
 ;; utility function for presentation
 (defun present (&rest tensors)
   "Present compiles and executes the given tensor, then prints the result."
   (format t "~{~& =>~% ~A~}" (multiple-value-list (apply #'proceed tensors))))
 
-;;; To lower `caten/apis` to a Graph, implement the lower method in the computation graph `Func` of `Caten/apis` and describe the lowered computation graph there.
+;;; To lower `caten/api` to a Graph, implement the lower method in the computation graph `Func` of `Caten/api` and describe the lowered computation graph there.
 ;;; Let’s try defining a `Func` to compute `Sin(Cos(x))` as an example.
 (defclass SinCos (Func) nil
   (:documentation "The func SinCos computes sin(cos(x))"))
@@ -127,8 +127,8 @@
 
 ;;; ~~~~[caten/codegen]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpackage :codegen-example
-  (:use :cl :caten/air :caten/aasm :caten/apis :caten/runtime :caten/codegen/expr-cache)
-  ;; Import some low-level apis
+  (:use :cl :caten/air :caten/aasm :caten/api :caten/runtime :caten/codegen/expr-cache)
+  ;; Import some low-level APIs
   (:import-from
    :caten/codegen/scheduler
    #:graph-schedule)
@@ -272,7 +272,7 @@
 ;;; - Set JIT=1 to enable it.
 ;;; - By setting JIT_DEBUG>=2, you can access a debugger similar to the previous one.
 (defun present-beautiful (tensor)
-  (ctx:with-contextvar (:BACKEND "clang" :JIT_DEBUG 4)
+  (ctx:with-contextvar (:BACKEND "clang" :JIT_DEBUG 3)
     (with-no-grad (caten tensor))))
 
 ;; auto-scheduler is WIP as of this writing!

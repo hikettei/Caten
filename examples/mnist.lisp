@@ -2,7 +2,7 @@
 ;;;; but to be executed expression by expression.
 ;;;; If you are using Emacs/Lem, you can simply press `C-C C-c` while your cursor is hovering over an expression
 
-;; A end-to-end MNIST Example
+;; An end-to-end MNIST Example
 
 (unless (find-package :caten)
   (ql:quickload :caten))
@@ -14,10 +14,11 @@
   (:use :cl :caten :caten/nn :numpy-file-format))
 
 (in-package :mnist-example)
-;; Note: we have created a dataset from the MNIST using the following scripts:
+;; Note: we assume that we have already created a dataset from MNIST using the following scripts:
 ;; - ./mnist_data/train_data.py
-;; BACKEND=CLANG to enable JIT JIT_DEBUG=2 to see what's going on.
+;; Set BACKEND=CLANG in order to enable JIT, and JIT_DEBUG=2 to see what's going on.
 (setf (ctx:getenv :BACKEND) "CLANG" (ctx:getenv :JIT_DEBUG) 2)
+
 (defun load-npy (path) (change-facet (load-array path) :tensor))
 (defun scale (tensor) (proceed (!reshape (!div tensor (fconst 255.0)) (nth 0 (shape tensor)) (* 28 28))))
 
@@ -53,22 +54,24 @@ X: Visible Elements, =: Invisible Elements"
          (expected  (!argmax test-label)))
     (!mean (!where (!eq predicted expected) (fconst 1.0) (fconst 0.0)))))
 
-(multiple-value-bind (model runner optimizer loss) (build-mlp-trainer *train-data* *train-label*)
+(multiple-value-bind (model runner optimizer loss)
+    (build-mlp-trainer *train-data* *train-label*)
   (defparameter *model* model) ;; Model to train
   (defparameter *runner* runner) ;; A graph runner for the compiled model
   (defparameter *optimizer* optimizer) ;; A list of optimizers
   (defparameter *loss* loss)) ;; the last tensor
 
-(caten/air:pprint-graph (tensor-graph *loss*))         ;; To see the network architecture in REPL
-(caten/air:pprint-graph (tensor-lowered-graph *loss*)) ;; To see the lowered graph in REPL
-(caten/air:->dot (tensor-graph *loss*))                ;; To see the network architecture in REPL (graphviz is required)
+(caten/air:pprint-graph (tensor-graph *loss*))         ;; To see the network architecture in the REPL
+(caten/air:pprint-graph (tensor-lowered-graph *loss*)) ;; To see the lowered graph in the REPL
+(caten/air:->dot (tensor-graph *loss*))                ;; To see the network architecture in the REPL (graphviz is required)
 
 (defun run-epoch (runner optimizers &key (batch-size 100) (data-size (nth 0 (shape *train-data*))))
   (loop for from upfrom 0 below data-size by batch-size
         for to = (min data-size (+ from batch-size)) do
           (format t "from=~a, to=~a~%" from to)
-          (forward runner `(from . ,from) `(to . ,to)) ;; Without AutoScheduler it is ridiculously slow. Currently not usable
+          (forward runner 'from from 'to to) ;; Without AutoScheduler it is ridiculously slow. Currently not very usable
           (backward runner)
           (mapc #'step-optimizer optimizers)
           (mapc #'zero-grad optimizers)))
-;; (run-epoch *runner* *optimizer*) Currently broken
+
+;; (run-epoch *runner* *optimizer*)

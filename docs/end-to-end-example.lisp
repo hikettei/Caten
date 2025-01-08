@@ -5,7 +5,7 @@
   (ql:quickload :caten))
 
 (defpackage :end-to-end
-  (:use :cl :caten/air :caten/aasm :caten/apis :caten/runtime :caten/codegen/expr-cache)
+  (:use :cl :caten/air :caten/aasm :caten/api :caten/runtime :caten/codegen/expr-cache)
   ;; Import some low-level APIs
   (:import-from
    :caten/codegen/scheduler
@@ -38,7 +38,7 @@
 ;;; 1. High-Level API
 
 ;;; In this example, we will show an end-to-end example of how the overall process of code generation works, starting from Caten's
-;;; High-Level Interface (caten/apis)
+;;; High-Level Interface (caten/api)
 
 ;;; Let's first define a class (similar to torch.autograd.Function) for the function sin(cos(x))
 ;;; It will be the same class used in getting-started.lisp

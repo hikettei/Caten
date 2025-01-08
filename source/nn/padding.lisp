@@ -82,12 +82,12 @@ Each start_0 and pad_0 is expected as a positive integer (caten will not check t
                           if (eql pad t)
                             collect shape
                           else
-                            collect (!+ (caten/apis::->iconst shape) (caten/apis::->iconst (first pad)) (caten/apis::->iconst (second pad)))))
+                            collect (!+ (caten/api::->iconst shape) (caten/api::->iconst (first pad)) (caten/api::->iconst (second pad)))))
          (pad-slice (loop for pad in padding ;; normalize to new-shape2
                           for shape in new-shape
                           for base-shape in (tr-shape (tensor-tr x))
-                          if (eql pad t) collect (list (iconst 0) (caten/apis::->iconst shape)) ;; all inputs must be a tensor to pass the forward
-                            else collect (list (caten/apis::->iconst (first pad)) (!+ (caten/apis::->iconst (first pad)) (caten/apis::->iconst base-shape)))))
+                          if (eql pad t) collect (list (iconst 0) (caten/api::->iconst shape)) ;; all inputs must be a tensor to pass the forward
+                            else collect (list (caten/api::->iconst (first pad)) (!+ (caten/api::->iconst (first pad)) (caten/api::->iconst base-shape)))))
          (padded-tensor (make-tensor new-shape :dtype (dtype-of x) :initial-element value))
          (index-components (map 'list #'(lambda (n) (!gid padded-tensor n :dtype *default-int*)) (range 0 (ndim x)))))
     (apply #'forward (make-instance 'Padding) (flatten (list padded-tensor x index-components (map 'list #'first pad-slice) (map 'list #'second pad-slice))))))

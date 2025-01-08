@@ -20,7 +20,7 @@
       (setf (aref out i)
 	    (let ((val (readf32-le aligned-buffer)))
 	      (if (eql val :not-a-number)
-		  (caten/apis:nan :dtype :float32)
+		  (caten/api:nan :dtype :float32)
 		  val))))
     out))
 
@@ -33,7 +33,7 @@
       (setf (aref out i)
 	    (let ((val (readf16-le aligned-buffer)))
 	      (if (eql val :not-a-number)
-		  (caten/apis:nan :dtype :float16)
+		  (caten/api:nan :dtype :float16)
 		  val))))
     out))
 

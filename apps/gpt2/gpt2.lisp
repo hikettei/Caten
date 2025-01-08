@@ -24,7 +24,7 @@ The pretrained model is downloaded from the following HuggingFace repository:
 
 Takes a compiled GPT2 model and a string input, and generates a text output.
 ")
-  (:use :cl :caten/apis :caten/llm :caten/gguf :float-features)
+  (:use :cl :caten/api :caten/llm :caten/gguf :float-features)
   (:export :gpt2-generate :make-gpt2))
 
 (in-package :caten/apps.gpt2)

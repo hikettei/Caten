@@ -1,4 +1,4 @@
-(in-package :caten/apis)
+(in-package :caten/api)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; iseq.lisp: Func Level Graph ===> AASM Graph Lowerer.
 ;; 1. (Sort)     Topologically sorting the tensor graph, getting iseq (a list of tensors)
@@ -481,7 +481,7 @@ An entry point for compiling the given tensors, returning GraphRuntime.
 (defun runtime-set-params (runtime params)
   (cond
     ((null params))
-    ((every #'consp params)
+    ((every #'dotted-pair-p params)
      ;; (warn "The format (format runtime `(id . value) ...) will be deprecated in the future. Use (format runtime key1 value1 key2 value2 ...) instead.")
      (loop for (place . value) in params
            for value-buffer = (if (tensor-p value)

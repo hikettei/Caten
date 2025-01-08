@@ -1,4 +1,4 @@
-(in-package :caten/apis)
+(in-package :caten/api)
 ;; initializers.lisp: Implements the lazy (or static) initialization of dense/sparse arrays.
 ;; How randomness should be implemented under the nature of laziness:
 ;;   All computational nodes that exhibit random behavior must depend on `RandNode`.

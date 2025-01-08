@@ -76,6 +76,7 @@ This package provides GraphRuntime, which is a class to run an air graph.
   (check-type var symbol)
   (let ((val (gethash var (runtime-variables runtime))))
     (if (eql val :nil) nil (or val (error "Runtime: the variable ~a is not defined in the graph." var)))))
+
 ;; ~~~~ Runner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (define-condition runtime-error ()
   ((runtime :initarg :runtime)
