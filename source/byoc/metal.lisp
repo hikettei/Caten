@@ -160,6 +160,11 @@
 (defvar *depth*)
 (defvar *global-idx-list*)
 
+(defmethod %render-node ((renderer Metal-Renderer) (id (eql :SPACE)) node)
+  (let ((lv (ecase (getattr node :level) (:block "gid") (:thread "lid")))
+        (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))
+    (format nil "~a.~a" lv dim)))
+
 (defmethod %render-kernel ((renderer Metal-Renderer) si)
   (let ((args (schedule-item-args si)))
     (with-output-to-string (out)
