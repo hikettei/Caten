@@ -124,9 +124,22 @@ for (int i=0; i<10; i+=amount) {
 ;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
 ;; OPTIMIZE=1
 (defmethod optimize-band-lv1 ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
+  (when (some #'identity prev-selected)
+    (return-from optimize-band-lv1 schedule-node-band))
+  
+  (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
+    (return-from optimize-band-lv1 schedule-node-band))
 
-  schedule-node-band)
-
+  (flet ((tryit (opt)
+           (when (opt-applicable-p opt schedule-node-band item (autoscheduler-config auto-scheduler))
+             (return-from optimize-band-lv1 (values (apply-opt opt schedule-node-band item (autoscheduler-config auto-scheduler)) opt)))))
+    (case (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler))
+      (0 nil)
+      (1 (tryit (make-instance 'Parallel)))
+      (3 )
+      (otherwise (warn "No Support for ~ad parallelism" (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler)))))
+    (tryit (make-instance 'Unroll :amount 4))
+    schedule-node-band))
 ;; OPTIMIZE=2
 (defmethod optimize-band-lv2 ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
   "Applies all possible optimizations to the given band, returning the best one."
@@ -144,7 +157,6 @@ for (int i=0; i<10; i+=amount) {
            (sorted (sort (map 'list #'list (compute-costs auto-scheduler next-kernels item) next-kernels next-actions) #'> :key #'car)))
       (when (null sorted) (return-from optimize-band-lv2 schedule-node-band))
       (format t "~%DEBUG: Generation=~a ============~%" (autoscheduler-n-generation auto-scheduler))
-      ;; (print next-actions)
       ;; [TODO] How to verify the validity of loop interchange without providing scalar info?
        (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
       (format t "Selected:~%~a" (render-schedule-node (isl:schedule-node-get-schedule (second (car sorted)))))
@@ -184,6 +196,9 @@ for (int i=0; i<10; i+=amount) {
 
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
+  ;; OPTIMIZE=0 | Applies no optimization
+  ;; OPTIMIZE=1 | Rule based optimization without any speed measurements
+  ;; OPTIMIZE=2 | BEAM Search based on cost models
   (symbol-macrolet ((OPTIMIZE (the integer (ctx:getenv :OPTIMIZE))))
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
     (when (>= OPTIMIZE 1)
