@@ -137,7 +137,8 @@ for (int i=0; i<10; i+=amount) {
     (case (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler))
       (0 nil)
       (1 (tryit (make-instance 'Parallel)))
-      (3 )
+      (3 (tryit (make-instance 'Global)))
+;;         (tryit (make-instance 'Local :amount 4)))
       (otherwise (warn "No Support for ~ad parallelism" (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler)))))
     (tryit (make-instance 'Unroll :amount 4))
     schedule-node-band))
@@ -181,7 +182,7 @@ for (int i=0; i<10; i+=amount) {
                  (dotimes (nth n-children)
                    (setf node (optimize-children (isl:schedule-node-get-child (get-absolute-pos node history) nth) :prev-selected selected :history (append history (list nth)))))
                  node))))
-    (optimize-children (autoscheduler-best-schedule auto-scheduler))))
+    (isl:schedule-node-get-schedule (optimize-children (autoscheduler-best-schedule auto-scheduler)))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] Make metrics configurable
 (defclass BogoScheduler (AutoScheduler) nil)
@@ -195,6 +196,10 @@ for (int i=0; i<10; i+=amount) {
 
 (defclass LispScheduler (AutoScheduler) nil) ;; [Experimental] Execution time in lisp is propotional to the same time in gcc?
 
+(defun schedule-node-get-bp (polyhedral schedule-node)
+
+  )
+
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
   ;; OPTIMIZE=0 | Applies no optimization
@@ -204,10 +209,18 @@ for (int i=0; i<10; i+=amount) {
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
     (when (>= OPTIMIZE 1)
       (let* ((strategy 'BogoScheduler)
-             (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler)))
-        (minimize-cost auto-scheduler node (if (= OPTIMIZE 1) #'optimize-band-lv1 #'optimize-band-lv2))))
+             (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler))
+             (new-schedule (minimize-cost auto-scheduler node (if (= OPTIMIZE 1) #'optimize-band-lv1 #'optimize-band-lv2))))
+        ;(print "FINAL SCHEDULE")
+        ;(print (render-schedule-node new-schedule))
+        ))
     ;; [TODO] BEAM Report with OPTIMIZE=1 and JIT_DEBUG=4
     ;; e.g.: n-trial, n-generation, found-opt-sequence, total-time-consumed
     
     ;; Load blueprint from optimized polyhedral IR
-    (setf (getattr node :blueprint) (caten/codegen/ast-parser:lower-into-bp-from-polyhedral (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank)) node))))
+    (setf (getattr node :blueprint)
+          (caten/codegen/ast-parser:lower-into-bp-from-polyhedral
+           (caten/codegen/polyhedral:->ast
+            (poly-schedule (getattr node :polyhedral))
+            (getattr node :rank))
+           node))))

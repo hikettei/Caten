@@ -198,7 +198,7 @@ This function returns a list of the results of applying f to each node. NIL is e
 
 (defun gid (n) (intern (format nil "_gid~a" n)))
 
-(defmethod ->ast ((poly Polyhedral-IR) rank)
+(defmethod ->ast (schedule rank)
   (macrolet ((set-option (name level)
 	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
 				 :pointer (isl::context-handle isl::*context*)
@@ -210,7 +210,7 @@ This function returns a list of the results of applying f to each node. NIL is e
     (set-option "ast_build_scale_strides" 1)
     (set-option "ast_build_allow_else" 0)
     (set-option "ast_build_allow_or" 0))
-  (let* ((schedule (isl:schedule-set-options (isl:copy (poly-schedule poly)) :separate))
+  (let* ((schedule (isl:schedule-set-options (isl:copy schedule) :separate))
 	 (ast-build (isl:ast-build-from-context (isl:set-from-str "{:}")))
          (rank (* 2 rank)) ;; rank * tile_bands * vectorizing
          (ast-build (isl:ast-build-set-iterators ast-build (apply #'isl:make-id-list (loop for i upfrom 0 below rank collect (gid i)))))
