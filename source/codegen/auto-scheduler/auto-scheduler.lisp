@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/auto-scheduler
   (:use :cl :caten/air :caten/codegen/shape-inference :caten/codegen/expr :caten/codegen/config
-        :caten/codegen/polyhedral :caten/codegen/transform)
+        :caten/codegen/polyhedral :caten/codegen/transform :caten/codegen/ast-parser)
   (:export
     #:auto-schedule
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
@@ -196,9 +196,8 @@ for (int i=0; i<10; i+=amount) {
 
 (defclass LispScheduler (AutoScheduler) nil) ;; [Experimental] Execution time in lisp is propotional to the same time in gcc?
 
-(defun schedule-node-get-bp (polyhedral schedule-node)
-
-  )
+(defun schedule-node-get-bp (isl-schedule node)
+  (->ast isl-schedule (getattr node :rank)
 
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
@@ -218,9 +217,4 @@ for (int i=0; i<10; i+=amount) {
     ;; e.g.: n-trial, n-generation, found-opt-sequence, total-time-consumed
     
     ;; Load blueprint from optimized polyhedral IR
-    (setf (getattr node :blueprint)
-          (caten/codegen/ast-parser:lower-into-bp-from-polyhedral
-           (caten/codegen/polyhedral:->ast
-            (poly-schedule (getattr node :polyhedral))
-            (getattr node :rank))
-           node))))
+    (setf (getattr node :blueprint) (lower-into-bp-from-polyhedral (->ast (poly-schedule (getattr node :polyhedral)) (getattr node :rank)) node))))
