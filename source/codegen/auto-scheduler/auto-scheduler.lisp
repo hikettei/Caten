@@ -28,9 +28,12 @@
   (and
    (< (isl:schedule-node-get-schedule-depth schedule-node) (auto-scheduler-n-global-loops config)) ;; Located in the parallel level?
    (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
-;; TODO (Add Global/Local Support in Caten)
-(defclass Global (Opt) nil) ;; blockIdx
-(defclass Local (Opt) nil)  ;; threadIdx
+
+(defclass Global (Parallel) nil) ;; blockIdx
+(defmethod apply-opt ((opt Global) schedule-node item config) (apply-global schedule-node))
+
+(defclass Local (Parallel) nil)  ;; threadIdx
+(defmethod apply-opt ((opt Local) schedule-node item config) (apply-local schedule-node (opt-amount opt)))
 
 (defclass Interchange (Opt) nil (:documentation "Swaps the loop with `amount` th band node in the current schedule."))
 (defmethod apply-opt ((opt Interchange) schedule-node item config)
@@ -41,7 +44,7 @@
 (defclass TileBand (Opt) nil (:documentation "Tiles the given schedule-node-band with the size"))
 (defmethod apply-opt ((opt TileBand) schedule-node item config) (apply-tile schedule-node (opt-amount opt)))
 (defmethod opt-applicable-p ((opt TileBand) schedule-node item config)
-  ;; [TODO] Only applicable after the band has a data reuse. but how do we know that?
+  ;; [TODO] hand-written condition to know when the tiling is effective and limit the exploration space.
   t)
 
 (defclass Unroll (Opt) nil (:documentation "Unroll the loop with `amount`
@@ -80,6 +83,8 @@ for (int i=0; i<10; i+=amount) {
 (defmethod opt-applicable-p ((opt Packing) schedule-node item config)
   ;; [TODO] Usually vectorize-level parallelism is located in the innnermost loop. how to judge this?
   t)
+
+(defclass Coalesce (Opt) nil) ;; TODO
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass AutoScheduler ()
   ((best-schedule :initarg :schedule :type isl:schedule-node-domain :accessor autoscheduler-best-schedule)
@@ -102,7 +107,9 @@ for (int i=0; i<10; i+=amount) {
     (0 nil)
     (1 (push (make-instance 'Parallel) actions))
     (3 ;; Block/Thread Parallelism
-     (warn "TODO: Block/Thread Parallelism"))
+     (push (make-instance 'Global) actions)
+     (dolist (amt `(2 3 4 8 13 16 29))
+       (push (make-instance 'Local :amount amt) actions)))
     (otherwise
      (warn "Currently Caten does not support n_global_loops=~a and thus the code is not parallelized." (auto-scheduler-n-global-loops config))))
   ;; Tile

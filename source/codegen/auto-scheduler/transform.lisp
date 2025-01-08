@@ -13,7 +13,9 @@
     #:apply-interchange #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile)
   ;; Marks
   (:export
-    #:apply-parallel))
+    #:apply-parallel
+    #:apply-global
+    #:apply-local))
 
 (in-package :caten/codegen/transform)
 ;; ~~ Legality Computations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -168,8 +170,9 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; ~~ Insert Marks ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-parallel (schedule-node)
   (schedule-node-insert-mark schedule-node (directive->id (directive "PARALLEL" 0 T))))
-;; [TODO] They are just inserting marks.
-;; - apply-parallel (for OpenMP)
-;; [TODO] Mark+Tile 
-;; - apply-global (blockIdx in CUDA)
-;; - apply-local (threadIdx in CUDA)
+
+(defun apply-global (schedule-node)
+  (schedule-node-insert-mark schedule-node (directive->id (directive "GLOBAL" 0 T))))
+
+(defun apply-local (band amt)
+  (%apply-tile band amt (directive "LOCAL_OUTER" amt t) (directive "LOCAL_INNER" amt t)))
