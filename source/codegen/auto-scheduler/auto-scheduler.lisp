@@ -122,11 +122,17 @@ for (int i=0; i<10; i+=amount) {
   (push (make-instance 'Unroll :amount 16) actions)
   actions)
 ;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
-(defmethod optimize-band ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
+;; OPTIMIZE=1
+(defmethod optimize-band-lv1 ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
+
+  schedule-node-band)
+
+;; OPTIMIZE=2
+(defmethod optimize-band-lv2 ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
   "Applies all possible optimizations to the given band, returning the best one."
   ;; Only interested in the schedule-node-band
   (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
-    (return-from optimize-band schedule-node-band))
+    (return-from optimize-band-lv2 schedule-node-band))
   (symbol-macrolet ((JIT_DEBUG (ctx:getenv :JIT_DEBUG)))
     (let* ((config (autoscheduler-config auto-scheduler))
            (next-actions
@@ -136,7 +142,7 @@ for (int i=0; i<10; i+=amount) {
                      collect opt))
            (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions))
            (sorted (sort (map 'list #'list (compute-costs auto-scheduler next-kernels item) next-kernels next-actions) #'> :key #'car)))
-      (when (null sorted) (return-from optimize-band schedule-node-band))
+      (when (null sorted) (return-from optimize-band-lv2 schedule-node-band))
       (format t "~%DEBUG: Generation=~a ============~%" (autoscheduler-n-generation auto-scheduler))
       ;; (print next-actions)
       ;; [TODO] How to verify the validity of loop interchange without providing scalar info?
@@ -146,13 +152,13 @@ for (int i=0; i<10; i+=amount) {
       (incf (autoscheduler-n-generation auto-scheduler))
       (values (second (car sorted)) (third (car sorted))))))
 
-(defmethod minimize-cost ((auto-scheduler AutoScheduler) item)
+(defmethod minimize-cost ((auto-scheduler AutoScheduler) item optimizer)
   (labels ((get-absolute-pos (node history &aux (node (isl:schedule-get-root (isl:schedule-node-get-schedule node))))
              (dolist (h history)
                (setf node (isl:schedule-node-get-child node h)))
              node)
            (optimize-children (node &key (history) (prev-selected) &aux (depth (isl:schedule-node-get-schedule-depth node)))
-             (multiple-value-bind (node selected) (optimize-band auto-scheduler node item prev-selected)
+             (multiple-value-bind (node selected) (funcall optimizer auto-scheduler node item prev-selected)
                (let ((generations (- (isl:schedule-node-get-schedule-depth node) depth)))
                  (dotimes (i generations) (setf history (append history (list 0)))))
                (let ((selected (if (and (or (null selected) (typep selected 'NoOpt)) (not (eql (isl:schedule-node-get-type node) :schedule-node-mark)))
@@ -180,17 +186,12 @@ for (int i=0; i<10; i+=amount) {
   (assert (getattr node :polyhedral))
   (symbol-macrolet ((OPTIMIZE (the integer (ctx:getenv :OPTIMIZE))))
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
-    ;; OPTIMIZE=1 : Parallel, Unroll, Vectorize, GLOCAL, LOCAL
-    ;; OPTIMIZE=2 : Interchange, Tile(Interchange is required!), GROUPTOP
-    (when (>= OPTIMIZE 2)
-      (warn "OPTIMIZE=2 is still under development. Do not use this.")
-      (let* ((strategy 'BogoScheduler) ;; TODO: Configurable
+    (when (>= OPTIMIZE 1)
+      (let* ((strategy 'BogoScheduler)
              (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler)))
-        (minimize-cost auto-scheduler node)))
-    ;; [TODO] BEAM report
-    ;; n-trial
-    ;; n-generation
-    ;; found-sequence
-    ;; total-time-consumed
+        (minimize-cost auto-scheduler node (if (= OPTIMIZE 1) #'optimize-band-lv1 #'optimize-band-lv2))))
+    ;; [TODO] BEAM Report with OPTIMIZE=1 and JIT_DEBUG=4
+    ;; e.g.: n-trial, n-generation, found-opt-sequence, total-time-consumed
+    
     ;; Load blueprint from optimized polyhedral IR
     (setf (getattr node :blueprint) (caten/codegen/ast-parser:lower-into-bp-from-polyhedral (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank)) node))))
