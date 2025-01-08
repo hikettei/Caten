@@ -50,6 +50,16 @@
                    (attn-output (!reshape attn-output (append (butlast (shape attn-output) 2) (list (apply #'* (last (shape attn-output) 2)))))))
               (call c-proj attn-output))))))))
 
+
+(defmodel (FeedForwardLLAMA (dim hidden-dim))
+    ((fc1   (Linear dim hidden-dim))
+     (fc2 (Linear dim hidden-dim))
+     (fc3 (Linear hidden-dim dim))))
+
+(defcall (model FeedForwardLLAMA) (X[~])
+  (with-slots ((fc1 fc1) (fc2 fc2) (fc3 fc3)) model
+    (forward fc3 (!mul (!silu (forward fc1 x)) (forward fc2 x)))))
+
 (defmodel (FeedForward (dim hidden-dim))
     ((c-fc   (Linear dim hidden-dim))
      (c-proj (Linear hidden-dim dim))))
