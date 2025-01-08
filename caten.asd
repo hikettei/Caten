@@ -4,7 +4,7 @@
   :version     "0.2"
   :licence     "MIT"
   :depends-on
-  ("caten.apis" "caten.nn")
+  ("caten.api" "caten.nn")
   :serial t
   :components ((:file "source/caten-user") (:file "source/documentation"))
   :in-order-to
@@ -27,7 +27,7 @@
 (asdf:defsystem "caten/gguf"
   :description "[gguf](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md) format translator."
   :author "hikettei <ichndm@gmail.com>"
-  :depends-on ("caten.apis" "caten/llm" "babel" "fast-io" "trivial-download")
+  :depends-on ("caten.api" "caten/llm" "babel" "fast-io" "trivial-download")
   :serial t
   :pathname "external/gguf"
   :components

@@ -2,7 +2,7 @@
   :description "Caten Neural Network Library"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
-  :depends-on ("rove" "caten.apis")
+  :depends-on ("rove" "caten.api")
   :serial t
   :components
   ((:file "package")
