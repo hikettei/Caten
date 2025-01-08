@@ -197,7 +197,7 @@ for (int i=0; i<10; i+=amount) {
 (defclass LispScheduler (AutoScheduler) nil) ;; [Experimental] Execution time in lisp is propotional to the same time in gcc?
 
 (defun schedule-node-get-bp (isl-schedule node)
-  (->ast isl-schedule (getattr node :rank)
+  (lower-into-bp-from-polyhedral (->ast isl-schedule (getattr node :nrank)) node))
 
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
