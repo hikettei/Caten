@@ -124,15 +124,16 @@ for (int i=0; i<10; i+=amount) {
 ;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
 ;; OPTIMIZE=1
 (defmethod optimize-band-lv1 ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
-  (when (some #'identity prev-selected)
-    (return-from optimize-band-lv1 schedule-node-band))
-  
+  ;; Only optimize schedule-node-band
   (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
     (return-from optimize-band-lv1 schedule-node-band))
-
+  
   (flet ((tryit (opt)
-           (when (opt-applicable-p opt schedule-node-band item (autoscheduler-config auto-scheduler))
+           (when (and
+                  (every #'(lambda (x) (not (typep opt (type-of x)))) prev-selected)
+                  (opt-applicable-p opt schedule-node-band item (autoscheduler-config auto-scheduler)))
              (return-from optimize-band-lv1 (values (apply-opt opt schedule-node-band item (autoscheduler-config auto-scheduler)) opt)))))
+    ;; Hand-written optimization rules
     (case (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler))
       (0 nil)
       (1 (tryit (make-instance 'Parallel)))
