@@ -152,3 +152,26 @@
 	   (logits (forward lm-head (forward ln-f hi))))
       (declare (ignore _))
       (!argmax (!view logits t -1 t)))))
+
+(defmodel (LlamaTransformer (dim n-heads n-layers norm-eps vocab-size &key (max-seq-len 1024)))
+    ((vocab-size vocab-size)
+     (wte (Embedding vocab-size dim))
+     ;; Remove wpe (positional embeddings) since we use RoPE
+     (h (loop repeat n-layers collect 
+                 (TransformerBlockLlama dim n-heads 
+                                        :norm-eps norm-eps 
+                                        :max-seq-len max-seq-len)))
+     (rms-f (RMSNorm `(,dim) :eps norm-eps))  ; LayerNorm -> RMSNorm
+     (lm-head (Linear dim vocab-size :bias nil))))
+
+(defcall (model LlamaTransformer) (Tokens[Batch Seq-Len] Start-Pos[])
+  (with-slots ((wte wte) (h h) (rms-f rms-f) (lm-head lm-head)) model
+    (let* ((token-emb (forward wte tokens))
+           (hi token-emb)
+           (mask (!triu (!full `(1 1 ,seq-len ,(!+ start-pos (iconst seq-len))) 
+                               (-inf)) 
+                        :diagonal (!+ (iconst 1) start-pos)))
+           (_ (dolist (hn h) (setf hi (forward hn hi mask start-pos))))
+           (logits (forward lm-head (forward rms-f hi))))
+      (declare (ignore _))
+      (!argmax (!view logits t -1 t)))))
