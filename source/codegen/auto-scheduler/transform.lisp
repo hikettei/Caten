@@ -14,8 +14,7 @@
   ;; Marks
   (:export
     #:apply-parallel
-    #:apply-global
-    #:apply-local))
+    #:apply-global))
 
 (in-package :caten/codegen/transform)
 ;; ~~ Legality Computations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -171,8 +170,5 @@ Returns T if the current schedule does not break any dependences in dep."
 (defun apply-parallel (schedule-node)
   (schedule-node-insert-mark schedule-node (directive->id (directive "PARALLEL" 0 T))))
 
-(defun apply-global (schedule-node)
-  (schedule-node-insert-mark schedule-node (directive->id (directive "GLOBAL" 0 T))))
-
-(defun apply-local (band amt)
-  (%apply-tile band amt (directive "LOCAL_OUTER" amt t) (directive "LOCAL_INNER" amt t)))
+(defun apply-global (schedule-node n-local)
+  (schedule-node-insert-mark schedule-node (directive->id (directive "GLOBAL" n-local T))))

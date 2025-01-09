@@ -21,7 +21,7 @@
 (defclass NoOpt (Opt) nil (:documentation "Nothing applied."))
 (defmethod apply-opt ((opt Noopt) schedule-node item config) (isl:copy schedule-node))
 (defmethod opt-applicable-p ((opt Noopt) schedule-node item config) t)
-;; Note: Parallel vs Global/Local is orthogonal
+;; Note: Parallel vs Globalis orthogonal
 (defclass Parallel (Opt) nil (:documentation "Parallelizes the given schedule-node"))
 (defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
@@ -29,11 +29,8 @@
    (< (isl:schedule-node-get-schedule-depth schedule-node) (auto-scheduler-n-global-loops config)) ;; Located in the parallel level?
    (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
 
-(defclass Global (Parallel) nil) ;; blockIdx
-(defmethod apply-opt ((opt Global) schedule-node item config) (apply-global schedule-node))
-
-(defclass Local (Parallel) nil)  ;; threadIdx
-(defmethod apply-opt ((opt Local) schedule-node item config) (apply-local schedule-node (opt-amount opt)))
+(defclass Global (Parallel) nil) ;; blockIdx + threadIdx
+(defmethod apply-opt ((opt Global) schedule-node item config) (apply-global schedule-node (opt-amount opt)))
 
 (defclass Interchange (Opt) nil (:documentation "Swaps the loop with `amount` th band node in the current schedule."))
 (defmethod apply-opt ((opt Interchange) schedule-node item config)
@@ -107,9 +104,8 @@ for (int i=0; i<10; i+=amount) {
     (0 nil)
     (1 (push (make-instance 'Parallel) actions))
     (3 ;; Block/Thread Parallelism
-     (push (make-instance 'Global) actions)
-     (dolist (amt `(2 3 4 8 13 16 29))
-       (push (make-instance 'Local :amount amt) actions)))
+     (dolist (amt `(0 2 3 4 8 13 16 29))
+       (push (make-instance 'Global :amount amt) actions)))
     (otherwise
      (warn "Currently Caten does not support n_global_loops=~a and thus the code is not parallelized." (auto-scheduler-n-global-loops config))))
   ;; Tile
@@ -137,7 +133,7 @@ for (int i=0; i<10; i+=amount) {
     (case (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler))
       (0 nil)
       (1 (tryit (make-instance 'Parallel)))
-      (3 (tryit (make-instance 'Global)))
+      (3 (tryit (make-instance 'Global :amount 0)))
 ;;         (tryit (make-instance 'Local :amount 4)))
       (otherwise (warn "No Support for ~ad parallelism" (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler)))))
     (tryit (make-instance 'Unroll :amount 4))

@@ -64,7 +64,7 @@ scop.lisp for the opposite things.
          (cond
            ((is "GLOBAL")
             (incf (context-n-global-dims ctx))
-            (warn "WIP"))
+            (error "NOT READY"))
            ;; UNROLL_OUTER + UNROLL_INNER = UNROLL
            ((is "UNROLL_OUTER")
             (let ((body (astfor-body user)))
@@ -96,7 +96,7 @@ scop.lisp for the opposite things.
                 (let ((replacement
                         (make-block
                          (list
-                          (astfor-mutate-global body (context-n-global-dims ctx) 0)
+                          (astfor-mutate-global body (context-n-global-dims ctx) (directive-amount directive))
                           (astfor-mutate-reminder-global (astfor-idx body) reminder)))))
                   (incf (context-n-global-dims ctx))
                   (return-from parse-isl-ast-mark replacement)))))))))
