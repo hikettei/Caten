@@ -50,16 +50,16 @@
                    (attn-output (!reshape attn-output (append (butlast (shape attn-output) 2) (list (apply #'* (last (shape attn-output) 2)))))))
               (call c-proj attn-output))))))))
 
-(defmodel (LlamaAttention (dim n-heads max-seq-len &key (rope-dim nil))
-                          ((wq (Linear dim dim :bias nil))      ; Separate Q projection
-                           (wk (Linear dim dim :bias nil))      ; Separate K projection
-                           (wv (Linear dim dim :bias nil))      ; Separate V projection
-                           (wo (Linear dim dim :bias nil))      ; Output projection
-                           (n-heads n-heads)
-                           (dim dim)
-                           (head-dim (floor (/ dim n-heads)))
-                           (rope-dim (or rope-dim (floor (/ head-dim 2)))) ; RoPE dimension
-                           (max-seq-len max-seq-len))))
+(defmodel (LlamaAttention (dim n-heads max-seq-len &key (rope-dim nil)))  ; Name and initargs
+    ((wq (Linear dim dim :bias nil))      ; Separate Q projection
+     (wk (Linear dim dim :bias nil))      ; Separate K projection
+     (wv (Linear dim dim :bias nil))      ; Separate V projection
+     (wo (Linear dim dim :bias nil))      ; Output projection
+     (n-heads n-heads)
+     (dim dim)
+     (head-dim (floor (/ dim n-heads)))
+     (rope-dim (or rope-dim (floor (/ head-dim 2)))) ; RoPE dimension
+     (max-seq-len max-seq-len)))
 
 (defmethod call ((model LlamaAttention) &rest inputs)
   (with-slots ((wq wq) (wk wk) (wv wv) (wo wo) 
