@@ -97,7 +97,7 @@ scop.lisp for the opposite things.
                         (make-block
                          (list
                           (astfor-mutate-global body (context-n-global-dims ctx) 0)
-                          (astfor-mutate-reminder-global reminder (context-n-global-dims ctx))))))
+                          (astfor-mutate-reminder-global reminder)))))
                   (incf (context-n-global-dims ctx))
                   (return-from parse-isl-ast-mark replacement)))))))))
     user))
