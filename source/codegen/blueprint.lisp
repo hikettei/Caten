@@ -55,7 +55,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                             iterations))))
                  (format nil "~(~a~)" name)))
            (make-index-space ()
-             (map 'list #'(lambda (x) (expr-const x :int64)) (reverse gids))))
+             (map 'list #'(lambda (x) (expr-const (intern (princ-to-string x)) :int64)) (reverse gids))))
     (format
      stream
      "{~%~a}~%"

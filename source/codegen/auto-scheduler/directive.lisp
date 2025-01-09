@@ -107,7 +107,7 @@
     (expr-infer-type idx)
     (make-block
      (list
-      (make-astexpr (make-node :JIT :EXPR (list bind-name) nil :declare-type `(t) :EXPR idx :_type_relay type-relay))
+      (make-astexpr (make-node :JIT :EXPR (list bind-name) nil :declare-type `(t) :EXPR idx :_type_relay type-relay) t)
       (make-if
        (expr-< (expr-const bind-name dtype) upper-bound)
        (astfor-body astfor)

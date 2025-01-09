@@ -252,8 +252,10 @@ scop.lisp for the opposite things.
 		  (lower then)
                   (assert (null else) () "else should be none")
 		  (push (r/endif) new-graph))
-                 ((AstExpr :expr expr)
+                 ((AstExpr :expr expr :is-defglobal-p defglobal-p)
                   (assert (eql (node-type expr) :EXPR) () "ASTEXPR can only have an EXPR.")
+                  (when defglobal-p
+                    (push (string-downcase (princ-to-string (car (node-writes expr)))) space))
                   (push expr new-graph))
 		 (_
 		  (error "create-rendering-graph: ~a should not occur here!" object)))))
