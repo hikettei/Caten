@@ -2,17 +2,17 @@
   (:documentation "An intermidate AST to parse ISL AST into Blueprint.")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia)
   (:export
-   #:ASTBlock
+   #:ASTBlock #:astblock-p #:astblock-body
    #:make-block
    #:satblock-body
 
-   #:User
+   #:User #:user-p
    #:make-user
    #:user-name
    #:user-args
    #:user-unroll
    
-   #:ASTFor
+   #:ASTFor #:astfor-p
    #:make-for
    #:copy-astfor
    #:astfor-idx
@@ -23,11 +23,13 @@
    #:astfor-scope
    #:astfor-marks
 
-   #:AstIf
+   #:AstIf #:astif-p
    #:make-if
    #:astif-condition
    #:astif-then-node
    #:astif-else-node
+
+   #:ASTExpr #:make-astexpr #:astexpr-p #:astexpr-expr
 
    #:map-ast-tree
    #:copy-and-assign-expr
@@ -45,6 +47,10 @@
               (:constructor make-user (name args)))
     "T_name(index)"
     (name name :type string) (args args :type list) (unroll nil :type list))
+
+  (defstruct (ASTExpr
+              (:constructor make-astexpr (expr)))
+    (expr expr :type Node))
 
   (defstruct (ASTFor
               (:constructor make-for (idx from to by body)))

@@ -197,7 +197,7 @@ for (int i=0; i<10; i+=amount) {
 (defclass LispScheduler (AutoScheduler) nil) ;; [Experimental] Execution time in lisp is propotional to the same time in gcc?
 
 (defun schedule-node-get-bp (isl-schedule node)
-  (lower-into-bp-from-polyhedral (->ast isl-schedule (getattr node :nrank)) node))
+  (lower-into-bp-from-polyhedral (->ast isl-schedule (getattr node :rank)) node))
 
 (defun auto-schedule (auto-scheduler node)
   (assert (getattr node :polyhedral))
@@ -210,9 +210,9 @@ for (int i=0; i<10; i+=amount) {
       (let* ((strategy 'BogoScheduler)
              (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler))
              (new-schedule (minimize-cost auto-scheduler node (if (= OPTIMIZE 1) #'optimize-band-lv1 #'optimize-band-lv2))))
-        ;(print "FINAL SCHEDULE")
-        ;(print (render-schedule-node new-schedule))
-        ))
+        (print "FINAL SCHEDULE")
+        (print (render-schedule-node new-schedule))
+        (caten/codegen/blueprint:print-blueprint (schedule-node-get-bp new-schedule node) t)))
     ;; [TODO] BEAM Report with OPTIMIZE=1 and JIT_DEBUG=4
     ;; e.g.: n-trial, n-generation, found-opt-sequence, total-time-consumed
     
