@@ -113,12 +113,11 @@
        (astfor-body astfor)
        nil)))))
 
-(defun astfor-mutate-reminder-global (astfor &key (dtype :int64))
+(defun astfor-mutate-reminder-global (parent-idx astfor &key (dtype :int64))
   "This function receives the reminder part of ASTFor, returning the new ASTFor using global indexing."
   (declare (type ASTFor astfor))
   ;; (IF IDX == UPFROM)
   ;; ASTFOR
-  (let* ((bind (astfor-idx astfor))
-         (from (astfor-from astfor))
-         (bind-name (intern (string-upcase (princ-to-string bind)))))
-    (make-if (expr-= (expr-const bind-name dtype) from) astfor nil)))
+  (let* ((parent-bind (intern (string-upcase (princ-to-string parent-idx))))
+         (from (astfor-from astfor)))
+    (make-if (expr-= (expr-const parent-bind dtype) from) astfor nil)))
