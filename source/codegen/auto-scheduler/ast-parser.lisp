@@ -61,10 +61,13 @@ scop.lisp for the opposite things.
     (macrolet ((is (name) `(equalp (directive-type directive) ,name)))
       (typecase user
         (AstFor
+         ;; Entry point for transformations
          (cond
            ((is "GLOBAL")
             (incf (context-n-global-dims ctx))
             (error "NOT READY"))
+           ((is "PARALLEL")
+            (setf (astfor-scope user) :global))
            ;; UNROLL_OUTER + UNROLL_INNER = UNROLL
            ((is "UNROLL_OUTER")
             (let ((body (astfor-body user)))
@@ -83,7 +86,11 @@ scop.lisp for the opposite things.
             (assert (null (astfor-marks user)) () "UNROLL_INNER should be orthogonal with other directives.")
             (setf (astfor-marks user) (list directive)))))
         (AstBlock
+         ;; Nested Directive Transformations
          (cond
+           ((is "PARALLEL")
+            (when (astfor-p (car (astblock-body user)))
+              (setf (astfor-scope (car (astblock-body user))) :global)))
            ((is "GLOBAL")
             ;; @DIRECTIVE(GLOBAL)
             ;; for (...;...;+=4) {...} // BODY

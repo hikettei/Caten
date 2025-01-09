@@ -173,7 +173,7 @@
                     ,(recursive-render-bp (subseq rest-blueprints 1 endfor)))
                   ,(recursive-render-bp (subseq rest-blueprints (1+ endfor))))
                (progn
-                 (when (eql (getattr bp :scope) :global) (warn "recursive-render-bp: The node ~a is scheduled as global but the upfrom/below/by is too complicated to handle.~%Thus this loop is not parallelized." bp))
+                 (when (eql (getattr bp :scope) :global) (warn "recursive-render-bp: The node ~a is scheduled as global but scheduled as local because the upfrom/below/by is too complicated to handle.~%Thus this loop is not parallelized." bp))
                  `(progn
                     (loop with ,(const (intern (princ-to-string (getattr bp :idx)))) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
                           while ,(render-expr 'LispStyle-Renderer (getattr bp :below))
