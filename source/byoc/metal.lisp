@@ -232,7 +232,7 @@
                    (render-list
                     (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
                          (node-writes bp) (relay-writes (read-type-relay bp)) (relay-write-iters (read-type-relay bp))))
-                   (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
+                   (render-expr 'Metal-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
       (:DEFINE-GLOBAL))))
 
 (defun header ()
