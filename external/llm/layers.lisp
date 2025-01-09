@@ -110,6 +110,18 @@
   (with-slots ((c-fc c-fc) (c-proj c-proj)) model
     (forward c-proj (!gelu (forward c-fc x)))))
 
+(defmodel (TransformerBlockLlama (dim n-heads &key (norm-eps 1e-5) (max-seq-len 1024)))
+    ((attn (LlamaAttention dim n-heads max-seq-len))
+     (mlp (FeedForwardLlama dim (* 4 dim)))
+     (rms_1 (RMSNorm `(,dim) :eps norm-eps))
+     (rms_2 (RMSNorm `(,dim) :eps norm-eps))))
+
+(defmethod call ((model TransformerBlockLlama) &rest inputs)
+  (multiple-value-bind (x mask start-pos) (apply #'values inputs)
+    (with-slots ((attn attn) (mlp mlp) (rms_1 rms_1) (rms_2 rms_2)) model
+      (let ((h (!add x (forward attn (forward rms_1 x) mask start-pos))))
+        (!add h (forward mlp (forward rms_2 h)))))))
+
 (defmodel (TransformerBlock (dim n-heads &key (norm-eps 1e-5) (max-seq-len 1024)))
     ((attn (Attention dim n-heads max-seq-len))
      (mlp (FeedForward dim (* 4 dim)))
