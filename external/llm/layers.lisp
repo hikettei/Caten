@@ -50,7 +50,49 @@
                    (attn-output (!reshape attn-output (append (butlast (shape attn-output) 2) (list (apply #'* (last (shape attn-output) 2)))))))
               (call c-proj attn-output))))))))
 
+(defmodel (LlamaAttention (dim n-heads max-seq-len &key (rope-dim nil))
+                          ((wq (Linear dim dim :bias nil))      ; Separate Q projection
+                           (wk (Linear dim dim :bias nil))      ; Separate K projection
+                           (wv (Linear dim dim :bias nil))      ; Separate V projection
+                           (wo (Linear dim dim :bias nil))      ; Output projection
+                           (n-heads n-heads)
+                           (dim dim)
+                           (head-dim (floor (/ dim n-heads)))
+                           (rope-dim (or rope-dim (floor (/ head-dim 2)))) ; RoPE dimension
+                           (max-seq-len max-seq-len))))
 
+(defmethod call ((model LlamaAttention) &rest inputs)
+  (with-slots ((wq wq) (wk wk) (wv wv) (wo wo) 
+                       (n-heads n-heads) (dim dim) (head-dim head-dim) 
+                       (rope-dim rope-dim)) model
+    (multiple-value-bind (x mask start-pos) (apply #'values inputs)
+      (let* ((batch-size (car (shape x)))
+             (seq-len (second (shape x)))
+             
+             (q (call wq x))
+             (k (call wk x))
+             (v (call wv x))
+             
+             (new-shape (list batch-size seq-len n-heads head-dim))
+             (q (!reshape q new-shape))
+             (k (!reshape k new-shape))
+             (v (!reshape v new-shape))
+             ;; Apply RoPE to Q and K
+             (q (!rope q rope-dim))
+             (k (!rope k rope-dim))
+ 
+             (q (!transpose q 1 2))
+             (k (!transpose k 1 2))
+             (v (!transpose v 1 2))
+ 
+             (attn-output (scaled-dot-product-attention q k v mask))
+             
+             (attn-output (!permute attn-output 0 2 1 3))
+             (attn-output (!reshape attn-output 
+                                    (list batch-size seq-len dim))))
+        (call wo attn-output)))))
+
+  
 (defmodel (FeedForwardLLAMA (dim hidden-dim))
     ((fc1   (Linear dim hidden-dim))
      (fc2 (Linear dim hidden-dim))
