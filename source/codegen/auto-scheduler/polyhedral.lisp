@@ -50,7 +50,7 @@
 
 (defmethod debug-render-to-clang ((pg Polyhedral-IR))
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-         (ast   (->ast pg 0))
+         (ast   (->ast (poly-schedule pg) 0))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
          (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
          (str   (isl::%isl-printer-get-str q)))
