@@ -210,6 +210,7 @@ for (int i=0; i<10; i+=amount) {
       (let* ((strategy 'BogoScheduler)
              (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler))
              (new-schedule (minimize-cost auto-scheduler node (if (= OPTIMIZE 1) #'optimize-band-lv1 #'optimize-band-lv2))))
+        (setf (poly-schedule (getattr node :polyhedral)) new-schedule)
         (print "FINAL SCHEDULE")
         (print (render-schedule-node new-schedule))
         (caten/codegen/blueprint:print-blueprint (schedule-node-get-bp new-schedule node) t)))

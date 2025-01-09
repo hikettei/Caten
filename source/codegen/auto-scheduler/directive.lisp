@@ -100,7 +100,7 @@
          (local  (expr-grid :thread depth dtype))
          (idx (if (= local-size 0) global (expr-add (expr-mul global (expr-const local-size dtype)) local)))
          (idx (expr-add from (expr-mul idx by)))
-         (type-relay (make-inferred-type nil (list (caten/runtime:make-buffer nil nil nil nil :device 'caten/codegen/shape-inference::RelayBuffer))))
+         (type-relay (make-inferred-type nil (list (caten/runtime:make-buffer nil nil dtype nil :device 'caten/codegen/shape-inference::RelayBuffer))))
          (bind-name (intern (string-upcase (princ-to-string bind)))))
     (setf (relay-write-iters type-relay) (list (make-iteration-space)))
     (assert upper-bound () "astfor-mutate-global: The ASTFor is not an SCOP: ~a" astfor)

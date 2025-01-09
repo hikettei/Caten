@@ -261,6 +261,7 @@ using namespace metal;
       (assert (null-pointer-p error-ptr) () "Failed to create a Metal library: ~a" (msg error-ptr "localizedDescription" :pointer))
       (setf (mp-fxn mp) (msg (mp-library mp) "newFunctionWithName:" :pointer :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp))))))
       (let ((descriptor (msg (objc-getclass "MTLComputePipelineDescriptor") "new" :pointer)))
+        (assert (not (null-pointer-p (mp-fxn mp))) () "setComputeFunction: function must not be a null pointer!")
         (msg descriptor "setComputeFunction:" :void :pointer (mp-fxn mp))
         (msg descriptor "setSupportIndirectCommandBuffers:" :void :bool t)
         (let ((error-ptr (null-pointer)))
