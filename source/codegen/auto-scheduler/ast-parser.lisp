@@ -64,8 +64,9 @@ scop.lisp for the opposite things.
          ;; Entry point for transformations
          (cond
            ((is "GLOBAL")
-            (incf (context-n-global-dims ctx))
-            (error "NOT READY"))
+            (let ((replacement (astfor-mutate-global user (context-n-global-dims ctx) (directive-amount directive))))
+              (incf (context-n-global-dims ctx))
+              (return-from parse-isl-ast-mark replacement)))
            ((is "PARALLEL")
             (setf (astfor-scope user) :global))
            ;; UNROLL_OUTER + UNROLL_INNER = UNROLL

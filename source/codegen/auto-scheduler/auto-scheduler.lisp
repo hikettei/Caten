@@ -95,10 +95,10 @@ for (int i=0; i<10; i+=amount) {
   "Returns a list of possible optimization candidates."
   (push (make-instance 'NoOpt) actions) ;; note: if you remove this line and all band is assigned any directive
   ;; Interchange
-  (let ((undernearth-band-count
-          (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
-    (dotimes (amount undernearth-band-count)
-      (push (make-instance 'Interchange :amount amount) actions)))
+  ;(let ((undernearth-band-count
+  ;        (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
+  ;  (dotimes (amount undernearth-band-count)
+  ;    (push (make-instance 'Interchange :amount amount) actions)))
   ;; Parallel Directive (Parallel or GLOBAL/LOCAL)
   (case (auto-scheduler-n-global-loops config)
     (0 nil)
@@ -136,7 +136,7 @@ for (int i=0; i<10; i+=amount) {
       (3 (tryit (make-instance 'Global :amount 0)))
 ;;         (tryit (make-instance 'Local :amount 4)))
       (otherwise (warn "No Support for ~ad parallelism" (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler)))))
-    (tryit (make-instance 'Unroll :amount 4))
+;;    (tryit (make-instance 'Unroll :amount 4))
     schedule-node-band))
 ;; OPTIMIZE=2
 (defmethod optimize-band-lv2 ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
