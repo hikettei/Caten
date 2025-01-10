@@ -30,7 +30,8 @@
 ;; ~~ MTLCompiler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
 (defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
-(defcfun "closure_cffi_callback" :pointer (callback :pointer))
+(defcfun "make_callback_closure" :pointer (callback :pointer))
+(defcfun "free_callback_closure" :pointer (callback :pointer))
 
 (defvar *callback-handler*)
 (defcallback callback :void
@@ -62,7 +63,7 @@
          (params-encoded (babel:string-to-octets params :encoding :utf-8))
          (params-padded (concatenate '(vector (unsigned-byte 8)) params-encoded (make-array 1 :element-type '(unsigned-byte 8) :initial-element 0)))
          (header (cl-pack:pack "<QQ" (length src-padded) (length params-padded)))
-         (request (concatenate 'string header (babel:octets-to-string src-padded) (babel:octets-to-string params-padded))))
+         (request (concatenate 'string header (babel:octets-to-string src-padded :encoding :utf-8) (babel:octets-to-string params-padded :encoding :utf-8))))
     request))
 
 (defun mtl-compile-source (source
@@ -76,11 +77,13 @@
                              (*callback-handler* :ready))
   (declare (type foreign-pointer service) (type string source params))
   (assert (<= (ctx:getenv :PARALLEL) 1) () "METAL does not support parallel compilation.")
-  (let ((request (make-request-form source params)))
+  (let ((request (make-request-form source params))
+        (callback (make-callback-closure (callback callback))))
     (with-foreign-string (*request request)
       (MTLCodeGenServiceBuildRequest
        service (null-pointer) +request-type-compile+
-       *request (length request) (closure-cffi-callback (get-callback 'callback))))
+       *request (length request) callback))
+    (free-callback-closure callback)
     (assert (consp *callback-handler*) () "*callback-handler* did not receive anything!")
     (case (car *callback-handler*)
       (:succeed
