@@ -38,7 +38,6 @@
     ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
   (declare (ignore blockptr))
   (assert (eql :ready *callback-handler*) () "*call-back-handler* is not set to :ready.")
-  (print error) (print datalen)
   (case error
     (0
      ;; offset from beginning to data = header size + warning size
