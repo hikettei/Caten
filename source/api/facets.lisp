@@ -55,6 +55,7 @@ Users can extend this method if needed.
                     (obj-dtype-of (aref storage 0))
                     (caten/common.dtype:lisp->dtype (array-element-type obj))))
          (buffer (make-buffer (array-dimensions obj) (static-compute-strides *default-order* (array-dimensions obj)) dtype nil :device (caten/codegen/backend:get-buffer-type)))
+         ;; TODO: Transfer into device without initializing runtime
          (_ (setf (buffer-value buffer) storage))
          (place (make-tensor (array-dimensions obj) :dtype dtype :from buffer)))
     (declare (ignore _))
