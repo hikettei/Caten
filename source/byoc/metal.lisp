@@ -151,7 +151,7 @@
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun dtype->mtype (dtype)
   (ecase dtype
-    (:bool 'boolean)
+    (:bool 'bool)
     (:float64 (error "float64 math is not supported on Metal."))
     (:float32 'float)
     (:bfloat16 'bfloat)
@@ -225,7 +225,7 @@
            (format stream "~a~a~a = ~a;~a~%"
                    (indent)
                    (if (car (getattr bp :declare-type))
-                       (format nil "~a " (->cdtype (buffer-dtype (car (relay-writes (read-type-relay bp))))))
+                       (format nil "~(~a~) " (dtype->mtype (buffer-dtype (car (relay-writes (read-type-relay bp))))))
                        "")
                    (render-list
                     (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
