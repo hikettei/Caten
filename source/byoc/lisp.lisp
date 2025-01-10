@@ -18,7 +18,7 @@
 
 (defmethod close-buffer (runtime (buffer LispBuffer)) (setf (buffer-value buffer) nil))
 (defmethod transfer-from-array (runtime (buffer LispBuffer) array) (setf (buffer-value buffer) array))
-(defmethod transfer-into-array (runtime (buffer LispBuffer)) (buffer-value buffer))
+(defmethod transfer-into-array ((buffer LispBuffer)) (buffer-value buffer))
 (defmethod copy-buffer-value (runtime (buffer LispBuffer)) (copy-seq (buffer-value buffer)))
 (defmethod bref ((buffer LispBuffer) idx) (aref (buffer-value buffer) idx))
 (define-backend :lisp LispBuffer GraphRuntime nil nil nil)

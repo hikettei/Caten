@@ -129,7 +129,7 @@
     (dotimes (i (apply #'* (buffer-shape buffer)))
       (setf (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i) (aref array i)))))
 
-(defmethod transfer-into-array ((runtime MetalRuntime) (buffer MetalBuffer))
+(defmethod transfer-into-array ((buffer MetalBuffer))
   ;; METAL -> CPU
   (let ((val (msg (buffer-value buffer) "contents" :pointer))
         (placeholder (make-array (apply #'* (buffer-shape buffer)) :element-type (dtype->lisp (buffer-dtype buffer)))))
@@ -138,7 +138,7 @@
 
 (defmethod copy-buffer-value ((runtime MetalRuntime) (buffer MetalBuffer))
   (let ((buffer (copy-buffer buffer)))
-    (transfer-from-array runtime buffer (transfer-into-array runtime buffer))
+    (transfer-from-array runtime buffer (transfer-into-array buffer))
     (buffer-value buffer)))
 
 (defmethod bref ((buffer MetalBuffer) idx)
