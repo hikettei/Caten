@@ -723,7 +723,7 @@ Lowers the Schedule-Item into blueprint.
     (setf (expr-graph ops) (->graph-with-tpsort (->fast-graph (expr-graph ops))))
     (make-gflops-measurer :ops ops :succeed-p t)))
 ;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun blueprint-gather-grids (blueprint &key (max-dimension 3))
+(defun blueprint-gather-grids (blueprint &key (max-dimension 3) (dtype :int64))
   (let ((grids
           (loop for bp in blueprint
                 if (and (eql (node-type bp) :EXPR) (typep (getattr bp :meta :allow-undefined t) 'ExprGrid))
@@ -731,4 +731,5 @@ Lowers the Schedule-Item into blueprint.
     (assert (<= (length grids) max-dimension) () "blueprint-gather-grids: the number of grids is over the limit.~%~a" blueprint)
     (append
      grids
-     (loop repeat (- max-dimension (length grids)) collect nil))))
+     (loop for i upfrom 0 below (- max-dimension (length grids))
+           collect (make-instance 'ExprGrid :rank (+ i (length grids)) :global-size (expr-const 1 dtype) :local-size (expr-const 1 dtype))))))

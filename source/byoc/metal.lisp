@@ -1,7 +1,7 @@
 (defpackage :caten/byoc/metal
   (:use
    :cl :caten/air :caten/codegen/expr :caten/codegen/renderer :caten/codegen/shape-inference
-   :caten/runtime/buffer :caten/codegen/helpers
+   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint
    :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
   (:import-from
    :caten/codegen/config
@@ -247,8 +247,7 @@ using namespace metal;
    (name :initarg :name :accessor mp-name)
    (library :accessor mp-library)
    (fxn :accessor mp-fxn)
-   (global-size :initform `(1 1 1) :accessor mp-global-size)
-   (local-size :initform `(1 1 1) :accessor mp-local-size)
+   (grid-size :initarg :grid-size :accessor mp-grid-size)
    (argtypes :initarg :argtypes :accessor mp-argtypes)
    (pipeline-state :accessor mp-pipeline-state)))
 
@@ -277,7 +276,7 @@ using namespace metal;
 (defmethod invoke ((mp Metal-Program) &rest buffers)
   (assert (= (length buffers) (length (mp-argtypes mp))) () "Metal: The number of arguments does not match the number of arguments in the Metal program.")
   (let ((total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
-    (when (> (apply #'* (mp-local-size mp)) total-max-threads)
+    (when (> (apply #'* (map 'list #'exprgrid-local-size-int (mp-grid-size mp))) total-max-threads)
       (error "Error: TODO"))
     (let* ((command-buffer (msg (mp-mtl-queue mp) "commandBuffer" :pointer))
            (encoder (msg command-buffer "computeCommandEncoder" :pointer)))
@@ -296,9 +295,11 @@ using namespace metal;
                         (with-foreign-object (*p (->cffi-dtype argtyp))
                           (setf (mem-ref *p (->cffi-dtype argtyp)) buf)
                           (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))))))
+      (assert (= (length (mp-grid-size mp)) 3) () "Metal only supports for 3d parallelism!")
       (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
-        (apply #'load-size gs (mp-global-size mp))
-        (apply #'load-size ls (mp-local-size mp))
+        ;; [TODO] Integer
+        (apply #'load-size gs (map 'list #'(lambda (x) (exprgrid-global-size-int x nil)) (mp-grid-size mp)))
+        (apply #'load-size ls (map 'list #'exprgrid-local-size-int (mp-grid-size mp)))
         (msg encoder "dispatchThreadgroups:threadsPerThreadgroup:" :void :pointer gs :pointer ls))
       (msg encoder "endEncoding" :void)
       (msg command-buffer "setLabel:" :void :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp)))))
@@ -310,7 +311,7 @@ using namespace metal;
 (defun make-metal-caller (mp) `(lambda (&rest args) (apply #'invoke ,mp args)))
 
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
-  (ensure-foreign-library)
+  (ensure-foreign-library) ;; TODO: O(0.05) time elapsed ...
   (float-features:with-float-traps-masked t
     (let* ((code (apply #'concatenate 'string
                         (append (list (header))
@@ -325,5 +326,7 @@ using namespace metal;
         (loop for item in items
               if (getattr item :rendered-object)
                 do (let* ((argtypes (map 'list #'(lambda (x) (getattr x :dtype)) (schedule-item-args item)))
-                          (caller (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue :argtypes argtypes)))
+                          (caller (make-instance
+                                   'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue :argtypes argtypes
+                                   :grid-size (blueprint-gather-grids (getattr item :blueprint) :max-dimension 3))))
                      (setf (getattr item :compiled-object) (make-metal-caller caller))))))))

@@ -48,9 +48,11 @@
   (:export
    #:ExprMeta #:exprmeta-comment
    #:ExprGrid
+   #:exprgrid-rank
    #:exprgrid-global-size
    #:exprgrid-local-size
-   #:exprgrid-realize))
+   #:exprgrid-global-size-int
+   #:exprgrid-local-size-int))
 
 (in-package :caten/codegen/expr)
 
@@ -341,7 +343,7 @@ Runs the expr with given params.
    (caten/runtime:make-runtime
     (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :buffer-type (find-symbol "LISPBUFFER" (find-package :caten/byoc/lisp)))
    params))
-;; ~~ Global Size Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ ExprMeta ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass ExprMeta () nil
   (:documentation "ExprMeta gives a meta information for the Expr."))
 
@@ -352,12 +354,18 @@ Runs the expr with given params.
 
 (defclass ExprGrid (ExprMeta)
   ((rank :initarg :rank :accessor exprgrid-rank)
-   (global-size :initarg :global-size :accessor exprgrid-global-size)
-   (local-size :initarg :local-size :accessor exprgrid-local-size)))
+   (global-size :initarg :global-size :accessor exprgrid-global-size :type Expr)
+   (local-size :initarg :local-size :accessor exprgrid-local-size :type Expr)))
 
-(defmethod exprgrid-realize ((exprgrid ExprGrid) args)
-  
-  )
+(defmethod exprgrid-local-size-int ((exprgrid ExprGrid))
+  (let ((val (expr-realize (exprgrid-local-size exprgrid))))
+    (assert (numberp (caten/runtime:buffer-value val)))
+    (caten/runtime:buffer-value val)))
+
+(defmethod exprgrid-global-size-int ((exprgrid ExprGrid) args)
+  (let ((val (apply #'expr-realize (exprgrid-global-size exprgrid) args)))
+    (assert (numberp (caten/runtime:buffer-value val)))
+    (caten/runtime:buffer-value val)))
 
 (defmethod exprmeta-comment ((exprgrid exprgrid))
-  (format nil "GRID<~a, ~a>" (exprgrid-global-size exprgrid) (exprgrid-local-size exprgrid)))
+  (format nil "GRID_~a<~a, ~a>" (exprgrid-rank exprgrid) (exprgrid-global-size exprgrid) (exprgrid-local-size exprgrid)))

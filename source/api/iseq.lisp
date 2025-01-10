@@ -493,7 +493,7 @@ An entry point for compiling the given tensors, returning GraphRuntime.
                                     value))
            do (setf (gethash place (runtime-variables runtime)) value-buffer)))
     (T
-     (assert (= 0 (mod (length params) 2)) () "The number of parameters should be even.")
+     (assert (= 0 (mod (length params) 2)) () "The number of parameters should be even, getting ~a" params)
      (loop for nth upfrom 0 below (length params) by 2
            for place = (nth nth params)
            for value = (nth (1+ nth) params)
