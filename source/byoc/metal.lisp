@@ -183,7 +183,7 @@
   (flet ((indent () (make-string *indent* :initial-element #\space)))
     (ecase (node-type bp)
       (:FOR
-       (format stream "~afor(int ~(~a~)=~a;~a;~a+=~a) {~%" (indent)
+       (format stream "~afor(int ~(~a~)=~a;~a;~(~a~)+=~a) {~%" (indent)
                (getattr bp :idx)
                (render-expr 'CStyle-Renderer (getattr bp :upfrom))
                (render-expr 'CStyle-Renderer (getattr bp :below))
