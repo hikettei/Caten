@@ -79,7 +79,7 @@ jobs:
         lisp: [sbcl-bin]
         backend: [metal]
         os: [macos-14]
-      steps:
+    steps:
       - uses: actions/checkout@v1
       - name: Set up ${{ matrix.lisp }} via Roswell.
         env:
