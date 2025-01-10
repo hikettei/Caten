@@ -230,7 +230,8 @@
 
 (defun header ()
   (format nil "#include <metal_stdlib>
-using namespace metal;"))
+using namespace metal;
+"))
 
 (defclass Metal-Program ()
   ((lib :initarg :lib :accessor mp-lib)
