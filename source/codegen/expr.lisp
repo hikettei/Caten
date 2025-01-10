@@ -337,12 +337,13 @@ Runs the expr with given params.
   (declare (type Expr expr))
   ;; Note: caten/api depends on caten/codegen, caten/byoc/lisp also depends on caten/codegen.
   ;; Pay attention for uiop:symbol-call and find-symbol!
-  (apply
-   #'uiop:symbol-call
-   :caten/api :%run
-   (caten/runtime:make-runtime
-    (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :buffer-type (find-symbol "LISPBUFFER" (find-package :caten/byoc/lisp)))
-   params))
+  (ctx:with-contextvar (:PROFILE 0)
+    (apply
+     #'uiop:symbol-call
+     :caten/api :%run
+     (caten/runtime:make-runtime
+      (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :buffer-type (find-symbol "LISPBUFFER" (find-package :caten/byoc/lisp)))
+     params)))
 ;; ~~ ExprMeta ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass ExprMeta () nil
   (:documentation "ExprMeta gives a meta information for the Expr."))
