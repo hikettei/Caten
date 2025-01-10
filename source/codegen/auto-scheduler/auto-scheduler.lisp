@@ -204,6 +204,10 @@ for (int i=0; i<10; i+=amount) {
   ;; OPTIMIZE=2 | BEAM Search based on cost models
   (symbol-macrolet ((OPTIMIZE (the integer (ctx:getenv :OPTIMIZE))))
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
+    ;; Scop again to remove unused loops
+    (ctx:with-contextvar (:JIT_DEBUG 0)
+      (setf (getattr node :blueprint) (lower-into-bp-from-polyhedral (->ast (poly-schedule (getattr node :polyhedral)) (getattr node :rank)) node))
+      (caten/codegen/scop:scop node))
     ;; [TODO] BEAM Cache
     ;; - auto-schedule is running under OPTIMIZE=1 but found the previous result from OPTIMIZE=2
     ;; ==> Apply previous OPTIMIZE=2 result
