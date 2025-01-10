@@ -26,7 +26,7 @@
     ,(if (getattr node :pointer-p)
          `(simple-array ,(dtype->lisp (getattr node :dtype)) (*))
          (dtype->lisp (getattr node :dtype)))
-    ,(const (car (node-writes node)))))
+       ,(const (car (node-writes node)))))
 
 (defmethod %render-kernel ((renderer LispStyle-Renderer) schedule-item)
   (let* ((args (schedule-item-args schedule-item)))
@@ -34,8 +34,8 @@
        (declare (optimize (speed 3) (safety 0)) ,@(map 'list #'global-type-spec args))
        ,(recursive-render-bp (getattr schedule-item :blueprint)))))
 
-(defun wrap-with-caller (body &aux (args (gensym)))
-  `(lambda (&rest ,args)
+(defun wrap-with-caller (kernel body &aux (args (gensym)))
+  `(lambda (&rest ,args &aux (lparallel:*kernel* ,kernel))
      (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args))))
 
 (defmethod %compile-kernel ((renderer LispStyle-Renderer) items dir)
@@ -48,10 +48,11 @@
                   ;; (format tmp "~%[Blueprint: ~A]:~%~A~%Disassembly for ~a:~%```~%" (getattr item :name) (getattr item :rendered-object) (getattr item :name))
                   (disassemble (compile nil (getattr item :rendered-object)) :stream tmp)
                   (format tmp "~%```~%"))))))
-  (dolist (item items)
-    (when (getattr item :rendered-object)
-      (setf (getattr item :compiled-object) (wrap-with-caller (getattr item :rendered-object))
-            (getattr item :rendered-object) (princ-to-string (getattr item :rendered-object))))))
+  (let ((kernel (lparallel:make-kernel (cl-cpus:get-number-of-processors))))
+    (dolist (item items)
+      (when (getattr item :rendered-object)
+        (setf (getattr item :compiled-object) (wrap-with-caller kernel (getattr item :rendered-object))
+              (getattr item :rendered-object) (princ-to-string (getattr item :rendered-object)))))))
 
 (defun const (obj)
   (if (symbolp obj)

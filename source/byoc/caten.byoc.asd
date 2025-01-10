@@ -3,7 +3,7 @@
   :author "hikettei <ichndm@gmail.com>"
   :license "MIT"
   :defsystem-depends-on ("cffi-grovel")
-  :depends-on ("caten.codegen" "caten.runtime" "cffi" "flexi-streams" "float-features" "babel" "cl-pack")
+  :depends-on ("caten.codegen" "caten.runtime" "cffi" "flexi-streams" "float-features" "babel" "cl-pack" "cl-cpus" "lparallel")
   :components ((:file "lisp")
                (:file "native")
                (:file "clang")
