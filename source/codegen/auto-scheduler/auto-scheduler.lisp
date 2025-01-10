@@ -204,6 +204,10 @@ for (int i=0; i<10; i+=amount) {
   ;; OPTIMIZE=2 | BEAM Search based on cost models
   (symbol-macrolet ((OPTIMIZE (the integer (ctx:getenv :OPTIMIZE))))
     (when (= 0 OPTIMIZE) (return-from auto-schedule)) ;; No optimization
+    ;; [TODO] BEAM Cache
+    ;; - auto-schedule is running under OPTIMIZE=1 but found the previous result from OPTIMIZE=2
+    ;; ==> Apply previous OPTIMIZE=2 result
+    ;; - Cache is saved to the disk.
     (when (>= OPTIMIZE 1)
       (let* ((strategy 'BogoScheduler)
              (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler))
