@@ -63,12 +63,12 @@ Users can extend this method if needed.
 
 (defmethod change-facet ((obj tensor) (direction (eql :array)))
   (assert (tensor-buffer obj) () "The tensor ~a is not realized." obj)
-  (let ((storage (buffer-value (tensor-buffer obj))))
+  (let ((storage (transfer-into-array (tensor-buffer obj))))
     (simple-array->array storage (buffer-shape (tensor-buffer obj)) (tensor-dtype obj))))
 
 (defmethod change-facet ((obj tensor) (direction (eql :simple-array)))
   (assert (tensor-buffer obj) () "The tensor ~a is not realized." obj)
-  (buffer-value (tensor-buffer obj)))
+  (transfer-into-array (tensor-buffer obj)))
 
 (defmacro with-facet ((bind (object &key (direction :array))) &body body)
   "
