@@ -37,7 +37,11 @@
       (make-param #'(lambda (_) _ new) size :dtype dtype :order :row))))
 
 ;; Utils for testing the generated kernel
-(defun elements (tensor) (buffer-value (tensor-buffer tensor)))
+(defun elements (tensor)
+  "The function elements refers to the buffer of the given tensor, returning simple-array. (if the buffer was not on the cpu they are transferred)"
+  (declare (type tensor tensor))
+  ;; Always returns simple-array
+  (transfer-into-array (tensor-buffer tensor)))
 
 (defun n-kernels (runtime)
   (declare (type GraphRuntime runtime))
