@@ -353,7 +353,6 @@
    #:schedule-sequence
    #:schedule-set
    #:schedule-to-str
-   #:schedule-set-options
    ;; Schedule constraints
    #:schedule-constraints
    #:schedule-constraints-p

@@ -123,7 +123,6 @@ for (int i=0; i<10; i+=amount) {
   ;; Only optimize schedule-node-band
   (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
     (return-from optimize-band-lv1 schedule-node-band))
-  
   (flet ((tryit (opt)
            (when (and
                   (every #'(lambda (x) (not (typep opt (type-of x)))) prev-selected)
