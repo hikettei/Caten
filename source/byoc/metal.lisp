@@ -38,13 +38,16 @@
     ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
   (declare (ignore blockptr))
   (assert (eql :ready *callback-handler*) () "*call-back-handler* is not set to :ready.")
+  (print error) (print datalen)
   (case error
     (0
      ;; offset from beginning to data = header size + warning size
-     (let* ((octets (loop for i upfrom 0 below datalen collect (mem-aref data :uint8 i)))
-            (offsets (cl-pack:unpack "<LL" (with-output-to-string (out) (map 'list #'(lambda (x) (princ (code-char x) out)) (subseq octets 8 16))))))
-       ;; [TODO] Print compile warnings
-       (setf *callback-handler* (cons :succeed (subseq octets offsets)))))
+     (let* ((octets (loop for i upfrom 0 below datalen collect (mem-aref data :uint8 i))))
+       (multiple-value-bind (header warn)
+           (cl-pack:unpack "<LL" (with-output-to-string (out) (map 'list #'(lambda (x) (princ (code-char x) out)) (subseq octets 8 16))))
+         (when (not (= warn 0))
+           (warn "Metal: ~a" (flexi-streams:octets-to-string (coerce (subseq octets header (+ header warn)) '(vector (unsigned-byte 8) *)))))
+         (setf *callback-handler* (cons :succeed (subseq octets (+ header warn)))))))
     (otherwise
      (setf *callback-handler* (cons :failed (foreign-string-to-lisp errormsg)))))
   nil)
@@ -232,7 +235,8 @@
       (:DEFINE-GLOBAL))))
 
 (defun header ()
-  (format nil "#include <metal_stdlib>
+  (format nil "
+#include <metal_stdlib>
 using namespace metal;
 "))
 
