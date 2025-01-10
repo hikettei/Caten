@@ -98,7 +98,7 @@ jobs:
           brew install isl
       - name: pkg-config isl --modversion
         run: |
-          pkg-config isl --libs --cflags
+          pkg-config isl --modversion
       - name: Update $PATH
         run: |
           echo $PATH
