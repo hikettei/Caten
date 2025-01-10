@@ -13,6 +13,7 @@ scop.lisp for the opposite things.
 (in-package :caten/codegen/ast-parser)
 
 (defstruct Context
+  (dynamic-shape-table (make-hash-table) :type hash-table)
   (n-global-offset 0 :type fixnum)
   (n-global-dims 0 :type fixnum))
 
@@ -20,7 +21,12 @@ scop.lisp for the opposite things.
   (if (= 0 (context-n-global-offset ctx))
       (context-n-global-dims ctx)
       (- (context-n-global-offset ctx) (context-n-global-dims ctx))))
-  
+
+(defmethod ctx-intern ((ctx Context) obj)
+  (let ((key (string-upcase (princ-to-string obj))))
+    (or (gethash obj (context-dynamic-shape-table ctx))
+        (intern key))))
+
 (declaim (ftype (function (context cffi:foreign-pointer) t) parse-isl-ast))
 (defun parse-isl-ast (ctx ast)
   (declare (type cffi:foreign-pointer ast))
@@ -132,7 +138,8 @@ scop.lisp for the opposite things.
 	 (declare (type string name))
          (if cache
              cache
-             (expr-const (intern (string-upcase name)) :int64))))
+             
+             (expr-const (ctx-intern ctx name) :int64))))
       (:ast-expr-int
        (let* ((id (isl::%isl-ast-expr-int-get-val ast))
 	      (num (isl::%isl-val-get-d id)))
@@ -269,9 +276,17 @@ scop.lisp for the opposite things.
       (lower lisp-ast))
     (nreverse new-graph)))
 
+(defun dynamic-shape-table (item)
+  (let ((table (make-hash-table :test 'equal)))
+    (loop for (name . dtype) in (getattr item :dynamic-shapes)
+          do (setf (gethash (string-upcase (princ-to-string name)) table) name))
+    table))
+
 (defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0))
   (declare (type isl:ast-node ast))
   (assert (eql (node-type scheduled-item) :Schedule-Item))
   (create-rendering-graph-nodes
-   (parse-isl-ast (make-context :n-global-offset n-global-offset) (isl::ast-node-handle ast))
+   (parse-isl-ast
+    (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item))
+    (isl::ast-node-handle ast))
    (getattr scheduled-item :blueprint)))
