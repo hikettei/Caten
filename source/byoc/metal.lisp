@@ -40,7 +40,7 @@
   (case error
     (0
      ;; offset from beginning to data = header size + warning size
-     (let* ((octets (loop for i upfrom 0 below datalen collect (mem-aref data :char i)))
+     (let* ((octets (loop for i upfrom 0 below datalen collect (mem-aref data :uint8 i)))
             (offsets (cl-pack:unpack "<LL" (with-output-to-string (out) (map 'list #'(lambda (x) (princ (code-char x) out)) (subseq octets 8 16))))))
        ;; [TODO] Print compile warnings
        (setf *callback-handler* (cons :succeed (subseq octets offsets)))))
@@ -85,7 +85,7 @@
     (case (car *callback-handler*)
       (:succeed
        (let* ((len (length (cdr *callback-handler*)))
-              (octets (make-array len :element-type '(signed-byte 8) :initial-contents (cdr *callback-handler*))))
+              (octets (make-array len :element-type '(unsigned-byte 8) :initial-contents (cdr *callback-handler*))))
          (assert (string= "MTLB" (flexi-streams:octets-to-string (subseq octets 0 4))) () "Invalid Metal library. Corrupt XCode?")
          (assert (string= "ENDT" (flexi-streams:octets-to-string (subseq octets (- len 4)))) () "Invalid Metal library. Corrupt XCode?")
          octets))
@@ -253,7 +253,7 @@ using namespace metal;
       (assert (null-pointer-p error-ptr) () "Failed to create a Metal library: ~a" (msg error-ptr "localizedDescription" :pointer))
       (setf (mp-fxn mp) (msg (mp-library mp) "newFunctionWithName:" :pointer :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp))))))
       (let ((descriptor (msg (objc-getclass "MTLComputePipelineDescriptor") "new" :pointer)))
-        (assert (not (null-pointer-p (mp-fxn mp))) () "setComputeFunction: function must not be a null pointer! looks compilation was failed?")
+        (assert (not (null-pointer-p (mp-fxn mp))) () "setComputeFunction: function must not be a null pointer! looks like the compilation was failed?")
         (msg descriptor "setComputeFunction:" :void :pointer (mp-fxn mp))
         (msg descriptor "setSupportIndirectCommandBuffers:" :void :bool t)
         (let ((error-ptr (null-pointer)))
@@ -308,7 +308,7 @@ using namespace metal;
 
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
   (ensure-foreign-library) ;; TODO: O(0.05) time elapsed ...
-  (float-features:with-float-traps-masked t
+  (with-float-traps-masked t
     (let* ((code (apply #'concatenate 'string
                         (append (list (header))
                                 (loop for item in items
