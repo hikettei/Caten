@@ -224,7 +224,7 @@
                                    (iteration-space-strides is)
                                    iterations))))
                         (format nil "~(~a~)" name))))
-           (format stream "~a~a~a = ~a;~%"
+           (format stream "~a~a~a = ~a;~a~%"
                    (indent)
                    (if (car (getattr bp :declare-type))
                        (format nil "~a " (->cdtype (buffer-dtype (car (relay-writes (read-type-relay bp))))))
@@ -232,7 +232,10 @@
                    (render-list
                     (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
                          (node-writes bp) (relay-writes (read-type-relay bp)) (relay-write-iters (read-type-relay bp))))
-                   (render-expr 'Metal-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
+                   (render-expr 'Metal-Renderer (getattr bp :EXPR) :index-space pre-iterations)
+                   (if (typep (getattr bp :meta :allow-undefined t) 'ExprMeta)
+                       (format nil " /* ~a */" (exprmeta-comment (getattr bp :meta)))
+                       "")))))
       (:DEFINE-GLOBAL))))
 
 (defun header ()
