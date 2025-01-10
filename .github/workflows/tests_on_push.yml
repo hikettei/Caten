@@ -95,7 +95,7 @@ jobs:
           python-version: 3.12
       - name: Installing libisl-dev
         run: |
-          brew install isl
+          brew reinstall isl
       - name: pkg-config isl --modversion
         run: |
           pkg-config isl --modversion
