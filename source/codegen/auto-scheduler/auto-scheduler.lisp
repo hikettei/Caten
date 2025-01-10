@@ -216,9 +216,9 @@ for (int i=0; i<10; i+=amount) {
                                if (typep value 'Opt)
                                  collect value)))
         (setf (poly-schedule (getattr node :polyhedral)) new-schedule)
-        (print "FINAL SCHEDULE")
-        (print (render-schedule-node new-schedule))
-        (caten/codegen/blueprint:print-blueprint (schedule-node-get-bp new-schedule node) t)
+        ;; (print "FINAL SCHEDULE")
+        ;; (print (render-schedule-node new-schedule))
+        ;; (caten/codegen/blueprint:print-blueprint (schedule-node-get-bp new-schedule node) t)
         ;; [TODO] BEAM Report with OPTIMIZE=1 and JIT_DEBUG=4
         ;; e.g.: n-trial, n-generation, found-opt-sequence, total-time-consumed
         ;; Load blueprint from optimized polyhedral IR

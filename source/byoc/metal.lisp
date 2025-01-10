@@ -240,6 +240,10 @@
 
 (defun header ()
   (format nil "#include <metal_stdlib>
+#define _infinity INFINITY
+#define _negative_infinity -INFINITY
+#define _nan NAN
+#define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
 using namespace metal;
 "))
 
