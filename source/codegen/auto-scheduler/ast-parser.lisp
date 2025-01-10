@@ -132,7 +132,7 @@ scop.lisp for the opposite things.
 	 (declare (type string name))
          (if cache
              cache
-             (expr-const (intern name) :int64))))
+             (expr-const (intern (string-upcase name)) :int64))))
       (:ast-expr-int
        (let* ((id (isl::%isl-ast-expr-int-get-val ast))
 	      (num (isl::%isl-val-get-d id)))

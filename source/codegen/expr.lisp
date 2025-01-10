@@ -357,13 +357,13 @@ Runs the expr with given params.
    (global-size :initarg :global-size :accessor exprgrid-global-size :type Expr)
    (local-size :initarg :local-size :accessor exprgrid-local-size :type Expr)))
 
-(defmethod exprgrid-local-size-int ((exprgrid ExprGrid))
-  (let ((val (expr-realize (exprgrid-local-size exprgrid))))
+(defmethod exprgrid-global-size-int ((exprgrid ExprGrid) args)
+  (let ((val (apply #'expr-realize (exprgrid-global-size exprgrid) args)))
     (assert (numberp (caten/runtime:buffer-value val)))
     (caten/runtime:buffer-value val)))
 
-(defmethod exprgrid-global-size-int ((exprgrid ExprGrid) args)
-  (let ((val (apply #'expr-realize (exprgrid-global-size exprgrid) args)))
+(defmethod exprgrid-local-size-int ((exprgrid ExprGrid))
+  (let ((val (expr-realize (exprgrid-local-size exprgrid))))
     (assert (numberp (caten/runtime:buffer-value val)))
     (caten/runtime:buffer-value val)))
 

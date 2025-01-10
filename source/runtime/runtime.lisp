@@ -29,6 +29,7 @@ This package provides GraphRuntime, which is a class to run an air graph.
    #:runtime-backward
    #:parse-allocate-node
    #:parse-view-node
+   #:runtime-invoke-jit-kernel
    #:runtime-error))
 
 (in-package :caten/runtime/runtime)
@@ -46,6 +47,8 @@ This package provides GraphRuntime, which is a class to run an air graph.
    (buffer-type :initarg :buffer-type :initform 'AbstractBuffer :accessor runtime-buffer-type)
    (renderer :initarg :renderer :accessor runtime-renderer))
   (:documentation ""))
+
+(defgeneric runtime-invoke-jit-kernel (runtime kernel-info node args))
 
 (defgeneric realize-node (node-type runtime node args)
   (:documentation ""))

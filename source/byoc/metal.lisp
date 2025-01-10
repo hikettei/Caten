@@ -280,9 +280,13 @@ using namespace metal;
         (foreign-slot-value mtl-size '(:struct mtlsize) 'height) height
         (foreign-slot-value mtl-size '(:struct mtlsize) 'depth) depth))
 
-(defmethod invoke ((mp Metal-Program) &rest buffers)
+(defmethod runtime-invoke-jit-kernel ((runtime MetalRuntime) kernel-info node args)
+  (apply (caten/codegen/jit:compiled-kernel-caller kernel-info) node args))
+
+(defmethod invoke ((mp Metal-Program) node &rest buffers)
   (assert (= (length buffers) (length (mp-argtypes mp))) () "Metal: The number of arguments does not match the number of arguments in the Metal program.")
-  (let ((total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
+  (let ((params (map 'list #'cons (node-reads node) buffers)) ;; e.g.: (A . 10)
+        (total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
     (when (> (apply #'* (map 'list #'exprgrid-local-size-int (mp-grid-size mp))) total-max-threads)
       (error "Error: TODO"))
     (let* ((command-buffer (msg (mp-mtl-queue mp) "commandBuffer" :pointer))
@@ -304,8 +308,7 @@ using namespace metal;
                           (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))))))
       (assert (= (length (mp-grid-size mp)) 3) () "Metal only supports for 3d parallelism!")
       (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
-        ;; [TODO] Integer
-        (apply #'load-size gs (map 'list #'(lambda (x) (exprgrid-global-size-int x nil)) (mp-grid-size mp)))
+        (apply #'load-size gs (map 'list #'(lambda (x) (exprgrid-global-size-int x params)) (mp-grid-size mp)))
         (apply #'load-size ls (map 'list #'exprgrid-local-size-int (mp-grid-size mp)))
         (msg encoder "dispatchThreadgroups:threadsPerThreadgroup:" :void :pointer gs :pointer ls))
       (msg encoder "endEncoding" :void)
@@ -315,7 +318,7 @@ using namespace metal;
       (let ((err (msg command-buffer "error" :pointer)))
         (assert (null-pointer-p err) () "Failed to execute a Metal command buffer: ~a" (msg err "localizedDescription" :pointer))))))
 
-(defun make-metal-caller (mp) `(lambda (&rest args) (apply #'invoke ,mp args)))
+(defun make-metal-caller (mp) `(lambda (node &rest args) (apply #'invoke ,mp node args)))
 
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
   (ensure-foreign-library) ;; TODO: O(0.05) time elapsed ...
