@@ -239,7 +239,7 @@
       (ok
        (every
 	#'=
-	(buffer-value (tensor-buffer (proceed (ax+b `(3 5 2) 1.0 1.0))))
+	(elements (proceed (ax+b `(3 5 2) 1.0 1.0)))
 	#(1.0 11.0 21.0 3.0 13.0 23.0 5.0 15.0 25.0 7.0 17.0 27.0 9.0 19.0 29.0 2.0
 	  12.0 22.0 4.0 14.0 24.0 6.0 16.0 26.0 8.0 18.0 28.0 10.0 20.0 30.0)))))
   (testing "Row Major"
@@ -247,7 +247,7 @@
       (ok
        (every
 	#'=
-	(buffer-value (tensor-buffer (proceed (ax+b `(3 5 2) 1.0 1.0))))
+	(elements (proceed (ax+b `(3 5 2) 1.0 1.0)))
 	#(1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0
 	  18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0))))))
 
@@ -269,8 +269,8 @@
 (deftest simple-view-test
   (macrolet ((okwhen (form value)
 	       `(if (eql *default-order* :row)
-		    (ok (every #'= (buffer-value (tensor-buffer (proceed (!contiguous ,form)))) ,value))
-		    (ok (= (reduce #'+ (buffer-value (tensor-buffer (proceed (!contiguous ,form))))) (reduce #'+ ,value))))))
+		    (ok (every #'= (elements (proceed (!contiguous ,form))) ,value))
+		    (ok (= (reduce #'+ (elements (proceed (!contiguous ,form)))) (reduce #'+ ,value))))))
     (dolist (*default-order* `(:row :column))
       (okwhen (!view (ax+b `(3 3) 1 0) 1 1) #(4.0))
       
@@ -300,8 +300,8 @@
 (deftest composed-view-test
   (macrolet ((okwhen (form value)
 	       `(if (eql *default-order* :row)
-		    (ok (every #'= (buffer-value (tensor-buffer (proceed (!contiguous ,form)))) ,value))
-		    (ok (= (reduce #'+ (buffer-value (tensor-buffer (proceed (!contiguous ,form))))) (reduce #'+ ,value))))))
+		    (ok (every #'= (elements (proceed (!contiguous ,form))) ,value))
+		    (ok (= (reduce #'+ (elements (proceed (!contiguous ,form)))) (reduce #'+ ,value))))))
     (dolist (*default-order* `(:row :column))
       ;; Needs more case to test
       (okwhen (!view (!view (ax+b `(10) 1 0) `(0 10)) `(0 5)) #(0.0 1.0 2.0 3.0 4.0))
@@ -311,8 +311,8 @@
       (okwhen (!view (!view (ax+b `(20) 1 0) `(18 0 -2)) `(10 2 -2)) #(8.0 10.0 12.0 14.0)))))
 
 (deftest symbolic-view-test
-  (ok (every #'= #(0.0) (buffer-value (tensor-buffer (pproceed `((a . 2) (b . 3)) (!view (ax+b `(a b) 1 0) 0 0))))))
-  (ok (every #'= #(23.0) (buffer-value (tensor-buffer (pproceed `((a . 2) (b . 3)) (!contiguous (!view (ax+b `(10 10) 1 0) 'a 'b))))))))
+  (ok (every #'= #(0.0) (elements (pproceed `((a . 2) (b . 3)) (!view (ax+b `(a b) 1 0) 0 0)))))
+  (ok (every #'= #(23.0) (elements (pproceed `((a . 2) (b . 3)) (!contiguous (!view (ax+b `(10 10) 1 0) 'a 'b)))))))
 
 (deftest slice-broadcast-not-coexisting
   (ok (signals (!view (ax+b `(1 3) 0 1) `(:~ 2) 1) 'caten-forward-error))
