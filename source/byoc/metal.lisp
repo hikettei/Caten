@@ -68,6 +68,22 @@
          (request (concatenate 'string header (babel:octets-to-string src-padded :encoding :utf-8) (babel:octets-to-string params-padded :encoding :utf-8))))
     request))
 
+(defun make-request-form (src params)
+  (let* ((src-encoded (babel:string-to-octets src :encoding :utf-8))
+         (src-padded-len (round-up (1+ (length src-encoded)) 4))
+         (src-padding-len (- src-padded-len (length src-encoded)))
+         (src-padded (concatenate
+                      '(vector (unsigned-byte 8))
+                      src-encoded
+                      (make-array src-padding-len :element-type '(unsigned-byte 8) :initial-element 0)))
+         (params-encoded (babel:string-to-octets params :encoding :utf-8))
+         (params-padded (concatenate
+                         '(vector (unsigned-byte 8))
+                         params-encoded
+                         (make-array 1 :element-type '(unsigned-byte 8) :initial-element 0)))
+         (header (map 'list #'char-code (cl-pack:pack "<QQ" (length src-padded) (length params-padded)))))
+    (concatenate '(vector (unsigned-byte 8)) header src-padded params-padded)))
+
 (defun mtl-compile-source (source
                            &key
                              (fmodules-cache-path
@@ -81,7 +97,7 @@
   (assert (<= (ctx:getenv :PARALLEL) 1) () "METAL does not support parallel compilation.")
   (let ((request (make-request-form source params))
         (callback (make-callback-closure (callback callback))))
-    (with-foreign-string (*request request)
+    (with-pointer-to-vector-data (*request request)
       (MTLCodeGenServiceBuildRequest
        service (null-pointer) +request-type-compile+
        *request (length request) callback))
