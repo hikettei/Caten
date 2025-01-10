@@ -33,7 +33,6 @@
 (defcfun "closure_cffi_callback" :pointer (callback :pointer))
 
 (defvar *callback-handler*)
-
 (defcallback callback :void
     ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
   (declare (ignore blockptr))
@@ -43,6 +42,7 @@
      ;; offset from beginning to data = header size + warning size
      (let* ((octets (loop for i upfrom 0 below datalen collect (mem-aref data :char i)))
             (offsets (cl-pack:unpack "<LL" (with-output-to-string (out) (map 'list #'(lambda (x) (princ (code-char x) out)) (subseq octets 8 16))))))
+       ;; [TODO] Print compile warnings
        (setf *callback-handler* (cons :succeed (subseq octets offsets)))))
     (otherwise
      (setf *callback-handler* (cons :failed (foreign-string-to-lisp errormsg)))))
@@ -230,12 +230,7 @@
 
 (defun header ()
   (format nil "#include <metal_stdlib>
-#define _infinity INFINITY
-#define _negative_infinity -INFINITY
-#define _nan NAN
-#define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
-using namespace metal;
-"))
+using namespace metal;"))
 
 (defclass Metal-Program ()
   ((lib :initarg :lib :accessor mp-lib)
