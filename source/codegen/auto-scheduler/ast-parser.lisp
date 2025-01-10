@@ -24,7 +24,7 @@ scop.lisp for the opposite things.
 
 (defmethod ctx-intern ((ctx Context) obj)
   (let ((key (string-upcase (princ-to-string obj))))
-    (or (gethash obj (context-dynamic-shape-table ctx))
+    (or (gethash key (context-dynamic-shape-table ctx))
         (intern key))))
 
 (declaim (ftype (function (context cffi:foreign-pointer) t) parse-isl-ast))
