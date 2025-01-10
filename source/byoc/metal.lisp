@@ -157,8 +157,6 @@
     (:int8 'int8_t)))
 
 (defvar *indent*)
-(defvar *depth*)
-(defvar *global-idx-list*)
 
 (defmethod %render-node ((renderer Metal-Renderer) (id (eql :SPACE)) node)
   (let ((lv (ecase (getattr node :level) (:block "gid") (:thread "lid")))
@@ -173,7 +171,7 @@
         (format out "device~a ~(~a~) ~a~(~a~), " (if (eql (getattr item :type) :output) "" " const") (dtype->mtype (getattr item :dtype))
                 (if (getattr item :pointer-p) "*" "&") (car (node-writes item))))
       (format out "uint3 gid [[threadgroup_position_in_grid]], uint3 lid [[thread_position_in_threadgroup]]) {~%")
-      (let ((*indent* 2) (*depth* 0) (*global-idx-list*))
+      (let ((*indent* 2))
         (dolist (node (getattr si :blueprint))
           (render-bp node out)))
       (format out "}~%~%"))))
@@ -182,23 +180,15 @@
   (flet ((indent () (make-string *indent* :initial-element #\space)))
     (ecase (node-type bp)
       (:FOR
-       (if (eql (getattr bp :scope) :global)
-           (progn
-             (format stream "~auint ~(~a~) = lid.~a;~%" (indent) (getattr bp :idx) (case *depth* (0 "x") (1 "y") (2 "z") (otherwise (error "Exceecive loop depth"))))
-             (push (getattr bp :idx) *global-idx-list*)
-             (incf *depth*))
-           (progn
-             (format stream "~afor(int ~(~a~)=~a;~a;~a+=~a) {~%" (indent)
-                     (getattr bp :idx)
-                     (render-expr 'CStyle-Renderer (getattr bp :upfrom))
-                     (render-expr 'CStyle-Renderer (getattr bp :below))
-                     (getattr bp :idx)
-                     (render-expr 'CStyle-Renderer (getattr bp :by)))
-             (incf *indent* 2))))
+       (format stream "~afor(int ~(~a~)=~a;~a;~a+=~a) {~%" (indent)
+               (getattr bp :idx)
+               (render-expr 'CStyle-Renderer (getattr bp :upfrom))
+               (render-expr 'CStyle-Renderer (getattr bp :below))
+               (getattr bp :idx)
+               (render-expr 'CStyle-Renderer (getattr bp :by)))
+       (incf *indent* 2))
       (:ENDFOR
-       (if (find (getattr bp :idx) *global-idx-list*)
-           nil
-           (progn (decf *indent* 2) (format stream "~a}~%" (indent)))))
+       (progn (decf *indent* 2) (format stream "~a}~%" (indent))))
       (:IF
        (format stream "~aif(~a){~%" (indent) (render-expr 'CStyle-Renderer (getattr bp :condition)))
        (incf *indent* 2))
