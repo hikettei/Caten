@@ -727,9 +727,11 @@ Lowers the Schedule-Item into blueprint.
   (let ((grids
           (loop for bp in blueprint
                 if (and (eql (node-type bp) :EXPR) (typep (getattr bp :meta :allow-undefined t) 'ExprGrid))
-                  collect (getattr bp :meta :allow-undefined t))))
+                  collect (getattr bp :meta :allow-undefined t)))
+        (out
+          (loop for i upfrom 0 below max-dimension
+                collect (make-instance 'ExprGrid :rank i :global-size (expr-const 1 dtype) :local-size (expr-const 1 dtype)))))
     (assert (<= (length grids) max-dimension) () "blueprint-gather-grids: the number of grids is over the limit.~%~a" blueprint)
-    (append
-     grids
-     (loop for i upfrom 0 below (- max-dimension (length grids))
-           collect (make-instance 'ExprGrid :rank (+ i (length grids)) :global-size (expr-const 1 dtype) :local-size (expr-const 1 dtype))))))
+    (dolist (g grids)
+      (setf (nth (exprgrid-rank g) out) g))
+    out))
