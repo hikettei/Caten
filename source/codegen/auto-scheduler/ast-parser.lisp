@@ -13,7 +13,13 @@ scop.lisp for the opposite things.
 (in-package :caten/codegen/ast-parser)
 
 (defstruct Context
+  (n-global-offset 0 :type fixnum)
   (n-global-dims 0 :type fixnum))
+
+(defmethod ctx-get-rank ((ctx Context))
+  (if (= 0 (context-n-global-offset ctx))
+      (context-n-global-dims ctx)
+      (- (context-n-global-offset ctx) (context-n-global-dims ctx))))
   
 (declaim (ftype (function (context cffi:foreign-pointer) t) parse-isl-ast))
 (defun parse-isl-ast (ctx ast)
@@ -64,7 +70,7 @@ scop.lisp for the opposite things.
          ;; Entry point for transformations
          (cond
            ((is "GLOBAL")
-            (let ((replacement (astfor-mutate-global user (context-n-global-dims ctx) (directive-amount directive))))
+            (let ((replacement (astfor-mutate-global user (ctx-get-rank ctx) (directive-amount directive))))
               (incf (context-n-global-dims ctx))
               (return-from parse-isl-ast-mark replacement)))
            ((is "PARALLEL")
@@ -104,7 +110,7 @@ scop.lisp for the opposite things.
                 (let ((replacement
                         (make-block
                          (list
-                          (astfor-mutate-global body (context-n-global-dims ctx) (directive-amount directive))
+                          (astfor-mutate-global body (ctx-get-rank ctx) (directive-amount directive))
                           (astfor-mutate-reminder-global (astfor-idx body) reminder)))))
                   (incf (context-n-global-dims ctx))
                   (return-from parse-isl-ast-mark replacement)))))))))
@@ -263,9 +269,9 @@ scop.lisp for the opposite things.
       (lower lisp-ast))
     (nreverse new-graph)))
 
-(defun lower-into-bp-from-polyhedral (ast scheduled-item)
+(defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0))
   (declare (type isl:ast-node ast))
   (assert (eql (node-type scheduled-item) :Schedule-Item))
   (create-rendering-graph-nodes
-   (parse-isl-ast (make-context) (isl::ast-node-handle ast))
+   (parse-isl-ast (make-context :n-global-offset n-global-offset) (isl::ast-node-handle ast))
    (getattr scheduled-item :blueprint)))

@@ -312,6 +312,7 @@ Corresponds to:
 "
          :slots ((level :type (member :block :thread))
                  (rank  :type (integer 0 3))
-                 (dtype :type keyword)))
+                 (dtype :type keyword)
+                 (size)))
 
 ) ;; eval-when

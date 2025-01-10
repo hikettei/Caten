@@ -256,9 +256,9 @@ Only supports the scalar computation because it is intended to identify the same
   (let ((grh (with-context (_ (%where (expr-out condition) (expr-out then) (expr-out else) :id out)))))
     (%connect-expr grh (list condition then else) out)))
 
-(defun make-grid (id level rank dtype) (emit (make-node :JIT :SPACE (list id) nil :level level :rank rank :dtype dtype)))
-(defun expr-grid (level rank dtype &aux (out (gensym "GRID")))
-  (let ((grh (with-context (_ (make-grid out level rank dtype)))))
+(defun make-grid (id level rank dtype size) (emit (make-node :JIT :SPACE (list id) nil :level level :rank rank :dtype dtype :size size)))
+(defun expr-grid (level rank dtype size &aux (out (gensym "GRID")))
+  (let ((grh (with-context (_ (make-grid out level rank dtype size)))))
     (%connect-expr grh nil out)))
 
 (defun expr-cast (x dtype &aux (out-id (gensym "w")))

@@ -104,7 +104,7 @@ for (int i=0; i<10; i+=amount) {
     (0 nil)
     (1 (push (make-instance 'Parallel) actions))
     (3 ;; Block/Thread Parallelism
-     (dolist (amt `(0 2 3 4 8 13 16 29))
+     (dolist (amt `(2 3 4 8 13 16 29))
        (push (make-instance 'Global :amount amt) actions)))
     (otherwise
      (warn "Currently Caten does not support n_global_loops=~a and thus the code is not parallelized." (auto-scheduler-n-global-loops config))))
@@ -128,15 +128,17 @@ for (int i=0; i<10; i+=amount) {
            (when (and
                   (every #'(lambda (x) (not (typep opt (type-of x)))) prev-selected)
                   (opt-applicable-p opt schedule-node-band item (autoscheduler-config auto-scheduler)))
+             (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) opt)
+             (incf (autoscheduler-n-generation auto-scheduler))
              (return-from optimize-band-lv1 (values (apply-opt opt schedule-node-band item (autoscheduler-config auto-scheduler)) opt)))))
     ;; Hand-written optimization rules
     (case (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler))
       (0 nil)
       (1 (tryit (make-instance 'Parallel)))
-      (3 (tryit (make-instance 'Global :amount 0)))
-;;         (tryit (make-instance 'Local :amount 4)))
+      (3 (tryit (make-instance 'Global :amount 1)))
       (otherwise (warn "No Support for ~ad parallelism" (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler)))))
-;;    (tryit (make-instance 'Unroll :amount 4))
+    ;; (tryit (make-instance 'Unroll :amount 4))
+    ;; (tryit (make-instance 'Packing :amount 4)) float4 or vectorize
     schedule-node-band))
 ;; OPTIMIZE=2
 (defmethod optimize-band-lv2 ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
@@ -205,13 +207,21 @@ for (int i=0; i<10; i+=amount) {
     (when (>= OPTIMIZE 1)
       (let* ((strategy 'BogoScheduler)
              (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler))
-             (new-schedule (minimize-cost auto-scheduler node (if (= OPTIMIZE 1) #'optimize-band-lv1 #'optimize-band-lv2))))
+             (new-schedule (minimize-cost auto-scheduler node (if (= OPTIMIZE 1) #'optimize-band-lv1 #'optimize-band-lv2)))
+             (optglobals (loop for value in (alexandria:hash-table-values (autoscheduler-gen2act auto-scheduler))
+                               if (typep value 'Opt)
+                                 collect value)))
         (setf (poly-schedule (getattr node :polyhedral)) new-schedule)
         (print "FINAL SCHEDULE")
         (print (render-schedule-node new-schedule))
-        (caten/codegen/blueprint:print-blueprint (schedule-node-get-bp new-schedule node) t)))
-    ;; [TODO] BEAM Report with OPTIMIZE=1 and JIT_DEBUG=4
-    ;; e.g.: n-trial, n-generation, found-opt-sequence, total-time-consumed
-    
-    ;; Load blueprint from optimized polyhedral IR
-    (setf (getattr node :blueprint) (lower-into-bp-from-polyhedral (->ast (poly-schedule (getattr node :polyhedral)) (getattr node :rank)) node))))
+        (caten/codegen/blueprint:print-blueprint (schedule-node-get-bp new-schedule node) t)
+        ;; [TODO] BEAM Report with OPTIMIZE=1 and JIT_DEBUG=4
+        ;; e.g.: n-trial, n-generation, found-opt-sequence, total-time-consumed
+        ;; Load blueprint from optimized polyhedral IR
+        (setf (getattr node :blueprint)
+              (lower-into-bp-from-polyhedral
+               (->ast
+                (poly-schedule (getattr node :polyhedral))
+                (getattr node :rank))
+               node
+               :n-global-offset (1- (length optglobals))))))))
