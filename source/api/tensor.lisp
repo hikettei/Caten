@@ -255,7 +255,7 @@ This feature is supported by [float-features](https://shinmera.github.io/float-f
     (:float64 float-features:double-float-negative-infinity)
     (:float32 float-features:single-float-negative-infinity)
     (:float16 (error "Not ready (TODO)"))
-    (:bfloat16 (error "Not ready (TODO"))))
+    (:bfloat16 (error "Not ready (TODO)"))))
 
 (defun nan (&key (dtype *default-float*))
   "
@@ -271,7 +271,7 @@ This feature is supported by [float-features](https://shinmera.github.io/float-f
     (:float64 float-features:double-float-nan)
     (:float32 float-features:single-float-nan)
     (:float16 (error "Not ready (TODO)"))
-    (:bfloat16 (error "Not ready (TODO"))))
+    (:bfloat16 (error "Not ready (TODO)"))))
 
 (defun float-infinity-p (x)
   (declare (type (or symbol number) x))
