@@ -239,6 +239,9 @@
 (defun header ()
   (format nil "
 #include <metal_stdlib>
+#define _infinity INFINITY
+#define _negative_infinity -INFINITY
+#define _nan NAN
 using namespace metal;
 "))
 
