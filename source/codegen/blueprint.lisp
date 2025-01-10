@@ -17,7 +17,8 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
   (:export
    #:lower-schedule-item
    #:lower-cached-schedule-item
-   #:print-blueprint)
+   #:print-blueprint
+   #:blueprint-gather-grids)
   ;; GFlops Mesaurer
   (:export
    #:GFlops-Measurer
@@ -78,7 +79,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                       do (decf indent 2) (format out "~a } // endif~%" (indent indent))
                else if (eql (node-type node) :EXPR) do
                  (let ((pre-iterations (getattr node :Iterations)))
-                   (format out "~a~a = ~a;~a~%"
+                   (format out "~a~a = ~a;~a~a~%"
                            (indent indent)
                            (render-list
                             (map 'list #'(lambda (x y z) (print-aref x y z :iterations (or pre-iterations (make-index-space))))
@@ -86,6 +87,9 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                            (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (or pre-iterations (make-index-space)))
                            (if (getattr node :reduction :allow-undefined t)
                                " // :reduction=t"
+                               "")
+                           (if (typep (getattr node :meta :allow-undefined t) 'ExprMeta)
+                               (format nil " // ~a" (exprmeta-comment (getattr node :meta)))
                                "")))
                else
 	         do (format out "~a~a = ~(~a~)(~a);~a~%"
@@ -718,3 +722,13 @@ Lowers the Schedule-Item into blueprint.
   (let ((ops (reduce #'expr-add total-flops)))
     (setf (expr-graph ops) (->graph-with-tpsort (->fast-graph (expr-graph ops))))
     (make-gflops-measurer :ops ops :succeed-p t)))
+;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun blueprint-gather-grids (blueprint &key (max-dimension 3))
+  (let ((grids
+          (loop for bp in blueprint
+                if (and (eql (node-type bp) :EXPR) (typep (getattr bp :meta :allow-undefined t) 'ExprGrid))
+                  collect (getattr bp :meta :allow-undefined t))))
+    (assert (<= (length grids) max-dimension) () "blueprint-gather-grids: the number of grids is over the limit.~%~a" blueprint)
+    (append
+     grids
+     (loop repeat (- max-dimension (length grids)) collect nil))))

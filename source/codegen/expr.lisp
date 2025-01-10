@@ -43,7 +43,14 @@
    #:with-expr-cache
    #:expr-detach-loop-bound
    #:expr-flops
-   #:expr-realize))
+   #:expr-realize)
+  ;; Meta
+  (:export
+   #:ExprMeta #:exprmeta-comment
+   #:ExprGrid
+   #:exprgrid-global-size
+   #:exprgrid-local-size
+   #:exprgrid-realize))
 
 (in-package :caten/codegen/expr)
 
@@ -334,3 +341,23 @@ Runs the expr with given params.
    (caten/runtime:make-runtime
     (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :buffer-type (find-symbol "LISPBUFFER" (find-package :caten/byoc/lisp)))
    params))
+;; ~~ Global Size Configuration ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass ExprMeta () nil
+  (:documentation "ExprMeta gives a meta information for the Expr."))
+
+(defmethod exprmeta-comment (exprmeta))
+(defmethod print-object ((exprmeta exprmeta) stream)
+  (print-unreadable-object (exprmeta stream :type t)
+    (format stream "/* ~a */" (exprmeta-comment exprmeta))))
+
+(defclass ExprGrid (ExprMeta)
+  ((rank :initarg :rank :accessor exprgrid-rank)
+   (global-size :initarg :global-size :accessor exprgrid-global-size)
+   (local-size :initarg :local-size :accessor exprgrid-local-size)))
+
+(defmethod exprgrid-realize ((exprgrid ExprGrid) args)
+  
+  )
+
+(defmethod exprmeta-comment ((exprgrid exprgrid))
+  (format nil "GRID<~a, ~a>" (exprgrid-global-size exprgrid) (exprgrid-local-size exprgrid)))

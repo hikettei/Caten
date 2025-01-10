@@ -97,18 +97,20 @@
   (let* ((bind (astfor-idx astfor)) (from (astfor-from astfor)) (to (astfor-to astfor)) (by (astfor-by astfor))
          (upper-bound (expr-detach-loop-bound to :allow-failed t))
          (size (expr-ceiling (expr-div (expr-cast (expr-sub upper-bound from) :float32) (expr-cast by :float32)) :float32))
-         (global (expr-grid :block depth dtype (expr-cast (expr-div size (expr-const local-size :float32)) dtype)))
+         (gs (expr-cast (expr-div size (expr-const local-size :float32)) dtype))
+         (global (expr-grid :block depth dtype gs))
          (local  (expr-grid :thread depth dtype (expr-const local-size dtype)))
          (idx (expr-add (expr-mul global (expr-const local-size dtype)) local))
          (idx (expr-add from (expr-mul idx by)))
          (type-relay (make-inferred-type nil (list (caten/runtime:make-buffer nil nil dtype nil :device 'caten/codegen/shape-inference::RelayBuffer))))
-         (bind-name (intern (string-upcase (princ-to-string bind)))))
+         (bind-name (intern (string-upcase (princ-to-string bind))))
+         (meta (make-instance 'Exprgrid :global-size gs :local-size (expr-const local-size dtype))))
     (setf (relay-write-iters type-relay) (list (make-iteration-space)))
     (assert upper-bound () "astfor-mutate-global: The ASTFor is not an SCOP: ~a" astfor)
     (expr-infer-type idx)
     (make-block
      (list
-      (make-astexpr (make-node :JIT :EXPR (list bind-name) nil :declare-type `(t) :EXPR idx :_type_relay type-relay) t)
+      (make-astexpr (make-node :JIT :EXPR (list bind-name) nil :declare-type `(t) :EXPR idx :_type_relay type-relay :meta meta) t)
       (make-if
        (expr-< (expr-const bind-name dtype) upper-bound)
        (astfor-body astfor)
