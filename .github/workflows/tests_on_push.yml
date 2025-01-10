@@ -113,7 +113,7 @@ jobs:
         run: |
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
-          CI=1 BACKEND=METAL OPTIMIZE=1 rove caten.asd
+          CI=1 BACKEND=METAL OPTIMIZE=1 make test
   Documentation:
     name: Test building documentations
     runs-on: ubuntu-latest
