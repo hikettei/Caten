@@ -102,7 +102,7 @@ jobs:
       - name: Update $PATH
         run: |
           echo $PATH
-          export PATH=/home/runner/.roswell/bin:$PATH
+          export PATH=/Users/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Extra Dependency for testing
         run: make install_extra
@@ -135,7 +135,7 @@ jobs:
       - name: Update $PATH
         run: |
           echo $PATH
-          export PATH=/Users/runner/.roswell/bin:$PATH
+          export PATH=/home/runner/.roswell/bin:$PATH
           echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
       - name: Installing Dependencies
         run: sudo apt-get install -y libisl-dev protobuf-compiler cmake
