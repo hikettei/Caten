@@ -480,7 +480,10 @@
       (ok (every (equal-to 4) (elements a))))))
 
 (defclass TestIndexComponents (Func) nil)
-(defmethod forward ((op TestIndexComponents) &rest inputs) (st "A[~] -> A[~]" ((car inputs))))
+(defmethod forward ((op TestIndexComponents) &rest inputs)
+  (let ((out (st "A[~] -> A[~]" ((car inputs)))))
+    (setf (tensor-dtype out) :int64)
+    out))
 (defmethod backward ((op TestIndexComponents) &optional dout) dout)
 (defmethod lower ((op TestIndexComponents) &rest inputs)
   (with-context (_ (%index-components (car inputs) (cdr inputs)))))
@@ -495,8 +498,8 @@
 	       (elements (proceed (test-ic (make-tensor `(4 5))))))
 	"Does symbolic index-component work?")
     (ok (every #'=
-	       (elements (pproceed `((a . 4) (b . 5)) (!sin (test-ic (make-tensor `(a b))))))
-	       (elements (proceed (!sin (test-ic (make-tensor `(4 5)))))))
+	       (elements (pproceed `((a . 4) (b . 5)) (!sin (!cast (test-ic (make-tensor `(a b))) :float32))))
+	       (elements (proceed (!sin (!cast (test-ic (make-tensor `(4 5))) :float32)))))
 	"Fused with Unary")))
 
 (deftest threefry2x32
