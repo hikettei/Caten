@@ -131,6 +131,8 @@
 
 (defmethod transfer-into-array ((buffer MetalBuffer))
   ;; METAL -> CPU
+  (when (numberp (buffer-value buffer))
+    (return-from transfer-into-array (buffer-value buffer)))
   (let ((val (msg (buffer-value buffer) "contents" :pointer))
         (placeholder (make-array (apply #'* (buffer-shape buffer)) :element-type (dtype->lisp (buffer-dtype buffer)))))
     (dotimes (i (apply #'* (buffer-shape buffer)) placeholder)
