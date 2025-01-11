@@ -192,6 +192,13 @@ Before contributing, please note that there is no linter here. Make an effort to
 - [ ] OpenCL (BACKEND=OPENCL)
 - [ ] Finish AutoScheduler (Polyhedral Compiler + BEAM Search)
 
+### Runtimes
+
+- [x] LISP RUNTIME
+- [ ] Exported Lisp Runtime (BACKEND=NATIVE)
+- [ ] Exported to dylib (BACKEND=CLANG)
+- [ ] JavaScript Runtime (BACKEND=WEBGPU)
+
 ## Running tests
 
 You should install python, numpy, pytorch before running the test-suite by using `make install_extra`. If not specified, install the latest one. 
