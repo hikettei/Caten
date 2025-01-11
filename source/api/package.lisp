@@ -206,6 +206,8 @@
    
    #:set-manual-seed
    #:with-manual-seed
+   #:*rng-counter*
+   #:get-rng-counter
    #:ax+b
    #:!full
    #:!rand

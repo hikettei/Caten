@@ -294,15 +294,16 @@ using namespace metal;
       (msg encoder "setComputePipelineState:" :void :pointer (mp-pipeline-state mp))
       (loop for buf in buffers
             for argtyp in (mp-argtypes mp)
+            for name in (node-reads node)
             for nth upfrom 0 do
               (if (typep buf 'MetalBuffer)
                   (msg encoder "setBuffer:offset:atIndex:" :void :pointer (buffer-value buf) :int 0 :int nth)
                   (if (and (buffer-p buf) (arrayp (buffer-value buf)))
                       (with-pointer-to-vector-data (*p (buffer-value buf))
-                        ;; [TODO] METAL cannot update *rng_counter* ...
+                        (warn "Metal JIT_KERNEL: The variable ~a is loaded as read-only buffer. Please transfer this buffer into metal first to supress this warning." name)
                         (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))
                       (let ((buf (if (and (buffer-p buf) (numberp (buffer-value buf))) (buffer-value buf) buf)))
-                        (assert (numberp buf) () "Metal: Please transfer the buffe ~a into metal." buf)
+                        (assert (numberp buf) () "Metal: Please transfer the buffer ~a into metal." buf)
                         (with-foreign-object (*p (->cffi-dtype argtyp))
                           (setf (mem-ref *p (->cffi-dtype argtyp)) buf)
                           (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))))))
