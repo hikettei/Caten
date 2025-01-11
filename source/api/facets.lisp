@@ -72,7 +72,11 @@ Users can extend this method if needed.
   (assert (tensor-buffer obj) () "The tensor ~a is not realized." obj)
   (transfer-into-array (tensor-buffer obj)))
 
-(defmacro with-facet ((bind (object &key (direction :array))) &body body)
+(defun synchronize-facet (placeholder bind direction)
+  (when (and (tensor-p placeholder) (not (eql direction :tensor)))
+    (transfer-from-array (get-global-runtime) (tensor-buffer placeholder) (change-facet (change-facet bind :tensor) :simple-array))))
+
+(defmacro with-facet ((bind (object &key (direction :array))) &body body &aux (placeholder (gensym)))
   "
 ```
 (with-facet (bind (object &key (direction :array))) &body body)
@@ -80,8 +84,9 @@ Users can extend this method if needed.
 
 Binds the result of `(change-facet object direction)` to the `bind`.
 "
-  `(let ((,bind (change-facet ,object ,direction)))
-     ,@body))
+  `(let ((,placeholder ,object))
+     (let ((,bind (change-facet ,placeholder ,direction)))
+       (prog1 ,@body (synchronize-facet ,placeholder ,bind ,direction)))))
 
 (defmacro with-facets ((&rest input-forms) &body body)
   "
