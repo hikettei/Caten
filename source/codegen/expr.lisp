@@ -43,7 +43,16 @@
    #:with-expr-cache
    #:expr-detach-loop-bound
    #:expr-flops
-   #:expr-realize))
+   #:expr-realize)
+  ;; Meta
+  (:export
+   #:ExprMeta #:exprmeta-comment
+   #:ExprGrid
+   #:exprgrid-rank
+   #:exprgrid-global-size
+   #:exprgrid-local-size
+   #:exprgrid-global-size-int
+   #:exprgrid-local-size-int))
 
 (in-package :caten/codegen/expr)
 
@@ -256,9 +265,9 @@ Only supports the scalar computation because it is intended to identify the same
   (let ((grh (with-context (_ (%where (expr-out condition) (expr-out then) (expr-out else) :id out)))))
     (%connect-expr grh (list condition then else) out)))
 
-(defun make-grid (id level rank) (emit (make-node :JIT :SPACE (list id) nil :level level :rank rank)))
-(defun expr-grid (level rank &aux (out (gensym "GRID")))
-  (let ((grh (with-context (_ (make-grid out level rank)))))
+(defun make-grid (id level rank dtype size) (emit (make-node :JIT :SPACE (list id) nil :level level :rank rank :dtype dtype :size size)))
+(defun expr-grid (level rank dtype size &aux (out (gensym "GRID")))
+  (let ((grh (with-context (_ (make-grid out level rank dtype size)))))
     (%connect-expr grh nil out)))
 
 (defun expr-cast (x dtype &aux (out-id (gensym "w")))
@@ -328,9 +337,36 @@ Runs the expr with given params.
   (declare (type Expr expr))
   ;; Note: caten/api depends on caten/codegen, caten/byoc/lisp also depends on caten/codegen.
   ;; Pay attention for uiop:symbol-call and find-symbol!
-  (apply
-   #'uiop:symbol-call
-   :caten/api :%run
-   (caten/runtime:make-runtime
-    (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :buffer-type (find-symbol "LISPBUFFER" (find-package :caten/byoc/lisp)))
-   params))
+  (ctx:with-contextvar (:PROFILE 0)
+    (apply
+     #'uiop:symbol-call
+     :caten/api :%run
+     (caten/runtime:make-runtime
+      (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :buffer-type (find-symbol "LISPBUFFER" (find-package :caten/byoc/lisp)))
+     params)))
+;; ~~ ExprMeta ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass ExprMeta () nil
+  (:documentation "ExprMeta gives a meta information for the Expr."))
+
+(defmethod exprmeta-comment (exprmeta))
+(defmethod print-object ((exprmeta exprmeta) stream)
+  (print-unreadable-object (exprmeta stream :type t)
+    (format stream "/* ~a */" (exprmeta-comment exprmeta))))
+
+(defclass ExprGrid (ExprMeta)
+  ((rank :initarg :rank :accessor exprgrid-rank)
+   (global-size :initarg :global-size :accessor exprgrid-global-size :type Expr)
+   (local-size :initarg :local-size :accessor exprgrid-local-size :type Expr)))
+
+(defmethod exprgrid-global-size-int ((exprgrid ExprGrid) args)
+  (let ((val (apply #'expr-realize (exprgrid-global-size exprgrid) args)))
+    (assert (numberp (caten/runtime:buffer-value val)))
+    (caten/runtime:buffer-value val)))
+
+(defmethod exprgrid-local-size-int ((exprgrid ExprGrid))
+  (let ((val (expr-realize (exprgrid-local-size exprgrid))))
+    (assert (numberp (caten/runtime:buffer-value val)))
+    (caten/runtime:buffer-value val)))
+
+(defmethod exprmeta-comment ((exprgrid exprgrid))
+  (format nil "GRID_~a<~a, ~a>" (exprgrid-rank exprgrid) (exprgrid-global-size exprgrid) (exprgrid-local-size exprgrid)))

@@ -1,7 +1,7 @@
 (defpackage :caten/byoc/metal
   (:use
    :cl :caten/air :caten/codegen/expr :caten/codegen/renderer :caten/codegen/shape-inference
-   :caten/runtime/buffer :caten/codegen/helpers
+   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint
    :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
   (:import-from
    :caten/codegen/config
@@ -30,10 +30,10 @@
 ;; ~~ MTLCompiler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
 (defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
-(defcfun "closure_cffi_callback" :pointer (callback :pointer))
+(defcfun "make_callback_closure" :pointer (callback :pointer))
+(defcfun "free_callback_closure" :pointer (callback :pointer))
 
 (defvar *callback-handler*)
-
 (defcallback callback :void
     ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
   (declare (ignore blockptr))
@@ -41,9 +41,12 @@
   (case error
     (0
      ;; offset from beginning to data = header size + warning size
-     (let* ((octets (loop for i upfrom 0 below datalen collect (mem-aref data :char i)))
-            (offsets (cl-pack:unpack "<LL" (with-output-to-string (out) (map 'list #'(lambda (x) (princ (code-char x) out)) (subseq octets 8 16))))))
-       (setf *callback-handler* (cons :succeed (subseq octets offsets)))))
+     (let* ((octets (loop for i upfrom 0 below datalen collect (mem-aref data :uint8 i))))
+       (multiple-value-bind (header warn)
+           (cl-pack:unpack "<LL" (with-output-to-string (out) (map 'list #'(lambda (x) (princ (code-char x) out)) (subseq octets 8 16))))
+         (when (not (= warn 0))
+           (warn "Metal: ~a" (flexi-streams:octets-to-string (coerce (subseq octets header (+ header warn)) '(vector (unsigned-byte 8) *)))))
+         (setf *callback-handler* (cons :succeed (subseq octets (+ header warn)))))))
     (otherwise
      (setf *callback-handler* (cons :failed (foreign-string-to-lisp errormsg)))))
   nil)
@@ -58,12 +61,15 @@
          (src-padding-len (- src-padded-len (length src-encoded)))
          (src-padded (concatenate
                       '(vector (unsigned-byte 8))
-                      src-encoded (make-array src-padding-len :element-type '(unsigned-byte 8) :initial-element 0)))
+                      src-encoded
+                      (make-array src-padding-len :element-type '(unsigned-byte 8) :initial-element 0)))
          (params-encoded (babel:string-to-octets params :encoding :utf-8))
-         (params-padded (concatenate '(vector (unsigned-byte 8)) params-encoded (make-array 1 :element-type '(unsigned-byte 8) :initial-element 0)))
-         (header (cl-pack:pack "<QQ" (length src-padded) (length params-padded)))
-         (request (concatenate 'string header (babel:octets-to-string src-padded) (babel:octets-to-string params-padded))))
-    request))
+         (params-padded (concatenate
+                         '(vector (unsigned-byte 8))
+                         params-encoded
+                         (make-array 1 :element-type '(unsigned-byte 8) :initial-element 0)))
+         (header (map 'list #'char-code (cl-pack:pack "<QQ" (length src-padded) (length params-padded)))))
+    (concatenate '(vector (unsigned-byte 8)) header src-padded params-padded)))
 
 (defun mtl-compile-source (source
                            &key
@@ -76,16 +82,18 @@
                              (*callback-handler* :ready))
   (declare (type foreign-pointer service) (type string source params))
   (assert (<= (ctx:getenv :PARALLEL) 1) () "METAL does not support parallel compilation.")
-  (let ((request (make-request-form source params)))
-    (with-foreign-string (*request request)
+  (let ((request (make-request-form source params))
+        (callback (make-callback-closure (callback callback))))
+    (with-pointer-to-vector-data (*request request)
       (MTLCodeGenServiceBuildRequest
        service (null-pointer) +request-type-compile+
-       *request (length request) (closure-cffi-callback (get-callback 'callback))))
+       *request (length request) callback))
+    (free-callback-closure callback)
     (assert (consp *callback-handler*) () "*callback-handler* did not receive anything!")
     (case (car *callback-handler*)
       (:succeed
        (let* ((len (length (cdr *callback-handler*)))
-              (octets (make-array len :element-type '(signed-byte 8) :initial-contents (cdr *callback-handler*))))
+              (octets (make-array len :element-type '(unsigned-byte 8) :initial-contents (cdr *callback-handler*))))
          (assert (string= "MTLB" (flexi-streams:octets-to-string (subseq octets 0 4))) () "Invalid Metal library. Corrupt XCode?")
          (assert (string= "ENDT" (flexi-streams:octets-to-string (subseq octets (- len 4)))) () "Invalid Metal library. Corrupt XCode?")
          octets))
@@ -121,8 +129,10 @@
     (dotimes (i (apply #'* (buffer-shape buffer)))
       (setf (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i) (aref array i)))))
 
-(defmethod transfer-into-array ((runtime MetalRuntime) (buffer MetalBuffer))
+(defmethod transfer-into-array ((buffer MetalBuffer))
   ;; METAL -> CPU
+  (when (numberp (buffer-value buffer))
+    (return-from transfer-into-array (buffer-value buffer)))
   (let ((val (msg (buffer-value buffer) "contents" :pointer))
         (placeholder (make-array (apply #'* (buffer-shape buffer)) :element-type (dtype->lisp (buffer-dtype buffer)))))
     (dotimes (i (apply #'* (buffer-shape buffer)) placeholder)
@@ -130,7 +140,7 @@
 
 (defmethod copy-buffer-value ((runtime MetalRuntime) (buffer MetalBuffer))
   (let ((buffer (copy-buffer buffer)))
-    (transfer-from-array runtime buffer (transfer-into-array runtime buffer))
+    (transfer-from-array runtime buffer (transfer-into-array buffer))
     (buffer-value buffer)))
 
 (defmethod bref ((buffer MetalBuffer) idx)
@@ -143,7 +153,7 @@
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun dtype->mtype (dtype)
   (ecase dtype
-    (:bool 'boolean)
+    (:bool 'bool)
     (:float64 (error "float64 math is not supported on Metal."))
     (:float32 'float)
     (:bfloat16 'bfloat)
@@ -157,8 +167,11 @@
     (:int8 'int8_t)))
 
 (defvar *indent*)
-(defvar *depth*)
-(defvar *global-idx-list*)
+
+(defmethod %render-node ((renderer Metal-Renderer) (id (eql :SPACE)) node)
+  (let ((lv (ecase (getattr node :level) (:block "gid") (:thread "lid")))
+        (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))
+    (format nil "~a.~a" lv dim)))
 
 (defmethod %render-kernel ((renderer Metal-Renderer) si)
   (let ((args (schedule-item-args si)))
@@ -168,7 +181,7 @@
         (format out "device~a ~(~a~) ~a~(~a~), " (if (eql (getattr item :type) :output) "" " const") (dtype->mtype (getattr item :dtype))
                 (if (getattr item :pointer-p) "*" "&") (car (node-writes item))))
       (format out "uint3 gid [[threadgroup_position_in_grid]], uint3 lid [[thread_position_in_threadgroup]]) {~%")
-      (let ((*indent* 2) (*depth* 0) (*global-idx-list*))
+      (let ((*indent* 2))
         (dolist (node (getattr si :blueprint))
           (render-bp node out)))
       (format out "}~%~%"))))
@@ -177,23 +190,15 @@
   (flet ((indent () (make-string *indent* :initial-element #\space)))
     (ecase (node-type bp)
       (:FOR
-       (if (eql (getattr bp :scope) :global)
-           (progn
-             (format stream "~auint ~(~a~) = lid.~a;~%" (indent) (getattr bp :idx) (case *depth* (0 "x") (1 "y") (2 "z") (otherwise (error "Exceecive loop depth"))))
-             (push (getattr bp :idx) *global-idx-list*)
-             (incf *depth*))
-           (progn
-             (format stream "~afor(int ~(~a~)=~a;~a;~a+=~a) {~%" (indent)
-                     (getattr bp :idx)
-                     (render-expr 'CStyle-Renderer (getattr bp :upfrom))
-                     (render-expr 'CStyle-Renderer (getattr bp :below))
-                     (getattr bp :idx)
-                     (render-expr 'CStyle-Renderer (getattr bp :by)))
-             (incf *indent* 2))))
+       (format stream "~afor(int ~(~a~)=~a;~a;~(~a~)+=~a) {~%" (indent)
+               (getattr bp :idx)
+               (render-expr 'CStyle-Renderer (getattr bp :upfrom))
+               (render-expr 'CStyle-Renderer (getattr bp :below))
+               (getattr bp :idx)
+               (render-expr 'CStyle-Renderer (getattr bp :by)))
+       (incf *indent* 2))
       (:ENDFOR
-       (if (find (getattr bp :idx) *global-idx-list*)
-           nil
-           (progn (decf *indent* 2) (format stream "~a}~%" (indent)))))
+       (progn (decf *indent* 2) (format stream "~a}~%" (indent))))
       (:IF
        (format stream "~aif(~a){~%" (indent) (render-expr 'CStyle-Renderer (getattr bp :condition)))
        (incf *indent* 2))
@@ -219,19 +224,26 @@
                                    (iteration-space-strides is)
                                    iterations))))
                         (format nil "~(~a~)" name))))
-           (format stream "~a~a~a = ~a;~%"
+           (format stream "~a~a~a = ~a;~a~%"
                    (indent)
                    (if (car (getattr bp :declare-type))
-                       (format nil "~a " (->cdtype (buffer-dtype (car (relay-writes (read-type-relay bp))))))
+                       (format nil "~(~a~) " (dtype->mtype (buffer-dtype (car (relay-writes (read-type-relay bp))))))
                        "")
                    (render-list
                     (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
                          (node-writes bp) (relay-writes (read-type-relay bp)) (relay-write-iters (read-type-relay bp))))
-                   (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
+                   (render-expr 'Metal-Renderer (getattr bp :EXPR) :index-space pre-iterations)
+                   (if (typep (getattr bp :meta :allow-undefined t) 'ExprMeta)
+                       (format nil " /* ~a */" (exprmeta-comment (getattr bp :meta)))
+                       "")))))
       (:DEFINE-GLOBAL))))
 
 (defun header ()
-  (format nil "#include <metal_stdlib>
+  (format nil "
+#include <metal_stdlib>
+#define _infinity INFINITY
+#define _negative_infinity -INFINITY
+#define _nan NAN
 using namespace metal;
 "))
 
@@ -242,8 +254,7 @@ using namespace metal;
    (name :initarg :name :accessor mp-name)
    (library :accessor mp-library)
    (fxn :accessor mp-fxn)
-   (global-size :initform `(1 1 1) :accessor mp-global-size)
-   (local-size :initform `(1 1 1) :accessor mp-local-size)
+   (grid-size :initarg :grid-size :accessor mp-grid-size)
    (argtypes :initarg :argtypes :accessor mp-argtypes)
    (pipeline-state :accessor mp-pipeline-state)))
 
@@ -256,6 +267,7 @@ using namespace metal;
       (assert (null-pointer-p error-ptr) () "Failed to create a Metal library: ~a" (msg error-ptr "localizedDescription" :pointer))
       (setf (mp-fxn mp) (msg (mp-library mp) "newFunctionWithName:" :pointer :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp))))))
       (let ((descriptor (msg (objc-getclass "MTLComputePipelineDescriptor") "new" :pointer)))
+        (assert (not (null-pointer-p (mp-fxn mp))) () "setComputeFunction: function must not be a null pointer! looks like the compilation was failed?")
         (msg descriptor "setComputeFunction:" :void :pointer (mp-fxn mp))
         (msg descriptor "setSupportIndirectCommandBuffers:" :void :bool t)
         (let ((error-ptr (null-pointer)))
@@ -268,10 +280,14 @@ using namespace metal;
         (foreign-slot-value mtl-size '(:struct mtlsize) 'height) height
         (foreign-slot-value mtl-size '(:struct mtlsize) 'depth) depth))
 
-(defmethod invoke ((mp Metal-Program) &rest buffers)
+(defmethod runtime-invoke-jit-kernel ((runtime MetalRuntime) kernel-info node args)
+  (apply (caten/codegen/jit:compiled-kernel-caller kernel-info) node args))
+
+(defmethod invoke ((mp Metal-Program) node &rest buffers)
   (assert (= (length buffers) (length (mp-argtypes mp))) () "Metal: The number of arguments does not match the number of arguments in the Metal program.")
-  (let ((total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
-    (when (> (apply #'* (mp-local-size mp)) total-max-threads)
+  (let ((params (map 'list #'cons (node-reads node) buffers)) ;; e.g.: (A . 10)
+        (total-max-threads (msg (mp-pipeline-state mp) "maxTotalThreadsPerThreadgroup" :int)))
+    (when (> (apply #'* (map 'list #'exprgrid-local-size-int (mp-grid-size mp))) total-max-threads)
       (error "Error: TODO"))
     (let* ((command-buffer (msg (mp-mtl-queue mp) "commandBuffer" :pointer))
            (encoder (msg command-buffer "computeCommandEncoder" :pointer)))
@@ -290,9 +306,10 @@ using namespace metal;
                         (with-foreign-object (*p (->cffi-dtype argtyp))
                           (setf (mem-ref *p (->cffi-dtype argtyp)) buf)
                           (msg encoder "setBytes:length:atIndex:" :void :pointer *p :int 4 :int nth))))))
+      (assert (= (length (mp-grid-size mp)) 3) () "Metal only supports for 3d parallelism!")
       (with-foreign-objects ((gs '(:struct MTLSize)) (ls '(:struct MTLSize)))
-        (apply #'load-size gs (mp-global-size mp))
-        (apply #'load-size ls (mp-local-size mp))
+        (apply #'load-size gs (map 'list #'(lambda (x) (exprgrid-global-size-int x params)) (mp-grid-size mp)))
+        (apply #'load-size ls (map 'list #'exprgrid-local-size-int (mp-grid-size mp)))
         (msg encoder "dispatchThreadgroups:threadsPerThreadgroup:" :void :pointer gs :pointer ls))
       (msg encoder "endEncoding" :void)
       (msg command-buffer "setLabel:" :void :pointer (to-ns-str (string-downcase (princ-to-string (mp-name mp)))))
@@ -301,11 +318,11 @@ using namespace metal;
       (let ((err (msg command-buffer "error" :pointer)))
         (assert (null-pointer-p err) () "Failed to execute a Metal command buffer: ~a" (msg err "localizedDescription" :pointer))))))
 
-(defun make-metal-caller (mp) `(lambda (&rest args) (apply #'invoke ,mp args)))
+(defun make-metal-caller (mp) `(lambda (node &rest args) (apply #'invoke ,mp node args)))
 
 (defmethod %compile-kernel ((renderer Metal-Renderer) items dir)
-  (ensure-foreign-library)
-  (float-features:with-float-traps-masked t
+  (ensure-foreign-library) ;; TODO: O(0.05) time elapsed ...
+  (with-float-traps-masked t
     (let* ((code (apply #'concatenate 'string
                         (append (list (header))
                                 (loop for item in items
@@ -319,5 +336,7 @@ using namespace metal;
         (loop for item in items
               if (getattr item :rendered-object)
                 do (let* ((argtypes (map 'list #'(lambda (x) (getattr x :dtype)) (schedule-item-args item)))
-                          (caller (make-instance 'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue :argtypes argtypes)))
+                          (caller (make-instance
+                                   'Metal-Program :lib lib :name (getattr item :name) :device device :mtl-queue mtl-queue :argtypes argtypes
+                                   :grid-size (blueprint-gather-grids (getattr item :blueprint) :max-dimension 3))))
                      (setf (getattr item :compiled-object) (make-metal-caller caller))))))))

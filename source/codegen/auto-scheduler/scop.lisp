@@ -35,7 +35,7 @@ ast-parser.lisp for the opposite thing.
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/air :caten/codegen/expr :caten/isl)
-  (:export #:scop #:with-polyhedral-space #:sync-blueprint-from-polyhedral))
+  (:export #:scop))
 
 (in-package :caten/codegen/scop)
 
@@ -298,14 +298,3 @@ Reference: https://www.researchgate.net/publication/347152973_PET-to-MLIR_A_poly
       (when (>= (ctx:getenv :JIT_DEBUG) 2)
         (format t "~a~%" (getattr node :polyhedral)))
       node)))
-
-(defun sync-blueprint-from-polyhedral (node)
-  (assert (eql (node-type node) :Schedule-Item))
-  (assert (getattr node :polyhedral) () "Cannot sync blueprint w/o polyhedral")
-  (setf (getattr node :blueprint)
-        (caten/codegen/ast-parser:lower-into-bp-from-polyhedral
-         (caten/codegen/polyhedral:->ast (getattr node :polyhedral) (getattr node :rank)) node)))
-
-(defmacro with-polyhedral-space ((node) &body body)
-  "Synchronizes the blueprint from polyhedral when exiting the body."
-  `(prog1 (progn ,@body) (sync-blueprint-from-polyhedral ,node)))

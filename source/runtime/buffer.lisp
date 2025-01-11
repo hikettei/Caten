@@ -73,7 +73,7 @@ Buffer expects the following methods to be implemented:
 
 (defgeneric transfer-from-array (runtime buffer array) (:documentation "array is a simple-array"))
 
-(defgeneric transfer-into-array (runtime buffer) (:documentation "Returns a storage array (flatten simple array)"))
+(defgeneric transfer-into-array (buffer) (:documentation "Returns a storage array (flatten simple array)"))
 
 (defgeneric copy-buffer-value (runtime buffer) (:documentation "Returns a copy of the buffer value."))
 

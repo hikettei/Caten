@@ -26,7 +26,7 @@
     ,(if (getattr node :pointer-p)
          `(simple-array ,(dtype->lisp (getattr node :dtype)) (*))
          (dtype->lisp (getattr node :dtype)))
-    ,(const (car (node-writes node)))))
+       ,(const (car (node-writes node)))))
 
 (defmethod %render-kernel ((renderer LispStyle-Renderer) schedule-item)
   (let* ((args (schedule-item-args schedule-item)))
@@ -34,8 +34,8 @@
        (declare (optimize (speed 3) (safety 0)) ,@(map 'list #'global-type-spec args))
        ,(recursive-render-bp (getattr schedule-item :blueprint)))))
 
-(defun wrap-with-caller (body &aux (args (gensym)))
-  `(lambda (&rest ,args)
+(defun wrap-with-caller (kernel body &aux (args (gensym)))
+  `(lambda (&rest ,args &aux (lparallel:*kernel* ,kernel))
      (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args))))
 
 (defmethod %compile-kernel ((renderer LispStyle-Renderer) items dir)
@@ -48,10 +48,11 @@
                   ;; (format tmp "~%[Blueprint: ~A]:~%~A~%Disassembly for ~a:~%```~%" (getattr item :name) (getattr item :rendered-object) (getattr item :name))
                   (disassemble (compile nil (getattr item :rendered-object)) :stream tmp)
                   (format tmp "~%```~%"))))))
-  (dolist (item items)
-    (when (getattr item :rendered-object)
-      (setf (getattr item :compiled-object) (wrap-with-caller (getattr item :rendered-object))
-            (getattr item :rendered-object) (princ-to-string (getattr item :rendered-object))))))
+  (let ((kernel (lparallel:make-kernel (cl-cpus:get-number-of-processors))))
+    (dolist (item items)
+      (when (getattr item :rendered-object)
+        (setf (getattr item :compiled-object) (wrap-with-caller kernel (getattr item :rendered-object))
+              (getattr item :rendered-object) (princ-to-string (getattr item :rendered-object)))))))
 
 (defun const (obj)
   (if (symbolp obj)
@@ -173,7 +174,7 @@
                     ,(recursive-render-bp (subseq rest-blueprints 1 endfor)))
                   ,(recursive-render-bp (subseq rest-blueprints (1+ endfor))))
                (progn
-                 (when (eql (getattr bp :scope) :global) (warn "recursive-render-bp: The node ~a is scheduled as global but the upfrom/below/by is too complicated to handle.~%Thus this loop is not parallelized." bp))
+                 (when (eql (getattr bp :scope) :global) (warn "recursive-render-bp: The node ~a is scheduled as global but scheduled as local because the upfrom/below/by is too complicated to handle.~%Thus this loop is not parallelized." bp))
                  `(progn
                     (loop with ,(const (intern (princ-to-string (getattr bp :idx)))) fixnum = ,(render-expr 'LispStyle-Renderer (getattr bp :upfrom))
                           while ,(render-expr 'LispStyle-Renderer (getattr bp :below))

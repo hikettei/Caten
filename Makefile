@@ -15,7 +15,7 @@ install_extra: ## Install extra dependencies for testing
 
 .PHONY: test
 test: ## Runs test harness
-	$(ROSWELL) $(QUICKLOAD) --eval '(asdf:test-system "caten")'
+	$(ROSWELL) $(QUICKLOAD) --eval '(progn (ql:quickload :caten/test) (asdf:test-system "caten"))'
 
 .PHONY: install_docs
 install_docs: ## Install documentation dependencies

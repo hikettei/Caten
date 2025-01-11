@@ -12,12 +12,12 @@ jobs:
   UnitTest:
     name: (${{ matrix.backend }}) Unittests on (${{ matrix.lisp }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         lisp: [sbcl-bin]
-        backend: [lisp, clang, native] #todo: metal
+        backend: [lisp, clang, native]
         os: [ubuntu-latest]
         target:
         - normal
@@ -69,6 +69,51 @@ jobs:
           ros config set dynamic-space-size 8gb
           ros -e '(ql:register-local-projects)' -q
           CI=1 BACKEND=NATIVE OPTIMIZE=1 rove caten.asd
+  UnitTest_Metal:
+    name: (${{ matrix.backend }}) Unittests on (${{ matrix.lisp }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        lisp: [sbcl-bin]
+        backend: [metal]
+        os: [macos-14]
+    steps:
+      - uses: actions/checkout@v1
+      - name: Set up ${{ matrix.lisp }} via Roswell.
+        env:
+          LISP: sbcl-bin
+        run: |
+          curl -L https://raw.githubusercontent.com/roswell/roswell/master/scripts/install-for-ci.sh | sh
+          ros install ${{ matrix.lisp }}
+          ros use ${{ matrix.lisp }}
+          ros install rove qlot
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+      - name: Installing libisl-dev
+        run: |
+          brew install isl
+      - name: pkg-config isl --modversion
+        run: |
+          pkg-config isl --modversion
+      - name: Update $PATH
+        run: |
+          echo $PATH
+          export PATH=/Users/runner/.roswell/bin:$PATH
+          echo "PATH=$HOME/bin:$PATH" >> $GITHUB_ENV
+      - name: Installing Extra Dependency for testing
+        run: make install_extra
+      - name: Check $PATH
+        run: echo $PATH
+      - name: (Metal JIT) rove caten.asd
+        if: ${{ matrix.backend == 'metal' }}
+        run: |
+          ros config set dynamic-space-size 8gb
+          ros -e '(ql:register-local-projects)' -q
+          CI=1 BACKEND=METAL OPTIMIZE=1 make test
   Documentation:
     name: Test building documentations
     runs-on: ubuntu-latest

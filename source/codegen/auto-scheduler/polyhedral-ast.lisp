@@ -2,17 +2,17 @@
   (:documentation "An intermidate AST to parse ISL AST into Blueprint.")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia)
   (:export
-   #:ASTBlock
+   #:ASTBlock #:astblock-p #:astblock-body
    #:make-block
    #:satblock-body
 
-   #:User
+   #:User #:user-p
    #:make-user
    #:user-name
    #:user-args
    #:user-unroll
    
-   #:ASTFor
+   #:ASTFor #:astfor-p
    #:make-for
    #:copy-astfor
    #:astfor-idx
@@ -23,11 +23,13 @@
    #:astfor-scope
    #:astfor-marks
 
-   #:AstIf
+   #:AstIf #:astif-p
    #:make-if
    #:astif-condition
    #:astif-then-node
    #:astif-else-node
+
+   #:ASTExpr #:make-astexpr #:astexpr-p #:astexpr-expr #:astexpr-is-defglobal-p
 
    #:map-ast-tree
    #:copy-and-assign-expr
@@ -45,6 +47,11 @@
               (:constructor make-user (name args)))
     "T_name(index)"
     (name name :type string) (args args :type list) (unroll nil :type list))
+
+  (defstruct (ASTExpr
+              (:constructor make-astexpr (expr is-defglobal-p)))
+    (expr expr :type Node)
+    (is-defglobal-p is-defglobal-p :type boolean))
 
   (defstruct (ASTFor
               (:constructor make-for (idx from to by body)))
@@ -70,12 +77,13 @@
      (let ((new-body (map 'list #'(lambda (x) (map-ast-tree f x)) (astblock-body ast))))
        (funcall f ast new-body)))
     (User (funcall f ast))
+    (AstExpr ast)
     (AstFor
      (let ((new-body (map-ast-tree f (astfor-body ast))))
        (funcall f ast new-body)))
     (AstIf
      (let ((new-body (map-ast-tree f (astif-then-node ast))))
-       (assert (astif-else-node ast) () "map-ast-tree: astif-else-node should be nil")
+       (assert (null (astif-else-node ast)) () "map-ast-tree: astif-else-node should be nil")
        (funcall f ast new-body)))))
                
 (defun copy-and-assign-expr (expr idx value)
@@ -111,6 +119,7 @@
                     (astfor-to new-for) (e (astfor-to new-for))
                     (astfor-by new-for) (e (astfor-by new-for)))
               new-for))
+           (AstExpr (make-astexpr (astexpr-expr ast) (astexpr-is-defglobal-p ast)))
            (AstIf
             (assert (= (length forms) 1))
             (let ((new-if (copy-astif ast)))
@@ -130,6 +139,7 @@
           (let ((users
                   (map 'list #'(lambda (n) (copy-and-assign-ast-tree ast idx n :unroll-at unroll-at)) (alexandria:iota n-unroll))))
             (make-block users)))
+         (AstExpr (make-astexpr (astexpr-expr ast) (astexpr-is-defglobal-p ast)))
          (AstFor
           (assert (= (length forms) 1))
           (let ((new-for (copy-astfor ast)))

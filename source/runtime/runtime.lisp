@@ -29,6 +29,7 @@ This package provides GraphRuntime, which is a class to run an air graph.
    #:runtime-backward
    #:parse-allocate-node
    #:parse-view-node
+   #:runtime-invoke-jit-kernel
    #:runtime-error))
 
 (in-package :caten/runtime/runtime)
@@ -46,6 +47,8 @@ This package provides GraphRuntime, which is a class to run an air graph.
    (buffer-type :initarg :buffer-type :initform 'AbstractBuffer :accessor runtime-buffer-type)
    (renderer :initarg :renderer :accessor runtime-renderer))
   (:documentation ""))
+
+(defgeneric runtime-invoke-jit-kernel (runtime kernel-info node args))
 
 (defgeneric realize-node (node-type runtime node args)
   (:documentation ""))
@@ -259,15 +262,8 @@ disassemble:
   (multiple-value-bind (shape v1 v2 v3 stride bc)
       (parse-view-node node args)
     (flet ((->number (x) (if (typep x 'abstractbuffer) (buffer-value x) x)))
-      (let ((buffer (copy-buffer (car args))))
-        ;; Casting from scalar -> array
-        (when (and (or (typep (buffer-value buffer) 'boolean) (numberp (buffer-value buffer))) (> (getattr node :nrank) 0))
-          (setf (buffer-value buffer)
-                (make-array (apply #'* (loop for b in (getattr node :broadcast)
-                                             for s in shape
-                                             if b collect 1 else collect (->number s)))
-	                    :element-type (dtype->lisp (buffer-dtype buffer))
-	                    :initial-element (buffer-value buffer))))
+      (let* ((buffer (copy-buffer (car args)))
+             (scalar-to-tensor-p (and (or (typep (buffer-value buffer) 'boolean) (numberp (buffer-value buffer))) (> (getattr node :nrank) 0))))
 	(setf (buffer-shape buffer) (map 'list #'->number shape)
 	      (buffer-stride buffer)
               (map 'list #'->number stride)
@@ -275,6 +271,16 @@ disassemble:
 	      (loop for i upfrom 0 below (length v1)
 		    collect (list (->number (nth i v1)) (->number (nth i v2)) (->number (nth i v3)) (nth i bc)))
 	      (buffer-nrank buffer) (length shape))
+        ;; Casting from scalar -> array
+        (when scalar-to-tensor-p
+          (let ((initial-elements (buffer-value buffer)))
+            (setf (buffer-value buffer) (open-buffer runtime buffer))
+            (transfer-from-array runtime buffer
+                                 (make-array (apply #'* (loop for b in (getattr node :broadcast)
+                                                              for s in shape
+                                                              if b collect 1 else collect (->number s)))
+	                                     :element-type (dtype->lisp (buffer-dtype buffer))
+	                                     :initial-element initial-elements))))
 	buffer))))
 ;; ~~~ Iterator Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun index-components ())

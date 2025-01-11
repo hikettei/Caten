@@ -38,12 +38,3 @@
 (define-isl-function schedule-from-domain %isl-schedule-from-domain
   (:give schedule)
   (:take union-set))
-
-(defcfun ("schedule_set_options" %schedule-set-options) :pointer
-  (isl-schedule :pointer)
-  (option :int))
-
-(defun schedule-set-options (schedule option)
-  (declare (type (member :separate :atomic) option) (type schedule schedule))
-  (let ((option (ecase option (:separate 1) (:atomic 0))))
-    (%make-schedule (%schedule-set-options (schedule-handle schedule) option))))

@@ -7,25 +7,29 @@
 (macrolet ((unary-dtype-test (name op lisp-op &key (non-zero nil) (ulp) (max) (fuzz t))
 	     `(deftest ,name
 		(dolist (dtype `(:float32 :float64))
-		  (let ((model (caten (,op (make-tensor `(1) :initial-element 'a :dtype dtype))))
-			(ulp (or ,ulp (1.0ulp dtype))))
-		    (forall (x dtype :fuzzing nil)
-		      (when (if ,non-zero (> x 0.0) t)
-			(when (or (null ,max) (<= (abs x) ,max))
-			  (assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
-				  ()
-				  "~(~a~)(x=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
-				  ',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
-				  (,lisp-op x) ulp dtype))))
-		    (forall (x dtype :fuzzing ,fuzz)
-		      (when (if ,non-zero (> x 0.0) t)
-			(when (or (null ,max) (<= (abs x) ,max))
-			  (assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
-				  ()
-				  "~(~a~)({x+(random 2.0)}=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
-				  ',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
-				  (,lisp-op x) ulp dtype))))
-		    (ok t))))))
+                  (let ((metal-fp64-p (and (eql dtype :float64) (find (ctx:getenv :BACKEND) `(:METAL)))))
+                    ;; FP64 math is not supported on metal
+                    (if metal-fp64-p
+                        (skip "FP64 Math is not supported on Metal")
+		        (let ((model (caten (,op (make-tensor `(1) :initial-element 'a :dtype dtype))))
+			      (ulp (or ,ulp (1.0ulp dtype))))
+		          (forall (x dtype :fuzzing nil)
+		            (when (if ,non-zero (> x 0.0) t)
+			      (when (or (null ,max) (<= (abs x) ,max))
+			        (assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
+				        ()
+				        "~(~a~)(x=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
+				        ',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
+				        (,lisp-op x) ulp dtype))))
+		          (forall (x dtype :fuzzing ,fuzz)
+		            (when (if ,non-zero (> x 0.0) t)
+			      (when (or (null ,max) (<= (abs x) ,max))
+			        (assert (<= (abs (- (,lisp-op x) (aref (elements (forward model `(a . ,x))) 0))) ulp)
+				        ()
+				        "~(~a~)({x+(random 2.0)}=~a)=~a is wrong, expecting ~a. ULP=~a, Dtype=~a"
+				        ',lisp-op x (aref (elements (forward model `(a . ,x))) 0)
+				        (,lisp-op x) ulp dtype))))
+		          (ok t))))))))
   ;; Trig
   (unary-dtype-test sin-test !sin sin)
   (unary-dtype-test cos-test !cos cos :ulp 1e-3 :max 121255)

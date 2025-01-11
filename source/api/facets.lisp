@@ -55,6 +55,7 @@ Users can extend this method if needed.
                     (obj-dtype-of (aref storage 0))
                     (caten/common.dtype:lisp->dtype (array-element-type obj))))
          (buffer (make-buffer (array-dimensions obj) (static-compute-strides *default-order* (array-dimensions obj)) dtype nil :device (caten/codegen/backend:get-buffer-type)))
+         ;; TODO: Transfer into device without initializing runtime
          (_ (setf (buffer-value buffer) storage))
          (place (make-tensor (array-dimensions obj) :dtype dtype :from buffer)))
     (declare (ignore _))
@@ -63,12 +64,12 @@ Users can extend this method if needed.
 
 (defmethod change-facet ((obj tensor) (direction (eql :array)))
   (assert (tensor-buffer obj) () "The tensor ~a is not realized." obj)
-  (let ((storage (buffer-value (tensor-buffer obj))))
+  (let ((storage (transfer-into-array (tensor-buffer obj))))
     (simple-array->array storage (buffer-shape (tensor-buffer obj)) (tensor-dtype obj))))
 
 (defmethod change-facet ((obj tensor) (direction (eql :simple-array)))
   (assert (tensor-buffer obj) () "The tensor ~a is not realized." obj)
-  (buffer-value (tensor-buffer obj)))
+  (transfer-into-array (tensor-buffer obj)))
 
 (defmacro with-facet ((bind (object &key (direction :array))) &body body)
   "

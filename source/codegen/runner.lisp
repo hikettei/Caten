@@ -17,12 +17,15 @@
             (compiled-kernel-name info)
             (if gflops (format nil " (~,6fGFLOP/s)" gflops) ""))))
 
+(defmethod runtime-invoke-jit-kernel ((runtime GraphRuntime) kernel-info node args)
+  (apply (compiled-kernel-caller kernel-info) args))
+
 (defmethod realize-node ((node-id (eql :JIT_KERNEL)) runtime node args)
   (let ((info (getattr node :kernel-info))
         (args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
     (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
     ;; [TODO] Create a common way to profile the kernel execution time for async and sync kernels.
-    (let ((prg-time (caten/runtime/profile:with-real-time (apply (compiled-kernel-caller info) args))))
+    (let ((prg-time (caten/runtime/profile:with-real-time (runtime-invoke-jit-kernel runtime info node args))))
       (when (= (ctx:getenv :PROFILE) 1)
         (incf caten/runtime/profile::*jit-time* prg-time)
         (profile-report runtime info prg-time args node)))

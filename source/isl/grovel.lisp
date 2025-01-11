@@ -1,5 +1,7 @@
 (in-package :caten/isl)
 
+(pkg-config-cflags "isl")
+
 (include "isl/arg.h")
 
 (cenum #.(swig-lispify "isl_arg_type" 'enumname)
