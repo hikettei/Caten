@@ -27,9 +27,11 @@ Sets `*inference-mode*=T` and `*no-grad*=T` within the scope of the body.
        ,@body)))
 
 ;; ~~ randomness ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun make-rng-counter ()
-  (ctx:with-contextvar (:BACKEND "LISP")
-    (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter))))
+(defun make-rng-counter () (make-hash-table))
+(defun get-rng-counter ()
+  (let ((backend (ctx:getenv :BACKEND)))
+    (or (gethash backend *rng-counter*)
+        (setf (gethash backend *rng-counter*) (proceed (make-tensor `(1) :dtype :uint32 :id '_rng_counter))))))
 (defparameter *manual-seed* 0)
 (defparameter *rng-counter* (make-rng-counter))
 (defun set-manual-seed (&key (seed 0))
@@ -78,7 +80,7 @@ Sets the seed for random operations within the scope of the body.
 (defmethod call ((op Threefry2x32-Random) &rest inputs)
   (st "A[~] -> A[~]" (inputs))
   (let* ((x (car inputs))
-	 (rng-counter (!add *rng-counter* (apply #'!* (map 'list #'->iconst (shape x))) :reduce t)))
+	 (rng-counter (!add (get-rng-counter) (apply #'!* (map 'list #'->iconst (shape x))) :reduce t)))
     ;; [FixME] Currently slice generates two kernels, so our implementation discards count1 of threefry2x32.
     (let* ((num (reduce #'!mul (map 'list #'->iconst (shape x))))
 	   ;; FixME: wrapping num w/ !ceiling will occur a compile error.

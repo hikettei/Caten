@@ -50,8 +50,8 @@
     (ok (= (length (elements (forward m `(n . 3))))))))
 
 (deftest symbolic-tensor-failing-case-2
-  (let* ((x (aref (buffer-value (tensor-buffer caten/api::*rng-counter*)) 0))
-         (m (caten (!add (!add (!index-components `(5)) (!add caten/api::*rng-counter* (!* (iconst 2) (iconst 'n)) :reduce t))  (!* (iconst 2) (iconst 'n)))))
+  (let* ((x (aref (elements (get-rng-counter)) 0))
+         (m (caten (!add (!add (!index-components `(5)) (!add (get-rng-counter) (!* (iconst 2) (iconst 'n)) :reduce t))  (!* (iconst 2) (iconst 'n)))))
          (o `(,(+ x (* 4 4)) ,(+ x (* 4 4) 1) ,(+ x (* 4 4) 2) ,(+ x (* 4 4) 3))))
     (ok (every #'= o (elements (forward m `(n . 4)))))))
 ;; Transformer-Failing-Case-Repro:
