@@ -319,7 +319,7 @@ This function returns the BOUND, otherwise returns error.
        flops
        (case (node-type node)
          (:WMMA 2)
-         ((:NEG :RECIP :SIN :EXP2 :LOG2 :SQRT :NOT :ADD :MUL :IDIV :AND :OR :XOR :MAX :GCD :!= :< :CAST) 1)
+         ((:NEG :RECIP :SIN :EXP2 :LOG2 :SQRT :NOT :ADD :MUL :IDIV :AND :OR :XOR :MAX :GCD :!= :< :CAST :MOD) 1)
          ((:ALLOCATE :WHERE :MOVE :AREF :INDEX-COMPONENTS :LOAD :STORE :VIEW) 0)
          (otherwise
           (warn "expr-flops: Cannot compute the number of flop for the node ~a. Counted as zero." node)
