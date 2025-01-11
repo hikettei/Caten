@@ -113,7 +113,7 @@
   (let ((initial-value (if (eql (buffer-dtype buffer) :bool)
                            nil
                            (coerce 0 (dtype->lisp (buffer-dtype buffer)))))
-        (size (* (apply #'* (buffer-shape buffer)) (dtype/size-of (buffer-dtype buffer)))))
+        (size (* (buffer-storage-size buffer) (dtype/size-of (buffer-dtype buffer)))))
     (if (= 0 (buffer-nrank buffer))
         (setf (buffer-value buffer) initial-value)
         (setf (buffer-value buffer) (msg (metal-runtime-device runtime) "newBufferWithLength:options:" :pointer :ulong size :int 0)))))
@@ -126,7 +126,7 @@
 (defmethod transfer-from-array ((runtime MetalRuntime) (buffer MetalBuffer) array)
   ;; CPU -> METAL
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
-    (dotimes (i (apply #'* (buffer-shape buffer)))
+    (dotimes (i (buffer-storage-size buffer))
       (setf (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i) (aref array i)))))
 
 (defmethod transfer-into-array ((buffer MetalBuffer))
@@ -134,8 +134,8 @@
   (when (numberp (buffer-value buffer))
     (return-from transfer-into-array (buffer-value buffer)))
   (let ((val (msg (buffer-value buffer) "contents" :pointer))
-        (placeholder (make-array (apply #'* (buffer-shape buffer)) :element-type (dtype->lisp (buffer-dtype buffer)))))
-    (dotimes (i (apply #'* (buffer-shape buffer)) placeholder)
+        (placeholder (make-array (buffer-storage-size buffer) :element-type (dtype->lisp (buffer-dtype buffer)))))
+    (dotimes (i (buffer-storage-size buffer) placeholder)
       (setf (aref placeholder i) (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) i)))))
 
 (defmethod copy-buffer-value ((runtime MetalRuntime) (buffer MetalBuffer))

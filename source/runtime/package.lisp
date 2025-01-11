@@ -4,6 +4,7 @@
   (:export
    #:AbstractBuffer
    #:buffer-shape
+   #:buffer-storage-size
    #:buffer-stride
    #:buffer-dtype
    #:buffer-views
