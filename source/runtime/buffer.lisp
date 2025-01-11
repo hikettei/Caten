@@ -19,6 +19,7 @@ Buffer expects the following methods to be implemented:
   (:export
    #:AbstractBuffer
    #:buffer-shape
+   #:buffer-storage-size
    #:buffer-stride
    #:buffer-dtype
    #:buffer-views
@@ -65,6 +66,14 @@ Buffer expects the following methods to be implemented:
       (when (slot-boundp buffer slot)
         (setf (slot-value copy slot) (slot-value buffer slot))))
     copy))
+
+(defmethod buffer-storage-size ((buffer AbstractBuffer))
+  (min
+   (apply #'* (buffer-shape buffer))
+   (apply #'* (loop for s in (buffer-shape buffer)
+                    for nth upfrom 0
+                    for v = (nth nth (buffer-views buffer))
+                    if (and (listp v) (fourth v)) collect 1 else collect s))))
 
 (defgeneric open-buffer (runtime buffer)
   (:documentation "Fills the (buffer-value buffer) with zero the given shape and dtype."))
