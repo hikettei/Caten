@@ -303,3 +303,15 @@ Returns `:INF` if the number is negative infinity, `:-INF` if the number is nega
      (if (> x 0) :inf :-inf))
     ((float-nan-p x) :nan)
     (t t)))
+;; ~~~ Temporary Runtime Management ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defparameter *global-runtime* (make-hash-table))
+
+(defun get-global-runtime ()
+  "
+```
+(get-global-runtime)
+```
+Returns a temporary runtime object just used for allocation global buffer."
+  (or (gethash (ctx:getenv :BACKEND) *global-runtime*)
+      (setf (gethash (ctx:getenv :BACKEND) *global-runtime*)
+            (make-runtime (make-graph) :runtime (caten/codegen/backend:get-runtime-type) :buffer-type (caten/codegen/backend:get-buffer-type)))))

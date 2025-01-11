@@ -110,13 +110,11 @@
            (ggml-type->caten-type (tensor-info-ggml-type tensor-info))
            nil
            :device 'caten/byoc/lisp:LispBuffer)))
-    (setf (caten/runtime:buffer-value buffer) (tensor-info-buffer tensor-info))
+    (caten/runtime:open-buffer (caten/api:get-global-runtime) buffer)
+    (caten/runtime:transfer-from-array (caten/api:get-global-runtime) buffer (tensor-info-buffer tensor-info))
     (let ((out (caten/api:make-tensor
                 (reverse (tensor-info-dimensions tensor-info))
                 :dtype (ggml-type->caten-type (tensor-info-ggml-type tensor-info))
                 :from buffer)))
       (setf (caten/api:tensor-buffer out) buffer)
-      ;; [TODO] caten/runtime:open-buffer depends on the runtime,
-      ;; Transfer the array from cpu into gpu?
-      ;; (!send out (caten/codegen/backend:get-buffer-type))
       out)))
