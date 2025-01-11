@@ -78,6 +78,10 @@
       (ok (= n (n-args shape runtime)) (format nil "got nargs=~a (expected ~a)" (n-args shape runtime) n))
       (skip "Needs JIT")))
 
+(defun transfer-to-lisp (tensor)
+  (ctx:with-contextvar (:BACKEND "LISP")
+    (change-facet (change-facet tensor :array) :tensor)))
+
 (defun ~= (error) #'(lambda (x y) (<= (abs (- x y)) error)))
 
 (defgeneric test/compile (op) (:documentation "Return a target compiled kernel."))
@@ -90,9 +94,8 @@
 (defgeneric test/run (op))
 (defun make-copy (tensor)
   (declare (type tensor tensor))
-  (ctx:with-contextvar (:BACKEND "LISP")
-    ;; [Note] Assuming JIT will not perform in-place mutation
-    (proceed (!add tensor (fconst 0 :dtype (dtype-of tensor))))))
+  (proceed (!copy tensor)))
+
 (defmacro define-nn-test (name description
 			  &key
 			    (dtypes `(:float32))
@@ -109,7 +112,7 @@
 	 (multiple-value-bind (,@(car caten)) (apply #'values ,runtime ,args) ,@(cdr caten)))
        (defmethod test/compute-in-lisp ((,op (eql ,name)) ,runtime &rest ,args)
 	 (ctx:with-contextvar (:BACKEND "LISP") ;; Allowed to use Custom/LazyApply if element-wise
-	   (multiple-value-bind (,@(car lisp)) (apply #'values ,runtime ,args)
+	   (multiple-value-bind (,@(car lisp)) (apply #'values ,runtime (map 'list #'transfer-to-lisp ,args))
 	     (declare (ignorable ,@(car lisp)))
 	     ,@(cdr lisp))))
        (defmethod test/in-place     ((,op (eql ,name)) ,runtime) (let ((,(caar in-place) ,runtime)) ,@(cdr in-place)))
