@@ -626,16 +626,12 @@
   (ok (eql t (float-type-of 1.0))))
 
 (deftest test-facet
-  (if (find (ctx:getenv :BACKEND) `(:METAL))
-      (skip "not tested on current backend. (TODO: Pass it on METAL)")
-      (progn
-        (let ((x (proceed (make-tensor `(3 3) :initial-element 1.0))))
-          (with-facet (a (x :direction :array))
-            (setf (aref a 0 0) 0.0 (aref a 1 1) 0.0 (aref a 2 2) 0.0))
-          (with-facet (a (x :direction :simple-array))
-            (ok (every #'= a #(0.0 1.0 1.0 1.0 0.0 1.0 1.0 1.0 0.0)))))
-        (let ((x (change-facet '(1 2 3 4 5) :tensor)))
-          (ok (eql (tensor-dtype x) *default-int*))
-          (ok (equal (tensor-shape x) '(5)))
-          (ok (every #'= (elements x) '(1 2 3 4 5)))))))
-
+  (let ((x (proceed (make-tensor `(3 3) :initial-element 1.0))))
+    (with-facet (a (x :direction :array))
+      (setf (aref a 0 0) 0.0 (aref a 1 1) 0.0 (aref a 2 2) 0.0))
+    (with-facet (a (x :direction :simple-array))
+      (ok (every #'= a #(0.0 1.0 1.0 1.0 0.0 1.0 1.0 1.0 0.0)))))
+  (let ((x (change-facet '(1 2 3 4 5) :tensor)))
+    (ok (eql (tensor-dtype x) *default-int*))
+    (ok (equal (tensor-shape x) '(5)))
+    (ok (every #'= (elements x) '(1 2 3 4 5)))))
