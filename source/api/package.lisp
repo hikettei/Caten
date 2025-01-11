@@ -24,6 +24,8 @@
   
   ;; from tensor.lisp
   (:export
+   #:*global-runtime*
+   #:get-global-runtime
    #:make-tensor
    #:make-view-internal
    #:tensor-graph

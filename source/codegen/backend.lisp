@@ -8,7 +8,8 @@
    #:get-backend-auto-scheduler
    #:get-backend-jit-p
    #:jit-mode-p
-   #:get-buffer-type))
+   #:get-buffer-type
+   #:get-runtime-type))
 
 (in-package :caten/codegen/backend)
 
@@ -39,3 +40,7 @@ Registers a new backend.
 (defun get-buffer-type (&key (backend (ctx:getenv :BACKEND)))
   "Returns the buffer type for the current device."
   (get-backend-buffer backend))
+
+(defun get-runtime-type (&key (backend (ctx:getenv :BACKEND)))
+  "Returns the runtime type for the current device."
+  (get-backend-runtime backend))

@@ -58,6 +58,7 @@ Compute the backward pass of the compiled computational graph (GraphRuntime). No
   (docs:doc/macro "with-no-grad" 'with-no-grad)
   (docs:doc/variable "*inference-mode*" '*inference-mode*)
   (docs:doc/macro "with-inference-mode" 'with-inference-mode)
+  (docs:doc/function "get-global-runtime" #'get-global-runtime)
   
   (docs:section "Examples")
   (docs:subsection "Tensor Creation")
