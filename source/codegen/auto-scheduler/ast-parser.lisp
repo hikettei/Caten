@@ -69,7 +69,7 @@ scop.lisp for the opposite things.
   (let* ((directive (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast)))))
          (user (parse-isl-ast ctx (isl::%isl-ast-node-mark-get-node ast))))
     ;; A Sequence of Mark => Set Priority
-    ;; ISL Schedule Levelで事前にSortしておく？(e.g.: GLOBALはUNROLLの後に来ないといけない)
+    ;; [TODO] Sort marks in the isl-schedule level (e.g.: GLOBAL should come after UNROLL)
     (macrolet ((is (name) `(equalp (directive-type directive) ,name)))
       (typecase user
         (AstFor
