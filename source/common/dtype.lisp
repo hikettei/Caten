@@ -132,7 +132,9 @@
 (defun dtype/smallest (dtype)
   (case dtype
     (:float64 2.2250738585072e-308)
-    (:float32 1.17549e-38)
+    (:float32
+     ;; Actual FLT_MIN is 1.17549435e-38 but MTL Symbolic cannot handle it
+     1.17549e-37)
     (:float16 6.104e-05)
     (:bfloat16 6.104e-05)    
     (:bool nil)

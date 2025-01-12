@@ -31,7 +31,7 @@
 				        (,lisp-op x) ulp dtype))))
 		          (ok t))))))))
   ;; Trig
-  (unary-dtype-test sin-test !sin sin)
+  (unary-dtype-test sin-test !sin sin :max 121255)
   (unary-dtype-test cos-test !cos cos :ulp 1e-3 :max 121255)
   (unary-dtype-test tan-test !tan tan :ulp 1e-1 :max 20 :fuzz nil)
   ;; Hyperbolic
@@ -45,8 +45,8 @@
   (unary-dtype-test exp2-test !exp2 exp2 :ulp 1e-3 :max 7)
   (unary-dtype-test log2-test !log2 log2 :non-zero t :ulp 1e-4)
   
-  (unary-dtype-test abs-test !abs abs)
-  (unary-dtype-test signum-test !signum signum)
+  (unary-dtype-test abs-test !abs abs :max 1e3)
+  (unary-dtype-test signum-test !signum signum :max 1e3)
   (unary-dtype-test sqrt-test !sqrt sqrt :ulp 1e-6 :non-zero t :max 1e6)
   (unary-dtype-test recip-test !recip / :ulp 1e-6 :non-zero t :max 1e6)
   

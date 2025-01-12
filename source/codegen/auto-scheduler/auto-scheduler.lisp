@@ -131,11 +131,11 @@ for (int i=0; i<10; i+=amount) {
              (incf (autoscheduler-n-generation auto-scheduler))
              (return-from optimize-band-lv1 (values (apply-opt opt schedule-node-band item (autoscheduler-config auto-scheduler)) opt)))))
     ;; Hand-written optimization rules
-    (case (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler))
-      (0 nil)
-      (1 (tryit (make-instance 'Parallel)))
-      (3 (tryit (make-instance 'Global :amount 1)))
-      (otherwise (warn "No Support for ~ad parallelism" (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler)))))
+    ;(case (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler))
+    ;  (0 nil)
+    ;  (1 (tryit (make-instance 'Parallel)))
+    ;  (3 (tryit (make-instance 'Global :amount 1)))
+    ;  (otherwise (warn "No Support for ~ad parallelism" (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler)))))
     ;; (tryit (make-instance 'Unroll :amount 4))
     ;; (tryit (make-instance 'Packing :amount 4)) float4 or vectorize
     schedule-node-band))

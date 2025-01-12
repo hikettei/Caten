@@ -10,7 +10,7 @@
   (assert (buffer-value (tensor-buffer tensor)) () "The tensor ~a is not realized yet!." tensor)
   (np:reshape
    (np:array
-    (buffer-value (tensor-buffer tensor))
+    (elements tensor)
     :dtype
     dtype)
    (buffer-shape (tensor-buffer tensor))))
@@ -30,12 +30,11 @@
   (let* ((size (coerce (torch-shape tensor) 'list))
  	 (buffer (remote-objects* (chain tensor (detach) (cpu) (flatten) (numpy))))
 	 (buffer-out (make-buffer size (caten/api::row-major-calc-strides size) dtype nil :device (caten/codegen/backend:get-buffer-type))))
-    ;; [TODO] Use Transfer Array
-    (setf (buffer-value buffer-out) buffer)
+    (open-buffer (get-global-runtime) buffer-out)
+    (transfer-from-array (get-global-runtime) buffer-out buffer)
     (let ((new (make-tensor (coerce size 'list) :dtype dtype :order :row)))
       (setf (tensor-buffer new) buffer-out)
       (make-param #'(lambda (_) _ new) size :dtype dtype :order :row))))
-
 ;; Utils for testing the generated kernel
 (defun elements (tensor)
   "The function elements refers to the buffer of the given tensor, returning simple-array. (if the buffer was not on the cpu they are transferred)"
@@ -79,6 +78,10 @@
       (ok (= n (n-args shape runtime)) (format nil "got nargs=~a (expected ~a)" (n-args shape runtime) n))
       (skip "Needs JIT")))
 
+(defun transfer-to-lisp (tensor)
+  (ctx:with-contextvar (:BACKEND "LISP")
+    (!reshape (change-facet (change-facet tensor :array) :tensor) (shape tensor))))
+
 (defun ~= (error) #'(lambda (x y) (<= (abs (- x y)) error)))
 
 (defgeneric test/compile (op) (:documentation "Return a target compiled kernel."))
@@ -91,9 +94,8 @@
 (defgeneric test/run (op))
 (defun make-copy (tensor)
   (declare (type tensor tensor))
-  (ctx:with-contextvar (:BACKEND "LISP")
-    ;; [Note] Assuming JIT will not perform in-place mutation
-    (proceed (!add tensor (fconst 0 :dtype (dtype-of tensor))))))
+  (proceed (!copy tensor)))
+
 (defmacro define-nn-test (name description
 			  &key
 			    (dtypes `(:float32))
@@ -110,7 +112,7 @@
 	 (multiple-value-bind (,@(car caten)) (apply #'values ,runtime ,args) ,@(cdr caten)))
        (defmethod test/compute-in-lisp ((,op (eql ,name)) ,runtime &rest ,args)
 	 (ctx:with-contextvar (:BACKEND "LISP") ;; Allowed to use Custom/LazyApply if element-wise
-	   (multiple-value-bind (,@(car lisp)) (apply #'values ,runtime ,args)
+	   (multiple-value-bind (,@(car lisp)) (apply #'values ,runtime (map 'list #'transfer-to-lisp ,args))
 	     (declare (ignorable ,@(car lisp)))
 	     ,@(cdr lisp))))
        (defmethod test/in-place     ((,op (eql ,name)) ,runtime) (let ((,(caar in-place) ,runtime)) ,@(cdr in-place)))
@@ -173,7 +175,7 @@
 (defmacro assert-equal ((&key (rtol 1e-7) (atol 0.0)) torch-form lisp-form)
 `(let ((torch ,torch-form) (lisp ,lisp-form))
    (ok (equal (shape torch) (shape lisp)) "Shapes match")
-   (multiple-value-bind (atol1 rtol1) (compute-rtol-atol (buffer-value (tensor-buffer (sync-visible-size torch))) (buffer-value (tensor-buffer (sync-visible-size lisp))))
+   (multiple-value-bind (atol1 rtol1) (compute-rtol-atol (elements (sync-visible-size torch)) (elements (sync-visible-size lisp)))
      (ok (<= atol1 ,atol) (format nil "Satisfying (atol=~a) <= ~a" atol1 ,atol))
      (ok (<= rtol1 ,rtol) (format nil "Satisfying (rtol=~a) <= ~a" rtol1 ,rtol)))))
 
@@ -183,7 +185,7 @@
      (ok (every #'(lambda (x y) (equal (shape x) (shape y))) torch lisp) "Shapes match")
      (loop for torchi in torch
            for lispi in lisp do
-             (multiple-value-bind (atol1 rtol1) (compute-rtol-atol (buffer-value (tensor-buffer (sync-visible-size torchi))) (buffer-value (tensor-buffer (sync-visible-size lispi))))
+             (multiple-value-bind (atol1 rtol1) (compute-rtol-atol (elements (sync-visible-size torchi)) (elements (sync-visible-size lispi)))
                (ok (<= atol1 ,atol) (format nil "Satisfying (atol=~a) <= ~a" atol1 ,atol))
                (ok (<= rtol1 ,rtol) (format nil "Satisfying (rtol=~a) <= ~a" rtol1 ,rtol))))))
 
