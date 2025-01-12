@@ -79,10 +79,11 @@
 
 (define-auto-scheduler
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
-    :vectorizes (list (Vectorize `(8) :rewriter #'identity)))
+    :vectorizes (list (Vectorize :gemm4x4 `(4 4) :rewriter #'identity)))
 
 (define-auto-scheduler (Mock-GPU-AutoScheduler ()) :n-global-loop 3)
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
+;; [TODO] Interchange: only counts visible bands
 ;; - PARALLEL (OpenMP)
 ;; - Coleasing (Fuse PARALLEL Loop w/ tiled bands)
 ;; - Loop Tiling (2D)
