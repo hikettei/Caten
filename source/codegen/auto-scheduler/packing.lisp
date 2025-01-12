@@ -53,6 +53,7 @@ TensorCore optimization is also implemented as a part of Vectorize.
           ;; (replace-blueprint )
           (assert (node-p new-user) () "vectorizer-rewrite must return a node, getting ~a. (vectorize-rule=~a)" new-user vectorize)
           ;; (if (every #'onep unroll) user ...)
+          (print "VECTORIZE")
           (late-rewrite-pack->unroll user :unrolled-as unroll))))))
 
 (defun TensorCore (dims &key (name :TensorCore))
@@ -126,7 +127,11 @@ If some users are failed to be vectorized, they are rewritten as unroll."
   "Returns T if the expr is directly rewritable as TensorCore."
   (declare (type node expr))
   (assert (eql (node-type expr) :EXPR))
-  t)
+  (and
+   (getattr expr :reduction)
+   (let ((nodes (map 'list #'node-type (graph-nodes (caten/codegen/expr:expr-graph (getattr expr :EXPR))))))
+     ;; temporary condition just used for the testing...
+     (equal nodes `(:AREF :AREF :MOVE :AREF :AREF :MUL :AREF :AREF :ADD)))))
 
 (defun expr-node-wmma-p (env)
   (declare (type Vectorize-Config env))

@@ -86,12 +86,14 @@
 
 (define-auto-scheduler
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
-    :vectorizes nil;(list (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'cpu-tc-rewriter))
+    :vectorizes (list (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'cpu-tc-rewriter))
     ;; :cost-functions (:sum (:vectorized-area :profile :coincidence)) (TODO)
     )
 
 (define-auto-scheduler (Mock-GPU-AutoScheduler ()) :n-global-loop 3)
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
+;; [TODO] Vectorizeを適用すると(getattr node :global-unrolled-space)を固定する。で，val_2_x_x_xは:global-unroll-spaceベースで決定する。
+;; - これがEXPRごとで共有できないとvectorize失敗になる
 ;; [TODO] Interchange: only counts visible bands
 ;; [TODO] Late unroll won't update the index? -> fix it first
 ;; [TODO] how to judge the elements are contiguous?
@@ -140,7 +142,6 @@
     (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
       (opt (make-instance 'Global :amount 1) 0)
       )
-    
     (print-bp raw)))
 ;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; ~~ Hand Optimized Kernel Generation(LayerNorm) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
