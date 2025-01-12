@@ -186,12 +186,15 @@
 (defun packing-ast (ast idx packing-at n-packing)
   (shift-ast ast idx packing-at n-packing :mode :packing))
 
-(defun late-rewrite-pack->unroll (ast)
+(defun late-rewrite-pack->unroll (ast &key (unrolled-as nil))
   "Rewrites the packed user (which is failed to vectorize) as an unrolled user."
-  (flet ((unroll (info prev-ast)
+  (check-type ast user)
+  (flet ((unroll (info prev-ast n-unroll-as)
            (multiple-value-bind (idx n-unroll unroll-at) (apply #'values info)
-             (make-block
-              (map 'list #'(lambda (n) (copy-and-assign-ast-tree prev-ast idx n :unroll-at unroll-at :mode :unroll)) (alexandria:iota n-unroll))))))
-    (dolist (info (user-late-unroll-info ast))
-      (setf ast (unroll info ast)))
-    ast))
+             (let ((n-unroll (or n-unroll-as n-unroll)))
+               (make-block
+                (map 'list #'(lambda (n) (copy-and-assign-ast-tree prev-ast idx n :unroll-at unroll-at :mode :unroll)) (alexandria:iota n-unroll)))))))
+    (let ((info (user-late-unroll-info ast)))
+      (dotimes (i (length info))
+        (setf ast (unroll (nth i info) ast (nth i unrolled-as))))
+      ast)))
