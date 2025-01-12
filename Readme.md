@@ -20,6 +20,7 @@ We have two doc files that explain how the Caten compilation pipeline works:
 
 - [End-to-End Example](docs/end-to-end-example.lisp) Which how the end-to-end compilation pipeline works.
 - [Getting Started](docs/getting-started.lisp) An intro to Caten.
+- [Bring Your Own Codegen](docs/bring-your-own-codegen.lisp) Describes how our abstraction works.
 
 ### Running LLMs
 
