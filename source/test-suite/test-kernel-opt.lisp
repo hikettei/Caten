@@ -74,6 +74,9 @@
 (defun print-bp (si) ;; utils for debugging in repl
   (caten/codegen/blueprint:print-blueprint (getattr si :blueprint) t))
 
+(defun print-schedule (si)
+  (print (getattr si :polyhedral)))
+
 (define-auto-scheduler (Mock-CPU-AutoScheduler ()) :n-global-loop 1)
 (define-auto-scheduler (Mock-GPU-AutoScheduler ()) :n-global-loop 3)
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
@@ -81,13 +84,24 @@
 ;; - Coleasing (Fuse PARALLEL Loop w/ tiled bands)
 ;; - Loop Tiling (2D)
 ;; - Loop Unrolling
-;; - Vectorize or TensorCore (8x8 gemm)
-;; 90% performance of OpenBLAS in the hand written kernel is enough great!.
+;; - Implement TensorCore(gemm8x8)
+;;   - Feed hand-written kernel in the CLANG backend
+;; 90% performance of OpenBLAS in the hand written kernel is enough great!
+;; reference: https://salykova.github.io/matmul-cpu
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-      (opt (make-instance 'Parallel) 0)
+      ;; Apply packing first to use TensorCore MULADD
+      (opt (make-instance 'Unroll :amount 4) 0)
+      (opt (make-instance 'Unroll :amount 4) 2)
+      (opt (make-instance 'Unroll :amount 4) 4)
+      ;; 2D Tiling (16, 16)
+      ;; (opt (make-instance 'TileBand :amount 16) 0)
+      ;; (opt (make-instance 'TileBand :amount 16) 2)
+      ;; (opt (make-instance 'Interchange :amount 1) 1)
+
       )
+    (print-schedule raw)
     (print-bp raw)))
 ;; To generate an optimized schedule for the gpu gemm kernel, we have to implement the following scheduling commands:
 ;; - GLOBAL/LOCAL (Remove extra if statements when the reminder part is zero.)
