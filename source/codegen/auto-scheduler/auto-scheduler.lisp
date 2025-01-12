@@ -102,7 +102,7 @@ for (int i=0; i<10; i+=amount) {
       (setf (poly-schedule (getattr schedule-item :polyhedral)) (isl:schedule-node-get-schedule new-sched))
       t)))
 
-(defun si-finalize-schedule (schedule-item &key (n-optglobals 0))
+(defun si-finalize-schedule (config schedule-item &key (n-optglobals 0))
   "Finalizes the blueprint modified in the Polyhedral IR Space."
   (declare (type node schedule-item))
   (assert (eql (node-type schedule-item) :Schedule-Item))
@@ -113,6 +113,7 @@ for (int i=0; i<10; i+=amount) {
           (poly-schedule (getattr schedule-item :polyhedral))
           (getattr schedule-item :rank))
          schedule-item
+         :vectorizes (auto-scheduler-vectorizes config)
          :n-global-offset n-optglobals)))
 
 (defmacro with-manual-scheduler ((scheduled-item auto-scheduler) &body body)
@@ -126,7 +127,7 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
                   (when (typep opt 'Global) (incf ,nglobal-bind))
                   (si-apply-opt ,auto-scheduler-bind ,scheduled-item opt band-idx)))
            (progn ,@body)
-           (si-finalize-schedule ,scheduled-item :n-optglobals ,nglobal-bind))))))
+           (si-finalize-schedule ,auto-scheduler-bind ,scheduled-item :n-optglobals ,nglobal-bind))))))
 ;; ~~ Auto Scheduling Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass AutoScheduler ()
   ((best-schedule :initarg :schedule :type isl:schedule-node-domain :accessor autoscheduler-best-schedule)
@@ -267,10 +268,4 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
         ;; [TODO] BEAM Report with OPTIMIZE=1 and JIT_DEBUG=4
         ;; e.g.: n-trial, n-generation, found-opt-sequence, total-time-consumed
         ;; Load blueprint from optimized polyhedral IR
-        (setf (getattr node :blueprint)
-              (lower-into-bp-from-polyhedral
-               (->ast
-                (poly-schedule (getattr node :polyhedral))
-                (getattr node :rank))
-               node
-               :n-global-offset (1- (length optglobals))))))))
+        (si-finalize-schedule (autoscheduler-config auto-scheduler) node :n-optglobals (1- (length optglobals)))))))

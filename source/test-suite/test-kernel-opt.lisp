@@ -1,6 +1,6 @@
 (defpackage :caten/test-suite/test-kernel-opt
   (:documentation "Tests all optimization rule defined in the ./source/codegen/search/engine.lisp")
-  (:use :cl :rove :caten/api :caten/nn :caten/runtime :caten/codegen/scheduler :caten/air
+  (:use :cl :rove :caten/api :caten/nn :caten/runtime :caten/codegen/scheduler :caten/air :caten/codegen/packing
    :caten/codegen/auto-scheduler)
   (:import-from
    :caten/codegen/config
@@ -77,7 +77,10 @@
 (defun print-schedule (si)
   (print (getattr si :polyhedral)))
 
-(define-auto-scheduler (Mock-CPU-AutoScheduler ()) :n-global-loop 1)
+(define-auto-scheduler
+    (Mock-CPU-AutoScheduler ()) :n-global-loop 1
+    :vectorizes (list (Vectorize `(8) :rewriter #'identity)))
+
 (define-auto-scheduler (Mock-GPU-AutoScheduler ()) :n-global-loop 3)
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
 ;; - PARALLEL (OpenMP)
@@ -91,6 +94,8 @@
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+      ;; Scheduling Priority:
+      ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
       ;; Apply packing first to use TensorCore MULADD
       (opt (make-instance 'Packing :amount 4) 0)
       (opt (make-instance 'Packing :amount 4) 1)

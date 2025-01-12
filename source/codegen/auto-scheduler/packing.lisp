@@ -4,10 +4,11 @@ replace the packed region (defined in auto-scheduler.lisp, class Packing) with t
 The class `Vectorize` will provide the information of the vectorized region, passed via define-auto-scheduler macro.
 TensorCore optimization is also implemented as a part of Vectorize.
 ")
-  (:use :cl)
+  (:use :cl :caten/air :caten/codegen/polyhedral-ast)
   (:export
    #:Vectorize
-   #:TensorCore))
+   #:TensorCore
+   #:ast-rewrite-vectorize))
 
 (in-package :caten/codegen/packing)
 
@@ -22,6 +23,17 @@ TensorCore optimization is also implemented as a part of Vectorize.
   (assert (and (= (length dims) 3) (every #'integerp dims)) () "TensorCore: dims are three-dimensional list of integers.")
   (Vectorize dims :applicable-p #'identity :rewriter #'identity))
 
-(defun apply-vectorize ()
-
-  )
+(defun ast-rewrite-vectorize (ast vectorize-rules schedule-item)
+  "Rewrites the packed user in the AST with the vectorize-rules. The earlier rules have the higher priority.
+If some users are failed to be vectorized, they are rewritten as unroll."
+  (declare (type list vectorize-rules))
+  (when (null vectorize-rules)
+    (return-from ast-rewrite-vectorize ast))
+  (map-ast-tree
+   #'(lambda (ast &rest forms)
+       (typecase ast
+         (User
+          ast)
+         (otherwise ast)))
+   ast))
+   

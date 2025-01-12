@@ -122,6 +122,7 @@
                        (user-unroll user) (copy-list (user-unroll user))
                        (user-vectorize user) (copy-list (user-vectorize user)))
                  (when unroll-at
+                   (assert (numberp pack-size) () "Packing size should be constant!")
                    (push (list unroll-at value pack-size) (user-vectorize user)))
                  user))))
            (AstFor
@@ -179,3 +180,8 @@
 
 (defun packing-ast (ast idx packing-at n-packing)
   (shift-ast ast idx packing-at n-packing :mode :packing))
+
+(defun late-rewriter-pack->unroll ()
+  "Rewrites the packing user as unrolled user."
+  ;; TODO
+  )

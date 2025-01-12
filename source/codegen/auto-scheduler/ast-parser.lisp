@@ -8,6 +8,9 @@ scop.lisp for the opposite things.
 ")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia
         :caten/codegen/polyhedral-ast :caten/codegen/transform :caten/codegen/directive)
+  (:import-from
+   :caten/codegen/packing
+   #:ast-rewrite-vectorize)
   (:export #:lower-into-bp-from-polyhedral))
 
 (in-package :caten/codegen/ast-parser)
@@ -301,11 +304,14 @@ scop.lisp for the opposite things.
           do (setf (gethash (string-upcase (princ-to-string name)) table) name))
     table))
 
-(defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0))
+(defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0) (vectorizes nil))
   (declare (type isl:ast-node ast))
   (assert (eql (node-type scheduled-item) :Schedule-Item))
   (create-rendering-graph-nodes
-   (parse-isl-ast
-    (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item))
-    (isl::ast-node-handle ast))
+   (ast-rewrite-vectorize
+    (parse-isl-ast
+     (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item))
+     (isl::ast-node-handle ast))
+    vectorizes
+    scheduled-item)
    (getattr scheduled-item :blueprint)))
