@@ -113,7 +113,7 @@
             (ecase mode
               (:unroll
                (let ((user (copy-user ast)))
-                 (setf (user-args user) (map 'list #'e (user-args user))
+                 (setf (user-args user) (print (map 'list #'e (print (user-args user))))
                        (user-unroll user) (copy-list (user-unroll user))
                        (user-vectorize user) (copy-list (user-vectorize user))
                        (user-late-unroll-info user) (copy-list (user-late-unroll-info user)))
@@ -121,9 +121,9 @@
                  user))
               (:packing
                (let ((user (copy-user ast)))
-                 (setf (user-args user) (map 'list #'e (user-args user))
+                 (setf (user-args user) (user-args user)
                        (user-unroll user) (copy-list (user-unroll user))
-                       (user-vectorize user) (copy-list (user-vectorize user))(user-late-unroll-info user) (copy-list (user-late-unroll-info user))
+                       (user-vectorize user) (copy-list (user-vectorize user)) (user-late-unroll-info user) (copy-list (user-late-unroll-info user))
                        (user-late-unroll-info user) (copy-list (user-late-unroll-info user)))
                  (when unroll-at
                    (assert (numberp pack-size) () "Packing size should be constant!")

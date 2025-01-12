@@ -88,9 +88,6 @@ TensorCore optimization is also implemented as a part of Vectorize.
 If some users are failed to be vectorized, they are rewritten as unroll."
   (declare (type list vectorize-rules))
   (assert (eql (node-type schedule-item) :Schedule-Item))
-  (when (null vectorize-rules)
-    (return-from ast-rewrite-vectorize ast))
-  
   (map-ast-tree
    #'(lambda (ast &rest forms)
        (etypecase ast

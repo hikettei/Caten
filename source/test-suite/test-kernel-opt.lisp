@@ -1,7 +1,7 @@
 (defpackage :caten/test-suite/test-kernel-opt
   (:documentation "Tests all optimization rule defined in the ./source/codegen/search/engine.lisp")
   (:use :cl :rove :caten/api :caten/nn :caten/runtime :caten/codegen/scheduler :caten/air :caten/codegen/packing
-   :caten/codegen/auto-scheduler)
+   :caten/codegen/auto-scheduler :caten/codegen/expr)
   (:import-from
    :caten/codegen/config
    #:define-auto-scheduler))
@@ -76,22 +76,27 @@
 
 (defun print-schedule (si)
   (print (getattr si :polyhedral)))
-
+;; todo: remove tc meta first
+(defclass TCMeta (ExprMeta) nil)
 (defun cpu-tc-rewriter (env)
   (let ((expr (vectorize-config-expr env)))
     ;; TODO: Adding ExprMeta to express vectorize?
+    (setf (getattr expr :meta) (make-instance 'TCMeta))
     expr))
 
 (define-auto-scheduler
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
-    :vectorizes (list (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'cpu-tc-rewriter))
+    :vectorizes nil;(list (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'cpu-tc-rewriter))
     ;; :cost-functions (:sum (:vectorized-area :profile :coincidence)) (TODO)
     )
 
 (define-auto-scheduler (Mock-GPU-AutoScheduler ()) :n-global-loop 3)
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
 ;; [TODO] Interchange: only counts visible bands
-;; [TODO] Late unroll won't update the index?
+;; [TODO] Late unroll won't update the index? -> fix it first
+;; [TODO] how to judge the elements are contiguous?
+;; [TODO] When TensorCore Optimization is applicable?
+;; [TODO] Maybe no need to schedule Unroll in AutoScheduler, Packing is enough.
 ;; - PARALLEL (OpenMP)
 ;; - Coleasing (Fuse PARALLEL Loop w/ tiled bands)
 ;; - Loop Tiling (2D)
@@ -109,12 +114,16 @@
       (opt (make-instance 'Packing :amount 4) 0)
       (opt (make-instance 'Packing :amount 4) 1)
       (opt (make-instance 'Packing :amount 4) 2)
-      ;(opt (make-instance 'Packing :amount 4) 2)
+      ;(opt (make-instance 'Unroll :amount 4) 0)
+      ;(opt (make-instance 'Unroll :amount 4) 1)
+      ;(opt (make-instance 'Unroll :amount 4) 2)
       ;; 2D Tiling (16, 16)
       ;; (opt (make-instance 'TileBand :amount 16) 0)
+      ;; (opt (make-instance 'TileBand :amount 16) 1)
       ;; (opt (make-instance 'TileBand :amount 16) 2)
       ;; (opt (make-instance 'Interchange :amount 1) 1)
-
+      ;; Parallelize at innermost dimension
+      ;; (opt (make-instance 'Parallel) 5)
       )
     (print-schedule raw)
     (print-bp raw)))
