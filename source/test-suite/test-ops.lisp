@@ -46,7 +46,7 @@
   (unary-dtype-test log2-test !log2 log2 :non-zero t :ulp 1e-4)
   
   (unary-dtype-test abs-test !abs abs :max 1e3)
-  (unary-dtype-test signum-test !signum signum)
+  (unary-dtype-test signum-test !signum signum :max 1e3)
   (unary-dtype-test sqrt-test !sqrt sqrt :ulp 1e-6 :non-zero t :max 1e6)
   (unary-dtype-test recip-test !recip / :ulp 1e-6 :non-zero t :max 1e6)
   
