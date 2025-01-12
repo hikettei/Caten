@@ -131,29 +131,18 @@
   (uiop:with-temporary-file (:pathname sharedlib :type "so" :keep t :directory dir)
     nil
     :close-stream
-    (let* ((cmd
-	     ;; gcc -shared -o sharedlib
-	     (append
-	      (list
-	       compiler "-shared"
-	       "-x" lang)
-	      compiler-flags
-	      (list "-o" (uiop:native-namestring sharedlib) "-")))
-	   (process-info (uiop:launch-program
-			  cmd
-			  :input :stream
-			  :error-output :stream))
-	   (input (uiop:process-info-input process-info))
-	   (error-output (uiop:process-info-error-output process-info)))
-      (unwind-protect (princ source input)
-	(close input))
-      (unless (zerop (uiop:wait-process process-info))
-	(error "Caten[Clang]: Failed to compile a shared library:~%~a~%
-
-Compiled with this command: ~a"
-	       (alexandria:read-stream-content-into-string error-output)
-	       (with-output-to-string (out)
-		 (dolist (c cmd) (princ c out) (princ " " out))))))
+    (let ((commands (format nil "~A -shared -x ~A ~{~A~} -o ~A -" compiler lang compiler-flags (uiop:native-namestring sharedlib))))
+      (multiple-value-bind (ret content)
+          (caten/common/bash:async-run-with-input 
+           commands
+           source)
+        (unless (zerop ret)
+          (error "Caten[CLANG] Failed to compile a shared library(RETURNCODE=~a)
+Compiled with this command: ~a
+```
+~a```
+"
+                 ret commands content))))
     (cffi:load-foreign-library sharedlib)))
 
 (defmacro with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked (form)
