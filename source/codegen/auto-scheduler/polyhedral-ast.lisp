@@ -6,12 +6,13 @@
    #:make-block
    #:satblock-body
 
-   #:User #:user-p
+   #:User #:user-p #:copy-user
    #:make-user
    #:user-name
    #:user-args
    #:user-unroll
    #:user-vectorize
+   #:user-late-unroll-info
    
    #:ASTFor #:astfor-p
    #:make-for
@@ -24,7 +25,7 @@
    #:astfor-scope
    #:astfor-marks
 
-   #:AstIf #:astif-p
+   #:AstIf #:astif-p #:copy-astif
    #:make-if
    #:astif-condition
    #:astif-then-node
@@ -36,7 +37,8 @@
    #:copy-and-assign-expr
    #:copy-and-assign-ast-tree
    #:unroll-ast
-   #:packing-ast))
+   #:packing-ast
+   #:late-rewrite-pack->unroll))
 
 (in-package :caten/codegen/polyhedral-ast)
 ;; ~~ ISL AST <-> Lisp Intermidate Object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -48,7 +50,7 @@
   (defstruct (User
               (:constructor make-user (name args)))
     "T_name(index)"
-    (name name :type string) (args args :type list) (unroll nil :type list) (vectorize nil :type list))
+    (name name :type string) (args args :type list) (unroll nil :type list) (vectorize nil :type list) (late-unroll-info nil :type list))
 
   (defstruct (ASTExpr
               (:constructor make-astexpr (expr is-defglobal-p)))
@@ -113,17 +115,20 @@
                (let ((user (copy-user ast)))
                  (setf (user-args user) (map 'list #'e (user-args user))
                        (user-unroll user) (copy-list (user-unroll user))
-                       (user-vectorize user) (copy-list (user-vectorize user)))
+                       (user-vectorize user) (copy-list (user-vectorize user))
+                       (user-late-unroll-info user) (copy-list (user-late-unroll-info user)))
                  (when unroll-at (push (cons unroll-at value) (user-unroll user)))
                  user))
               (:packing
                (let ((user (copy-user ast)))
                  (setf (user-args user) (map 'list #'e (user-args user))
                        (user-unroll user) (copy-list (user-unroll user))
-                       (user-vectorize user) (copy-list (user-vectorize user)))
+                       (user-vectorize user) (copy-list (user-vectorize user))(user-late-unroll-info user) (copy-list (user-late-unroll-info user))
+                       (user-late-unroll-info user) (copy-list (user-late-unroll-info user)))
                  (when unroll-at
                    (assert (numberp pack-size) () "Packing size should be constant!")
-                   (push (list unroll-at value pack-size) (user-vectorize user)))
+                   (push (list unroll-at value pack-size) (user-vectorize user))
+                   (push (list idx pack-size unroll-at) (user-late-unroll-info user)))
                  user))))
            (AstFor
             (assert (= (length forms) 1))
@@ -181,7 +186,12 @@
 (defun packing-ast (ast idx packing-at n-packing)
   (shift-ast ast idx packing-at n-packing :mode :packing))
 
-(defun late-rewriter-pack->unroll ()
-  "Rewrites the packing user as unrolled user."
-  ;; TODO
-  )
+(defun late-rewrite-pack->unroll (ast)
+  "Rewrites the packed user (which is failed to vectorize) as an unrolled user."
+  (flet ((unroll (info prev-ast)
+           (multiple-value-bind (idx n-unroll unroll-at) (apply #'values info)
+             (make-block
+              (map 'list #'(lambda (n) (copy-and-assign-ast-tree prev-ast idx n :unroll-at unroll-at :mode :unroll)) (alexandria:iota n-unroll))))))
+    (dolist (info (user-late-unroll-info ast))
+      (setf ast (unroll info ast)))
+    ast))
