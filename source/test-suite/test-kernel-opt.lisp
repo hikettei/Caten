@@ -1,6 +1,10 @@
 (defpackage :caten/test-suite/test-kernel-opt
   (:documentation "Tests all optimization rule defined in the ./source/codegen/search/engine.lisp")
-  (:use :cl :rove :caten/api :caten/nn :caten/runtime :caten/codegen/scheduler :caten/air))
+  (:use :cl :rove :caten/api :caten/nn :caten/runtime :caten/codegen/scheduler :caten/air
+   :caten/codegen/auto-scheduler)
+  (:import-from
+   :caten/codegen/config
+   #:define-auto-scheduler))
 (in-package :caten/test-suite/test-kernel-opt)
 ;; AutoScheduler workload:
 ;; 1. Assume there's two type of operations:
@@ -16,7 +20,11 @@
       (values (graph-schedule (runtime-graph runtime)) runtime))))
 
 (defun jit-kernel-p (node) (getattr node :jitable))
-
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; There are two type of kernels we assume:
+;; - 1. Reduction: Gemm, Conv2D, Embedding, etc.
+;; - 2. Normalization: Softmax, LayerNorm, etc.
+;; the function get-x-schedule will return the schedule item of each kernel with polyhedral ir.
 (defun get-gemm-schedule ()
   (multiple-value-bind (schedule runtime)
       (get-raw-schedule (!matmul (make-tensor `(512 512)) (make-tensor `(512 512))))
@@ -24,7 +32,7 @@
     (dolist (node (graph-nodes schedule))
       (when (jit-kernel-p node)
         (caten/codegen/blueprint:lower-schedule-item node (runtime-graph runtime) schedule)
-        (caten/codegen/scop:scop node) ;; Lower into the Polyhedral IR
+        (caten/codegen/scop:scop node)
         (return-from get-gemm-schedule node)))))
 
 (defun get-softmax-schedule ()
@@ -34,7 +42,7 @@
     (dolist (node (graph-nodes schedule))
       (when (jit-kernel-p node)
         (caten/codegen/blueprint:lower-schedule-item node (runtime-graph runtime) schedule)
-        (caten/codegen/scop:scop node) ;; Lower into the Polyhedral IR
+        (caten/codegen/scop:scop node)
         (return-from get-softmax-schedule node)))))
 
 (defun get-layernorm-schedule ()
@@ -45,7 +53,7 @@
       (dolist (node (graph-nodes schedule))
         (when (jit-kernel-p node)
           (caten/codegen/blueprint:lower-schedule-item node (runtime-graph runtime) schedule)
-          (caten/codegen/scop:scop node) ;; Lower into the Polyhedral IR
+          (caten/codegen/scop:scop node)
           (return-from get-layernorm-schedule node))))))
 
 (defun get-convnd-relu-schedule ()
@@ -56,5 +64,16 @@
       (dolist (node (graph-nodes schedule))
         (when (jit-kernel-p node)
           (caten/codegen/blueprint:lower-schedule-item node (runtime-graph runtime) schedule)
-          (caten/codegen/scop:scop node) ;; Lower into the Polyhedral IR
+          (caten/codegen/scop:scop node)
           (return-from get-convnd-relu-schedule node))))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; TODO:
+;; - Tile Optimization Test (band node relocation works? 2d tiling works?)
+
+;; ~~ Hand Optimized Kernel Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(define-auto-scheduler (Test/CPU-Auto-Scheduler ()) :n-global-loop 1)
+(deftest hand-optimized-cpu-gemm-test
+  (let ((raw (get-gemm-schedule)))
+    (with-manual-scheduler (raw Test/CPU-Auto-Scheduler)
+      (opt (make-instance 'Parallel) 0))
+    ))

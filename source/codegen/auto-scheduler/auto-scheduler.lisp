@@ -7,7 +7,9 @@
     #:AutoScheduler #:autoscheduler-best-schedule #:autoscheduler-config
     #:autoscheduler-n-generation #:autoscheduler-gen2act
     #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing
-    #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs))
+    #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs)
+  (:export
+   #:si-apply-opt #:si-finalize-schedule #:with-manual-scheduler))
 
 (in-package :caten/codegen/auto-scheduler)
 ;; ~~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -25,6 +27,8 @@
 (defclass Parallel (Opt) nil (:documentation "Parallelizes the given schedule-node"))
 (defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
+  ;; もう一個ある:
+  ;; ParentがSequenceではないこと
   (and
    (< (isl:schedule-node-get-schedule-depth schedule-node) (auto-scheduler-n-global-loops config)) ;; Located in the parallel level?
    (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
@@ -82,7 +86,49 @@ for (int i=0; i<10; i+=amount) {
   t)
 
 (defclass Coalesce (Opt) nil) ;; TODO
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Manual Scheduling Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun si-apply-opt (config schedule-item opt band)
+  (declare (type node schedule-item) (type Opt opt) (type fixnum band))
+  (assert (eql (node-type schedule-item) :Schedule-Item))
+  (assert (getattr schedule-item :polyhedral) () "si-apply-opt: Run caten/codegen/scop:scop first to obtain Polyhedral IR!")
+  (let* ((bands (map-schedule-nodes
+                 #'(lambda (type node mark)
+                     (declare (ignore mark))
+                     (when (eql type :schedule-node-band) node))
+                 (getattr schedule-item :polyhedral)))
+         (tgt-band (nth band bands)))
+    (assert tgt-band () "si-apply-opt: Band ~a not found in the schedule. n_bands=~a" band (length bands))
+    (assert (opt-applicable-p opt tgt-band schedule-item config) () "si-apply-opt: The given opt is not applicable for the band. ~a" opt)
+    (let ((new-sched (apply-opt opt tgt-band schedule-item config)))
+      (setf (poly-schedule (getattr schedule-item :polyhedral)) (isl:schedule-node-get-schedule new-sched))
+      t)))
+
+(defun si-finalize-schedule (schedule-item &key (n-optglobals 0))
+  "Finalizes the blueprint modified in the Polyhedral IR Space."
+  (declare (type node schedule-item))
+  (assert (eql (node-type schedule-item) :Schedule-Item))
+  (assert (getattr schedule-item :polyhedral) () "si-finalize-schedule: Run caten/codegen/scop:scop first to obtain Polyhedral IR!")
+  (setf (getattr schedule-item :blueprint)
+        (lower-into-bp-from-polyhedral
+         (->ast
+          (poly-schedule (getattr schedule-item :polyhedral))
+          (getattr schedule-item :rank))
+         schedule-item
+         :n-global-offset n-optglobals)))
+
+(defmacro with-manual-scheduler ((scheduled-item auto-scheduler) &body body)
+  "A utility macro to write hand written scheduling commands to the given schedule-item, under the auto-scheduler.
+This macro will bind the function `(opt opt band-idx)` locally, which will destructively apply the `opt` to the `band-idx`th band of the given schedule-node."
+  (alexandria:with-gensyms (auto-scheduler-bind nglobal-bind)
+    `(let ((,nglobal-bind 0) (,auto-scheduler-bind (make-instance ',auto-scheduler)))
+       (caten/codegen/expr-cache:with-expr-cache ()
+         (flet ((opt (opt band-idx)
+                  (declare (type opt opt) (type fixnum band-idx))
+                  (when (typep opt 'Global) (incf ,nglobal-bind))
+                  (si-apply-opt ,auto-scheduler-bind ,scheduled-item opt band-idx)))
+           (progn ,@body)
+           (si-finalize-schedule ,scheduled-item :n-optglobals ,nglobal-bind))))))
+;; ~~ Auto Scheduling Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass AutoScheduler ()
   ((best-schedule :initarg :schedule :type isl:schedule-node-domain :accessor autoscheduler-best-schedule)
    (n-generation :initform 0 :accessor autoscheduler-n-generation)
