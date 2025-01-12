@@ -11,6 +11,7 @@
    #:user-name
    #:user-args
    #:user-unroll
+   #:user-vectorize
    
    #:ASTFor #:astfor-p
    #:make-for
@@ -34,7 +35,8 @@
    #:map-ast-tree
    #:copy-and-assign-expr
    #:copy-and-assign-ast-tree
-   #:unroll-ast))
+   #:unroll-ast
+   #:packing-ast))
 
 (in-package :caten/codegen/polyhedral-ast)
 ;; ~~ ISL AST <-> Lisp Intermidate Object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -46,7 +48,7 @@
   (defstruct (User
               (:constructor make-user (name args)))
     "T_name(index)"
-    (name name :type string) (args args :type list) (unroll nil :type list))
+    (name name :type string) (args args :type list) (unroll nil :type list) (vectorize nil :type list))
 
   (defstruct (ASTExpr
               (:constructor make-astexpr (expr is-defglobal-p)))
@@ -96,8 +98,8 @@
             do (setf (getattr node :value) value))
     new-expr))
 
-(defun copy-and-assign-ast-tree (ast idx value &key (unroll-at nil))
-  (declare (type string idx))
+(defun copy-and-assign-ast-tree (ast idx value &key (unroll-at nil) (mode :unroll) (pack-size nil))
+  (declare (type string idx) (type (member :unroll :packing) mode))
   (flet ((e (expr) (copy-and-assign-expr expr idx value)))
     (map-ast-tree
      #'(lambda (ast &rest forms)
@@ -106,11 +108,22 @@
             (assert (= (length forms) 1))
             (make-block (first forms)))
            (User
-            (let ((user (copy-user ast)))
-              (setf (user-args user) (map 'list #'e (user-args user))
-                    (user-unroll user) (copy-list (user-unroll user)))
-              (when unroll-at (push (cons unroll-at value) (user-unroll user)))
-              user))
+            (ecase mode
+              (:unroll
+               (let ((user (copy-user ast)))
+                 (setf (user-args user) (map 'list #'e (user-args user))
+                       (user-unroll user) (copy-list (user-unroll user))
+                       (user-vectorize user) (copy-list (user-vectorize user)))
+                 (when unroll-at (push (cons unroll-at value) (user-unroll user)))
+                 user))
+              (:packing
+               (let ((user (copy-user ast)))
+                 (setf (user-args user) (map 'list #'e (user-args user))
+                       (user-unroll user) (copy-list (user-unroll user))
+                       (user-vectorize user) (copy-list (user-vectorize user)))
+                 (when unroll-at
+                   (push (list unroll-at value pack-size) (user-vectorize user)))
+                 user))))
            (AstFor
             (assert (= (length forms) 1))
             (let ((new-for (copy-astfor ast)))
@@ -128,7 +141,8 @@
               new-if))))
      ast)))
 
-(defun unroll-ast (ast idx unroll-at n-unroll)
+(defun shift-ast (ast idx unroll-at n-unroll &key (mode :unroll))
+  (declare (type (member :unroll :packing) mode))
   (map-ast-tree
    #'(lambda (ast &rest forms)
        (etypecase ast
@@ -136,9 +150,13 @@
           (assert (= (length forms) 1))
           (make-block (first forms)))
          (User
-          (let ((users
-                  (map 'list #'(lambda (n) (copy-and-assign-ast-tree ast idx n :unroll-at unroll-at)) (alexandria:iota n-unroll))))
-            (make-block users)))
+          (ecase mode
+            (:unroll
+             (let ((users
+                     (map 'list #'(lambda (n) (copy-and-assign-ast-tree ast idx n :unroll-at unroll-at :mode mode)) (alexandria:iota n-unroll))))
+               (make-block users)))
+            (:packing
+             (copy-and-assign-ast-tree ast idx 0 :unroll-at unroll-at :mode mode :pack-size n-unroll))))
          (AstExpr (make-astexpr (astexpr-expr ast) (astexpr-is-defglobal-p ast)))
          (AstFor
           (assert (= (length forms) 1))
@@ -156,3 +174,8 @@
             new-if))))
    ast))
 
+(defun unroll-ast (ast idx unroll-at n-unroll)
+  (shift-ast ast idx unroll-at n-unroll :mode :unroll))
+
+(defun packing-ast (ast idx packing-at n-packing)
+  (shift-ast ast idx packing-at n-packing :mode :packing))

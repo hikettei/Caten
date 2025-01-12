@@ -97,7 +97,26 @@ scop.lisp for the opposite things.
            ((is "UNROLL_INNER")
             ;; UNROLL_BODY is triggered by the UNROLL_PARENT. Without it the form is ignored.
             (assert (null (astfor-marks user)) () "UNROLL_INNER should be orthogonal with other directives.")
+            (setf (astfor-marks user) (list directive)))
+           ;; PACKED_OUTER+PACKED_INNER = PACKED
+           ((is "PACKED_OUTER")
+            (let ((body (astfor-body user)))
+              (when (or
+                     (not (typep body 'ASTFor))
+                     (null (and (astfor-marks body) (every #'(lambda (x) (equalp (directive-type x) "PACKED_INNER")) (astfor-marks body)))))
+                (return-from parse-isl-ast-mark user))
+              (let* ((n-pack (directive-amount directive))
+                     (user (copy-astfor user))
+                     (packed (make-packed-body user body n-pack))
+                     (reminder (compute-reminder-for-unroll user body n-pack)))
+                (setf (astfor-body user) packed)
+                (return-from parse-isl-ast-mark (make-block (list user reminder))))))
+           ((is "PACKED_INNER")
+            (assert (null (astfor-marks user)) () "PACKED_INNER should be orthogonal with other directives.")
             (setf (astfor-marks user) (list directive)))))
+        ;; [TODO] Test all cases for multiple directives per single loop.
+        ;; - 1. TILE+PACKING (high priority!)
+        ;; - 2. UNROLL+PACKING
         (AstBlock
          ;; Nested Directive Transformations
          (cond

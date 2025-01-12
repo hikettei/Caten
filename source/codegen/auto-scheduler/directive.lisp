@@ -2,11 +2,12 @@
   (:documentation "Provides various hand-written blueprint rewriting rule for corresponding @directive.")
   (:use :cl :caten/codegen/expr :caten/codegen/polyhedral-ast :caten/air :caten/codegen/shape-inference)
   (:export
-    #:make-unrolled-body
-    #:compute-reminder-for-unroll
-    #:unroll-expr
-    #:astfor-mutate-global
-    #:astfor-mutate-reminder-global))
+   #:make-unrolled-body
+   #:make-packed-body
+   #:compute-reminder-for-unroll
+   #:unroll-expr
+   #:astfor-mutate-global
+   #:astfor-mutate-reminder-global))
 
 (in-package :caten/codegen/directive)
 ;; ~~~ UNROLL ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -14,6 +15,9 @@
   "Creates a copy of ASTFor body with the idx is set to nth."
   (declare (type ASTFor body) (type fixnum n-unroll))
   (unroll-ast (astfor-body body) (astfor-idx body) (astfor-idx user) n-unroll))
+
+(defun make-packed-body (user body n-pack)
+  (packing-ast (astfor-body body) (astfor-idx body) (astfor-idx user) n-pack))
 
 (defmethod astfor-compute-reminder ((astfor ASTFor) unroll-by)
   (let ((below (expr-detach-loop-bound (astfor-to astfor)))
