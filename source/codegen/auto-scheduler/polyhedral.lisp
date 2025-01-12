@@ -148,6 +148,10 @@
   (print-unreadable-object (pg stream :type t)
     (format stream "~a~%[Kernel]:~%~a" (pprint-schedule (copy (poly-schedule pg))) (debug-render-to-clang pg))))
 
+(defun mark->directive (mark)
+  (declare (type isl::identifier mark))
+  (caten/codegen/transform:str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::identifier-handle mark)))))
+
 (defun map-schedule-nodes (f polyhedral-ir)
   "
 ```
@@ -163,7 +167,7 @@ This function returns a list of the results of applying f to each node. NIL is e
           for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
           while (>= n-children 0) do
             (loop for nth upfrom 0 below n-children
-                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (mark->directive (schedule-node-mark-get-id node)))
                   for band = (schedule-node-get-child node nth)
                   for type = (schedule-node-get-type band) do
                     (let ((out (funcall f type band mark))) (when out (push out outputs)))
@@ -179,7 +183,7 @@ This function returns a list of the results of applying f to each node. NIL is e
           for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
           while (>= n-children 0) do
             (loop for nth upfrom 0 below n-children
-                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (mark->directive (schedule-node-mark-get-id node)))
                   for band = (schedule-node-get-child node nth)
                   for type = (schedule-node-get-type band) do
                     (let ((out (funcall f type band mark))) (when out (push out outputs)))

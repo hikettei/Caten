@@ -28,7 +28,7 @@
 (defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
   ;; もう一個ある:
-  ;; ParentがSequenceではないこと
+  ;; ParentがSequenceではないこと (for softmax ...)
   (and
    (< (isl:schedule-node-get-schedule-depth schedule-node) (auto-scheduler-n-global-loops config)) ;; Located in the parallel level?
    (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
@@ -81,9 +81,7 @@ for (int i=0; i<10; i+=amount) {
 ```
 "))
 (defmethod apply-opt ((opt Packing) schedule-node item config) (apply-pack schedule-node (opt-amount opt)))
-(defmethod opt-applicable-p ((opt Packing) schedule-node item config)
-  ;; [TODO] Usually vectorize-level parallelism is located in the innnermost loop. how to judge this?
-  t)
+(defmethod opt-applicable-p ((opt Packing) schedule-node item config) t)
 
 (defclass Coalesce (Opt) nil) ;; TODO
 ;; ~~ Manual Scheduling Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -93,8 +91,9 @@ for (int i=0; i<10; i+=amount) {
   (assert (getattr schedule-item :polyhedral) () "si-apply-opt: Run caten/codegen/scop:scop first to obtain Polyhedral IR!")
   (let* ((bands (map-schedule-nodes
                  #'(lambda (type node mark)
-                     (declare (ignore mark))
-                     (when (eql type :schedule-node-band) node))
+                     (when (eql type :schedule-node-band)
+                       (when (or (null mark) (directive-visible mark))
+                         node)))
                  (getattr schedule-item :polyhedral)))
          (tgt-band (nth band bands)))
     (assert tgt-band () "si-apply-opt: Band ~a not found in the schedule. n_bands=~a" band (length bands))

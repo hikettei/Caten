@@ -92,9 +92,10 @@
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;; Apply packing first to use TensorCore MULADD
-      (opt (make-instance 'Unroll :amount 4) 0)
-      (opt (make-instance 'Unroll :amount 4) 2)
-      (opt (make-instance 'Unroll :amount 4) 4)
+      (opt (make-instance 'Packing :amount 4) 0)
+      (opt (make-instance 'Packing :amount 4) 1)
+      (opt (make-instance 'Packing :amount 4) 2)
+      ;(opt (make-instance 'Packing :amount 4) 2)
       ;; 2D Tiling (16, 16)
       ;; (opt (make-instance 'TileBand :amount 16) 0)
       ;; (opt (make-instance 'TileBand :amount 16) 2)
