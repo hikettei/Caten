@@ -74,10 +74,19 @@
 (defun print-bp (si) ;; utils for debugging in repl
   (caten/codegen/blueprint:print-blueprint (getattr si :blueprint) t))
 
-(define-auto-scheduler (Test/CPU-Auto-Scheduler ()) :n-global-loop 1)
+(define-auto-scheduler (Mock-CPU-AutoScheduler ()) :n-global-loop 1)
+(define-auto-scheduler (Mock-GPU-AutoScheduler ()) :n-global-loop 3)
+
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule)))
-    (with-manual-scheduler (raw Test/CPU-Auto-Scheduler)
+    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       (opt (make-instance 'Parallel) 0)
+      )
+    (print-bp raw)))
+
+(deftest hand-optimized-gpu-gemm-test
+  (let ((raw (get-gemm-schedule)))
+    (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
+      (opt (make-instance 'Global :amount 1) 0)
       )
     (print-bp raw)))
