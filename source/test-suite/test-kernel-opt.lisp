@@ -76,14 +76,26 @@
 
 (define-auto-scheduler (Mock-CPU-AutoScheduler ()) :n-global-loop 1)
 (define-auto-scheduler (Mock-GPU-AutoScheduler ()) :n-global-loop 3)
-
+;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
+;; - PARALLEL (OpenMP)
+;; - Coleasing (Fuse PARALLEL Loop w/ tiled bands)
+;; - Loop Tiling (2D)
+;; - Loop Unrolling
+;; - Vectorize or TensorCore (8x8 gemm)
+;; 90% performance of OpenBLAS in the hand written kernel is enough great!.
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       (opt (make-instance 'Parallel) 0)
       )
     (print-bp raw)))
-
+;; To generate an optimized schedule for the gpu gemm kernel, we have to implement the following scheduling commands:
+;; - GLOBAL/LOCAL
+;; - GROUP
+;; - Warp Reduction Transformation
+;; - Tile
+;; - TensorCore
+;; - :BARIIER (=> __syncthreads())
 (deftest hand-optimized-gpu-gemm-test
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
