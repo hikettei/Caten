@@ -150,7 +150,7 @@
 
 (defun mark->directive (mark)
   (declare (type isl::identifier mark))
-  (caten/codegen/transform:str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::identifier-handle mark)))))
+  (uiop:symbol-call :caten/codegen/transform :str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::identifier-handle mark)))))
 
 (defun map-schedule-nodes (f polyhedral-ir)
   "
