@@ -70,7 +70,7 @@
 ;; TODO:
 ;; - Tile Optimization Test (band node relocation works? 2d tiling works?)
 
-;; ~~ Hand Optimized Kernel Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Hand Optimized Kernel Generation(GEMM) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun print-bp (si) ;; utils for debugging in repl
   (caten/codegen/blueprint:print-blueprint (getattr si :blueprint) t))
 
@@ -90,15 +90,20 @@
       )
     (print-bp raw)))
 ;; To generate an optimized schedule for the gpu gemm kernel, we have to implement the following scheduling commands:
-;; - GLOBAL/LOCAL
+;; - GLOBAL/LOCAL (Remove extra if statements when the reminder part is zero.)
 ;; - GROUP
 ;; - Warp Reduction Transformation
 ;; - Tile
 ;; - TensorCore
 ;; - :BARIIER (=> __syncthreads())
+;; Goal: 80~90% performance of cuBLAS
 (deftest hand-optimized-gpu-gemm-test
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
       (opt (make-instance 'Global :amount 1) 0)
       )
+    
     (print-bp raw)))
+;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Hand Optimized Kernel Generation(LayerNorm) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Hand Optimized Kernel Generation(Conv2d) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
