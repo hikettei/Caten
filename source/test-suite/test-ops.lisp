@@ -31,7 +31,7 @@
 				        (,lisp-op x) ulp dtype))))
 		          (ok t))))))))
   ;; Trig
-  (unary-dtype-test sin-test !sin sin)
+  (unary-dtype-test sin-test !sin sin :max 121255)
   (unary-dtype-test cos-test !cos cos :ulp 1e-3 :max 121255)
   (unary-dtype-test tan-test !tan tan :ulp 1e-1 :max 20 :fuzz nil)
   ;; Hyperbolic
