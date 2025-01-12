@@ -130,6 +130,7 @@ for (int i=0; i<10; i+=amount) {
              (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) opt)
              (incf (autoscheduler-n-generation auto-scheduler))
              (return-from optimize-band-lv1 (values (apply-opt opt schedule-node-band item (autoscheduler-config auto-scheduler)) opt)))))
+    ;; [TODO] Make GLOBAL Tile
     ;; Hand-written optimization rules
     ;(case (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler))
     ;  (0 nil)
