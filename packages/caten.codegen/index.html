@@ -1,0 +1,903 @@
+
+<!DOCTYPE html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../css/bootstrap.min.css">
+  
+
+  
+    <meta http-equiv="content-language" content="en">
+  
+  
+
+  
+  <title>caten/codegen | Caten Documentation</title>
+  
+
+  
+
+  <link rel="stylesheet" href="../../css/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/default.min.css">
+  <link rel="stylesheet" href="../../css/vs.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  
+  
+  
+  <script async>var base_url = '../..';</script>
+  <script src="../../js/jquery-3.6.1.slim.min.js"></script>
+  <script src="../../js/bootstrap.bundle.min.js"></script>
+  <script async src="../../js/highlight.min.js"></script>
+
+  
+  
+</head>
+<body>
+  
+  
+    
+    <header>
+      <nav class="navbar navbar-expand-sm navbar-toggleable-sm  border-bottom box-shadow mb-3 ">
+        <div class="container">
+            <a class="navbar-brand text-body" asp-area="" href="/">
+              
+              
+                Caten Documentation
+              
+            </a>
+            <div class="print-hide">
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="d-none d-md-flex input-group mb-3">
+                
+                    <input class="form-control" type="search" id="searchbox" accesskey="/" placeholder="Search in here" aria-label="Search" aria-describedby="search-btn"/>
+                    <button class="btn btn-outline-secondary" type="button" id="search-btn" onclick="search(false);">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    
+                </div>
+            </div>
+            </div>
+        </div>
+    </nav>
+    <nav class="navbar border-bottom box-shadow mb-3 d-md-none print-hide">
+      <div class="container">
+          <div class="navbar-collapse d-flex">
+            <p>
+              <div class="d-flex input-group mb-3">
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_nav(this);" type="button" data-bs-toggle="collapse" data-bs-target="#nav" title="Show Navigation"><i class="bi bi-book"></i></button>
+                
+                
+                <input class="form-control" type="search" id="searchbox_mobile" accesskey="/" placeholder="Search in here" aria-label="Search">
+                <button class="btn btn-outline-secondary" type="button" onclick="search(true);"><i class="bi bi-search"></i></button>
+                
+                
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_toc(this);" type="button" data-bs-toggle="collapse" data-bs-target="#tol"><i class="bi bi-list-ul"></i></button>
+                
+                
+            </div>
+            </p>
+          </div>
+      </div>
+    </nav>
+  </header>
+    
+  
+  
+  
+  <div class="container">
+    <main role="main" class="pb-3">
+      <div class="row">
+        
+        
+    
+    <div class="col-12 col-md-2 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="nav"  style="overflow-x:scroll;">
+        <ul class="list-group list-group-flush">
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../..">Home</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../quickstart/">Quickstart</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../development/">Development</a></li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >API Reference</a>
+          <ul class="collapse list-group list-group-flush show ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.air/">caten/air</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.aasm/">caten/aasm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-body" href="./">caten/codegen</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/api</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.tensor/">Tensor</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.differentiable_ops/">Func</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.module/">Module</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.models/">Model</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.initializers/">Initializers</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.shapetracker/">ShapeTracker</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.facet/">Facet API</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.state-dict/">StateDict</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/nn</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.activations/">Activation</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.convolutions/">Convolution</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.criterion/">Criterion</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.embeddings/">Embedding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.linears/">Linear</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.normalizations/">Normalization</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.padding/">Padding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.pooling/">Pooling</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.encoding/">Encoding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.optimizers/">Optimizers</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >Ready to use packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps.gpt2/">caten/apps.gpt2</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >External Packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.gguf/">caten/gguf</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.onnx/">caten/oonx</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.llm/">caten/llm</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+      </ul>
+      </div>
+    </div>
+    
+       
+
+
+
+<div class="col-12 col-md-2 order-md-3 print-hide">
+  <div class="collapse d-md-block text-nowrap" id="tol" style="overflow-x:scroll;">
+    <span>In this article</span>
+    <hr />
+    <ul class="list-group list-group-flush">
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#catencodegen">caten/codegen</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#hackable-kernel-generator" >Hackable Kernel Generator</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#how-to-enable-jit" >How to enable JIT</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#how-to-debug-jit" >How to debug JIT</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#how-to-learn-jit" >How to learn JIT</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#shape-inference">Shape Inference</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-run-type-infer" >[function] run-type-infer</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#struct-inferred-type" >[struct] Inferred-Type</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#struct-iteration-space" >[struct] Iteration-Space</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#rewriting-rules">Rewriting Rules</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#optimization-for-gemm" >Optimization for gemm</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#scheduler">Scheduler</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#schedule-item" >:SCHEDULE-ITEM</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-graph-schedule" >[function] graph-schedule</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#example-scheduler-shape-inference-rewriting-rules" >Example (Scheduler + Shape Inference + Rewriting Rules)</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#lowerer-blueprint">Lowerer (Blueprint)</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#example-scheduler-lowerer" >Example (Scheduler + Lowerer)</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#renderer">Renderer</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#render-irs" >Render IRs</a>
+    
+        <ul class="list-group list-group-flush">
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#define-global" >:DEFINE-GLOBAL</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#aref" >:AREF</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#endif" >:ENDIF</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#if" >:IF</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#endfor" >:ENDFOR</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#for" >:FOR</a>
+    
+    </li>
+
+        
+        </ul>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#expr">EXPR</a>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#memory-planner">Memory Planner</a>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#scop-analyzer">Scop Analyzer</a>
+        
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<div class="col-12 col-md-8 print-main">
+  
+  <h1>caten/codegen</h1>
+  
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item active" aria-current="page">Caten Documentation</li>
+      
+      
+      
+      
+      
+      
+      
+      
+      <li class="breadcrumb-item active" aria-current="page">API Reference</li>
+      
+      
+        
+
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">caten/codegen</li>
+        
+        
+        
+
+        
+
+        
+
+      
+      
+      
+      
+      
+      
+      
+    </ol>
+  </nav>
+  
+  
+  <div class="container ml-0">
+    <div class="row">
+      
+      <div class="col-2 px-0" style="text-wrap: nowrap;">
+        
+        <a class="btn text-primary print-hide" href="../caten.aasm/"
+          title="caten/aasm"><i class="bi bi-chevron-left"></i></a>
+        
+        
+        <a class="btn text-primary print-hide" href="../caten.api/" title="Overview"><i
+            class="bi bi-chevron-right"></i></a>
+        
+      </div>
+      <div class="col px-0" style="text-align: right;">
+        
+        
+        <small><span class='git-page-authors git-authors'></span></small>
+        <span>|</span>
+        
+        
+        
+        
+        
+      </div>
+      <div class="col-1 col-sm-2 px-0" style="text-align: right;text-wrap: nowrap;">
+        <button class="btn print-block d-none d-lg-inline" title="Print this article"
+          onclick="window.print();"><i class="bi bi-printer"></i></button>
+        <button class="btn print-visible d-none" onclick="print_normal();"
+          title="Open NewTab"><i class="bi bi-arrow-up-right-square"></i></button>
+        
+        
+        <a class="btn disabled print-hide d-none d-sm-inline"><i class="bi bi-pencil"></i></a>
+        
+        
+        <span class="dropdown print-hide">
+          <button class="btn btn" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown"
+            aria-expanded="false"><i class="bi bi-list"></i></button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
+            <li>
+              <h6 class="dropdown-header">Share via</h6>
+            </li>
+            <li><button class="btn dropdown-item"
+                onclick="share_to_twitter('caten/codegen | Caten Documentation','');"><i
+                  class="bi bi-twitter-x"></i>&nbsp;X.com</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_facebook();"><i
+                  class="bi bi-facebook"></i>&nbsp;Facebook</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_line();"><i
+                  class="bi bi-line"></i>&nbsp;LINE</button></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li><button class="btn dropdown-item" onclick="window.print();"><i class="bi bi-printer"></i>&nbsp;Print</button></li>
+            <li><button class="btn dropdown-item" id="page-url-copy-btn"><i class="bi bi-clipboard"></i>&nbsp;Copy Url to clipboard</button></li>
+            <li>
+              
+              
+              <a class="btn dropdown-item disabled"><i class="bi bi-pencil"></i>&nbsp;Edit this article</a>
+              
+              
+            </li>
+            <li><button class="btn dropdown-item" onclick="print_view();"><i
+                  class="bi bi-file-earmark-text"></i>&nbsp;View in EmbedMode</button></li>
+          </ul>
+        </span>
+      </div>
+    </div>
+  </div>
+  
+  <hr />
+  
+  
+  <h1 id="catencodegen">caten/codegen</h1>
+<h2 id="hackable-kernel-generator">Hackable Kernel Generator</h2>
+<p>The <code>caten/codegen</code> is a system designed to JIT-compile AASM Graphs into other languages, such as C or Metal, to achieve faster computation.</p>
+<p>This package has the following two objectives:</p>
+<ol>
+<li>
+<p><strong>Device Independence</strong>: It imposes no constraints on the execution device, allowing users to extend it with only 200–300 lines of code.</p>
+</li>
+<li>
+<p><strong>Performance</strong>: It ensures computations run fairly fast on each target device.</p>
+</li>
+</ol>
+<p>Caten's code generation is divided into two stages based on the intended purpose:</p>
+<ol>
+<li>
+<p><strong>caten/codegen</strong> Generates unoptimized code (e.g., Scheduler, Lowerer, op fusion, etc.).</p>
+</li>
+<li>
+<p><strong>caten/polyhedral</strong> <strong>(Optional)</strong> Performs advanced kernel loop transformations and optimizations on the scheduled code, such as Auto Scheduler.</p>
+</li>
+</ol>
+<p>This document focuses on the first stage, <code>caten/codegen</code>, and provides related information and some examples. </p>
+<h2 id="how-to-enable-jit">How to enable JIT</h2>
+<p>To enable JIT, you need to feed the :BACKEND contextvar with the desired backend. (backends must be defined by <code>caten/codegen/backend:define-backend</code> and :JIT must be set to 1)</p>
+<p>The following code snippet demonstrates how to enable JIT on repl:</p>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>;; Option1: Set globally
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>(setf (ctx:getenv :BACKEND) &quot;CLANG&quot;)
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>;; Option2: Set locally
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>(ctx:with-contextvar (:BACKEND &quot;CLANG&quot;)
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>  ;; ...
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>)
+</code></pre></div>
+After setting the contextvar, you can run the function <code>caten</code> to JIT-compile the AASM Graphs, e.g.:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>(caten (!rand `(3 3)))
+</code></pre></div></p>
+<h2 id="how-to-debug-jit">How to debug JIT</h2>
+<p>You can set the <code>JIT_DEBUG</code> contextvar to debug the JIT compilation process. The debugging level ranges from 0 to 4, as shown below:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>JIT_DEBUG | Effect
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>----------|-------
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>0         | None
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>1         | Nothing for now
+<a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>2         | Displays blueprint and scop
+<a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>3         | Displays schedule-graph
+<a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>4         | Displays memory-planner and the compiled code
+</code></pre></div></p>
+<h2 id="how-to-learn-jit">How to learn JIT</h2>
+<p>You can start by reading <code>./caten/docs/getting-started.lisp</code> to understand the basic concepts of <code>caten/codegen</code> through a running example.</p>
+<p>Additionally, the following sections provide documentation and explanations for each JIT mechanism, along with simple executable examples. </p>
+<h1 id="shape-inference">Shape Inference</h1>
+<p>The JIT compilation starts by inferring the shape of each points in the graph. <code>caten/codegen/shape-inference</code> is responsible for this task. </p>
+<h3 id="function-run-type-infer">[function] run-type-infer</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>(run-type-infer runtime)
+</code></pre></div>
+Runs the shape inference to the given GraphRuntime, returning <code>Type-Reporter</code>.</p>
+<h3 id="struct-inferred-type">[struct] Inferred-Type</h3>
+<p>A structure <code>Inferred-Type</code> contains the shape/stride/view information of the node at each points. Also, it containts the iteration space information that is used to render the kernel.</p>
+<p>If the shape inference is successfully done and properly deployed to the target graph by the <code>rewriting-rule</code>, the function <code>(read-type-relay node)</code> will return the <code>Inferred-Type</code> structure.</p>
+<ul>
+<li>relay-reads returns the list of the buffer corresponding to the node-reads. (If node-reads a number, nil is set)</li>
+<li>relay-writes returns the list of the buffer corresponding to the node-writes.</li>
+<li>relay-read-iters returns the list of the iteration space corresponding to the node-reads.</li>
+<li>relay-write-iters returns the list of the iteration space corresponding to the node-writes.</li>
+</ul>
+<h3 id="struct-iteration-space">[struct] Iteration-Space</h3>
+<p>Iteration-Space is a structure that contains the shape/stride/view information of the each buffer. It is used to render the kernel.
+iteration-space-shape to get the shape, iteration-space-strides to get the stride, iteration-space-views to get the offsets and increments, and iteration-space-procedure to get how the iteraton-space is collapsed or permuted. Each elements for shape/stride are Expr.</p>
+<p><code>iteration-space-expr-aref</code> to render the aref.</p>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>(iteration-space-expr-aref iteration-space buffer gids)
+</code></pre></div>
+gids corresponds for the loop idx in the kernel.</p>
+<h1 id="rewriting-rules">Rewriting Rules</h1>
+<p>TODO: apply-rewriting-rules doc </p>
+<h2 id="optimization-for-gemm">Optimization for gemm</h2>
+<p>TODO: WMMA Rewriting Docs </p>
+<h1 id="scheduler">Scheduler</h1>
+<p>The <code>caten/codegen/scheduler</code> is responsible for assigining the execution order of the computation graph in the aasm.
+Occasionally they merges or rewrites a view in order to schedule multiple nodes into the same schedule if possible.</p>
+<p>The function <code>graph-schedule</code> is an entry point, and takes a shape-inferred aasm graph as input, performs scheduling, and returns a schedule graph (called Schedule-Graph) whose each node is composed of Schedule-Item.</p>
+<p>One Schedule-Item corresponds to one kernel in GPU, <code>graph-schedule</code> must ensure that each item is merged only within the bounds that can be lowered into a single kernel.## Schedule-Item</p>
+<h3 id="schedule-item">:SCHEDULE-ITEM</h3>
+<p>Schedule-Item is an intermidate object to represent a one kernel in GPU.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>f = cache_name or name
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>write_ids = f(*[storage_id_dst], *[dynamic_shape], *[inputs])
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>                      ^ can be modified by the memory-planner
+</code></pre></div>
+<p>It has a unique <code>name</code>, and <code>cache-name</code>. If <code>cache-name</code> was assigned, the compiler will fail to compile this schedule-item and reuse the kernel named <code>cache-name</code> instead.</p>
+<p>In order to lowering the computation graph as the foreign language, <code>items</code> must be consisted of JITAble operations (except for special irs and :allocate). If it qualifies, <code>jitable</code> is set to T.</p>
+<p>Otherwise, the scheduled items are relocated to the compiled GraphRuntime directly. Specifially, if the item was :ALLOCATE, :allocated-p is set to T.</p>
+<ul>
+<li>blueprint[list] is a lowered schedule-item</li>
+<li>polyhedral[list] is a Polyhedral IR obtained by lowering blueprint</li>
+<li>auto-schedule-p[list] is set to T if it is worth to run auto-scheduler. (If there is a symbolic incremental, loop is not an affine and cannot run isl scheduler)</li>
+<li>items[list] are the scheduled items</li>
+<li>items-to-cache[list] are the copies of items but having the unique read/write. It is used to determine the equivalence of the two schedule-items.</li>
+<li>rank[fixnum] is the highest rank of the iteration space.</li>
+<li>storage-id-src[list] is the list of the storage-id of the source buffer (optimized by running memory-planner)</li>
+<li>storage-id-dst[list] is the list of the storage-id of the destination buffer (optimized by running memory-planner)</li>
+<li>namespace[list] a list of symbols appeared in the items. It is used to map a new blueprint from the cached blueprint.</li>
+</ul>
+<p>When optimizing schedule-item in-place, the 0th read is consumed.</p>
+<h3 id="function-graph-schedule">[function] graph-schedule</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>(graph-schedule graph)
+</code></pre></div>
+Creates a schedule-graph(FastGraph) from the given <code>graph</code>.</p>
+<h2 id="example-scheduler-shape-inference-rewriting-rules">Example (Scheduler + Shape Inference + Rewriting Rules)</h2>
+<p>This code snippet demonstrates how to create a schedule-graph from AASM Graph. AASM Graph is obtained by running caten with JIT=0. </p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">ctx:with-contextvar</span><span class="w"> </span><span class="p">(</span><span class="ss">:BACKEND</span><span class="w"> </span><span class="s">&quot;LISP&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">pprint-graph</span><span class="w"> </span><span class="p">(</span><span class="nv">runtime-graph</span><span class="w"> </span><span class="p">(</span><span class="nv">caten</span><span class="w"> </span><span class="p">(</span><span class="nv">!relu</span><span class="w"> </span><span class="p">(</span><span class="nv">!matmul</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))))))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>============================================================================================================================================
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>=== [P: 0] =================================================================================================================================
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>[P=0, ID=0]:
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>   :PAUSE/BACKWARD {0}
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>   └ :MAX {N1}
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a>     └ :VIEW {N2}
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>     │ ├ load(0.0)
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>     │   └ Allocate[:float32] NIL
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>     ├ :VIEW {N3}
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>       ├ :MOVE {N4}
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>         ├ Allocate[:float32] (3 3 1)
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>         └ :VIEW {N5}
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>           ├ :ADD {N6}
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a>             ├ :VIEW {N7}
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a>             │ ├ load(0.0)
+<a id="__codelineno-8-16" name="__codelineno-8-16" href="#__codelineno-8-16"></a>             │   └ Allocate[:float32] (3 3 1)
+<a id="__codelineno-8-17" name="__codelineno-8-17" href="#__codelineno-8-17"></a>             └ :MUL {N8}
+<a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>               └ :VIEW {N9}
+<a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>               │ ├ Allocate[:float32] (3 3)
+<a id="__codelineno-8-20" name="__codelineno-8-20" href="#__codelineno-8-20"></a>               ├ :MOVE {N10}
+<a id="__codelineno-8-21" name="__codelineno-8-21" href="#__codelineno-8-21"></a>                 ├ Allocate[:float32] (3 3 3)
+<a id="__codelineno-8-22" name="__codelineno-8-22" href="#__codelineno-8-22"></a>                 └ :VIEW {N11}
+<a id="__codelineno-8-23" name="__codelineno-8-23" href="#__codelineno-8-23"></a>                   ├ Allocate[:float32] (3 3)
+<a id="__codelineno-8-24" name="__codelineno-8-24" href="#__codelineno-8-24"></a>============================================================================================================================================
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">Example</span><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="p">(</span><span class="k">let*</span><span class="w"> </span><span class="p">((</span><span class="nv">graph</span><span class="w"> </span><span class="p">(</span><span class="nv">ctx:with-contextvar</span><span class="w"> </span><span class="p">(</span><span class="ss">:BACKEND</span><span class="w"> </span><span class="s">&quot;LISP&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">runtime-graph</span><span class="w"> </span><span class="p">(</span><span class="nv">caten</span><span class="w"> </span><span class="p">(</span><span class="nv">!relu</span><span class="w"> </span><span class="p">(</span><span class="nv">!matmul</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))))))))</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">       </span><span class="p">(</span><span class="nv">vm</span><span class="w"> </span><span class="p">(</span><span class="nv">make-runtime</span><span class="w"> </span><span class="nv">graph</span><span class="w"> </span><span class="ss">:fw-outputs</span><span class="w"> </span><span class="p">(</span><span class="nv">graph-outputs</span><span class="w"> </span><span class="nv">graph</span><span class="p">))))</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">  </span><span class="p">(</span><span class="nv">run-type-infer</span><span class="w"> </span><span class="nv">vm</span><span class="p">)</span><span class="w"> </span><span class="c1">;; Running the shape inference</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="p">(</span><span class="nv">apply-rewriting-rules</span><span class="w"> </span><span class="nv">vm</span><span class="p">)</span><span class="w"> </span><span class="c1">;; Running the rewriting rules</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">  </span><span class="c1">;; graph-schedule to finally run the scheduler</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span><span class="p">(</span><span class="nv">pprint-graph</span><span class="w"> </span><span class="p">(</span><span class="nv">graph-schedule</span><span class="w"> </span><span class="p">(</span><span class="nv">runtime-graph</span><span class="w"> </span><span class="nv">vm</span><span class="p">))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>============================================================================================================================================
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>=== [P: 0] =================================================================================================================================
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a>[P=0, ID=0]:
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a>   :PAUSE/BACKWARD {N1}
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a>   └ [KERNEL] FUSED_RELU_SUMNODE_MATMUL18889
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a>     ├ Allocate[:float32] (3 3 3)
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a>     ├ Allocate[:float32] (3 3)
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a>     ├ Allocate[:float32] (3 3)
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a>     ├ Allocate[:float32] (3 3 1)
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a>     ├ Allocate[:float32] (3 3 1)
+<a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a>     └ Allocate[:float32] NIL
+<a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a>============================================================================================================================================
+</code></pre></div>
+</details>
+
+<h1 id="lowerer-blueprint">Lowerer (Blueprint)</h1>
+<p>The package <code>caten/codegen/blueprint</code> is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
+The <code>lower-schedule-item</code> method infers loop boundaries based on <code>Schedule-item</code> and performs lowering into a format that includes :FOR/:ENDFOR nodes.### [function] LOWER-SCHEDULE-ITEM</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>(lower-schedule-item node base-graph scheduled-graph)
+</code></pre></div>
+<p>Lowers the Schedule-Item into blueprint.</p>
+<ul>
+<li>
+<p>node is a schedule-item to lower which belongs to scheduled-graph.</p>
+</li>
+<li>
+<p>base-graph is the graph you passed to the graph-schedule.</p>
+</li>
+<li>
+<p>scheduled-graph is the scheduled graph obtained by graph-schedule.</p>
+</li>
+</ul>
+<h2 id="example-scheduler-lowerer">Example (Scheduler + Lowerer)</h2>
+<p>This code snippet demonstrates how to lower the schedule-graph into a blueprint created in the previous section. </p>
+<div class="highlight"><span class="filename">Example</span><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="p">(</span><span class="k">let*</span><span class="w"> </span><span class="p">((</span><span class="nv">graph</span><span class="w"> </span><span class="p">(</span><span class="nv">ctx:with-contextvar</span><span class="w"> </span><span class="p">(</span><span class="ss">:BACKEND</span><span class="w"> </span><span class="s">&quot;LISP&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">runtime-graph</span><span class="w"> </span><span class="p">(</span><span class="nv">caten</span><span class="w"> </span><span class="p">(</span><span class="nv">!relu</span><span class="w"> </span><span class="p">(</span><span class="nv">!matmul</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))))))))</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">       </span><span class="p">(</span><span class="nv">vm</span><span class="w"> </span><span class="p">(</span><span class="nv">make-runtime</span><span class="w"> </span><span class="nv">graph</span><span class="w"> </span><span class="ss">:fw-outputs</span><span class="w"> </span><span class="p">(</span><span class="nv">graph-outputs</span><span class="w"> </span><span class="nv">graph</span><span class="p">))))</span>
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="p">(</span><span class="nv">run-type-infer</span><span class="w"> </span><span class="nv">vm</span><span class="p">)</span><span class="w"> </span><span class="c1">;; Running the shape inference</span>
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="w">  </span><span class="p">(</span><span class="nv">apply-rewriting-rules</span><span class="w"> </span><span class="nv">vm</span><span class="p">)</span><span class="w"> </span><span class="c1">;; Running the rewriting rules</span>
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a><span class="w">  </span><span class="c1">;; graph-schedule to finally run the scheduler</span>
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a><span class="w">  </span><span class="p">(</span><span class="k">let</span><span class="w"> </span><span class="p">((</span><span class="nv">schedule-graph</span><span class="w"> </span><span class="p">(</span><span class="nv">graph-schedule</span><span class="w"> </span><span class="p">(</span><span class="nv">runtime-graph</span><span class="w"> </span><span class="nv">vm</span><span class="p">))))</span>
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a><span class="w">    </span><span class="p">(</span><span class="nv">caten/codegen/expr-cache::with-expr-cache</span><span class="w"> </span><span class="p">()</span><span class="w"> </span><span class="c1">;; need this to forcibly keep the loop affine.</span>
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a><span class="w">      </span><span class="p">(</span><span class="k">let</span><span class="w"> </span><span class="p">((</span><span class="nv">bp</span><span class="w"> </span><span class="p">(</span><span class="nv">lower-schedule-item</span><span class="w"> </span><span class="p">(</span><span class="nb">nth</span><span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="p">(</span><span class="nv">graph-nodes</span><span class="w"> </span><span class="nv">schedule-graph</span><span class="p">))</span><span class="w"> </span><span class="nv">graph</span><span class="w"> </span><span class="nv">schedule-graph</span><span class="p">)))</span>
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a><span class="w">        </span><span class="p">(</span><span class="nv">print-blueprint</span><span class="w"> </span><span class="nv">bp</span><span class="w"> </span><span class="no">nil</span><span class="p">)))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>{
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>  for (int _gid0=0;(_gid0&lt;3);_gid0+=1) {
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>    for (int _gid1=0;(_gid1&lt;3);_gid1+=1) {
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>      val_2 = 0.0;
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>      for (int _gid2=0;(_gid2&lt;3);_gid2+=1) {
+<a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a>        val_2 = (val_2+(val_4[((3*_gid0)+_gid2)]*val_6[(_gid1+(3*_gid2))])); // :reduction=t
+<a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a>      } // _gid2
+<a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a>      val_12[((3*_gid0)+_gid1)] = max(val_2, 0.0);
+<a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a>    } // _gid1
+<a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a>  } // _gid0
+<a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a>}
+</code></pre></div>
+</details>
+
+<h1 id="renderer">Renderer</h1>
+<p>TODO (Docs for Renderer/rendre-expr/extensible polyhedral compiler/etc) </p>
+<p>Here is a list of nodes used to render the kernel. </p>
+<h2 id="render-irs">Render IRs</h2>
+<h3 id="define-global">:DEFINE-GLOBAL</h3>
+<p>The node :DEFINE-GLOBAL declares a global variable in the kernel. (it corresponds to the argument of the kernel.)</p>
+<p>When optimizing define-global in-place, the 0th read is consumed.</p>
+<h3 id="aref">:AREF</h3>
+<p>:AREF corresponds to the following code:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>ID[*space]
+</code></pre></div></p>
+<ul>
+<li>storage-id[symbol] An index to the reference pointer optimized by the memory-planner.</li>
+<li>buffer[AbstractBuffer] The buffer to be accessed.</li>
+<li>space[Iteration-Space] The iteration space <code>:AREF</code> belongs to.</li>
+</ul>
+<p>When optimizing aref in-place, the 0th read is consumed.</p>
+<h3 id="endif">:ENDIF</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>} // endif
+</code></pre></div>
+<p>When optimizing endif in-place, the 0th read is consumed.</p>
+<h3 id="if">:IF</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>if(condition)
+</code></pre></div>
+When optimizing if in-place, the 0th read is consumed.</p>
+<h3 id="endfor">:ENDFOR</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>} // idx
+</code></pre></div>
+When optimizing endfor in-place, the 0th read is consumed.</p>
+<h3 id="for">:FOR</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>for(int idx=upfrom, below, by)
+</code></pre></div>
+<ul>
+<li>scope[keyword] If <code>:global</code>, the loop is parallelizable. One of :global, :local.</li>
+</ul>
+<p>When optimizing for in-place, the 0th read is consumed.</p>
+<h1 id="expr">EXPR</h1>
+<p>TODO </p>
+<h1 id="memory-planner">Memory Planner</h1>
+<p>TODO: Docs (MIP Solver) </p>
+<h1 id="scop-analyzer">Scop Analyzer</h1>
+<p>TODO: Docs for scop </p>
+  
+
+  
+      </div>
+      </div>
+      <script src="../../js/theme.js"></script>
+      
+      
+      
+    <script async src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    <script async src="../../search/main.js"></script>
+      
+      
+    </main>
+  </div>
+  
+  
+  
+  
+  
+  <footer class="border-top footer text-muted .position-absolute.bottom-0.start-50.translate-middle-x" style="padding-top:15px;">
+    <div class="container">
+      <div class="row">
+        <div class="col-md">
+          
+        </div>
+        
+      </div>
+    </div>
+  </footer>
+  
+  
+
+<div class="modal fade" id="searchModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="searchModal" aria-hidden="true">
+  <div class="modal-dialog modal-lg print-hide">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">Search</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input id="mkdocs-search-query" type="text" class="form-control" aria-label="Search" aria-describedby="inputGroup-sizing-default">
+        </div>
+        <div id="mkdocs-search-results">
+          Enter a keyword to search.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,586 @@
+
+<!DOCTYPE html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../css/bootstrap.min.css">
+  
+
+  
+    <meta http-equiv="content-language" content="en">
+  
+  
+
+  
+  <title>caten/gguf | Caten Documentation</title>
+  
+
+  
+
+  <link rel="stylesheet" href="../../css/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/default.min.css">
+  <link rel="stylesheet" href="../../css/vs.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  
+  
+  
+  <script async>var base_url = '../..';</script>
+  <script src="../../js/jquery-3.6.1.slim.min.js"></script>
+  <script src="../../js/bootstrap.bundle.min.js"></script>
+  <script async src="../../js/highlight.min.js"></script>
+
+  
+  
+</head>
+<body>
+  
+  
+    
+    <header>
+      <nav class="navbar navbar-expand-sm navbar-toggleable-sm  border-bottom box-shadow mb-3 ">
+        <div class="container">
+            <a class="navbar-brand text-body" asp-area="" href="/">
+              
+              
+                Caten Documentation
+              
+            </a>
+            <div class="print-hide">
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="d-none d-md-flex input-group mb-3">
+                
+                    <input class="form-control" type="search" id="searchbox" accesskey="/" placeholder="Search in here" aria-label="Search" aria-describedby="search-btn"/>
+                    <button class="btn btn-outline-secondary" type="button" id="search-btn" onclick="search(false);">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    
+                </div>
+            </div>
+            </div>
+        </div>
+    </nav>
+    <nav class="navbar border-bottom box-shadow mb-3 d-md-none print-hide">
+      <div class="container">
+          <div class="navbar-collapse d-flex">
+            <p>
+              <div class="d-flex input-group mb-3">
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_nav(this);" type="button" data-bs-toggle="collapse" data-bs-target="#nav" title="Show Navigation"><i class="bi bi-book"></i></button>
+                
+                
+                <input class="form-control" type="search" id="searchbox_mobile" accesskey="/" placeholder="Search in here" aria-label="Search">
+                <button class="btn btn-outline-secondary" type="button" onclick="search(true);"><i class="bi bi-search"></i></button>
+                
+                
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_toc(this);" type="button" data-bs-toggle="collapse" data-bs-target="#tol"><i class="bi bi-list-ul"></i></button>
+                
+                
+            </div>
+            </p>
+          </div>
+      </div>
+    </nav>
+  </header>
+    
+  
+  
+  
+  <div class="container">
+    <main role="main" class="pb-3">
+      <div class="row">
+        
+        
+    
+    <div class="col-12 col-md-2 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="nav"  style="overflow-x:scroll;">
+        <ul class="list-group list-group-flush">
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../..">Home</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../quickstart/">Quickstart</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../development/">Development</a></li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >API Reference</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.air/">caten/air</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.aasm/">caten/aasm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.codegen/">caten/codegen</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/api</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.tensor/">Tensor</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.differentiable_ops/">Func</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.module/">Module</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.models/">Model</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.initializers/">Initializers</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.shapetracker/">ShapeTracker</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.facet/">Facet API</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.state-dict/">StateDict</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/nn</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.activations/">Activation</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.convolutions/">Convolution</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.criterion/">Criterion</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.embeddings/">Embedding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.linears/">Linear</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.normalizations/">Normalization</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.padding/">Padding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.pooling/">Pooling</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.encoding/">Encoding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.optimizers/">Optimizers</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >Ready to use packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps.gpt2/">caten/apps.gpt2</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >External Packages</a>
+          <ul class="collapse list-group list-group-flush show ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-body" href="./">caten/gguf</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.onnx/">caten/oonx</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.llm/">caten/llm</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+      </ul>
+      </div>
+    </div>
+    
+       
+
+
+
+<div class="col-12 col-md-2 order-md-3 print-hide">
+  <div class="collapse d-md-block text-nowrap" id="tol" style="overflow-x:scroll;">
+    <span>In this article</span>
+    <hr />
+    <ul class="list-group list-group-flush">
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#gguf">GGUF</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#class-gguf" >[class] GGUF</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-make-gguf" >[function] make-gguf</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-load-gguf" >[function] load-gguf</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-load-gguf-url" >[function] load-gguf-url</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-gguf-state-dict" >[function] gguf-&gt;state-dict</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-gguf-bpe-tokenizer" >[function] gguf-&gt;bpe-tokenizer</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#struct-metadata" >[struct] Metadata</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#struct-tensor-info" >[struct] Tensor-Info</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<div class="col-12 col-md-8 print-main">
+  
+  <h1>caten/gguf</h1>
+  
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item active" aria-current="page">Caten Documentation</li>
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      
+      <li class="breadcrumb-item active" aria-current="page">External Packages</li>
+      
+      
+        
+        <li class="breadcrumb-item active" aria-current="page">caten/gguf</li>
+        
+        
+        
+
+        
+
+        
+
+      
+      
+      
+    </ol>
+  </nav>
+  
+  
+  <div class="container ml-0">
+    <div class="row">
+      
+      <div class="col-2 px-0" style="text-wrap: nowrap;">
+        
+        <a class="btn text-primary print-hide" href="../caten.apps.gpt2/"
+          title="caten/apps.gpt2"><i class="bi bi-chevron-left"></i></a>
+        
+        
+        <a class="btn text-primary print-hide" href="../caten.external.onnx/" title="caten/oonx"><i
+            class="bi bi-chevron-right"></i></a>
+        
+      </div>
+      <div class="col px-0" style="text-align: right;">
+        
+        
+        <small><span class='git-page-authors git-authors'></span></small>
+        <span>|</span>
+        
+        
+        
+        
+        
+      </div>
+      <div class="col-1 col-sm-2 px-0" style="text-align: right;text-wrap: nowrap;">
+        <button class="btn print-block d-none d-lg-inline" title="Print this article"
+          onclick="window.print();"><i class="bi bi-printer"></i></button>
+        <button class="btn print-visible d-none" onclick="print_normal();"
+          title="Open NewTab"><i class="bi bi-arrow-up-right-square"></i></button>
+        
+        
+        <a class="btn disabled print-hide d-none d-sm-inline"><i class="bi bi-pencil"></i></a>
+        
+        
+        <span class="dropdown print-hide">
+          <button class="btn btn" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown"
+            aria-expanded="false"><i class="bi bi-list"></i></button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
+            <li>
+              <h6 class="dropdown-header">Share via</h6>
+            </li>
+            <li><button class="btn dropdown-item"
+                onclick="share_to_twitter('caten/gguf | Caten Documentation','');"><i
+                  class="bi bi-twitter-x"></i>&nbsp;X.com</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_facebook();"><i
+                  class="bi bi-facebook"></i>&nbsp;Facebook</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_line();"><i
+                  class="bi bi-line"></i>&nbsp;LINE</button></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li><button class="btn dropdown-item" onclick="window.print();"><i class="bi bi-printer"></i>&nbsp;Print</button></li>
+            <li><button class="btn dropdown-item" id="page-url-copy-btn"><i class="bi bi-clipboard"></i>&nbsp;Copy Url to clipboard</button></li>
+            <li>
+              
+              
+              <a class="btn dropdown-item disabled"><i class="bi bi-pencil"></i>&nbsp;Edit this article</a>
+              
+              
+            </li>
+            <li><button class="btn dropdown-item" onclick="print_view();"><i
+                  class="bi bi-file-earmark-text"></i>&nbsp;View in EmbedMode</button></li>
+          </ul>
+        </span>
+      </div>
+    </div>
+  </div>
+  
+  <hr />
+  
+  
+  <h1 id="gguf">GGUF</h1>
+<p>Looking to work with quantized models? The <code>caten/gguf</code> package enables you to read quantized model weights directly from GGUF files, construct a StateDict, and create tokenizers for <code>caten/llm</code>. It's a convenient tool for integrating quantized models into your projects.</p>
+<p>Please note that the quantization functionality currently supports only a limited number of bit depths. We appreciate your understanding and are continuously working to expand this feature.</p>
+<p>(As of this writing, fp32/fp16 only, Int8 Quant will be added soon!)</p>
+<h3 id="class-gguf">[class] GGUF</h3>
+<p>A class that represents the GGUF file format.</p>
+<ul>
+<li>
+<p>(gguf-version gguf) returns a fixnum indicating the version of the GGUF file.</p>
+</li>
+<li>
+<p>(gguf-tensor-count gguf) returns the number of tensors in the GGUF file.</p>
+</li>
+<li>
+<p>(gguf-metadata-kv-count gguf) returns the number of metadata key-value pairs in the GGUF file.</p>
+</li>
+<li>
+<p>(gguf-metadata gguf) returns a list of metadata key-value pairs.</p>
+</li>
+<li>
+<p>(gguf-tensor-info gguf) returns a list of tensor information.</p>
+</li>
+<li>
+<p>(gguf-metadata-get gguf key) to get the corresponding value of the key where key is a string.</p>
+</li>
+</ul>
+<h3 id="function-make-gguf">[function] make-gguf</h3>
+<p>Creates GGUF from the given stream.</p>
+<p>The definition is described in the following link:</p>
+<ul>
+<li><a href="https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure">https://github.com/ggerganov/ggml/blob/master/docs/gguf.md#file-structure</a></li>
+</ul>
+<p>In short, this function accepts the following format:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>[Magic Number (4 Byte)] | [GGUF Version (4 Byte)] | [Tensor_Count (8 Byte)] | [Metadata_KV_Count (8 Byte)] | [Rest_data]
+</code></pre></div></p>
+<h3 id="function-load-gguf">[function] load-gguf</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>(load-gguf pathname)
+</code></pre></div>
+Creates a gguf file from the given pathname.</p>
+<h3 id="function-load-gguf-url">[function] load-gguf-url</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>(load-gguf-url url filename &amp;optional output-directory)
+</code></pre></div>
+Creates a gguf file from the given URL. The downloaded file will be saved in the output-directory named as filename. If the file already exists, it will not download the file again.</p>
+<h3 id="function-gguf-state-dict">[function] gguf-&gt;state-dict</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>(gguf-&gt;state-dict gguf)
+</code></pre></div>
+Creates a caten/state-dict from the given gguf file's tensor-info.</p>
+<h3 id="function-gguf-bpe-tokenizer">[function] gguf-&gt;bpe-tokenizer</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>(gguf-&gt;bpe-tokenizer gguf &amp;key (metadata-tokens &quot;tokenizer.ggml.tokens&quot;) (metadata-merges &quot;tokenizer.ggml.merges&quot;))
+</code></pre></div>
+<p>Creates a BPE tokenizer (which is caten/llm:Tokenizer) from the given gguf file's metadata.</p>
+<h3 id="struct-metadata">[struct] Metadata</h3>
+<p>A structure to represent metadata in GGUF file.</p>
+<p>(metadata-key metadata) to access the key typed as string. (metadata-value-type metadata) to access the type of value typed as a keyword. (metadata-value metadata) to access the value typed as a number, boolean, or simple-array.</p>
+<h3 id="struct-tensor-info">[struct] Tensor-Info</h3>
+<p>Tensor-Info stores the information of a tensor in the gguf file.
+(tensor-info-name tensor-info) returns the name of the tensor which is a string, (tensor-info-n-dimension tensor-info) returns the rank of the tensor. (tensor-info-dimensions tensor-info) returns the shape of the tensor. (tensor-info-ggml-type tensor-info) returns the data type of the tensor which is a keyword. (tensor-info-relative-offset tensor-info) returns the offset of the tensor in the gguf file. (tensor-info-absolute-offset tensor-info) returns the absolute offset of the tensor in the stream, (inconviniently buffers are stored with this offset but caten will precompute them). (tensor-info-buffer tensor-info) returns the parsed buffer of the tensor.</p>
+  
+
+  
+      </div>
+      </div>
+      <script src="../../js/theme.js"></script>
+      
+      
+      
+    <script async src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    <script async src="../../search/main.js"></script>
+      
+      
+    </main>
+  </div>
+  
+  
+  
+  
+  
+  <footer class="border-top footer text-muted .position-absolute.bottom-0.start-50.translate-middle-x" style="padding-top:15px;">
+    <div class="container">
+      <div class="row">
+        <div class="col-md">
+          
+        </div>
+        
+      </div>
+    </div>
+  </footer>
+  
+  
+
+<div class="modal fade" id="searchModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="searchModal" aria-hidden="true">
+  <div class="modal-dialog modal-lg print-hide">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">Search</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input id="mkdocs-search-query" type="text" class="form-control" aria-label="Search" aria-describedby="inputGroup-sizing-default">
+        </div>
+        <div id="mkdocs-search-results">
+          Enter a keyword to search.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

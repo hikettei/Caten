@@ -1,0 +1,712 @@
+
+<!DOCTYPE html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../css/bootstrap.min.css">
+  
+
+  
+    <meta http-equiv="content-language" content="en">
+  
+  
+
+  
+  <title>Activation | Caten Documentation</title>
+  
+
+  
+
+  <link rel="stylesheet" href="../../css/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/default.min.css">
+  <link rel="stylesheet" href="../../css/vs.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  
+  
+  
+  <script async>var base_url = '../..';</script>
+  <script src="../../js/jquery-3.6.1.slim.min.js"></script>
+  <script src="../../js/bootstrap.bundle.min.js"></script>
+  <script async src="../../js/highlight.min.js"></script>
+
+  
+  
+</head>
+<body>
+  
+  
+    
+    <header>
+      <nav class="navbar navbar-expand-sm navbar-toggleable-sm  border-bottom box-shadow mb-3 ">
+        <div class="container">
+            <a class="navbar-brand text-body" asp-area="" href="/">
+              
+              
+                Caten Documentation
+              
+            </a>
+            <div class="print-hide">
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="d-none d-md-flex input-group mb-3">
+                
+                    <input class="form-control" type="search" id="searchbox" accesskey="/" placeholder="Search in here" aria-label="Search" aria-describedby="search-btn"/>
+                    <button class="btn btn-outline-secondary" type="button" id="search-btn" onclick="search(false);">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    
+                </div>
+            </div>
+            </div>
+        </div>
+    </nav>
+    <nav class="navbar border-bottom box-shadow mb-3 d-md-none print-hide">
+      <div class="container">
+          <div class="navbar-collapse d-flex">
+            <p>
+              <div class="d-flex input-group mb-3">
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_nav(this);" type="button" data-bs-toggle="collapse" data-bs-target="#nav" title="Show Navigation"><i class="bi bi-book"></i></button>
+                
+                
+                <input class="form-control" type="search" id="searchbox_mobile" accesskey="/" placeholder="Search in here" aria-label="Search">
+                <button class="btn btn-outline-secondary" type="button" onclick="search(true);"><i class="bi bi-search"></i></button>
+                
+                
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_toc(this);" type="button" data-bs-toggle="collapse" data-bs-target="#tol"><i class="bi bi-list-ul"></i></button>
+                
+                
+            </div>
+            </p>
+          </div>
+      </div>
+    </nav>
+  </header>
+    
+  
+  
+  
+  <div class="container">
+    <main role="main" class="pb-3">
+      <div class="row">
+        
+        
+    
+    <div class="col-12 col-md-2 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="nav"  style="overflow-x:scroll;">
+        <ul class="list-group list-group-flush">
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../..">Home</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../quickstart/">Quickstart</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../development/">Development</a></li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >API Reference</a>
+          <ul class="collapse list-group list-group-flush show ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.air/">caten/air</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.aasm/">caten/aasm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.codegen/">caten/codegen</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/api</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.tensor/">Tensor</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.differentiable_ops/">Func</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.module/">Module</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.models/">Model</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.initializers/">Initializers</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.shapetracker/">ShapeTracker</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.facet/">Facet API</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.state-dict/">StateDict</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/nn</a>
+              <ul class="collapse list-group list-group-flush show">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-body" href="./">Activation</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.convolutions/">Convolution</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.criterion/">Criterion</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.embeddings/">Embedding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.linears/">Linear</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.normalizations/">Normalization</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.padding/">Padding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.pooling/">Pooling</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.encoding/">Encoding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.optimizers/">Optimizers</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >Ready to use packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps.gpt2/">caten/apps.gpt2</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >External Packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.gguf/">caten/gguf</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.onnx/">caten/oonx</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.llm/">caten/llm</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+      </ul>
+      </div>
+    </div>
+    
+       
+
+
+
+<div class="col-12 col-md-2 order-md-3 print-hide">
+  <div class="collapse d-md-block text-nowrap" id="tol" style="overflow-x:scroll;">
+    <span>In this article</span>
+    <hr />
+    <ul class="list-group list-group-flush">
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#activations">Activations</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-sigmoid" >[function] !sigmoid</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-hard-sigmoid" >[function] !hard-sigmoid</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-relu" >[function] !relu</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-leaky-relu" >[function] !leaky-relu</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-log-softmax" >[function] !log-softmax</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-elu" >[function] !elu</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-relu6" >[function] !relu6</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-softmax" >[function] !softmax</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-softplus" >[function] !softplus</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-softsign" >[function] !softsign</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-softshrink" >[function] !softshrink</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-celu" >[function] !celu</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-silu" >[function] !silu</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-logsigmoid" >[function] !logsigmoid</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-gelu" >[function] !gelu</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-selu" >[function] !selu</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-mish" >[function] !mish</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-hardswish" >[function] !hardswish</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-hardtanh" >[function] !hardtanh</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-softmin" >[function] !softmin</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<div class="col-12 col-md-8 print-main">
+  
+  <h1>Activation</h1>
+  
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item active" aria-current="page">Caten Documentation</li>
+      
+      
+      
+      
+      
+      
+      
+      
+      <li class="breadcrumb-item active" aria-current="page">API Reference</li>
+      
+      
+        
+
+        
+
+        
+
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">caten/nn</li>
+        
+        
+        
+        
+        <li class="breadcrumb-item active" aria-current="page">Activation</li>
+        
+        
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+        
+
+      
+      
+      
+      
+      
+      
+      
+    </ol>
+  </nav>
+  
+  
+  <div class="container ml-0">
+    <div class="row">
+      
+      <div class="col-2 px-0" style="text-wrap: nowrap;">
+        
+        <a class="btn text-primary print-hide" href="../caten.api.state-dict/"
+          title="StateDict"><i class="bi bi-chevron-left"></i></a>
+        
+        
+        <a class="btn text-primary print-hide" href="../caten.nn.convolutions/" title="Convolution"><i
+            class="bi bi-chevron-right"></i></a>
+        
+      </div>
+      <div class="col px-0" style="text-align: right;">
+        
+        
+        <small><span class='git-page-authors git-authors'></span></small>
+        <span>|</span>
+        
+        
+        
+        
+        
+      </div>
+      <div class="col-1 col-sm-2 px-0" style="text-align: right;text-wrap: nowrap;">
+        <button class="btn print-block d-none d-lg-inline" title="Print this article"
+          onclick="window.print();"><i class="bi bi-printer"></i></button>
+        <button class="btn print-visible d-none" onclick="print_normal();"
+          title="Open NewTab"><i class="bi bi-arrow-up-right-square"></i></button>
+        
+        
+        <a class="btn disabled print-hide d-none d-sm-inline"><i class="bi bi-pencil"></i></a>
+        
+        
+        <span class="dropdown print-hide">
+          <button class="btn btn" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown"
+            aria-expanded="false"><i class="bi bi-list"></i></button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
+            <li>
+              <h6 class="dropdown-header">Share via</h6>
+            </li>
+            <li><button class="btn dropdown-item"
+                onclick="share_to_twitter('Activation | Caten Documentation','');"><i
+                  class="bi bi-twitter-x"></i>&nbsp;X.com</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_facebook();"><i
+                  class="bi bi-facebook"></i>&nbsp;Facebook</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_line();"><i
+                  class="bi bi-line"></i>&nbsp;LINE</button></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li><button class="btn dropdown-item" onclick="window.print();"><i class="bi bi-printer"></i>&nbsp;Print</button></li>
+            <li><button class="btn dropdown-item" id="page-url-copy-btn"><i class="bi bi-clipboard"></i>&nbsp;Copy Url to clipboard</button></li>
+            <li>
+              
+              
+              <a class="btn dropdown-item disabled"><i class="bi bi-pencil"></i>&nbsp;Edit this article</a>
+              
+              
+            </li>
+            <li><button class="btn dropdown-item" onclick="print_view();"><i
+                  class="bi bi-file-earmark-text"></i>&nbsp;View in EmbedMode</button></li>
+          </ul>
+        </span>
+      </div>
+    </div>
+  </div>
+  
+  <hr />
+  
+  
+  <h1 id="activations">Activations</h1>
+<h3 id="function-sigmoid">[function] !sigmoid</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>(!sigmoid x)
+</code></pre></div>
+Applies the Sigmoid function element-wise to the input tensor.</p>
+<h3 id="function-hard-sigmoid">[function] !hard-sigmoid</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>(!hard-sigmoid x &amp;key (alpha 0.2) (beta 0.5))
+</code></pre></div>
+Applies the HardSigmoid function element-wise to the input tensor.</p>
+<h3 id="function-relu">[function] !relu</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>(!relu x)
+</code></pre></div>
+Applies the ReLU function element-wise to the input tensor.</p>
+<h3 id="function-leaky-relu">[function] !leaky-relu</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>(!leaky-relu x &amp;key (neg-slope 1e-3))
+</code></pre></div>
+Applies the LeakyReLU function element-wise to the input tensor.</p>
+<h3 id="function-log-softmax">[function] !log-softmax</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>(!log-softmax x &amp;key (axis -1))
+</code></pre></div>
+Applies the LogSoftmax function element-wise to the input tensor.</p>
+<h3 id="function-elu">[function] !elu</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>(!elu x &amp;key (alpha 1.0))
+</code></pre></div>
+Applies the ELU function element-wise to the input tensor.</p>
+<h3 id="function-relu6">[function] !relu6</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>(!relu6 x)
+</code></pre></div>
+Applies the ReLU6 function element-wise to the input tensor.</p>
+<h3 id="function-softmax">[function] !softmax</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>(!softmax x &amp;key (axis -1))
+</code></pre></div>
+Applies the Softmax function to the input tensor.</p>
+<h3 id="function-softplus">[function] !softplus</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>(!softplus x &amp;key (beta 1.0))
+</code></pre></div>
+Applies the Softplus function element-wise to the input tensor.</p>
+<h3 id="function-softsign">[function] !softsign</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>(!softsign x)
+</code></pre></div>
+Applies the Softsign function element-wise to the input tensor.</p>
+<h3 id="function-softshrink">[function] !softshrink</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>(!softshrink x &amp;key (lmd 0.5))
+</code></pre></div>
+Applies the SoftShrink function element-wise to the input tensor.</p>
+<h3 id="function-celu">[function] !celu</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>(!celu x &amp;key (alpha 1.0))
+</code></pre></div>
+Applies the CeLU function element-wise to the input tensor.</p>
+<h3 id="function-silu">[function] !silu</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>(!silu x)
+</code></pre></div>
+Applies the SiLU function element-wise to the input tensor.</p>
+<h3 id="function-logsigmoid">[function] !logsigmoid</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>(!logsigmoid x)
+</code></pre></div>
+Applies the LogSigmoid function element-wise to the input tensor.</p>
+<h3 id="function-gelu">[function] !gelu</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>(!gelu x &amp;key (approx :tanh))
+</code></pre></div>
+Applies the GeLU activation to the input tensor. There are two ways to approximate the GeLU function. <code>:tanh</code> to use tanh. <code>:sigmoid</code> to use sigmoid.</p>
+<h3 id="function-selu">[function] !selu</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>(!selu x)
+</code></pre></div>
+Applies the SeLU function element-wise to the input tensor.</p>
+<h3 id="function-mish">[function] !mish</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>(!mish x)
+</code></pre></div>
+Applies the Mish function element-wise to the input tensor.</p>
+<h3 id="function-hardswish">[function] !hardswish</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>(!hardswish x)
+</code></pre></div>
+Applies the HardSwish function element-wise to the input tensor.</p>
+<h3 id="function-hardtanh">[function] !hardtanh</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>(!hardtanh x &amp;key (min_val -1.0) (max_val 1.0))
+</code></pre></div>
+Applies the HardTanh function element-wise to the input tensor.</p>
+<h3 id="function-softmin">[function] !softmin</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>(!softmin x)
+</code></pre></div>
+Applies the Softmin function element-wise to the input tensor.</p>
+  
+
+  
+      </div>
+      </div>
+      <script src="../../js/theme.js"></script>
+      
+      
+      
+    <script async src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    <script async src="../../search/main.js"></script>
+      
+      
+    </main>
+  </div>
+  
+  
+  
+  
+  
+  <footer class="border-top footer text-muted .position-absolute.bottom-0.start-50.translate-middle-x" style="padding-top:15px;">
+    <div class="container">
+      <div class="row">
+        <div class="col-md">
+          
+        </div>
+        
+      </div>
+    </div>
+  </footer>
+  
+  
+
+<div class="modal fade" id="searchModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="searchModal" aria-hidden="true">
+  <div class="modal-dialog modal-lg print-hide">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">Search</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input id="mkdocs-search-query" type="text" class="form-control" aria-label="Search" aria-describedby="inputGroup-sizing-default">
+        </div>
+        <div id="mkdocs-search-results">
+          Enter a keyword to search.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
