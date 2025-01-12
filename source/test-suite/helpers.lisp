@@ -80,7 +80,7 @@
 
 (defun transfer-to-lisp (tensor)
   (ctx:with-contextvar (:BACKEND "LISP")
-    (change-facet (change-facet tensor :array) :tensor)))
+    (!reshape (change-facet (change-facet tensor :array) :tensor) (shape tensor))))
 
 (defun ~= (error) #'(lambda (x y) (<= (abs (- x y)) error)))
 
