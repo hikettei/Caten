@@ -70,10 +70,14 @@
 ;; TODO:
 ;; - Tile Optimization Test (band node relocation works? 2d tiling works?)
 
-;; ~~ Hand Optimized Kernel Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Hand Optimized Kernel Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun print-bp (si) ;; utils for debugging in repl
+  (caten/codegen/blueprint:print-blueprint (getattr si :blueprint) t))
+
 (define-auto-scheduler (Test/CPU-Auto-Scheduler ()) :n-global-loop 1)
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Test/CPU-Auto-Scheduler)
-      (opt (make-instance 'Parallel) 0))
-    ))
+      (opt (make-instance 'Parallel) 0)
+      )
+    (print-bp raw)))
