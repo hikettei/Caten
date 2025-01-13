@@ -30,9 +30,10 @@
   (declare (type keyword dtype) (type fixnum a b) (type (or symbol fixnum) s1 s2 s3 s4 s5 s6))
   (let ((dtype (string-downcase (princ-to-string (->cdtype dtype)))))
     (with-output-to-string (out)
-      (macrolet ((c (designator &rest args) `(format out ,designator ,@args)))
+      (macrolet ((c (designator &rest args) `(format out ,designator ,@args))
+                 (maybe-mul (a b) `(if (zerop ,a) 0 (if (numberp ,b) (* ,a ,b) (format nil "~(~a~)*~(~a~)" ,a ,b)))))
         ;; Header declaration: static inline void _gemm_...(float *a, float *b, float *c0 ... *cn)
-        (c "static inline void _gemm_~ax~a_~(~a~)_tc(" dtype a b)
+        (c "static inline void _gemm_~(~a~)_~ax~a_tc(" dtype a b)
         (c "~a *a, ~a *b, " dtype dtype)
         ;; unroll by I
         (dotimes (i a) (c "float *c~a, " i))
@@ -40,11 +41,11 @@
         (progn
           ;; TODO Symbolic Stride
           (dotimes (kth b)
-            (c "  ~a* _a~a = *(a+~a);" dtype kth (* kth s2))
-            (c " ~a* _b~a = *(b+~a);" dtype kth (* kth s3))
+            (c "  ~a* _a~a = *(a+~a);" dtype kth (maybe-mul kth s2))
+            (c " ~a* _b~a = *(b+~a);" dtype kth (maybe-mul kth s3))
             (c "~%  ")
             (dotimes (i a)
-              (c "*c~a += (*(_a~a))*(*(_b~a+~a)); " i kth kth (* i s4)))
+              (c "*c~a += (*(_a~a))*(*(_b~a+~a)); " i kth kth (maybe-mul i s4)))
             (c "~%")))
         (c "}")))))
 
