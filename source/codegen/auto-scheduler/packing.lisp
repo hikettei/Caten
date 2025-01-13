@@ -5,6 +5,10 @@ The class `Vectorize` will provide the information of the vectorized region, pas
 TensorCore optimization is also implemented as a part of Vectorize.
 ")
   (:use :cl :caten/air :caten/codegen/polyhedral-ast)
+  (:import-from
+   :caten/codegen/expr
+   #:ExprMeta
+   #:ExprMeta-comment)
   (:export
    #:Vectorize
    #:TensorCore
@@ -14,6 +18,8 @@ TensorCore optimization is also implemented as a part of Vectorize.
    #:Vectorize-Config-Vectorize
    #:Vectorize-Config-Expr)
   (:export
+   #:Vectorized
+   #:vectorized-intrinsic
    #:expr-node-wmma-p))
 
 (in-package :caten/codegen/packing)
@@ -54,6 +60,10 @@ TensorCore optimization is also implemented as a part of Vectorize.
           ;; (replace-blueprint )
           (assert (node-p new-user) () "vectorizer-rewrite must return a node, getting ~a. (vectorize-rule=~a)" new-user vectorize)
           (setf (user-name user) (string-upcase (princ-to-string (node-id new-user))))
+          ;; TODO(Hikettei) refactor this code to:
+          ;; - Add something like :render-node-pool attribute in Schedule-Item
+          ;; - And push the new-user to the pool instead of :blueprint
+          ;; - When finding a user, search from the pool instead of :blueprint.
           (push new-user (getattr schedule-item :blueprint))
           (late-rewrite-pack->unroll user :unrolled-as unroll))))))
 
@@ -123,7 +133,14 @@ If some users are failed to be vectorized, they are rewritten as unroll."
                   (astif-condition new-if) (astif-condition new-if))
             new-if))))
    ast))
-;; ~~ WMMA Rewriter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ ExprMeta  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Vectorized (ExprMeta)
+  ((intrinsic :initarg :intrinsic :type keyword :accessor vectorized-intrinsic)))
+
+(defmethod exprmeta-comment ((expr Vectorized))
+  (declare (type Vectorized expr))
+  (format nil "Vectorized: ~a" (vectorized-intrinsic expr)))
+
 (defun %expr-node-wmma-p (expr)
   "Returns T if the expr is directly rewritable as TensorCore."
   (declare (type node expr))

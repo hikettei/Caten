@@ -1,6 +1,6 @@
 (defpackage :caten/test-suite/test-kernel-opt
   (:documentation "Tests all optimization rule defined in the ./source/codegen/search/engine.lisp")
-  (:use :cl :rove :caten/api :caten/nn :caten/runtime :caten/codegen/scheduler :caten/air :caten/codegen/packing
+  (:use :cl :rove :caten/api :caten/nn :caten/runtime :caten/codegen/scheduler :caten/air :caten/codegen/packing :caten/codegen/renderer
    :caten/codegen/auto-scheduler :caten/codegen/expr)
   (:import-from
    :caten/codegen/config
@@ -76,17 +76,17 @@
 
 (defun print-schedule (si)
   (print (getattr si :polyhedral)))
-;; todo: remove tc meta first
-(defclass TCMeta (ExprMeta) nil)
+
 (defun cpu-tc-rewriter (env)
   (let ((expr (vectorize-config-expr env)))
-    ;; TODO: Adding ExprMeta to express vectorize?
-    (setf (getattr expr :meta) (make-instance 'TCMeta))
+    (setf (getattr expr :meta) (make-instance 'Vectorized :intrinsic :gemm4x4))
     expr))
 
 (define-auto-scheduler
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
-    :vectorizes (list (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'cpu-tc-rewriter))
+    :vectorizes
+    (list
+     (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'cpu-tc-rewriter))
     ;; :cost-functions (:sum (:vectorized-area :profile :coincidence)) (TODO)
     )
 
@@ -94,10 +94,13 @@
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
 ;; [TODO] Vectorizeを適用すると(getattr node :global-unrolled-space)を固定する。で，val_2_x_x_xは:global-unroll-spaceベースで決定する。
 ;; - これがEXPRごとで共有できないとvectorize失敗になる
-;; - 1. Add: :CALL
+;; - 1. Add: :VECTORIZED (or implement: expr-vectorize)
+;;  - LOAD, STORE SIMD Rewriting rule...
+;;  - Add the concept of pack/unpack
 ;; - 2. Add: SIMD (float4 mutation, __mm256, etc...)
 ;; - 3. expr-node-wmma-p => Use Simplififer!
 ;; - 4. TransposedGemm is properly vectorized?
+;; - 5. Fix: PACK+TILE
 ;; [TODO] Interchange: only counts visible bands
 ;; [TODO] Late unroll won't update the index? -> fix it first
 ;; [TODO] how to judge the elements are contiguous?
