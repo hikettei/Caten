@@ -22,16 +22,16 @@
 (defcfun "sel_registerName" :pointer (name :pointer))
 (defcfun "dispatch_data_create" :pointer (data :pointer) (offset :size) (x :pointer) (y :pointer))
 (defcfun "objc_getClass" :pointer (name :string))
+(defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
+(defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
+(defcfun "make_callback_closure" :pointer (callback :pointer))
+(defcfun "free_callback_closure" :pointer (callback :pointer))
 
 (defun sel (name) (with-foreign-string (*name name) (sel-registername *name)))
 (defmacro msg (ptr selector restype &rest args)
   `(foreign-funcall "objc_msgSend" :pointer ,ptr :pointer (sel ,selector) ,@args ,restype))
 (defun to-ns-str (str) (with-foreign-string (*str str) (msg (objc-getclass "NSString") "stringWithUTF8String:" :pointer :pointer *str)))
 ;; ~~ MTLCompiler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
-(defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
-(defcfun "make_callback_closure" :pointer (callback :pointer))
-(defcfun "free_callback_closure" :pointer (callback :pointer))
 ;; [TODO] METAL Parallel Compilation
 ;; CFFI assumes `defcallback` is placed in the toplevel of the file.
 ;; i.e.: (callback callback) will not create a new closure which is required to work MTLCompiler in parallel.
@@ -153,6 +153,10 @@
 (defmethod bref ((buffer MetalBuffer) idx)
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
+;; ~~~ Custom Optimization  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun render-wmma-kernel ()
+  
+  )
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
 (define-auto-scheduler (Metal-Auto-Scheduler ()) :n-global-loop 3)
