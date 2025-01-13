@@ -30,7 +30,9 @@ TensorCore optimization is also implemented as a part of Vectorize.
    #:expr-node-simd-load-p
    #:expr-rewrite-as-simd-load
    #:expr-node-simd-store-p
-   #:expr-rewrite-as-simd-store))
+   #:expr-rewrite-as-simd-store
+   #:expr-node-simd-upcast-p
+   #:expr-rewrite-as-simd-upcast))
 
 (in-package :caten/codegen/packing)
 ;; ~~ Vectorize ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -209,6 +211,7 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 ;; ~~ Vectorize Rewriters ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defsimplifier
     (rewrite-load-as-simd :speed 0)
+    ;; TODO: :LOAD :ALLOCATE (when loading scalar)
     ((:LOAD ((:AREF () :storage-id x :buffer xb :space xi)) :value value)
      ->
      ((node graph)
@@ -226,8 +229,11 @@ If some users are failed to be vectorized, they are rewritten as unroll."
        :TMP :VECTORIZED_PLACEHOLDER (node-writes node) nil
        :args (list (list x xb xi) (list y yb yi))))))
 
-(defun expr-node-simd-p (env rewriter)
+(defun expr-node-simd-p (env rewriter &key (allow-always nil))
   (declare (type Vectorize-Config env))
+  (when (typep (getattr (vectorize-config-expr env) :meta :allow-undefined t) 'Vectorized)
+    (return-from expr-node-simd-p nil))
+  (when allow-always (return-from expr-node-simd-p t))
   (let ((graph (copy-graph (expr-graph (getattr (vectorize-config-expr env) :EXPR)))))
     (funcall rewriter graph)
     (verify-graph graph)
@@ -258,6 +264,14 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 (defun expr-rewrite-as-simd-store (env name)
   (declare (type Vectorize-Config env))
   (expr-node-rewrite-as-simd env #'expr-node-simd-store-p name :unpack))
+
+(defun expr-node-simd-upcast-p (env)
+  (declare (type Vectorize-Config env))
+  (expr-node-simd-p env #'identity :allow-always t))
+
+(defun expr-rewrite-as-simd-upcast (env name)
+  (declare (type Vectorize-Config env))
+  (expr-node-rewrite-as-simd env #'expr-node-simd-upcast-p name :compute))
 ;; ~~ Pack/Unpack Insertion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Consider the following blueprint:
 ;; ```
@@ -266,8 +280,12 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 ;; ```
 ;; EXPR1 returns `unpacked` values and EXPR2 expects `packed` values. Here the compiler should insert pack/unpack nodes.
 ;; The function `blueprint-upcast-inference` will infer the pack/unpack nodes and insert them into the blueprint.
+(defun expr-node-insert-load ())
+(defun expr-node-insert-store ())
 (defun blueprint-upcast-inference (blueprints schedule-item)
+  "Inserts PACK/UNPACK when the EXPR is trying to access the UNPACK/PACK-ed elements respectively."
   (declare (type list blueprints) (type node schedule-item))
   (let ((variable-table (make-hash-table)))
-
+    (print blueprints)
+    nil
     ))

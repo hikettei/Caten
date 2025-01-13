@@ -81,9 +81,10 @@
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
     :vectorizes
     (list
-     (Vectorize :gemm4x4 `(4 4)  :applicable-p #'expr-node-wmma-p       :rewriter #'(lambda (x) (expr-rewrite-as-tensorcore x :gemm4x4)))
-     (Vectorize :simd-load `(4)  :applicable-p #'expr-node-simd-load-p  :rewriter #'(lambda (x) (expr-rewrite-as-simd-load x :load)))
-     (Vectorize :simd-store `(4) :applicable-p #'expr-node-simd-store-p :rewriter #'(lambda (x) (expr-rewrite-as-simd-store x :store))))
+     (Vectorize :gemm4x4 `(4 4)  :applicable-p #'expr-node-wmma-p         :rewriter #'(lambda (x) (expr-rewrite-as-tensorcore x :gemm4x4)))
+     (Vectorize :simd-load `(4)  :applicable-p #'expr-node-simd-load-p    :rewriter #'(lambda (x) (expr-rewrite-as-simd-load x :load)))
+     (Vectorize :simd-store `(4) :applicable-p #'expr-node-simd-store-p   :rewriter #'(lambda (x) (expr-rewrite-as-simd-store x :store)))
+     (Vectorize :simd-upcast `(4) :applicable-p #'expr-node-simd-upcast-p :rewriter #'(lambda (x) (expr-rewrite-as-simd-upcast x :upcast))))
     ;; :cost-functions (:sum (:vectorized-area :profile :coincidence)) (TODO)
     )
 
@@ -176,11 +177,8 @@
 (deftest hand-optimized-cpu-conv2d-relu-test
   (let ((raw (get-convnd-relu-schedule)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-      (opt (make-instance 'Packing :amount 2) 0)
-      (opt (make-instance 'Packing :amount 2) 1)
-      (opt (make-instance 'Unroll :amount 3) 5)
-      (opt (make-instance 'Unroll :amount 5) 6)
-      (opt (make-instance 'Unroll :amount 5) 7)
+      (opt (make-instance 'Packing :amount 4) 6)
+      (opt (make-instance 'Packing :amount 4) 7)
       
       )
     (print-bp raw)))
