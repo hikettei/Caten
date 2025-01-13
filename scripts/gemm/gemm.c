@@ -17,13 +17,14 @@
 // Optimized by AutoScheduler
 #define NB 16
 #define KB 16
-
-static inline void gemm4x4(const float *a, const float *b, float *c1, float *c2, float *c3, float *c4, int nr) {
-  float sum1 = *c1; float sum2 = *c2; float sum3 = *c3; float sum4 = *c4;
+// 
+static inline void gemm4x4(const float *a, float *b, float *c1, float *c2, float *c3, float *c4, int nr)
+{
   for (int k=0; k<4; k++) {
-    sum1 += a[k] * b[k * nr+0]; sum2 += a[k] * b[k * nr+1]; sum3 += a[k] * b[k * nr+2]; sum4 += a[k] * b[k * nr+3];
+    float a0 = *(a+k);
+    float* b0 = (b+k*nr);
+    *c1 += a0 * *(b0+0); *c2 += a0 * *(b0+1); *c3 += a0 * *(b0+2); *c4 += a0 * *(b0+3);
   }
-  *c1 = sum1; *c2 = sum2; *c3 = sum3; *c4 = sum4;
 }
 
 void gemm(int M, int N, int K,
@@ -54,7 +55,7 @@ int main() {
   int M = 512;
   int N = 512;
   int K = 512;
-  int n_sample = 100;
+  int n_sample = 300;
 
   float *A = (float*)malloc(M * N * sizeof(float));
   float *B = (float*)malloc(N * K * sizeof(float));
