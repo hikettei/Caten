@@ -6,6 +6,7 @@
   :depends-on ("caten.codegen" "caten.runtime" "cffi" "flexi-streams" "float-features" "babel" "cl-pack" "cl-cpus" "lparallel")
   :components ((:file "lisp")
                (:file "native")
+               (:file "helpers/simd")
                (:file "clang")
                (:cffi-wrapper-file "helpers/callback" :soname "callback_helper")
                (:file "metal")
