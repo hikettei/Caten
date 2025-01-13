@@ -94,6 +94,10 @@
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
 ;; [TODO] Vectorizeを適用すると(getattr node :global-unrolled-space)を固定する。で，val_2_x_x_xは:global-unroll-spaceベースで決定する。
 ;; - これがEXPRごとで共有できないとvectorize失敗になる
+;; - 1. Add: :CALL
+;; - 2. Add: SIMD (float4 mutation, __mm256, etc...)
+;; - 3. expr-node-wmma-p => Use Simplififer!
+;; - 4. TransposedGemm is properly vectorized?
 ;; [TODO] Interchange: only counts visible bands
 ;; [TODO] Late unroll won't update the index? -> fix it first
 ;; [TODO] how to judge the elements are contiguous?
@@ -119,7 +123,7 @@
       (opt (make-instance 'Packing :amount 1) 0)
       (opt (make-instance 'Packing :amount 4) 1)
       (opt (make-instance 'Packing :amount 4) 2)
-      ;(opt (make-instance 'Unroll :amount 4) 0)
+      ;(opt (make-instance 'Unroll :amount 1) 0)
       ;(opt (make-instance 'Unroll :amount 4) 1)
       ;(opt (make-instance 'Unroll :amount 4) 2)
       ;; 2D Tiling (16, 16)
