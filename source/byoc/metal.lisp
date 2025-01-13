@@ -8,7 +8,7 @@
    #:define-auto-scheduler))
 
 (in-package :caten/byoc/metal)
-
+;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defconstant +request-type-compile+ 13)
 
 (defun ensure-foreign-library ()
@@ -32,7 +32,12 @@
 (defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
 (defcfun "make_callback_closure" :pointer (callback :pointer))
 (defcfun "free_callback_closure" :pointer (callback :pointer))
-
+;; [TODO] METAL Parallel Compilation
+;; CFFI assumes `defcallback` is placed in the toplevel of the file.
+;; i.e.: (callback callback) will not create a new closure which is required to work MTLCompiler in parallel.
+;; (If we only targeting sbcl) defcallback is just an wrapper of sb-alien:alien-lambda (https://koji-kojiro.github.io/sb-docs/build/html/sb-alien/macro/ALIEN-LAMBDA.html)
+;; - 1. Use sb-alien:alien-lambda directly to create a new closure. (keep defcallback for ccl-bin/etc, etc)
+;; - 2. If running on SBCL, BACKEND=METAL and PARALLEL>1 is available by using (1.) otherwise produce an error.
 (defvar *callback-handler*)
 (defcallback callback :void
     ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
