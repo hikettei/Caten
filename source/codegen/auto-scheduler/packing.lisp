@@ -9,7 +9,8 @@ TensorCore optimization is also implemented as a part of Vectorize.
    :caten/codegen/expr
    #:ExprMeta
    #:ExprMeta-comment
-   #:copy-expr)
+   #:copy-expr
+   #:expr-graph)
   (:export
    #:Vectorize
    #:TensorCore
@@ -22,7 +23,11 @@ TensorCore optimization is also implemented as a part of Vectorize.
    #:Vectorized
    #:vectorized-intrinsic
    #:expr-node-wmma-p
-   #:expr-rewrite-as-tensorcore))
+   #:expr-rewrite-as-tensorcore
+   #:expr-node-simd-load-p
+   #:expr-rewrite-as-simd-load
+   #:expr-node-simd-store-p
+   #:expr-rewrite-as-simd-store))
 
 (in-package :caten/codegen/packing)
 ;; ~~ Vectorize ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -142,11 +147,14 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 (defclass Vectorized (ExprMeta)
   ((intrinsic :initarg :intrinsic :type keyword :accessor vectorized-intrinsic)))
 
+(defclass SIMDPack (Vectorized) nil)
+(defclass SIMDUnpack (Vectorized) nil)
+
 (defmethod exprmeta-comment ((expr Vectorized))
   (declare (type Vectorized expr))
   (format nil "Vectorized: ~a" (vectorized-intrinsic expr)))
 ;; ~~ WMMA Rewriter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defnode (:TMP :VECTORIZED_WMMA_PLACEHOLDER)
+(defnode (:TMP :VECTORIZED_PLACEHOLDER)
     ()
     "A placeholder node (only used in the function wmma->vectorized-wmma) to indicate the wmma node is replaced w/ TensorCore"
     :slots ((args :type list)))
@@ -168,7 +176,7 @@ If some users are failed to be vectorized, they are rewritten as unroll."
                 (>= (length (iteration-space-shape yi)) 2)
                 (>= (length (iteration-space-shape zi)) 2))
            (make-node
-            :TMP :VECTORIZED_WMMA_PLACEHOLDER (node-writes node) nil
+            :TMP :VECTORIZED_PLACEHOLDER (node-writes node) nil
             :args (list (list x xb xi) (list y yb yi) (list z zb zi)))))))
 
 (defun %expr-node-wmma-p (expr)
@@ -185,7 +193,7 @@ If some users are failed to be vectorized, they are rewritten as unroll."
     (wmma->vectorized-wmma graph)
     (verify-graph graph)
     ;; Note: ensure only WMMA is left. (e.g. WMMA+Sin is not allowed)
-    (when (and (= (length (graph-nodes graph)) 1) (eql :VECTORIZED_WMMA_PLACEHOLDER (node-type (car (graph-nodes graph)))))
+    (when (and (= (length (graph-nodes graph)) 1) (eql :VECTORIZED_PLACEHOLDER (node-type (car (graph-nodes graph)))))
       (let ((node (car (graph-nodes graph))))
         (getattr node :args)))))
 
@@ -206,6 +214,58 @@ If some users are failed to be vectorized, they are rewritten as unroll."
     (setf (getattr expr :EXPR) (copy-expr (getattr expr :EXPR))
           (getattr expr :meta) (make-instance 'Vectorized :intrinsic name))
     expr))
+;; ~~ Vectorize Rewriters ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defsimplifier
+    (rewrite-load-as-simd :speed 0)
+    ((:LOAD ((:AREF () :storage-id x :buffer xb :space xi)) :value value)
+     ->
+     ((node graph)
+      (make-node
+       :TMP :VECTORIZED_PLACEHOLDER (node-writes node) nil
+       :args (list (list x xb xi) value)))))
+
+(defsimplifier
+    (rewrite-store-as-simd :speed 0)
+    ((:MOVE ((:AREF () :storage-id x :buffer xb :space xi)
+             (:AREF () :storage-id y :buffer yb :space yi)))
+     ->
+     ((node graph)
+      (make-node
+       :TMP :VECTORIZED_PLACEHOLDER (node-writes node) nil
+       :args (list (list x xb xi) (list y yb yi))))))
+
+(defun expr-node-simd-p (env rewriter)
+  (declare (type Vectorize-Config env))
+  (let ((graph (copy-graph (expr-graph (getattr (vectorize-config-expr env) :EXPR)))))
+    (funcall rewriter graph)
+    (verify-graph graph)
+    (when (and (= (length (graph-nodes graph)) 1)
+               (eql :VECTORIZED_PLACEHOLDER (node-type (car (graph-nodes graph)))))
+      (getattr (car (graph-nodes graph)) :args))))
+
+(defun expr-node-rewrite-as-simd (env predicate name)
+  (declare (type Vectorize-Config env))
+  (let ((expr (copy-node (vectorize-config-expr env)))
+        (cfg  (funcall predicate env)))
+    (assert cfg () "expr-rewrite-as-tensorcore: the expr is not wmma.")
+    (setf (getattr expr :EXPR) (copy-expr (getattr expr :EXPR))
+          (getattr expr :meta) (make-instance 'Vectorized :intrinsic name))
+    expr))
+
+(defun expr-node-simd-load-p (env)
+  (expr-node-simd-p env #'rewrite-load-as-simd))
+
+(defun expr-rewrite-as-simd-load (env name)
+  (declare (type Vectorize-Config env))
+  (expr-node-rewrite-as-simd env #'expr-node-simd-load-p name))
+
+(defun expr-node-simd-store-p (env)
+  (declare (type Vectorize-Config env))
+  (expr-node-simd-p env #'rewrite-store-as-simd))
+
+(defun expr-rewrite-as-simd-store (env name)
+  (declare (type Vectorize-Config env))
+  (expr-node-rewrite-as-simd env #'expr-node-simd-store-p name))
 ;; ~~ Pack/Unpack Insertion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Consider the following blueprint:
 ;; ```

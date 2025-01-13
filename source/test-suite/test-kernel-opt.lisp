@@ -81,7 +81,9 @@
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
     :vectorizes
     (list
-     (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'(lambda (x) (expr-rewrite-as-tensorcore x :gemm4x4))))
+     (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'(lambda (x) (expr-rewrite-as-tensorcore x :gemm4x4)))
+     (Vectorize :simd-load `(4) :applicable-p #'expr-node-simd-load-p :rewriter #'(lambda (x) (expr-rewrite-as-simd-load x :pack)))
+     (Vectorize :simd-store `(4) :applicable-p #'expr-node-simd-store-p :rewriter #'(lambda (x) (expr-rewrite-as-simd-store x :store))))
     ;; :cost-functions (:sum (:vectorized-area :profile :coincidence)) (TODO)
     )
 
@@ -119,7 +121,7 @@
       ;; Scheduling Priority:
       ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
       ;; Apply packing first to use TensorCore MULADD
-      (opt (make-instance 'Packing :amount 1) 0)
+      ;; (opt (make-instance 'Packing :amount 1) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
       (opt (make-instance 'Packing :amount 4) 1)
       (opt (make-instance 'Packing :amount 4) 2)
       ;(opt (make-instance 'Unroll :amount 1) 0)
@@ -166,7 +168,10 @@
   (let ((raw (get-layernorm-schedule)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       (opt (make-instance 'Packing :amount 4) 0)
-      (opt (make-instance 'Packing :amount 4) 1))
+      (opt (make-instance 'Packing :amount 4) 1)
+      (opt (make-instance 'Packing :amount 4) 2)
+      (opt (make-instance 'Packing :amount 4) 3)
+      )
     (print-bp raw)))
 ;; ~~ Hand Optimized Kernel Generation(Conv2d) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-conv2d-relu-test
