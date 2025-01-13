@@ -1,7 +1,7 @@
 (defpackage :caten/byoc/metal
   (:use
    :cl :caten/air :caten/codegen/expr :caten/codegen/renderer :caten/codegen/shape-inference
-   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint
+   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint :caten/codegen/packing
    :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
   (:import-from
    :caten/codegen/config
@@ -154,7 +154,7 @@
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
 ;; ~~~ Custom Optimization  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun render-gemm8x8x8 ()
+(defun render-gemm8x8x8 () ;; TODO: Dtype
   (with-output-to-string (out)
     (macrolet ((c (designator &rest args) `(format out ,designator ,@args)))
       (c "float2 _gemm_8x8x8(float2 m, float2 n, float2 o) {~%")
@@ -164,7 +164,11 @@
       (c "}"))))
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
-(define-auto-scheduler (Metal-Auto-Scheduler ()) :n-global-loop 3)
+(define-auto-scheduler
+    (Metal-Auto-Scheduler ()) :n-global-loop 3
+    ;; [TODO] Metal TensorCore
+    ;; :vectorizes (list (Vectorize :gemm8x8x8 `(8 8 8) :applicable-p #'identity :rewriter #'identity))
+    )
 (define-backend :metal MetalBuffer MetalRuntime Metal-Renderer Metal-Auto-Scheduler t)
 
 (defun dtype->mtype (dtype)
