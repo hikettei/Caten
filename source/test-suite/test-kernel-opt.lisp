@@ -77,16 +77,11 @@
 (defun print-schedule (si)
   (print (getattr si :polyhedral)))
 
-(defun cpu-tc-rewriter (env)
-  (let ((expr (vectorize-config-expr env)))
-    (setf (getattr expr :meta) (make-instance 'Vectorized :intrinsic :gemm4x4))
-    expr))
-
 (define-auto-scheduler
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
     :vectorizes
     (list
-     (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'cpu-tc-rewriter))
+     (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'(lambda (x) (expr-rewrite-as-tensorcore x :gemm4x4))))
     ;; :cost-functions (:sum (:vectorized-area :profile :coincidence)) (TODO)
     )
 

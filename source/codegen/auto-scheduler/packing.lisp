@@ -8,7 +8,8 @@ TensorCore optimization is also implemented as a part of Vectorize.
   (:import-from
    :caten/codegen/expr
    #:ExprMeta
-   #:ExprMeta-comment)
+   #:ExprMeta-comment
+   #:copy-expr)
   (:export
    #:Vectorize
    #:TensorCore
@@ -20,7 +21,8 @@ TensorCore optimization is also implemented as a part of Vectorize.
   (:export
    #:Vectorized
    #:vectorized-intrinsic
-   #:expr-node-wmma-p))
+   #:expr-node-wmma-p
+   #:expr-rewrite-as-tensorcore))
 
 (in-package :caten/codegen/packing)
 ;; ~~ Vectorize ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -190,6 +192,20 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 (defun expr-node-wmma-p (env)
   (declare (type Vectorize-Config env))
   (%expr-node-wmma-p (vectorize-config-expr env)))
+
+(defun cpu-tc-rewriter (env)
+  (let ((expr (vectorize-config-expr env)))
+    (setf (getattr expr :meta) (make-instance 'Vectorized :intrinsic :gemm4x4))
+    expr))
+
+(defun expr-rewrite-as-tensorcore (env name)
+  (declare (type Vectorize-Config env))
+  (let* ((expr (copy-node (vectorize-config-expr env)))
+         (cfg  (%expr-node-wmma-p expr)))
+    (assert cfg () "expr-rewrite-as-tensorcore: the expr is not wmma.")
+    (setf (getattr expr :EXPR) (copy-expr (getattr expr :EXPR))
+          (getattr expr :meta) (make-instance 'Vectorized :intrinsic name))
+    expr))
 ;; ~~ Pack/Unpack Insertion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Consider the following blueprint:
 ;; ```
