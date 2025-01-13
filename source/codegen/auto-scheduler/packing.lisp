@@ -53,7 +53,8 @@ TensorCore optimization is also implemented as a part of Vectorize.
         (let ((new-user (funcall (vectorize-rewriter vectorize) env)))
           ;; (replace-blueprint )
           (assert (node-p new-user) () "vectorizer-rewrite must return a node, getting ~a. (vectorize-rule=~a)" new-user vectorize)
-          ;; (if (every #'onep unroll) user ...)
+          (setf (user-name user) (string-upcase (princ-to-string (node-id new-user))))
+          (push new-user (getattr schedule-item :blueprint))
           (late-rewrite-pack->unroll user :unrolled-as unroll))))))
 
 (defun TensorCore (dims &key (name :TensorCore))

@@ -20,7 +20,6 @@
    #:%render-const
    #:expr-index-components
    #:make-aref
-   #:make-vectorized
    #:make-define-global
    #:%renderer-get-auto-scheduler
    #:render-index
@@ -92,27 +91,6 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
                  (pointer-p :type boolean)
                  (type :type (member :input :output :shape))
                  (nrank :type integer)))
-
-(defnode (:Render :VECTORIZED) (caten/aasm:JITAble)
-         "
-```
-*writes = name(*reads)
-```
-The render node :VECTORIZED will invoke an simd intrinsic with writes/reads.
-"
-         :slots ((name :type keyword)))
-
-(defun make-vectorized (name writes reads write-types read-types)
-  (declare (type keyword name) (type list writes reads write-types read-types))
-  (assert (= (length writes) (length write-types)))
-  (assert (= (length reads) (length read-types)))
-  (assert (every #'symbolp writes))
-  (assert (every #'(lambda (x) (or (symbolp x) (numberp x))) reads))
-  (assert (every #'buffer-p write-types))
-  (assert (every #'buffer-p read-types))
-  (let ((call (make-node :Render :VECTORIZED writes reads :name name)))
-    (setf (getattr call :_type_relay) (make-inferred-type read-types write-types))
-    call))
 
 (defun make-define-global (id dtype pointer-p type nrank)
   (declare (type symbol id)
