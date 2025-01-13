@@ -81,8 +81,8 @@
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
     :vectorizes
     (list
-     (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'(lambda (x) (expr-rewrite-as-tensorcore x :gemm4x4)))
-     (Vectorize :simd-load `(4) :applicable-p #'expr-node-simd-load-p :rewriter #'(lambda (x) (expr-rewrite-as-simd-load x :load)))
+     (Vectorize :gemm4x4 `(4 4)  :applicable-p #'expr-node-wmma-p       :rewriter #'(lambda (x) (expr-rewrite-as-tensorcore x :gemm4x4)))
+     (Vectorize :simd-load `(4)  :applicable-p #'expr-node-simd-load-p  :rewriter #'(lambda (x) (expr-rewrite-as-simd-load x :load)))
      (Vectorize :simd-store `(4) :applicable-p #'expr-node-simd-store-p :rewriter #'(lambda (x) (expr-rewrite-as-simd-store x :store))))
     ;; :cost-functions (:sum (:vectorized-area :profile :coincidence)) (TODO)
     )
