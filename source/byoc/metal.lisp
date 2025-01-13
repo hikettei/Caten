@@ -8,7 +8,7 @@
    #:define-auto-scheduler))
 
 (in-package :caten/byoc/metal)
-;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ CFFI Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defconstant +request-type-compile+ 13)
 
 (defun ensure-foreign-library ()
@@ -104,7 +104,7 @@
          octets))
       (:failed
        (error "Failed to compile a metallib:~%~a~%Compiled with this command: ~a" (cdr *callback-handler*) params)))))
-;; ~~ Extension ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ MetalBuffer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass MetalBuffer (AbstractBuffer) nil)
 (defclass MetalRuntime (GraphRuntime) ((device :accessor metal-runtime-device)))
 
@@ -153,11 +153,11 @@
 (defmethod bref ((buffer MetalBuffer) idx)
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
-
+;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
 (define-auto-scheduler (Metal-Auto-Scheduler ()) :n-global-loop 3)
 (define-backend :metal MetalBuffer MetalRuntime Metal-Renderer Metal-Auto-Scheduler t)
-;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 (defun dtype->mtype (dtype)
   (ecase dtype
     (:bool 'bool)
