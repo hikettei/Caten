@@ -152,7 +152,7 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 
 (defmethod exprmeta-comment ((expr Vectorized))
   (declare (type Vectorized expr))
-  (format nil "Vectorized: ~a" (vectorized-intrinsic expr)))
+  (format nil "simd_~(~a~)" (vectorized-intrinsic expr)))
 ;; ~~ WMMA Rewriter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defnode (:TMP :VECTORIZED_PLACEHOLDER)
     ()
