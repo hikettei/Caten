@@ -154,9 +154,14 @@
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
 ;; ~~~ Custom Optimization  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun render-wmma-kernel ()
-  
-  )
+(defun render-gemm8x8x8 ()
+  (with-output-to-string (out)
+    (macrolet ((c (designator &rest args) `(format out ,designator ,@args)))
+      (c "float2 _gemm_8x8x8(float2 m, float2 n, float2 o) {~%")
+      (c "  simdgroup_float8x8 a,b,c; a.thread_elements()[0] = m.x; a.thread_elements()[1] = m.y; b.thread_elements()[0] = n.x;~%")
+      (c "  b.thread_elements()[1] = n.y; c.thread_elements()[0] = o.x; c.thread_elements()[1] = o.y; simdgroup_multiply_accumulate(c, a, b, c);~%")
+      (c "  return float2(c.thread_elements()[0], c.thread_elements()[1]);~%")
+      (c "}"))))
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
 (define-auto-scheduler (Metal-Auto-Scheduler ()) :n-global-loop 3)
