@@ -20,6 +20,7 @@
    #:%render-const
    #:expr-index-components
    #:make-aref
+   #:make-call
    #:make-define-global
    #:%renderer-get-auto-scheduler
    #:render-index
@@ -32,7 +33,8 @@
 (defgeneric %render-const (renderer obj) (:documentation ""))
 (defgeneric %render-kernel (renderer schedule-item))
 (defgeneric %compile-kernel (renderer schedule-items dir))
-
+;; [TODO] Move to ./caten/aasm/attrs.lisp
+;; Blueprint is a list consisted of :Render and :EXPR
 (defnode (:Render :FOR) ()
          "
 ```
@@ -90,6 +92,27 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
                  (pointer-p :type boolean)
                  (type :type (member :input :output :shape))
                  (nrank :type integer)))
+
+(defnode (:Render :CALL) (caten/aasm:JITAble)
+         "
+```
+*writes = name(*reads)
+```
+The render node :CALL invokes a custom function named `name` with reads and writes.
+"
+         :slots ((name :type keyword)))
+
+(defun make-call (name writes reads write-types read-types)
+  (declare (type keyword name) (type list writes reads write-types read-types))
+  (assert (= (length writes) (length write-types)) () "make-call: writes and write-types must have the same length.")
+  (assert (= (length reads) (length read-types)) () "make-call: reads and read-types must have the same length.")
+  (assert (every #'symbolp writes))
+  (assert (every #'(lambda (x) (or (symbolp x) (numberp x))) reads))
+  (assert (every #'buffer-p write-types))
+  (assert (every #'buffer-p read-types))
+  (let ((call (make-node :Render :CALL writes reads :name name)))
+    (setf (getattr call :_type_relay) (make-inferred-type read-types write-types))
+    call))
 
 (defun make-define-global (id dtype pointer-p type nrank)
   (declare (type symbol id)
