@@ -4,7 +4,7 @@ replace the packed region (defined in auto-scheduler.lisp, class Packing) with t
 The class `Vectorize` will provide the information of the vectorized region, passed via define-auto-scheduler macro.
 TensorCore optimization is also implemented as a part of Vectorize.
 ")
-  (:use :cl :caten/air :caten/codegen/polyhedral-ast)
+  (:use :cl :caten/air :caten/codegen/polyhedral-ast :caten/codegen/shape-inference)
   (:import-from
    :caten/codegen/expr
    #:ExprMeta
@@ -23,7 +23,7 @@ TensorCore optimization is also implemented as a part of Vectorize.
    #:expr-node-wmma-p))
 
 (in-package :caten/codegen/packing)
-
+;; ~~ Vectorize ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Vectorize
             (:constructor vectorize (name dims &key (applicable-p #'identity) (rewriter nil))))
   (name name :type keyword)
@@ -57,10 +57,9 @@ TensorCore optimization is also implemented as a part of Vectorize.
         
         ;; -> will return a new render node which computes vectorize-dims region.
         (let ((new-user (funcall (vectorize-rewriter vectorize) env)))
-          ;; (replace-blueprint )
-          (assert (node-p new-user) () "vectorizer-rewrite must return a node, getting ~a. (vectorize-rule=~a)" new-user vectorize)
+          (assert (node-p new-user) () "vectorizer-rewrite must retnurn a node, getting ~a. (vectorize-rule=~a)" new-user vectorize)
           (setf (user-name user) (string-upcase (princ-to-string (node-id new-user))))
-          ;; TODO(Hikettei) refactor this code to:
+          ;; TODO(hikettei) refactor this code to:
           ;; - Add something like :render-node-pool attribute in Schedule-Item
           ;; - And push the new-user to the pool instead of :blueprint
           ;; - When finding a user, search from the pool instead of :blueprint.
@@ -109,7 +108,8 @@ If some users are failed to be vectorized, they are rewritten as unroll."
             (setf (user-args ast) (copy-list (user-args ast))
                   (user-unroll ast) (copy-list (user-unroll ast))
                   (user-vectorize ast) (copy-list (user-vectorize ast))
-                  (user-late-unroll-info ast) (copy-list (user-late-unroll-info ast)))
+                  (user-late-unroll-info ast) (copy-list (user-late-unroll-info ast))
+                  (user-simd ast) (copy-list (user-simd ast)))
             (if (null (user-vectorize ast))
                 ast
                 (or (try-rules ast vectorize-rules schedule-item) (late-rewrite-pack->unroll ast)))))
@@ -134,25 +134,71 @@ If some users are failed to be vectorized, they are rewritten as unroll."
             new-if))))
    ast))
 ;; ~~ ExprMeta  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Renderer/Codegen is able to know wheter the expr is vectorized or not by checking the ExprMeta.
+;; If the Expr is attributed as `Vectorized`, that means the expr is vectorized.
+;; In order to compile the vectorized blueprint, the compiler should run pack/unpack inference first.
 (defclass Vectorized (ExprMeta)
   ((intrinsic :initarg :intrinsic :type keyword :accessor vectorized-intrinsic)))
 
 (defmethod exprmeta-comment ((expr Vectorized))
   (declare (type Vectorized expr))
   (format nil "Vectorized: ~a" (vectorized-intrinsic expr)))
+;; ~~ WMMA Rewriter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defnode (:TMP :VECTORIZED_WMMA_PLACEHOLDER)
+    ()
+    "A placeholder node (only used in the function wmma->vectorized-wmma) to indicate the wmma node is replaced w/ TensorCore"
+    :slots ((args :type list)))
+;; In the node (MOVE: X <- A, B) A is not rendered so it is legal to remove the path A.
+(defsimplifier
+    (simplify-move-in-exprgraph :speed 0)
+    ((:MOVE (_ B)) -> B))
+
+(defsimplifier
+    (wmma->vectorized-wmma :speed 0)
+    ((:WMMA ((:AREF () :storage-id x :buffer xb :space xi)
+             (:AREF () :storage-id y :buffer yb :space yi)
+             (:AREF () :storage-id z :buffer zb :space zi)))
+     -> ((node graph)
+         ;; Note: TensorCore should assert at least 2d level parallelism.
+         ;; [TODO] Assert they are contiguous (no offsets, no extra strides, etc...)
+         (when (and
+                (>= (length (iteration-space-shape xi)) 2)
+                (>= (length (iteration-space-shape yi)) 2)
+                (>= (length (iteration-space-shape zi)) 2))
+           (make-node
+            :TMP :VECTORIZED_WMMA_PLACEHOLDER (node-writes node) nil
+            :args (list (list x xb xi) (list y yb yi) (list z zb zi)))))))
 
 (defun %expr-node-wmma-p (expr)
-  "Returns T if the expr is directly rewritable as TensorCore."
+  "Returns T if the expr is only consisted of WMMA nodes (plus rewritable as TensorCore)"
   (declare (type node expr))
   (assert (eql (node-type expr) :EXPR))
   ;; [TODO] Switch to use wmma-rewriter
-  ;; (print (caten/codegen/rewriting-rules::wmma-rewriter ))
-  (and
-   (getattr expr :reduction)
-   (let ((nodes (map 'list #'node-type (graph-nodes (caten/codegen/expr:expr-graph (getattr expr :EXPR))))))
-     ;; temporary condition just used for the testing...
-     (equal nodes `(:AREF :AREF :MOVE :AREF :AREF :MUL :AREF :AREF :ADD)))))
+  (when (null (getattr expr :reduction))
+    (return-from %expr-node-wmma-p nil))
+  
+  (let ((graph (copy-graph (caten/codegen/expr:expr-graph (getattr expr :EXPR)))))
+    (simplify-move-in-exprgraph graph)
+    (caten/codegen/rewriting-rules::wmma-rewriter graph)
+    (wmma->vectorized-wmma graph)
+    (verify-graph graph)
+    ;; Note: ensure only WMMA is left. (e.g. WMMA+Sin is not allowed)
+    (when (and (= (length (graph-nodes graph)) 1) (eql :VECTORIZED_WMMA_PLACEHOLDER (node-type (car (graph-nodes graph)))))
+      (let ((node (car (graph-nodes graph))))
+        (getattr node :args)))))
 
 (defun expr-node-wmma-p (env)
   (declare (type Vectorize-Config env))
   (%expr-node-wmma-p (vectorize-config-expr env)))
+;; ~~ Pack/Unpack Insertion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; Consider the following blueprint:
+;; ```
+;; Y <- EXPR1(X, Meta=NIL)
+;; Z <- EXPR2(Y, Meta=VECTORIZED)
+;; ```
+;; EXPR1 returns `unpacked` values and EXPR2 expects `packed` values. Here the compiler should insert pack/unpack nodes.
+;; The function `blueprint-upcast-inference` will infer the pack/unpack nodes and insert them into the blueprint.
+(defun blueprint-upcast-inference (blueprints schedule-item)
+  (declare (type list blueprints) (type node schedule-item))
+  
+  )

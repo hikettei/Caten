@@ -281,7 +281,8 @@ scop.lisp for the opposite things.
 		      (lower body)
                       (when (null is-tile-band) (setf space (remove idx space :test #'string=)))
 		      (push (r/endfor idx) new-graph))))
-		 ((User :name name :args args)
+		 ((User :name name :args args :simd simd)
+                  ;; [TODO] Pack variables based on SIMD
                   (push (caten/codegen/directive:unroll-expr (reverse space) (find-user name args) object) new-graph))
 		 ((AstIf :condition cond :then-node then :else-node else)
 		  (push (r/if cond) new-graph)

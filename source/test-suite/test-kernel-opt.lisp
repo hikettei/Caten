@@ -97,7 +97,8 @@
 ;; - 1. Add: :VECTORIZED (or implement: expr-vectorize)
 ;;  - LOAD, STORE SIMD Rewriting rule...
 ;;  - Add the concept of pack/unpack
-;; - 2. Add: SIMD (float4 mutation, __mm256, etc...)
+;; - 2. (!!!!) Add: SIMD (float4 mutation, __mm256, etc...)
+;;   - ast-parser.lispで，例えばArgsがPackされてなかったらPackするなど。。。
 ;; - 3. expr-node-wmma-p => Use Simplififer!
 ;; - 4. TransposedGemm is properly vectorized?
 ;; - 5. Fix: PACK+TILE

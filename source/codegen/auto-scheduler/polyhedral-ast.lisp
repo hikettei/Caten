@@ -10,6 +10,7 @@
    #:make-user
    #:user-name
    #:user-args
+   #:user-simd
    #:user-unroll
    #:user-vectorize
    #:user-late-unroll-info
@@ -50,7 +51,8 @@
   (defstruct (User
               (:constructor make-user (name args)))
     "T_name(index)"
-    (name name :type string) (args args :type list) (unroll nil :type list) (vectorize nil :type list) (late-unroll-info nil :type list))
+    (name name :type string) (args args :type list) (unroll nil :type list) (vectorize nil :type list) (late-unroll-info nil :type list)
+    (simd nil :type list))
 
   (defstruct (ASTExpr
               (:constructor make-astexpr (expr is-defglobal-p)))
@@ -116,7 +118,8 @@
                  (setf (user-args user) (map 'list #'e (user-args user))
                        (user-unroll user) (copy-list (user-unroll user))
                        (user-vectorize user) (copy-list (user-vectorize user))
-                       (user-late-unroll-info user) (copy-list (user-late-unroll-info user)))
+                       (user-late-unroll-info user) (copy-list (user-late-unroll-info user))
+                       (user-simd user) (copy-list (user-simd user)))
                  (when unroll-at (push (cons unroll-at value) (user-unroll user)))
                  user))
               (:packing
@@ -124,7 +127,8 @@
                  (setf (user-args user) (user-args user)
                        (user-unroll user) (copy-list (user-unroll user))
                        (user-vectorize user) (copy-list (user-vectorize user))
-                       (user-late-unroll-info user) (copy-list (user-late-unroll-info user)))
+                       (user-late-unroll-info user) (copy-list (user-late-unroll-info user))
+                       (user-simd user) (copy-list (user-simd user)))
                  (when unroll-at
                    (assert (numberp pack-size) () "Packing size should be constant!")
                    (push (list unroll-at value pack-size) (user-vectorize user))
