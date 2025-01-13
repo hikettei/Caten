@@ -22,6 +22,9 @@ TensorCore optimization is also implemented as a part of Vectorize.
   (:export
    #:Vectorized
    #:vectorized-intrinsic
+   #:vectorized-perform
+   #:vectorized-cfg)
+  (:export
    #:expr-node-wmma-p
    #:expr-rewrite-as-tensorcore
    #:expr-node-simd-load-p
@@ -145,10 +148,9 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 ;; If the Expr is attributed as `Vectorized`, that means the expr is vectorized.
 ;; In order to compile the vectorized blueprint, the compiler should run pack/unpack inference first.
 (defclass Vectorized (ExprMeta)
-  ((intrinsic :initarg :intrinsic :type keyword :accessor vectorized-intrinsic)))
-
-(defclass SIMDPack (Vectorized) nil)
-(defclass SIMDUnpack (Vectorized) nil)
+  ((intrinsic :initarg :intrinsic :type keyword :accessor vectorized-intrinsic)
+   (perform :initarg :perform :type (member :pack :unpack :compute) :accessor vectorized-perform)
+   (cfg :initarg :cfg :accessor vectorized-cfg)))
 
 (defmethod exprmeta-comment ((expr Vectorized))
   (declare (type Vectorized expr))
@@ -201,19 +203,9 @@ If some users are failed to be vectorized, they are rewritten as unroll."
   (declare (type Vectorize-Config env))
   (%expr-node-wmma-p (vectorize-config-expr env)))
 
-(defun cpu-tc-rewriter (env)
-  (let ((expr (vectorize-config-expr env)))
-    (setf (getattr expr :meta) (make-instance 'Vectorized :intrinsic :gemm4x4))
-    expr))
-
 (defun expr-rewrite-as-tensorcore (env name)
   (declare (type Vectorize-Config env))
-  (let* ((expr (copy-node (vectorize-config-expr env)))
-         (cfg  (%expr-node-wmma-p expr)))
-    (assert cfg () "expr-rewrite-as-tensorcore: the expr is not wmma.")
-    (setf (getattr expr :EXPR) (copy-expr (getattr expr :EXPR))
-          (getattr expr :meta) (make-instance 'Vectorized :intrinsic name))
-    expr))
+  (expr-node-rewrite-as-simd env #'expr-node-wmma-p name :compute))
 ;; ~~ Vectorize Rewriters ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defsimplifier
     (rewrite-load-as-simd :speed 0)
@@ -243,13 +235,13 @@ If some users are failed to be vectorized, they are rewritten as unroll."
                (eql :VECTORIZED_PLACEHOLDER (node-type (car (graph-nodes graph)))))
       (getattr (car (graph-nodes graph)) :args))))
 
-(defun expr-node-rewrite-as-simd (env predicate name)
+(defun expr-node-rewrite-as-simd (env predicate name perform)
   (declare (type Vectorize-Config env))
   (let ((expr (copy-node (vectorize-config-expr env)))
         (cfg  (funcall predicate env)))
     (assert cfg () "expr-rewrite-as-tensorcore: the expr is not wmma.")
     (setf (getattr expr :EXPR) (copy-expr (getattr expr :EXPR))
-          (getattr expr :meta) (make-instance 'Vectorized :intrinsic name))
+          (getattr expr :meta) (make-instance 'Vectorized :intrinsic name :perform perform :cfg cfg))
     expr))
 
 (defun expr-node-simd-load-p (env)
@@ -257,7 +249,7 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 
 (defun expr-rewrite-as-simd-load (env name)
   (declare (type Vectorize-Config env))
-  (expr-node-rewrite-as-simd env #'expr-node-simd-load-p name))
+  (expr-node-rewrite-as-simd env #'expr-node-simd-load-p name :pack))
 
 (defun expr-node-simd-store-p (env)
   (declare (type Vectorize-Config env))
@@ -265,7 +257,7 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 
 (defun expr-rewrite-as-simd-store (env name)
   (declare (type Vectorize-Config env))
-  (expr-node-rewrite-as-simd env #'expr-node-simd-store-p name))
+  (expr-node-rewrite-as-simd env #'expr-node-simd-store-p name :unpack))
 ;; ~~ Pack/Unpack Insertion ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Consider the following blueprint:
 ;; ```
@@ -276,5 +268,6 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 ;; The function `blueprint-upcast-inference` will infer the pack/unpack nodes and insert them into the blueprint.
 (defun blueprint-upcast-inference (blueprints schedule-item)
   (declare (type list blueprints) (type node schedule-item))
-  
-  )
+  (let ((variable-table (make-hash-table)))
+
+    ))

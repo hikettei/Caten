@@ -82,7 +82,7 @@
     :vectorizes
     (list
      (Vectorize :gemm4x4 `(4 4) :applicable-p #'expr-node-wmma-p :rewriter #'(lambda (x) (expr-rewrite-as-tensorcore x :gemm4x4)))
-     (Vectorize :simd-load `(4) :applicable-p #'expr-node-simd-load-p :rewriter #'(lambda (x) (expr-rewrite-as-simd-load x :pack)))
+     (Vectorize :simd-load `(4) :applicable-p #'expr-node-simd-load-p :rewriter #'(lambda (x) (expr-rewrite-as-simd-load x :load)))
      (Vectorize :simd-store `(4) :applicable-p #'expr-node-simd-store-p :rewriter #'(lambda (x) (expr-rewrite-as-simd-store x :store))))
     ;; :cost-functions (:sum (:vectorized-area :profile :coincidence)) (TODO)
     )
@@ -114,7 +114,6 @@
 ;; 90% performance of OpenBLAS in the hand written kernel is enough great!
 ;; reference: https://salykova.github.io/matmul-cpu
 
-;; TODO: val_2_0_0 -> val_2_0_0, val_2_0_1, val_2_0_2, ...
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
@@ -124,9 +123,9 @@
       ;; (opt (make-instance 'Packing :amount 1) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
       (opt (make-instance 'Packing :amount 4) 1)
       (opt (make-instance 'Packing :amount 4) 2)
-      ;(opt (make-instance 'Unroll :amount 1) 0)
-      ;(opt (make-instance 'Unroll :amount 4) 1)
-      ;(opt (make-instance 'Unroll :amount 4) 2)
+      ;; (opt (make-instance 'Unroll :amount 1) 0)
+      ;; (opt (make-instance 'Unroll :amount 4) 1)
+      ;; (opt (make-instance 'Unroll :amount 4) 2)
       ;; 2D Tiling (16, 16)
       ;; (opt (make-instance 'TileBand :amount 16) 0)
       ;; (opt (make-instance 'TileBand :amount 16) 1)
