@@ -99,6 +99,7 @@
 ;; [TODO] how to judge the elements are contiguous?
 ;; [TODO] When TensorCore Optimization is applicable?
 ;; [TODO] Maybe no need to schedule Unroll in AutoScheduler, Packing is enough.
+;; [TODO} Lowerしてから，SIMDに合わせてBlueprintをいじった方が確実
 ;; - PARALLEL (OpenMP)
 ;; - Coleasing (Fuse PARALLEL Loop w/ tiled bands)
 ;; - Loop Tiling (2D)
@@ -107,13 +108,15 @@
 ;;   - Feed hand-written kernel in the CLANG backend
 ;; 90% performance of OpenBLAS in the hand written kernel is enough great!
 ;; reference: https://salykova.github.io/matmul-cpu
+
+;; TODO: val_2_0_0 -> val_2_0_0, val_2_0_1, val_2_0_2, ...
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;; Scheduling Priority:
       ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
       ;; Apply packing first to use TensorCore MULADD
-      (opt (make-instance 'Packing :amount 4) 0)
+      (opt (make-instance 'Packing :amount 1) 0)
       (opt (make-instance 'Packing :amount 4) 1)
       (opt (make-instance 'Packing :amount 4) 2)
       ;(opt (make-instance 'Unroll :amount 4) 0)
@@ -141,8 +144,36 @@
   (let ((raw (get-gemm-schedule)))
     (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
       (opt (make-instance 'Global :amount 1) 0)
+      (opt (make-instance 'Global :amount 1) 0)
+      (opt (make-instance 'Packing :amount 4) 0)
+      (opt (make-instance 'Packing :amount 4) 1)
+      (opt (make-instance 'Packing :amount 4) 2)
       )
     (print-bp raw)))
 ;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(deftest hand-optimized-cpu-softmax-test
+  (let ((raw (get-softmax-schedule)))
+    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+      (opt (make-instance 'Parallel) 0)
+      (opt (make-instance 'Packing :amount 4) 0)
+      (opt (make-instance 'Packing :amount 4) 1))
+    (print-bp raw)))
 ;; ~~ Hand Optimized Kernel Generation(LayerNorm) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(deftest hand-optimized-cpu-layernorm-test
+  (let ((raw (get-layernorm-schedule)))
+    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+      (opt (make-instance 'Packing :amount 4) 0)
+      (opt (make-instance 'Packing :amount 4) 1))
+    (print-bp raw)))
 ;; ~~ Hand Optimized Kernel Generation(Conv2d) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(deftest hand-optimized-cpu-conv2d-relu-test
+  (let ((raw (get-convnd-relu-schedule)))
+    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+      (opt (make-instance 'Packing :amount 2) 0)
+      (opt (make-instance 'Packing :amount 2) 1)
+      (opt (make-instance 'Unroll :amount 3) 5)
+      (opt (make-instance 'Unroll :amount 5) 6)
+      (opt (make-instance 'Unroll :amount 5) 7)
+      
+      )
+    (print-bp raw)))
