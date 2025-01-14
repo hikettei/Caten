@@ -32,7 +32,8 @@
 (defgeneric %render-const (renderer obj) (:documentation ""))
 (defgeneric %render-kernel (renderer schedule-item))
 (defgeneric %compile-kernel (renderer schedule-items dir))
-
+;; [TODO] Move to ./caten/aasm/attrs.lisp
+;; Blueprint is a list consisted of :Render and :EXPR
 (defnode (:Render :FOR) ()
          "
 ```

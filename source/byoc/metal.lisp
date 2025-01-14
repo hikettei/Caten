@@ -1,14 +1,14 @@
 (defpackage :caten/byoc/metal
   (:use
    :cl :caten/air :caten/codegen/expr :caten/codegen/renderer :caten/codegen/shape-inference
-   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint
+   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint :caten/codegen/packing
    :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
   (:import-from
    :caten/codegen/config
    #:define-auto-scheduler))
 
 (in-package :caten/byoc/metal)
-
+;; ~~ CFFI Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defconstant +request-type-compile+ 13)
 
 (defun ensure-foreign-library ()
@@ -22,17 +22,22 @@
 (defcfun "sel_registerName" :pointer (name :pointer))
 (defcfun "dispatch_data_create" :pointer (data :pointer) (offset :size) (x :pointer) (y :pointer))
 (defcfun "objc_getClass" :pointer (name :string))
+(defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
+(defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
+(defcfun "make_callback_closure" :pointer (callback :pointer))
+(defcfun "free_callback_closure" :pointer (callback :pointer))
 
 (defun sel (name) (with-foreign-string (*name name) (sel-registername *name)))
 (defmacro msg (ptr selector restype &rest args)
   `(foreign-funcall "objc_msgSend" :pointer ,ptr :pointer (sel ,selector) ,@args ,restype))
 (defun to-ns-str (str) (with-foreign-string (*str str) (msg (objc-getclass "NSString") "stringWithUTF8String:" :pointer :pointer *str)))
 ;; ~~ MTLCompiler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
-(defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
-(defcfun "make_callback_closure" :pointer (callback :pointer))
-(defcfun "free_callback_closure" :pointer (callback :pointer))
-
+;; [TODO] METAL Parallel Compilation
+;; CFFI assumes `defcallback` is placed in the toplevel of the file.
+;; i.e.: (callback callback) will not create a new closure which is required to work MTLCompiler in parallel.
+;; (If we only targeting sbcl) defcallback is just an wrapper of sb-alien:alien-lambda (https://koji-kojiro.github.io/sb-docs/build/html/sb-alien/macro/ALIEN-LAMBDA.html)
+;; - 1. Use sb-alien:alien-lambda directly to create a new closure. (keep defcallback for ccl-bin/etc, etc)
+;; - 2. If running on SBCL, BACKEND=METAL and PARALLEL>1 is available by using (1.) otherwise produce an error.
 (defvar *callback-handler*)
 (defcallback callback :void
     ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
@@ -99,7 +104,7 @@
          octets))
       (:failed
        (error "Failed to compile a metallib:~%~a~%Compiled with this command: ~a" (cdr *callback-handler*) params)))))
-;; ~~ Extension ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ MetalBuffer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass MetalBuffer (AbstractBuffer) nil)
 (defclass MetalRuntime (GraphRuntime) ((device :accessor metal-runtime-device)))
 
@@ -148,11 +153,24 @@
 (defmethod bref ((buffer MetalBuffer) idx)
   (let ((val (msg (buffer-value buffer) "contents" :pointer)))
     (mem-aref val (caten/codegen/helpers:->cffi-dtype (buffer-dtype buffer)) idx)))
-
-(defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
-(define-auto-scheduler (Metal-Auto-Scheduler ()) :n-global-loop 3)
-(define-backend :metal MetalBuffer MetalRuntime Metal-Renderer Metal-Auto-Scheduler t)
+;; ~~~ Custom Optimization  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun render-gemm8x8x8 () ;; TODO: Dtype
+  (with-output-to-string (out)
+    (macrolet ((c (designator &rest args) `(format out ,designator ,@args)))
+      (c "float2 _gemm_8x8x8(float2 m, float2 n, float2 o) {~%")
+      (c "  simdgroup_float8x8 a,b,c; a.thread_elements()[0] = m.x; a.thread_elements()[1] = m.y; b.thread_elements()[0] = n.x;~%")
+      (c "  b.thread_elements()[1] = n.y; c.thread_elements()[0] = o.x; c.thread_elements()[1] = o.y; simdgroup_multiply_accumulate(c, a, b, c);~%")
+      (c "  return float2(c.thread_elements()[0], c.thread_elements()[1]);~%")
+      (c "}"))))
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
+(define-auto-scheduler
+    (Metal-Auto-Scheduler ()) :n-global-loop 3
+    ;; [TODO] Metal TensorCore
+    ;; :vectorizes (list (Vectorize :gemm8x8x8 `(8 8 8) :applicable-p #'identity :rewriter #'identity))
+    )
+(define-backend :metal MetalBuffer MetalRuntime Metal-Renderer Metal-Auto-Scheduler t)
+
 (defun dtype->mtype (dtype)
   (ecase dtype
     (:bool 'bool)

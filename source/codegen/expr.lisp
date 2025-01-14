@@ -6,6 +6,7 @@
    :nodes-write-to)
   (:export
    #:with-expr
+   #:expr-copy
    #:expr-depends-on
    #:expr-graft-after
    #:expr-graph
@@ -56,10 +57,16 @@
 
 (in-package :caten/codegen/expr)
 
-(defstruct Expr
+(defstruct (Expr (:copier %copy-expr))
   "Expr is a graph wrapper that reprensents a computation whose node leaves are scalar (scalar number, aref from the tensor) and each computation is a scalar."
   (graph (error "graph must occur") :type Graph)
   (out (error "out must occur") :type node))
+
+(defun copy-expr (expr)
+  (let ((new-expr (%copy-expr expr)))
+    (setf (expr-graph new-expr) (copy-graph (expr-graph expr))
+          (expr-out new-expr) (copy-node (expr-out expr)))
+    new-expr))
 
 (defsimplifier
     (%get-scalar)

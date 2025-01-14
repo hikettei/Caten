@@ -190,6 +190,7 @@ Before contributing, please note that there is no linter here. Make an effort to
 - [ ] CUDA (BACKEND=CUDA)
 - [ ] LLVM (BACKEND=LLVM)
 - [ ] OpenCL (BACKEND=OPENCL)
+- [x] TensorCore (Vectorize) Support
 - [ ] Finish AutoScheduler (Polyhedral Compiler + BEAM Search)
 
 ### Runtimes

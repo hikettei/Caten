@@ -19,6 +19,7 @@
    (:file "auto-scheduler/polyhedral")
    (:file "auto-scheduler/polyhedral-ast")
    (:file "auto-scheduler/transform")
+   (:file "auto-scheduler/packing")
    (:file "auto-scheduler/directive")
    (:file "auto-scheduler/ast-parser")
    (:file "auto-scheduler/scop")

@@ -66,7 +66,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 	       for node in nodes
 	       if (eql (node-type node) :FOR)
 	         do (format out "~a~afor (int ~(~a~)=~(~a~);~(~a~);~(~a~)+=~(~a~)) {~%"
-                            (indent indent) (if (eql (getattr node :scope) :global) "parallel " "") (getattr node :idx)
+                            (indent indent) (if (eql (getattr node :scope) :global) "@parallel " "") (getattr node :idx)
                             (render-expr 'Default-Renderer (getattr node :upfrom)) (render-expr 'Default-Renderer (getattr node :below))
                             (getattr node :idx) (render-expr 'Default-Renderer (getattr node :by)))
                     (push (getattr node :idx) gids)
@@ -78,17 +78,21 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                else if (eql (node-type node) :ENDIF)
                       do (decf indent 2) (format out "~a } // endif~%" (indent indent))
                else if (eql (node-type node) :EXPR) do
-                 (let ((pre-iterations (getattr node :Iterations)))
-                   (format out "~a~a = ~a;~a~a~%"
+                 (let ((pre-iterations (getattr node :Iterations))
+                       (is-vectorized (typep (getattr node :meta :allow-undefined t) (find-symbol "VECTORIZED" (find-package :caten/codegen/packing)))))
+                   (format out "~a~a = ~a~a~a~a;~a~a~%"
                            (indent indent)
                            (render-list
                             (map 'list #'(lambda (x y z) (print-aref x y z :iterations (or pre-iterations (make-index-space))))
                                  (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
+                           (if is-vectorized (exprmeta-comment (getattr node :meta)) "")
+                           (if is-vectorized "(" "")
                            (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (or pre-iterations (make-index-space)))
+                           (if is-vectorized ")" "")
                            (if (getattr node :reduction :allow-undefined t)
                                " // :reduction=t"
                                "")
-                           (if (typep (getattr node :meta :allow-undefined t) 'ExprMeta)
+                           (if (and (typep (getattr node :meta :allow-undefined t) 'ExprMeta) (null is-vectorized))
                                (format nil " // ~a" (exprmeta-comment (getattr node :meta)))
                                "")))
                else

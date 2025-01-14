@@ -8,6 +8,9 @@ scop.lisp for the opposite things.
 ")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia
         :caten/codegen/polyhedral-ast :caten/codegen/transform :caten/codegen/directive)
+  (:import-from
+   :caten/codegen/packing
+   #:ast-rewrite-vectorize)
   (:export #:lower-into-bp-from-polyhedral))
 
 (in-package :caten/codegen/ast-parser)
@@ -97,7 +100,27 @@ scop.lisp for the opposite things.
            ((is "UNROLL_INNER")
             ;; UNROLL_BODY is triggered by the UNROLL_PARENT. Without it the form is ignored.
             (assert (null (astfor-marks user)) () "UNROLL_INNER should be orthogonal with other directives.")
+            (setf (astfor-marks user) (list directive)))
+           ;; PACKED_OUTER+PACKED_INNER = PACKED
+           ((is "PACKED_OUTER")
+            (let ((body (astfor-body user)))
+              (when (or
+                     (not (typep body 'ASTFor))
+                     (null (and (astfor-marks body) (every #'(lambda (x) (equalp (directive-type x) "PACKED_INNER")) (astfor-marks body)))))
+                (return-from parse-isl-ast-mark user))
+              (let* ((n-pack (directive-amount directive))
+                     (user (copy-astfor user))
+                     (packed (make-packed-body user (copy-ast body) n-pack))
+                     (reminder (compute-reminder-for-unroll user (copy-ast body) n-pack)))
+                (setf (astfor-body user) packed)
+                (push directive (astfor-marks user))
+                (return-from parse-isl-ast-mark (make-block (list user reminder))))))
+           ((is "PACKED_INNER")
+            (assert (null (astfor-marks user)) () "PACKED_INNER should be orthogonal with other directives.")
             (setf (astfor-marks user) (list directive)))))
+        ;; [TODO] Test all cases for multiple directives per single loop.
+        ;; - 1. TILE+PACKING (high priority!)
+        ;; - 2. UNROLL+PACKING
         (AstBlock
          ;; Nested Directive Transformations
          (cond
@@ -259,8 +282,8 @@ scop.lisp for the opposite things.
 		      (lower body)
                       (when (null is-tile-band) (setf space (remove idx space :test #'string=)))
 		      (push (r/endfor idx) new-graph))))
-		 ((User :name name :args args)
-                  (push (caten/codegen/directive:unroll-expr (reverse space) (find-user name args) object) new-graph))
+		 ((User :name name :args args :simd simd)
+                  (push (unroll-expr (reverse space) (find-user name args) object) new-graph))
 		 ((AstIf :condition cond :then-node then :else-node else)
 		  (push (r/if cond) new-graph)
 		  (lower then)
@@ -282,11 +305,16 @@ scop.lisp for the opposite things.
           do (setf (gethash (string-upcase (princ-to-string name)) table) name))
     table))
 
-(defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0))
+(defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0) (vectorizes nil))
   (declare (type isl:ast-node ast))
   (assert (eql (node-type scheduled-item) :Schedule-Item))
-  (create-rendering-graph-nodes
-   (parse-isl-ast
-    (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item))
-    (isl::ast-node-handle ast))
-   (getattr scheduled-item :blueprint)))
+  (caten/codegen/packing:blueprint-upcast-inference
+   (create-rendering-graph-nodes
+    (ast-rewrite-vectorize
+     (parse-isl-ast
+      (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item))
+      (isl::ast-node-handle ast))
+     vectorizes
+     scheduled-item)
+    (getattr scheduled-item :blueprint))
+   scheduled-item))
