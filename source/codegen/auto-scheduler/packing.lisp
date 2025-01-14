@@ -321,20 +321,20 @@ simd_store( for (int idx[n]=0;idx[m]<dims[n];idx[n]+=strides[n]) { array[idx[n]]
                (declare (type (member :packed :unpacked) type))
                (setf (gethash id variable-table) type))
              (readvar (id) (or (gethash id variable-table) :unpacked))
-             (infer-expr (node expr meta &aux (vectorized-p (typep meta 'Vectorized)) (new-nodes))
-               ;; Sort the graph first
-               (verify-graph (expr-graph expr))
+             (infer-expr (node expr meta &aux (vectorized-p (typep meta 'Vectorized)) (new-nodes) (expr-graph (copy-graph (expr-graph expr))))
+               ;; Sort a copy of graph first.
+               (verify-graph expr-graph)
                ;; Anything assignment to the array is :unpack
                (when (and vectorized-p (not (= -1 (caten/runtime:buffer-nrank (car (relay-writes (read-type-relay node)))))))
                  (setf (vectorized-perform meta) :unpack))
                
                (case (and (typep meta 'Vectorized) (vectorized-perform meta))
                  (:pack
-                  (dolist (n (graph-nodes (expr-graph expr)))
+                  (dolist (n (graph-nodes expr-graph))
                     (dolist (w (node-writes n))
                       (setvar w :packed))))
                  (otherwise
-                  (dolist (n (graph-nodes (expr-graph expr)))
+                  (dolist (n (graph-nodes expr-graph))
                     (dolist (r (node-reads n))
                       (when (and (null vectorized-p) (eql :packed (readvar r)))
                         (print "INSERT :UNPACK"))
