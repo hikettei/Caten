@@ -2,7 +2,8 @@
   (:documentation "An intermidate AST to parse ISL AST into Blueprint.")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia)
   (:export
-   #:ASTBlock #:astblock-p #:astblock-body
+   #:copy-ast
+   #:ASTBlock #:astblock-p #:astblock-body #:copy-astblock
    #:make-block
    #:satblock-body
 
@@ -74,6 +75,13 @@
     (condition condition :type Expr)
     (then-node then-node :type (or ASTBlock User ASTFOR ASTIF))
     (else-node else-node :type (or ASTBlock User ASTFOR ASTIF null))))
+
+(defgeneric copy-ast (ast))
+(defmethod copy-ast ((ast ASTBlock)) (make-block (copy-list (astblock-body ast))))
+(defmethod copy-ast ((ast User)) (copy-user ast))
+(defmethod copy-ast ((ast AstExpr)) (copy-astexpr ast))
+(defmethod copy-ast ((ast ASTFor)) (copy-astfor ast))
+(defmethod copy-ast ((ast AstIf)) (copy-astif ast))
 
 (defun map-ast-tree (f ast)
   "f = (lambda (ast &rest args) ...)"

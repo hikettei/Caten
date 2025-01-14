@@ -25,9 +25,9 @@
 ;; - 1. Reduction: Gemm, Conv2D, Embedding, etc.
 ;; - 2. Normalization: Softmax, LayerNorm, etc.
 ;; the function get-x-schedule will return the schedule item of each kernel with polyhedral ir.
-(defun get-gemm-schedule ()
+(defun get-gemm-schedule (m n k)
   (multiple-value-bind (schedule runtime)
-      (get-raw-schedule (!matmul (make-tensor `(512 512)) (make-tensor `(512 512))))
+      (get-raw-schedule  (!matmul (make-tensor `(,m ,n)) (make-tensor `(,n ,k))))
     (assert (= 1 (count-if #'jit-kernel-p (graph-nodes schedule))) () "Cannot run the test without scheduling gemm = 1 kernel.")
     (dolist (node (graph-nodes schedule))
       (when (jit-kernel-p node)
@@ -76,7 +76,7 @@
 
 (defun print-schedule (si)
   (print (getattr si :polyhedral)))
-
+;; 明日のTODO: multiple node-writes
 (define-auto-scheduler
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
     :vectorizes
@@ -114,14 +114,20 @@
 ;;   - Feed hand-written kernel in the CLANG backend
 ;; 90% performance of OpenBLAS in the hand written kernel is enough great!
 ;; reference: https://salykova.github.io/matmul-cpu
-
+;; Workload:
+;; - Unrollの代わりにUpcsatを追加する
+;; - Upcsat/PACK/UNPACK/COMPUTEを追加する
+;; - Upcast/COMPUTEのRendererを追加する
+;; - Memory Planner?
+;; - Mixed Precision?
 (deftest hand-optimized-cpu-gemm-test
-  (let ((raw (get-gemm-schedule)))
+  (let ((raw (get-gemm-schedule 'a 'b 'c)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;; Scheduling Priority:
       ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
       ;; Apply packing first to use TensorCore MULADD
-      ;; (opt (make-instance 'Packing :amount 1) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
+      (opt (make-instance 'Parallel) 0)
+;      (opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
       (opt (make-instance 'Packing :amount 4) 1)
       (opt (make-instance 'Packing :amount 4) 2)
       ;; (opt (make-instance 'Unroll :amount 1) 0)
@@ -146,7 +152,7 @@
 ;; - :BARIIER (=> __syncthreads())
 ;; Goal: 80~90% performance of cuBLAS
 (deftest hand-optimized-gpu-gemm-test
-  (let ((raw (get-gemm-schedule)))
+  (let ((raw (get-gemm-schedule 512 512 512)))
     (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
       (opt (make-instance 'Global :amount 1) 0)
       (opt (make-instance 'Global :amount 1) 0)

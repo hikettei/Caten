@@ -4,7 +4,7 @@ replace the packed region (defined in auto-scheduler.lisp, class Packing) with t
 The class `Vectorize` will provide the information of the vectorized region, passed via define-auto-scheduler macro.
 TensorCore optimization is also implemented as a part of Vectorize.
 ")
-  (:use :cl :caten/air :caten/codegen/polyhedral-ast :caten/codegen/shape-inference)
+  (:use :cl :caten/air :caten/codegen/polyhedral-ast :caten/codegen/shape-inference :caten/codegen/transform)
   (:import-from
    :caten/codegen/expr
    #:ExprMeta
@@ -48,8 +48,8 @@ TensorCore optimization is also implemented as a part of Vectorize.
   (vectorize (error "vectorize must occur") :type Vectorize)
   (expr (error "exrp must occur") :type node))
 
-(defun apply-vectorize (user vectorize schedule-item)
-  (declare (type user user))
+(defun apply-vectorize (user vectorize schedule-item packed-dims)
+  (declare (type user user) (ignore packed-dims))
   (when (< (length (user-vectorize user)) (length (vectorize-dims vectorize)))
     (return-from apply-vectorize nil))
   (let ((padded
@@ -66,16 +66,22 @@ TensorCore optimization is also implemented as a part of Vectorize.
              (funcall
               (vectorize-applicable-p vectorize)
               env))
-        
         ;; -> will return a new render node which computes vectorize-dims region.
         (let ((new-user (funcall (vectorize-rewriter vectorize) env)))
           (assert (node-p new-user) () "vectorizer-rewrite must retnurn a node, getting ~a. (vectorize-rule=~a)" new-user vectorize)
-          (setf (user-name user) (string-upcase (princ-to-string (node-id new-user))))
+          (let ((new-name (string-upcase (princ-to-string (node-id new-user)))))
+            (assert (not (equalp new-name (user-name user))) () "vectorize-rewriter should return a new node.")
+            (setf (user-name user) new-name))
           ;; TODO(hikettei) refactor this code to:
           ;; - Add something like :render-node-pool attribute in Schedule-Item
           ;; - And push the new-user to the pool instead of :blueprint
           ;; - When finding a user, search from the pool instead of :blueprint.
           (push new-user (getattr schedule-item :blueprint))
+          (assert (null (user-simd user)) () "Cannot vectorize user for multiple times.")
+          (setf (user-simd user)
+                (loop for v in (user-vectorize user)
+                      for u in unroll
+                      collect (cons (car v) (the integer (/ (third v) u)))))
           (late-rewrite-pack->unroll user :unrolled-as unroll))))))
 
 (defun TensorCore (dims &key (name :TensorCore))
@@ -101,50 +107,50 @@ TensorCore optimization is also implemented as a part of Vectorize.
             (assert (= (length (getattr node :iterations)) (length base)) () "Before and after the polyhedral compilation, the rank of iteration space should not be changed. ~a -> ~a" (getattr node :iterations) (user-args user)))))
     node))
 
-(defun try-rules (ast vectorize-rules schedule-item)
+(defun try-rules (ast vectorize-rules schedule-item packed-dims)
   (loop for r in vectorize-rules
-        for new-ast = (apply-vectorize ast r schedule-item)
+        for new-ast = (apply-vectorize ast r schedule-item (reverse packed-dims))
         when new-ast do (return-from try-rules new-ast)))
 
 (defun ast-rewrite-vectorize (ast vectorize-rules schedule-item)
-  "Rewrites the packed user in the AST with the vectorize-rules. The earlier rules have the higher priority.
+    "Rewrites the packed user in the AST with the vectorize-rules. The earlier rules have the higher priority.
 If some users are failed to be vectorized, they are rewritten as unroll."
   (declare (type list vectorize-rules))
   (assert (eql (node-type schedule-item) :Schedule-Item))
-  (map-ast-tree
-   #'(lambda (ast &rest forms)
-       (etypecase ast
-         (User
-          ;; Find the first vectorize item which satisfies applicable-p, otherwise unroll.
-          (let ((ast (copy-user ast)))
-            (setf (user-args ast) (copy-list (user-args ast))
-                  (user-unroll ast) (copy-list (user-unroll ast))
-                  (user-vectorize ast) (copy-list (user-vectorize ast))
-                  (user-late-unroll-info ast) (copy-list (user-late-unroll-info ast))
-                  (user-simd ast) (copy-list (user-simd ast)))
-            (if (null (user-vectorize ast))
-                ast
-                (or (try-rules ast vectorize-rules schedule-item) (late-rewrite-pack->unroll ast)))))
-         ;; Otherwise
-         (AstBlock
-          (assert (= (length forms)))
-          (make-block (first forms)))
-         (AstFor
-          (assert (= (length forms) 1))
-          (let ((new-for (copy-astfor ast)))
-            (setf (astfor-body new-for) (first forms)
-                  (astfor-from new-for) (astfor-from new-for)
-                  (astfor-to new-for) (astfor-to new-for)
-                  (astfor-by new-for) (astfor-by new-for))
-            new-for))
-         (AstExpr (make-astexpr (astexpr-expr ast) (astexpr-is-defglobal-p ast)))
-         (AstIf
-          (assert (= (length forms) 1))
-          (let ((new-if (copy-astif ast)))
-            (setf (astif-then-node new-if) (first forms)
-                  (astif-condition new-if) (astif-condition new-if))
-            new-if))))
-   ast))
+  (labels ((handler (ast &key (packed-dims nil))
+             (etypecase ast
+               (User
+                ;; Find the first vectorize item which satisfies applicable-p, otherwise unroll.
+                (let ((ast (copy-user ast)))
+                  (setf (user-args ast) (copy-list (user-args ast))
+                        (user-unroll ast) (copy-list (user-unroll ast))
+                        (user-vectorize ast) (copy-list (user-vectorize ast))
+                        (user-late-unroll-info ast) (copy-list (user-late-unroll-info ast))
+                        (user-simd ast) (copy-list (user-simd ast)))
+                  (if (null (user-vectorize ast))
+                      ast
+                      (or (try-rules ast vectorize-rules schedule-item packed-dims) (late-rewrite-pack->unroll ast)))))
+               (AstBlock (make-block (map 'list #'(lambda (x) (handler x :packed-dims packed-dims)) (astblock-body ast))))
+               (ASTFor
+                (let ((new-for (copy-astfor ast))
+                      (packed-dims (copy-list packed-dims))
+                      (changed-p nil))
+                  (dolist (m (astfor-marks ast))
+                    (when (and m (equalp "PACKED_OUTER" (directive-type m)))
+                      (setf changed-p t)
+                      (push (list (astfor-idx new-for) 0 (directive-amount m)) packed-dims)))
+                  (unless changed-p
+                    (push (list (astfor-idx new-for) 0 1) packed-dims))
+                  (setf (astfor-body new-for) (handler (astfor-body ast) :packed-dims packed-dims))
+                  new-for))
+               (AstExpr (make-astexpr (astexpr-expr ast) (astexpr-is-defglobal-p ast)))
+               (AstIf
+                (let ((new-if (copy-astif ast)))
+                  (setf (astif-then-node new-if) (handler (astif-then-node ast) :packed-dims packed-dims)
+                        (astif-condition new-if) (astif-condition ast))
+                  new-if)))))
+    (handler ast)))
+               
 ;; ~~ ExprMeta  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Renderer/Codegen is able to know wheter the expr is vectorized or not by checking the ExprMeta.
 ;; If the Expr is attributed as `Vectorized`, that means the expr is vectorized.
@@ -245,6 +251,7 @@ If some users are failed to be vectorized, they are rewritten as unroll."
   (declare (type Vectorize-Config env))
   (let ((expr (copy-node (vectorize-config-expr env)))
         (cfg  (funcall predicate env)))
+    (setf (node-id expr) (gensym "NID"))
     (assert cfg () "expr-rewrite-as-tensorcore: the expr is not wmma.")
     (setf (getattr expr :EXPR) (copy-expr (getattr expr :EXPR))
           (getattr expr :meta) (make-instance 'Vectorized :intrinsic name :perform perform :cfg cfg))

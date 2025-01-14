@@ -38,8 +38,8 @@
      (expr-const 1 :int64)
      (copy-and-assign-ast-tree (astfor-body body) (astfor-idx user) 0))))
 
-(defun make-suffix (space user)
-  (flet ((s (idx &aux (val (find idx (user-unroll user) :key #'car :test #'string=)))
+(defun make-suffix (space user &key (unroll (user-unroll user)))
+  (flet ((s (idx &aux (val (find idx unroll :key #'car :test #'string=)))
            (if val (cdr val) nil)))
     (let ((suffix
             (apply #'concatenate 'string
