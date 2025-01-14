@@ -32,7 +32,8 @@ TensorCore optimization is also implemented as a part of Vectorize.
    #:expr-node-simd-store-p
    #:expr-rewrite-as-simd-store
    #:expr-node-simd-upcast-p
-   #:expr-rewrite-as-simd-upcast))
+   #:expr-rewrite-as-simd-upcast
+   #:blueprint-upcast-inference))
 
 (in-package :caten/codegen/packing)
 ;; ~~ Vectorize ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -82,6 +83,7 @@ TensorCore optimization is also implemented as a part of Vectorize.
                 (loop for v in (user-vectorize user)
                       for u in unroll
                       collect (cons (car v) (the integer (/ (third v) u)))))
+          (print (user-simd user))
           (late-rewrite-pack->unroll user :unrolled-as unroll))))))
 
 (defun TensorCore (dims &key (name :TensorCore))
@@ -287,12 +289,69 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 ;; ```
 ;; EXPR1 returns `unpacked` values and EXPR2 expects `packed` values. Here the compiler should insert pack/unpack nodes.
 ;; The function `blueprint-upcast-inference` will infer the pack/unpack nodes and insert them into the blueprint.
+;; [TODO] Move to caten/aasm.lisp
+(defnode (:SIMD :PACK) ()
+         "
+Equivalent to doing:
+```
+simd_load( for (int idx[n]=0;idx[m]<dims[n];idx[n]+=strides[n]) { array[idx[n]]; } )
+```
+
+- dims[list] is a list of ((\"_gidN\" . dims) ...)
+"
+    :slots ((dims :type list) (dtype :type keyword) (strides :type list)))
+
+(defnode (:SIMD :UNPACK) ()
+         "
+Equivalent to doing:
+```
+simd_store( for (int idx[n]=0;idx[m]<dims[n];idx[n]+=strides[n]) { array[idx[n]]; } )
+```
+"
+    :slots ((dims :type list) (dtype :type keyword) (strides :type list)))
+;; TODO: make-packする際に，Broadcastを考慮する
+;; TODO: TensorCore, Broadcastingの条件を追加する。PACKは100% 1次元
 (defun expr-node-insert-load ())
 (defun expr-node-insert-store ())
 (defun blueprint-upcast-inference (blueprints schedule-item)
   "Inserts PACK/UNPACK when the EXPR is trying to access the UNPACK/PACK-ed elements respectively."
   (declare (type list blueprints) (type node schedule-item))
   (let ((variable-table (make-hash-table)))
-    (print blueprints)
-    nil
-    ))
+    (labels ((setvar (id type)
+               (declare (type (member :packed :unpacked) type))
+               (setf (gethash id variable-table) type))
+             (readvar (id) (or (gethash id variable-table) :unpacked))
+             (infer-expr (node expr meta &aux (vectorized-p (typep meta 'Vectorized)) (new-nodes))
+               ;; Sort the graph first
+               (verify-graph (expr-graph expr))
+               ;; Anything assignment to the array is :unpack
+               (when (and vectorized-p (not (= -1 (caten/runtime:buffer-nrank (car (relay-writes (read-type-relay node)))))))
+                 (setf (vectorized-perform meta) :unpack))
+               
+               (case (and (typep meta 'Vectorized) (vectorized-perform meta))
+                 (:pack
+                  (dolist (n (graph-nodes (expr-graph expr)))
+                    (dolist (w (node-writes n))
+                      (setvar w :packed))))
+                 (otherwise
+                  (dolist (n (graph-nodes (expr-graph expr)))
+                    (dolist (r (node-reads n))
+                      (when (and (null vectorized-p) (eql :packed (readvar r)))
+                        (print "INSERT :UNPACK"))
+                      (when (and vectorized-p (eql :unpacked (readvar r)))
+                        (print "INSERT :PACK")))
+                    (dolist (w (node-writes n))
+                      (if vectorized-p (setvar w :packed) (setvar w :unpacked))))
+                  (when (and vectorized-p (eql :unpack (vectorized-perform meta)))
+                    ;; The last node of :unpack is unpacked
+                    (dolist (r (node-reads (caten/codegen/expr:expr-out expr)))
+                      ;; Ensure they are packed status
+                      (when (eql :unpacked (readvar r))
+                        (print "INSERT :PACK"))))))
+               (insert-nodes (expr-graph expr) new-nodes)))
+      ;; TODO: Add the concept of scope
+      (loop for bp in blueprints do
+        (case (node-type bp)
+          (:EXPR
+           (infer-expr bp (getattr bp :EXPR) (getattr bp :meta :allow-undefined t)))))
+      blueprints)))

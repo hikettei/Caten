@@ -54,7 +54,7 @@
   (let ((space (loop for s in space
                      for stride in (iteration-space-strides iteration-space)
                      unless (expr-equal-to stride 0) collect s)))
-    (intern (string-upcase (format nil "~a~a" name (make-suffix space user))))))
+    (intern (string-downcase (format nil "~a~a" name (make-suffix space user))))))
 
 (defun unroll-node (node space user)
   (when (eql (node-type node) :Aref)
