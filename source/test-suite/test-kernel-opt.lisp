@@ -121,18 +121,18 @@
 ;; - Memory Planner?
 ;; - Mixed Precision?
 (deftest hand-optimized-cpu-gemm-test
-  (let ((raw (get-gemm-schedule 'a 'b 'c)))
+  (let ((raw (get-gemm-schedule 512 512 512)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;; Scheduling Priority:
       ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
       ;; Apply packing first to use TensorCore MULADD
       (opt (make-instance 'Parallel) 0)
-;      (opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
-      (opt (make-instance 'Packing :amount 4) 1)
-      (opt (make-instance 'Packing :amount 4) 2)
-      ;; (opt (make-instance 'Unroll :amount 1) 0)
-      ;; (opt (make-instance 'Unroll :amount 4) 1)
-      ;; (opt (make-instance 'Unroll :amount 4) 2)
+      ;;(opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
+      ;;(opt (make-instance 'Packing :amount 4) 1)
+      ;;(opt (make-instance 'Packing :amount 4) 2)
+       (opt (make-instance 'Unroll :amount 4) 0)
+       (opt (make-instance 'Unroll :amount 4) 1)
+       (opt (make-instance 'Unroll :amount 4) 2)
       ;; 2D Tiling (16, 16)
       ;; (opt (make-instance 'TileBand :amount 16) 0)
       ;; (opt (make-instance 'TileBand :amount 16) 1)

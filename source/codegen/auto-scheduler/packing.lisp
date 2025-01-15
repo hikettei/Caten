@@ -18,7 +18,8 @@ TensorCore optimization is also implemented as a part of Vectorize.
   (:export
    #:Vectorize-Config
    #:Vectorize-Config-Vectorize
-   #:Vectorize-Config-Expr)
+   #:Vectorize-Config-Expr
+   #:vectorized-config-simd)
   (:export
    #:Vectorized
    #:vectorized-intrinsic
@@ -46,6 +47,7 @@ TensorCore optimization is also implemented as a part of Vectorize.
 
 (defstruct Vectorize-Config
   "applicable-p, rewriter will receive the necessary information via this structure to complete vectorize."
+  (simd (error "simd must occur") :type list)
   (vectorize (error "vectorize must occur") :type Vectorize)
   (expr (error "exrp must occur") :type node))
 
@@ -58,9 +60,12 @@ TensorCore optimization is also implemented as a part of Vectorize.
                   (vectorize-dims vectorize))))
     (assert (= (length padded) (length (user-vectorize user))))
     (assert (every #'zerop (map 'list #'second (user-vectorize user))) () "apply-vectorze: range should start from zero.")
-    (let ((applicable-p (every #'(lambda (x y) (= 0 (mod x y))) (map 'list #'third (user-vectorize user)) padded))
-          (unroll (map 'list #'(lambda (x y) (/ x y)) (map 'list #'third (user-vectorize user)) padded))
-          (env (make-vectorize-config :vectorize vectorize :expr (find-user user (user-name user) schedule-item))))
+    (let* ((applicable-p (every #'(lambda (x y) (= 0 (mod x y))) (map 'list #'third (user-vectorize user)) padded))
+           (unroll (map 'list #'(lambda (x y) (/ x y)) (map 'list #'third (user-vectorize user)) padded))
+           (simd (loop for v in (user-vectorize user)
+                       for u in unroll
+                       collect (cons (car v) (the integer (/ (third v) u)))))
+           (env (make-vectorize-config :vectorize vectorize :simd simd :expr (find-user user (user-name user) schedule-item))))
       (when (and
              applicable-p
              ;; [TODO] Judge the elements are contiguous in the memory! (stride must be one if simd)
@@ -83,13 +88,21 @@ TensorCore optimization is also implemented as a part of Vectorize.
                 (loop for v in (user-vectorize user)
                       for u in unroll
                       collect (cons (car v) (the integer (/ (third v) u)))))
-          (print (user-simd user))
           (late-rewrite-pack->unroll user :unrolled-as unroll))))))
 
 (defun TensorCore (dims &key (name :TensorCore))
+  "
+Assuming the memory access (notated as +) is contiguous 1d upcast, computes the vectorized region in a single operation e.g.:
+```
+  A       B
++---    ++++
++---  @ ----
++---    ----
+```
+"
   (declare (type list dims))
   (assert (and (= (length dims) 3) (every #'integerp dims)) () "TensorCore: dims are three-dimensional list of integers.")
-  (Vectorize name dims :applicable-p #'identity :rewriter #'identity))
+  (Vectorize name dims :applicable-p #'expr-node-wmma-p :rewriter #'expr-rewrite-as-tensorcore))
 ;; ~~ Vectorizer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; [TODO] find-user has a lot of reuse with the find-user in ast-parser.lisp
 (defun find-user (user node-id schedule-item &aux (items (getattr schedule-item :blueprint)))
@@ -187,6 +200,7 @@ If some users are failed to be vectorized, they are rewritten as unroll."
                 (>= (length (iteration-space-shape xi)) 2)
                 (>= (length (iteration-space-shape yi)) 2)
                 (>= (length (iteration-space-shape zi)) 2))
+           ;; [TODO] Broadcastの軸の箇所と，PackのサイズからTensorCoreに変換できるか判定
            (make-node
             :TMP :VECTORIZED_PLACEHOLDER (node-writes node) nil
             :args (list (list x xb xi) (list y yb yi) (list z zb zi)))))))
@@ -289,30 +303,34 @@ If some users are failed to be vectorized, they are rewritten as unroll."
 ;; ```
 ;; EXPR1 returns `unpacked` values and EXPR2 expects `packed` values. Here the compiler should insert pack/unpack nodes.
 ;; The function `blueprint-upcast-inference` will infer the pack/unpack nodes and insert them into the blueprint.
-;; [TODO] Move to caten/aasm.lisp
+;; [TODO] Move to caten/aasm.lisp once the specs are concatenated.
 (defnode (:SIMD :PACK) ()
          "
 Equivalent to doing:
 ```
-simd_load( for (int idx[n]=0;idx[m]<dims[n];idx[n]+=strides[n]) { array[idx[n]]; } )
+simd_load( for(int idx=0; idx < dim; idx+=stride) { array[idx]; }
 ```
-
-- dims[list] is a list of ((\"_gidN\" . dims) ...)
 "
-    :slots ((dims :type list) (dtype :type keyword) (strides :type list)))
+         :slots ((idx :type string) (dim :type expr) (stride :type expr)))
 
 (defnode (:SIMD :UNPACK) ()
          "
 Equivalent to doing:
 ```
-simd_store( for (int idx[n]=0;idx[m]<dims[n];idx[n]+=strides[n]) { array[idx[n]]; } )
+simd_load( for(int idx=0; idx < dim; idx+=stride) { array[idx]; }
 ```
 "
-    :slots ((dims :type list) (dtype :type keyword) (strides :type list)))
+         :slots ((idx :type string) (dim :type expr) (stride :type expr)))
+
+(defun %pack (name idx dim stride &key (out (gensym "SIMD")))
+  (make-node :SIMD :PACK (list out) (list name) :idx idx :dim dim :stride stride))
+
+(defun %unpack (name idx dim stride &key (out (gensym "SIMD")))
+  (make-node :SIMD :PACK (list out) (list name) :idx idx :dim dim :stride stride))
 ;; TODO: make-packする際に，Broadcastを考慮する
 ;; TODO: TensorCore, Broadcastingの条件を追加する。PACKは100% 1次元
-(defun expr-node-insert-load ())
-(defun expr-node-insert-store ())
+;; TODO: LayerNorm Unroll val_2_0を修正
+;; TODO: TensorCore: float4になるように，Broadcastingの条件を追加する。
 (defun blueprint-upcast-inference (blueprints schedule-item)
   "Inserts PACK/UNPACK when the EXPR is trying to access the UNPACK/PACK-ed elements respectively."
   (declare (type list blueprints) (type node schedule-item))
@@ -328,26 +346,23 @@ simd_store( for (int idx[n]=0;idx[m]<dims[n];idx[n]+=strides[n]) { array[idx[n]]
                (when (and vectorized-p (not (= -1 (caten/runtime:buffer-nrank (car (relay-writes (read-type-relay node)))))))
                  (setf (vectorized-perform meta) :unpack))
                
-               (case (and (typep meta 'Vectorized) (vectorized-perform meta))
-                 (:pack
-                  (dolist (n (graph-nodes expr-graph))
-                    (dolist (w (node-writes n))
-                      (setvar w :packed))))
-                 (otherwise
-                  (dolist (n (graph-nodes expr-graph))
-                    (dolist (r (node-reads n))
-                      (when (and (null vectorized-p) (eql :packed (readvar r)))
-                        (print "INSERT :UNPACK"))
-                      (when (and vectorized-p (eql :unpacked (readvar r)))
-                        (print "INSERT :PACK")))
-                    (dolist (w (node-writes n))
-                      (if vectorized-p (setvar w :packed) (setvar w :unpacked))))
-                  (when (and vectorized-p (eql :unpack (vectorized-perform meta)))
-                    ;; The last node of :unpack is unpacked
-                    (dolist (r (node-reads (caten/codegen/expr:expr-out expr)))
-                      ;; Ensure they are packed status
-                      (when (eql :unpacked (readvar r))
-                        (print "INSERT :PACK"))))))
+               (dolist (n (graph-nodes expr-graph))
+                 (dolist (r (node-reads n))
+                   (when (and (null vectorized-p) (eql :packed (readvar r)))
+                     (print "INSERT :UNPACK1"))
+                   (when (and vectorized-p (eql :unpacked (readvar r)))
+                     (print "INSERT :PACK1")))
+                 (dolist (w (node-writes n))
+                   (if vectorized-p (setvar w :packed) (setvar w :unpacked))))
+               ;; Some additional constraints for :unpack and :pack
+               (when (and vectorized-p (find (vectorized-perform meta) `(:pack :unpack)))
+                 ;; The last node of :unpack is unpacked
+                 (dolist (r (node-reads (caten/codegen/expr:expr-out expr)))
+                   ;; Ensure they are packed status
+                   (when (eql (if (eql (vectorized-perform meta) :pack) :packed :unpacked) (readvar r))
+                     (if (eql (vectorized-perform meta) :pack)
+                         (print "INSERT :UNPACK")
+                         (print "INSERT :PACK")))))
                (insert-nodes (expr-graph expr) new-nodes)))
       ;; TODO: Add the concept of scope
       (loop for bp in blueprints do
