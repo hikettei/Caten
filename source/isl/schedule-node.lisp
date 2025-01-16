@@ -147,3 +147,12 @@
 (defun schedule-node-get-schedule-depth (node)
   (declare (type schedule-node node))
   (%isl-schedule-node-get-schedule-depth (schedule-node-handle node)))
+
+(define-isl-function schedule-node-has-parent %isl-schedule-node-has-parent
+  (:give boolean)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-is-equal %isl-schedule-node-is-equal
+  (:give boolean)
+  (:keep schedule-node)
+  (:keep schedule-node))

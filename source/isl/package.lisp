@@ -390,6 +390,8 @@
    #:schedule-node-get-domain
    #:schedule-node-band-get-partial-schedule
    #:schedule-node-band-get-space
+   #:schedule-node-has-parent
+   #:schedule-node-is-equal
    ))
 
 (in-package :caten/isl)

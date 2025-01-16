@@ -95,6 +95,8 @@
 ;; - 1. Add: :VECTORIZED (or implement: expr-vectorize)
 ;;  - LOAD, STORE SIMD Rewriting rule...
 ;;  - Add the concept of pack/unpack
+;;  - Softmax: Innermost dims are not coincident...
+;;  - Fix: Unroll/Packing new indexed var names are 100% working??????
 ;; - 2. (!!!!) Add: SIMD (float4 mutation, __mm256, etc...)
 ;;   - ast-parser.lispで，例えばArgsがPackされてなかったらPackするなど。。。
 ;; - 3. expr-node-wmma-p => Use Simplififer!
@@ -120,19 +122,41 @@
 ;; - Upcast/COMPUTEのRendererを追加する
 ;; - Memory Planner?
 ;; - Mixed Precision?
+;; [TODO] Workload
+;; - TODO: Delete schedule BFS in optimize-bands!
+;; - 1. ISL上で以下の操作を実現する:
+;;  - 1 band 1 mark?
+;;  - TODO: Size=1のBandの処理をテストに書く
+;;  - MEMORY COALEASING (TILE2D, bnut threads are merged)
+;;    - Tile2Dを実装する！
+;;  - Shared Memory Utilization (How to insert the barrier?)
+;;  - Implement GLOBAL/LOCAL as tile
+;;  - TILE
+;;  - PACK (No conflict!)
+;; - Interchange: Markも一緒に移動する
+;; - kernel-optでテストを書く
+;; - 2. Vectorizeを定義する
+;;  - PACK/UNPACK
+;;  - 27 Opsに対してSIMD Mutationを実装する
+;;  - Dtypeが異なる時どうするか考える
+;; - Polyhedral Transformationをまず完成させる
+;;  - 1. UNROLL/PACKINGを綺麗にする
+;;  - 2. Tilingと干渉しない
+;;  - 3. Tiling/UNROLL/PACKINGの，val_x_y_zのIndexingをちゃんとやる
+;;  - 4. 
+;; - Vectorize = PACKED_INNER次元の範囲でSliceすること
+;; - PACKED_INNER次元は全てVectorizeされると仮定する。(無理なら等価な普通の演算に書き換えられるように)
+;; - ReminderとPACKED?
 (deftest hand-optimized-cpu-gemm-test
-  (let ((raw (get-gemm-schedule 512 512 512)))
+  (let ((raw (get-gemm-schedule 'a 'b 'c)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;; Scheduling Priority:
       ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
       ;; Apply packing first to use TensorCore MULADD
       (opt (make-instance 'Parallel) 0)
-      ;;(opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
-      ;;(opt (make-instance 'Packing :amount 4) 1)
-      ;;(opt (make-instance 'Packing :amount 4) 2)
-       (opt (make-instance 'Unroll :amount 4) 0)
-       (opt (make-instance 'Unroll :amount 4) 1)
-       (opt (make-instance 'Unroll :amount 4) 2)
+      (opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
+      (opt (make-instance 'Packing :amount 4) 1)
+      (opt (make-instance 'Packing :amount 4) 2)
       ;; 2D Tiling (16, 16)
       ;; (opt (make-instance 'TileBand :amount 16) 0)
       ;; (opt (make-instance 'TileBand :amount 16) 1)
@@ -143,14 +167,11 @@
       )
     (print-schedule raw)
     (print-bp raw)))
-;; To generate an optimized schedule for the gpu gemm kernel, we have to implement the following scheduling commands:
-;; - GLOBAL/LOCAL (Remove extra if statements when the reminder part is zero.)
-;; - GROUP
-;; - Warp Reduction Transformation
-;; - Tile
-;; - TensorCore
-;; - :BARIIER (=> __syncthreads())
-;; Goal: 80~90% performance of cuBLAS
+
+;; Note: OPTIMIZE=1 Behaviour
+;; (with-manual-scheduler (x scheduler)
+;;    (dotimes (i (n-bands))
+;;      (opt (make-instance 'Packing :amount 4) i)))
 (deftest hand-optimized-gpu-gemm-test
   (let ((raw (get-gemm-schedule 512 512 512)))
     (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
