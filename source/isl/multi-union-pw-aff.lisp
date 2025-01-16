@@ -106,3 +106,12 @@
 
 (defun pw-aff-var-on-domain (local-space type pos)
   (%make-pw-aff (%isl-pw-aff-var-on-domain (isl-object-handle (copy local-space)) type pos)))
+
+(defun multi-union-pw-aff-reset-tuple-id (mupa type)
+  (declare (type multi-union-pw-aff mupa))
+  (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-reset-tuple-id (multi-union-pw-aff-handle (copy mupa)) type)))
+
+(define-isl-function multi-union-pw-aff-union-add %isl-multi-union-pw-aff-union-add
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take multi-union-pw-aff))

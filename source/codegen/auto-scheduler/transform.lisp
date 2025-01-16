@@ -202,29 +202,10 @@ For example, if the tree is given as:
 Packed schedule-items has a chance to be upcasted/vectorized by the caten compiler."
   (declare (type isl::schedule-node band) (type fixnum pack-by))
   (%apply-tile band pack-by (directive "PACKED_OUTER" pack-by t) (directive "PACKED_INNER" pack-by nil)))
-
-(defun apply-multi-tile (band tile-sizes)
-  "Applies Nd tiling to the given schedule-node-band with tile-sizes.
-First this function tries to gather undernearth nodes from band for (length tile-sizes) times. All of collected nodes must be schedule-nodes.
-e.g.: the given `band` is an entry point for n-consecutive schedule-node-bands.
-The difference from using `apply-tile` multiple time is, this function will interchange tiled bands to innermost dimensions to generate tile-dims micro-kernel.
-"
-  (declare (type isl::schedule-node-band band) (type list tile-sizes))
-  ;; TODO: Use isl_schedule_node_band_sink, in manual.pdf p217
-  (labels ((tile (sched rest-size)
-             (if (null rest-size)
-                 sched
-                 (let* ((sched (apply-tile sched (car rest-size)))
-                        (n-children (isl::%isl-schedule-node-n-children (isl::schedule-node-handle sched)))
-                        (child (if (= 0 n-children) nil (schedule-node-get-child sched 0))))
-                   (when (null child) (return-from apply-multi-tile nil)) ;; lack of dims
-                   (when (not (eql (schedule-node-get-type child) :schedule-node-band))
-                     (return-from apply-multi-tile nil)) ;; not a band
-                   (tile (schedule-node-get-child child 0) (cdr rest-size))))))
-    (tile band tile-sizes)))
 ;; ~~ Coincidence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-parallel (schedule-node)
   ;; note: num of cores optimization is beyond caten!
+  ;; note: @collapse(2) is 100% effective, apply this automatically...
   (schedule-node-insert-mark schedule-node (directive->id (directive "PARALLEL" 0 T))))
 
 (defun apply-global (poly band ls)
@@ -292,15 +273,40 @@ We assume band1 and band2 are contiguous and mergeable dimension by the shape tr
   ;; 単純にこうやって書き換えるだけにする。
   ;; TODO: @DIRECTIVE(GLOBAL) const idx2 = blockDim.x * gridDim.x
   ;; TODO: @DIRECTIVE(LOCAL)  const idx1 = threadIdx.x
+  ;;
   ;; Coalesceにはそれを踏まえてSchedule Node Bandを書き換えるようにしたい。。。
-  
+  ;; 1. Remove the band I
+  ;; 2. Remove the band J
+  ;; 3. Compute the stride of I (but how? by rendering the ast partially?)
+  ;; 4. Insert a new schedule band with the stride of I
+
+  ;; softmax -> band depthが同じの複数あるとParallelizeできないルールにする
+  ;; const idx1 const idx1でどうせ重複する
   (let* ((sched-a (schedule-node-band-get-partial-schedule band1))
          (band2 (schedule-node-get-child band1 0))
          (_ (assert (eql :schedule-node-band (print (schedule-node-get-type band2))))) ;; [TODO] skip mark ...
          (sched-b (schedule-node-band-get-partial-schedule band2))
          (merged (multi-union-pw-aff-flat-range-product sched-a sched-b)))
     (declare (ignore _))
-    (print merged)
+    ;; Assume you have 4 schedules:
+    ;; for (int i=0;i<M;i++16) @GLOBAL(X)
+    ;;   for (int j=0;j<min(16, i);j++) @LOCAL(X)
+    ;;     for(int k=0;k<N;k++) @GLOBAL(Y)
+    ;;       for (int l=0;l<min(16, i);l++) @LOCAL(Y)
+    ;;         S(i+j, k+l)
+    ;; The goal here is merge J and L in a single loop in a equivalent form.
+    ;; for (int i=0;i<M;i++16) @GLOBAL(X)
+    ;;   for(int k=0;k<N;k++16) @GLOBAL(Y)
+    ;;     for (int j=0;j<min(16, m - i - 1);j++) @LOCAL(X)
+    ;;       for (int l=0;l<min(16, n - k - 1);l++) @LOCAL(Y)
+    ;;         S(i+j, k+l)
+    ;; ==>
+    ;; for (int i=0;i<M;i++16) @GLOBAL(X)
+    ;;   for(int k=0;k<N;k++16) @GLOBAL(Y)
+    ;;     for(..) @LOCAL(
+    ;;     for (int j=0;j<min(16, m - i - 1);j++) @LOCAL(X)
+    ;;       for (int l=0;l<min(16, n - k - 1);l++) @LOCAL(Y)
+    ;;         S(i+j, k+l)
     band1))
 
 (defun apply-cache-blocking ()

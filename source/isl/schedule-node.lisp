@@ -160,3 +160,15 @@
 (define-isl-function schedule-node-band-sink %isl-schedule-node-band-sink
   (:give schedule-node)
   (:take schedule-node))
+
+(define-isl-function schedule-node-filter-get-filter %isl-schedule-node-filter-get-filter
+  (:give union-set)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-parent %isl-schedule-node-parent
+  (:give schedule-node)
+  (:take schedule-node))
+
+(define-isl-function schedule-node-next-sibling %isl-schedule-node-next-sibling
+  (:give schedule-node)
+  (:take schedule-node))

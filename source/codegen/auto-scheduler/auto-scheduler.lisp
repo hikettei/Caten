@@ -6,7 +6,7 @@
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
     #:AutoScheduler #:autoscheduler-best-schedule #:autoscheduler-config
     #:autoscheduler-n-generation #:autoscheduler-gen2act
-    #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing #:Coalesce #:Multi-Tile-Band
+    #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing #:Coalesce
     #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs)
   (:export
    #:si-apply-opt #:si-finalize-schedule #:with-manual-scheduler))
@@ -47,14 +47,6 @@
 (defmethod opt-applicable-p ((opt TileBand) schedule-node item config)
   ;; [TODO] hand-written condition to know when the tiling is effective and limit the exploration space.
   t)
-
-(defclass Multi-Tile-Band (Opt) ((tile-sizes :initarg :tile-sizes :initform nil :accessor opt-tile-sizes))
-  (:documentation "Applies multiple tiling to the given schedule-node-band with the sizes"))
-(defmethod apply-opt ((opt Multi-Tile-Band) schedule-node item config)
-  (assert (opt-tile-sizes opt) () "Multi-Tile-Band: No tile-sizes are given.")
-  (assert (null (opt-amount opt)) () "Do not provide opt-amount for Multi-Tile-Band")
-  (apply-multi-tile schedule-node (opt-tile-sizes opt)))
-(defmethod opt-applicable-p ((opt Multi-Tile-Band) schedule-node item config) (apply-multi-tile schedule-node (opt-tile-sizes opt)))
 
 (defclass Unroll (Opt) nil (:documentation "Unroll the loop with `amount`
 ```

@@ -81,12 +81,14 @@ scop.lisp for the opposite things.
            ((is "GLOBAL")
             ;; TODO:
             ;; const idx1 = amount * blockIdx.X;
+            ;; dont use amount use by
             (let ((replacement (astfor-mutate-global user (ctx-get-rank ctx) (directive-amount directive))))
               (incf (context-n-global-dims ctx))
               (return-from parse-isl-ast-mark replacement)))
            ((is "LOCAL")
             ;; TODO
             ;; If (min ...) is scheduled, insert IF
+            ;; If (min m - c0 -1)
             ;; const idx2 = threadIdx.y;
             ;; index = idx1 + idx2;
             

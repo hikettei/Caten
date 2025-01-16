@@ -41,13 +41,17 @@
 (defun get-softmax-schedule ()
   (get-schedule-from-op (!softmax (make-tensor `(128 128)))))
 
-(defun get-layer-norm-schedule ()
+(defun get-layernorm-schedule ()
   (with-inference-mode ()
     (get-schedule-from-op (forward (LayerNorm `(128)) (make-tensor `(128 128))))))
 
 (defun get-convnd-relu-schedule ()
   (with-inference-mode ()
     (get-schedule-from-op (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
+
+(defun get-embedding-schedule (b s)
+  (with-inference-mode ()
+    (get-schedule-from-op (call (Embedding 128 256) (make-tensor `(,b ,s))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun print-bp (si) ;; utils for debugging in repl
   (caten/codegen/blueprint:print-blueprint (getattr si :blueprint) t))
@@ -187,6 +191,7 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 
 (deftest test-tile-and-coalesce-cpu
   (let ((raw (get-gemm-schedule 'm 'n 'k)))
+    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       (opt (make-instance 'Parallel) 0)
       (opt (make-instance 'TileBand :amount 16) 0)
@@ -209,8 +214,22 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; Test UNROLL+PACK
 ;; Test Interchange (Mark are moved)
 ;; TODO: Markが挿入されたBandはInterchangeできないようにした方が良くない？
+;; TODO: BEAM=1 is not required???
 
 ;; ~~ Hand Optimized Kernel Generation(GEMM) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; 方針が変わった
+;; - ISL上でOptimalなScheduleを得る目的は変わらない
+;; - OPTIMIZE=1: ILPを解く, 全部のBANDにTILE+PACKING, OUTERMOST LOOP PARALLELISM, COLLAPSE, COALEASCINGを適用
+;;   - Single Kernelにならない場合棄却する
+;;   - AnsorでいうTemplate生成
+;; - OPTIMIZE=2
+;;   - LOCAL_SIZE, TILE_SIZEをGFLOPSベースで最適化する
+;;   - ISL Coalescingで条件をSimplifyする
+
+;; ISL Workload
+;; - Softmax/LayerNorm/Embedding/Symbolicを常に1 KernelへFusion -> WIN
+;; - Mapping Tile Dims -> UNROLL/PACKING/TILE/COALESCE etc
+
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
 ;; [TODO] Vectorizeを適用すると(getattr node :global-unrolled-space)を固定する。で，val_2_x_x_xは:global-unroll-spaceベースで決定する。
 ;; - これがEXPRごとで共有できないとvectorize失敗になる
@@ -273,21 +292,23 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; - ReminderとPACKED?
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule 'a 'b 'c)))
+    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;; Scheduling Priority:
       ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
       ;; Apply packing first to use TensorCore MULADD
       (opt (make-instance 'Parallel) 0)
       (opt (make-instance 'TileBand :amount 32) 0)
-      (opt (make-instance 'TileBand :amount 32) 2)
-      (opt (make-instance 'TileBand :amount 32) 4)
-      (opt (make-instance 'Packing :amount 4) 1)
-      (opt (make-instance 'Packing :amount 4) 3)
-      (opt (make-instance 'Packing :amount 4) 5)
- ;;     (opt (make-instance 'Packing :amount 4) 1)
-;;      (opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
-;;      (opt (make-instance 'Packing :amount 4) 1)
-;;      (opt (make-instance 'Packing :amount 4) 2)
+      (opt (make-instance 'Packing :amount 16) 1)
+      
+      ;(opt (make-instance 'TileBand :amount 32) 2)
+      ;(opt (make-instance 'TileBand :amount 32) 4)
+      
+;;     (opt (make-instance 'Packing :amount 4) 5)
+;;     (opt (make-instance 'Packing :amount 4) 1)
+;;     (opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
+;;     (opt (make-instance 'Packing :amount 4) 1)
+;;     (opt (make-instance 'Packing :amount 4) 2)
       ;; 2D Tiling (16, 16)
       ;; (opt (make-instance 'TileBand :amount 16) 0)
       ;; (opt (make-instance 'TileBand :amount 16) 1)
@@ -319,14 +340,17 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-softmax-test
   (let ((raw (get-softmax-schedule)))
+    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-      (opt (make-instance 'Parallel) 0)
-      (opt (make-instance 'Packing :amount 4) 0)
-      (opt (make-instance 'Packing :amount 4) 1))
+      ;;(opt (make-instance 'Parallel) 0)
+      ;(opt (make-instance 'Packing :amount 4) 0)
+      ;(opt (make-instance 'Packing :amount 4) 1)
+      )
     (print-bp raw)))
 ;; ~~ Hand Optimized Kernel Generation(LayerNorm) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-layernorm-test
   (let ((raw (get-layernorm-schedule)))
+    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       (opt (make-instance 'Packing :amount 4) 0)
       (opt (make-instance 'Packing :amount 4) 1)
@@ -337,9 +361,22 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; ~~ Hand Optimized Kernel Generation(Conv2d) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-conv2d-relu-test
   (let ((raw (get-convnd-relu-schedule)))
+    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-      (opt (make-instance 'Packing :amount 4) 6)
-      (opt (make-instance 'Packing :amount 4) 7)
+     ; (opt (make-instance 'Packing :amount 4) 6)
+     ; (opt (make-instance 'Packing :amount 4) 7)
       
       )
     (print-bp raw)))
+
+(deftest hand-optimized-cpu-embedding-test
+  ;; Symbolic kernel needs expr-cache
+  (caten/codegen/expr-cache:with-expr-cache ()
+    (let ((raw (get-embedding-schedule 128 128)))
+      (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
+      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+        ;; (opt (make-instance 'Packing :amount 4) 6)
+        ;; (opt (make-instance 'Packing :amount 4) 7)
+        
+        )
+      (print-bp raw))))

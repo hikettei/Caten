@@ -143,6 +143,8 @@
    ;; MultiUnionPwAff
    #:pw-aff-var-on-domain
    #:multi-union-pw-aff
+   #:multi-union-pw-aff-reset-tuple-id
+   #:multi-union-pw-aff-union-add
    #:multi-union-pw-aff-from-str
    #:multi-union-pw-aff-intersect-domain
    #:multi-union-pw-aff-size
@@ -221,6 +223,7 @@
    #:union-map-lex-le-union-map
    #:union-map-lex-gt-union-map
    #:union-map-lex-ge-union-map
+   #:union-map-coalesce
    #:union-map-equalp
    #:union-map-subsetp
    #:union-map-strict-subset-p
@@ -371,6 +374,9 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-node-parent
+   #:schedule-node-next-sibling
+   #:schedule-node-filter-get-filter
    #:schedule-node-band-sink
    #:schedule-node-get-schedule-depth
    #:schedule-node-get-ancestor
