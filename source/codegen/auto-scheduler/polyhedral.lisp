@@ -194,9 +194,18 @@ This function returns a list of the results of applying f to each node. NIL is e
 
 (defun schedule-node-get-undernearth-bands (schedule-node)
   (declare (type isl::schedule-node schedule-node))
-  (map-schedule-node-children #'(lambda (type band mark) (declare (ignore mark)) (when (eql type :schedule-node-band) band)) schedule-node))
+  (map-schedule-node-children
+   #'(lambda (type band mark)
+       (when (and
+              (eql type :schedule-node-band)
+              (or
+               (null mark)
+               (null (uiop:symbol-call :caten/codegen/transform :directive-visible mark))))
+         band))
+   schedule-node))
 
 (defun schedule-node-get-band-from-relative-idx (schedule-node idx)
+  "Returns the idxth visible band"
   (declare (type isl::schedule-node schedule-node) (type fixnum idx))
   (nth idx (schedule-node-get-undernearth-bands schedule-node)))
 

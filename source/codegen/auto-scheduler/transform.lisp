@@ -11,7 +11,7 @@
   ;; Transforms
   (:export
    #:apply-interchange #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile #:apply-multi-tile
-   #:apply-parallel  #:apply-global))
+   #:apply-parallel #:apply-global #:apply-coalesce))
 
 (in-package :caten/codegen/transform)
 ;; ~~ Legality Computations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -154,9 +154,10 @@ for (int i=0; i<100; i+=amount) {
   (declare (type isl::schedule-node band) (type (or null Directive) directive-parent directive-child))
   (assert (eql (schedule-node-get-type band) :schedule-node-band) () "Only schedule-node-band is tilable!")
   (let* ((tiled-schedule (if directive-parent
-                             (schedule-node-insert-mark band (directive->id directive-parent))
+                             (schedule-node-get-child
+                              (schedule-node-insert-mark band (directive->id directive-parent))
+                              0)
                              band))
-         (tiled-schedule (schedule-node-get-child tiled-schedule 0))
          (tiled-schedule (schedule-node-band-tile tiled-schedule (tiling-sizes band :size-default amount))))
     (if directive-child
         (let ((tiled-schedule (schedule-node-insert-mark (schedule-node-get-child tiled-schedule 0) (directive->id directive-child))))
@@ -166,7 +167,7 @@ for (int i=0; i<100; i+=amount) {
               (schedule-node-get-child tiled-schedule 0)))
         tiled-schedule)))
 
-(defun %schedule-node-band-get-marks (schedule-node-band)
+(defun %schedule-node-band-get-mark (schedule-node-band)
   "Returns schedule-node-mark which is a parent of schedule-node-band.
 For example, if the tree is given as:
 ```
@@ -181,7 +182,7 @@ For example, if the tree is given as:
        (when (and (eql type :schedule-node-band) (schedule-node-is-equal schedule-node-band band))
          ;; [TODO] Test
          (print "BAND is found!")
-         (return-from %schedule-node-band-get-marks mark)))
+         (return-from %schedule-node-band-get-mark mark)))
    (schedule-get-root (schedule-node-get-schedule schedule-node-band))))
 ;; ~~ Tile Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-tile (band tile-size)
@@ -247,18 +248,26 @@ Do not feed the tiled band otherwise the generated kernel would be messed! This 
   (assert (check-legality-parallel band (poly-dependencies poly)))
   (%apply-tile band ls (directive "GLOBAL" ls NIL) (directive "LOCAL" ls NIL)))
 ;; ~~ Legality Based Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %apply-interchange (poly band1 band2)
+(defun apply-interchange (poly band1 idx)
   "Interchanges band1 and band2, if exists, also interchanges the marks. Finally the legality of transformation is checked."
-  (declare (type isl::schedule-node-band band1 band2))
-  
-  )
+  (declare (type isl::schedule-node-band band1) (type fixnum idx))
+  (let* ((maybe-mark (%schedule-node-band-get-mark band1))
+         (band1-band (if maybe-mark (schedule-node-delete maybe-mark) band1)) ;; = point out to schedule_node_band
+         (_ (assert (eql (schedule-node-get-type band1-band) :schedule-node-band))) ;; TODO: return to nil?
+         (mupa (schedule-node-band-get-partial-schedule band1))
+         (node (schedule-node-delete band1-band))
+         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
+         (__ (when (= 0 n-child) (return-from apply-interchange nil))) ;; Nothing to interchange
+         ;; TODO: Update how to specify the idx
+         (node (schedule-node-get-band-from-relative-idx node idx)) ;; must retrive the band2 from node
+         (___ (assert node () "IDX=~a does not exists in the schedule:~%~A" idx band1))
+         (node (if maybe-mark (schedule-node-insert-mark node (schedule-node-mark-get-id maybe-mark)) node))
+         (node (schedule-node-insert-partial-schedule node mupa)))
+    (declare (ignore _ __ ___))
+    (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
+      node)))
 
-(defun apply-interchange (poly band1 band-idx)
-  (declare (type isl::schedule-node-band band1) (type fixnum band-idx))
-  
-  )
-
-(defun apply-global-coalescing ()
+(defun apply-coalesce (band1 n-amount)
   "Merges the given schedule-node-band.
 ```
 
@@ -267,35 +276,27 @@ This optimization has an effect for both archtecture:
 For CPU: Effective for parallelizing tiled bands, especially when the outermost band is relatively small.
 For GPU: Find out K-Warp chance.
 "
+  (declare (type isl::schedule-node band1) (type fixnum n-amount))
+  (assert (eql :schedule-node-band (schedule-node-get-type band1)))
+  ;; TODO: Support n-amount
   ;; TODO: Effective for both CPU and GPU PARALLEL/GLOBAL
   ;; OMP COLLAPSE is effective for smaller arrays with tiled bands
-  (error "TODO")
   ;; TODO: Gather N Schedule-Node-Band who is global or parallelized.
   ;; TODO: Insert a new schedule-node with coalesced accessing
   ;; TODO: Check legality of the final schedule.
-  )
+  (let* ((sched-a (schedule-node-band-get-partial-schedule band1))
+         (band2 (schedule-node-get-child band1 0))
+         (_ (assert (eql :schedule-node-band (print (schedule-node-get-type band2))))) ;; [TODO] skip mark ...
+         (sched-b (schedule-node-band-get-partial-schedule band2))
+         (merged (multi-union-pw-aff-flat-range-product sched-a sched-b))
+         (node (schedule-node-delete band1))
+         (sched (schedule-node-insert-partial-schedule node merged)))
+    ;; [TODO] なんか違うかも
+    sched))
 
 (defun apply-cache-blocking ()
   "Applies Shared Memory Cache-Blocking Optimization to the given schedule-node-band (expecting the code is generated for the gpu)
 TODO: How to insert the barrier?
 "
+  ;; TODO: This is just a tiling
   )
-
-
-
-(defun apply-interchange (poly band1 idx)
-  "Returns a new schedule of band1 with band1 and idx'th band node interchanged. Returns nil if the operation breaks the dependencies."
-  (declare (type polyhedral-ir poly) (type isl::schedule-node band1) (type fixnum idx))
-  (assert (eql (schedule-node-get-type band1) :schedule-node-band))
-  (let* ((mupa (schedule-node-band-get-partial-schedule band1))
-         (node (schedule-node-delete band1))
-         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
-         (_ (when (= 0 n-child) (return-from apply-interchange nil))) ;; Nothing to interchange
-         (node (schedule-node-get-band-from-relative-idx node idx))
-         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" idx band1))
-         (node (schedule-node-insert-partial-schedule node mupa)))
-    (declare (ignore _ __))
-    (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
-      ;;(schedule-node-insert-mark node (directive->id (directive "INTERCHANGE" idx t)))
-      node)))
-

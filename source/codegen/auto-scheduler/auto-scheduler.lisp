@@ -6,7 +6,7 @@
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
     #:AutoScheduler #:autoscheduler-best-schedule #:autoscheduler-config
     #:autoscheduler-n-generation #:autoscheduler-gen2act
-    #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing
+    #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing #:Coalesce
     #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs)
   (:export
    #:si-apply-opt #:si-finalize-schedule #:with-manual-scheduler))
@@ -34,7 +34,7 @@
    (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
 
 (defclass Global (Parallel) nil) ;; blockIdx + threadIdx
-(defmethod apply-opt ((opt Global) schedule-node item config) (apply-global schedule-node (opt-amount opt)))
+(defmethod apply-opt ((opt Global) schedule-node item config) (apply-global (getattr item :polyhedral) schedule-node (opt-amount opt)))
 
 (defclass Interchange (Opt) nil (:documentation "Swaps the loop with `amount` th band node in the current schedule."))
 (defmethod apply-opt ((opt Interchange) schedule-node item config)
@@ -83,7 +83,9 @@ for (int i=0; i<10; i+=amount) {
 (defmethod apply-opt ((opt Packing) schedule-node item config) (apply-pack schedule-node (opt-amount opt)))
 (defmethod opt-applicable-p ((opt Packing) schedule-node item config) t)
 
-(defclass Coalesce (Opt) nil) ;; TODO
+(defclass Coalesce (Opt) nil)
+(defmethod opt-applicable-p ((opt Coalesce) schedule-node item config) (apply-coalesce schedule-node (opt-amount opt)))
+(defmethod apply-opt ((opt Coalesce) schedule-node item config) (apply-coalesce schedule-node (opt-amount opt)))
 ;; ~~ Manual Scheduling Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun si-apply-opt (config schedule-item opt band)
   (declare (type node schedule-item) (type Opt opt) (type fixnum band))

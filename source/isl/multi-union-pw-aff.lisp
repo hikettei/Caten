@@ -90,3 +90,8 @@
   (:give multi-val)
   (:take space)
   (:take value-list))
+
+(define-isl-function multi-union-pw-aff-flat-range-product %isl-multi-union-pw-aff-flat-range-product
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take multi-union-pw-aff))

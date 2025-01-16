@@ -67,8 +67,9 @@
           (caten/codegen/scop:scop node)
           (return-from get-convnd-relu-schedule node))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; TODO:
+;; TODO: Some scheduling tests ...
 ;; - Tile Optimization Test (band node relocation works? 2d tiling works?)
+;; - test by string=
 
 ;; ~~ Hand Optimized Kernel Generation(GEMM) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun print-bp (si) ;; utils for debugging in repl
@@ -76,7 +77,7 @@
 
 (defun print-schedule (si)
   (print (getattr si :polyhedral)))
-;; 明日のTODO: multiple node-writes
+
 (define-auto-scheduler
     (Mock-CPU-AutoScheduler ()) :n-global-loop 1
     :vectorizes
@@ -93,6 +94,7 @@
 ;; [TODO] Vectorizeを適用すると(getattr node :global-unrolled-space)を固定する。で，val_2_x_x_xは:global-unroll-spaceベースで決定する。
 ;; - これがEXPRごとで共有できないとvectorize失敗になる
 ;; - 1. Add: :VECTORIZED (or implement: expr-vectorize)
+;;  - Specify the idx.
 ;;  - LOAD, STORE SIMD Rewriting rule...
 ;;  - Add the concept of pack/unpack
 ;;  - Softmax: Innermost dims are not coincident...
@@ -117,7 +119,8 @@
 ;; 90% performance of OpenBLAS in the hand written kernel is enough great!
 ;; reference: https://salykova.github.io/matmul-cpu
 ;; Workload:
-;; - Unrollの代わりにUpcsatを追加する
+;; - Unrollの代わりにUpcastを追加する
+;; - 
 ;; - Upcsat/PACK/UNPACK/COMPUTEを追加する
 ;; - Upcast/COMPUTEのRendererを追加する
 ;; - Memory Planner?
@@ -154,9 +157,16 @@
       ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
       ;; Apply packing first to use TensorCore MULADD
       (opt (make-instance 'Parallel) 0)
-      (opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
+      (opt (make-instance 'TileBand :amount 32) 0)
+      (opt (make-instance 'TileBand :amount 32) 2)
+      (opt (make-instance 'TileBand :amount 32) 4)
       (opt (make-instance 'Packing :amount 4) 1)
-      (opt (make-instance 'Packing :amount 4) 2)
+      (opt (make-instance 'Packing :amount 4) 3)
+      (opt (make-instance 'Packing :amount 4) 5)
+ ;;     (opt (make-instance 'Packing :amount 4) 1)
+;;      (opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
+;;      (opt (make-instance 'Packing :amount 4) 1)
+;;      (opt (make-instance 'Packing :amount 4) 2)
       ;; 2D Tiling (16, 16)
       ;; (opt (make-instance 'TileBand :amount 16) 0)
       ;; (opt (make-instance 'TileBand :amount 16) 1)
@@ -166,7 +176,10 @@
       ;; (opt (make-instance 'Parallel) 5)
       )
     (print-schedule raw)
-    (print-bp raw)))
+    (print-bp raw)
+    nil
+    
+    ))
 
 ;; Note: OPTIMIZE=1 Behaviour
 ;; (with-manual-scheduler (x scheduler)

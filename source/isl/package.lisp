@@ -157,6 +157,7 @@
    #:union-pw-aff-floor
    #:union-pw-aff-scale-val
    #:multi-union-pw-aff-set-union-pw-aff
+   #:multi-union-pw-aff-flat-range-product
    #:multi-val-from-val-list
    ;; Union set
    #:union-set
@@ -392,6 +393,7 @@
    #:schedule-node-band-get-space
    #:schedule-node-has-parent
    #:schedule-node-is-equal
+   
    ))
 
 (in-package :caten/isl)
