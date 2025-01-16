@@ -79,10 +79,20 @@ scop.lisp for the opposite things.
          ;; Entry point for transformations
          (cond
            ((is "GLOBAL")
+            ;; TODO:
+            ;; const idx1 = amount * blockIdx.X;
             (let ((replacement (astfor-mutate-global user (ctx-get-rank ctx) (directive-amount directive))))
               (incf (context-n-global-dims ctx))
               (return-from parse-isl-ast-mark replacement)))
+           ((is "LOCAL")
+            ;; TODO
+            ;; If (min ...) is scheduled, insert IF
+            ;; const idx2 = threadIdx.y;
+            ;; index = idx1 + idx2;
+            
+            )
            ((is "PARALLEL")
+            ;; TODO: The order does not matter
             (setf (astfor-scope user) :global))
            ;; UNROLL_OUTER + UNROLL_INNER = UNROLL
            ((is "UNROLL_OUTER")
@@ -118,6 +128,7 @@ scop.lisp for the opposite things.
            ((is "PACKED_INNER")
             (assert (null (astfor-marks user)) () "PACKED_INNER should be orthogonal with other directives.")
             (setf (astfor-marks user) (list directive)))))
+        ;; [TODO] remove this case!
         ;; [TODO] Test all cases for multiple directives per single loop.
         ;; - 1. TILE+PACKING (high priority!)
         ;; - 2. UNROLL+PACKING

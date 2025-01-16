@@ -200,7 +200,7 @@ This function returns a list of the results of applying f to each node. NIL is e
               (eql type :schedule-node-band)
               (or
                (null mark)
-               (null (uiop:symbol-call :caten/codegen/transform :directive-visible mark))))
+               (uiop:symbol-call :caten/codegen/transform :directive-visible mark)))
          band))
    schedule-node))
 

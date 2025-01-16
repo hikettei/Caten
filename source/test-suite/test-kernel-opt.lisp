@@ -25,47 +25,29 @@
 ;; - 1. Reduction: Gemm, Conv2D, Embedding, etc.
 ;; - 2. Normalization: Softmax, LayerNorm, etc.
 ;; the function get-x-schedule will return the schedule item of each kernel with polyhedral ir.
-(defun get-gemm-schedule (m n k)
+(defun get-schedule-from-op (op)
   (multiple-value-bind (schedule runtime)
-      (get-raw-schedule  (!matmul (make-tensor `(,m ,n)) (make-tensor `(,n ,k))))
-    (assert (= 1 (count-if #'jit-kernel-p (graph-nodes schedule))) () "Cannot run the test without scheduling gemm = 1 kernel.")
+      (get-raw-schedule op)
+    (assert (= 1 (count-if #'jit-kernel-p (graph-nodes schedule))) () "Cannot run the op without scheduling op = 1 kernel.")
     (dolist (node (graph-nodes schedule))
       (when (jit-kernel-p node)
         (caten/codegen/blueprint:lower-schedule-item node (runtime-graph runtime) schedule)
         (caten/codegen/scop:scop node)
-        (return-from get-gemm-schedule node)))))
+        (return-from get-schedule-from-op node)))))
+
+(defun get-gemm-schedule (m n k)
+  (get-schedule-from-op (!matmul (make-tensor `(,m ,n)) (make-tensor `(,n ,k)))))
 
 (defun get-softmax-schedule ()
-  (multiple-value-bind (schedule runtime)
-      (get-raw-schedule (!softmax (make-tensor `(128 128))))
-    (assert (= 1 (count-if #'jit-kernel-p (graph-nodes schedule))) () "Cannot run the test without scheduling softmax = 1 kernel.")
-    (dolist (node (graph-nodes schedule))
-      (when (jit-kernel-p node)
-        (caten/codegen/blueprint:lower-schedule-item node (runtime-graph runtime) schedule)
-        (caten/codegen/scop:scop node)
-        (return-from get-softmax-schedule node)))))
+  (get-schedule-from-op (!softmax (make-tensor `(128 128)))))
 
-(defun get-layernorm-schedule ()
+(defun get-layer-norm-schedule ()
   (with-inference-mode ()
-    (multiple-value-bind (schedule runtime)
-        (get-raw-schedule (forward (LayerNorm `(128)) (make-tensor `(128 128))))
-      (assert (= 1 (count-if #'jit-kernel-p (graph-nodes schedule))) () "Cannot run the test without scheduling softmax = 1 kernel.")
-      (dolist (node (graph-nodes schedule))
-        (when (jit-kernel-p node)
-          (caten/codegen/blueprint:lower-schedule-item node (runtime-graph runtime) schedule)
-          (caten/codegen/scop:scop node)
-          (return-from get-layernorm-schedule node))))))
+    (get-schedule-from-op (forward (LayerNorm `(128)) (make-tensor `(128 128))))))
 
 (defun get-convnd-relu-schedule ()
   (with-inference-mode ()
-    (multiple-value-bind (schedule runtime)
-        (get-raw-schedule (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))
-      (assert (= 1 (count-if #'jit-kernel-p (graph-nodes schedule))) () "Cannot run the test without scheduling softmax = 1 kernel.")
-      (dolist (node (graph-nodes schedule))
-        (when (jit-kernel-p node)
-          (caten/codegen/blueprint:lower-schedule-item node (runtime-graph runtime) schedule)
-          (caten/codegen/scop:scop node)
-          (return-from get-convnd-relu-schedule node))))))
+    (get-schedule-from-op (!relu (forward (ConvND 3 6 `(5 5)) (make-tensor `(10 3 25 25)))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun print-bp (si) ;; utils for debugging in repl
   (caten/codegen/blueprint:print-blueprint (getattr si :blueprint) t))
@@ -140,9 +122,93 @@ for (int c0 = 0; c0 < a; c0 += 32) {
   }
 }
 ")))
-;; TODO: Some scheduling tests ...
-;; - Tile Optimization Test (band node relocation works? 2d tiling works?)
-;; - test by string=
+
+(deftest test-elementwise-vectorize-parallelize
+  ;; Interchange PARALLEL -> Does not effect on the scheduled code?
+  (ok
+   (string=
+    (let ((raw (get-schedule-from-op (!sin (make-tensor `(100 100))))))
+      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+        (opt (make-instance 'Parallel) 0)
+        (opt (make-instance 'Packing :amount 4) 0))
+      (get-schedule raw))
+    (let ((raw (get-schedule-from-op (!sin (make-tensor `(100 100))))))
+      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+        (opt (make-instance 'Packing :amount 4) 0)
+        (opt (make-instance 'Parallel) 0))
+      (get-schedule raw)))))
+
+(deftest test-global-mutation
+  (testing "If LocalSize=1, @DIRECTIVE(LOCAL) should not appeared here."
+    (let ((raw (get-gemm-schedule 'm 'n 'k)))
+      (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
+        (opt (make-instance 'Global :amount 1) 0))
+      (assert-schedule raw "// @DIRECTIVE(TYPE=GLOBAL,AMOUNT=1,VISIBLE=NIL)
+for (int c0 = 0; c0 < m; c0 += 1) {
+  for (int c2 = 0; c2 < k; c2 += 1) {
+    TASK(c0, c2);
+    for (int c3 = 0; c3 < n; c3 += 1)
+      TASK(c0, c2, c3);
+    TASK(c0, c2);
+  }
+}
+")))
+  (testing "LocalSize>1"
+    (let ((raw (get-gemm-schedule 'm 'n 'k)))
+      (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
+        ;; Gemm is parallelized at the two outermost dimensions
+        (opt (make-instance 'Global :amount 16) 0)
+        (opt (make-instance 'Global :amount 16) 0))
+      (assert-schedule raw "// @DIRECTIVE(TYPE=GLOBAL,AMOUNT=16,VISIBLE=NIL)
+for (int c0 = 0; c0 < m; c0 += 16) {
+  // @DIRECTIVE(TYPE=LOCAL,AMOUNT=16,VISIBLE=NIL)
+  for (int c1 = 0; c1 <= min(15, m - c0 - 1); c1 += 1) {
+    // @DIRECTIVE(TYPE=GLOBAL,AMOUNT=16,VISIBLE=NIL)
+    for (int c2 = 0; c2 < k; c2 += 16) {
+      // @DIRECTIVE(TYPE=LOCAL,AMOUNT=16,VISIBLE=NIL)
+      for (int c3 = 0; c3 <= min(15, k - c2 - 1); c3 += 1) {
+        TASK(c0 + c1, c2 + c3);
+        for (int c4 = 0; c4 < n; c4 += 1)
+          TASK(c0 + c1, c2 + c3, c4);
+        TASK(c0 + c1, c2 + c3);
+      }
+    }
+  }
+}
+"))))
+
+;; [TODO]
+;; (deftest test-tile2d
+;;  (let ((raw (get-gemm-schedule 'm 'n 'k)))
+;;    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+;;      (opt (make-instance 'TileBand :amount 16) 0)
+;;      (opt (make-instance 'TileBand :amount 16) 2))
+;;    (get-schedule raw)))
+
+(deftest test-tile-and-coalesce-cpu
+  (let ((raw (get-gemm-schedule 'm 'n 'k)))
+    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+      (opt (make-instance 'Parallel) 0)
+      (opt (make-instance 'TileBand :amount 16) 0)
+      (opt (make-instance 'TileBand :amount 16) 2)
+      )
+    (print (get-schedule raw))
+    nil))
+
+(deftest test-tile-and-coalesce-gpu
+  (let ((raw (get-gemm-schedule 'm 'n 'k)))
+    (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
+      (opt (make-instance 'Global :amount 16) 0)
+      (opt (make-instance 'Global :amount 16) 0)
+      )
+    (print (get-schedule raw))
+    nil))
+;; Test Softmax Inner band is not coincident (signal ...)
+;; Test Coalesce
+;; Test Tile2D
+;; Test UNROLL+PACK
+;; Test Interchange (Mark are moved)
+;; TODO: Markが挿入されたBandはInterchangeできないようにした方が良くない？
 
 ;; ~~ Hand Optimized Kernel Generation(GEMM) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:

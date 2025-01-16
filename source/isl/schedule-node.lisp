@@ -156,3 +156,7 @@
   (:give boolean)
   (:keep schedule-node)
   (:keep schedule-node))
+
+(define-isl-function schedule-node-band-sink %isl-schedule-node-band-sink
+  (:give schedule-node)
+  (:take schedule-node))

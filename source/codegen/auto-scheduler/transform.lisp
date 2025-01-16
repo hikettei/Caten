@@ -211,8 +211,17 @@ The difference from using `apply-tile` multiple time is, this function will inte
 "
   (declare (type isl::schedule-node-band band) (type list tile-sizes))
   ;; TODO: Use isl_schedule_node_band_sink, in manual.pdf p217
-  (error "TODO")
-  )
+  (labels ((tile (sched rest-size)
+             (if (null rest-size)
+                 sched
+                 (let* ((sched (apply-tile sched (car rest-size)))
+                        (n-children (isl::%isl-schedule-node-n-children (isl::schedule-node-handle sched)))
+                        (child (if (= 0 n-children) nil (schedule-node-get-child sched 0))))
+                   (when (null child) (return-from apply-multi-tile nil)) ;; lack of dims
+                   (when (not (eql (schedule-node-get-type child) :schedule-node-band))
+                     (return-from apply-multi-tile nil)) ;; not a band
+                   (tile (schedule-node-get-child child 0) (cdr rest-size))))))
+    (tile band tile-sizes)))
 ;; ~~ Coincidence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-parallel (schedule-node)
   ;; note: num of cores optimization is beyond caten!
@@ -249,50 +258,50 @@ Do not feed the tiled band otherwise the generated kernel would be messed! This 
   (%apply-tile band ls (directive "GLOBAL" ls NIL) (directive "LOCAL" ls NIL)))
 ;; ~~ Legality Based Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-interchange (poly band1 idx)
-  "Interchanges band1 and band2, if exists, also interchanges the marks. Finally the legality of transformation is checked."
-  (declare (type isl::schedule-node-band band1) (type fixnum idx))
-  (let* ((maybe-mark (%schedule-node-band-get-mark band1))
-         (band1-band (if maybe-mark (schedule-node-delete maybe-mark) band1)) ;; = point out to schedule_node_band
-         (_ (assert (eql (schedule-node-get-type band1-band) :schedule-node-band))) ;; TODO: return to nil?
-         (mupa (schedule-node-band-get-partial-schedule band1))
-         (node (schedule-node-delete band1-band))
+  "Returns a new schedule of band1 with band1 and idx'th band node interchanged. Returns nil if the operation breaks the dependencies."
+  (declare (type polyhedral-ir poly) (type isl::schedule-node band1) (type fixnum idx))
+  (assert (eql (schedule-node-get-type band1) :schedule-node-band))
+  (let* ((mupa (schedule-node-band-get-partial-schedule band1))
+         (node (schedule-node-delete band1))
          (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
-         (__ (when (= 0 n-child) (return-from apply-interchange nil))) ;; Nothing to interchange
-         ;; TODO: Update how to specify the idx
-         (node (schedule-node-get-band-from-relative-idx node idx)) ;; must retrive the band2 from node
-         (___ (assert node () "IDX=~a does not exists in the schedule:~%~A" idx band1))
-         (node (if maybe-mark (schedule-node-insert-mark node (schedule-node-mark-get-id maybe-mark)) node))
+         (_ (when (= 0 n-child) (return-from apply-interchange nil))) ;; Nothing to interchange
+         (node (schedule-node-get-band-from-relative-idx node idx))
+         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" idx band1))
          (node (schedule-node-insert-partial-schedule node mupa)))
-    (declare (ignore _ __ ___))
+    (declare (ignore _ __))
     (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
       node)))
 
-(defun apply-coalesce (band1 n-amount)
-  "Merges the given schedule-node-band.
+(defun apply-coalesce (band1)
+  "Merges the band with the undernearth band if possible.
+The basic idea is that:
 ```
-
+(dotimes (i 10)
+  (dotimes (j 10)
+    (print (+ (* 10 i) j))))
 ```
-This optimization has an effect for both archtecture:
-For CPU: Effective for parallelizing tiled bands, especially when the outermost band is relatively small.
-For GPU: Find out K-Warp chance.
-"
-  (declare (type isl::schedule-node band1) (type fixnum n-amount))
+This is equivalent to:
+```
+(dotimes (i 100)
+  (print (+ (* 10 (floor i 10)) (mod i 10))))
+```
+We assume band1 and band2 are contiguous and mergeable dimension by the shape tracker.
+(we only want this optimization under the PARALLEL/GLOBAL Nodes)"
+  (declare (type isl::schedule-node band1))
   (assert (eql :schedule-node-band (schedule-node-get-type band1)))
-  ;; TODO: Support n-amount
-  ;; TODO: Effective for both CPU and GPU PARALLEL/GLOBAL
-  ;; OMP COLLAPSE is effective for smaller arrays with tiled bands
-  ;; TODO: Gather N Schedule-Node-Band who is global or parallelized.
-  ;; TODO: Insert a new schedule-node with coalesced accessing
-  ;; TODO: Check legality of the final schedule.
+  ;; 単純にこうやって書き換えるだけにする。
+  ;; TODO: @DIRECTIVE(GLOBAL) const idx2 = blockDim.x * gridDim.x
+  ;; TODO: @DIRECTIVE(LOCAL)  const idx1 = threadIdx.x
+  ;; Coalesceにはそれを踏まえてSchedule Node Bandを書き換えるようにしたい。。。
+  
   (let* ((sched-a (schedule-node-band-get-partial-schedule band1))
          (band2 (schedule-node-get-child band1 0))
          (_ (assert (eql :schedule-node-band (print (schedule-node-get-type band2))))) ;; [TODO] skip mark ...
          (sched-b (schedule-node-band-get-partial-schedule band2))
-         (merged (multi-union-pw-aff-flat-range-product sched-a sched-b))
-         (node (schedule-node-delete band1))
-         (sched (schedule-node-insert-partial-schedule node merged)))
-    ;; [TODO] なんか違うかも
-    sched))
+         (merged (multi-union-pw-aff-flat-range-product sched-a sched-b)))
+    (declare (ignore _))
+    (print merged)
+    band1))
 
 (defun apply-cache-blocking ()
   "Applies Shared Memory Cache-Blocking Optimization to the given schedule-node-band (expecting the code is generated for the gpu)

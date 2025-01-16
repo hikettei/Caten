@@ -80,6 +80,8 @@
    #:create-space-set
    #:create-space-map
    #:space-dim
+   #:space-add-dims
+   #:space-set-from-params
    #:multi-aff-zero
    #:set-from-multi-aff
    ;; Local Space
@@ -139,6 +141,7 @@
    #:basic-set-add-constraint
    #:basic-set-apply
    ;; MultiUnionPwAff
+   #:pw-aff-var-on-domain
    #:multi-union-pw-aff
    #:multi-union-pw-aff-from-str
    #:multi-union-pw-aff-intersect-domain
@@ -156,6 +159,7 @@
    #:multi-union-pw-aff-floor
    #:union-pw-aff-floor
    #:union-pw-aff-scale-val
+   #:multi-union-pw-aff-get-space
    #:multi-union-pw-aff-set-union-pw-aff
    #:multi-union-pw-aff-flat-range-product
    #:multi-val-from-val-list
@@ -367,6 +371,7 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-node-band-sink
    #:schedule-node-get-schedule-depth
    #:schedule-node-get-ancestor
    #:schedule-node-band-set-ast-build-options

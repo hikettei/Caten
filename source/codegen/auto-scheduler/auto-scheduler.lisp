@@ -6,7 +6,7 @@
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
     #:AutoScheduler #:autoscheduler-best-schedule #:autoscheduler-config
     #:autoscheduler-n-generation #:autoscheduler-gen2act
-    #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing #:Coalesce
+    #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing #:Coalesce #:Multi-Tile-Band
     #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs)
   (:export
    #:si-apply-opt #:si-finalize-schedule #:with-manual-scheduler))
@@ -48,6 +48,14 @@
   ;; [TODO] hand-written condition to know when the tiling is effective and limit the exploration space.
   t)
 
+(defclass Multi-Tile-Band (Opt) ((tile-sizes :initarg :tile-sizes :initform nil :accessor opt-tile-sizes))
+  (:documentation "Applies multiple tiling to the given schedule-node-band with the sizes"))
+(defmethod apply-opt ((opt Multi-Tile-Band) schedule-node item config)
+  (assert (opt-tile-sizes opt) () "Multi-Tile-Band: No tile-sizes are given.")
+  (assert (null (opt-amount opt)) () "Do not provide opt-amount for Multi-Tile-Band")
+  (apply-multi-tile schedule-node (opt-tile-sizes opt)))
+(defmethod opt-applicable-p ((opt Multi-Tile-Band) schedule-node item config) (apply-multi-tile schedule-node (opt-tile-sizes opt)))
+
 (defclass Unroll (Opt) nil (:documentation "Unroll the loop with `amount`
 ```
 for (int i=0; i<10; i++) {
@@ -84,17 +92,17 @@ for (int i=0; i<10; i+=amount) {
 (defmethod opt-applicable-p ((opt Packing) schedule-node item config) t)
 
 (defclass Coalesce (Opt) nil)
-(defmethod opt-applicable-p ((opt Coalesce) schedule-node item config) (apply-coalesce schedule-node (opt-amount opt)))
-(defmethod apply-opt ((opt Coalesce) schedule-node item config) (apply-coalesce schedule-node (opt-amount opt)))
+(defmethod opt-applicable-p ((opt Coalesce) schedule-node item config) (apply-coalesce schedule-node))
+(defmethod apply-opt ((opt Coalesce) schedule-node item config) (apply-coalesce schedule-node))
 ;; ~~ Manual Scheduling Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun si-apply-opt (config schedule-item opt band)
+(defun si-apply-opt (config schedule-item opt band only-visible)
   (declare (type node schedule-item) (type Opt opt) (type fixnum band))
   (assert (eql (node-type schedule-item) :Schedule-Item))
   (assert (getattr schedule-item :polyhedral) () "si-apply-opt: Run caten/codegen/scop:scop first to obtain Polyhedral IR!")
   (let* ((bands (map-schedule-nodes
                  #'(lambda (type node mark)
                      (when (eql type :schedule-node-band)
-                       (when (or (null mark) (directive-visible mark))
+                       (when (or (null mark) (if only-visible (directive-visible mark) t))
                          node)))
                  (getattr schedule-item :polyhedral)))
          (tgt-band (nth band bands)))
@@ -124,10 +132,10 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
   (alexandria:with-gensyms (auto-scheduler-bind nglobal-bind)
     `(let ((,nglobal-bind 0) (,auto-scheduler-bind (make-instance ',auto-scheduler)))
        (caten/codegen/expr-cache:with-expr-cache ()
-         (flet ((opt (opt band-idx)
+         (flet ((opt (opt band-idx &key (only-visible t))
                   (declare (type opt opt) (type fixnum band-idx))
                   (when (typep opt 'Global) (incf ,nglobal-bind))
-                  (si-apply-opt ,auto-scheduler-bind ,scheduled-item opt band-idx)))
+                  (si-apply-opt ,auto-scheduler-bind ,scheduled-item opt band-idx only-visible)))
            (progn ,@body)
            (si-finalize-schedule ,auto-scheduler-bind ,scheduled-item :n-optglobals ,nglobal-bind))))))
 ;; ~~ Auto Scheduling Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
