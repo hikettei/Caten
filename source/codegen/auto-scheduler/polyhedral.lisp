@@ -45,8 +45,7 @@
              (union-map-union
               (union-map-union WaR RaW)
               WaW)))
-      (setf (poly-dependencies pg) (union-map-coalesce dependencies)
-            (poly-schedule pg) (compute-schedule pg))
+      (setf (poly-dependencies pg) (union-map-coalesce dependencies))
       pg)))
 
 (defmethod debug-render-to-clang ((pg Polyhedral-IR))
@@ -268,12 +267,25 @@ This function returns a list of the results of applying f to each node. NIL is e
     (schedule-node-insert-partial-schedule node mupa)))
 
 (defun ensure-single-kernel (schedule base-schedule)
-  (let ((top (schedule-node-get-child (schedule-get-root schedule) 0)))
-    (if (find (schedule-node-get-type top) `(:schedule-node-sequence :schedule-node-set))
+  (let ((top (schedule-node-get-child (schedule-get-root schedule) 0))
+        (base (schedule-node-get-child (schedule-get-root base-schedule) 0)))
+    (if (or
+         (find (schedule-node-get-type top) `(:schedule-node-sequence :schedule-node-set))
+         (find (schedule-node-get-type base) `(:schedule-node-sequence :schedule-node-set)))
         base-schedule
         schedule)))
 
 (defmethod compute-schedule ((poly Polyhedral-IR))
+  (macrolet ((set-option (name level)
+	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
+				 :pointer (isl::context-handle isl::*context*)
+				 :int ,level
+				 :void)))
+    (set-option "schedule_treat_coalescing" 0)
+    (set-option "schedule_outer_coincidence" 0)
+    (set-option "schedule_maximize_band_depth" 0)
+    (set-option "schedule_maximize_coincidence" 0)
+    (set-option "schedule_whole_component" 0))
   (let* ((sc (schedule-constraints-on-domain (poly-domain poly)))
          (sc (schedule-constraints-set-coincidence sc (poly-dependencies poly)))
          (sc (schedule-constraints-set-proximity sc (poly-dependencies poly)))
