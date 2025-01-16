@@ -1,7 +1,7 @@
 (defpackage :caten/test-suite/test-kernel-opt
   (:documentation "Tests all optimization rule defined in the ./source/codegen/search/engine.lisp")
   (:use :cl :rove :caten/api :caten/nn :caten/runtime :caten/codegen/scheduler :caten/air :caten/codegen/packing :caten/codegen/renderer
-   :caten/codegen/auto-scheduler :caten/codegen/expr)
+   :caten/codegen/auto-scheduler :caten/codegen/expr :cl-ppcre)
   (:import-from
    :caten/codegen/config
    #:define-auto-scheduler))
@@ -67,11 +67,6 @@
           (caten/codegen/scop:scop node)
           (return-from get-convnd-relu-schedule node))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; TODO: Some scheduling tests ...
-;; - Tile Optimization Test (band node relocation works? 2d tiling works?)
-;; - test by string=
-
-;; ~~ Hand Optimized Kernel Generation(GEMM) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun print-bp (si) ;; utils for debugging in repl
   (caten/codegen/blueprint:print-blueprint (getattr si :blueprint) t))
 
@@ -90,6 +85,66 @@
     )
 
 (define-auto-scheduler (Mock-GPU-AutoScheduler ()) :n-global-loop 3)
+;; ~~ Test Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun string-hide-nid (string)
+  "NID12345(...) -> TASK(...)"
+  (declare (type string string))
+  (regex-replace-all "NID[0-9]+" string "TASK"))
+
+(defun get-schedule (item)
+  (declare (type node item))
+  (assert (jit-kernel-p item))
+  (string-hide-nid
+   (caten/codegen/polyhedral:render-schedule-node
+    (caten/codegen/polyhedral:poly-schedule
+     (getattr item :polyhedral)))))
+
+(defmacro assert-schedule (item expected)
+  `(let ((r (get-schedule ,item)))
+     (ok (string= r ,expected) (format nil "[Scheduled]~%~a~%[Expected]~%~a" r ,expected))))
+
+(deftest test-packing-tileband-combine
+  (let ((raw (get-gemm-schedule 'a 'b 'c)))
+    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+      (opt (make-instance 'Parallel) 0)
+      (opt (make-instance 'TileBand :amount 32) 0)
+      (opt (make-instance 'TileBand :amount 32) 2)
+      (opt (make-instance 'TileBand :amount 32) 4)
+      (opt (make-instance 'Packing :amount 4) 1)
+      (opt (make-instance 'Packing :amount 4) 3)
+      (opt (make-instance 'Packing :amount 4) 5))
+    (assert-schedule raw "// @DIRECTIVE(TYPE=PARALLEL,AMOUNT=0,VISIBLE=T)
+for (int c0 = 0; c0 < a; c0 += 32) {
+  // @DIRECTIVE(TYPE=PACKED_OUTER,AMOUNT=4,VISIBLE=T)
+  for (int c1 = 0; c1 <= min(31, a - c0 - 1); c1 += 4) {
+    // @DIRECTIVE(TYPE=PACKED_INNER,AMOUNT=4,VISIBLE=NIL)
+    for (int c2 = 0; c2 <= min(3, a - c0 - c1 - 1); c2 += 1)
+      for (int c3 = 0; c3 < c; c3 += 32) {
+        // @DIRECTIVE(TYPE=PACKED_OUTER,AMOUNT=4,VISIBLE=T)
+        for (int c4 = 0; c4 <= min(31, c - c3 - 1); c4 += 4) {
+          // @DIRECTIVE(TYPE=PACKED_INNER,AMOUNT=4,VISIBLE=NIL)
+          for (int c5 = 0; c5 <= min(3, c - c3 - c4 - 1); c5 += 1) {
+            TASK(c0 + c1 + c2, c3 + c4 + c5);
+            for (int c6 = 0; c6 < b; c6 += 32) {
+              // @DIRECTIVE(TYPE=PACKED_OUTER,AMOUNT=4,VISIBLE=T)
+              for (int c7 = 0; c7 <= min(31, b - c6 - 1); c7 += 4) {
+                // @DIRECTIVE(TYPE=PACKED_INNER,AMOUNT=4,VISIBLE=NIL)
+                for (int c8 = 0; c8 <= min(3, b - c6 - c7 - 1); c8 += 1)
+                  TASK(c0 + c1 + c2, c3 + c4 + c5, c6 + c7 + c8);
+              }
+            }
+            TASK(c0 + c1 + c2, c3 + c4 + c5);
+          }
+        }
+      }
+  }
+}
+")))
+;; TODO: Some scheduling tests ...
+;; - Tile Optimization Test (band node relocation works? 2d tiling works?)
+;; - test by string=
+
+;; ~~ Hand Optimized Kernel Generation(GEMM) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
 ;; [TODO] Vectorizeを適用すると(getattr node :global-unrolled-space)を固定する。で，val_2_x_x_xは:global-unroll-spaceベースで決定する。
 ;; - これがEXPRごとで共有できないとvectorize失敗になる
