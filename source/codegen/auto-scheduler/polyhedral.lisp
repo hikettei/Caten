@@ -45,7 +45,8 @@
              (union-map-union
               (union-map-union WaR RaW)
               WaW)))
-      (setf (poly-dependencies pg) (union-map-coalesce dependencies))
+      (setf (poly-dependencies pg) (union-map-coalesce dependencies)
+            (poly-schedule pg) (compute-schedule pg))
       pg)))
 
 (defmethod debug-render-to-clang ((pg Polyhedral-IR))
