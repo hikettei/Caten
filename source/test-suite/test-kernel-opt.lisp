@@ -191,7 +191,7 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 
 (deftest test-tile-and-coalesce-cpu
   (let ((raw (get-gemm-schedule 'm 'n 'k)))
-    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
+    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral:reschedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       (opt (make-instance 'Parallel) 0)
       (opt (make-instance 'TileBand :amount 16) 0)
@@ -292,7 +292,7 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; - ReminderとPACKED?
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule 'a 'b 'c)))
-    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
+    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::reschedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;; Scheduling Priority:
       ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
@@ -340,7 +340,7 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-softmax-test
   (let ((raw (get-softmax-schedule)))
-    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
+    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral:reschedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;;(opt (make-instance 'Parallel) 0)
       ;(opt (make-instance 'Packing :amount 4) 0)
@@ -361,7 +361,7 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; ~~ Hand Optimized Kernel Generation(Conv2d) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-conv2d-relu-test
   (let ((raw (get-convnd-relu-schedule)))
-    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
+    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral:reschedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
      ; (opt (make-instance 'Packing :amount 4) 6)
      ; (opt (make-instance 'Packing :amount 4) 7)
@@ -373,7 +373,7 @@ for (int c0 = 0; c0 < m; c0 += 16) {
   ;; Symbolic kernel needs expr-cache
   (caten/codegen/expr-cache:with-expr-cache ()
     (let ((raw (get-embedding-schedule 128 128)))
-      (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
+      (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral:reschedule (getattr raw :polyhedral)))
       (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
         ;; (opt (make-instance 'Packing :amount 4) 6)
         ;; (opt (make-instance 'Packing :amount 4) 7)

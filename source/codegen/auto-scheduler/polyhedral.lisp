@@ -16,7 +16,8 @@
    #:map-schedule-node-children
    #:schedule-node-get-undernearth-bands
    #:schedule-node-get-band-from-relative-idx
-   #:render-schedule-node))
+   #:render-schedule-node
+   #:reschedule))
 
 (in-package :caten/codegen/polyhedral)
 
@@ -275,7 +276,7 @@ This function returns a list of the results of applying f to each node. NIL is e
         base-schedule
         schedule)))
 
-(defmethod compute-schedule ((poly Polyhedral-IR))
+(defmethod reschedule ((poly Polyhedral-IR))
   (macrolet ((set-option (name level)
 	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
 				 :pointer (isl::context-handle isl::*context*)
