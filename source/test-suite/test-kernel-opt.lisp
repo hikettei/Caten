@@ -290,19 +290,19 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; - PACKED_INNER次元は全てVectorizeされると仮定する。(無理なら等価な普通の演算に書き換えられるように)
 ;; - ReminderとPACKED?
 (deftest hand-optimized-cpu-gemm-test
-  (let ((raw (get-gemm-schedule 'a 'b 'c)))
-    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-      ;; Scheduling Priority:
-      ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
-      ;; Apply packing first to use TensorCore MULADD
-      (opt (make-instance 'Parallel) 0)
-      (opt (make-instance 'TileBand :amount 32) 0)
-      (opt (make-instance 'Packing :amount 16) 1))
-    (print-schedule raw)
-    (print-bp raw)
-    nil
-    
-    ))
+  (with-expr-cache ()
+    (let ((raw (get-gemm-schedule 'a 'b 'c)))
+      (schedule-item-maximize-band-depth raw)
+      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+        ;; Scheduling Priority:
+        ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
+        ;; Apply packing first to use TensorCore MULADD
+        (opt (make-instance 'Parallel) 0)
+        (opt (make-instance 'TileBand :amount 32) 0)
+        (opt (make-instance 'Unroll :amount 16) 1))
+      (print-schedule raw)
+      (print-bp raw)
+      )))
 
 ;; Note: OPTIMIZE=1 Behaviour
 ;; (with-manual-scheduler (x scheduler)

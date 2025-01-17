@@ -23,7 +23,8 @@
    #:make-define-global
    #:%renderer-get-auto-scheduler
    #:render-index
-   #:render-aref-index))
+   #:render-aref-index
+   #:renderer-scope-valid-code-p))
 
 (in-package :caten/codegen/renderer)
 
@@ -60,14 +61,15 @@ for(int idx=upfrom, below, by)
 ```
 if(condition)
 ```"
-         :slots ((condition :type Expr)))
+         :slots ((condition :type Expr) (idx :type symbol)))
 
 (defnode (:Render :ENDIF) ()
          "
 ```
 } // endif
 ```
-")
+"
+         :slots ((idx :type symbol)))
 
 (defnode (:Render :Aref) ()
          ":AREF corresponds to the following code:
@@ -222,13 +224,24 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
       (from-expr (iteration-space-shape is) components))))
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
-  nil
-  (:documentation "Default Renderer used to print-object in repl"))
+  ((scope :initform nil :initarg :scope :accessor renderer-scope)
+   (scope-valid-code-p :initform t :accessor renderer-scope-valid-code-p))
+  (:documentation "Default Renderer used to print-object in repl. If scope is provided, the default renderer will proceed with checking the legality of the variable access."))
+
+(defun sname (obj) (intern (string-upcase (princ-to-string obj)) "KEYWORD"))
+(defmethod renderer-check-legality ((renderer Default-Renderer) name)
+  (when (and name (symbolp name) (renderer-scope renderer))
+    (let ((scope (renderer-scope renderer)))
+      (when (null (gethash (sname name) scope))
+        ;; (warn "~a is not defined" name)
+        (setf (renderer-scope-valid-code-p renderer) nil)))))
 
 (defmethod %render-const ((renderer Default-Renderer) obj)
+  (renderer-check-legality renderer obj)
   (format nil "~(~a~)" obj))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
+  (renderer-check-legality renderer (getattr node :value))
   (%render-const renderer (getattr node :value)))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :SPACE)) node)
@@ -282,6 +295,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (def :< "<"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
+  (renderer-check-legality renderer (getattr node :storage-id))
   (render-aref renderer node))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)

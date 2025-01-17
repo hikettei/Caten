@@ -25,7 +25,9 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
    #:GFlops-Measurer-ops
    #:GFlops-Measurer-succeed-p
    #:compute-gflops
-   #:schedule-item-gflops))
+   #:schedule-item-gflops)
+  ;; Verifier
+  (:export #:verify-blueprint))
 
 (in-package :caten/codegen/blueprint)
 ;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -739,3 +741,78 @@ Lowers the Schedule-Item into blueprint.
     (dolist (g grids)
       (setf (nth (exprgrid-rank g) out) g))
     out))
+;; ~~ Verifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct Scope
+  (variables (make-hash-table) :type hash-table))
+
+(defstruct (Var
+            (:constructor make-var (dtype pointer-p)))
+  dtype pointer-p)
+
+(defmethod var-eq ((var1 Var) (var2 Var))
+  ;; [TODO] Compare dtypes
+  (eql (var-pointer-p var1) (var-pointer-p var2)))
+
+(defun sname (obj) (intern (string-upcase (princ-to-string obj)) "KEYWORD"))
+(defmethod scope-declare ((scope scope) name (var Var))
+  (if (gethash (sname name) (scope-variables scope))
+      nil
+      (progn
+        (setf (gethash (sname name) (scope-variables scope)) var)
+        t)))
+
+(defmethod scope-lookup ((scope scope) name)
+  (gethash (sname name) (scope-variables scope)))
+
+(defmethod scope-copy-from ((scope scope))
+  (make-scope :variables (copy-hash-table (scope-variables scope))))
+
+(defun verify-blueprint (blueprints)
+  "Returns T if the blueprint is valid to compile, otherwise returns (values NIL reason)."
+  (symbol-macrolet
+      ((->fail/malformed (return-from verify-blueprint (values nil :malformed)))
+       (->fail/redefined (return-from verify-blueprint (values nil :redefined)))
+       (->fail/undefined (return-from verify-blueprint (values nil :undefined))))
+    (labels ((explore-blueprint (from to scope)
+               (loop with count = from while (< count to)
+                     for node = (nth count blueprints) do
+                       (case (node-type node)
+                         ;; Render Nodes creating a new scope
+                         ((:FOR :IF)
+                          (let* ((endwith (ecase (node-type node) (:IF :ENDIF) (:FOR :ENDFOR)))
+                                 (endfor
+                                   (find
+                                    (getattr node :idx) (nthcdr count blueprints)
+                                    :key #'(lambda (x) (and (eql (node-type x) endwith) (getattr x :idx)))))
+                                 (_ (when (null endfor) ->fail/malformed))
+                                 (endfor-abs-position (position (node-id endfor) blueprints :key #'node-id)))
+                            (declare (ignore _))
+                            (unless (>= endfor-abs-position count) ->fail/malformed)
+                            (let ((scope (scope-copy-from scope)))
+                              (when (eql (node-type node) :FOR)
+                                (unless (scope-declare scope (getattr node :idx) (make-var :int64 nil)) ->fail/redefined))
+                              (explore-blueprint (1+ count) endfor-abs-position scope))
+                            (setf count (1+ endfor-abs-position))))
+                         (:DEFINE-GLOBAL
+                          (unless (scope-declare scope (car (node-writes node)) (make-var (getattr node :dtype) (getattr node :pointer-p)))
+                            ->fail/redefined)
+                          (incf count))
+                         (:EXPR
+                          (let ((verifier
+                                  (make-instance 'caten/codegen/renderer:Default-Renderer
+                                                 :graph (expr-graph (getattr node :EXPR)) :index-space (getattr node :iterations)
+                                                 :scope (scope-variables scope))))
+                            (caten/codegen/renderer:render-node verifier (car (node-writes (expr-out (getattr node :EXPR)))))
+                            (unless (caten/codegen/renderer:renderer-scope-valid-code-p verifier)
+                              ->fail/undefined))
+                          (loop for decl in (getattr node :declare-type)
+                                for w in (node-writes node)
+                                for type in (relay-writes (read-type-relay node))
+                                if decl do (unless (scope-declare scope w (make-var (buffer-dtype type) (> (buffer-nrank type) 0)))
+                                             ->fail/redefined))
+                          (incf count))
+                         (otherwise
+                          (warn "verify-blueprint: Cannot verify the node ~a" node)
+                          ->fail/malformed)))))
+      (explore-blueprint 0 (length blueprints) (make-scope))
+      (values t nil))))

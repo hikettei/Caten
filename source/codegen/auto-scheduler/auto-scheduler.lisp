@@ -133,10 +133,12 @@ This method ensures the generated ast is compiled without any errors, and fits i
          (root (isl:schedule-node-get-child domain 0)))
     (when (find (isl:schedule-node-get-type root) `(:schedule-node-sequence :schedule-node-set))
       (return-from verify-schedule nil))
-    ;; note(hikettei) there is a circular dependency
-    (let ((blueprint (lower-into-bp-from-polyhedral (->ast new-schedule 0) schedule-item)))
-      (print blueprint)
-      nil)))
+    (multiple-value-bind (valid-p fail-due-to)
+        (caten/codegen/blueprint:verify-blueprint
+         (caten/codegen/rewriting-rules:%schedule-item-write-define-global
+          (lower-into-bp-from-polyhedral (->ast new-schedule 0) schedule-item)
+          schedule-item))
+      (values valid-p fail-due-to))))
 ;; ~~ Manual Scheduling Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun si-apply-opt (config schedule-item opt band only-visible)
   (declare (type node schedule-item) (type Opt opt) (type fixnum band))
