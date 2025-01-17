@@ -191,7 +191,6 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 
 (deftest test-tile-and-coalesce-cpu
   (let ((raw (get-gemm-schedule 'm 'n 'k)))
-    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral:reschedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       (opt (make-instance 'Parallel) 0)
       (opt (make-instance 'TileBand :amount 16) 0)
@@ -292,31 +291,13 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; - ReminderとPACKED?
 (deftest hand-optimized-cpu-gemm-test
   (let ((raw (get-gemm-schedule 'a 'b 'c)))
-    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::reschedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;; Scheduling Priority:
       ;; Interchange(Memory Layout) -> Packing -> Tile -> Interchange (2D Tile) -> Parallelize
       ;; Apply packing first to use TensorCore MULADD
       (opt (make-instance 'Parallel) 0)
       (opt (make-instance 'TileBand :amount 32) 0)
-      (opt (make-instance 'Packing :amount 16) 1)
-      
-      ;(opt (make-instance 'TileBand :amount 32) 2)
-      ;(opt (make-instance 'TileBand :amount 32) 4)
-      
-;;     (opt (make-instance 'Packing :amount 4) 5)
-;;     (opt (make-instance 'Packing :amount 4) 1)
-;;     (opt (make-instance 'Packing :amount 4) 0) ;; TODO: Ignore AMT=1 Pack/Unroll/Tile
-;;     (opt (make-instance 'Packing :amount 4) 1)
-;;     (opt (make-instance 'Packing :amount 4) 2)
-      ;; 2D Tiling (16, 16)
-      ;; (opt (make-instance 'TileBand :amount 16) 0)
-      ;; (opt (make-instance 'TileBand :amount 16) 1)
-      ;; (opt (make-instance 'TileBand :amount 16) 2)
-      ;; (opt (make-instance 'Interchange :amount 1) 1)
-      ;; Parallelize at innermost dimension
-      ;; (opt (make-instance 'Parallel) 5)
-      )
+      (opt (make-instance 'Packing :amount 16) 1))
     (print-schedule raw)
     (print-bp raw)
     nil
@@ -340,7 +321,6 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-softmax-test
   (let ((raw (get-softmax-schedule)))
-    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral:reschedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;;(opt (make-instance 'Parallel) 0)
       ;(opt (make-instance 'Packing :amount 4) 0)
@@ -350,7 +330,6 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; ~~ Hand Optimized Kernel Generation(LayerNorm) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-layernorm-test
   (let ((raw (get-layernorm-schedule)))
-    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral::compute-schedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       (opt (make-instance 'Packing :amount 4) 0)
       (opt (make-instance 'Packing :amount 4) 1)
@@ -361,7 +340,6 @@ for (int c0 = 0; c0 < m; c0 += 16) {
 ;; ~~ Hand Optimized Kernel Generation(Conv2d) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-conv2d-relu-test
   (let ((raw (get-convnd-relu-schedule)))
-    (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral:reschedule (getattr raw :polyhedral)))
     (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
      ; (opt (make-instance 'Packing :amount 4) 6)
      ; (opt (make-instance 'Packing :amount 4) 7)
@@ -373,7 +351,6 @@ for (int c0 = 0; c0 < m; c0 += 16) {
   ;; Symbolic kernel needs expr-cache
   (caten/codegen/expr-cache:with-expr-cache ()
     (let ((raw (get-embedding-schedule 128 128)))
-      (setf (caten/codegen/polyhedral:poly-schedule (getattr raw :polyhedral)) (caten/codegen/polyhedral:reschedule (getattr raw :polyhedral)))
       (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
         ;; (opt (make-instance 'Packing :amount 4) 6)
         ;; (opt (make-instance 'Packing :amount 4) 7)

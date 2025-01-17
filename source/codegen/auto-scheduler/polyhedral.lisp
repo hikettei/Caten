@@ -16,8 +16,7 @@
    #:map-schedule-node-children
    #:schedule-node-get-undernearth-bands
    #:schedule-node-get-band-from-relative-idx
-   #:render-schedule-node
-   #:reschedule))
+   #:render-schedule-node))
 
 (in-package :caten/codegen/polyhedral)
 
@@ -242,53 +241,3 @@ This function returns a list of the results of applying f to each node. NIL is e
          (q (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast-build-node)))
          (str (isl::%isl-printer-get-str q)))
     str))
-
-(defun schedule-node-fuse-all (band)
-  (declare (type isl::schedule-node band))
-  (assert (find (schedule-node-get-type band) `(:schedule-node-set :schedule-node-sequence)))
-  (let* ((n-children (isl::%isl-schedule-node-n-children (isl::schedule-node-handle band)))
-         (node (schedule-node-first-child band))
-         (mupa nil))
-    (loop for i upfrom 0 below n-children do
-      (assert (eql (schedule-node-get-type node) :schedule-node-filter))
-      (let ((filter (schedule-node-filter-get-filter node)))
-        (setf node (schedule-node-first-child node))
-        (assert (eql (schedule-node-get-type node) :schedule-node-band))
-        (let* ((tmp (schedule-node-band-get-partial-schedule node))
-               (tmp (multi-union-pw-aff-intersect-domain tmp filter))
-               (tmp (multi-union-pw-aff-reset-tuple-id tmp :dim-out)))
-          (if (null mupa)
-              (setf mupa tmp)
-              (setf mupa (multi-union-pw-aff-union-add mupa tmp)))
-          (setf node (schedule-node-delete node)
-                node (schedule-node-parent node))
-          (if (= i (- n-children 1))
-              (setf node (schedule-node-parent node))
-              (setf node (schedule-node-next-sibling node))))))
-    (schedule-node-insert-partial-schedule node mupa)))
-
-(defun ensure-single-kernel (schedule base-schedule)
-  (let ((top (schedule-node-get-child (schedule-get-root schedule) 0))
-        (base (schedule-node-get-child (schedule-get-root base-schedule) 0)))
-    (if (or
-         (find (schedule-node-get-type top) `(:schedule-node-sequence :schedule-node-set))
-         (find (schedule-node-get-type base) `(:schedule-node-sequence :schedule-node-set)))
-        base-schedule
-        schedule)))
-
-(defmethod reschedule ((poly Polyhedral-IR))
-  (macrolet ((set-option (name level)
-	       `(foreign-funcall ,(format nil "isl_options_set_~(~a~)" name)
-				 :pointer (isl::context-handle isl::*context*)
-				 :int ,level
-				 :void)))
-    (set-option "schedule_treat_coalescing" 0)
-    (set-option "schedule_outer_coincidence" 0)
-    (set-option "schedule_maximize_band_depth" 0)
-    (set-option "schedule_maximize_coincidence" 0)
-    (set-option "schedule_whole_component" 0))
-  (let* ((sc (schedule-constraints-on-domain (poly-domain poly)))
-         (sc (schedule-constraints-set-coincidence sc (poly-dependencies poly)))
-         (sc (schedule-constraints-set-proximity sc (poly-dependencies poly)))
-         (sc (schedule-constraints-set-validity sc (poly-dependencies poly))))
-    (ensure-single-kernel (schedule-constraints-compute-schedule sc) (poly-schedule poly))))
