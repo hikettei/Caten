@@ -183,123 +183,51 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
                   (si-apply-opt ,auto-scheduler-bind ,scheduled-item opt band-idx only-visible)))
            (progn ,@body)
            (si-finalize-schedule ,auto-scheduler-bind ,scheduled-item :n-optglobals ,nglobal-bind))))))
-;; ~~ Auto Scheduling Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass AutoScheduler ()
-  ((best-schedule :initarg :schedule :type isl:schedule-node-domain :accessor autoscheduler-best-schedule)
-   (n-generation :initform 0 :accessor autoscheduler-n-generation)
-   (gen2act :initform (make-hash-table) :accessor autoscheduler-gen2act)
-   (config :initarg :config :type Auto-Scheduler-Config :accessor autoscheduler-config)))
+;; ~~ Sketch Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun generate-sketch (item config)
+  "Returns a new schedule which is called a sketch, a template kernel that is further optimized by the auto-scheduler.
+(values sketch-schedule (list params-to-search))"
+  (declare (type node item))
+  (assert (eql (node-type item) :Schedule-Item))
+  ;; Maximizing the band depth
+  (setf (poly-schedule (getattr item :polyhedral)) (schedule-item-maximize-band-depth item))
+  ;; --------------------------------------------------------------------------
+  ;; Tile all bands and mapping each band to parallelism:
+  ;; --------------------------------------------------------------------------
+  ;; 1. Parallelize the outermost band.    Target to optimize
+  ;; - PARALLEL (if N_GLOBAL_DIMS=1)    |      nothing
+  ;; - GLOBAL   (if N_GLOBAL_DIMS>1)    |     Local_Size (which is a tile dim)
+  ;; --------------------------------------------------------------------------
+  
+  ;; --------------------------------------------------------------------------
+  ;; 2. Mapping inner bands with the following optimizations:
+  ;;      Opt       |    Applicable to       | Target to optimize
+  ;; - Loop Tiling  |       all bands        |    tiling size
+  ;; - Loop Packing | filters with stride=1  |  nothing(constant)
 
-(defgeneric compute-costs (auto-scheduler schedule-nodes item) (:documentation "This method receives a list of candidate schedules, returning a same-lengthed list whose elements are type of float. (the higher the better)"))
+  ;; --------------------------------------------------------------------------
+  ;; 3. Some minor optimizations:
+  ;; - Unroll:     Remove away small loops by unrolling everything
+  ;; - Coalescing: Optimize the memory access pattern by transforming global.
+  ;; - Collapse:   (CPU Only) Merge PARALLEL+TILE into a single band.
+  ;; - Shared Memory Transfer:
+  ;; - etc ... (User defined via with-manual-scheduling)
 
-(defmethod get-possible-opts ((auto-scheduler AutoScheduler) schedule-node-band config &aux (actions))
-  "Returns a list of possible optimization candidates."
-  (push (make-instance 'NoOpt) actions) ;; note: if you remove this line and all band is assigned any directive
-  ;; Interchange
-  ;(let ((undernearth-band-count
-  ;        (1- (length (schedule-node-get-undernearth-bands schedule-node-band)))))
-  ;  (dotimes (amount undernearth-band-count)
-  ;    (push (make-instance 'Interchange :amount amount) actions)))
-  ;; Parallel Directive (Parallel or GLOBAL/LOCAL)
-  (case (auto-scheduler-n-global-loops config)
-    (0 nil)
-    (1 (push (make-instance 'Parallel) actions))
-    (3 ;; Block/Thread Parallelism
-     (dolist (amt `(2 3 4 8 13 16 29))
-       (push (make-instance 'Global :amount amt) actions)))
-    (otherwise
-     (warn "Currently Caten does not support n_global_loops=~a and thus the code is not parallelized." (auto-scheduler-n-global-loops config))))
-  ;; Tile
-  (dolist (tile-size (auto-scheduler-tile-sizes config)) (push (make-instance 'TileBand :amount tile-size) actions))
-  ;; Pack (Vectorize)
-  ;; [TODO] Feed the simd width by auto scheduler config
-  (dolist (width `(4 8)) (push (make-instance 'Packing :amount width) actions))
-  ;; Unroll
-  ;; [TODO] Unroll_Limit=16?
-  (push (make-instance 'Unroll :amount 16) actions)
-  actions)
-;; TODO: Stop Early Scalarify? NUMO cores would select the interchange of LOAD in gemm kernel
-;; OPTIMIZE=1
-(defmethod optimize-band-lv1 ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
-  ;; Only optimize schedule-node-band
-  (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
-    (return-from optimize-band-lv1 schedule-node-band))
-  (flet ((tryit (opt)
-           (when (and
-                  (every #'(lambda (x) (not (typep opt (type-of x)))) prev-selected)
-                  (opt-applicable-p opt schedule-node-band item (autoscheduler-config auto-scheduler)))
-             (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) opt)
-             (incf (autoscheduler-n-generation auto-scheduler))
-             (return-from optimize-band-lv1 (values (apply-opt opt schedule-node-band item (autoscheduler-config auto-scheduler)) opt)))))
-    ;; [TODO] Make GLOBAL Tile
-    ;; Hand-written optimization rules
-    ;(case (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler))
-    ;  (0 nil)
-    ;  (1 (tryit (make-instance 'Parallel)))
-    ;  (3 (tryit (make-instance 'Global :amount 1)))
-    ;  (otherwise (warn "No Support for ~ad parallelism" (auto-scheduler-n-global-loops (autoscheduler-config auto-scheduler)))))
-    ;; (tryit (make-instance 'Unroll :amount 4))
-    ;; (tryit (make-instance 'Packing :amount 4)) float4 or vectorize
-    schedule-node-band))
-;; OPTIMIZE=2
-(defmethod optimize-band-lv2 ((auto-scheduler AutoScheduler) schedule-node-band item prev-selected)
-  "Applies all possible optimizations to the given band, returning the best one."
-  ;; Only interested in the schedule-node-band
-  (unless (eql (isl:schedule-node-get-type schedule-node-band) :schedule-node-band)
-    (return-from optimize-band-lv2 schedule-node-band))
-  (symbol-macrolet ((JIT_DEBUG (ctx:getenv :JIT_DEBUG)))
-    (let* ((config (autoscheduler-config auto-scheduler))
-           (next-actions
-             (loop for opt in (get-possible-opts auto-scheduler schedule-node-band config)
-                   if (and (opt-applicable-p opt schedule-node-band item config)
-                           (every #'(lambda (x) (not (typep opt (type-of x)))) prev-selected))
-                     collect opt))
-           (next-kernels (map 'list #'(lambda (x) (apply-opt x schedule-node-band item config)) next-actions))
-           (sorted (sort (map 'list #'list (compute-costs auto-scheduler next-kernels item) next-kernels next-actions) #'> :key #'car)))
-      (when (null sorted) (return-from optimize-band-lv2 schedule-node-band))
-      (format t "~%DEBUG: Generation=~a ============~%" (autoscheduler-n-generation auto-scheduler))
-      ;; [TODO] How to verify the validity of loop interchange without providing scalar info?
-       (dolist (k next-kernels) (print (render-schedule-node (isl:schedule-node-get-schedule k))))
-      (format t "Selected:~%~a" (render-schedule-node (isl:schedule-node-get-schedule (second (car sorted)))))
-      (setf (gethash (autoscheduler-n-generation auto-scheduler) (autoscheduler-gen2act auto-scheduler)) (third (car sorted)))
-      (incf (autoscheduler-n-generation auto-scheduler))
-      (values (second (car sorted)) (third (car sorted))))))
+  ;; --------------------------------------------------------------------------
+  ;; (TODO) Sketch Generation is applicable to TPU/NPU in the future.
+  ;; - Add custrom constraints that are specified by define-auto-scheduler.
+  ;; --------------------------------------------------------------------------
+  ;; ===> A sketch is returned. also here is a list of symbols to be optimized.
+  )
 
-(defmethod minimize-cost ((auto-scheduler AutoScheduler) item optimizer)
-  (labels ((get-absolute-pos (node history &aux (node (isl:schedule-get-root (isl:schedule-node-get-schedule node))))
-             (dolist (h history)
-               (setf node (isl:schedule-node-get-child node h)))
-             node)
-           (optimize-children (node &key (history) (prev-selected) &aux (depth (isl:schedule-node-get-schedule-depth node)))
-             (multiple-value-bind (node selected) (funcall optimizer auto-scheduler node item prev-selected)
-               (let ((generations (- (isl:schedule-node-get-schedule-depth node) depth)))
-                 (dotimes (i generations) (setf history (append history (list 0)))))
-               (let ((selected (if (and (or (null selected) (typep selected 'NoOpt)) (not (eql (isl:schedule-node-get-type node) :schedule-node-mark)))
-                                   nil ;; move to next band
-                                   (append prev-selected (list selected))))
-                     (n-children (the fixnum (isl::%isl-schedule-node-n-children (isl::schedule-node-handle (get-absolute-pos node history))))))
-                 (dotimes (nth n-children)
-                   (setf node (optimize-children (isl:schedule-node-get-child (get-absolute-pos node history) nth) :prev-selected selected :history (append history (list nth)))))
-                 node))))
-    (isl:schedule-node-get-schedule (optimize-children (autoscheduler-best-schedule auto-scheduler)))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; [TODO] Make metrics configurable
-(defclass BogoScheduler (AutoScheduler) nil)
-(defmethod compute-costs ((s BogoScheduler) schedule-nodes item) (loop repeat (length schedule-nodes) collect (random 1.0)))
-
-(defclass ProfileScheduler (AutoScheduler) nil) ;; TODO
-
-(defclass ILPScheduler (AutoScheduler) nil) ;; TODO
-
-(defclass RandomForestScheduler (AutoScheduler) nil) ;; TODO
-
-(defclass LispScheduler (AutoScheduler) nil) ;; [Experimental] Execution time in lisp is propotional to the same time in gcc?
-
+;; ~~ Entry Point ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-node-get-bp (isl-schedule node)
   (lower-into-bp-from-polyhedral (->ast isl-schedule (getattr node :rank)) node))
 
 (defun auto-schedule (auto-scheduler node)
+  "An entry point for the auto scheduler."
   (assert (getattr node :polyhedral))
+  ;;   LEVEL    |    Description
   ;; OPTIMIZE=0 | Applies no optimization
   ;; OPTIMIZE=1 | Rule based optimization without any speed measurements
   ;; OPTIMIZE=2 | BEAM Search based on cost models
@@ -310,17 +238,6 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
     ;; ==> Apply previous OPTIMIZE=2 result
     ;; - Cache is saved to the disk.
     (when (>= OPTIMIZE 1)
-      (let* ((strategy 'BogoScheduler)
-             (auto-scheduler (make-instance strategy :schedule (isl:schedule-get-root (poly-schedule (getattr node :polyhedral))) :config auto-scheduler))
-             (new-schedule (minimize-cost auto-scheduler node (if (= OPTIMIZE 1) #'optimize-band-lv1 #'optimize-band-lv2)))
-             (optglobals (loop for value in (alexandria:hash-table-values (autoscheduler-gen2act auto-scheduler))
-                               if (typep value 'Opt)
-                                 collect value)))
-        (setf (poly-schedule (getattr node :polyhedral)) new-schedule)
-        ;; (print "FINAL SCHEDULE")
-        ;; (print (render-schedule-node new-schedule))
-        ;; (caten/codegen/blueprint:print-blueprint (schedule-node-get-bp new-schedule node) t)
-        ;; [TODO] BEAM Report with OPTIMIZE=1 and JIT_DEBUG=4
-        ;; e.g.: n-trial, n-generation, found-opt-sequence, total-time-consumed
+      (let* ((sketch (generate-sketch node auto-scheduler)))
         ;; Load blueprint from optimized polyhedral IR
-        (si-finalize-schedule (autoscheduler-config auto-scheduler) node :n-optglobals (1- (length optglobals)))))))
+        (si-finalize-schedule auto-scheduler node)))))
