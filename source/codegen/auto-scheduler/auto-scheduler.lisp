@@ -31,8 +31,6 @@
 (defclass Parallel (Opt) nil (:documentation "Parallelizes the given schedule-node"))
 (defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
-  ;; もう一個ある:
-  ;; ParentがSequenceではないこと (for softmax ...)
   (and
    (< (isl:schedule-node-get-schedule-depth schedule-node) (auto-scheduler-n-global-loops config)) ;; Located in the parallel level?
    (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
@@ -186,6 +184,7 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
 ;; ~~ Sketch Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun generate-sketch (item config)
   "Returns a new schedule which is called a sketch, a template kernel that is further optimized by the auto-scheduler.
+See also : `docs/assets/Caten_Sketch_Generation.jpg`
 (values sketch-schedule (list params-to-search))"
   (declare (type node item))
   (assert (eql (node-type item) :Schedule-Item))
@@ -199,15 +198,25 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
   ;; - GLOBAL   (if N_GLOBAL_DIMS>1)    |     Local_Size (which is a tile dim)
   ;; --------------------------------------------------------------------------
   
+  ;; 作業中ノート: 休憩したらPARALLEL/GLOBALに手をつける
+  ;; Tweak GLOBAL: 一番外側のBAND_DEPTHだけPARALLEL/GLOBALになる
+  ;; 1. band-dimがn-global-loopより大きい場合:
+  ;; - tiling-sizesのband-dimに, (min band-dim n-global-dims)を追加したら外側二つだけTILEでたりするするの？
+  ;; @DIRECTIVEについて: デフォルトでリストにする。
+  ;; 2D Warp has a chance to get parallelized
+  
   ;; --------------------------------------------------------------------------
   ;; 2. Mapping inner bands with the following optimizations:
   ;;      Opt       |    Applicable to       | Target to optimize
   ;; - Loop Tiling  |       all bands        |    tiling size
   ;; - Loop Packing | filters with stride=1  |  nothing(constant)
 
+  ;; 作業中ノート:
+  ;; Tile/Packの判定をどうするか？
+  
   ;; --------------------------------------------------------------------------
   ;; 3. Some minor optimizations:
-  ;; - Unroll:     Remove away small loops by unrolling everything
+  ;; - Unroll:     Remove away small loops by unrolling with loop size.
   ;; - Coalescing: Optimize the memory access pattern by transforming global.
   ;; - Collapse:   (CPU Only) Merge PARALLEL+TILE into a single band.
   ;; - Shared Memory Transfer:
