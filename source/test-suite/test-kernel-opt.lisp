@@ -213,6 +213,11 @@
 ;; - Vectorize = PACKED_INNER次元の範囲でSliceすること
 ;; - PACKED_INNER次元は全てVectorizeされると仮定する。(無理なら等価な普通の演算に書き換えられるように)
 ;; - ReminderとPACKED?
+(defun tmp-sketch-list (raw scheduler)
+  (loop for i upfrom 0
+        for sketch in (caten/codegen/auto-scheduler::generate-sketch raw (make-instance scheduler))
+        do (format t "<<N=~a>>~%~a~%" i sketch)))
+
 (deftest hand-optimized-cpu-gemm-test
   (with-expr-cache ()
     (let ((raw (get-gemm-schedule 'a 'a 'a)))
@@ -221,8 +226,7 @@
             do (format
                 t
                 "N=~a~%~a~%" i
-                (caten/codegen/polyhedral:render-schedule-node
-                 (caten/codegen/auto-scheduler::sketch-schedule sketch))))
+                (caten/codegen/polyhedral:render-schedule-node (caten/codegen/auto-scheduler::sketch-schedule sketch))))
 ;;      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
 ;;        (opt (make-instance 'Parallel) 0)
 ;;        )
@@ -237,7 +241,7 @@
             for sketch in (caten/codegen/auto-scheduler::generate-sketch raw (make-instance 'Mock-GPU-AutoScheduler))
             do (format
                 t
-                "N=~a~%~a~%" i sketch))
+                "<<<N=~a>>>~%~a~%" i sketch))
 ;      (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
 ;        )
       nil
@@ -245,9 +249,11 @@
 ;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-softmax-test
   (let ((raw (get-softmax-schedule)))
-    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-      )
-    (print-bp raw)))
+    (print "CPU")
+    (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
+    (print "GPU")
+    (tmp-sketch-list raw 'Mock-GPU-AutoScheduler)
+    ))
 ;; ~~ Hand Optimized Kernel Generation(LayerNorm) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-layernorm-test
   (let ((raw (get-layernorm-schedule)))

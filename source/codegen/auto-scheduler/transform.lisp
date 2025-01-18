@@ -132,7 +132,7 @@ This class is transformable/loadable to/from string/schedule-node-mark."))
   (declare (type (or list fixnum) obj))
   (if (listp obj)
       (progn
-        (assert (<= (length obj) n-depth) () "The tile dims must be less than the band dims(=~a)." n-depth)
+        (assert (<= (length obj) n-depth) () "The tile dims must be less than the band dims(=~a). getting ~a" n-depth obj)
         obj)
       (loop for i upfrom 0 below n-depth collect obj)))
 

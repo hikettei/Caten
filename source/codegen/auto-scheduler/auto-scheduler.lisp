@@ -41,26 +41,35 @@
     (setf (opt-reschedule-new-sched opt) new-schedule)
     (verify-schedule item new-schedule)))
 
-(defclass Parallel (Opt) nil (:documentation "Parallelizes the given schedule-node"))
+(defclass Parallel (Opt)
+  ((use-legality-parallel :initarg :use-legality-parallel :initform nil :accessor parallel-use-legality-parallel))
+  (:documentation "Parallelizes the given schedule-node"))
 (defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
-  
-  ;;(print (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral))))
-  t)
+  (when (parallel-use-legality-parallel opt)
+    (assert (every #'null (isl:schedule-node-band-get-coincident schedule-node)) () ":use-legality-parallel is not applicable if the given schedule-node has coincident.")
+    (return-from opt-applicable-p (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
+  (let ((coincident (isl:schedule-node-band-get-coincident schedule-node)))
+    (and (> (length coincident) 0) (car coincident))))
 
-(defclass Global (Opt) nil) ;; blockIdx + threadIdx
+(defclass Global (Opt)
+  ;; blockIdx + threadIdx
+  ((use-legality-parallel :initarg :use-legality-parallel :initform nil :accessor global-use-legality-parallel)))
+
 (defmethod apply-opt ((opt Global) schedule-node item config)
   (apply-global (getattr item :polyhedral) schedule-node (opt-amount opt)))
 
 (defmethod opt-applicable-p ((opt Global) schedule-node item config)
   (assert (listp (opt-amount opt)) () "Global amount must be given as a list.")
+  (when (global-use-legality-parallel opt)
+    (assert (every #'null (isl:schedule-node-band-get-coincident schedule-node)) () ":use-legality-parallel is not applicable if the given schedule-node has coincident.")
+    (return-from opt-applicable-p (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
   (let* ((coincident
            (isl:schedule-node-band-get-coincident schedule-node))
          (split-at
            (or (position-if #'null coincident) (length coincident))))
     ;; e.g.: coincident=(T T NIL) <=> split the band at pos=2
-    (and
-     (<= (length (opt-amount opt)) split-at))))
+    (<= (length (opt-amount opt)) split-at)))
 
 (defclass TileBand (Opt) nil (:documentation "Tiles the given schedule-node-band with the size"))
 (defmethod apply-opt ((opt TileBand) schedule-node item config) (apply-tile schedule-node (opt-amount opt)))
@@ -256,32 +265,31 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; - PARALLEL (if N_GLOBAL_DIMS=1)    |      nothing
   ;; - GLOBAL   (if N_GLOBAL_DIMS>1)    |     Local_Size (which is a tile dim)
   ;; --------------------------------------------------------------------------
-  
-  ;; 作業中ノート: 休憩したらPARALLEL/GLOBALに手をつける
-  ;; [TODO] SketchのScheduleは複数になる。最後はSortして選択
-  ;; Tweak GLOBAL: 一番外側のBAND_DEPTHだけPARALLEL/GLOBALになる
-  ;; [TODO] Coincidentを取得するが
-  ;; - ISL Scheduleが失敗した場合: 
-  ;; - ISL Scheduleが成功した場合: 
   (let ((n-global-dims (auto-scheduler-n-global-loops config)))
     ;; [TODO] Also candidates: Where to split the band?
     (loop for sketch in sketches
           for target-band = (nth 0 (sketch-get-bands sketch))
+          for use-legality-parallel = (null (sketch-opt-history sketch)) ; If Reschedule is not selected, ISL Schedule coincident is not assigned. (Use check-legality-parallel instead)
+          for band-depth = (and target-band (schedule-node-band-get-depth target-band))
           when target-band do
             (case n-global-dims
-              (1 )
+              (1
+               (let ((opt (make-instance 'Parallel :use-legality-parallel use-legality-parallel)))
+                 (when (opt-applicable-p opt target-band item config)
+                   (setf sketches (remove sketch sketches))
+                   (push (sketch-next-generation sketch opt 0 target-band item config) sketches))))
               (otherwise
                ;; The smaller (- n-global-dims parallelized-dims), the better.
                ;; Restrict the search space by only pushing the best one.
                (loop named global
-                     for idx in (nreverse (alexandria:iota n-global-dims))
+                     for idx in (map 'list #'1+ (nreverse (alexandria:iota (min band-depth n-global-dims))))
                      for local-size = (loop repeat idx collect 4) ;; [TODO] Make it symbolic!
-                     for opt = (make-instance 'Global :amount local-size) do
+                     for opt = (make-instance 'Global :amount local-size :use-legality-parallel use-legality-parallel) do
                        (when (and local-size (opt-applicable-p opt target-band item config))
+                         (setf sketches (remove sketch sketches))
                          (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
                          ;; Exit the generation as soon as the best one is found.
                          (return-from global)))))))
-                     
   ;; @DIRECTIVEについて: デフォルトでリストにする。
   ;; 2D Warp has a chance to get parallelized
   
