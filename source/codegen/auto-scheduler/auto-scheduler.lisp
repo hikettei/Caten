@@ -71,9 +71,15 @@
     ;; e.g.: coincident=(T T NIL) <=> split the band at pos=2
     (<= (length (opt-amount opt)) split-at)))
 
-(defclass TileBand (Opt) nil (:documentation "Tiles the given schedule-node-band with the size"))
+(defclass TileBand (Opt) ((only-coincident :initarg :only-coincident :initform nil :accessor tile-only-coincident))
+  (:documentation "Tiles the given schedule-node-band with the size"))
 (defmethod apply-opt ((opt TileBand) schedule-node item config) (apply-tile schedule-node (opt-amount opt)))
-(defmethod opt-applicable-p ((opt TileBand) schedule-node item config) t)
+(defmethod opt-applicable-p ((opt TileBand) schedule-node item config)
+  (or
+   (null (tile-only-coincident opt))
+   (let* ((coincident (isl::schedule-node-band-get-coincident schedule-node))
+          (split-at (or (position-if #'null coincident) (length coincident))))
+     (<= (length (opt-amount opt)) split-at))))
 
 (defclass Unroll (Opt) nil (:documentation "Unroll the loop with `amount`
 ```
@@ -211,25 +217,22 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
   "Sketch records the history of the applied optimization, and the schedule status."
   (schedule schedule :type isl:schedule)
   (opt-history opt-history :type list) ;; a list of (cons band-idx opt)
-  (search-params nil :type list)
-  (pioneer 0 :type fixnum))
+  (search-params nil :type list))
 
 (defmethod print-object ((sketch Sketch) stream)
   (print-unreadable-object (sketch stream :type t :identity t)
-    (format stream "~%  ```~%~a  ```~%  :search-params ~a~%  :pioneer ~a~%  :opt-history ~a~%"
+    (format stream "~%  ```~%~a  ```~%  :search-params ~a~%  :opt-history ~a~%"
             (apply #'concatenate 'string
                    (loop for line in (cl-ppcre:split "\\n" (caten/codegen/polyhedral:render-schedule-node (sketch-schedule sketch)))
                          collect (format nil "  ~a~%" line)))
             (sketch-search-params sketch)
-            (sketch-pioneer sketch)
             (sketch-opt-history sketch))))
 
 (defmethod sketch-get-bands ((sketch sketch))
   (map-schedule-node-children
    #'(lambda (type node mark)
        (when (eql type :schedule-node-band)
-         (when (or (null mark) (directive-visible mark))
-           node)))
+         node))
    (isl:schedule-get-root (sketch-schedule sketch))))
 
 (defmethod sketch-get-band ((sketch sketch) idx)
@@ -239,10 +242,8 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
   (length (sketch-get-bands sketch)))
 
 (defmethod sketch-next-generation ((sketch Sketch) (opt Opt) idx band item config)
-  (let* ((new-sketch (make-sketch (isl:schedule-node-get-schedule (apply-opt opt (sketch-get-band sketch idx) item config))))
-         (diff (- (sketch-n-band new-sketch) (sketch-n-band sketch))))
-    (setf (sketch-opt-history new-sketch) (append (list (cons idx opt)) (sketch-opt-history sketch))
-          (sketch-pioneer new-sketch) (+ 1 diff idx)) ;; the next optimization starts with idx
+  (let* ((new-sketch (make-sketch (isl:schedule-node-get-schedule (apply-opt opt band item config)))))
+    (setf (sketch-opt-history new-sketch) (append (list (cons idx opt)) (sketch-opt-history sketch)))
     new-sketch))
 
 (defun generate-sketch (item config &aux (sketches))
@@ -259,11 +260,11 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
     (when (opt-applicable-p reschedule nil item config)
       (push (make-sketch (isl:schedule-node-get-schedule (apply-opt reschedule nil item config)) :opt-history (list (cons 0 reschedule))) sketches)))
   ;; --------------------------------------------------------------------------
-  ;; Tile all bands and mapping each band to parallelism:
+  ;; all bands and mapping each band to parallelism:
   ;; --------------------------------------------------------------------------
-  ;; 1. Parallelize the outermost band.    Target to optimize
+  ;; 1. Parallelize the outermost band. |  Params to optimize
   ;; - PARALLEL (if N_GLOBAL_DIMS=1)    |      nothing
-  ;; - GLOBAL   (if N_GLOBAL_DIMS>1)    |     Local_Size (which is a tile dim)
+  ;; - GLOBAL   (if N_GLOBAL_DIMS>1)    |   Local_Size (which is a tile dim)
   ;; --------------------------------------------------------------------------
   (let ((n-global-dims (auto-scheduler-n-global-loops config)))
     ;; [TODO] Also candidates: Where to split the band?
@@ -283,25 +284,59 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                ;; Restrict the search space by only pushing the best one.
                (loop named global
                      for idx in (map 'list #'1+ (nreverse (alexandria:iota (min band-depth n-global-dims))))
-                     for local-size = (loop repeat idx collect 4) ;; [TODO] Make it symbolic!
+                     for local-size = (loop repeat idx collect 8) ;; [TODO] Make it symbolic!
                      for opt = (make-instance 'Global :amount local-size :use-legality-parallel use-legality-parallel) do
                        (when (and local-size (opt-applicable-p opt target-band item config))
                          (setf sketches (remove sketch sketches))
+                         ;; [TODO] ND Global has a chance to be transformed as: USE_KWARP_GLOBAL
                          (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
                          ;; Exit the generation as soon as the best one is found.
-                         (return-from global)))))))
-  ;; @DIRECTIVEについて: デフォルトでリストにする。
-  ;; 2D Warp has a chance to get parallelized
-  
+                         (return-from global))))))
+    ;; Tile Bands
+    (case n-global-dims
+      ((0 1)
+       ;; TODO Only coincident are tileable
+       (loop for sketch in sketches
+             for target-band = (nth 0 (sketch-get-bands sketch))
+             for band-depth = (and target-band (schedule-node-band-get-depth target-band))
+             for has-coincidence = (and (find 'Reschedule (sketch-opt-history sketch) :key #'cdr :test #'(lambda (x y) (typep y x))) t)
+             when target-band do
+               (loop named tile
+                     for idx in (map 'list #'1+ (nreverse (alexandria:iota band-depth)))
+                     for tile-size = (loop repeat idx collect 8) ;; [TODO] Make it symbolic and searchable.
+                     for opt = (make-instance 'TileBand :amount tile-size :only-coincident has-coincidence) do
+                       (when (and tile-size (opt-applicable-p opt target-band item config))
+                         (setf sketches (remove sketch sketches))
+                         (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
+                         (return-from tile)))))))
   ;; --------------------------------------------------------------------------
-  ;; 2. Mapping inner bands with the following optimizations:
+  ;; 2. Tile the innermost band to apply simd.
   ;;      Opt       |    Applicable to       | Target to optimize
   ;; - Loop Tiling  |       all bands        |    tiling size
   ;; - Loop Packing | filters with stride=1  |  nothing(constant)
-
-  ;; 作業中ノート:
-  ;; Tile/Packの判定をどうするか？
-  
+  (loop for sketch in sketches
+        for sketch-first = sketch
+        for bands = (sketch-get-bands sketch)
+        for innermost-depth = (reduce #'max (map 'list #'isl:schedule-node-get-schedule-depth bands)) do
+          ;; Exploration space is restricted to depth < innsermost-depth
+          (flet ((get-bands (sketch)
+                   (map-schedule-node-children
+                    #'(lambda (type node mark)
+                        (when (and
+                               (eql type :schedule-node-band)
+                               (or (null mark) (equalp (directive-type mark) "LOCAL"))
+                               (<= (isl:schedule-node-get-schedule-depth node) innermost-depth))
+                          node))
+                    (isl:schedule-get-root (sketch-schedule sketch)))))
+            ;; Upcast all bands
+            (loop for bands = (get-bands sketch)
+                  for band = (car bands)
+                  while band do
+                    (let ((opt (make-instance 'Packing :amount 4)))
+                      (when (opt-applicable-p opt band item config)
+                        (setf sketch (sketch-next-generation sketch opt 0 band item config)))))
+            (setf sketches (remove sketch-first sketches))
+            (push sketch sketches)))
   ;; --------------------------------------------------------------------------
   ;; 3. Some minor optimizations:
   ;; - Unroll:     Remove away small loops by unrolling with loop size.

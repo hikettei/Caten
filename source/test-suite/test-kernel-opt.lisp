@@ -221,12 +221,7 @@
 (deftest hand-optimized-cpu-gemm-test
   (with-expr-cache ()
     (let ((raw (get-gemm-schedule 'a 'a 'a)))
-      (loop for i upfrom 0
-            for sketch in (caten/codegen/auto-scheduler::generate-sketch raw (make-instance 'Mock-CPU-AutoScheduler))
-            do (format
-                t
-                "N=~a~%~a~%" i
-                (caten/codegen/polyhedral:render-schedule-node (caten/codegen/auto-scheduler::sketch-schedule sketch))))
+      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
 ;;      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
 ;;        (opt (make-instance 'Parallel) 0)
 ;;        )
@@ -275,3 +270,11 @@
         
         )
       (print-bp raw))))
+
+(deftest hand-optimized-unary-test
+  (with-expr-cache ()
+    (let ((raw (get-schedule-from-op (!sin (make-tensor `(10 10))))))
+      (print "CPU")
+      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
+      (print "GPU")
+      (tmp-sketch-list raw 'Mock-GPU-AutoScheduler))))
