@@ -3,14 +3,14 @@
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
   (:use :cl :caten/aasm :caten/air :caten/codegen/polyhedral :cl-ppcre :caten/isl)
-  (:export #:get-zeros-on-union-set #:check-legality-parallel #:check-legality)
+  (:export #:get-zeros-on-union-set #:check-legality-parallel #:check-legality #:schedule-node-band-get-depth)
   ;; Directive
   (:export
     #:Directive #:directive-type #:directive-amount #:directive-visible
     #:directive->str #:directive->id #:str->directive)
   ;; Transforms
   (:export
-   #:apply-interchange #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile #:apply-multi-tile
+   #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile #:apply-multi-tile
    #:apply-parallel #:apply-global #:apply-coalesce))
 
 (in-package :caten/codegen/transform)
@@ -60,16 +60,15 @@ Returns T if the current schedule does not break any dependences in dep."
 ;; ~~ Directive ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Directive ()
   ((type :initarg :type :accessor directive-type)
-   (amount :initarg :amount :accessor directive-amount)
-   (visible :initarg :visible :accessor directive-visible))
+   (amount :initarg :amount :accessor directive-amount))
   (:documentation "Directive will effect how the schedule-node-band is interpreted by ast-parser.lisp.
 Usually, it is inserted just before schedule-node-band, and one schedule-node-band has a one or zero directive.
 This class is transformable/loadable to/from string/schedule-node-mark."))
 
 (defun directive (type amount visible)
   "Creates a new directive."
-  (declare (type string type) (type fixnum amount) (type boolean visible))
-  (make-instance 'Directive :type type :amount amount :visible visible))
+  (declare (type string type) (type (or list fixnum) amount) (type boolean visible))
+  (make-instance 'Directive :type type :amount (if (numberp amount) (list amount) amount) :visible visible))
 
 (defmethod print-object ((directive Directive) stream)
   (print-unreadable-object (directive stream)
@@ -98,7 +97,7 @@ This class is transformable/loadable to/from string/schedule-node-mark."))
        key
        (case key
          (:TYPE value)
-         (:AMOUNT (parse-integer value))
+         (:AMOUNT (read-from-string value))
          (:VISIBLE (string= (string-upcase value) "T"))
          (otherwise value))))))
 
@@ -123,13 +122,27 @@ This class is transformable/loadable to/from string/schedule-node-mark."))
 ;; Final kernel is tweaked when pasing the ISL AST (see: parse-isl-mark in caten/codegen/auto-scheduler/ast-parser.lisp).
 ;; Everything you should know to read this code is:
 ;; - Everything is %apply-tile and insert-mark
-(defun tiling-sizes (band &key (size-default 32) (dims))
-  (declare (type list dims) (type fixnum size-default))
+(defun schedule-node-band-get-depth (band)
+  "Returns the depth of the target band."
+  (declare (type isl::schedule-node-band band))
+  (space-dim (schedule-node-band-get-space band) 3))
+
+(defun broadcast-tile-size (band obj)
+  (declare (type (or list fixnum) obj))
+  (if (listp obj)
+      (progn
+        (assert (= (schedule-node-band-get-depth band) (length obj)) () "The depth of the band and the obj are not matched! getting ~a but length should be ~a." obj (schedule-node-band-get-depth band))
+        obj)
+      (loop for i upfrom 0 below (schedule-node-band-get-depth band) collect obj)))
+
+(defun tiling-sizes (band dims)
+  (declare (type list dims) (type list dims))
   (let* ((band-space (schedule-node-band-get-space band))
-         (dim (space-dim band-space 3)))
+         (dim (schedule-node-band-get-depth band)))
+    (assert (= dim (length dims)) () "Tiling-Sizes: The depth and dims are not matched! getting ~a but length should be ~a." dims dim)
     (multi-val-from-val-list
      band-space
-     (apply #'make-value-list (loop for i upfrom 0 below dim collect (or (nth i dims) size-default))))))
+     (apply #'make-value-list dims))))
 
 (defun %apply-tile (band amount directive-parent directive-child)
   "
@@ -151,14 +164,14 @@ for (int i=0; i<100; i+=amount) {
 }
 ```
 "
-  (declare (type isl::schedule-node band) (type (or null Directive) directive-parent directive-child))
+  (declare (type isl::schedule-node band) (type (or null Directive) directive-parent directive-child) (type list amount))
   (assert (eql (schedule-node-get-type band) :schedule-node-band) () "Only schedule-node-band is tilable!")
   (let* ((tiled-schedule (if directive-parent
                              (schedule-node-get-child
                               (schedule-node-insert-mark band (directive->id directive-parent))
                               0)
                              band))
-         (tiled-schedule (schedule-node-band-tile tiled-schedule (tiling-sizes band :size-default amount))))
+         (tiled-schedule (schedule-node-band-tile tiled-schedule (tiling-sizes band amount))))
     (if directive-child
         (let ((tiled-schedule (schedule-node-insert-mark (schedule-node-get-child tiled-schedule 0) (directive->id directive-child))))
           ;; If directive-visible is NIL, the band is oblige to have more optimizations, the returned schedule should be pointed to mark.
@@ -166,42 +179,26 @@ for (int i=0; i<100; i+=amount) {
               tiled-schedule
               (schedule-node-get-child tiled-schedule 0)))
         tiled-schedule)))
-
-(defun %schedule-node-band-get-mark (schedule-node-band)
-  "Returns schedule-node-mark which is a parent of schedule-node-band.
-For example, if the tree is given as:
-```
-@DIRECTIVE(TYPE=1)
-  SCHEDULE_NODE_BAND(...) # YOU ARE HERE
-```
-@DIRECTIVE(TYPE=1) is returned. Note that one schedule-node-band should 0 or 1 marks at most."
-  (declare (type isl::schedule-node schedule-node-band))
-  (assert (eql (schedule-node-get-type schedule-node-band) :schedule-node-band))
-  (map-schedule-node-children
-   #'(lambda (type band mark)
-       (when (and (eql type :schedule-node-band) (schedule-node-is-equal schedule-node-band band))
-         ;; [TODO] Test
-         (print "BAND is found!")
-         (return-from %schedule-node-band-get-mark mark)))
-   (schedule-get-root (schedule-node-get-schedule schedule-node-band))))
 ;; ~~ Tile Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-tile (band tile-size)
   "Applies 1D Tiling to the given schedule-node-band with tile-size.
 (TODO: this function should accept a symolic tile-size to finetune an optimal tilesize without recompling the code.)"
-  (declare (type isl::schedule-node band) (type fixnum tile-size))
+  (declare (type isl::schedule-node band) (type (or fixnum list) tile-size))
   ;; %apply-tile transform itself is apply-tile. no additional transformation by caten is required. so set directive=nil.
-  (%apply-tile band tile-size nil nil))
+  (%apply-tile band (broadcast-tile-size band tile-size) nil nil))
 
 (defun apply-unroll (band unroll-by)
   "Unrolls the given schedule-node-band with unroll-by."
-  (declare (type isl::schedule-node band) (type fixnum unroll-by))
-  (%apply-tile band unroll-by (directive "UNROLL_OUTER" unroll-by t) (directive "UNROLL_INNER" unroll-by nil)))
+  (declare (type isl::schedule-node band) (type (or fixnum list) unroll-by))
+  (let ((unroll-by (broadcast-tile-size band unroll-by)))
+    (%apply-tile band unroll-by (directive "UNROLL_OUTER" unroll-by t) (directive "UNROLL_INNER" unroll-by nil))))
 
 (defun apply-pack (band pack-by)
   "Packs the given schedule-node-band with pack-by which must be constant.
 Packed schedule-items has a chance to be upcasted/vectorized by the caten compiler."
-  (declare (type isl::schedule-node band) (type fixnum pack-by))
-  (%apply-tile band pack-by (directive "PACKED_OUTER" pack-by t) (directive "PACKED_INNER" pack-by nil)))
+  (declare (type isl::schedule-node band) (type (or fixnum list) pack-by))
+  (let ((pack-by (broadcast-tile-size band pack-by)))
+    (%apply-tile band pack-by (directive "PACKED_OUTER" pack-by t) (directive "PACKED_INNER" pack-by nil))))
 ;; ~~ Coincidence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-parallel (schedule-node)
   ;; note: num of cores optimization is beyond caten!
@@ -233,26 +230,12 @@ S1(i+ii)
 
 The band should be a plain node just generated by the scop.lisp tp keep simplicity of the generated kernel.
 Do not feed the tiled band otherwise the generated kernel would be messed! This thing is not checked by the compiler!"
-  (declare (type isl::schedule-node-band band) (type fixnum ls))
+  (declare (type isl::schedule-node-band band) (type (or list fixnum) ls))
   (assert (eql (schedule-node-get-type band) :schedule-node-band) ())
   (assert (check-legality-parallel band (poly-dependencies poly)))
-  (%apply-tile band ls (directive "GLOBAL" ls NIL) (directive "LOCAL" ls NIL)))
+  (let ((ls (broadcast-tile-size band ls)))
+    (%apply-tile band ls (directive "GLOBAL" ls NIL) (directive "LOCAL" ls NIL))))
 ;; ~~ Legality Based Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun apply-interchange (poly band1 idx)
-  "Returns a new schedule of band1 with band1 and idx'th band node interchanged. Returns nil if the operation breaks the dependencies."
-  (declare (type polyhedral-ir poly) (type isl::schedule-node band1) (type fixnum idx))
-  (assert (eql (schedule-node-get-type band1) :schedule-node-band))
-  (let* ((mupa (schedule-node-band-get-partial-schedule band1))
-         (node (schedule-node-delete band1))
-         (n-child (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node)))
-         (_ (when (= 0 n-child) (return-from apply-interchange nil))) ;; Nothing to interchange
-         (node (schedule-node-get-band-from-relative-idx node idx))
-         (__ (assert node () "IDX=~a does not exists in the schedule:~%~A" idx band1))
-         (node (schedule-node-insert-partial-schedule node mupa)))
-    (declare (ignore _ __))
-    (when (check-legality (schedule-node-get-schedule node) (poly-dependencies poly))
-      node)))
-
 (defun apply-coalesce (band1)
   "Merges the band with the undernearth band if possible.
 The basic idea is that:
@@ -271,8 +254,7 @@ We assume band1 and band2 are contiguous and mergeable dimension by the shape tr
   (declare (type isl::schedule-node band1))
   (assert (eql :schedule-node-band (schedule-node-get-type band1)))
   ;; 単純にこうやって書き換えるだけにする。
-  ;; TODO: @DIRECTIVE(GLOBAL) const idx2 = blockDim.x * gridDim.x
-  ;; TODO: @DIRECTIVE(LOCAL)  const idx1 = threadIdx.x
+  ;; TODO: @DIRECTIVEを使ってAST Levelでやる？
   ;;
   ;; Coalesceにはそれを踏まえてSchedule Node Bandを書き換えるようにしたい。。。
   ;; 1. Remove the band I

@@ -7,7 +7,7 @@
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
     #:AutoScheduler #:autoscheduler-best-schedule #:autoscheduler-config
     #:autoscheduler-n-generation #:autoscheduler-gen2act
-    #:NoOpt #:Parallel #:Global #:Local #:Interchange #:TileBand #:Unroll #:Packing #:Coalesce
+    #:NoOpt #:Parallel #:Global #:Local #:TileBand #:Unroll #:Packing #:Coalesce
     #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs)
   ;; ILP Solvers
   (:export #:schedule-item-maximize-band-depth #:verify-schedule)
@@ -27,28 +27,19 @@
 (defclass NoOpt (Opt) nil (:documentation "Nothing applied."))
 (defmethod apply-opt ((opt Noopt) schedule-node item config) (isl:copy schedule-node))
 (defmethod opt-applicable-p ((opt Noopt) schedule-node item config) t)
-;; Note: Parallel vs Globalis orthogonal
+
 (defclass Parallel (Opt) nil (:documentation "Parallelizes the given schedule-node"))
 (defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
-  (and
-   (< (isl:schedule-node-get-schedule-depth schedule-node) (auto-scheduler-n-global-loops config)) ;; Located in the parallel level?
-   (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral)))))
+  (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral))))
 
 (defclass Global (Parallel) nil) ;; blockIdx + threadIdx
-(defmethod apply-opt ((opt Global) schedule-node item config) (apply-global (getattr item :polyhedral) schedule-node (opt-amount opt)))
-
-(defclass Interchange (Opt) nil (:documentation "Swaps the loop with `amount` th band node in the current schedule."))
-(defmethod apply-opt ((opt Interchange) schedule-node item config)
-  (opt-applicable-p opt schedule-node item config))
-(defmethod opt-applicable-p ((Opt Interchange) schedule-node item config)
-  (apply-interchange (getattr item :polyhedral) schedule-node (opt-amount opt)))
+(defmethod apply-opt ((opt Global) schedule-node item config)
+  (apply-global (getattr item :polyhedral) schedule-node (opt-amount opt)))
 
 (defclass TileBand (Opt) nil (:documentation "Tiles the given schedule-node-band with the size"))
 (defmethod apply-opt ((opt TileBand) schedule-node item config) (apply-tile schedule-node (opt-amount opt)))
-(defmethod opt-applicable-p ((opt TileBand) schedule-node item config)
-  ;; [TODO] hand-written condition to know when the tiling is effective and limit the exploration space.
-  t)
+(defmethod opt-applicable-p ((opt TileBand) schedule-node item config) t)
 
 (defclass Unroll (Opt) nil (:documentation "Unroll the loop with `amount`
 ```
@@ -65,7 +56,7 @@ for (int i=0; i<10; i+=amount) {
   T_amount(i+amount)
 }
 ```"))
-;; More chances to find vectorize by gcc, but takes longer compilation time and no improvements on the speed.
+
 (defmethod apply-opt ((opt Unroll) schedule-node item config) (apply-unroll schedule-node (opt-amount opt)))
 (defmethod opt-applicable-p ((opt Unroll) schedule-node item config) t)
 
@@ -88,6 +79,8 @@ for (int i=0; i<10; i+=amount) {
 (defclass Coalesce (Opt) nil)
 (defmethod opt-applicable-p ((opt Coalesce) schedule-node item config) (apply-coalesce schedule-node))
 (defmethod apply-opt ((opt Coalesce) schedule-node item config) (apply-coalesce schedule-node))
+;; TODO: GLOBAL MEMORY CACHE
+
 ;; ~~ ILP Solver ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod schedule-item-maximize-band-depth ((schedule-item Node))
   "Returns: (values new-schedule verified-p)"
@@ -202,6 +195,11 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; Tweak GLOBAL: 一番外側のBAND_DEPTHだけPARALLEL/GLOBALになる
   ;; 1. band-dimがn-global-loopより大きい場合:
   ;; - tiling-sizesのband-dimに, (min band-dim n-global-dims)を追加したら外側二つだけTILEでたりするするの？
+
+  ;; - [ ] Tweak Directive Class (Multi Dimensinal)
+  ;; - [ ] Add: GLOBAL/PARALLEL,
+  ;; - [ ] Add: GLOBAL/PARALLEL Lowerer
+  
   ;; @DIRECTIVEについて: デフォルトでリストにする。
   ;; 2D Warp has a chance to get parallelized
   
