@@ -38,8 +38,8 @@
 (defun get-gemm-schedule (m n k)
   (get-schedule-from-op (!matmul (make-tensor `(,m ,n)) (make-tensor `(,n ,k)))))
 
-(defun get-softmax-schedule ()
-  (get-schedule-from-op (!softmax (make-tensor `(128 128)))))
+(defun get-softmax-schedule (a b)
+  (get-schedule-from-op (!softmax (make-tensor `(,a ,b)))))
 
 (defun get-layernorm-schedule ()
   (with-inference-mode ()
@@ -222,12 +222,17 @@
 (deftest hand-optimized-cpu-gemm-test
   (with-expr-cache ()
     (let ((raw (get-gemm-schedule 'a 'a 'a)))
-      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
-;;      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-;;        (opt (make-instance 'Parallel) 0)
-;;        )
-;;      (print-schedule raw)
-;;      (print-bp raw)
+;;      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
+      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+        (opt (make-instance 'Reschedule) 0)
+        (opt (make-instance 'Parallel) 0)
+        (opt (make-instance 'TileBand :amount '(32 32)) 0)
+        (opt (make-instance 'Packing :amount '(8 8)) 1)
+        (opt (make-instance 'Packing :amount '(4)) 2)
+        (print-schedule raw)
+        )
+      (print-schedule raw)
+      (print-bp raw)
       )))
 
 (deftest hand-optimized-gpu-gemm-test
@@ -244,7 +249,7 @@
       )))
 ;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-softmax-test
-  (let ((raw (get-softmax-schedule)))
+  (let ((raw (get-softmax-schedule 'a 'b)))
     (print "CPU")
     (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
     (print "GPU")
@@ -258,23 +263,25 @@
     (print-bp raw)))
 ;; ~~ Hand Optimized Kernel Generation(Conv2d) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-conv2d-relu-test
-  (let ((raw (get-convnd-relu-schedule)))
-    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)      
-      )
-    (print-bp raw)))
+  (with-expr-cache ()
+    (let ((raw (get-convnd-relu-schedule)))
+      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
+      (tmp-sketch-list raw 'Mock-GPU-AutoScheduler)
+      
+      ;;    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+      ;;      )
+      (print-bp raw))))
 
 (deftest hand-optimized-cpu-embedding-test
   ;; Symbolic kernel needs expr-cache
   (caten/codegen/expr-cache:with-expr-cache ()
     (let ((raw (get-embedding-schedule 128 128)))
-      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-        
-        )
+      
       (print-bp raw))))
 
 (deftest hand-optimized-unary-test
   (with-expr-cache ()
-    (let ((raw (get-schedule-from-op (!sin (make-tensor `(10 10))))))
+    (let ((raw (get-schedule-from-op (!sin (make-tensor `(a b))))))
       (print "CPU")
       (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
       (print "GPU")

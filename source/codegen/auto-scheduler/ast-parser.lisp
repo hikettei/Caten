@@ -30,20 +30,20 @@ scop.lisp for the opposite things.
     (or (gethash key (context-dynamic-shape-table ctx))
         (intern key))))
 
-(declaim (ftype (function (context cffi:foreign-pointer) t) parse-isl-ast))
-(defun parse-isl-ast (ctx ast)
+(declaim (ftype (function (context cffi:foreign-pointer list) t) parse-isl-ast))
+(defun parse-isl-ast (ctx ast directives)
   (declare (type cffi:foreign-pointer ast))
   (let ((type (isl::%isl-ast-node-get-type ast)))
     (ecase type
       (:ast-node-error (isl::isl-error))
-      (:ast-node-for   (parse-isl-ast-for ctx ast))
-      (:ast-node-if    (parse-isl-ast-if ctx ast))
-      (:ast-node-block (parse-isl-ast-block ctx ast))
-      (:ast-node-mark  (parse-isl-ast-mark ctx ast))
-      (:ast-node-user  (parse-isl-ast-user ctx ast)))))
+      (:ast-node-for   (parse-isl-ast-for ctx ast directives))
+      (:ast-node-if    (parse-isl-ast-if ctx ast directives))
+      (:ast-node-block (parse-isl-ast-block ctx ast directives))
+      (:ast-node-mark  (parse-isl-ast-mark ctx ast directives))
+      (:ast-node-user  (parse-isl-ast-user ctx ast directives)))))
 
-(declaim (ftype (function (context cffi:foreign-pointer) ASTBlock) parse-isl-ast-block))
-(defun parse-isl-ast-block (ctx ast)
+(declaim (ftype (function (context cffi:foreign-pointer list) ASTBlock) parse-isl-ast-block))
+(defun parse-isl-ast-block (ctx ast directives)
   (declare (type cffi:foreign-pointer ast))
   (let* ((children (isl::%isl-ast-node-block-get-children ast))
 	 (n        (isl::%isl-ast-node-list-n-ast-node children)))
@@ -51,10 +51,10 @@ scop.lisp for the opposite things.
      (loop for i upfrom 0 below n
 	   for child = (isl::%isl-ast-node-list-get-at children i)
 	   collect
-	   (parse-isl-ast ctx child)))))
+	   (parse-isl-ast ctx child directives)))))
 
-(declaim (ftype (function (context cffi:foreign-pointer) User) parse-isl-ast-user))
-(defun parse-isl-ast-user (ctx ast)
+(declaim (ftype (function (context cffi:foreign-pointer list) User) parse-isl-ast-user))
+(defun parse-isl-ast-user (ctx ast directives)
   (declare (type cffi:foreign-pointer ast))
   (let ((expr (isl::%isl-ast-node-user-get-expr ast)))
     (let* ((first-expr (isl::%isl-ast-expr-op-get-arg expr 0))
@@ -63,11 +63,11 @@ scop.lisp for the opposite things.
 	   (name       (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
 	   (args       (loop for i upfrom 1 below n
 			     collect
-			     (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg expr i)))))
+			     (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg expr i) directives))))
       (make-user name args))))
 
-(declaim (ftype (function (context cffi:foreign-pointer) t) parse-isl-ast-mark))
-(defun parse-isl-ast-mark (ctx ast)
+(declaim (ftype (function (context cffi:foreign-pointer list) t) parse-isl-ast-mark))
+(defun parse-isl-ast-mark (ctx ast directives)
   "Inserts multi-dimensional marks into the ASTFor. e.g.:
 ```
 @DIRECTIVE(type=GLOBAL, amount=(2 2), visible=NIL)
@@ -87,24 +87,29 @@ for (int i = 0; i < 10; i++) {
 ```
 The mapped ast is finally transformed by the ast-rewrite-directive function.
 "
+  ;; [TODO] quite hard to read this code ...
   (let* ((directive (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast)))))
-         (user (parse-isl-ast ctx (isl::%isl-ast-node-mark-get-node ast))))
-    (assert (astfor-p user) () "parse-isl-ast-mark: The child of the mark node should be a loop, getting ~a." user)
-    (labels ((get-n-descendant (n)
-               (let ((node user))
-                 (loop repeat n do
-                   (setf node (astfor-body node))
-                   (assert (astfor-p node) () "parse-isl-ast-mark: The ~ath descendant of the mark node should be a loop, getting ~a." n node))
-                 node))
-             (directive-n (n)
-               (directive (directive-type directive) (nth n (directive-amount directive)) (directive-visible directive))))
-      (loop for n upfrom 0
-            for amt in (directive-amount directive)
-            do (push (directive-n n) (astfor-marks (get-n-descendant n))))
-      user)))
+         (type (directive-type directive))
+         (stop-type (cond ((equalp type "LOCAL") "GLOBAL") ((equalp type "PACKED_INNER") "PACKED_OUTER")))
+         (corresponding-size nil)
+         (directives
+           (loop for directives-channel in directives
+                 for nth upfrom 0
+                 collect
+                 (loop for d in directives-channel
+                       when (equalp (directive-type d) stop-type)
+                         do (setf corresponding-size (length (nth nth directives)))
+                       else
+                         collect d)))
+         (directives-new
+           (loop for amt in (directive-amount directive)
+                 collect (directive (directive-type directive) amt (directive-visible directive)))))
+    (when corresponding-size
+      (setf directives-new (subseq directives-new 0 (- (length directives-new) corresponding-size))))
+    (parse-isl-ast ctx (isl::%isl-ast-node-mark-get-node ast) (append directives (list directives-new)))))
 
-(declaim (ftype (function (context (or cffi:foreign-pointer isl:ast-node)) (values Expr &optional)) parse-isl-expr))
-(defun parse-isl-expr (ctx ast)
+(declaim (ftype (function (context (or cffi:foreign-pointer isl:ast-node) list) (values Expr &optional)) parse-isl-expr))
+(defun parse-isl-expr (ctx ast directives)
   (declare (type (or cffi:foreign-pointer isl:ast-node) ast))
   (let* ((ast (if (isl:ast-node-p ast)
 		  (isl::ast-node-handle ast)
@@ -130,7 +135,7 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
       (:ast-expr-op
        (let* ((n-arg (isl::%isl-ast-expr-get-op-n-arg ast))
 	      (args (loop for nth upfrom 0 below n-arg
-			  collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg ast nth))))
+			  collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg ast nth) directives)))
 	      (op-type (isl::%isl-ast-expr-op-get-type ast)))
 	 (flet ((->expr (lhs rhs)
 		  (assert (not (eql op-type :ast-expr-op-error)) () ":isl_ast_expr_op_error")
@@ -172,29 +177,34 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 		 (otherwise
 		  (reduce #'->expr args))))))))))
 
-(declaim (ftype (function (context cffi:foreign-pointer) ASTFor) parse-isl-ast-for))
-(defun parse-isl-ast-for (ctx ast)
+(declaim (ftype (function (context cffi:foreign-pointer list) ASTFor) parse-isl-ast-for))
+(defun parse-isl-ast-for (ctx ast directives)
   (declare (type cffi:foreign-pointer ast))
   (let* ((iter (isl::%isl-ast-node-for-get-iterator ast))
 	 (id (isl::%isl-ast-expr-get-id iter))
 	 (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
-	 (from (parse-isl-expr ctx (isl::%isl-ast-node-for-get-init ast)))
-	 (by (parse-isl-expr ctx (isl::%isl-ast-node-for-get-inc ast)))
-	 (to (parse-isl-expr ctx (isl::%isl-ast-node-for-get-cond ast)))
-	 (body (parse-isl-ast ctx (isl::%isl-ast-node-for-get-body ast))))
-    (make-for name from to by body)))
+	 (from (parse-isl-expr ctx (isl::%isl-ast-node-for-get-init ast) directives))
+	 (by (parse-isl-expr ctx (isl::%isl-ast-node-for-get-inc ast) directives))
+	 (to (parse-isl-expr ctx (isl::%isl-ast-node-for-get-cond ast) directives))
+         (directives (loop for d in directives if d collect d))
+         (mark (map 'list #'car directives))
+         (directives (loop for d in (map 'list #'cdr directives) if d collect d))
+	 (body (parse-isl-ast ctx (isl::%isl-ast-node-for-get-body ast) directives)))
+    (let ((for (make-for name from to by body)))
+      (setf (astfor-marks for) mark)
+      for)))
 
-(declaim (ftype (function (context cffi:foreign-pointer) AstIf) parse-isl-ast-if))
-(defun parse-isl-ast-if (ctx ast)
+(declaim (ftype (function (context cffi:foreign-pointer list) AstIf) parse-isl-ast-if))
+(defun parse-isl-ast-if (ctx ast directives)
   (declare (type cffi:foreign-pointer ast))
   (let* ((condition
-	   (parse-isl-expr ctx (isl::%isl-ast-node-if-get-cond ast)))
+	   (parse-isl-expr ctx (isl::%isl-ast-node-if-get-cond ast) directives))
 	 (then-node
-	   (parse-isl-ast ctx (isl::%isl-ast-node-if-get-then-node ast)))
+	   (parse-isl-ast ctx (isl::%isl-ast-node-if-get-then-node ast) directives))
 	 (else-p (isl::%isl-ast-node-if-has-else-node ast))
 	 (else-node
 	   (when (eql else-p :bool-true)
-	     (parse-isl-ast ctx (isl::%isl-ast-node-if-get-else-node ast)))))
+	     (parse-isl-ast ctx (isl::%isl-ast-node-if-get-else-node ast) directives))))
     (make-if condition then-node else-node)))
 ;; ~~ Directive Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-rewrite-directive (ast-root)
@@ -273,12 +283,14 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 (defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0) (vectorizes nil))
   (declare (type isl:ast-node ast))
   (assert (eql (node-type scheduled-item) :Schedule-Item))
+  ;; [TODO] Clean up
   (caten/codegen/packing:blueprint-upcast-inference
    (create-rendering-graph-nodes
     (ast-rewrite-vectorize
      (parse-isl-ast
       (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item))
-      (isl::ast-node-handle ast))
+      (isl::ast-node-handle ast)
+      nil)
      vectorizes
      scheduled-item)
     (getattr scheduled-item :blueprint))

@@ -176,11 +176,7 @@ for (int i=0; i<100; i+=amount) {
                              band))
          (tiled-schedule (schedule-node-band-tile tiled-schedule (tiling-sizes band amount))))
     (if directive-child
-        (let ((tiled-schedule (schedule-node-insert-mark (schedule-node-get-child tiled-schedule 0) (directive->id directive-child))))
-          ;; If directive-visible is NIL, the band is oblige to have more optimizations, the returned schedule should be pointed to mark.
-          (if (directive-visible directive-child)
-              tiled-schedule
-              (schedule-node-get-child tiled-schedule 0)))
+        (schedule-node-insert-mark (schedule-node-get-child tiled-schedule 0) (directive->id directive-child))
         tiled-schedule)))
 ;; ~~ Tile Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-tile (band tile-size)

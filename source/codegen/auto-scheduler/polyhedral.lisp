@@ -241,7 +241,7 @@ This function returns a list of the results of applying f to each node. NIL is e
          (q (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast-build-node)))
          (str (isl::%isl-printer-get-str q)))
     str))
-
+;; [todo] delete
 (cffi:defcallback schedule-node-set-separate :pointer ((node :pointer) (user :pointer))
   (declare (ignore user))
   (if (eql (isl::%isl-schedule-node-get-type node) :schedule-node-band)

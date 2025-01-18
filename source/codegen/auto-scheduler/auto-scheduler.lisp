@@ -7,7 +7,7 @@
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
     #:AutoScheduler #:autoscheduler-best-schedule #:autoscheduler-config
     #:autoscheduler-n-generation #:autoscheduler-gen2act
-    #:NoOpt #:Parallel #:Global #:Local #:TileBand #:Unroll #:Packing #:Coalesce
+    #:NoOpt #:Parallel #:Global #:Local #:TileBand #:Unroll #:Packing #:Coalesce #:Reschedule
     #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs)
   ;; ILP Solvers
   (:export #:schedule-item-maximize-band-depth #:verify-schedule)
@@ -267,10 +267,9 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; - GLOBAL   (if N_GLOBAL_DIMS>1)    |   Local_Size (which is a tile dim)
   ;; --------------------------------------------------------------------------
   (let ((n-global-dims (auto-scheduler-n-global-loops config)))
-    ;; [TODO] Also candidates: Where to split the band?
     (loop for sketch in sketches
           for target-band = (nth 0 (sketch-get-bands sketch))
-          for use-legality-parallel = (null (sketch-opt-history sketch)) ; If Reschedule is not selected, ISL Schedule coincident is not assigned. (Use check-legality-parallel instead)
+          for use-legality-parallel = (null (sketch-opt-history sketch)) ;; If Reschedule is not selected, ISL Schedule coincident is not assigned. (Use check-legality-parallel instead)
           for band-depth = (and target-band (schedule-node-band-get-depth target-band))
           when target-band do
             (case n-global-dims
@@ -308,14 +307,14 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
            when target-band do
              (loop named tile
                    for idx in (map 'list #'1+ (nreverse (alexandria:iota (min band-depth 3))))
-                   for tile-size = (loop repeat idx collect 8) ;; [TODO] Make it symbolic and searchable.
+                   for tile-size = (loop repeat idx collect 32) ;; [TODO] Make it symbolic and searchable.
                    for opt = (make-instance 'TileBand :amount tile-size :only-coincident has-coincidence) do
                      (when (and tile-size (opt-applicable-p opt target-band item config))
+                       ;; Branching the sketch
                        (setf sketches (remove sketch sketches))
                        (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
                        (return-from tile))))))
-
-  ;; [TODO] c6 in cpu gemm is not packed.
+  ;; SIMD/UPCAST
   (loop for sketch in sketches
         for sketch-first = sketch
         for bands = (sketch-get-bands sketch)
@@ -327,19 +326,22 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                         (when (and
                                (eql type :schedule-node-band)
                                (or (null mark) (equalp (directive-type mark) "LOCAL"))
-                               ;; (<= (isl:schedule-node-get-schedule-depth node) innermost-depth)
+                               ;; (>= (isl:schedule-node-get-schedule-depth node) innermost-depth)
                                )
                           node))
                     (isl:schedule-get-root (sketch-schedule sketch)))))
             ;; Upcast all bands
             (loop for bands = (get-bands sketch)
                   for band = (car bands)
+                  for band-depth = (and band (schedule-node-band-get-depth band))
                   while band do
-                    (let ((opt (make-instance 'Packing :amount 4)))
+                    (let ((opt (make-instance 'Packing :amount (loop repeat band-depth collect 4)))) ;; [TODO] Tune this parameter!
                       (when (opt-applicable-p opt band item config)
                         (setf sketch (sketch-next-generation sketch opt 0 band item config)))))
             (setf sketches (remove sketch-first sketches))
             (push sketch sketches)))
+  ;; - PARALLEL+LOCAL Conflicts こっちだけ直せばOK
+  ;; - LOCAL: Size=1が消えるからPaddingできない
   ;; --------------------------------------------------------------------------
   ;; 3. Some minor optimizations:
   ;; - Unroll:     Remove away small loops by unrolling with loop size.
@@ -360,7 +362,17 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; B. Has Tensorcore = 1000 points
   ;; Score = (A.) + (B.) + Volume(PACKED_REGION)
 
-  ;; [TODO]
+  ;; Workload(次にやるべきこと)
+  ;; - Microkernel Transformationを完成させる
+  ;;   - Finish: ASTParser
+  ;;     - [ ] Finish: Vectorize(gemm8x8 mutation)
+  ;;     - [ ] Refactor Vectorizer
+
+  ;; - Improve the sketch generation
+
+
+  ;; TILE_DIMS=64, PACK_DIMS=32みたいなのを仮定する
+  
   ;; - Trade-Offになる箇所でSketchを分岐する
   ;; - Verify-Blueprintで先に枝刈りする
   ;; - Tile dimensionをSymbolicにする
@@ -370,6 +382,18 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; - PARALLEL+TILE Fusion in the CPU
   ;; - Shared Memory Transfer Optimization
   ;; - Search with Full Symbolic
+  ;; - Sketchって 40通りくらい生成されない？
+  ;; - optimize local size
+  ;; - ILP: Give LOCAL_SIZE <= TILE_SIZE ... 
+
+  ;; [TODO] (ctx:getenv :SKETCH_SAMPLE_TOP_K)
+  ;; Usually <= 3
+
+  ;; [TODO]
+  ;; To maximize the performance, it is equivalent to solve ILP against (LS1 LS2 LS3 ... TILE1 TILE2 ... P1 P2 ...)
+  ;; cost = Volume(Vectorized_Size) ?
+  (dolist (s sketches)
+    (lower-into-bp-from-polyhedral (->ast (sketch-schedule s) 0) item))
   sketches)
 
 ;; ~~ Entry Point ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
