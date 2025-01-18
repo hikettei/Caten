@@ -172,3 +172,7 @@
 (define-isl-function schedule-node-next-sibling %isl-schedule-node-next-sibling
   (:give schedule-node)
   (:take schedule-node))
+
+(defun schedule-node-descendant-bottom-up (schedule-node callback user)
+  (declare (type schedule-node schedule-node) (type foreign-pointer user))
+  (%make-schedule-node (%isl-schedule-node-map-descendant-bottom-up (schedule-node-handle (copy schedule-node)) callback user)))
