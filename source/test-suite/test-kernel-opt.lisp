@@ -33,7 +33,6 @@
       (when (jit-kernel-p node)
         (caten/codegen/blueprint:lower-schedule-item node (runtime-graph runtime) schedule)
         (caten/codegen/scop:scop node)
-        (setf (caten/codegen/polyhedral:poly-schedule (getattr node :polyhedral)) (schedule-item-maximize-band-depth node))
         (return-from get-schedule-from-op node)))))
 
 (defun get-gemm-schedule (m n k)
@@ -216,25 +215,33 @@
 ;; - ReminderとPACKED?
 (deftest hand-optimized-cpu-gemm-test
   (with-expr-cache ()
-    (let ((raw (get-gemm-schedule 'a 'b 'c)))
-      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-        (opt (make-instance 'Parallel) 0)
-        )
-      (print-schedule raw)
-      (print-bp raw)
+    (let ((raw (get-gemm-schedule 'a 'a 'a)))
+      (loop for i upfrom 0
+            for sketch in (caten/codegen/auto-scheduler::generate-sketch raw (make-instance 'Mock-CPU-AutoScheduler))
+            do (format
+                t
+                "N=~a~%~a~%" i
+                (caten/codegen/polyhedral:render-schedule-node
+                 (caten/codegen/auto-scheduler::sketch-schedule sketch))))
+;;      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+;;        (opt (make-instance 'Parallel) 0)
+;;        )
+;;      (print-schedule raw)
+;;      (print-bp raw)
       )))
 
 (deftest hand-optimized-gpu-gemm-test
   (with-expr-cache ()
     (let ((raw (get-gemm-schedule 'a 'a 'a)))
-      (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
-        (print-schedule raw)
-        (opt (make-instance 'Global :amount `(4 4)) 0)
-;        (opt (make-instance 'Packing :amount 4) 0)
-        (print-schedule raw)
-        )
-      (print-schedule raw)
-      (print-bp raw))))
+      (loop for i upfrom 0
+            for sketch in (caten/codegen/auto-scheduler::generate-sketch raw (make-instance 'Mock-GPU-AutoScheduler))
+            do (format
+                t
+                "N=~a~%~a~%" i sketch))
+;      (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
+;        )
+      nil
+      )))
 ;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-softmax-test
   (let ((raw (get-softmax-schedule)))
