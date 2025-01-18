@@ -210,7 +210,7 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 (defun ast-rewrite-directive (ast-root)
   ;; TODO: Count the number of @GLOBAL
   ;; TODO: Pair OUTER and INNER
-
+  ast-root
   )
 ;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun r/for (idx upfrom below by scope)
@@ -283,18 +283,14 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 (defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0) (vectorizes nil))
   (declare (type isl:ast-node ast))
   (assert (eql (node-type scheduled-item) :Schedule-Item))
-  ;; [TODO] Clean up
-  (caten/codegen/packing:blueprint-upcast-inference
-   (create-rendering-graph-nodes
-    (ast-rewrite-vectorize
-     (parse-isl-ast
-      (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item))
-      (isl::ast-node-handle ast)
-      nil)
-     vectorizes
-     scheduled-item)
-    (getattr scheduled-item :blueprint))
-   scheduled-item))
+  (let* ((ctx (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item)))
+         (ast (parse-isl-ast ctx (isl::ast-node-handle ast) nil))
+         (ast (ast-rewrite-directive ast))
+         (ast (ast-rewrite-vectorize ast vectorizes scheduled-item))
+         (bp (create-rendering-graph-nodes ast (getattr scheduled-item :blueprint)))
+         (bp (caten/codegen/packing:blueprint-upcast-inference bp scheduled-item)))
+    bp))
+
 ;; TMP
 #|
 (defun parse-isl-ast-mark (ctx ast)
