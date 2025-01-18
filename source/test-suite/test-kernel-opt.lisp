@@ -209,11 +209,12 @@
 ;;  - 1. UNROLL/PACKINGを綺麗にする
 ;;  - 2. Tilingと干渉しない
 ;;  - 3. Tiling/UNROLL/PACKINGの，val_x_y_zのIndexingをちゃんとやる
-;;  - 4. 
+;;  - 4. Clean up symbolic kernels ...
 ;; - Vectorize = PACKED_INNER次元の範囲でSliceすること
 ;; - PACKED_INNER次元は全てVectorizeされると仮定する。(無理なら等価な普通の演算に書き換えられるように)
 ;; - ReminderとPACKED?
 ;; - Toplevelで呼ぶ時は(trivial-garbage:gc :full t)しないと結構重たい。。。
+;; Simplify the reminder part ...
 (defun tmp-sketch-list (raw scheduler)
   (loop for i upfrom 0
         for sketch in (caten/codegen/auto-scheduler::generate-sketch raw (make-instance scheduler))
@@ -221,18 +222,18 @@
 
 (deftest hand-optimized-cpu-gemm-test
   (with-expr-cache ()
-    (let ((raw (get-gemm-schedule 'a 'a 'a)))
-;;      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
-      (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-        (opt (make-instance 'Reschedule) 0)
-        (opt (make-instance 'Parallel) 0)
-        (opt (make-instance 'TileBand :amount '(32 32)) 0)
-        (opt (make-instance 'Packing :amount '(8 8)) 1)
-        (opt (make-instance 'Packing :amount '(4)) 2)
-        (print-schedule raw)
-        )
-      (print-schedule raw)
-      (print-bp raw)
+    (let ((raw (get-gemm-schedule 512 256 384)))
+      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
+      ;(with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+      ;  (opt (make-instance 'Reschedule) 0)
+      ;  (opt (make-instance 'Parallel) 0)
+      ;  (opt (make-instance 'TileBand :amount '(32 32)) 0)
+      ;  (opt (make-instance 'Packing :amount '(8 8)) 1)
+      ;  (opt (make-instance 'Packing :amount '(4)) 2)
+      ;  (print-schedule raw)
+      ;  )
+      ;(print-schedule raw)
+      ;(print-bp raw)
       )))
 
 (deftest hand-optimized-gpu-gemm-test
@@ -282,7 +283,7 @@
 (deftest hand-optimized-unary-test
   (with-expr-cache ()
     (let ((raw (get-schedule-from-op (!sin (make-tensor `(a b))))))
-      (print "CPU")
-      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
+      ;(print "CPU")
+      ;(tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
       (print "GPU")
       (tmp-sketch-list raw 'Mock-GPU-AutoScheduler))))

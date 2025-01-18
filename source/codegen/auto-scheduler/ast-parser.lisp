@@ -241,7 +241,7 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
     (handler ast nil nil)))
 
 (defun ast-rewrite-directive (ast)
-  (labels ((handler (ast &key (reminder-idx-list))
+  (labels ((handler (ast)
              ;; Reminder-idx-list
              (etypecase ast
                (User (copy-user ast))
@@ -267,9 +267,13 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
                   ;;  - val_2_3 -> expr-realizeでRenderした方が良くない？
                   ;;  - user-prefix methodを実装する
                   ;; - Band Size >= 2 -> How to create a pair?
+ 
+                  ;; [TODO]
+                  ;; - Reminder Partの計算式を単純化する
+                  ;; - Indexing (val_...)を修正する
+                  ;; - Testing the validity
                   (if mark
                       (cond
-                        ;; [TODO] Idx things
                         ((equalp (directive-type mark) "PACKED_INNER")
                          (setf (astfor-body new-astfor) (handler (astfor-body ast)))
                          (let* ((n-pack (directive-amount mark))
@@ -282,9 +286,11 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
                          ;; BODY ==> VECTORIZED_PARTS, REMINDER_PARTS
                          ;; This thing can be explicited by passing the reminder-idx-list
                          (let* ((n-pack (directive-amount mark))
-                                (packed-body (handler (astfor-body ast) :reminder-idx-list reminder-idx-list)))
+                                (packed-body (handler (astfor-body ast)))
+                                (reminder (compute-reminder-for-unroll ast (astfor-body ast) (if (listp n-pack) (car n-pack) n-pack))))
                            (setf (astfor-body new-astfor) packed-body)
-                           new-astfor))
+                           ;; todo recursively handle astfor reminder????
+                           (make-block (list new-astfor reminder))))
                         (T (error "The directive ~a transformation is not supported." mark)))
                       (progn
                         (setf (astfor-body new-astfor) (handler (astfor-body ast)))
@@ -300,7 +306,7 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 
 (defun ast-rewrite-grids (ast)
   "Rewrites PARALLEL/GLOBAL/LOCAL directives."
-  
+  ast
   )
 ;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun r/for (idx upfrom below by scope)
