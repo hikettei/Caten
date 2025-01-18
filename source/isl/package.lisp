@@ -405,6 +405,7 @@
    #:schedule-node-band-get-space
    #:schedule-node-has-parent
    #:schedule-node-is-equal
+   #:schedule-node-band-split
    
    ))
 

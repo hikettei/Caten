@@ -176,3 +176,6 @@
 (defun schedule-node-descendant-bottom-up (schedule-node callback user)
   (declare (type schedule-node schedule-node) (type foreign-pointer user))
   (%make-schedule-node (%isl-schedule-node-map-descendant-bottom-up (schedule-node-handle (copy schedule-node)) callback user)))
+
+(defun schedule-node-band-split (node pos)
+  (%make-schedule-node (%isl-schedule-node-band-split (schedule-node-handle (copy node)) pos)))

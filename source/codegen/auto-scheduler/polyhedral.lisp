@@ -241,3 +241,16 @@ This function returns a list of the results of applying f to each node. NIL is e
          (q (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast-build-node)))
          (str (isl::%isl-printer-get-str q)))
     str))
+
+(cffi:defcallback schedule-node-set-separate :pointer ((node :pointer) (user :pointer))
+  (declare (ignore user))
+  (if (eql (isl::%isl-schedule-node-get-type node) :schedule-node-band)
+      (progn
+        (dotimes (i (isl::%isl-schedule-node-n-children node))
+          (setf node (isl::%isl-schedule-node-band-member-set-ast-loop-type node i :ast-loop-separate)))
+        node)
+      node))
+
+(defun schedule-node-set-separate (sched)
+  (let ((node (isl:schedule-node-descendant-bottom-up (isl:schedule-get-root sched) (cffi:callback schedule-node-set-separate) (cffi:null-pointer))))
+    (isl:schedule-node-get-schedule node)))

@@ -68,6 +68,224 @@ scop.lisp for the opposite things.
 
 (declaim (ftype (function (context cffi:foreign-pointer) t) parse-isl-ast-mark))
 (defun parse-isl-ast-mark (ctx ast)
+  "Inserts multi-dimensional marks into the ASTFor. e.g.:
+```
+@DIRECTIVE(type=GLOBAL, amount=(2 2), visible=NIL)
+for (int i = 0; i < 10; i++) {
+  for (int j = 0; j < 10; j++) {
+    S1(i, j)
+  }
+```
+The @DIRECTIVE is transformed and mapped as:
+```
+@DIRECTIVE(type=GLOBAL, amount=(2), visible=NIL)
+for (int i = 0; i < 10; i++) {
+  @DIRECTIVE(type=GLOBAL, amount=(2), visible=NIL)
+  for (int j = 0; j < 10; j++) {
+    S1(i, j)
+  }
+```
+The mapped ast is finally transformed by the ast-rewrite-directive function.
+"
+  (let* ((directive (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast)))))
+         (user (parse-isl-ast ctx (isl::%isl-ast-node-mark-get-node ast))))
+    (assert (astfor-p user) () "parse-isl-ast-mark: The child of the mark node should be a loop, getting ~a." user)
+    (labels ((get-n-descendant (n)
+               (let ((node user))
+                 (loop repeat n do
+                   (setf node (astfor-body node))
+                   (assert (astfor-p node) () "parse-isl-ast-mark: The ~ath descendant of the mark node should be a loop, getting ~a." n node))
+                 node))
+             (directive-n (n)
+               (directive (directive-type directive) (nth n (directive-amount directive)) (directive-visible directive))))
+      (loop for n upfrom 0
+            for amt in (directive-amount directive)
+            do (push (directive-n n) (astfor-marks (get-n-descendant n))))
+      user)))
+
+(declaim (ftype (function (context (or cffi:foreign-pointer isl:ast-node)) (values Expr &optional)) parse-isl-expr))
+(defun parse-isl-expr (ctx ast)
+  (declare (type (or cffi:foreign-pointer isl:ast-node) ast))
+  (let* ((ast (if (isl:ast-node-p ast)
+		  (isl::ast-node-handle ast)
+		  ast))
+	 (type (isl::%isl-ast-expr-get-type ast)))
+    (ecase type
+      (:ast-expr-error (isl::isl-error))
+      (:ast-expr-id
+       (let* ((id (isl::%isl-ast-expr-id-get-id ast))
+	      (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
+              (cache (restore-expr name)))
+	 (declare (type string name))
+         (if cache
+             cache
+             
+             (expr-const (ctx-intern ctx name) :int64))))
+      (:ast-expr-int
+       (let* ((id (isl::%isl-ast-expr-int-get-val ast))
+	      (num (isl::%isl-val-get-d id)))
+	 (declare (type number num))
+	 (let ((num (round num)))
+           (expr-const num :int64))))
+      (:ast-expr-op
+       (let* ((n-arg (isl::%isl-ast-expr-get-op-n-arg ast))
+	      (args (loop for nth upfrom 0 below n-arg
+			  collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg ast nth))))
+	      (op-type (isl::%isl-ast-expr-op-get-type ast)))
+	 (flet ((->expr (lhs rhs)
+		  (assert (not (eql op-type :ast-expr-op-error)) () ":isl_ast_expr_op_error")
+		  (ecase op-type
+		    (:ast-expr-op-and (expr-and lhs rhs))
+		    (:ast-expr-op-and-then (expr-and lhs rhs))
+		    (:ast-expr-op-or (expr-or lhs rhs))
+		    (:ast-expr-op-or-else (expr-or lhs rhs))
+		    (:ast-expr-op-max (expr-max lhs rhs))
+		    (:ast-expr-op-min  (expr-min lhs rhs))
+		    (:ast-expr-op-minus (expr-neg lhs)) ;; (- a)
+		    (:ast-expr-op-add (expr-add lhs rhs))
+		    (:ast-expr-op-sub (expr-sub lhs rhs))
+		    (:ast-expr-op-mul (expr-mul lhs rhs))
+		    (:ast-expr-op-div (expr-idiv lhs rhs))		 
+		    (:ast-expr-op-fdiv-q (expr-idiv lhs rhs))
+		    (:ast-expr-op-pdiv-q (expr-idiv lhs rhs))
+		    (:ast-expr-op-pdiv-r (expr-mod lhs rhs))
+		    (:ast-expr-op-zdiv-r (expr-mod lhs rhs))
+		    ;; (:expr-op-cond)
+		    (:ast-expr-op-eq (expr-= lhs rhs))
+                    ;; Rewrite LE to simplify the expression assuming rhs is an integer.
+		    (:ast-expr-op-le (expr-< lhs (expr-add rhs (expr-const 1 :int64)))) ;; <=
+		    (:ast-expr-op-lt (expr-< lhs rhs)) ;; <
+		    (:ast-expr-op-ge (expr-not (expr-< lhs rhs))) ;; >=
+		    (:ast-expr-op-gt (expr-> lhs rhs)) ;; >
+		    ;; (:expr-op-call)
+		    ;; (:expr-op-access)
+		    ;; (:expr-op-member)
+		    ;; (:expr-op-address-of)
+		    (otherwise
+		     (error "~a is not supported by caten" op-type)))))
+	   (if (= (length args) 1)
+	       (->expr (car args) nil)
+	       (case op-type
+		 (:ast-expr-op-select
+		  (assert (= (length args) 3))
+		  (apply #'expr-where args))
+		 (otherwise
+		  (reduce #'->expr args))))))))))
+
+(declaim (ftype (function (context cffi:foreign-pointer) ASTFor) parse-isl-ast-for))
+(defun parse-isl-ast-for (ctx ast)
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((iter (isl::%isl-ast-node-for-get-iterator ast))
+	 (id (isl::%isl-ast-expr-get-id iter))
+	 (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
+	 (from (parse-isl-expr ctx (isl::%isl-ast-node-for-get-init ast)))
+	 (by (parse-isl-expr ctx (isl::%isl-ast-node-for-get-inc ast)))
+	 (to (parse-isl-expr ctx (isl::%isl-ast-node-for-get-cond ast)))
+	 (body (parse-isl-ast ctx (isl::%isl-ast-node-for-get-body ast))))
+    (make-for name from to by body)))
+
+(declaim (ftype (function (context cffi:foreign-pointer) AstIf) parse-isl-ast-if))
+(defun parse-isl-ast-if (ctx ast)
+  (declare (type cffi:foreign-pointer ast))
+  (let* ((condition
+	   (parse-isl-expr ctx (isl::%isl-ast-node-if-get-cond ast)))
+	 (then-node
+	   (parse-isl-ast ctx (isl::%isl-ast-node-if-get-then-node ast)))
+	 (else-p (isl::%isl-ast-node-if-has-else-node ast))
+	 (else-node
+	   (when (eql else-p :bool-true)
+	     (parse-isl-ast ctx (isl::%isl-ast-node-if-get-else-node ast)))))
+    (make-if condition then-node else-node)))
+;; ~~ Directive Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun ast-rewrite-directive (ast-root)
+  ;; TODO: Count the number of @GLOBAL
+  ;; TODO: Pair OUTER and INNER
+
+  )
+;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun r/for (idx upfrom below by scope)
+  (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by :scope scope))
+
+(defun r/endfor (idx)
+  (make-node :Render :ENDFOR nil nil :idx idx))
+
+(defun r/if (condition idx)
+  (make-node :Render :IF nil nil :condition condition :idx idx))
+
+(defun r/endif (idx)
+  (make-node :Render :ENDIF nil nil :idx idx))
+
+(defun create-rendering-graph-nodes (lisp-ast items &aux (space))
+  (let ((new-graph))
+    (labels ((find-user (node-id args)
+               (let ((node (find (princ-to-string node-id) items
+                                 :key (alexandria:compose #'princ-to-string #'node-id)
+                                 :test #'equalp)))
+                 (assert node () "~a is not found in ~a" node-id items)
+                 (assert (eql (node-type node) :EXPR))
+                 (setf node (copy-node node))
+                 (let ((base (getattr node :iterations)))
+                   (setf (getattr node :iterations) args)
+                   (if (and (null args) (> (length base) 0))
+                       (setf (getattr node :iterations) base)
+                       (progn
+                         (setf (getattr node :iterations) (ensure-iteration-space-length (length base) (getattr node :iterations)))
+                         (assert (= (length (getattr node :iterations)) (length base)) () "Before and after the polyhedral compilation, the rank of iteration space should not be changed. ~a -> ~a" (getattr node :iterations) args))))
+                 node))
+             (lower (object)
+	       (when (listp object) (return-from lower (map 'list #'lower object)))
+	       (ematch object
+		 ((ASTBlock :body body) (map 'list #'lower body))
+		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
+                  ;; [TODO] Generalize this
+                  ;; TILE_BAND is not an unroll idx?
+                  (let ((is-tile-band (find "TILE_BAND" (astfor-marks object) :test #'equalp)))
+                    (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
+                      (when (null is-tile-band) (push idx space))
+		      (push (r/for idx upfrom to by scope) new-graph)
+		      (lower body)
+                      (when (null is-tile-band) (setf space (remove idx space :test #'string=)))
+		      (push (r/endfor idx) new-graph))))
+		 ((User :name name :args args)
+                  (push (unroll-expr (reverse space) (find-user name args) object) new-graph))
+		 ((AstIf :condition cond :then-node then :else-node else)
+                  (let ((id (gensym "IF")))
+		    (push (r/if cond id) new-graph)
+		    (lower then)
+                    (assert (null else) () "else should be none")
+		    (push (r/endif id) new-graph)))
+                 ((AstExpr :expr expr :is-defglobal-p defglobal-p)
+                  (assert (eql (node-type expr) :EXPR) () "ASTEXPR can only have an EXPR.")
+                  (when defglobal-p
+                    (push (string-downcase (princ-to-string (car (node-writes expr)))) space))
+                  (push expr new-graph))
+		 (_
+		  (error "create-rendering-graph: ~a should not occur here!" object)))))
+      (lower lisp-ast))
+    (nreverse new-graph)))
+
+(defun dynamic-shape-table (item)
+  (let ((table (make-hash-table :test 'equal)))
+    (loop for (name . dtype) in (getattr item :dynamic-shapes)
+          do (setf (gethash (string-upcase (princ-to-string name)) table) name))
+    table))
+
+(defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0) (vectorizes nil))
+  (declare (type isl:ast-node ast))
+  (assert (eql (node-type scheduled-item) :Schedule-Item))
+  (caten/codegen/packing:blueprint-upcast-inference
+   (create-rendering-graph-nodes
+    (ast-rewrite-vectorize
+     (parse-isl-ast
+      (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item))
+      (isl::ast-node-handle ast))
+     vectorizes
+     scheduled-item)
+    (getattr scheduled-item :blueprint))
+   scheduled-item))
+;; TMP
+#|
+(defun parse-isl-ast-mark (ctx ast)
   "@DIRECTIVE Transformation Triggers"
   (let* ((directive (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast)))))
          (user (parse-isl-ast ctx (isl::%isl-ast-node-mark-get-node ast))))
@@ -156,179 +374,5 @@ scop.lisp for the opposite things.
                           (astfor-mutate-reminder-global (astfor-idx body) reminder)))))
                   (incf (context-n-global-dims ctx))
                   (return-from parse-isl-ast-mark replacement)))))))))
-    user))
-
-(declaim (ftype (function (context (or cffi:foreign-pointer isl:ast-node)) (values Expr &optional)) parse-isl-expr))
-(defun parse-isl-expr (ctx ast)
-  (declare (type (or cffi:foreign-pointer isl:ast-node) ast))
-  (let* ((ast (if (isl:ast-node-p ast)
-		  (isl::ast-node-handle ast)
-		  ast))
-	 (type (isl::%isl-ast-expr-get-type ast)))
-    (ecase type
-      (:ast-expr-error (isl::isl-error))
-      (:ast-expr-id
-       (let* ((id (isl::%isl-ast-expr-id-get-id ast))
-	      (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
-              (cache (restore-expr name)))
-	 (declare (type string name))
-         (if cache
-             cache
-             
-             (expr-const (ctx-intern ctx name) :int64))))
-      (:ast-expr-int
-       (let* ((id (isl::%isl-ast-expr-int-get-val ast))
-	      (num (isl::%isl-val-get-d id)))
-	 (declare (type number num))
-	 (let ((num (round num)))
-           (expr-const num :int64))))
-      (:ast-expr-op
-       (let* ((n-arg (isl::%isl-ast-expr-get-op-n-arg ast))
-	      (args (loop for nth upfrom 0 below n-arg
-			  collect (parse-isl-expr ctx (isl::%isl-ast-expr-op-get-arg ast nth))))
-	      (op-type (isl::%isl-ast-expr-op-get-type ast)))
-	 (flet ((->expr (lhs rhs)
-		  (assert (not (eql op-type :ast-expr-op-error)) () ":isl_ast_expr_op_error")
-		  (ecase op-type
-		    (:ast-expr-op-and (expr-and lhs rhs))
-		    (:ast-expr-op-and-then (expr-and lhs rhs))
-		    (:ast-expr-op-or (expr-or lhs rhs))
-		    (:ast-expr-op-or-else (expr-or lhs rhs))
-		    (:ast-expr-op-max (expr-max lhs rhs))
-		    (:ast-expr-op-min  (expr-min lhs rhs))
-		    (:ast-expr-op-minus (expr-neg lhs)) ;; (- a)
-		    (:ast-expr-op-add (expr-add lhs rhs))
-		    (:ast-expr-op-sub (expr-sub lhs rhs))
-		    (:ast-expr-op-mul (expr-mul lhs rhs))
-		    (:ast-expr-op-div (expr-idiv lhs rhs))		 
-		    (:ast-expr-op-fdiv-q (expr-idiv lhs rhs))
-		    (:ast-expr-op-pdiv-q (expr-idiv lhs rhs))
-		    (:ast-expr-op-pdiv-r (expr-mod lhs rhs))
-		    (:ast-expr-op-zdiv-r (expr-mod lhs rhs))
-		    ;; (:expr-op-cond)
-		    (:ast-expr-op-eq (expr-= lhs rhs))
-                    ;; Rewrite LE to simplify the expression
-		    (:ast-expr-op-le (expr-< lhs (expr-add rhs (expr-const 1 :int64)))) ;; <=
-		    (:ast-expr-op-lt (expr-< lhs rhs)) ;; <
-		    (:ast-expr-op-ge (expr-not (expr-< lhs rhs))) ;; >=
-		    (:ast-expr-op-gt (expr-> lhs rhs)) ;; >
-		    ;; (:expr-op-call)
-		    ;; (:expr-op-access)
-		    ;; (:expr-op-member)
-		    ;; (:expr-op-address-of)
-		    (otherwise
-		     (error "~a is not supported by caten" op-type)))))
-	   (if (= (length args) 1)
-	       (->expr (car args) nil)
-	       (case op-type
-		 (:ast-expr-op-select
-		  (assert (= (length args) 3))
-		  (apply #'expr-where args))
-		 (otherwise
-		  (reduce #'->expr args))))))))))
-
-(declaim (ftype (function (context cffi:foreign-pointer) ASTFor) parse-isl-ast-for))
-(defun parse-isl-ast-for (ctx ast)
-  (declare (type cffi:foreign-pointer ast))
-  (let* ((iter (isl::%isl-ast-node-for-get-iterator ast))
-	 (id (isl::%isl-ast-expr-get-id iter))
-	 (name (cffi:foreign-string-to-lisp (isl::%isl-id-get-name id)))
-	 (from (parse-isl-expr ctx (isl::%isl-ast-node-for-get-init ast)))
-	 (by (parse-isl-expr ctx (isl::%isl-ast-node-for-get-inc ast)))
-	 (to (parse-isl-expr ctx (isl::%isl-ast-node-for-get-cond ast)))
-	 (body (parse-isl-ast ctx (isl::%isl-ast-node-for-get-body ast))))
-    (make-for name from to by body)))
-
-(declaim (ftype (function (context cffi:foreign-pointer) AstIf) parse-isl-ast-if))
-(defun parse-isl-ast-if (ctx ast)
-  (declare (type cffi:foreign-pointer ast))
-  (let* ((condition
-	   (parse-isl-expr ctx (isl::%isl-ast-node-if-get-cond ast)))
-	 (then-node
-	   (parse-isl-ast ctx (isl::%isl-ast-node-if-get-then-node ast)))
-	 (else-p (isl::%isl-ast-node-if-has-else-node ast))
-	 (else-node
-	   (when (eql else-p :bool-true)
-	     (parse-isl-ast ctx (isl::%isl-ast-node-if-get-else-node ast)))))
-    (make-if condition then-node else-node)))
-;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun r/for (idx upfrom below by scope)
-  (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by :scope scope))
-
-(defun r/endfor (idx)
-  (make-node :Render :ENDFOR nil nil :idx idx))
-
-(defun r/if (condition idx)
-  (make-node :Render :IF nil nil :condition condition :idx idx))
-
-(defun r/endif (idx)
-  (make-node :Render :ENDIF nil nil :idx idx))
-
-(defun create-rendering-graph-nodes (lisp-ast items &aux (space))
-  (let ((new-graph))
-    (labels ((find-user (node-id args)
-               (let ((node (find (princ-to-string node-id) items
-                                 :key (alexandria:compose #'princ-to-string #'node-id)
-                                 :test #'equalp)))
-                 (assert node () "~a is not found in ~a" node-id items)
-                 (assert (eql (node-type node) :EXPR))
-                 (setf node (copy-node node))
-                 (let ((base (getattr node :iterations)))
-                   (setf (getattr node :iterations) args)
-                   (if (and (null args) (> (length base) 0))
-                       (setf (getattr node :iterations) base)
-                       (progn
-                         (setf (getattr node :iterations) (ensure-iteration-space-length (length base) (getattr node :iterations)))
-                         (assert (= (length (getattr node :iterations)) (length base)) () "Before and after the polyhedral compilation, the rank of iteration space should not be changed. ~a -> ~a" (getattr node :iterations) args))))
-                 node))
-             (lower (object)
-	       (when (listp object) (return-from lower (map 'list #'lower object)))
-	       (ematch object
-		 ((ASTBlock :body body) (map 'list #'lower body))
-		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
-                  ;; [TODO] Generalize this
-                  ;; TILE_BAND is not an unroll idx?
-                  (let ((is-tile-band (find "TILE_BAND" (astfor-marks object) :test #'equalp)))
-                    (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
-                      (when (null is-tile-band) (push idx space))
-		      (push (r/for idx upfrom to by scope) new-graph)
-		      (lower body)
-                      (when (null is-tile-band) (setf space (remove idx space :test #'string=)))
-		      (push (r/endfor idx) new-graph))))
-		 ((User :name name :args args)
-                  (push (unroll-expr (reverse space) (find-user name args) object) new-graph))
-		 ((AstIf :condition cond :then-node then :else-node else)
-                  (let ((id (gensym "IF")))
-		    (push (r/if cond id) new-graph)
-		    (lower then)
-                    (assert (null else) () "else should be none")
-		    (push (r/endif id) new-graph)))
-                 ((AstExpr :expr expr :is-defglobal-p defglobal-p)
-                  (assert (eql (node-type expr) :EXPR) () "ASTEXPR can only have an EXPR.")
-                  (when defglobal-p
-                    (push (string-downcase (princ-to-string (car (node-writes expr)))) space))
-                  (push expr new-graph))
-		 (_
-		  (error "create-rendering-graph: ~a should not occur here!" object)))))
-      (lower lisp-ast))
-    (nreverse new-graph)))
-
-(defun dynamic-shape-table (item)
-  (let ((table (make-hash-table :test 'equal)))
-    (loop for (name . dtype) in (getattr item :dynamic-shapes)
-          do (setf (gethash (string-upcase (princ-to-string name)) table) name))
-    table))
-
-(defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0) (vectorizes nil))
-  (declare (type isl:ast-node ast))
-  (assert (eql (node-type scheduled-item) :Schedule-Item))
-  (caten/codegen/packing:blueprint-upcast-inference
-   (create-rendering-graph-nodes
-    (ast-rewrite-vectorize
-     (parse-isl-ast
-      (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item))
-      (isl::ast-node-handle ast))
-     vectorizes
-     scheduled-item)
-    (getattr scheduled-item :blueprint))
-   scheduled-item))
+user))
+|#

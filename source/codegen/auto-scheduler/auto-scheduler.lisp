@@ -31,7 +31,8 @@
 (defclass Parallel (Opt) nil (:documentation "Parallelizes the given schedule-node"))
 (defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
-  (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral))))
+  ;;(print (check-legality-parallel schedule-node (poly-dependencies (getattr item :polyhedral))))
+  t)
 
 (defclass Global (Parallel) nil) ;; blockIdx + threadIdx
 (defmethod apply-opt ((opt Global) schedule-node item config)
@@ -92,9 +93,10 @@ for (int i=0; i<10; i+=amount) {
 		 :int ,level
 		 :void)))
     (set-option "schedule_treat_coalescing" 0)
-    (set-option "schedule_outer_coincidence" 1)
+    (set-option "schedule_outer_coincidence" 0)
     (set-option "schedule_maximize_band_depth" 0)
     (set-option "schedule_maximize_coincidence" 0)
+    (set-option "schedule_serialize_sccs" 0)
     (set-option "schedule_whole_component" 0))
   (let* ((poly (getattr schedule-item :polyhedral))
          (sc (isl:schedule-constraints-on-domain (poly-domain poly)))
@@ -199,7 +201,9 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; - [ ] Tweak Directive Class (Multi Dimensinal)
   ;; - [ ] Add: GLOBAL/PARALLEL,
   ;; - [ ] Add: GLOBAL/PARALLEL Lowerer
-  
+  (let ((n-global-dims (auto-scheduler-n-global-loops config)))
+    ;; [TODO] Also candidates: Where to split the band?
+    )
   ;; @DIRECTIVEについて: デフォルトでリストにする。
   ;; 2D Warp has a chance to get parallelized
   

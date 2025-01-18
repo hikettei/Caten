@@ -218,6 +218,7 @@
   (with-expr-cache ()
     (let ((raw (get-gemm-schedule 'a 'b 'c)))
       (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+        (opt (make-instance 'Parallel) 0)
         )
       (print-schedule raw)
       (print-bp raw)
@@ -225,8 +226,12 @@
 
 (deftest hand-optimized-gpu-gemm-test
   (with-expr-cache ()
-    (let ((raw (get-gemm-schedule 512 512 512)))
+    (let ((raw (get-gemm-schedule 'a 'a 'a)))
       (with-manual-scheduler (raw Mock-GPU-AutoScheduler)
+        (print-schedule raw)
+        (opt (make-instance 'Global :amount `(4 4)) 0)
+;        (opt (make-instance 'Packing :amount 4) 0)
+        (print-schedule raw)
         )
       (print-schedule raw)
       (print-bp raw))))
