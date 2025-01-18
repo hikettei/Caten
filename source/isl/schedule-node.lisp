@@ -179,3 +179,9 @@
 
 (defun schedule-node-band-split (node pos)
   (%make-schedule-node (%isl-schedule-node-band-split (schedule-node-handle (copy node)) pos)))
+
+(defun schedule-node-band-get-coincident (schedule-node)
+  (declare (type schedule-node schedule-node))
+  (let ((member (isl::%isl-schedule-node-band-n-member (schedule-node-handle schedule-node))))
+    (loop for i upfrom 0 below member
+          collect (eql :bool-true (%isl-schedule-node-band-member-get-coincident (schedule-node-handle schedule-node) i)))))

@@ -406,6 +406,7 @@
    #:schedule-node-has-parent
    #:schedule-node-is-equal
    #:schedule-node-band-split
+   #:schedule-node-band-get-coincident
    
    ))
 
