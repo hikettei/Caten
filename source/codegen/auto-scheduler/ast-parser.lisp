@@ -207,10 +207,64 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 	     (parse-isl-ast ctx (isl::%isl-ast-node-if-get-else-node ast) directives))))
     (make-if condition then-node else-node)))
 ;; ~~ Directive Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun ast-rewrite-directive (ast-root)
-  ;; TODO: Count the number of @GLOBAL
-  ;; TODO: Pair OUTER and INNER
-  ast-root
+(defun ast-rewrite-directive (ast)
+  (labels ((handler (ast &key (reminder-idx-list))
+             ;; Reminder-idx-list
+             (etypecase ast
+               (User (copy-user ast))
+               (AstBlock
+                (let ((new-block (copy-astblock ast)))
+                  (setf (astblock-body new-block) (map 'list #'handler (astblock-body ast)))
+                  new-block))
+               (ASTFor
+                (let ((new-astfor (copy-astfor ast))
+                      (marks (astfor-marks ast))
+                      (mark))
+                  (assert (<= (length marks) 2))
+                  (setf (astfor-marks new-astfor)
+                        (loop for m in marks
+                              if (find (directive-type m) `("GLOBAL" "LOCAL" "PARALLEL") :test #'equalp)
+                                collect m
+                              else
+                                do (setf mark m)))
+                  ;; Blocking:
+                  ;; - PACKED_INNER/PACKED_OUTER Pair is needed
+                  ;;  - UNROLL_AT, UNROLL_IDX ===> これがval_2_3とかの変数名を決定するから，OUTER/INNERのペアを求めたい。。。
+                  ;;  - val_2_3 -> expr-realizeでRenderした方が良くない？
+                  ;;  - user-prefix methodを実装する
+                  ;; - Band Size >= 2 -> How to create a pair?
+                  (if mark
+                    (cond
+                      ((equalp (directive-type mark) "PACKED_INNER")
+                       (setf (astfor-body new-astfor) (handler (astfor-body ast)))
+                       (let* ((n-pack (directive-amount mark))
+                              (n-pack (the fixnum (if (numberp n-pack) n-pack (car n-pack))))
+                              (packed-body (packing-ast (astfor-body new-astfor) (astfor-idx new-astfor) (astfor-idx new-astfor) n-pack)))
+                         packed-body))
+                      ((equalp (directive-type mark) "PACKED_OUTER")
+                       ;; PACKED_OUTER will break the body into two parts
+                       ;; BODY ==> VECTORIZED_PARTS, REMINDER_PARTS
+                       ;; This thing can be explicited by passing the reminder-idx-list
+                       (let* ((n-pack (directive-amount mark))
+                              (packed-body (handler (astfor-body ast) :reminder-idx-list reminder-idx-list)))
+                         (setf (astfor-body new-astfor) packed-body)
+                         new-astfor))
+                      (T (error "The directive ~a transformation is not supported." mark)))
+                    (progn
+                      (setf (astfor-body new-astfor) (handler (astfor-body ast)))
+                      new-astfor))))
+               (AstExpr ast) ;; leaf
+               (AstIf
+                (let ((new-if (copy-astif ast)))
+                  (setf (astif-then-node new-if) (handler (astif-then-node ast))
+                        (astif-else-node new-if) (handler (astif-else-node ast)))
+                  new-if))
+               (null))))
+    (handler ast)))
+
+(defun ast-rewrite-grids (ast)
+  "Rewrites PARALLEL/GLOBAL/LOCAL directives."
+  
   )
 ;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun r/for (idx upfrom below by scope)
@@ -227,6 +281,7 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 
 (defun create-rendering-graph-nodes (lisp-ast items &aux (space))
   (let ((new-graph))
+    (print lisp-ast)
     (labels ((find-user (node-id args)
                (let ((node (find (princ-to-string node-id) items
                                  :key (alexandria:compose #'princ-to-string #'node-id)
@@ -283,6 +338,9 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 (defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0) (vectorizes nil))
   (declare (type isl:ast-node ast))
   (assert (eql (node-type scheduled-item) :Schedule-Item))
+  ;; debug
+  (setf vectorizes nil)
+  
   (let* ((ctx (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item)))
          (ast (parse-isl-ast ctx (isl::ast-node-handle ast) nil))
          (ast (ast-rewrite-directive ast))

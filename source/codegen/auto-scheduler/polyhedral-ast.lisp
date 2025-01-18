@@ -76,6 +76,57 @@
     (then-node then-node :type (or ASTBlock User ASTFOR ASTIF))
     (else-node else-node :type (or ASTBlock User ASTFOR ASTIF null))))
 
+(defun indent-string (string)
+  (with-output-to-string (out)
+    (loop for line in (cl-ppcre:split "\\n" string)
+          ;; the first words are *ast-indent* * space
+          do (princ " " out) (format out "~a~%" line))))
+
+(defmethod print-object ((AstBlock astblock) stream)
+  (princ
+   (with-output-to-string (out)
+     (format out "(AstBlock () {~%")
+     (dolist (x (astblock-body astblock))
+       (format out (indent-string (indent-string (format nil "~a" x)))))
+     (format out "})"))
+   stream))
+
+(defmethod print-object ((User user) stream)
+  (princ
+   (with-output-to-string (out)
+     (format out "(User {~a(" (user-name user))
+     (loop for arg in (user-args user)
+           for nth upfrom 0
+           do (format out "~a" (caten/codegen/renderer:render-expr 'caten/codegen/renderer:Default-Renderer arg))
+           when (< nth (1- (length (user-args user)))) do (format out ", "))
+     (format out ")}~%")
+     (format out "  :unroll ~a" (user-unroll user))
+     (format out ")"))
+   stream))
+
+(defmethod print-object ((AstExpr astexpr) stream)
+  (format stream "~a" (astexpr-expr astexpr)))
+
+(defmethod print-object ((ASTFor astfor) stream)
+  (princ
+   (with-output-to-string (out)
+     (format out "(AstFor {:idx ~a :from ~a :to ~a :by ~a :scope ~a}~%" (astfor-idx astfor) (astfor-from astfor) (astfor-to astfor) (astfor-by astfor) (astfor-scope astfor))
+     (format out "  marks=~a " (astfor-marks astfor))
+     (format out " {~%")
+     (format out (indent-string (indent-string (format nil "~a" (astfor-body astfor)))))
+     (format out " })"))
+   stream))
+
+(defmethod print-object ((ASTIF astif) stream)
+  (princ
+   (with-output-to-string (out)
+     (format out "(AstIf {:condition ~a} {~%" (astif-condition astif))
+     (format out (indent-string (indent-string (format nil "~a" (astif-then-node astif)))))
+     (when (astif-else-node astif)
+       (format out (indent-string (indent-string (format nil "~a" (astif-then-node astif))))))
+     (format out " })"))
+   stream))
+     
 (defgeneric copy-ast (ast))
 (defmethod copy-ast ((ast ASTBlock)) (make-block (copy-list (astblock-body ast))))
 (defmethod copy-ast ((ast User)) (copy-user ast))

@@ -390,12 +390,16 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; Usually <= 3
 
   ;; [TODO]
-  ;; To maximize the performance, it is equivalent to solve ILP against (LS1 LS2 LS3 ... TILE1 TILE2 ... P1 P2 ...)
+  ;; To maximize the performance, it is equivalent to solve ILP against:
+  ;; (LocalSize1 LocalSize2 LocalSize3)
+  ;; TILE_SIZE
+  ;; PACK_SIZE
   ;; cost = Volume(Vectorized_Size) ?
   (dolist (s sketches)
-    (lower-into-bp-from-polyhedral (->ast (sketch-schedule s) 0) item))
+    (PRINT "=== SAMPLE ===")
+    (caten/codegen/blueprint:print-blueprint (lower-into-bp-from-polyhedral (->ast (sketch-schedule s) 0) item) t))
   sketches)
-
+;; TODO: (defstruct search-space (ls1 ls2 ls3 tile-size pack-size))
 ;; ~~ Entry Point ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-node-get-bp (isl-schedule node)
   (lower-into-bp-from-polyhedral (->ast isl-schedule (getattr node :rank)) node))

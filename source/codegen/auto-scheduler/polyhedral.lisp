@@ -48,9 +48,9 @@
       (setf (poly-dependencies pg) (union-map-coalesce dependencies))
       pg)))
 
-(defmethod debug-render-to-clang ((pg Polyhedral-IR))
+(defun ast-node-into-clang (ast)
+  (declare (type isl::ast-node ast))
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-         (ast   (->ast (poly-schedule pg) 0))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
          (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
          (str   (isl::%isl-printer-get-str q)))
@@ -146,7 +146,7 @@
 
 (defmethod print-object ((pg Polyhedral-IR) stream)
   (print-unreadable-object (pg stream :type t)
-    (format stream "~a~%[Kernel]:~%~a" (pprint-schedule (copy (poly-schedule pg))) (debug-render-to-clang pg))))
+    (format stream "~a~%[Kernel]:~%~a" (pprint-schedule (copy (poly-schedule pg))) (ast-node-into-clang (->ast (poly-schedule pg) 0)))))
 
 (defun mark->directive (mark)
   (declare (type isl::identifier mark))
@@ -241,16 +241,3 @@ This function returns a list of the results of applying f to each node. NIL is e
          (q (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast-build-node)))
          (str (isl::%isl-printer-get-str q)))
     str))
-;; [todo] delete
-(cffi:defcallback schedule-node-set-separate :pointer ((node :pointer) (user :pointer))
-  (declare (ignore user))
-  (if (eql (isl::%isl-schedule-node-get-type node) :schedule-node-band)
-      (progn
-        (dotimes (i (isl::%isl-schedule-node-n-children node))
-          (setf node (isl::%isl-schedule-node-band-member-set-ast-loop-type node i :ast-loop-separate)))
-        node)
-      node))
-
-(defun schedule-node-set-separate (sched)
-  (let ((node (isl:schedule-node-descendant-bottom-up (isl:schedule-get-root sched) (cffi:callback schedule-node-set-separate) (cffi:null-pointer))))
-    (isl:schedule-node-get-schedule node)))
