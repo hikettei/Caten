@@ -213,6 +213,7 @@
 ;; - Vectorize = PACKED_INNER次元の範囲でSliceすること
 ;; - PACKED_INNER次元は全てVectorizeされると仮定する。(無理なら等価な普通の演算に書き換えられるように)
 ;; - ReminderとPACKED?
+;; - Toplevelで呼ぶ時は(trivial-garbage:gc :full t)しないと結構重たい。。。
 (defun tmp-sketch-list (raw scheduler)
   (loop for i upfrom 0
         for sketch in (caten/codegen/auto-scheduler::generate-sketch raw (make-instance scheduler))

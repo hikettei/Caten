@@ -291,41 +291,44 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                          ;; [TODO] ND Global has a chance to be transformed as: USE_KWARP_GLOBAL
                          (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
                          ;; Exit the generation as soon as the best one is found.
-                         (return-from global))))))
-    ;; Tile Bands
-    (case n-global-dims
-      ((0 1)
-       ;; TODO Only coincident are tileable
-       (loop for sketch in sketches
-             for target-band = (nth 0 (sketch-get-bands sketch))
-             for band-depth = (and target-band (schedule-node-band-get-depth target-band))
-             for has-coincidence = (and (find 'Reschedule (sketch-opt-history sketch) :key #'cdr :test #'(lambda (x y) (typep y x))) t)
-             when target-band do
-               (loop named tile
-                     for idx in (map 'list #'1+ (nreverse (alexandria:iota band-depth)))
-                     for tile-size = (loop repeat idx collect 8) ;; [TODO] Make it symbolic and searchable.
-                     for opt = (make-instance 'TileBand :amount tile-size :only-coincident has-coincidence) do
-                       (when (and tile-size (opt-applicable-p opt target-band item config))
-                         (setf sketches (remove sketch sketches))
-                         (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
-                         (return-from tile)))))))
+                         (return-from global)))))))
   ;; --------------------------------------------------------------------------
   ;; 2. Tile the innermost band to apply simd.
   ;;      Opt       |    Applicable to       | Target to optimize
   ;; - Loop Tiling  |       all bands        |    tiling size
   ;; - Loop Packing | filters with stride=1  |  nothing(constant)
+  ;; Tile Bands
+  (case (auto-scheduler-n-global-loops config)
+    ((0 1)
+     ;; TODO Only coincident are tileable
+     (loop for sketch in sketches
+           for target-band = (nth 0 (sketch-get-bands sketch))
+           for band-depth = (and target-band (schedule-node-band-get-depth target-band))
+           for has-coincidence = (and (find 'Reschedule (sketch-opt-history sketch) :key #'cdr :test #'(lambda (x y) (typep y x))) t)
+           when target-band do
+             (loop named tile
+                   for idx in (map 'list #'1+ (nreverse (alexandria:iota (min band-depth 3))))
+                   for tile-size = (loop repeat idx collect 8) ;; [TODO] Make it symbolic and searchable.
+                   for opt = (make-instance 'TileBand :amount tile-size :only-coincident has-coincidence) do
+                     (when (and tile-size (opt-applicable-p opt target-band item config))
+                       (setf sketches (remove sketch sketches))
+                       (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
+                       (return-from tile))))))
+
+  ;; [TODO] c6 in cpu gemm is not packed.
   (loop for sketch in sketches
         for sketch-first = sketch
         for bands = (sketch-get-bands sketch)
         for innermost-depth = (reduce #'max (map 'list #'isl:schedule-node-get-schedule-depth bands)) do
-          ;; Exploration space is restricted to depth < innsermost-depth
+          ;; Exploration space is restricted to depth < innsermost-depth ?
           (flet ((get-bands (sketch)
                    (map-schedule-node-children
                     #'(lambda (type node mark)
                         (when (and
                                (eql type :schedule-node-band)
                                (or (null mark) (equalp (directive-type mark) "LOCAL"))
-                               (<= (isl:schedule-node-get-schedule-depth node) innermost-depth))
+                               ;; (<= (isl:schedule-node-get-schedule-depth node) innermost-depth)
+                               )
                           node))
                     (isl:schedule-get-root (sketch-schedule sketch)))))
             ;; Upcast all bands
@@ -350,6 +353,23 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; - Add custrom constraints that are specified by define-auto-scheduler.
   ;; --------------------------------------------------------------------------
   ;; ===> A sketch is returned. also here is a list of symbols to be optimized.
+
+  ;; [TODO]: Verify-blueprint通らないやつは削除，OPTIMIZE=1用でSortする:
+  ;; [TODO]: 実際に実行しなくても，Scheduleの優劣でSortすることは可能:
+  ;; A. Has Reschedule = 10000 points (always reschedule to the higher dimensional)
+  ;; B. Has Tensorcore = 1000 points
+  ;; Score = (A.) + (B.) + Volume(PACKED_REGION)
+
+  ;; [TODO]
+  ;; - Trade-Offになる箇所でSketchを分岐する
+  ;; - Verify-Blueprintで先に枝刈りする
+  ;; - Tile dimensionをSymbolicにする
+  ;; - AST Parse, Vectorizeを全て実装する
+  ;; - Sort by the score
+  ;; - Memory Coalescing
+  ;; - PARALLEL+TILE Fusion in the CPU
+  ;; - Shared Memory Transfer Optimization
+  ;; - Search with Full Symbolic
   sketches)
 
 ;; ~~ Entry Point ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
