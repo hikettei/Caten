@@ -26,6 +26,7 @@
    #:astfor-body
    #:astfor-scope
    #:astfor-marks
+   #:astfor-tile-parent
 
    #:AstIf #:astif-p #:copy-astif
    #:make-if
@@ -68,6 +69,7 @@
     (by by :type Expr)
     (body body :type (or ASTBlock User ASTFor ASTIF))
     (scope :local :type (member :local :global))
+    (tile-parent nil :type (or null AstFor))
     (marks nil :type list))
 
   (defstruct (AstIf
@@ -101,6 +103,7 @@
            when (< nth (1- (length (user-args user)))) do (format out ", "))
      (format out ")}~%")
      (format out "  :unroll ~a" (user-unroll user))
+     ;; [TODO] More attributes?
      (format out ")"))
    stream))
 
@@ -112,6 +115,8 @@
    (with-output-to-string (out)
      (format out "(AstFor {:idx ~a :from ~a :to ~a :by ~a :scope ~a}~%" (astfor-idx astfor) (astfor-from astfor) (astfor-to astfor) (astfor-by astfor) (astfor-scope astfor))
      (format out "  marks=~a " (astfor-marks astfor))
+     (when (astfor-tile-parent astfor)
+       (format out "  tile-parent=~a " (astfor-idx (astfor-tile-parent astfor))))
      (format out " {~%")
      (format out (indent-string (indent-string (format nil "~a" (astfor-body astfor)))))
      (format out " })"))

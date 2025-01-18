@@ -207,6 +207,39 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 	     (parse-isl-ast ctx (isl::%isl-ast-node-if-get-else-node ast) directives))))
     (make-if condition then-node else-node)))
 ;; ~~ Directive Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun ast-rewrite-tile-pair (ast)
+  (labels ((handler (ast globals packs)
+             (etypecase ast
+               (User (copy-user ast))
+               (AstBlock
+                (let ((new-block (copy-astblock ast)))
+                  (setf (astblock-body new-block) (map 'list #'(lambda (x) (handler x globals packs)) (astblock-body ast)))
+                  new-block))
+               (AstFor
+                ;; Pair GLOBAL and LOCAL, PACKED_OUTER and PACKED_INNER
+                (let ((new-astfor (copy-astfor ast))
+                      (globals (if (find "GLOBAL" (astfor-marks ast) :test #'equalp :key #'directive-type)
+                                   (append globals (list ast)) globals))
+                      (packs   (if (find "PACKED_OUTER" (astfor-marks ast) :test #'equalp :key #'directive-type)
+                                   (append packs (list ast)) packs)))
+                  (when (find "LOCAL" (astfor-marks ast) :test #'equalp :key #'directive-type)
+                    (assert globals () "Mismatch pair of GLOBAL and LOCAL")
+                    (setf (astfor-tile-parent new-astfor) (car globals)
+                          globals (cdr globals)))
+                  (when (find "PACKED_INNER" (astfor-marks ast) :test #'equalp :key #'directive-type)
+                    (assert packs () "Mismatch pair of PACKED_OUTER and PACKED_INNER")
+                    (setf (astfor-tile-parent new-astfor) (car packs)
+                          packs (cdr packs)))
+                  (setf (astfor-body new-astfor) (handler (astfor-body ast) globals packs))
+                  new-astfor))
+               (AstExpr ast)
+               (AstIf
+                (let ((new-if (copy-astif ast)))
+                  (setf (astif-then-node new-if) (handler (astif-then-node ast) globals packs)
+                        (astif-else-node new-if) (handler (astif-else-node ast) globals packs))
+                  new-if)))))
+    (handler ast nil nil)))
+
 (defun ast-rewrite-directive (ast)
   (labels ((handler (ast &key (reminder-idx-list))
              ;; Reminder-idx-list
@@ -228,31 +261,34 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
                               else
                                 do (setf mark m)))
                   ;; Blocking:
-                  ;; - PACKED_INNER/PACKED_OUTER Pair is needed
-                  ;;  - UNROLL_AT, UNROLL_IDX ===> これがval_2_3とかの変数名を決定するから，OUTER/INNERのペアを求めたい。。。
+                  ;; - PACKED_INNER/PACKED_OUTER Pair is needed ok
+                  ;;  - UNROLL_AT, UNROLL_IDX ===> これがval_2_3とかの変数名を決定するから，OUTER/INNERのペアを求めたい。。。ok
+                  ;;  - tile-parentのポインタが同じとは限らないから毎回調べる
                   ;;  - val_2_3 -> expr-realizeでRenderした方が良くない？
                   ;;  - user-prefix methodを実装する
                   ;; - Band Size >= 2 -> How to create a pair?
                   (if mark
-                    (cond
-                      ((equalp (directive-type mark) "PACKED_INNER")
-                       (setf (astfor-body new-astfor) (handler (astfor-body ast)))
-                       (let* ((n-pack (directive-amount mark))
-                              (n-pack (the fixnum (if (numberp n-pack) n-pack (car n-pack))))
-                              (packed-body (packing-ast (astfor-body new-astfor) (astfor-idx new-astfor) (astfor-idx new-astfor) n-pack)))
-                         packed-body))
-                      ((equalp (directive-type mark) "PACKED_OUTER")
-                       ;; PACKED_OUTER will break the body into two parts
-                       ;; BODY ==> VECTORIZED_PARTS, REMINDER_PARTS
-                       ;; This thing can be explicited by passing the reminder-idx-list
-                       (let* ((n-pack (directive-amount mark))
-                              (packed-body (handler (astfor-body ast) :reminder-idx-list reminder-idx-list)))
-                         (setf (astfor-body new-astfor) packed-body)
-                         new-astfor))
-                      (T (error "The directive ~a transformation is not supported." mark)))
-                    (progn
-                      (setf (astfor-body new-astfor) (handler (astfor-body ast)))
-                      new-astfor))))
+                      (cond
+                        ;; [TODO] Idx things
+                        ((equalp (directive-type mark) "PACKED_INNER")
+                         (setf (astfor-body new-astfor) (handler (astfor-body ast)))
+                         (let* ((n-pack (directive-amount mark))
+                                (n-pack (the fixnum (if (numberp n-pack) n-pack (car n-pack))))
+                                (parent (astfor-tile-parent ast))
+                                (packed-body (packing-ast (astfor-body new-astfor) (astfor-idx ast) (astfor-idx parent) n-pack)))
+                           packed-body))
+                        ((equalp (directive-type mark) "PACKED_OUTER")
+                         ;; PACKED_OUTER will break the body into two parts
+                         ;; BODY ==> VECTORIZED_PARTS, REMINDER_PARTS
+                         ;; This thing can be explicited by passing the reminder-idx-list
+                         (let* ((n-pack (directive-amount mark))
+                                (packed-body (handler (astfor-body ast) :reminder-idx-list reminder-idx-list)))
+                           (setf (astfor-body new-astfor) packed-body)
+                           new-astfor))
+                        (T (error "The directive ~a transformation is not supported." mark)))
+                      (progn
+                        (setf (astfor-body new-astfor) (handler (astfor-body ast)))
+                        new-astfor))))
                (AstExpr ast) ;; leaf
                (AstIf
                 (let ((new-if (copy-astif ast)))
@@ -281,7 +317,6 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 
 (defun create-rendering-graph-nodes (lisp-ast items &aux (space))
   (let ((new-graph))
-    (print lisp-ast)
     (labels ((find-user (node-id args)
                (let ((node (find (princ-to-string node-id) items
                                  :key (alexandria:compose #'princ-to-string #'node-id)
@@ -343,6 +378,7 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
   
   (let* ((ctx (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item)))
          (ast (parse-isl-ast ctx (isl::ast-node-handle ast) nil))
+         (ast (ast-rewrite-tile-pair ast))
          (ast (ast-rewrite-directive ast))
          (ast (ast-rewrite-vectorize ast vectorizes scheduled-item))
          (bp (create-rendering-graph-nodes ast (getattr scheduled-item :blueprint)))
