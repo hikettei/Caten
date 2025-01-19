@@ -51,7 +51,7 @@
           ""
           (format nil "_~a" suffix)))))
 
-(defun make-suffix-for-is (name iteration-space user)
+(defun make-suffix-for-is (name iteration-space user max-size)
   (let* ((prefixes (user-unroll-prefix user))
          (space (loop for stride in (iteration-space-strides iteration-space)
                       for nth upfrom 0
@@ -59,15 +59,28 @@
                       if (or (null p) (expr-equal-to stride 0))
                         collect 0
                       else
-                        collect p)))
+                        collect p))
+         (space (loop for i upfrom 0 below max-size
+                      collect (or (nth i space) 0))))
     (intern
      (string-downcase
       (format nil "~a_~a" name (apply #'concatenate 'string (butlast (loop for s in space append (list (princ-to-string s) "_")))))))))
 
-(defun unroll-node (node user)
+(defun make-padding-suffix (name max-size)
+  (intern
+   (string-downcase
+    (format nil "~a_~a" name (apply #'concatenate 'string (butlast (loop repeat max-size append (list "0" "_"))))))))
+
+(defun unroll-node (node user maximum-rank ds)
   (when (eql (node-type node) :Aref)
     (when (= -1 (caten/runtime:buffer-nrank (getattr node :buffer)))
-      (setf (getattr node :storage-id) (make-suffix-for-is (getattr node :storage-id) (getattr node :space)  user)))
+      (setf (getattr node :storage-id) (make-suffix-for-is (getattr node :storage-id) (getattr node :space) user maximum-rank)))
+    (return-from unroll-node node))
+  (when (eql (node-type node) :LOAD)
+    (when (symbolp (getattr node :value))
+      (when (and (= 0 (caten/runtime:buffer-nrank (car (relay-reads (read-type-relay node)))))
+                 (null (gethash (string-upcase (princ-to-string (getattr node :value))) ds))) ;; not defined as a dynamic shape
+        (setf (getattr node :value) (make-padding-suffix (getattr node :value) maximum-rank))))
     (return-from unroll-node node))
   (when (null (getattr node :_type_relay :allow-undefined t))
     (return-from unroll-node node))
@@ -76,20 +89,22 @@
         for wi in (relay-write-iters (read-type-relay node))
         for nth upfrom 0
         if (= (caten/runtime:buffer-nrank write) -1)
-          do (setf (nth nth (node-writes node)) (make-suffix-for-is w wi user)))
+          do (setf (nth nth (node-writes node)) (make-suffix-for-is w wi user maximum-rank))
+        if (null wi)
+          do (setf (nth nth (node-writes node)) (make-padding-suffix w maximum-rank)))
   (loop for read in (relay-reads (read-type-relay node))
         for r in (node-reads node)
         for ri in (relay-read-iters (read-type-relay node))
         for nth upfrom 0
         if (and read ri (= 0 (caten/runtime:buffer-nrank read)))
-          do (setf (nth nth (node-reads node)) (make-suffix-for-is r ri user)))
+          do (setf (nth nth (node-reads node)) (make-suffix-for-is r ri user maximum-rank))
+        else if (and (symbolp r) (null ri))
+          do (setf (nth nth (node-reads node)) (make-padding-suffix r maximum-rank)))
   node)
 
-(defun unroll-expr (space expr user)
+(defun unroll-expr (space expr user maximum-rank ds)
   "Unrolls the expr who belongs to the User"
-  (declare (type node expr) (type User user))
-  (when (null (user-unroll user))
-    (return-from unroll-expr expr))
+  (declare (type node expr) (type User user) (type hash-table ds))
   (assert (eql (node-type expr) :EXPR))
   (assert (null (getattr expr :unroll-history)))
   (assert (null (getattr expr :parent-node-id)))
@@ -99,8 +114,8 @@
           (make-expr :graph (apply #'make-graph (map 'list #'copy-node (graph-nodes (expr-graph (getattr expr :EXPR)))))
                      :out (copy-node (expr-out (getattr expr :EXPR))))
           (node-id expr) (intern (string-upcase (format nil "~a~a" (node-id expr) suffix))))
-    (unroll-node expr user)
-    (map 'list #'(lambda (node) (when (eql (node-type node) :AREF) (unroll-node node user))) (graph-nodes (expr-graph (getattr expr :EXPR))))
+    (unroll-node expr user maximum-rank ds)
+    (map 'list #'(lambda (node) (when (find (node-type node) `(:AREF :LOAD)) (unroll-node node user maximum-rank ds))) (graph-nodes (expr-graph (getattr expr :EXPR))))
     expr))
 ;; ~~~ Block/Thread Parallelism ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun astfor-mutate-global (astfor depth local-size callback &key (dtype :int64))

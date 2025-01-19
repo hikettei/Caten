@@ -306,7 +306,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
            when target-band do
              (loop named tile
                    for idx in (map 'list #'1+ (nreverse (alexandria:iota (min band-depth 3))))
-                   for tile-size = (loop repeat idx collect 32) ;; [TODO] Make it symbolic and searchable.
+                   for tile-size = (loop repeat idx collect 16) ;; [TODO] Make it symbolic and searchable.
                    for opt = (make-instance 'TileBand :amount tile-size :only-coincident has-coincidence) do
                      (when (and tile-size (opt-applicable-p opt target-band item config))
                        ;; Branching the sketch

@@ -68,7 +68,6 @@ TensorCore optimization is also implemented as a part of Vectorize.
            (env (make-vectorize-config :vectorize vectorize :simd simd :expr (find-user user (user-name user) schedule-item))))
       (when (and
              applicable-p
-             nil ;; tmp
              ;; [TODO] Judge the elements are contiguous in the memory! (stride must be one if simd)
              (funcall
               (vectorize-applicable-p vectorize)
@@ -143,7 +142,6 @@ If some users are failed to be vectorized, they are rewritten as unroll."
                         (user-vectorize ast) (copy-list (user-vectorize ast))
                         (user-late-unroll-info ast) (copy-list (user-late-unroll-info ast))
                         (user-simd ast) (copy-list (user-simd ast)))
-                  (print (user-vectorize ast))
                   (if (null (user-vectorize ast))
                       ast
                       (or (try-rules ast vectorize-rules schedule-item) (late-rewrite-pack->unroll ast)))))
