@@ -186,7 +186,7 @@ This method ensures the generated ast is compiled without any errors, and fits i
       (setf (poly-schedule (getattr schedule-item :polyhedral)) (isl:schedule-node-get-schedule new-sched))
       t)))
 
-(defun si-finalize-schedule (config schedule-item &key (n-optglobals 0))
+(defun si-finalize-schedule (config schedule-item)
   "Finalizes the blueprint modified in the Polyhedral IR Space."
   (declare (type node schedule-item))
   (assert (eql (node-type schedule-item) :Schedule-Item))
@@ -197,8 +197,7 @@ This method ensures the generated ast is compiled without any errors, and fits i
           (poly-schedule (getattr schedule-item :polyhedral))
           (getattr schedule-item :rank))
          schedule-item
-         :vectorizes (auto-scheduler-vectorizes config)
-         :n-global-offset n-optglobals)))
+         :vectorizes (auto-scheduler-vectorizes config))))
 
 (defmacro with-manual-scheduler ((scheduled-item auto-scheduler) &body body)
   "A utility macro to write hand written scheduling commands to the given schedule-item, under the auto-scheduler.

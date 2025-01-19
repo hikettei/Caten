@@ -222,7 +222,7 @@
 
 (deftest hand-optimized-cpu-gemm-test
   (with-expr-cache ()
-    (let ((raw (get-gemm-schedule 512 256 384)))
+    (let ((raw (get-gemm-schedule 'a 'b 'c)))
       (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
       ;(with-manual-scheduler (raw Mock-CPU-AutoScheduler)
       ;  (opt (make-instance 'Reschedule) 0)
@@ -250,18 +250,21 @@
       )))
 ;; ~~ Hand Optimized Kernel Generation(Softmax) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-softmax-test
-  (let ((raw (get-softmax-schedule 'a 'b)))
-    (print "CPU")
-    (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
-    (print "GPU")
-    (tmp-sketch-list raw 'Mock-GPU-AutoScheduler)
-    ))
+  (with-expr-cache ()
+    (let ((raw (get-softmax-schedule 'a 'b)))
+      (print "CPU")
+      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
+      (print "GPU")
+      (tmp-sketch-list raw 'Mock-GPU-AutoScheduler)
+      )))
 ;; ~~ Hand Optimized Kernel Generation(LayerNorm) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-layernorm-test
-  (let ((raw (get-layernorm-schedule)))
-    (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
-      )
-    (print-bp raw)))
+  (with-expr-cache ()
+    (let ((raw (get-layernorm-schedule)))
+      (tmp-sketch-list raw 'Mock-CPU-AutoScheduler)
+     ;; (with-manual-scheduler (raw Mock-CPU-AutoScheduler)
+     ;;   )
+      (print-bp raw))))
 ;; ~~ Hand Optimized Kernel Generation(Conv2d) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (deftest hand-optimized-cpu-conv2d-relu-test
   (with-expr-cache ()
