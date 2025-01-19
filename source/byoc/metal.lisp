@@ -5,7 +5,10 @@
    :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
   (:import-from
    :caten/codegen/config
-   #:define-auto-scheduler))
+   #:define-auto-scheduler)
+  (:export
+   #:mtl-compile-source
+   #:Metal-Program))
 
 (in-package :caten/byoc/metal)
 ;; ~~ CFFI Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

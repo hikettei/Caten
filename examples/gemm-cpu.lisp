@@ -2,7 +2,7 @@
 ;;;; but to be executed expression by expression.
 ;;;; If you are using Emacs/Lem, you can simply press `C-C C-c` while your cursor is hovering over an expression
 
-;;;; Matmul Benchmark
+;;;; Matmul Benchmark (vs OpenBLAS)
 
 (unless (find-package :caten)
   (ql:quickload :caten))
