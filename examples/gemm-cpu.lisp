@@ -87,6 +87,6 @@ void call_sgemm(int M, int K, int N, float *A, float *B, float *C) {
 (compare-speed 1024 1024 1024 :n-sample 1)
 
 ;; GFLOPS
-(compare-speed 1024 1024 1024 :n-sample 10)
+(compare-speed 2048 2048 2048 :n-sample 20)
 
 ;; (TODO: Plot the graph using cl-gnuplots)
