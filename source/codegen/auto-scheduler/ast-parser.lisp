@@ -259,35 +259,24 @@ So the final code looks like (also simplified by the simplifier if shapes are st
 ```
 int alu_0 = X;
 int alu_1 = alu_0 - N_UNROLL-1
+int alu_2 = X - (mod X N_UNROLL)
 for (int i=0; i<alu_1; i+=N_UNROLL)
   S(i) S(i+1) S(i+2) ... S(i+N_UNROLL-1)
-for (int i=alu_1; i<alu_0; i+=1)
+for (int i=alu_2; i<alu_0; i+=1)
   S(i)
 ```"
-  (let* ((alu0-id (ctx-intern ctx (format nil "_alu0_~a" (astfor-idx astfor))))
-         (alu1-id (ctx-intern ctx (format nil "_alu1_~a" (astfor-idx astfor))))
-         (alu0 (expr-const alu0-id :int64))
-         (alu1 (expr-const alu1-id :int64))
-         (alu0-expr (expr-detach-loop-bound (astfor-to astfor)))
-         (alu1-expr (expr-sub alu0 (expr-const (- n-unroll 1) :int64)))
-         (type1 (make-inferred-type nil (list (caten/runtime:make-buffer nil nil :int64 nil :device 'caten/codegen/shape-inference::RelayBuffer))))
-         (type2 (make-inferred-type nil (list (caten/runtime:make-buffer nil nil :int64 nil :device 'caten/codegen/shape-inference::RelayBuffer))))
+  (let* ((alu0 (expr-detach-loop-bound (astfor-to astfor)))
+         (alu1 (expr-sub alu0 (expr-const (- n-unroll 1) :int64)))
          (idx (expr-const (ctx-intern ctx (astfor-idx astfor)) :int64))
          
          (packed-upfrom (expr-const 0 :int64))
          (packed-to (expr-< idx alu1))
          (packed-by (expr-const n-unroll :int64))
 
-         (reminder-upfrom alu1)
+         (reminder-upfrom (expr-sub alu0 (expr-mod alu0 (expr-const n-unroll :int64))))
          (reminder-to (expr-< idx alu0))
          (reminder-by (expr-const 1 :int64)))
-    (setf (relay-write-iters type1) (list (make-iteration-space))
-          (relay-write-iters type2) (list (make-iteration-space)))
-    (expr-infer-type alu0-expr)
-    (expr-infer-type alu1-expr)
     (values
-     (make-astexpr (make-node :JIT :EXPR (list alu0-id) nil :EXPR alu0-expr :declare-type `(t) :_type_relay type1) nil)
-     (make-astexpr (make-node :JIT :EXPR (list alu1-id) nil :EXPR alu1-expr :declare-type `(t) :_type_relay type2) nil)
      (make-for (astfor-idx astfor) packed-upfrom packed-to packed-by unrolled-body)
      (make-for (astfor-idx astfor) reminder-upfrom reminder-to reminder-by reminder-body))))
 
@@ -332,12 +321,12 @@ for (int i=alu_1; i<alu_0; i+=1)
                                 (n-pack (the fixnum (if (numberp n-pack) n-pack (car n-pack))))
                                 (packed-body (handler (astfor-body ast) (append vectorized-idx (list (astfor-idx ast)))))
                                 (reminder-body (handler (astfor-body ast) vectorized-idx)))
-                           (multiple-value-bind (alu0 alu1 packed-for reminder-for)
+                           (multiple-value-bind (packed-for reminder-for)
                                (astfor-make-reminder-astfor ctx ast n-pack packed-body reminder-body)
                              ;; [TODO] Test LOCAL+VECTORIZE Fusion generating a reminder.
                              (setf (astfor-marks packed-for) (astfor-marks new-astfor)
                                    (astfor-tile-parent packed-for) (astfor-tile-parent new-astfor))
-                             (make-block (list alu0 alu1 packed-for reminder-for)))))
+                             (make-block (list packed-for reminder-for)))))
                         (T (error "The directive ~a transformation is not supported." mark)))
                       (progn
                         (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx))
