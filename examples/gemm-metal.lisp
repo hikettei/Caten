@@ -140,7 +140,9 @@ kernel void mtlsgemm(device float *a, device const float *data1, device const fl
     (format t "[BENCHMARK N=~a]~%" *N*)
     (format t "Metal Kernel ~A GFLOPS~%" avg-gflops-mps)
     (format t "Caten JIT Kernel ~A GFLOPS~%" avg-gflops-ctn)
-    (format t "Metal/Caten=~A%~%" (/ avg-gflops-ctn avg-gflops-mps))))
+    (format t "Metal/Caten=~A%~%" (/ avg-gflops-ctn avg-gflops-mps))
+    (format t "METAL=~a~%" mps)
+    (format t "CATEN=~a~%" ctn)))
 
 ;; 4000 GFLOPS w/ Metal is doable, we are still working on improving the auto scheduler to reach that level...
 (benchmark)
