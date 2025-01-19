@@ -255,7 +255,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
 
   ;; [TODO] Solve ILP Succeed one is always better?
   (let ((reschedule (make-instance 'Reschedule)))
-    (if (opt-applicable-p reschedule nil item config)
+    (if (opt-applicable-p reschedule nil item config) ;; (note) 99% of the computation time consists Reschedule in generate-sketch
         (push (make-sketch (isl:schedule-node-get-schedule (apply-opt reschedule nil item config)) :opt-history (list (cons 0 reschedule))) sketches)
         (push (make-sketch (poly-schedule (getattr item :polyhedral))) sketches)))
   ;; --------------------------------------------------------------------------

@@ -5,7 +5,8 @@
   (:import-from
    :caten/codegen/config
    #:define-auto-scheduler)
-  (:import-from :caten/byoc/lisp #:LispBuffer))
+  (:import-from :caten/byoc/lisp #:LispBuffer)
+  (:export #:ClangBuffer #:ClangRuntime #:load-foreign-function))
 
 (in-package :caten/byoc/clang)
 
