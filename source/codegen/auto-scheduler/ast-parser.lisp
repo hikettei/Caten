@@ -5,6 +5,10 @@ Transform the Polyhedral IR into the Blueprint IR.
 [ISL Polyhedral IR] ==> <Polyhedral-AST> ===> Caten Blueprint IR
 ```
 scop.lisp for the opposite things.
+
+To generate a simplified kernel, caten/codegen assumes the following constraints to the input:
+- The loops are starting with zero.
+- The tiled loops are also starting with zero.
 ")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia
         :caten/codegen/polyhedral-ast :caten/codegen/transform :caten/codegen/directive)
@@ -124,7 +128,6 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 	 (declare (type string name))
          (if cache
              cache
-             
              (expr-const (ctx-intern ctx name) :int64))))
       (:ast-expr-int
        (let* ((id (isl::%isl-ast-expr-int-get-val ast))
@@ -208,6 +211,7 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
     (make-if condition then-node else-node)))
 ;; ~~ Directive Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-rewrite-tile-pair (ast)
+  "Pairs GLOBAL and LOCAL, PACKED_OUTER and PACKED_INNER."
   (labels ((handler (ast globals packs)
              (etypecase ast
                (User (copy-user ast))
@@ -216,7 +220,7 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
                   (setf (astblock-body new-block) (map 'list #'(lambda (x) (handler x globals packs)) (astblock-body ast)))
                   new-block))
                (AstFor
-                ;; Pair GLOBAL and LOCAL, PACKED_OUTER and PACKED_INNER
+                ;; Pair GLOBAL and LOCAL, PACKED_OUTER and PACKED_INNER.
                 (let ((new-astfor (copy-astfor ast))
                       (globals (if (find "GLOBAL" (astfor-marks ast) :test #'equalp :key #'directive-type)
                                    (append globals (list ast)) globals))
@@ -237,17 +241,71 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
                 (let ((new-if (copy-astif ast)))
                   (setf (astif-then-node new-if) (handler (astif-then-node ast) globals packs)
                         (astif-else-node new-if) (handler (astif-else-node ast) globals packs))
-                  new-if)))))
+                  new-if))
+               (null))))
     (handler ast nil nil)))
 
-(defun ast-rewrite-directive (ast)
-  (labels ((handler (ast)
+(defun astfor-make-reminder-astfor (ctx astfor n-unroll unrolled-body reminder-body)
+  "
+Consider this loop unrolling pattern:
+```
+for (int i=0; i<X; i+=N_UNROLL)
+  S(i) S(i+1) S(i+2) ... S(i+N_UNROLL-1)
+```
+Here, the last statement S(i+N_UNROLL-1) should satisfy the following condition to avoid out-of-bound access:
+
+{ i+N_UNROLL-1 <= X } <=> { i <= X - (N_UNROLL-1) }
+
+This is a subset of the original iteration space. So we also have to generate a reminder part:
+```
+for (int i=X-N_REMINDER; i<X; i+=1)
+  S(i)
+```
+So the final code looks like (also simplified by the simplifier if shapes are static)
+```
+int alu_0 = X;
+int alu_1 = alu_0 - N_UNROLL-1
+for (int i=0; i<alu_1; i+=N_UNROLL)
+  S(i) S(i+1) S(i+2) ... S(i+N_UNROLL-1)
+for (int i=alu_1; i<alu_0; i+=1)
+  S(i)
+```"
+  (let* ((alu0-id (ctx-intern ctx (format nil "_alu0_~a" (astfor-idx astfor))))
+         (alu1-id (ctx-intern ctx (format nil "_alu1_~a" (astfor-idx astfor))))
+         (alu0 (expr-const alu0-id :int64))
+         (alu1 (expr-const alu1-id :int64))
+         (alu0-expr (expr-detach-loop-bound (astfor-to astfor)))
+         (alu1-expr (expr-sub alu0 (expr-const (- n-unroll 1) :int64)))
+         (type1 (make-inferred-type nil (list (caten/runtime:make-buffer nil nil :int64 nil :device 'caten/codegen/shape-inference::RelayBuffer))))
+         (type2 (make-inferred-type nil (list (caten/runtime:make-buffer nil nil :int64 nil :device 'caten/codegen/shape-inference::RelayBuffer))))
+         (idx (expr-const (ctx-intern ctx (astfor-idx astfor)) :int64))
+         
+         (packed-upfrom (expr-const 0 :int64))
+         (packed-to (expr-< idx alu1))
+         (packed-by (expr-const n-unroll :int64))
+
+         (reminder-upfrom alu1)
+         (reminder-to (expr-< idx alu0))
+         (reminder-by (expr-const 1 :int64)))
+    (setf (relay-write-iters type1) (list (make-iteration-space))
+          (relay-write-iters type2) (list (make-iteration-space)))
+    (values
+     (make-astexpr (make-node :JIT :EXPR (list alu0-id) nil :EXPR alu0-expr :declare-type `(t) :_type_relay type1) nil)
+     (make-astexpr (make-node :JIT :EXPR (list alu1-id) nil :EXPR alu1-expr :declare-type `(t) :_type_relay type2) nil)
+     (make-for (astfor-idx astfor) packed-upfrom packed-to packed-by unrolled-body)
+     (make-for (astfor-idx astfor) reminder-upfrom reminder-to reminder-by reminder-body))))
+
+(defun ast-rewrite-directive (ctx ast)
+  "Rewrites the PACKED_INNER and PACKED_OUTER directives:
+- PACKED_INNER is a trigger to generate the unrolled part and the reminder part.
+- PACKED_OUTER is completly unrolled and the astfor is removed."
+  (labels ((handler (ast vectorized-idx)
              ;; Reminder-idx-list
              (etypecase ast
                (User (copy-user ast))
                (AstBlock
                 (let ((new-block (copy-astblock ast)))
-                  (setf (astblock-body new-block) (map 'list #'handler (astblock-body ast)))
+                  (setf (astblock-body new-block) (map 'list #'(lambda (x) (handler x vectorized-idx)) (astblock-body ast)))
                   new-block))
                (ASTFor
                 (let ((new-astfor (copy-astfor ast))
@@ -260,50 +318,42 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
                                 collect m
                               else
                                 do (setf mark m)))
-                  ;; Blocking:
-                  ;; - PACKED_INNER/PACKED_OUTER Pair is needed ok
-                  ;;  - UNROLL_AT, UNROLL_IDX ===> これがval_2_3とかの変数名を決定するから，OUTER/INNERのペアを求めたい。。。ok
-                  ;;  - tile-parentのポインタが同じとは限らないから毎回調べる
-                  ;;  - val_2_3 -> expr-realizeでRenderした方が良くない？
-                  ;;  - user-prefix methodを実装する
-                  ;; - Band Size >= 2 -> How to create a pair?
- 
-                  ;; [TODO]
-                  ;; - Reminder Partの計算式を単純化する
-                  ;; - Indexing (val_...)を修正する
-                  ;; - Testing the validity
                   (if mark
                       (cond
                         ((equalp (directive-type mark) "PACKED_INNER")
-                         (setf (astfor-body new-astfor) (handler (astfor-body ast)))
+                         (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx))
                          (let* ((n-pack (directive-amount mark))
                                 (n-pack (the fixnum (if (numberp n-pack) n-pack (car n-pack))))
                                 (parent (astfor-tile-parent ast))
-                                (packed-body (packing-ast (astfor-body new-astfor) (astfor-idx ast) (astfor-idx parent) n-pack)))
-                           packed-body))
+                                (allow-vectorized (and parent (find (astfor-idx parent) vectorized-idx :test #'string=))))
+                           (if allow-vectorized
+                               ;; Unroll_IDX = 0, 1, 2, ...
+                               (packing-ast (astfor-body new-astfor) (astfor-idx ast) (astfor-idx parent) n-pack)
+                               ;; Unroll_Idx = 0
+                               (packing-ast (astfor-body new-astfor) (astfor-idx ast) (astfor-idx parent) 1))))
                         ((equalp (directive-type mark) "PACKED_OUTER")
-                         ;; PACKED_OUTER will break the body into two parts
-                         ;; BODY ==> VECTORIZED_PARTS, REMINDER_PARTS
-                         ;; This thing can be explicited by passing the reminder-idx-list
                          (let* ((n-pack (directive-amount mark))
-                                (packed-body (handler (astfor-body ast)))
-                                (reminder (compute-reminder-for-unroll ast (astfor-body ast) (if (listp n-pack) (car n-pack) n-pack))))
-                           (setf (astfor-body new-astfor) packed-body)
-                           ;; todo recursively handle astfor reminder????
-                           (make-block (list new-astfor reminder))))
+                                (n-pack (the fixnum (if (numberp n-pack) n-pack (car n-pack))))
+                                (packed-body (handler (astfor-body ast) (append vectorized-idx (list (astfor-idx ast)))))
+                                (reminder-body (handler (astfor-body ast) vectorized-idx)))
+                           (multiple-value-bind (alu0 alu1 packed-for reminder-for)
+                               (astfor-make-reminder-astfor ctx ast n-pack packed-body reminder-body)
+                             ;; [TODO] Test LOCAL+VECTORIZE Fusion generating a reminder.
+                             (setf (astfor-marks packed-for) (astfor-marks new-astfor))
+                             (make-block (list alu0 alu1 packed-for reminder-for)))))
                         (T (error "The directive ~a transformation is not supported." mark)))
                       (progn
-                        (setf (astfor-body new-astfor) (handler (astfor-body ast)))
+                        (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx))
                         new-astfor))))
-               (AstExpr ast) ;; leaf
+               (AstExpr ast)
                (AstIf
                 (let ((new-if (copy-astif ast)))
-                  (setf (astif-then-node new-if) (handler (astif-then-node ast))
-                        (astif-else-node new-if) (handler (astif-else-node ast)))
+                  (setf (astif-then-node new-if) (handler (astif-then-node ast) vectorized-idx)
+                        (astif-else-node new-if) (handler (astif-else-node ast) vectorized-idx))
                   new-if))
                (null))))
-    (handler ast)))
-
+    (handler ast nil)))
+         
 (defun ast-rewrite-grids (ast)
   "Rewrites PARALLEL/GLOBAL/LOCAL directives."
   ast
@@ -344,7 +394,6 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 		 ((ASTBlock :body body) (map 'list #'lower body))
 		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
                   ;; [TODO] Generalize this
-                  ;; TILE_BAND is not an unroll idx?
                   (let ((is-tile-band (find "TILE_BAND" (astfor-marks object) :test #'equalp)))
                     (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
                       (when (null is-tile-band) (push idx space))
@@ -385,7 +434,7 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
   (let* ((ctx (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item)))
          (ast (parse-isl-ast ctx (isl::ast-node-handle ast) nil))
          (ast (ast-rewrite-tile-pair ast))
-         (ast (ast-rewrite-directive ast))
+         (ast (ast-rewrite-directive ctx ast))
          (ast (ast-rewrite-vectorize ast vectorizes scheduled-item))
          (bp (create-rendering-graph-nodes ast (getattr scheduled-item :blueprint)))
          (bp (caten/codegen/packing:blueprint-upcast-inference bp scheduled-item)))
