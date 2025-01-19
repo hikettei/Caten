@@ -184,11 +184,15 @@
       (:ENDFOR
        (error ":ENDFOR should not be appeared here. Malformed blueprint?"))
       (:IF
-       ;; [TODO] ENDIF does not have :idx so cannot determine the pair of :IF and :ENDIF
-       ;; This is why LispStyle Renderer does not support IF statement yet.
-       (error "LispStyle Renderer currently does not support IF statement."))
+       (let* ((endif (position-if #'(lambda (x) (and (eql (node-type x) :ENDIF) (equal (getattr x :idx) (getattr bp :idx)))) rest-blueprints)))
+         (assert endif () "recursive-render-bp: :IF without :ENDIF is not allowed. Malformed blueprint?")
+         (let ((condition (render-expr 'LispStyle-Renderer (getattr bp :condition))))
+           `(progn
+              (when ,condition
+                ,(recursive-render-bp (subseq rest-blueprints 1 endif)))
+              ,(recursive-render-bp (subseq rest-blueprints (1+ endif)))))))
       (:ENDIF
-       (error "LispStyle Renderer currently does not support IF statement."))
+       (error ":ENDIF should not be appeared here. Malformed blueprint?"))
       (:EXPR
        (let ((write-index (render-index 'LispStyle-Renderer bp :nth 0))
              (id (const (car (node-writes bp))))
