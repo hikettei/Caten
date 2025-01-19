@@ -7,6 +7,7 @@
    #:compute-reminder-for-unroll
    #:unroll-expr
    #:astfor-mutate-global
+   #:astfor-mutate-local
    #:astfor-mutate-reminder-global))
 
 (in-package :caten/codegen/directive)
@@ -95,7 +96,46 @@
     (map 'list #'(lambda (node) (when (eql (node-type node) :AREF) (unroll-node node space user))) (graph-nodes (expr-graph (getattr expr :EXPR))))
     expr))
 ;; ~~~ Block/Thread Parallelism ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun astfor-mutate-global (astfor depth local-size &key (dtype :int64))
+(defun astfor-mutate-global (astfor depth local-size callback &key (dtype :int64))
+  (assert (expr-equal-to (astfor-from astfor) 0) () "AstFor-Mutate-Global: The Global should start from 0.")
+  (let* ((bind (astfor-idx astfor)) (to (astfor-to astfor)) (by (astfor-by astfor))
+         (upper-bound (expr-detach-loop-bound to))
+         ;; EXPR passed to the GPU Driver
+         (gs (expr-ceiling (expr-div (expr-cast upper-bound :float32) (expr-cast (expr-const local-size dtype) :float32)) :float32))
+         (global (expr-grid :block depth dtype gs))
+         (idx (expr-mul global by))
+         (type-relay (make-inferred-type nil (list (caten/runtime:make-buffer nil nil dtype nil :device 'caten/codegen/shape-inference::RelayBuffer))))
+         (bind-name (intern (string-upcase (princ-to-string bind))))
+         (meta nil)) ;; TODO: Update ExprGrid
+    (setf (relay-write-iters type-relay) (list (make-iteration-space)))
+    (expr-infer-type idx)
+    (make-block
+     (list
+      (make-astexpr (make-node :JIT :EXPR (list bind-name) nil :declare-type `(t) :EXPR idx :_type_relay type-relay :meta meta) t)
+      (funcall callback (astfor-body astfor))))))
+
+(defun astfor-mutate-local (astfor parent depth local-size callback &key (dtype :int64))
+  (assert (expr-equal-to (astfor-from astfor) 0) () "AstFor-Mutate-Local: The Local should start from 0.")
+  (let* ((bind (astfor-idx astfor)) (by (astfor-by astfor))
+         (ls (expr-grid :thread depth dtype local-size))
+         (idx (expr-mul ls by)) ;; [TODO] Replace this expr to implement memory coalescing.
+         (type-relay (make-inferred-type nil (list (caten/runtime:make-buffer nil nil dtype nil :device 'caten/codegen/shape-inference::RelayBuffer))))
+         (bind-name (intern (string-upcase (princ-to-string bind))))
+         (meta nil) ;; [TODO]
+         ;; reminder computation
+         (parent-id (expr-const (intern (string-upcase (astfor-idx parent))) dtype))
+         (loop-size (expr-detach-loop-bound (astfor-to parent))))
+    (setf (relay-write-iters type-relay) (list (make-iteration-space)))
+    (expr-infer-type idx)
+    (make-block
+     (list
+      (make-astexpr (make-node :JIT :EXPR (list bind-name) nil :declare-type `(t) :EXPR idx :_type_relay type-relay :meta meta) t)
+      (make-if
+       (expr-< (expr-add (expr-const bind-name dtype) parent-id) loop-size)
+       (funcall callback (astfor-body astfor))
+       nil)))))
+         
+(defun astfor-mutate-glo1bal (astfor depth local-size &key (dtype :int64))
   "Mutates the ASTFor to use global/local indexing."
   (declare (type ASTFor astfor))
   (let* ((bind (astfor-idx astfor)) (from (astfor-from astfor)) (to (astfor-to astfor)) (by (astfor-by astfor))

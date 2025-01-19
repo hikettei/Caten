@@ -21,13 +21,7 @@ To generate a simplified kernel, caten/codegen assumes the following constraints
 
 (defstruct Context
   (dynamic-shape-table (make-hash-table) :type hash-table)
-  (n-global-offset 0 :type fixnum)
   (n-global-dims 0 :type fixnum))
-
-(defmethod ctx-get-rank ((ctx Context))
-  (if (= 0 (context-n-global-offset ctx))
-      (context-n-global-dims ctx)
-      (- (context-n-global-offset ctx) (context-n-global-dims ctx))))
 
 (defmethod ctx-intern ((ctx Context) obj)
   (let ((key (string-upcase (princ-to-string obj))))
@@ -289,6 +283,8 @@ for (int i=alu_1; i<alu_0; i+=1)
          (reminder-by (expr-const 1 :int64)))
     (setf (relay-write-iters type1) (list (make-iteration-space))
           (relay-write-iters type2) (list (make-iteration-space)))
+    (expr-infer-type alu0-expr)
+    (expr-infer-type alu1-expr)
     (values
      (make-astexpr (make-node :JIT :EXPR (list alu0-id) nil :EXPR alu0-expr :declare-type `(t) :_type_relay type1) nil)
      (make-astexpr (make-node :JIT :EXPR (list alu1-id) nil :EXPR alu1-expr :declare-type `(t) :_type_relay type2) nil)
@@ -339,7 +335,8 @@ for (int i=alu_1; i<alu_0; i+=1)
                            (multiple-value-bind (alu0 alu1 packed-for reminder-for)
                                (astfor-make-reminder-astfor ctx ast n-pack packed-body reminder-body)
                              ;; [TODO] Test LOCAL+VECTORIZE Fusion generating a reminder.
-                             (setf (astfor-marks packed-for) (astfor-marks new-astfor))
+                             (setf (astfor-marks packed-for) (astfor-marks new-astfor)
+                                   (astfor-tile-parent packed-for) (astfor-tile-parent new-astfor))
                              (make-block (list alu0 alu1 packed-for reminder-for)))))
                         (T (error "The directive ~a transformation is not supported." mark)))
                       (progn
@@ -353,11 +350,45 @@ for (int i=alu_1; i<alu_0; i+=1)
                   new-if))
                (null))))
     (handler ast nil)))
-         
-(defun ast-rewrite-grids (ast)
+
+(defun ast-rewrite-grids (ast &aux (count 0) (idx2count (make-hash-table :test #'equal)) (idx2band (make-hash-table :test #'equal)))
   "Rewrites PARALLEL/GLOBAL/LOCAL directives."
-  ast
-  )
+  (labels ((handler (ast)
+             (etypecase ast
+               (User ast)
+               (AstBlock (make-block (map 'list #'handler (astblock-body ast))))
+               (AstFor
+                (when (null (astfor-marks ast))
+                  (return-from handler ast))
+                (let ((mark (car (astfor-marks ast))))
+                  (cond
+                    ((equalp (directive-type mark) "PARALLEL")
+                     (setf (astfor-scope ast) :global)
+                     ast)
+                    ((equalp (directive-type mark) "GLOBAL")
+                     ;; idx = global size * thread stride
+                     (setf (gethash (astfor-idx ast) idx2count) count
+                           (gethash (astfor-idx ast) idx2band) ast)
+                     (let* ((new-astfor (copy-astfor ast))
+                            (ls (directive-amount mark))
+                            (ls (if (numberp ls) ls (car ls)))
+                            (gid (astfor-mutate-global new-astfor count ls #'(lambda (body) (incf count) (handler body)))))
+                       gid))
+                    ((equalp (directive-type mark) "LOCAL")
+                     (assert (astfor-tile-parent ast) () "LOCAL should have a parent.")
+                     (assert (gethash (astfor-idx (astfor-tile-parent ast)) idx2count) () "GLOBAL should be defined before LOCAL.")
+                     (let* ((new-astfor (copy-astfor ast))
+                            (ls (directive-amount mark))
+                            (ls (if (numberp ls) ls (car ls)))
+                            (p (gethash (astfor-idx (astfor-tile-parent ast)) idx2band))
+                            (lid (astfor-mutate-local new-astfor p (gethash (astfor-idx (astfor-tile-parent ast)) idx2count) ls #'handler)))
+                       lid))
+                    (T (error "Not supported directive: ~a" mark)))))
+               (AstExpr Ast)
+               (AstIf
+                (make-if (astif-condition ast) (handler (astif-then-node ast)) (handler (astif-else-node ast))))
+               (null))))
+    (handler ast)))
 ;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun r/for (idx upfrom below by scope)
   (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by :scope scope))
@@ -425,18 +456,18 @@ for (int i=alu_1; i<alu_0; i+=1)
           do (setf (gethash (string-upcase (princ-to-string name)) table) name))
     table))
 
-(defun lower-into-bp-from-polyhedral (ast scheduled-item &key (n-global-offset 0) (vectorizes nil))
+(defun lower-into-bp-from-polyhedral (ast scheduled-item &key (vectorizes nil))
   (declare (type isl:ast-node ast))
   (assert (eql (node-type scheduled-item) :Schedule-Item))
   ;; debug
   (setf vectorizes nil)
   
-  (let* ((ctx (make-context :n-global-offset n-global-offset :dynamic-shape-table (dynamic-shape-table scheduled-item)))
+  (let* ((ctx (make-context :dynamic-shape-table (dynamic-shape-table scheduled-item)))
          (ast (parse-isl-ast ctx (isl::ast-node-handle ast) nil))
          (ast (ast-rewrite-tile-pair ast))
          (ast (ast-rewrite-directive ctx ast))
-         (ast (ast-rewrite-vectorize ast vectorizes scheduled-item))
          (ast (ast-rewrite-grids ast))
+         (ast (ast-rewrite-vectorize ast vectorizes scheduled-item))
          (bp (create-rendering-graph-nodes ast (getattr scheduled-item :blueprint)))
          (bp (caten/codegen/packing:blueprint-upcast-inference bp scheduled-item)))
     bp))

@@ -311,7 +311,10 @@ This function returns the BOUND, otherwise returns error.
           (return-from expr-detach-loop-bound)
           (error "The first argument of the loop bound must be a LOAD node.")))
     (let ((new-expr (copy-expr expr)))
-      (setf (expr-out new-expr) bound)
+      ;; Note: Previously the graph was not copied.
+      (setf (expr-out new-expr) bound
+            (expr-graph new-expr) (copy-graph (expr-graph new-expr))
+            (graph-outputs (expr-graph new-expr)) (node-writes bound))
       new-expr)))
 
 (defun expr-flops (expr)
