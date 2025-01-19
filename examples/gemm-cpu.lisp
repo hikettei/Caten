@@ -76,7 +76,7 @@ void call_sgemm(int M, int K, int N, float *A, float *B, float *C) {
         (format t "[M=~a N=~a K=~a]~%" M N K)
         (format t "OpenBLAS: ~a GFLOPS (~a sec)~%" (float (/ (/ flops openblas-time) 1e9)) openblas-time)
         (format t "Caten: ~a GFLOPS (~a sec)~%" (float (/ (/ flops caten-time) 1e9)) caten-time)
-        (format t "max_error = ~a" (apply #'max (map 'list #'abs (map 'list #'- (change-facet openblas-out :simple-array) (change-facet caten-out :simple-array)))))))))
+        (format t "max_error = ~a" (reduce #'max (map 'list #'abs (map 'list #'- (change-facet openblas-out :simple-array) (change-facet caten-out :simple-array)))))))))
 
 ;; Example
 (compare-speed 1024 1024 1024)
