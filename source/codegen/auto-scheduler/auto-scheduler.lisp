@@ -254,10 +254,10 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; Generating the root of the sketch. (Solve ILP or not to maximize the band depth)
 
   ;; [TODO] Solve ILP Succeed one is always better?
-  (push (make-sketch (poly-schedule (getattr item :polyhedral))) sketches)
   (let ((reschedule (make-instance 'Reschedule)))
-    (when (opt-applicable-p reschedule nil item config)
-      (push (make-sketch (isl:schedule-node-get-schedule (apply-opt reschedule nil item config)) :opt-history (list (cons 0 reschedule))) sketches)))
+    (if (opt-applicable-p reschedule nil item config)
+        (push (make-sketch (isl:schedule-node-get-schedule (apply-opt reschedule nil item config)) :opt-history (list (cons 0 reschedule))) sketches)
+        (push (make-sketch (poly-schedule (getattr item :polyhedral))) sketches)))
   ;; --------------------------------------------------------------------------
   ;; all bands and mapping each band to parallelism:
   ;; --------------------------------------------------------------------------
@@ -394,9 +394,9 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; TILE_SIZE
   ;; PACK_SIZE
   ;; cost = Volume(Vectorized_Size) ?
-  (dolist (s sketches)
-    (PRINT "=== SAMPLE ===")
-    (caten/codegen/blueprint:print-blueprint (lower-into-bp-from-polyhedral (->ast (sketch-schedule s) 0) item) t))
+  ;;(dolist (s sketches)
+  ;;  (PRINT "=== SAMPLE ===")
+  ;;  (caten/codegen/blueprint:print-blueprint (lower-into-bp-from-polyhedral (->ast (sketch-schedule s) 0) item) t))
   sketches)
 ;; TODO: (defstruct search-space (ls1 ls2 ls3 tile-size pack-size))
 ;; ~~ Entry Point ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -418,5 +418,6 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
     ;; - Cache is saved to the disk.
     (when (>= OPTIMIZE 1)
       (let* ((sketch (generate-sketch node auto-scheduler)))
+        (setf (poly-schedule (getattr node :polyhedral)) (sketch-schedule (car sketch)))
         ;; Load blueprint from optimized polyhedral IR
         (si-finalize-schedule auto-scheduler node)))))
