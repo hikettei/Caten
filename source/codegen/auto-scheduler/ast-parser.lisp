@@ -413,7 +413,13 @@ for (int i=alu_2; i<alu_0; i+=1)
 	       (ematch object
 		 ((ASTBlock :body body) (map 'list #'lower body))
 		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
-                  (when (not (expr-scalar-equivalent-p upfrom (expr-detach-loop-bound to)))
+                  (when (not
+                         (let ((d (expr-detach-loop-bound to)))
+                           (and
+                            d
+                            (eql :LOAD (node-type (expr-out d)))
+                            (numberp (getattr (expr-out d) :value))
+                            (expr-scalar-equivalent-p upfrom d))))
                     (push idx space)
 		    (push (r/for idx upfrom to by scope) new-graph)
 		    (lower body)
