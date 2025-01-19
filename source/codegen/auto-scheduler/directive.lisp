@@ -128,7 +128,7 @@
          (idx (expr-mul global by))
          (type-relay (make-inferred-type nil (list (caten/runtime:make-buffer nil nil dtype nil :device 'caten/codegen/shape-inference::RelayBuffer))))
          (bind-name (intern (string-upcase (princ-to-string bind))))
-         (meta nil)) ;; TODO: Update ExprGrid
+         (meta (make-instance 'ExprGrid :rank depth :global-size (expr-cast gs dtype) :local-size (expr-const local-size dtype))))
     (setf (relay-write-iters type-relay) (list (make-iteration-space)))
     (expr-infer-type idx)
     (make-block
