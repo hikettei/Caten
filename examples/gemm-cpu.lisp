@@ -47,39 +47,46 @@ void call_sgemm(int M, int K, int N, float *A, float *B, float *C) {
 (defmethod change-facet (obj (direction (eql :ext/int-sap)))
   (with-pointer-to-vector-data (a* (change-facet obj :simple-array)) a*))
 
-(defun matmul-openblas (a b)
+(defun matmul-openblas (a b n-sample)
   (st "A[~ m n] B[~ n k] -> A[~ m k]" (a b))
   (let* ((m (nth 0 (shape a)))
          (k (nth 1 (shape a)))
          (n (nth 1 (shape b)))
          (out (linspace `(,m ,n) 0.0 0.0)))
     (let ((t1 (get-internal-real-time)))
-      (sgemm m k n (change-facet a :ext/int-sap) (change-facet b :ext/int-sap) (change-facet out :ext/int-sap))
+      (dotimes (i n-sample)
+        (sgemm m k n (change-facet a :ext/int-sap) (change-facet b :ext/int-sap) (change-facet out :ext/int-sap)))
       (let ((t2 (get-internal-real-time)))
         (values out (float (/ (- t2 t1) internal-time-units-per-second)))))))
 
-(defun matmul-caten (a b)
+(defun matmul-caten (a b n-sample)
   (with-no-grad
     (let* ((matmul (caten (!matmul a b)))
            (t1 (get-internal-real-time))
-           (out (forward matmul))
+           (out)
+           (_ (dotimes (i n-sample) (setf out (forward matmul))))
            (t2 (get-internal-real-time)))
+      (declare (ignore _))
       (values out (float (/ (- t2 t1) internal-time-units-per-second))))))
 
-(defun compare-speed (M N K)
+(defun compare-speed (M N K &key (n-sample 1))
   (let ((a (rand `(,M ,N)))
         (b (rand `(,N ,K)))
-        (flops (* M N K 2)))
-    (multiple-value-bind (openblas-out openblas-time) (matmul-openblas a b)
-      (multiple-value-bind (caten-out caten-time) (matmul-caten a b)
+        (flops (* M N K 2 n-sample)))
+    (multiple-value-bind (openblas-out openblas-time) (matmul-openblas a b n-sample)
+      (multiple-value-bind (caten-out caten-time) (matmul-caten a b n-sample)
         (format t "[M=~a N=~a K=~a]~%" M N K)
         (format t "OpenBLAS: ~a GFLOPS (~a sec)~%" (float (/ (/ flops openblas-time) 1e9)) openblas-time)
         (format t "Caten: ~a GFLOPS (~a sec)~%" (float (/ (/ flops caten-time) 1e9)) caten-time)
-        (format t "max_error = ~a" (reduce #'max (map 'list #'abs (map 'list #'- (change-facet openblas-out :simple-array) (change-facet caten-out :simple-array)))))
+        (when (= n-sample 1) ;; OpenBLAS won't fill C with zeros.
+          (format t "max_error = ~a" (reduce #'max (map 'list #'abs (map 'list #'- (change-facet openblas-out :simple-array) (change-facet caten-out :simple-array))))))
         ;; (values openblas_gflops caten_gflops)
         (values (float (/ (/ flops openblas-time) 1e9)) (float (/ (/ flops caten-time) 1e9)))))))
 
-;; Usage
-(compare-speed 1024 1024 1024)
+;; Accuracy
+(compare-speed 1024 1024 1024 :n-sample 1)
+
+;; GFLOPS
+(compare-speed 1024 1024 1024 :n-sample 10)
 
 ;; (TODO: Plot the graph using cl-gnuplots)
