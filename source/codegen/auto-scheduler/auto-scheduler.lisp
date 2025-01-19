@@ -335,7 +335,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                   for band = (car bands)
                   for band-depth = (and band (schedule-node-band-get-depth band))
                   while band do
-                    (let ((opt (make-instance 'Packing :amount (loop repeat band-depth collect 2)))) ;; [TODO] Tune this parameter!
+                    (let ((opt (make-instance 'Packing :amount (loop repeat band-depth collect 4)))) ;; [TODO] Tune this parameter!
                       (when (opt-applicable-p opt band item config)
                         (setf sketch (sketch-next-generation sketch opt 0 band item config)))))
             (setf sketches (remove sketch-first sketches))

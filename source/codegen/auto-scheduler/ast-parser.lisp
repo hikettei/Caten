@@ -459,9 +459,6 @@ for (int i=alu_1; i<alu_0; i+=1)
 (defun lower-into-bp-from-polyhedral (ast scheduled-item &key (vectorizes nil))
   (declare (type isl:ast-node ast))
   (assert (eql (node-type scheduled-item) :Schedule-Item))
-  ;; debug
-  (setf vectorizes nil)
-  
   (let* ((ctx (make-context :dynamic-shape-table (dynamic-shape-table scheduled-item)))
          (ast (parse-isl-ast ctx (isl::ast-node-handle ast) nil))
          (ast (ast-rewrite-tile-pair ast))

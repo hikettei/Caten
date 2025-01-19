@@ -41,7 +41,8 @@
    #:copy-and-assign-ast-tree
    #:unroll-ast
    #:packing-ast
-   #:late-rewrite-pack->unroll))
+   #:late-rewrite-pack->unroll
+   #:user-unroll-prefix))
 
 (in-package :caten/codegen/polyhedral-ast)
 ;; ~~ ISL AST <-> Lisp Intermidate Object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -254,6 +255,16 @@
 (defun packing-ast (ast idx packing-at n-packing)
   (shift-ast ast idx packing-at n-packing :mode :packing))
 
+(defmethod user-unroll-prefix ((user user))
+  (loop for arg in (user-args user)
+        for idxs = (expr-depends-on arg)
+        collect
+        (reduce
+         #'+
+         (loop for i in idxs
+               for s = (find (princ-to-string i) (user-unroll user) :key #'car :test #'equalp)
+               if s collect (cdr s) else collect 0))))
+
 (defun late-rewrite-pack->unroll (ast &key (unrolled-as nil))
   "Rewrites the packed user (which is failed to vectorize) as an unrolled user."
   (check-type ast user)
@@ -265,4 +276,5 @@
     (let ((info (user-late-unroll-info ast)))
       (dotimes (i (length info))
         (setf ast (unroll (nth i info) ast (nth i unrolled-as))))
+      ;; (user-args user).lem == (user-prefix user) ...になる情報をここで付与する
       ast)))

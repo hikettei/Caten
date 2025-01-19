@@ -51,8 +51,8 @@ TensorCore optimization is also implemented as a part of Vectorize.
   (vectorize (error "vectorize must occur") :type Vectorize)
   (expr (error "exrp must occur") :type node))
 
-(defun apply-vectorize (user vectorize schedule-item packed-dims)
-  (declare (type user user) (ignore packed-dims))
+(defun apply-vectorize (user vectorize schedule-item)
+  (declare (type user user))
   (when (< (length (user-vectorize user)) (length (vectorize-dims vectorize)))
     (return-from apply-vectorize nil))
   (let ((padded
@@ -68,6 +68,7 @@ TensorCore optimization is also implemented as a part of Vectorize.
            (env (make-vectorize-config :vectorize vectorize :simd simd :expr (find-user user (user-name user) schedule-item))))
       (when (and
              applicable-p
+             nil ;; tmp
              ;; [TODO] Judge the elements are contiguous in the memory! (stride must be one if simd)
              (funcall
               (vectorize-applicable-p vectorize)
@@ -122,9 +123,9 @@ Assuming the memory access (notated as +) is contiguous 1d upcast, computes the 
             (assert (= (length (getattr node :iterations)) (length base)) () "Before and after the polyhedral compilation, the rank of iteration space should not be changed. ~a -> ~a" (getattr node :iterations) (user-args user)))))
     node))
 
-(defun try-rules (ast vectorize-rules schedule-item packed-dims)
+(defun try-rules (ast vectorize-rules schedule-item)
   (loop for r in vectorize-rules
-        for new-ast = (apply-vectorize ast r schedule-item (reverse packed-dims))
+        for new-ast = (apply-vectorize ast r schedule-item)
         when new-ast do (return-from try-rules new-ast)))
 
 (defun ast-rewrite-vectorize (ast vectorize-rules schedule-item)
@@ -132,7 +133,7 @@ Assuming the memory access (notated as +) is contiguous 1d upcast, computes the 
 If some users are failed to be vectorized, they are rewritten as unroll."
   (declare (type list vectorize-rules))
   (assert (eql (node-type schedule-item) :Schedule-Item))
-  (labels ((handler (ast &key (packed-dims nil))
+  (labels ((handler (ast)
              (etypecase ast
                (User
                 ;; Find the first vectorize item which satisfies applicable-p, otherwise unroll.
@@ -142,26 +143,19 @@ If some users are failed to be vectorized, they are rewritten as unroll."
                         (user-vectorize ast) (copy-list (user-vectorize ast))
                         (user-late-unroll-info ast) (copy-list (user-late-unroll-info ast))
                         (user-simd ast) (copy-list (user-simd ast)))
+                  (print (user-vectorize ast))
                   (if (null (user-vectorize ast))
                       ast
-                      (or (try-rules ast vectorize-rules schedule-item packed-dims) (late-rewrite-pack->unroll ast)))))
-               (AstBlock (make-block (map 'list #'(lambda (x) (handler x :packed-dims packed-dims)) (astblock-body ast))))
+                      (or (try-rules ast vectorize-rules schedule-item) (late-rewrite-pack->unroll ast)))))
+               (AstBlock (make-block (map 'list #'handler (astblock-body ast))))
                (ASTFor
-                (let ((new-for (copy-astfor ast))
-                      (packed-dims (copy-list packed-dims))
-                      (changed-p nil))
-                  (dolist (m (astfor-marks ast))
-                    (when (and m (equalp "PACKED_OUTER" (directive-type m)))
-                      (setf changed-p t)
-                      (push (list (astfor-idx new-for) 0 (directive-amount m)) packed-dims)))
-                  (unless changed-p
-                    (push (list (astfor-idx new-for) 0 1) packed-dims))
-                  (setf (astfor-body new-for) (handler (astfor-body ast) :packed-dims packed-dims))
+                (let ((new-for (copy-astfor ast)))
+                  (setf (astfor-body new-for) (handler (astfor-body ast)))
                   new-for))
                (AstExpr (make-astexpr (astexpr-expr ast) (astexpr-is-defglobal-p ast)))
                (AstIf
                 (let ((new-if (copy-astif ast)))
-                  (setf (astif-then-node new-if) (handler (astif-then-node ast) :packed-dims packed-dims)
+                  (setf (astif-then-node new-if) (handler (astif-then-node ast))
                         (astif-condition new-if) (astif-condition ast))
                   new-if)))))
     (handler ast)))
