@@ -36,7 +36,8 @@
 
 (defun wrap-with-caller (kernel body &aux (args (gensym)))
   `(lambda (&rest ,args &aux (lparallel:*kernel* ,kernel))
-     (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args))))
+     (caten/runtime/profile:with-real-time
+       (apply ,body (map 'list #'(lambda (m) (if (buffer-p m) (buffer-value m) m)) ,args)))))
 
 (defmethod %compile-kernel ((renderer LispStyle-Renderer) items dir)
   (when (>= (ctx:getenv :JIT_DEBUG) 3)

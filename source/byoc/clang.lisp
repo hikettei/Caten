@@ -191,18 +191,19 @@ Compiled with this command: ~a"
        ;; causes an "arithmetic error FLOATING-POINT-INVALID-OPERATION".
        ;; This might be due to the (implicit and/or float/int) conversions
        ;; in the code generated for example, for threefry2x32.
-       (with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked
-	,(expand
-	  defglobals
-	  `((cffi:foreign-funcall
-             ,(format nil "~(~a~)" name)
-             ,@(loop for arg in defglobals
-		     for is-pointer = (getattr arg :pointer-p)
-		     if (not is-pointer)
-		       append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg)))
-		     else
-		       append `(:pointer ,(car (node-writes arg))))
-             :void)))))))
+       (caten/runtime/profile:with-real-time
+         (with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked
+	     ,(expand
+	       defglobals
+	       `((cffi:foreign-funcall
+                  ,(format nil "~(~a~)" name)
+                  ,@(loop for arg in defglobals
+		          for is-pointer = (getattr arg :pointer-p)
+		          if (not is-pointer)
+		            append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg)))
+		          else
+		            append `(:pointer ,(car (node-writes arg))))
+                  :void))))))))
 
 (defmethod %compile-kernel ((renderer CStyle-Renderer) items dir)
   (let ((code

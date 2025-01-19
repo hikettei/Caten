@@ -303,6 +303,10 @@ using namespace metal;
 (defmethod runtime-invoke-jit-kernel ((runtime MetalRuntime) kernel-info node args)
   (apply (caten/codegen/jit:compiled-kernel-caller kernel-info) node args))
 
+(defun cmdbuf-start-time (cmdbuf) (msg cmdbuf "GPUStartTime" :double))
+(defun cmdbuf-end-time (cmdbuf) (msg cmdbuf "GPUEndTime" :double))
+(defun cmdbuf-elapsed-time (cmdbuf) (- (cmdbuf-end-time cmdbuf) (cmdbuf-start-time cmdbuf)))
+
 (defmethod invoke ((mp Metal-Program) node &rest buffers)
   (assert (= (length buffers) (length (mp-argtypes mp))) () "Metal: The number of arguments does not match the number of arguments in the Metal program.")
   (let ((params (map 'list #'cons (node-reads node) buffers)) ;; e.g.: (A . 10)
@@ -337,7 +341,8 @@ using namespace metal;
       (msg command-buffer "commit" :void)
       (msg command-buffer "waitUntilCompleted" :void)
       (let ((err (msg command-buffer "error" :pointer)))
-        (assert (null-pointer-p err) () "Failed to execute a Metal command buffer: ~a" (msg err "localizedDescription" :pointer))))))
+        (assert (null-pointer-p err) () "Failed to execute a Metal command buffer: ~a" (msg err "localizedDescription" :pointer)))
+      (coerce (cmdbuf-elapsed-time command-buffer) 'single-float))))
 
 (defun make-metal-caller (mp) `(lambda (node &rest args) (apply #'invoke ,mp node args)))
 
