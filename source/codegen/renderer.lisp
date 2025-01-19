@@ -169,7 +169,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
                     (append
                      (graph-nodes (expr-graph expr))
                      (graph-nodes (renderer-graph renderer))))
-              (format nil "~(~a~)[~a]"
+              (format nil "(*(~(~a~)+~a))"
                       (%render-const renderer id)
                       (render-node renderer (car (node-writes (expr-out expr))))))
             (format nil "~(~a~)[?]" id)))))
