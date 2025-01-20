@@ -131,90 +131,29 @@
       )
     (print (get-schedule raw))
     nil))
-;; Test Softmax Inner band is not coincident (signal ...)
-;; Test Coalesce
-;; Test Tile2D
-;; Test UNROLL+PACK
-;; Test Interchange (Mark are moved)
-;; TODO: Markが挿入されたBandはInterchangeできないようにした方が良くない？
-;; TODO: BEAM=1 is not required???
+
+;; Workload
+;; - (Stage1) Optimize the gemm as we go!
+;; - CPU Gemm 350 GFLOP/s
+;;  - [ ] Vectorize is all you need
+;;  - [ ] Tile Size FineTune is all you need
+;; - Metal GEMM 3900 GFLOP/s
+;;  - [ ] Float4 Upcasting (Vectorize)
+;;   - [ ] TensorCore Utilization
+;;   - [ ] Local Size FineTUning
+;;   - [ ] Memory Coalescing
+;;   - [ ] Shared Memory Blocking
+
+;; - (Stage2) Optimize the compilation speed
+;;  - [ ] Restrict the exploration stage for nested (more than 4d loops)
+;;  - [ ] Schedule the convnd in 0.1s
+;;  - [ ] GPT2 Compilation finishes in 15sec (OPTIMIZE=1), 1 mins with OPTIMIZE=2
+
+;; - (Stage3) Pass all tests in CI with OPTIMIZE=1
+;;  - [ ] 
+;;  - [ ] 
 
 ;; ~~ Hand Optimized Kernel Generation(GEMM) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; 方針が変わった
-;; - ISL上でOptimalなScheduleを得る目的は変わらない
-;; - OPTIMIZE=1: ILPを解く, 全部のBANDにTILE+PACKING, OUTERMOST LOOP PARALLELISM, COLLAPSE, COALEASCINGを適用
-;;   - Single Kernelにならない場合棄却する
-;;   - AnsorでいうTemplate生成
-;; - OPTIMIZE=2
-;;   - LOCAL_SIZE, TILE_SIZEをGFLOPSベースで最適化する
-;;   - ISL Coalescingで条件をSimplifyする
-
-;; ISL Workload
-;; - Softmax/LayerNorm/Embedding/Symbolicを常に1 KernelへFusion -> WIN
-;; - Mapping Tile Dims -> UNROLL/PACKING/TILE/COALESCE etc
-
-;; To generate an optimized schedule for the cpu gemm kernel, we have to implement the following scheduling commands:
-;; [TODO] Vectorizeを適用すると(getattr node :global-unrolled-space)を固定する。で，val_2_x_x_xは:global-unroll-spaceベースで決定する。
-;; - これがEXPRごとで共有できないとvectorize失敗になる
-;; - 1. Add: :VECTORIZED (or implement: expr-vectorize)
-;;  - Specify the idx.
-;;  - LOAD, STORE SIMD Rewriting rule...
-;;  - Add the concept of pack/unpack
-;;  - Softmax: Innermost dims are not coincident...
-;;  - Fix: Unroll/Packing new indexed var names are 100% working??????
-;; - 2. (!!!!) Add: SIMD (float4 mutation, __mm256, etc...)
-;;   - ast-parser.lispで，例えばArgsがPackされてなかったらPackするなど。。。
-;; - 3. expr-node-wmma-p => Use Simplififer!
-;; - 4. TransposedGemm is properly vectorized?
-;; - 5. Fix: PACK+TILE
-;; [TODO] Interchange: only counts visible bands
-;; [TODO] Late unroll won't update the index? -> fix it first
-;; [TODO] how to judge the elements are contiguous?
-;; [TODO] When TensorCore Optimization is applicable?
-;; [TODO] Maybe no need to schedule Unroll in AutoScheduler, Packing is enough.
-;; [TODO} Lowerしてから，SIMDに合わせてBlueprintをいじった方が確実
-;; - PARALLEL (OpenMP)
-;; - Coleasing (Fuse PARALLEL Loop w/ tiled bands)
-;; - Loop Tiling (2D)
-;; - Loop Unrolling
-;; - Implement TensorCore(gemm8x8)
-;;   - Feed hand-written kernel in the CLANG backend
-;; 90% performance of OpenBLAS in the hand written kernel is enough great!
-;; reference: https://salykova.github.io/matmul-cpu
-;; Workload:
-;; - Unrollの代わりにUpcastを追加する
-;; - 
-;; - Upcsat/PACK/UNPACK/COMPUTEを追加する
-;; - Upcast/COMPUTEのRendererを追加する
-;; - Memory Planner?
-;; - Mixed Precision?
-;; [TODO] Workload
-;; - TODO: Delete schedule BFS in optimize-bands!
-;; - 1. ISL上で以下の操作を実現する:
-;;  - 1 band 1 mark?
-;;  - TODO: Size=1のBandの処理をテストに書く
-;;  - MEMORY COALEASING (TILE2D, bnut threads are merged)
-;;    - Tile2Dを実装する！
-;;  - Shared Memory Utilization (How to insert the barrier?)
-;;  - Implement GLOBAL/LOCAL as tile
-;;  - TILE
-;;  - PACK (No conflict!)
-;; - Interchange: Markも一緒に移動する
-;; - kernel-optでテストを書く
-;; - 2. Vectorizeを定義する
-;;  - PACK/UNPACK
-;;  - 27 Opsに対してSIMD Mutationを実装する
-;;  - Dtypeが異なる時どうするか考える
-;; - Polyhedral Transformationをまず完成させる
-;;  - 1. UNROLL/PACKINGを綺麗にする
-;;  - 2. Tilingと干渉しない
-;;  - 3. Tiling/UNROLL/PACKINGの，val_x_y_zのIndexingをちゃんとやる
-;;  - 4. Clean up symbolic kernels ...
-;; - Vectorize = PACKED_INNER次元の範囲でSliceすること
-;; - PACKED_INNER次元は全てVectorizeされると仮定する。(無理なら等価な普通の演算に書き換えられるように)
-;; - ReminderとPACKED?
-;; - Toplevelで呼ぶ時は(trivial-garbage:gc :full t)しないと結構重たい。。。
-;; Simplify the reminder part ...
 (defun tmp-sketch-list (raw scheduler)
   (loop for i upfrom 0
         for sketch in (caten/codegen/auto-scheduler::generate-sketch raw (make-instance scheduler))
