@@ -202,15 +202,14 @@ This method ensures the generated ast is compiled without any errors, and fits i
 (defmacro with-manual-scheduler ((scheduled-item auto-scheduler) &body body)
   "A utility macro to write hand written scheduling commands to the given schedule-item, under the auto-scheduler.
 This macro will bind the function `(opt opt band-idx)` locally, which will destructively apply the `opt` to the `band-idx`th band of the given schedule-node."
-  (alexandria:with-gensyms (auto-scheduler-bind nglobal-bind)
-    `(let ((,nglobal-bind 0) (,auto-scheduler-bind (make-instance ',auto-scheduler)))
+  (alexandria:with-gensyms (auto-scheduler-bind)
+    `(let ((,auto-scheduler-bind (make-instance ',auto-scheduler)))
        (caten/codegen/expr-cache:with-expr-cache ()
          (flet ((opt (opt band-idx &key (only-visible t))
                   (declare (type opt opt) (type fixnum band-idx))
-                  (when (typep opt 'Global) (incf ,nglobal-bind))
                   (si-apply-opt ,auto-scheduler-bind ,scheduled-item opt band-idx only-visible)))
            (progn ,@body)
-           (si-finalize-schedule ,auto-scheduler-bind ,scheduled-item :n-optglobals ,nglobal-bind))))))
+           (si-finalize-schedule ,auto-scheduler-bind ,scheduled-item))))))
 ;; ~~ Sketch Generation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Sketch (:constructor make-sketch (schedule &key (opt-history nil))))
   "Sketch records the history of the applied optimization, and the schedule status."
@@ -299,7 +298,8 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;;      Opt       |    Applicable to       | Target to optimize
   ;; - Loop Tiling  |       all bands        |    tiling size
   ;; - Loop Packing | filters with stride=1  |  nothing(constant)
-  ;; Tile Bands
+
+  (when nil
   (case (auto-scheduler-n-global-loops config)
     ((0 1)
      ;; TODO Only coincident are tileable
@@ -316,8 +316,10 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                        ;; Branching the sketch
                        (setf sketches (remove sketch sketches))
                        (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
-                       (return-from tile))))))
+                       (return-from tile)))))))
+  
   ;; SIMD/UPCAST
+  (when nil
   (loop for sketch in sketches
         for sketch-first = sketch
         for bands = (sketch-get-bands sketch)
@@ -342,7 +344,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                       (when (opt-applicable-p opt band item config)
                         (setf sketch (sketch-next-generation sketch opt 0 band item config)))))
             (setf sketches (remove sketch-first sketches))
-            (push sketch sketches)))
+            (push sketch sketches))))
   ;; - PARALLEL+LOCAL Conflicts こっちだけ直せばOK
   ;; - LOCAL: Size=1が消えるからPaddingできない
   ;; --------------------------------------------------------------------------
