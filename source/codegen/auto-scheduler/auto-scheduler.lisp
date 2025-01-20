@@ -218,6 +218,10 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
   (opt-history opt-history :type list) ;; a list of (cons band-idx opt)
   (search-params nil :type list))
 
+;; Note:
+;; (defstruct (Sketch-Param (:constructor make-sketch-param ())))
+;; TILE_SIZE_USE = PACK_SIZE * TILE_SIZE
+
 (defmethod print-object ((sketch Sketch) stream)
   (print-unreadable-object (sketch stream :type t :identity t)
     (format stream "~%  ```~%~a  ```~%  :search-params ~a~%  :opt-history ~a~%"
@@ -306,7 +310,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
            when target-band do
              (loop named tile
                    for idx in (map 'list #'1+ (nreverse (alexandria:iota (min band-depth 3))))
-                   for tile-size = (loop repeat idx collect 16) ;; [TODO] Make it symbolic and searchable.
+                   for tile-size = (loop repeat idx collect 64) ;; [TODO] Make it symbolic and searchable.
                    for opt = (make-instance 'TileBand :amount tile-size :only-coincident has-coincidence) do
                      (when (and tile-size (opt-applicable-p opt target-band item config))
                        ;; Branching the sketch
