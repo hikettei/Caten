@@ -24,7 +24,8 @@
    #:%renderer-get-auto-scheduler
    #:render-index
    #:render-aref-index
-   #:renderer-scope-valid-code-p))
+   #:renderer-scope-valid-code-p
+   #:renderer-rendered-nodes))
 
 (in-package :caten/codegen/renderer)
 
@@ -230,7 +231,8 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
   ((scope :initform nil :initarg :scope :accessor renderer-scope)
-   (scope-valid-code-p :initform t :accessor renderer-scope-valid-code-p))
+   (scope-valid-code-p :initform t :accessor renderer-scope-valid-code-p)
+   (renderered-nodes :initform nil :accessor renderer-rendered-nodes))
   (:documentation "Default Renderer used to print-object in repl. If scope is provided, the default renderer will proceed with checking the legality of the variable access."))
 
 (defun sname (obj) (intern (string-upcase (princ-to-string obj)) "KEYWORD"))
@@ -240,6 +242,10 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
       (when (null (gethash (sname name) scope))
         ;; (warn "~a is not defined" name)
         (setf (renderer-scope-valid-code-p renderer) nil)))))
+
+(defmethod %render-node :around ((renderer Default-Renderer) id node)
+  (push node (renderer-renderered-nodes renderer))
+  (call-next-method))
 
 (defmethod %render-const ((renderer Default-Renderer) obj)
   (renderer-check-legality renderer obj)

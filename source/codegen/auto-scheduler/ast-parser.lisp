@@ -351,7 +351,28 @@ Constraints:
             transfer)
         (if insert-barrier-p (make-astexpr (make-node :Render :BARRIER nil nil) nil) nil))))))
 
-(defun ast-rewrite-directive (ctx ast)
+(defun astfor-gather-buffer-loads (ast blueprints)
+  (let ((loads))
+    (labels ((find-from-user (id)
+               (find (princ-to-string id) blueprints :key (alexandria:compose #'princ-to-string #'node-id) :test #'equalp))
+             (handler (ast)
+               (etypecase ast
+                 (User
+                  (let ((usr (find-from-user (user-name ast))))
+                    (assert usr () "The user ~a is not appeared in the original blueprint." ast)
+                    (when (eql :EXPR (node-type usr))
+                      (dolist (a (caten/codegen/blueprint:expr-gather-buffer-loads usr))
+                        (assert (eql (node-type a) :Aref))
+                        (push a loads)))))
+                 (AstBlock (mapc #'handler (astblock-body ast)))
+                 (AstFor (handler (astfor-body ast)))
+                 (AstExpr ast)
+                 (AstIf (handler (astif-then-node ast)) (handler (astif-else-node ast)))
+                 (null))))
+      (handler ast)
+      (remove-duplicates loads :key #'(lambda (x) (getattr x :storage-id))))))
+
+(defun ast-rewrite-directive (ctx ast blueprints)
   "Rewrites the PACKED_INNER and PACKED_OUTER directives:
 - PACKED_INNER is a trigger to generate the unrolled part and the reminder part.
 - PACKED_OUTER is completly unrolled and the astfor is removed."
@@ -417,10 +438,15 @@ Constraints:
                          ;; 2. Handler内部で読まれているAREFの一覧を取得する
                          ;; 3. それら全部SharedMemoryに移すように書けばいい
                          ;; 4. PREFETCH should be used at once in a single kernel.
+                         ;; 5. PACKED_OUTER ===> Can be much easier to rewrite? Only the innermost loops should be updated.
                          (assert (and (astfor-p (astfor-body ast)) (find "PREFETCH_INNER" (astfor-marks (astfor-body ast)) :key #'directive-type :test #'equalp))
                                  ()
                                  "Nothing can be inserted between PREFETCH_INNER and PREFETCH_OUTER, and it should be one-dimensional!")
-                         (let* ((guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) (make-block nil))))
+                         (let* ((loads (astfor-gather-buffer-loads (astfor-body ast) blueprints)) ;; List of aref used in the child.
+                                (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) (make-block nil))))
+                           (print "++++++")
+                           (print (length loads))
+                           (print loads)
                            (print guard)
                            (print data-reuse)
                            (setf (astfor-body new-astfor) (make-block (list guard (handler (astfor-body ast) vectorized-idx data-reuse))))
@@ -575,7 +601,7 @@ Constraints:
   (let* ((ctx (make-context :dynamic-shape-table (dynamic-shape-table scheduled-item)))
          (ast (parse-isl-ast ctx (isl::ast-node-handle ast) nil))
          (ast (ast-rewrite-tile-pair ast))
-         (ast (ast-rewrite-directive ctx ast))
+         (ast (ast-rewrite-directive ctx ast (getattr scheduled-item :blueprint)))
          (ast (ast-rewrite-grids ast))
          (ast (ast-rewrite-vectorize ast vectorizes scheduled-item))
          ;; [TODO] Define ASTTree Simplifier. (e.g.: Unrolling a small astfor etc)

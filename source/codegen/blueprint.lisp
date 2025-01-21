@@ -27,7 +27,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
    #:compute-gflops
    #:schedule-item-gflops)
   ;; Verifier
-  (:export #:verify-blueprint))
+  (:export #:verify-blueprint #:expr-gather-buffer-loads))
 
 (in-package :caten/codegen/blueprint)
 ;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -820,3 +820,14 @@ Lowers the Schedule-Item into blueprint.
                           ->fail/malformed)))))
       (explore-blueprint 0 (length blueprints) (make-scope))
       (values t nil))))
+
+(defun expr-gather-buffer-loads (expr-node)
+  (declare (type node expr-node))
+  (assert (eql (node-type expr-node) :EXPR))
+  (let ((renderer (make-instance
+                   'caten/codegen/renderer:default-renderer
+                   :graph (expr-graph (getattr expr-node :EXPR)) :index-space (getattr expr-node :iterations))))
+    (caten/codegen/renderer:render-node renderer (car (node-writes (expr-out (getattr expr-node :EXPR)))))
+    (loop for node in (caten/codegen/renderer:renderer-rendered-nodes renderer)
+          if (and (eql (node-type node) :Aref) (> (buffer-nrank (getattr node :buffer)) 0))
+            collect node)))

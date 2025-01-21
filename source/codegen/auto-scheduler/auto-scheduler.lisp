@@ -349,6 +349,9 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; - Loop Packing | filters with stride=1  |  nothing(constant)
   ;; [TODO] All bands with the incremental is still set to 1 should be further tiled by the SIMD UPCAST
   ;; Producing a vectorizable/upcastable dims
+  ;; [TODO] Remove This code!!!
+  ;; - We dont have to tile all dims
+  ;; - The child of PREFETCH_OUTER is a SIMD.
   (when nil
     ;; SIMD/UPCAST
     (loop for sketch in sketches
