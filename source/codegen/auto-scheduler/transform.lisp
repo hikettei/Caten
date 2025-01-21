@@ -183,8 +183,7 @@ for (int i=0; i<100; i+=amount) {
   "Applies 1D Tiling to the given schedule-node-band with tile-size.
 (TODO: this function should accept a symolic tile-size to finetune an optimal tilesize without recompling the code.)"
   (declare (type isl::schedule-node band) (type (or fixnum list) tile-size))
-  ;; %apply-tile transform itself is apply-tile. no additional transformation by caten is required. so set directive=nil.
-  (%apply-tile band (broadcast-tile-size band tile-size) nil nil))
+  (%apply-tile band (broadcast-tile-size band tile-size) (directive "TILE_OUTER" tile-size t) (directive "TILE_INNER" tile-size t)))
 
 (defun apply-pack (band pack-by)
   "Packs the given schedule-node-band with pack-by which must be constant.

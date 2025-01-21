@@ -88,7 +88,8 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
   ;; [TODO] quite hard to read this code ...
   (let* ((directive (str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::%isl-ast-node-mark-get-id ast)))))
          (type (directive-type directive))
-         (stop-type (cond ((equalp type "LOCAL") "GLOBAL") ((equalp type "PACKED_INNER") "PACKED_OUTER")))
+         (stop-type (cond ((equalp type "LOCAL") "GLOBAL") ((equalp type "PACKED_INNER") "PACKED_OUTER")
+                          ((equalp type "PREFETCH_INNER") "PREFETCH_OUTER") ((equalp type "TILE_OUTER") "TILE_INNER")))
          (corresponding-size nil)
          (directives
            (loop for directives-channel in directives
@@ -206,12 +207,12 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
 ;; ~~ Directive Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-rewrite-tile-pair (ast)
   "Pairs GLOBAL and LOCAL, PACKED_OUTER and PACKED_INNER."
-  (labels ((handler (ast globals packs)
+  (labels ((handler (ast globals packs prefetchs tiles)
              (etypecase ast
                (User (copy-user ast))
                (AstBlock
                 (let ((new-block (copy-astblock ast)))
-                  (setf (astblock-body new-block) (map 'list #'(lambda (x) (handler x globals packs)) (astblock-body ast)))
+                  (setf (astblock-body new-block) (map 'list #'(lambda (x) (handler x globals packs prefetchs tiles)) (astblock-body ast)))
                   new-block))
                (AstFor
                 ;; Pair GLOBAL and LOCAL, PACKED_OUTER and PACKED_INNER.
@@ -219,7 +220,11 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
                       (globals (if (find "GLOBAL" (astfor-marks ast) :test #'equalp :key #'directive-type)
                                    (append globals (list ast)) globals))
                       (packs   (if (find "PACKED_OUTER" (astfor-marks ast) :test #'equalp :key #'directive-type)
-                                   (append packs (list ast)) packs)))
+                                   (append packs (list ast)) packs))
+                      (prefetchs (if (find "PREFETCH_OUTER" (astfor-marks ast) :test #'equalp :key #'directive-type)
+                                     (append prefetchs (list ast)) prefetchs))
+                      (tiles (if (find "TILE_OUTER" (astfor-marks ast) :test #'equalp :key #'directive-type)
+                                 (append tiles (list ast)) tiles)))
                   (when (find "LOCAL" (astfor-marks ast) :test #'equalp :key #'directive-type)
                     (assert globals () "Mismatch pair of GLOBAL and LOCAL")
                     (setf (astfor-tile-parent new-astfor) (car globals)
@@ -228,16 +233,22 @@ The mapped ast is finally transformed by the ast-rewrite-directive function.
                     (assert packs () "Mismatch pair of PACKED_OUTER and PACKED_INNER")
                     (setf (astfor-tile-parent new-astfor) (car packs)
                           packs (cdr packs)))
-                  (setf (astfor-body new-astfor) (handler (astfor-body ast) globals packs))
+                  (when (find "PREFETCH_INNER" (astfor-marks ast) :test #'equalp :key #'directive-type)
+                    (assert prefetchs () "Mismatch pair of PREFETCH_OUTER and PREFETCH_INNER")
+                    (setf (astfor-tile-parent new-astfor) (car prefetchs) prefetchs (cdr prefetchs)))
+                  (when (find "TILE_INNER" (astfor-marks ast) :test #'equalp :key #'directive-type)
+                    (assert tiles () "Mismatch pair of TILE_OUTER and TILE_INNER")
+                    (setf (astfor-tile-parent new-astfor) (car tiles) tiles (cdr tiles)))
+                  (setf (astfor-body new-astfor) (handler (astfor-body ast) globals packs prefetchs tiles))
                   new-astfor))
                (AstExpr ast)
                (AstIf
                 (let ((new-if (copy-astif ast)))
-                  (setf (astif-then-node new-if) (handler (astif-then-node ast) globals packs)
-                        (astif-else-node new-if) (handler (astif-else-node ast) globals packs))
+                  (setf (astif-then-node new-if) (handler (astif-then-node ast) globals packs prefetchs tiles)
+                        (astif-else-node new-if) (handler (astif-else-node ast) globals packs prefetchs tiles))
                   new-if))
                (null))))
-    (handler ast nil nil)))
+    (handler ast nil nil nil nil)))
 
 (defun astfor-make-reminder-astfor (ctx astfor n-unroll unrolled-body reminder-body)
   "
@@ -280,33 +291,100 @@ for (int i=alu_2; i<alu_0; i+=1)
      (make-for (astfor-idx astfor) packed-upfrom packed-to packed-by unrolled-body)
      (make-for (astfor-idx astfor) reminder-upfrom reminder-to reminder-by reminder-body))))
 
+(defun ast-make-prefetch-barrier (ctx data-reuse prefetch-inner transfer)
+  "
+for (int _gid0=0; _gid0<512; _gid0+=128) {
+  for (int _gid1=0; _gid1<512; _gid1+=128) {
+    for (int _gid2=0; _gid2<128; _gid2+=1) {
+      for (int _gid3=0; _gid3<128; _gid3+=1) {
+        float val_2_0_0_0 = 0.0;
+        for (int _gid4=0; _gid4<512; _gid4+=128) {
+          if (_gid2 == 0 and _gid3 == 0) {   /*/ This function creates this form /*/
+              As_Aligned[...]=[...];         /*/ Transfer /*/
+              Bs_Aligned[...]=[...];         /*/ Transfer /*/
+          }                                  /*/ Transfer /*/
+          for (int _gid5=0; _gid5<128; _gid5+=1) {
+            val_2_0_0_0 = (val_2_0_0_0+((*(val_4+((512*(_gid0+_gid2))+(_gid4+_gid5))))*(*(val_6+((_gid1+_gid3)+(512*(_gid4+_gid5)))))));
+          }
+        }
+        (*(val_9+((512*(_gid0+_gid2))+(_gid1+_gid3)))) = val_2_0_0_0;
+      }
+    }
+  }
+}
+
+Constraints:
+- data-reuse[list of astfor]
+  - Mark must be either of:
+    - every mark is LOCAL      => A barrier is inserted.
+    - every mark is TILE_INNER => A if statement is inserted.
+"
+  (labels ((identify-for (for)
+             (if (find "LOCAL" (astfor-marks for) :test #'equalp :key #'directive-type)
+                 :LOCAL
+                 (if (or
+                      (find "TILE_INNER" (astfor-marks for) :test #'equalp :key #'directive-type)
+                      (find "PREFETCH_INNER" (astfor-marks for) :test #'equalp :key #'directive-type))
+                     :TILE_INNER
+                     (error "The AstFor ~a should have either of :LOCAL or :TILE_INNER" for))))
+           (butnil (&rest list) (loop for l in list if l collect l))
+           (newband (parent-band body)
+             (declare (type astfor parent-band))
+             (ecase (identify-for parent-band)
+               (:LOCAL body)
+               (:TILE_INNER
+                (let ((new-astfor (copy-astfor parent-band)))
+                  ;; [TODO] Remove extra bands in new-astfor?
+                  ;; [TODO] Rewrite BY=1 (since this region is never vectorized.)
+                  (setf (astfor-body new-astfor) body)
+                  new-astfor)))))
+    (let ((insert-barrier-p (some #'(lambda (x) (eql (identify-for x) :LOCAL)) data-reuse))
+          (guard-triggers (loop for d in data-reuse if (eql (identify-for d) :TILE_INNER) collect d))
+          (transfer (newband prefetch-inner transfer)))
+      (dolist (d (reverse data-reuse)) (setf transfer (newband d transfer)))
+      (make-block
+       (butnil
+        (if guard-triggers
+            (make-if
+             (reduce #'expr-and (map 'list #'(lambda (x) (expr-= (expr-const (ctx-intern ctx (astfor-idx x)) :int64) (expr-const 0 :int64))) guard-triggers))
+             transfer nil)
+            transfer)
+        (if insert-barrier-p (make-astexpr (make-node :Render :BARRIER nil nil) nil) nil))))))
+
 (defun ast-rewrite-directive (ctx ast)
   "Rewrites the PACKED_INNER and PACKED_OUTER directives:
 - PACKED_INNER is a trigger to generate the unrolled part and the reminder part.
 - PACKED_OUTER is completly unrolled and the astfor is removed."
-  (labels ((handler (ast vectorized-idx)
+  (labels ((handler (ast vectorized-idx data-reuse)
              ;; Reminder-idx-list
              (etypecase ast
                (User (copy-user ast))
                (AstBlock
                 (let ((new-block (copy-astblock ast)))
-                  (setf (astblock-body new-block) (map 'list #'(lambda (x) (handler x vectorized-idx)) (astblock-body ast)))
+                  (setf (astblock-body new-block) (map 'list #'(lambda (x) (handler x vectorized-idx data-reuse)) (astblock-body ast)))
                   new-block))
                (ASTFor
                 (let ((new-astfor (copy-astfor ast))
                       (marks (astfor-marks ast))
-                      (mark))
-                  (assert (<= (length marks) 2))
+                      (mark)
+                      (data-reuse
+                        (append
+                         data-reuse
+                         (when (some #'(lambda (x) (find x (astfor-marks ast) :key #'directive-type :test #'equalp)) `("TILE_INNER" "LOCAL"))
+                           (list ast)))))
+                  (assert (<= (length marks) 2)) ;; Note: This assertion is not enough to detect PACK_OUTER+TILE_INNER ...
                   (setf (astfor-marks new-astfor)
                         (loop for m in marks
+                              ;; GLOBAL/LOCAL/PARALLEL -> Rewriting is not done in this function
+                              ;; TILE_OUTER/TILE_INNER -> Just a trigger for marking data reuse points.
                               if (find (directive-type m) `("GLOBAL" "LOCAL" "PARALLEL") :test #'equalp)
                                 collect m
-                              else
-                                do (setf mark m)))
+                              else if (null (find (directive-type m) `("TILE_INNER" "TILE_OUTER") :test #'equalp))
+                                     do (setf mark m)))
                   (if mark
                       (cond
                         ((equalp (directive-type mark) "PACKED_INNER")
-                         (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx))
+                         (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx data-reuse))
                          (let* ((n-pack (directive-amount mark))
                                 (n-pack (the fixnum (if (numberp n-pack) n-pack (car n-pack))))
                                 (parent (astfor-tile-parent ast))
@@ -319,8 +397,8 @@ for (int i=alu_2; i<alu_0; i+=1)
                         ((equalp (directive-type mark) "PACKED_OUTER")
                          (let* ((n-pack (directive-amount mark))
                                 (n-pack (the fixnum (if (numberp n-pack) n-pack (car n-pack))))
-                                (packed-body (handler (astfor-body ast) (append vectorized-idx (list (astfor-idx ast)))))
-                                (reminder-body (handler (astfor-body ast) vectorized-idx)))
+                                (packed-body (handler (astfor-body ast) (append vectorized-idx (list (astfor-idx ast))) data-reuse))
+                                (reminder-body (handler (astfor-body ast) vectorized-idx data-reuse)))
                            (multiple-value-bind (packed-for reminder-for)
                                (astfor-make-reminder-astfor ctx ast n-pack packed-body reminder-body)
                              ;; [TODO] Test LOCAL+VECTORIZE Fusion generating a reminder.
@@ -328,25 +406,44 @@ for (int i=alu_2; i<alu_0; i+=1)
                                    (astfor-tile-parent packed-for) (astfor-tile-parent new-astfor))
                              (make-block (list packed-for reminder-for)))))
                         ((equalp (directive-type mark) "PREFETCH_OUTER")
-                         (warn "TODO")
-                         (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx))
-                         new-astfor)
+                         ;; Note:
+                         ;; - Here, we assume the undernearth block is TILED by BLOCKDIM x BLOCKDIM x BLOCKDIM.
+                         ;;   - 1. Transfer the buffers used in the child into the Shared Memory.
+                         ;;     - Here, A/B may not be needed to be transferred. Increment the pointer instead.
+                         ;;   - 2. Insert DEFINE-SHARED-MEMORY
+                         ;;   - 3. Insert the BARRIER
+                         ;;   - 4. Prefetch MUST BE 1D RIGHT?
+                         ;; 1. handlerを先に展開する
+                         ;; 2. Handler内部で読まれているAREFの一覧を取得する
+                         ;; 3. それら全部SharedMemoryに移すように書けばいい
+                         ;; 4. PREFETCH should be used at once in a single kernel.
+                         (assert (and (astfor-p (astfor-body ast)) (find "PREFETCH_INNER" (astfor-marks (astfor-body ast)) :key #'directive-type :test #'equalp))
+                                 ()
+                                 "Nothing can be inserted between PREFETCH_INNER and PREFETCH_OUTER, and it should be one-dimensional!")
+                         (let* (
+                                (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) (make-block nil))))
+                           (print guard)
+                           (print data-reuse)
+                           (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx data-reuse))
+                           (make-block (list guard new-astfor))))
                         ((equalp (directive-type mark) "PREFETCH_INNER")
-                         (warn "TODO")
-                         (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx))
+                         ;; Note:
+                         ;; [TODO]
+                         ;; TILE_INNER rewrites all access to the buffer to the access to the shared memory.
+                         (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx data-reuse))
                          new-astfor)
                         (T (error "The directive ~a transformation is not supported." mark)))
                       (progn
-                        (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx))
+                        (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx data-reuse))
                         new-astfor))))
                (AstExpr ast)
                (AstIf
                 (let ((new-if (copy-astif ast)))
-                  (setf (astif-then-node new-if) (handler (astif-then-node ast) vectorized-idx)
-                        (astif-else-node new-if) (handler (astif-else-node ast) vectorized-idx))
+                  (setf (astif-then-node new-if) (handler (astif-then-node ast) vectorized-idx data-reuse)
+                        (astif-else-node new-if) (handler (astif-else-node ast) vectorized-idx data-reuse))
                   new-if))
                (null))))
-    (handler ast nil)))
+    (handler ast nil nil)))
 
 (defun ast-rewrite-grids (ast &aux (count 0) (idx2count (make-hash-table :test #'equal)) (idx2band (make-hash-table :test #'equal)))
   "Rewrites PARALLEL/GLOBAL/LOCAL directives."
@@ -380,6 +477,7 @@ for (int i=alu_2; i<alu_0; i+=1)
                             (p (gethash (astfor-idx (astfor-tile-parent ast)) idx2band))
                             (lid (astfor-mutate-local new-astfor p (gethash (astfor-idx (astfor-tile-parent ast)) idx2count) ls #'handler)))
                        lid))
+                    ((equalp (directive-type mark) "PREFETCH_INNER") ast)
                     (T (error "Not supported directive: ~a" mark)))))
                (AstExpr Ast)
                (AstIf
@@ -445,7 +543,7 @@ for (int i=alu_2; i<alu_0; i+=1)
                     (assert (null else) () "else should be none")
 		    (push (r/endif id) new-graph)))
                  ((AstExpr :expr expr :is-defglobal-p defglobal-p)
-                  (assert (eql (node-type expr) :EXPR) () "ASTEXPR can only have an EXPR.")
+                  ;; (assert (eql (node-type expr) :EXPR) () "ASTEXPR can only have an EXPR.")
                   (when defglobal-p
                     (push (string-downcase (princ-to-string (car (node-writes expr)))) space))
                   (push expr new-graph))

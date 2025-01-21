@@ -79,6 +79,10 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                       do (incf indent 2) (format out "~a if (~(~a~)) {~%" (indent indent) (render-expr 'Default-Renderer (getattr node :condition)))
                else if (eql (node-type node) :ENDIF)
                       do (decf indent 2) (format out "~a } // endif~%" (indent indent))
+               else if (eql (node-type node) :BARRIER)
+                      do (format out "~athread_barrier();~%" (indent indent))
+               else if (eql (node-type node) :DEFINE-SHARED-MEMORY) do
+                 (format out "~aSHARED_MEMORY ~(~a~) ~(~a~)[~a];~%" (indent indent) (getattr node :dtype) (car (node-writes node)) (getattr node :size))
                else if (eql (node-type node) :EXPR) do
                  (let ((pre-iterations (getattr node :Iterations))
                        (is-vectorized (typep (getattr node :meta :allow-undefined t) (find-symbol "VECTORIZED" (find-package :caten/codegen/packing)))))

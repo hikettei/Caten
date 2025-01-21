@@ -347,7 +347,8 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;;      Opt       |    Applicable to       | Target to optimize
   ;; - Loop Tiling  |       all bands        |    tiling size
   ;; - Loop Packing | filters with stride=1  |  nothing(constant)
-  ;; [TODO]
+  ;; [TODO] All bands with the incremental is still set to 1 should be further tiled by the SIMD UPCAST
+  ;; Producing a vectorizable/upcastable dims
   (when nil
     ;; SIMD/UPCAST
     (loop for sketch in sketches
