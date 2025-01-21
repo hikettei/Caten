@@ -7,7 +7,7 @@
     #:Opt #:opt-id #:opt-amount #:apply-opt #:opt-applicable-p
     #:AutoScheduler #:autoscheduler-best-schedule #:autoscheduler-config
     #:autoscheduler-n-generation #:autoscheduler-gen2act
-    #:NoOpt #:Parallel #:Global #:Local #:TileBand #:Unroll #:Packing #:Coalesce #:Reschedule
+    #:NoOpt #:Parallel #:Global #:Local #:TileBand #:Packing #:Coalesce #:Reschedule
     #:get-possible-opts #:optimize-band #:minimize-cost #:compute-costs)
   ;; ILP Solvers
   (:export #:schedule-item-maximize-band-depth #:verify-schedule)
@@ -84,25 +84,6 @@
 (defclass Prefetch (Opt) nil (:documentation "Inserts a trigger for transfering the data from global memory to (aligned) shared memory."))
 (defmethod apply-opt ((opt Prefetch) schedule-node item config) (apply-and-insert-prefetch schedule-node (opt-amount opt)))
 (defmethod opt-applicable-p ((opt Prefetch) schedule-node item config) t)
-;; [TODO] Remove Unroll
-(defclass Unroll (Opt) nil (:documentation "Unroll the loop with `amount`
-```
-for (int i=0; i<10; i++) {
-   T1(i)
-}
-```
-=>
-```
-for (int i=0; i<10; i+=amount) {
-  T1(i)
-  T2(i+1)
-  ...
-  T_amount(i+amount)
-}
-```"))
-
-(defmethod apply-opt ((opt Unroll) schedule-node item config) (apply-unroll schedule-node (opt-amount opt)))
-(defmethod opt-applicable-p ((opt Unroll) schedule-node item config) t)
 
 (defclass Packing (Opt) nil (:documentation "Packs the task with `amount`.
 ```
@@ -244,10 +225,10 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
 (defmethod sketch-get-band-depth-list ((sketch sketch))
   (map 'list #'isl:schedule-node-get-schedule-depth (sketch-get-bands sketch)))
 
-(defmethod sketch-get-band-at-depth ((sketch sketch) depth)
+(defmethod sketch-get-band-at-depth ((sketch sketch) depth allow-marked)
   (map-schedule-node-children
    #'(lambda (type node mark)
-       (when (and (null mark) (eql type :schedule-node-band) (= (isl:schedule-node-get-schedule-depth node) depth))
+       (when (and (or allow-marked (null mark)) (eql type :schedule-node-band) (= (isl:schedule-node-get-schedule-depth node) depth))
          (return-from sketch-get-band-at-depth node)))
    (isl:schedule-get-root (sketch-schedule sketch))))
 
@@ -264,12 +245,12 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
 
 (defun generate-sketch (item config &aux (sketches) (blocksize 128))
   "Returns a new schedule which is called a sketch, a template kernel that is further optimized by the auto-scheduler.
+The sketch is equivalent to the decision tree where each node corresponds for whether an optimization is applied or not.
 See also : `docs/assets/Caten_Sketch_Generation.jpg`
 (values sketch-schedule (list params-to-search))"
   (declare (type node item))
   (assert (eql (node-type item) :Schedule-Item))
   ;; Generating the root of the sketch. (Solve ILP or not to maximize the band depth)
-
   ;; [TODO] Solve ILP Succeed one is always better?
   (let ((reschedule (make-instance 'Reschedule)))
     (if (opt-applicable-p reschedule nil item config) ;; (note) 99% of the computation time consists Reschedule in generate-sketch
@@ -332,21 +313,32 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                        (return-from tile))))))
   ;; Also the loop is tiled in the innermost depth.
   (loop for sketch in sketches
-        for innermost = (reduce #'max (sketch-get-band-depth-list sketch)) do
-          (loop for tgt-band = (sketch-get-band-at-depth sketch innermost)
+        for band-depth-list = (sketch-get-band-depth-list sketch)
+        for innermost = (reduce #'max band-depth-list) do
+          (loop for tgt-band = (sketch-get-band-at-depth sketch innermost nil)
                 while tgt-band
                 for tile-size = (list blocksize) ;; TODO
                 for opt = (make-instance 'Prefetch :amount tile-size) do
                   (when (and tile-size (opt-applicable-p opt tgt-band item config))
                     (setf sketches (remove sketch sketches)
                           sketch (sketch-next-generation sketch opt 0 tgt-band item config))
-                    (push sketch sketches))))
+                    (push sketch sketches)))
+          (when (> (count innermost band-depth-list) 1)
+            ;; Intra Tile Fusion (Optimization for Softmax/LayerNorm)
+            ;; Finding a pattern such like:
+            ;; (sequence)
+            ;;   L c2 @DIRECTIVE(PREFETCH_OUTER)
+            ;;     L c3 @DIRECTIVE(PREFETCH_INNER)
+            ;;   L c2 @DIRECTIVE(PREFETCH_OUTER)
+            ;;     L c3 @DIRECTIVE(PREFETCH_INNER)
+            ;;   ...
+            ;; - 1. Inserts the first tile(c2) @DIRECTIVE(LOCAL)
+            ;; - 2. Inserts the second tile(c2) @DIRECTIVE(BARRIER)
+            ;; For GPU, this is the equivalent to doing warpReduce. (For example, SumReduce/MaxReduce in Softmax is further utilizes the thread level parallelism)
+            ;; For CPU, this is the equivalent to the intra tile fusion and utilizes simd register by transferring arrays into aligned memory.
+            
+            ))
   ;; [TODO]
-  ;; (Optimization for Softmax/LayerNorm)
-  ;; Searching for the tiled schedule-node-band in schedule-node-sequence, assigning:
-  ;; The first tile is @DIRECTIVE(LOCAL)
-  ;; The second one is @DIRECTIVE(BARRIER)
-  ;; The third one is ...
   
   ;; All of those optimization covers 90% of required optimization decision tree for CPU/GPU.
   

@@ -10,7 +10,7 @@
     #:directive->str #:directive->id #:str->directive)
   ;; Transforms
   (:export
-   #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile #:apply-multi-tile
+   #:apply-tile #:apply-pack #:%apply-tile #:apply-multi-tile
    #:apply-parallel #:apply-global #:apply-coalesce #:apply-and-insert-prefetch))
 
 (in-package :caten/codegen/transform)
@@ -185,12 +185,6 @@ for (int i=0; i<100; i+=amount) {
   (declare (type isl::schedule-node band) (type (or fixnum list) tile-size))
   ;; %apply-tile transform itself is apply-tile. no additional transformation by caten is required. so set directive=nil.
   (%apply-tile band (broadcast-tile-size band tile-size) nil nil))
-
-(defun apply-unroll (band unroll-by)
-  "Unrolls the given schedule-node-band with unroll-by."
-  (declare (type isl::schedule-node band) (type (or fixnum list) unroll-by))
-  (let ((unroll-by (broadcast-tile-size band unroll-by)))
-    (%apply-tile band unroll-by (directive "UNROLL_OUTER" unroll-by t) (directive "UNROLL_INNER" unroll-by nil))))
 
 (defun apply-pack (band pack-by)
   "Packs the given schedule-node-band with pack-by which must be constant.
