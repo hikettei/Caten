@@ -437,7 +437,7 @@ Constraints:
            (make-node :JIT :EXPR (list (ctx-shared-mem-id ctx (getattr aref :storage-id))) (list (getattr aref :storage-id))
                       :EXPR (make-expr :graph (make-graph aref) :out aref)
                       :_type_relay type-relay
-                      :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (format nil "~a_1"(astfor-idx x))) :int64)) astfor-list))
+                      :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (format nil "~a_1" (astfor-idx x))) :int64)) astfor-list))
            nil))))
 
 (defun aref->shared-memory-decl (aref)
@@ -449,10 +449,11 @@ Constraints:
               :size (reduce #'* (caten/runtime:buffer-shape (getattr aref :buffer))))
    nil))
 
-(defun aref->tiled-aref (ctx aref blocksize)
+(defun aref->tiled-aref (ctx aref blocksize offsets &key (use-offsets nil))
   (declare (type node aref))
   (assert (eql (node-type aref) :Aref))
-  (let ((shape) (stride) (last-stride 1))
+  (let ((shape) (stride) (last-stride 1)
+        (negative-offsets (map 'list #'(lambda (x) (expr-neg (expr-const (ctx-intern ctx x) :int64))) offsets)))
     (loop for s in (reverse (iteration-space-strides (getattr aref :space)))
           if (expr-equal-to s 0)
             do (push 1 shape) (push 0 stride)
@@ -465,7 +466,8 @@ Constraints:
                           shape stride (caten/runtime:buffer-dtype (getattr aref :buffer))
                           (loop repeat (length shape) collect nil)
                           :device 'caten/codegen/shape-inference::RelayBuffer)
-                 :space (make-iteration-space :shape (map 'list #'asc shape) :strides (map 'list #'asc stride) :views (loop repeat (length shape) collect (list 0 1 1)))))))
+                 :space (make-iteration-space :shape (map 'list #'asc shape) :strides (map 'list #'asc stride)
+                                              :views (loop for o in negative-offsets collect (list (if use-offsets o 0) 1 1)))))))
 
 (defun make-aref-rewriter (base new)
   #'(lambda (x)
@@ -573,12 +575,15 @@ Constraints:
                          (let* ((loads (ast-gather-buffer-loads (astfor-body ast) blueprints)) ;; List of aref used in the child.
                                 (blocksize (directive-amount mark))
                                 (blocksize (if (listp blocksize) (car blocksize) blocksize))
-                                (narefs (map 'list #'(lambda (x) (aref->tiled-aref ctx x blocksize)) loads))
                                 (ls (append data-reuse (list (astfor-body ast))))
+                                (tids (map 'list (alexandria:compose #'astfor-idx #'astfor-tile-parent) ls))
+                                (narefs (map 'list #'(lambda (x) (aref->tiled-aref ctx x blocksize tids)) loads))
+                                (narefs-shifted (map 'list #'(lambda (x) (aref->tiled-aref ctx x blocksize tids :use-offsets t)) loads))
                                 (transfer-body (ast-make-transfer-body ctx loads narefs ls))
                                 (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) transfer-body narefs))
-                                (rewriters (map 'list #'make-aref-rewriter loads narefs))
+                                (rewriters (map 'list #'make-aref-rewriter loads narefs-shifted))
                                 (smemdecls (map 'list #'aref->shared-memory-decl narefs)))
+                           (assert (every #'astfor-tile-parent ls))
                            ;; Note:
                            ;; 1. make shared memory strided array
                            ;; 2. rewrite-shared-access rewriting rule (replace aref)
