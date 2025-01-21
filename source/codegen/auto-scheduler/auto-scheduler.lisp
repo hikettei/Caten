@@ -243,7 +243,7 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
     (setf (sketch-opt-history new-sketch) (append (list (cons idx opt)) (sketch-opt-history sketch)))
     new-sketch))
 
-(defun generate-sketch (item config &aux (sketches) (blocksize 128))
+(defun generate-sketch (item config &aux (sketches) (blocksize 32))
   "Returns a new schedule which is called a sketch, a template kernel that is further optimized by the auto-scheduler.
 The sketch is equivalent to the decision tree where each node corresponds for whether an optimization is applied or not.
 See also : `docs/assets/Caten_Sketch_Generation.jpg`
@@ -352,7 +352,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; [TODO] Remove This code!!!
   ;; - We dont have to tile all dims
   ;; - The child of PREFETCH_OUTER is a SIMD.
-  (when nil
+  (when t
     ;; SIMD/UPCAST
     (loop for sketch in sketches
           for sketch-first = sketch
