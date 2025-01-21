@@ -294,7 +294,7 @@ for (int i=alu_2; i<alu_0; i+=1)
      (make-for (astfor-idx astfor) packed-upfrom packed-to packed-by unrolled-body)
      (make-for (astfor-idx astfor) reminder-upfrom reminder-to reminder-by reminder-body))))
 ;; ~~ Shared Memory Transfer Optimization ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun ast-make-prefetch-barrier (ctx data-reuse prefetch-inner transfer)
+(defun ast-make-prefetch-barrier (ctx data-reuse prefetch-inner transfer narefs)
   "
 for (int _gid0=0; _gid0<512; _gid0+=128) {
   for (int _gid1=0; _gid1<512; _gid1+=128) {
@@ -322,6 +322,7 @@ Constraints:
     - every mark is LOCAL      => A barrier is inserted.
     - every mark is TILE_INNER => A if statement is inserted.
 "
+  (declare (type list transfer narefs))
   (labels ((identify-for (for)
              (if (find "LOCAL" (astfor-marks for) :test #'equalp :key #'directive-type)
                  :LOCAL
@@ -343,8 +344,18 @@ Constraints:
                   new-astfor)))))
     (let ((insert-barrier-p (some #'(lambda (x) (eql (identify-for x) :LOCAL)) data-reuse))
           (guard-triggers (loop for d in data-reuse if (eql (identify-for d) :TILE_INNER) collect d))
-          (transfer (newband prefetch-inner transfer)))
-      (dolist (d (reverse data-reuse)) (setf transfer (newband d transfer)))
+          (transfer
+            (make-block
+             (loop for aref in narefs
+                   for tfexpr in transfer
+                   for tfbody = (make-block (list tfexpr))
+                   collect
+                   (progn
+                     (loop for band in (append (list prefetch-inner) (reverse data-reuse))
+                           for stride in (iteration-space-strides (getattr aref :space))
+                           unless (expr-equal-to stride 0) do
+                             (setf tfbody (newband band tfbody)))                             
+                     tfbody)))))
       (make-block
        (butnil
         (if guard-triggers
@@ -375,27 +386,21 @@ Constraints:
       (handler ast)
       (remove-duplicates loads :key #'(lambda (x) (getattr x :storage-id))))))
 
-(defun ast-make-prefetched-indexing (ctx astfor-list)
-  "New Region is aligned by idx = idx1 + idx2 + idx3 + ..."
-  (reduce #'expr-add (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (astfor-idx x)) :int64)) astfor-list)))
-
-(defun ast-make-transfer-body (ctx loads astfor-list)
+(defun ast-make-transfer-body (ctx loads narefs astfor-list)
   (declare (type list loads))
   (assert (every #'(lambda (x) (eql (node-type x) :Aref)) loads))
-  (make-block
-   (loop for aref in loads
-         for ones = (loop repeat (length astfor-list) collect (expr-const 1 :int64))
-         for views = (loop repeat (length astfor-list) collect (list 0 1 1))
-         collect
-         (let ((type-relay (make-inferred-type (list (getattr aref :buffer)) (list (getattr aref :buffer)))))
-           (setf (relay-write-iters type-relay)
-                 (list (make-iteration-space :shape ones :strides ones :views views)))
-           (make-astexpr
-            (make-node :JIT :EXPR (list (ctx-shared-mem-id ctx (getattr aref :storage-id))) (list (getattr aref :storage-id))
-                       :EXPR (make-expr :graph (make-graph aref) :out aref)
-                       :_type_relay type-relay
-                       :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (astfor-idx x)) :int64)) astfor-list))
-            nil)))))
+  (loop for aref in loads
+        for target in narefs
+        collect
+        (let ((type-relay (make-inferred-type (list (getattr aref :buffer)) (list (getattr target :buffer)))))
+          (setf (relay-write-iters type-relay) (list (getattr target :space))
+                (relay-read-iters type-relay) (list (getattr aref :space)))
+          (make-astexpr
+           (make-node :JIT :EXPR (list (ctx-shared-mem-id ctx (getattr aref :storage-id))) (list (getattr aref :storage-id))
+                      :EXPR (make-expr :graph (make-graph aref) :out aref)
+                      :_type_relay type-relay
+                      :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (astfor-idx x)) :int64)) astfor-list))
+           nil))))
 
 (defun aref->shared-memory-decl (ctx aref rank size)
   (declare (type node aref))
@@ -413,8 +418,6 @@ Constraints:
             do (push 1 shape) (push 0 stride)
           else
             do (push blocksize shape) (push last-stride stride) (setf last-stride (* blocksize last-stride)))
-    (print shape)
-    (print stride)
     (flet ((asc (x) (expr-const x :int64)))
       (make-node :JIT :Aref (node-writes aref) (node-reads aref)
                  :storage-id (ctx-shared-mem-id ctx (getattr aref :storage-id))
@@ -423,6 +426,39 @@ Constraints:
                           (loop repeat (length shape) collect nil)
                           :device 'caten/codegen/shape-inference::RelayBuffer)
                  :space (make-iteration-space :shape (map 'list #'asc shape) :strides (map 'list #'asc stride) :views (loop repeat (length shape) collect (list 0 1 1)))))))
+
+(defun make-aref-rewriter (base new)
+  #'(lambda (x)
+      (when (and (eql (node-type x) :Aref)
+                 (eql (getattr x :storage-id) (getattr base :storage-id)))
+        new)))
+
+(defun ast-rewrite-expr (rewriters blueprints ast)
+  (labels ((rewrite (node)
+             (dolist (r rewriters)
+               (let ((o (funcall r node)))
+                 (when o (return-from rewrite o)))))
+           (handler (ast)
+             (etypecase ast
+               (User
+                (labels ((find-from-user (id)
+                           (find (princ-to-string id) blueprints :key (alexandria:compose #'princ-to-string #'node-id) :test #'equalp)))
+                  (let ((usr (find-from-user (user-name ast))))
+                    (assert usr () "The user ~a is not appeared in the original blueprint." ast)
+                    (when (eql :EXPR (node-type usr))
+                      (setf (graph-nodes (expr-graph (getattr usr :EXPR)))
+                            (loop for node in (graph-nodes (expr-graph (getattr usr :EXPR)))
+                                  if (eql (node-type node) :Aref)
+                                    collect (or (rewrite node) node)
+                                  else
+                                    collect node))))))
+               (AstBlock (mapc #'handler (astblock-body ast)))
+               (AstFor (handler (astfor-body ast)))
+               (AstExpr)
+               (AstIf (handler (astif-then-node ast)) (handler (astif-else-node ast)))
+               (null))))
+    (handler ast)
+    ast))
 
 (defun ast-rewrite-directive (ctx ast blueprints)
   "Rewrites the PACKED_INNER and PACKED_OUTER directives:
@@ -498,22 +534,18 @@ Constraints:
                                 (blocksize (directive-amount mark))
                                 (blocksize (if (listp blocksize) (car blocksize) blocksize))
                                 (narefs (map 'list #'(lambda (x) (aref->tiled-aref ctx x blocksize)) loads))
-                                (transfer-body (ast-make-transfer-body ctx loads (append data-reuse (list (astfor-body ast)))))
-                                (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) transfer-body)))
+                                (ls (append data-reuse (list (astfor-body ast))))
+                                (transfer-body (ast-make-transfer-body ctx loads narefs ls))
+                                (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) transfer-body narefs))
+                                (rewriters (map 'list #'make-aref-rewriter loads narefs)))
                            ;; Note:
                            ;; 1. make shared memory strided array
                            ;; 2. rewrite-shared-access rewriting rule (replace aref)
                            ;; 3. todo: tweak the cache size, val_6/val_4 only requires BLOCKSIZE * BLOCKSIZE region
-                           (print "++++++")
-                           (print narefs)
-                           (print guard)
-                           (print data-reuse)
-                           (setf (astfor-body new-astfor) (make-block (list guard (handler (astfor-body ast) vectorized-idx data-reuse))))
+                           (setf (astfor-body new-astfor) (make-block (list guard (ast-rewrite-expr rewriters blueprints (handler (astfor-body ast) vectorized-idx data-reuse)))))
+                           
                            new-astfor))
                         ((equalp (directive-type mark) "PREFETCH_INNER")
-                         ;; Note:
-                         ;; [TODO]
-                         ;; TILE_INNER rewrites all access to the buffer to the access to the shared memory.
                          (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx data-reuse))
                          new-astfor)
                         (T (error "The directive ~a transformation is not supported." mark)))
