@@ -260,6 +260,8 @@
                        (format nil " /* ~a */" (exprmeta-comment (getattr bp :meta)))
                        "")))))
       (:BARRIER (format stream "~athreadgroup_barrier(mem_flags::mem_threadgroup);~%" (indent)))
+      (:DEFINE-SHARED-MEMORY
+       (format stream "~athreadgroup ~a ~(~a~)[~a];~%" (indent) (dtype->mtype (getattr bp :dtype)) (car (node-writes bp)) (getattr bp :size)))
       (:DEFINE-GLOBAL))))
 
 (defun header ()

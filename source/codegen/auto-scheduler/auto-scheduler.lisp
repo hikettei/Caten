@@ -323,6 +323,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                     (setf sketches (remove sketch sketches)
                           sketch (sketch-next-generation sketch opt 0 tgt-band item config))
                     (push sketch sketches)))
+          ;; [TODO] ここがReductionだった場合，Shared Memory or warpReduce, which one would be beneficial?
           (when (> (count innermost band-depth-list) 1)
             ;; Intra Tile Fusion (Optimization for Softmax/LayerNorm)
             ;; Finding a pattern such like:
@@ -339,7 +340,6 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
             (apply-intra-tile-fusion (sketch-get-band-at-depth sketch innermost t) innermost)
             ))
   ;; [TODO]
-  
   ;; All of those optimization covers 90% of required optimization decision tree for CPU/GPU.
   
   ;; --------------------------------------------------------------------------
@@ -347,43 +347,35 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;;      Opt       |    Applicable to       | Target to optimize
   ;; - Loop Tiling  |       all bands        |    tiling size
   ;; - Loop Packing | filters with stride=1  |  nothing(constant)
+  ;; [TODO]
   (when nil
-  ;; SIMD/UPCAST
-  (loop for sketch in sketches
-        for sketch-first = sketch
-        for bands = (sketch-get-bands sketch)
-        for innermost-depth = (reduce #'max (map 'list #'isl:schedule-node-get-schedule-depth bands)) do
-          ;; Exploration space is restricted to depth < innsermost-depth ?
-          (flet ((get-bands (sketch)
-                   (map-schedule-node-children
-                    #'(lambda (type node mark)
-                        (when (and
-                               (eql type :schedule-node-band)
-                               (or (null mark) (equalp (directive-type mark) "LOCAL"))
-                               ;; (>= (isl:schedule-node-get-schedule-depth node) innermost-depth)
-                               )
-                          node))
-                    (isl:schedule-get-root (sketch-schedule sketch)))))
-            ;; Upcast all bands
-            (loop for bands = (get-bands sketch)
-                  for band = (car bands)
-                  for band-depth = (and band (schedule-node-band-get-depth band))
-                  while band do
-                    (let ((opt (make-instance 'Packing :amount (loop repeat band-depth collect 4)))) ;; [TODO] Tune this parameter!
-                      (when (opt-applicable-p opt band item config)
-                        (setf sketch (sketch-next-generation sketch opt 0 band item config)))))
-            (setf sketches (remove sketch-first sketches))
-            (push sketch sketches))))
-  ;; - PARALLEL+LOCAL Conflicts こっちだけ直せばOK
-  ;; - LOCAL: Size=1が消えるからPaddingできない
-  ;; --------------------------------------------------------------------------
-  ;; 3. Some minor optimizations:
-  ;; - Unroll:     Remove away small loops by unrolling with loop size.
-  ;; - Coalescing: Optimize the memory access pattern by transforming global.
+    ;; SIMD/UPCAST
+    (loop for sketch in sketches
+          for sketch-first = sketch
+          for bands = (sketch-get-bands sketch)
+          for innermost-depth = (reduce #'max (map 'list #'isl:schedule-node-get-schedule-depth bands)) do
+            ;; Exploration space is restricted to depth < innsermost-depth ?
+            (flet ((get-bands (sketch)
+                     (map-schedule-node-children
+                      #'(lambda (type node mark)
+                          (when (and
+                                 (eql type :schedule-node-band)
+                                 (or (null mark) (equalp (directive-type mark) "LOCAL") (equalp (directive-type mark) "PREFETCH_INNER"))
+                                 ;; (>= (isl:schedule-node-get-schedule-depth node) innermost-depth)
+                                 )
+                            node))
+                      (isl:schedule-get-root (sketch-schedule sketch)))))
+              ;; Upcast all bands
+              (loop for bands = (get-bands sketch)
+                    for band = (car bands)
+                    for band-depth = (and band (schedule-node-band-get-depth band))
+                    while band do
+                      (let ((opt (make-instance 'Packing :amount (loop repeat band-depth collect 4)))) ;; [TODO] Tune this parameter!
+                        (when (opt-applicable-p opt band item config)
+                          (setf sketch (sketch-next-generation sketch opt 0 band item config)))))
+              (setf sketches (remove sketch-first sketches))
+              (push sketch sketches))))
   ;; - Collapse:   (CPU Only) Merge PARALLEL+TILE into a single band.
-  ;; - Shared Memory Transfer:
-  ;; - etc ... (User defined via with-manual-scheduling)
-
   ;; --------------------------------------------------------------------------
   ;; (TODO) Sketch Generation is applicable to TPU/NPU in the future.
   ;; - Add custrom constraints that are specified by define-auto-scheduler.

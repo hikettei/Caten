@@ -109,6 +109,10 @@
                     (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
                          (node-writes bp) (relay-writes (read-type-relay bp)) (relay-write-iters (read-type-relay bp))))
                    (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
+      (:BARRIER (error "thread barrier is not supported on clang"))
+      (:DEFINE-SHARED-MEMORY
+       (format stream "~astatic ~a ~(~a~)[~(~a~)] __attribute__((aligned(64)));~%" (indent)
+               (->cdtype (getattr bp :dtype)) (car (node-writes bp)) (getattr bp :size)))
       (:DEFINE-GLOBAL))))
 
 (defun header ()
