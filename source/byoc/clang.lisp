@@ -161,6 +161,23 @@ Compiled with this command: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
+(defun disassemble-foreign-code (source &key (compiler "gcc") (lang "c") (compiler-flags))
+  (declare (type string source compiler))
+  (when (= 1 (ctx:getenv :OMP)) (push "-fopenmp" compiler-flags))
+  (let* ((cmd (append (list compiler "-x" lang) compiler-flags (list "-" "-S" "-o" "-")))
+	 (process-info (uiop:launch-program (print cmd) :input :stream :error-output :stream :output :stream))
+	 (input (uiop:process-info-input process-info))
+	 (error-output (uiop:process-info-error-output process-info)))
+    (unwind-protect (princ source input) (close input))
+    (unless (zerop (uiop:wait-process process-info))
+      (error "Caten[Clang]: Failed to compile a shared library:~%~a~%
+
+Compiled with this command: ~a"
+	     (alexandria:read-stream-content-into-string error-output)
+	     (with-output-to-string (out)
+	       (dolist (c cmd) (princ c out) (princ " " out)))))
+    (alexandria:read-stream-content-into-string (uiop:process-info-output process-info))))
+
 (defmacro with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked (form)
   #+(and :darwin :x86-64) `(float-features:with-float-traps-masked (:invalid) ,form)
   #-(and :darwin :x86-64) `(progn ,form))
