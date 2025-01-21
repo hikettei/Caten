@@ -204,5 +204,9 @@
            ,(when (null decl-p)
               `(setf ,(if write-index `(aref ,id ,write-index) id) ,(render-expr 'LispStyle-Renderer (getattr bp :EXPR) :index-space (getattr bp :iterations))))
            ,(recursive-render-bp (cdr rest-blueprints)))))
+      (:BARRIER (error "thread barrier is not supported on the native backend."))
+      (:DEFINE-SHARED-MEMORY
+       `(let ((,(car (node-writes bp)) (make-array `(,(getattr bp :size)) :element-type ,(dtype->lisp (getattr bp :dtype)))))
+          ,(recursive-render-bp (cdr rest-blueprints))))
       (:DEFINE-GLOBAL
        (recursive-render-bp (cdr rest-blueprints))))))
