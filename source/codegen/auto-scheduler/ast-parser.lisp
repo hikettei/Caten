@@ -294,6 +294,39 @@ for (int i=alu_2; i<alu_0; i+=1)
      (make-for (astfor-idx astfor) packed-upfrom packed-to packed-by unrolled-body)
      (make-for (astfor-idx astfor) reminder-upfrom reminder-to reminder-by reminder-body))))
 ;; ~~ Shared Memory Transfer Optimization ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun ast-rewrite-astfor-idx (ctx ast from-idx to-idx &aux (to-idx-s (ctx-intern ctx to-idx)) (from-idx-s (ctx-intern ctx from-idx)))
+  (labels ((rewrite-expr (expr)
+             (let ((cpexpr (copy-expr expr)))
+               (setf (graph-nodes (expr-graph cpexpr))
+                     (loop for node in (graph-nodes (expr-graph cpexpr))
+                           if (and (eql (node-type node) :Load) (eql from-idx-s (getattr node :value)))
+                             collect
+                             (let ((n (copy-node node)))
+                               (setf (getattr n :value) to-idx-s)
+                               n)
+                           else
+                             collect node))
+               cpexpr))    
+           (handler (ast)
+             (etypecase ast
+               (User
+                (let ((cp (copy-user ast)))
+                  (setf (user-args cp) (map 'list #'rewrite-expr (user-args ast)))
+                  cp))
+               (AstBlock (make-block (map 'list #'handler (astblock-body ast))))
+               (AstFor
+                (let ((copy-astfor (copy-astfor ast)))
+                  (setf (astfor-idx copy-astfor) (if (equalp from-idx (astfor-idx ast)) to-idx (astfor-idx ast))
+                        (astfor-from copy-astfor) (rewrite-expr (astfor-from ast))
+                        (astfor-to copy-astfor) (rewrite-expr (astfor-to ast))
+                        (astfor-body copy-astfor) (handler (astfor-body copy-astfor)))
+                  copy-astfor))
+               (AstExpr ast)
+               (AstIf
+                (make-if (astif-condition ast) (handler (astif-then-node ast)) (handler (astif-else-node ast))))
+               (null ast))))
+    (handler ast)))
+
 (defun ast-make-prefetch-barrier (ctx data-reuse prefetch-inner transfer narefs)
   "
 for (int _gid0=0; _gid0<512; _gid0+=128) {
@@ -349,12 +382,17 @@ Constraints:
              (loop for aref in narefs
                    for tfexpr in transfer
                    for tfbody = (make-block (list tfexpr))
+                   for ids = nil
                    collect
                    (progn
                      (loop for band in (append (list prefetch-inner) (reverse data-reuse))
                            for stride in (iteration-space-strides (getattr aref :space))
                            unless (expr-equal-to stride 0) do
-                             (setf tfbody (newband band tfbody)))                             
+                             (push (astfor-idx band) ids)
+                             (setf tfbody (newband band tfbody)))
+                     (loop for idx in ids
+                           for new = (format nil "~a_1" idx)
+                           do (setf tfbody (ast-rewrite-astfor-idx ctx tfbody idx new)))
                      tfbody)))))
       (make-block
        (butnil
@@ -399,7 +437,7 @@ Constraints:
            (make-node :JIT :EXPR (list (ctx-shared-mem-id ctx (getattr aref :storage-id))) (list (getattr aref :storage-id))
                       :EXPR (make-expr :graph (make-graph aref) :out aref)
                       :_type_relay type-relay
-                      :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (astfor-idx x)) :int64)) astfor-list))
+                      :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (format nil "~a_1"(astfor-idx x))) :int64)) astfor-list))
            nil))))
 
 (defun aref->shared-memory-decl (aref)
