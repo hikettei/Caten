@@ -402,12 +402,14 @@ Constraints:
                       :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (astfor-idx x)) :int64)) astfor-list))
            nil))))
 
-(defun aref->shared-memory-decl (ctx aref rank size)
+(defun aref->shared-memory-decl (aref)
   (declare (type node aref))
   (assert (eql (node-type aref) :Aref))
-  (make-node :Render :DEFINE-SHARED-MEMORY (list (ctx-intern ctx (getattr aref :storage-id))) nil
-             :dtype (caten/runtime:buffer-dtype (getattr aref :buffer))
-             :size (reduce #'* (loop repeat rank collect size))))
+  (make-astexpr
+   (make-node :Render :DEFINE-SHARED-MEMORY (list (getattr aref :storage-id)) nil
+              :dtype (caten/runtime:buffer-dtype (getattr aref :buffer))
+              :size (reduce #'* (caten/runtime:buffer-shape (getattr aref :buffer))))
+   nil))
 
 (defun aref->tiled-aref (ctx aref blocksize)
   (declare (type node aref))
@@ -537,12 +539,16 @@ Constraints:
                                 (ls (append data-reuse (list (astfor-body ast))))
                                 (transfer-body (ast-make-transfer-body ctx loads narefs ls))
                                 (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) transfer-body narefs))
-                                (rewriters (map 'list #'make-aref-rewriter loads narefs)))
+                                (rewriters (map 'list #'make-aref-rewriter loads narefs))
+                                (smemdecls (map 'list #'aref->shared-memory-decl narefs)))
                            ;; Note:
                            ;; 1. make shared memory strided array
                            ;; 2. rewrite-shared-access rewriting rule (replace aref)
                            ;; 3. todo: tweak the cache size, val_6/val_4 only requires BLOCKSIZE * BLOCKSIZE region
-                           (setf (astfor-body new-astfor) (make-block (list guard (ast-rewrite-expr rewriters blueprints (handler (astfor-body ast) vectorized-idx data-reuse)))))
+                           (setf (astfor-body new-astfor)
+                                 (make-block
+                                  (append smemdecls (list guard)
+                                          (list (ast-rewrite-expr rewriters blueprints (handler (astfor-body ast) vectorized-idx data-reuse))))))
                            
                            new-astfor))
                         ((equalp (directive-type mark) "PREFETCH_INNER")
@@ -614,7 +620,7 @@ Constraints:
   (make-node :Render :ENDIF nil nil :idx idx))
 
 (defun create-rendering-graph-nodes (ctx lisp-ast items &aux (space))
-  (let ((new-graph) (maximum-rank (ast-get-rank lisp-ast)))
+  (let ((new-graph) (maximum-rank (ast-get-rank lisp-ast)) (sharedbufs))
     (labels ((find-user (node-id args)
                (let ((node (find (princ-to-string node-id) items
                                  :key (alexandria:compose #'princ-to-string #'node-id)
@@ -662,11 +668,13 @@ Constraints:
                   ;; (assert (eql (node-type expr) :EXPR) () "ASTEXPR can only have an EXPR.")
                   (when defglobal-p
                     (push (string-downcase (princ-to-string (car (node-writes expr)))) space))
-                  (push expr new-graph))
+                  (if (eql (node-type expr) :DEFINE-SHARED-MEMORY)
+                      (push expr sharedbufs)
+                      (push expr new-graph)))
 		 (_
 		  (error "create-rendering-graph: ~a should not occur here!" object)))))
       (lower lisp-ast))
-    (nreverse new-graph)))
+    (append sharedbufs (nreverse new-graph))))
 
 (defun ast-get-rank (ast &aux (rank 0))
   (labels ((handler (ast)
