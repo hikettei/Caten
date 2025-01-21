@@ -259,6 +259,7 @@
                    (if (typep (getattr bp :meta :allow-undefined t) 'ExprMeta)
                        (format nil " /* ~a */" (exprmeta-comment (getattr bp :meta)))
                        "")))))
+      (:BARRIER (format stream "~athreadgroup_barrier(mem_flags::mem_threadgroup);~%" (indent)))
       (:DEFINE-GLOBAL))))
 
 (defun header ()

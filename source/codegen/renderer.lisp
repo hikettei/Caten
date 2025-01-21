@@ -33,7 +33,7 @@
 (defgeneric %render-const (renderer obj) (:documentation ""))
 (defgeneric %render-kernel (renderer schedule-item))
 (defgeneric %compile-kernel (renderer schedule-items dir))
-;; [TODO] Move to ./caten/aasm/attrs.lisp
+;; [TODO] Move to ./caten/aasm/attrs.lisp, or create renderops.lisp
 ;; Blueprint is a list consisted of :Render and :EXPR
 (defnode (:Render :FOR) ()
          "
@@ -93,6 +93,8 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
                  (pointer-p :type boolean)
                  (type :type (member :input :output :shape))
                  (nrank :type integer)))
+
+(defnode (:Render :BARRIER) () "Inserts syncthreads(); in CUDA.")
 
 (defun make-define-global (id dtype pointer-p type nrank)
   (declare (type symbol id)
