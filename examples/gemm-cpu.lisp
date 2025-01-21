@@ -16,6 +16,7 @@
  (ctx:getenv :BACKEND) "CLANG"
  (ctx:getenv :JIT_DEBUG) 4
  (ctx:getenv :OPTIMIZE) 2
+ (ctx:getenv :DISASSEMBLE) 1
  (ctx:getenv :PROFILE) 1) ;; This will display GFLOPS on your repl.
 
 ;; You may also want to modify these parameters to maximize the performance.
