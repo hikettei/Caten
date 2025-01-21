@@ -397,6 +397,33 @@ Constraints:
                        :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (astfor-idx x)) :int64)) astfor-list))
             nil)))))
 
+(defun aref->shared-memory-decl (ctx aref rank size)
+  (declare (type node aref))
+  (assert (eql (node-type aref) :Aref))
+  (make-node :Render :DEFINE-SHARED-MEMORY (list (ctx-intern ctx (getattr aref :storage-id))) nil
+             :dtype (caten/runtime:buffer-dtype (getattr aref :buffer))
+             :size (reduce #'* (loop repeat rank collect size))))
+
+(defun aref->tiled-aref (ctx aref blocksize)
+  (declare (type node aref))
+  (assert (eql (node-type aref) :Aref))
+  (let ((shape) (stride) (last-stride 1))
+    (loop for s in (iteration-space-strides (getattr aref :space))
+          if (expr-equal-to s 0)
+            do (push 1 shape) (push 0 stride)
+          else
+            do (push blocksize shape) (push last-stride stride) (setf last-stride (* blocksize last-stride)))
+    (print shape)
+    (print stride)
+    (flet ((asc (x) (expr-const x :int64)))
+      (make-node :JIT :Aref (node-writes aref) (node-reads aref)
+                 :storage-id (ctx-shared-mem-id ctx (getattr aref :storage-id))
+                 :buffer (caten/runtime:make-buffer
+                          shape stride (caten/runtime:buffer-dtype (getattr aref :buffer))
+                          (loop repeat (length shape) collect nil)
+                          :device 'caten/codegen/shape-inference::RelayBuffer)
+                 :space (make-iteration-space :shape (map 'list #'asc shape) :strides (map 'list #'asc stride) :views (loop repeat (length shape) collect (list 0 1 1)))))))
+
 (defun ast-rewrite-directive (ctx ast blueprints)
   "Rewrites the PACKED_INNER and PACKED_OUTER directives:
 - PACKED_INNER is a trigger to generate the unrolled part and the reminder part.
@@ -468,11 +495,17 @@ Constraints:
                                  ()
                                  "Nothing can be inserted between PREFETCH_INNER and PREFETCH_OUTER, and it should be one-dimensional!")
                          (let* ((loads (ast-gather-buffer-loads (astfor-body ast) blueprints)) ;; List of aref used in the child.
+                                (blocksize (directive-amount mark))
+                                (blocksize (if (listp blocksize) (car blocksize) blocksize))
+                                (narefs (map 'list #'(lambda (x) (aref->tiled-aref ctx x blocksize)) loads))
                                 (transfer-body (ast-make-transfer-body ctx loads (append data-reuse (list (astfor-body ast)))))
                                 (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) transfer-body)))
+                           ;; Note:
+                           ;; 1. make shared memory strided array
+                           ;; 2. rewrite-shared-access rewriting rule (replace aref)
+                           ;; 3. todo: tweak the cache size, val_6/val_4 only requires BLOCKSIZE * BLOCKSIZE region
                            (print "++++++")
-                           (print (length loads))
-                           (print loads)
+                           (print narefs)
                            (print guard)
                            (print data-reuse)
                            (setf (astfor-body new-astfor) (make-block (list guard (handler (astfor-body ast) vectorized-idx data-reuse))))
