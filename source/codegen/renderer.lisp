@@ -244,7 +244,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
         (setf (renderer-scope-valid-code-p renderer) nil)))))
 
 (defmethod %render-node :around ((renderer Default-Renderer) id node)
-  (push node (renderer-renderered-nodes renderer))
+  (push node (renderer-rendered-nodes renderer))
   (call-next-method))
 
 (defmethod %render-const ((renderer Default-Renderer) obj)
