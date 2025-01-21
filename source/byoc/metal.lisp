@@ -269,6 +269,7 @@
 #define _negative_infinity -INFINITY
 #define _nan NAN
 using namespace metal;
+#define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
 "))
 
 (defclass Metal-Program ()
