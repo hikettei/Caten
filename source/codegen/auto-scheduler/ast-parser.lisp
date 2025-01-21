@@ -28,6 +28,9 @@ To generate a simplified kernel, caten/codegen assumes the following constraints
     (or (gethash key (context-dynamic-shape-table ctx))
         (intern key))))
 
+(defmethod ctx-shared-mem-id ((ctx Context) obj)
+  (ctx-intern ctx (format nil "_~a_s" obj)))
+
 (declaim (ftype (function (context cffi:foreign-pointer list) t) parse-isl-ast))
 (defun parse-isl-ast (ctx ast directives)
   (declare (type cffi:foreign-pointer ast))
@@ -290,7 +293,7 @@ for (int i=alu_2; i<alu_0; i+=1)
     (values
      (make-for (astfor-idx astfor) packed-upfrom packed-to packed-by unrolled-body)
      (make-for (astfor-idx astfor) reminder-upfrom reminder-to reminder-by reminder-body))))
-
+;; ~~ Shared Memory Transfer Optimization ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-make-prefetch-barrier (ctx data-reuse prefetch-inner transfer)
   "
 for (int _gid0=0; _gid0<512; _gid0+=128) {
@@ -351,7 +354,7 @@ Constraints:
             transfer)
         (if insert-barrier-p (make-astexpr (make-node :Render :BARRIER nil nil) nil) nil))))))
 
-(defun astfor-gather-buffer-loads (ast blueprints)
+(defun ast-gather-buffer-loads (ast blueprints)
   (let ((loads))
     (labels ((find-from-user (id)
                (find (princ-to-string id) blueprints :key (alexandria:compose #'princ-to-string #'node-id) :test #'equalp))
@@ -371,6 +374,28 @@ Constraints:
                  (null))))
       (handler ast)
       (remove-duplicates loads :key #'(lambda (x) (getattr x :storage-id))))))
+
+(defun ast-make-prefetched-indexing (ctx astfor-list)
+  "New Region is aligned by idx = idx1 + idx2 + idx3 + ..."
+  (reduce #'expr-add (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (astfor-idx x)) :int64)) astfor-list)))
+
+(defun ast-make-transfer-body (ctx loads astfor-list)
+  (declare (type list loads))
+  (assert (every #'(lambda (x) (eql (node-type x) :Aref)) loads))
+  (make-block
+   (loop for aref in loads
+         for ones = (loop repeat (length astfor-list) collect (expr-const 1 :int64))
+         for views = (loop repeat (length astfor-list) collect (list 0 1 1))
+         collect
+         (let ((type-relay (make-inferred-type (list (getattr aref :buffer)) (list (getattr aref :buffer)))))
+           (setf (relay-write-iters type-relay)
+                 (list (make-iteration-space :shape ones :strides ones :views views)))
+           (make-astexpr
+            (make-node :JIT :EXPR (list (ctx-shared-mem-id ctx (getattr aref :storage-id))) (list (getattr aref :storage-id))
+                       :EXPR (make-expr :graph (make-graph aref) :out aref)
+                       :_type_relay type-relay
+                       :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (astfor-idx x)) :int64)) astfor-list))
+            nil)))))
 
 (defun ast-rewrite-directive (ctx ast blueprints)
   "Rewrites the PACKED_INNER and PACKED_OUTER directives:
@@ -442,8 +467,9 @@ Constraints:
                          (assert (and (astfor-p (astfor-body ast)) (find "PREFETCH_INNER" (astfor-marks (astfor-body ast)) :key #'directive-type :test #'equalp))
                                  ()
                                  "Nothing can be inserted between PREFETCH_INNER and PREFETCH_OUTER, and it should be one-dimensional!")
-                         (let* ((loads (astfor-gather-buffer-loads (astfor-body ast) blueprints)) ;; List of aref used in the child.
-                                (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) (make-block nil))))
+                         (let* ((loads (ast-gather-buffer-loads (astfor-body ast) blueprints)) ;; List of aref used in the child.
+                                (transfer-body (ast-make-transfer-body ctx loads (append data-reuse (list (astfor-body ast)))))
+                                (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) transfer-body)))
                            (print "++++++")
                            (print (length loads))
                            (print loads)
