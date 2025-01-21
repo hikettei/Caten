@@ -206,7 +206,7 @@
            ,(recursive-render-bp (cdr rest-blueprints)))))
       (:BARRIER (error "thread barrier is not supported on the native backend."))
       (:DEFINE-SHARED-MEMORY
-       `(let ((,(car (node-writes bp)) (make-array `(,(getattr bp :size)) :element-type ,(dtype->lisp (getattr bp :dtype)))))
+       `(let ((,(car (node-writes bp)) (make-array (list ,(getattr bp :size)) :element-type ',(dtype->lisp (getattr bp :dtype)))))
           ,(recursive-render-bp (cdr rest-blueprints))))
       (:DEFINE-GLOBAL
        (recursive-render-bp (cdr rest-blueprints))))))
