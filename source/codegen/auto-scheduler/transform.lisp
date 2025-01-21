@@ -11,7 +11,7 @@
   ;; Transforms
   (:export
    #:apply-tile #:apply-pack #:%apply-tile #:apply-multi-tile
-   #:apply-parallel #:apply-global #:apply-coalesce #:apply-and-insert-prefetch))
+   #:apply-parallel #:apply-global #:apply-coalesce #:apply-and-insert-prefetch #:apply-intra-tile-fusion))
 
 (in-package :caten/codegen/transform)
 ;; ~~ Legality Computations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -233,7 +233,22 @@ Do not feed the tiled band otherwise the generated kernel would be messed! This 
   (declare (type isl::schedule-node-band band) (type (or list fixnum) blocksize))
   (let ((ls (broadcast-tile-size band blocksize)))
     (%apply-tile band ls (directive "PREFETCH_OUTER" ls NIL) (directive "PREFETCH_INNER" ls NIL))))
+
+(defun apply-intra-tile-fusion (band depth)
+  (declare (type isl::schedule-node-band band) (type fixnum depth))
+  (let ((tgt-bands (map-schedule-node-children
+                    #'(lambda (type node mark)
+                        (declare (ignore mark))
+                        (when (and (eql type :schedule-node-band) (= (schedule-node-get-schedule-depth node) depth))
+                          node))
+                    (schedule-get-root (schedule-node-get-schedule band)))))
+    (when (>= (length tgt-bands) 2)
+      (let ((sequence (schedule-node-get-shared-ancestor (nth 0 tgt-bands) (nth 1 tgt-bands))))
+        (when (eql (schedule-node-get-type sequence) :schedule-node-sequence)
+          ;; [TODO] Finish this
+          )))))
 ;; ~~ Legality Based Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO] Maybe removed.
 (defun apply-coalesce (band1)
   "Merges the band with the undernearth band if possible.
 The basic idea is that:

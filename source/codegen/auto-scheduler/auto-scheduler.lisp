@@ -336,7 +336,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
             ;; - 2. Inserts the second tile(c2) @DIRECTIVE(BARRIER)
             ;; For GPU, this is the equivalent to doing warpReduce. (For example, SumReduce/MaxReduce in Softmax is further utilizes the thread level parallelism)
             ;; For CPU, this is the equivalent to the intra tile fusion and utilizes simd register by transferring arrays into aligned memory.
-            
+            (apply-intra-tile-fusion (sketch-get-band-at-depth sketch innermost t) innermost)
             ))
   ;; [TODO]
   

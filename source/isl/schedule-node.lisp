@@ -185,3 +185,8 @@
   (let ((member (isl::%isl-schedule-node-band-n-member (schedule-node-handle schedule-node))))
     (loop for i upfrom 0 below member
           collect (eql :bool-true (%isl-schedule-node-band-member-get-coincident (schedule-node-handle schedule-node) i)))))
+
+(define-isl-function schedule-node-get-shared-ancestor %isl-schedule-node-get-shared-ancestor
+  (:give schedule-node)
+  (:keep schedule-node)
+  (:keep schedule-node))

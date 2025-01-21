@@ -374,6 +374,7 @@
    #:isl-printer-to-str
    ;; from schedule-node.lisp
    #:schedule-get-root
+   #:schedule-node-get-shared-ancestor
    #:schedule-node-descendant-bottom-up
    #:schedule-node-parent
    #:schedule-node-next-sibling
