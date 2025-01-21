@@ -420,12 +420,11 @@ Constraints:
                          (assert (and (astfor-p (astfor-body ast)) (find "PREFETCH_INNER" (astfor-marks (astfor-body ast)) :key #'directive-type :test #'equalp))
                                  ()
                                  "Nothing can be inserted between PREFETCH_INNER and PREFETCH_OUTER, and it should be one-dimensional!")
-                         (let* (
-                                (guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) (make-block nil))))
+                         (let* ((guard (ast-make-prefetch-barrier ctx data-reuse (astfor-body ast) (make-block nil))))
                            (print guard)
                            (print data-reuse)
-                           (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx data-reuse))
-                           (make-block (list guard new-astfor))))
+                           (setf (astfor-body new-astfor) (make-block (list guard (handler (astfor-body ast) vectorized-idx data-reuse))))
+                           new-astfor))
                         ((equalp (directive-type mark) "PREFETCH_INNER")
                          ;; Note:
                          ;; [TODO]
