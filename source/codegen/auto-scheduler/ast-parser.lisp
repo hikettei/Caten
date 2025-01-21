@@ -386,7 +386,7 @@ Constraints:
                    collect
                    (progn
                      (loop for band in (append (list prefetch-inner) (reverse data-reuse))
-                           for stride in (iteration-space-strides (getattr aref :space))
+                           for stride in (reverse (iteration-space-strides (getattr aref :space)))
                            unless (expr-equal-to stride 0) do
                              (push (astfor-idx band) ids)
                              (setf tfbody (newband band tfbody)))
@@ -453,7 +453,7 @@ Constraints:
   (declare (type node aref))
   (assert (eql (node-type aref) :Aref))
   (let ((shape) (stride) (last-stride 1))
-    (loop for s in (iteration-space-strides (getattr aref :space))
+    (loop for s in (reverse (iteration-space-strides (getattr aref :space)))
           if (expr-equal-to s 0)
             do (push 1 shape) (push 0 stride)
           else
