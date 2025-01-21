@@ -11,7 +11,7 @@
   ;; Transforms
   (:export
    #:apply-tile #:apply-unroll #:apply-pack #:%apply-tile #:apply-multi-tile
-   #:apply-parallel #:apply-global #:apply-coalesce))
+   #:apply-parallel #:apply-global #:apply-coalesce #:apply-and-insert-prefetch))
 
 (in-package :caten/codegen/transform)
 ;; ~~ Legality Computations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -234,6 +234,11 @@ Do not feed the tiled band otherwise the generated kernel would be messed! This 
   ;; (assert (check-legality-parallel band (poly-dependencies poly)))
   (let ((ls (broadcast-tile-size band ls)))
     (%apply-tile band ls (directive "GLOBAL" ls NIL) (directive "LOCAL" ls NIL))))
+
+(defun apply-and-insert-prefetch (band blocksize)
+  (declare (type isl::schedule-node-band band) (type (or list fixnum) blocksize))
+  (let ((ls (broadcast-tile-size band blocksize)))
+    (%apply-tile band ls (directive "PREFETCH_OUTER" ls NIL) (directive "PREFETCH_INNER" ls NIL))))
 ;; ~~ Legality Based Transformations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-coalesce (band1)
   "Merges the band with the undernearth band if possible.
@@ -289,10 +294,3 @@ We assume band1 and band2 are contiguous and mergeable dimension by the shape tr
     ;;       for (int l=0;l<min(16, n - k - 1);l++) @LOCAL(Y)
     ;;         S(i+j, k+l)
     band1))
-
-(defun apply-cache-blocking ()
-  "Applies Shared Memory Cache-Blocking Optimization to the given schedule-node-band (expecting the code is generated for the gpu)
-TODO: How to insert the barrier?
-"
-  ;; TODO: This is just a tiling
-  )

@@ -81,6 +81,10 @@
           (split-at (or (position-if #'null coincident) (length coincident))))
      (<= (length (opt-amount opt)) split-at))))
 
+(defclass Prefetch (Opt) nil (:documentation "Inserts a trigger for transfering the data from global memory to (aligned) shared memory."))
+(defmethod apply-opt ((opt Prefetch) schedule-node item config) (apply-and-insert-prefetch schedule-node (opt-amount opt)))
+(defmethod opt-applicable-p ((opt Prefetch) schedule-node item config) t)
+;; [TODO] Remove Unroll
 (defclass Unroll (Opt) nil (:documentation "Unroll the loop with `amount`
 ```
 for (int i=0; i<10; i++) {
@@ -237,6 +241,16 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
          node))
    (isl:schedule-get-root (sketch-schedule sketch))))
 
+(defmethod sketch-get-band-depth-list ((sketch sketch))
+  (map 'list #'isl:schedule-node-get-schedule-depth (sketch-get-bands sketch)))
+
+(defmethod sketch-get-band-at-depth ((sketch sketch) depth)
+  (map-schedule-node-children
+   #'(lambda (type node mark)
+       (when (and (null mark) (eql type :schedule-node-band) (= (isl:schedule-node-get-schedule-depth node) depth))
+         (return-from sketch-get-band-at-depth node)))
+   (isl:schedule-get-root (sketch-schedule sketch))))
+
 (defmethod sketch-get-band ((sketch sketch) idx)
   (nth idx (sketch-get-bands sketch)))
 
@@ -248,7 +262,7 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
     (setf (sketch-opt-history new-sketch) (append (list (cons idx opt)) (sketch-opt-history sketch)))
     new-sketch))
 
-(defun generate-sketch (item config &aux (sketches))
+(defun generate-sketch (item config &aux (sketches) (blocksize 128))
   "Returns a new schedule which is called a sketch, a template kernel that is further optimized by the auto-scheduler.
 See also : `docs/assets/Caten_Sketch_Generation.jpg`
 (values sketch-schedule (list params-to-search))"
@@ -268,6 +282,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; - PARALLEL (if N_GLOBAL_DIMS=1)    |      nothing
   ;; - GLOBAL   (if N_GLOBAL_DIMS>1)    |   Local_Size (which is a tile dim)
   ;; --------------------------------------------------------------------------
+  ;; [TODO] Use GLOBAL COALESCE
   (let ((n-global-dims (auto-scheduler-n-global-loops config)))
     (loop for sketch in sketches
           for target-band = (nth 0 (sketch-get-bands sketch))
@@ -294,12 +309,10 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                          ;; Exit the generation as soon as the best one is found.
                          (return-from global)))))))
   ;; --------------------------------------------------------------------------
-  ;; 2. Tile the innermost band to apply simd.
-  ;;      Opt       |    Applicable to       | Target to optimize
-  ;; - Loop Tiling  |       all bands        |    tiling size
-  ;; - Loop Packing | filters with stride=1  |  nothing(constant)
-
-  (when nil
+  ;; 2. Tile all bands with BLOCKSIZE to find the memory locality.
+  ;; - Inserts Shared Memory Transfer Points.
+  ;; - Innermost reductions have a chance to be rewritten as warpReduce.
+  ;; (For 1d parallelism) Tiling the outermost band.
   (case (auto-scheduler-n-global-loops config)
     ((0 1)
      ;; TODO Only coincident are tileable
@@ -310,16 +323,40 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
            when target-band do
              (loop named tile
                    for idx in (map 'list #'1+ (nreverse (alexandria:iota (min band-depth 3))))
-                   for tile-size = (loop repeat idx collect 64) ;; [TODO] Make it symbolic and searchable.
+                   for tile-size = (loop repeat idx collect blocksize)
                    for opt = (make-instance 'TileBand :amount tile-size :only-coincident has-coincidence) do
                      (when (and tile-size (opt-applicable-p opt target-band item config))
                        ;; Branching the sketch
                        (setf sketches (remove sketch sketches))
                        (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
-                       (return-from tile)))))))
+                       (return-from tile))))))
+  ;; Also the loop is tiled in the innermost depth.
+  (loop for sketch in sketches
+        for innermost = (reduce #'max (sketch-get-band-depth-list sketch)) do
+          (loop for tgt-band = (sketch-get-band-at-depth sketch innermost)
+                while tgt-band
+                for tile-size = (list blocksize) ;; TODO
+                for opt = (make-instance 'Prefetch :amount tile-size) do
+                  (when (and tile-size (opt-applicable-p opt tgt-band item config))
+                    (setf sketches (remove sketch sketches)
+                          sketch (sketch-next-generation sketch opt 0 tgt-band item config))
+                    (push sketch sketches))))
+  ;; [TODO]
+  ;; (Optimization for Softmax/LayerNorm)
+  ;; Searching for the tiled schedule-node-band in schedule-node-sequence, assigning:
+  ;; The first tile is @DIRECTIVE(LOCAL)
+  ;; The second one is @DIRECTIVE(BARRIER)
+  ;; The third one is ...
   
-  ;; SIMD/UPCAST
+  ;; All of those optimization covers 90% of required optimization decision tree for CPU/GPU.
+  
+  ;; --------------------------------------------------------------------------
+  ;; 3. Further tile the tiled ALU ops to use SIMD
+  ;;      Opt       |    Applicable to       | Target to optimize
+  ;; - Loop Tiling  |       all bands        |    tiling size
+  ;; - Loop Packing | filters with stride=1  |  nothing(constant)
   (when nil
+  ;; SIMD/UPCAST
   (loop for sketch in sketches
         for sketch-first = sketch
         for bands = (sketch-get-bands sketch)
