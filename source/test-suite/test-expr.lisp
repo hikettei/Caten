@@ -34,3 +34,14 @@
                (ops-computed (compute-gflops flops 1.0 `(A 512 B 256 C 1024))))
           (ok (gflops-measurer-succeed-p flops))
           (ok (= ops-computed (/ ops 1e9))))))))
+
+(defun rexpr (expr)
+  (let ((renderer (make-instance 'caten/codegen/renderer:default-renderer
+                                 :graph (expr-graph expr))))
+    (caten/codegen/renderer:render-node renderer (car (node-writes (expr-out expr))))))
+
+(deftest test-expr-simplify
+  (testing  "(-a)+(a+c) ==> c"
+    (let ((op (expr-add (expr-neg (expr-const 'a :int32)) (expr-add (expr-const 'a :int32) (expr-const 'c :int32)))))
+      (ok (= 2 (length (graph-nodes (expr-graph op)))))
+      (ok (equalp "c" (rexpr op))))))

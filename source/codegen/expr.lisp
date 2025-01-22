@@ -171,7 +171,8 @@ Only supports the scalar computation because it is intended to identify the same
 
 (defmethod simplify-expr ((expr Expr))
   ;; [TODO] Use FastGraph
-  (optimize-aasm (expr-graph expr))
+  ;; Note(hikkei) set heavy-opt-threshold to 0 to always enable full symbolic simplification.
+  (optimize-aasm (expr-graph expr));; :heavy-opt-threshold 0)
   (uiop:symbol-call :caten/codegen/shape-inference :expr-infer-type expr)
   expr)
 
