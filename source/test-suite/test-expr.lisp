@@ -44,4 +44,8 @@
   (testing  "(-a)+(a+c) ==> c"
     (let ((op (expr-add (expr-neg (expr-const 'a :int32)) (expr-add (expr-const 'a :int32) (expr-const 'c :int32)))))
       (ok (= 2 (length (graph-nodes (expr-graph op)))))
-      (ok (equalp "c" (rexpr op))))))
+      (ok (equalp "c" (rexpr op)))))
+  (testing  "(-a)+(a+c+z) ==> c+z"
+    (let ((op (expr-add (expr-neg (expr-const 'a :int32)) (expr-add (expr-add (expr-const 'a :int32) (expr-const 'c :int32)) (expr-const 1 :int32)))))
+      (ok (= 5 (length (graph-nodes (expr-graph op)))))
+      (ok (equalp "(c+1)" (rexpr op))))))
