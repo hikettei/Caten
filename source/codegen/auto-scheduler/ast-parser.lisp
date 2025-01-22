@@ -431,9 +431,17 @@ Constraints:
   (loop for aref in loads
         for target in narefs
         collect
-        (let ((type-relay (make-inferred-type (list (getattr aref :buffer)) (list (getattr target :buffer)))))
+        (let ((space (caten/codegen/shape-inference::copy-iteration-space (getattr aref :space)))
+              (type-relay (make-inferred-type (list (getattr aref :buffer)) (list (getattr target :buffer)))))
+          (setf (iteration-space-views space) (copy-list (iteration-space-views space)))
+          (loop for offset in (iteration-space-views space)
+                for nth upfrom 0
+                ;; [TODO] If the tile was nested for multiple times?
+                for idx = (expr-const (ctx-intern ctx (astfor-idx (astfor-tile-parent (nth nth astfor-list)))) :int64)
+                for upfrom = (car (nth nth (iteration-space-views space)))
+                do (setf (car (nth nth (iteration-space-views space))) (expr-add (expr-const upfrom :int64) idx)))
           (setf (relay-write-iters type-relay) (list (getattr target :space))
-                (relay-read-iters type-relay) (list (getattr aref :space)))
+                (relay-read-iters type-relay) (list space))
           (make-astexpr
            (make-node :JIT :EXPR (list (ctx-shared-mem-id ctx (getattr aref :storage-id))) (list (getattr aref :storage-id))
                       :EXPR (make-expr :graph (make-graph aref) :out aref)
