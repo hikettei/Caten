@@ -632,9 +632,14 @@ Constraints:
                      (let ((new-astfor (copy-astfor body)))
                        (setf (astfor-body new-astfor) (newband band (astfor-body new-astfor)))
                        new-astfor)
-                     (progn
-                       (setf (astfor-body band) body)
-                       band))))
+                     (if (typep body 'AstIf)
+                         (let ((new-astif (copy-astif body)))
+                           (assert (null (astif-else-node new-astif)) () "ElseForm is not supported.")
+                           (setf (astif-then-node new-astif) (newband band (astif-then-node new-astif)))
+                           new-astif)
+                         (progn
+                           (setf (astfor-body band) body)
+                           band)))))
         (dolist (r prefetch-loops)
           (setf final-ast (newband r final-ast)))
         final-ast))))
