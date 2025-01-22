@@ -517,7 +517,7 @@ Constraints:
     (handler ast)
     ast))
 
-(defun ast-rewrite-directive (ctx ast blueprints)
+(defun ast-rewrite-directive (ctx ast blueprints &aux (prefetch-loops))
   "Rewrites the PACKED_INNER and PACKED_OUTER directives:
 - PACKED_INNER is a trigger to generate the unrolled part and the reminder part.
 - PACKED_OUTER is completly unrolled and the astfor is removed."
@@ -603,12 +603,11 @@ Constraints:
                            ;; 1. make shared memory strided array
                            ;; 2. rewrite-shared-access rewriting rule (replace aref)
                            ;; 3. todo: tweak the cache size, val_6/val_4 only requires BLOCKSIZE * BLOCKSIZE region
-                           (setf (astfor-body new-astfor)
-                                 (make-block
-                                  (append smemdecls (list guard)
-                                          (list (ast-rewrite-expr rewriters blueprints (handler (astfor-body ast) vectorized-idx data-reuse))))))
-                           
-                           new-astfor))
+                           ;; Moved to the top of the iteration
+                           (push new-astfor prefetch-loops)
+                           (make-block
+                            (append smemdecls (list guard)
+                                    (list (ast-rewrite-expr rewriters blueprints (handler (astfor-body ast) vectorized-idx data-reuse)))))))
                         ((equalp (directive-type mark) "PREFETCH_INNER")
                          (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx data-reuse))
                          new-astfor)
@@ -623,7 +622,22 @@ Constraints:
                         (astif-else-node new-if) (handler (astif-else-node ast) vectorized-idx data-reuse))
                   new-if))
                (null))))
-    (handler ast nil nil)))
+    (let ((final-ast (handler ast nil nil)))
+      (labels ((newband (band body)
+                 ;; Sink the band undernarth of the outermost band.
+                 (if (and (typep body 'AstFor)
+                          (or
+                           (find "PARALLEL" (astfor-marks body) :test #'equalp :key #'directive-type)
+                           (find "GLOBAL" (astfor-marks body) :test #'equalp :key #'directive-type)))
+                     (let ((new-astfor (copy-astfor body)))
+                       (setf (astfor-body new-astfor) (newband band (astfor-body new-astfor)))
+                       new-astfor)
+                     (progn
+                       (setf (astfor-body band) body)
+                       band))))
+        (dolist (r prefetch-loops)
+          (setf final-ast (newband r final-ast)))
+        final-ast))))
 
 (defun ast-rewrite-grids (ast &aux (count 0) (idx2count (make-hash-table :test #'equal)) (idx2band (make-hash-table :test #'equal)))
   "Rewrites PARALLEL/GLOBAL/LOCAL directives."
