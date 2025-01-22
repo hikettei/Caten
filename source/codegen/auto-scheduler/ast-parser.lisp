@@ -428,6 +428,9 @@ Constraints:
 (defun ast-make-transfer-body (ctx loads narefs astfor-list)
   (declare (type list loads))
   (assert (every #'(lambda (x) (eql (node-type x) :Aref)) loads))
+  (print "+++++")
+  (assert (every #'astfor-tile-parent astfor-list))
+  (PRINT "A")
   (loop for aref in loads
         for target in narefs
         collect
@@ -438,10 +441,13 @@ Constraints:
                 for nth upfrom 0
                 ;; [TODO] If the tile was nested for multiple times?
                 for idx = (expr-const (ctx-intern ctx (astfor-idx (astfor-tile-parent (nth nth astfor-list)))) :int64)
-                for upfrom = (car (nth nth (iteration-space-views space)))
-                do (setf (car (nth nth (iteration-space-views space))) (expr-add (expr-const upfrom :int64) idx)))
+                for upfrom = (or (car (nth nth (iteration-space-views space))) 0)
+                for view = (or (nth nth (iteration-space-views space)) (list 0 1 1 t))
+                do (setf (nth nth (iteration-space-views space)) view
+                         (car (nth nth (iteration-space-views space))) (expr-add (expr-const upfrom :int64) idx)))
           (setf (relay-write-iters type-relay) (list (getattr target :space))
                 (relay-read-iters type-relay) (list space))
+          
           (make-astexpr
            (make-node :JIT :EXPR (list (ctx-shared-mem-id ctx (getattr aref :storage-id))) (list (getattr aref :storage-id))
                       :EXPR (make-expr :graph (make-graph aref) :out aref)
