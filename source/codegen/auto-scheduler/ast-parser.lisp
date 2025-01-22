@@ -373,7 +373,8 @@ Constraints:
                 (let ((new-astfor (copy-astfor parent-band)))
                   ;; [TODO] Remove extra bands in new-astfor?
                   ;; [TODO] Rewrite BY=1 (since this region is never vectorized.)
-                  (setf (astfor-body new-astfor) body)
+                  (setf (astfor-by new-astfor) (expr-const 1 :int32)
+                        (astfor-body new-astfor) body)
                   new-astfor)))))
     (let ((insert-barrier-p (some #'(lambda (x) (eql (identify-for x) :LOCAL)) data-reuse))
           (guard-triggers (loop for d in data-reuse if (eql (identify-for d) :TILE_INNER) collect d))
