@@ -717,7 +717,7 @@ Constraints:
 		 (_
 		  (error "create-rendering-graph: ~a should not occur here!" object)))))
       (lower lisp-ast))
-    (append sharedbufs (nreverse new-graph))))
+    (append (remove-duplicates sharedbufs :key #'node-writes :test #'equal) (nreverse new-graph))))
 
 (defun ast-get-rank (ast &aux (rank 0))
   (labels ((handler (ast)
