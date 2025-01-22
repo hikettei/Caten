@@ -22,7 +22,11 @@
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)
   (let ((args (loop for item in (getattr si :blueprint)
                     if (eql (node-type item) :DEFINE-GLOBAL)
-                      collect item)))
+                      collect item))
+        (private-vars
+          (loop for item in (getattr si :blueprint)
+                if (eql (node-type item) :DEFINE-SHARED-MEMORY)
+                  collect (car (node-writes item)))))
     (with-output-to-string (out)
       (let ((args
               (apply
@@ -47,7 +51,7 @@
         (format out "void ~(~a~)(~a) {~%" (getattr si :name) args)
         (let ((*indent* 2))
           (dolist (bp (getattr si :blueprint))
-            (render-bp out bp)))
+            (render-bp out bp private-vars)))
         (format out "}~%")))))
 ;; OpenMP requires the brackets to be removed in the for loop.
 (defun trim-brackets (str)
@@ -56,14 +60,18 @@
         (subseq str 1 (1- len))
         str)))
 
-(defun render-bp (stream bp)
+(defun render-bp (stream bp private-vars)
   (flet ((indent () (make-string *indent* :initial-element #\space)))
     (ecase (node-type bp)
       (:FOR
        (format stream "~a~afor (int ~(~a~)=~(~a~); ~(~a~); ~(~a~)+=~(~a~)) {~%"
                (indent)
                (if (eql (getattr bp :scope) :global)
-                   (format nil "#pragma omp parallel for~%~a" (indent))
+                   (if private-vars
+                       (format nil "#pragma omp parallel for private(~(~a~))~%~a"
+                               (render-list private-vars)
+                               (indent))
+                       (format nil "#pragma omp parallel for~%~a" (indent)))
                    "")
                (getattr bp :idx)
                (render-expr 'CStyle-Renderer (getattr bp :upfrom))
@@ -237,9 +245,9 @@ Compiled with this command: ~a"
                           collect (getattr item :rendered-object))))))
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
-    (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir)
+    (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3" "-ffast-math") :dir dir)
     (when (>= (ctx:getenv :DISASSEMBLE) 1)
-      (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))))
+      (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3" "-ffast-math"))))
     (dolist (item items)
       (when (getattr item :rendered-object)
         (setf (getattr item :compiled-object)
