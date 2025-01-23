@@ -433,9 +433,7 @@ Constraints:
 (defun ast-make-transfer-body (ctx loads narefs astfor-list)
   (declare (type list loads))
   (assert (every #'(lambda (x) (eql (node-type x) :Aref)) loads))
-  (print "+++++")
   (assert (every #'astfor-tile-parent astfor-list))
-  (PRINT "A")
   (loop for aref in loads
         for target in narefs
         collect
@@ -452,7 +450,6 @@ Constraints:
                          (car (nth nth (iteration-space-views space))) (expr-add (expr-const upfrom :int64) idx)))
           (setf (relay-write-iters type-relay) (list (getattr target :space))
                 (relay-read-iters type-relay) (list space))
-          
           (make-astexpr
            (make-node :JIT :EXPR (list (ctx-shared-mem-id ctx (getattr aref :storage-id))) (list (getattr aref :storage-id))
                       :EXPR (make-expr :graph (make-graph aref) :out aref)
@@ -630,10 +627,7 @@ Constraints:
     (let ((final-ast (handler ast nil nil)))
       (labels ((newband (band body)
                  ;; Sink the band undernarth of the outermost band.
-                 (if (and (typep body 'AstFor)
-                          (or
-                           (find "PARALLEL" (astfor-marks body) :test #'equalp :key #'directive-type)
-                           (find "GLOBAL" (astfor-marks body) :test #'equalp :key #'directive-type)))
+                 (if (and (typep body 'AstFor) (null (astfor-tile-parent body)))
                      (let ((new-astfor (copy-astfor body)))
                        (setf (astfor-body new-astfor) (newband band (astfor-body new-astfor)))
                        new-astfor)
