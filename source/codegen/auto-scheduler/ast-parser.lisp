@@ -696,7 +696,7 @@ Constraints:
   (make-node :Render :ENDIF nil nil :idx idx))
 
 (defun create-rendering-graph-nodes (ctx lisp-ast items &aux (space))
-  (let ((new-graph) (maximum-rank (ast-get-rank lisp-ast)) (sharedbufs))
+  (let ((new-graph) (maximum-rank (ast-get-rank lisp-ast)))
     (labels ((find-user (node-id args)
                (let ((node (find (princ-to-string node-id) items
                                  :key (alexandria:compose #'princ-to-string #'node-id)
@@ -744,13 +744,11 @@ Constraints:
                   ;; (assert (eql (node-type expr) :EXPR) () "ASTEXPR can only have an EXPR.")
                   (when defglobal-p
                     (push (string-downcase (princ-to-string (car (node-writes expr)))) space))
-                  (if (eql (node-type expr) :DEFINE-SHARED-MEMORY)
-                      (push expr sharedbufs)
-                      (push expr new-graph)))
+                  (push expr new-graph))
 		 (_
 		  (error "create-rendering-graph: ~a should not occur here!" object)))))
       (lower lisp-ast))
-    (append (remove-duplicates sharedbufs :key #'node-writes :test #'equal) (nreverse new-graph))))
+    (nreverse new-graph)))
 
 (defun ast-get-rank (ast &aux (rank 0))
   (labels ((handler (ast)

@@ -22,11 +22,7 @@
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)
   (let ((args (loop for item in (getattr si :blueprint)
                     if (eql (node-type item) :DEFINE-GLOBAL)
-                      collect item))
-        (private-vars
-          (loop for item in (getattr si :blueprint)
-                if (eql (node-type item) :DEFINE-SHARED-MEMORY)
-                  collect (car (node-writes item)))))
+                      collect item)))
     (with-output-to-string (out)
       (let ((args
               (apply
@@ -51,7 +47,7 @@
         (format out "void ~(~a~)(~a) {~%" (getattr si :name) args)
         (let ((*indent* 2))
           (dolist (bp (getattr si :blueprint))
-            (render-bp out bp private-vars)))
+            (render-bp out bp)))
         (format out "}~%")))))
 ;; OpenMP requires the brackets to be removed in the for loop.
 (defun trim-brackets (str)
@@ -60,18 +56,14 @@
         (subseq str 1 (1- len))
         str)))
 
-(defun render-bp (stream bp private-vars)
+(defun render-bp (stream bp)
   (flet ((indent () (make-string *indent* :initial-element #\space)))
     (ecase (node-type bp)
       (:FOR
        (format stream "~a~afor (int ~(~a~)=~(~a~); ~(~a~); ~(~a~)+=~(~a~)) {~%"
                (indent)
                (if (eql (getattr bp :scope) :global)
-                   (if private-vars
-                       (format nil "#pragma omp parallel for private(~(~a~))~%~a"
-                               (render-list private-vars)
-                               (indent))
-                       (format nil "#pragma omp parallel for~%~a" (indent)))
+                   (format nil "#pragma omp parallel for~%~a" (indent))
                    "")
                (getattr bp :idx)
                (render-expr 'CStyle-Renderer (getattr bp :upfrom))
@@ -119,7 +111,7 @@
                    (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
       (:BARRIER (error "thread barrier is not supported on clang"))
       (:DEFINE-SHARED-MEMORY
-       (format stream "~astatic ~a ~(~a~)[~(~a~)] __attribute__((aligned(64)));~%" (indent)
+       (format stream "~a~a ~(~a~)[~(~a~)] __attribute__((aligned(64)));~%" (indent)
                (->cdtype (getattr bp :dtype)) (car (node-writes bp)) (getattr bp :size)))
       (:DEFINE-GLOBAL))))
 
