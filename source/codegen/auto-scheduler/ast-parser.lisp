@@ -681,8 +681,8 @@ Constraints:
                (null))))
     (handler ast)))
 ;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun r/for (idx upfrom below by scope)
-  (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by :scope scope))
+(defun r/for (idx upfrom below by scope &key (depth 0))
+  (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by :scope scope :depth depth))
 
 (defun r/endfor (idx)
   (make-node :Render :ENDFOR nil nil :idx idx))
@@ -714,7 +714,7 @@ Constraints:
 	       (when (listp object) (return-from lower (map 'list #'lower object)))
 	       (ematch object
 		 ((ASTBlock :body body) (map 'list #'lower body))
-		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope)
+		 ((AstFor :idx idx :from upfrom :to to :by by :body body :scope scope :marks marks)
                   (when (not
                          (let ((d (expr-detach-loop-bound to)))
                            (and
@@ -722,11 +722,12 @@ Constraints:
                             (eql :LOAD (node-type (expr-out d)))
                             (numberp (getattr (expr-out d) :value))
                             (expr-scalar-equivalent-p upfrom d))))
-                    (push idx space)
-		    (push (r/for idx upfrom to by scope) new-graph)
-		    (lower body)
-                    (setf space (remove idx space :test #'string=))
-		    (push (r/endfor idx) new-graph)))
+                    (let ((amount (find "PARALLEL" marks :key #'directive-type :test #'equalp)))
+                      (push idx space)
+		      (push (r/for idx upfrom to by scope :depth (if amount (car (directive-amount amount)) 0)) new-graph)
+		      (lower body)
+                      (setf space (remove idx space :test #'string=))
+		      (push (r/endfor idx) new-graph))))
 		 ((User :name name :args args)
                   (push
                    (unroll-expr (reverse space) (find-user name args)

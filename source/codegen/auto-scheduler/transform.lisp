@@ -192,10 +192,10 @@ Packed schedule-items has a chance to be upcasted/vectorized by the caten compil
   (let ((pack-by (broadcast-tile-size band pack-by)))
     (%apply-tile band pack-by (directive "PACKED_OUTER" pack-by t) (directive "PACKED_INNER" pack-by nil))))
 ;; ~~ Coincidence ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun apply-parallel (schedule-node)
+(defun apply-parallel (schedule-node depth)
   ;; note: num of cores optimization is beyond caten!
   ;; note: @collapse(2) is 100% effective, apply this automatically...
-  (schedule-node-insert-mark schedule-node (directive->id (directive "PARALLEL" 0 T))))
+  (schedule-node-insert-mark schedule-node (directive->id (directive "PARALLEL" depth T))))
 
 (defun apply-global (poly band ls)
   "Globalizes the schedule-node-band is it satisfies the leagality-parallel.

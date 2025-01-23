@@ -44,7 +44,7 @@
 (defclass Parallel (Opt)
   ((use-legality-parallel :initarg :use-legality-parallel :initform nil :accessor parallel-use-legality-parallel))
   (:documentation "Parallelizes the given schedule-node"))
-(defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node))
+(defmethod apply-opt ((opt Parallel) schedule-node item config) (apply-parallel schedule-node (or (opt-amount opt) 1)))
 (defmethod opt-applicable-p ((opt Parallel) schedule-node item config)
   (when (parallel-use-legality-parallel opt)
     (assert (every #'null (isl:schedule-node-band-get-coincident schedule-node)) () ":use-legality-parallel is not applicable if the given schedule-node has coincident.")
@@ -269,10 +269,14 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
           for target-band = (nth 0 (sketch-get-bands sketch))
           for use-legality-parallel = (null (sketch-opt-history sketch)) ;; If Reschedule is not selected, ISL Schedule coincident is not assigned. (Use check-legality-parallel instead)
           for band-depth = (and target-band (schedule-node-band-get-depth target-band))
+          for has-coincident = (and (find 'Reschedule (sketch-opt-history sketch) :key #'cdr :test #'(lambda (x y) (typep y x))) t)
           when target-band do
             (case n-global-dims
               (1
-               (let ((opt (make-instance 'Parallel :use-legality-parallel use-legality-parallel)))
+               (let* ((depth (if has-coincident
+                                 (count-if #'identity (isl::schedule-node-band-get-coincident target-band))
+                                 1))
+                      (opt (make-instance 'Parallel :use-legality-parallel use-legality-parallel :amount (max 1 depth))))
                  (when (opt-applicable-p opt target-band item config)
                    (setf sketches (remove sketch sketches))
                    (push (sketch-next-generation sketch opt 0 target-band item config) sketches))))

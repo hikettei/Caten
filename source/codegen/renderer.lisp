@@ -43,12 +43,14 @@ for(int idx=upfrom, below, by)
 ```
 
 - scope[keyword] If `:global`, the loop is parallelizable. One of :global, :local.
+- depth[integer] If scope is :global, the depth of the loop is provided. (corresponding to `#pragma omp parallel for collapse(depth)`)
 "
          :slots ((idx :type symbol)
                  (upfrom :type Expr)
                  (below :type Expr)
                  (by :type Expr)
-                 (scope :initform :local :type (member :global :local))))
+                 (scope :initform :local :type (member :global :local))
+                 (depth :initform 0 :type integer)))
 
 (defnode (:Render :ENDFOR) ()
          "

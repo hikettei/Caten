@@ -63,7 +63,7 @@
        (format stream "~a~afor (int ~(~a~)=~(~a~); ~(~a~); ~(~a~)+=~(~a~)) {~%"
                (indent)
                (if (eql (getattr bp :scope) :global)
-                   (format nil "#pragma omp parallel for~%~a" (indent))
+                   (format nil "#pragma omp parallel for collapse(~a)~%~a" (getattr bp :depth) (indent))
                    "")
                (getattr bp :idx)
                (render-expr 'CStyle-Renderer (getattr bp :upfrom))
