@@ -397,7 +397,7 @@ Constraints:
                              (push (astfor-idx band) ids)
                              (setf tfbody (newband band tfbody)))
                      (loop for idx in ids
-                           for new = (format nil "~a_1" idx)
+                           for new = (princ-to-string idx)
                            do (setf tfbody (ast-rewrite-astfor-idx ctx tfbody idx new)))
                      tfbody)))))
       (make-block
@@ -450,7 +450,7 @@ Constraints:
            (make-node :JIT :EXPR (list (ctx-shared-mem-id ctx (getattr aref :storage-id))) (list (getattr aref :storage-id))
                       :EXPR (make-expr :graph (make-graph aref) :out aref)
                       :_type_relay type-relay
-                      :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (format nil "~a_1" (astfor-idx x))) :int64)) astfor-list))
+                      :iterations (map 'list #'(lambda (x) (expr-const (ctx-intern ctx (princ-to-string (astfor-idx x))) :int64)) astfor-list))
            nil))))
 
 (defun aref->shared-memory-decl (aref)
