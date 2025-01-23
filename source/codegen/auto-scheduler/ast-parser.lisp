@@ -635,8 +635,8 @@ Constraints:
                              (setf (astif-then-node new-astif) (newband prefetch (astif-then-node new-astif)))
                              new-astif)
                            (progn ;; Insert Prefetch Points
-                             (setf (astfor-body band) (make-block (append smemdecl (list transfer) (list body))))
-                             band))))))
+                             (setf (astfor-body band) (make-block (append (list transfer) (list body))))
+                             (make-block (append smemdecl (list band)))))))))
         (dolist (r prefetch-loops)
           (setf final-ast (newband r final-ast)))
         final-ast))))
