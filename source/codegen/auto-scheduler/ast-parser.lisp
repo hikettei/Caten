@@ -382,7 +382,7 @@ Constraints:
                         (astfor-body new-astfor) body)
                   new-astfor)))))
     (let ((insert-barrier-p (some #'(lambda (x) (eql (identify-for x) :LOCAL)) data-reuse))
-          (guard-triggers (loop for d in data-reuse if (eql (identify-for d) :TILE_INNER) collect d))
+;;           (guard-triggers (loop for d in data-reuse if (eql (identify-for d) :TILE_INNER) collect d))
           (transfer
             (make-block
              (loop for aref in narefs
@@ -402,11 +402,7 @@ Constraints:
                      tfbody)))))
       (make-block
        (butnil
-        (if guard-triggers
-            (make-if
-             (reduce #'expr-and (map 'list #'(lambda (x) (expr-= (expr-const (ctx-intern ctx (astfor-idx x)) :int64) (expr-const 0 :int64))) guard-triggers))
-             transfer nil)
-            transfer)
+        transfer
         (if insert-barrier-p (make-astexpr (make-node :Render :BARRIER nil nil) nil) nil))))))
 
 (defun ast-gather-buffer-loads (ast blueprints)
@@ -606,10 +602,8 @@ Constraints:
                            ;; 2. rewrite-shared-access rewriting rule (replace aref)
                            ;; 3. todo: tweak the cache size, val_6/val_4 only requires BLOCKSIZE * BLOCKSIZE region
                            ;; Moved to the top of the iteration
-                           (push new-astfor prefetch-loops)
-                           (make-block
-                            (append smemdecls (list guard)
-                                    (list (ast-rewrite-expr rewriters blueprints (handler (astfor-body ast) vectorized-idx data-reuse)))))))
+                           (push (list new-astfor smemdecls guard) prefetch-loops)
+                           (ast-rewrite-expr rewriters blueprints (handler (astfor-body ast) vectorized-idx data-reuse))))
                         ((equalp (directive-type mark) "PREFETCH_INNER")
                          (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx data-reuse))
                          new-astfor)
@@ -625,20 +619,24 @@ Constraints:
                   new-if))
                (null))))
     (let ((final-ast (handler ast nil nil)))
-      (labels ((newband (band body)
-                 ;; Sink the band undernarth of the outermost band.
-                 (if (and (typep body 'AstFor) (null (astfor-tile-parent body)))
-                     (let ((new-astfor (copy-astfor body)))
-                       (setf (astfor-body new-astfor) (newband band (astfor-body new-astfor)))
-                       new-astfor)
-                     (if (typep body 'AstIf)
-                         (let ((new-astif (copy-astif body)))
-                           (assert (null (astif-else-node new-astif)) () "ElseForm is not supported.")
-                           (setf (astif-then-node new-astif) (newband band (astif-then-node new-astif)))
-                           new-astif)
-                         (progn
-                           (setf (astfor-body band) body)
-                           band)))))
+      (labels ((newband (prefetch body)
+                 (multiple-value-bind (band smemdecl transfer) (apply #'values prefetch)
+                   ;; Sink the band undernarth of the outermost band.
+                   (if (and (typep body 'AstFor)
+                            (or
+                             (null (astfor-tile-parent body))
+                             (find "LOCAL" (astfor-marks body) :test #'equalp :key #'directive-type)))
+                       (let ((new-astfor (copy-astfor body)))
+                         (setf (astfor-body new-astfor) (newband prefetch (astfor-body new-astfor)))
+                         new-astfor)
+                       (if (typep body 'AstIf) ;; Sink
+                           (let ((new-astif (copy-astif body)))
+                             (assert (null (astif-else-node new-astif)) () "ElseForm is not supported.")
+                             (setf (astif-then-node new-astif) (newband prefetch (astif-then-node new-astif)))
+                             new-astif)
+                           (progn ;; Insert Prefetch Points
+                             (setf (astfor-body band) (make-block (append smemdecl (list transfer) (list body))))
+                             band))))))
         (dolist (r prefetch-loops)
           (setf final-ast (newband r final-ast)))
         final-ast))))
@@ -775,7 +773,7 @@ Constraints:
          (ast (parse-isl-ast ctx (isl::ast-node-handle ast) nil))
          (ast (ast-rewrite-tile-pair ast))
          (ast (ast-rewrite-directive ctx ast (getattr scheduled-item :blueprint)))
-         (ast (ast-rewrite-grids ast))
+         (ast (ast-rewrite-grids (print ast)))
          (ast (ast-rewrite-vectorize ast vectorizes scheduled-item))
          ;; [TODO] Define ASTTree Simplifier. (e.g.: Unrolling a small astfor etc)
          (bp (create-rendering-graph-nodes ctx ast (getattr scheduled-item :blueprint)))
