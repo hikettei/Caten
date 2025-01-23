@@ -243,7 +243,7 @@ This macro will bind the function `(opt opt band-idx)` locally, which will destr
     (setf (sketch-opt-history new-sketch) (append (list (cons idx opt)) (sketch-opt-history sketch)))
     new-sketch))
 
-(defun generate-sketch (item config &aux (sketches) (blocksize 32))
+(defun generate-sketch (item config &aux (sketches) (blocksize 64))
   "Returns a new schedule which is called a sketch, a template kernel that is further optimized by the auto-scheduler.
 The sketch is equivalent to the decision tree where each node corresponds for whether an optimization is applied or not.
 See also : `docs/assets/Caten_Sketch_Generation.jpg`
@@ -312,6 +312,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                        (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
                        (return-from tile))))))
   ;; Also the loop is tiled in the innermost depth.
+  ;; TODO: Prefetch/SharedMemoryTransfer -> 別物？
   (loop for sketch in sketches
         for band-depth-list = (sketch-get-band-depth-list sketch)
         for innermost = (reduce #'max band-depth-list) do
@@ -352,7 +353,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; [TODO] Remove This code!!!
   ;; - We dont have to tile all dims
   ;; - The child of PREFETCH_OUTER is a SIMD.
-  (when t
+  (when nil
     ;; SIMD/UPCAST
     (loop for sketch in sketches
           for sketch-first = sketch
@@ -374,7 +375,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                     for band = (car bands)
                     for band-depth = (and band (schedule-node-band-get-depth band))
                     while band do
-                      (let ((opt (make-instance 'Packing :amount (loop repeat band-depth collect 16)))) ;; [TODO] Tune this parameter!
+                      (let ((opt (make-instance 'Packing :amount (loop repeat band-depth collect 4)))) ;; [TODO] Tune this parameter!
                         (when (opt-applicable-p opt band item config)
                           (setf sketch (sketch-next-generation sketch opt 0 band item config)))))
               (setf sketches (remove sketch-first sketches))
@@ -393,6 +394,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;; Score = (A.) + (B.) + Volume(PACKED_REGION)
 
   ;; Workload(次にやるべきこと)
+  ;; Unroll is not necessary?
   ;; - Microkernel Transformationを完成させる
   ;;   - Finish: ASTParser
   ;;     - [ ] Finish: Vectorize(gemm8x8 mutation)
@@ -428,6 +430,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
   ;;(dolist (s sketches)
   ;;  (PRINT "=== SAMPLE ===")
   ;;  (caten/codegen/blueprint:print-blueprint (lower-into-bp-from-polyhedral (->ast (sketch-schedule s) 0) item) t))
+  (print (car sketches))
   sketches)
 ;; TODO: (defstruct search-space (ls1 ls2 ls3 tile-size pack-size))
 ;; ~~ Entry Point ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
