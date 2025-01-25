@@ -316,7 +316,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                        (push (sketch-next-generation sketch opt 0 target-band item config) sketches)
                        (return-from tile))))))
   ;; Also the loop is tiled in the innermost depth.
-  ;; TODO: Prefetch/SharedMemoryTransfer -> 別物？
+  ;; [TODO] Prefetch is effective for matmul but is not for Embedding
   (loop for sketch in sketches
         for band-depth-list = (sketch-get-band-depth-list sketch)
         for innermost = (reduce #'max band-depth-list) do

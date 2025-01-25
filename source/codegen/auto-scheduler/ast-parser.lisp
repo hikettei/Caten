@@ -405,26 +405,38 @@ Constraints:
         transfer
         (if insert-barrier-p (make-astexpr (make-node :Render :BARRIER nil nil) nil) nil))))))
 
-(defun ast-gather-buffer-loads (ast blueprints)
+(defun ast-map-user (ast blueprints handler)
   (let ((loads))
     (labels ((find-from-user (id)
                (find (princ-to-string id) blueprints :key (alexandria:compose #'princ-to-string #'node-id) :test #'equalp))
              (handler (ast)
                (etypecase ast
-                 (User
-                  (let ((usr (find-from-user (user-name ast))))
-                    (assert usr () "The user ~a is not appeared in the original blueprint." ast)
-                    (when (eql :EXPR (node-type usr))
-                      (dolist (a (caten/codegen/blueprint:expr-gather-buffer-loads usr))
-                        (assert (eql (node-type a) :Aref))
-                        (push a loads)))))
+                 (User (funcall handler ast (find-from-user (user-name ast))))
                  (AstBlock (mapc #'handler (astblock-body ast)))
                  (AstFor (handler (astfor-body ast)))
                  (AstExpr ast)
                  (AstIf (handler (astif-then-node ast)) (handler (astif-else-node ast)))
                  (null))))
       (handler ast)
-      (remove-duplicates loads :key #'(lambda (x) (getattr x :storage-id))))))
+      t)))
+
+(defun ast-gather-buffer-loads (ast blueprints &aux (loads))
+  (labels ((load-handler (ast usr)
+             (assert usr () "The user ~a is not appeared in the original blueprint." ast)
+             (when (eql :EXPR (node-type usr))
+               (dolist (a (caten/codegen/blueprint:expr-gather-buffer-loads usr))
+                 (assert (eql (node-type a) :Aref))
+                 (push a loads)))))
+    (ast-map-user ast blueprints #'load-handler)
+    (remove-duplicates loads :key #'(lambda (x) (getattr x :storage-id)))))
+
+(defun ast-gather-buffer-stores (ast blueprints &aux (stores))
+  (labels ((store-handler (ast usr)
+             (assert usr () "The user ~a is not appeared in the original blueprint." ast)
+             (when (and (eql :EXPR (node-type usr)) (getattr usr :reduction :allow-undefined t))
+               (push usr stores))))
+    (ast-map-user ast blueprints #'store-handler)
+    stores))
 
 (defun ast-make-transfer-body (ctx loads narefs astfor-list)
   (declare (type list loads))
@@ -585,7 +597,8 @@ Constraints:
                          (assert (and (astfor-p (astfor-body ast)) (find "PREFETCH_INNER" (astfor-marks (astfor-body ast)) :key #'directive-type :test #'equalp))
                                  ()
                                  "Nothing can be inserted between PREFETCH_INNER and PREFETCH_OUTER, and it should be one-dimensional!")
-                         (let* ((loads (ast-gather-buffer-loads (astfor-body ast) blueprints)) ;; List of aref used in the child.
+                         (let* ((loads (ast-gather-buffer-loads (astfor-body ast) blueprints)) ; Enumaretes a list of buffer loads under the body.
+                                (stores (ast-gather-buffer-stores (astfor-body ast) blueprints)) ;; Enumerates a list of buffer stores under the body.
                                 (blocksize (directive-amount mark))
                                 (blocksize (if (listp blocksize) (car blocksize) blocksize))
                                 (ls (append data-reuse (list (astfor-body ast))))
@@ -603,6 +616,7 @@ Constraints:
                            ;; 3. todo: tweak the cache size, val_6/val_4 only requires BLOCKSIZE * BLOCKSIZE region
                            ;; Moved to the top of the iteration
                            (push (list new-astfor smemdecls guard) prefetch-loops)
+                           ;; Rewrites the access to buffer -> the access to shared memory.
                            (ast-rewrite-expr rewriters blueprints (handler (astfor-body ast) vectorized-idx data-reuse))))
                         ((equalp (directive-type mark) "PREFETCH_INNER")
                          (setf (astfor-body new-astfor) (handler (astfor-body ast) vectorized-idx data-reuse))
@@ -680,6 +694,11 @@ Constraints:
                 (make-if (astif-condition ast) (handler (astif-then-node ast)) (handler (astif-else-node ast))))
                (null))))
     (handler ast)))
+;; [TODO]
+;; 1. Lower the index computation as EXPR. (TODO: Update :aref to only have the corresponding expr, or add alternative :aref)
+;; 2. Implement the function simplify-ast
+(defun simplify-ast ()) ;; TODO: Simplifies the duplicated computation in an equivalent form.
+
 ;; ~~ ISL Object <--> Blueprint ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun r/for (idx upfrom below by scope &key (depth 0))
   (make-node :Render :FOR nil nil :idx idx :upfrom upfrom :below below :by by :scope scope :depth depth))
