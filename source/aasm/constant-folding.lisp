@@ -106,6 +106,22 @@
 ;; [TODO] Logical AND/XOR/OR for threefry2x32
 (defsimplifier
     (apply-fold-constant :speed 1)
+    ;; (-(a)+(a+c)) -> c
+    ((:Add ((:Neg ((Var x dtype1))) (:Add ((Var y dtype2) (Var z dtype3)))))
+     ->
+     ((node graph)
+      (when (and (equal x y) (eql dtype1 dtype2))
+        (Const z dtype3))))
+    ;; (-(a)+((a+c)+z)) -> (c+z)
+    ((:Add ((:Neg ((Var x dtype1))) (:Add ((:Add ((Var y dtype2) (Var z dtype3))) (Var w dtype4)))))
+     ->
+     ((node graph)
+      (when (and (equal x y) (eql dtype1 dtype2))
+        ;; c+z
+        (with-context-nodes
+          (z (%load (%salloc :dtype dtype3) z))
+          (w (%load (%salloc :dtype dtype4) w))
+          (out (%add z w))))))
     ((:Mod ((Const x dtype) (Const y _))) -> (Const (mod x y) dtype))
     ((:Cast (_ (Const x _)) :dtype dtype) -> (Const (caten/common.dtype:dtype/cast x dtype) dtype))
     ((:Add ((Const x dtype) (Const y _))) -> (Const (+ x y) dtype))
