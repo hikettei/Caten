@@ -9,12 +9,12 @@
        (unless ,noopt (setf graph (simplify-ast graph)))
        graph)))
 ;; ~~ Control Flows ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %range (bind body &key (start 0) (end 1) (step 1) (dtype *default-int*) (out (gensym "RANGE")))
-  (declare (type (or node symbol) bind) (type (or node symbol) body) (type (or symbol node fixnum) start end step) (type keyword dtype) (type symbol out))
+(defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")))
+  (declare (type (or node symbol) bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out))
   (let ((bind (if (symbolp bind)
                   (%bind bind (%iconst bind :dtype dtype))
-                        bind)))
-    (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind start end step body))))))
+                  bind)))
+    (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind size step body))))))
 
 (defun %if (condition body &key (out (gensym "IF")))
   (declare (type (or symbol node) condition body) (type symbol out))
@@ -42,10 +42,6 @@
 (defun %aref (name idx &key (out (gensym "AREF")))
   (declare (type (or symbol node) name idx))
   (emit (make-node :Render :Aref (list out) (map 'list #'node->id1 (list name idx)))))
-
-(defun print-ast (graph)
-  (print graph)
-  (pprint-graph graph))
 ;; ~~ AST Simplification ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defsimplifier
     (simplify-control-flow :speed 0)
@@ -72,19 +68,67 @@
   (declare (type graph graph))
   (setf graph (optimize-aasm graph :heavy-opt-threshold 0))
   (simplify-control-flow graph))
+
+(defun print-ast (graph)
+  (print graph)
+  (pprint-graph graph)
+  ;;(caten/air:->dot graph :pathname "/tmp/graph.dot")
+  (viz-ast graph)
+  )
+;; [TODO] Decompose 3 -> 1 + 1 + 1 and optimize the indexing?
+(defun viz-ast (graph &aux (indent 0) (seen))
+  (print
+   (with-output-to-string (out)
+     (labels ((indent () (make-string indent :initial-element #\space))
+              (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
+              (r (s &aux (val (id->value graph s)))
+                (when (and val (null (find (node-id val) seen)))
+                  (f val)
+                  (push (node-id val) seen)))
+              (f (node)
+                (case (node-type node)
+                  (:PROGN
+                    (fmt "{")
+                    (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
+                    (fmt "}"))
+                  (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
+                  (:RANGE
+                      (multiple-value-bind (bind size step body) (apply #'values (node-reads node))
+                        (r bind) (r size) (r step)
+                        (fmt "for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)++)" bind bind size bind)
+                        (r body)))
+                  (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
+                  (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
+                  ((:ADD :MUL :AND :<) (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)~(~a~);" (car (node-writes node)) (node-type node) (node-reads node)))
+                  (:Aref
+                   (multiple-value-bind (name idx) (apply #'values (node-reads node))
+                     (r name) (r idx)
+                     (fmt "~(~a~) = ~(~a~)[~(~a~)];" (car (node-writes node)) name idx)))
+                  (:IF
+                   (multiple-value-bind (cond body) (apply #'values (node-reads node))
+                     (r cond)
+                     (fmt "if (~(~a~)) {" cond)
+                     (incf indent 2) (r body) (decf indent)
+                     (fmt "}")))
+                  (otherwise
+                   (warn "Unsupported Node: ~a" (node-type node))))))                    
+       (f (id->value graph (car (graph-outputs graph))))))))
 ;; PROGN+PROGN -> PROGN
+;; IndexingをもっとSimplifyしたい。RANGEの外に出す方法？
 (print-ast
  (with-blueprint ()
    (%progn ;; [TODO] Introduce %Function instead of PROGN?
     (%defglobal 'a)
     (%defglobal 'b)
-    (%range
-     'gid0
+    (%range 'gid0  (%add (%iconst 'm) (%iconst 'n))
      (%progn
       (%progn
        (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
              (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
          (%if (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
               (%if (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-                   (%add (%aref 'a idx1) (%aref 'b idx2)))))))
-     :start 0 :end (%add (%iconst 'm) (%iconst 'n))))))
+                   (%progn
+                    (%add (%aref 'a idx1) (%aref 'b idx2))
+                    (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
+                    (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
+                    (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3))))))))))))))
