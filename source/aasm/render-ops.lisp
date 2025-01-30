@@ -20,6 +20,8 @@
   (declare (type (or symbol node) condition body) (type symbol out))
   (emit (make-node :Render :IF (list out) (map 'list #'node->id1 (list condition body)))))
 
+(defun %when (condition body &key (out (gensym "IF"))) (%if condition body :out out))
+
 (defun %progn (&rest body &aux (out (gensym "PROGN")))
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 body))))
@@ -119,25 +121,37 @@
                   (otherwise
                    (warn "Unsupported Node: ~a" (node-type node))))))                    
        (f (id->value graph (car (graph-outputs graph))))))))
+;; [TODO] OpFusion
 ;; PROGN+PROGN -> PROGN
 ;; IndexingをもっとSimplifyしたい。RANGEの外に出す方法？
 ;; イメージ:
 ;; ./caten/codegen -> caten/ir/render-ops.lispの機能を使って色々AST変形を実施する
+;; - Remove :GLOBAL :LOCAL If Guard (which is rebundant only)
+;; - Remove :LOAD is an args of buffer, instead, use :DEFINE-GLOBAL
 (print-ast
  (with-blueprint ()
    (%progn ;; [TODO] Introduce %Function instead of PROGN?
     (%defglobal 'a)
     (%defglobal 'b)
-    (%range 'gid0 (%iconst 100) ;; (%add (%iconst 'm) (%iconst 'n))
+    (%defglobal 'm)
+    (%defglobal 'n)
+    (%range
+     'gid0 (%add (%iconst 'm) (%iconst 'n))
      (%progn
       (%progn
        (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
              (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
-         (%if (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-              (%if (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-                   (%progn
-                    (%add (%aref 'a (%iconst 0)) (%aref 'b idx2))
-                    (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
-                    (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
-                    (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3))))))))))))))
-   
+         (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
+                (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
+                       (%progn
+                        (%add (%aref 'a (%iconst 0)) (%aref 'b idx2))
+                        (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
+                        (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
+                        (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3))))))))))))))
+
+;; [TODO]
+;; - OpFusion
+;; - TileBands
+;;  - Vectorize
+;;  - Parallelize
+;;  - It is IR's obligation to provide the information to opfusion
