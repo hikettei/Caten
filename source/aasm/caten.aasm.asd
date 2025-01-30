@@ -13,10 +13,6 @@
    (:file "render-ops")
    
    (:file "tensor-ir")
-   (:file "ops")
-   
    (:file "constant-folding")
    (:file "optimizers")
-   (:file "view")
-   (:file "logical")
    (:file "documentation")))
