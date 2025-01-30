@@ -9,7 +9,6 @@
    (:file "helpers")
    (:file "ops")
    (:file "tensor-ops")
-   (:file "render-ops")
-   
+   (:file "render-ops")   
    (:file "simplifiers")
    (:file "documentation")))
