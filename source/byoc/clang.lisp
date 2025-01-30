@@ -237,9 +237,10 @@ Compiled with this command: ~a"
                           collect (getattr item :rendered-object))))))
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
-    (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3" "-ffast-math") :dir dir)
+    ;; [Note] -ffast-math and CI fails?
+    (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir)
     (when (>= (ctx:getenv :DISASSEMBLE) 1)
-      (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3" "-ffast-math"))))
+      (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))))
     (dolist (item items)
       (when (getattr item :rendered-object)
         (setf (getattr item :compiled-object)
