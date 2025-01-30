@@ -129,10 +129,10 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
 (macrolet ((def (fname opname &optional possibly-overflow)
 	     `(defun ,fname (x y &key (id (gensym "BID")) (reduction nil) (wrap-around ,(if possibly-overflow '*wrap-around-mode* nil)))
 		"If wrap-around=t -> (mod (op x y) (max_value_of (dtype x)))"
-		(declare (type node x y))
+		(declare (type (or number symbol node) x y))
 		(when (and (null ,possibly-overflow) wrap-around)
 		  (error "~a does not support the wrap-around option." ',fname))
-		(emit (make-node :BinaryOps ,opname (list id) (list (node->id x) (node->id y)) :reduction reduction :wrap-around wrap-around)))))
+		(emit (make-node :BinaryOps ,opname (list id) (list (node->id1 x) (node->id1 y)) :reduction reduction :wrap-around wrap-around)))))
   (def %add :ADD t)
   (def %mul :MUL t)
   (def %idiv :IDIV nil)

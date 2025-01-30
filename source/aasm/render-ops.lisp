@@ -5,8 +5,8 @@
           (out (progn ,@body)))
      (assert (node-p out) () "The last form must be a node.")
      (setf (graph-outputs *ctx*) (node-writes out))
-     (let ((graph *ctx*))
-       (unless ,noopt (simplify-ast graph))
+     (let ((graph (->fast-graph *ctx*)))
+       (unless ,noopt (setf graph (simplify-ast graph)))
        graph)))
 ;; ~~ Control Flows ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind body &key (start 0) (end 1) (step 1) (dtype *default-int*) (out (gensym "RANGE")))
@@ -46,25 +46,45 @@
 (defun print-ast (graph)
   (print graph)
   (pprint-graph graph))
-
-(defsimplifier (simplify-control-flow :speed 0))
+;; ~~ AST Simplification ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defsimplifier
+    (simplify-control-flow :speed 0)
+    ((:PROGN (~ args))
+     ->
+     ((node graph)
+      (let ((args-new (map 'list #'(lambda (x) (id->value graph x)) args)))
+        (when (some #'(lambda (x) (and (node-p x) (eql :PROGN (node-type x)))) args-new)
+          (make-node :Render :PROGN (node-writes node)
+                     (loop for arg in args
+                           for arg-new in args-new
+                           if (and (node-p arg-new) (eql :PROGN (node-type arg-new)))
+                             append (node-reads arg-new)
+                           else
+                             collect arg))))))
+    ((:IF (cond1 (:IF (cond2 body))))
+     ->
+     ((node graph)
+      (with-context-nodes
+        (new-cond (%and cond1 cond2))
+        (out (%if new-cond body :out (car (node-writes node))))))))
 
 (defun simplify-ast (graph)
   (declare (type graph graph))
-  (let ((graph (->graph graph)))
-    (optimize-aasm graph :heavy-opt-threshold 0)
-    (->fast-graph graph)))
+  (setf graph (optimize-aasm graph :heavy-opt-threshold 0))
+  (simplify-control-flow graph))
 ;; PROGN+PROGN -> PROGN
 (print-ast
  (with-blueprint ()
-   (%progn
+   (%progn ;; [TODO] Introduce %Function instead of PROGN?
     (%defglobal 'a)
     (%defglobal 'b)
     (%range
      'gid0
      (%progn
-      (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
-            (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
-        (%if (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-             (%add (%aref 'a idx1) (%aref 'b idx2)))))
+      (%progn
+       (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
+             (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
+         (%if (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
+              (%if (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
+                   (%add (%aref 'a idx1) (%aref 'b idx2)))))))
      :start 0 :end (%add (%iconst 'm) (%iconst 'n))))))
