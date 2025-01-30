@@ -1,0 +1,1937 @@
+
+<!DOCTYPE html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../css/bootstrap.min.css">
+  
+
+  
+    <meta http-equiv="content-language" content="en">
+  
+  
+
+  
+  <title>Func | Caten Documentation</title>
+  
+
+  
+
+  <link rel="stylesheet" href="../../css/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/default.min.css">
+  <link rel="stylesheet" href="../../css/vs.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  
+  
+  
+  <script async>var base_url = '../..';</script>
+  <script src="../../js/jquery-3.6.1.slim.min.js"></script>
+  <script src="../../js/bootstrap.bundle.min.js"></script>
+  <script async src="../../js/highlight.min.js"></script>
+
+  
+  
+</head>
+<body>
+  
+  
+    
+    <header>
+      <nav class="navbar navbar-expand-sm navbar-toggleable-sm  border-bottom box-shadow mb-3 ">
+        <div class="container">
+            <a class="navbar-brand text-body" asp-area="" href="/">
+              
+              
+                Caten Documentation
+              
+            </a>
+            <div class="print-hide">
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="d-none d-md-flex input-group mb-3">
+                
+                    <input class="form-control" type="search" id="searchbox" accesskey="/" placeholder="Search in here" aria-label="Search" aria-describedby="search-btn"/>
+                    <button class="btn btn-outline-secondary" type="button" id="search-btn" onclick="search(false);">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    
+                </div>
+            </div>
+            </div>
+        </div>
+    </nav>
+    <nav class="navbar border-bottom box-shadow mb-3 d-md-none print-hide">
+      <div class="container">
+          <div class="navbar-collapse d-flex">
+            <p>
+              <div class="d-flex input-group mb-3">
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_nav(this);" type="button" data-bs-toggle="collapse" data-bs-target="#nav" title="Show Navigation"><i class="bi bi-book"></i></button>
+                
+                
+                <input class="form-control" type="search" id="searchbox_mobile" accesskey="/" placeholder="Search in here" aria-label="Search">
+                <button class="btn btn-outline-secondary" type="button" onclick="search(true);"><i class="bi bi-search"></i></button>
+                
+                
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_toc(this);" type="button" data-bs-toggle="collapse" data-bs-target="#tol"><i class="bi bi-list-ul"></i></button>
+                
+                
+            </div>
+            </p>
+          </div>
+      </div>
+    </nav>
+  </header>
+    
+  
+  
+  
+  <div class="container">
+    <main role="main" class="pb-3">
+      <div class="row">
+        
+        
+    
+    <div class="col-12 col-md-2 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="nav"  style="overflow-x:scroll;">
+        <ul class="list-group list-group-flush">
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../..">Home</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../quickstart/">Quickstart</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../development/">Development</a></li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >API Reference</a>
+          <ul class="collapse list-group list-group-flush show ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.air/">caten/air</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.aasm/">caten/aasm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.codegen/">caten/codegen</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/api</a>
+              <ul class="collapse list-group list-group-flush show">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.tensor/">Tensor</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-body" href="./">Func</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.module/">Module</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.models/">Model</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.initializers/">Initializers</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.shapetracker/">ShapeTracker</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.facet/">Facet API</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.state-dict/">StateDict</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/nn</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.activations/">Activation</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.convolutions/">Convolution</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.criterion/">Criterion</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.embeddings/">Embedding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.linears/">Linear</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.normalizations/">Normalization</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.padding/">Padding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.pooling/">Pooling</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.encoding/">Encoding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.optimizers/">Optimizers</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >Ready to use packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps.gpt2/">caten/apps.gpt2</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >External Packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.gguf/">caten/gguf</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.onnx/">caten/oonx</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.llm/">caten/llm</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+      </ul>
+      </div>
+    </div>
+    
+       
+
+
+
+<div class="col-12 col-md-2 order-md-3 print-hide">
+  <div class="collapse d-md-block text-nowrap" id="tol" style="overflow-x:scroll;">
+    <span>In this article</span>
+    <hr />
+    <ul class="list-group list-group-flush">
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#func">Func</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#func-class" >Func Class</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#class-func" >[class] Func</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-lower" >[generic] lower</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-forward" >[generic] forward</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-backward" >[generic] backward</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#differentiable-ops-built_in" >Differentiable Ops (built_in)</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-identity" >[function] !identity</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-view" >[function] !view</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-permute" >[function] !permute</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-t" >[function] !t</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-transpose" >[function] !transpose</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-contiguous" >[function] !contiguous</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-copy" >[function] !copy</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-reshape" >[function] !reshape</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-flatten" >[function] !flatten</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-uprank" >[function] !uprank</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-repeat" >[function] !repeat</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-expand" >[function] !expand</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-move" >[function] !move</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-assign" >[function] !assign</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-add" >[function] !add</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-sub" >[function] !sub</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-mul" >[function] !mul</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-div" >[function] !div</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-mod" >[function] !mod</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-idiv" >[function] !idiv</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-maximum" >[function] !maximum</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-minimum" >[function] !minimum</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-gcd" >[function] !gcd</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-lcm" >[function] !lcm</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-exp" >[function] !exp</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-log" >[function] !log</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-sqrt" >[function] !sqrt</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-neg" >[function] !neg</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-recip" >[function] !recip</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-square" >[function] !square</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-rsqrt" >[function] !rsqrt</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-signum" >[function] !signum</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-gid" >[function] !gid</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-normalize-axis" >[function] !normalize-axis</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-abs" >[function] !abs</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function" >[function] !&gt;</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function_1" >[function] !&lt;</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function_2" >[function] !&gt;=</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function_3" >[function] !&lt;=</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-eq" >[function] !eq</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-neq" >[function] !neq</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-and" >[function] !and</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-xor" >[function] !xor</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-or" >[function] !or</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-where" >[function] !where</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-const" >[function] !const</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-index-components" >[generic] !index-components</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<div class="col-12 col-md-8 print-main">
+  
+  <h1>Func</h1>
+  
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item active" aria-current="page">Caten Documentation</li>
+      
+      
+      
+      
+      
+      
+      
+      
+      <li class="breadcrumb-item active" aria-current="page">API Reference</li>
+      
+      
+        
+
+        
+
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">caten/api</li>
+        
+        
+        
+        
+
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">Func</li>
+        
+        
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+        
+
+        
+
+      
+      
+      
+      
+      
+      
+      
+    </ol>
+  </nav>
+  
+  
+  <div class="container ml-0">
+    <div class="row">
+      
+      <div class="col-2 px-0" style="text-wrap: nowrap;">
+        
+        <a class="btn text-primary print-hide" href="../caten.api.tensor/"
+          title="Tensor"><i class="bi bi-chevron-left"></i></a>
+        
+        
+        <a class="btn text-primary print-hide" href="../caten.api.module/" title="Module"><i
+            class="bi bi-chevron-right"></i></a>
+        
+      </div>
+      <div class="col px-0" style="text-align: right;">
+        
+        
+        <small><span class='git-page-authors git-authors'></span></small>
+        <span>|</span>
+        
+        
+        
+        
+        
+      </div>
+      <div class="col-1 col-sm-2 px-0" style="text-align: right;text-wrap: nowrap;">
+        <button class="btn print-block d-none d-lg-inline" title="Print this article"
+          onclick="window.print();"><i class="bi bi-printer"></i></button>
+        <button class="btn print-visible d-none" onclick="print_normal();"
+          title="Open NewTab"><i class="bi bi-arrow-up-right-square"></i></button>
+        
+        
+        <a class="btn disabled print-hide d-none d-sm-inline"><i class="bi bi-pencil"></i></a>
+        
+        
+        <span class="dropdown print-hide">
+          <button class="btn btn" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown"
+            aria-expanded="false"><i class="bi bi-list"></i></button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
+            <li>
+              <h6 class="dropdown-header">Share via</h6>
+            </li>
+            <li><button class="btn dropdown-item"
+                onclick="share_to_twitter('Func | Caten Documentation','');"><i
+                  class="bi bi-twitter-x"></i>&nbsp;X.com</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_facebook();"><i
+                  class="bi bi-facebook"></i>&nbsp;Facebook</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_line();"><i
+                  class="bi bi-line"></i>&nbsp;LINE</button></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li><button class="btn dropdown-item" onclick="window.print();"><i class="bi bi-printer"></i>&nbsp;Print</button></li>
+            <li><button class="btn dropdown-item" id="page-url-copy-btn"><i class="bi bi-clipboard"></i>&nbsp;Copy Url to clipboard</button></li>
+            <li>
+              
+              
+              <a class="btn dropdown-item disabled"><i class="bi bi-pencil"></i>&nbsp;Edit this article</a>
+              
+              
+            </li>
+            <li><button class="btn dropdown-item" onclick="print_view();"><i
+                  class="bi bi-file-earmark-text"></i>&nbsp;View in EmbedMode</button></li>
+          </ul>
+        </span>
+      </div>
+    </div>
+  </div>
+  
+  <hr />
+  
+  
+  <h1 id="func">Func</h1>
+<h3 id="func-class">Func Class</h3>
+<h3 id="class-func">[class] Func</h3>
+<p>A CLOS class that represents a computation.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>[Func] -&gt; &lt;Lower&gt; -&gt; [FastGraph] -&gt; &lt;Simplifier&gt; -&gt; [Completed]
+</code></pre></div>
+<p><code>Func</code> (as the base class) is syntactic sugar for generating lowered instructions defined in the <code>caten/aasm</code> package.</p>
+<p>To properly lower the respective <code>Func</code>, you need to implement the following three methods:</p>
+<ul>
+<li>lower: Lower the <code>Func</code> into a list of <code>caten/air:node</code>. This should return <code>caten/air:graph</code>.</li>
+<li>forward: Create the type for the Tensor after computation. Be aware of its lazy evaluation nature; do not perform the actual computation. <code>ShapeTracker</code> might help you. (use the <code>st</code> macro)</li>
+<li>backward: Create the graph for the backward computation of op given prev-grad. Return: <code>(values input_1.grad input_2.grad ...)</code>.</li>
+</ul>
+<h3 id="generic-lower">[generic] lower</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>(lower op &amp;rest nodes)
+</code></pre></div>
+<p>Lowers the Func into a list of <code>caten/air:node</code>. This should return caten/air:graph.
+- op[Func] Func to lower.
+- nodes[list] list of previous nodes (each position corresponds to the position of the variables in the Func).</p>
+<h3 id="generic-forward">[generic] forward</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>(forward op &amp;rest tensors)
+</code></pre></div>
+<p>Create the type for the Tensor after computation. Be aware of its lazy evaluation nature; do not perform the actual computation. Use the <code>st</code> macro to create a new tensor.</p>
+<ul>
+<li>op[Func] Func to forward.</li>
+<li>tensors[list] list of input tensors.</li>
+</ul>
+<h3 id="generic-backward">[generic] backward</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>(backward op &amp;optional prev-grad)
+</code></pre></div>
+<p>Create the graph for the backward computation of op given prev-grad. Return: <code>(values input_1.grad input_2.grad ...)</code>.
+save-for-backward is determined automatically, so you do not have to consider about in-place operation.</p>
+<ul>
+<li>op[Func] Func to backward.</li>
+<li>prev-grad[Tensor] previous gradient tensor.</li>
+</ul>
+<h3 id="differentiable-ops-built_in">Differentiable Ops (built_in)</h3>
+<h3 id="function-identity">[function] !identity</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>(!identity tensor)
+</code></pre></div>
+<p>Equivalent to #'identity, but it is used to create a lazy computation node.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!identity</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="ss">:initial-element</span><span class="w"> </span><span class="mf">1.0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>{Tensor{LISPBUFFER}[float32] :shape (3 3) :id STC103377
+<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>   ((1.0 1.0 1.0)
+<a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    (1.0 1.0 1.0)
+<a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>    (1.0 1.0 1.0))
+<a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>  :op #&lt;PROCEEDNODE {1003C72ED3}&gt;
+<a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a>  :requires-grad NIL
+<a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>  :variables (STC103317)
+<a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-view">[function] !view</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>(!view base &amp;rest subscripts)
+</code></pre></div>
+<p>Create a view node from the base tensor and subscripts.</p>
+<p>We refer to <code>VIEW</code> as a node creating tensor whose buffers are shared with the <code>base</code> tensor, but shapes, strides, dtypes, offsets, or dtypes are different.</p>
+<p>Subscripts has the following notation:</p>
+<ul>
+<li><code>t</code> keep using the base view.</li>
+<li><code>fixnum</code> refers to the specified element. e.g.: <code>A[3]</code></li>
+<li><code>(a b)</code> slices in the range of <code>[a, b)</code></li>
+<li><code>(a b c)</code> slices in the range of <code>[a, b)</code> with step <code>c</code>. <code>c</code> can be negative. In that case, b must be larger than a. For example: <code>(10 0 -1)</code> to reverse the elements in the axis.</li>
+<li><code>(:~ n)</code> to broadcast the axis, with the size of <code>n</code></li>
+</ul>
+<p>It is supported to compose multiple views; the viewed tensors can be created from the viewed tensors.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!contiguous</span><span class="w"> </span><span class="p">(</span><span class="nv">!view</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">6</span><span class="p">)</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">6</span><span class="p">))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>{Tensor{LISPBUFFER}[float32] :shape (3 3) :id STC104263
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>   ((33.0 34.0 35.0)
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>    (43.0 44.0 45.0)
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>    (53.0 54.0 55.0))
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>  :op #&lt;PROCEEDNODE {1003E28B53}&gt;
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>  :requires-grad NIL
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>  :variables (STC103581)
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-permute">[function] !permute</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>(!permute tensor &amp;rest order)
+</code></pre></div>
+<p>Returns a tensor that is a permutation of the original tensor. The new tensor has the same data as the original tensor but with the dimensions permuted according to the <code>order</code> specified. order can be passed as a list or separated arguments. That is, both of <code>(!permute x 0 1)</code> or <code>(!permute x (list 0 1))</code> are valid.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!contiguous</span><span class="w"> </span><span class="p">(</span><span class="nv">!permute</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC104454
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>   ((0.0  10.0 20.0 30.0 40.0 50.0 60.0 70.0 80.0 90.0)
+<a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a>    (1.0  11.0 21.0 31.0 41.0 51.0 61.0 71.0 81.0 91.0)
+<a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a>    (2.0  12.0 22.0 32.0 42.0 52.0 62.0 72.0 82.0 92.0)
+<a id="__codelineno-12-5" name="__codelineno-12-5" href="#__codelineno-12-5"></a>    (3.0  13.0 23.0 33.0 43.0 53.0 63.0 73.0 83.0 93.0)
+<a id="__codelineno-12-6" name="__codelineno-12-6" href="#__codelineno-12-6"></a>    (4.0  14.0 24.0 34.0 44.0 54.0 64.0 74.0 84.0 94.0)
+<a id="__codelineno-12-7" name="__codelineno-12-7" href="#__codelineno-12-7"></a>    (5.0  15.0 25.0 35.0 45.0 55.0 65.0 75.0 85.0 95.0)
+<a id="__codelineno-12-8" name="__codelineno-12-8" href="#__codelineno-12-8"></a>    (6.0  16.0 26.0 36.0 46.0 56.0 66.0 76.0 86.0 96.0)
+<a id="__codelineno-12-9" name="__codelineno-12-9" href="#__codelineno-12-9"></a>    (7.0  17.0 27.0 37.0 47.0 57.0 67.0 77.0 87.0 97.0)
+<a id="__codelineno-12-10" name="__codelineno-12-10" href="#__codelineno-12-10"></a>    (8.0  18.0 28.0 38.0 48.0 58.0 68.0 78.0 88.0 98.0)
+<a id="__codelineno-12-11" name="__codelineno-12-11" href="#__codelineno-12-11"></a>    (9.0  19.0 29.0 39.0 49.0 59.0 69.0 79.0 89.0 99.0))
+<a id="__codelineno-12-12" name="__codelineno-12-12" href="#__codelineno-12-12"></a>  :op #&lt;PROCEEDNODE {1003E91903}&gt;
+<a id="__codelineno-12-13" name="__codelineno-12-13" href="#__codelineno-12-13"></a>  :requires-grad NIL
+<a id="__codelineno-12-14" name="__codelineno-12-14" href="#__codelineno-12-14"></a>  :variables (TID104271)
+<a id="__codelineno-12-15" name="__codelineno-12-15" href="#__codelineno-12-15"></a>  :tracker #&lt;TRACKER :order={row(1 0)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-t">[function] !t</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>(!t tensor)
+</code></pre></div>
+<p>Transposes the last two axes of the tensor</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!contiguous</span><span class="w"> </span><span class="p">(</span><span class="nv">!t</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC104645
+<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a>   ((0.0  10.0 20.0 30.0 40.0 50.0 60.0 70.0 80.0 90.0)
+<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a>    (1.0  11.0 21.0 31.0 41.0 51.0 61.0 71.0 81.0 91.0)
+<a id="__codelineno-15-4" name="__codelineno-15-4" href="#__codelineno-15-4"></a>    (2.0  12.0 22.0 32.0 42.0 52.0 62.0 72.0 82.0 92.0)
+<a id="__codelineno-15-5" name="__codelineno-15-5" href="#__codelineno-15-5"></a>    (3.0  13.0 23.0 33.0 43.0 53.0 63.0 73.0 83.0 93.0)
+<a id="__codelineno-15-6" name="__codelineno-15-6" href="#__codelineno-15-6"></a>    (4.0  14.0 24.0 34.0 44.0 54.0 64.0 74.0 84.0 94.0)
+<a id="__codelineno-15-7" name="__codelineno-15-7" href="#__codelineno-15-7"></a>    (5.0  15.0 25.0 35.0 45.0 55.0 65.0 75.0 85.0 95.0)
+<a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a>    (6.0  16.0 26.0 36.0 46.0 56.0 66.0 76.0 86.0 96.0)
+<a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a>    (7.0  17.0 27.0 37.0 47.0 57.0 67.0 77.0 87.0 97.0)
+<a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a>    (8.0  18.0 28.0 38.0 48.0 58.0 68.0 78.0 88.0 98.0)
+<a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a>    (9.0  19.0 29.0 39.0 49.0 59.0 69.0 79.0 89.0 99.0))
+<a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a>  :op #&lt;PROCEEDNODE {1003EFA683}&gt;
+<a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a>  :requires-grad NIL
+<a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a>  :variables (TID104462)
+<a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a>  :tracker #&lt;TRACKER :order={row(1 0)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-transpose">[function] !transpose</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>(!transpose tensor &amp;optional (dim0 1) (dim1 0))
+</code></pre></div>
+<p>Transposes <code>dim0</code> and <code>dim1</code>.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!contiguous</span><span class="w"> </span><span class="p">(</span><span class="nv">!transpose</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC104836
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>   ((0.0  10.0 20.0 30.0 40.0 50.0 60.0 70.0 80.0 90.0)
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>    (1.0  11.0 21.0 31.0 41.0 51.0 61.0 71.0 81.0 91.0)
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a>    (2.0  12.0 22.0 32.0 42.0 52.0 62.0 72.0 82.0 92.0)
+<a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>    (3.0  13.0 23.0 33.0 43.0 53.0 63.0 73.0 83.0 93.0)
+<a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>    (4.0  14.0 24.0 34.0 44.0 54.0 64.0 74.0 84.0 94.0)
+<a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a>    (5.0  15.0 25.0 35.0 45.0 55.0 65.0 75.0 85.0 95.0)
+<a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>    (6.0  16.0 26.0 36.0 46.0 56.0 66.0 76.0 86.0 96.0)
+<a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a>    (7.0  17.0 27.0 37.0 47.0 57.0 67.0 77.0 87.0 97.0)
+<a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a>    (8.0  18.0 28.0 38.0 48.0 58.0 68.0 78.0 88.0 98.0)
+<a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a>    (9.0  19.0 29.0 39.0 49.0 59.0 69.0 79.0 89.0 99.0))
+<a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a>  :op #&lt;PROCEEDNODE {1004049D83}&gt;
+<a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a>  :requires-grad NIL
+<a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a>  :variables (TID104653)
+<a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a>  :tracker #&lt;TRACKER :order={row(1 0)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-contiguous">[function] !contiguous</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>(!contiguous x &amp;key (force nil))
+</code></pre></div>
+<p>If the tensor is viewed, then creates a copy of tensor with contiguous memory. Otherwise, return the original tensor. If <code>force</code> is set to T, it always creates a copy.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!contiguous</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC104935
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a>   ((0.0  1.0  2.0  3.0  4.0  5.0  6.0  7.0  8.0  9.0)
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a>    (10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0)
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a>    (20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0)
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a>    (30.0 31.0 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0)
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a>    (40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0 48.0 49.0)
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a>    (50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0)
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a>    (60.0 61.0 62.0 63.0 64.0 65.0 66.0 67.0 68.0 69.0)
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a>    (70.0 71.0 72.0 73.0 74.0 75.0 76.0 77.0 78.0 79.0)
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a>    (80.0 81.0 82.0 83.0 84.0 85.0 86.0 87.0 88.0 89.0)
+<a id="__codelineno-21-11" name="__codelineno-21-11" href="#__codelineno-21-11"></a>    (90.0 91.0 92.0 93.0 94.0 95.0 96.0 97.0 98.0 99.0))
+<a id="__codelineno-21-12" name="__codelineno-21-12" href="#__codelineno-21-12"></a>  :op #&lt;PROCEEDNODE {1004096083}&gt;
+<a id="__codelineno-21-13" name="__codelineno-21-13" href="#__codelineno-21-13"></a>  :requires-grad NIL
+<a id="__codelineno-21-14" name="__codelineno-21-14" href="#__codelineno-21-14"></a>  :variables (STC104843)
+<a id="__codelineno-21-15" name="__codelineno-21-15" href="#__codelineno-21-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-copy">[function] !copy</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>(!copy x)
+</code></pre></div>
+Creates a copy of the tensor. In Caten, the in-place operations are automatically determined, so in general, you do not have to consider using it.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!copy</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC105065
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>   ((0.0  1.0  2.0  3.0  4.0  5.0  6.0  7.0  8.0  9.0)
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>    (10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0)
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a>    (20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0)
+<a id="__codelineno-24-5" name="__codelineno-24-5" href="#__codelineno-24-5"></a>    (30.0 31.0 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0)
+<a id="__codelineno-24-6" name="__codelineno-24-6" href="#__codelineno-24-6"></a>    (40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0 48.0 49.0)
+<a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a>    (50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0)
+<a id="__codelineno-24-8" name="__codelineno-24-8" href="#__codelineno-24-8"></a>    (60.0 61.0 62.0 63.0 64.0 65.0 66.0 67.0 68.0 69.0)
+<a id="__codelineno-24-9" name="__codelineno-24-9" href="#__codelineno-24-9"></a>    (70.0 71.0 72.0 73.0 74.0 75.0 76.0 77.0 78.0 79.0)
+<a id="__codelineno-24-10" name="__codelineno-24-10" href="#__codelineno-24-10"></a>    (80.0 81.0 82.0 83.0 84.0 85.0 86.0 87.0 88.0 89.0)
+<a id="__codelineno-24-11" name="__codelineno-24-11" href="#__codelineno-24-11"></a>    (90.0 91.0 92.0 93.0 94.0 95.0 96.0 97.0 98.0 99.0))
+<a id="__codelineno-24-12" name="__codelineno-24-12" href="#__codelineno-24-12"></a>  :op #&lt;PROCEEDNODE {10040CDF73}&gt;
+<a id="__codelineno-24-13" name="__codelineno-24-13" href="#__codelineno-24-13"></a>  :requires-grad NIL
+<a id="__codelineno-24-14" name="__codelineno-24-14" href="#__codelineno-24-14"></a>  :variables (STC104947)
+<a id="__codelineno-24-15" name="__codelineno-24-15" href="#__codelineno-24-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-reshape">[function] !reshape</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>(!reshape x &amp;rest shape)
+</code></pre></div>
+<p>Returns a same tensor but <code>shape</code> is changed. shape can be passed as a list or separated arguments. That is, both of <code>(!reshape x '(1 2 3))</code> or <code>(!reshape x 1 2 3)</code> are valid.</p>
+<p>Shape is a list of integers, symbols, or tensors.</p>
+<p>If <code>x</code> is a viewed tensor, it creates a copy of the tensor with contiguous memory (but later JIT will try to eliminate this).</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!reshape</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">5</span><span class="w"> </span><span class="mi">20</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>{Tensor{LISPBUFFER}[float32] :shape (5 20) :id STC105262
+<a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a>   ((0.0  1.0  2.0  3.0  4.0  ~ 15.0 16.0 17.0 18.0 19.0)
+<a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a>    (20.0 21.0 22.0 23.0 24.0 ~ 35.0 36.0 37.0 38.0 39.0)
+<a id="__codelineno-27-4" name="__codelineno-27-4" href="#__codelineno-27-4"></a>    (40.0 41.0 42.0 43.0 44.0 ~ 55.0 56.0 57.0 58.0 59.0)
+<a id="__codelineno-27-5" name="__codelineno-27-5" href="#__codelineno-27-5"></a>    (60.0 61.0 62.0 63.0 64.0 ~ 75.0 76.0 77.0 78.0 79.0)
+<a id="__codelineno-27-6" name="__codelineno-27-6" href="#__codelineno-27-6"></a>    (80.0 81.0 82.0 83.0 84.0 ~ 95.0 96.0 97.0 98.0 99.0))
+<a id="__codelineno-27-7" name="__codelineno-27-7" href="#__codelineno-27-7"></a>  :op #&lt;PROCEEDNODE {100412F693}&gt;
+<a id="__codelineno-27-8" name="__codelineno-27-8" href="#__codelineno-27-8"></a>  :requires-grad NIL
+<a id="__codelineno-27-9" name="__codelineno-27-9" href="#__codelineno-27-9"></a>  :variables (TID105073)
+<a id="__codelineno-27-10" name="__codelineno-27-10" href="#__codelineno-27-10"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(5 20) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-flatten">[function] !flatten</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>(!flatten x &amp;key (axis 1))
+</code></pre></div>
+<p>Flattens the input tensor into a 2D matrix. If input tensor has shape (d_0, d_1, ... d_n) then the output will have shape (d_0 X d_1 ... d_(axis-1), d_axis X d_(axis+1) ... X dn).</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!flatten</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="ss">:axis</span><span class="w"> </span><span class="mi">1</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>{Tensor{LISPBUFFER}[float32] :shape (3 27) :id STC105567
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>   ((0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>    (0.0 0.0 0.0 0.0 0.0 ~ 0.0 0.0 0.0 0.0 0.0))
+<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a>  :op #&lt;PROCEEDNODE {1004246673}&gt;
+<a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a>  :requires-grad NIL
+<a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a>  :variables (TID105303)
+<a id="__codelineno-30-8" name="__codelineno-30-8" href="#__codelineno-30-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 27) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-uprank">[function] !uprank</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>(!uprank x n)
+</code></pre></div>
+<p>Returns a tensor with one is inserted at the beginning of the shape of <code>x</code> for n times.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!uprank</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="mi">2</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>{Tensor{LISPBUFFER}[float32] :shape (1 1 10 10) :id STC105830
+<a id="__codelineno-33-2" name="__codelineno-33-2" href="#__codelineno-33-2"></a>   ((((0.0  1.0  2.0  3.0  4.0  5.0  6.0  7.0  8.0  9.0)
+<a id="__codelineno-33-3" name="__codelineno-33-3" href="#__codelineno-33-3"></a>      (10.0 11.0 12.0 13.0 14.0 15.0 16.0 17.0 18.0 19.0)
+<a id="__codelineno-33-4" name="__codelineno-33-4" href="#__codelineno-33-4"></a>      (20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0)
+<a id="__codelineno-33-5" name="__codelineno-33-5" href="#__codelineno-33-5"></a>      (30.0 31.0 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0)
+<a id="__codelineno-33-6" name="__codelineno-33-6" href="#__codelineno-33-6"></a>      (40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0 48.0 49.0)
+<a id="__codelineno-33-7" name="__codelineno-33-7" href="#__codelineno-33-7"></a>      (50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0)
+<a id="__codelineno-33-8" name="__codelineno-33-8" href="#__codelineno-33-8"></a>      (60.0 61.0 62.0 63.0 64.0 65.0 66.0 67.0 68.0 69.0)
+<a id="__codelineno-33-9" name="__codelineno-33-9" href="#__codelineno-33-9"></a>      (70.0 71.0 72.0 73.0 74.0 75.0 76.0 77.0 78.0 79.0)
+<a id="__codelineno-33-10" name="__codelineno-33-10" href="#__codelineno-33-10"></a>      (80.0 81.0 82.0 83.0 84.0 85.0 86.0 87.0 88.0 89.0)
+<a id="__codelineno-33-11" name="__codelineno-33-11" href="#__codelineno-33-11"></a>      (90.0 91.0 92.0 93.0 94.0 95.0 96.0 97.0 98.0 99.0))))
+<a id="__codelineno-33-12" name="__codelineno-33-12" href="#__codelineno-33-12"></a>  :op #&lt;PROCEEDNODE {10042E17F3}&gt;
+<a id="__codelineno-33-13" name="__codelineno-33-13" href="#__codelineno-33-13"></a>  :requires-grad NIL
+<a id="__codelineno-33-14" name="__codelineno-33-14" href="#__codelineno-33-14"></a>  :variables (TID105575)
+<a id="__codelineno-33-15" name="__codelineno-33-15" href="#__codelineno-33-15"></a>  :tracker #&lt;TRACKER :order={row(0 1 2 3)} :shape=(1 1 10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-repeat">[function] !repeat</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>(!repeat x &amp;rest repeats)
+</code></pre></div>
+<p>Returns a tensor with the shape of <code>x</code> broadcasted by <code>repeats</code>.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!repeat</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">1</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="mi">10</span><span class="w"> </span><span class="mi">1</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC108317
+<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>  &lt;&lt;Error during rendering: Invalid index 10 for (SIMPLE-ARRAY SINGLE-FLOAT (10)), should be a non...&gt;&gt;
+<a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a>  :op #&lt;PROCEEDNODE {1004A7D663}&gt;
+<a id="__codelineno-36-4" name="__codelineno-36-4" href="#__codelineno-36-4"></a>  :requires-grad NIL
+<a id="__codelineno-36-5" name="__codelineno-36-5" href="#__codelineno-36-5"></a>  :variables (VID106200)
+<a id="__codelineno-36-6" name="__codelineno-36-6" href="#__codelineno-36-6"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10(0 10 1) 10(0 10 1)) :contiguous-p=NIL&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-expand">[function] !expand</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>(!expand x &amp;rest shape)
+</code></pre></div>
+<p>Returns a tensor that is expanded to the shape that is specified. Expand can also increase the number of dimensions that a tensor has.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!expand</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">1</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a>{Tensor{LISPBUFFER}[float32] :shape (1 10) :id STC108955
+<a id="__codelineno-39-2" name="__codelineno-39-2" href="#__codelineno-39-2"></a>   ((0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0))
+<a id="__codelineno-39-3" name="__codelineno-39-3" href="#__codelineno-39-3"></a>  :op #&lt;PROCEEDNODE {1004BAC4F3}&gt;
+<a id="__codelineno-39-4" name="__codelineno-39-4" href="#__codelineno-39-4"></a>  :requires-grad NIL
+<a id="__codelineno-39-5" name="__codelineno-39-5" href="#__codelineno-39-5"></a>  :variables (VID108325)
+<a id="__codelineno-39-6" name="__codelineno-39-6" href="#__codelineno-39-6"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(~1 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-move">[function] !move</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a>(!move a b &amp;key (reduce nil))
+</code></pre></div>
+<p>Moves the element of b into a, returning a. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!move</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">2</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-42-1" name="__codelineno-42-1" href="#__codelineno-42-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC109123
+<a id="__codelineno-42-2" name="__codelineno-42-2" href="#__codelineno-42-2"></a>   ((2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-42-3" name="__codelineno-42-3" href="#__codelineno-42-3"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-42-4" name="__codelineno-42-4" href="#__codelineno-42-4"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-42-5" name="__codelineno-42-5" href="#__codelineno-42-5"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-42-6" name="__codelineno-42-6" href="#__codelineno-42-6"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-42-7" name="__codelineno-42-7" href="#__codelineno-42-7"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-42-8" name="__codelineno-42-8" href="#__codelineno-42-8"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-42-9" name="__codelineno-42-9" href="#__codelineno-42-9"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-42-10" name="__codelineno-42-10" href="#__codelineno-42-10"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-42-11" name="__codelineno-42-11" href="#__codelineno-42-11"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0))
+<a id="__codelineno-42-12" name="__codelineno-42-12" href="#__codelineno-42-12"></a>  :op #&lt;PROCEEDNODE {1004D4C1B3}&gt;
+<a id="__codelineno-42-13" name="__codelineno-42-13" href="#__codelineno-42-13"></a>  :requires-grad NIL
+<a id="__codelineno-42-14" name="__codelineno-42-14" href="#__codelineno-42-14"></a>  :variables (STC108970)
+<a id="__codelineno-42-15" name="__codelineno-42-15" href="#__codelineno-42-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-assign">[function] !assign</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-43-1" name="__codelineno-43-1" href="#__codelineno-43-1"></a>(!assign a b)
+</code></pre></div>
+Equivalent to doing <code>(!move a b :reduce t)</code>. Useful when you want to the value of lazy ops to an pre-allocated buffer, like KV-Cache.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-44-1" name="__codelineno-44-1" href="#__codelineno-44-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!assign</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">2</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-45-1" name="__codelineno-45-1" href="#__codelineno-45-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC109291
+<a id="__codelineno-45-2" name="__codelineno-45-2" href="#__codelineno-45-2"></a>   ((2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-45-3" name="__codelineno-45-3" href="#__codelineno-45-3"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-45-4" name="__codelineno-45-4" href="#__codelineno-45-4"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-45-5" name="__codelineno-45-5" href="#__codelineno-45-5"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-45-6" name="__codelineno-45-6" href="#__codelineno-45-6"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-45-7" name="__codelineno-45-7" href="#__codelineno-45-7"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-45-8" name="__codelineno-45-8" href="#__codelineno-45-8"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-45-9" name="__codelineno-45-9" href="#__codelineno-45-9"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-45-10" name="__codelineno-45-10" href="#__codelineno-45-10"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0)
+<a id="__codelineno-45-11" name="__codelineno-45-11" href="#__codelineno-45-11"></a>    (2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0 2.0))
+<a id="__codelineno-45-12" name="__codelineno-45-12" href="#__codelineno-45-12"></a>  :op #&lt;PROCEEDNODE {1004DAB4E3}&gt;
+<a id="__codelineno-45-13" name="__codelineno-45-13" href="#__codelineno-45-13"></a>  :requires-grad NIL
+<a id="__codelineno-45-14" name="__codelineno-45-14" href="#__codelineno-45-14"></a>  :variables (STC109138)
+<a id="__codelineno-45-15" name="__codelineno-45-15" href="#__codelineno-45-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-add">[function] !add</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-46-1" name="__codelineno-46-1" href="#__codelineno-46-1"></a>(!add a b &amp;key (reduce nil))
+<a id="__codelineno-46-2" name="__codelineno-46-2" href="#__codelineno-46-2"></a>;; or
+<a id="__codelineno-46-3" name="__codelineno-46-3" href="#__codelineno-46-3"></a>(!+ &amp;rest tensors)
+</code></pre></div>
+<p>Adds <code>a</code> and <code>b</code>. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-47-1" name="__codelineno-47-1" href="#__codelineno-47-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!add</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-48-1" name="__codelineno-48-1" href="#__codelineno-48-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC109460
+<a id="__codelineno-48-2" name="__codelineno-48-2" href="#__codelineno-48-2"></a>   ((0.0   2.0   4.0   6.0   8.0   10.0  12.0  14.0  16.0  18.0)
+<a id="__codelineno-48-3" name="__codelineno-48-3" href="#__codelineno-48-3"></a>    (20.0  22.0  24.0  26.0  28.0  30.0  32.0  34.0  36.0  38.0)
+<a id="__codelineno-48-4" name="__codelineno-48-4" href="#__codelineno-48-4"></a>    (40.0  42.0  44.0  46.0  48.0  50.0  52.0  54.0  56.0  58.0)
+<a id="__codelineno-48-5" name="__codelineno-48-5" href="#__codelineno-48-5"></a>    (60.0  62.0  64.0  66.0  68.0  70.0  72.0  74.0  76.0  78.0)
+<a id="__codelineno-48-6" name="__codelineno-48-6" href="#__codelineno-48-6"></a>    (80.0  82.0  84.0  86.0  88.0  90.0  92.0  94.0  96.0  98.0)
+<a id="__codelineno-48-7" name="__codelineno-48-7" href="#__codelineno-48-7"></a>    (100.0 102.0 104.0 106.0 108.0 110.0 112.0 114.0 116.0 118.0)
+<a id="__codelineno-48-8" name="__codelineno-48-8" href="#__codelineno-48-8"></a>    (120.0 122.0 124.0 126.0 128.0 130.0 132.0 134.0 136.0 138.0)
+<a id="__codelineno-48-9" name="__codelineno-48-9" href="#__codelineno-48-9"></a>    (140.0 142.0 144.0 146.0 148.0 150.0 152.0 154.0 156.0 158.0)
+<a id="__codelineno-48-10" name="__codelineno-48-10" href="#__codelineno-48-10"></a>    (160.0 162.0 164.0 166.0 168.0 170.0 172.0 174.0 176.0 178.0)
+<a id="__codelineno-48-11" name="__codelineno-48-11" href="#__codelineno-48-11"></a>    (180.0 182.0 184.0 186.0 188.0 190.0 192.0 194.0 196.0 198.0))
+<a id="__codelineno-48-12" name="__codelineno-48-12" href="#__codelineno-48-12"></a>  :op #&lt;PROCEEDNODE {1004DF93A3}&gt;
+<a id="__codelineno-48-13" name="__codelineno-48-13" href="#__codelineno-48-13"></a>  :requires-grad NIL
+<a id="__codelineno-48-14" name="__codelineno-48-14" href="#__codelineno-48-14"></a>  :variables (STC109306)
+<a id="__codelineno-48-15" name="__codelineno-48-15" href="#__codelineno-48-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-sub">[function] !sub</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-49-1" name="__codelineno-49-1" href="#__codelineno-49-1"></a>(!sub a b &amp;key (reduce nil))
+<a id="__codelineno-49-2" name="__codelineno-49-2" href="#__codelineno-49-2"></a>;; or
+<a id="__codelineno-49-3" name="__codelineno-49-3" href="#__codelineno-49-3"></a>(!- &amp;rest tensors)
+</code></pre></div>
+<p>Subtracts <code>b</code> from <code>a</code>. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-50-1" name="__codelineno-50-1" href="#__codelineno-50-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!sub</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-51-1" name="__codelineno-51-1" href="#__codelineno-51-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC109635
+<a id="__codelineno-51-2" name="__codelineno-51-2" href="#__codelineno-51-2"></a>   ((0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-51-3" name="__codelineno-51-3" href="#__codelineno-51-3"></a>    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-51-4" name="__codelineno-51-4" href="#__codelineno-51-4"></a>    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-51-5" name="__codelineno-51-5" href="#__codelineno-51-5"></a>    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-51-6" name="__codelineno-51-6" href="#__codelineno-51-6"></a>    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-51-7" name="__codelineno-51-7" href="#__codelineno-51-7"></a>    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-51-8" name="__codelineno-51-8" href="#__codelineno-51-8"></a>    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-51-9" name="__codelineno-51-9" href="#__codelineno-51-9"></a>    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-51-10" name="__codelineno-51-10" href="#__codelineno-51-10"></a>    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0)
+<a id="__codelineno-51-11" name="__codelineno-51-11" href="#__codelineno-51-11"></a>    (0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0))
+<a id="__codelineno-51-12" name="__codelineno-51-12" href="#__codelineno-51-12"></a>  :op #&lt;PROCEEDNODE {1004E3AD13}&gt;
+<a id="__codelineno-51-13" name="__codelineno-51-13" href="#__codelineno-51-13"></a>  :requires-grad NIL
+<a id="__codelineno-51-14" name="__codelineno-51-14" href="#__codelineno-51-14"></a>  :variables (STC109476)
+<a id="__codelineno-51-15" name="__codelineno-51-15" href="#__codelineno-51-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-mul">[function] !mul</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-52-1" name="__codelineno-52-1" href="#__codelineno-52-1"></a>(!mul a b &amp;key (reduce nil))
+<a id="__codelineno-52-2" name="__codelineno-52-2" href="#__codelineno-52-2"></a>;; or
+<a id="__codelineno-52-3" name="__codelineno-52-3" href="#__codelineno-52-3"></a>(!* &amp;rest tensors)
+</code></pre></div>
+<p>Multiplies <code>a</code> and <code>b</code>. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!mul</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC109810
+<a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a>   ((0.0    1.0    4.0    9.0    16.0   25.0   36.0   49.0   64.0   81.0)
+<a id="__codelineno-54-3" name="__codelineno-54-3" href="#__codelineno-54-3"></a>    (100.0  121.0  144.0  169.0  196.0  225.0  256.0  289.0  324.0  361.0)
+<a id="__codelineno-54-4" name="__codelineno-54-4" href="#__codelineno-54-4"></a>    (400.0  441.0  484.0  529.0  576.0  625.0  676.0  729.0  784.0  841.0)
+<a id="__codelineno-54-5" name="__codelineno-54-5" href="#__codelineno-54-5"></a>    (900.0  961.0  1024.0 1089.0 1156.0 1225.0 1296.0 1369.0 1444.0 1521.0)
+<a id="__codelineno-54-6" name="__codelineno-54-6" href="#__codelineno-54-6"></a>    (1600.0 1681.0 1764.0 1849.0 1936.0 2025.0 2116.0 2209.0 2304.0 2401.0)
+<a id="__codelineno-54-7" name="__codelineno-54-7" href="#__codelineno-54-7"></a>    (2500.0 2601.0 2704.0 2809.0 2916.0 3025.0 3136.0 3249.0 3364.0 3481.0)
+<a id="__codelineno-54-8" name="__codelineno-54-8" href="#__codelineno-54-8"></a>    (3600.0 3721.0 3844.0 3969.0 4096.0 4225.0 4356.0 4489.0 4624.0 4761.0)
+<a id="__codelineno-54-9" name="__codelineno-54-9" href="#__codelineno-54-9"></a>    (4900.0 5041.0 5184.0 5329.0 5476.0 5625.0 5776.0 5929.0 6084.0 6241.0)
+<a id="__codelineno-54-10" name="__codelineno-54-10" href="#__codelineno-54-10"></a>    (6400.0 6561.0 6724.0 6889.0 7056.0 7225.0 7396.0 7569.0 7744.0 7921.0)
+<a id="__codelineno-54-11" name="__codelineno-54-11" href="#__codelineno-54-11"></a>    (8100.0 8281.0 8464.0 8649.0 8836.0 9025.0 9216.0 9409.0 9604.0 9801.0))
+<a id="__codelineno-54-12" name="__codelineno-54-12" href="#__codelineno-54-12"></a>  :op #&lt;PROCEEDNODE {1004E92E33}&gt;
+<a id="__codelineno-54-13" name="__codelineno-54-13" href="#__codelineno-54-13"></a>  :requires-grad NIL
+<a id="__codelineno-54-14" name="__codelineno-54-14" href="#__codelineno-54-14"></a>  :variables (STC109650)
+<a id="__codelineno-54-15" name="__codelineno-54-15" href="#__codelineno-54-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-div">[function] !div</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a>(!div a b &amp;key (reduce nil))
+<a id="__codelineno-55-2" name="__codelineno-55-2" href="#__codelineno-55-2"></a>;; or
+<a id="__codelineno-55-3" name="__codelineno-55-3" href="#__codelineno-55-3"></a>(!/ &amp;rest tensors)
+</code></pre></div>
+<p>Divides <code>a</code> by <code>b</code>. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!div</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">1</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC110000
+<a id="__codelineno-57-2" name="__codelineno-57-2" href="#__codelineno-57-2"></a>   ((1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0)
+<a id="__codelineno-57-3" name="__codelineno-57-3" href="#__codelineno-57-3"></a>    (1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0)
+<a id="__codelineno-57-4" name="__codelineno-57-4" href="#__codelineno-57-4"></a>    (1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0)
+<a id="__codelineno-57-5" name="__codelineno-57-5" href="#__codelineno-57-5"></a>    (1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0)
+<a id="__codelineno-57-6" name="__codelineno-57-6" href="#__codelineno-57-6"></a>    (0.99999994 1.0        1.0        1.0        1.0        1.0        0.99999994 1.0        1.0        1.0)
+<a id="__codelineno-57-7" name="__codelineno-57-7" href="#__codelineno-57-7"></a>    (1.0        1.0        1.0        1.0        0.99999994 1.0        1.0        1.0        1.0        1.0)
+<a id="__codelineno-57-8" name="__codelineno-57-8" href="#__codelineno-57-8"></a>    (0.99999994 1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0)
+<a id="__codelineno-57-9" name="__codelineno-57-9" href="#__codelineno-57-9"></a>    (1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0        1.0)
+<a id="__codelineno-57-10" name="__codelineno-57-10" href="#__codelineno-57-10"></a>    (1.0        0.99999994 0.99999994 1.0        1.0        1.0        1.0        1.0        1.0        1.0)
+<a id="__codelineno-57-11" name="__codelineno-57-11" href="#__codelineno-57-11"></a>    (1.0        1.0        1.0        0.99999994 1.0        1.0        0.99999994 1.0        1.0        1.0))
+<a id="__codelineno-57-12" name="__codelineno-57-12" href="#__codelineno-57-12"></a>  :op #&lt;PROCEEDNODE {1004F129A3}&gt;
+<a id="__codelineno-57-13" name="__codelineno-57-13" href="#__codelineno-57-13"></a>  :requires-grad NIL
+<a id="__codelineno-57-14" name="__codelineno-57-14" href="#__codelineno-57-14"></a>  :variables (STC109826)
+<a id="__codelineno-57-15" name="__codelineno-57-15" href="#__codelineno-57-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-mod">[function] !mod</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a>(!mod a b &amp;key (reduce nil))
+</code></pre></div>
+Computes the remainder of the division of <code>a</code> by <code>b</code>. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!mod</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="ss">:dtype</span><span class="w"> </span><span class="ss">:int32</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="ss">:dtype</span><span class="w"> </span><span class="ss">:int32</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a>{Tensor{LISPBUFFER}[int32] :shape (10 10) :id STC110173
+<a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a>   ((0 0 0 0 0 0 0 0 0 0)
+<a id="__codelineno-60-3" name="__codelineno-60-3" href="#__codelineno-60-3"></a>    (0 0 0 0 0 0 0 0 0 0)
+<a id="__codelineno-60-4" name="__codelineno-60-4" href="#__codelineno-60-4"></a>    (0 0 0 0 0 0 0 0 0 0)
+<a id="__codelineno-60-5" name="__codelineno-60-5" href="#__codelineno-60-5"></a>    (0 0 0 0 0 0 0 0 0 0)
+<a id="__codelineno-60-6" name="__codelineno-60-6" href="#__codelineno-60-6"></a>    (0 0 0 0 0 0 0 0 0 0)
+<a id="__codelineno-60-7" name="__codelineno-60-7" href="#__codelineno-60-7"></a>    (0 0 0 0 0 0 0 0 0 0)
+<a id="__codelineno-60-8" name="__codelineno-60-8" href="#__codelineno-60-8"></a>    (0 0 0 0 0 0 0 0 0 0)
+<a id="__codelineno-60-9" name="__codelineno-60-9" href="#__codelineno-60-9"></a>    (0 0 0 0 0 0 0 0 0 0)
+<a id="__codelineno-60-10" name="__codelineno-60-10" href="#__codelineno-60-10"></a>    (0 0 0 0 0 0 0 0 0 0)
+<a id="__codelineno-60-11" name="__codelineno-60-11" href="#__codelineno-60-11"></a>    (0 0 0 0 0 0 0 0 0 0))
+<a id="__codelineno-60-12" name="__codelineno-60-12" href="#__codelineno-60-12"></a>  :op #&lt;PROCEEDNODE {1005194943}&gt;
+<a id="__codelineno-60-13" name="__codelineno-60-13" href="#__codelineno-60-13"></a>  :requires-grad NIL
+<a id="__codelineno-60-14" name="__codelineno-60-14" href="#__codelineno-60-14"></a>  :variables (STC110015)
+<a id="__codelineno-60-15" name="__codelineno-60-15" href="#__codelineno-60-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-idiv">[function] !idiv</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a>(!idiv a b &amp;key (reduce nil))
+</code></pre></div>
+<p>Assuming both of a and b are the integer, divides <code>a</code> by <code>b</code> and returns the integer part. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-62-1" name="__codelineno-62-1" href="#__codelineno-62-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!idiv</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="ss">:dtype</span><span class="w"> </span><span class="ss">:uint32</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="ss">:dtype</span><span class="w"> </span><span class="ss">:uint32</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a>{Tensor{LISPBUFFER}[uint32] :shape (10 10) :id STC110337
+<a id="__codelineno-63-2" name="__codelineno-63-2" href="#__codelineno-63-2"></a>   ((0   2   3   5   6   8   9   11  12  14)
+<a id="__codelineno-63-3" name="__codelineno-63-3" href="#__codelineno-63-3"></a>    (15  17  18  20  21  23  24  26  27  29)
+<a id="__codelineno-63-4" name="__codelineno-63-4" href="#__codelineno-63-4"></a>    (30  32  33  35  36  38  39  41  42  44)
+<a id="__codelineno-63-5" name="__codelineno-63-5" href="#__codelineno-63-5"></a>    (45  47  48  50  51  53  54  56  57  59)
+<a id="__codelineno-63-6" name="__codelineno-63-6" href="#__codelineno-63-6"></a>    (60  62  63  65  66  68  69  71  72  74)
+<a id="__codelineno-63-7" name="__codelineno-63-7" href="#__codelineno-63-7"></a>    (75  77  78  80  81  83  84  86  87  89)
+<a id="__codelineno-63-8" name="__codelineno-63-8" href="#__codelineno-63-8"></a>    (90  92  93  95  96  98  99  101 102 104)
+<a id="__codelineno-63-9" name="__codelineno-63-9" href="#__codelineno-63-9"></a>    (105 107 108 110 111 113 114 116 117 119)
+<a id="__codelineno-63-10" name="__codelineno-63-10" href="#__codelineno-63-10"></a>    (120 122 123 125 126 128 129 131 132 134)
+<a id="__codelineno-63-11" name="__codelineno-63-11" href="#__codelineno-63-11"></a>    (135 137 138 140 141 143 144 146 147 149))
+<a id="__codelineno-63-12" name="__codelineno-63-12" href="#__codelineno-63-12"></a>  :op #&lt;PROCEEDNODE {100521B093}&gt;
+<a id="__codelineno-63-13" name="__codelineno-63-13" href="#__codelineno-63-13"></a>  :requires-grad NIL
+<a id="__codelineno-63-14" name="__codelineno-63-14" href="#__codelineno-63-14"></a>  :variables (STC110188)
+<a id="__codelineno-63-15" name="__codelineno-63-15" href="#__codelineno-63-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-maximum">[function] !maximum</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-64-1" name="__codelineno-64-1" href="#__codelineno-64-1"></a>(!maximum a b &amp;key (reduce nil))
+</code></pre></div>
+Returns the maximum of <code>a</code> and <code>b</code>. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-65-1" name="__codelineno-65-1" href="#__codelineno-65-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!maximum</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-66-1" name="__codelineno-66-1" href="#__codelineno-66-1"></a>{Tensor{LISPBUFFER}[float32] :shape (3 3) :id STC134994
+<a id="__codelineno-66-2" name="__codelineno-66-2" href="#__codelineno-66-2"></a>   ((0.49818084 0.6545696  1.1272388)
+<a id="__codelineno-66-3" name="__codelineno-66-3" href="#__codelineno-66-3"></a>    (0.71888524 0.86670333 0.97324157)
+<a id="__codelineno-66-4" name="__codelineno-66-4" href="#__codelineno-66-4"></a>    (0.71676797 0.63761955 0.62686044))
+<a id="__codelineno-66-5" name="__codelineno-66-5" href="#__codelineno-66-5"></a>  :op #&lt;PROCEEDNODE {1002DF3423}&gt;
+<a id="__codelineno-66-6" name="__codelineno-66-6" href="#__codelineno-66-6"></a>  :requires-grad NIL
+<a id="__codelineno-66-7" name="__codelineno-66-7" href="#__codelineno-66-7"></a>  :variables (STC134273)
+<a id="__codelineno-66-8" name="__codelineno-66-8" href="#__codelineno-66-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-minimum">[function] !minimum</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-67-1" name="__codelineno-67-1" href="#__codelineno-67-1"></a>(!minimum a b &amp;key (reduce nil))
+</code></pre></div>
+Returns the minimum of <code>a</code> and <code>b</code>. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-68-1" name="__codelineno-68-1" href="#__codelineno-68-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!minimum</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-69-1" name="__codelineno-69-1" href="#__codelineno-69-1"></a>{Tensor{LISPBUFFER}[float32] :shape (3 3) :id STC135746
+<a id="__codelineno-69-2" name="__codelineno-69-2" href="#__codelineno-69-2"></a>   ((0.037297387 -2.037279   -0.49524468)
+<a id="__codelineno-69-3" name="__codelineno-69-3" href="#__codelineno-69-3"></a>    (0.083971575 0.3244131   0.39060554)
+<a id="__codelineno-69-4" name="__codelineno-69-4" href="#__codelineno-69-4"></a>    (-0.52718425 -1.4125385  0.8568455))
+<a id="__codelineno-69-5" name="__codelineno-69-5" href="#__codelineno-69-5"></a>  :op #&lt;PROCEEDNODE {10030FC523}&gt;
+<a id="__codelineno-69-6" name="__codelineno-69-6" href="#__codelineno-69-6"></a>  :requires-grad NIL
+<a id="__codelineno-69-7" name="__codelineno-69-7" href="#__codelineno-69-7"></a>  :variables (STC135010)
+<a id="__codelineno-69-8" name="__codelineno-69-8" href="#__codelineno-69-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-gcd">[function] !gcd</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-70-1" name="__codelineno-70-1" href="#__codelineno-70-1"></a>(!gcd a b &amp;key (reduce nil))
+</code></pre></div>
+Returns the greatest common divisor of <code>a</code> and <code>b</code>. If <code>reduce</code> is T, it will reduce the result. (Broadcast)</p>
+<p><code>a</code>, <code>b</code> are expected to be integer scalars. (dedicated to the view computation)</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-71-1" name="__codelineno-71-1" href="#__codelineno-71-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">ctx:with-contextvar</span><span class="w"> </span><span class="p">(</span><span class="ss">:backend</span><span class="w"> </span><span class="s">&quot;lisp&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!gcd</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">8</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">4</span><span class="p">))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-72-1" name="__codelineno-72-1" href="#__codelineno-72-1"></a>{Tensor{LISPBUFFER}[int64] :shape NIL :id STC135767
+<a id="__codelineno-72-2" name="__codelineno-72-2" href="#__codelineno-72-2"></a>  4
+<a id="__codelineno-72-3" name="__codelineno-72-3" href="#__codelineno-72-3"></a>  :op #&lt;PROCEEDNODE {1003249853}&gt;
+<a id="__codelineno-72-4" name="__codelineno-72-4" href="#__codelineno-72-4"></a>  :requires-grad NIL
+<a id="__codelineno-72-5" name="__codelineno-72-5" href="#__codelineno-72-5"></a>  :variables (STC135749)
+<a id="__codelineno-72-6" name="__codelineno-72-6" href="#__codelineno-72-6"></a>  :tracker #&lt;TRACKER :order={rowNIL} :shape=() :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-lcm">[function] !lcm</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-73-1" name="__codelineno-73-1" href="#__codelineno-73-1"></a>(!lcm a b)
+</code></pre></div>
+Returns the least common multiple of <code>a</code> and <code>b</code>.</p>
+<p><code>a</code>, <code>b</code> are expected to be integer scalars.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-74-1" name="__codelineno-74-1" href="#__codelineno-74-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">ctx:with-contextvar</span><span class="w"> </span><span class="p">(</span><span class="ss">:backend</span><span class="w"> </span><span class="s">&quot;lisp&quot;</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!lcm</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">8</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">4</span><span class="p">))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-75-1" name="__codelineno-75-1" href="#__codelineno-75-1"></a>{Tensor{LISPBUFFER}[int64] :shape NIL :id STC135829
+<a id="__codelineno-75-2" name="__codelineno-75-2" href="#__codelineno-75-2"></a>  8
+<a id="__codelineno-75-3" name="__codelineno-75-3" href="#__codelineno-75-3"></a>  :op #&lt;PROCEEDNODE {10032B8443}&gt;
+<a id="__codelineno-75-4" name="__codelineno-75-4" href="#__codelineno-75-4"></a>  :requires-grad NIL
+<a id="__codelineno-75-5" name="__codelineno-75-5" href="#__codelineno-75-5"></a>  :variables (STC135773)
+<a id="__codelineno-75-6" name="__codelineno-75-6" href="#__codelineno-75-6"></a>  :tracker #&lt;TRACKER :order={rowNIL} :shape=() :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-exp">[function] !exp</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-76-1" name="__codelineno-76-1" href="#__codelineno-76-1"></a>(!exp x)
+</code></pre></div>
+<p>Computes <code>(exp x)</code>.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-77-1" name="__codelineno-77-1" href="#__codelineno-77-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!exp</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mf">0.01</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-78-1" name="__codelineno-78-1" href="#__codelineno-78-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC135951
+<a id="__codelineno-78-2" name="__codelineno-78-2" href="#__codelineno-78-2"></a>   ((1.0       1.0100502 1.0202013 1.0304545 1.0408108 1.0512711 1.0618366 1.0725082 1.0832871 1.0941743)
+<a id="__codelineno-78-3" name="__codelineno-78-3" href="#__codelineno-78-3"></a>    (1.105171  1.116278  1.1274968 1.1388284 1.1502738 1.1618342 1.1735109 1.1853049 1.1972173 1.2092496)
+<a id="__codelineno-78-4" name="__codelineno-78-4" href="#__codelineno-78-4"></a>    (1.2214028 1.2336781 1.2460767 1.2586    1.2712492 1.2840254 1.2969301 1.3099644 1.3231298 1.3364275)
+<a id="__codelineno-78-5" name="__codelineno-78-5" href="#__codelineno-78-5"></a>    (1.3498588 1.3634251 1.3771278 1.3909681 1.4049476 1.4190675 1.4333293 1.4477346 1.4622846 1.4769808)
+<a id="__codelineno-78-6" name="__codelineno-78-6" href="#__codelineno-78-6"></a>    (1.4918246 1.5068177 1.5219616 1.5372574 1.5527072 1.5683122 1.5840739 1.5999942 1.6160744 1.6323161)
+<a id="__codelineno-78-7" name="__codelineno-78-7" href="#__codelineno-78-7"></a>    (1.6487212 1.6652912 1.6820276 1.6989322 1.7160068 1.733253  1.7506725 1.768267  1.7860384 1.8039883)
+<a id="__codelineno-78-8" name="__codelineno-78-8" href="#__codelineno-78-8"></a>    (1.8221188 1.8404315 1.8589281 1.8776106 1.8964808 1.9155407 1.9347923 1.9542372 1.9738777 1.9937155)
+<a id="__codelineno-78-9" name="__codelineno-78-9" href="#__codelineno-78-9"></a>    (2.0137527 2.033991  2.054433  2.0750806 2.0959353 2.1169999 2.138276  2.1597662 2.181472  2.2033963)
+<a id="__codelineno-78-10" name="__codelineno-78-10" href="#__codelineno-78-10"></a>    (2.2255409 2.2479079 2.2704997 2.2933185 2.316367  2.3396468 2.3631606 2.386911  2.4108996 2.4351294)
+<a id="__codelineno-78-11" name="__codelineno-78-11" href="#__codelineno-78-11"></a>    (2.4596028 2.4843223 2.5092902 2.5345092 2.5599813 2.5857096 2.6116965 2.6379445 2.664456  2.691234))
+<a id="__codelineno-78-12" name="__codelineno-78-12" href="#__codelineno-78-12"></a>  :op #&lt;PROCEEDNODE {1003320683}&gt;
+<a id="__codelineno-78-13" name="__codelineno-78-13" href="#__codelineno-78-13"></a>  :requires-grad NIL
+<a id="__codelineno-78-14" name="__codelineno-78-14" href="#__codelineno-78-14"></a>  :variables (STC135837)
+<a id="__codelineno-78-15" name="__codelineno-78-15" href="#__codelineno-78-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-log">[function] !log</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-79-1" name="__codelineno-79-1" href="#__codelineno-79-1"></a>(!log x)
+</code></pre></div>
+<p>Computes <code>(log x)</code>.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-80-1" name="__codelineno-80-1" href="#__codelineno-80-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!log</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mf">0.01</span><span class="w"> </span><span class="mf">0.001</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-81-1" name="__codelineno-81-1" href="#__codelineno-81-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC136062
+<a id="__codelineno-81-2" name="__codelineno-81-2" href="#__codelineno-81-2"></a>   ((-6.9077554   -4.50986     -3.8632329   -3.4737678   -3.1941833   -2.97593     -2.7968814   -2.6450753   -2.5133061   -2.396896)
+<a id="__codelineno-81-3" name="__codelineno-81-3" href="#__codelineno-81-3"></a>    (-2.2926347   -2.198225    -2.1119647   -2.032558    -1.9589953   -1.8904755   -1.8263509   -1.7660917   -1.7092583   -1.6554819)
+<a id="__codelineno-81-4" name="__codelineno-81-4" href="#__codelineno-81-4"></a>    (-1.6044505   -1.555897    -1.5095925   -1.4653376   -1.4229584   -1.3823024   -1.343235    -1.3056365   -1.2694006   -1.2344321)
+<a id="__codelineno-81-5" name="__codelineno-81-5" href="#__codelineno-81-5"></a>    (-1.2006451   -1.1679624   -1.1363143   -1.105637    -1.0758728   -1.046969    -1.0188774   -0.99155325  -0.964956    -0.93904775)
+<a id="__codelineno-81-6" name="__codelineno-81-6" href="#__codelineno-81-6"></a>    (-0.9137939   -0.8891622   -0.8651225   -0.84164727  -0.81871045  -0.796288    -0.7743574   -0.7528972   -0.73188806  -0.7113112)
+<a id="__codelineno-81-7" name="__codelineno-81-7" href="#__codelineno-81-7"></a>    (-0.6911492   -0.6713857   -0.6520053   -0.63299334  -0.6143361   -0.59602046  -0.5780344   -0.5603661   -0.5430046   -0.52593935)
+<a id="__codelineno-81-8" name="__codelineno-81-8" href="#__codelineno-81-8"></a>    (-0.5091604   -0.49265832  -0.47642422  -0.46044946  -0.44472587  -0.42924568  -0.41400146  -0.39898625  -0.38419297  -0.36961547)
+<a id="__codelineno-81-9" name="__codelineno-81-9" href="#__codelineno-81-9"></a>    (-0.35524744  -0.3410829   -0.3271162   -0.3133419   -0.29975465  -0.28634965  -0.27312195  -0.26006696  -0.24718018  -0.23445737)
+<a id="__codelineno-81-10" name="__codelineno-81-10" href="#__codelineno-81-10"></a>    (-0.22189441  -0.20948724  -0.19723219  -0.18512551  -0.17316367  -0.1613432   -0.14966084  -0.1381133   -0.12669767  -0.11541088)
+<a id="__codelineno-81-11" name="__codelineno-81-11" href="#__codelineno-81-11"></a>    (-0.10425006  -0.093212426 -0.082295306 -0.07149601  -0.060812157 -0.050241243 -0.039780907 -0.029428856 -0.019182874 -0.009040808))
+<a id="__codelineno-81-12" name="__codelineno-81-12" href="#__codelineno-81-12"></a>  :op #&lt;PROCEEDNODE {1003378C73}&gt;
+<a id="__codelineno-81-13" name="__codelineno-81-13" href="#__codelineno-81-13"></a>  :requires-grad NIL
+<a id="__codelineno-81-14" name="__codelineno-81-14" href="#__codelineno-81-14"></a>  :variables (STC135959)
+<a id="__codelineno-81-15" name="__codelineno-81-15" href="#__codelineno-81-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-sqrt">[function] !sqrt</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-82-1" name="__codelineno-82-1" href="#__codelineno-82-1"></a>(!sqrt x)
+</code></pre></div>
+Computes <code>(sqrt x)</code>.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-83-1" name="__codelineno-83-1" href="#__codelineno-83-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!sqrt</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mf">0.01</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-84-1" name="__codelineno-84-1" href="#__codelineno-84-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC136342
+<a id="__codelineno-84-2" name="__codelineno-84-2" href="#__codelineno-84-2"></a>   ((0.0        0.1        0.14142135 0.17320508 0.2        0.2236068  0.24494897 0.26457512 0.2828427  0.29999998)
+<a id="__codelineno-84-3" name="__codelineno-84-3" href="#__codelineno-84-3"></a>    (0.31622776 0.33166248 0.34641016 0.3605551  0.37416574 0.38729832 0.4        0.41231057 0.42426407 0.4358899)
+<a id="__codelineno-84-4" name="__codelineno-84-4" href="#__codelineno-84-4"></a>    (0.4472136  0.45825756 0.4690416  0.47958314 0.48989794 0.5        0.50990194 0.51961523 0.52915025 0.53851646)
+<a id="__codelineno-84-5" name="__codelineno-84-5" href="#__codelineno-84-5"></a>    (0.5477225  0.55677646 0.5656854  0.5744563  0.5830952  0.591608   0.59999996 0.60827625 0.61644137 0.6244998)
+<a id="__codelineno-84-6" name="__codelineno-84-6" href="#__codelineno-84-6"></a>    (0.6324555  0.64031243 0.64807403 0.65574384 0.66332495 0.67082036 0.67823297 0.6855655  0.6928203  0.7)
+<a id="__codelineno-84-7" name="__codelineno-84-7" href="#__codelineno-84-7"></a>    (0.70710677 0.71414286 0.7211102  0.72801095 0.7348469  0.7416199  0.7483315  0.7549834  0.7615773  0.76811457)
+<a id="__codelineno-84-8" name="__codelineno-84-8" href="#__codelineno-84-8"></a>    (0.77459663 0.781025   0.7874008  0.7937254  0.8        0.8062258  0.8124038  0.81853527 0.82462114 0.83066237)
+<a id="__codelineno-84-9" name="__codelineno-84-9" href="#__codelineno-84-9"></a>    (0.83666    0.84261495 0.84852815 0.85440034 0.86023253 0.8660254  0.8717798  0.8774964  0.8831761  0.8888194)
+<a id="__codelineno-84-10" name="__codelineno-84-10" href="#__codelineno-84-10"></a>    (0.8944272  0.9        0.9055385  0.91104335 0.9165151  0.92195445 0.92736185 0.9327379  0.9380832  0.9433981)
+<a id="__codelineno-84-11" name="__codelineno-84-11" href="#__codelineno-84-11"></a>    (0.94868326 0.9539392  0.9591663  0.96436507 0.96953595 0.9746794  0.9797959  0.98488575 0.98994946 0.9949874))
+<a id="__codelineno-84-12" name="__codelineno-84-12" href="#__codelineno-84-12"></a>  :op #&lt;PROCEEDNODE {100341D103}&gt;
+<a id="__codelineno-84-13" name="__codelineno-84-13" href="#__codelineno-84-13"></a>  :requires-grad NIL
+<a id="__codelineno-84-14" name="__codelineno-84-14" href="#__codelineno-84-14"></a>  :variables (STC136070)
+<a id="__codelineno-84-15" name="__codelineno-84-15" href="#__codelineno-84-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-neg">[function] !neg</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-85-1" name="__codelineno-85-1" href="#__codelineno-85-1"></a>(!neg tensor)
+</code></pre></div>
+!neg computes the negative value of the tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-86-1" name="__codelineno-86-1" href="#__codelineno-86-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!neg</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mf">0.01</span><span class="w"> </span><span class="mf">0.0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-87-1" name="__codelineno-87-1" href="#__codelineno-87-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC136445
+<a id="__codelineno-87-2" name="__codelineno-87-2" href="#__codelineno-87-2"></a>   ((-0.0         -0.01        -0.02        -0.03        -0.04        -0.049999997 -0.06        -0.07        -0.08        -0.089999996)
+<a id="__codelineno-87-3" name="__codelineno-87-3" href="#__codelineno-87-3"></a>    (-0.099999994 -0.11        -0.12        -0.13        -0.14        -0.14999999  -0.16        -0.17        -0.17999999  -0.19)
+<a id="__codelineno-87-4" name="__codelineno-87-4" href="#__codelineno-87-4"></a>    (-0.19999999  -0.21        -0.22        -0.22999999  -0.24        -0.25        -0.26        -0.26999998  -0.28        -0.29)
+<a id="__codelineno-87-5" name="__codelineno-87-5" href="#__codelineno-87-5"></a>    (-0.29999998  -0.31        -0.32        -0.32999998  -0.34        -0.35        -0.35999998  -0.37        -0.38        -0.39)
+<a id="__codelineno-87-6" name="__codelineno-87-6" href="#__codelineno-87-6"></a>    (-0.39999998  -0.41        -0.42        -0.42999998  -0.44        -0.45        -0.45999998  -0.47        -0.48        -0.48999998)
+<a id="__codelineno-87-7" name="__codelineno-87-7" href="#__codelineno-87-7"></a>    (-0.5         -0.51        -0.52        -0.53        -0.53999996  -0.55        -0.56        -0.57        -0.58        -0.59)
+<a id="__codelineno-87-8" name="__codelineno-87-8" href="#__codelineno-87-8"></a>    (-0.59999996  -0.61        -0.62        -0.63        -0.64        -0.65        -0.65999997  -0.66999996  -0.68        -0.69)
+<a id="__codelineno-87-9" name="__codelineno-87-9" href="#__codelineno-87-9"></a>    (-0.7         -0.71        -0.71999997  -0.72999996  -0.74        -0.75        -0.76        -0.77        -0.78        -0.78999996)
+<a id="__codelineno-87-10" name="__codelineno-87-10" href="#__codelineno-87-10"></a>    (-0.79999995  -0.81        -0.82        -0.83        -0.84        -0.84999996  -0.85999995  -0.87        -0.88        -0.89)
+<a id="__codelineno-87-11" name="__codelineno-87-11" href="#__codelineno-87-11"></a>    (-0.9         -0.90999997  -0.91999996  -0.93        -0.94        -0.95        -0.96        -0.96999997  -0.97999996  -0.98999995))
+<a id="__codelineno-87-12" name="__codelineno-87-12" href="#__codelineno-87-12"></a>  :op #&lt;PROCEEDNODE {100345CFF3}&gt;
+<a id="__codelineno-87-13" name="__codelineno-87-13" href="#__codelineno-87-13"></a>  :requires-grad NIL
+<a id="__codelineno-87-14" name="__codelineno-87-14" href="#__codelineno-87-14"></a>  :variables (STC136350)
+<a id="__codelineno-87-15" name="__codelineno-87-15" href="#__codelineno-87-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-recip">[function] !recip</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-88-1" name="__codelineno-88-1" href="#__codelineno-88-1"></a>(!recip tensor)
+</code></pre></div>
+!recip computes the reciprocal of the tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-89-1" name="__codelineno-89-1" href="#__codelineno-89-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!recip</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mf">0.01</span><span class="w"> </span><span class="mf">0.1</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-90-1" name="__codelineno-90-1" href="#__codelineno-90-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC136556
+<a id="__codelineno-90-2" name="__codelineno-90-2" href="#__codelineno-90-2"></a>   ((10.0       9.090909   8.333333   7.692308   7.142857   6.6666665  6.25       5.882353   5.5555553  5.263158)
+<a id="__codelineno-90-3" name="__codelineno-90-3" href="#__codelineno-90-3"></a>    (5.0000005  4.7619047  4.5454545  4.3478265  4.1666665  4.0        3.846154   3.7037036  3.5714285  3.448276)
+<a id="__codelineno-90-4" name="__codelineno-90-4" href="#__codelineno-90-4"></a>    (3.3333335  3.2258065  3.125      3.0303032  2.9411764  2.857143   2.777778   2.702703   2.631579   2.5641026)
+<a id="__codelineno-90-5" name="__codelineno-90-5" href="#__codelineno-90-5"></a>    (2.5000002  2.4390244  2.3809524  2.3255816  2.2727273  2.2222223  2.1739132  2.1276596  2.0833335  2.0408163)
+<a id="__codelineno-90-6" name="__codelineno-90-6" href="#__codelineno-90-6"></a>    (2.0000002  1.9607843  1.923077   1.8867925  1.8518518  1.8181818  1.7857143  1.754386   1.724138   1.6949153)
+<a id="__codelineno-90-7" name="__codelineno-90-7" href="#__codelineno-90-7"></a>    (1.6666666  1.6393442  1.6129032  1.5873016  1.5625     1.5384614  1.5151515  1.4925373  1.4705882  1.4492754)
+<a id="__codelineno-90-8" name="__codelineno-90-8" href="#__codelineno-90-8"></a>    (1.4285715  1.4084506  1.3888888  1.369863   1.3513514  1.3333334  1.3157895  1.2987013  1.2820512  1.2658228)
+<a id="__codelineno-90-9" name="__codelineno-90-9" href="#__codelineno-90-9"></a>    (1.25       1.2345679  1.2195122  1.2048193  1.1904762  1.1764705  1.1627907  1.1494253  1.1363636  1.1235955)
+<a id="__codelineno-90-10" name="__codelineno-90-10" href="#__codelineno-90-10"></a>    (1.1111112  1.098901   1.0869565  1.0752689  1.0638298  1.0526316  1.0416667  1.0309278  1.0204082  1.010101)
+<a id="__codelineno-90-11" name="__codelineno-90-11" href="#__codelineno-90-11"></a>    (1.0        0.990099   0.98039216 0.97087383 0.9615385  0.952381   0.9433963  0.9345795  0.92592597 0.91743124))
+<a id="__codelineno-90-12" name="__codelineno-90-12" href="#__codelineno-90-12"></a>  :op #&lt;PROCEEDNODE {10034AAA63}&gt;
+<a id="__codelineno-90-13" name="__codelineno-90-13" href="#__codelineno-90-13"></a>  :requires-grad NIL
+<a id="__codelineno-90-14" name="__codelineno-90-14" href="#__codelineno-90-14"></a>  :variables (STC136453)
+<a id="__codelineno-90-15" name="__codelineno-90-15" href="#__codelineno-90-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-square">[function] !square</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-91-1" name="__codelineno-91-1" href="#__codelineno-91-1"></a>(!square x)
+</code></pre></div>
+Computes the x*x</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-92-1" name="__codelineno-92-1" href="#__codelineno-92-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!square</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mf">0.01</span><span class="w"> </span><span class="mf">0.1</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-93-1" name="__codelineno-93-1" href="#__codelineno-93-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC136664
+<a id="__codelineno-93-2" name="__codelineno-93-2" href="#__codelineno-93-2"></a>   ((0.010000001 0.0121      0.014400001 0.0169      0.0196      0.0225      0.0256      0.028900001 0.0324      0.0361)
+<a id="__codelineno-93-3" name="__codelineno-93-3" href="#__codelineno-93-3"></a>    (0.039999995 0.044100005 0.0484      0.052899994 0.057600003 0.0625      0.0676      0.072900005 0.0784      0.08409999)
+<a id="__codelineno-93-4" name="__codelineno-93-4" href="#__codelineno-93-4"></a>    (0.08999999  0.0961      0.1024      0.10889999  0.115600005 0.122499995 0.12959999  0.13689998  0.1444      0.15209998)
+<a id="__codelineno-93-5" name="__codelineno-93-5" href="#__codelineno-93-5"></a>    (0.15999998  0.1681      0.17639999  0.18489999  0.1936      0.20249999  0.21159998  0.2209      0.2304      0.24009998)
+<a id="__codelineno-93-6" name="__codelineno-93-6" href="#__codelineno-93-6"></a>    (0.24999997  0.26009998  0.2704      0.28089997  0.29160002  0.3025      0.3136      0.3249      0.33639997  0.34809998)
+<a id="__codelineno-93-7" name="__codelineno-93-7" href="#__codelineno-93-7"></a>    (0.36        0.37210003  0.3844      0.3969      0.4096      0.42250004  0.43560004  0.4489      0.46240002  0.4761)
+<a id="__codelineno-93-8" name="__codelineno-93-8" href="#__codelineno-93-8"></a>    (0.48999998  0.5041      0.5184      0.53290004  0.54760003  0.5625      0.5776      0.5929      0.60840005  0.6241)
+<a id="__codelineno-93-9" name="__codelineno-93-9" href="#__codelineno-93-9"></a>    (0.64000005  0.6561      0.6724      0.6889      0.7056001   0.7225      0.7396      0.7569      0.7744      0.79209995)
+<a id="__codelineno-93-10" name="__codelineno-93-10" href="#__codelineno-93-10"></a>    (0.80999994  0.8281      0.8464      0.8649      0.8836      0.9025      0.9216      0.9409      0.96040004  0.98010004)
+<a id="__codelineno-93-11" name="__codelineno-93-11" href="#__codelineno-93-11"></a>    (1.0         1.0201      1.0403999   1.0609      1.0816      1.1024998   1.1235999   1.1448998   1.1663998   1.1880999))
+<a id="__codelineno-93-12" name="__codelineno-93-12" href="#__codelineno-93-12"></a>  :op #&lt;PROCEEDNODE {10034E7A03}&gt;
+<a id="__codelineno-93-13" name="__codelineno-93-13" href="#__codelineno-93-13"></a>  :requires-grad NIL
+<a id="__codelineno-93-14" name="__codelineno-93-14" href="#__codelineno-93-14"></a>  :variables (STC136564)
+<a id="__codelineno-93-15" name="__codelineno-93-15" href="#__codelineno-93-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-rsqrt">[function] !rsqrt</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-94-1" name="__codelineno-94-1" href="#__codelineno-94-1"></a>(!rsqrt x)
+</code></pre></div>
+Computes the reciprocal of sqrt x.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-95-1" name="__codelineno-95-1" href="#__codelineno-95-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!rsqrt</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mf">0.01</span><span class="w"> </span><span class="mf">0.1</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-96-1" name="__codelineno-96-1" href="#__codelineno-96-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC136958
+<a id="__codelineno-96-2" name="__codelineno-96-2" href="#__codelineno-96-2"></a>   ((3.1622777  3.0151134  2.8867514  2.7735012  2.6726124  2.5819888  2.5        2.4253561  2.3570225  2.2941573)
+<a id="__codelineno-96-3" name="__codelineno-96-3" href="#__codelineno-96-3"></a>    (2.236068   2.1821787  2.1320071  2.0851443  2.0412414  2.0        1.9611614  1.924501   1.8898224  1.8569535)
+<a id="__codelineno-96-4" name="__codelineno-96-4" href="#__codelineno-96-4"></a>    (1.825742   1.7960529  1.7677671  1.7407765  1.7149858  1.6903085  1.6666667  1.6439899  1.6222143  1.6012815)
+<a id="__codelineno-96-5" name="__codelineno-96-5" href="#__codelineno-96-5"></a>    (1.5811388  1.5617375  1.5430336  1.5249858  1.5075567  1.490712   1.4744196  1.4586499  1.4433757  1.4285715)
+<a id="__codelineno-96-6" name="__codelineno-96-6" href="#__codelineno-96-6"></a>    (1.4142135  1.40028    1.3867506  1.3736057  1.3608276  1.3483996  1.3363062  1.3245324  1.3130643  1.3018892)
+<a id="__codelineno-96-7" name="__codelineno-96-7" href="#__codelineno-96-7"></a>    (1.2909944  1.2803688  1.2700013  1.2598816  1.25       1.2403474  1.2309148  1.2216945  1.2126781  1.2038586)
+<a id="__codelineno-96-8" name="__codelineno-96-8" href="#__codelineno-96-8"></a>    (1.1952286  1.1867816  1.1785113  1.1704115  1.1624764  1.1547005  1.1470786  1.1396058  1.132277   1.1250879)
+<a id="__codelineno-96-9" name="__codelineno-96-9" href="#__codelineno-96-9"></a>    (1.118034   1.1111112  1.1043153  1.0976427  1.0910894  1.0846523  1.0783278  1.0721126  1.0660036  1.0599979)
+<a id="__codelineno-96-10" name="__codelineno-96-10" href="#__codelineno-96-10"></a>    (1.0540926  1.0482849  1.0425721  1.0369517  1.0314213  1.0259783  1.0206207  1.0153462  1.0101525  1.0050378)
+<a id="__codelineno-96-11" name="__codelineno-96-11" href="#__codelineno-96-11"></a>    (1.0        0.99503714 0.99014753 0.98532933 0.9805807  0.9759001  0.97128594 0.96673656 0.9622505  0.95782626))
+<a id="__codelineno-96-12" name="__codelineno-96-12" href="#__codelineno-96-12"></a>  :op #&lt;PROCEEDNODE {100359CFC3}&gt;
+<a id="__codelineno-96-13" name="__codelineno-96-13" href="#__codelineno-96-13"></a>  :requires-grad NIL
+<a id="__codelineno-96-14" name="__codelineno-96-14" href="#__codelineno-96-14"></a>  :variables (STC136673)
+<a id="__codelineno-96-15" name="__codelineno-96-15" href="#__codelineno-96-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-signum">[function] !signum</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-97-1" name="__codelineno-97-1" href="#__codelineno-97-1"></a>(!signum x)
+</code></pre></div>
+<p>Returns the sign of the tensor. If the tensor is positive, it returns 1. If the tensor is negative, it returns -1. If the tensor is zero, it returns 0. Note that this function is not differentiable.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-98-1" name="__codelineno-98-1" href="#__codelineno-98-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!signum</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mf">0.02</span><span class="w"> </span><span class="mf">-0.1</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-99-1" name="__codelineno-99-1" href="#__codelineno-99-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC140119
+<a id="__codelineno-99-2" name="__codelineno-99-2" href="#__codelineno-99-2"></a>   ((-1.0 -1.0 -1.0 -1.0 -1.0 -1.0 1.0  1.0  1.0  1.0)
+<a id="__codelineno-99-3" name="__codelineno-99-3" href="#__codelineno-99-3"></a>    (1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0)
+<a id="__codelineno-99-4" name="__codelineno-99-4" href="#__codelineno-99-4"></a>    (1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0)
+<a id="__codelineno-99-5" name="__codelineno-99-5" href="#__codelineno-99-5"></a>    (1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0)
+<a id="__codelineno-99-6" name="__codelineno-99-6" href="#__codelineno-99-6"></a>    (1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0)
+<a id="__codelineno-99-7" name="__codelineno-99-7" href="#__codelineno-99-7"></a>    (1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0)
+<a id="__codelineno-99-8" name="__codelineno-99-8" href="#__codelineno-99-8"></a>    (1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0)
+<a id="__codelineno-99-9" name="__codelineno-99-9" href="#__codelineno-99-9"></a>    (1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0)
+<a id="__codelineno-99-10" name="__codelineno-99-10" href="#__codelineno-99-10"></a>    (1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0)
+<a id="__codelineno-99-11" name="__codelineno-99-11" href="#__codelineno-99-11"></a>    (1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0  1.0))
+<a id="__codelineno-99-12" name="__codelineno-99-12" href="#__codelineno-99-12"></a>  :op #&lt;PROCEEDNODE {1003C76403}&gt;
+<a id="__codelineno-99-13" name="__codelineno-99-13" href="#__codelineno-99-13"></a>  :requires-grad NIL
+<a id="__codelineno-99-14" name="__codelineno-99-14" href="#__codelineno-99-14"></a>  :variables (STC137558)
+<a id="__codelineno-99-15" name="__codelineno-99-15" href="#__codelineno-99-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-gid">[function] !gid</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-100-1" name="__codelineno-100-1" href="#__codelineno-100-1"></a>(!gid tensor rank &amp;key (dtype *default-float*))
+</code></pre></div>
+Finds the <code>rank</code> th index components of the tensor.</p>
+<p>For example (!gid x 1) for (3 3) tensor is a `(0 1 2). (As a hint) by combining !gid with !where, you can implement a pseudo random access of the tensor. For example:</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-101-1" name="__codelineno-101-1" href="#__codelineno-101-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!gid</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="mi">-1</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-102-1" name="__codelineno-102-1" href="#__codelineno-102-1"></a>{Tensor{LISPBUFFER}[float32] :shape (3 3) :id STC140744
+<a id="__codelineno-102-2" name="__codelineno-102-2" href="#__codelineno-102-2"></a>   ((0.0 1.0 2.0)
+<a id="__codelineno-102-3" name="__codelineno-102-3" href="#__codelineno-102-3"></a>    (0.0 1.0 2.0)
+<a id="__codelineno-102-4" name="__codelineno-102-4" href="#__codelineno-102-4"></a>    (0.0 1.0 2.0))
+<a id="__codelineno-102-5" name="__codelineno-102-5" href="#__codelineno-102-5"></a>  :op #&lt;PROCEEDNODE {1003DD9F33}&gt;
+<a id="__codelineno-102-6" name="__codelineno-102-6" href="#__codelineno-102-6"></a>  :requires-grad NIL
+<a id="__codelineno-102-7" name="__codelineno-102-7" href="#__codelineno-102-7"></a>  :variables (VID140129)
+<a id="__codelineno-102-8" name="__codelineno-102-8" href="#__codelineno-102-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(~3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-normalize-axis">[function] !normalize-axis</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-103-1" name="__codelineno-103-1" href="#__codelineno-103-1"></a>(!normalize-axis ndim axis)
+</code></pre></div>
+Creates a tensor graph which normalizes the axis. If the axis is negative, then it will be normalized to the positive axis.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-104-1" name="__codelineno-104-1" href="#__codelineno-104-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!normalize-axis</span><span class="w"> </span><span class="mi">3</span><span class="w"> </span><span class="mi">-1</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-105-1" name="__codelineno-105-1" href="#__codelineno-105-1"></a>{Tensor{LISPBUFFER}[int64] :shape NIL :id STC140800
+<a id="__codelineno-105-2" name="__codelineno-105-2" href="#__codelineno-105-2"></a>  2
+<a id="__codelineno-105-3" name="__codelineno-105-3" href="#__codelineno-105-3"></a>  :op #&lt;PROCEEDNODE {1003E46BF3}&gt;
+<a id="__codelineno-105-4" name="__codelineno-105-4" href="#__codelineno-105-4"></a>  :requires-grad NIL
+<a id="__codelineno-105-5" name="__codelineno-105-5" href="#__codelineno-105-5"></a>  :variables (STC140751)
+<a id="__codelineno-105-6" name="__codelineno-105-6" href="#__codelineno-105-6"></a>  :tracker #&lt;TRACKER :order={rowNIL} :shape=() :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-abs">[function] !abs</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-106-1" name="__codelineno-106-1" href="#__codelineno-106-1"></a>(!abs x)
+</code></pre></div>
+<p>Returns the absolute value of the tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-107-1" name="__codelineno-107-1" href="#__codelineno-107-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!abs</span><span class="w"> </span><span class="p">(</span><span class="nv">ax+b</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">10</span><span class="w"> </span><span class="mi">10</span><span class="p">)</span><span class="w"> </span><span class="mf">0.02</span><span class="w"> </span><span class="mf">-0.1</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-108-1" name="__codelineno-108-1" href="#__codelineno-108-1"></a>{Tensor{LISPBUFFER}[float32] :shape (10 10) :id STC143970
+<a id="__codelineno-108-2" name="__codelineno-108-2" href="#__codelineno-108-2"></a>   ((0.1         0.08        0.060000002 0.040000003 0.020000003 7.450581e-9 0.019999996 0.04        0.059999995 0.07999999)
+<a id="__codelineno-108-3" name="__codelineno-108-3" href="#__codelineno-108-3"></a>    (0.09999999  0.12        0.13999999  0.16        0.18        0.19999999  0.22        0.24000001  0.26        0.28)
+<a id="__codelineno-108-4" name="__codelineno-108-4" href="#__codelineno-108-4"></a>    (0.29999998  0.32        0.34        0.35999998  0.38        0.4         0.42        0.43999997  0.46        0.48)
+<a id="__codelineno-108-5" name="__codelineno-108-5" href="#__codelineno-108-5"></a>    (0.49999997  0.52        0.53999996  0.55999994  0.58        0.59999996  0.61999995  0.64        0.65999997  0.67999995)
+<a id="__codelineno-108-6" name="__codelineno-108-6" href="#__codelineno-108-6"></a>    (0.6999999   0.71999997  0.73999995  0.75999993  0.78        0.79999995  0.81999993  0.84        0.85999995  0.87999994)
+<a id="__codelineno-108-7" name="__codelineno-108-7" href="#__codelineno-108-7"></a>    (0.9         0.91999996  0.93999994  0.9599999   0.9799999   1.0         1.02        1.04        1.06        1.0799999)
+<a id="__codelineno-108-8" name="__codelineno-108-8" href="#__codelineno-108-8"></a>    (1.0999999   1.12        1.14        1.16        1.18        1.1999999   1.2199999   1.2399999   1.26        1.28)
+<a id="__codelineno-108-9" name="__codelineno-108-9" href="#__codelineno-108-9"></a>    (1.3         1.3199999   1.3399999   1.3599999   1.38        1.4         1.42        1.4399999   1.4599999   1.4799999)
+<a id="__codelineno-108-10" name="__codelineno-108-10" href="#__codelineno-108-10"></a>    (1.4999999   1.52        1.54        1.56        1.5799999   1.5999999   1.6199999   1.64        1.66        1.68)
+<a id="__codelineno-108-11" name="__codelineno-108-11" href="#__codelineno-108-11"></a>    (1.6999999   1.7199999   1.7399999   1.76        1.78        1.8         1.8199999   1.8399999   1.8599999   1.8799999))
+<a id="__codelineno-108-12" name="__codelineno-108-12" href="#__codelineno-108-12"></a>  :op #&lt;PROCEEDNODE {10048E2103}&gt;
+<a id="__codelineno-108-13" name="__codelineno-108-13" href="#__codelineno-108-13"></a>  :requires-grad NIL
+<a id="__codelineno-108-14" name="__codelineno-108-14" href="#__codelineno-108-14"></a>  :variables (STC141401)
+<a id="__codelineno-108-15" name="__codelineno-108-15" href="#__codelineno-108-15"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(10 10) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function">[function] !&gt;</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-109-1" name="__codelineno-109-1" href="#__codelineno-109-1"></a>(!&gt; x y)
+</code></pre></div>
+<p>Compares x and y element-wise and returns the result as a boolean tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-110-1" name="__codelineno-110-1" href="#__codelineno-110-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!where</span><span class="w"> </span><span class="p">(</span><span class="nv">!&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-111-1" name="__codelineno-111-1" href="#__codelineno-111-1"></a>{Tensor{LISPBUFFER}[int64] :shape (3 3) :id STC145421
+<a id="__codelineno-111-2" name="__codelineno-111-2" href="#__codelineno-111-2"></a>   ((1 1 1)
+<a id="__codelineno-111-3" name="__codelineno-111-3" href="#__codelineno-111-3"></a>    (0 0 1)
+<a id="__codelineno-111-4" name="__codelineno-111-4" href="#__codelineno-111-4"></a>    (1 1 1))
+<a id="__codelineno-111-5" name="__codelineno-111-5" href="#__codelineno-111-5"></a>  :op #&lt;PROCEEDNODE {1004DB48C3}&gt;
+<a id="__codelineno-111-6" name="__codelineno-111-6" href="#__codelineno-111-6"></a>  :requires-grad NIL
+<a id="__codelineno-111-7" name="__codelineno-111-7" href="#__codelineno-111-7"></a>  :variables (STC144183)
+<a id="__codelineno-111-8" name="__codelineno-111-8" href="#__codelineno-111-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function_1">[function] !&lt;</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-112-1" name="__codelineno-112-1" href="#__codelineno-112-1"></a>(!&lt; x y)
+</code></pre></div>
+<p>Compares x and y element-wise and returns the result as a boolean tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-113-1" name="__codelineno-113-1" href="#__codelineno-113-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!where</span><span class="w"> </span><span class="p">(</span><span class="nv">!&lt;</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-114-1" name="__codelineno-114-1" href="#__codelineno-114-1"></a>{Tensor{LISPBUFFER}[int64] :shape (3 3) :id STC146864
+<a id="__codelineno-114-2" name="__codelineno-114-2" href="#__codelineno-114-2"></a>   ((0 1 0)
+<a id="__codelineno-114-3" name="__codelineno-114-3" href="#__codelineno-114-3"></a>    (0 0 0)
+<a id="__codelineno-114-4" name="__codelineno-114-4" href="#__codelineno-114-4"></a>    (0 0 0))
+<a id="__codelineno-114-5" name="__codelineno-114-5" href="#__codelineno-114-5"></a>  :op #&lt;PROCEEDNODE {1005246D33}&gt;
+<a id="__codelineno-114-6" name="__codelineno-114-6" href="#__codelineno-114-6"></a>  :requires-grad NIL
+<a id="__codelineno-114-7" name="__codelineno-114-7" href="#__codelineno-114-7"></a>  :variables (STC145634)
+<a id="__codelineno-114-8" name="__codelineno-114-8" href="#__codelineno-114-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function_2">[function] !&gt;=</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-115-1" name="__codelineno-115-1" href="#__codelineno-115-1"></a>(!&gt;= x y)
+</code></pre></div>
+<p>Compares x and y element-wise and returns the result as a boolean tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-116-1" name="__codelineno-116-1" href="#__codelineno-116-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!where</span><span class="w"> </span><span class="p">(</span><span class="nv">!&gt;=</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-117-1" name="__codelineno-117-1" href="#__codelineno-117-1"></a>{Tensor{LISPBUFFER}[int64] :shape (3 3) :id STC148321
+<a id="__codelineno-117-2" name="__codelineno-117-2" href="#__codelineno-117-2"></a>   ((1 0 1)
+<a id="__codelineno-117-3" name="__codelineno-117-3" href="#__codelineno-117-3"></a>    (1 1 1)
+<a id="__codelineno-117-4" name="__codelineno-117-4" href="#__codelineno-117-4"></a>    (1 0 1))
+<a id="__codelineno-117-5" name="__codelineno-117-5" href="#__codelineno-117-5"></a>  :op #&lt;PROCEEDNODE {10077CA8F3}&gt;
+<a id="__codelineno-117-6" name="__codelineno-117-6" href="#__codelineno-117-6"></a>  :requires-grad NIL
+<a id="__codelineno-117-7" name="__codelineno-117-7" href="#__codelineno-117-7"></a>  :variables (STC147077)
+<a id="__codelineno-117-8" name="__codelineno-117-8" href="#__codelineno-117-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function_3">[function] !&lt;=</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-118-1" name="__codelineno-118-1" href="#__codelineno-118-1"></a>(!&lt;= x y)
+</code></pre></div>
+<p>Compares x and y element-wise and returns the result as a boolean tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-119-1" name="__codelineno-119-1" href="#__codelineno-119-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!where</span><span class="w"> </span><span class="p">(</span><span class="nv">!&lt;=</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-120-1" name="__codelineno-120-1" href="#__codelineno-120-1"></a>{Tensor{LISPBUFFER}[int64] :shape (3 3) :id STC149770
+<a id="__codelineno-120-2" name="__codelineno-120-2" href="#__codelineno-120-2"></a>   ((0 0 0)
+<a id="__codelineno-120-3" name="__codelineno-120-3" href="#__codelineno-120-3"></a>    (0 0 0)
+<a id="__codelineno-120-4" name="__codelineno-120-4" href="#__codelineno-120-4"></a>    (1 1 0))
+<a id="__codelineno-120-5" name="__codelineno-120-5" href="#__codelineno-120-5"></a>  :op #&lt;PROCEEDNODE {1007C34733}&gt;
+<a id="__codelineno-120-6" name="__codelineno-120-6" href="#__codelineno-120-6"></a>  :requires-grad NIL
+<a id="__codelineno-120-7" name="__codelineno-120-7" href="#__codelineno-120-7"></a>  :variables (STC148534)
+<a id="__codelineno-120-8" name="__codelineno-120-8" href="#__codelineno-120-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-eq">[function] !eq</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-121-1" name="__codelineno-121-1" href="#__codelineno-121-1"></a>(!EQ x y)
+</code></pre></div>
+<p>Compares x and y element-wise and returns the result as a boolean tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-122-1" name="__codelineno-122-1" href="#__codelineno-122-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!where</span><span class="w"> </span><span class="p">(</span><span class="nv">!eq</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-123-1" name="__codelineno-123-1" href="#__codelineno-123-1"></a>{Tensor{LISPBUFFER}[int64] :shape (3 3) :id STC151215
+<a id="__codelineno-123-2" name="__codelineno-123-2" href="#__codelineno-123-2"></a>   ((0 0 0)
+<a id="__codelineno-123-3" name="__codelineno-123-3" href="#__codelineno-123-3"></a>    (0 0 0)
+<a id="__codelineno-123-4" name="__codelineno-123-4" href="#__codelineno-123-4"></a>    (0 0 0))
+<a id="__codelineno-123-5" name="__codelineno-123-5" href="#__codelineno-123-5"></a>  :op #&lt;PROCEEDNODE {1008118723}&gt;
+<a id="__codelineno-123-6" name="__codelineno-123-6" href="#__codelineno-123-6"></a>  :requires-grad NIL
+<a id="__codelineno-123-7" name="__codelineno-123-7" href="#__codelineno-123-7"></a>  :variables (STC149983)
+<a id="__codelineno-123-8" name="__codelineno-123-8" href="#__codelineno-123-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-neq">[function] !neq</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-124-1" name="__codelineno-124-1" href="#__codelineno-124-1"></a>(!NEQ x y)
+</code></pre></div>
+<p>Compares x and y element-wise and returns the result as a boolean tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-125-1" name="__codelineno-125-1" href="#__codelineno-125-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!where</span><span class="w"> </span><span class="p">(</span><span class="nv">!neq</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-126-1" name="__codelineno-126-1" href="#__codelineno-126-1"></a>{Tensor{LISPBUFFER}[int64] :shape (3 3) :id STC152658
+<a id="__codelineno-126-2" name="__codelineno-126-2" href="#__codelineno-126-2"></a>   ((1 1 1)
+<a id="__codelineno-126-3" name="__codelineno-126-3" href="#__codelineno-126-3"></a>    (1 1 1)
+<a id="__codelineno-126-4" name="__codelineno-126-4" href="#__codelineno-126-4"></a>    (1 1 1))
+<a id="__codelineno-126-5" name="__codelineno-126-5" href="#__codelineno-126-5"></a>  :op #&lt;PROCEEDNODE {10092D8513}&gt;
+<a id="__codelineno-126-6" name="__codelineno-126-6" href="#__codelineno-126-6"></a>  :requires-grad NIL
+<a id="__codelineno-126-7" name="__codelineno-126-7" href="#__codelineno-126-7"></a>  :variables (STC151428)
+<a id="__codelineno-126-8" name="__codelineno-126-8" href="#__codelineno-126-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-and">[function] !and</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-127-1" name="__codelineno-127-1" href="#__codelineno-127-1"></a>(!AND x y)
+</code></pre></div>
+<p>Computes the logical/bitwise and of the tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-128-1" name="__codelineno-128-1" href="#__codelineno-128-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!and</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-129-1" name="__codelineno-129-1" href="#__codelineno-129-1"></a>{Tensor{LISPBUFFER}[int64] :shape NIL :id STC152675
+<a id="__codelineno-129-2" name="__codelineno-129-2" href="#__codelineno-129-2"></a>  1
+<a id="__codelineno-129-3" name="__codelineno-129-3" href="#__codelineno-129-3"></a>  :op #&lt;PROCEEDNODE {10092DFA33}&gt;
+<a id="__codelineno-129-4" name="__codelineno-129-4" href="#__codelineno-129-4"></a>  :requires-grad NIL
+<a id="__codelineno-129-5" name="__codelineno-129-5" href="#__codelineno-129-5"></a>  :variables (STC152661)
+<a id="__codelineno-129-6" name="__codelineno-129-6" href="#__codelineno-129-6"></a>  :tracker #&lt;TRACKER :order={rowNIL} :shape=() :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-xor">[function] !xor</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-130-1" name="__codelineno-130-1" href="#__codelineno-130-1"></a>(!XOR x y)
+</code></pre></div>
+<p>Computes the logical/bitwise xor of the tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-131-1" name="__codelineno-131-1" href="#__codelineno-131-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!xor</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-132-1" name="__codelineno-132-1" href="#__codelineno-132-1"></a>{Tensor{LISPBUFFER}[int64] :shape NIL :id STC152692
+<a id="__codelineno-132-2" name="__codelineno-132-2" href="#__codelineno-132-2"></a>  6
+<a id="__codelineno-132-3" name="__codelineno-132-3" href="#__codelineno-132-3"></a>  :op #&lt;PROCEEDNODE {10092F7013}&gt;
+<a id="__codelineno-132-4" name="__codelineno-132-4" href="#__codelineno-132-4"></a>  :requires-grad NIL
+<a id="__codelineno-132-5" name="__codelineno-132-5" href="#__codelineno-132-5"></a>  :variables (STC152678)
+<a id="__codelineno-132-6" name="__codelineno-132-6" href="#__codelineno-132-6"></a>  :tracker #&lt;TRACKER :order={rowNIL} :shape=() :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-or">[function] !or</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-133-1" name="__codelineno-133-1" href="#__codelineno-133-1"></a>(!OR x y)
+</code></pre></div>
+<p>Computes the logical/bitwise or of the tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-134-1" name="__codelineno-134-1" href="#__codelineno-134-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!or</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">5</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-135-1" name="__codelineno-135-1" href="#__codelineno-135-1"></a>{Tensor{LISPBUFFER}[int64] :shape NIL :id STC152709
+<a id="__codelineno-135-2" name="__codelineno-135-2" href="#__codelineno-135-2"></a>  7
+<a id="__codelineno-135-3" name="__codelineno-135-3" href="#__codelineno-135-3"></a>  :op #&lt;PROCEEDNODE {100930E643}&gt;
+<a id="__codelineno-135-4" name="__codelineno-135-4" href="#__codelineno-135-4"></a>  :requires-grad NIL
+<a id="__codelineno-135-5" name="__codelineno-135-5" href="#__codelineno-135-5"></a>  :variables (STC152695)
+<a id="__codelineno-135-6" name="__codelineno-135-6" href="#__codelineno-135-6"></a>  :tracker #&lt;TRACKER :order={rowNIL} :shape=() :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-where">[function] !where</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-136-1" name="__codelineno-136-1" href="#__codelineno-136-1"></a>(!where condition x y)
+</code></pre></div>
+<p>Selects elements from <code>x</code> or <code>y</code> based on the <code>condition</code>. If the condition is true, it selects the element from <code>x</code>, otherwise from <code>y</code>.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-137-1" name="__codelineno-137-1" href="#__codelineno-137-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!where</span><span class="w"> </span><span class="p">(</span><span class="nv">!eq</span><span class="w"> </span><span class="p">(</span><span class="nv">rand</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="p">(</span><span class="nv">randn</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">0</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-138-1" name="__codelineno-138-1" href="#__codelineno-138-1"></a>{Tensor{LISPBUFFER}[int64] :shape (3 3) :id STC154154
+<a id="__codelineno-138-2" name="__codelineno-138-2" href="#__codelineno-138-2"></a>   ((0 0 0)
+<a id="__codelineno-138-3" name="__codelineno-138-3" href="#__codelineno-138-3"></a>    (0 0 0)
+<a id="__codelineno-138-4" name="__codelineno-138-4" href="#__codelineno-138-4"></a>    (0 0 0))
+<a id="__codelineno-138-5" name="__codelineno-138-5" href="#__codelineno-138-5"></a>  :op #&lt;PROCEEDNODE {1002E52583}&gt;
+<a id="__codelineno-138-6" name="__codelineno-138-6" href="#__codelineno-138-6"></a>  :requires-grad NIL
+<a id="__codelineno-138-7" name="__codelineno-138-7" href="#__codelineno-138-7"></a>  :variables (STC152922)
+<a id="__codelineno-138-8" name="__codelineno-138-8" href="#__codelineno-138-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="function-const">[function] !const</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-139-1" name="__codelineno-139-1" href="#__codelineno-139-1"></a>(!const tensor value)
+</code></pre></div>
+Creates a constant tensor with the specified value from the tensor.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-140-1" name="__codelineno-140-1" href="#__codelineno-140-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!const</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))</span><span class="w"> </span><span class="mf">1.0</span><span class="p">))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-141-1" name="__codelineno-141-1" href="#__codelineno-141-1"></a>{Tensor{LISPBUFFER}[float32] :shape NIL :id STC154168
+<a id="__codelineno-141-2" name="__codelineno-141-2" href="#__codelineno-141-2"></a>  1.0
+<a id="__codelineno-141-3" name="__codelineno-141-3" href="#__codelineno-141-3"></a>  :op #&lt;PROCEEDNODE {1002E60333}&gt;
+<a id="__codelineno-141-4" name="__codelineno-141-4" href="#__codelineno-141-4"></a>  :requires-grad NIL
+<a id="__codelineno-141-5" name="__codelineno-141-5" href="#__codelineno-141-5"></a>  :variables (SID154159)
+<a id="__codelineno-141-6" name="__codelineno-141-6" href="#__codelineno-141-6"></a>  :tracker #&lt;TRACKER :order={rowNIL} :shape=() :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<h3 id="generic-index-components">[generic] !index-components</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-142-1" name="__codelineno-142-1" href="#__codelineno-142-1"></a>(!index-components object)
+</code></pre></div>
+<p>Returns the index components of the tensor. object can be either of tensor or list.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-143-1" name="__codelineno-143-1" href="#__codelineno-143-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!index-components</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">))))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-144-1" name="__codelineno-144-1" href="#__codelineno-144-1"></a>{Tensor{LISPBUFFER}[float32] :shape (3 3) :id STC154250
+<a id="__codelineno-144-2" name="__codelineno-144-2" href="#__codelineno-144-2"></a>   ((0.0 1.0 2.0)
+<a id="__codelineno-144-3" name="__codelineno-144-3" href="#__codelineno-144-3"></a>    (3.0 4.0 5.0)
+<a id="__codelineno-144-4" name="__codelineno-144-4" href="#__codelineno-144-4"></a>    (6.0 7.0 8.0))
+<a id="__codelineno-144-5" name="__codelineno-144-5" href="#__codelineno-144-5"></a>  :op #&lt;PROCEEDNODE {1002E79AD3}&gt;
+<a id="__codelineno-144-6" name="__codelineno-144-6" href="#__codelineno-144-6"></a>  :requires-grad NIL
+<a id="__codelineno-144-7" name="__codelineno-144-7" href="#__codelineno-144-7"></a>  :variables (STC154173)
+<a id="__codelineno-144-8" name="__codelineno-144-8" href="#__codelineno-144-8"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(3 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-145-1" name="__codelineno-145-1" href="#__codelineno-145-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">proceed</span><span class="w"> </span><span class="p">(</span><span class="nv">!index-components</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">1</span><span class="w"> </span><span class="mi">3</span><span class="p">)))</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-146-1" name="__codelineno-146-1" href="#__codelineno-146-1"></a>{Tensor{LISPBUFFER}[float32] :shape (1 3) :id STC154332
+<a id="__codelineno-146-2" name="__codelineno-146-2" href="#__codelineno-146-2"></a>   ((0.0 1.0 2.0))
+<a id="__codelineno-146-3" name="__codelineno-146-3" href="#__codelineno-146-3"></a>  :op #&lt;PROCEEDNODE {1002E8B253}&gt;
+<a id="__codelineno-146-4" name="__codelineno-146-4" href="#__codelineno-146-4"></a>  :requires-grad NIL
+<a id="__codelineno-146-5" name="__codelineno-146-5" href="#__codelineno-146-5"></a>  :variables (STC154255)
+<a id="__codelineno-146-6" name="__codelineno-146-6" href="#__codelineno-146-6"></a>  :tracker #&lt;TRACKER :order={row(0 1)} :shape=(1 3) :contiguous-p=T&gt;}
+</code></pre></div>
+</details>
+  
+
+  
+      </div>
+      </div>
+      <script src="../../js/theme.js"></script>
+      
+      
+      
+    <script async src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    <script async src="../../search/main.js"></script>
+      
+      
+    </main>
+  </div>
+  
+  
+  
+  
+  
+  <footer class="border-top footer text-muted .position-absolute.bottom-0.start-50.translate-middle-x" style="padding-top:15px;">
+    <div class="container">
+      <div class="row">
+        <div class="col-md">
+          
+        </div>
+        
+      </div>
+    </div>
+  </footer>
+  
+  
+
+<div class="modal fade" id="searchModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="searchModal" aria-hidden="true">
+  <div class="modal-dialog modal-lg print-hide">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">Search</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input id="mkdocs-search-query" type="text" class="form-control" aria-label="Search" aria-describedby="inputGroup-sizing-default">
+        </div>
+        <div id="mkdocs-search-results">
+          Enter a keyword to search.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

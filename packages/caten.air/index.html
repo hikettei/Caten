@@ -1,0 +1,874 @@
+
+<!DOCTYPE html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../css/bootstrap.min.css">
+  
+
+  
+    <meta http-equiv="content-language" content="en">
+  
+  
+
+  
+  <title>caten/air | Caten Documentation</title>
+  
+
+  
+
+  <link rel="stylesheet" href="../../css/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/default.min.css">
+  <link rel="stylesheet" href="../../css/vs.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  
+  
+  
+  <script async>var base_url = '../..';</script>
+  <script src="../../js/jquery-3.6.1.slim.min.js"></script>
+  <script src="../../js/bootstrap.bundle.min.js"></script>
+  <script async src="../../js/highlight.min.js"></script>
+
+  
+  
+</head>
+<body>
+  
+  
+    
+    <header>
+      <nav class="navbar navbar-expand-sm navbar-toggleable-sm  border-bottom box-shadow mb-3 ">
+        <div class="container">
+            <a class="navbar-brand text-body" asp-area="" href="/">
+              
+              
+                Caten Documentation
+              
+            </a>
+            <div class="print-hide">
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="d-none d-md-flex input-group mb-3">
+                
+                    <input class="form-control" type="search" id="searchbox" accesskey="/" placeholder="Search in here" aria-label="Search" aria-describedby="search-btn"/>
+                    <button class="btn btn-outline-secondary" type="button" id="search-btn" onclick="search(false);">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    
+                </div>
+            </div>
+            </div>
+        </div>
+    </nav>
+    <nav class="navbar border-bottom box-shadow mb-3 d-md-none print-hide">
+      <div class="container">
+          <div class="navbar-collapse d-flex">
+            <p>
+              <div class="d-flex input-group mb-3">
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_nav(this);" type="button" data-bs-toggle="collapse" data-bs-target="#nav" title="Show Navigation"><i class="bi bi-book"></i></button>
+                
+                
+                <input class="form-control" type="search" id="searchbox_mobile" accesskey="/" placeholder="Search in here" aria-label="Search">
+                <button class="btn btn-outline-secondary" type="button" onclick="search(true);"><i class="bi bi-search"></i></button>
+                
+                
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_toc(this);" type="button" data-bs-toggle="collapse" data-bs-target="#tol"><i class="bi bi-list-ul"></i></button>
+                
+                
+            </div>
+            </p>
+          </div>
+      </div>
+    </nav>
+  </header>
+    
+  
+  
+  
+  <div class="container">
+    <main role="main" class="pb-3">
+      <div class="row">
+        
+        
+    
+    <div class="col-12 col-md-2 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="nav"  style="overflow-x:scroll;">
+        <ul class="list-group list-group-flush">
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../..">Home</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../quickstart/">Quickstart</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../development/">Development</a></li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >API Reference</a>
+          <ul class="collapse list-group list-group-flush show ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-body" href="./">caten/air</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.aasm/">caten/aasm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.codegen/">caten/codegen</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/api</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.tensor/">Tensor</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.differentiable_ops/">Func</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.module/">Module</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.models/">Model</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.initializers/">Initializers</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.shapetracker/">ShapeTracker</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.facet/">Facet API</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.state-dict/">StateDict</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/nn</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.activations/">Activation</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.convolutions/">Convolution</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.criterion/">Criterion</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.embeddings/">Embedding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.linears/">Linear</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.normalizations/">Normalization</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.padding/">Padding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.pooling/">Pooling</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.encoding/">Encoding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.optimizers/">Optimizers</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >Ready to use packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps.gpt2/">caten/apps.gpt2</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >External Packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.gguf/">caten/gguf</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.onnx/">caten/oonx</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.llm/">caten/llm</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+      </ul>
+      </div>
+    </div>
+    
+       
+
+
+
+<div class="col-12 col-md-2 order-md-3 print-hide">
+  <div class="collapse d-md-block text-nowrap" id="tol" style="overflow-x:scroll;">
+    <span>In this article</span>
+    <hr />
+    <ul class="list-group list-group-flush">
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#node">Node</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#struct-node" >[struct] Node</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#macro-defnode" >[macro] defnode</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-make-node" >[function] make-node</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-copy-node" >[function] copy-node</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-getattrs" >[function] getattrs</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-getattr" >[function] getattr</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-remattr" >[function] remattr</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#examples" >Examples</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#graph">Graph</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#class-graph" >[class] Graph</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#class-fastgraph" >[class] FastGraph</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-copy-graph" >[generic] copy-graph</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-make-graph" >[function] make-graph</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-graph-nodes" >[generic] graph-nodes</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-id-value" >[generic] id-&gt;value</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-id-users" >[generic] id-&gt;users</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-remnode" >[generic] remnode</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-insert-nodes" >[generic] insert-nodes</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-fast-graph" >[function] -&gt;fast-graph</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-graph" >[generic] -&gt;graph</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#generic-verify-graph" >[generic] verify-graph</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#simplifier">Simplifier</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#macro-defsimplifier" >[macro] defsimplifier</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#visualizer">Visualizer</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-dot" >[function] -&gt;dot</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-pprint-graph" >[function] pprint-graph</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<div class="col-12 col-md-8 print-main">
+  
+  <h1>caten/air</h1>
+  
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item active" aria-current="page">Caten Documentation</li>
+      
+      
+      
+      
+      
+      
+      
+      
+      <li class="breadcrumb-item active" aria-current="page">API Reference</li>
+      
+      
+        
+        <li class="breadcrumb-item active" aria-current="page">caten/air</li>
+        
+        
+        
+
+        
+
+        
+
+        
+
+        
+
+      
+      
+      
+      
+      
+      
+      
+    </ol>
+  </nav>
+  
+  
+  <div class="container ml-0">
+    <div class="row">
+      
+      <div class="col-2 px-0" style="text-wrap: nowrap;">
+        
+        <a class="btn text-primary print-hide" href="../../development/"
+          title="Development"><i class="bi bi-chevron-left"></i></a>
+        
+        
+        <a class="btn text-primary print-hide" href="../caten.aasm/" title="caten/aasm"><i
+            class="bi bi-chevron-right"></i></a>
+        
+      </div>
+      <div class="col px-0" style="text-align: right;">
+        
+        
+        <small><span class='git-page-authors git-authors'></span></small>
+        <span>|</span>
+        
+        
+        
+        
+        
+      </div>
+      <div class="col-1 col-sm-2 px-0" style="text-align: right;text-wrap: nowrap;">
+        <button class="btn print-block d-none d-lg-inline" title="Print this article"
+          onclick="window.print();"><i class="bi bi-printer"></i></button>
+        <button class="btn print-visible d-none" onclick="print_normal();"
+          title="Open NewTab"><i class="bi bi-arrow-up-right-square"></i></button>
+        
+        
+        <a class="btn disabled print-hide d-none d-sm-inline"><i class="bi bi-pencil"></i></a>
+        
+        
+        <span class="dropdown print-hide">
+          <button class="btn btn" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown"
+            aria-expanded="false"><i class="bi bi-list"></i></button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
+            <li>
+              <h6 class="dropdown-header">Share via</h6>
+            </li>
+            <li><button class="btn dropdown-item"
+                onclick="share_to_twitter('caten/air | Caten Documentation','');"><i
+                  class="bi bi-twitter-x"></i>&nbsp;X.com</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_facebook();"><i
+                  class="bi bi-facebook"></i>&nbsp;Facebook</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_line();"><i
+                  class="bi bi-line"></i>&nbsp;LINE</button></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li><button class="btn dropdown-item" onclick="window.print();"><i class="bi bi-printer"></i>&nbsp;Print</button></li>
+            <li><button class="btn dropdown-item" id="page-url-copy-btn"><i class="bi bi-clipboard"></i>&nbsp;Copy Url to clipboard</button></li>
+            <li>
+              
+              
+              <a class="btn dropdown-item disabled"><i class="bi bi-pencil"></i>&nbsp;Edit this article</a>
+              
+              
+            </li>
+            <li><button class="btn dropdown-item" onclick="print_view();"><i
+                  class="bi bi-file-earmark-text"></i>&nbsp;View in EmbedMode</button></li>
+          </ul>
+        </span>
+      </div>
+    </div>
+  </div>
+  
+  <hr />
+  
+  
+  <p>aIR(=<strong>A</strong>bstract<strong>IR</strong>) is a Caten's internal IR and is used to represent computations expressed as either Let-Binding Based IR or a DAG.</p>
+<p>Each nodes are represented using a <code>Node</code> structure, and their list (or tree structure) is maintained by the <code>Graph</code> CLOS class. The compilation is performed by efficiently manipulating and optimizing the graph using a pattern matcher.</p>
+<p>Note that All nodes must be declared using the defnode macro before compilation. This allows node-related errors to be detected and reported during compilation. </p>
+<h1 id="node">Node</h1>
+<h3 id="struct-node">[struct] Node</h3>
+<p>A node is a computation with input sources <code>(reads)</code> and outputs <code>(writes)</code>.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a> Read1 Read2 Read3 Read4
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>   \    |    |    /
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>      [Operation]
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>          |
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>   writes1 writes2 ...
+</code></pre></div></p>
+<p>Before creating a node using <code>make-node</code>, the node must be defined using <code>defnode</code>. Attributes are defined by defnode.</p>
+<ul>
+<li>node-class[keyword] indicates the classification of the node (e.g.: <code>:BinaryOps, :UnaryOps</code>). This information is used for debugging purposes.</li>
+<li>node-type[keyword] indicates the type of the node (e.g.: <code>:Add, :Sub, :Mul, :Div</code>).</li>
+<li>node-id[symbol] a unique symbol that exists only once in the namespaces. (usually generated by gensym)</li>
+<li>node-writes[list] a list of symbols that represent the output buffers.</li>
+<li>node-reads[list] a list of symbols or numbers that represent the input buffers. (usually connected with the <code>(node-writes)</code>)</li>
+<li>node-attr[Attribute] additional information about the node. (e.g.: reduction, dtype, type inference etc...)</li>
+<li>out-nth[fixnum] node-&gt;id will point to the out-nth element of the writes list.</li>
+</ul>
+<h3 id="macro-defnode">[macro] defnode</h3>
+<p>Defines a new node.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">(</span><span class="nv">defnode</span><span class="w"> </span><span class="p">(</span><span class="nc">class</span><span class="w"> </span><span class="k">type</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="k">&amp;rest</span><span class="w"> </span><span class="nv">direct-superclasses</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nv">description</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="k">&amp;key</span><span class="w"> </span><span class="p">(</span><span class="nv">placeholder</span><span class="w"> </span><span class="mi">0</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">verify</span><span class="w"> </span><span class="ss">&#39;identity</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">slots</span><span class="p">))</span>
+</code></pre></div>
+<ul>
+<li>class[keyword] an identifier of the node class.</li>
+<li>type[keyword] an identifier of the node type.</li>
+<li>direct-superclasses[list of keyword] a list of superclasses.</li>
+<li>description[string] a description of the node.</li>
+<li>placeholder[(unsigned-byte 32) or -1] when mutating the node in-place, the compiler consumes the placeholder-th read buffer.</li>
+<li>verify[function] a function to verify the arguments.</li>
+<li>slots[list of (symbol &amp;rest slot-options)] a list of slot definitions.</li>
+</ul>
+<h3 id="function-make-node">[function] make-node</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">(</span><span class="nv">make-node</span><span class="w"> </span><span class="nc">class</span><span class="w"> </span><span class="k">type</span><span class="w"> </span><span class="nv">writes</span><span class="w"> </span><span class="nv">reads</span><span class="w"> </span><span class="k">&amp;rest</span><span class="w"> </span><span class="nv">attrs</span><span class="p">)</span>
+</code></pre></div>
+<p>Create a node with the given <code>class</code>, <code>type</code>, <code>writes</code>, <code>reads</code>, and <code>attrs</code>. <code>class</code> and <code>type</code> should be defined by <code>defnode</code>, otherwise the function will produce an error.</p>
+<ul>
+<li>class[keyword] indicates the classification of the node (e.g.: <code>:BinaryOps, :UnaryOps</code>). This information is used for debugging purposes.</li>
+<li>type[keyword] indicates the type of the node (e.g.: <code>:Add, :Sub, :Mul, :Div</code>).</li>
+<li>writes[list] a list of symbols that represent the output buffers.</li>
+<li>reads[list] a list of symbols or numbers that represent the input buffers. (usually connected with the <code>(node-writes)</code>)</li>
+<li>attrs[keyword and value pairs] initializers for the Attribute class.</li>
+</ul>
+<h3 id="function-copy-node">[function] copy-node</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>(copy-node node)
+</code></pre></div>
+Create a deepcopy of the given node.</p>
+<h3 id="function-getattrs">[function] getattrs</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>(getattrs node)
+</code></pre></div>
+Return the list of attributes of the node.</p>
+<h3 id="function-getattr">[function] getattr</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>(getattr node id &amp;key (allow-undefined nil))
+</code></pre></div>
+Return the value of the attribute <code>id</code> of the node. If the attribute is not defined, it will produce an error. If <code>allow-undefined</code> is t, it returns nil without error.</p>
+<p>This function is setfable.</p>
+<h3 id="function-remattr">[function] remattr</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>(remattr node id &amp;key (allow-undefined nil))
+</code></pre></div>
+<p>Equivalent to:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>(setf (getattr node id :allow-undefined allow-undefined) nil)
+</code></pre></div>
+<h2 id="examples">Examples</h2>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">make-node</span><span class="w"> </span><span class="ss">:BinaryOps</span><span class="w"> </span><span class="ss">:ADD</span><span class="w"> </span><span class="p">(</span><span class="nb">list</span><span class="w"> </span><span class="ss">&#39;x</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nb">list</span><span class="w"> </span><span class="ss">&#39;y</span><span class="w"> </span><span class="ss">&#39;z</span><span class="p">)</span><span class="w"> </span><span class="ss">:reduction</span><span class="w"> </span><span class="no">t</span><span class="p">)</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>&lt;Node[BINARYOPS] ADD(NID1615) : X* &lt;- (Y, Z) where :reduction=T&gt;
+</code></pre></div>
+</details>
+
+<h1 id="graph">Graph</h1>
+<h3 id="class-graph">[class] Graph</h3>
+<p>A Graph is a data structure used to handle a collection of nodes.</p>
+<p>Graph has a list of nodes (nodes), node inputs (seen), and node outputs (outputs).</p>
+<p>Unlike <code>FastGraph</code>, Graph does not assume that the nodes form a DAG. Additionally, it guarantees that the nodes will not be sorted during each process of the Pattern Matcher. Graph structures, such as Let-Binding, are represented using Graph.</p>
+<p>Note: Using Graph may lead to performance degradation if the graph is a DAG. Please use FastGraph instead.</p>
+<h3 id="class-fastgraph">[class] FastGraph</h3>
+<p><code>FastGraph</code> is a subclass of <code>Graph</code> that implements faster node searches based on the assumption that the nodes form a DAG. (It is approximately 20 times faster than Graph, in the larger scale.)
+Since <code>FastGraph</code> stores nodes as a hash-table, there are some constraints on node operations. If necessary, converting between <code>(-&gt;fast-graph graph)</code> and <code>(-&gt;graph graph)</code> can be done frequently with minimal impact on performance.</p>
+<h3 id="generic-copy-graph">[generic] copy-graph</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>(copy-graph graph)
+</code></pre></div>
+Creates a copy of the given graph.</p>
+<h3 id="function-make-graph">[function] make-graph</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>(make-graph &amp;rest nodes)
+</code></pre></div>
+Creates a new Graph object with the given nodes.</p>
+<h3 id="generic-graph-nodes">[generic] graph-nodes</h3>
+<p>NIL</p>
+<h3 id="generic-id-value">[generic] id-&gt;value</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>(id-&gt;value graph id)
+</code></pre></div>
+Returns a node whose node-writes includes the given id.</p>
+<h3 id="generic-id-users">[generic] id-&gt;users</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>(id-&gt;users graph id)
+</code></pre></div>
+Returns a list of nodes whose node-reads includes the given id.</p>
+<h3 id="generic-remnode">[generic] remnode</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>(remnode graph id)
+</code></pre></div>
+Removes all node where node-id = <code>id</code> from the given graph.</p>
+<h3 id="generic-insert-nodes">[generic] insert-nodes</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>(insert-nodes graph nodes)
+</code></pre></div>
+Inserts the given nodes (list) into the graph.</p>
+<h3 id="function-fast-graph">[function] -&gt;fast-graph</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>(-&gt;fast-graph graph)
+</code></pre></div>
+<p>Creates a FastGraph object from the given graph.</p>
+<h3 id="generic-graph">[generic] -&gt;graph</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>(-&gt;graph graph)
+</code></pre></div>
+Converts the given graph to a fast graph.</p>
+<h3 id="generic-verify-graph">[generic] verify-graph</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>(verify-graph graph &amp;key no-purge)
+</code></pre></div>
+Verify the consistency of the graphs and simplify them by doing following things:
+- Checks if all variables are immutable
+- All variables appeared in read, are also defined in writes.
+- Purge all isolated graph
+- Sort nodes by time.
+- Set no-purge=T to ignore purge isolated graph step. This has no effect on FastGraph.</p>
+<h1 id="simplifier">Simplifier</h1>
+<h3 id="macro-defsimplifier">[macro] defsimplifier</h3>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>(defsimplifier (name &amp;key (speed 3)) &amp;rest rules)
+</code></pre></div>
+Defines a new simplifier named <code>name</code>. The defined function has a following form:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>(name graph &amp;key (no-verify nil) (return-changed-p nil))
+</code></pre></div>
+The <code>graph</code> is a graph to simplify. The <code>no-verify</code> is a flag to skip the verification process. The <code>return-changed-p</code> is a flag to return the result of the simplification process, or a boolean indicating that the graph was changed during simplification process.. The <code>speed</code> is an optimization level. The <code>rules</code> are a list of simplification rules. Each rule has a form:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>(Node_Name (Read_Args) Attrs)
+</code></pre></div>
+<p>(TODO: Documentation)</p>
+<p>(See also: <code>./source/aasm/constant-folding.lisp</code>)</p>
+<h1 id="visualizer">Visualizer</h1>
+<h3 id="function-dot">[function] -&gt;dot</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>(-&gt;dot graph &amp;key (pathname &quot;/tmp/graph.dot&quot;) (open t) (title &quot;node&quot;))
+</code></pre></div>
+<p>Visualizes the graph using graphviz(requirement). Set open=t to open the resulting image in the default browser. A tmp file is created at the pathname location. The graph is saved as a .png and .html file. The title is used in the html file.</p>
+<h3 id="function-pprint-graph">[function] pprint-graph</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>(pprint-graph graph &amp;key (screen-width 140) (stream t))
+</code></pre></div>
+<p>The function <code>pprint-graph</code> prints the graph in a tree-like structure. <code>screen-width</code> controls the width of the output, if the graph is too wide and cannot fit in the screen, it will be split into multiple pages.</p>
+<div class="highlight"><span class="filename">lisp</span><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="nv">CATEN-USER&gt;</span><span class="w"> </span><span class="p">(</span><span class="nv">pprint-graph</span><span class="w"> </span><span class="p">(</span><span class="nv">runtime-graph</span><span class="w"> </span><span class="p">(</span><span class="nv">caten</span><span class="w"> </span><span class="p">(</span><span class="nv">!gelu</span><span class="w"> </span><span class="p">(</span><span class="nv">make-tensor</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">3</span><span class="w"> </span><span class="mi">3</span><span class="p">)</span><span class="w"> </span><span class="ss">:id</span><span class="w"> </span><span class="ss">&#39;x</span><span class="p">))))</span><span class="w"> </span><span class="ss">:stream</span><span class="w"> </span><span class="no">nil</span><span class="p">)</span>
+</code></pre></div>
+<details>
+<summary>Result</summary>
+<div class="highlight"><span class="filename">Result</span><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>============================================================================================================================================
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>=== [P: 0] =================================================================================================================================
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>[P=0, ID=0]:
+<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a>   :PAUSE/BACKWARD {0}
+<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a>   └ :MUL {N1}
+<a id="__codelineno-25-6" name="__codelineno-25-6" href="#__codelineno-25-6"></a>     ├ :MUL {N2}
+<a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a>     │ └ Allocate[:float32] (3 3)
+<a id="__codelineno-25-8" name="__codelineno-25-8" href="#__codelineno-25-8"></a>     │ ├ :MOVE {N3}
+<a id="__codelineno-25-9" name="__codelineno-25-9" href="#__codelineno-25-9"></a>     │   ├ Allocate[:float32] (3 3)
+<a id="__codelineno-25-10" name="__codelineno-25-10" href="#__codelineno-25-10"></a>     │   └ :VIEW {N4}
+<a id="__codelineno-25-11" name="__codelineno-25-11" href="#__codelineno-25-11"></a>     │     ├ load(0.5)
+<a id="__codelineno-25-12" name="__codelineno-25-12" href="#__codelineno-25-12"></a>     │       └ Allocate[:float32] NIL
+<a id="__codelineno-25-13" name="__codelineno-25-13" href="#__codelineno-25-13"></a>     └ :ADD {N5}
+<a id="__codelineno-25-14" name="__codelineno-25-14" href="#__codelineno-25-14"></a>       ├ :MOVE {N6}
+<a id="__codelineno-25-15" name="__codelineno-25-15" href="#__codelineno-25-15"></a>       │ ├ Allocate[:float32] (3 3)
+<a id="__codelineno-25-16" name="__codelineno-25-16" href="#__codelineno-25-16"></a>       │ └ :VIEW {N7}
+<a id="__codelineno-25-17" name="__codelineno-25-17" href="#__codelineno-25-17"></a>       │   ├ load(1.0)
+<a id="__codelineno-25-18" name="__codelineno-25-18" href="#__codelineno-25-18"></a>       │     └ Allocate[:float32] NIL
+<a id="__codelineno-25-19" name="__codelineno-25-19" href="#__codelineno-25-19"></a>       └ :ADD {N8}
+<a id="__codelineno-25-20" name="__codelineno-25-20" href="#__codelineno-25-20"></a>         └ :VIEW {N9}
+<a id="__codelineno-25-21" name="__codelineno-25-21" href="#__codelineno-25-21"></a>         │ ├ load(-1.0)
+<a id="__codelineno-25-22" name="__codelineno-25-22" href="#__codelineno-25-22"></a>         │   └ Allocate[:float32] NIL
+<a id="__codelineno-25-23" name="__codelineno-25-23" href="#__codelineno-25-23"></a>         ├ :MUL {N10}
+<a id="__codelineno-25-24" name="__codelineno-25-24" href="#__codelineno-25-24"></a>           ├ :MOVE {N11}
+<a id="__codelineno-25-25" name="__codelineno-25-25" href="#__codelineno-25-25"></a>           │ ├ Allocate[:float32] (3 3)
+<a id="__codelineno-25-26" name="__codelineno-25-26" href="#__codelineno-25-26"></a>           │ └ :VIEW {N12}
+<a id="__codelineno-25-27" name="__codelineno-25-27" href="#__codelineno-25-27"></a>           │   ├ load(2.0)
+<a id="__codelineno-25-28" name="__codelineno-25-28" href="#__codelineno-25-28"></a>           │     └ Allocate[:float32] NIL
+<a id="__codelineno-25-29" name="__codelineno-25-29" href="#__codelineno-25-29"></a>           └ :RECIP {N13}
+<a id="__codelineno-25-30" name="__codelineno-25-30" href="#__codelineno-25-30"></a>             └ :ADD {N14}
+<a id="__codelineno-25-31" name="__codelineno-25-31" href="#__codelineno-25-31"></a>               ├ :MOVE {N15}
+<a id="__codelineno-25-32" name="__codelineno-25-32" href="#__codelineno-25-32"></a>               │ ├ Allocate[:float32] (3 3)
+<a id="__codelineno-25-33" name="__codelineno-25-33" href="#__codelineno-25-33"></a>               │ └ :VIEW {N16}
+<a id="__codelineno-25-34" name="__codelineno-25-34" href="#__codelineno-25-34"></a>               │   ├ load(1.0)
+<a id="__codelineno-25-35" name="__codelineno-25-35" href="#__codelineno-25-35"></a>               │     └ Allocate[:float32] NIL
+<a id="__codelineno-25-36" name="__codelineno-25-36" href="#__codelineno-25-36"></a>               └ :EXP2 {N17}
+<a id="__codelineno-25-37" name="__codelineno-25-37" href="#__codelineno-25-37"></a>                 └ :MUL {N18}
+<a id="__codelineno-25-38" name="__codelineno-25-38" href="#__codelineno-25-38"></a>                   └ load(1.442695)
+<a id="__codelineno-25-39" name="__codelineno-25-39" href="#__codelineno-25-39"></a>                   │ └ Allocate[:float32] NIL
+<a id="__codelineno-25-40" name="__codelineno-25-40" href="#__codelineno-25-40"></a>                   ├ :MUL {N19}
+<a id="__codelineno-25-41" name="__codelineno-25-41" href="#__codelineno-25-41"></a>                     └ :VIEW {N20}
+<a id="__codelineno-25-42" name="__codelineno-25-42" href="#__codelineno-25-42"></a>                     │ ├ load(0.6931472)
+<a id="__codelineno-25-43" name="__codelineno-25-43" href="#__codelineno-25-43"></a>                     │   └ Allocate[:float32] NIL
+<a id="__codelineno-25-44" name="__codelineno-25-44" href="#__codelineno-25-44"></a>                     ├ :MUL {N21}
+<a id="__codelineno-25-45" name="__codelineno-25-45" href="#__codelineno-25-45"></a>                       └ :VIEW {N22}
+<a id="__codelineno-25-46" name="__codelineno-25-46" href="#__codelineno-25-46"></a>                       │ ├ load(-1.442695)
+<a id="__codelineno-25-47" name="__codelineno-25-47" href="#__codelineno-25-47"></a>                       │   └ Allocate[:float32] NIL
+<a id="__codelineno-25-48" name="__codelineno-25-48" href="#__codelineno-25-48"></a>                       ├ :MUL {N23}
+<a id="__codelineno-25-49" name="__codelineno-25-49" href="#__codelineno-25-49"></a>                         ├ :MOVE {N24}
+<a id="__codelineno-25-50" name="__codelineno-25-50" href="#__codelineno-25-50"></a>                         │ ├ Allocate[:float32] (3 3)
+<a id="__codelineno-25-51" name="__codelineno-25-51" href="#__codelineno-25-51"></a>                         │ └ :VIEW {N25}
+<a id="__codelineno-25-52" name="__codelineno-25-52" href="#__codelineno-25-52"></a>                         │   ├ load(2.0)
+<a id="__codelineno-25-53" name="__codelineno-25-53" href="#__codelineno-25-53"></a>                         └ :MUL {N26}
+<a id="__codelineno-25-54" name="__codelineno-25-54" href="#__codelineno-25-54"></a>                           ├ :MOVE {N27}
+<a id="__codelineno-25-55" name="__codelineno-25-55" href="#__codelineno-25-55"></a>                           │ ├ Allocate[:float32] (3 3)
+<a id="__codelineno-25-56" name="__codelineno-25-56" href="#__codelineno-25-56"></a>                           │ └ :VIEW {N28}
+<a id="__codelineno-25-57" name="__codelineno-25-57" href="#__codelineno-25-57"></a>                           │   ├ load(0.7978846)
+<a id="__codelineno-25-58" name="__codelineno-25-58" href="#__codelineno-25-58"></a>                           │     └ Allocate[:float32] NIL
+<a id="__codelineno-25-59" name="__codelineno-25-59" href="#__codelineno-25-59"></a>                           └ :ADD {N29}
+<a id="__codelineno-25-60" name="__codelineno-25-60" href="#__codelineno-25-60"></a>                             ├ Allocate[:float32] (3 3)
+<a id="__codelineno-25-61" name="__codelineno-25-61" href="#__codelineno-25-61"></a>                             └ :MUL {N30}
+<a id="__codelineno-25-62" name="__codelineno-25-62" href="#__codelineno-25-62"></a>                               └ :MUL {N31}
+<a id="__codelineno-25-63" name="__codelineno-25-63" href="#__codelineno-25-63"></a>                               │ └ Allocate[:float32] (3 3)
+<a id="__codelineno-25-64" name="__codelineno-25-64" href="#__codelineno-25-64"></a>                               │ ├ :MUL {N32}
+<a id="__codelineno-25-65" name="__codelineno-25-65" href="#__codelineno-25-65"></a>                               │   ├ Allocate[:float32] (3 3)
+<a id="__codelineno-25-66" name="__codelineno-25-66" href="#__codelineno-25-66"></a>                               │     Allocate[:float32] (3 3)
+<a id="__codelineno-25-67" name="__codelineno-25-67" href="#__codelineno-25-67"></a>                               ├ :MOVE {N33}
+<a id="__codelineno-25-68" name="__codelineno-25-68" href="#__codelineno-25-68"></a>                                 ├ Allocate[:float32] (3 3)
+<a id="__codelineno-25-69" name="__codelineno-25-69" href="#__codelineno-25-69"></a>                                 └ :VIEW {N34}
+<a id="__codelineno-25-70" name="__codelineno-25-70" href="#__codelineno-25-70"></a>                                   ├ load(0.044715)
+<a id="__codelineno-25-71" name="__codelineno-25-71" href="#__codelineno-25-71"></a>                                     └ Allocate[:float32] NIL
+<a id="__codelineno-25-72" name="__codelineno-25-72" href="#__codelineno-25-72"></a>============================================================================================================================================
+</code></pre></div>
+</details>
+  
+
+  
+      </div>
+      </div>
+      <script src="../../js/theme.js"></script>
+      
+      
+      
+    <script async src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    <script async src="../../search/main.js"></script>
+      
+      
+    </main>
+  </div>
+  
+  
+  
+  
+  
+  <footer class="border-top footer text-muted .position-absolute.bottom-0.start-50.translate-middle-x" style="padding-top:15px;">
+    <div class="container">
+      <div class="row">
+        <div class="col-md">
+          
+        </div>
+        
+      </div>
+    </div>
+  </footer>
+  
+  
+
+<div class="modal fade" id="searchModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="searchModal" aria-hidden="true">
+  <div class="modal-dialog modal-lg print-hide">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">Search</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input id="mkdocs-search-query" type="text" class="form-control" aria-label="Search" aria-describedby="inputGroup-sizing-default">
+        </div>
+        <div id="mkdocs-search-results">
+          Enter a keyword to search.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

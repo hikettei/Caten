@@ -1,0 +1,944 @@
+
+<!DOCTYPE html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../css/bootstrap.min.css">
+  
+
+  
+    <meta http-equiv="content-language" content="en">
+  
+  
+
+  
+  <title>caten/aasm | Caten Documentation</title>
+  
+
+  
+
+  <link rel="stylesheet" href="../../css/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/default.min.css">
+  <link rel="stylesheet" href="../../css/vs.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  
+  
+  
+  <script async>var base_url = '../..';</script>
+  <script src="../../js/jquery-3.6.1.slim.min.js"></script>
+  <script src="../../js/bootstrap.bundle.min.js"></script>
+  <script async src="../../js/highlight.min.js"></script>
+
+  
+  
+</head>
+<body>
+  
+  
+    
+    <header>
+      <nav class="navbar navbar-expand-sm navbar-toggleable-sm  border-bottom box-shadow mb-3 ">
+        <div class="container">
+            <a class="navbar-brand text-body" asp-area="" href="/">
+              
+              
+                Caten Documentation
+              
+            </a>
+            <div class="print-hide">
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="d-none d-md-flex input-group mb-3">
+                
+                    <input class="form-control" type="search" id="searchbox" accesskey="/" placeholder="Search in here" aria-label="Search" aria-describedby="search-btn"/>
+                    <button class="btn btn-outline-secondary" type="button" id="search-btn" onclick="search(false);">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    
+                </div>
+            </div>
+            </div>
+        </div>
+    </nav>
+    <nav class="navbar border-bottom box-shadow mb-3 d-md-none print-hide">
+      <div class="container">
+          <div class="navbar-collapse d-flex">
+            <p>
+              <div class="d-flex input-group mb-3">
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_nav(this);" type="button" data-bs-toggle="collapse" data-bs-target="#nav" title="Show Navigation"><i class="bi bi-book"></i></button>
+                
+                
+                <input class="form-control" type="search" id="searchbox_mobile" accesskey="/" placeholder="Search in here" aria-label="Search">
+                <button class="btn btn-outline-secondary" type="button" onclick="search(true);"><i class="bi bi-search"></i></button>
+                
+                
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_toc(this);" type="button" data-bs-toggle="collapse" data-bs-target="#tol"><i class="bi bi-list-ul"></i></button>
+                
+                
+            </div>
+            </p>
+          </div>
+      </div>
+    </nav>
+  </header>
+    
+  
+  
+  
+  <div class="container">
+    <main role="main" class="pb-3">
+      <div class="row">
+        
+        
+    
+    <div class="col-12 col-md-2 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="nav"  style="overflow-x:scroll;">
+        <ul class="list-group list-group-flush">
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../..">Home</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../quickstart/">Quickstart</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../development/">Development</a></li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >API Reference</a>
+          <ul class="collapse list-group list-group-flush show ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.air/">caten/air</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-body" href="./">caten/aasm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.codegen/">caten/codegen</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/api</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.tensor/">Tensor</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.differentiable_ops/">Func</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.module/">Module</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.models/">Model</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.initializers/">Initializers</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.shapetracker/">ShapeTracker</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.facet/">Facet API</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.state-dict/">StateDict</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/nn</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.activations/">Activation</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.convolutions/">Convolution</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.criterion/">Criterion</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.embeddings/">Embedding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.linears/">Linear</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.normalizations/">Normalization</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.padding/">Padding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.pooling/">Pooling</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.encoding/">Encoding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.optimizers/">Optimizers</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >Ready to use packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps.gpt2/">caten/apps.gpt2</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >External Packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.gguf/">caten/gguf</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.onnx/">caten/oonx</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.llm/">caten/llm</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+      </ul>
+      </div>
+    </div>
+    
+       
+
+
+
+<div class="col-12 col-md-2 order-md-3 print-hide">
+  <div class="collapse d-md-block text-nowrap" id="tol" style="overflow-x:scroll;">
+    <span>In this article</span>
+    <hr />
+    <ul class="list-group list-group-flush">
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#catenaasm">caten/aasm</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#unaryops" >UnaryOps</a>
+    
+        <ul class="list-group list-group-flush">
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#cast" >:CAST</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#not" >:NOT</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#sqrt" >:SQRT</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#log2" >:LOG2</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#exp2" >:EXP2</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#sin" >:SIN</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#recip" >:RECIP</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#neg" >:NEG</a>
+    
+    </li>
+
+        
+        </ul>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#binaryops" >BinaryOps</a>
+    
+        <ul class="list-group list-group-flush">
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#gcd" >:GCD</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#max" >:MAX</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#move" >:MOVE</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#xor" >:XOR</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#or" >:OR</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#and" >:AND</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#idiv" >:IDIV</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#mod" >:MOD</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#mul" >:MUL</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#add" >:ADD</a>
+    
+    </li>
+
+        
+        </ul>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#ternaryops" >TernaryOps</a>
+    
+        <ul class="list-group list-group-flush">
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#wmma" >:WMMA</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#where" >:WHERE</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#_1" >:&lt;</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#_2" >:!=</a>
+    
+    </li>
+
+        
+        </ul>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#buffer" >Buffer</a>
+    
+        <ul class="list-group list-group-flush">
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#view" >:VIEW</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#store" >:STORE</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#load" >:LOAD</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#allocate" >:ALLOCATE</a>
+    
+    </li>
+
+        
+        </ul>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#indexing" >Indexing</a>
+    
+        <ul class="list-group list-group-flush">
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#index-components" >:INDEX-COMPONENTS</a>
+    
+    </li>
+
+        
+        </ul>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#jit-specific-ops" >JIT Specific Ops</a>
+    
+        <ul class="list-group list-group-flush">
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#jit_kernel" >:JIT_KERNEL</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#space" >:SPACE</a>
+    
+    </li>
+
+        
+            
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#expr" >:EXPR</a>
+    
+    </li>
+
+        
+        </ul>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<div class="col-12 col-md-8 print-main">
+  
+  <h1>caten/aasm</h1>
+  
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item active" aria-current="page">Caten Documentation</li>
+      
+      
+      
+      
+      
+      
+      
+      
+      <li class="breadcrumb-item active" aria-current="page">API Reference</li>
+      
+      
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">caten/aasm</li>
+        
+        
+        
+
+        
+
+        
+
+        
+
+      
+      
+      
+      
+      
+      
+      
+    </ol>
+  </nav>
+  
+  
+  <div class="container ml-0">
+    <div class="row">
+      
+      <div class="col-2 px-0" style="text-wrap: nowrap;">
+        
+        <a class="btn text-primary print-hide" href="../caten.air/"
+          title="caten/air"><i class="bi bi-chevron-left"></i></a>
+        
+        
+        <a class="btn text-primary print-hide" href="../caten.codegen/" title="caten/codegen"><i
+            class="bi bi-chevron-right"></i></a>
+        
+      </div>
+      <div class="col px-0" style="text-align: right;">
+        
+        
+        <small><span class='git-page-authors git-authors'></span></small>
+        <span>|</span>
+        
+        
+        
+        
+        
+      </div>
+      <div class="col-1 col-sm-2 px-0" style="text-align: right;text-wrap: nowrap;">
+        <button class="btn print-block d-none d-lg-inline" title="Print this article"
+          onclick="window.print();"><i class="bi bi-printer"></i></button>
+        <button class="btn print-visible d-none" onclick="print_normal();"
+          title="Open NewTab"><i class="bi bi-arrow-up-right-square"></i></button>
+        
+        
+        <a class="btn disabled print-hide d-none d-sm-inline"><i class="bi bi-pencil"></i></a>
+        
+        
+        <span class="dropdown print-hide">
+          <button class="btn btn" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown"
+            aria-expanded="false"><i class="bi bi-list"></i></button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
+            <li>
+              <h6 class="dropdown-header">Share via</h6>
+            </li>
+            <li><button class="btn dropdown-item"
+                onclick="share_to_twitter('caten/aasm | Caten Documentation','');"><i
+                  class="bi bi-twitter-x"></i>&nbsp;X.com</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_facebook();"><i
+                  class="bi bi-facebook"></i>&nbsp;Facebook</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_line();"><i
+                  class="bi bi-line"></i>&nbsp;LINE</button></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li><button class="btn dropdown-item" onclick="window.print();"><i class="bi bi-printer"></i>&nbsp;Print</button></li>
+            <li><button class="btn dropdown-item" id="page-url-copy-btn"><i class="bi bi-clipboard"></i>&nbsp;Copy Url to clipboard</button></li>
+            <li>
+              
+              
+              <a class="btn dropdown-item disabled"><i class="bi bi-pencil"></i>&nbsp;Edit this article</a>
+              
+              
+            </li>
+            <li><button class="btn dropdown-item" onclick="print_view();"><i
+                  class="bi bi-file-earmark-text"></i>&nbsp;View in EmbedMode</button></li>
+          </ul>
+        </span>
+      </div>
+    </div>
+  </div>
+  
+  <hr />
+  
+  
+  <h1 id="catenaasm">caten/aasm</h1>
+<h2 id="unaryops">UnaryOps</h2>
+<h3 id="cast">:CAST</h3>
+<p>The node :CAST casts the first read tensor into <code>:dtype</code>, writing the result into the first write.
+When optimizing cast in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>UNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="not">:NOT</h3>
+<p>The node :NOT computes the logical-not of the given tensor if the input is a boolean, otherwise (integer) computes a bitwise-not.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>out = not(x) (if boolean)
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>out = lognot(x) (if integer)
+</code></pre></div>
+<p>When optimizing not in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>UNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="sqrt">:SQRT</h3>
+<p>The node :SQRT computes square-root of the first read tensor, writing the result to the first write.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>out = sqrt(x);
+</code></pre></div></p>
+<p>When optimizing sqrt in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>UNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="log2">:LOG2</h3>
+<p>The node :LOG2 computes <code>log2</code> of the first read tensor, writing the result to the first write.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>out = log2(x);
+</code></pre></div></p>
+<p>When optimizing log2 in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>UNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="exp2">:EXP2</h3>
+<p>The node :EXP2 computes <code>exp2</code> of the first read tensor, writing the result to the first write.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>out = exp2(x);
+</code></pre></div></p>
+<p>When optimizing exp2 in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>UNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="sin">:SIN</h3>
+<p>The node :SIN computes sine of the first read tensor, writing the result to the first write.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>out = sin(x);
+</code></pre></div></p>
+<p>When optimizing sin in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>UNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="recip">:RECIP</h3>
+<p>The node :RECIP computes the reciprocal of the first read tensor, writing the result to the first write.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>out = (1/x);
+</code></pre></div></p>
+<p>When optimizing recip in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>UNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="neg">:NEG</h3>
+<p>The node :NEG flips the sign of the first read tensor, writing the result to the first write.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>out = (-x);
+</code></pre></div></p>
+<p>When optimizing neg in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>UNARYOPS</code>, <code>JITABLE</code>,  </p>
+<h2 id="binaryops">BinaryOps</h2>
+<h3 id="gcd">:GCD</h3>
+<p>Computes the greatest common divisor of two integer tensors in read, writing the result to the first write.</p>
+<p>(Note: This computation should only applied to scalar tensors, and used for only computing the dynamic shaped tensor indexing.)</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>out &lt;- gcd(x, y)
+</code></pre></div>
+<p>When optimizing gcd in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, </p>
+<h3 id="max">:MAX</h3>
+<p>Computes the maximum value of two tensors in read, writing the result to the first write.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>out &lt;- max(x, y)
+</code></pre></div>
+When optimizing max in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="move">:MOVE</h3>
+<p>Moves the second read into the first read, setting the result to first write.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>out &lt;- move(x, y)
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>where move(x, y) is x = y
+</code></pre></div></p>
+<p>When optimizing move in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="xor">:XOR</h3>
+<p>The node :XOR computes the bit-wise xor of two tensors in <code>read</code> if they are integer, otherwise (boolean) computes the logical-xor.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>out &lt;- x ^ y (if boolean)
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a>out &lt;- x ^ y (if integer)
+</code></pre></div>
+When optimizing xor in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="or">:OR</h3>
+<p>The node :OR computes the bit-wise or of two tensors in <code>read</code> if they are integer, otherwise (boolean) computes the logical-or.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>out &lt;- x || y (if boolean)
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>out &lt;- x | y (if integer)
+</code></pre></div>
+When optimizing or in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="and">:AND</h3>
+<p>The node :AND computes the bit-wise and of two tensors in <code>read</code> if they are integer, otherwise (boolean) computes the logical-and.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>out &lt;- x &amp;&amp; y (if boolean)
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>out &lt;- x &amp; y (if integer)
+</code></pre></div>
+When optimizing and in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="idiv">:IDIV</h3>
+<p>The node :IDIV divides the first tensor in <code>read</code> by the second tensor in <code>read</code>, writing the result to the first <code>write</code>.
+Unlike other BinaryOps, :IDIV assumes two tensors to be an integer typed tensor.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>out &lt;- x / y
+</code></pre></div>
+When optimizing idiv in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="mod">:MOD</h3>
+<p>The node :MOD finds the reminder of the first tensor in <code>read</code> divided by the second tensor in <code>read</code>.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>out &lt;- x % y
+</code></pre></div>
+When optimizing mod in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="mul">:MUL</h3>
+<p>The node :MUL multiplies the two tensors in <code>read</code> and writes the result to the first <code>write</code>.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>out &lt;- x + y
+</code></pre></div>
+When optimizing mul in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="add">:ADD</h3>
+<p>The node :ADD adds the two tensors in <code>read</code> and writes the result to the first <code>write</code>.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>out &lt;- x + y
+</code></pre></div>
+When optimizing add in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BINARYOPS</code>, <code>JITABLE</code>,  </p>
+<h2 id="ternaryops">TernaryOps</h2>
+<h3 id="wmma">:WMMA</h3>
+<p>The node :WMMA is generated during optimization (simplifiers.lisp) by AJIT and represents a fused computation of :ADD and :MUL. WMMA is not generated during VM execution.</p>
+<p>WMMA is used to optimize the gemm computation:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>WMMA(c, a, b) is the equivalent to:
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>c += a * b      (if reduction = t)
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>out = c + a * b (if reduction = nil)
+</code></pre></div>
+When optimizing wmma in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>TERNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="where">:WHERE</h3>
+<p>If the result of the first read (boolean) is true, the second read is selected, and if false, the third read is selected and written to the first write. When optimizing in-place, note that the value of the second read is used as a placeholder since choosing the first read would result in a data type mismatch with write.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>in_dtype = dtype_of(y);
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>out[in_dtype] = x[boolean] ? y[in_dtype] : z[in_dtype];
+</code></pre></div></p>
+<p>When optimizing where in-place, the 1th read is consumed.</p>
+<p>superclasses = <code>TERNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="_1">:&lt;</h3>
+<p>Compares the second and third tensors in read with <code>&lt;</code>, writing the result to the first write. The first read tensor is an placeholder for the first write tensor and is always boolean.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>x = y &lt; z;
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>out = x;
+</code></pre></div></p>
+<p>When optimizing &lt; in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>TERNARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="_2">:!=</h3>
+<p>Compares the second and third tensors in read with <code>not-equal</code>, writing the result to the first write. The first read tensor is an placeholder for the first write tensor and is always boolean.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>x = y != z;
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>out = x;
+</code></pre></div></p>
+<p>When optimizing != in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>TERNARYOPS</code>, <code>JITABLE</code>,  </p>
+<h2 id="buffer">Buffer</h2>
+<h3 id="view">:VIEW</h3>
+<p>Creates a view object of the tensor in a first read.
+<code>View object</code> can modify the multi-dimensional offset of tensors, strides, shapes, and strides without copying.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>out = view(x, *shape-new, *upfrom, *below, *by, *stride-new)
+</code></pre></div>
+upfrom and below describes the multi-dimensional offset of the tensor. Caten applies an operation to out in the range of <code>[upfrom, below)</code>. by indicates the step of stride. the out tensor is reinitialized with <code>shape-new</code> and stride-new<code>.
+View has an attribute</code>broadcast[list]`, this indicates the stride of thecorresponding axis is recognised as 0 if set to T.</p>
+<ul>
+<li>nrank[(unsigned-byte 32)] the rank of viewed tensor.</li>
+<li>broadcast[list] broadcasting order.</li>
+<li>permute[list] is an optional parameter and does nothing in VM, but requires to apply Polyhedral Compiler. If the view was created in <code>caten/api:!permute</code>, set the argument to this attribute.</li>
+</ul>
+<p>When optimizing view in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BUFFEROPS</code>, <code>JITABLE</code>, </p>
+<h3 id="store">:STORE</h3>
+<p>Just like a :MOVE, moves the second tensor in read into the first tensor in read, writing the result to the first write.
+(Note: :STORE can be removed in the future refactoring)</p>
+<p>When optimizing store in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BUFFEROPS</code>, <code>BINARYOPS</code>, <code>JITABLE</code>, </p>
+<h3 id="load">:LOAD</h3>
+<p>Fills the first tensor in <code>read</code> with <code>value</code>, writing the result into the first write. The first read can be either of tensor or scalar.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>x[...] = value;
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a>out = x;
+</code></pre></div></p>
+<ul>
+<li>value[symbol or number] initial value.</li>
+</ul>
+<p>When optimizing load in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BUFFEROPS</code>, <code>JITABLE</code>, </p>
+<h3 id="allocate">:ALLOCATE</h3>
+<p>Allocates a new matrix of scalar value in the VM.
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>out = allocate(*shape, *stride)
+</code></pre></div></p>
+<p>:Allocate is defined as described above. The first through <code>nrank</code>-th read scalar tensors represent the size of the Tensor, and from the <code>nrank</code>-th read to the last, they represent the stride of the allocated Tensor. (they can be sliced using <code>subseq</code>)</p>
+<ul>
+<li>dtype[dtype-t] dtype to allocate.</li>
+<li>nrank[(unsigned-byte 32)] a rank of tensor. If set to 0, allocates a scalar.</li>
+<li>from[symbol or buffer or null] If specified, instead of allocating, an already allocated Buffer is used. If a symbol is specified, a buffer is already defined in the variable table of GraphRuntime. If buffer is specified, use the buffer directly.</li>
+<li>pool[null or Buffer] A place to store the result of the previous allocation. Allocation will be performed only after this slot is set to nil, or size are different due to dynamic shape.</li>
+</ul>
+<p>When optimizing allocate in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>BUFFEROPS</code>, <code>JITABLE</code>,  </p>
+<h2 id="indexing">Indexing</h2>
+<h3 id="index-components">:INDEX-COMPONENTS</h3>
+<p>The node :INDEX-COMPONENTS Indicates which element-wise computation of the Tensor is being performed. Typically, it should return the argument used when performing Aref on the Tensor with the corresponding <code>strides</code>.</p>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>out &lt;- index_components(x, *strides)
+</code></pre></div>
+is compiled as:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>for i=0..N
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>  for j=0..M
+<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a>    out[i, j] = stride[0] * i + j;
+</code></pre></div></p>
+<p>When optimizing index-components in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>INDEXING</code>, <code>JITABLE</code>,  </p>
+<h2 id="jit-specific-ops">JIT Specific Ops</h2>
+<h3 id="jit_kernel">:JIT_KERNEL</h3>
+<p>The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM.
+When optimizing jit_kernel in-place, the 0th read is consumed.</p>
+<h3 id="space">:SPACE</h3>
+<p>Corresponds to:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>[blockIdx|threadIdx].[rank]
+</code></pre></div></p>
+<p>When optimizing space in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>JITABLE</code>, </p>
+<h3 id="expr">:EXPR</h3>
+<p>The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes.
+- Expr[caten/codegen/expr:EXPR] a tree structure comprised of <code>caten/codegen/expr:EXPR</code>
+- reduction[boolean]
+- Meta[caten/codegen/expr:ExprMeta] a place to store ExprMeta.</p>
+<p>When optimizing expr in-place, the 0th read is consumed.</p>
+<p>superclasses = <code>JITABLE</code>,  </p>
+  
+
+  
+      </div>
+      </div>
+      <script src="../../js/theme.js"></script>
+      
+      
+      
+    <script async src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    <script async src="../../search/main.js"></script>
+      
+      
+    </main>
+  </div>
+  
+  
+  
+  
+  
+  <footer class="border-top footer text-muted .position-absolute.bottom-0.start-50.translate-middle-x" style="padding-top:15px;">
+    <div class="container">
+      <div class="row">
+        <div class="col-md">
+          
+        </div>
+        
+      </div>
+    </div>
+  </footer>
+  
+  
+
+<div class="modal fade" id="searchModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="searchModal" aria-hidden="true">
+  <div class="modal-dialog modal-lg print-hide">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">Search</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input id="mkdocs-search-query" type="text" class="form-control" aria-label="Search" aria-describedby="inputGroup-sizing-default">
+        </div>
+        <div id="mkdocs-search-results">
+          Enter a keyword to search.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
