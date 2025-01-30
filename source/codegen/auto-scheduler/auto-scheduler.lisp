@@ -328,7 +328,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
                     (setf sketches (remove sketch sketches)
                           sketch (sketch-next-generation sketch opt 0 tgt-band item config))
                     (push sketch sketches)))
-          ;; [TODO] ここがReductionだった場合，Shared Memory or warpReduce, which one would be beneficial?
+          ;; [TODO] If it were a reduction，Shared Memory or warpReduce, which one would be beneficial?
           (when (> (count innermost band-depth-list) 1)
             ;; Intra Tile Fusion (Optimization for Softmax/LayerNorm)
             ;; Finding a pattern such like:
@@ -454,8 +454,7 @@ See also : `docs/assets/Caten_Sketch_Generation.jpg`
     ;; - auto-schedule is running under OPTIMIZE=1 but found the previous result from OPTIMIZE=2
     ;; ==> Apply previous OPTIMIZE=2 result
     ;; - Cache is saved to the disk.
-    (when (>= OPTIMIZE 1)
+    (when (>= OPTIMIZE 2)
       (let* ((sketch (generate-sketch node auto-scheduler)))
-        (setf (poly-schedule (getattr node :polyhedral)) (sketch-schedule (car sketch)))
-        ;; Load blueprint from optimized polyhedral IR
-        (si-finalize-schedule auto-scheduler node)))))
+        (setf (poly-schedule (getattr node :polyhedral)) (sketch-schedule (car sketch)))))
+    (si-finalize-schedule auto-scheduler node)))
