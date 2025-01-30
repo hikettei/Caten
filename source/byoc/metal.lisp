@@ -5,12 +5,14 @@
    :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
   (:import-from
    :caten/codegen/config
-   #:define-auto-scheduler))
+   #:define-auto-scheduler)
+  (:export
+   #:mtl-compile-source
+   #:Metal-Program))
 
 (in-package :caten/byoc/metal)
-
+;; ~~ CFFI Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defconstant +request-type-compile+ 13)
-
 (defun ensure-foreign-library ()
   (load-foreign-library "/usr/lib/libobjc.dylib")
   (load-foreign-library "/System/Library/Frameworks/Metal.framework/Metal")
@@ -22,17 +24,22 @@
 (defcfun "sel_registerName" :pointer (name :pointer))
 (defcfun "dispatch_data_create" :pointer (data :pointer) (offset :size) (x :pointer) (y :pointer))
 (defcfun "objc_getClass" :pointer (name :string))
+(defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
+(defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
+(defcfun "make_callback_closure" :pointer (callback :pointer))
+(defcfun "free_callback_closure" :pointer (callback :pointer))
 
 (defun sel (name) (with-foreign-string (*name name) (sel-registername *name)))
 (defmacro msg (ptr selector restype &rest args)
   `(foreign-funcall "objc_msgSend" :pointer ,ptr :pointer (sel ,selector) ,@args ,restype))
 (defun to-ns-str (str) (with-foreign-string (*str str) (msg (objc-getclass "NSString") "stringWithUTF8String:" :pointer :pointer *str)))
 ;; ~~ MTLCompiler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defcfun "MTLCodeGenServiceCreate" :pointer (service-name :string))
-(defcfun "MTLCodeGenServiceBuildRequest" :void (cgs :pointer) (unused :pointer) (request-type :int) (request :pointer) (request-len :size) (callback :pointer))
-(defcfun "make_callback_closure" :pointer (callback :pointer))
-(defcfun "free_callback_closure" :pointer (callback :pointer))
-
+;; [TODO] METAL Parallel Compilation
+;; CFFI assumes `defcallback` is placed in the toplevel of the file.
+;; i.e.: (callback callback) will not create a new closure which is required to work MTLCompiler in parallel.
+;; (If we only targeting sbcl) defcallback is just an wrapper of sb-alien:alien-lambda (https://koji-kojiro.github.io/sb-docs/build/html/sb-alien/macro/ALIEN-LAMBDA.html)
+;; - 1. Use sb-alien:alien-lambda directly to create a new closure. (keep defcallback for ccl-bin/etc, etc)
+;; - 2. If running on SBCL, BACKEND=METAL and PARALLEL>1 is available by using (1.) otherwise produce an error.
 (defvar *callback-handler*)
 (defcallback callback :void
     ((blockptr :pointer) (error :int32) (data :pointer) (datalen :size) (errormsg :pointer))
@@ -99,7 +106,7 @@
          octets))
       (:failed
        (error "Failed to compile a metallib:~%~a~%Compiled with this command: ~a" (cdr *callback-handler*) params)))))
-;; ~~ Extension ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ MetalBuffer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass MetalBuffer (AbstractBuffer) nil)
 (defclass MetalRuntime (GraphRuntime) ((device :accessor metal-runtime-device)))
 
@@ -211,7 +218,7 @@
        (let ((pre-iterations (getattr bp :iterations)))
          (labels ((print-aref (name b is &key iterations)
                     (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
-                        (format nil "~(~a~)[~(~a~)]" name
+                        (format nil "(*(~(~a~)+~(~a~)))" name
                                 (render-expr
                                  'CStyle-Renderer
                                  (apply
@@ -238,6 +245,9 @@
                    (if (typep (getattr bp :meta :allow-undefined t) 'ExprMeta)
                        (format nil " /* ~a */" (exprmeta-comment (getattr bp :meta)))
                        "")))))
+      (:BARRIER (format stream "~athreadgroup_barrier(mem_flags::mem_threadgroup);~%" (indent)))
+      (:DEFINE-SHARED-MEMORY
+       (format stream "~athreadgroup ~(~a~) ~(~a~)[~a];~%" (indent) (dtype->mtype (getattr bp :dtype)) (car (node-writes bp)) (getattr bp :size)))
       (:DEFINE-GLOBAL))))
 
 (defun header ()
@@ -247,6 +257,7 @@
 #define _negative_infinity -INFINITY
 #define _nan NAN
 using namespace metal;
+#define min(a, b) ((a) < (b) ? (a) : (b))~%#define max(a, b) ((a) > (b) ? (a) : (b))
 "))
 
 (defclass Metal-Program ()
@@ -285,6 +296,10 @@ using namespace metal;
 (defmethod runtime-invoke-jit-kernel ((runtime MetalRuntime) kernel-info node args)
   (apply (caten/codegen/jit:compiled-kernel-caller kernel-info) node args))
 
+(defun cmdbuf-start-time (cmdbuf) (msg cmdbuf "GPUStartTime" :double))
+(defun cmdbuf-end-time (cmdbuf) (msg cmdbuf "GPUEndTime" :double))
+(defun cmdbuf-elapsed-time (cmdbuf) (- (cmdbuf-end-time cmdbuf) (cmdbuf-start-time cmdbuf)))
+
 (defmethod invoke ((mp Metal-Program) node &rest buffers)
   (assert (= (length buffers) (length (mp-argtypes mp))) () "Metal: The number of arguments does not match the number of arguments in the Metal program.")
   (let ((params (map 'list #'cons (node-reads node) buffers)) ;; e.g.: (A . 10)
@@ -319,7 +334,8 @@ using namespace metal;
       (msg command-buffer "commit" :void)
       (msg command-buffer "waitUntilCompleted" :void)
       (let ((err (msg command-buffer "error" :pointer)))
-        (assert (null-pointer-p err) () "Failed to execute a Metal command buffer: ~a" (msg err "localizedDescription" :pointer))))))
+        (assert (null-pointer-p err) () "Failed to execute a Metal command buffer: ~a" (msg err "localizedDescription" :pointer))
+        (coerce (cmdbuf-elapsed-time command-buffer) 'single-float)))))
 
 (defun make-metal-caller (mp) `(lambda (node &rest args) (apply #'invoke ,mp node args)))
 
