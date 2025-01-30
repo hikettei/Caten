@@ -327,7 +327,7 @@ Corresponds to:
 (defnode (:Render :RANGE) (RenderOps)
          "
 ```
-ID <- RANGE(UPFROM, TO, BY, BODY, _type_relay=...)
+ID <- RANGE(START, END, STEP, BODY, _type_relay=...)
 ```
 The node :RANGE controls the iteration of the loop. The loop iterates the `BODY` (which must be a RenderOps) over the range of `[UPFROM, floor(TO, BY))`"
          :slots nil)
@@ -348,7 +348,7 @@ ID <- PROGN(S1, S2, ..., Sn)
 "
          :slots nil)
 ;; [TODO] Rename to EXPR
-(defnode (:Render :EXPR_Placeholder) (RenderOps)
+(defnode (:Render :EXPR) (RenderOps)
          "
 ```
 ID <- EXPR(E1, E2, ..., En)
@@ -370,6 +370,14 @@ ID <- BARRIER()
 X <- ()
 ```
 Similar to allocate
+"
+         :slots nil)
+
+(defnode (:Render :Aref) (RenderOps)
+         "
+```
+X <- Aref(Array, Index)
+```
 "
          :slots nil)
 ;; Note: More?
