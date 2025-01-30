@@ -6,7 +6,7 @@
 (defparameter *default-uint*  (ctx:getenv :DEFAULT_UINT))
 
 (defun size-p (x) (or (integerp x) (node-p x)))
-(defun node->id1 (x) (if (integerp x) x (node->id x)))
+(defun node->id1 (x) (if (or (symbolp x) (integerp x)) x (node->id x)))
 
 (defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")) (from nil))
   "Equivalent to `dtype i[shape];`
@@ -168,6 +168,7 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
   "id = where(condition, x{true-then}, y{false-then})"
   (declare (type node condition x y))
   (emit (make-node :TernaryOps :WHERE (list id) (list (node->id condition) (node->id x) (node->id y)))))
+
 (defun infer-tensor-info (graph id)
   "Return: [nrank, shape, stride, dtype, (view_from, view_to, view_by, broadcast)]"
   (declare (type graph graph) (type symbol id) (optimize (speed 3)))
