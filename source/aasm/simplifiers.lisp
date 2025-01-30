@@ -103,6 +103,19 @@
 	    :Buffer :View
 	    (node-writes node) new-views
 	    :nrank nrank :broadcast broadcast :permute permute :tr tr)))))))
+
+(defun sfold (ss node graph)
+  (when ss
+    (let ((node (copy-node node)))
+      (setf (node-id node) (node->id node))
+      (let* ((ss-nodes (map 'list #'(lambda (x) (id->value graph x)) ss))
+             (new-args (loop for ss-node in ss-nodes
+                             for ss-val  in ss
+                             for val = (and ss-node (scalar-p ss-val graph))
+                             if val collect val else collect ss-val)))
+        (unless (equal new-args ss)
+          (setf (node-reads node) new-args)
+          node)))))
 ;; [TODO] Logical AND/XOR/OR for threefry2x32
 (defsimplifier
     (apply-fold-constant :speed 1)
@@ -154,7 +167,10 @@
      ((node graph) (sfold-allocate ss node graph nrank dtype from)))
     ((:View (~ ss) :broadcast broadcast :nrank nrank :permute permute :tr tr)
      ->
-     ((node graph) (sfold-view ss node graph nrank broadcast permute tr))))
+     ((node graph) (sfold-view ss node graph nrank broadcast permute tr)))
+    ((:Range (~ ss)) -> ((node graph) (sfold ss node graph)))
+    ;; TODO: IF
+    ((:Aref (name idx)) -> ((node graph) (sfold (list name idx) node graph))))
 
 (defun fold-constant (graph &key (debug-opt nil))
   (apply-fold-constant graph :debug-opt debug-opt)

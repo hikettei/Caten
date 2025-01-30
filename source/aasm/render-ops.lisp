@@ -62,7 +62,13 @@
      ((node graph)
       (with-context-nodes
         (new-cond (%and cond1 cond2))
-        (out (%if new-cond body :out (car (node-writes node))))))))
+        (out (%if new-cond body :out (car (node-writes node)))))))
+    ;; [TODO] Tile the range
+    ;; [TODO] Remove the ISL dependencies
+    ;; If the size==1 -> remove the range
+    ;; 
+;;    ((:RANGE (bind size step body)) -> ((node graph))
+    )
 
 (defun simplify-ast (graph)
   (declare (type graph graph))
@@ -84,7 +90,8 @@
               (r (s &aux (val (id->value graph s)))
                 (when (and val (null (find (node-id val) seen)))
                   (f val)
-                  (push (node-id val) seen)))
+                  (push (node-id val) seen))
+                s)
               (f (node)
                 (case (node-type node)
                   (:PROGN
@@ -94,8 +101,7 @@
                   (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
                   (:RANGE
                       (multiple-value-bind (bind size step body) (apply #'values (node-reads node))
-                        (r bind) (r size) (r step)
-                        (fmt "for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)++)" bind bind size bind)
+                        (fmt "for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a)" (r bind) (r bind) (r size) (r bind) (r step))
                         (r body)))
                   (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
                   (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
@@ -115,12 +121,14 @@
        (f (id->value graph (car (graph-outputs graph))))))))
 ;; PROGN+PROGN -> PROGN
 ;; IndexingをもっとSimplifyしたい。RANGEの外に出す方法？
+;; イメージ:
+;; ./caten/codegen -> caten/ir/render-ops.lispの機能を使って色々AST変形を実施する
 (print-ast
  (with-blueprint ()
    (%progn ;; [TODO] Introduce %Function instead of PROGN?
     (%defglobal 'a)
     (%defglobal 'b)
-    (%range 'gid0  (%add (%iconst 'm) (%iconst 'n))
+    (%range 'gid0 (%iconst 100) ;; (%add (%iconst 'm) (%iconst 'n))
      (%progn
       (%progn
        (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
@@ -128,7 +136,8 @@
          (%if (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
               (%if (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
                    (%progn
-                    (%add (%aref 'a idx1) (%aref 'b idx2))
+                    (%add (%aref 'a (%iconst 0)) (%aref 'b idx2))
                     (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
                     (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
                     (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3))))))))))))))
+   
