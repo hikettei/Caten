@@ -7,8 +7,7 @@
   :components
   ((:file "package")
    (:file "helpers")
-   (:file "attrs")
-   (:file "ctx")
+   (:file "attrs") ;; todo: rename -> ops.lisp
    (:file "tensor-ir")
    (:file "ops")
    (:file "constant-folding")
