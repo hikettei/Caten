@@ -9,7 +9,7 @@
    (:file "helpers")
    (:file "attrs") ;; todo: rename -> ops.lisp
 
-   (:file "graph-ops")
+   (:file "tensor-ops")
    (:file "render-ops")
    
    (:file "tensor-ir")
