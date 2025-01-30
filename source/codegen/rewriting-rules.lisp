@@ -38,6 +38,7 @@
    #:nodes-depends-on
    #:ensure-string-as-compilable)
   (:export
+   #:%schedule-item-write-define-global
    #:schedule-item-write-define-global
    #:apply-rewriting-rules
    #:nodes-apply-static-gensym
@@ -204,28 +205,31 @@
   (setf (runtime-graph runtime) (->graph (runtime-graph runtime)))
   runtime)
 
-(defmethod schedule-item-write-define-global ((schedule-item Node))
+(defmethod %schedule-item-write-define-global (blueprints (schedule-item Node))
   "Inserts DEFINE_GLOBAL to the top of graph"
   (declare (type node schedule-item))
   (assert (eql (node-type schedule-item) :Schedule-Item))
   (assert (= (length (getattr schedule-item :storage-id-src)) (length (getattr schedule-item :read-types))))
   (assert (= (length (getattr schedule-item :storage-id-dst)) (length (getattr schedule-item :write-types))))
-  (setf (getattr schedule-item :blueprint)
-        (append
-         ;; writes
-         (loop for write in (getattr schedule-item :storage-id-dst)
-               for wt in (getattr schedule-item :write-types)
-               for nth upfrom 0
-               collect
-               (progn
-                 (setf (nth nth (getattr schedule-item :write-types)) wt)
-                 (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt))))
-         ;; dynamic shapes
-         (loop for item in (getattr schedule-item :dynamic-shapes)
-               collect
-               (make-define-global (car item) (cdr item) nil :shape 0))
-         (loop for read in (getattr schedule-item :storage-id-src)
-               for rt in (getattr schedule-item :read-types)
-               collect
-               (make-define-global read (buffer-dtype rt) (> (buffer-nrank rt) 0) :input (buffer-nrank rt)))
-         (getattr schedule-item :blueprint))))
+  (append
+   ;; writes
+   (loop for write in (getattr schedule-item :storage-id-dst)
+         for wt in (getattr schedule-item :write-types)
+         for nth upfrom 0
+         collect
+         (progn
+           (setf (nth nth (getattr schedule-item :write-types)) wt)
+           (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt))))
+   ;; dynamic shapes
+   (loop for item in (getattr schedule-item :dynamic-shapes)
+         collect
+         (make-define-global (car item) (cdr item) nil :shape 0))
+   (loop for read in (getattr schedule-item :storage-id-src)
+         for rt in (getattr schedule-item :read-types)
+         collect
+         (make-define-global read (buffer-dtype rt) (> (buffer-nrank rt) 0) :input (buffer-nrank rt)))
+   blueprints))
+
+(defmethod schedule-item-write-define-global ((schedule-item Node))
+  (declare (type Node schedule-item))
+  (setf (getattr schedule-item :blueprint) (%schedule-item-write-define-global (getattr schedule-item :blueprint) schedule-item)))

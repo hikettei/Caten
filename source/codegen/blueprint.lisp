@@ -25,7 +25,9 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
    #:GFlops-Measurer-ops
    #:GFlops-Measurer-succeed-p
    #:compute-gflops
-   #:schedule-item-gflops))
+   #:schedule-item-gflops)
+  ;; Verifier
+  (:export #:verify-blueprint #:expr-gather-buffer-loads))
 
 (in-package :caten/codegen/blueprint)
 ;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -66,7 +68,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 	       for node in nodes
 	       if (eql (node-type node) :FOR)
 	         do (format out "~a~afor (int ~(~a~)=~(~a~);~(~a~);~(~a~)+=~(~a~)) {~%"
-                            (indent indent) (if (eql (getattr node :scope) :global) "parallel " "") (getattr node :idx)
+                            (indent indent) (if (eql (getattr node :scope) :global) "@parallel " "") (getattr node :idx)
                             (render-expr 'Default-Renderer (getattr node :upfrom)) (render-expr 'Default-Renderer (getattr node :below))
                             (getattr node :idx) (render-expr 'Default-Renderer (getattr node :by)))
                     (push (getattr node :idx) gids)
@@ -77,18 +79,26 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                       do (incf indent 2) (format out "~a if (~(~a~)) {~%" (indent indent) (render-expr 'Default-Renderer (getattr node :condition)))
                else if (eql (node-type node) :ENDIF)
                       do (decf indent 2) (format out "~a } // endif~%" (indent indent))
+               else if (eql (node-type node) :BARRIER)
+                      do (format out "~athread_barrier();~%" (indent indent))
+               else if (eql (node-type node) :DEFINE-SHARED-MEMORY) do
+                 (format out "~aSHARED_MEMORY ~(~a~) ~(~a~)[~a];~%" (indent indent) (getattr node :dtype) (car (node-writes node)) (getattr node :size))
                else if (eql (node-type node) :EXPR) do
-                 (let ((pre-iterations (getattr node :Iterations)))
-                   (format out "~a~a = ~a;~a~a~%"
+                 (let ((pre-iterations (getattr node :Iterations))
+                       (is-vectorized (typep (getattr node :meta :allow-undefined t) (find-symbol "VECTORIZED" (find-package :caten/codegen/packing)))))
+                   (format out "~a~a = ~a~a~a~a;~a~a~%"
                            (indent indent)
                            (render-list
                             (map 'list #'(lambda (x y z) (print-aref x y z :iterations (or pre-iterations (make-index-space))))
                                  (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
+                           (if is-vectorized (exprmeta-comment (getattr node :meta)) "")
+                           (if is-vectorized "(" "")
                            (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (or pre-iterations (make-index-space)))
+                           (if is-vectorized ")" "")
                            (if (getattr node :reduction :allow-undefined t)
                                " // :reduction=t"
                                "")
-                           (if (typep (getattr node :meta :allow-undefined t) 'ExprMeta)
+                           (if (and (typep (getattr node :meta :allow-undefined t) 'ExprMeta) (null is-vectorized))
                                (format nil " // ~a" (exprmeta-comment (getattr node :meta)))
                                "")))
                else
@@ -735,3 +745,89 @@ Lowers the Schedule-Item into blueprint.
     (dolist (g grids)
       (setf (nth (exprgrid-rank g) out) g))
     out))
+;; ~~ Verifier ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct Scope
+  (variables (make-hash-table) :type hash-table))
+
+(defstruct (Var
+            (:constructor make-var (dtype pointer-p)))
+  dtype pointer-p)
+
+(defmethod var-eq ((var1 Var) (var2 Var))
+  ;; [TODO] Compare dtypes
+  (eql (var-pointer-p var1) (var-pointer-p var2)))
+
+(defun sname (obj) (intern (string-upcase (princ-to-string obj)) "KEYWORD"))
+(defmethod scope-declare ((scope scope) name (var Var))
+  (if (gethash (sname name) (scope-variables scope))
+      nil
+      (progn
+        (setf (gethash (sname name) (scope-variables scope)) var)
+        t)))
+
+(defmethod scope-lookup ((scope scope) name)
+  (gethash (sname name) (scope-variables scope)))
+
+(defmethod scope-copy-from ((scope scope))
+  (make-scope :variables (copy-hash-table (scope-variables scope))))
+
+(defun verify-blueprint (blueprints)
+  "Returns T if the blueprint is valid to compile, otherwise returns (values NIL reason)."
+  (symbol-macrolet
+      ((->fail/malformed (return-from verify-blueprint (values nil :malformed)))
+       (->fail/redefined (return-from verify-blueprint (values nil :redefined)))
+       (->fail/undefined (return-from verify-blueprint (values nil :undefined))))
+    (labels ((explore-blueprint (from to scope)
+               (loop with count = from while (< count to)
+                     for node = (nth count blueprints) do
+                       (case (node-type node)
+                         ;; Render Nodes creating a new scope
+                         ((:FOR :IF)
+                          (let* ((endwith (ecase (node-type node) (:IF :ENDIF) (:FOR :ENDFOR)))
+                                 (endfor
+                                   (find
+                                    (getattr node :idx) (nthcdr count blueprints)
+                                    :key #'(lambda (x) (and (eql (node-type x) endwith) (getattr x :idx)))))
+                                 (_ (when (null endfor) ->fail/malformed))
+                                 (endfor-abs-position (position (node-id endfor) blueprints :key #'node-id)))
+                            (declare (ignore _))
+                            (unless (>= endfor-abs-position count) ->fail/malformed)
+                            (let ((scope (scope-copy-from scope)))
+                              (when (eql (node-type node) :FOR)
+                                (unless (scope-declare scope (getattr node :idx) (make-var :int64 nil)) ->fail/redefined))
+                              (explore-blueprint (1+ count) endfor-abs-position scope))
+                            (setf count (1+ endfor-abs-position))))
+                         (:DEFINE-GLOBAL
+                          (unless (scope-declare scope (car (node-writes node)) (make-var (getattr node :dtype) (getattr node :pointer-p)))
+                            ->fail/redefined)
+                          (incf count))
+                         (:EXPR
+                          (let ((verifier
+                                  (make-instance 'caten/codegen/renderer:Default-Renderer
+                                                 :graph (expr-graph (getattr node :EXPR)) :index-space (getattr node :iterations)
+                                                 :scope (scope-variables scope))))
+                            (caten/codegen/renderer:render-node verifier (car (node-writes (expr-out (getattr node :EXPR)))))
+                            (unless (caten/codegen/renderer:renderer-scope-valid-code-p verifier)
+                              ->fail/undefined))
+                          (loop for decl in (getattr node :declare-type)
+                                for w in (node-writes node)
+                                for type in (relay-writes (read-type-relay node))
+                                if decl do (unless (scope-declare scope w (make-var (buffer-dtype type) (> (buffer-nrank type) 0)))
+                                             ->fail/redefined))
+                          (incf count))
+                         (otherwise
+                          (warn "verify-blueprint: Cannot verify the node ~a" node)
+                          ->fail/malformed)))))
+      (explore-blueprint 0 (length blueprints) (make-scope))
+      (values t nil))))
+
+(defun expr-gather-buffer-loads (expr-node)
+  (declare (type node expr-node))
+  (assert (eql (node-type expr-node) :EXPR))
+  (let ((renderer (make-instance
+                   'caten/codegen/renderer:default-renderer
+                   :graph (expr-graph (getattr expr-node :EXPR)) :index-space (getattr expr-node :iterations))))
+    (caten/codegen/renderer:render-node renderer (car (node-writes (expr-out (getattr expr-node :EXPR)))))
+    (loop for node in (caten/codegen/renderer:renderer-rendered-nodes renderer)
+          if (and (eql (node-type node) :Aref) (> (buffer-nrank (getattr node :buffer)) 0))
+            collect node)))

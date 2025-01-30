@@ -45,12 +45,12 @@
              (union-map-union
               (union-map-union WaR RaW)
               WaW)))
-      (setf (poly-dependencies pg) dependencies)
+      (setf (poly-dependencies pg) (union-map-coalesce dependencies))
       pg)))
 
-(defmethod debug-render-to-clang ((pg Polyhedral-IR))
+(defun ast-node-into-clang (ast)
+  (declare (type isl::ast-node ast))
   (let* ((p     (isl::%isl-printer-to-str (isl::context-handle isl::*context*)))
-         (ast   (->ast (poly-schedule pg) 0))
          (p     (isl::%isl-printer-set-output-format p 4)) ;; 4 == Clang
          (q     (isl::%isl-printer-print-ast-node p (isl::ast-node-handle ast)))
          (str   (isl::%isl-printer-get-str q)))
@@ -146,7 +146,11 @@
 
 (defmethod print-object ((pg Polyhedral-IR) stream)
   (print-unreadable-object (pg stream :type t)
-    (format stream "~a~%[Kernel]:~%~a" (pprint-schedule (copy (poly-schedule pg))) (debug-render-to-clang pg))))
+    (format stream "~a~%[Kernel]:~%~a" (pprint-schedule (copy (poly-schedule pg))) (ast-node-into-clang (->ast (poly-schedule pg) 0)))))
+
+(defun mark->directive (mark)
+  (declare (type isl::identifier mark))
+  (uiop:symbol-call :caten/codegen/transform :str->directive (cffi:foreign-string-to-lisp (isl::%isl-id-get-name (isl::identifier-handle mark)))))
 
 (defun map-schedule-nodes (f polyhedral-ir)
   "
@@ -163,7 +167,7 @@ This function returns a list of the results of applying f to each node. NIL is e
           for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
           while (>= n-children 0) do
             (loop for nth upfrom 0 below n-children
-                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (mark->directive (schedule-node-mark-get-id node)))
                   for band = (schedule-node-get-child node nth)
                   for type = (schedule-node-get-type band) do
                     (let ((out (funcall f type band mark))) (when out (push out outputs)))
@@ -179,7 +183,7 @@ This function returns a list of the results of applying f to each node. NIL is e
           for n-children = (isl::%isl-schedule-node-n-children (isl::schedule-node-handle node))
           while (>= n-children 0) do
             (loop for nth upfrom 0 below n-children
-                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (identifier-name (schedule-node-mark-get-id node)))
+                  for mark = (when (eql (schedule-node-get-type node) :schedule-node-mark) (mark->directive (schedule-node-mark-get-id node)))
                   for band = (schedule-node-get-child node nth)
                   for type = (schedule-node-get-type band) do
                     (let ((out (funcall f type band mark))) (when out (push out outputs)))
@@ -190,9 +194,18 @@ This function returns a list of the results of applying f to each node. NIL is e
 
 (defun schedule-node-get-undernearth-bands (schedule-node)
   (declare (type isl::schedule-node schedule-node))
-  (map-schedule-node-children #'(lambda (type band mark) (declare (ignore mark)) (when (eql type :schedule-node-band) band)) schedule-node))
+  (map-schedule-node-children
+   #'(lambda (type band mark)
+       (when (and
+              (eql type :schedule-node-band)
+              (or
+               (null mark)
+               (uiop:symbol-call :caten/codegen/transform :directive-visible mark)))
+         band))
+   schedule-node))
 
 (defun schedule-node-get-band-from-relative-idx (schedule-node idx)
+  "Returns the idxth visible band"
   (declare (type isl::schedule-node schedule-node) (type fixnum idx))
   (nth idx (schedule-node-get-undernearth-bands schedule-node)))
 

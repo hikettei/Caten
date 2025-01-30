@@ -13,6 +13,10 @@
   :free %isl-multi-val-free
   :copy %isl-multi-val-copy)
 
+(define-isl-object pw-aff
+  :free %isl-pw-aff-free
+  :copy %isl-pw-aff-copy)
+
 (defmethod print-object ((value multi-union-pw-aff) stream)
   (print-unreadable-object (value stream :type t)
     (write-string (%isl-multi-union-pw-aff-to-str (multi-union-pw-aff-handle value)) stream)))
@@ -90,3 +94,24 @@
   (:give multi-val)
   (:take space)
   (:take value-list))
+
+(define-isl-function multi-union-pw-aff-flat-range-product %isl-multi-union-pw-aff-flat-range-product
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take multi-union-pw-aff))
+
+(define-isl-function multi-union-pw-aff-get-space %isl-multi-union-pw-aff-get-space
+  (:give space)
+  (:keep multi-union-pw-aff))
+
+(defun pw-aff-var-on-domain (local-space type pos)
+  (%make-pw-aff (%isl-pw-aff-var-on-domain (isl-object-handle (copy local-space)) type pos)))
+
+(defun multi-union-pw-aff-reset-tuple-id (mupa type)
+  (declare (type multi-union-pw-aff mupa))
+  (%make-multi-union-pw-aff (%isl-multi-union-pw-aff-reset-tuple-id (multi-union-pw-aff-handle (copy mupa)) type)))
+
+(define-isl-function multi-union-pw-aff-union-add %isl-multi-union-pw-aff-union-add
+  (:give multi-union-pw-aff)
+  (:take multi-union-pw-aff)
+  (:take multi-union-pw-aff))

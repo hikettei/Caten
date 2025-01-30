@@ -2,15 +2,19 @@
   (:documentation "An intermidate AST to parse ISL AST into Blueprint.")
   (:use :cl :caten/codegen/expr :caten/codegen/expr-cache :caten/air :caten/codegen/shape-inference :trivia)
   (:export
-   #:ASTBlock #:astblock-p #:astblock-body
+   #:copy-ast
+   #:ASTBlock #:astblock-p #:astblock-body #:copy-astblock
    #:make-block
    #:satblock-body
 
-   #:User #:user-p
+   #:User #:user-p #:copy-user
    #:make-user
    #:user-name
    #:user-args
+   #:user-simd
    #:user-unroll
+   #:user-vectorize
+   #:user-late-unroll-info
    
    #:ASTFor #:astfor-p
    #:make-for
@@ -22,8 +26,9 @@
    #:astfor-body
    #:astfor-scope
    #:astfor-marks
+   #:astfor-tile-parent
 
-   #:AstIf #:astif-p
+   #:AstIf #:astif-p #:copy-astif
    #:make-if
    #:astif-condition
    #:astif-then-node
@@ -34,7 +39,10 @@
    #:map-ast-tree
    #:copy-and-assign-expr
    #:copy-and-assign-ast-tree
-   #:unroll-ast))
+   #:unroll-ast
+   #:packing-ast
+   #:late-rewrite-pack->unroll
+   #:user-unroll-prefix))
 
 (in-package :caten/codegen/polyhedral-ast)
 ;; ~~ ISL AST <-> Lisp Intermidate Object ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -46,7 +54,8 @@
   (defstruct (User
               (:constructor make-user (name args)))
     "T_name(index)"
-    (name name :type string) (args args :type list) (unroll nil :type list))
+    (name name :type string) (args args :type list) (unroll nil :type list) (vectorize nil :type list) (late-unroll-info nil :type list)
+    (simd nil :type list))
 
   (defstruct (ASTExpr
               (:constructor make-astexpr (expr is-defglobal-p)))
@@ -61,6 +70,7 @@
     (by by :type Expr)
     (body body :type (or ASTBlock User ASTFor ASTIF))
     (scope :local :type (member :local :global))
+    (tile-parent nil :type (or null AstFor))
     (marks nil :type list))
 
   (defstruct (AstIf
@@ -68,6 +78,67 @@
     (condition condition :type Expr)
     (then-node then-node :type (or ASTBlock User ASTFOR ASTIF))
     (else-node else-node :type (or ASTBlock User ASTFOR ASTIF null))))
+
+(defun indent-string (string)
+  (with-output-to-string (out)
+    (loop for line in (cl-ppcre:split "\\n" string)
+          ;; the first words are *ast-indent* * space
+          do (princ " " out) (format out "~a~%" line))))
+
+(defmethod print-object ((AstBlock astblock) stream)
+  (princ
+   (with-output-to-string (out)
+     (format out "(AstBlock () {~%")
+     (dolist (x (astblock-body astblock))
+       (format out (indent-string (indent-string (format nil "~a" x)))))
+     (format out "})"))
+   stream))
+
+(defmethod print-object ((User user) stream)
+  (princ
+   (with-output-to-string (out)
+     (format out "(User {~a(" (user-name user))
+     (loop for arg in (user-args user)
+           for nth upfrom 0
+           do (format out "~a" (caten/codegen/renderer:render-expr 'caten/codegen/renderer:Default-Renderer arg))
+           when (< nth (1- (length (user-args user)))) do (format out ", "))
+     (format out ")}~%")
+     (format out "  :unroll ~a" (user-unroll user))
+     ;; [TODO] More attributes?
+     (format out ")"))
+   stream))
+
+(defmethod print-object ((AstExpr astexpr) stream)
+  (format stream "~a" (astexpr-expr astexpr)))
+
+(defmethod print-object ((ASTFor astfor) stream)
+  (princ
+   (with-output-to-string (out)
+     (format out "(AstFor {:idx ~a :from ~a :to ~a :by ~a :scope ~a}~%" (astfor-idx astfor) (astfor-from astfor) (astfor-to astfor) (astfor-by astfor) (astfor-scope astfor))
+     (format out "  marks=~a " (astfor-marks astfor))
+     (when (astfor-tile-parent astfor)
+       (format out "  tile-parent=~a " (astfor-idx (astfor-tile-parent astfor))))
+     (format out " {~%")
+     (format out (indent-string (indent-string (format nil "~a" (astfor-body astfor)))))
+     (format out " })"))
+   stream))
+
+(defmethod print-object ((ASTIF astif) stream)
+  (princ
+   (with-output-to-string (out)
+     (format out "(AstIf {:condition ~a} {~%" (astif-condition astif))
+     (format out (indent-string (indent-string (format nil "~a" (astif-then-node astif)))))
+     (when (astif-else-node astif)
+       (format out (indent-string (indent-string (format nil "~a" (astif-then-node astif))))))
+     (format out " })"))
+   stream))
+     
+(defgeneric copy-ast (ast))
+(defmethod copy-ast ((ast ASTBlock)) (make-block (copy-list (astblock-body ast))))
+(defmethod copy-ast ((ast User)) (copy-user ast))
+(defmethod copy-ast ((ast AstExpr)) (copy-astexpr ast))
+(defmethod copy-ast ((ast ASTFor)) (copy-astfor ast))
+(defmethod copy-ast ((ast AstIf)) (copy-astif ast))
 
 (defun map-ast-tree (f ast)
   "f = (lambda (ast &rest args) ...)"
@@ -96,8 +167,8 @@
             do (setf (getattr node :value) value))
     new-expr))
 
-(defun copy-and-assign-ast-tree (ast idx value &key (unroll-at nil))
-  (declare (type string idx))
+(defun copy-and-assign-ast-tree (ast idx value &key (unroll-at nil) (mode :unroll) (pack-size nil))
+  (declare (type string idx) (type (member :unroll :packing) mode))
   (flet ((e (expr) (copy-and-assign-expr expr idx value)))
     (map-ast-tree
      #'(lambda (ast &rest forms)
@@ -106,11 +177,28 @@
             (assert (= (length forms) 1))
             (make-block (first forms)))
            (User
-            (let ((user (copy-user ast)))
-              (setf (user-args user) (map 'list #'e (user-args user))
-                    (user-unroll user) (copy-list (user-unroll user)))
-              (when unroll-at (push (cons unroll-at value) (user-unroll user)))
-              user))
+            (ecase mode
+              (:unroll
+               (let ((user (copy-user ast)))
+                 (setf (user-args user) (map 'list #'e (user-args user))
+                       (user-unroll user) (copy-list (user-unroll user))
+                       (user-vectorize user) (copy-list (user-vectorize user))
+                       (user-late-unroll-info user) (copy-list (user-late-unroll-info user))
+                       (user-simd user) (copy-list (user-simd user)))
+                 (when unroll-at (push (cons unroll-at value) (user-unroll user)))
+                 user))
+              (:packing
+               (let ((user (copy-user ast)))
+                 (setf (user-args user) (user-args user)
+                       (user-unroll user) (copy-list (user-unroll user))
+                       (user-vectorize user) (copy-list (user-vectorize user))
+                       (user-late-unroll-info user) (copy-list (user-late-unroll-info user))
+                       (user-simd user) (copy-list (user-simd user)))
+                 (when unroll-at
+                   (assert (numberp pack-size) () "Packing size should be constant!")
+                   (push (list unroll-at value pack-size) (user-vectorize user))
+                   (push (list idx pack-size unroll-at) (user-late-unroll-info user)))
+                 user))))
            (AstFor
             (assert (= (length forms) 1))
             (let ((new-for (copy-astfor ast)))
@@ -128,7 +216,8 @@
               new-if))))
      ast)))
 
-(defun unroll-ast (ast idx unroll-at n-unroll)
+(defun shift-ast (ast idx unroll-at n-unroll &key (mode :unroll))
+  (declare (type (member :unroll :packing) mode))
   (map-ast-tree
    #'(lambda (ast &rest forms)
        (etypecase ast
@@ -136,9 +225,13 @@
           (assert (= (length forms) 1))
           (make-block (first forms)))
          (User
-          (let ((users
-                  (map 'list #'(lambda (n) (copy-and-assign-ast-tree ast idx n :unroll-at unroll-at)) (alexandria:iota n-unroll))))
-            (make-block users)))
+          (ecase mode
+            (:unroll
+             (let ((users
+                     (map 'list #'(lambda (n) (copy-and-assign-ast-tree ast idx n :unroll-at unroll-at :mode mode)) (alexandria:iota n-unroll))))
+               (make-block users)))
+            (:packing
+             (copy-and-assign-ast-tree ast idx 0 :unroll-at unroll-at :mode mode :pack-size n-unroll))))
          (AstExpr (make-astexpr (astexpr-expr ast) (astexpr-is-defglobal-p ast)))
          (AstFor
           (assert (= (length forms) 1))
@@ -156,3 +249,32 @@
             new-if))))
    ast))
 
+(defun unroll-ast (ast idx unroll-at n-unroll)
+  (shift-ast ast idx unroll-at n-unroll :mode :unroll))
+
+(defun packing-ast (ast idx packing-at n-packing)
+  (shift-ast ast idx packing-at n-packing :mode :packing))
+
+(defmethod user-unroll-prefix ((user user))
+  (loop for arg in (user-args user)
+        for idxs = (expr-depends-on arg)
+        collect
+        (reduce
+         #'+
+         (loop for i in idxs
+               for s = (find (princ-to-string i) (user-unroll user) :key #'car :test #'equalp)
+               if s collect (cdr s) else collect 0))))
+
+(defun late-rewrite-pack->unroll (ast &key (unrolled-as nil))
+  "Rewrites the packed user (which is failed to vectorize) as an unrolled user."
+  (check-type ast user)
+  (flet ((unroll (info prev-ast n-unroll-as)
+           (multiple-value-bind (idx n-unroll unroll-at) (apply #'values info)
+             (let ((n-unroll (or n-unroll-as n-unroll)))
+               (make-block
+                (map 'list #'(lambda (n) (copy-and-assign-ast-tree prev-ast idx n :unroll-at unroll-at :mode :unroll)) (alexandria:iota n-unroll)))))))
+    (let ((info (user-late-unroll-info ast)))
+      (dotimes (i (length info))
+        (setf ast (unroll (nth i info) ast (nth i unrolled-as))))
+      ;; (user-args user).lem == (user-prefix user) ...になる情報をここで付与する
+      ast)))

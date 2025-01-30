@@ -23,7 +23,9 @@
    #:make-define-global
    #:%renderer-get-auto-scheduler
    #:render-index
-   #:render-aref-index))
+   #:render-aref-index
+   #:renderer-scope-valid-code-p
+   #:renderer-rendered-nodes))
 
 (in-package :caten/codegen/renderer)
 
@@ -32,7 +34,8 @@
 (defgeneric %render-const (renderer obj) (:documentation ""))
 (defgeneric %render-kernel (renderer schedule-item))
 (defgeneric %compile-kernel (renderer schedule-items dir))
-
+;; [TODO] Move to ./caten/aasm/attrs.lisp, or create renderops.lisp
+;; Blueprint is a list consisted of :Render and :EXPR
 (defnode (:Render :FOR) ()
          "
 ```
@@ -40,12 +43,14 @@ for(int idx=upfrom, below, by)
 ```
 
 - scope[keyword] If `:global`, the loop is parallelizable. One of :global, :local.
+- depth[integer] If scope is :global, the depth of the loop is provided. (corresponding to `#pragma omp parallel for collapse(depth)`)
 "
          :slots ((idx :type symbol)
                  (upfrom :type Expr)
                  (below :type Expr)
                  (by :type Expr)
-                 (scope :initform :local :type (member :global :local))))
+                 (scope :initform :local :type (member :global :local))
+                 (depth :initform 0 :type integer)))
 
 (defnode (:Render :ENDFOR) ()
          "
@@ -59,14 +64,15 @@ for(int idx=upfrom, below, by)
 ```
 if(condition)
 ```"
-         :slots ((condition :type Expr)))
+         :slots ((condition :type Expr) (idx :type symbol)))
 
 (defnode (:Render :ENDIF) ()
          "
 ```
 } // endif
 ```
-")
+"
+         :slots ((idx :type symbol)))
 
 (defnode (:Render :Aref) ()
          ":AREF corresponds to the following code:
@@ -90,6 +96,11 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
                  (pointer-p :type boolean)
                  (type :type (member :input :output :shape))
                  (nrank :type integer)))
+
+(defnode (:Render :BARRIER) () "Inserts syncthreads(); in CUDA.")
+
+(defnode (:Render :DEFINE-SHARED-MEMORY) () "Declares a shared memory in the kenrel."
+         :slots ((dtype :type keyword) (size :type integer)))
 
 (defun make-define-global (id dtype pointer-p type nrank)
   (declare (type symbol id)
@@ -166,7 +177,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
                     (append
                      (graph-nodes (expr-graph expr))
                      (graph-nodes (renderer-graph renderer))))
-              (format nil "~(~a~)[~a]"
+              (format nil "(*(~(~a~)+~a))"
                       (%render-const renderer id)
                       (render-node renderer (car (node-writes (expr-out expr))))))
             (format nil "~(~a~)[?]" id)))))
@@ -221,13 +232,29 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
       (from-expr (iteration-space-shape is) components))))
 ;; ~~ Default Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Default-Renderer (Renderer)
-  nil
-  (:documentation "Default Renderer used to print-object in repl"))
+  ((scope :initform nil :initarg :scope :accessor renderer-scope)
+   (scope-valid-code-p :initform t :accessor renderer-scope-valid-code-p)
+   (renderered-nodes :initform nil :accessor renderer-rendered-nodes))
+  (:documentation "Default Renderer used to print-object in repl. If scope is provided, the default renderer will proceed with checking the legality of the variable access."))
+
+(defun sname (obj) (intern (string-upcase (princ-to-string obj)) "KEYWORD"))
+(defmethod renderer-check-legality ((renderer Default-Renderer) name)
+  (when (and name (symbolp name) (renderer-scope renderer))
+    (let ((scope (renderer-scope renderer)))
+      (when (null (gethash (sname name) scope))
+        ;; (warn "~a is not defined" name)
+        (setf (renderer-scope-valid-code-p renderer) nil)))))
+
+(defmethod %render-node :around ((renderer Default-Renderer) id node)
+  (push node (renderer-rendered-nodes renderer))
+  (call-next-method))
 
 (defmethod %render-const ((renderer Default-Renderer) obj)
+  (renderer-check-legality renderer obj)
   (format nil "~(~a~)" obj))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
+  (renderer-check-legality renderer (getattr node :value))
   (%render-const renderer (getattr node :value)))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :SPACE)) node)
@@ -281,6 +308,7 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (def :< "<"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
+  (renderer-check-legality renderer (getattr node :storage-id))
   (render-aref renderer node))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)

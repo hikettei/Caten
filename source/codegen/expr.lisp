@@ -6,6 +6,7 @@
    :nodes-write-to)
   (:export
    #:with-expr
+   #:expr-copy
    #:expr-depends-on
    #:expr-graft-after
    #:expr-graph
@@ -56,10 +57,16 @@
 
 (in-package :caten/codegen/expr)
 
-(defstruct Expr
+(defstruct (Expr (:copier %copy-expr))
   "Expr is a graph wrapper that reprensents a computation whose node leaves are scalar (scalar number, aref from the tensor) and each computation is a scalar."
   (graph (error "graph must occur") :type Graph)
   (out (error "out must occur") :type node))
+
+(defun copy-expr (expr)
+  (let ((new-expr (%copy-expr expr)))
+    (setf (expr-graph new-expr) (copy-graph (expr-graph expr))
+          (expr-out new-expr) (copy-node (expr-out expr)))
+    new-expr))
 
 (defsimplifier
     (%get-scalar)
@@ -164,7 +171,8 @@ Only supports the scalar computation because it is intended to identify the same
 
 (defmethod simplify-expr ((expr Expr))
   ;; [TODO] Use FastGraph
-  (optimize-aasm (expr-graph expr))
+  ;; Note(hikkei) set heavy-opt-threshold to 0 to always enable full symbolic simplification.
+  (optimize-aasm (expr-graph expr));; :heavy-opt-threshold 0)
   (uiop:symbol-call :caten/codegen/shape-inference :expr-infer-type expr)
   expr)
 
@@ -304,7 +312,10 @@ This function returns the BOUND, otherwise returns error.
           (return-from expr-detach-loop-bound)
           (error "The first argument of the loop bound must be a LOAD node.")))
     (let ((new-expr (copy-expr expr)))
-      (setf (expr-out new-expr) bound)
+      ;; Note: Previously the graph was not copied.
+      (setf (expr-out new-expr) bound
+            (expr-graph new-expr) (copy-graph (expr-graph new-expr))
+            (graph-outputs (expr-graph new-expr)) (node-writes bound))
       new-expr)))
 
 (defun expr-flops (expr)

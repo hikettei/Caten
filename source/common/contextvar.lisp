@@ -161,6 +161,10 @@ Usage:
      1 :int
      #.(oneof "ANIMATE" 1 `(0 1))
      "Select either 0 or 1. Setting it to 0 suppresses animations in caten/common/tqdm.lisp.")
+    (:DISASSEMBLE
+     0 :int
+     #.(oneof "DISASSERMBLE" 0 `(0 1))
+     "Set 1 to disassemble and display the generated kernel.")
     (:CC
      "gcc" :string identity
      "The default GCC compiler used by the CLANG backend.")

@@ -147,3 +147,46 @@
 (defun schedule-node-get-schedule-depth (node)
   (declare (type schedule-node node))
   (%isl-schedule-node-get-schedule-depth (schedule-node-handle node)))
+
+(define-isl-function schedule-node-has-parent %isl-schedule-node-has-parent
+  (:give boolean)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-is-equal %isl-schedule-node-is-equal
+  (:give boolean)
+  (:keep schedule-node)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-band-sink %isl-schedule-node-band-sink
+  (:give schedule-node)
+  (:take schedule-node))
+
+(define-isl-function schedule-node-filter-get-filter %isl-schedule-node-filter-get-filter
+  (:give union-set)
+  (:keep schedule-node))
+
+(define-isl-function schedule-node-parent %isl-schedule-node-parent
+  (:give schedule-node)
+  (:take schedule-node))
+
+(define-isl-function schedule-node-next-sibling %isl-schedule-node-next-sibling
+  (:give schedule-node)
+  (:take schedule-node))
+
+(defun schedule-node-descendant-bottom-up (schedule-node callback user)
+  (declare (type schedule-node schedule-node) (type foreign-pointer user))
+  (%make-schedule-node (%isl-schedule-node-map-descendant-bottom-up (schedule-node-handle (copy schedule-node)) callback user)))
+
+(defun schedule-node-band-split (node pos)
+  (%make-schedule-node (%isl-schedule-node-band-split (schedule-node-handle (copy node)) pos)))
+
+(defun schedule-node-band-get-coincident (schedule-node)
+  (declare (type schedule-node schedule-node))
+  (let ((member (isl::%isl-schedule-node-band-n-member (schedule-node-handle schedule-node))))
+    (loop for i upfrom 0 below member
+          collect (eql :bool-true (%isl-schedule-node-band-member-get-coincident (schedule-node-handle schedule-node) i)))))
+
+(define-isl-function schedule-node-get-shared-ancestor %isl-schedule-node-get-shared-ancestor
+  (:give schedule-node)
+  (:keep schedule-node)
+  (:keep schedule-node))

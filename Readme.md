@@ -4,6 +4,10 @@
 
 [![CI](https://github.com/hikettei/Caten/actions/workflows/tests_on_push.yml/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/tests_on_push.yml) [![Benchmarks](https://github.com/hikettei/Caten/actions/workflows/benchmark.yml/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/benchmark.yml) [![pages-build-deployment](https://github.com/hikettei/Caten/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/pages/pages-build-deployment) [![](https://dcbadge.limes.pink/api/server/tNawU7TN3s?style=flat)](https://discord.gg/tNawU7TN3s)
 
+### Overview
+
+<img alt="Concepts" src="./docs/assets/Caten_Overview_Style2.jpg" width="120%">
+
 `Caten = Compile+AbstracTENsor`
 
 Caten is an experimental deep learning compiler. Our goal is to create a solution that’s as simple as tinygrad yet as flexible as TVM—all while extending the possibilities of interactive programming into the realm of AI.
@@ -190,6 +194,9 @@ Before contributing, please note that there is no linter here. Make an effort to
 - [ ] CUDA (BACKEND=CUDA)
 - [ ] LLVM (BACKEND=LLVM)
 - [ ] OpenCL (BACKEND=OPENCL)
+- [ ] X86 (BACKEND=X86)
+- [ ] PTX (BACKEND=PTX)
+- [ ] TensorCore (User extensible Vectorization) Support
 - [ ] Finish AutoScheduler (Polyhedral Compiler + BEAM Search)
 
 ### Runtimes
