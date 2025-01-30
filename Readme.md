@@ -63,7 +63,7 @@ Give it a try in your REPL!
   (caten (!relu (!matmul (make-tensor `(a b)) (make-tensor `(b c))))))
 ```
 
-We’ve adopted a RISC-style architecture. Ultimately, everything in Caten boils down to [just 26 composable primitive ops](https://github.com/hikettei/Caten/blob/main/source/aasm/attrs.lisp).
+We’ve adopted a RISC-style architecture. Ultimately, everything in Caten boils down to [just 26 composable primitive ops](https://github.com/hikettei/Caten/blob/main/source/aasm/ops.lisp).
 
 When you replace `tensor-graph` with `tensor-lowered-graph`, you’ll see exactly what we mean! And by using `->dot` instead of `pprint-graph`, you can visualize that graph right in your browser!
 

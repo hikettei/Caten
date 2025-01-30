@@ -7,12 +7,10 @@
   :components
   ((:file "package")
    (:file "helpers")
-   (:file "attrs") ;; todo: rename -> ops.lisp
-
+   (:file "ops")
    (:file "tensor-ops")
    (:file "render-ops")
    
-   (:file "tensor-ir")
    (:file "constant-folding")
    (:file "optimizers")
    (:file "documentation")))
