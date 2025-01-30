@@ -8,7 +8,6 @@
 ;; JIT        | {SPACE}                                        | 1 OP(s)
 ;; +)__________________________________________________________________
 ;;                                                             | 26 Ops
-
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defclass JITAble ()
@@ -318,3 +317,61 @@ Corresponds to:
                  (size)))
 
 ) ;; eval-when
+;; ~~ [Render Ops] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(eval-when (:compile-toplevel :load-toplevel :execute)
+
+(defclass RenderOps ()
+  nil
+  (:documentation "RenderOps is a class that represents the operation of rendering the node to the target language."))
+
+(defnode (:Render :RANGE) (RenderOps)
+         "
+```
+ID <- RANGE(UPFROM, TO, BY, BODY, _type_relay=...)
+```
+The node :RANGE controls the iteration of the loop. The loop iterates the `BODY` (which must be a RenderOps) over the range of `[UPFROM, floor(TO, BY))`"
+         :slots nil)
+
+(defnode (:Render :IF) (RenderOps)
+         "
+```
+ID <- IF(CONDITION, THEN)
+```
+"
+         :slots nil)
+
+(defnode (:Render :PROGN) (RenderOps)
+         "
+```
+ID <- PROGN(S1, S2, ..., Sn)
+```
+"
+         :slots nil)
+;; [TODO] Rename to EXPR
+(defnode (:Render :EXPR_Placeholder) (RenderOps)
+         "
+```
+ID <- EXPR(E1, E2, ..., En)
+```
+"
+         :slots nil)
+;; ControlFlow
+(defnode (:Render :BARRIER) (RenderOps)
+         "
+```
+ID <- BARRIER()
+```
+"
+         :slots nil)
+
+(defnode (:Render :DEFINE-GLOBAL) (RenderOps)
+         "
+```
+X <- ()
+```
+Similar to allocate
+"
+         :slots nil)
+;; Note: More?
+
+)
