@@ -107,7 +107,6 @@
                         (r body)))
                   (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
                   (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
-                  ((:ADD :MUL :AND :<) (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)~(~a~);" (car (node-writes node)) (node-type node) (node-reads node)))
                   (:Aref
                    (multiple-value-bind (name idx) (apply #'values (node-reads node))
                      (r name) (r idx)
@@ -118,8 +117,7 @@
                      (fmt "if (~(~a~)) {" cond)
                      (incf indent 2) (r body) (decf indent)
                      (fmt "}")))
-                  (otherwise
-                   (warn "Unsupported Node: ~a" (node-type node))))))                    
+                  (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))            
        (f (id->value graph (car (graph-outputs graph))))))))
 ;; [TODO] OpFusion
 ;; PROGN+PROGN -> PROGN
@@ -148,7 +146,6 @@
                         (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
                         (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
                         (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3))))))))))))))
-
 ;; [TODO]
 ;; - OpFusion
 ;; - TileBands
