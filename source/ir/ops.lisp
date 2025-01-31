@@ -317,7 +317,7 @@ Corresponds to:
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defclass RenderOps ()
-  nil
+  ((is-empty :initform nil :initarg :is-empty))
   (:documentation "RenderOps is a class that represents the operation of rendering the node to the target language."))
 
 (defnode (:Render :RANGE) (RenderOps)

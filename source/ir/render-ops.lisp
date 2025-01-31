@@ -29,7 +29,7 @@
 
 (defun %progn (&rest body &aux (out (gensym "PROGN")))
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
-  (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 body))))
+  (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
 
 (defun %expr (&rest nodes &aux (out (gensym "EXPR")))
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) nodes) () "%expr: The body must be a list of symbols or nodes.")
@@ -55,8 +55,15 @@
 (defmacro %defun (name (&rest args) &body body)
   `(%function ',name (list ,@args) (%progn ,@body)))
 ;; ~~ AST Simplification ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun Empty! (node)
+  (assert (typep (node-attr node) 'RenderOps))
+  (let ((node (copy-node node)))
+    (setf (getattr node :is-empty) t)
+    node))
+
 (defsimplifier
     (simplify-control-flow :speed 0)
+    ;; (PROGN (PROGN X)) -> (PROGN X))
     ((:PROGN (~ args))
      ->
      ((node graph)
@@ -75,8 +82,13 @@
       (with-context-nodes
         (new-cond (%and cond1 cond2))
         (out (%if new-cond body :out (car (node-writes node)))))))
-    ;; [TODO] Tile the range
-    ;; [TODO] Remove the ISL dependencies
+    ;; Removing Empty IF/Range
+    ((:Range (_ _ _ (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
+    ((:IF (_ (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
+    ((:Range (_ _ _ (:Range (_ _ _ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
+    ((:IF (_ (:IF (_ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
+    ;; FOR + FOR
+    
     ;; If the size==1 -> remove the range
     ;; ((:RANGE (bind size step body)) -> ((node graph))
     ;; :FOR + :PROGN (X)
@@ -113,7 +125,9 @@
                   (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
                   (:RANGE
                       (multiple-value-bind (bind size step body) (apply #'values (node-reads node))
-                        (fmt "for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a)" (r bind) (r bind) (r size) (r bind) (r step))
+                        (fmt "@~(~a~) for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a" (getattr node :mark)
+                             (r bind) (r bind) (r size) (r bind) (r step)
+                             (if (getattr node :is-empty) "/* empty */" ""))
                         (r body)))
                   (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
                   (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))

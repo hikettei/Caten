@@ -446,10 +446,10 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-      (let ((ast (astify-blueprint (print (ctx-blueprint ctx)))))
+      (let ((ast (astify-blueprint (ctx-blueprint ctx))))
+        (print (graph-nodes ast))
         (caten/ir::print-ast ast)
         ast))))
-
 ;; [TODO]
 ;; (defmethod print-blueprint (nodes stream &aux (gids)))
 ;; ^ Simplify how to describe write relay
