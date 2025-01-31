@@ -2,7 +2,7 @@
   (:documentation "
 This package provides GraphRuntime, which is a class to run an air graph.
 ")
-  (:use :cl :caten/air :caten/aasm :caten/runtime/buffer :caten/runtime/profile :caten/common.dtype)
+  (:use :cl :caten/air :caten/ir :caten/runtime/buffer :caten/runtime/profile :caten/common.dtype)
   (:import-from :alexandria :compose)
   (:export
    #:*supress-allocate-mode*
