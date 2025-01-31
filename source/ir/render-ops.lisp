@@ -1,4 +1,4 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 
 (defmacro with-blueprint ((&key (noopt nil)) &body body)
   `(let* ((*ctx* (make-graph))

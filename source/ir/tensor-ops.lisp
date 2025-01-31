@@ -1,4 +1,4 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 
 (defparameter *default-order* (ctx:getenv :DEFAULT_ORDER))
 (defparameter *default-float* (ctx:getenv :DEFAULT_FLOAT))

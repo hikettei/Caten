@@ -1,5 +1,5 @@
 (in-package :cl-user)
-(defpackage :caten/aasm
+(defpackage :caten/ir
   (:use :cl :trivia :caten/air :alexandria :caten/common.documentation)
   (:import-from
    :caten/common.dtype
@@ -27,8 +27,7 @@
    #:%stride
    #:%shape
    #:%make-tensor
-   #:%index-components
-   )
+   #:%index-components)
   ;; from ctx.lisp
   (:export
    #:with-context
@@ -81,5 +80,4 @@
   (:export
    #:%where)
   ;; from optimizers.lisp
-  (:export #:optimize-aasm #:minimize-duplicated-symbolic-path)
-  )
+  (:export #:optimize-aasm #:minimize-duplicated-symbolic-path))
