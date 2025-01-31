@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/expr
   (:documentation "`Expr` is a syntax sugar for the tensor-ops in `caten/aasm`")
-  (:use :cl :caten/air :caten/aasm)
+  (:use :cl :caten/air :caten/ir)
   (:import-from
    :caten/codegen/helpers
    :nodes-write-to)
@@ -164,7 +164,7 @@ Only supports the scalar computation because it is intended to identify the same
   ;; [TODO] Use FastGraph
   ;; Note(hikkei) set heavy-opt-threshold to 0 to always enable full symbolic simplification.
   (optimize-aasm (expr-graph expr));; :heavy-opt-threshold 0)
-  (uiop:symbol-call :caten/codegen/shape-inference :expr-infer-type expr)
+  (uiop:symbol-call :caten/codegen/type-relay :expr-infer-type expr)
   expr)
 
 (defun %connect-expr (grh args out)

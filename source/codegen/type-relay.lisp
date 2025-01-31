@@ -1,8 +1,8 @@
 (defpackage :caten/codegen/type-relay
   (:documentation "Perform the following inference given the graph by direcly running it in :relay-checker VM.")
-  (:use :cl :caten/runtime/buffer :caten/runtime/runtime :caten/air)
+  (:use :cl :caten/codegen/expr :caten/runtime/buffer :caten/runtime/runtime :caten/air)
   (:import-from :caten/codegen/helpers #:permute-list)
-  (:import-from :caten/common.dtype #:dtype-t  #:dtype->lisp)
+  (:import-from :caten/common.dtype #:dtype-t #:dtype->lisp)
   (:export
    #:RelayChecker #:RelayBuffer
    #:Inferred-Type #:make-inferred-type #:read-type-relay
@@ -16,7 +16,8 @@
    #:Iteration-space-procedure
    #:mergeable-view-p
    #:iteration-space-expr-aref
-   #:buffer-iteration-space   #:ensure-iteration-space-length
+   #:buffer-iteration-space #:ensure-iteration-space-length
+   #:expr-infer-type
    #:inferred-type-vizualize-to-dot
    #:node-writes-broadcasted-p
    #:buffer-inferred-permute
@@ -212,7 +213,7 @@ If the shape inference is successfully done and properly deployed to the target 
 	(when (null allow-overwrite)
 	  (assert (null (getattr n :_type_relay :allow-undefined t)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
 	(when (null (getattr n :_type_relay :allow-undefined t))
-          (when (subtypep (class-of (caten/air:node-attr n)) 'caten/aasm:JITAble)
+          (when (subtypep (class-of (caten/air:node-attr n)) 'caten/ir:JITAble)
 	    (setf (getattr n :_type_relay) type)))))))
 ;; ~~ Loop Collapse ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun mergeable-view-p (g view shape &aux (shape (if (typep shape 'Expr) shape (expr-const (reveal-buffer shape) :int64))))
@@ -236,6 +237,16 @@ If the shape inference is successfully done and properly deployed to the target 
         (expr-const val dtype)
         ;; Merge only scalar path!
         (expr-from-graph val (apply #'caten/air:make-graph (gather-only-scalars (graph-nodes graph)))))))
+
+(defun expr-infer-type (expr)
+  "Running TypeRelay Inference for the expr graph."
+  (declare (type expr expr))
+  (assert (caten/air:graph-outputs (expr-graph expr)))
+  ;; Sort the graph by execution order
+  (setf (expr-graph expr) (caten/air:->fast-graph (expr-graph expr))
+        (expr-graph expr) (caten/air:->graph-with-tpsort (expr-graph expr)))
+  (run-type-infer (make-runtime (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :runtime 'RelayChecker) :allow-overwrite t)
+  expr)
 
 (defstruct Iteration-Space
   "
