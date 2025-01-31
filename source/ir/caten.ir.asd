@@ -1,5 +1,5 @@
-(asdf:defsystem "caten.aasm"
-  :description "aasm = Abstract + (internal) assembly"
+(asdf:defsystem "caten.ir"
+  :description "Caten IR (Implements caten.aIR)"
   :author      "hikettei <ichndm@gmail.com>"
   :licence     "MIT"
   :depends-on ("alexandria" "caten.common" "caten.air")

@@ -819,3 +819,9 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
       (let ((out (apply #'make-graph (apply #'append (map 'list (alexandria:compose #'graph-nodes #'%graph-schedule) graph-by-phase)))))
         (setf (graph-outputs out) (graph-outputs graph))
         (->fast-graph out)))))
+
+;; [TODO]
+;; schedule-graph -> RuntimeGraph is here
+(defun schedule->runtime-graph (schedule-graph)
+
+  )
