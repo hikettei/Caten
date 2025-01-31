@@ -25,7 +25,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 
 (in-package :caten/codegen/blueprint)
 ;; ~~ Temporary Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defnode (:Tmp :TmpRange) () "" :slots ((size) (type) (idx)))
+(defnode (:Tmp :TmpRange) () "" :slots ((size :type Expr) (type :type keyword) (idx)))
 (defnode (:Tmp :TmpEndRange) () "" :slots ((idx)))
 (defun %make-coincident-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :coincident :idx idx))
 (defun %make-reduction-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :reduction :idx idx))
@@ -393,6 +393,30 @@ Depends=~a Reduce=~a Users=~a
              (recursive-lower-into-bp ctx x)))
        (node-reads node))
       nil)))
+
+(defun astify-blueprint (bp)
+  (declare (type list bp))
+  (with-blueprint ()
+    (labels ((sendexpr (expr)
+               (dolist (n (graph-nodes (expr-graph expr))) (emit n))
+               (expr-out expr))
+             (explore (rest-items)
+               (declare (type list rest-items))
+               (when (null rest-items) (return-from explore))
+               (case (node-type (car rest-items))
+                 (:TMPRange
+                  (let ((endrange (position-if #'(lambda (x) (and (eql (node-type x) :TmpEndRange) (equal (getattr x :idx) (getattr (car rest-items) :idx)))) rest-items)))
+                    (assert endrange () "Inserting TMPRange w/o corresponding TmpEndRange is invaild. Malformed lowering result?")
+                    (%progn
+                     (%range
+                      (getattr (car rest-items) :idx) (sendexpr (getattr (car rest-items) :size))
+                      (%progn (explore (subseq rest-items 1 endrange)))
+                      :mark (getattr (car rest-items) :type))
+                     (explore (subseq rest-items (1+ endrange))))))
+                 (:TMPEndRange (error "TMPEndRange should not occur here, malformed lowering result?"))
+                 (otherwise
+                  (%progn (emit (car rest-items)) (explore (cdr rest-items)))))))
+      (explore bp))))
 ;; Entry point for the lowerer is here :)  
 (defun lower-schedule-item (schedule-item base-graph schedule-graph)
   "
@@ -422,7 +446,9 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-      (print (ctx-blueprint ctx)))))
+      (let ((ast (astify-blueprint (print (ctx-blueprint ctx)))))
+        (caten/ir::print-ast ast)
+        ast))))
 
 ;; [TODO]
 ;; (defmethod print-blueprint (nodes stream &aux (gids)))
