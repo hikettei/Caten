@@ -9,6 +9,7 @@
    (:file "backend")
    (:file "expr")
    (:file "type-relay")
+   (:file "rewriting-rules")
    (:file "scheduler")
    (:file "blueprint")
    (:file "jit")

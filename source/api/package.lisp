@@ -7,7 +7,7 @@
 - Merge View Solver
 - ASM Bindings
 - Graph Caller")
-  (:use :cl :alexandria :trivia :cl-ppcre :caten/ir1 :caten/air :caten/runtime)
+  (:use :cl :alexandria :trivia :cl-ppcre :caten/ir :caten/air :caten/runtime)
   (:local-nicknames (:docs :caten/common.documentation))
   (:import-from
    :caten/common.dtype

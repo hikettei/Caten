@@ -1,5 +1,5 @@
 (defpackage :caten/codegen/jit
-  (:use :cl :caten/runtime :caten/codegen/backend)
+  (:use :cl :caten/runtime :caten/air :caten/codegen/backend :caten/codegen/type-relay :caten/codegen/rewriting-rules)
   (:export
    #:codegen
    #:jit))
@@ -23,4 +23,5 @@
     (run-type-infer runtime)
     ;; Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
     (apply-rewriting-rules runtime)
+    runtime
     ))
