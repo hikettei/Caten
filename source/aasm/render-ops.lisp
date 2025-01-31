@@ -68,8 +68,7 @@
     ;; [TODO] Tile the range
     ;; [TODO] Remove the ISL dependencies
     ;; If the size==1 -> remove the range
-    ;; 
-;;    ((:RANGE (bind size step body)) -> ((node graph))
+    ;; ((:RANGE (bind size step body)) -> ((node graph))
     )
 
 (defun simplify-ast (graph)
@@ -119,6 +118,10 @@
                      (fmt "}")))
                   (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))            
        (f (id->value graph (car (graph-outputs graph))))))))
+
+(defun apply-tile (graph range width)
+  ;; Rewrite IDX -> ...
+  )
 ;; [TODO] OpFusion
 ;; PROGN+PROGN -> PROGN
 ;; IndexingをもっとSimplifyしたい。RANGEの外に出す方法？
@@ -150,5 +153,11 @@
 ;; - OpFusion
 ;; - TileBands
 ;;  - Vectorize
+;;    - PrefetchがISL無しで実装できるか？
 ;;  - Parallelize
 ;;  - It is IR's obligation to provide the information to opfusion
+;;  - Switch to use aasm instead of blueprint in codegen
+;;  - Remove EXPR, EXPR-Cache, and so on ...
+;;  - EXPR内部の
+;;  - defsimplifier -> make-simplifierにする
+;; (funcall (PatternMatcher ((z -> (x + y)) -> (z + y))) graph) ;; <- allow to do this
