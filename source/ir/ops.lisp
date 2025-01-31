@@ -330,7 +330,7 @@ Corresponds to:
 ID <- RANGE(SIZE, STEP, BODY, _type_relay=...)
 ```
 The node :RANGE controls the iteration of the loop. The loop iterates the `BODY` (which must be a RenderOps) over the range of `[UPFROM, floor(TO, BY))`"
-         :slots nil)
+         :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)))
 
 (defnode (:Render :IF) (RenderOps)
          "
