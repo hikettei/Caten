@@ -25,10 +25,10 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 
 (in-package :caten/codegen/blueprint)
 ;; ~~ Temporary Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defnode (:Tmp :TmpRange) () "" :slots ((size) (type)))
+(defnode (:Tmp :TmpRange) () "" :slots ((size) (type) (idx)))
 (defnode (:Tmp :TmpEndRange) () "" :slots ((idx)))
-(defun %make-coincident-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :coincident))
-(defun %make-reduction-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :reduction))
+(defun %make-coincident-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :coincident :idx idx))
+(defun %make-reduction-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :reduction :idx idx))
 (defun %make-endrange (idx) (make-node :Tmp :TmpEndRange nil nil :idx idx))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod get-grouped-dims ((graph Graph) (base-graph Graph))
@@ -403,8 +403,8 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
 "
   (declare (type node schedule-item))
   (assert (eql (node-type schedule-item) :Schedule-Item) () "lower-schedule-item expects a Schedule-Item, got ~a" schedule-item)
-  ;; cannot lower the vmops
-  (when (null (getattr schedule-item :jitable)) (return-from lower-schedule-item))
+  ;; Only kernel are lowered
+  (unless (eql :kernel (getattr schedule-item :type)) (return-from lower-schedule-item))
   (let* ((graph (apply #'make-graph (getattr schedule-item :items)))
          (_ (setf (graph-outputs graph) (node-writes schedule-item)))
          (iterspace (get-grouped-dims graph base-graph))
@@ -422,7 +422,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-      (ctx-blueprint ctx))))
+      (print (ctx-blueprint ctx)))))
 
 ;; [TODO]
 ;; (defmethod print-blueprint (nodes stream &aux (gids)))

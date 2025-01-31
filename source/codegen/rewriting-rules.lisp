@@ -40,8 +40,7 @@
               for view in views
               for node = (id->value (runtime-graph runtime) id) do
                 (when (null node) (warn "The output ~a is not found in the graph." id))
-                (when (> (length view) 1) (warn "(No simplifier?) Detected multiple views in a single buffer: ~a~%Using the first one ~a~%" views (car view)))
-                (when node (setf (getattr node :_output_type) (car view)))))
+                (when (> (length view) 1) (warn "(No simplifier?) Detected multiple views in a single buffer: ~a~%Using the first one ~a~%" views (car view)))))
       (macrolet ((renew (accessor)
 		   `(let ((new-table (make-hash-table)))
 		      (maphash
