@@ -380,6 +380,10 @@ X <- Aref(Array, Index)
 ```
 "
          :slots nil)
+
+(defnode (:Render :Function) (RenderOps)
+         ""
+         :slots ((name :initform nil :type symbol)))
 ;; Note: More?
 
 )

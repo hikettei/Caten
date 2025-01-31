@@ -30,8 +30,7 @@
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) nodes) () "%expr: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :EXPR (list out) (map 'list #'node->id1 nodes))))
 
-(defun %defglobal (name)
-  (emit (make-node :Render :DEFINE-GLOBAL (list name) nil)))
+(defun %global (name) (emit (make-node :Render :DEFINE-GLOBAL (list name) nil)))
 
 (defun %barrier (&key (out (gensym "BARRIER"))) (emit (make-node :Render :BARRIER (list out) nil)))
 
@@ -44,6 +43,12 @@
 (defun %aref (name idx &key (out (gensym "AREF")))
   (declare (type (or symbol node) name idx))
   (emit (make-node :Render :Aref (list out) (map 'list #'node->id1 (list name idx)))))
+
+(defun %function (name args body &aux (out (gensym "FUNCTION")))
+  (emit (make-node :Render :Function (list out) (map 'list #'node->id1 (append (list body) args)) :name name)))
+
+(defmacro %defun (name (&rest args) &body body)
+  `(%function ',name (list ,@args) (%progn ,@body)))
 ;; ~~ AST Simplification ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defsimplifier
     (simplify-control-flow :speed 0)
@@ -122,6 +127,10 @@
 (defun apply-tile (graph range width)
   ;; Rewrite IDX -> ...
   )
+
+(defstruct AstGraph
+  (graph (error "Graph must occur") :type Graph)
+  (node (error "Node must occur") :type Node))
 ;; [TODO] OpFusion
 ;; PROGN+PROGN -> PROGN
 ;; IndexingをもっとSimplifyしたい。RANGEの外に出す方法？
@@ -131,11 +140,7 @@
 ;; - Remove :LOAD is an args of buffer, instead, use :DEFINE-GLOBAL
 (print-ast
  (with-blueprint ()
-   (%progn ;; [TODO] Introduce %Function instead of PROGN?
-    (%defglobal 'a)
-    (%defglobal 'b)
-    (%defglobal 'm)
-    (%defglobal 'n)
+   (%defun eladd ((%global 'a) (%global 'b) (%global 'm) (%global 'n))
     (%range
      'gid0 (%add (%iconst 'm) (%iconst 'n))
      (%progn
@@ -149,6 +154,21 @@
                         (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
                         (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
                         (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3))))))))))))))
+
+(print-ast
+ (with-blueprint ()
+   (%defun smth ((%global 'x))
+     (%range
+      '_gid0 (%iconst 100)
+      (%progn
+       (%range
+        '_gid1 (%iconst 1000)
+        (%progn
+         (%add
+          (%aref 'x '_gid0)
+          (%aref 'x '_gid1))))
+       
+       )))))
 ;; [TODO]
 ;; - OpFusion
 ;; - TileBands
