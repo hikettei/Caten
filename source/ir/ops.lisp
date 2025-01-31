@@ -12,14 +12,10 @@
 
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
-   (_read_views :initform nil :initarg :_read_views) ;; [TODO] Removable
-   (_output_type :initform nil :initarg :_output_type) ;; [TODO] Removable
+   (_read_views :initform nil :initarg :_read_views)
    (declare-type :initarg :declare-type :initform nil)
    (iterations :initarg :iterations :initform nil)
-   (_lowering_history :initform nil :initarg :_lowering_history)
-   ;; Metadata for Vectorize
-   (parent-node-id :initform nil :initarg :parent-node-id)
-   (unroll-history :initform nil :initarg :unroll-history))
+   (_lowering_history :initform nil :initarg :_lowering_history)) ;; a list of parent module names which is used to create the kernel name.
   (:documentation "This node is jitable.
 - declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:
 ```
