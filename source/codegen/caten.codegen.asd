@@ -6,5 +6,9 @@
   :serial t
   :components
   ((:file "helpers")
-   
+   (:file "backend")
+   (:file "type-relay")
+   (:file "scheduler")
+   (:file "blueprint")
+   (:file "jit")
    (:file "package")))
