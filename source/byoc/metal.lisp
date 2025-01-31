@@ -1,10 +1,10 @@
 (defpackage :caten/byoc/metal
   (:use
-   :cl :caten/air :caten/codegen/expr :caten/codegen/renderer :caten/codegen/shape-inference
-   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint :caten/codegen/packing
+   :cl :caten/air :caten/codegen/expr :caten/codegen/renderer :caten/codegen/type-relay
+   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint
    :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
   (:import-from
-   :caten/codegen/config
+   :caten/codegen/search
    #:define-auto-scheduler)
   (:export
    #:mtl-compile-source

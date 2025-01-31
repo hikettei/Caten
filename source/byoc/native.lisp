@@ -2,9 +2,9 @@
   (:documentation "BACKEND=NATIVE to use Lisp JIT")
   (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
    :caten/codegen/backend :caten/codegen/renderer :caten/air
-   :caten/codegen/expr :caten/codegen/helpers :caten/codegen/shape-inference)
+   :caten/codegen/expr :caten/codegen/helpers :caten/codegen/type-relay)
   (:import-from
-   :caten/codegen/config
+   :caten/codegen/search
    #:define-auto-scheduler)
   (:import-from
    :caten/byoc/lisp
