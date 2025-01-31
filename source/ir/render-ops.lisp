@@ -1,3 +1,8 @@
+;;;; render-ops.lisp
+;;;; This file includes the following features which is required to generate the optimized code.
+;;;; - ASTGraph Creation
+;;;; - ASTGraph Simplification
+;;;; - ASTGraph Optimization (e.g.: Tile range)
 (in-package :caten/ir)
 
 (defmacro with-blueprint ((&key (noopt nil)) &body body)

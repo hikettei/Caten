@@ -1,4 +1,3 @@
-(in-package :cl-user)
 (defpackage :caten/ir
   (:use :cl :trivia :caten/air :alexandria :caten/common.documentation)
   (:import-from
