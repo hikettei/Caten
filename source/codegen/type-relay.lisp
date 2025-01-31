@@ -7,7 +7,7 @@
    #:RelayChecker #:RelayBuffer
    #:Inferred-Type #:make-inferred-type #:read-type-relay
    #:relay-reads #:relay-writes #:relay-read-iters #:relay-write-iters
-   #:run-type-infer #:buffer-merge-dims #:merge-dims
+   #:run-type-infer #:buffer-merge-dims #:merge-dims #:reveal-buffer
    #:Iteration-Space
    #:make-iteration-space
    #:Iteration-space-shape

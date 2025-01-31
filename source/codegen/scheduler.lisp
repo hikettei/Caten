@@ -719,7 +719,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
                       collect `(0 1 1 t)
                     else
                       collect v)
-              :device 'caten/codegen/shape-inference::RelayBuffer))
+              :device 'caten/codegen/type-relay:RelayBuffer))
            (%jstore (w a b base-type)
              (make-node :Buffer :MOVE (list w) (list a b)
                         :_type_relay
