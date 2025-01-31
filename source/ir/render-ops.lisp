@@ -21,6 +21,9 @@
                   bind)))
     (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind size step body)) :mark mark))))
 
+(defmacro %dotimes ((bind size &optional (mark :noopt)) &body body)
+  `(%range ',bind ,size (%progn ,@body) :mark ,mark))
+
 (defun %if (condition body &key (out (gensym "IF")))
   (declare (type (or symbol node) condition body) (type symbol out))
   (emit (make-node :Render :IF (list out) (map 'list #'node->id1 (list condition body)))))
@@ -146,9 +149,16 @@
                   (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))            
        (f (id->value graph (car (graph-outputs graph))))))))
 
-(defun apply-tile (graph range width)
+(defun apply-tile (graph b1 b2)
   ;; Rewrite IDX -> ...
-  )
+  ;; TODO: Prognと同じ理由でFailしない？
+  (funcall
+   (Simplifier
+       ()
+       ((:RANGE ((guard bind1 (eql bind1 b1)) size1 step1 (:RANGE ((guard bind2 (eql bind2 b2)) size2 step2 body) :mark (eql :coincident))) :mark (eql :coincident))
+        ->
+        ((node graph) nil)))
+   graph))
 
 (defstruct AstGraph
   (graph (error "Graph must occur") :type Graph)
@@ -162,22 +172,23 @@
 ;; - Remove :LOAD is an args of buffer, instead, use :DEFINE-GLOBAL
 ;; - EXPRの実装が先？
 ;; - 10000 Total LoC
+;; - how to manipulate gids?
+;; - can we vectorize/tile Range?
 (print-ast
  (with-blueprint ()
    (%defun eladd ((%global 'a) (%global 'b) (%global 'm) (%global 'n))
-    (%range
-     'gid0 (%add (%iconst 'm) (%iconst 'n))
-     (%progn
-      (%progn
-       (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
-             (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
-         (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-                (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-                       (%progn
-                        (%add (%aref 'a (%iconst 0)) (%aref 'b idx2))
-                        (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
-                        (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
-                        (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3))))))))))))))
+     (%dotimes (gid0 (%add (%iconst 'm) (%iconst 'n)) :coincident)
+       (%progn
+        (%progn
+         (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
+               (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
+           (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
+                  (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
+                         (%progn
+                          (%add (%aref 'a (%iconst 0)) (%aref 'b idx2))
+                          (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
+                          (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
+                          (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3))))))))))))))
 
 (print-ast
  (with-blueprint ()
@@ -205,3 +216,4 @@
 ;;  - EXPR内部の
 ;;  - defsimplifier -> make-simplifierにする
 ;; (funcall (PatternMatcher ((z -> (x + y)) -> (z + y))) graph) ;; <- allow to do this
+;; any valid way to run type inference?
