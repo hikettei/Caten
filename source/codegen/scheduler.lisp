@@ -8,7 +8,7 @@ The function `graph-schedule` is an entry point, and takes a shape-inferred aasm
 One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure that each item is merged only within the bounds that can be lowered into a single kernel.")
   (:use :cl :caten/air :caten/runtime :caten/codegen/type-relay :caten/codegen/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
   (:import-from :caten/ir #:JITAble)
-  (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule))
+  (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule #:schedule-item-equal))
 
 (in-package #:caten/codegen/scheduler)
 
@@ -50,6 +50,52 @@ One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure
                 (if (getattr node :cache-name)
                     (format nil ":cache-name=~a :name=~a" (getattr node :cache-name) (getattr node :name))
                     (format nil ":name=~a" (getattr node :name)))))))
+;; ~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun buffer-equal (a b)
+  (declare (optimize (speed 3)))
+  (and
+   (buffer-p a) (buffer-p b)
+   (equal (buffer-shape a) (buffer-shape b))
+   (equal (buffer-stride a) (buffer-stride b))
+   (equal (buffer-views a) (buffer-views b))
+   (equal (buffer-dtype a) (buffer-dtype b))
+   (equal (buffer-inferred-permute a) (buffer-inferred-permute b))))
+
+(deftype attr-value-type () `(or null symbol number list))
+
+(defun schedule-item-equal (si1 si2 &aux (items1 (getattr si1 :items-to-cache)) (items2 (getattr si2 :items-to-cache)))
+  (and
+   (= (length items1) (length items2))
+   (every
+    #'(lambda (x y)
+        (and
+         (eql (node-type x) (node-type y))
+         (equal (node-writes x) (node-writes y))
+         (equal (node-reads x) (node-reads y))
+         (let ((attrs1 (getattrs x))
+               (attrs2 (getattrs y)))
+           (and
+            (equal attrs1 attrs2)
+            (every
+             #'(lambda (k1 k2)
+                 (assert (eql k1 k2))
+                 (let ((a1 (getattr x k1))
+                       (a2 (getattr y k2)))
+                   ;; Caten/AIR has an assertion that all nodes are "dumpable"
+                   ;; i.e.: attrs that impacts on the computation results are always typed number/symbol/list/bool
+                   (if (eql k1 :_read_views)
+                       t
+                       (if (and (typep a1 'attr-value-type) (typep a2 'attr-value-type))
+                           (equal a1 a2)
+                           t ;; [FIXME] isn't it danger? if attrs are not found, they ignore it!
+                           ))))
+             attrs1 attrs2)))
+         (let ((xt (read-type-relay x))
+               (yt (read-type-relay y)))
+           (and
+            (every #'(lambda (a b) (buffer-equal a b)) (relay-reads xt) (relay-reads yt))
+            (every #'(lambda (a b) (buffer-equal a b)) (relay-writes xt) (relay-writes yt))))))
+    items1 items2)))
 ;; ~~ Some Helpers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun schedule-item-initialize-namespace (si)
   (declare (type node si))

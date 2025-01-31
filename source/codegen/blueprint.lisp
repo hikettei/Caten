@@ -24,7 +24,13 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
   (:export #:verify-blueprint #:expr-gather-buffer-loads))
 
 (in-package :caten/codegen/blueprint)
-
+;; ~~ Temporary Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defnode (:Tmp :TmpRange) () "" :slots ((size) (type)))
+(defnode (:Tmp :TmpEndRange) () "" :slots ((idx)))
+(defun %make-coincident-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :coincident))
+(defun %make-reduction-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :reduction))
+(defun %make-endrange (idx) (make-node :Tmp :TmpEndRange nil nil :idx idx))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod get-grouped-dims ((graph Graph) (base-graph Graph))
   "Infers the loop boundaries of the graph by finding the common iteration space."
   (let* ((kernel-rank
@@ -132,204 +138,6 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
         (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (relay-reads (read-type-relay n)))
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
 
-(defun initial-loop-permutation (graph rank)
-  (let ((reduced (graph-reduced-axes graph rank))
-        (stashed))
-    ;; reduced axes should be the last
-    `(,@(loop for p in (range 0 rank)
-              for r in reduced
-              if r ;; (reduced)
-                do (push p stashed)
-              else
-                collect p)
-      ,@(nreverse stashed))))
-
-;; Entry point for the lowerer is here :)
-(defun lower-schedule-item (schedule-item base-graph)
-  "
-```
-(lower-schedule-item schedule-item)
-```
-Takes one node of type `Schedule-Item` and returns the blueprint.
-"
-  (declare (type node schedule-item))
-  (assert (eql (node-type schedule-item) :Schedule-Item) () "lower-schedule-item expects a Schedule-Item, got ~a" schedule-item)
-  ;; cannot lower the vmops
-  (when (null (getattr schedule-item :jitable)) (return-from lower-schedule-item))
-  (let* ((graph (apply #'make-graph (getattr schedule-item :items)))
-         (_ (setf (graph-outputs graph) (node-writes schedule-item)))
-         (iterspace (get-grouped-dims graph base-graph))
-         (__ (fixup-graph-iteration-space graph iterspace base-graph))
-         (order (initial-loop-permutation graph (length (car iterspace))))
-         (gids (permute-list order (map 'list #'gid (range 0 (length (car iterspace))))))
-         (group-size (permute-list order (car iterspace))))
-    
-    ))
-
-
-  (declare (type node node) (type graph base-graph scheduled-graph))
-  (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
-  ;; won't lower the allocation, they are the vm instruction.
-  (when (null (getattr node :jitable)) (return-from lower-schedule-item))
-  (let* ((graph (apply #'make-graph (getattr node :items)))
-         (_ (setf (graph-outputs graph) (node-writes node)))
-         (iterspace (get-grouped-dims graph base-graph))
-         (__ (fixup-graph-iteration-space graph iterspace base-graph)) ; Use the common iteration space in the group
-         (order (initial-loop-permutation graph (length (car iterspace)))) ;; permute reduce axes deeper
-         (gids (permute-list order (map 'list #'gid (range 0 (length (car iterspace))))))
-         (group-size (permute-list order (car iterspace))))
-    (declare (ignore _ __))
-    (graph-swizzle-space graph order)
-    ;; gids       = (gid0, gid1, gid2, ...)
-    ;; group-size = (10, 20, 30, ...)
-    ;; order      = (0 1 2 ...) (the order of gids, and group-size)
-    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil :band2node (make-hash-table)
-                         :schedule-graph scheduled-graph)))
-      ;; Initially the blueprint starts with plain loops
-      (setf (ctx-blueprint ctx) (initial-bp ctx))
-      #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
-      #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
-      (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-      ;; Peforming the OpFusion to the lowered blueprint.
-      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
-            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; early scalarify
-            (ctx-blueprint ctx) (blueprint-scalarify (ctx-blueprint ctx) node base-graph) ; rewrite local buffers as a scalar
-            (ctx-blueprint ctx) (blueprint-exprify (ctx-blueprint ctx) node) ; rewrite jitable nodes -> expr
-            (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
-      (multiple-value-bind (new-bp id-as-dag-map) (blueprint-propagate-reduction (ctx-blueprint ctx)) ;; A = B + C * D => B += C * D
-        ;; id-as-dag-map: subsequent kernels will recognise the key as value
-        (setf (ctx-blueprint ctx) new-bp)
-        ;; Synchronize the realized buffers
-        (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
-          (let ((before-assigned-map) (cycle))
-            (loop for w in writes
-                  if (and (gethash (car w) id-as-dag-map)) do
-                    (if (find (car w) (node-writes node)) (push w cycle) (push (car w) before-assigned-map)))
-            (setf (getattr node :read-types) (map 'list #'cdr reads)
-                  (getattr node :write-types) (append (map 'list #'cdr cycle) (map 'list #'cdr writes))
-                  (getattr node :storage-id-src) (map 'list #'car reads)
-                  (getattr node :storage-id-dst) (append (map 'list #'car cycle) (map 'list #'car writes))
-                  (getattr node :dynamic-shapes) constants
-                  (node-reads node) (append before-assigned-map (map 'list #'car reads))
-                  ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
-                  (node-writes node) (append (map 'list #'car cycle) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))))
-      (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
-      (setf (getattr node :blueprint) (ctx-blueprint ctx)
-            (getattr node :blueprint-base) (copy-list (ctx-blueprint ctx))))))
-
-
-
-
-
-
-
-
-
-;; ~~~ OLD ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %make-for (idx size)
-  "Represents for an iteration in the range of [0, size)"
-  (make-node :Render :FOR (list idx)  nil :idx idx :upfrom (expr-const 0 :int64) :below (expr-< (expr-const idx :int64) size) :by (expr-const 1 :int64)))
-
-(defun %make-endfor (idx)
-  "Represents the end of the iteration."
-  (make-node :Render :ENDFOR nil nil :idx idx))
-
-(defmethod print-blueprint (nodes stream &aux (gids))
-  (labels ((print-aref (name b is &key (iterations (make-index-space)))
-             (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
-                 (format nil "~a[~(~a~)]" name
-                         (render-expr
-                          'Default-Renderer
-                          (apply
-                           #'expr-add
-                           (map
-                            'list
-                            #'(lambda (view stride i)
-                                (if view
-                                    (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
-                                    (expr-mul stride i)))
-                            (iteration-space-views is)
-                            (iteration-space-strides is)
-                            iterations))))
-                 (format nil "~(~a~)" name)))
-           (make-index-space ()
-             (map 'list #'(lambda (x) (expr-const (intern (princ-to-string x)) :int64)) (reverse gids))))
-    (format
-     stream
-     "{~%~a}~%"
-     (with-output-to-string (out)
-       (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
-         (loop with indent = 2
-	       for node in nodes
-	       if (eql (node-type node) :FOR)
-	         do (format out "~a~afor (int ~(~a~)=~(~a~);~(~a~);~(~a~)+=~(~a~)) {~%"
-                            (indent indent) (if (eql (getattr node :scope) :global) "@parallel " "") (getattr node :idx)
-                            (render-expr 'Default-Renderer (getattr node :upfrom)) (render-expr 'Default-Renderer (getattr node :below))
-                            (getattr node :idx) (render-expr 'Default-Renderer (getattr node :by)))
-                    (push (getattr node :idx) gids)
-		    (incf indent 2)
-	       else if (eql (node-type node) :ENDFOR)
-	              do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (getattr node :idx)) (setf gids (remove (getattr node :idx) gids))
-               else if (eql (node-type node) :IF)
-                      do (incf indent 2) (format out "~a if (~(~a~)) {~%" (indent indent) (render-expr 'Default-Renderer (getattr node :condition)))
-               else if (eql (node-type node) :ENDIF)
-                      do (decf indent 2) (format out "~a } // endif~%" (indent indent))
-               else if (eql (node-type node) :BARRIER)
-                      do (format out "~athread_barrier();~%" (indent indent))
-               else if (eql (node-type node) :DEFINE-SHARED-MEMORY) do
-                 (format out "~aSHARED_MEMORY ~(~a~) ~(~a~)[~a];~%" (indent indent) (getattr node :dtype) (car (node-writes node)) (getattr node :size))
-               else if (eql (node-type node) :EXPR) do
-                 (let ((pre-iterations (getattr node :Iterations))
-                       (is-vectorized (typep (getattr node :meta :allow-undefined t) (find-symbol "VECTORIZED" (find-package :caten/codegen/packing)))))
-                   (format out "~a~a = ~a~a~a~a;~a~a~%"
-                           (indent indent)
-                           (render-list
-                            (map 'list #'(lambda (x y z) (print-aref x y z :iterations (or pre-iterations (make-index-space))))
-                                 (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
-                           (if is-vectorized (exprmeta-comment (getattr node :meta)) "")
-                           (if is-vectorized "(" "")
-                           (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (or pre-iterations (make-index-space)))
-                           (if is-vectorized ")" "")
-                           (if (getattr node :reduction :allow-undefined t)
-                               " // :reduction=t"
-                               "")
-                           (if (and (typep (getattr node :meta :allow-undefined t) 'ExprMeta) (null is-vectorized))
-                               (format nil " // ~a" (exprmeta-comment (getattr node :meta)))
-                               "")))
-               else
-	         do (format out "~a~a = ~(~a~)(~a);~a~%"
-                            (indent indent)
-                            (render-list (map 'list #'print-aref (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
-                            (node-type node)
-                            (render-list (map 'list #'print-aref (node-reads node) (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node))))
-                            (if (getattr node :reduction :allow-undefined t)
-                                " // :reduction=t"
-                                ""))))))))
-
-(defun node-reduced-axes (node)
-  (let ((is (car (relay-write-iters (read-type-relay node)))))
-    (when is
-      (loop for s in (iteration-space-strides is)
-            if (expr-equal-to s 0)
-              collect t
-            else
-              collect nil))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-
-(defmethod graph-swizzle-space ((graph Graph) (order list))
-  "Permutes all buffers in the graph by the order."
-  (flet ((swizzle (id space)
-           (when space
-             (assert (length (iteration-space-procedure space)) () "graph-swizzle-loop-order: Cannot swizzle the space ~a ~a with ~a" id space order)
-             (setf (iteration-space-shape space) (permute-list order (iteration-space-shape space))
-                   (iteration-space-strides space) (permute-list order (iteration-space-strides space))
-                   (iteration-space-views space) (permute-list order (iteration-space-views space))
-                   (iteration-space-procedure space) (permute-list order (iteration-space-procedure space))))))
-    (dolist (n (graph-nodes graph))
-      (mapc #'swizzle (node-reads n) (relay-read-iters (read-type-relay n)))
-      (mapc #'swizzle (node-writes n) (relay-write-iters (read-type-relay n))))))
-
 (defmethod node-depend-idx-list ((node Node) gid
                                  &aux
                                    (type (read-type-relay node))
@@ -350,6 +158,15 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
           for stride in strides
           if (not (every #'no-dep-p size stride))
             collect g)))
+
+(defun node-reduced-axes (node)
+  (let ((is (car (relay-write-iters (read-type-relay node)))))
+    (when is
+      (loop for s in (iteration-space-strides is)
+            if (expr-equal-to s 0)
+              collect t
+            else
+              collect nil))))
 
 (defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
   (when (null axes) (setf axes (make-list (length gids))))
@@ -372,8 +189,31 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                 if r do (setf (nth nth reduced-axes) t)))))
     reduced-axes))
 
+(defun initial-loop-permutation (graph rank)
+  (let ((reduced (graph-reduced-axes graph rank))
+        (stashed))
+    ;; reduced axes should be the last
+    `(,@(loop for p in (range 0 rank)
+              for r in reduced
+              if r ;; (reduced)
+                do (push p stashed)
+              else
+                collect p)
+      ,@(nreverse stashed))))
 
-;; ~~~ Lowerer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmethod graph-swizzle-space ((graph Graph) (order list))
+  "Permutes all buffers in the graph by the order."
+  (flet ((swizzle (id space)
+           (when space
+             (assert (length (iteration-space-procedure space)) () "graph-swizzle-loop-order: Cannot swizzle the space ~a ~a with ~a" id space order)
+             (setf (iteration-space-shape space) (permute-list order (iteration-space-shape space))
+                   (iteration-space-strides space) (permute-list order (iteration-space-strides space))
+                   (iteration-space-views space) (permute-list order (iteration-space-views space))
+                   (iteration-space-procedure space) (permute-list order (iteration-space-procedure space))))))
+    (dolist (n (graph-nodes graph))
+      (mapc #'swizzle (node-reads n) (relay-read-iters (read-type-relay n)))
+      (mapc #'swizzle (node-writes n) (relay-write-iters (read-type-relay n))))))
+
 (defstruct ctx
   "an intermidate object used to debug `recursive-lower-into-bp`"
   graph order blueprint seen gids loop-size-list band2node schedule-graph)
@@ -382,19 +222,16 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
 
 (defmethod initial-bp ((ctx ctx))
   (with-slots ((gids gids) (group-size loop-size-list)) ctx
-    `(,@(map 'list #'%make-for gids group-size) ,@(reverse (map 'list #'%make-endfor gids)))))
+    `(,@(map 'list #'%make-coincident-range gids group-size) ,@(reverse (map 'list #'%make-endrange gids)))))
 
 (defmethod reduce-bp ((ctx ctx) (something node) gids key)
   (let* ((sizes (loop with size = (iteration-space-shape (car (relay-write-iters (read-type-relay something))))
                       for g in gids
                       for p = (position g (ctx-gids ctx))
                       collect (nth p size)))
-         (loops (map 'list #'%make-for gids sizes)))
-    (dolist (l loops)
-      (setf (gethash (node-id l) (ctx-band2node ctx)) key))
-    `(,@loops
-      ,something
-      ,@(reverse (map 'list #'%make-endfor gids)))))
+         (loops (map 'list #'%make-reduction-range gids sizes)))
+    (dolist (l loops) (setf (gethash (node-id l) (ctx-band2node ctx)) key))
+    `(,@loops ,something ,@(reverse (map 'list #'%make-endrange gids)))))
 
 (defun recursive-scalar-p (ctx id)
   (declare (type ctx ctx))
@@ -460,7 +297,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       (loop for bp in blueprint
             for nth upfrom 0
             for high-priority-p = nil
-            if (eql (node-type bp) :FOR) do
+            if (eql (node-type bp) :TMPRange) do
               (let ((cache (gethash (node-id bp) (ctx-band2node ctx))))
                 (when (and node-reduce-axes cache)
                   ;; Relucant to create a new reduce loop
@@ -471,7 +308,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                       (push (getattr bp :idx) serialized-reduce-idx))))
                 (push (getattr bp :idx) idx-satisfied))
             else
-              if (eql (node-type bp) :ENDFOR)
+              if (eql (node-type bp) :TMPEndRange)
                 do (setf idx-satisfied (remove (getattr bp :idx) idx-satisfied)
                          serialized-reduce-idx (remove (getattr bp :idx) serialized-reduce-idx))
             else
@@ -503,7 +340,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
           (when (= nrank 0)
             ;; If only used in this blueprint
             (let ((users (id->users (ctx-schedule-graph ctx) (car (node-writes node)))))
-              (if (some #'(lambda (x) (getattr x :jitable)) users) ;; If the scalar is used in another jitable kernel?
+              (if (some #'(lambda (x) (eql :kernel (getattr x :type))) users) ;; If the scalar is used in another jitable kernel?
                   (let* ((dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
                          (buffer (make-buffer `(1) `(0) dtype `((0 1 1 t)) :device 'RelayBuffer))
                          (space (buffer-merge-dims (ctx-schedule-graph ctx) buffer)))
@@ -536,94 +373,43 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
     (when (null node) (return-from recursive-lower-into-bp))
     (when (find id seen) (return-from recursive-lower-into-bp))
     (push id seen)
-    (multiple-value-bind (new-bp changed-p)
-        (try-insert-node ctx node)
+    (multiple-value-bind (new-bp changed-p) (try-insert-node ctx node)
       (when (null changed-p) ;; if failed -> add the outermost loops and retry. (todo: which is not preferable though...)
         (setf (ctx-blueprint ctx) (append (initial-bp ctx) (ctx-blueprint ctx)))
         (multiple-value-bind (new-bp1 changed-p1)
             (try-insert-node ctx node)
           (setf new-bp new-bp1 changed-p changed-p1)))
-      (assert changed-p () "recursive-lower-into-bp: Cannot insert the node ~a into a single kernel.
+      (assert changed-p () "recursive-lower-into-bp: Cannot lower the node ~a within a single kernel.
 Depends=~a Reduce=~a Users=~a
 ```
 ~a
-```" node (node-depend-idx-list node (ctx-gids ctx)) (node-reduced-gids node (ctx-gids ctx))
-     (map 'list #'node-id (id->users (ctx-graph ctx) (car (node-writes node)))) (ctx-blueprint ctx))
-
-     (setf blueprint new-bp)
-     (mapc
-      #'(lambda (x)
-          (when (and (null (find x seen)) (id->value (ctx-graph ctx) x))
-            (recursive-lower-into-bp ctx x)))
-      (node-reads node))
+```"
+              node (node-depend-idx-list node (ctx-gids ctx)) (node-reduced-gids node (ctx-gids ctx))
+              (map 'list #'node-id (id->users (ctx-graph ctx) (car (node-writes node)))) (ctx-blueprint ctx))
+      (setf blueprint new-bp)
+      (mapc
+       #'(lambda (x)
+           (when (and (null (find x seen)) (id->value (ctx-graph ctx) x))
+             (recursive-lower-into-bp ctx x)))
+       (node-reads node))
       nil)))
-
-(defun simplify-pointer-and-constant (blueprints)
-  (let ((constants))
-    (loop for bp in blueprints
-          if (and (not (eql (node-class bp) :Render)) (getattr bp :declare-type)) do
-            (push (car (node-writes bp)) constants))
-    (loop for bp in blueprints
-          if (not (eql (node-class bp) :Render)) do
-            (loop for read in (node-reads bp)
-                  for type in (relay-reads (read-type-relay bp))
-                  for is in (relay-read-iters (read-type-relay bp))
-                  for nth upfrom 0
-                  if (and type is (find read constants)) do
-                    ;; The load to :declare-type is a scalar.
-                    (setf (nth nth (relay-reads (read-type-relay bp)))
-                          (let ((buffer (caten/runtime:copy-buffer type)))
-                            (setf (buffer-nrank buffer) -1)
-                            buffer))))
-    blueprints))
-
-(defun gid-n (gid &aux (gid-str (princ-to-string gid)))
-  (assert (equalp (subseq gid-str 0 4) "_gid"))
-  (parse-integer (subseq gid-str 4)))
-
-(defun ctx-padding-loop (ctx)
-  "Inserts padding loops to keep the rank of loops same. Polyhedral Compiler should responsible for transforming this, so, caten/codegen should keep the ir untouched."
-  (let* ((appeared
-           (loop for bp in (ctx-blueprint ctx)
-                 if (eql (node-type bp) :FOR)
-                   collect bp))
-         (threshold (and appeared (apply #'min (map 'list #'(lambda (x) (gid-n (getattr x :idx))) appeared))))
-         (padding-loops
-           (loop for gid in (ctx-gids ctx)
-                 for size in (ctx-loop-size-list ctx)
-                 if (and (expr-equal-to size 1)
-                         (null (find gid appeared :key #'(lambda (x) (getattr x :idx))))
-                         threshold
-                         (< (gid-n gid) threshold)) ;; only the outermost loops are subject.
-                   collect (cons (%make-for gid size) (%make-endfor gid)))))
-    (when (null appeared) (return-from ctx-padding-loop (ctx-blueprint ctx)))
-    `(,@(map 'list #'car padding-loops)
-      ,@(ctx-blueprint ctx)
-      ,@(reverse (map 'list #'cdr padding-loops)))))
-
-(defun lower-schedule-item (node base-graph scheduled-graph) ;; Entry point for lowerer is here :)
+;; Entry point for the lowerer is here :)  
+(defun lower-schedule-item (schedule-item base-graph schedule-graph)
   "
 ```
-(lower-schedule-item node base-graph scheduled-graph)
+(lower-schedule-item schedule-item)
 ```
-
-Lowers the Schedule-Item into blueprint.
-
-- node is a schedule-item to lower which belongs to scheduled-graph.
-
-- base-graph is the graph you passed to the graph-schedule.
-
-- scheduled-graph is the scheduled graph obtained by graph-schedule.
+Takes one node of type `Schedule-Item` and returns the blueprint.
 "
-  (declare (type node node) (type graph base-graph scheduled-graph))
-  (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
-  ;; won't lower the allocation, they are the vm instruction.
-  (when (null (getattr node :jitable)) (return-from lower-schedule-item))
-  (let* ((graph (apply #'make-graph (getattr node :items)))
-         (_ (setf (graph-outputs graph) (node-writes node)))
+  (declare (type node schedule-item))
+  (assert (eql (node-type schedule-item) :Schedule-Item) () "lower-schedule-item expects a Schedule-Item, got ~a" schedule-item)
+  ;; cannot lower the vmops
+  (when (null (getattr schedule-item :jitable)) (return-from lower-schedule-item))
+  (let* ((graph (apply #'make-graph (getattr schedule-item :items)))
+         (_ (setf (graph-outputs graph) (node-writes schedule-item)))
          (iterspace (get-grouped-dims graph base-graph))
-         (__ (fixup-graph-iteration-space graph iterspace base-graph)) ; Use the common iteration space in the group
-         (order (initial-loop-permutation graph (length (car iterspace)))) ;; permute reduce axes deeper
+         (__ (fixup-graph-iteration-space graph iterspace base-graph))
+         (order (initial-loop-permutation graph (length (car iterspace))))
          (gids (permute-list order (map 'list #'gid (range 0 (length (car iterspace))))))
          (group-size (permute-list order (car iterspace))))
     (declare (ignore _ __))
@@ -631,40 +417,18 @@ Lowers the Schedule-Item into blueprint.
     ;; gids       = (gid0, gid1, gid2, ...)
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
-    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil :band2node (make-hash-table)
-                         :schedule-graph scheduled-graph)))
-      ;; Initially the blueprint starts with plain loops
+    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil :band2node (make-hash-table) :schedule-graph schedule-graph)))
       (setf (ctx-blueprint ctx) (initial-bp ctx))
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-      ;; Peforming the OpFusion to the lowered blueprint.
-      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
-            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; early scalarify
-            (ctx-blueprint ctx) (blueprint-scalarify (ctx-blueprint ctx) node base-graph) ; rewrite local buffers as a scalar
-            (ctx-blueprint ctx) (blueprint-exprify (ctx-blueprint ctx) node) ; rewrite jitable nodes -> expr
-            (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
-      (multiple-value-bind (new-bp id-as-dag-map) (blueprint-propagate-reduction (ctx-blueprint ctx)) ;; A = B + C * D => B += C * D
-        ;; id-as-dag-map: subsequent kernels will recognise the key as value
-        (setf (ctx-blueprint ctx) new-bp)
-        ;; Synchronize the realized buffers
-        (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
-          (let ((before-assigned-map) (cycle))
-            (loop for w in writes
-                  if (and (gethash (car w) id-as-dag-map)) do
-                    (if (find (car w) (node-writes node)) (push w cycle) (push (car w) before-assigned-map)))
-            (setf (getattr node :read-types) (map 'list #'cdr reads)
-                  (getattr node :write-types) (append (map 'list #'cdr cycle) (map 'list #'cdr writes))
-                  (getattr node :storage-id-src) (map 'list #'car reads)
-                  (getattr node :storage-id-dst) (append (map 'list #'car cycle) (map 'list #'car writes))
-                  (getattr node :dynamic-shapes) constants
-                  (node-reads node) (append before-assigned-map (map 'list #'car reads))
-                  ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
-                  (node-writes node) (append (map 'list #'car cycle) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))))
-      (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
-      (setf (getattr node :blueprint) (ctx-blueprint ctx)
-            (getattr node :blueprint-base) (copy-list (ctx-blueprint ctx))))))
-;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      (ctx-blueprint ctx))))
+
+;; [TODO]
+;; (defmethod print-blueprint (nodes stream &aux (gids)))
+;; ^ Simplify how to describe write relay
+;; Blueprint List --> ASTTree
+;; ~~~ OLD ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
   (let ((node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
     (assert node () "find-cache-base-schedule-item: No cache item for ~a" node)
@@ -771,7 +535,7 @@ Lowers the Schedule-Item into blueprint.
                        do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))
         (setf (getattr node :blueprint) (make-copy-of-bp (getattr base-item :blueprint))
               (getattr node :blueprint-base) (make-copy-of-bp (getattr base-item :blueprint-base)))))))
-;;; ~~~~ GFlops Measurements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;;; ~~~~ GFlops Measurements (Not Tested) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct GFlops-Measurer
   "A helper object to compute GFlops"
   (ops (error "flops must occur") :type (or null Expr))
@@ -812,7 +576,7 @@ Lowers the Schedule-Item into blueprint.
   (let ((ops (reduce #'expr-add total-flops)))
     (setf (expr-graph ops) (->graph-with-tpsort (->fast-graph (expr-graph ops))))
     (make-gflops-measurer :ops ops :succeed-p t)))
-;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Utils(Removable?) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun blueprint-gather-grids (blueprint &key (max-dimension 3) (dtype :int64))
   (let ((grids
           (loop for bp in blueprint
@@ -826,13 +590,13 @@ Lowers the Schedule-Item into blueprint.
       (setf (nth (exprgrid-rank g) out) g))
     out))
 
-(defun expr-gather-buffer-loads (expr-node)
-  (declare (type node expr-node))
-  (assert (eql (node-type expr-node) :EXPR))
-  (let ((renderer (make-instance
-                   'caten/codegen/renderer:default-renderer
-                   :graph (expr-graph (getattr expr-node :EXPR)) :index-space (getattr expr-node :iterations))))
-    (caten/codegen/renderer:render-node renderer (car (node-writes (expr-out (getattr expr-node :EXPR)))))
-    (loop for node in (caten/codegen/renderer:renderer-rendered-nodes renderer)
-          if (and (eql (node-type node) :Aref) (> (buffer-nrank (getattr node :buffer)) 0))
-            collect node)))
+;(defun expr-gather-buffer-loads (expr-node)
+;  (declare (type node expr-node))
+;  (assert (eql (node-type expr-node) :EXPR))
+;  (let ((renderer (make-instance
+;                   'caten/codegen/renderer:default-renderer
+;                   :graph (expr-graph (getattr expr-node :EXPR)) :index-space (getattr expr-node :iterations))))
+;    (caten/codegen/renderer:render-node renderer (car (node-writes (expr-out (getattr expr-node :EXPR)))))
+;    (loop for node in (caten/codegen/renderer:renderer-rendered-nodes renderer)
+;          if (and (eql (node-type node) :Aref) (> (buffer-nrank (getattr node :buffer)) 0))
+;            collect node)))

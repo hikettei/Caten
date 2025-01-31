@@ -8,7 +8,7 @@
   ;; from attrs.lisp
   (:export
    #:JITAble)
-  ;; from tensor-ir.lisp
+  ;; from tensor-ops.lisp
   (:export
    #:*default-order*
    #:*default-float*
@@ -27,7 +27,7 @@
    #:%shape
    #:%make-tensor
    #:%index-components)
-  ;; from ctx.lisp
+  ;; from helpers.lisp
   (:export
    #:with-context
    #:with-context-nodes
@@ -51,7 +51,6 @@
    #:%xor
    #:%max
    #:%gcd
-
    ;; Unary
    #:%sin
    #:%log2
@@ -61,22 +60,14 @@
    #:%sqrt
    #:%not
    #:%cast
-
    ;; CMP
    #:%!= #:%=
    #:%< #:%> #:%<= #:%>=
-   )
-  ;; from constant-folding.lisp
-  (:export
-   #:fold-constant)
-  ;; from view.lisp
-  (:export
    #:infer-tensor-info
    #:%view
    #:%reshape
-   )
-  ;; from logical.lisp
-  (:export
    #:%where)
-  ;; from optimizers.lisp
-  (:export #:optimize-aasm #:minimize-duplicated-symbolic-path))
+  ;; from simplifier.lisp
+  (:export #:optimize-aasm #:minimize-duplicated-symbolic-path #:fold-constant)
+  ;; from render-ops.lisp
+  (:export #:with-blueprint #:%range #:%progn))

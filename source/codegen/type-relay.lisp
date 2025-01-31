@@ -22,7 +22,8 @@
    #:node-writes-broadcasted-p
    #:buffer-inferred-permute
    #:buffer-orig-buffer-shape
-   #:buffer-depend-idx-list))
+   #:buffer-depend-idx-list
+   #:%expr-const))
 
 (in-package :caten/codegen/type-relay)
 ;; ~~ TypeReporter ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

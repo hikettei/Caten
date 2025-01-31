@@ -14,12 +14,12 @@
        (unless ,noopt (setf graph (simplify-ast graph)))
        graph)))
 ;; ~~ Control Flows ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")))
-  (declare (type (or node symbol) bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out))
+(defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
+  (declare (type (or node symbol) bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
   (let ((bind (if (symbolp bind)
                   (%bind bind (%iconst bind :dtype dtype))
                   bind)))
-    (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind size step body))))))
+    (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind size step body)) :mark mark))))
 
 (defun %if (condition body &key (out (gensym "IF")))
   (declare (type (or symbol node) condition body) (type symbol out))
@@ -79,6 +79,7 @@
     ;; [TODO] Remove the ISL dependencies
     ;; If the size==1 -> remove the range
     ;; ((:RANGE (bind size step body)) -> ((node graph))
+    ;; :FOR + :PROGN (X)
     )
 
 (defun simplify-ast (graph)
@@ -143,6 +144,8 @@
 ;; ./caten/codegen -> caten/ir/render-ops.lispの機能を使って色々AST変形を実施する
 ;; - Remove :GLOBAL :LOCAL If Guard (which is rebundant only)
 ;; - Remove :LOAD is an args of buffer, instead, use :DEFINE-GLOBAL
+;; - EXPRの実装が先？
+;; - 10000 Total LoC
 (print-ast
  (with-blueprint ()
    (%defun eladd ((%global 'a) (%global 'b) (%global 'm) (%global 'n))
