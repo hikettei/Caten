@@ -17,7 +17,7 @@
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
   (declare (type (or node symbol) bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
   (let ((bind (if (symbolp bind)
-                  (%bind bind (%iconst bind :dtype dtype))
+                  (%salloc :dtype dtype :id bind)
                   bind)))
     (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind size step body)) :mark mark))))
 
@@ -102,14 +102,14 @@
 (defun simplify-ast (graph)
   (declare (type graph graph))
   (setf graph (optimize-aasm graph :heavy-opt-threshold 0))
+  ;; [TODO] Simplify the ast graph based on indexing dependencies!
+  ;; e.g.: relocate allocate on the top
   (simplify-control-flow graph))
 
 (defun print-ast (graph)
-  (print graph)
   (pprint-graph graph)
   ;;(caten/air:->dot graph :pathname "/tmp/graph.dot")
-  (viz-ast graph)
-  )
+  (viz-ast graph))
 ;; [TODO] Decompose 3 -> 1 + 1 + 1 and optimize the indexing?
 (defun viz-ast (graph &aux (indent 0) (seen))
   (print
@@ -204,6 +204,7 @@
           (%aref 'x '_gid1))))
        
        )))))
+;; ^ これ使ってOP定義できるようにする(AOT)
 ;; [TODO]
 ;; - OpFusion
 ;; - TileBands
@@ -215,5 +216,13 @@
 ;;  - Remove EXPR, EXPR-Cache, and so on ...
 ;;  - EXPR内部の
 ;;  - defsimplifier -> make-simplifierにする
-;; (funcall (PatternMatcher ((z -> (x + y)) -> (z + y))) graph) ;; <- allow to do this
-;; any valid way to run type inference?
+;; - Workload:
+;;  - Exprify
+;;  - RANGE Specification
+;;  - Lowering INDEX-COMPONENTS, Aref Indexing
+;;  - any valid way to run type inference? ==> Supercede the old type infer results
+;;  - remove the declare-type option instead use allocate
+;;  - Redefine the ast?
+;;    IDX, BODY <- RANGE(SIZE, STEP)
+;;    SimplifierがLeafの方に持ってくと依存がおかしくなる気がする
+;;    is not top-down graph but bottom-up graph ...

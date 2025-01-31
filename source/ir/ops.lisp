@@ -323,9 +323,20 @@ Corresponds to:
 (defnode (:Render :RANGE) (RenderOps)
          "
 ```
-ID <- RANGE(SIZE, STEP, BODY, _type_relay=...)
+ID <- RANGE(BIND, SIZE, STEP, BODY)
 ```
-The node :RANGE controls the iteration of the loop. The loop iterates the `BODY` (which must be a RenderOps) over the range of `[UPFROM, floor(TO, BY))`"
+The node :RANGE controls the iteration of the loop. The loop iterates the `BODY` (which must be a RenderOps) over the range of `[0, floor(SIZE, BY))`
+
+The mark specifies the type of loop which is exploited by the compiler to optimize the code. It is user's responsibility to ensure the validity of the mark.
+
+Mark could be one of:
+
+```
+- coincident (which means the loop is parallelizable)
+- reduction  (which means the loop is reduction)
+- noopt      (which means the loop is not optimized)
+```
+"
          :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)))
 
 (defnode (:Render :IF) (RenderOps)
