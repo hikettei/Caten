@@ -102,7 +102,6 @@
   (simplify-control-flow graph))
 
 (defun print-ast (graph)
-  (simplify-ast graph)
   (print graph)
   (pprint-graph graph)
   ;;(caten/air:->dot graph :pathname "/tmp/graph.dot")

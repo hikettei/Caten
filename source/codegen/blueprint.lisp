@@ -258,6 +258,29 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
      (and (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes)
           (every #'(lambda (x) (recursive-scalar-p ctx x)) (node-reads node))))))
 
+(defun gid-n (gid &aux (gid-str (princ-to-string gid)))
+  (assert (equalp (subseq gid-str 0 4) "_gid"))
+  (parse-integer (subseq gid-str 4)))
+
+(defun ctx-padding-loop (ctx)
+  "Inserts padding loops to keep the rank of loops same. Polyhedral Compiler should responsible for transforming this, so, caten/codegen should keep the ir untouched."
+  (let* ((appeared
+           (loop for bp in (ctx-blueprint ctx)
+                 if (eql (node-type bp) :TMPRange)
+                   collect bp))
+         (threshold (and appeared (apply #'min (map 'list #'(lambda (x) (gid-n (getattr x :idx))) appeared))))
+         (padding-loops
+           (loop for gid in (ctx-gids ctx)
+                 for size in (ctx-loop-size-list ctx)
+                 if (and threshold (expr-equal-to size 1)
+                         (null (find gid appeared :key #'(lambda (x) (getattr x :idx))))
+                         (< (gid-n gid) threshold)) ;; only the outermost loops are subject.
+                   collect (cons (%make-coincident-range gid size) (%make-endrange gid)))))
+    (when (null appeared) (return-from ctx-padding-loop (ctx-blueprint ctx)))
+    `(,@(map 'list #'car padding-loops)
+      ,@(ctx-blueprint ctx)
+      ,@(reverse (map 'list #'cdr padding-loops)))))
+
 (defun try-insert-node (ctx node &aux (changed-p nil))
   "First this function tries to search all possible insertable position for the node, and then insert the node in the most suitable position. (values new_bp successed_p) is returned."
   (with-slots ((blueprint blueprint)) ctx
@@ -446,6 +469,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
+      (setf (ctx-blueprint ctx) (ctx-padding-loop ctx))
       (let ((ast (astify-blueprint (ctx-blueprint ctx))))
         (caten/ir::print-ast ast)
         ast))))
