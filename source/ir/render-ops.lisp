@@ -67,15 +67,18 @@
     ((:PROGN (~ args))
      ->
      ((node graph)
-      (let ((args-new (map 'list #'(lambda (x) (id->value graph x)) args)))
-        (when (some #'(lambda (x) (and (node-p x) (eql :PROGN (node-type x)))) args-new)
-          (make-node :Render :PROGN (node-writes node)
-                     (loop for arg in args
-                           for arg-new in args-new
-                           if (and (node-p arg-new) (eql :PROGN (node-type arg-new)))
-                             append (node-reads arg-new)
-                           else
-                             collect arg))))))
+      (flet ((empty-p (x) (and (node-p x) (typep (node-attr x) 'RenderOps) (getattr x :is-empty))))
+        (let ((args-new (map 'list #'(lambda (x) (id->value graph x)) args)))
+          ;; Removes Empty RenderOps, Merges nested progns
+          (when (or
+                 (some #'(lambda (x) (and (node-p x) (eql :PROGN (node-type x)))) args-new)
+                 (some #'empty-p args-new))
+            (make-node :Render :PROGN (node-writes node)
+                       (loop for arg in args for arg-new in args-new
+                             if (and (node-p arg-new) (eql :PROGN (node-type arg-new)))
+                               append (node-reads arg-new)
+                             else if (null (empty-p arg-new))
+                                    collect arg)))))))
     ((:IF (cond1 (:IF (cond2 body))))
      ->
      ((node graph)
@@ -87,8 +90,7 @@
     ((:IF (_ (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
     ((:Range (_ _ _ (:Range (_ _ _ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:IF (_ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
-    ;; FOR + FOR
-    
+
     ;; If the size==1 -> remove the range
     ;; ((:RANGE (bind size step body)) -> ((node graph))
     ;; :FOR + :PROGN (X)
@@ -100,6 +102,7 @@
   (simplify-control-flow graph))
 
 (defun print-ast (graph)
+  (simplify-ast graph)
   (print graph)
   (pprint-graph graph)
   ;;(caten/air:->dot graph :pathname "/tmp/graph.dot")
