@@ -19,7 +19,7 @@
   (let ((bind (if (symbolp bind)
                   (%salloc :dtype dtype :id bind)
                   bind)))
-    (emit (make-node :Render :RANGE (list out bind) (map 'list #'node->id1 (list bind size step body)) :mark mark))))
+    (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind size step body)) :mark mark))))
 
 (defmacro %dotimes ((bind size &optional (mark :noopt)) &body body)
   `(%range ',bind ,size (%progn ,@body) :mark ,mark))
@@ -226,7 +226,4 @@
 ;;    IDX, BODY <- RANGE(SIZE, STEP)
 ;;    SimplifierがLeafの方に持ってくと依存がおかしくなる気がする
 ;;    is not top-down graph but bottom-up graph ...
-
-;; Specifications on AST
-;; Rather than bottom up mode?
-;;
+;; Remove Fused Move using Pattern Mathcer, Exprify is located here!
