@@ -17,7 +17,7 @@
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
   (declare (type (or node symbol) bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
   (let ((bind (if (symbolp bind)
-                  (%salloc :dtype dtype :id bind)
+                  (%bind bind (%iconst bind :dtype dtype));(%salloc :dtype dtype :id bind)
                   bind)))
     (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind size step body)) :mark mark))))
 
@@ -192,7 +192,8 @@
                          #'print
                          #'simplify-control-flow
                          #'print
-                         #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0)))))
+                         #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0))
+                         #'print)))
   (declare (type graph graph))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   ;; e.g.: relocate allocate on the top
