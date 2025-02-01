@@ -201,49 +201,7 @@
   ;;(caten/air:->dot graph :pathname "/tmp/graph.dot")
   (viz-ast graph))
 ;; [TODO] Decompose 3 -> 1 + 1 + 1 and optimize the indexing?
-(defun viz-ast (graph &aux (indent 0) (seen))
-  (print
-   (with-output-to-string (out)
-     (labels ((indent () (make-string indent :initial-element #\space))
-              (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
-              (r (s &aux (val (id->value graph s)))
-                (when (and val (null (find (node-id val) seen)))
-                  (f val)
-                  (push (node-id val) seen))
-                s)
-              (f (node)
-                (case (node-type node)
-                  (:PROGN
-                    (fmt "{")
-                    (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
-                    (fmt "}"))
-                  (:EXPR
-                   (fmt "~a = <EXPR>{" (car (node-writes node)))
-                   (incf indent 2)
-                   ;; [TODO] RenderExpr
-                   (decf indent 2)
-                   (fmt "}"))
-                  (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
-                  (:RANGE
-                      (multiple-value-bind (bind size step body) (apply #'values (node-reads node))
-                        (fmt "@~(~a~) for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a" (getattr node :mark)
-                             (r bind) (r bind) (r size) (r bind) (r step)
-                             (if (getattr node :is-empty) "/* empty */" ""))
-                        (r body)))
-                  (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
-                  (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
-                  (:Aref
-                   (multiple-value-bind (name idx) (apply #'values (node-reads node))
-                     (r name) (r idx)
-                     (fmt "~(~a~) = ~(~a~)[~(~a~)];" (car (node-writes node)) name idx)))
-                  (:IF
-                   (multiple-value-bind (cond body) (apply #'values (node-reads node))
-                     (r cond)
-                     (fmt "if (~(~a~)) {" cond)
-                     (incf indent 2) (r body) (decf indent)
-                     (fmt "}")))
-                  (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))            
-       (f (id->value graph (car (graph-outputs graph))))))))
+(defun viz-ast (graph) (uiop:symbol-call :caten/codegen/blueprint :print-blueprint graph t))
 ;; ~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-tile (graph b1 b2)
   ;; Rewrite IDX -> ...
