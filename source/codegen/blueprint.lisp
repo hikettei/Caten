@@ -431,7 +431,7 @@ Depends=~a Reduce=~a Users=~a
                        for ri in (relay-read-iters (read-type-relay node))
                        for name in (node-reads node)
                        for nth upfrom 0
-                       if (> (buffer-nrank buffer) 0) do
+                       if (and buffer (> (buffer-nrank buffer) 0)) do
                          (let ((aref (emit (%aref name (sendexpr (reduce #'expr-add (iteration-space-expr-aref ri buffer gids)))))))
                            (setf (nth nth (node-reads node)) (car (node-writes aref)))))
                  (setf (getattr node :_type_relay) nil)
@@ -486,6 +486,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph))
       (let ((ast (astify-blueprint (ctx-blueprint ctx) (ctx-gids ctx))))
+        (pprint-graph ast)
         (print-blueprint ast t)
         ast))))
 

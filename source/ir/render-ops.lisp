@@ -287,5 +287,10 @@
 ;;    is not top-down graph but bottom-up graph ...
 ;; Remove Fused Move using Pattern Mathcer, Exprify is located here!
 ;; graph-seen is always an argument of the function?
-;; LOAD :value fusion always
 ;; [TODO] Update Aref Renderer
+;; TODO
+;; - FORのAllocate,Symbolic ARefのEXPR?
+;; - RenderOpsしかないことを保証
+;; - 常にLOADをPropagateしたい (%defglobalの挿入が必須)
+;; - %prognの時系列
+;; - val_8はなんで0?
