@@ -210,7 +210,7 @@
   (def :< "<"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
-  (render-aref renderer node))
+  (format nil "~(~a~)[~(~a~)]" (car (node-reads node)) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
@@ -232,7 +232,11 @@
           (render-node renderer (second (node-reads node)))
           (render-node renderer (third (node-reads node)))))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :EXPR)) node)
+  (%render-const renderer (car (node-writes node))))
+
 (defmethod %render-node ((renderer Default-Renderer) id node)
+  (warn "Renderer: Unknown node type: ~a" (node-type node))
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))
 
 (defmethod print-object ((expr expr) stream)

@@ -6,7 +6,7 @@
 The package `caten/codegen/blueprint` is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
 The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.")
   (:use :cl :caten/air :caten/ir :caten/codegen/expr :alexandria :caten/codegen/type-relay :caten/codegen/helpers :caten/runtime/runtime :caten/runtime/buffer)
-  (:import-from :caten/codegen/renderer #:render-expr #:Default-Renderer)
+  (:import-from :caten/codegen/renderer #:render-expr #:Default-Renderer #:render-node)
   (:import-from :caten/codegen/rewriting-rules #:nodes-apply-static-gensym)
   (:import-from :caten/codegen/realize #:bp-finalize-realize)
   (:export
@@ -486,10 +486,50 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph))
       (let ((ast (astify-blueprint (ctx-blueprint ctx) (ctx-gids ctx))))
-        (caten/ir::print-ast ast)
+        (print-blueprint ast t)
         ast))))
-;; [TODO]
-;; (defmethod print-blueprint (nodes stream &aux (gids)))
+
+(defmethod print-blueprint (graph stream &aux (indent 0) (seen))
+  (princ
+   (with-output-to-string (out)
+     (labels ((indent () (make-string indent :initial-element #\space))
+              (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
+              (r (s &aux (val (id->value graph s)))
+                (when (and val (null (find (node-id val) seen)))
+                  (f val) (push (node-id val) seen))
+                s)
+              (f (node)
+                ;; [TODO] RenderOpsとEXPRしか使わないはず
+                (case (node-type node)
+                  (:PROGN
+                    (fmt "{")
+                    (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
+                    (fmt "}"))
+                  (:EXPR
+                   (let ((renderer (make-instance 'Default-Renderer :graph graph)))
+                     (fmt "~a = ~a;" (car (node-writes node)) (render-node renderer (car (node-reads node))))))
+                  (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
+                  (:RANGE
+                      (multiple-value-bind (bind size step body) (apply #'values (node-reads node))
+                        (fmt "@~(~a~) for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a" (getattr node :mark)
+                             (r bind) (r bind) (r size) (r bind) (r step)
+                             (if (getattr node :is-empty) "/* empty */" ""))
+                        (r body)))
+                  (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
+                  (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
+                  (:Aref
+                   (multiple-value-bind (name idx) (apply #'values (node-reads node))
+                     (r name) (r idx)
+                     (fmt "~(~a~) = ~(~a~)[~(~a~)];" (car (node-writes node)) name idx)))
+                  (:IF
+                   (multiple-value-bind (cond body) (apply #'values (node-reads node))
+                     (r cond)
+                     (fmt "if (~(~a~)) {" cond)
+                     (incf indent 2) (r body) (decf indent)
+                     (fmt "}")))
+                  (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))            
+       (f (id->value graph (car (graph-outputs graph))))))
+   stream))
 ;; ^ Simplify how to describe write relay
 ;; Blueprint List --> ASTTree
 ;; ~~~ OLD ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

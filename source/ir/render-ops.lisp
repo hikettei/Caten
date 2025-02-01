@@ -219,7 +219,9 @@
                     (fmt "}"))
                   (:EXPR
                    (fmt "~a = <EXPR>{" (car (node-writes node)))
-                   (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
+                   (incf indent 2)
+                   ;; [TODO] RenderExpr
+                   (decf indent 2)
                    (fmt "}"))
                   (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
                   (:RANGE
@@ -328,3 +330,4 @@
 ;; Remove Fused Move using Pattern Mathcer, Exprify is located here!
 ;; graph-seen is always an argument of the function?
 ;; LOAD :value fusion always
+;; [TODO] Update Aref Renderer
