@@ -15,10 +15,8 @@
        graph)))
 ;; ~~ Control Flows ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
-  (declare (type (or node symbol) bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
-  (let ((bind (if (symbolp bind)
-                  (%bind bind (%iconst bind :dtype dtype));(%salloc :dtype dtype :id bind)
-                  bind)))
+  (declare (type symbol bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
+  (let ((bind (%bind bind (%iconst bind :dtype dtype))))
     (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind size step body)) :mark mark))))
 
 (defmacro %dotimes ((bind size &optional (mark :noopt)) &body body)
@@ -33,10 +31,6 @@
 (defun %progn (&rest body &aux (out (gensym "PROGN")))
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
-
-(defun %expr (&rest nodes &aux (out (gensym "EXPR")))
-  (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) nodes) () "%expr: The body must be a list of symbols or nodes.")
-  (emit (make-node :Render :EXPR (list out) (map 'list #'node->id1 nodes))))
 
 (defun %global (name) (emit (make-node :Render :DEFINE-GLOBAL (list name) nil)))
 
@@ -187,13 +181,9 @@
                      &key
                        (opts
                         (list
-                         #'print
                          #'exprify-ast
-                         #'print
                          #'simplify-control-flow
-                         #'print
-                         #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0))
-                         #'print)))
+                         #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0)))))
   (declare (type graph graph))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   ;; e.g.: relocate allocate on the top
