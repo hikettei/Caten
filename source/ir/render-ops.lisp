@@ -168,7 +168,6 @@
                  (insert-nodes graph (list new-progn))))
              (mapc #'explore (node-reads (id->value graph id)))))
     (mapc #'explore (graph-outputs graph)))
-  (verify-graph graph)
   graph)
 
 (defun ast-purge-realize (graph)
@@ -188,13 +187,19 @@
                      &key
                        (opts
                         (list
+                         #'print
                          #'exprify-ast
+                         #'print
                          #'simplify-control-flow
+                         #'print
                          #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0)))))
   (declare (type graph graph))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   ;; e.g.: relocate allocate on the top
-  (funcall (apply #'compose opts) graph))
+  (verify-graph (->graph graph)) ;; [TMP]
+  (let ((g (funcall (apply #'compose opts) graph)))
+    (verify-graph g)
+    g))
 
 (defun print-ast (graph)
   (pprint-graph graph)
@@ -293,5 +298,6 @@
 ;; - RenderOpsしかないことを保証
 ;; - 常にLOADをPropagateしたい (%defglobalの挿入が必須)
 ;; - %prognの時系列
-;; - val_8はなんで0?
-;; - decompose index components
+;; - val_8はなんで0? --> simplfy-ast
+;; - まずRangeのIndexingの実装方法をちゃんと考える。。。
+;; - Undefined Variableを直すのが先

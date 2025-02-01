@@ -70,6 +70,9 @@
                     for wi in (relay-write-iters (read-type-relay bp))
                     for nth upfrom 0
                     if (and wt wi (local-p w)) do
-                      (setf (nth nth (relay-writes (read-type-relay bp))) (buffer-scalarify wt)
-                            (getattr bp :declare-type) (list t)))))
+                      ;; [TODO] 戻ったら: ALlocationとdefine-globalの挿入をやる
+                      ;;  ^ SimplifierがRealize判定と同値のことをやるはず
+                      ;(print "+++DO ALLOC++++")
+                      ;(print (id->value base-graph (get-output-to bp)))
+                      (setf (nth nth (relay-writes (read-type-relay bp))) (buffer-scalarify wt)))))
     blueprint))
