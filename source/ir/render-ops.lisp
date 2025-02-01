@@ -168,6 +168,7 @@
                  (insert-nodes graph (list new-progn))))
              (mapc #'explore (node-reads (id->value graph id)))))
     (mapc #'explore (graph-outputs graph)))
+  (verify-graph graph)
   graph)
 
 (defun ast-purge-realize (graph)
