@@ -98,12 +98,23 @@
     ;; :FOR + :PROGN (X)
     )
 
-(defun exprify-ast (graph)
+(defun exprify-ast (graph &aux (seen nil))
+  (declare (type FastGraph graph))
   "Groups multiple strongly connected ops into a single Expr. Expr and Expr are also mergeable."
   ;; 1. Find PROGN
   ;; 2. Count id->users (slow)
-  
-  )
+  (labels ((exprify-progn (rprogn)
+             ;; Replaces the progn with the new progn
+             (dolist (r (node-reads rprogn))
+               (print r)))
+           (explore (id &aux (node (id->value graph id)))
+             (when (or (null node) (find id seen)) (return-from explore))
+             (push (node-id node) seen)
+             (when (eql (node-type node) :PROGN)
+               (exprify-progn node))
+             (mapc #'explore (node-reads (id->value graph id)))))
+    (mapc #'explore (graph-outputs graph))
+    graph))
 
 (defun ast-purge-realize (graph)
   "The first argument of MOVE in the EXPRBlock does not use the first argument and thus removed."
@@ -118,12 +129,17 @@
   
   )
 
-(defun simplify-ast (graph)
+(defun simplify-ast (graph
+                     &key
+                       (opts
+                        (list
+                         #'exprify-ast
+                         #'simplify-control-flow
+                         #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0)))))
   (declare (type graph graph))
-  (setf graph (optimize-aasm graph :heavy-opt-threshold 0))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   ;; e.g.: relocate allocate on the top
-  (simplify-control-flow graph))
+  (funcall (apply #'compose opts) graph))
 
 (defun print-ast (graph)
   (pprint-graph graph)
