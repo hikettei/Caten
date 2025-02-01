@@ -12,6 +12,7 @@
    (:file "renderer")
    (:file "rewriting-rules")
    (:file "scheduler")
+   (:file "realize")
    (:file "blueprint")
    (:file "search")
    (:file "jit")))

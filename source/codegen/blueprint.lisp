@@ -8,6 +8,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
   (:use :cl :caten/air :caten/ir :caten/codegen/expr :alexandria :caten/codegen/type-relay :caten/codegen/helpers :caten/runtime/runtime :caten/runtime/buffer)
   (:import-from :caten/codegen/renderer #:render-expr #:Default-Renderer)
   (:import-from :caten/codegen/rewriting-rules #:nodes-apply-static-gensym)
+  (:import-from :caten/codegen/realize #:bp-finalize-realize)
   (:export
    #:lower-schedule-item
    #:lower-cached-schedule-item
@@ -469,7 +470,8 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-      (setf (ctx-blueprint ctx) (ctx-padding-loop ctx))
+      (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
+            (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph))
       (let ((ast (astify-blueprint (ctx-blueprint ctx))))
         (caten/ir::print-ast ast)
         ast))))
