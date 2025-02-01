@@ -93,11 +93,30 @@
     ((:IF (_ (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
     ((:Range (_ _ _ (:Range (_ _ _ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:IF (_ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
-
     ;; If the size==1 -> remove the range
     ;; ((:RANGE (bind size step body)) -> ((node graph))
     ;; :FOR + :PROGN (X)
     )
+
+(defun exprify-ast (graph)
+  "Groups multiple strongly connected ops into a single Expr. Expr and Expr are also mergeable."
+  ;; 1. Find PROGN
+  ;; 2. Count id->users (slow)
+  
+  )
+
+(defun ast-purge-realize (graph)
+  "The first argument of MOVE in the EXPRBlock does not use the first argument and thus removed."
+  ;; 1. Search for EXPR
+  ;; 2. Search for MOVE
+  ;; 3. Rewrite MUL(MOVE(A, AREF(B)), C) -> ...
+  
+  )
+
+(defun ast-resolve-reduction (graph)
+  "Resolves the storage-id to satisfy the reduction/assign relations"
+  
+  )
 
 (defun simplify-ast (graph)
   (declare (type graph graph))
@@ -148,7 +167,7 @@
                      (fmt "}")))
                   (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))            
        (f (id->value graph (car (graph-outputs graph))))))))
-
+;; ~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun apply-tile (graph b1 b2)
   ;; Rewrite IDX -> ...
   ;; TODO: Prognと同じ理由でFailしない？
@@ -159,6 +178,11 @@
         ->
         ((node graph) nil)))
    graph))
+
+(defun ast-shift ())
+(defun ast-vectorize ())
+(defun ast-grouptop ())
+(defun ast-group ())
 
 (defstruct AstGraph
   (graph (error "Graph must occur") :type Graph)
