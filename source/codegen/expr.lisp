@@ -207,7 +207,7 @@ Only supports the scalar computation because it is intended to identify the same
 
 (macrolet ((def (name op)
              `(defun ,name (a b &aux (out (gensym "w")))
-                (declare (type (or symbol Expr) a b))
+                (declare (type (or symbol fixnum Expr) a b))
                 (let ((grh (with-context (_ (,op (if (expr-p a) (expr-out a) a) (if (expr-p b) (expr-out b) b) :id out)))))
                   (%connect-expr grh (list a b) out)))))
   (def expr-add-binary %add)

@@ -294,3 +294,4 @@
 ;; - 常にLOADをPropagateしたい (%defglobalの挿入が必須)
 ;; - %prognの時系列
 ;; - val_8はなんで0?
+;; - decompose index components

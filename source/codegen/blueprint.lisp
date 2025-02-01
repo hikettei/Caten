@@ -419,6 +419,33 @@ Depends=~a Reduce=~a Users=~a
        (node-reads node))
       nil)))
 
+(defun make-index-components (node gids)
+  (assert (eql (node-type node) :INDEX-COMPONENTS))
+  (labels ((from-expr (shapes components)
+             (reduce
+              #'expr-add
+              (map
+               'list
+               #'(lambda (size stride gid)
+                   (if (expr-equal-to size 1)
+                       (expr-const 0 :int64)
+                       (expr-mul stride gid)))
+               shapes
+               components
+               gids)))
+           (merge-stride (proc list)
+             (loop for p in proc
+                   collect
+                   (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
+                     (if (find 0 strides :test #'eql) 0 (car (last strides)))))))
+    (let* ((is (car (relay-write-iters (read-type-relay node))))
+           (proc (iteration-space-procedure is))
+           (components (merge-stride proc (cdr (node-reads node)))))
+      (let ((e (from-expr (iteration-space-shape is) components)))
+        (setf (node-writes (expr-out e)) (node-writes node)
+              (graph-outputs (expr-graph e)) (node-writes node))
+        e))))
+
 (defun astify-blueprint (bp gids &aux (caten/codegen/expr::*expr-no-simplify-mode* t))
   (declare (type list bp))
   (with-blueprint ()
@@ -427,6 +454,7 @@ Depends=~a Reduce=~a Users=~a
                (expr-out expr))
              (lower-item (node)
                (let ((node (copy-node node)))
+                 ;; [TODO] Lower aref as well
                  (loop for buffer in (relay-reads (read-type-relay node))
                        for ri in (relay-read-iters (read-type-relay node))
                        for name in (node-reads node)
@@ -451,6 +479,8 @@ Depends=~a Reduce=~a Users=~a
                      (explore (subseq rest-items (1+ endrange))))))
                  (:TMPEndRange (error "TMPEndRange should not occur here, malformed lowering result?"))
                  (:TMPUser (error "NOT READY"))
+                 (:INDEX-COMPONENTS
+                  (%progn (sendexpr (make-index-components (car rest-items) gids)) (explore (cdr rest-items))))
                  (otherwise
                   (%progn (lower-item (car rest-items)) (explore (cdr rest-items)))))))
       (explore bp))))
