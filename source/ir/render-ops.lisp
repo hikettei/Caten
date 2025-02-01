@@ -16,8 +16,8 @@
 ;; ~~ Control Flows ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
   (declare (type symbol bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
-  (let ((bind (%bind bind (%iconst bind :dtype dtype))))
-    (emit (make-node :Render :RANGE (list out) (map 'list #'node->id1 (list bind size step body)) :mark mark))))
+  (let ((range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step))))))
+    (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
 (defmacro %dotimes ((bind size &optional (mark :noopt)) &body body)
   `(%range ',bind ,size (%progn ,@body) :mark ,mark))
@@ -85,9 +85,9 @@
         (new-cond (%and cond1 cond2))
         (out (%if new-cond body :out (car (node-writes node)))))))
     ;; Removing Empty IF/Range
-    ((:Range (_ _ _ (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
+    ((:FOR ((:Range (_ _)) (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
-    ((:Range (_ _ _ (:Range (_ _ _ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
+    ((:FOR ((:Range (_ _)) (:FOR ((:RANGE (_ _)) _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:IF (_ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ;; If the size==1 -> remove the range
     ;; ((:RANGE (bind size step body)) -> ((node graph))
@@ -181,7 +181,7 @@
                      &key
                        (opts
                         (list
-                         #'exprify-ast
+                         ;#'exprify-ast
                          #'simplify-control-flow
                          #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0)))))
   (declare (type graph graph))
@@ -194,7 +194,7 @@
 
 (defun print-ast (graph)
   (pprint-graph graph)
-  ;;(caten/air:->dot graph :pathname "/tmp/graph.dot")
+  ;(caten/air:->dot graph :pathname "/tmp/graph.dot")
   (viz-ast graph))
 ;; [TODO] Decompose 3 -> 1 + 1 + 1 and optimize the indexing?
 (defun viz-ast (graph) (uiop:symbol-call :caten/codegen/blueprint :print-blueprint graph t))
@@ -202,13 +202,13 @@
 (defun apply-tile (graph b1 b2)
   ;; Rewrite IDX -> ...
   ;; TODO: Prognと同じ理由でFailしない？
-  (funcall
-   (Simplifier
-       ()
-       ((:RANGE ((guard bind1 (eql bind1 b1)) size1 step1 (:RANGE ((guard bind2 (eql bind2 b2)) size2 step2 body) :mark (eql :coincident))) :mark (eql :coincident))
-        ->
-        ((node graph) nil)))
-   graph))
+;  (funcall
+;   (Simplifier
+;       ()
+;       ((:RANGE ((guard bind1 (eql bind1 b1)) size1 step1 (:RANGE ((guard bind2 (eql bind2 b2)) size2 step2 body) :mark (eql :coincident))) :mark (eql :coincident))
+;        ->
+;        ((node graph) nil)))
+   graph)
 
 (defun ast-shift ())
 (defun ast-vectorize ())
@@ -292,3 +292,4 @@
 ;; - val_8はなんで0? --> simplfy-ast
 ;; - まずRangeのIndexingの実装方法をちゃんと考える。。。
 ;; - Undefined Variableを直すのが先
+;; - Need to reimplement :RANGE First ...

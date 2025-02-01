@@ -531,7 +531,6 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                   (f val) (push (node-id val) seen))
                 s)
               (f (node)
-                ;; [TODO] RenderOpsとEXPRしか使わないはず
                 (case (node-type node)
                   (:PROGN
                     (fmt "{")
@@ -541,12 +540,16 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                    (let ((renderer (make-instance 'Default-Renderer :graph graph)))
                      (fmt "~a = ~a;" (car (node-writes node)) (render-node renderer (car (node-reads node))))))
                   (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
-                  (:RANGE
-                      (multiple-value-bind (bind size step body) (apply #'values (node-reads node))
-                        (fmt "@~(~a~) for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a" (getattr node :mark)
-                             (r bind) (r bind) (r size) (r bind) (r step)
-                             (if (getattr node :is-empty) "/* empty */" ""))
-                        (r body)))
+                  (:RANGE)
+                  (:FOR
+                   (multiple-value-bind (range body) (apply #'values (node-reads node))
+                     (setf range (id->value graph range))
+                     (assert (and range (eql (node-type range) :RANGE)))
+                     (multiple-value-bind (bind size step) (values (car (node-writes range)) (first (node-reads range)) (second (node-reads range)))
+                       (fmt "@~(~a~) for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a" (getattr node :mark)
+                            (r bind) (r bind) (r size) (r bind) (r step)
+                            (if (getattr node :is-empty) "/* empty */" "")))
+                     (r body)))
                   (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
                   (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
                   (:Aref

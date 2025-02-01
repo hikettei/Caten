@@ -313,7 +313,7 @@ Corresponds to:
 (defnode (:Render :RANGE) (RenderOps)
          "
 ```
-ID <- RANGE(BIND, SIZE, STEP, BODY)
+BIND <- RANGE(SIZE, STEP)
 ```
 The node :RANGE controls the iteration of the loop. The loop iterates the `BODY` (which must be a RenderOps) over the range of `[0, floor(SIZE, BY))`
 
@@ -325,6 +325,13 @@ Mark could be one of:
 - coincident (which means the loop is parallelizable)
 - reduction  (which means the loop is reduction)
 - noopt      (which means the loop is not optimized)
+```
+")
+
+(defnode (:Render :FOR) (RenderOps)
+         "
+```
+ID <- FOR(RANGE, BODY)
 ```
 "
          :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)))
@@ -382,5 +389,4 @@ X <- Aref(Array, Index)
          ""
          :slots ((name :initform nil :type symbol)))
 ;; Note: More?
-
 )
