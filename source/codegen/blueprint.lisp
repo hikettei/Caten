@@ -28,7 +28,6 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 ;; ~~ Temporary Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defnode (:Tmp :TmpRange) () "" :slots ((size :type Expr) (type :type keyword) (idx)))
 (defnode (:Tmp :TmpEndRange) () "" :slots ((idx)))
-(defnode (:Tmp :TmpUser) () "" :slots ())
 (defun %make-coincident-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :coincident :idx idx))
 (defun %make-reduction-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :reduction :idx idx))
 (defun %make-endrange (idx) (make-node :Tmp :TmpEndRange nil nil :idx idx))
@@ -480,7 +479,6 @@ Depends=~a Reduce=~a Users=~a
                       :mark (getattr (car rest-items) :type))
                      (explore (subseq rest-items (1+ endrange))))))
                  (:TMPEndRange (error "TMPEndRange should not occur here, malformed lowering result?"))
-                 (:TMPUser (error "NOT READY"))
                  (:INDEX-COMPONENTS
                   (%progn (sendexpr (make-index-components (car rest-items) gids)) (explore (cdr rest-items))))
                  (otherwise
