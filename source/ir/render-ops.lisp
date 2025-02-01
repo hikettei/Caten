@@ -55,6 +55,8 @@
 (defun %function (name args body &aux (out (gensym "FUNCTION")))
   (emit (make-node :Render :Function (list out) (map 'list #'node->id1 (append (list body) args)) :name name)))
 
+(defun %expr (name &key (out (gensym "EXPR"))) (emit (make-node :Render :EXPR (list out) (list name))))
+
 (defmacro %defun (name (&rest args) &body body)
   `(%function ',name (list ,@args) (%progn ,@body)))
 ;; ~~ AST Simplification ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -98,23 +100,81 @@
     ;; :FOR + :PROGN (X)
     )
 
+(defun ast-descendants-graph (graph outputs &key (seen) (result) (stop-at (make-hash-table)))
+  (declare (type FastGraph graph) (type list outputs))
+  (let ((out-ids (remove-duplicates (apply #'append (map 'list #'node-writes outputs)))))
+    (labels ((explore (x &aux (node (id->value graph x)))
+               (when (or (null node) (find x seen)) (return-from explore))
+               (when (gethash x stop-at) (return-from explore))
+               (push x seen)
+               (push node result)
+               (mapc #'explore (node-reads node))))
+      (mapc #'explore out-ids))
+    (let ((g (apply #'make-graph (remove-duplicates result :key #'node-id))))
+      (setf (graph-outputs g) out-ids)
+      (values (->fast-graph g) seen))))
+
+(defun ast-make-sink-map (dg &aux (seen) (sink-map (make-hash-table)))
+  (declare (type FastGraph dg))
+  (labels ((explore (x &aux (node (id->value dg x)))
+             (when (or (null node) (find x seen)) (return-from explore))
+             (push x seen)
+             (when (> (length (id->users dg x)) 1)
+               (setf (gethash x sink-map) t))
+             (mapc #'explore (node-reads node))))
+    (mapc #'explore (graph-outputs dg)))
+  sink-map)
+
+(defun ast-exprify-tensor-graph (base-graph dg sink-map &aux (seen) (groups) (global-seen))
+  (declare (type FastGraph dg) (type hash-table sink-map))
+  (labels ((explore (x &aux (node (id->value dg x)))
+             (when (or (null node) (find x seen)) (return-from explore))
+             (push x seen)
+             (when (null (find x global-seen))
+               (multiple-value-bind (g new-seen)
+                   (ast-descendants-graph dg (list node) :seen global-seen :stop-at sink-map)
+                 (setf global-seen new-seen)
+                 (push g groups)))
+             (mapc #'explore (node-reads node))))
+    (mapc #'explore (graph-outputs dg))
+    (setf groups (loop for g in groups if (graph-nodes g) collect g))
+    (assert (every #'(lambda (x) (= (length (graph-outputs x)) 1)) groups) () "The output of the graph must be a single node.")
+    (print sink-map)
+    (print (length groups))
+    (loop for g in groups
+          for name = (gensym "E")
+          for out = (car (graph-outputs g))
+          for out-node = (id->value g out)
+          do (setf (node-writes out-node) (list name)) (insert-nodes base-graph (list out-node))
+          collect (%expr name :out out))))
+;; EXPR has a slot for rendering a comment.
 (defun exprify-ast (graph &aux (seen nil))
-  (declare (type FastGraph graph))
+  (declare (type FastGraph graph) (optimize (speed 3)) (type list seen))
   "Groups multiple strongly connected ops into a single Expr. Expr and Expr are also mergeable."
-  ;; 1. Find PROGN
-  ;; 2. Count id->users (slow)
-  (labels ((exprify-progn (rprogn)
-             ;; Replaces the progn with the new progn
-             (dolist (r (node-reads rprogn))
-               (print r)))
+  ;; Find sink points
+  (labels ((render-p (node) (and (eql (node-class node) :Render) (null (find (node-type node) `(:EXPR :Aref :DEFINE-GLOBAL)))))
+           (sort-progn-body (parents &aux (dg (ast-descendants-graph graph parents)) (m (ast-make-sink-map dg)))
+             ;; The descendant of parents is asseted not to have RenderOps.
+             (assert (null (some #'render-p (graph-nodes dg))))
+             (ast-exprify-tensor-graph graph dg m))
+           (split-parent (parents &aux (results) (tmp))
+             (declare (type list parents results tmp))
+             (loop for p in parents
+                   if (render-p p) do (when tmp (push (reverse tmp) results)) (push p results) (setf tmp nil)
+                   else do (push p tmp))
+             (when tmp (push (reverse tmp) results))
+             (reverse results))
            (explore (id &aux (node (id->value graph id)))
-             (when (or (null node) (find id seen)) (return-from explore))
+             (when (or (null node) (find (the symbol id) seen)) (return-from explore))
              (push (node-id node) seen)
+             ;; A Expr is only mergeable with descendants w/ current PROGN.
              (when (eql (node-type node) :PROGN)
-               (exprify-progn node))
+               (let ((parents (split-parent (map 'list #'(lambda (x) (id->value graph x)) (node-reads node)))))
+                 (loop for p in parents
+                       when (listp p) do (insert-nodes graph (sort-progn-body p)))))
              (mapc #'explore (node-reads (id->value graph id)))))
-    (mapc #'explore (graph-outputs graph))
-    graph))
+    (mapc #'explore (graph-outputs graph)))
+  graph)
 
 (defun ast-purge-realize (graph)
   "The first argument of MOVE in the EXPRBlock does not use the first argument and thus removed."
@@ -162,6 +222,10 @@
                     (fmt "{")
                     (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
                     (fmt "}"))
+                  (:EXPR
+                   (fmt "~a = <EXPR>{" (car (node-writes node)))
+                   (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
+                   (fmt "}"))
                   (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
                   (:RANGE
                       (multiple-value-bind (bind size step body) (apply #'values (node-reads node))
@@ -267,3 +331,5 @@
 ;;    SimplifierがLeafの方に持ってくと依存がおかしくなる気がする
 ;;    is not top-down graph but bottom-up graph ...
 ;; Remove Fused Move using Pattern Mathcer, Exprify is located here!
+;; graph-seen is always an argument of the function?
+;; LOAD :value fusion always

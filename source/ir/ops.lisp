@@ -348,7 +348,7 @@ ID <- PROGN(S1, S2, ..., Sn)
 (defnode (:Render :EXPR) (RenderOps)
          "
 ```
-ID <- EXPR(E1, E2, ..., En)
+ID <- EXPR(NODE)
 ```
 "
          :slots nil)
