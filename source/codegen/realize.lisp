@@ -72,4 +72,4 @@
                     if (and wt wi (local-p w)) do
                       (setf (nth nth (relay-writes (read-type-relay bp))) (buffer-scalarify wt)
                             (getattr bp :declare-type) (list t)))))
-    blueprint)))
+    blueprint))

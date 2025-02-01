@@ -28,6 +28,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 ;; ~~ Temporary Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defnode (:Tmp :TmpRange) () "" :slots ((size :type Expr) (type :type keyword) (idx)))
 (defnode (:Tmp :TmpEndRange) () "" :slots ((idx)))
+(defnode (:Tmp :TmpUser) () "" :slots ())
 (defun %make-coincident-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :coincident :idx idx))
 (defun %make-reduction-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :reduction :idx idx))
 (defun %make-endrange (idx) (make-node :Tmp :TmpEndRange nil nil :idx idx))
@@ -418,12 +419,23 @@ Depends=~a Reduce=~a Users=~a
        (node-reads node))
       nil)))
 
-(defun astify-blueprint (bp)
+(defun astify-blueprint (bp gids &aux (caten/codegen/expr::*expr-no-simplify-mode* t))
   (declare (type list bp))
   (with-blueprint ()
     (labels ((sendexpr (expr)
                (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                (expr-out expr))
+             (lower-item (node)
+               (let ((node (copy-node node)))
+                 (loop for buffer in (relay-reads (read-type-relay node))
+                       for ri in (relay-read-iters (read-type-relay node))
+                       for name in (node-reads node)
+                       for nth upfrom 0
+                       if (> (buffer-nrank buffer) 0) do
+                         (let ((aref (emit (%aref name (sendexpr (reduce #'expr-add (iteration-space-expr-aref ri buffer gids)))))))
+                           (setf (nth nth (node-reads node)) (car (node-writes aref)))))
+                 (setf (getattr node :_type_relay) nil)
+                 (emit node)))
              (explore (rest-items)
                (declare (type list rest-items))
                (when (null rest-items) (return-from explore))
@@ -438,8 +450,9 @@ Depends=~a Reduce=~a Users=~a
                       :mark (getattr (car rest-items) :type))
                      (explore (subseq rest-items (1+ endrange))))))
                  (:TMPEndRange (error "TMPEndRange should not occur here, malformed lowering result?"))
+                 (:TMPUser (error "NOT READY"))
                  (otherwise
-                  (%progn (emit (car rest-items)) (explore (cdr rest-items)))))))
+                  (%progn (lower-item (car rest-items)) (explore (cdr rest-items)))))))
       (explore bp))))
 ;; Entry point for the lowerer is here :)  
 (defun lower-schedule-item (schedule-item base-graph schedule-graph)
@@ -472,7 +485,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph))
-      (let ((ast (astify-blueprint (ctx-blueprint ctx))))
+      (let ((ast (astify-blueprint (ctx-blueprint ctx) (ctx-gids ctx))))
         (caten/ir::print-ast ast)
         ast))))
 ;; [TODO]

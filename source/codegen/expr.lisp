@@ -160,18 +160,22 @@ Only supports the scalar computation because it is intended to identify the same
             do (push (getattr node :value) symbols))
     (remove-duplicates symbols)))
 
+(defparameter *expr-no-simplify-mode* nil)
 (defmethod simplify-expr ((expr Expr))
   ;; [TODO] Use FastGraph
   ;; Note(hikkei) set heavy-opt-threshold to 0 to always enable full symbolic simplification.
-  (optimize-aasm (expr-graph expr));; :heavy-opt-threshold 0)
-  (uiop:symbol-call :caten/codegen/type-relay :expr-infer-type expr)
+  (unless *expr-no-simplify-mode*
+    (optimize-aasm (expr-graph expr));; :heavy-opt-threshold 0)
+    (uiop:symbol-call :caten/codegen/type-relay :expr-infer-type expr))
   expr)
 
 (defun %connect-expr (grh args out)
   (declare (type graph grh))
-  (assert (every #'expr-p args))
-  (let ((graph (apply #'make-graph (append (apply #'append (map 'list (alexandria:compose #'graph-nodes #'expr-graph) args)) (graph-nodes grh)))))
-    (setf (graph-outputs graph) (list out))
+  (let* ((seen (loop for a in args if (symbolp a) collect a))
+         (args (loop for a in args if (expr-p a) collect a))
+         (graph (apply #'make-graph (append (apply #'append (map 'list (alexandria:compose #'graph-nodes #'expr-graph) args)) (graph-nodes grh)))))
+    (setf (graph-outputs graph) (list out)
+          (graph-seen graph) seen)
     (simplify-expr (make-expr :graph graph :out (id->value graph out)))))
 
 (defun expr-from-graph (id graph)
@@ -203,8 +207,8 @@ Only supports the scalar computation because it is intended to identify the same
 
 (macrolet ((def (name op)
              `(defun ,name (a b &aux (out (gensym "w")))
-                (declare (type Expr a b))
-                (let ((grh (with-context (_ (,op (expr-out a) (expr-out b) :id out)))))
+                (declare (type (or symbol Expr) a b))
+                (let ((grh (with-context (_ (,op (if (expr-p a) (expr-out a) a) (if (expr-p b) (expr-out b) b) :id out)))))
                   (%connect-expr grh (list a b) out)))))
   (def expr-add-binary %add)
   (def expr-sub-binary %sub)

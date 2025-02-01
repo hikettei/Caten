@@ -178,7 +178,6 @@ Only supports the scalar computation because it is intended to identify the same
 
 (defun %connect-expr (grh args out)
   (declare (type graph grh))
-  (assert (every #'expr-p args))
   (let ((graph (apply #'make-graph (append (apply #'append (map 'list (alexandria:compose #'graph-nodes #'expr-graph) args)) (graph-nodes grh)))))
     (setf (graph-outputs graph) (list out))
     (simplify-expr (make-expr :graph graph :out (id->value graph out)))))

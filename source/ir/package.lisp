@@ -70,4 +70,4 @@
   ;; from simplifier.lisp
   (:export #:optimize-aasm #:minimize-duplicated-symbolic-path #:fold-constant)
   ;; from render-ops.lisp
-  (:export #:with-blueprint #:%range #:%progn))
+  (:export #:with-blueprint #:%range #:%progn #:%aref))
