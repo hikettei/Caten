@@ -25,8 +25,8 @@ Constraints:
   (let ((range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step)) :idx bind :dtype dtype))))
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
-(defmacro %dotimes ((bind size &optional (mark :noopt)) &body body)
-  `(%range ',bind ,size (%progn ,@body) :mark ,mark))
+(defmacro %dotimes ((bind size &key (mark :noopt) (id (gensym "RANGE"))) &body body)
+  `(%range ',bind ,size (%progn ,@body) :mark ,mark :out ',id))
 
 (defun %if (condition body &key (out (gensym "IF")))
   "
@@ -227,7 +227,7 @@ Constraints:
   "Resolves the storage-id to satisfy the reduction/assign relations"
   
   )
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun simplify-ast (graph
                      &key
                        (opts
@@ -247,18 +247,28 @@ Constraints:
   (declare (type graph graph))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   (funcall (apply #'compose (reverse opts)) graph))
-;; ~~ Scheduling  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun apply-tile (graph idx1 idx2)
-  ;; Rewrite IDX -> ...
-  ;; TODO: Prognと同じ理由でFailしない？
-;  (funcall
-;   (Simplifier
-;       ()
-;       ((:RANGE ((guard bind1 (eql bind1 b1)) size1 step1 (:RANGE ((guard bind2 (eql bind2 b2)) size2 step2 body) :mark (eql :coincident))) :mark (eql :coincident))
-;        ->
-;        ((node graph) nil)))
-   graph)
+;; ~~ Scheduling  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun %ast-tile-band (graph band tile-sizes &aux (bands))
+  (declare (type FastGraph graph) (type node band) (type list tile-sizes))
+  (assert (eql (node-type band) :FOR) () "%ast-tile-band: band must be :FOR, getting ~a" band)
+  (assert (>= (length tile-sizes) 1) () "TileSizes must be larger than 1.")
+  (when (null (getattr band :band)) (assert (= 1 (length tile-sizes)) () "tile-size must be one for non-coincidence band."))
+  (push band bands)
+  (labels ((explore (id band-depth)
+             (when (>= band-depth (length tile-sizes))
+               (return-from explore))
+             (let ((node (id->value graph id)))
+               (assert (and node (eql (node-type node) :FOR)) () "%ast-tile-band: The given tile-sizes ~a is too large (<= ~a)" band-depth)
+               (assert (eql (getattr node :band) (getattr (car bands) :band)) () "%ast-tile-band: ~a and ~a are not coincident." node (car bands))
+               (push node bands)
+               (explore (second (node-reads band)) (1+ band-depth)))))
+    (explore (second (node-reads band)) 1))
+  (assert (= (length bands) (length tile-sizes)) () "tile-sizes and band-depth should correspond.")
+  (setf bands (nreverse bands))
+  (print bands)
+  graph)
 
+(defun ast-parallelize ())
 (defun ast-shift ())
 (defun ast-vectorize ())
 (defun ast-grouptop ())
@@ -287,21 +297,23 @@ Constraints:
 ;; - 10000 Total LoC
 ;; - how to manipulate gids?
 ;; - can we vectorize/tile Range?
-(print-ast
- (with-blueprint ()
-   (%defun eladd ((%global 'a) (%global 'b) (%global 'm) (%global 'n))
-     (%dotimes (gid0 (%add (%iconst 'm) (%iconst 'n)) :coincident)
-       (%progn
-        (%progn
-         (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
-               (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
-           (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-                  (%when (%< nil :row (%iconst 'gid1) (%add (%iconst 'm) (%iconst 'n)))
-                         (%progn
-                          (%add (%aref 'a (%iconst 0)) (%aref 'b idx2))
-                          (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
-                          (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
-                          (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3))))))))))))))
+(let ((g
+        (with-blueprint ()
+          (%defun eladd ((%global 'a) (%global 'b) (%global 'm) (%global 'n))
+            (%dotimes (gid0 (%add (%iconst 'm) (%iconst 'n)) :mark :coincident :id target-loop)
+              (%progn
+               (%progn
+                (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
+                      (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
+                  (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
+                         (%when (%< nil :row (%iconst 'gid1) (%add (%iconst 'm) (%iconst 'n)))
+                                (%progn
+                                 (%add (%aref 'a (%iconst 0)) (%aref 'b idx2))
+                                 (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
+                                 (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
+                                 (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3)))))))))))))))
+  (%ast-tile-band g (id->value g 'target-loop) `(4))
+  (print-ast g))
 
 (print-ast
  (with-blueprint ()
@@ -310,7 +322,7 @@ Constraints:
       '_gid0 (%iconst 100)
       (%progn
        (%range
-        '_gid1 (%iconst 1000)
+        '_gid1 (%iconst 100)
         (%progn
          (%add
           (%aref 'x '_gid0)
@@ -373,3 +385,5 @@ Constraints:
 ;;   - First, play w/ manual scheduler and reimplement gemm scheduling example.
 ;;   - EXPR Purge
 ;;   - ASTGraph -> RenderOps Listは確定, print-blueprint的な実装で再現できるはず
+;;   - UNROLL/Vectorizeをどうやって実装するか？
+;;     -> GID0が頂点，再起的にSubgraphを探索してGID0に関連するIDを+1する
