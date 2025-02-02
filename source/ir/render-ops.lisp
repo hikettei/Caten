@@ -200,7 +200,9 @@
                      &key
                        (opts
                         (list
-                         #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0))
+                         #'fold-constant
+                         ;; #'minimize-duplicated-symbolic-path
+                         #'fuse-duplicated-store
                          #'simplify-control-flow
                          #'exprify-ast
                          #'(lambda (x) (verify-graph x) x)
