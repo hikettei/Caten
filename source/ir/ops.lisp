@@ -326,7 +326,8 @@ Mark could be one of:
 - reduction  (which means the loop is reduction)
 - noopt      (which means the loop is not optimized)
 ```
-")
+"
+         :slots ((idx)))
 
 (defnode (:Render :FOR) (RenderOps)
          "

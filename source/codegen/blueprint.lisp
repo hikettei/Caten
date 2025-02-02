@@ -522,6 +522,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
         ast))))
 
 (defmethod print-blueprint (graph stream &aux (indent 0) (seen))
+  ;; (caten/air:->dot graph :pathname "/tmp/graph.dot")
   (princ
    (with-output-to-string (out)
      (labels ((indent () (make-string indent :initial-element #\space))
@@ -540,12 +541,12 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                    (let ((renderer (make-instance 'Default-Renderer :graph graph)))
                      (fmt "~a = ~a;" (car (node-writes node)) (render-node renderer (car (node-reads node))))))
                   (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
-                  (:RANGE)
+;                  (:RANGE)
                   (:FOR
                    (multiple-value-bind (range body) (apply #'values (node-reads node))
                      (setf range (id->value graph range))
                      (assert (and range (eql (node-type range) :RANGE)))
-                     (multiple-value-bind (bind size step) (values (car (node-writes range)) (first (node-reads range)) (second (node-reads range)))
+                     (multiple-value-bind (bind size step) (values (getattr range :idx) (first (node-reads range)) (second (node-reads range)))
                        (fmt "@~(~a~) for (~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a" (getattr node :mark)
                             (r bind) (r bind) (r size) (r bind) (r step)
                             (if (getattr node :is-empty) "/* empty */" "")))

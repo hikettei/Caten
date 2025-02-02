@@ -16,7 +16,7 @@
 ;; ~~ Control Flows ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
   (declare (type symbol bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
-  (let ((range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step))))))
+  (let ((range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step)) :idx bind))))
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
 (defmacro %dotimes ((bind size &optional (mark :noopt)) &body body)
@@ -218,6 +218,9 @@
 (defstruct AstGraph
   (graph (error "Graph must occur") :type Graph)
   (node (error "Node must occur") :type Node))
+
+;; todo
+(defstruct CatenFunction (blueprint))
 ;; [TODO] OpFusion
 ;; PROGN+PROGN -> PROGN
 ;; IndexingをもっとSimplifyしたい。RANGEの外に出す方法？
