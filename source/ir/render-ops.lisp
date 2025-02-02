@@ -201,7 +201,7 @@
                        (opts
                         (list
                          #'fold-constant
-                         ;; #'minimize-duplicated-symbolic-path
+                         ;; #'minimize-duplicated-symbolic-path <- TODO: Implement AST-supported version of this to simplify the indexing
                          #'fuse-duplicated-store
                          #'simplify-control-flow
                          #'exprify-ast
