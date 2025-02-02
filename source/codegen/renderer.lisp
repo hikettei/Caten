@@ -159,6 +159,9 @@
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
   (%render-const renderer (getattr node :value)))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :RANGE)) node)
+  (%render-const renderer (getattr node :idx)))
+
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :SPACE)) node)
   (let ((lv (ecase (getattr node :level) (:block "blockIdx") (:thread "threadIdx")))
         (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))

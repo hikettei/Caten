@@ -545,7 +545,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                   (:FOR
                    (multiple-value-bind (range body) (apply #'values (node-reads node))
                      (setf range (id->value graph range))
-                     (assert (and range (eql (node-type range) :RANGE)))
+                     (assert (and range (eql (node-type range) :RANGE)) () "The first argument of :FOR should be :RANGE, getting ~a" range)
                      (multiple-value-bind (bind size step) (values (getattr range :idx) (first (node-reads range)) (second (node-reads range)))
                        (fmt "@~(~a~) for (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a" (getattr node :mark)
                             bind bind (r size) bind (r step)

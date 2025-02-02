@@ -90,8 +90,7 @@
     ((:FOR ((:Range (_ _)) (:FOR ((:RANGE (_ _)) _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:IF (_ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ;; If the size==1 -> remove the range
-    ;; ((:RANGE (bind size step body)) -> ((node graph))
-    ;; :FOR + :PROGN (X)
+    ;; ((:FOR ((:RANGE (1 1)) _)) -> ((node graph)))
     )
 
 (defun ast-descendants-graph (graph outputs &key (seen) (result) (stop-at (make-hash-table)))
@@ -100,6 +99,7 @@
     (labels ((explore (x &aux (node (id->value graph x)))
                (when (or (null node) (find x seen)) (return-from explore))
                (when (gethash x stop-at) (return-from explore))
+               (when (eql (node-type node) :RANGE) (return-from explore))
                (push x seen)
                (push node result)
                (mapc #'explore (node-reads node))))
@@ -181,7 +181,7 @@
                      &key
                        (opts
                         (list
-                         ;#'exprify-ast
+                         #'exprify-ast
                          #'simplify-control-flow
                          #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0)))))
   (declare (type graph graph))
@@ -292,7 +292,11 @@
 ;; - RenderOpsしかないことを保証
 ;; - 常にLOADをPropagateしたい (%defglobalの挿入が必須)
 ;; - %prognの時系列
-;; - val_8はなんで0? --> simplfy-ast
 ;; - まずRangeのIndexingの実装方法をちゃんと考える。。。
 ;; - Undefined Variableを直すのが先
 ;; - Need to reimplement :RANGE First ...
+;; - StorageIDの実装(LOAD, Reductionの時系列...)
+;;   - Assign/Reduction
+;;   - Allocate+Load
+;;   - Store after reduction
+;;   - in DAG
