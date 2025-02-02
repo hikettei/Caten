@@ -275,49 +275,55 @@ for (int i=0; i<M; i+=32)
     (explore (second (node-reads band)) 1))
   (assert (= (length bands) (length tile-sizes)) () "tile-sizes and band-depth should correspond.")
   (setf bands (nreverse bands))
-  ;; 1. Create (and supercede w/) new tiled range.
-  (loop for band in bands
-        for tile-size in tile-sizes
-        for idx = (car (node-reads band))
-        for range = (id->value graph idx)
-        for gid = (getattr range :idx)
-        for dtype = (getattr range :dtype)
-        for new-step = (%mul tile-size (second (node-reads range)))
-        for new-step-expr = (%expr (node->id1 new-step))
-        for range-size-id = (gensym "TILEBOUND")
-        for range-size-graph = (with-context (out (%expr (node->id1 (%min (%sub (car (node-reads range)) (ngid idx sp)) tile-size)) :out range-size-id)))
-        for range-parent = (make-node :Render :Range (list (ngid idx sp)) (list (car (node-reads range)) (node->id1 new-step-expr)) :idx (ngid gid sp) :dtype dtype)
-        for range-child = (make-node :Render :Range (list (ngid idx sc)) (list range-size-id 1) :idx (ngid gid sc) :dtype dtype)
-        do (insert-nodes graph (list new-step new-step-expr range-parent range-child))
-           (insert-nodes graph (graph-nodes range-size-graph)))
-  ;; 2. Create new FOR
-  (let ((next-write-to (car (node-writes (car bands)))))
-    ;; Insert Parents, and then children
-    (dolist (prefix (list sp sc))
-      (loop for band in bands
-            for idx = (car (node-reads band))
-            for range = (id->value graph idx)
-            for prev-body = (gensym "T")
-            for new-band = (if (equal prefix sp) (getattr band :band) (ngid (getattr band :band) cid))
-            for new-for = (make-node :Render :FOR (list next-write-to) (list (ngid idx prefix) prev-body)
-                                     :mark (getattr band :mark) :band new-band)
-            do (insert-nodes graph (list new-for))
-               (setf next-write-to prev-body)))
-    ;; Finally insert the body to next-write-to
-    (let* ((innermost (car (last bands)))
-           (body (copy-node (id->value graph (second (node-reads innermost))))))
-      (assert (= (length (node-writes body)) 1))
-      (setf (node-writes body) (copy-list (node-writes body))
-            (node-writes body) (list next-write-to))
-      (insert-nodes graph (list body))))
-  ;; 3. Replace the access to i -> i + ii
-  (loop for band in bands
-        for idx = (car (node-reads band))
-        for idx-new = (%add (ngid idx sp) (ngid idx sc) :id idx)
-        do (insert-nodes graph (list idx-new)))
-  ;; [TODO] Ensure the old grpah was purged from graph
-  (verify-graph graph)
-  graph)
+  (flet ((g (obj)
+           (if (numberp obj)
+               (%iconst obj :dtype :int64)
+               obj)))
+    ;; 1. Create (and supercede w/) new tiled range.
+    (loop for band in bands
+          for tile-size in tile-sizes
+          for idx = (car (node-reads band))
+          for range = (id->value graph idx)
+          for gid = (getattr range :idx)
+          for dtype = (getattr range :dtype)
+          for new-step-id = (gensym "NEWSTEP")
+          for new-step-graph = (with-context (_ (%mul (g tile-size) (g (second (node-reads range))) :id new-step-id)))
+          for new-step-expr = (%expr new-step-id)
+          for range-size-id = (gensym "TILEBOUND")
+          for range-size-graph = (with-context (out (%expr (node->id1 (%min (%sub (g (car (node-reads range))) (ngid idx sp)) (g tile-size))) :out range-size-id)))
+          for range-parent = (make-node :Render :Range (list (ngid idx sp)) (list (car (node-reads range)) (node->id1 new-step-expr)) :idx (ngid gid sp) :dtype dtype)
+          for range-child = (make-node :Render :Range (list (ngid idx sc)) (list range-size-id 1) :idx (ngid gid sc) :dtype dtype)
+          do (insert-nodes graph (list new-step-expr range-parent range-child))
+             (insert-nodes graph (graph-nodes new-step-graph))
+             (insert-nodes graph (graph-nodes range-size-graph)))
+    ;; 2. Create new FOR
+    (let ((next-write-to (car (node-writes (car bands)))))
+      ;; Insert Parents, and then children
+      (dolist (prefix (list sp sc))
+        (loop for band in bands
+              for idx = (car (node-reads band))
+              for range = (id->value graph idx)
+              for prev-body = (gensym "T")
+              for new-band = (if (equal prefix sp) (getattr band :band) (ngid (getattr band :band) cid))
+              for new-for = (make-node :Render :FOR (list next-write-to) (list (ngid idx prefix) prev-body)
+                                       :mark (getattr band :mark) :band new-band)
+              do (insert-nodes graph (list new-for))
+                 (setf next-write-to prev-body)))
+      ;; Finally insert the body to next-write-to
+      (let* ((innermost (car (last bands)))
+             (body (copy-node (id->value graph (second (node-reads innermost))))))
+        (assert (= (length (node-writes body)) 1))
+        (setf (node-writes body) (copy-list (node-writes body))
+              (node-writes body) (list next-write-to))
+        (insert-nodes graph (list body))))
+    ;; 3. Replace the access to i -> i + ii
+    (loop for band in bands
+          for idx = (car (node-reads band))
+          for idx-new = (%add (ngid idx sp) (ngid idx sc) :id idx)
+          do (insert-nodes graph (list idx-new)))
+    ;; [TODO] Ensure the old grpah was purged from graph
+    (verify-graph graph)
+    graph))
 ;; tile series
 (defun ast-band-tile ())
 (defun ast-band-parallelize ()) ;; for collapse (band_depth)
@@ -380,7 +386,7 @@ for (int i=0; i<M; i+=32)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
   (%ast-band-tile g (id->value g 'tgt-loop) `(16 8))
-  (%ast-band-tile g (id->value g 'tgt-loop) `(16 8))
+  (fold-constant g)
   ;; (%ast-band-global
   (print-ast g))
 
