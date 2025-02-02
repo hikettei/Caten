@@ -11,7 +11,7 @@
      (assert (node-p out) () "The last form must be a node.")
      (setf (graph-outputs *ctx*) (node-writes out))
      (let ((graph (->fast-graph *ctx*)))
-       (unless ,noopt (setf graph (simplify-ast graph)))
+       (unless ,noopt (setf graph (%simplify-ast graph)))
        graph)))
 ;; ~~ Interface ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
@@ -228,25 +228,29 @@ Constraints:
   
   )
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun simplify-ast (graph
-                     &key
-                       (opts
-                        (list
-                         #'fold-constant
-                         ;;#'minimize-duplicated-symbolic-path;; <- TODO: Implement AST-supported version of this to simplify the indexing
-                         ;; ^ 共通項を見つけたらPROGNをInsertして配置するように？・・・
-                         #'fuse-duplicated-store
-                         #'simplify-control-flow
-                         #'exprify-ast
-                         #'(lambda (x) (verify-graph x) x)
-                         #'ast-verify-sequence
-                         #'ast-maximize-band-depth
-                         #'(lambda (x) (print (->graph-with-tpsort x)) x)
-                         )))
+(defun %simplify-ast (graph
+                      &key
+                        (opts
+                         (list
+                          #'fold-constant
+                          ;;#'minimize-duplicated-symbolic-path;; <- TODO: Implement AST-supported version of this to simplify the indexing
+                          ;; ^ 共通項を見つけたらPROGNをInsertして配置するように？・・・
+                          #'fuse-duplicated-store
+                          #'simplify-control-flow
+                          #'exprify-ast
+                          #'(lambda (x) (verify-graph x) x)
+                          #'ast-verify-sequence
+                          #'ast-maximize-band-depth
+                          #'(lambda (x) (print (->graph-with-tpsort x)) x)
+                          )))
   "Simplifies the AST"
   (declare (type graph graph))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   (funcall (apply #'compose (reverse opts)) graph))
+
+(defun simplify-ast (graph)
+  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-verify-sequence)))
+
 ;; ~~ Scheduling  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands))
   "Tiles the band:
@@ -386,7 +390,7 @@ for (int i=0; i<M; i+=32)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
   (%ast-band-tile g (id->value g 'tgt-loop) `(16 8))
-  (fold-constant g)
+  (simplify-ast g)
   ;; (%ast-band-global
   (print-ast g))
 
