@@ -26,7 +26,7 @@ Constraints:
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
 (defmacro %dotimes ((bind size &key (mark :noopt) (id (gensym "RANGE"))) &body body)
-  `(%range ',bind ,size (%progn ,@body) :mark ,mark :out ',id))
+  `(let ((,bind ',bind)) (%range ',bind ,size (%progn ,@body) :mark ,mark :out ',id)))
 
 (defun %if (condition body &key (out (gensym "IF")))
   "
@@ -303,8 +303,8 @@ Constraints:
             (%dotimes (gid0 (%add (%iconst 'm) (%iconst 'n)) :mark :coincident :id target-loop)
               (%progn
                (%progn
-                (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
-                      (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
+                (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst gid0)))
+                      (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst gid0))))
                   (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
                          (%when (%< nil :row (%iconst 'gid1) (%add (%iconst 'm) (%iconst 'n)))
                                 (%progn
@@ -313,6 +313,16 @@ Constraints:
                                  (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
                                  (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3)))))))))))))))
   (%ast-tile-band g (id->value g 'target-loop) `(4))
+  (print-ast g))
+
+(let ((g
+        (with-blueprint ()
+          (%defun eladd ((%global 'a) (%global 'b))
+            (%dotimes (gid0 512 :mark :coincident :id tgt-loop)
+              (%dotimes (gid1 512 :mark :coincident)
+                (let ((idx (%add gid0 gid1)))
+                  (%add (%aref 'a idx) (%aref 'b idx)))))))))
+  (%ast-tile-band g (id->value g 'tgt-loop) `(4 4))
   (print-ast g))
 
 (print-ast
