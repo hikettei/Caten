@@ -16,7 +16,7 @@
 ;; ~~ Control Flows ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
   (declare (type symbol bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
-  (let ((range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step)) :idx bind))))
+  (let ((range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step)) :idx bind :dtype dtype))))
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
 (defmacro %dotimes ((bind size &optional (mark :noopt)) &body body)
@@ -90,7 +90,10 @@
     ((:FOR ((:Range (_ _)) (:FOR ((:RANGE (_ _)) _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:IF (_ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ;; If the size==1 -> remove the range
-    ;; ((:FOR ((:RANGE (1 1)) _)) -> ((node graph)))
+    ;; TODO: (RANGE (4 4)) is also removable
+    ;; [TODO] Make it working ...
+    ;((:RANGE (1 1) :idx idx :dtype dtype) -> ((node graph) (with-context-nodes (out (%bind idx (%iconst 0 :dtype dtype))))))
+    ;((:FOR ((Var (= 0) _) body)) -> (:PROGN (body)))
     )
 
 (defun ast-descendants-graph (graph outputs &key (seen) (result) (stop-at (make-hash-table)))
@@ -187,9 +190,9 @@
   (declare (type graph graph))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   ;; e.g.: relocate allocate on the top
-  (verify-graph (->graph graph)) ;; [TMP]
   (let ((g (funcall (apply #'compose opts) graph)))
     (verify-graph g)
+    (print (->graph-with-tpsort g))
     g))
 
 (defun print-ast (graph)
