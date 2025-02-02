@@ -217,7 +217,10 @@ D = Z
                                 (find-if #'(lambda (x) (invalid-load-p (car (node-writes node2)) x)) (the list users2)))
                         (return-from load-eql-p nil))
                       (and alloc1 alloc2 (eql (the keyword (getattr alloc1 :dtype)) (the keyword (getattr alloc2 :dtype)))))))
-             (c (node)
+             (range-eql-p (node1 node2)
+               (and (eql (node-type node1) :RANGE) (eql (node-type node2) :RANGE)
+                    (eql (getattr node1 :idx) (getattr node2 :idx))))
+             (c (node) ;; gather the replaceable LOAD/RANGE appeared first.
                (when (not (= (length (node-writes node)) 1)) (return-from c))
                (setf (gethash (car (node-writes node)) id->node) node)
                (dolist (r (node-reads node))
@@ -230,12 +233,15 @@ D = Z
                   (when (gethash (car (node-reads node)) replaceable-map)
                     (when (not (member node defined :test #'load-eql-p))
                       (push node defined))))
+                 (:RANGE
+                     (when (not (member node defined :test #'range-eql-p))
+                       (push node defined)))
                  (otherwise)))
              (newid (sym)
                (when (not (symbolp sym)) (return-from newid sym))
                (let ((node (gethash sym id->node)))
                  (when (null node) (return-from newid sym))
-                 (let ((c (find node defined :test #'load-eql-p)))
+                 (let ((c (or (find node defined :test #'load-eql-p) (find node defined :test #'range-eql-p))))
                    (if c
                        (car (node-writes c))
                        sym))))
