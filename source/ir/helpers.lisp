@@ -72,3 +72,5 @@ will return a graph."
                   if (graph-p g) append (graph-nodes g))
             (graph-nodes g)))
      g))
+;; ~~ AST Transformation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun ngid (gid suffix) (intern (format nil "~a~a" gid suffix)))

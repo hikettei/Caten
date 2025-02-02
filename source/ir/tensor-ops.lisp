@@ -109,8 +109,8 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
 
 (macrolet ((def (fname opname)
 	     `(defun ,fname (x &key (id (gensym "UID")))
-		(declare (type node x))
-		(emit (make-node :UnaryOps ,opname (list id) (list (node->id x)))))))
+		(declare (type (or number symbol node) x))
+		(emit (make-node :UnaryOps ,opname (list id) (list (node->id1 x)))))))
   (def %neg   :NEG)
   (def %recip :RECIP)
   (def %sin   :SIN)
@@ -143,6 +143,8 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
   (def %max :MAX)
   (def %gcd :GCD)
   (def %mod :MOD))
+
+(defun %min (x y &key (id (gensym "BID")) (reduction nil)) (%neg (%max (%neg x) (%neg y) :reduction reduction) :id id))
 (defun %sub (x y &key (reduction nil) (id (gensym "BID"))) (%add x (%neg y) :reduction reduction :id id))
 (defun %div (x y &key (reduction nil) (id (gensym "BID"))) (%mul x (%recip y) :reduction reduction :id id))
 

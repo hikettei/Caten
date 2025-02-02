@@ -248,7 +248,27 @@ Constraints:
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   (funcall (apply #'compose (reverse opts)) graph))
 ;; ~~ Scheduling  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %ast-tile-band (graph band tile-sizes &aux (bands))
+(defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") &aux (bands))
+  "Tiles the band:
+```
+for (int i=0; i<M; i++) Instance(i)
+```
+===>
+```
+;; (i start indexing)
+for (int i=0; i<M; i+=32)
+  for (int ii=i; ii<min(M, i+32); ii++)
+    Instance(ii)
+;; (zero start indexing)
+for (int i=0; i<M; i+=32)
+  for (int ii=0; ii<min(M - i, 32); ii++)
+    Instance(i + ii)
+```
+
+RANGE BODY
+   \   /
+    FOR
+"
   (declare (type FastGraph graph) (type node band) (type list tile-sizes))
   (assert (eql (node-type band) :FOR) () "%ast-tile-band: band must be :FOR, getting ~a" band)
   (assert (>= (length tile-sizes) 1) () "TileSizes must be larger than 1.")
@@ -265,14 +285,60 @@ Constraints:
     (explore (second (node-reads band)) 1))
   (assert (= (length bands) (length tile-sizes)) () "tile-sizes and band-depth should correspond.")
   (setf bands (nreverse bands))
-  (print bands)
+  ;; 1. Create (and supercede w/) new tiled range.
+  (loop for band in bands
+        for tile-size in tile-sizes
+        for idx = (car (node-reads band))
+        for range = (id->value graph idx)
+        for gid = (getattr range :idx)
+        for dtype = (getattr range :dtype)
+        for new-step = (%mul tile-size (second (node-reads range)))
+        for new-step-expr = (%expr (node->id1 new-step))
+        for range-size-id = (gensym "TILEBOUND")
+        for range-size-graph = (with-context (out (%expr (node->id1 (%min (%sub (car (node-reads range)) (ngid idx sp)) tile-size)) :out range-size-id)))
+        for range-parent = (make-node :Render :Range (list (ngid idx sp)) (list (car (node-reads range)) (node->id1 new-step-expr)) :idx (ngid gid sp) :dtype dtype)
+        for range-child = (make-node :Render :Range (list (ngid idx sc)) (list range-size-id 1) :idx (ngid gid sc) :dtype dtype)
+        do (insert-nodes graph (list new-step new-step-expr range-parent range-child))
+           (insert-nodes graph (graph-nodes range-size-graph)))
+  ;; 2. Create new FOR
+  (let ((next-write-to (car (node-writes (car bands)))))
+    ;; Insert Parents, and then children
+    (dolist (prefix (list sp sc))
+      (loop for band in bands
+            for idx = (car (node-reads band))
+            for range = (id->value graph idx)
+            for prev-body = (gensym "T")
+            for new-for = (make-node :Render :FOR (list next-write-to) (list (ngid idx prefix) prev-body)
+                                     :mark (getattr band :mark) :band (getattr band :band))
+            do (insert-nodes graph (list new-for))
+               (setf next-write-to prev-body)))
+    ;; Finally insert the body to next-write-to
+    (let* ((innermost (car (last bands)))
+           (body (copy-node (id->value graph (second (node-reads innermost))))))
+      (assert (= (length (node-writes body)) 1))
+      (setf (node-writes body) (copy-list (node-writes body))
+            (node-writes body) (list next-write-to))
+      (insert-nodes graph (list body))))
+  ;; 3. Replace the access to i -> i + ii
+  (loop for band in bands
+        for idx = (car (node-reads band))
+        for idx-new = (%add (ngid idx sp) (ngid idx sc) :id idx)
+        do (insert-nodes graph (list idx-new)))
+  ;; [TODO] Ensure the old grpah was purged from graph
+  (verify-graph graph)
   graph)
+;; tile series
+(defun ast-band-tile ())
+(defun ast-band-parallelize ()) ;; for collapse (band_depth)
+(defun ast-band-global ())
 
-(defun ast-parallelize ())
-(defun ast-shift ())
 (defun ast-vectorize ())
+(defun ast-upcast ())
+;; smem transfers
 (defun ast-grouptop ())
 (defun ast-group ())
+;; Microkernel Optimization
+(defun ast-microkernel ())
 ;;; OLD
 (defstruct AstGraph
   (graph (error "Graph must occur") :type Graph)
@@ -317,12 +383,13 @@ Constraints:
 
 (let ((g
         (with-blueprint ()
-          (%defun eladd ((%global 'a) (%global 'b))
+          (%defun 2d-elwise-add ((%global 'a) (%global 'b))
             (%dotimes (gid0 512 :mark :coincident :id tgt-loop)
               (%dotimes (gid1 512 :mark :coincident)
-                (let ((idx (%add gid0 gid1)))
+                (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
-  (%ast-tile-band g (id->value g 'tgt-loop) `(4 4))
+  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4))
+  ;; (%ast-band-global
   (print-ast g))
 
 (print-ast
@@ -397,3 +464,5 @@ Constraints:
 ;;   - ASTGraph -> RenderOps Listは確定, print-blueprint的な実装で再現できるはず
 ;;   - UNROLL/Vectorizeをどうやって実装するか？
 ;;     -> GID0が頂点，再起的にSubgraphを探索してGID0に関連するIDを+1する
+;;   - TODO: tensor-compute-schedule
+;;  - TODO: (NEG 1), (MUL 1, 4) simplification!
