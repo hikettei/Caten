@@ -103,7 +103,7 @@
     (labels ((explore (x &aux (node (id->value graph x)))
                (when (or (null node) (find x seen)) (return-from explore))
                (when (gethash x stop-at) (return-from explore))
-               (when (eql (node-type node) :RANGE) (return-from explore))
+               (when (member (node-type node) `(:RANGE :DEFINE-GLOBAL)) (return-from explore))
                (push x seen)
                (push node result)
                (mapc #'explore (node-reads node))))
