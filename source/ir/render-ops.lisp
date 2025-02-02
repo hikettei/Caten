@@ -94,6 +94,7 @@
     ;; [TODO] Make it working ...
     ;((:RANGE (1 1) :idx idx :dtype dtype) -> ((node graph) (with-context-nodes (out (%bind idx (%iconst 0 :dtype dtype))))))
     ;((:FOR ((Var (= 0) _) body)) -> (:PROGN (body)))
+    ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
 
 (defun ast-descendants-graph (graph outputs &key (seen) (result) (stop-at (make-hash-table)))
@@ -132,7 +133,7 @@
                (setf (node-writes out-node) (list name))
                (insert-nodes base-graph (list out-node)))))
     (mapc #'exprify (hash-table-keys sink-map)))
-  (reverse exprs))
+  exprs)
 
 (defun exprify-ast (graph &aux (seen nil))
   (declare (type FastGraph graph) (optimize (speed 3)) (type list seen))
