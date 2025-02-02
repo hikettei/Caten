@@ -101,24 +101,10 @@ Constraints:
     ;; If the size==1 -> remove the range
     ;; [TODO] Make it working ...
     ;; TODO: (RANGE (4 4)) is also removable
-    ((:RANGE (1 1) :idx idx :dtype dtype) -> ((node graph) (with-context-nodes (out (%bind idx (%iconst 0 :dtype dtype))))))
-    ((:FOR ((Var (= 0) _) body)) -> body)
+    ;((:RANGE (1 1) :idx idx :dtype dtype) -> ((node graph) (with-context-nodes (out (%bind idx (%iconst 0 :dtype dtype))))))
+    ;((:FOR ((Var (= 0) _) body)) -> body)
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
-
-(defun ast-fixup-loop-scope (graph &aux (seen))
-  "Push an arbitary op upward out of a loop if it does not depend on the loop."
-  (declare (type FastGraph graph))
-  (labels ((explore (id &optional gids &aux (node (id->value graph id)))
-             (when (or (null id) (find id seen)) (return-from explore))
-             (push id seen)
-             ;; Update gids for the next ops
-             (when (eql (node-type node) :FOR)
-               (let ((range (id->value graph (car (node-reads node)))))
-                 (assert (and range (eql (node-type range) :RANGE)))
-                 (setf gids (append gids (list (getattr range :idx))))))
-             (mapc #'(lambda (x) (explore x gids)) (node-reads node))))
-    (mapc #'explore (graph-outputs graph))))
 ;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-descendants-graph (graph outputs &key (seen) (result) (stop-at (make-hash-table)))
   (declare (type FastGraph graph) (type list outputs))
@@ -190,7 +176,7 @@ Constraints:
              (mapc #'explore (node-reads (id->value graph id)))))
     (mapc #'explore (graph-outputs graph)))
   graph)
-;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-verify-sequence (graph &aux (sorted (graph-nodes (->graph-with-tpsort graph))))
   "The function `ast-verify` sorts the order of PROGN(S1, S2, ..., Sn) based on the order of topological sorted graph."
   (declare (type FastGraph graph))
@@ -235,7 +221,7 @@ Constraints:
                          #'exprify-ast
                          #'(lambda (x) (verify-graph x) x)
                          #'ast-verify-sequence
-                         ;#'ast-maximize-band-depth
+                         #'ast-maximize-band-depth
                          #'(lambda (x) (print (->graph-with-tpsort x)) x)
                          )))
   "Simplifies the AST"

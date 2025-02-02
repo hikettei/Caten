@@ -561,7 +561,9 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                        (fmt "@~(~a~) for (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a" (getattr node :mark)
                             bind bind (e size) bind (e step)
                             (if (getattr node :is-empty) "/* empty */" "")))
-                     (r body)))
+                     (unless (eql (node-type (id->value graph body)) :PROGN) (incf indent 2))
+                     (r body)
+                     (unless (eql (node-type (id->value graph body)) :PROGN) (decf indent 2))))
                   (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
                   (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
                   (:Aref
