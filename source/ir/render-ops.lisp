@@ -252,7 +252,7 @@ Constraints:
   (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-verify-sequence)))
 
 ;; ~~ Scheduling  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands))
+(defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
   "Tiles the band:
 ```
 for (int i=0; i<M; i++) Instance(i)
@@ -315,6 +315,7 @@ for (int i=0; i<M; i+=32)
               for new-for = (make-node :Render :FOR (list next-write-to) (list (ngid idx prefix) prev-body)
                                        :mark (getattr band :mark) :band new-band)
               do (insert-nodes graph (list new-for))
+                 (if (eql prefix sp) (push new-for globals) (push new-for locals))
                  (setf next-write-to prev-body)))
       ;; Finally insert the body to next-write-to
       (let* ((innermost (car (last bands)))
@@ -330,14 +331,16 @@ for (int i=0; i<M; i+=32)
           do (insert-nodes graph (list idx-new)))
     ;; [TODO] Ensure the old grpah was purged from graph
     (verify-graph graph)
-    graph))
+    (values graph (nreverse globals) (nreverse locals))))
 ;;; OptOps (Tile Based)
-(defun ast-band-tile ())
-(defun ast-band-parallelize ()) ;; for collapse (band_depth)
+(defun ast-band-tile (graph band tile-sizes)
+  (%ast-band-tile graph band tile-sizes))
 (defun ast-band-global ())
 (defun ast-unroll ())
 (defun ast-vectorize ())
 (defun ast-upcast ())
+
+(defun ast-band-parallelize ()) ;; not an tile but uses the depth of band to mark for collapse(N)
 ;;; OptOps (Shared Memory Transfer)
 (defun ast-grouptop ())
 (defun ast-group ())
@@ -393,7 +396,6 @@ for (int i=0; i<M; i+=32)
 ;;  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4)) ;; [todo] ensure inserting a new global
   
   (simplify-ast g)
-  ;; (%ast-band-global
   (print-ast g))
 
 (print-ast
