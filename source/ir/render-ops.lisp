@@ -194,6 +194,7 @@
   (let ((g (funcall (apply #'compose opts) graph)))
     (verify-graph g)
     (print (->graph-with-tpsort g))
+    ;; [TODO] ^の情報から，SEQUENCEの時系列をSortする
     g))
 
 (defun print-ast (graph)
@@ -306,3 +307,5 @@
 ;;   - Insert Store Rewriting Rule!
 ;;   - in DAG
 ;;   - FIRST PRIORITY: 
+;;   - Render -> AST, Add RenderOps (Renderer will use this for simplicity, ast->render to translate this)
+;;   - Type Inferenceを実行した後，Scalar LoadをPropagateできる (TODO: 既存の実装で1とか2を直接読んでる箇所は修正すること)
