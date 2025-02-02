@@ -15,7 +15,13 @@
        graph)))
 ;; ~~ Interface ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
+  "
+Constraints:
+- SIZE/STEP is always an EXPR, that is, must not include an control flow.
+"
   (declare (type symbol bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
+  (when (node-p size) (setf size (%expr (node->id1 size))))
+  (when (node-p step) (setf body (%expr (node->id1 body))))
   (let ((range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step)) :idx bind :dtype dtype))))
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
@@ -90,12 +96,26 @@
     ((:FOR ((:Range (_ _)) (:FOR ((:RANGE (_ _)) _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:IF (_ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ;; If the size==1 -> remove the range
-    ;; TODO: (RANGE (4 4)) is also removable
     ;; [TODO] Make it working ...
-    ;((:RANGE (1 1) :idx idx :dtype dtype) -> ((node graph) (with-context-nodes (out (%bind idx (%iconst 0 :dtype dtype))))))
-    ;((:FOR ((Var (= 0) _) body)) -> (:PROGN (body)))
+    ;; TODO: (RANGE (4 4)) is also removable
+    ((:RANGE (1 1) :idx idx :dtype dtype) -> ((node graph) (with-context-nodes (out (%bind idx (%iconst 0 :dtype dtype))))))
+    ((:FOR ((Var (= 0) _) body)) -> body)
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
+
+(defun ast-fixup-loop-scope (graph &aux (seen))
+  "Push an arbitary op upward out of a loop if it does not depend on the loop."
+  (declare (type FastGraph graph))
+  (labels ((explore (id &optional gids &aux (node (id->value graph id)))
+             (when (or (null id) (find id seen)) (return-from explore))
+             (push id seen)
+             ;; Update gids for the next ops
+             (when (eql (node-type node) :FOR)
+               (let ((range (id->value graph (car (node-reads node)))))
+                 (assert (and range (eql (node-type range) :RANGE)))
+                 (setf gids (append gids (list (getattr range :idx))))))
+             (mapc #'(lambda (x) (explore x gids)) (node-reads node))))
+    (mapc #'explore (graph-outputs graph))))
 ;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-descendants-graph (graph outputs &key (seen) (result) (stop-at (make-hash-table)))
   (declare (type FastGraph graph) (type list outputs))
@@ -185,8 +205,7 @@
 
 (defsimplifier
     (ast-maximize-band-depth :speed 0)
-    ((:FOR 
-    
+    ((:FOR (range (:PROGN (body))) :mark mark) -> (:FOR (range body) :mark mark)))
 
 (defun ast-purge-realize (graph)
   "The first argument of MOVE in the EXPRBlock does not use the first argument and thus removed."
@@ -206,12 +225,14 @@
                        (opts
                         (list
                          #'fold-constant
-                         ;; #'minimize-duplicated-symbolic-path <- TODO: Implement AST-supported version of this to simplify the indexing
+                         ;;#'minimize-duplicated-symbolic-path;; <- TODO: Implement AST-supported version of this to simplify the indexing
+                         ;; ^ 共通項を見つけたらPROGNをInsertして配置するように？・・・
                          #'fuse-duplicated-store
                          #'simplify-control-flow
                          #'exprify-ast
                          #'(lambda (x) (verify-graph x) x)
                          #'ast-verify-sequence
+                         ;#'ast-maximize-band-depth
                          #'(lambda (x) (print (->graph-with-tpsort x)) x)
                          )))
   "Simplifies the AST"
@@ -234,7 +255,7 @@
 (defun ast-vectorize ())
 (defun ast-grouptop ())
 (defun ast-group ())
-
+;;; OLD
 (defstruct AstGraph
   (graph (error "Graph must occur") :type Graph)
   (node (error "Node must occur") :type Node))
@@ -317,6 +338,12 @@
 ;; Remove Fused Move using Pattern Mathcer, Exprify is located here!
 ;; graph-seen is always an argument of the function?
 ;; [TODO] Update Aref Renderer
+;; Workload
+;; - 1. GIDに依存しないOpはなるべく外に出す
+;; - 2. MaximizeBandを実装
+;; - 3. SIZE=1 --> Remove
+;; - 4. 
+
 ;; TODO
 ;; - FORのAllocate,Symbolic ARefのEXPR?
 ;; - RenderOpsしかないことを保証
@@ -336,3 +363,4 @@
 ;;   - Type Inferenceを実行した後，Scalar LoadをPropagateできる (TODO: 既存の実装で1とか2を直接読んでる箇所は修正すること)
 ;;   - まず時系列問題を修正する，その次に謎のeを直す
 ;;   - First, play w/ manual scheduler and reimplement gemm scheduling example.
+;;   - EXPR Purge
