@@ -208,8 +208,10 @@ Constraints:
    graph)
   (flet ((maybe-new (x y) (or (gethash x gid2band) (gethash y gid2band) (intern (format nil "B~a" (incf count)) "KEYWORD"))))
     (loop for (r1 . r2) in bands
-          do (setf (gethash r1 gid2band) (maybe-new r1 r2) (gethash r2 gid2band) (maybe-new r1 r2))))
-  (maphash #'(lambda (k v) (format t "~a -> ~a~%" k v)) gid2band)
+          do (setf (gethash r1 gid2band) (maybe-new r1 r2) (gethash r2 gid2band) (maybe-new r1 r2)))
+    (dolist (node (graph-nodes graph))
+      (when (eql (node-type node) :RANGE)
+        (setf (getattr node :band) (maybe-new (getattr node :idx) (getattr node :idx))))))
   graph)
 
 (defun ast-purge-realize (graph)
