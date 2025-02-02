@@ -299,4 +299,6 @@
 ;;   - Assign/Reduction
 ;;   - Allocate+Load
 ;;   - Store after reduction
+;;   - Insert Store Rewriting Rule!
 ;;   - in DAG
+;;   - FIRST PRIORITY: 
