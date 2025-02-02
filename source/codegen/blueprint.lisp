@@ -420,30 +420,31 @@ Depends=~a Reduce=~a Users=~a
 
 (defun make-index-components (node gids)
   (assert (eql (node-type node) :INDEX-COMPONENTS))
-  (labels ((from-expr (shapes components)
-             (reduce
-              #'expr-add
-              (map
-               'list
-               #'(lambda (size stride gid)
-                   (if (expr-equal-to size 1)
-                       0
-                       (expr-mul stride gid)))
-               shapes
-               components
-               gids)))
-           (merge-stride (proc list)
-             (loop for p in proc
-                   collect
-                   (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
-                     (if (find 0 strides :test #'eql) 0 (car (last strides)))))))
-    (let* ((is (car (relay-write-iters (read-type-relay node))))
-           (proc (iteration-space-procedure is))
-           (components (merge-stride proc (cdr (node-reads node)))))
-      (let ((e (from-expr (iteration-space-shape is) components)))
-        (setf (node-writes (expr-out e)) (node-writes node)
-              (graph-outputs (expr-graph e)) (node-writes node))
-        e))))
+  (flet ((maybe-expr-const (x) (if (numberp x) (expr-const x :int64) x)))
+    (labels ((from-expr (shapes components)
+               (reduce
+                #'expr-add
+                (map
+                 'list
+                 #'(lambda (size stride gid)
+                     (if (expr-equal-to size 1)
+                         (expr-const 0 :int64)
+                         (expr-mul (maybe-expr-const stride) (maybe-expr-const gid))))
+                 shapes
+                 components
+                 gids)))
+             (merge-stride (proc list)
+               (loop for p in proc
+                     collect
+                     (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
+                       (if (find 0 strides :test #'eql) (expr-const 0 :int64) (maybe-expr-const (car (last strides))))))))
+      (let* ((is (car (relay-write-iters (read-type-relay node))))
+             (proc (iteration-space-procedure is))
+             (components (merge-stride proc (cdr (node-reads node)))))
+        (let ((e (from-expr (iteration-space-shape is) components)))
+          (setf (node-writes (expr-out e)) (node-writes node)
+                (graph-outputs (expr-graph e)) (node-writes node))
+        e)))))
 
 (defun astify-blueprint (node bp gids &aux (caten/codegen/expr::*expr-no-simplify-mode* t))
   (declare (type list bp))

@@ -273,14 +273,15 @@ gids corresponds for the loop idx in the kernel.
         (stride (iteration-space-strides is))
         (view (iteration-space-views is)))
     (assert (= (length gids) (length size)) () "The iteration space and the buffer should have the same rank, getting gids=~a~%~a" gids is)
-    (loop for s in stride
-          for nth upfrom 0
-          for i in gids
-          for v = (nth nth view)
-          if v
-            collect (expr-mul s (expr-add (car v) (expr-mul (third v) i)))
-          else
-            collect (expr-mul i s))))
+    (flet ((maybe-expr-const (x) (if (numberp x) (expr-const x :int64) x)))
+      (loop for s in stride
+            for nth upfrom 0
+            for i in gids
+            for v = (nth nth view)
+            if v
+              collect (expr-mul (maybe-expr-const s) (expr-add (maybe-expr-const (car v)) (expr-mul (maybe-expr-const (third v)) (maybe-expr-const i))))
+            else
+              collect (expr-mul (maybe-expr-const i) (maybe-expr-const s))))))
 
 (defmethod iteration-space-sync-broadcast ((is Iteration-Space))
   (setf (iteration-space-views is)

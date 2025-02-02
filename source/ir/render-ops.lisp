@@ -167,7 +167,7 @@
              (mapc #'explore (node-reads (id->value graph id)))))
     (mapc #'explore (graph-outputs graph)))
   graph)
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-verify-sequence (graph &aux (sorted (graph-nodes (->graph-with-tpsort graph))))
   "The function `ast-verify` sorts the order of PROGN(S1, S2, ..., Sn) based on the order of topological sorted graph."
   (declare (type FastGraph graph))
@@ -183,6 +183,11 @@
             do (helper node))
     graph))
 
+(defsimplifier
+    (ast-maximize-band-depth :speed 0)
+    ((:FOR 
+    
+
 (defun ast-purge-realize (graph)
   "The first argument of MOVE in the EXPRBlock does not use the first argument and thus removed."
   ;; 1. Search for EXPR
@@ -195,7 +200,7 @@
   "Resolves the storage-id to satisfy the reduction/assign relations"
   
   )
-
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun simplify-ast (graph
                      &key
                        (opts
@@ -209,18 +214,12 @@
                          #'ast-verify-sequence
                          #'(lambda (x) (print (->graph-with-tpsort x)) x)
                          )))
+  "Simplifies the AST"
   (declare (type graph graph))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   (funcall (apply #'compose (reverse opts)) graph))
-;; OLD
-(defun print-ast (graph)
-  (pprint-graph graph)
-  ;(caten/air:->dot graph :pathname "/tmp/graph.dot")
-  (viz-ast graph))
-;; [TODO] Decompose 3 -> 1 + 1 + 1 and optimize the indexing?
-(defun viz-ast (graph) (uiop:symbol-call :caten/codegen/blueprint :print-blueprint graph t))
-;; ~~ Optimizations ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun apply-tile (graph b1 b2)
+;; ~~ Scheduling  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun apply-tile (graph idx1 idx2)
   ;; Rewrite IDX -> ...
   ;; TODO: Prognと同じ理由でFailしない？
 ;  (funcall
@@ -239,7 +238,13 @@
 (defstruct AstGraph
   (graph (error "Graph must occur") :type Graph)
   (node (error "Node must occur") :type Node))
-
+;; OLD
+(defun print-ast (graph)
+  (pprint-graph graph)
+  ;(caten/air:->dot graph :pathname "/tmp/graph.dot")
+  (viz-ast graph))
+;; [TODO] Decompose 3 -> 1 + 1 + 1 and optimize the indexing?
+(defun viz-ast (graph) (uiop:symbol-call :caten/codegen/blueprint :print-blueprint graph t))
 ;; todo
 (defstruct CatenFunction (blueprint))
 ;; [TODO] OpFusion
@@ -283,6 +288,10 @@
           (%aref 'x '_gid1))))
        
        )))))
+;; TODO: %defun -> macro
+;; (get-caten-function 'smth) ==> CatenFunction
+;; ^ (opt f scheduling) --> Scheduling Transformation
+;; Finally (render-ast ast renderer)
 ;; ^ これ使ってOP定義できるようにする(AOT)
 ;; [TODO]
 ;; - OpFusion
@@ -326,3 +335,4 @@
 ;;   - Render -> AST, Add RenderOps (Renderer will use this for simplicity, ast->render to translate this)
 ;;   - Type Inferenceを実行した後，Scalar LoadをPropagateできる (TODO: 既存の実装で1とか2を直接読んでる箇所は修正すること)
 ;;   - まず時系列問題を修正する，その次に謎のeを直す
+;;   - First, play w/ manual scheduler and reimplement gemm scheduling example.
