@@ -248,27 +248,17 @@ Constraints:
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
   (funcall (apply #'compose (reverse opts)) graph))
 ;; ~~ Scheduling  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") &aux (bands))
+(defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands))
   "Tiles the band:
 ```
 for (int i=0; i<M; i++) Instance(i)
 ```
 ===>
 ```
-;; (i start indexing)
-for (int i=0; i<M; i+=32)
-  for (int ii=i; ii<min(M, i+32); ii++)
-    Instance(ii)
-;; (zero start indexing)
 for (int i=0; i<M; i+=32)
   for (int ii=0; ii<min(M - i, 32); ii++)
     Instance(i + ii)
-```
-
-RANGE BODY
-   \   /
-    FOR
-"
+```"
   (declare (type FastGraph graph) (type node band) (type list tile-sizes))
   (assert (eql (node-type band) :FOR) () "%ast-tile-band: band must be :FOR, getting ~a" band)
   (assert (>= (length tile-sizes) 1) () "TileSizes must be larger than 1.")
@@ -308,8 +298,9 @@ RANGE BODY
             for idx = (car (node-reads band))
             for range = (id->value graph idx)
             for prev-body = (gensym "T")
+            for new-band = (if (equal prefix sp) (getattr band :band) (ngid (getattr band :band) cid))
             for new-for = (make-node :Render :FOR (list next-write-to) (list (ngid idx prefix) prev-body)
-                                     :mark (getattr band :mark) :band (getattr band :band))
+                                     :mark (getattr band :mark) :band new-band)
             do (insert-nodes graph (list new-for))
                (setf next-write-to prev-body)))
     ;; Finally insert the body to next-write-to
@@ -388,7 +379,8 @@ RANGE BODY
               (%dotimes (gid1 512 :mark :coincident)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
-  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4))
+  (%ast-band-tile g (id->value g 'tgt-loop) `(16 8))
+  (%ast-band-tile g (id->value g 'tgt-loop) `(16 8))
   ;; (%ast-band-global
   (print-ast g))
 
@@ -466,3 +458,4 @@ RANGE BODY
 ;;     -> GID0が頂点，再起的にSubgraphを探索してGID0に関連するIDを+1する
 ;;   - TODO: tensor-compute-schedule
 ;;  - TODO: (NEG 1), (MUL 1, 4) simplification!
+;;  - Remove away MAX
