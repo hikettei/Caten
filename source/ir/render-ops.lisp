@@ -13,7 +13,7 @@
      (let ((graph (->fast-graph *ctx*)))
        (unless ,noopt (setf graph (simplify-ast graph)))
        graph)))
-;; ~~ Control Flows ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Interface ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
   (declare (type symbol bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
   (let ((range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step)) :idx bind :dtype dtype))))
@@ -53,7 +53,7 @@
 
 (defmacro %defun (name (&rest args) &body body)
   `(%function ',name (list ,@args) (%progn ,@body)))
-;; ~~ AST Simplification ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun Empty! (node)
   (assert (typep (node-attr node) 'RenderOps))
   (let ((node (copy-node node)))
@@ -96,7 +96,7 @@
     ;((:FOR ((Var (= 0) _) body)) -> (:PROGN (body)))
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
-
+;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-descendants-graph (graph outputs &key (seen) (result) (stop-at (make-hash-table)))
   (declare (type FastGraph graph) (type list outputs))
   (let ((out-ids (remove-duplicates (apply #'append (map 'list #'node-writes outputs)))))
@@ -167,6 +167,21 @@
              (mapc #'explore (node-reads (id->value graph id)))))
     (mapc #'explore (graph-outputs graph)))
   graph)
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defun ast-verify-sequence (graph &aux (sorted (graph-nodes (->graph-with-tpsort graph))))
+  "The function `ast-verify` sorts the order of PROGN(S1, S2, ..., Sn) based on the order of topological sorted graph."
+  (declare (type FastGraph graph))
+  (flet ((helper (node)
+           ;; The younger the latter
+           (let* ((field (map 'list #'(lambda (x) (id->value graph x)) (node-reads node)))
+                  (field-positions (map 'list #'(lambda (x) (position (node-id x) sorted :key #'node-id)) field))
+                  (pairs (map 'list #'cons field field-positions)))
+             (assert (every #'identity field) () "ast-verify-sequence: There is an undefined progn field: ~a" field)
+             (setf (node-reads node) (map 'list (compose #'car #'node-writes #'car) (sort pairs #'< :key #'cdr))))))
+    (loop for node in (graph-nodes graph)
+          when (eql (node-type node) :PROGN)
+            do (helper node))
+    graph))
 
 (defun ast-purge-realize (graph)
   "The first argument of MOVE in the EXPRBlock does not use the first argument and thus removed."
@@ -185,18 +200,17 @@
                      &key
                        (opts
                         (list
-                         #'exprify-ast
+                         #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0))
                          #'simplify-control-flow
-                         #'(lambda (x) (optimize-aasm x :heavy-opt-threshold 0)))))
+                         #'exprify-ast
+                         #'(lambda (x) (verify-graph x) x)
+                         #'ast-verify-sequence
+                         #'(lambda (x) (print (->graph-with-tpsort x)) x)
+                         )))
   (declare (type graph graph))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
-  ;; e.g.: relocate allocate on the top
-  (let ((g (funcall (apply #'compose opts) graph)))
-    (verify-graph g)
-    (print (->graph-with-tpsort g))
-    ;; [TODO] ^の情報から，SEQUENCEの時系列をSortする
-    g))
-
+  (funcall (apply #'compose (reverse opts)) graph))
+;; OLD
 (defun print-ast (graph)
   (pprint-graph graph)
   ;(caten/air:->dot graph :pathname "/tmp/graph.dot")
@@ -309,3 +323,4 @@
 ;;   - FIRST PRIORITY: 
 ;;   - Render -> AST, Add RenderOps (Renderer will use this for simplicity, ast->render to translate this)
 ;;   - Type Inferenceを実行した後，Scalar LoadをPropagateできる (TODO: 既存の実装で1とか2を直接読んでる箇所は修正すること)
+;;   - まず時系列問題を修正する，その次に謎のeを直す

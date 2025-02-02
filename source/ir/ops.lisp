@@ -350,6 +350,7 @@ ID <- IF(CONDITION, THEN)
 ```
 ID <- PROGN(S1, S2, ..., Sn)
 ```
+The equivalent to schedule-node-sequence
 "
          :slots nil)
 
