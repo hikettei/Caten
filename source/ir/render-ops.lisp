@@ -2,7 +2,7 @@
 ;;;; This file includes the following features which is required to generate the optimized code.
 ;;;; - ASTGraph Creation
 ;;;; - ASTGraph Simplification
-;;;; - ASTGraph Optimization (e.g.: Tile range)
+;;;; - ASTGraph Optimization (e.g.: Tile, Unroll, Microkernel, etc)
 (in-package :caten/ir)
 
 (defmacro with-blueprint ((&key (noopt nil)) &body body)
@@ -63,7 +63,7 @@ Constraints:
 
 (defmacro %defun (name (&rest args) &body body)
   `(%function ',name (list ,@args) (%progn ,@body)))
-;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun Empty! (node)
   (assert (typep (node-attr node) 'RenderOps))
   (let ((node (copy-node node)))
@@ -105,7 +105,7 @@ Constraints:
     ;((:FOR ((Var (= 0) _) body)) -> body)
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
-;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-descendants-graph (graph outputs &key (seen) (result) (stop-at (make-hash-table)))
   (declare (type FastGraph graph) (type list outputs))
   (let ((out-ids (remove-duplicates (apply #'append (map 'list #'node-writes outputs)))))
@@ -331,22 +331,19 @@ for (int i=0; i<M; i+=32)
     ;; [TODO] Ensure the old grpah was purged from graph
     (verify-graph graph)
     graph))
-;; tile series
+;;; OptOps (Tile Based)
 (defun ast-band-tile ())
 (defun ast-band-parallelize ()) ;; for collapse (band_depth)
 (defun ast-band-global ())
-
+(defun ast-unroll ())
 (defun ast-vectorize ())
 (defun ast-upcast ())
-;; smem transfers
+;;; OptOps (Shared Memory Transfer)
 (defun ast-grouptop ())
 (defun ast-group ())
-;; Microkernel Optimization
+;;; OptOps (MicroKernel)
 (defun ast-microkernel ())
-;;; OLD
-(defstruct AstGraph
-  (graph (error "Graph must occur") :type Graph)
-  (node (error "Node must occur") :type Node))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; OLD
 (defun print-ast (graph)
   (pprint-graph graph)
@@ -392,8 +389,8 @@ for (int i=0; i<M; i+=32)
               (%dotimes (gid1 512 :mark :coincident)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
-  (%ast-band-tile g (id->value g 'tgt-loop) `(64 32))
   (%ast-band-tile g (id->value g 'tgt-loop) `(4 4))
+;;  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4)) ;; [todo] ensure inserting a new global
   
   (simplify-ast g)
   ;; (%ast-band-global
