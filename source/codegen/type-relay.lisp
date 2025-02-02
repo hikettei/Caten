@@ -278,7 +278,7 @@ gids corresponds for the loop idx in the kernel.
           for i in gids
           for v = (nth nth view)
           if v
-            collect (expr-mul s (expr-add (expr-const (car v) :int64) (expr-mul (expr-const (third v) :int64) (expr-const i :int64))))
+            collect (expr-mul s (expr-add (car v) (expr-mul (third v) i)))
           else
             collect (expr-mul i s))))
 

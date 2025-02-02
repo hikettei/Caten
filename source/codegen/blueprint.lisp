@@ -427,7 +427,7 @@ Depends=~a Reduce=~a Users=~a
                'list
                #'(lambda (size stride gid)
                    (if (expr-equal-to size 1)
-                       (expr-const 0 :int64)
+                       0
                        (expr-mul stride gid)))
                shapes
                components
@@ -540,7 +540,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                   (:EXPR
                    (let ((renderer (make-instance 'Default-Renderer :graph graph)))
                      (fmt "~a = ~a;" (car (node-writes node)) (render-node renderer (car (node-reads node))))))
-                  (:DEFINE-GLOBAL (fmt "defglobal ~a;" (car (node-writes node))))
+                  (:DEFINE-GLOBAL); (fmt "defglobal ~a;" (car (node-writes node))))
                   (:RANGE (fmt "~(~a~) = ~(~a~); // RANGE" (car (node-writes node)) (getattr node :idx)))
                   (:FOR
                    (multiple-value-bind (range body) (apply #'values (node-reads node))
