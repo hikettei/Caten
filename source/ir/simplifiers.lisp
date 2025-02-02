@@ -31,7 +31,10 @@
   `(or
     (<Rule> :Load ((:Allocate () :nrank 0 :dtype ,dtype)) :value ,x)
     ,@(when (equal x `(= 0))
-        `((<Rule> :Allocate () :nrank 0 :dtype ,dtype)))))
+        `((<Rule> :Allocate () :nrank 0 :dtype ,dtype)))
+    ;; Equivalent to `(= NUMBER), place the x directly. so that simplifier can recognise both of MUL(1, X) and MUL(LOAD(ALLOC(), 1), X)
+    ,@(when (and (listp x) (eql '= (first x)) (numberp (second x)))
+        `(,x))))
 
 (defun Const (x dtype) (with-context-nodes (_ (%load (%salloc :dtype dtype) x))))
 (defpattern Bool (x) `(<Rule> :Load ((:Allocate () :nrank 0 :dtype :bool)) :value (boolean ,x)))
