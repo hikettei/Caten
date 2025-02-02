@@ -198,20 +198,21 @@ Constraints:
        ()
        ((:FOR (range (:PROGN (body))) :mark mark) -> (:FOR (range body) :mark mark))
        ;; Found a sequence of band which is independent each other ==> fuse the band!
-       ((:FOR ((:RANGE (_ _) :idx r1) (:FOR ((:RANGE (_ _) :idx r2) _) :mark m1)) :mark m2)
+       ((:FOR ((:RANGE (_ _) :idx r1) (:FOR ((:RANGE (_ _) :idx r2) _) :mark (eql :coincident))) :mark (eql :coincident))
         ->
         ((node graph)
          ;; [TODO] This implementation can recognise an innermost loop band fusion?
-         (when (and (eql m1 m2) (null (find (cons r1 r2) bands :test #'equal)))
+         (when (null (find (cons r1 r2) bands :test #'equal))
            (push (cons r1 r2) bands)
            (list node)))))
    graph)
   (flet ((maybe-new (x y) (or (gethash x gid2band) (gethash y gid2band) (intern (format nil "B~a" (incf count)) "KEYWORD"))))
     (loop for (r1 . r2) in bands
           do (setf (gethash r1 gid2band) (maybe-new r1 r2) (gethash r2 gid2band) (maybe-new r1 r2)))
-    (dolist (node (graph-nodes graph))
-      (when (eql (node-type node) :RANGE)
-        (setf (getattr node :band) (maybe-new (getattr node :idx) (getattr node :idx))))))
+    (loop for node in (graph-nodes graph)
+          for range = (id->value graph (car (node-reads node)))
+          if (and node range (eql (node-type node) :FOR) (eql (node-type range) :RANGE) (eql :coincident (getattr node :mark))) do
+            (setf (getattr node :band) (maybe-new (getattr range :idx) (getattr range :idx))))) 
   graph)
 
 (defun ast-purge-realize (graph)

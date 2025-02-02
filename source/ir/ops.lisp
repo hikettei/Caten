@@ -327,7 +327,7 @@ Mark could be one of:
 - noopt      (which means the loop is not optimized)
 ```
 "
-         :slots ((idx) (dtype) (band)))
+         :slots ((idx) (dtype)))
 
 (defnode (:Render :FOR) (RenderOps)
          "
@@ -335,7 +335,8 @@ Mark could be one of:
 ID <- FOR(RANGE, BODY)
 ```
 "
-         :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)))
+         :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)
+                 (band :initform nil)))
 
 (defnode (:Render :IF) (RenderOps)
          "
