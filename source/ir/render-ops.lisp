@@ -29,7 +29,11 @@ Constraints:
   `(%range ',bind ,size (%progn ,@body) :mark ,mark))
 
 (defun %if (condition body &key (out (gensym "IF")))
+  "
+Constraints:
+- condition is always an EXPR, that is, must not include an control flow."
   (declare (type (or symbol node) condition body) (type symbol out))
+  (when (node-p condition) (setf condition (%expr (node->id1 condition))))
   (emit (make-node :Render :IF (list out) (map 'list #'node->id1 (list condition body)))))
 
 (defun %when (condition body &key (out (gensym "IF"))) (%if condition body :out out))
@@ -84,12 +88,11 @@ Constraints:
                                append (node-reads arg-new)
                              else if (null (empty-p arg-new))
                                     collect arg)))))))
-    ((:IF (cond1 (:IF (cond2 body))))
+    ((:IF ((:EXPR (cond1)) (:IF ((:EXPR (cond2)) body))))
      ->
      ((node graph)
       (with-context-nodes
-        (new-cond (%and cond1 cond2))
-        (out (%if new-cond body :out (car (node-writes node)))))))
+        (out (%if (%and cond1 cond2) body :out (car (node-writes node)))))))
     ;; Removing Empty IF/Range
     ((:FOR ((:Range (_ _)) (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
@@ -288,7 +291,7 @@ Constraints:
          (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0)))
                (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst 'gid0))))
            (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-                  (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
+                  (%when (%< nil :row (%iconst 'gid1) (%add (%iconst 'm) (%iconst 'n)))
                          (%progn
                           (%add (%aref 'a (%iconst 0)) (%aref 'b idx2))
                           (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))

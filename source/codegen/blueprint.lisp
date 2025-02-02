@@ -570,8 +570,9 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                      (fmt "~(~a~) = ~(~a~)[~(~a~)];" (car (node-writes node)) name idx)))
                   (:IF
                    (multiple-value-bind (cond body) (apply #'values (node-reads node))
-                     (r cond)
-                     (fmt "if (~(~a~)) {" cond)
+                     (setf cond (id->value graph cond))
+                     (assert (and cond (eql (node-type cond) :EXPR)) () "IF: the conditon must be EXPR.")
+                     (fmt "if (~(~a~)) {" (e (car (node-reads cond))))
                      (incf indent 2) (r body) (decf indent)
                      (fmt "}")))
                   (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))            
