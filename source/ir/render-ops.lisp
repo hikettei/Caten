@@ -282,7 +282,10 @@ for (int i=0; i<M; i+=32)
   (flet ((g (obj)
            (if (numberp obj)
                (%iconst obj :dtype :int64)
-               obj)))
+               (let ((val (id->value graph obj)))
+                 (if (and val (eql (node-type val) :EXPR))
+                     (car (node-reads val))
+                     obj)))))
     ;; 1. Create (and supercede w/) new tiled range.
     (loop for band in bands
           for tile-size in tile-sizes
@@ -389,7 +392,9 @@ for (int i=0; i<M; i+=32)
               (%dotimes (gid1 512 :mark :coincident)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
-  (%ast-band-tile g (id->value g 'tgt-loop) `(16 8))
+  (%ast-band-tile g (id->value g 'tgt-loop) `(64 32))
+  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4))
+  
   (simplify-ast g)
   ;; (%ast-band-global
   (print-ast g))
