@@ -61,6 +61,10 @@ Constraints:
 
 (defun %expr (name &key (out (gensym "EXPR"))) (emit (make-node :Render :EXPR (list out) (list name))))
 
+(defun %setf (tgt value &key (out (gensym "SETF")))
+  (declare (type (or symbol node) tgt value))
+  (emit (make-node :Render :SETF (list out) (map 'list #'node->id1 (list tgt value)))))
+
 (defmacro %defun (name (&rest args) &body body)
   `(%function ',name (list ,@args) (%progn ,@body)))
 ;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -153,7 +157,7 @@ Constraints:
   (declare (type FastGraph graph) (optimize (speed 3)) (type list seen))
   "Groups multiple strongly connected ops into a single Expr. Expr and Expr are also mergeable."
   ;; Find sink points
-  (labels ((render-p (node) (and (eql (node-class node) :Render) (null (find (node-type node) `(:EXPR :Aref :DEFINE-GLOBAL)))))
+  (labels ((render-p (node) (and (eql (node-class node) :Render) (null (find (node-type node) `(:EXPR :Aref :DEFINE-GLOBAL :SETF)))))
            (sort-progn-body (parents &aux (dg (ast-descendants-graph graph parents)) (m (ast-make-sink-map dg)))
              ;; The descendant of parents is asseted not to have RenderOps.
              (assert (null (some #'render-p (graph-nodes dg))))
@@ -473,7 +477,7 @@ for (int i=0; i<M; i+=32)
             (%dotimes (gid0 512 :mark :coincident :id tgt-loop)
               (%dotimes (gid1 512 :mark :coincident)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
-                  (%add (%aref 'a idx) (%aref 'b idx)))))))))
+                  (%setf (%aref 'a idx) (%add (%aref 'a idx) (%aref 'b idx))))))))))
 ;  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
   (%ast-band-tile g (id->value g 'tgt-loop) `(3 3)) ;; [todo] ensure inserting a new global
   (simplify-ast g)
@@ -558,3 +562,12 @@ for (int i=0; i<M; i+=32)
 
 ;; - Assign/Reduction Type Inference which is more smarter and clearner
 ;; - Buffer
+
+;; 1. EXPR(SETF ...) === Storeとする。
+;; 2. id->value
+
+;; Finish Valid Codegen workload
+;; - Loweringする時，gidをstackに保存する (store)
+;; - EXPR_STOREのRenderer
+;; - EXPRifyのBug?
+;; - Memory Planner

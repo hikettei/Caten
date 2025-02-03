@@ -446,16 +446,17 @@ Depends=~a Reduce=~a Users=~a
                 (graph-outputs (expr-graph e)) (node-writes node))
         e)))))
 
-(defun astify-blueprint (node bp gids &aux (caten/ir/expr::*expr-no-simplify-mode* t))
+(defun astify-blueprint (schedule-item bp gids &aux (caten/ir/expr::*expr-no-simplify-mode* t))
   (declare (type list bp))
   (with-blueprint ()
-    (dolist (n (node-reads node))
+    (dolist (n (node-reads schedule-item))
       (caten/ir::%global n))
     (labels ((sendexpr (expr)
                (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                (expr-out expr))
              (lower-item (node)
                (let ((node (copy-node node)))
+                 (assert (= (length (node-writes node)) 1) () "Cannot lower the node ~a with multiple writes." node)
                  ;; [TODO] Lower aref as well
                  (loop for buffer in (relay-reads (read-type-relay node))
                        for ri in (relay-read-iters (read-type-relay node))
@@ -464,6 +465,37 @@ Depends=~a Reduce=~a Users=~a
                        if (and buffer (> (buffer-nrank buffer) 0)) do
                          (let ((aref (emit (%aref name (sendexpr (reduce #'expr-add (iteration-space-expr-aref ri buffer gids)))))))
                            (setf (nth nth (node-reads node)) (car (node-writes aref)))))
+                 ;; Insert %setf if the node is reduction.
+                 (when (getattr node :reduction :allow-undefined t)
+                   (assert (not (find (car (node-writes node)) (node-writes schedule-item))) () "The reduction node ~a cannot be an output of the schedule-item." node)
+                   (let* ((type (read-type-relay node))
+                          (aref (if (> (buffer-nrank (car (relay-reads type))) 0)
+                                    (emit
+                                     (%aref
+                                      (car (node-reads node))
+                                      (sendexpr (reduce #'expr-add (iteration-space-expr-aref (car (relay-read-iters type)) (car (relay-reads type)) gids)))))
+                                    (car (node-reads node))))
+                          (id (car (node-writes node))))
+                     (setf (getattr node :_type_relay) nil)
+                     (setf (node-writes node) (list (gensym "TMP")))
+                     (return-from lower-item (emit (%setf aref (emit node) :out id)))))
+                 ;; Also insert %setf if the node is an output of the schedule-item.
+                 (when (find (car (node-writes node)) (node-writes schedule-item))
+                   (assert (null (getattr node :reduction :allow-undefined t)) () "The node ~a cannot be a reduction node." node)
+                   (let* ((type (read-type-relay node))
+                          (aref (if (> (buffer-nrank (car (relay-writes type))) 0)
+                                    (emit
+                                     (%aref
+                                      (car (node-writes node))
+                                      ;; [TODO] GIDS --> LoopSizeをTraceしてStackする必要がある。 or any way to avoid this????
+                                      (sendexpr (reduce #'expr-add (iteration-space-expr-aref (car (relay-write-iters type)) (car (relay-writes type)) gids)))))
+                                    ;; [TODO] (%aref x 0) ?
+                                    (car (node-writes node)))))
+                     (setf (getattr node :_type_relay) nil)
+                     ;; Note: %setf aref is the end of node.
+                     (return-from lower-item (emit (%setf aref (emit node))))))
+                 ;; Otherwise emit the node
+                 ;; [TODO] Set declare-type?
                  (setf (getattr node :_type_relay) nil)
                  (emit node)))
              (explore (rest-items)

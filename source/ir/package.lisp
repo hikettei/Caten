@@ -70,8 +70,10 @@
   ;; from simplifier.lisp
   (:export #:optimize-aasm #:minimize-duplicated-symbolic-path #:fold-constant)
   ;; from render-ops.lisp
-  ;; Graph Creations
-  (:export #:with-blueprint #:%range #:%progn #:%aref)
+  ;; AST
+  (:export #:with-blueprint)
+  ;; ASTOps
+  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defun)
   ;; Optimization Ops
   
   )
