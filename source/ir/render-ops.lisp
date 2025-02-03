@@ -424,7 +424,7 @@ for (int i=0; i<M; i+=32)
 ;;; OptOps (MicroKernel)
 (defun ast-microkernel ())
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; OLD
+;; debug
 (defun print-ast (graph)
   (pprint-graph graph)
   ;(caten/air:->dot graph :pathname "/tmp/graph.dot")
@@ -469,11 +469,10 @@ for (int i=0; i<M; i+=32)
               (%dotimes (gid1 512 :mark :coincident)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
-;;  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
-  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4)) ;; [todo] ensure inserting a new global
+;  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
+  (%ast-band-tile g (id->value g 'tgt-loop) `(3 3)) ;; [todo] ensure inserting a new global
   (simplify-ast g)
   (print-ast g))
-
 
 (print-ast
  (with-blueprint ()
@@ -549,3 +548,5 @@ for (int i=0; i<M; i+=32)
 ;;  - TODO: (NEG 1), (MUL 1, 4) simplification!
 ;;  - Remove away MAX (TODO) from tiled schedule
 ;;  - Args関連の機能を安定化させたい
+;;  [Note] UNROLLが一つのBandのみで時系列確定できる？とする
+;; - Codegenを先に実装か？・・・
