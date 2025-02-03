@@ -397,22 +397,30 @@ for (int i=0; i<M; i+=32)
                       (out
                        (%bind
                         (car (node-writes grid-band))
-                        (%if (%< nil :row (%add (car (node-writes range)) (car (node-writes (id->value graph (car (node-reads block-band)))))) (reveal-expr (car (node-reads band-size))))
-                             body))))))
+                        (%if (%< nil :row (%add (car (node-writes range)) (car (node-writes (id->value graph (car (node-reads block-band)))))) (reveal-expr (car (node-reads band-size)))) body))))))
         (verify-graph graph)
         graph))))
 
-(defun ast-unroll ()
+(defun ast-band-unroll (graph band local-sizes)
+  (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band local-sizes)
+    ;; The work here is to remove away local-bands
+    ;; also inserting reminder bands in the gloal-bands
+    
+    )
   ;; [TODO] Insert Reminder Statements
+  ;; [TODO] How to determine the unrolled variable index? it depends on time-series dependencies
   )
 
-(defun ast-vectorize ())
-(defun ast-upcast ())
+(defun ast-vectorize ()) ;; reuse unroll
+(defun ast-upcast ()) ;; reuse unroll
 
-(defun ast-band-parallelize ()) ;; Not an tile but uses the depth of band to mark for collapse(N)
+(defun ast-band-parallelize ()) ;; Not an tile but uses the depth of band to mark for collapse(N), reuse tile
 ;;; OptOps (Shared Memory Transfer)
-(defun ast-grouptop ())
-(defun ast-group ())
+(defun ast-group (graph band)
+  ;; band == reduction
+  )
+(defun ast-grouptop (graph band))
+
 ;;; OptOps (MicroKernel)
 (defun ast-microkernel ())
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -461,8 +469,8 @@ for (int i=0; i<M; i+=32)
               (%dotimes (gid1 512 :mark :coincident)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
-  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(8 8))
-;;  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4)) ;; [todo] ensure inserting a new global
+;;  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
+  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4)) ;; [todo] ensure inserting a new global
   (simplify-ast g)
   (print-ast g))
 
