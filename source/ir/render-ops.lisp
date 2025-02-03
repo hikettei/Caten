@@ -337,29 +337,60 @@ for (int i=0; i<M; i+=32)
   "Tiles the given band with tile-sizes."
   (%ast-band-tile graph band tile-sizes))
 
-(defun %gid (rank range &key (dtype :int64) (id (gensym "G")))
-  (emit (make-node :JIT :SPACE (list id) (list ) :level :block :rank rank :dtype dtype :size size)))
+(defun %gid (rank graph range local-size &key (dtype :int64) (id (gensym "G")))
+  (let* ((loop-size
+           (if (numberp (car (node-reads range)))
+               (caten/ir/expr:expr-const (car (node-reads range)) :float32)
+               (let ((expr (id->value graph (car (node-reads range)))))
+                 (assert (and expr (eql (node-type expr) :EXPR)) () "%gid: The parent for Range must be fixnum or EXPR.")
+                 (caten/ir/expr:make-expr
+                  :graph (ast-descendants-graph graph (node-reads expr))
+                  :out (id->value graph (car (node-reads expr)))))))
+         (loop-size (caten/ir/expr:expr-cast loop-size :float32))
+         (local-size (caten/ir/expr:expr-const local-size :float32))
+         (size (caten/ir/expr:expr-ceiling (caten/ir/expr:expr-div loop-size local-size) dtype)))
+    (emit (make-node :JIT :SPACE (list id) nil :level :block :rank rank :dtype dtype :size size))))
 
-(defun %lid (rank range &key (dtype :int64) (id (gensym "L")))
-  (emit (make-node :JIT :SPACE (list id) (list ) :level :thread :rank rank :dtype dtype :size size)))
+(defun %lid (rank size &key (dtype :int64) (id (gensym "L")))
+  (emit (make-node :JIT :SPACE (list id) nil :level :thread :rank rank :dtype dtype :size (caten/ir/expr:expr-const size dtype))))
 
 (defun ast-band-tile-gpu (graph band local-sizes)
   "Tiles the given band and map them into gpu with local-sizes."
   (multiple-value-bind (graph block-bands thread-bands) (%ast-band-tile graph band local-sizes)
     (loop for block-band in block-bands
+          for size in local-sizes
           for level upfrom 0
           for range = (id->value graph (car (node-reads block-band)))
+          for body = (id->value graph (second (node-reads block-band)))
           do (insert-nodes
               graph
               (with-context-nodes
-                  (_ (%expr (%gid level range) :out (car (node-writes block-band)))))))
+                  (out
+                   (%bind
+                    (car (node-writes block-band))
+                    (%progn
+                     (%bind (car (node-writes range)) (%expr (node->id1 (%gid level graph range size))))
+                     body))))))
+                    
+    (PRINT "GLBL")
+    (print graph)
     (loop for grid-band in thread-bands
-          for level upfrom 0
           for range = (id->value graph (car (node-reads grid-band)))
+          for body = (id->value graph (second (node-reads grid-band)))
+          for level upfrom 0
+          for size in local-sizes
           do (insert-nodes
               graph
               (with-context-nodes
-                  (_ (%expr (%lid level range) :out (car (node-writes grid-band)))))))
+                  (out
+                   (%bind
+                    (car (node-writes grid-band))
+                    (%progn
+                     (%bind (car (node-writes range)) (%expr (node->id1 (%lid level size))))
+                     ;; TODO: Insert If Here
+                     body))))))
+    (verify-graph graph)
+    (print graph)
     ;; [TODO] Insert If statements
     graph))
 
@@ -421,10 +452,13 @@ for (int i=0; i<M; i+=32)
               (%dotimes (gid1 512 :mark :coincident)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
-  (%ast-band-tile g (id->value g 'tgt-loop) `(2 2))
+  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(8 8))
 ;;  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4)) ;; [todo] ensure inserting a new global
   (simplify-ast g)
   (print-ast g))
+
+
+
 
 (print-ast
  (with-blueprint ()
