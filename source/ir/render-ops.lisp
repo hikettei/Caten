@@ -356,43 +356,42 @@ for (int i=0; i<M; i+=32)
 
 (defun ast-band-tile-gpu (graph band local-sizes)
   "Tiles the given band and map them into gpu with local-sizes."
-  (multiple-value-bind (graph block-bands thread-bands) (%ast-band-tile graph band local-sizes)
-    (loop for block-band in block-bands
-          for size in local-sizes
-          for level upfrom 0
-          for range = (id->value graph (car (node-reads block-band)))
-          for body = (id->value graph (second (node-reads block-band)))
-          do (insert-nodes
-              graph
-              (with-context-nodes
-                  (out
-                   (%bind
-                    (car (node-writes block-band))
-                    (%progn
-                     (%bind (car (node-writes range)) (%expr (node->id1 (%gid level graph range size))))
-                     body))))))
-                    
-    (PRINT "GLBL")
-    (print graph)
-    (loop for grid-band in thread-bands
-          for range = (id->value graph (car (node-reads grid-band)))
-          for body = (id->value graph (second (node-reads grid-band)))
-          for level upfrom 0
-          for size in local-sizes
-          do (insert-nodes
-              graph
-              (with-context-nodes
-                  (out
-                   (%bind
-                    (car (node-writes grid-band))
-                    (%progn
-                     (%bind (car (node-writes range)) (%expr (node->id1 (%lid level size))))
-                     ;; TODO: Insert If Here
-                     body))))))
-    (verify-graph graph)
-    (print graph)
-    ;; [TODO] Insert If statements
-    graph))
+  (let ((loop-sizes))
+    (multiple-value-bind (graph block-bands thread-bands) (%ast-band-tile graph band local-sizes)
+      (loop for block-band in block-bands
+            for size in local-sizes
+            for level upfrom 0
+            for range = (id->value graph (car (node-reads block-band)))
+            for body = (id->value graph (second (node-reads block-band)))
+            do (push range loop-sizes)
+               (insert-nodes
+                graph
+                (with-context-nodes
+                    (out
+                     (%bind
+                      (car (node-writes block-band))
+                      (%progn (%bind (car (node-writes range)) (%expr (node->id1 (%gid level graph range size)))) body))))))
+      
+      (loop for grid-band in thread-bands
+            for band-size in (reverse loop-sizes)
+            for block-band in block-bands
+            for range = (id->value graph (car (node-reads grid-band)))
+            for body = (id->value graph (second (node-reads grid-band)))
+            for level upfrom 0
+            for size in local-sizes
+            do (insert-nodes
+                graph
+                (with-context-nodes
+                    (out
+                     (%bind
+                      (car (node-writes grid-band))
+                      (%progn
+                       ;; [TODO] Place this in the toplevel
+                       (%bind (car (node-writes range)) (%expr (node->id1 (%lid level size))))
+                       (%if (%< nil :row (%add (car (node-writes range)) (car (node-writes (id->value graph (car (node-reads block-band)))))) (car (node-reads band-size)))
+                            body)))))))
+      (verify-graph graph)
+      graph)))
 
 (defun ast-unroll ()
   ;; [TODO] Insert Reminder Statements
@@ -456,8 +455,6 @@ for (int i=0; i<M; i+=32)
 ;;  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4)) ;; [todo] ensure inserting a new global
   (simplify-ast g)
   (print-ast g))
-
-
 
 
 (print-ast

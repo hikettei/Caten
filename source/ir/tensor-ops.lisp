@@ -151,13 +151,13 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
 ;; CompareOps: map <- [map{bool}, x, y]
 (macrolet ((def (fname opname)
 	     `(defun ,fname (shape order x y &key (id (gensym "BID")) (out nil))
-		(declare (type node x y))
+		(declare (type (or number symbol node) x y))
 		(let ((out (or
 			    out
 			    (if shape
 				(%make-tensor shape :dtype :bool :order order)
 				(%salloc :dtype :bool)))))
-		  (emit (make-node :TernaryOps ,opname (list id) (list (node->id out) (node->id x) (node->id y))))))))
+		  (emit (make-node :TernaryOps ,opname (list id) (list (node->id1 out) (node->id1 x) (node->id1 y))))))))
   (def %!= :!=)
   (def %< :<))
 
