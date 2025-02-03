@@ -365,9 +365,11 @@ for (int i=0; i<M; i+=32)
     (let ((loop-sizes))
       (multiple-value-bind (graph block-bands thread-bands) (%ast-band-tile graph band local-sizes)
         (loop for block-band in block-bands
+              for thread-band in thread-bands
               for size in local-sizes
               for level upfrom 0
               for range = (id->value graph (car (node-reads block-band)))
+              for trange = (id->value graph (car (node-reads thread-band)))
               for body = (id->value graph (second (node-reads block-band)))
               do (push range loop-sizes)
                  (insert-nodes
@@ -380,8 +382,8 @@ for (int i=0; i<M; i+=32)
                          (%bind
                           (car (node-writes range))
                           (%expr (node->id1 (%mul (reveal-expr (second (node-reads range))) (%gid level graph range size)))))
+                         (%bind (car (node-writes trange)) (%expr (node->id1 (%lid level size))))
                          body))))))
-        
         (loop for grid-band in thread-bands
               for band-size in (reverse loop-sizes)
               for block-band in block-bands
@@ -395,17 +397,15 @@ for (int i=0; i<M; i+=32)
                       (out
                        (%bind
                         (car (node-writes grid-band))
-                        (%progn
-                         ;; [TODO] Place this in the toplevel
-                         (%bind (car (node-writes range)) (%expr (node->id1 (%lid level size))))
-                         (%if (%< nil :row (%add (car (node-writes range)) (car (node-writes (id->value graph (car (node-reads block-band)))))) (reveal-expr (car (node-reads band-size))))
-                              body)))))))
+                        (%if (%< nil :row (%add (car (node-writes range)) (car (node-writes (id->value graph (car (node-reads block-band)))))) (reveal-expr (car (node-reads band-size))))
+                             body))))))
         (verify-graph graph)
         graph))))
 
 (defun ast-unroll ()
   ;; [TODO] Insert Reminder Statements
   )
+
 (defun ast-vectorize ())
 (defun ast-upcast ())
 
