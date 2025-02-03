@@ -10,5 +10,6 @@
    (:file "ops")
    (:file "simplifiers")
    (:file "tensor-ops")
+   (:file "expr")
    (:file "render-ops")
    (:file "documentation")))
