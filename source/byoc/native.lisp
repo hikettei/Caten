@@ -2,7 +2,7 @@
   (:documentation "BACKEND=NATIVE to use Lisp JIT")
   (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
    :caten/codegen/backend :caten/codegen/renderer :caten/air
-   :caten/codegen/expr :caten/codegen/helpers :caten/codegen/type-relay)
+   :caten/ir/expr :caten/codegen/helpers :caten/codegen/type-relay)
   (:import-from
    :caten/codegen/search
    #:define-auto-scheduler)

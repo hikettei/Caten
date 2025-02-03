@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/type-relay
   (:documentation "Perform the following inference given the graph by direcly running it in :relay-checker VM.")
-  (:use :cl :caten/codegen/expr :caten/runtime/buffer :caten/runtime/runtime :caten/air)
+  (:use :cl :caten/ir/expr :caten/runtime/buffer :caten/runtime/runtime :caten/air)
   (:import-from :caten/codegen/helpers #:permute-list)
   (:import-from :caten/common.dtype #:dtype-t #:dtype->lisp)
   (:export

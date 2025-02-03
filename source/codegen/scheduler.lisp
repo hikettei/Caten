@@ -6,7 +6,7 @@ Occasionally they merges or rewrites a view in order to schedule multiple nodes 
 The function `graph-schedule` is an entry point, and takes a shape-inferred aasm graph as input, performs scheduling, and returns a schedule graph (called Schedule-Graph) whose each node is composed of Schedule-Item.
 
 One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure that each item is merged only within the bounds that can be lowered into a single kernel.")
-  (:use :cl :caten/air :caten/runtime :caten/codegen/type-relay :caten/codegen/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
+  (:use :cl :caten/air :caten/runtime :caten/codegen/type-relay :caten/ir/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
   (:import-from :caten/ir #:JITAble)
   (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule #:schedule-item-equal))
 

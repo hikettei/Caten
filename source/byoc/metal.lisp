@@ -1,8 +1,8 @@
 (defpackage :caten/byoc/metal
   (:use
-   :cl :caten/air :caten/codegen/expr :caten/codegen/renderer :caten/codegen/type-relay
+   :cl :caten/air :caten/ir/expr :caten/codegen/renderer :caten/codegen/type-relay
    :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint
-   :caten/runtime/buffer :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
+   :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
   (:import-from
    :caten/codegen/search
    #:define-auto-scheduler)
