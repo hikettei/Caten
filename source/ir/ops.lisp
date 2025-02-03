@@ -355,13 +355,29 @@ The equivalent to schedule-node-sequence
 "
          :slots nil)
 
-(defnode (:Render :EXPR) (RenderOps)
+(defnode (:Render :Aref) (RenderOps) ;; TODO: Rename Aref -> LOAD?
+         "
+```
+X <- Aref(Array, Index)
+```
+"
+         :slots nil)
+
+(defnode (:Render :EXPR) (RenderOps) ;; TODO: Rename EXPR -> ALU?
          "
 ```
 ID <- EXPR(NODE)
 ```
 "
          :slots nil)
+
+(defnode (:Render :SETF) (RenderOps) ;; TODO: Rename SETF -> STORE?
+         "
+```
+ID <- SETF(AREF(TARGET, IDX), EXPR(...)) 
+```
+Writes the value of EXPR into the corresponding region of AREF.
+")
 ;; ControlFlow
 (defnode (:Render :BARRIER) (RenderOps)
          "
@@ -377,14 +393,6 @@ ID <- BARRIER()
 X <- ()
 ```
 Similar to allocate
-"
-         :slots nil)
-
-(defnode (:Render :Aref) (RenderOps)
-         "
-```
-X <- Aref(Array, Index)
-```
 "
          :slots nil)
 
