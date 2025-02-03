@@ -7,7 +7,6 @@
   :components
   ((:file "helpers")
    (:file "backend")
-   (:file "expr")
    (:file "type-relay")
    (:file "renderer")
    (:file "rewriting-rules")
