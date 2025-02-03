@@ -70,6 +70,11 @@ Constraints:
     (setf (getattr node :is-empty) t)
     node))
 
+(defpattern EConst (x)
+  `(or
+    (= ,x)
+    (<Rule> :EXPR ((Var (= ,x) _)))))
+
 (defsimplifier
     (simplify-control-flow :speed 0)
     ;; (PROGN (PROGN X)) -> (PROGN X))
@@ -101,8 +106,8 @@ Constraints:
     ;; If the size==1 -> remove the range
     ;; [TODO] Make it working ...
     ;; TODO: (RANGE (4 4)) is also removable
-    ;((:RANGE (1 1) :idx idx :dtype dtype) -> ((node graph) (with-context-nodes (out (%bind idx (%iconst 0 :dtype dtype))))))
-    ;((:FOR ((Var (= 0) _) body)) -> body)
+    ;;((:RANGE ((EConst 1) (EConst 1)) :idx idx :dtype dtype) -> ((node graph) (with-context-nodes (out (%bind (car (node-writes node)) (%iconst 0 :dtype dtype))))))
+    ;;((:FOR ((EConst 0) body)) -> body)
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
 ;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -550,3 +555,6 @@ for (int i=0; i<M; i+=32)
 ;;  - Args関連の機能を安定化させたい
 ;;  [Note] UNROLLが一つのBandのみで時系列確定できる？とする
 ;; - Codegenを先に実装か？・・・
+
+;; - Assign/Reduction Type Inference which is more smarter and clearner
+;; - Buffer
