@@ -5,7 +5,7 @@
    #:dtype-t
    #:dtype->lisp
    #:dtype/cast)
-  ;; from attrs.lisp
+  ;; from ops.lisp
   (:export
    #:JITAble)
   ;; from tensor-ops.lisp
@@ -70,4 +70,8 @@
   ;; from simplifier.lisp
   (:export #:optimize-aasm #:minimize-duplicated-symbolic-path #:fold-constant)
   ;; from render-ops.lisp
-  (:export #:with-blueprint #:%range #:%progn #:%aref))
+  ;; Graph Creations
+  (:export #:with-blueprint #:%range #:%progn #:%aref)
+  ;; Optimization Ops
+  
+  )

@@ -13,7 +13,7 @@
      (let ((graph (->fast-graph *ctx*)))
        (unless ,noopt (setf graph (%simplify-ast graph)))
        graph)))
-;; ~~ Interface ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Interface ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
   "
 Constraints:
@@ -251,7 +251,7 @@ Constraints:
 (defun simplify-ast (graph)
   (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-verify-sequence)))
 
-;; ~~ Scheduling  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
   "Tiles the band:
 ```
@@ -334,13 +334,42 @@ for (int i=0; i<M; i+=32)
     (values graph (nreverse globals) (nreverse locals))))
 ;;; OptOps (Tile Based)
 (defun ast-band-tile (graph band tile-sizes)
+  "Tiles the given band with tile-sizes."
   (%ast-band-tile graph band tile-sizes))
-(defun ast-band-global ())
-(defun ast-unroll ())
+
+(defun %gid (rank range &key (dtype :int64) (id (gensym "G")))
+  (emit (make-node :JIT :SPACE (list id) (list ) :level :block :rank rank :dtype dtype :size size)))
+
+(defun %lid (rank range &key (dtype :int64) (id (gensym "L")))
+  (emit (make-node :JIT :SPACE (list id) (list ) :level :thread :rank rank :dtype dtype :size size)))
+
+(defun ast-band-tile-gpu (graph band local-sizes)
+  "Tiles the given band and map them into gpu with local-sizes."
+  (multiple-value-bind (graph block-bands thread-bands) (%ast-band-tile graph band local-sizes)
+    (loop for block-band in block-bands
+          for level upfrom 0
+          for range = (id->value graph (car (node-reads block-band)))
+          do (insert-nodes
+              graph
+              (with-context-nodes
+                  (_ (%expr (%gid level range) :out (car (node-writes block-band)))))))
+    (loop for grid-band in thread-bands
+          for level upfrom 0
+          for range = (id->value graph (car (node-reads grid-band)))
+          do (insert-nodes
+              graph
+              (with-context-nodes
+                  (_ (%expr (%lid level range) :out (car (node-writes grid-band)))))))
+    ;; [TODO] Insert If statements
+    graph))
+
+(defun ast-unroll ()
+  ;; [TODO] Insert Reminder Statements
+  )
 (defun ast-vectorize ())
 (defun ast-upcast ())
 
-(defun ast-band-parallelize ()) ;; not an tile but uses the depth of band to mark for collapse(N)
+(defun ast-band-parallelize ()) ;; Not an tile but uses the depth of band to mark for collapse(N)
 ;;; OptOps (Shared Memory Transfer)
 (defun ast-grouptop ())
 (defun ast-group ())
@@ -378,11 +407,11 @@ for (int i=0; i<M; i+=32)
                   (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
                          (%when (%< nil :row (%iconst 'gid1) (%add (%iconst 'm) (%iconst 'n)))
                                 (%progn
-                                 (%add (%aref 'a (%iconst 0)) (%aref 'b idx2))
+                                 (%add (%aref 'a idx1) (%aref 'b idx2))
                                  (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
                                  (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
                                  (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3)))))))))))))))
-  (%ast-tile-band g (id->value g 'target-loop) `(4))
+;  (%ast-tile-band g (id->value g 'target-loop) `(4))
   (print-ast g))
 
 (let ((g
@@ -392,9 +421,8 @@ for (int i=0; i<M; i+=32)
               (%dotimes (gid1 512 :mark :coincident)
                 (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
                   (%add (%aref 'a idx) (%aref 'b idx)))))))))
-  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4))
+  (%ast-band-tile g (id->value g 'tgt-loop) `(2 2))
 ;;  (%ast-band-tile g (id->value g 'tgt-loop) `(4 4)) ;; [todo] ensure inserting a new global
-  
   (simplify-ast g)
   (print-ast g))
 
@@ -409,9 +437,7 @@ for (int i=0; i<M; i+=32)
         (%progn
          (%add
           (%aref 'x '_gid0)
-          (%aref 'x '_gid1))))
-       
-       )))))
+          (%aref 'x '_gid1)))))))))
 ;; TODO: %defun -> macro
 ;; (get-caten-function 'smth) ==> CatenFunction
 ;; ^ (opt f scheduling) --> Scheduling Transformation
@@ -443,9 +469,9 @@ for (int i=0; i<M; i+=32)
 ;; [TODO] Update Aref Renderer
 ;; Workload
 ;; - 1. GIDに依存しないOpはなるべく外に出す
-;; - 2. MaximizeBandを実装
+;; - 2. MaximizeBandを実装 (OK)
 ;; - 3. SIZE=1 --> Remove
-;; - 4. 
+;; - 4. OptOpsを一通り実装する (GLOBAL/LOCAL), Vectorize, Unroll, and the most important thing TensorCore
 
 ;; TODO
 ;; - FORのAllocate,Symbolic ARefのEXPR?
@@ -470,6 +496,7 @@ for (int i=0; i<M; i+=32)
 ;;   - ASTGraph -> RenderOps Listは確定, print-blueprint的な実装で再現できるはず
 ;;   - UNROLL/Vectorizeをどうやって実装するか？
 ;;     -> GID0が頂点，再起的にSubgraphを探索してGID0に関連するIDを+1する
-;;   - TODO: tensor-compute-schedule
+;;     - TODO: tensor-compute-schedule
 ;;  - TODO: (NEG 1), (MUL 1, 4) simplification!
-;;  - Remove away MAX
+;;  - Remove away MAX (TODO) from tiled schedule
+;;  - Args関連の機能を安定化させたい
