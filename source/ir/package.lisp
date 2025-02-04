@@ -71,7 +71,7 @@
   (:export #:optimize-aasm #:minimize-duplicated-symbolic-path #:fold-constant)
   ;; from render-ops.lisp
   ;; AST
-  (:export #:with-blueprint)
+  (:export #:with-blueprint #:get-caten-function)
   ;; ASTOps
   (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defun)
   ;; Optimization Ops

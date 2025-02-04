@@ -387,7 +387,7 @@ X <- ()
 ```
 Declares a buffer.
 "
-         :slots nil)
+         :slots ((dtype) (pointer-p :type boolean)))
 ;;; JITOps
 (defnode (:JIT :Aref) () ;; TODO: Rename Aref -> LOAD?
          "

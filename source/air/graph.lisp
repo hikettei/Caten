@@ -59,8 +59,8 @@ Creates a copy of the given graph.
 (defmethod copy-graph ((graph Graph))
   "Creates a copy of the given graph."
   (let ((g (apply #'make-graph (graph-nodes graph))))
-    (setf (graph-seen graph) (copy-list (graph-seen graph))
-	  (graph-outputs graph) (copy-list (graph-outputs graph)))
+    (setf (graph-seen g) (copy-list (graph-seen graph))
+	  (graph-outputs g) (copy-list (graph-outputs graph)))
     g))
 
 (defun graph-p (graph) (typep graph 'Graph))

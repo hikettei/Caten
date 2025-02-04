@@ -5,6 +5,11 @@
 ;;;; - ASTGraph Optimization (e.g.: Tile, Unroll, Microkernel, etc)
 (in-package :caten/ir)
 
+(defparameter *function* (make-hash-table))
+
+(defun get-caten-function (name)
+  (copy-graph (or (gethash name *function*) (error "The function ~a is not defined." name))))
+
 (defmacro with-blueprint ((&key (noopt nil)) &body body)
   `(let* ((*ctx* (make-graph))
           (out (progn ,@body)))
@@ -29,8 +34,7 @@ Constraints:
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
 (defmacro %dotimes ((bind size &key (mark :noopt) (id (gensym "RANGE"))) &body body)
-  "
-"
+  ""
   `(let ((,bind ',bind)) (%range ',bind ,size (%progn ,@body) :mark ,mark :out ',id)))
 
 (defun %if (condition body &key (out (gensym "IF")))
@@ -42,15 +46,15 @@ Constraints:
   (emit (make-node :Render :IF (list out) (map 'list #'node->id1 (list condition body)))))
 
 (defun %when (condition body &key (out (gensym "IF")))
-  "%if"
   (%if condition body :out out))
 
 (defun %progn (&rest body &aux (out (gensym "PROGN")))
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
 
-(defun %global (name)
-  (emit (make-node :Render :DEFINE-GLOBAL (list name) nil)))
+(defun %global (name dtype pointer-p)
+  (declare (type dtype-t dtype) (type boolean pointer-p) (type symbol name))
+  (emit (make-node :Render :DEFINE-GLOBAL (list name) nil :dtype dtype :pointer-p pointer-p)))
 
 (defun %barrier (&key (out (gensym "BARRIER"))) (emit (make-node :Render :BARRIER (list out) nil)))
 
@@ -64,9 +68,6 @@ Constraints:
   (declare (type (or symbol node) name idx))
   (emit (make-node :JIT :Aref (list out) (map 'list #'node->id1 (list name idx)))))
 
-(defun %function (name args body &aux (out (gensym "FUNCTION")))
-  (emit (make-node :Render :Function (list out) (map 'list #'node->id1 (append (list body) args)) :name name)))
-
 (defun %expr (name &key (out (gensym "EXPR"))) (emit (make-node :Render :EXPR (list out) (list name))))
 
 (defun %setf (tgt value &key (out (gensym "SETF")))
@@ -74,7 +75,20 @@ Constraints:
   (emit (make-node :JIT :SETF (list out) (map 'list #'node->id1 (list tgt value)))))
 
 (defmacro %defun (name (&rest args) &body body)
-  `(%function ',name (list ,@args) (%progn ,@body)))
+  (flet ((verify-args (arg)
+           (assert (listp arg))
+           (multiple-value-bind (value dtype pointer-p) (apply #'values arg)
+             (assert (symbolp value))
+             (assert (typep dtype 'dtype-t))
+             (assert (typep pointer-p 'boolean))
+             (list value dtype pointer-p))))
+    `(setf (gethash ',name *function*)
+           (with-blueprint ()
+             (%progn
+              (let (,@(loop for arg in args
+                            for arg-list = (verify-args arg)
+                            collect `(,(car arg-list) (%global ',(car arg-list) ,@(cdr arg-list)))))
+                (%progn ,@body)))))))
 
 (defun %empty (dtype) (make-node :JIT :Empty (list (gensym)) nil :dtype dtype))
 ;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -493,50 +507,49 @@ for (int i=0; i<M; i+=32)
 ;; - 10000 Total LoC
 ;; - how to manipulate gids?
 ;; - can we vectorize/tile Range?
-(let ((g
-        (with-blueprint ()
-          (%defun eladd ((%global 'a) (%global 'b) (%global 'm) (%global 'n))
-            (%dotimes (gid0 (%add (%iconst 'm) (%iconst 'n)) :mark :coincident :id target-loop)
-              (%progn
-               (%progn
-                (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst gid0)))
-                      (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst gid0))))
-                  (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-                         (%when (%< nil :row (%iconst 'gid1) (%add (%iconst 'm) (%iconst 'n)))
-                                (%progn
-                                 (%add (%aref 'a idx1) (%aref 'b idx2))
-                                 (%add (%aref 'a (%add idx1 (%iconst 1))) (%aref 'b (%add idx2 (%iconst 1))))
-                                 (%add (%aref 'a (%add idx1 (%iconst 2))) (%aref 'b (%add idx2 (%iconst 2))))
-                                 (%add (%aref 'a (%add idx1 (%iconst 3))) (%aref 'b (%add idx2 (%iconst 3)))))))))))))))
-;  (%ast-tile-band g (id->value g 'target-loop) `(4))
-  (print-ast g))
 
-(let ((g
-        (with-blueprint ()
-          (%defun 2d-elwise-add ((%global 'a) (%global 'b))
-            (%dotimes (gid0 512 :mark :coincident :id tgt-loop)
-              (%dotimes (gid1 512 :mark :coincident)
-                (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
-                  (%setf (%aref 'a idx) (%add (%aref 'a idx) (%aref 'b idx))))))))))
-;  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
+(%defun eladd ((a :float32 t) (b :float32 t) (m :int64 nil) (n :int64 nil))
+  (%dotimes (gid0 (%add (%iconst 'm) (%iconst 'n)) :mark :coincident :id target-loop)
+    (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst gid0)))
+          (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst gid0))))
+      (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
+             (%when (%< nil :row (%iconst 'gid1) (%add (%iconst 'm) (%iconst 'n)))
+                    (%progn
+                     (%add (%aref a idx1) (%aref b idx2))
+                     (%add (%aref a (%add idx1 (%iconst 1))) (%aref b (%add idx2 (%iconst 1))))
+                     (%add (%aref a (%add idx1 (%iconst 2))) (%aref b (%add idx2 (%iconst 2))))
+                     (%add (%aref a (%add idx1 (%iconst 3))) (%aref b (%add idx2 (%iconst 3))))))))))
+
+(print-ast (get-caten-function 'eladd))
+
+(%defun 2d-elwise-add ((a :float32 t) (b :float32 t))
+  (%dotimes (gid0 512 :mark :coincident :id tgt-loop)
+    (%dotimes (gid1 512 :mark :coincident)
+      (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
+        (%setf (%aref 'a idx) (%add (%aref a idx) (%aref b idx)))))))
+
+(print-ast (get-caten-function '2d-elwise-add))
+
+(let ((g (get-caten-function '2d-elwise-add)))
+  ;;(ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
   (%ast-band-tile g (id->value g 'tgt-loop) `(3 3)) ;; [todo] ensure inserting a new global
   (simplify-ast g)
   (print-ast g))
 
-(print-ast
- (with-blueprint ()
-   (%defun smth ((%global 'x))
-     (%range
-      '_gid0 (%iconst 100)
-      (%progn
-       (%range
-        '_gid1 (%iconst 100)
-        (%progn
-         (%setf
-          (%aref 'x '_gid0)
-          (%add
-           (%aref 'x '_gid0)
-           (%aref 'x '_gid1))))))))))
+(%defun smth ((x :float32 t))
+  (%range
+   '_gid0 (%iconst 100)
+   (%progn
+    (%range
+     '_gid1 (%iconst 100)
+     (%progn
+      (%setf
+       (%aref x '_gid0)
+       (%add
+        (%aref x '_gid0)
+        (%aref x '_gid1))))))))
+
+(print-ast (get-caten-function 'smth))
 ;; TODO: %defun -> macro
 ;; (get-caten-function 'smth) ==> CatenFunction
 ;; ^ (opt f scheduling) --> Scheduling Transformation
@@ -588,7 +601,6 @@ for (int i=0; i<M; i+=32)
 ;;     -> GID0が頂点，再起的にSubgraphを探索してGID0に関連するIDを+1する
 ;;     - TODO: tensor-compute-schedule
 ;;  - Remove away MAX (TODO) from tiled schedule
-
 
 ;; Finish Valid Codegen workload
 ;; - (with-inference-mode () (caten (forward (caten/nn:Embedding 128 128) (make-tensor `(128 128)))))
