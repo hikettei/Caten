@@ -4,10 +4,9 @@
 ;; BinaryOps  | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
 ;; TernaryOps | {!=, <, WHERE, WMMA}                           | 4 Ops
 ;; Buffer     | {ALLOCATE, LOAD, STORE, VIEW}                  | 4 Ops
-;; Indexing   | {INDEX-COMPONENTS}                             | 1 Op(s)
 ;; JIT        | {SPACE}                                        | 1 OP(s)
 ;; +)__________________________________________________________________
-;;                                                             | 26 Ops
+;;                                                             | 25 Ops
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defclass JITAble ()
@@ -84,10 +83,6 @@ out = not(x) (if boolean)
 out = lognot(x) (if integer)
 ```
 ")
-
-(defnode (:UnaryOps :CAST) (UnaryOps JITAble)
-	 "The node :CAST casts the first read tensor into `:dtype`, writing the result into the first write."
-	 :slots ((dtype :type dtype-t)))
 
 (defclass BinaryOps ()
   ((reduction :initarg :reduction :initform nil :type boolean)
@@ -173,6 +168,14 @@ out <- max(x, y)
 out <- gcd(x, y)
 ```
 ")
+
+(defnode (:BinaryOps :CAST) (BinaryOps JITAble)
+	 "
+```
+OUT <- CAST(OUT, X)
+```
+The node :CAST casts the first read tensor into `:dtype`, writing the result into the first write."
+	 :slots ((dtype :type dtype-t)))
 
 (defclass TernaryOps ()
   nil
