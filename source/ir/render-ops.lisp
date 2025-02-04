@@ -90,7 +90,7 @@ Constraints:
                             collect `(,(car arg-list) (%global ',(car arg-list) ,@(cdr arg-list)))))
                 (%progn ,@body)))))))
 
-(defun %empty (dtype) (make-node :JIT :Empty (list (gensym)) nil :dtype dtype))
+(defun %empty () (make-node :JIT :Empty (list (gensym)) nil))
 ;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun Empty! (node)
   (assert (typep (node-attr node) 'RenderOps))
@@ -267,13 +267,7 @@ Constraints:
   (labels ((Purge (node)
              (unless (find (car (node-writes node)) seen2)
                (push (car (node-writes node)) seen2)
-               ;; [TODO] Anyway infer the dtype ...
-               ;; A better solution is that:
-               ;; - Add :DEFINE-GLOBAL, AREF, etc to have an dtype
-               ;; - use infer-tensor-info and only the dtype matters.
-               ;; - in that case %empty should be deleted.
-               (let ((dtype :float32))
-                 (list (%bind (car (node-reads node)) (%empty dtype)) node))))
+               (list (%bind (car (node-reads node)) (%empty)) node)))
            (simplify-expr (expr &aux (expr-graph (ast-expr-graph graph expr)))
              ;; Rewriting MUL(MOVE(A, AREF(B)), C) -> MUL(AREF(B), C)
              (funcall (Simplifier () ((:MOVE (_ b)) -> b))  expr-graph)
@@ -286,7 +280,7 @@ Constraints:
               (Simplifier
                   ()
                   ((:MOVE (_ _)) -> ((node graph) (Purge node)))
-                  ((:LOAD   (_)) -> ((node graph) (Purge node)))
+                  ;;((:LOAD   (_)) -> ((node graph) (Purge node)))
                   ((:<  (_ _ _)) -> ((node graph) (Purge node)))
                   ((:!= (_ _ _)) -> ((node graph) (Purge node)))
                   ((:Cast (_ _)) -> ((node graph) (Purge node))))
@@ -296,6 +290,8 @@ Constraints:
     (funcall
      (Simplifier () ((:EXPR (id)) -> ((node graph) (unless (find id seen1) (push id seen1) (simplify-expr node)))))
      graph)))
+;; [TODO] TypeMap definition is in air
+(defun ast-infer-type-map (graph))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %simplify-ast (graph
                       &key
@@ -319,7 +315,6 @@ Constraints:
 
 (defun simplify-ast (graph)
   (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-verify-sequence)))
-
 ;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
   "Tiles the band:
@@ -551,9 +546,6 @@ for (int i=0; i<M; i+=32)
 
 (print-ast (get-caten-function 'smth))
 ;; TODO: %defun -> macro
-;; (get-caten-function 'smth) ==> CatenFunction
-;; ^ (opt f scheduling) --> Scheduling Transformation
-;; Finally (render-ast ast renderer)
 ;; ^ これ使ってOP定義できるようにする(AOT)
 ;; [TODO]
 ;; - TileBands
@@ -609,7 +601,6 @@ for (int i=0; i<M; i+=32)
 ;;  - 手動Schedulingの例としてExample提供して仕様を固める
 ;; - Memory Planner
 ;;   - ArefのNAMEを書き換えるだけで完了
-;; - EXPRIFY内部で不要なMOVE/AllocateをPurgeする (OK)
 ;; - DTYPE MAPの実装を完了させる
 ;;  - これはTypeMapというAttributeに格納して，TypeRelayとは別のものにする(TypeRelayはCodegen内部で隠蔽する)
 ;; - EXPRIFY: EXPR+EXPRで何回も適用できるように，Simplifyした後のグラフでもやりたい

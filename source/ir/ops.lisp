@@ -424,9 +424,7 @@ Corresponds to:
                  (dtype :type keyword)
                  (size)))
 
-(defnode (:JIT :EMPTY) ()
-         "A placeholder for variable that are not rendered."
-         :slots ((dtype)))
+(defnode (:JIT :EMPTY) () "A placeholder for variable that are not rendered.")
 
 (defnode (:Render :Function) () ;; [TODO] remove :function?
          ""
