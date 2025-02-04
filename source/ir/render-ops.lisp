@@ -171,7 +171,7 @@ Constraints:
              (reverse results))
            (explore (id &aux (node (id->value graph id)))
              (when (or (null node) (find (the symbol id) seen)) (return-from explore))
-             (push (node-id node) seen)
+             (push id seen)
              ;; A Expr is only mergeable with descendants w/ current PROGN.
              (when (eql (node-type node) :PROGN)
                (let* ((new-progn
