@@ -568,6 +568,5 @@ for (int i=0; i<M; i+=32)
 
 ;; Finish Valid Codegen workload
 ;; - Loweringする時，gidをstackに保存する (store)
-;; - EXPR_STOREのRenderer
-;; - EXPRifyのBug?
+;; - EXPRIFY内部で不要なMOVE/AllocateをPurgeする
 ;; - Memory Planner

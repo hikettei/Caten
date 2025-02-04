@@ -446,7 +446,7 @@ Depends=~a Reduce=~a Users=~a
                 (graph-outputs (expr-graph e)) (node-writes node))
         e)))))
 
-(defun astify-blueprint (schedule-item bp gids &aux (caten/ir/expr::*expr-no-simplify-mode* t))
+(defun astify-blueprint (schedule-item bp rank &aux (caten/ir/expr::*expr-no-simplify-mode* t))
   (declare (type list bp))
   (with-blueprint ()
     (dolist (n (node-reads schedule-item))
@@ -457,8 +457,13 @@ Depends=~a Reduce=~a Users=~a
              (is-setf-p (id &aux (val (id->value *ctx* id)))
                (when (and val (eql (node-type val) :SETF))
                  (car (node-reads val))))
-             (lower-item (node)
-               (let ((node (copy-node node)))
+             (padding-gids (gids)
+               (append
+                gids
+                (loop repeat (- rank (length gids)) collect 0)))
+             (lower-item (node gids)
+               (let ((node (copy-node node))
+                     (gids (padding-gids gids)))
                  (assert (= (length (node-writes node)) 1) () "Cannot lower the node ~a with multiple writes." node)
                  ;; Lowering %aref if needed.
                  (loop for buffer in (relay-reads (read-type-relay node))
@@ -505,7 +510,7 @@ Depends=~a Reduce=~a Users=~a
                  ;; [TODO] Set declare-type?
                  (setf (getattr node :_type_relay) nil)
                  (emit node)))
-             (explore (rest-items)
+             (explore (rest-items gids)
                (declare (type list rest-items))
                (when (null rest-items) (return-from explore))
                (case (node-type (car rest-items))
@@ -515,15 +520,15 @@ Depends=~a Reduce=~a Users=~a
                     (%progn
                      (%range
                       (getattr (car rest-items) :idx) (sendexpr (getattr (car rest-items) :size))
-                      (%progn (explore (subseq rest-items 1 endrange)))
+                      (%progn (explore (subseq rest-items 1 endrange) (append gids (list (getattr (car rest-items) :idx)))))
                       :mark (getattr (car rest-items) :type))
-                     (explore (subseq rest-items (1+ endrange))))))
+                     (explore (subseq rest-items (1+ endrange)) gids))))
                  (:TMPEndRange (error "TMPEndRange should not occur here, malformed lowering result?"))
                  (:INDEX-COMPONENTS
-                  (%progn (sendexpr (make-index-components (car rest-items) gids)) (explore (cdr rest-items))))
+                  (%progn (sendexpr (make-index-components (car rest-items) gids)) (explore (cdr rest-items) gids)))
                  (otherwise
-                  (%progn (lower-item (car rest-items)) (explore (cdr rest-items)))))))
-      (explore bp))))
+                  (%progn (lower-item (car rest-items) gids) (explore (cdr rest-items) gids))))))
+      (explore bp nil))))
 ;; Entry point for the lowerer is here :)  
 (defun lower-schedule-item (schedule-item base-graph schedule-graph)
   "
@@ -555,7 +560,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph))
-      (let ((ast (astify-blueprint schedule-item (ctx-blueprint ctx) (ctx-gids ctx))))
+      (let ((ast (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx)))))
         (print ast)
         (pprint-graph ast)
         (print-blueprint ast t)
