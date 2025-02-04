@@ -498,7 +498,6 @@ Depends=~a Reduce=~a Users=~a
                                     (emit
                                      (%aref
                                       (car (node-writes node))
-                                      ;; [TODO] GIDS --> LoopSizeをTraceしてStackする必要がある。 or any way to avoid this????
                                       (sendexpr (reduce #'expr-add (iteration-space-expr-aref (car (relay-write-iters type)) (car (relay-writes type)) gids)))))
                                     ;; [TODO] (%aref x 0) ?
                                     (car (node-writes node)))))
