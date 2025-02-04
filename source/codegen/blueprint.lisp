@@ -581,7 +581,9 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                     (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
                     (fmt "}"))
                   (:EXPR
-                   (fmt "~(~a~) = ~a; // expr" (car (node-writes node)) (e (car (node-reads node)))))
+                   (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
+                       (fmt "~a; // EXPR(STORE)" (e (car (node-reads node))))
+                       (fmt "~(~a~) = ~a; // expr" (car (node-writes node)) (e (car (node-reads node))))))
                   (:DEFINE-GLOBAL); (fmt "defglobal ~a;" (car (node-writes node))))
                   (:RANGE (fmt "~(~a~) = ~(~a~); // RANGE" (car (node-writes node)) (getattr node :idx)))
                   (:FOR

@@ -218,6 +218,12 @@
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :BIND)) node)
+  (format nil "~a" (%render-const renderer (getattr node :value))))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :SETF)) node)
+  (format nil "~a = ~a" (render-node renderer (car (node-reads node))) (render-node renderer (second (node-reads node)))))
+
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :STORE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
 
