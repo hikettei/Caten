@@ -378,6 +378,14 @@ ID <- SETF(AREF(TARGET, IDX), EXPR(...))
 ```
 Writes the value of EXPR into the corresponding region of AREF.
 ")
+
+(defnode (:JIT :BIND) (RenderOps)
+         "
+```
+ID <- BIND(X, value=value)
+```"
+         :slots ((value)))
+
 ;; ControlFlow
 (defnode (:Render :BARRIER) (RenderOps)
          "

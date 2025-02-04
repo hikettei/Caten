@@ -454,6 +454,9 @@ Depends=~a Reduce=~a Users=~a
     (labels ((sendexpr (expr)
                (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                (expr-out expr))
+             (is-setf-p (id &aux (val (id->value *ctx* id)))
+               (when (and val (eql (node-type val) :SETF))
+                 (car (node-reads val))))
              (lower-item (node)
                (let ((node (copy-node node)))
                  (assert (= (length (node-writes node)) 1) () "Cannot lower the node ~a with multiple writes." node)
@@ -462,7 +465,10 @@ Depends=~a Reduce=~a Users=~a
                        for ri in (relay-read-iters (read-type-relay node))
                        for name in (node-reads node)
                        for nth upfrom 0
-                       if (and buffer (> (buffer-nrank buffer) 0)) do
+                       if (is-setf-p name) do
+                         (let* ((load (emit (make-node :JIT :BIND (list (gensym "BIND")) (list name) :value (is-setf-p name)))))
+                           (setf (nth nth (node-reads node)) (car (node-writes load))))
+                       else if (and buffer (> (buffer-nrank buffer) 0)) do
                          (let ((aref (emit (%aref name (sendexpr (reduce #'expr-add (iteration-space-expr-aref ri buffer gids)))))))
                            (setf (nth nth (node-reads node)) (car (node-writes aref)))))
                  ;; Insert %setf if the node is reduction.
