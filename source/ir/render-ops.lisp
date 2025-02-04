@@ -291,7 +291,7 @@ Constraints:
      (Simplifier () ((:EXPR (id)) -> ((node graph) (unless (find id seen1) (push id seen1) (simplify-expr node)))))
      graph)))
 ;; [TODO] TypeMap definition is in air
-(defun ast-infer-type-map (graph))
+(defun ast-infer-type-map (graph))g
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %simplify-ast (graph
                       &key
@@ -469,13 +469,14 @@ for (int i=0; i<M; i+=32)
   (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band local-sizes)
     ;; The work here is to remove away local-bands
     ;; also inserting reminder bands in the gloal-bands
-    
-    )
-  ;; [TODO] Insert Reminder Statements
-  ;; [TODO] How to determine the unrolled variable index? it depends on time-series dependencies
+    ;; [TODO] Insert Reminder Statements
+    ;; [TODO] How to determine the unrolled variable index? it depends on time-series dependencies
+    ))
+
+(defun ast-vectorize (graph band local-sizes)
+  ;; ensure stride == 1
   )
 
-(defun ast-vectorize ()) ;; reuse unroll
 (defun ast-upcast ()) ;; reuse unroll
 
 (defun ast-band-parallelize ()) ;; Not an tile but uses the depth of band to mark for collapse(N), reuse tile
@@ -483,8 +484,8 @@ for (int i=0; i<M; i+=32)
 (defun ast-group (graph band)
   ;; band == reduction
   )
-(defun ast-grouptop (graph band))
 
+(defun ast-grouptop (graph band))
 ;;; OptOps (MicroKernel)
 (defun ast-microkernel ())
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -526,10 +527,21 @@ for (int i=0; i<M; i+=32)
 (print-ast (get-caten-function '2d-elwise-add))
 
 (let ((g (get-caten-function '2d-elwise-add)))
-  ;;(ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
-  (%ast-band-tile g (id->value g 'tgt-loop) `(3 3)) ;; [todo] ensure inserting a new global
+  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
+  ;;(ast-band-tile g (id->value g 'tgt-loop) `(16 16))
+  
   (simplify-ast g)
   (print-ast g))
+
+(%defun matmul ((a :float32 t) (b :float32 t) (c :float32 t) (m :int64) (n :int64) (k :int64))
+  (%dotimes (_gid0 (%iconst 'M) :mark :coincident)
+    (%dotimes (_gid1 (%iconst 'K) :mark :coincident)
+      (%bind 'acc (%iconst 0.0 :dtype :float32))
+      (%dotimes (_gid2 (%iconst 'N) :mark :reduction)
+        (%setf 'acc (%add 'acc (%mul (%aref a (%add (%mul (%iconst 'n) _gid0) _gid2)) (%aref b (%add _gid1 (%mul (%iconst 'k) _gid2)))))))
+      (%setf (%aref c (%add _gid1 (%mul (%iconst 'k) _gid0))) 'acc))))
+
+(print-ast (get-caten-function 'matmul))
 
 (%defun smth ((x :float32 t))
   (%range
