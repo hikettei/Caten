@@ -530,9 +530,11 @@ for (int i=0; i<M; i+=32)
        (%range
         '_gid1 (%iconst 100)
         (%progn
-         (%add
+         (%setf
           (%aref 'x '_gid0)
-          (%aref 'x '_gid1)))))))))
+          (%add
+           (%aref 'x '_gid0)
+           (%aref 'x '_gid1))))))))))
 ;; TODO: %defun -> macro
 ;; (get-caten-function 'smth) ==> CatenFunction
 ;; ^ (opt f scheduling) --> Scheduling Transformation
@@ -592,19 +594,19 @@ for (int i=0; i<M; i+=32)
 ;;   - UNROLL/Vectorizeをどうやって実装するか？
 ;;     -> GID0が頂点，再起的にSubgraphを探索してGID0に関連するIDを+1する
 ;;     - TODO: tensor-compute-schedule
-;;  - TODO: (NEG 1), (MUL 1, 4) simplification!
 ;;  - Remove away MAX (TODO) from tiled schedule
-;;  - Args関連の機能を安定化させたい
-;;  [Note] UNROLLが一つのBandのみで時系列確定できる？とする
-;; - Codegenを先に実装か？・・・
 
-;; - Assign/Reduction Type Inference which is more smarter and clearner
-;; - Buffer
-
-;; 1. EXPR(SETF ...) === Storeとする。
-;; 2. id->value
 
 ;; Finish Valid Codegen workload
-;; - EXPRIFY内部で不要なMOVE/AllocateをPurgeする
+;; - (with-inference-mode () (caten (forward (caten/nn:Embedding 128 128) (make-tensor `(128 128)))))
+;;  - val_7を取り除く (PROGNでReadされてるから消えない)
+;; - %GLOBAL, %AREFなどBlueprint作成APIの使用をconcreteする
+;;  - 手動Schedulingの例としてExample提供して仕様を固める
 ;; - Memory Planner
+;;   - ArefのNAMEを書き換えるだけで完了
+;; - EXPRIFY内部で不要なMOVE/AllocateをPurgeする (OK)
+;; - DTYPE MAPの実装を完了させる
 ;; - EXPRIFY: EXPR+EXPRで何回も適用できるように，Simplifyした後のグラフでもやりたい
+;; - Schedule Cacheを完了
+;; - CodegenをUpdate, 全てのテストをPassする
+;; - OptOpsに取り掛かる
