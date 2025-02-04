@@ -291,7 +291,7 @@ Constraints:
      (Simplifier () ((:EXPR (id)) -> ((node graph) (unless (find id seen1) (push id seen1) (simplify-expr node)))))
      graph)))
 ;; [TODO] TypeMap definition is in air
-(defun ast-infer-type-map (graph))g
+(defun ast-infer-type-map (graph))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %simplify-ast (graph
                       &key
@@ -314,7 +314,7 @@ Constraints:
     g))
 
 (defun simplify-ast (graph)
-  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-verify-sequence)))
+  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-verify-sequence)))
 ;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
   "Tiles the band:
@@ -539,10 +539,10 @@ for (int i=0; i<M; i+=32)
       (%bind 'acc (%iconst 0.0 :dtype :float32))
       (%dotimes (_gid2 (%iconst 'N) :mark :reduction)
         (%setf 'acc (%add 'acc (%mul (%aref a (%add (%mul (%iconst 'n) _gid0) _gid2)) (%aref b (%add _gid1 (%mul (%iconst 'k) _gid2)))))))
-      (%setf (%aref c (%add _gid1 (%mul (%iconst 'k) _gid0))) 'acc))))
+      (%setf (%aref c (%add _gid1 (%mul (%iconst 'k) _gid0))) (%exp2 'acc)))))
 
 (let ((g (get-caten-function 'matmul)))
-  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(4 4))
+  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(32 32))
   (simplify-ast g)
   (print-ast g))
 ;; TODO: %defun -> macro
