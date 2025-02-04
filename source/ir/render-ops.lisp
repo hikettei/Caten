@@ -115,7 +115,7 @@ Constraints:
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
 ;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun ast-descendants-graph (graph outputs &key (seen) (result) (stop-at (make-hash-table)))
+(defun ast-descendants-graph (graph outputs &key (only-surface nil) (seen) (result) (stop-at (make-hash-table)))
   (declare (type FastGraph graph) (type list outputs))
   (let ((out-ids (remove-duplicates (apply #'append (map 'list #'node-writes outputs)))))
     (labels ((explore (x &aux (node (id->value graph x)))
@@ -124,7 +124,7 @@ Constraints:
                (when (member (node-type node) `(:RANGE :DEFINE-GLOBAL)) (return-from explore))
                (push x seen)
                (push node result)
-               (mapc #'explore (node-reads node))))
+               (unless only-surface (mapc #'explore (node-reads node)))))
       (mapc #'explore out-ids))
     (let* ((g (apply #'make-graph (remove-duplicates result :key #'node-id)))
            (reads (apply #'append (map 'list #'node-reads (graph-nodes g)))))
@@ -158,7 +158,7 @@ Constraints:
   "Groups multiple strongly connected ops into a single Expr. Expr and Expr are also mergeable."
   ;; Find sink points
   (labels ((render-p (node) (and (eql (node-class node) :Render) (null (find (node-type node) `(:EXPR :Aref :DEFINE-GLOBAL :SETF)))))
-           (sort-progn-body (parents &aux (dg (ast-descendants-graph graph parents)) (m (ast-make-sink-map dg)))
+           (sort-progn-body (parents &aux (dg (ast-descendants-graph graph parents :only-surface t)) (m (ast-make-sink-map dg)))
              ;; The descendant of parents is asseted not to have RenderOps.
              (assert (null (some #'render-p (graph-nodes dg))))
              (ast-exprify-tensor-graph graph dg m))
@@ -567,6 +567,5 @@ for (int i=0; i<M; i+=32)
 ;; 2. id->value
 
 ;; Finish Valid Codegen workload
-;; - Loweringする時，gidをstackに保存する (store)
 ;; - EXPRIFY内部で不要なMOVE/AllocateをPurgeする
 ;; - Memory Planner
