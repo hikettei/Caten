@@ -249,9 +249,7 @@ Constraints:
                           #'exprify-ast
                           #'(lambda (x) (verify-graph x) x)
                           #'ast-verify-sequence
-                          #'ast-maximize-band-depth
-                          #'(lambda (x) (print (->graph-with-tpsort x)) x)
-                          )))
+                          #'ast-maximize-band-depth)))
   "Simplifies the AST"
   (declare (type graph graph))
   ;; [TODO] Simplify the ast graph based on indexing dependencies!
