@@ -389,6 +389,9 @@ ID <- BIND(X, value=value)
 ```"
          :slots ((value)))
 
+(defnode (:JIT :EMPTY) (RenderOps)
+         "A placeholder for variable that are not rendered."
+         :slots ((dtype)))
 ;; ControlFlow
 (defnode (:Render :BARRIER) (RenderOps)
          "

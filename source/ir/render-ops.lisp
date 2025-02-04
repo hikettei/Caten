@@ -67,6 +67,8 @@ Constraints:
 
 (defmacro %defun (name (&rest args) &body body)
   `(%function ',name (list ,@args) (%progn ,@body)))
+
+(defun %empty (dtype) (make-node :JIT :Empty (list (gensym)) nil :dtype dtype))
 ;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun Empty! (node)
   (assert (typep (node-attr node) 'RenderOps))
@@ -243,8 +245,13 @@ Constraints:
   (labels ((Purge (node)
              (unless (find (car (node-writes node)) seen2)
                (push (car (node-writes node)) seen2)
-               ;; [TODO] Insert allocation here?
-               ))
+               ;; [TODO] Anyway infer the dtype ...
+               ;; A better solution is that:
+               ;; - Add :DEFINE-GLOBAL, AREF, etc to have an dtype
+               ;; - use infer-tensor-info and only the dtype matters.
+               ;; - in that case %empty should be deleted.
+               (let ((dtype :float32))
+                 (list (%bind (car (node-reads node)) (%empty dtype)) node))))
            (simplify-expr (expr &aux (expr-graph (ast-expr-graph graph expr)))
              ;; Rewriting MUL(MOVE(A, AREF(B)), C) -> MUL(AREF(B), C)
              (funcall (Simplifier () ((:MOVE (_ b)) -> b))  expr-graph)
