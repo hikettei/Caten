@@ -408,7 +408,7 @@ for (int i=0; i<M; i+=32)
                (let ((expr (id->value graph (car (node-reads range)))))
                  (assert (and expr (eql (node-type expr) :EXPR)) () "%gid: The parent for Range must be fixnum or EXPR.")
                  (caten/ir/expr:make-expr
-                  :graph (ast-descendants-graph graph (node-reads expr))
+                  :graph (ast-descendants-graph graph (map 'list #'(lambda (x) (id->value graph x)) (node-reads expr)))
                   :out (id->value graph (car (node-reads expr)))))))
          (loop-size (caten/ir/expr:expr-cast loop-size :float32))
          (local-size (caten/ir/expr:expr-const local-size :float32))
@@ -534,29 +534,17 @@ for (int i=0; i<M; i+=32)
   (print-ast g))
 
 (%defun matmul ((a :float32 t) (b :float32 t) (c :float32 t) (m :int64) (n :int64) (k :int64))
-  (%dotimes (_gid0 (%iconst 'M) :mark :coincident)
+  (%dotimes (_gid0 (%iconst 'M) :mark :coincident :id tgt-loop)
     (%dotimes (_gid1 (%iconst 'K) :mark :coincident)
       (%bind 'acc (%iconst 0.0 :dtype :float32))
       (%dotimes (_gid2 (%iconst 'N) :mark :reduction)
         (%setf 'acc (%add 'acc (%mul (%aref a (%add (%mul (%iconst 'n) _gid0) _gid2)) (%aref b (%add _gid1 (%mul (%iconst 'k) _gid2)))))))
       (%setf (%aref c (%add _gid1 (%mul (%iconst 'k) _gid0))) 'acc))))
 
-(print-ast (get-caten-function 'matmul))
-
-(%defun smth ((x :float32 t))
-  (%range
-   '_gid0 (%iconst 100)
-   (%progn
-    (%range
-     '_gid1 (%iconst 100)
-     (%progn
-      (%setf
-       (%aref x '_gid0)
-       (%add
-        (%aref x '_gid0)
-        (%aref x '_gid1))))))))
-
-(print-ast (get-caten-function 'smth))
+(let ((g (get-caten-function 'matmul)))
+  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(4 4))
+  (simplify-ast g)
+  (print-ast g))
 ;; TODO: %defun -> macro
 ;; ^ これ使ってOP定義できるようにする(AOT)
 ;; [TODO]
