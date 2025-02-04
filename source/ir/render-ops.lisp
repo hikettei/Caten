@@ -224,36 +224,69 @@ Constraints:
             (setf (getattr node :band) (maybe-new (getattr range :idx) (getattr range :idx))))) 
   graph)
 
-(defun ast-purge-realize (graph)
-  "The first argument of MOVE in the EXPRBlock does not use the first argument and thus removed."
-  ;; 1. Search for EXPR
-  ;; 2. Search for MOVE
-  ;; 3. Rewrite MUL(MOVE(A, AREF(B)), C) -> ...
-  
-  )
+(defun ast-expr-graph (graph expr &aux (seen nil) (nodes))
+  (declare (type FastGraph graph) (type node expr))
+  (assert (eql (node-type expr) :EXPR))
+  (labels ((explore (id &aux (node (id->value graph id)))
+             (when (or (null node) (find id seen)) (return-from explore))
+             (when (eql (node-type node) :EXPR) (return-from explore))
+             (push node nodes)
+             (mapc #'explore (node-reads node))))
+    (explore (car (node-reads expr))))
+  (let ((g (apply #'make-graph nodes)))
+    (setf (graph-outputs g) (node-reads expr))
+    (->fast-graph g)))
 
-(defun ast-resolve-reduction (graph)
-  "Resolves the storage-id to satisfy the reduction/assign relations"
-  
-  )
+(defun ast-simplify-expr (graph &aux (seen1) (seen2))
+  "The first argument of MOVE in the EXPRBlock does not use the first argument and thus removed."
+  (declare (type FastGraph graph))
+  (labels ((Purge (node)
+             (unless (find (car (node-writes node)) seen2)
+               (push (car (node-writes node)) seen2)
+               ;; [TODO] Insert allocation here?
+               ))
+           (simplify-expr (expr &aux (expr-graph (ast-expr-graph graph expr)))
+             ;; Rewriting MUL(MOVE(A, AREF(B)), C) -> MUL(AREF(B), C)
+             (funcall (Simplifier () ((:MOVE (_ b)) -> b))  expr-graph)
+             (funcall (Simplifier () ((:STORE (_ b)) -> b)) expr-graph)
+             ;; Rewrite the path that are not rendered with Allocate.
+             ;; 1. LOAD(ALLOCATE(X))
+             ;; 2. TernaryOps(Allocate(_), X, Y)
+             ;; 3. Cast(ALLOCATE(X), Y)
+             (funcall
+              (Simplifier
+                  ()
+                  ((:MOVE (_ _)) -> ((node graph) (Purge node)))
+                  ((:LOAD   (_)) -> ((node graph) (Purge node)))
+                  ((:<  (_ _ _)) -> ((node graph) (Purge node)))
+                  ((:!= (_ _ _)) -> ((node graph) (Purge node)))
+                  ((:Cast (_ _)) -> ((node graph) (Purge node))))
+              expr-graph)
+             (insert-nodes graph (graph-nodes expr-graph))
+             (list expr)))
+    (funcall
+     (Simplifier () ((:EXPR (id)) -> ((node graph) (unless (find id seen1) (push id seen1) (simplify-expr node)))))
+     graph)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %simplify-ast (graph
                       &key
                         (opts
                          (list
                           #'fold-constant
-                          ;;#'minimize-duplicated-symbolic-path;; <- TODO: Implement AST-supported version of this to simplify the indexing
-                          ;; ^ 共通項を見つけたらPROGNをInsertして配置するように？・・・
                           #'fuse-duplicated-store
                           #'simplify-control-flow
                           #'exprify-ast
+                          #'ast-simplify-expr
+                          ;; 1. purge reduction (this will remove an extra aref etc)
+                          ;; 2. exprify again
                           #'(lambda (x) (verify-graph x) x)
                           #'ast-verify-sequence
                           #'ast-maximize-band-depth)))
   "Simplifies the AST"
-  (declare (type graph graph))
-  ;; [TODO] Simplify the ast graph based on indexing dependencies!
-  (funcall (apply #'compose (reverse opts)) graph))
+  (declare (type FastGraph graph))
+  (let ((g (funcall (apply #'compose (reverse opts)) graph)))
+    (verify-graph g)
+    g))
 
 (defun simplify-ast (graph)
   (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-verify-sequence)))
@@ -567,3 +600,4 @@ for (int i=0; i<M; i+=32)
 ;; Finish Valid Codegen workload
 ;; - EXPRIFY内部で不要なMOVE/AllocateをPurgeする
 ;; - Memory Planner
+;; - EXPRIFY: EXPR+EXPRで何回も適用できるように，Simplifyした後のグラフでもやりたい
