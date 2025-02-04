@@ -457,7 +457,7 @@ Depends=~a Reduce=~a Users=~a
              (lower-item (node)
                (let ((node (copy-node node)))
                  (assert (= (length (node-writes node)) 1) () "Cannot lower the node ~a with multiple writes." node)
-                 ;; [TODO] Lower aref as well
+                 ;; Lowering %aref if needed.
                  (loop for buffer in (relay-reads (read-type-relay node))
                        for ri in (relay-read-iters (read-type-relay node))
                        for name in (node-reads node)
@@ -492,9 +492,10 @@ Depends=~a Reduce=~a Users=~a
                                     ;; [TODO] (%aref x 0) ?
                                     (car (node-writes node)))))
                      (setf (getattr node :_type_relay) nil)
+                     (setf (node-writes node) (list (gensym "T")))
                      ;; Note: %setf aref is the end of node.
                      (return-from lower-item (emit (%setf aref (emit node))))))
-                 ;; Otherwise emit the node
+                 ;; Otherwise emit the node directly.
                  ;; [TODO] Set declare-type?
                  (setf (getattr node :_type_relay) nil)
                  (emit node)))
