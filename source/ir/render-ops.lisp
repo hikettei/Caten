@@ -541,18 +541,9 @@ for (int i=0; i<M; i+=32)
 ;; Finally (render-ast ast renderer)
 ;; ^ これ使ってOP定義できるようにする(AOT)
 ;; [TODO]
-;; - OpFusion
 ;; - TileBands
 ;;  - Vectorize
 ;;    - PrefetchがISL無しで実装できるか？
-;;  - Parallelize
-;;  - It is IR's obligation to provide the information to opfusion
-;;  - Switch to use aasm instead of blueprint in codegen
-;;  - Remove EXPR, EXPR-Cache, and so on ...
-;;  - EXPR内部の
-;;  - defsimplifier -> make-simplifierにする
-;; - Workload:
-;;  - Exprify
 ;;  - RANGE Specification
 ;;  - Lowering INDEX-COMPONENTS, Aref Indexing
 ;;  - any valid way to run type inference? ==> Supercede the old type infer results
