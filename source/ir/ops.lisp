@@ -1,12 +1,12 @@
 (in-package :caten/ir)
-;; = [Summary of ops in caten/aasm] ===================================
+;; = [Summary of TensorOps] ===========================================
 ;; UnaryOps   | {NEG, RECIP, SIN, EXP2, LOG2, SQRT, NOT}       | 7 Ops
 ;; BinaryOps  | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
 ;; TernaryOps | {!=, <, WHERE, WMMA}                           | 4 Ops
 ;; Buffer     | {ALLOCATE, LOAD, STORE, VIEW}                  | 4 Ops
-;; JIT        | {SPACE}                                        | 1 OP(s)
+;; JIT        | {SPACE, AREF, SETF, BIND}                      | 4 Ops
 ;; +)__________________________________________________________________
-;;                                                             | 25 Ops
+;;                                                             | 28 Ops
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defclass JITAble ()
@@ -293,6 +293,125 @@ for i=0..N
 ```
 ")
 
+) ;; eval-when
+;; ~~ [Render Ops] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(eval-when (:compile-toplevel :load-toplevel :execute)
+
+(defclass RenderOps ()
+  ((is-empty :initform nil :initarg :is-empty))
+  (:documentation "RenderOps is a class that represents the operation of rendering the node to the target language."))
+;;;; Control Flows
+(defnode (:Render :RANGE) (RenderOps)
+         "
+```
+BIND <- RANGE(SIZE, STEP, idx=idx, dtype=dtype)
+```
+
+The node :RANGE will generate a variable named `idx` (with dtype which is an integer) which moves from zero to SIZE with a step of `STEP`.
+
+The compiler will assume SIZE/STEP is always an integer, or a node typed :EXPR.
+"
+         :slots ((idx) (dtype)))
+
+(defnode (:Render :FOR) (RenderOps)
+         "
+```
+ID <- FOR(RANGE, BODY)
+```
+
+The node :FOR will iterate over the range and executes the `BODY` node.
+
+- The variable `RANGE` is always a :RANGE node.
+- The variable `BODY` is always a RenderOps node.
+
+This node also have an special attribute named `mark` for specifying the optimization strategy.
+
+Mark  specifies the type of loop which is exploited by the compiler to optimize the code. It is user's responsibility to ensure the validity of the mark.
+
+Mark should be one of the following based on the nature of the loop.
+
+```
+- coincident (which means the loop is parallelizable)
+- reduction  (which means the loop is reduction)
+- noopt      (which means the loop is not optimized)
+```
+
+Also, once the ASTGraph is constructed the compiler will try to maximize the band depth. Users can access this information via the `band` attribute. Nodes marked as the same `band` has the same band id.
+"
+         :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)
+                 (band :initform nil)))
+
+(defnode (:Render :IF) (RenderOps)
+         "
+```
+ID <- IF(CONDITION, THEN)
+```
+
+The node `IF` will execute `then` only when condition is evaluated to True.
+
+- The variable `CONDITION` is always an EXPR.
+- The variable `THEN` is always RenderOps.
+"
+         :slots nil)
+
+(defnode (:Render :PROGN) (RenderOps)
+         "
+```
+ID <- PROGN(S1, S2, ..., Sn)
+```
+
+The node `:PROGN` will execute nodes from S1 to Sn in sequence. S1 ~ Sn is a node which is a type of RenderOps.
+"
+         :slots nil)
+
+(defnode (:Render :BARRIER) (RenderOps)
+         "
+```
+ID <- BARRIER()
+```
+" :slots nil)
+
+(defnode (:Render :EXPR) (RenderOps) ;; TODO: Rename EXPR -> ALU?
+         "
+```
+ID <- EXPR(NODE)
+```
+ALU
+"
+         :slots nil)
+
+(defnode (:Render :DEFINE-GLOBAL) (RenderOps)
+         "
+```
+X <- ()
+```
+Declares a buffer.
+"
+         :slots nil)
+;;; JITOps
+(defnode (:JIT :Aref) () ;; TODO: Rename Aref -> LOAD?
+         "
+```
+X <- Aref(Array, Index)
+```
+"
+         :slots nil)
+
+(defnode (:JIT :SETF) () ;; TODO: Rename SETF -> STORE?
+         "
+```
+ID <- SETF(AREF(TARGET, IDX), EXPR(...)) 
+```
+Writes the value of EXPR into the corresponding region of AREF.
+")
+
+(defnode (:JIT :BIND) ()
+         "
+```
+ID <- BIND(X, value=value)
+```"
+         :slots ((value)))
+
 (defnode (:JIT :SPACE) (JITAble)
          "
 Corresponds to:
@@ -305,112 +424,11 @@ Corresponds to:
                  (dtype :type keyword)
                  (size)))
 
-) ;; eval-when
-;; ~~ [Render Ops] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(eval-when (:compile-toplevel :load-toplevel :execute)
-
-(defclass RenderOps ()
-  ((is-empty :initform nil :initarg :is-empty))
-  (:documentation "RenderOps is a class that represents the operation of rendering the node to the target language."))
-
-(defnode (:Render :RANGE) (RenderOps)
-         "
-```
-BIND <- RANGE(SIZE, STEP)
-```
-The node :RANGE controls the iteration of the loop. The loop iterates the `BODY` (which must be a RenderOps) over the range of `[0, floor(SIZE, BY))`
-
-The mark specifies the type of loop which is exploited by the compiler to optimize the code. It is user's responsibility to ensure the validity of the mark.
-
-Mark could be one of:
-
-```
-- coincident (which means the loop is parallelizable)
-- reduction  (which means the loop is reduction)
-- noopt      (which means the loop is not optimized)
-```
-"
-         :slots ((idx) (dtype)))
-
-(defnode (:Render :FOR) (RenderOps)
-         "
-```
-ID <- FOR(RANGE, BODY)
-```
-"
-         :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)
-                 (band :initform nil)))
-
-(defnode (:Render :IF) (RenderOps)
-         "
-```
-ID <- IF(CONDITION, THEN)
-```
-"
-         :slots nil)
-
-(defnode (:Render :PROGN) (RenderOps)
-         "
-```
-ID <- PROGN(S1, S2, ..., Sn)
-```
-The equivalent to schedule-node-sequence
-"
-         :slots nil)
-
-(defnode (:Render :Aref) (RenderOps) ;; TODO: Rename Aref -> LOAD?
-         "
-```
-X <- Aref(Array, Index)
-```
-"
-         :slots nil)
-
-(defnode (:Render :EXPR) (RenderOps) ;; TODO: Rename EXPR -> ALU?
-         "
-```
-ID <- EXPR(NODE)
-```
-"
-         :slots nil)
-
-(defnode (:Render :SETF) (RenderOps) ;; TODO: Rename SETF -> STORE?
-         "
-```
-ID <- SETF(AREF(TARGET, IDX), EXPR(...)) 
-```
-Writes the value of EXPR into the corresponding region of AREF.
-")
-
-(defnode (:JIT :BIND) (RenderOps)
-         "
-```
-ID <- BIND(X, value=value)
-```"
-         :slots ((value)))
-
-(defnode (:JIT :EMPTY) (RenderOps)
+(defnode (:JIT :EMPTY) ()
          "A placeholder for variable that are not rendered."
          :slots ((dtype)))
-;; ControlFlow
-(defnode (:Render :BARRIER) (RenderOps)
-         "
-```
-ID <- BARRIER()
-```
-"
-         :slots nil)
 
-(defnode (:Render :DEFINE-GLOBAL) (RenderOps)
-         "
-```
-X <- ()
-```
-Similar to allocate
-"
-         :slots nil)
-
-(defnode (:Render :Function) (RenderOps)
+(defnode (:Render :Function) () ;; [TODO] remove :function?
          ""
          :slots ((name :initform nil :type symbol)))
 ;; Note: More?

@@ -16,6 +16,9 @@
 ;; ~~ Interface ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
   "
+```
+(%range bind size body &key (step 1) (dtype *default-int*) (out (gensym \"RANGE\")) (mark :noopt))
+```
 Constraints:
 - SIZE/STEP is always an EXPR, that is, must not include an control flow.
 "
@@ -26,6 +29,8 @@ Constraints:
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
 (defmacro %dotimes ((bind size &key (mark :noopt) (id (gensym "RANGE"))) &body body)
+  "
+"
   `(let ((,bind ',bind)) (%range ',bind ,size (%progn ,@body) :mark ,mark :out ',id)))
 
 (defun %if (condition body &key (out (gensym "IF")))
@@ -36,13 +41,16 @@ Constraints:
   (when (node-p condition) (setf condition (%expr (node->id1 condition))))
   (emit (make-node :Render :IF (list out) (map 'list #'node->id1 (list condition body)))))
 
-(defun %when (condition body &key (out (gensym "IF"))) (%if condition body :out out))
+(defun %when (condition body &key (out (gensym "IF")))
+  "%if"
+  (%if condition body :out out))
 
 (defun %progn (&rest body &aux (out (gensym "PROGN")))
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
 
-(defun %global (name) (emit (make-node :Render :DEFINE-GLOBAL (list name) nil)))
+(defun %global (name)
+  (emit (make-node :Render :DEFINE-GLOBAL (list name) nil)))
 
 (defun %barrier (&key (out (gensym "BARRIER"))) (emit (make-node :Render :BARRIER (list out) nil)))
 
@@ -54,7 +62,7 @@ Constraints:
 
 (defun %aref (name idx &key (out (gensym "AREF")))
   (declare (type (or symbol node) name idx))
-  (emit (make-node :Render :Aref (list out) (map 'list #'node->id1 (list name idx)))))
+  (emit (make-node :JIT :Aref (list out) (map 'list #'node->id1 (list name idx)))))
 
 (defun %function (name args body &aux (out (gensym "FUNCTION")))
   (emit (make-node :Render :Function (list out) (map 'list #'node->id1 (append (list body) args)) :name name)))
@@ -63,7 +71,7 @@ Constraints:
 
 (defun %setf (tgt value &key (out (gensym "SETF")))
   (declare (type (or symbol node) tgt value))
-  (emit (make-node :Render :SETF (list out) (map 'list #'node->id1 (list tgt value)))))
+  (emit (make-node :JIT :SETF (list out) (map 'list #'node->id1 (list tgt value)))))
 
 (defmacro %defun (name (&rest args) &body body)
   `(%function ',name (list ,@args) (%progn ,@body)))
@@ -123,7 +131,7 @@ Constraints:
     (labels ((explore (x &aux (node (id->value graph x)))
                (when (or (null node) (find x seen)) (return-from explore))
                (when (gethash x stop-at) (return-from explore))
-               (when (member (node-type node) `(:RANGE :DEFINE-GLOBAL)) (return-from explore))
+               (when (eql (node-class node) :Render) (return-from explore))
                (push x seen)
                (push node result)
                (unless only-surface (mapc #'explore (node-reads node)))))
@@ -159,7 +167,7 @@ Constraints:
   (declare (type FastGraph graph) (optimize (speed 3)) (type list seen))
   "Groups multiple strongly connected ops into a single Expr. Expr and Expr are also mergeable."
   ;; Find sink points
-  (labels ((render-p (node) (and (eql (node-class node) :Render) (null (find (node-type node) `(:EXPR :Aref :DEFINE-GLOBAL :SETF)))))
+  (labels ((render-p (node) (eql (node-class node) :Render))
            (sort-progn-body (parents &aux (dg (ast-descendants-graph graph parents :only-surface t)) (m (ast-make-sink-map dg)))
              ;; The descendant of parents is asseted not to have RenderOps.
              (assert (null (some #'render-p (graph-nodes dg))))
@@ -478,12 +486,6 @@ for (int i=0; i<M; i+=32)
   (viz-ast graph))
 ;; [TODO] Decompose 3 -> 1 + 1 + 1 and optimize the indexing?
 (defun viz-ast (graph) (uiop:symbol-call :caten/codegen/blueprint :print-blueprint graph t))
-;; todo
-(defstruct CatenFunction (blueprint))
-;; [TODO] OpFusion
-;; PROGN+PROGN -> PROGN
-;; IndexingをもっとSimplifyしたい。RANGEの外に出す方法？
-;; イメージ:
 ;; ./caten/codegen -> caten/ir/render-ops.lispの機能を使って色々AST変形を実施する
 ;; - Remove :GLOBAL :LOCAL If Guard (which is rebundant only)
 ;; - Remove :LOAD is an args of buffer, instead, use :DEFINE-GLOBAL
@@ -597,6 +599,7 @@ for (int i=0; i<M; i+=32)
 ;;   - ArefのNAMEを書き換えるだけで完了
 ;; - EXPRIFY内部で不要なMOVE/AllocateをPurgeする (OK)
 ;; - DTYPE MAPの実装を完了させる
+;;  - これはTypeMapというAttributeに格納して，TypeRelayとは別のものにする(TypeRelayはCodegen内部で隠蔽する)
 ;; - EXPRIFY: EXPR+EXPRで何回も適用できるように，Simplifyした後のグラフでもやりたい
 ;; - Schedule Cacheを完了
 ;; - CodegenをUpdate, 全てのテストをPassする
