@@ -93,7 +93,7 @@ Constraints:
                             collect `(,(car arg-list) (%global ',(car arg-list) ,@(cdr arg-list)))))
                 (%progn ,@body)))))))
 
-(defun %empty (dtype) (make-node :JIT :Empty (list (gensym)) nil :dtype dtype))
+(defun %empty (dtype) (make-node :Buffer :Allocate (list (gensym)) nil :dtype dtype :nrank 0))
 ;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun Empty! (node)
   (assert (typep (node-attr node) 'RenderOps))
@@ -359,7 +359,6 @@ Constraints:
         (:PROGN (send node (make-typed :void nil)))
         (:IF (send node (make-typed :void nil)))
         (:SPACE (send node (make-typed (getattr node :dtype) nil)))
-        (:EMPTY (send node (make-typed (getattr node :dtype) nil)))
         (:DEFINE-SHARED-MEMORY (send node (make-typed (getattr node :dtype) t)))))
     ;; Repeat until all leave inference is completed.
     (loop until (null waitlist)

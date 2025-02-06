@@ -430,8 +430,6 @@ Corresponds to:
 (defnode (:Render :DEFINE-SHARED-MEMORY) (TypedNode) "Declares a shared memory in the kenrel."
          :slots ((dtype :type keyword) (size :type integer)))
 
-(defnode (:JIT :EMPTY) (TypedNode) "A placeholder for variable that are not rendered." :slots ((dtype :type keyword)))
-
 (defnode (:Render :Function) (TypedNode) ;; [TODO] remove :function?
          ""
          :slots ((name :initform nil :type symbol)))
