@@ -79,5 +79,5 @@
   (:export #:TypedNode #:Typed #:typed-dtype #:typed-pointer-p)
   ;; Optimization Ops
   (:export
-   #:ast-band-tile #:ast-band-tile-gpu
+   #:ast-band-tile #:ast-band-tile-gpu #:ast-band-group
    ))

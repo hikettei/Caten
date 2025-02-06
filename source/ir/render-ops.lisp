@@ -468,11 +468,8 @@ for (int i=0; i<M; i+=32)
           do (insert-nodes graph (list idx-new))
              (loop for node in (graph-nodes graph)
                    if (and (eql (node-type node) :RANGE) (eql (getattr node :idx) idx)) do
-                     (let ((idx-new (%add (ngid idx sp) (ngid idx sc) :id  (car (node-writes node)))))
-                       (insert-nodes graph (list idx-new))
-                       (print node)
-                       (print idx-new)
-                       (print idx))))
+                     (let ((idx-new (%add (ngid idx sp) (ngid idx sc) :id (car (node-writes node)))))
+                       (insert-nodes graph (list idx-new)))))
     ;; [TODO] Ensure the old grpah was purged from graph
     (verify-graph graph)
     (values graph (nreverse globals) (nreverse locals))))
@@ -576,16 +573,13 @@ for (int i=0; i<M; i+=32)
   (loop for r in (node-reads progn)
         do (assert (and (id->value graph r) (eql (node-type (id->value graph r)) :EXPR)) () "progn should be a list of EXPR.")
         collect (car (node-reads (id->value graph r)))))
-
-(defun graph-rewrite-id-map (graph from to)
-  
-  )
 ;;; OptOps (Shared Memory Transfer)
 (defun ast-band-group (graph band size)
   "Optimization for GPU"
   (declare (type FastGraph graph) (type node band) (type list size))
   (assert (eql (node-type band) :FOR) () "ast-band-group: The given band is not :FOR.")
   (assert (eql (getattr band :mark) :reduction) () "ast-band-group is only applicable for :reduction.")
+  (assert (= (length size) 1))
   (ast-infer-typed-node graph)
   (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band size)
     (let* ((body (id->value graph (second (node-reads (car (last local-bands))))))
@@ -624,12 +618,14 @@ for (int i=0; i<M; i+=32)
                            for l = (car reduce) for alu = (second reduce)
                            for id1 = (when l (emit (make-node :JIT :BIND (list (lid l 3)) (list (lid l 1)) :value (lid l 0))))
                            for id2 = (when l (lid l 2))
+                           for body = (id->value graph (second (node-reads (car (last local-bands)))))
                            when l do (setf alu (copy-node alu)
                                            (node-id alu) (gensym "N")
                                            (node-writes alu) (list (gensym "W"))
                                            (car (node-reads alu)) (node->id1 (%aref id1 rid)))
                                      (assert (= 2 (length (node-reads alu))) () "alu ~a is not binaryops" alu)
                                      (emit alu)
+                           and append (when (and body (eql (node-type body) :PROGN) (> (length (node-reads body)) 1)) (butlast (node-reads body)))
                            and collect (%expr (node->id1 (%setf (%aref id1 rid) (node->id1 alu))) :out id2)))))
                  (list (%barrier))
                  (list
@@ -651,7 +647,7 @@ for (int i=0; i<M; i+=32)
               when (eql (node-type node) :BIND) do
                 (loop for reduce in reductions
                       for l = (first reduce) for final-id = (when l (lid l 4))
-                      if (eql (getattr node :value) (car (node-writes l))) do
+                      if (and l (eql (getattr node :value) (car (node-writes l)))) do
                         (let ((n (copy-node node)))
                           (setf (node-reads n) (list final-id))
                           (insert-nodes graph (list n))))))
@@ -676,7 +672,8 @@ the reduction in only the cached region."
 ;; - [ ] :LOAD is always an const define-global
 ;; - [ ] RANGE(1) ==> Remove
 ;; - [ ] TileBands, Remove MAX if unnecessary.
-
+;; - [ ] GID Count is GLOBAL
+;; - [ ] Softmax, Reduce is lowered as _GID2_1, _GID2_2, ...
 ;; Optimizer Things:
 ;; - [ ] BEAM Search
 ;; - [ ] Matmul ---> Block Warp Reduction is effective for both GPU and CPU.
