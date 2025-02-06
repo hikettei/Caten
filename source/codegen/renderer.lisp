@@ -213,7 +213,10 @@
   (def :< "<"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
-  (format nil "~(~a~)[~(~a~)]" (car (node-reads node)) (render-node renderer (second (node-reads node)))))
+  (let ((p (id->value (renderer-graph renderer) (car (node-reads node)))))
+    (if (and p (eql (node-type p) :BIND))
+        (format nil "~(~a~)[~(~a~)]" (getattr p :value) (render-node renderer (second (node-reads node))))
+        (format nil "~(~a~)[~(~a~)]" (car (node-reads node)) (render-node renderer (second (node-reads node)))))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
