@@ -359,13 +359,18 @@ Constraints:
         (:PROGN (send node (make-typed :void nil)))
         (:IF (send node (make-typed :void nil)))
         (:SPACE (send node (make-typed (getattr node :dtype) nil)))
+        (:BARRIER (send node (make-typed :void nil)))
         (:DEFINE-SHARED-MEMORY (send node (make-typed (getattr node :dtype) t)))))
     ;; Repeat until all leave inference is completed.
     (loop until (null waitlist)
           for changed-p = nil do
             (loop for node in (graph-nodes graph)
                   for src-ids = (map 'list #'getyped (node-reads node))
-                  when (and (find (node-id node) waitlist) (every #'identity src-ids)) do
+                  if (eql (node-type node) :BIND) do
+                    (when (and (find (node-id node) waitlist) (getyped (getattr node :value)))
+                      (setf changed-p t)
+                      (send node (getyped (getattr node :value))))
+                  else if (and (find (node-id node) waitlist) (every #'identity src-ids)) do
                     (setf changed-p t)
                     (case (node-type node)
                       (:AREF
@@ -382,6 +387,8 @@ Constraints:
     (loop for node in (graph-nodes graph)
           for src-types = (map 'list #'getyped (node-reads node))
           for dst-types = (map 'list #'getyped (node-writes node)) do
+            (when (eql (node-type node) :BIND)
+              (setf src-types (map 'list #'getyped (list (getattr node :value)))))
             (assert (every #'identity src-types)) (assert (every #'identity dst-types))
             (setf (getattr node :src-types) src-types (getattr node :dst-types) dst-types))
     graph))
@@ -548,8 +555,6 @@ for (int i=0; i<M; i+=32)
   )
 
 (defun ast-band-parallelize ()) ;; Not an tile but uses the depth of band to mark for collapse(N), reuse tile
-(defun expr-gather-buffer-loads ())
-(defun expr-gather-buffer-stores ())
 
 (defun expr-get-reduced-to (graph expr)
   (declare (type graph graph) (type symbol expr))
@@ -558,11 +563,9 @@ for (int i=0; i<M; i+=32)
   (let* ((entry (id->value graph expr))
          (x (and entry (id->value graph (car (node-reads entry)))))
          (y (and entry (id->value graph (second (node-reads entry))))))
-    (print entry)
-    (print x) (print y)
-    (when (and entry (eql (node-type entry) :SETF)
-               x y (getattr y :reduction :allow-undefined t))
-      x)))
+    (when (and entry (eql (node-type entry) :SETF) x y (getattr y :reduction :allow-undefined t))
+      ;; (list load alu)
+      (list x (copy-node y)))))
 
 (defun progn->expr-list (graph progn)
   (declare (type Graph graph) (type node progn))
@@ -570,30 +573,77 @@ for (int i=0; i<M; i+=32)
   (loop for r in (node-reads progn)
         do (assert (and (id->value graph r) (eql (node-type (id->value graph r)) :EXPR)) () "progn should be a list of EXPR.")
         collect (car (node-reads (id->value graph r)))))
+
+(defun graph-rewrite-id-map (graph from to)
+  
+  )
 ;;; OptOps (Shared Memory Transfer)
-;;; --> これはReductionの分割だけにとどめる
 (defun ast-band-group (graph band size)
   "Optimization for GPU"
   (declare (type FastGraph graph) (type node band) (type list size))
   (assert (eql (node-type band) :FOR) () "ast-band-group: The given band is not :FOR.")
   (assert (eql (getattr band :mark) :reduction) () "ast-band-group is only applicable for :reduction.")
-  ;; 1. Reductionの真上にTHREADGROUPのやつ配置
-  ;; 2. ReductionをSIZE分割する
-  ;; 3. SIZE分割したReductionをSharedMemoryに移動
-  ;; 4. SharedMemory内部でもう一回Reduction実行
+  (ast-infer-typed-node graph)
   (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band size)
     (let* ((body (id->value graph (second (node-reads (car (last local-bands))))))
-           (reduce-ops
+           (reductions
              (ecase (node-type body)
                (:EXPR (list (expr-get-reduced-to graph (car (node-reads body)))))
                (:PROGN (map 'list #'(lambda (x) (expr-get-reduced-to graph x)) (progn->expr-list graph body))))))
-      (print "REDUCED_TO")
-      (print reduce-ops)
-      ;; Reduction Output Enumerate
-      (with-blueprint ()
-        (%progn
-;         (%defsmem :size size :dtype dtype :out out)
-         )))))
+      (insert-nodes
+       graph
+       (with-context-nodes
+           (uload
+            (%bind
+             (second (node-reads (car global-bands)))
+             (apply
+              #'%progn
+              ;; Shared Memory Declaration for local buffers and initial value.
+              (append
+               (loop for reduce in reductions
+                     for l = (car reduce)
+                     for id = (when l (intern (format nil "_local_~(~a~)" (car (node-writes l)))))
+                     for id1 = (when l (intern (format nil "_local_~(~a~)_1" (car (node-writes l)))))
+                     when l
+                       append
+                       (list
+                        (%bind id (%defsmem :size size :dtype (typed-dtype (car (getattr l :dst-types)))))
+                        (%dotimes (tmpgid (reduce #'* size) :mark :noopt) ;; expecting the loop to be unrolled away ...
+                          (%expr (node->id1 (%setf (%aref id tmpgid) (car (node-reads l)) :out id1))))))
+               (list
+                (%dotimes (tmpgid (reduce #'* size) :mark :noopt)
+                  (apply
+                   #'%progn
+                   (loop for reduce in reductions
+                         for l = (car reduce) for alu = (second reduce)
+                         for id = (when l (intern (format nil "_local_~(~a~)" (car (node-writes l)))))
+                         when l do (setf alu (copy-node alu)
+                                         (node-id alu) (gensym "N")
+                                         (node-reads alu) (copy-list (node-reads alu))
+                                         (car (node-reads alu)) (node->id1 (%aref id tmpgid)))
+                                   (assert (= 2 (length (node-reads alu))) () "alu ~a is not binaryops" alu)
+                                   (emit alu)
+                         and collect (%expr (node->id1 (%setf (%aref id tmpgid) (node->id1 alu))))))))
+               ;; insert local reduction
+               (list (%barrier))
+               ;; Insert global reduction
+               (list
+                (%when
+                 (%= nil :row (car (node-reads (car global-bands))) (%iconst 0))
+                 (%dotimes (tmpgid (reduce #'* size) :mark :noopt)
+                  (apply
+                   #'%progn
+                   (loop for reduce in reductions
+                         for l = (car reduce) for alu = (second reduce)
+                         for id = (when l (intern (format nil "_local_~(~a~)" (car (node-writes l)))))
+                         when l do (setf alu (copy-node alu)
+                                         (node-id alu) (gensym "N")
+                                         (node-reads alu) (list (node->id1 l) (node->id1 (%aref id tmpgid))))
+                                   (emit alu)
+                         and collect (%expr (node->id1 (%setf l (node->id1 alu)))))))))))))))
+      (verify-graph graph)
+      graph
+      )))
 ;; TODO: Matmul is this:
 ;; - Old Auto Schedulerと同じ方針でOK
 ;; https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh#L50

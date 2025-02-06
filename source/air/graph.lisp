@@ -63,6 +63,9 @@ Creates a copy of the given graph.
 	  (graph-outputs g) (copy-list (graph-outputs graph)))
     g))
 
+(defmethod copy-graph ((graph FastGraph))
+  (->fast-graph (copy-graph (->graph graph))))
+
 (defun graph-p (graph) (typep graph 'Graph))
 
 (defmethod graph-nodes ((graph Graph)) (%graph-nodes graph))
