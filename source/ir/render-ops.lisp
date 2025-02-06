@@ -93,7 +93,7 @@ Constraints:
                             collect `(,(car arg-list) (%global ',(car arg-list) ,@(cdr arg-list)))))
                 (%progn ,@body)))))))
 
-(defun %empty () (make-node :JIT :Empty (list (gensym)) nil))
+(defun %empty (dtype) (make-node :JIT :Empty (list (gensym)) nil :dtype dtype))
 ;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun Empty! (node)
   (assert (typep (node-attr node) 'RenderOps))
@@ -270,7 +270,8 @@ Constraints:
   (labels ((Purge (node)
              (unless (find (car (node-writes node)) seen2)
                (push (car (node-writes node)) seen2)
-               (list (%bind (car (node-reads node)) (%empty)) node)))
+               ;; [TODO] Deduce the type of %empty after running shape inference!!!!
+               (list (%bind (car (node-reads node)) (%empty :float32)) node)))
            (simplify-expr (expr &aux (expr-graph (ast-expr-graph graph expr)))
              ;; Rewriting MUL(MOVE(A, AREF(B)), C) -> MUL(AREF(B), C)
              (funcall (Simplifier () ((:MOVE (_ b)) -> b))  expr-graph)
@@ -318,16 +319,59 @@ Constraints:
 
 (defun simplify-ast (graph)
   (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-verify-sequence)))
-;; ~~ Type Map ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; (getattr :src-types) (getattr :dst-types)
-(defstruct (AType (:constructor make-atype (dtype pointer-p)))
+;; ~~ Type Map ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct (Typed (:constructor make-typed (dtype pointer-p)) (:conc-name typed-)) ;; -> AType
   (dtype dtype :type dtype-t)
   (pointer-p pointer-p :type boolean))
 
-(defun ast-infer-type (graph &aux (typemap (make-hash-table)))
-  (declare (type FastGraph graph))
-
-  )
+(defun ast-infer-typed-node (graph &aux (typemap (make-hash-table)) (waitlist (map 'list #'node-id (graph-nodes graph))))
+  (declare (type FastGraph graph) (optimize (speed 3)) (type list waitlist))
+  (flet ((send (node typed)
+           (declare (type Typed typed))
+           (assert (find (node-id node) waitlist))
+           (setf waitlist (remove (node-id node) waitlist)
+                 (gethash (car (node-writes node)) typemap) typed))
+         (getyped (typed)
+           (if (numberp typed)
+               (if (floatp typed)
+                   (make-typed *default-float* nil)
+                   (progn
+                     (assert (integerp typed))
+                     (make-typed *default-int* nil)))
+               (gethash typed typemap))))
+    (loop for node in (graph-nodes graph) do
+      (assert (subtypep (node-attr node) 'TypedNode) () "The given node ~a is not defined as TypedNode." node)
+      ;; Entry points of the graph.
+      (case (node-type node)
+        (:Allocate
+         (send node (make-typed (getattr node :dtype) (> (length (node-reads node)) 0))))
+        (:DEFINE-GLOBAL
+         (send node (make-typed (getattr node :dtype) (getattr node :pointer-p))))
+        (:SPACE (send node (make-typed (getattr node :dtype) nil)))
+        (:EMPTY (send node (make-typed (getattr node :dtype) nil)))
+        (:DEFINE-SHARED-MEMORY (send node (make-typed (getattr node :dtype) t)))))
+    ;; Repeat until all leave inference is completed.
+    (loop until (null waitlist)
+          for changed-p = nil do
+            (loop for node in (graph-nodes graph)
+                  for src-ids = (map 'list #'getyped (node-reads node))
+                  when (and (null (find (node-id node) waitlist)) (every #'identity src-ids)) do
+                    (setf changed-p t)
+                    (case (node-type node)
+                      (:AREF
+                       (assert (typed-pointer-p (car src-ids)))
+                       (send node (make-typed (typed-dtype (car src-ids)) nil)))
+                      (otherwise
+                       (send node (apply #'caten/air::%get-output-to (node-attr node) src-ids)))))
+            (when (and waitlist (null changed-p))
+              (error "Failed to deduce the graph type ~a. " graph)))
+    ;; Deploy the inferred map
+    (loop for node in (graph-nodes graph)
+          for src-types = (map 'list #'getyped (node-reads node))
+          for dst-types = (map 'list #'getyped (node-writes node)) do
+            (assert (every #'identity src-types)) (assert (every #'identity dst-types))
+            (setf (getattr node :src-types) src-types (getattr node :dst-types) dst-types))
+    graph))
 ;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
   "Tiles the band:

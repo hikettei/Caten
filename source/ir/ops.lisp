@@ -9,7 +9,9 @@
 ;;                                                             | 28 Ops
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
-(defclass JITAble ()
+(defclass TypedNode () ((src-types :initarg :src-types) (dst-types :initarg :dst-types)))
+
+(defclass JITAble (TypedNode)
   ((_type_relay :initarg :_type_relay)
    (_read_views :initform nil :initarg :_read_views)
    (declare-type :initarg :declare-type :initform nil)
@@ -297,7 +299,7 @@ for i=0..N
 ;; ~~ [Render Ops] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
-(defclass RenderOps ()
+(defclass RenderOps (TypedNode)
   ((is-empty :initform nil :initarg :is-empty))
   (:documentation "RenderOps is a class that represents the operation of rendering the node to the target language."))
 ;;;; Control Flows
@@ -389,7 +391,7 @@ Declares a buffer.
 "
          :slots ((dtype) (pointer-p :type boolean)))
 ;;; JITOps
-(defnode (:JIT :Aref) () ;; TODO: Rename Aref -> LOAD?
+(defnode (:JIT :Aref) (RenderOps) ;; TODO: Rename Aref -> LOAD?
          "
 ```
 X <- Aref(Array, Index)
@@ -412,7 +414,7 @@ ID <- BIND(X, value=value)
 ```"
          :slots ((value)))
 
-(defnode (:JIT :SPACE) (JITAble)
+(defnode (:JIT :SPACE) (JITAble) ;; TODO: Rename SPACE -> GID?
          "
 Corresponds to:
 ```
@@ -427,7 +429,7 @@ Corresponds to:
 (defnode (:Render :DEFINE-SHARED-MEMORY) () "Declares a shared memory in the kenrel."
          :slots ((dtype :type keyword) (size :type integer)))
 
-(defnode (:JIT :EMPTY) () "A placeholder for variable that are not rendered.")
+(defnode (:JIT :EMPTY) () "A placeholder for variable that are not rendered." :slots ((dtype :type keyword)))
 
 (defnode (:Render :Function) () ;; [TODO] remove :function?
          ""
