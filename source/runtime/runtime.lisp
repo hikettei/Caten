@@ -258,6 +258,9 @@ disassemble:
         (report-allocation runtime nil (buffer-dtype (getattr node :pool)) (buffer-shape (getattr node :pool)))
         (getattr node :pool)))))
 
+(defmethod realize-node ((node-id (eql :EMPTY)) (runtime GraphRuntime) node args)
+  (let ((dtype (getattr node :dtype))) (make-buffer nil nil dtype nil)))
+
 (defmethod realize-node ((node-id (eql :View)) (runtime GraphRuntime) node args)
   (multiple-value-bind (shape v1 v2 v3 stride bc)
       (parse-view-node node args)

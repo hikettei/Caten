@@ -4,9 +4,14 @@
    #:Auto-Scheduler
    #:Strategy
    #:define-auto-scheduler)
+  ;; Schedule
   (:export
-   #:get-optimized-ast
-   #:search-optimized-ast))
+   #:Schedule-Node #:make-schedule-node-from-blueprint #:make-schedule-node
+   #:schedule-node-schedule #:schedule-node-node
+   #:schedule-node-clone #:schedule-node-move
+   #:schedule-node-get-type #:schedule-node-get-child #:schedule-node-get-n-children)
+  (:export
+   #:get-optimized-ast #:search-optimized-ast))
 
 (in-package :caten/codegen/search)
 ;; ~~ Abstractions ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -53,6 +58,11 @@
   (schedule (error "AST must occur") :type FastGraph)
   (node (error "Node must occur") :type Node))
 
+(defun make-schedule-node-from-blueprint (blueprint)
+  (declare (type Graph blueprint))
+  (assert (= 1 (length (graph-outputs blueprint))) () "make-schedule-node-from-blueprint: AST must start from a single node")
+  (make-schedule-node :schedule blueprint :node (id->value blueprint (car (graph-outputs blueprint)))))
+
 (defmethod schedule-node-clone ((sn schedule-node)) ;; copy-graph = shallow copy.
   (make-schedule-node :schedule (copy-graph (schedule-node-schedule sn)) :node (schedule-node-node sn)))
 
@@ -83,8 +93,7 @@
 (defmethod get-optimized-ast ((auto-scheduler Auto-Scheduler) (ast Graph))
   "Optimizes the given ast using rule-based auto-scheduler."
   (with-slots ((use-tile-gpu use-tile-gpu) (global-max global-max) (local-max local-max) (shared-max shared-max) (use-parallel use-parallel)) (slot-value auto-scheduler 'strategy)
-    (assert (= 1 (length (graph-outputs ast))) () "get-optimized-ast: AST must start from a single node")
-    (let ((schedule (make-schedule-node :schedule ast :node (id->value ast (car (graph-outputs ast)))))
+    (let ((schedule (make-schedule-node-from-blueprint ast))
           (seen-bands nil))
       (declare (type list seen-bands))
       (labels ((explore-children (node)
@@ -98,7 +107,8 @@
                       (case (getattr (schedule-node-node node) :mark)
                         (:coincident
                          (print "CDN")
-                         (ast-band-tile (schedule-node-schedule node) (schedule-node-node node) `(4 4))
+                         ;(ast-band-tile (schedule-node-schedule node) (schedule-node-node node) `(4))
+                         
                          )
                         (:reduction
                          (print "RDC"))
@@ -114,3 +124,9 @@
   (with-slots ((use-tile-gpu use-tile-gpu) (global-max global-max) (local-max local-max) (shared-max shared-max) (use-parallel use-parallel)) (slot-value auto-scheduler 'strategy)
     
     ast))
+;; how to detect the data reuse?
+;; k*_gid0 + _gid1 <- val_16[n*_gid0 + _gid2]
+;; k*_gid0 + _gid1 <- val_19[_gid1+k*_gid2]
+
+;; _gid0 * 128 + _gid2 <- val_9[_gid0]
+;; _gid0 * 128 + _gid2 <- val_14[_gid2+128*_gid1]

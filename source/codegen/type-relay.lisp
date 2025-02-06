@@ -77,7 +77,7 @@
 	  (buffer-orig-buffer-shape buff) (buffer-orig-buffer-shape (car args)))
     buff))
 ;; ~~ Realizes ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter *special-nodes* `(:Allocate :View :Load :Where :AREF :SPACE))
+(defparameter *special-nodes* `(:Allocate :View :Load :Where :AREF :SPACE :EMPTY))
 (defmethod realize-node :around (node-id (runtime RelayChecker) node args)
   (when (getattr node :_type_relay :allow-undefined t)
     (loop for n in (node-writes node)
@@ -119,6 +119,9 @@
     (when (or (numberp val) (symbolp val))
       (setf (buffer-value out) val))
     out))
+
+(defmethod realize-node ((node-id (eql :EMPTY)) (runtime RelayChecker) node args)
+  (make-buffer nil nil (getattr node :dtype) nil :device 'RelayBuffer))
 
 (defmethod realize-node ((node-id (eql :Where)) (runtime RelayChecker) node args) (copy-buffer (second args)))
 ;; ~~ Entry Points ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
