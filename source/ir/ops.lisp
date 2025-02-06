@@ -9,9 +9,10 @@
 ;;                                                             | 28 Ops
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
-(defclass TypedNode () ((src-types :initarg :src-types) (dst-types :initarg :dst-types)))
+(defclass TypedNode () ;; = it is possible to use the node as an AST.
+  ((src-types :initarg :src-types :initform nil) (dst-types :initarg :dst-types :initform nil)))
 
-(defclass JITAble (TypedNode)
+(defclass JITAble () ;; = it is valid to pass the node to the scheduler.lisp
   ((_type_relay :initarg :_type_relay)
    (_read_views :initform nil :initarg :_read_views)
    (declare-type :initarg :declare-type :initform nil)
@@ -35,49 +36,49 @@ UnaryOps applies an operaton to the first given read value and overwrites the re
 out <- f(x)
 ```"))
 
-(defnode (:UnaryOps :NEG) (UnaryOps JITAble)
+(defnode (:UnaryOps :NEG) (UnaryOps JITAble TypedNode)
 	 "The node :NEG flips the sign of the first read tensor, writing the result to the first write.
 ```
 out = (-x);
 ```
 ")
 
-(defnode (:UnaryOps :RECIP) (UnaryOps JITAble)
+(defnode (:UnaryOps :RECIP) (UnaryOps JITAble TypedNode)
 	 "The node :RECIP computes the reciprocal of the first read tensor, writing the result to the first write.
 ```
 out = (1/x);
 ```
 ")
 
-(defnode (:UnaryOps :SIN) (UnaryOps JITAble)
+(defnode (:UnaryOps :SIN) (UnaryOps JITAble TypedNode)
 	 "The node :SIN computes sine of the first read tensor, writing the result to the first write.
 ```
 out = sin(x);
 ```
 ")
 
-(defnode (:UnaryOps :EXP2) (UnaryOps JITAble)
+(defnode (:UnaryOps :EXP2) (UnaryOps JITAble TypedNode)
 	 "The node :EXP2 computes `exp2` of the first read tensor, writing the result to the first write.
 ```
 out = exp2(x);
 ```
 ")
 
-(defnode (:UnaryOps :LOG2) (UnaryOps JITAble)
+(defnode (:UnaryOps :LOG2) (UnaryOps JITAble TypedNode)
 	 "The node :LOG2 computes `log2` of the first read tensor, writing the result to the first write.
 ```
 out = log2(x);
 ```
 ")
 
-(defnode (:UnaryOps :SQRT) (UnaryOps JITAble)
+(defnode (:UnaryOps :SQRT) (UnaryOps JITAble TypedNode)
 	 "The node :SQRT computes square-root of the first read tensor, writing the result to the first write.
 ```
 out = sqrt(x);
 ```
 ")
 
-(defnode (:UnaryOps :NOT) (UnaryOps JITAble)
+(defnode (:UnaryOps :NOT) (UnaryOps JITAble TypedNode)
 	 "The node :NOT computes the logical-not of the given tensor if the input is a boolean, otherwise (integer) computes a bitwise-not.
 
 ```
@@ -101,53 +102,53 @@ x <- f(x, y)
 - wrap-around[boolean] When this option is set to T, it suggests that overflow may occur as a result of the computation. If the backend in use does not exhibit the behavior of wrapping around to the minimum value of the data type when the maximum value is exceeded, this needs to be implemented intentionally. (This behaviour is assumed by threefry2x32 as of this writing: 2024/9/16) Only the :ADD and :MUL requires this behaviour.
 "))
 
-(defnode (:BinaryOps :Add) (BinaryOps JITAble)
+(defnode (:BinaryOps :Add) (BinaryOps JITAble TypedNode)
 	 "The node :ADD adds the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
 ```")
 
-(defnode (:BinaryOps :MUL) (BinaryOps JITAble)
+(defnode (:BinaryOps :MUL) (BinaryOps JITAble TypedNode)
 	 "The node :MUL multiplies the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
 ```")
 
-(defnode (:BinaryOps :MOD) (BinaryOps JITAble)
+(defnode (:BinaryOps :MOD) (BinaryOps JITAble TypedNode)
 	 "The node :MOD finds the reminder of the first tensor in `read` divided by the second tensor in `read`.
 ```
 out <- x % y
 ```")
 
-(defnode (:BinaryOps :IDIV) (BinaryOps JITAble)
+(defnode (:BinaryOps :IDIV) (BinaryOps JITAble TypedNode)
 	 "The node :IDIV divides the first tensor in `read` by the second tensor in `read`, writing the result to the first `write`.
 Unlike other BinaryOps, :IDIV assumes two tensors to be an integer typed tensor.
 ```
 out <- x / y
 ```")
 
-(defnode (:BinaryOps :AND) (BinaryOps JITAble)
+(defnode (:BinaryOps :AND) (BinaryOps JITAble TypedNode)
 	 "The node :AND computes the bit-wise and of two tensors in `read` if they are integer, otherwise (boolean) computes the logical-and.
 ```
 out <- x && y (if boolean)
 out <- x & y (if integer)
 ```")
 
-(defnode (:BinaryOps :OR) (BinaryOps JITAble)
+(defnode (:BinaryOps :OR) (BinaryOps JITAble TypedNode)
 	 "The node :OR computes the bit-wise or of two tensors in `read` if they are integer, otherwise (boolean) computes the logical-or.
 ```
 out <- x || y (if boolean)
 out <- x | y (if integer)
 ```")
 
-(defnode (:BinaryOps :XOR) (BinaryOps JITAble)
+(defnode (:BinaryOps :XOR) (BinaryOps JITAble TypedNode)
 	 "The node :XOR computes the bit-wise xor of two tensors in `read` if they are integer, otherwise (boolean) computes the logical-xor.
 ```
 out <- x ^ y (if boolean)
 out <- x ^ y (if integer)
 ```")
 
-(defnode (:BinaryOps :MOVE) (BinaryOps JITAble)
+(defnode (:BinaryOps :MOVE) (BinaryOps JITAble TypedNode)
 	 "Moves the second read into the first read, setting the result to first write.
 ```
 out <- move(x, y)
@@ -155,7 +156,7 @@ where move(x, y) is x = y
 ```
 ")
 
-(defnode (:BinaryOps :MAX) (BinaryOps JITAble)
+(defnode (:BinaryOps :MAX) (BinaryOps JITAble TypedNode)
 	 "Computes the maximum value of two tensors in read, writing the result to the first write.
 ```
 out <- max(x, y)
@@ -171,7 +172,7 @@ out <- gcd(x, y)
 ```
 ")
 
-(defnode (:BinaryOps :CAST) (BinaryOps JITAble)
+(defnode (:BinaryOps :CAST) (BinaryOps JITAble TypedNode)
 	 "
 ```
 OUT <- CAST(OUT, X)
@@ -188,7 +189,7 @@ out <- f(x, y, z)
 ```
 "))
 
-(defnode (:TernaryOps :!=) (TernaryOps JITAble)
+(defnode (:TernaryOps :!=) (TernaryOps JITAble TypedNode)
 	 "Compares the second and third tensors in read with `not-equal`, writing the result to the first write. The first read tensor is an placeholder for the first write tensor and is always boolean.
 ```
 x = y != z;
@@ -196,7 +197,7 @@ out = x;
 ```
 ")
 
-(defnode (:TernaryOps :<) (TernaryOps JITAble)
+(defnode (:TernaryOps :<) (TernaryOps JITAble TypedNode)
 	 "Compares the second and third tensors in read with `<`, writing the result to the first write. The first read tensor is an placeholder for the first write tensor and is always boolean.
 ```
 x = y < z;
@@ -204,7 +205,7 @@ out = x;
 ```
 ")
 
-(defnode (:TernaryOps :WHERE) (TernaryOps JITAble)
+(defnode (:TernaryOps :WHERE) (TernaryOps JITAble TypedNode)
 	 "If the result of the first read (boolean) is true, the second read is selected, and if false, the third read is selected and written to the first write. When optimizing in-place, note that the value of the second read is used as a placeholder since choosing the first read would result in a data type mismatch with write.
 ```
 in_dtype = dtype_of(y);
@@ -213,7 +214,7 @@ out[in_dtype] = x[boolean] ? y[in_dtype] : z[in_dtype];
 "
 	 :placeholder 1)
 
-(defnode (:TernaryOps :WMMA) (TernaryOps JITAble)
+(defnode (:TernaryOps :WMMA) (TernaryOps JITAble TypedNode)
 	 "The node :WMMA is generated during optimization (simplifiers.lisp) by AJIT and represents a fused computation of :ADD and :MUL. WMMA is not generated during VM execution.
 
 WMMA is used to optimize the gemm computation:
@@ -228,7 +229,7 @@ out = c + a * b (if reduction = nil)
   nil
   (:documentation "BufferOps performs an operaton related to the buffer."))
 
-(defnode (:Buffer :Allocate) (BufferOps JITAble)
+(defnode (:Buffer :Allocate) (BufferOps JITAble TypedNode)
 	 "Allocates a new matrix of scalar value in the VM.
 ```
 out = allocate(*shape, *stride)
@@ -246,7 +247,7 @@ out = allocate(*shape, *stride)
 		 (from :initform nil)
                  (pool :initform nil :type (or null Buffer))))
 
-(defnode (:Buffer :LOAD) (BufferOps JITAble)
+(defnode (:Buffer :LOAD) (BufferOps JITAble TypedNode)
 	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
 ```
 x[...] = value;
@@ -257,12 +258,12 @@ out = x;
 "
 	 :slots ((value)))
 
-(defnode (:Buffer :STORE) (BufferOps BinaryOps JITAble)
+(defnode (:Buffer :STORE) (BufferOps BinaryOps JITAble TypedNode)
 	 "Just like a :MOVE, moves the second tensor in read into the first tensor in read, writing the result to the first write.
 (Note: :STORE can be removed in the future refactoring)
 ")
 
-(defnode (:Buffer :VIEW) (BufferOps JITAble)
+(defnode (:Buffer :VIEW) (BufferOps JITAble TypedNode)
 	 "Creates a view object of the tensor in a first read.
 `View object` can modify the multi-dimensional offset of tensors, strides, shapes, and strides without copying.
 ```
@@ -299,11 +300,11 @@ for i=0..N
 ;; ~~ [Render Ops] ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
-(defclass RenderOps (TypedNode)
+(defclass RenderOps ()
   ((is-empty :initform nil :initarg :is-empty))
   (:documentation "RenderOps is a class that represents the operation of rendering the node to the target language."))
 ;;;; Control Flows
-(defnode (:Render :RANGE) (RenderOps)
+(defnode (:Render :RANGE) (RenderOps TypedNode)
          "
 ```
 BIND <- RANGE(SIZE, STEP, idx=idx, dtype=dtype)
@@ -315,7 +316,7 @@ The compiler will assume SIZE/STEP is always an integer, or a node typed :EXPR.
 "
          :slots ((idx) (dtype)))
 
-(defnode (:Render :FOR) (RenderOps)
+(defnode (:Render :FOR) (RenderOps TypedNode)
          "
 ```
 ID <- FOR(RANGE, BODY)
@@ -343,7 +344,7 @@ Also, once the ASTGraph is constructed the compiler will try to maximize the ban
          :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)
                  (band :initform nil)))
 
-(defnode (:Render :IF) (RenderOps)
+(defnode (:Render :IF) (RenderOps TypedNode)
          "
 ```
 ID <- IF(CONDITION, THEN)
@@ -356,7 +357,7 @@ The node `IF` will execute `then` only when condition is evaluated to True.
 "
          :slots nil)
 
-(defnode (:Render :PROGN) (RenderOps)
+(defnode (:Render :PROGN) (RenderOps TypedNode)
          "
 ```
 ID <- PROGN(S1, S2, ..., Sn)
@@ -366,14 +367,14 @@ The node `:PROGN` will execute nodes from S1 to Sn in sequence. S1 ~ Sn is a nod
 "
          :slots nil)
 
-(defnode (:Render :BARRIER) (RenderOps)
+(defnode (:Render :BARRIER) (RenderOps TypedNode)
          "
 ```
 ID <- BARRIER()
 ```
 " :slots nil)
 
-(defnode (:Render :EXPR) (RenderOps) ;; TODO: Rename EXPR -> ALU?
+(defnode (:Render :EXPR) (RenderOps TypedNode) ;; TODO: Rename EXPR -> ALU?
          "
 ```
 ID <- EXPR(NODE)
@@ -382,7 +383,7 @@ ALU
 "
          :slots nil)
 
-(defnode (:Render :DEFINE-GLOBAL) (RenderOps)
+(defnode (:Render :DEFINE-GLOBAL) (RenderOps TypedNode)
          "
 ```
 X <- ()
@@ -391,7 +392,7 @@ Declares a buffer.
 "
          :slots ((dtype) (pointer-p :type boolean)))
 ;;; JITOps
-(defnode (:JIT :Aref) (RenderOps) ;; TODO: Rename Aref -> LOAD?
+(defnode (:JIT :Aref) (RenderOps TypedNode) ;; TODO: Rename Aref -> LOAD?
          "
 ```
 X <- Aref(Array, Index)
@@ -399,7 +400,7 @@ X <- Aref(Array, Index)
 "
          :slots nil)
 
-(defnode (:JIT :SETF) () ;; TODO: Rename SETF -> STORE?
+(defnode (:JIT :SETF) (TypedNode) ;; TODO: Rename SETF -> STORE?
          "
 ```
 ID <- SETF(AREF(TARGET, IDX), EXPR(...)) 
@@ -407,14 +408,14 @@ ID <- SETF(AREF(TARGET, IDX), EXPR(...))
 Writes the value of EXPR into the corresponding region of AREF.
 ")
 
-(defnode (:JIT :BIND) ()
+(defnode (:JIT :BIND) (TypedNode)
          "
 ```
 ID <- BIND(X, value=value)
 ```"
          :slots ((value)))
 
-(defnode (:JIT :SPACE) (JITAble) ;; TODO: Rename SPACE -> GID?
+(defnode (:JIT :SPACE) (TypedNode) ;; TODO: Rename SPACE -> GID?
          "
 Corresponds to:
 ```
@@ -426,12 +427,12 @@ Corresponds to:
                  (dtype :type keyword)
                  (size)))
 
-(defnode (:Render :DEFINE-SHARED-MEMORY) () "Declares a shared memory in the kenrel."
+(defnode (:Render :DEFINE-SHARED-MEMORY) (TypedNode) "Declares a shared memory in the kenrel."
          :slots ((dtype :type keyword) (size :type integer)))
 
-(defnode (:JIT :EMPTY) () "A placeholder for variable that are not rendered." :slots ((dtype :type keyword)))
+(defnode (:JIT :EMPTY) (TypedNode) "A placeholder for variable that are not rendered." :slots ((dtype :type keyword)))
 
-(defnode (:Render :Function) () ;; [TODO] remove :function?
+(defnode (:Render :Function) (TypedNode) ;; [TODO] remove :function?
          ""
          :slots ((name :initform nil :type symbol)))
 ;; Note: More?

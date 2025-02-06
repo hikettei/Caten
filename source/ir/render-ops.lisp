@@ -270,8 +270,9 @@ Constraints:
   (labels ((Purge (node)
              (unless (find (car (node-writes node)) seen2)
                (push (car (node-writes node)) seen2)
-               ;; [TODO] Deduce the type of %empty after running shape inference!!!!
-               (list (%bind (car (node-reads node)) (%empty :float32)) node)))
+               (let ((typed (car (getattr node :src-types))))
+                 (assert typed () "ast-simplify-expr: Cannot deduce the first src of ~a" node)
+                 (list (%bind (car (node-reads node)) (%empty (typed-dtype typed))) node))))
            (simplify-expr (expr &aux (expr-graph (ast-expr-graph graph expr)))
              ;; Rewriting MUL(MOVE(A, AREF(B)), C) -> MUL(AREF(B), C)
              (funcall (Simplifier () ((:MOVE (_ b)) -> b))  expr-graph)
@@ -284,7 +285,7 @@ Constraints:
               (Simplifier
                   ()
                   ((:MOVE (_ _)) -> ((node graph) (Purge node)))
-                  ;;((:LOAD   (_)) -> ((node graph) (Purge node)))
+                  ((:LOAD   (_)) -> ((node graph) (Purge node)))
                   ((:<  (_ _ _)) -> ((node graph) (Purge node)))
                   ((:!= (_ _ _)) -> ((node graph) (Purge node)))
                   ((:Cast (_ _)) -> ((node graph) (Purge node))))
@@ -292,10 +293,10 @@ Constraints:
              (insert-nodes graph (graph-nodes expr-graph))
              (list expr)))
     (funcall
-     (Simplifier () ((:EXPR (id)) -> ((node graph) (unless (find id seen1) (push id seen1) (simplify-expr node)))))
+     (compose
+      (Simplifier () ((:EXPR (id)) -> ((node graph) (unless (find id seen1) (push id seen1) (simplify-expr node)))))
+      #'ast-infer-typed-node)
      graph)))
-;; [TODO] TypeMap definition is in air
-(defun ast-infer-type-map (graph))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %simplify-ast (graph
                       &key
@@ -321,8 +322,12 @@ Constraints:
   (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-verify-sequence)))
 ;; ~~ Type Map ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Typed (:constructor make-typed (dtype pointer-p)) (:conc-name typed-)) ;; -> AType
-  (dtype dtype :type dtype-t)
+  (dtype dtype :type (or (member :void) dtype-t))
   (pointer-p pointer-p :type boolean))
+
+(defmethod print-object ((typed Typed) stream)
+  (print-unreadable-object (typed stream :type nil)
+    (format stream "TYPED ~(~a~)~a" (typed-dtype typed) (if (typed-pointer-p typed) "*" ""))))
 
 (defun ast-infer-typed-node (graph &aux (typemap (make-hash-table)) (waitlist (map 'list #'node-id (graph-nodes graph))))
   (declare (type FastGraph graph) (optimize (speed 3)) (type list waitlist))
@@ -340,13 +345,17 @@ Constraints:
                      (make-typed *default-int* nil)))
                (gethash typed typemap))))
     (loop for node in (graph-nodes graph) do
-      (assert (subtypep (node-attr node) 'TypedNode) () "The given node ~a is not defined as TypedNode." node)
+      (assert (subtypep (class-of (node-attr node)) 'TypedNode) () "The given node ~a is not defined as TypedNode." node)
       ;; Entry points of the graph.
       (case (node-type node)
-        (:Allocate
+        (:ALLOCATE
          (send node (make-typed (getattr node :dtype) (> (length (node-reads node)) 0))))
         (:DEFINE-GLOBAL
          (send node (make-typed (getattr node :dtype) (getattr node :pointer-p))))
+        ;; Set VOID for control flow
+        (:FOR (send node (make-typed :void nil)))
+        (:PROGN (send node (make-typed :void nil)))
+        (:IF (send node (make-typed :void nil)))
         (:SPACE (send node (make-typed (getattr node :dtype) nil)))
         (:EMPTY (send node (make-typed (getattr node :dtype) nil)))
         (:DEFINE-SHARED-MEMORY (send node (make-typed (getattr node :dtype) t)))))
@@ -355,16 +364,19 @@ Constraints:
           for changed-p = nil do
             (loop for node in (graph-nodes graph)
                   for src-ids = (map 'list #'getyped (node-reads node))
-                  when (and (null (find (node-id node) waitlist)) (every #'identity src-ids)) do
+                  when (and (find (node-id node) waitlist) (every #'identity src-ids)) do
                     (setf changed-p t)
                     (case (node-type node)
                       (:AREF
                        (assert (typed-pointer-p (car src-ids)))
                        (send node (make-typed (typed-dtype (car src-ids)) nil)))
+                      (:CAST
+                       (send node (make-typed (getattr node :dtype) (typed-pointer-p (car src-ids)))))
                       (otherwise
-                       (send node (apply #'caten/air::%get-output-to (node-attr node) src-ids)))))
+                       (send node (or (apply #'caten/air::%get-output-to (node-attr node) src-ids) (error "Please add special typemap handler for the node ~a" node))))))
             (when (and waitlist (null changed-p))
-              (error "Failed to deduce the graph type ~a. " graph)))
+              (error "Failed to deduce the graph type due to cycle dependencies of ~a"
+                     (map 'list #'(lambda (x) (find x (the list (graph-nodes graph)) :key #'node-id)) waitlist))))
     ;; Deploy the inferred map
     (loop for node in (graph-nodes graph)
           for src-types = (map 'list #'getyped (node-reads node))
