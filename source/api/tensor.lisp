@@ -317,10 +317,9 @@ Returns a temporary runtime object just used for allocation global buffer."
             (make-runtime (make-graph) :runtime (caten/codegen/backend:get-runtime-type) :buffer-type (caten/codegen/backend:get-buffer-type)))))
 ;; ~~ Schedule Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun tensor-compute-schedule (tensor)
-  (let ((runtime (%compile-toplevel (list tensor) :rewriters nil :external-simplifiers *external-simplifiers*)))
-    (caten/codegen/type-relay:run-type-infer runtime)
-    (caten/codegen/rewriting-rules:apply-rewriting-rules runtime)
-    (caten/codegen/scheduler:graph-schedule (runtime-graph runtime))))
+  (caten/codegen/jit:codegen
+   (%compile-toplevel (list tensor) :rewriters nil :external-simplifiers *external-simplifiers*)
+   :get-schedule-p t))
 
 (defun tensor-get-kernel (tensor &optional (n 0))
   (let* ((schedule-graph (tensor-compute-schedule tensor))

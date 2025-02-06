@@ -19,7 +19,7 @@
             do (push tgt seen))
     schedule-graph))
 ;; [TODO] Runner here
-(defun codegen (runtime &key (backend (ctx:getenv :BACKEND)))
+(defun codegen (runtime &key (backend (ctx:getenv :BACKEND)) (get-schedule-p nil))
   "
 ```
 (codegen runtime &key (backend (ctx:getenv :BACKEND)))
@@ -64,6 +64,7 @@
                      (when (>= JIT_DEBUG 2)
                        (format t "Compilation Time : ~A(sec)" (float (/ (- end start) internal-time-units-per-second))))))))
            (graph-nodes schedule-graph)))
+        (when get-schedule-p (return-from codegen schedule-graph))
         ;; Running AutoScheduler
         ;; [TODO] Implement Advanced Fusion (e.g.: Matmul+Softmax+Matmul Fusion etc)
         (when (>= JIT_DEBUG 2)

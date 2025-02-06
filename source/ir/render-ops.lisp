@@ -618,7 +618,7 @@ for (int i=0; i<M; i+=32)
 ;; - [ ] Implenment Swizzle/Upcast/Vectorize, Support tmp.x
 
 ;; More Things:
-;; - [ ] Add: tensor-schedule-graph
+;; - [x] Add: tensor-schedule-graph
 ;; - [ ] Add: ast-finalize-graph -> Propagate all :LOAD
 ;; Finish valid codegen workload
 ;; - (with-inference-mode () (caten (forward (caten/nn:Embedding 128 128) (make-tensor `(128 128)))))
