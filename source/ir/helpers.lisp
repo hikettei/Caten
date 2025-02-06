@@ -74,3 +74,16 @@ will return a graph."
      g))
 ;; ~~ AST Transformation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ngid (gid suffix) (intern (format nil "~a~a" gid suffix)))
+
+(defun get-band-from-gid (graph gid &optional (nth 0))
+  (declare (type graph graph) (type symbol gid))
+  (or
+   (nth
+    nth
+    (loop for node in (graph-nodes graph)
+          when (and (eql (node-type node) :FOR)
+                    (let ((range (id->value graph (car (node-reads node)))))
+                      (and range (eql (node-type range) :RANGE)
+                           (equalp (princ-to-string (getattr range :idx)) (princ-to-string gid)))))
+            collect node))
+   (error "get-band-from-gid: The gid ~a is not found in the graph." gid)))

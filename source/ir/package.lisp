@@ -34,7 +34,8 @@
    #:with-context-from-parents
    #:with-asm
    #:*ctx*
-   #:emit)
+   #:emit
+   #:get-band-from-gid)
   ;; from ops.lisp
   (:export
    ;; Binary

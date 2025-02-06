@@ -598,9 +598,15 @@ for (int i=0; i<M; i+=32)
 ;; - Old Auto Schedulerと同じ方針でOK
 ;; https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh#L50
 (defun ast-band-prefetch (graph band size)
-  "Reduction Optimization for CPU"
+  "Prefetch will first transfers all buffers used in the reduction band to the shared memory, and performs
+the reduction in only the cached region."
+  (declare (type FastGraph graph) (type node band) (type list size))
+  (assert (eql (node-type band) :FOR) () "ast-band-prefetch: The given band is not :FOR.")
+  (assert (eql (getattr band :mark) :reduction) () "ast-band-prefetch is only applicable for :reduction.")
   ;; Implements WarpTile!!
-  )
+  (print graph)
+  (print band)
+  graph)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ;; Simplifier Things:
 ;; - [ ] Remove :GLOBAL :LOCAL IF Guard which is rebundant
