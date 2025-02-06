@@ -32,6 +32,8 @@
    #:tensor-lowered-graph
    #:fconst #:uconst #:iconst
    #:->iconst #:->fconst #:->uconst
+
+   #:tensor-compute-schedule #:tensor-get-kernel
    
    #:Tensor
    #:tensor-p
