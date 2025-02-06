@@ -19,7 +19,7 @@
        (unless ,noopt (setf graph (%simplify-ast graph)))
        graph)))
 ;; ~~ Interface ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt))
+(defun %range (bind size body &key (step 1) (dtype *default-int*) (out (gensym "RANGE")) (mark :noopt) (range))
   "
 ```
 (%range bind size body &key (step 1) (dtype *default-int*) (out (gensym \"RANGE\")) (mark :noopt))
@@ -30,12 +30,12 @@ Constraints:
   (declare (type symbol bind) (type (or node symbol) body) (type (or symbol node fixnum) size step) (type keyword dtype) (type symbol out) (type (member :coincident :noopt :reduction) mark))
   (when (node-p size) (setf size (%expr (node->id1 size))))
   (when (node-p step) (setf body (%expr (node->id1 body))))
-  (let ((range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step)) :idx bind :dtype dtype))))
+  (let ((range (or range (emit (make-node :Render :RANGE (list bind) (map 'list #'node->id1 (list size step)) :idx bind :dtype dtype)))))
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
-(defmacro %dotimes ((bind size &key (mark :noopt) (id (gensym "RANGE"))) &body body)
+(defmacro %dotimes ((bind size &key (mark :noopt) (id (gensym "RANGE")) (range)) &body body)
   ""
-  `(let ((,bind ',bind)) (%range ',bind ,size (%progn ,@body) :mark ,mark :out ',id)))
+  `(let ((,bind ',bind)) (%range ',bind ,size (%progn ,@body) :mark ,mark :out ',id :range ,range)))
 
 (defun %if (condition body &key (out (gensym "IF")))
   "
@@ -465,7 +465,14 @@ for (int i=0; i<M; i+=32)
     (loop for band in bands
           for idx = (car (node-reads band))
           for idx-new = (%add (ngid idx sp) (ngid idx sc) :id idx)
-          do (insert-nodes graph (list idx-new)))
+          do (insert-nodes graph (list idx-new))
+             (loop for node in (graph-nodes graph)
+                   if (and (eql (node-type node) :RANGE) (eql (getattr node :idx) idx)) do
+                     (let ((idx-new (%add (ngid idx sp) (ngid idx sc) :id  (car (node-writes node)))))
+                       (insert-nodes graph (list idx-new))
+                       (print node)
+                       (print idx-new)
+                       (print idx))))
     ;; [TODO] Ensure the old grpah was purged from graph
     (verify-graph graph)
     (values graph (nreverse globals) (nreverse locals))))
@@ -582,6 +589,8 @@ for (int i=0; i<M; i+=32)
   (ast-infer-typed-node graph)
   (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band size)
     (let* ((body (id->value graph (second (node-reads (car (last local-bands))))))
+           (range (car (node-reads (car (last local-bands)))))
+           (rid (getattr (id->value graph range) :idx))
            (reductions
              (ecase (node-type body)
                (:EXPR (list (expr-get-reduced-to graph (car (node-reads body)))))
@@ -608,7 +617,7 @@ for (int i=0; i<M; i+=32)
                           (%dotimes (tmpgid (reduce #'* size) :mark :noopt) ;; expecting the loop to be unrolled away ...
                             (%expr (node->id1 (%setf (%aref id tmpgid) (car (node-reads l)))) :out id1))))
                  (list
-                  (%dotimes (tmpgid (reduce #'* size) :mark :noopt)
+                  (%dotimes (tmpgid (reduce #'* size) :mark :noopt :range range)
                     (apply
                      #'%progn
                      (loop for reduce in reductions
@@ -618,10 +627,10 @@ for (int i=0; i<M; i+=32)
                            when l do (setf alu (copy-node alu)
                                            (node-id alu) (gensym "N")
                                            (node-writes alu) (list (gensym "W"))
-                                           (car (node-reads alu)) (node->id1 (%aref id1 tmpgid)))
+                                           (car (node-reads alu)) (node->id1 (%aref id1 rid)))
                                      (assert (= 2 (length (node-reads alu))) () "alu ~a is not binaryops" alu)
                                      (emit alu)
-                           and collect (%expr (node->id1 (%setf (%aref id1 tmpgid) (node->id1 alu))) :out id2)))))
+                           and collect (%expr (node->id1 (%setf (%aref id1 rid) (node->id1 alu))) :out id2)))))
                  (list (%barrier))
                  (list
                   (%when
