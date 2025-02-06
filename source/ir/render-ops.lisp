@@ -224,8 +224,10 @@ Constraints:
              (assert (every #'identity field) () "ast-verify-sequence: There is an undefined progn field: ~a" field)
              (setf (node-reads node) (map 'list (compose #'car #'node-writes #'car) (sort pairs #'< :key #'cdr))))))
     (loop for node in (graph-nodes graph)
-          when (eql (node-type node) :PROGN)
-            do (helper node))
+          ;when (eql (node-type node) :PROGN)
+          ;  do (helper node)
+          )
+    ;; [TODO] No need to sort PROGN?
     graph))
 
 (defun ast-maximize-band-depth (graph &aux (bands) (gid2band (make-hash-table)) (count 0))
@@ -619,9 +621,7 @@ for (int i=0; i<M; i+=32)
                                      (assert (= 2 (length (node-reads alu))) () "alu ~a is not binaryops" alu)
                                      (emit alu)
                            and collect (%expr (node->id1 (%setf (%aref id1 tmpgid) (node->id1 alu))) :out id2)))))
-                 ;; insert local reduction
                  (list (%barrier))
-                 ;; Insert global reduction
                  (list
                   (%when
                    (%= nil :row (car (node-reads (car global-bands))) (%iconst 0))
@@ -645,7 +645,7 @@ for (int i=0; i<M; i+=32)
                           (setf (node-reads n) (list final-id))
                           (insert-nodes graph (list n))))))
         (verify-graph graph)
-        graph))))
+        graph)))
 ;; TODO: Matmul is this:
 ;; - Old Auto Schedulerと同じ方針でOK
 ;; https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh#L50
