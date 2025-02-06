@@ -542,11 +542,9 @@ for (int i=0; i<M; i+=32)
     ;; [TODO] How to determine the unrolled variable index? it depends on time-series dependencies
     ))
 
-(defun ast-vectorize (graph band local-sizes)
-  ;; ensure stride == 1
+(defun ast-band-packing (graph band local-sizes)
+  ;; TODO: No need to ensure stride == 1
   )
-
-(defun ast-upcast ()) ;; reuse unroll
 
 (defun ast-band-parallelize ()) ;; Not an tile but uses the depth of band to mark for collapse(N), reuse tile
 (defun expr-gather-buffer-loads ())
@@ -595,7 +593,8 @@ for (int i=0; i<M; i+=32)
         (%progn
 ;         (%defsmem :size size :dtype dtype :out out)
          )))))
-;; TODO Matmul is this:
+;; TODO: Matmul is this:
+;; - Old Auto Schedulerと同じ方針でOK
 ;; https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh#L50
 (defun ast-band-prefetch (graph band size)
   "Reduction Optimization for CPU"
@@ -619,52 +618,13 @@ for (int i=0; i<M; i+=32)
 ;; - how to manipulate gids?
 ;; - can we vectorize/tile Range?
 
-(%defun eladd ((a :float32 t) (b :float32 t) (m :int64 nil) (n :int64 nil))
-  (%dotimes (gid0 (%add (%iconst 'm) (%iconst 'n)) :mark :coincident :id target-loop)
-    (let ((idx1 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst gid0)))
-          (idx2 (%mul (%add (%iconst 'm) (%iconst 'n)) (%iconst gid0))))
-      (%when (%< nil :row (%iconst 'gid0) (%add (%iconst 'm) (%iconst 'n)))
-             (%when (%< nil :row (%iconst 'gid1) (%add (%iconst 'm) (%iconst 'n)))
-                    (%progn
-                     (%add (%aref a idx1) (%aref b idx2))
-                     (%add (%aref a (%add idx1 (%iconst 1))) (%aref b (%add idx2 (%iconst 1))))
-                     (%add (%aref a (%add idx1 (%iconst 2))) (%aref b (%add idx2 (%iconst 2))))
-                     (%add (%aref a (%add idx1 (%iconst 3))) (%aref b (%add idx2 (%iconst 3))))))))))
-
-(print-ast (get-caten-function 'eladd))
-
-(%defun 2d-elwise-add ((a :float32 t) (b :float32 t))
-  (%dotimes (gid0 512 :mark :coincident :id tgt-loop)
-    (%dotimes (gid1 512 :mark :coincident)
-      (let ((idx (%add (%mul (%iconst 512) gid0) gid1)))
-        (%setf (%aref 'a idx) (%add (%aref a idx) (%aref b idx)))))))
-
-(print-ast (get-caten-function '2d-elwise-add))
-
-(let ((g (get-caten-function '2d-elwise-add)))
-  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
-  ;;(ast-band-tile g (id->value g 'tgt-loop) `(16 16))
-  (simplify-ast g)
-  (print-ast g))
-
-(%defun matmul ((a :float32 t) (b :float32 t) (c :float32 t) (m :int64) (n :int64) (k :int64))
-  (%dotimes (_gid0 (%iconst 'M) :mark :coincident :id tgt-loop)
-    (%dotimes (_gid1 (%iconst 'K) :mark :coincident)
-      (%bind 'acc (%iconst 0.0 :dtype :float32))
-      (%dotimes (_gid2 (%iconst 'N) :mark :reduction :id reduction)
-        (%setf 'acc (%add 'acc (%mul (%aref a (%add (%mul (%iconst 'n) _gid0) _gid2)) (%aref b (%add _gid1 (%mul (%iconst 'k) _gid2)))) :reduction t) :out 'acc1))
-      (%setf (%aref c (%add _gid1 (%mul (%iconst 'k) _gid0))) (%exp2 (emit (make-node :JIT :BIND (list 'v) (list 'acc1) :value 'acc1)))))))
 ;; TODO1 -> Matmulのscheduleがおかしいので，Tensorから作ったscheduleを使うように修正する
 ;; TODO2 -> Type Inferenceを実装する
 ;; TODO on optimization:
 ;; - (Matmul) -> https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh (Prefetch, effective for CPU and GPU)
 ;; - (Softmax) -> Block Reduction
 ;; - Swizzle, Upcast, Vectorize.
-(let ((g (get-caten-function 'matmul)))
-  (ast-band-tile-gpu g (id->value g 'tgt-loop) `(32 32))
-  (ast-band-group g (id->value g 'reduction) `(8))
-  (simplify-ast g)
-  (print-ast g))
+
 ;; [TODO]
 ;; - TileBands
 ;;  - Vectorize
