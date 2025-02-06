@@ -311,7 +311,8 @@ Constraints:
                           ;; 2. exprify again
                           #'(lambda (x) (verify-graph x) x)
                           #'ast-verify-sequence
-                          #'ast-maximize-band-depth)))
+                          #'ast-maximize-band-depth
+                          #'ast-infer-typed-node)))
   "Simplifies the AST"
   (declare (type FastGraph graph))
   (let ((g (funcall (apply #'compose (reverse opts)) graph)))
@@ -319,7 +320,8 @@ Constraints:
     g))
 
 (defun simplify-ast (graph)
-  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-verify-sequence)))
+  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow
+                                   #'ast-simplify-expr #'ast-verify-sequence #'ast-infer-typed-node)))
 ;; ~~ Type Map ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Typed (:constructor make-typed (dtype pointer-p)) (:conc-name typed-)) ;; -> AType
   (dtype dtype :type (or (member :void) dtype-t))
@@ -601,15 +603,6 @@ for (int i=0; i<M; i+=32)
   ;; Implements WarpTile!!
   )
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-;; [todo] delete
-;; debug
-(defun print-ast (graph)
-  (pprint-graph graph)
-  ;(caten/air:->dot graph :pathname "/tmp/graph.dot")
-  (viz-ast graph))
-;; [TODO] Decompose 3 -> 1 + 1 + 1 and optimize the indexing?
-(defun viz-ast (graph) (uiop:symbol-call :caten/codegen/blueprint :print-blueprint graph t))
 ;; ./caten/codegen -> caten/ir/render-ops.lispの機能を使って色々AST変形を実施する
 ;; - Remove :GLOBAL :LOCAL If Guard (which is rebundant only)
 ;; - Remove :LOAD is an args of buffer, instead, use :DEFINE-GLOBAL
@@ -619,7 +612,8 @@ for (int i=0; i<M; i+=32)
 ;; - can we vectorize/tile Range?
 
 ;; TODO1 -> Matmulのscheduleがおかしいので，Tensorから作ったscheduleを使うように修正する
-;; TODO2 -> Type Inferenceを実装する
+;; TODO2 -> Type Inferenceを実装する (OK)
+;; TODO3 -> Searchを先に実装しよう
 ;; TODO on optimization:
 ;; - (Matmul) -> https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh (Prefetch, effective for CPU and GPU)
 ;; - (Softmax) -> Block Reduction
