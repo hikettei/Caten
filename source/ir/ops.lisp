@@ -424,6 +424,9 @@ Corresponds to:
                  (dtype :type keyword)
                  (size)))
 
+(defnode (:Render :DEFINE-SHARED-MEMORY) () "Declares a shared memory in the kenrel."
+         :slots ((dtype :type keyword) (size :type integer)))
+
 (defnode (:JIT :EMPTY) () "A placeholder for variable that are not rendered.")
 
 (defnode (:Render :Function) () ;; [TODO] remove :function?

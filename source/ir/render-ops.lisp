@@ -58,6 +58,9 @@ Constraints:
 
 (defun %barrier (&key (out (gensym "BARRIER"))) (emit (make-node :Render :BARRIER (list out) nil)))
 
+(defun %defsmem (&key (size `(4)) (dtype *default-float*) (out (gensym "SMEM")))
+  (emit (make-node :Render :DEFINE-SHARED-MEMORY (list out) nil :size size :dtype dtype)))
+
 (defun %bind (name node)
   (declare (type symbol name) (type node node))
   (assert (= 1 (length (node-writes node))) () "%bind: The node must have exactly one read.")
@@ -315,6 +318,16 @@ Constraints:
 
 (defun simplify-ast (graph)
   (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-verify-sequence)))
+;; ~~ Type Map ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; (getattr :src-types) (getattr :dst-types)
+(defstruct (AType (:constructor make-atype (dtype pointer-p)))
+  (dtype dtype :type dtype-t)
+  (pointer-p pointer-p :type boolean))
+
+(defun ast-infer-type (graph &aux (typemap (make-hash-table)))
+  (declare (type FastGraph graph))
+
+  )
 ;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
   "Tiles the band:
@@ -480,15 +493,61 @@ for (int i=0; i<M; i+=32)
 (defun ast-upcast ()) ;; reuse unroll
 
 (defun ast-band-parallelize ()) ;; Not an tile but uses the depth of band to mark for collapse(N), reuse tile
-;;; OptOps (Shared Memory Transfer)
-(defun ast-group (graph band)
-  ;; band == reduction
-  )
+(defun expr-gather-buffer-loads ())
+(defun expr-gather-buffer-stores ())
 
-(defun ast-grouptop (graph band))
-;;; OptOps (MicroKernel)
-(defun ast-microkernel ())
+(defun expr-get-reduced-to (graph expr)
+  (declare (type graph graph) (type symbol expr))
+  ;; Assuming a tree like EXPR(SETF(X, Y))
+  ;; If X is ReduceOps, returns (id->value graph x)
+  (let* ((entry (id->value graph expr))
+         (x (and entry (id->value graph (car (node-reads entry)))))
+         (y (and entry (id->value graph (second (node-reads entry))))))
+    (print entry)
+    (print x) (print y)
+    (when (and entry (eql (node-type entry) :SETF)
+               x y (getattr y :reduction :allow-undefined t))
+      x)))
+
+(defun progn->expr-list (graph progn)
+  (declare (type Graph graph) (type node progn))
+  (assert (eql (node-type progn) :PROGN))
+  (loop for r in (node-reads progn)
+        do (assert (and (id->value graph r) (eql (node-type (id->value graph r)) :EXPR)) () "progn should be a list of EXPR.")
+        collect (car (node-reads (id->value graph r)))))
+;;; OptOps (Shared Memory Transfer)
+;;; --> これはReductionの分割だけにとどめる
+(defun ast-band-group (graph band size)
+  "Optimization for GPU"
+  (declare (type FastGraph graph) (type node band) (type list size))
+  (assert (eql (node-type band) :FOR) () "ast-band-group: The given band is not :FOR.")
+  (assert (eql (getattr band :mark) :reduction) () "ast-band-group is only applicable for :reduction.")
+  ;; 1. Reductionの真上にTHREADGROUPのやつ配置
+  ;; 2. ReductionをSIZE分割する
+  ;; 3. SIZE分割したReductionをSharedMemoryに移動
+  ;; 4. SharedMemory内部でもう一回Reduction実行
+  (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band size)
+    (let* ((body (id->value graph (second (node-reads (car (last local-bands))))))
+           (reduce-ops
+             (ecase (node-type body)
+               (:EXPR (list (expr-get-reduced-to graph (car (node-reads body)))))
+               (:PROGN (map 'list #'(lambda (x) (expr-get-reduced-to graph x)) (progn->expr-list graph body))))))
+      (print "REDUCED_TO")
+      (print reduce-ops)
+      ;; Reduction Output Enumerate
+      (with-blueprint ()
+        (%progn
+;         (%defsmem :size size :dtype dtype :out out)
+         )))))
+;; TODO Matmul is this:
+;; https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh#L50
+(defun ast-band-prefetch (graph band size)
+  "Reduction Optimization for CPU"
+  ;; Implements WarpTile!!
+  )
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+;; [todo] delete
 ;; debug
 (defun print-ast (graph)
   (pprint-graph graph)
@@ -529,7 +588,6 @@ for (int i=0; i<M; i+=32)
 (let ((g (get-caten-function '2d-elwise-add)))
   (ast-band-tile-gpu g (id->value g 'tgt-loop) `(128 128)) ;; [TODO] Add Simplifier for removing IF Guard
   ;;(ast-band-tile g (id->value g 'tgt-loop) `(16 16))
-  
   (simplify-ast g)
   (print-ast g))
 
@@ -537,16 +595,20 @@ for (int i=0; i<M; i+=32)
   (%dotimes (_gid0 (%iconst 'M) :mark :coincident :id tgt-loop)
     (%dotimes (_gid1 (%iconst 'K) :mark :coincident)
       (%bind 'acc (%iconst 0.0 :dtype :float32))
-      (%dotimes (_gid2 (%iconst 'N) :mark :reduction)
-        (%setf 'acc (%add 'acc (%mul (%aref a (%add (%mul (%iconst 'n) _gid0) _gid2)) (%aref b (%add _gid1 (%mul (%iconst 'k) _gid2)))))))
-      (%setf (%aref c (%add _gid1 (%mul (%iconst 'k) _gid0))) (%exp2 'acc)))))
-
+      (%dotimes (_gid2 (%iconst 'N) :mark :reduction :id reduction)
+        (%setf 'acc (%add 'acc (%mul (%aref a (%add (%mul (%iconst 'n) _gid0) _gid2)) (%aref b (%add _gid1 (%mul (%iconst 'k) _gid2)))) :reduction t) :out 'acc1))
+      (%setf (%aref c (%add _gid1 (%mul (%iconst 'k) _gid0))) (%exp2 (emit (make-node :JIT :BIND (list 'v) (list 'acc1) :value 'acc1)))))))
+;; TODO1 -> Matmulのscheduleがおかしいので，Tensorから作ったscheduleを使うように修正する
+;; TODO2 -> Type Inferenceを実装する
+;; TODO on optimization:
+;; - (Matmul) -> https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh (Prefetch, effective for CPU and GPU)
+;; - (Softmax) -> Block Reduction
+;; - Swizzle, Upcast, Vectorize.
 (let ((g (get-caten-function 'matmul)))
   (ast-band-tile-gpu g (id->value g 'tgt-loop) `(32 32))
+  (ast-band-group g (id->value g 'reduction) `(8))
   (simplify-ast g)
   (print-ast g))
-;; TODO: %defun -> macro
-;; ^ これ使ってOP定義できるようにする(AOT)
 ;; [TODO]
 ;; - TileBands
 ;;  - Vectorize
@@ -607,3 +669,4 @@ for (int i=0; i<M; i+=32)
 ;; - Schedule Cacheを完了
 ;; - CodegenをUpdate, 全てのテストをPassする
 ;; - OptOpsに取り掛かる
+;; - softmax val_9 SETF

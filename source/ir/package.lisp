@@ -73,7 +73,7 @@
   ;; AST
   (:export #:with-blueprint #:get-caten-function)
   ;; ASTOps
-  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defun)
+  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defsmem #:%defun)
   ;; Optimization Ops
   
   )
