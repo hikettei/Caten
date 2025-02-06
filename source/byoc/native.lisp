@@ -14,7 +14,7 @@
 ;; [TODO]
 ;; - [ ] Inline all mathematical functions! (compile nil generated-code) will produce no errors. (PRs are welcome)
 ;;   - [ ] Add proper type declarations in %render-node, from given read-type-relay.
-(define-auto-scheduler (Native-Auto-Scheduler ()) :n-global-loop 1)
+(define-auto-scheduler Native-Auto-Scheduler :use-parallel 1)
 (defclass NativeRuntime (GraphRuntime) nil)
 (define-backend :native LispBuffer NativeRuntime LispStyle-Renderer Native-Auto-Scheduler t)
 (defclass LispStyle-Renderer (Renderer) nil)

@@ -167,11 +167,7 @@
       (c "}"))))
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
-(define-auto-scheduler
-    (Metal-Auto-Scheduler ()) :n-global-loop 3
-    ;; [TODO] Metal TensorCore
-    ;; :vectorizes (list (Vectorize :gemm8x8x8 `(8 8 8) :applicable-p #'identity :rewriter #'identity))
-    )
+(define-auto-scheduler Metal-Auto-Scheduler :use-tile-gpu 3 :shared-max 32768)
 (define-backend :metal MetalBuffer MetalRuntime Metal-Renderer Metal-Auto-Scheduler t)
 
 (defun dtype->mtype (dtype)
