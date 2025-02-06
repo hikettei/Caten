@@ -603,80 +603,32 @@ for (int i=0; i<M; i+=32)
   ;; Implements WarpTile!!
   )
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; ./caten/codegen -> caten/ir/render-ops.lispの機能を使って色々AST変形を実施する
-;; - Remove :GLOBAL :LOCAL If Guard (which is rebundant only)
-;; - Remove :LOAD is an args of buffer, instead, use :DEFINE-GLOBAL
-;; - EXPRの実装が先？
-;; - 10000 Total LoC
-;; - how to manipulate gids?
-;; - can we vectorize/tile Range?
+;; Simplifier Things:
+;; - [ ] Remove :GLOBAL :LOCAL IF Guard which is rebundant
+;; - [ ] :LOAD is always an const define-global
+;; - [ ] RANGE(1) ==> Remove
+;; - [ ] TileBands, Remove MAX if unnecessary.
 
-;; TODO1 -> Matmulのscheduleがおかしいので，Tensorから作ったscheduleを使うように修正する
-;; TODO2 -> Type Inferenceを実装する (OK)
-;; TODO3 -> Searchを先に実装しよう
-;; TODO on optimization:
-;; - (Matmul) -> https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh (Prefetch, effective for CPU and GPU)
-;; - (Softmax) -> Block Reduction
-;; - Swizzle, Upcast, Vectorize.
+;; Optimizer Things:
+;; - [ ] BEAM Search
+;; - [ ] Matmul ---> Block Warp Reduction is effective for both GPU and CPU.
+;;   - [ ] https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh (Prefetch, effective for CPU and GPU)
+;; - [ ] Softmax --> Implement Block Reduction
+;; - [ ] Finish Implementing Unroll
+;; - [ ] Implenment Swizzle/Upcast/Vectorize, Support tmp.x
 
-;; [TODO]
-;; - TileBands
-;;  - Vectorize
-;;    - PrefetchがISL無しで実装できるか？
-;;  - RANGE Specification
-;;  - Lowering INDEX-COMPONENTS, Aref Indexing
-;;  - any valid way to run type inference? ==> Supercede the old type infer results
-;;  - remove the declare-type option instead use allocate
-;;  - Redefine the ast?
-;;    IDX, BODY <- RANGE(SIZE, STEP)
-;;    SimplifierがLeafの方に持ってくと依存がおかしくなる気がする
-;;    is not top-down graph but bottom-up graph ...
-;; Remove Fused Move using Pattern Mathcer, Exprify is located here!
-;; graph-seen is always an argument of the function?
-;; [TODO] Update Aref Renderer
-;; Workload
-;; - 1. GIDに依存しないOpはなるべく外に出す
-;; - 2. MaximizeBandを実装 (OK)
-;; - 3. SIZE=1 --> Remove
-;; - 4. OptOpsを一通り実装する (GLOBAL/LOCAL), Vectorize, Unroll, and the most important thing TensorCore
+;; More Things:
+;; - [ ] Add: tensor-schedule-graph
 
-;; TODO
-;; - FORのAllocate,Symbolic ARefのEXPR?
-;; - RenderOpsしかないことを保証
-;; - 常にLOADをPropagateしたい (%defglobalの挿入が必須)
-;; - %prognの時系列
-;; - まずRangeのIndexingの実装方法をちゃんと考える。。。
-;; - Undefined Variableを直すのが先
-;; - Need to reimplement :RANGE First ...
-;; - StorageIDの実装(LOAD, Reductionの時系列...)
-;;   - Assign/Reduction
-;;   - Allocate+Load
-;;   - Store after reduction
-;;   - Insert Store Rewriting Rule!
-;;   - in DAG
-;;   - FIRST PRIORITY: 
-;;   - Render -> AST, Add RenderOps (Renderer will use this for simplicity, ast->render to translate this)
-;;   - Type Inferenceを実行した後，Scalar LoadをPropagateできる (TODO: 既存の実装で1とか2を直接読んでる箇所は修正すること)
-;;   - まず時系列問題を修正する，その次に謎のeを直す
-;;   - First, play w/ manual scheduler and reimplement gemm scheduling example.
-;;   - EXPR Purge
-;;   - ASTGraph -> RenderOps Listは確定, print-blueprint的な実装で再現できるはず
-;;   - UNROLL/Vectorizeをどうやって実装するか？
-;;     -> GID0が頂点，再起的にSubgraphを探索してGID0に関連するIDを+1する
-;;     - TODO: tensor-compute-schedule
-;;  - Remove away MAX (TODO) from tiled schedule
-
-;; Finish Valid Codegen workload
+;; Finish valid codegen workload
 ;; - (with-inference-mode () (caten (forward (caten/nn:Embedding 128 128) (make-tensor `(128 128)))))
 ;;  - val_7を取り除く (PROGNでReadされてるから消えない)
-;; - %GLOBAL, %AREFなどBlueprint作成APIの使用をconcreteする
-;;  - 手動Schedulingの例としてExample提供して仕様を固める
-;; - Memory Planner
-;;   - ArefのNAMEを書き換えるだけで完了
-;; - DTYPE MAPの実装を完了させる
-;;  - これはTypeMapというAttributeに格納して，TypeRelayとは別のものにする(TypeRelayはCodegen内部で隠蔽する)
-;; - EXPRIFY: EXPR+EXPRで何回も適用できるように，Simplifyした後のグラフでもやりたい
-;; - Schedule Cacheを完了
+;; - Matmul -> ADDMUL Fusion (ReExprify)
+;; - Manual Scheduler Example
+;; - Bring Back Memory Planner
+;;   - CoincidentなArefのNAMEを書き換えるだけで完了
+;; - Schedule Cache
 ;; - CodegenをUpdate, 全てのテストをPassする
 ;; - OptOpsに取り掛かる
-;; - softmax val_9 SETF
+;; - softmax val_9 SETF Fix
+;; - All node ends with SETF?
