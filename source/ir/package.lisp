@@ -71,11 +71,12 @@
   (:export #:optimize-aasm #:minimize-duplicated-symbolic-path #:fold-constant)
   ;; from render-ops.lisp
   ;; AST
-  (:export #:with-blueprint #:get-caten-function)
+  (:export #:with-blueprint #:get-caten-function #:simplify-ast)
   ;; ASTOps
   (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defsmem #:%defun)
   ;; Typed
   (:export #:TypedNode #:Typed #:typed-dtype #:typed-pointer-p)
   ;; Optimization Ops
   (:export
+   #:ast-band-tile #:ast-band-tile-gpu
    ))
