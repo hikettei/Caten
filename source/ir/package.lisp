@@ -74,6 +74,8 @@
   (:export #:with-blueprint #:get-caten-function)
   ;; ASTOps
   (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defsmem #:%defun)
+  ;; Typed
+  (:export #:TypedNode #:Typed #:typed-dtype #:typed-pointer-p)
   ;; Optimization Ops
   (:export
    ))
