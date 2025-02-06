@@ -13,7 +13,7 @@
    #:get-backend-configs))
 
 (in-package :caten/codegen/backend)
-
+;; [TODO] Rename backend -> abstraction?
 (defgeneric get-backend-buffer (backend))
 (defgeneric get-backend-runtime (backend))
 (defgeneric get-backend-auto-scheduler (backend))

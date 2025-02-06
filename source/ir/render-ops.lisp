@@ -619,7 +619,7 @@ for (int i=0; i<M; i+=32)
 
 ;; More Things:
 ;; - [ ] Add: tensor-schedule-graph
-
+;; - [ ] Add: ast-finalize-graph -> Propagate all :LOAD
 ;; Finish valid codegen workload
 ;; - (with-inference-mode () (caten (forward (caten/nn:Embedding 128 128) (make-tensor `(128 128)))))
 ;;  - val_7を取り除く (PROGNでReadされてるから消えない)
@@ -632,3 +632,5 @@ for (int i=0; i<M; i+=32)
 ;; - OptOpsに取り掛かる
 ;; - softmax val_9 SETF Fix
 ;; - All node ends with SETF?
+;; - Move CStyleRenderer -> byoc/renderers/cstyle.lisp
+;; - optimize pprint-graph!!

@@ -1,11 +1,14 @@
 (defpackage :caten/codegen/search
-  (:use :cl)
+  (:use :cl :caten/ir :caten/air)
   (:export
    #:Auto-Scheduler-Config
    #:define-auto-scheduler
    #:auto-scheduler-n-global-loops
    #:auto-scheduler-tile-sizes
-   #:auto-scheduler-vectorizes))
+   #:auto-scheduler-vectorizes)
+  (:export
+   #:get-optimized-ast
+   #:search-optimized-ast))
 
 (in-package :caten/codegen/search)
 ;; [todo] reimpl auto scheduler interface
@@ -39,3 +42,8 @@ TODO: Docs
           (auto-scheduler-tile-sizes ,instance) ,tile-sizes
           (auto-scheduler-vectorizes ,instance) ,vectorizes)))))
 ;; ~~ BEAM Search ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmethod get-optimized-ast ((auto-scheduler Auto-Scheduler-Config) (ast Graph))
+  ast)
+
+(defmethod search-optimized-ast ((auto-scheduler Auto-Scheduler-Config) (ast Graph))
+  ast)
