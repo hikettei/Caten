@@ -495,7 +495,12 @@ Depends=~a Reduce=~a Users=~a
                      (setf (node-writes node) (list (gensym "TMP")))
                      (return-from lower-item (emit (%setf aref (emit node) :out id)))))
                  ;; Also insert %setf if the node is an output of the schedule-item.
-                 (when (find (car (node-writes node)) (node-writes schedule-item))
+                 (when (or
+                        (find (car (node-writes node)) (node-writes schedule-item))
+                        (> (buffer-nrank (car (relay-writes (read-type-relay node)))) 0))
+                   (when (null (find (car (node-writes node)) (node-writes schedule-item)))
+                     ;; Insert a %global as a temporary buffer
+                     (%global (car (node-writes node)) (buffer-dtype (car (relay-writes (read-type-relay node)))) t))
                    (assert (null (getattr node :reduction :allow-undefined t)) () "The node ~a cannot be a reduction node." node)
                    (let* ((type (read-type-relay node))
                           (aref (if (> (buffer-nrank (car (relay-writes type))) 0)
