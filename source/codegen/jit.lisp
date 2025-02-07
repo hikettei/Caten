@@ -2,10 +2,11 @@
   (:use :cl :caten/runtime :caten/air :caten/codegen/backend :caten/codegen/type-relay :caten/codegen/rewriting-rules
         :caten/codegen/scheduler :caten/common.logger :caten/codegen/blueprint)
   (:import-from :caten/codegen/search #:get-optimized-ast #:search-optimized-ast)
+  (:import-from :caten/codegen/helpers #:coerce-dtyped-buffer)
   (:export #:codegen #:jit))
 
 (in-package :caten/codegen/jit)
-
+;; ~~ Compiler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun minify-equivalent-schedule (schedule-graph)
   (let ((tgts (loop for node in (graph-nodes schedule-graph)
                     if (eql (getattr node :type) :kernel)
@@ -18,7 +19,7 @@
           else
             do (push tgt seen))
     schedule-graph))
-;; [TODO] Runner here
+
 (defun codegen (runtime &key (backend (ctx:getenv :BACKEND)) (get-schedule-p nil))
   "
 ```
@@ -91,12 +92,12 @@
                  (when (>= JIT_DEBUG 2)
                    (format t "Optimization Time: ~A(sec)" (float (/ (- (get-internal-real-time) start) internal-time-units-per-second))))))
            (graph-nodes schedule-graph)))
-        ;; Copy and retrive cache, or no need to copy a cache actually?
-        
         ;; Running Memory Planner
-
+        
+        ;; Rendering
+        
         ;; Schedule Graph -> VM Graph
-        ))))
+        (schedule-graph->runtime-graph schedule-graph)))))
 
 (defun jit (runtime &key (backend (ctx:getenv :BACKEND)))
   "

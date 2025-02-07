@@ -8,7 +8,8 @@ The function `graph-schedule` is an entry point, and takes a shape-inferred aasm
 One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure that each item is merged only within the bounds that can be lowered into a single kernel.")
   (:use :cl :caten/air :caten/runtime :caten/codegen/type-relay :caten/ir/expr :caten/codegen/helpers :caten/codegen/rewriting-rules)
   (:import-from :caten/ir #:JITAble)
-  (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule #:schedule-item-equal))
+  (:export #:Group #:make-group #:graph-schedule #:*function-name-maxlen* #:group->schedule #:schedule-item-equal)
+  (:export #:schedule-graph->runtime-graph))
 
 (in-package #:caten/codegen/scheduler)
 
@@ -866,8 +867,26 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
         (setf (graph-outputs out) (graph-outputs graph))
         (->fast-graph out)))))
 
-;; [TODO]
-;; schedule-graph -> RuntimeGraph is here
-(defun schedule->runtime-graph (schedule-graph)
-
-  )
+(defun schedule-graph->runtime-graph (schedule-graph &aux (seen) (n2f (make-hash-table)))
+  (declare (type Graph schedule-graph))
+  (let ((caten/ir:*ctx* (make-graph)))
+    (labels ((e (node)
+               (setf (getattr node :_type_relay) nil
+                     (getattr node :_read_views) nil)
+               (caten/ir:emit node))
+             (explore (id &aux (node (id->value schedule-graph id)))
+               (when (or (null node) (find id seen)) (return-from explore))
+               (assert (eql (node-type node) :Schedule-Item))
+               (push id seen)
+               (ecase (getattr node :type)
+                 ((:allocate :vmop :backward) (mapc #'e (getattr node :items)))
+                 (:kernel
+                  ;; If cached ->
+                  ;; If not cached ->
+                  ;; [TODO] Use VIEW
+                  (print node)
+                  ))
+               (mapc #'explore (node-reads node))))
+      (mapc #'explore (graph-outputs schedule-graph)))
+    (setf (graph-outputs caten/ir:*ctx*) (copy-list (graph-outputs schedule-graph)))
+    caten/ir:*ctx*))
