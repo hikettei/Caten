@@ -6,8 +6,17 @@
 
 (in-package :caten/codegen/runner)
 ;; ~~ Runner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defclass AbstractKernel ()
-  )
+(defclass AbstractKernel () ;; blueprint --_> Abstractkernelを持つ
+  ((name :initarg :name :accessor kernel-name)
+   (flops :initarg :flops :accessor kernel-flops)))
+
+(defnode (:JIT :JIT_KERNEL) ()
+	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
+	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list) (cached-p :type boolean)))
+
+(defgeneric invoke-kernel (kernel runtime args))
+
+(defmethod kernel->jit-kernel ())
 
 (defstruct (Compiled-Kernel)
   (name (error "name must occur") :type keyword)
@@ -18,9 +27,6 @@
   (out-positions (error "out positions must occur") :type list)
   (flops (error "flops must occur") :type GFlops-Measurer))
 
-(defnode (:JIT :JIT_KERNEL) ()
-	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
-	 :slots ((output-buffer-n :type fixnum) (kernel-info :type Compiled-Kernel) (dtypes :type list) (cached-p :type boolean)))
 
 (defun profile-report (runtime info elapsed-time args node)
   (let* ((flops (compiled-kernel-flops info))
@@ -34,7 +40,7 @@
             (compiled-kernel-device info)
             (compiled-kernel-name info)
             (if gflops (format nil " (~,6fGFLOP/s)" gflops) ""))))
-
+;; remove
 (defmethod runtime-invoke-jit-kernel ((runtime GraphRuntime) kernel-info node args)
   (apply (compiled-kernel-caller kernel-info) args))
 

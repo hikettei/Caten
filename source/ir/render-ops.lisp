@@ -655,6 +655,7 @@ for (int i=0; i<M; i+=32)
         graph)))
 ;; TODO: Matmul is this:
 ;; - Old Auto Schedulerと同じ方針でOK
+;; - oneDNN Graph Compiler
 ;; https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh#L50
 (defun ast-band-prefetch (graph band size)
   "Prefetch will first transfers all buffers used in the reduction band to the shared memory, and performs
@@ -662,7 +663,8 @@ the reduction in only the cached region."
   (declare (type FastGraph graph) (type node band) (type list size))
   (assert (eql (node-type band) :FOR) () "ast-band-prefetch: The given band is not :FOR.")
   (assert (eql (getattr band :mark) :reduction) () "ast-band-prefetch is only applicable for :reduction.")
-  ;; Implements WarpTile!!
+  ;; groupの_gid2_pのBandにval_19のPrefetchを追加すればOK?
+  
   (print graph)
   (print band)
   graph)
@@ -678,10 +680,9 @@ the reduction in only the cached region."
 ;; - [ ] BEAM Search
 ;; - [ ] Matmul ---> Block Warp Reduction is effective for both GPU and CPU.
 ;;   - [ ] https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh (Prefetch, effective for CPU and GPU)
-;; - [ ] Softmax --> Implement Block Reduction
+;; - [x] Softmax --> Implement Block Reduction
 ;; - [ ] Finish Implementing Unroll
-;; - [ ] Implenment Swizzle/Upcast/Vectorize, Support tmp.x
-
+;; - [ ] Implenment Swizzle/Upcast/Vectorize, Support tmp.x. (Add Ops for UNROLL(BIND, X)
 ;; More Things:
 ;; - [x] Add: tensor-schedule-graph
 ;; - [ ] Add: ast-finalize-graph -> Propagate all :LOAD
@@ -699,3 +700,4 @@ the reduction in only the cached region."
 ;; - All node ends with SETF?
 ;; - Move CStyleRenderer -> byoc/renderers/cstyle.lisp
 ;; - optimize pprint-graph!!
+;; - codegenが動くようにする

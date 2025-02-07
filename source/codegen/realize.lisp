@@ -4,10 +4,11 @@
   (:export
    #:buffer-scalarify
    #:bp-finalize-realize
+   #:schedule-item-sync-realize
    ))
 
 (in-package :caten/codegen/realize)
-
+;; ~~ Scalarify ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun buffer-scalarify (buffer)
   (let ((buffer (copy-buffer buffer)))
     (setf (buffer-nrank buffer) -1)
@@ -27,8 +28,8 @@
           for nth upfrom start to end
           for ir = (nth nth blueprint)
           if (find (node-type ir) `(:TmpRange)) do (incf depth)
-          else if (find (node-type ir) `(:TmpEndRange)) do (decf depth)
-          end
+            else if (find (node-type ir) `(:TmpEndRange)) do (decf depth)
+                   end
           if (< depth 0) do (return-from memory-access-local-p nil))
     t))
 
@@ -70,9 +71,22 @@
                     for wi in (relay-write-iters (read-type-relay bp))
                     for nth upfrom 0
                     if (and wt wi (local-p w)) do
-                      ;; [TODO] 戻ったら: ALlocationとdefine-globalの挿入をやる
-                      ;;  ^ SimplifierがRealize判定と同値のことをやるはず
-                      ;(print "+++DO ALLOC++++")
-                      ;(print (id->value base-graph (get-output-to bp)))
                       (setf (nth nth (relay-writes (read-type-relay bp))) (buffer-scalarify wt)))))
     blueprint))
+;; ~~~ Realize ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmethod schedule-item-sync-realize ((item Node))
+  "Only the buffers appeared in the :DEFINE-GLOBAL, is needed to be allocated on the device."
+  (assert (eql (node-type item) :schedule-item))
+  (assert (eql (getattr item :type) :kernel))
+  (let ((buffers
+          (loop for node in (graph-nodes (getattr item :blueprint))
+                if (eql (node-type node) :DEFINE-GLOBAL)
+                  collect (car (node-writes node)))))
+    (flet ((included-p (name) (member name buffers)))
+      (setf (node-reads item) (loop for name in (node-reads item) if (included-p name) collect name)
+            (node-writes item) (loop for name in (node-writes item) if (included-p name) collect name))
+      item)))
+;; ~~~ Memory Scheduler ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+;; 1. In Kernel Scheduler
+;; 2. Global Scheduler 
