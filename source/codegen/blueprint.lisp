@@ -446,7 +446,7 @@ Depends=~a Reduce=~a Users=~a
                 (graph-outputs (expr-graph e)) (node-writes node))
         e)))))
 
-(defun astify-blueprint (schedule-item bp rank &aux (caten/ir/expr::*expr-no-simplify-mode* t))
+(defun astify-blueprint (schedule-item bp rank &aux (caten/ir/expr::*expr-no-simplify-mode* t) (gid-seen (make-hash-table)))
   (declare (type list bp))
   (with-blueprint ()
     (loop for n in (node-reads schedule-item)
@@ -465,6 +465,10 @@ Depends=~a Reduce=~a Users=~a
                (append
                 gids
                 (loop repeat (- rank (length gids)) collect 0)))
+             (ensure-unique-gid (gid)
+               (if (null (gethash gid gid-seen))
+                   (prog1 gid (setf (gethash gid gid-seen) 1))
+                   (prog1 (intern (format nil "~a_~a" gid (gethash gid gid-seen))) (incf (gethash gid gid-seen)))))
              (lower-item (node gids)
                (let ((node (copy-node node))
                      (gids (padding-gids gids)))
@@ -523,12 +527,13 @@ Depends=~a Reduce=~a Users=~a
                (when (null rest-items) (return-from explore))
                (case (node-type (car rest-items))
                  (:TMPRange
-                  (let ((endrange (position-if #'(lambda (x) (and (eql (node-type x) :TmpEndRange) (equal (getattr x :idx) (getattr (car rest-items) :idx)))) rest-items)))
+                  (let ((endrange (position-if #'(lambda (x) (and (eql (node-type x) :TmpEndRange) (equal (getattr x :idx) (getattr (car rest-items) :idx)))) rest-items))
+                        (gid (ensure-unique-gid (getattr (car rest-items) :idx))))
                     (assert endrange () "Inserting TMPRange w/o corresponding TmpEndRange is invaild. Malformed lowering result?")
                     (%progn
                      (%range
-                      (getattr (car rest-items) :idx) (sendexpr (getattr (car rest-items) :size))
-                      (%progn (explore (subseq rest-items 1 endrange) (append gids (list (getattr (car rest-items) :idx)))))
+                      gid (sendexpr (getattr (car rest-items) :size))
+                      (%progn (explore (subseq rest-items 1 endrange) (append gids (list gid))))
                       :mark (getattr (car rest-items) :type))
                      (explore (subseq rest-items (1+ endrange)) gids))))
                  (:TMPEndRange (error "TMPEndRange should not occur here, malformed lowering result?"))
