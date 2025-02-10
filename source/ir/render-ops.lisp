@@ -372,12 +372,14 @@ Constraints:
                     (setf changed-p t)
                     (case (node-type node)
                       (:AREF
-                       ;; (assert (typed-pointer-p (car src-ids)))
+                       (assert (typed-pointer-p (car src-ids)))
                        (send node (make-typed (typed-dtype (car src-ids)) nil)))
                       (:CAST
                        (send node (make-typed (getattr node :dtype) (typed-pointer-p (car src-ids)))))
                       (otherwise
-                       (send node (or (apply #'caten/air::%get-output-to (node-attr node) src-ids) (error "Please add special typemap handler for the node ~a" node))))))
+                       (send node (or (apply #'caten/air::%get-output-to (node-attr node) src-ids) (error "Please add special typemap handler for the node ~a" node)))))
+                  else if (and (find (node-id node) waitlist) (eql (node-type node) :BIND) (getyped (getattr node :value))) do
+                    (send node (make-typed (typed-dtype (getyped (getattr node :value))) (typed-pointer-p (getyped (getattr node :value))))))
             (when (and waitlist (null changed-p))
               (error "Failed to deduce the graph type due to cycle dependencies of ~a"
                      (map 'list #'(lambda (x) (find x (the list (graph-nodes graph)) :key #'node-id)) waitlist))))
@@ -385,6 +387,8 @@ Constraints:
     (loop for node in (graph-nodes graph)
           for src-types = (map 'list #'getyped (node-reads node))
           for dst-types = (map 'list #'getyped (node-writes node)) do
+            (when (and (eql (node-type node) :BIND) (some #'null src-types))
+              (setf src-types (list (getyped (getattr node :value)))))
             (assert (every #'identity src-types)) (assert (every #'identity dst-types))
             (setf (getattr node :src-types) src-types (getattr node :dst-types) dst-types))
     graph))
@@ -651,8 +655,8 @@ for (int i=0; i<M; i+=32)
                         (let ((n (copy-node node)))
                           (setf (node-reads n) (list final-id))
                           (insert-nodes graph (list n))))))
-        (verify-graph graph)
-        graph)))
+      (verify-graph graph)
+      graph)))
 ;; TODO: Matmul is this:
 ;; - Old Auto Schedulerと同じ方針でOK
 ;; - oneDNN Graph Compiler
@@ -664,7 +668,6 @@ the reduction in only the cached region."
   (assert (eql (node-type band) :FOR) () "ast-band-prefetch: The given band is not :FOR.")
   (assert (eql (getattr band :mark) :reduction) () "ast-band-prefetch is only applicable for :reduction.")
   ;; groupの_gid2_pのBandにval_19のPrefetchを追加すればOK?
-  
   (print graph)
   (print band)
   graph)
@@ -696,7 +699,6 @@ the reduction in only the cached region."
 ;; - Schedule Cache
 ;; - CodegenをUpdate, 全てのテストをPassする
 ;; - OptOpsに取り掛かる
-;; - softmax val_9 SETF Fix
 ;; - All node ends with SETF?
 ;; - Move CStyleRenderer -> byoc/renderers/cstyle.lisp
 ;; - optimize pprint-graph!!
