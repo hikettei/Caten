@@ -392,6 +392,21 @@ Constraints:
             (assert (every #'identity src-types)) (assert (every #'identity dst-types))
             (setf (getattr node :src-types) src-types (getattr node :dst-types) dst-types))
     graph))
+;; [TODO] How to explore :FOR or :PROGN?
+(defun ast-band-children (graph band &key (nodes nil) (seen nil))
+  (labels ((explore (id &aux (node (id->value graph id)))
+             (when (or (null node) (find id seen)) (return-from explore))
+             (push id seen)
+             (when (eql (node-class node) :Render) (return-from explore))
+             (push node nodes)
+             (mapc #'explore (node-reads node))))
+    (let ((body (id->value graph (second (node-reads band)))))
+      (ecase (node-type body)
+;;        (:PROGN
+;;          )
+        (:EXPR
+         (explore (car (node-reads body)))))))
+  nodes)
 ;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
   "Tiles the band:
@@ -474,8 +489,6 @@ for (int i=0; i<M; i+=32)
                    if (and (eql (node-type node) :RANGE) (eql (getattr node :idx) idx)) do
                      (let ((idx-new (%add (ngid idx sp) (ngid idx sc) :id (car (node-writes node)))))
                        (insert-nodes graph (list idx-new)))))
-    ;; [TODO] Ensure the old grpah was purged from graph
-    (verify-graph graph)
     (values graph (nreverse globals) (nreverse locals))))
 ;;; OptOps (Tile Based)
 (defun ast-band-tile (graph band tile-sizes)
@@ -546,13 +559,99 @@ for (int i=0; i<M; i+=32)
         (verify-graph graph)
         graph))))
 
-(defun ast-band-unroll (graph band local-sizes)
-  (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band local-sizes)
-    ;; The work here is to remove away local-bands
-    ;; also inserting reminder bands in the gloal-bands
-    ;; [TODO] Insert Reminder Statements
-    ;; [TODO] How to determine the unrolled variable index? it depends on time-series dependencies
-    ))
+(defgeneric compute-unroll-reminder (reminder size step n-unroll)
+  (:documentation "Finds the maximum integer which satisfies MOD(SIZE//STEP, n_unroll) == 0"))
+
+(defmethod compute-unroll-reminder ((reminder (eql :idiv)) size step n-unroll)
+  (let* ((id (gensym))
+         (g (with-context (out (%mul step (%mul n-unroll (%idiv (%idiv size step) n-unroll)) :id id)))))
+    (setf (graph-outputs g) (list id))
+    g))
+;; [TODO] ast-band-children ---> Bandの直下だけ探索する (seen by other bandsはむし)
+(defun ast-unroll-body (graph body idx n)
+  "Removes IDX from body by unrolling with N"
+  (declare (type graph graph) (type symbol idx) (type fixnum n))
+  (let ((nodes (apply #'make-graph (ast-band-children graph body)))
+        (out (second (node-reads body))))
+    (setf (graph-outputs nodes) (list out)
+          nodes (graph-nodes (->graph-with-tpsort (->fast-graph nodes)))
+          nodes (loop for node in nodes unless (eql (node-type node) :RANGE) collect node))
+    (labels ((%cpy-node (node)
+               (let ((node (copy-node node)))
+                 (setf (node-id node) (gensym "NID"))
+                 node))
+             (is-range-p (node &aux (node (id->value graph node)))
+               (and node (eql (node-type node) :RANGE) (eql idx (getattr node :idx))))
+             (unroll-id (cnt id &aux (val (id->value graph id)))
+               (declare (type fixnum cnt) (type symbol id))
+               (if val
+                   (if (find id nodes :key #'node-writes :test #'find)
+                       (intern (format nil "~a_~a" id cnt))
+                       id)
+                   id))
+             (unroll-with-count (count &aux (seen (make-hash-table)))
+               (flet ((getid (id cnt)
+                        (or
+                         (gethash id seen)
+                         (setf (gethash id seen)
+                               (if (is-range-p id)
+                                   (node->id1 cnt)
+                                   (unroll-id count id))))))
+                 (with-context
+                     (cnt (%iconst count))
+                     (_ (loop for node_ in nodes for node = (%cpy-node node_)
+                              do (setf (node-reads node) (map 'list #'(lambda (x) (getid x cnt)) (node-reads node))
+                                       (node-writes node) (map 'list #'(lambda (x) (getid x cnt)) (node-writes node)))
+                                 (emit node)))))))
+      (loop for i upfrom 0 below n
+            for unrolled = (unroll-with-count i)
+            do (insert-nodes graph (graph-nodes unrolled)))
+      body)))
+
+(defun ast-unroll-reminder (graph reminder idx n)
+  "Rewrites IDX"
+  reminder)
+;; [TODO] Fixnumの直接加算を書き換えるようにする w/ %iconst or pattern match
+(defun ast-band-unroll (graph band local-sizes &key (reminder :idiv) (dtype :int64)  &aux (n-unroll (car local-sizes)))
+  (assert (= 1 (length local-sizes)) () "ast-band-unroll: the length of local-sizes must be one.")
+  (let ((range (id->value graph (car (node-reads band)))))
+    (assert (and range (eql (node-type range) :RANGE)))
+    (multiple-value-bind (graph global-bands local-bands) (%ast-band-tile graph band local-sizes)
+      ;; The work here is to remove away local-bands
+      ;; also inserting reminder bands in the gloal-bands
+      ;; [TODO] Insert Reminder Statements
+      ;; [TODO] How to determine the unrolled variable index? it depends on time-series dependencies?
+      ;; note: do not run verify-graph during %ast-band-tile
+      (flet ((expr-out (id &aux (node (id->value graph id)))
+               (if (numberp id)
+                   id
+                   (car (node-reads node)))))
+        (let* ((reminder-graph (compute-unroll-reminder reminder (expr-out (car (node-reads range))) (expr-out (second (node-reads range))) n-unroll))
+               (reminder-expr (%expr (car (graph-outputs reminder-graph))))
+               (new-step (%mul n-unroll (second (node-reads range))))
+               (new-step-expr (%expr (node->id1 new-step)))
+               (idx1 (getattr (id->value graph (car (node-reads (car global-bands)))) :idx))
+               (idx2 (getattr (id->value graph (car (node-reads (car local-bands)))) :idx))
+               (range1 (make-node :Render :RANGE (list (gensym)) (list (node->id1 reminder-expr) (node->id1 new-step-expr))
+                                  :idx idx1 :dtype dtype))
+               (reminder-size (%sub (car (node-reads range)) (car (graph-outputs reminder-graph))))
+               (reminder-size-expr (%expr (node->id1 reminder-size)))
+               (range2 (make-node :Render :RANGE (list (gensym)) (list (node->id1 reminder-size-expr) (second (node-reads range)))
+                                  :idx idx2 :dtype dtype))
+               (body1 (ast-unroll-body graph (car local-bands) idx2 n-unroll)) ;; Unrolled body
+               (body2 (ast-unroll-reminder graph (car local-bands) idx2 n-unroll)) ;; Reminder body (idx2 is rewritten as idx2 + reminder_graph.out)
+               (main-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range1) (node->id1 body1)) :mark :noopt))
+               (reminder-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range2) (node->id1 body2)) :mark :noopt))
+               (prgn (%bind (car (node-writes (car global-bands)))
+                            (%progn
+                             main-band
+                             ))))
+          (insert-nodes graph (graph-nodes reminder-graph))
+          (insert-nodes graph (list new-step new-step-expr reminder-expr reminder-size-expr
+                                    body1 body2
+                                    range1 reminder-size range2 main-band reminder-band prgn))
+          graph
+          )))))
 
 (defun ast-band-packing (graph band local-sizes)
   ;; TODO: No need to ensure stride == 1
@@ -678,13 +777,16 @@ the reduction in only the cached region."
 ;; - [ ] RANGE(1) ==> Remove
 ;; - [ ] TileBands, Remove MAX if unnecessary.
 ;; - [ ] GID Count is GLOBAL
-;; - [ ] Softmax, Reduce is lowered as _GID2_1, _GID2_2, ...
+;; - [x] Softmax, Reduce is lowered as _GID2_1, _GID2_2, ...
 ;; Optimizer Things:
 ;; - [ ] BEAM Search
 ;; - [ ] Matmul ---> Block Warp Reduction is effective for both GPU and CPU.
 ;;   - [ ] https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh (Prefetch, effective for CPU and GPU)
 ;; - [x] Softmax --> Implement Block Reduction
+;; - [ ] Get optimal scheduling for Softmax on GPU manually
+;; - [ ] Get optimal scheduling for Matmul on GPU manually
 ;; - [ ] Finish Implementing Unroll
+;; - [ ] (Unroll) --> Unroll blockIdx.x
 ;; - [ ] Implenment Swizzle/Upcast/Vectorize, Support tmp.x. (Add Ops for UNROLL(BIND, X)
 ;; More Things:
 ;; - [x] Add: tensor-schedule-graph
