@@ -564,7 +564,7 @@ for (int i=0; i<M; i+=32)
     (setf (graph-outputs g) (list id))
     g))
 
-(defun ast-unroll-body (graph body idx n)
+(defun ast-unroll-body (graph body idx n &key (offset 0))
   "Removes IDX from body by unrolling with N"
   (declare (type graph graph) (type symbol idx) (type fixnum n))
   (let ((nodes (apply #'make-graph (ast-band-children graph body)))
@@ -594,32 +594,53 @@ for (int i=0; i<M; i+=32)
                                    (node->id1 cnt)
                                    (unroll-id count id))))))
                  (with-context
-                     (cnt (%iconst count))
+                   (cnt (%iconst count))
                    (_ (loop for node_ in nodes for node = (%cpy-node node_)
                             do (setf (node-reads node) (map 'list #'(lambda (x) (getid x cnt)) (node-reads node))
                                      (node-writes node) (map 'list #'(lambda (x) (getid x cnt)) (node-writes node)))
                                (emit node)))))))
       (apply
        #'%progn
-       (loop for i upfrom 0 below n
+       (loop for i upfrom offset below (+ offset n)
              for unrolled = (unroll-with-count i)
              for end = (intern (format nil "~a_~a" out i))
              do (insert-nodes graph (graph-nodes unrolled))
              collect end)))))
 
-(defun ast-unroll-reminder (graph reminder idx n)
-  "Rewrites IDX"
-  reminder)
+(defun ast-unroll-reminder (graph reminder idx offset)
+  "Rewrites the IDX -> IDX+UNROLL_OFFSET"
+  (let ((nodes (apply #'make-graph (ast-band-children graph reminder)))
+        (out (second (node-reads reminder))))
+    (setf (graph-outputs nodes) (list out)
+          nodes (graph-nodes (->graph-with-tpsort (->fast-graph nodes)))
+          nodes (loop for node in nodes unless (eql (node-type node) :RANGE) collect node))
+    (labels ((%cpy-node (node)
+               (let ((node (copy-node node)))
+                 (setf (node-id node) (gensym "NID"))
+                 node))
+             (newid (id &aux (node (id->value graph id)))
+               (if (and id (eql (node-type node) :RANGE) (eql idx (getattr node :idx)))
+                   offset
+                   (if (eql id idx) offset id)))
+             (clone-graph ()
+               (with-context
+                   (_ (loop for node_ in nodes for node = (%cpy-node node_)
+                            do (setf (node-reads node) (map 'list #'newid (node-reads node))
+                                     (node-writes node) (map 'list #'newid (node-writes node)))
+                               (emit node))))))
+      (insert-nodes graph (graph-nodes (clone-graph)))
+      (%progn out))))
 
 (defun node-force-number-bypass (node)
   "Inserts %LOAD if the node is trying to load number directly"
+  (when (eql (node-type node) :RANGE) (return-from node-force-number-bypass (list node)))
   (with-context-nodes
       (_
        (loop for r in (node-reads node)
              for nth upfrom 0
              if (integerp r) do (setf (nth nth (node-reads node)) (node->id1 (%iconst r)))
              else if (floatp r) do (setf (nth nth (node-reads node)) (node->id1 (%fconst r)))))
-    (__ (emit node))))
+      (__ (emit node))))
 
 (defun ast-band-unroll (graph band local-sizes &key (reminder :idiv) (dtype :int64)  &aux (n-unroll (car local-sizes)))
   (assert (= 1 (length local-sizes)) () "ast-band-unroll: the length of local-sizes must be one.")
@@ -643,23 +664,21 @@ for (int i=0; i<M; i+=32)
                (idx2 (getattr (id->value graph (car (node-reads (car local-bands)))) :idx))
                (range1 (make-node :Render :RANGE (list (gensym)) (list (node->id1 reminder-expr) (node->id1 new-step-expr))
                                   :idx idx1 :dtype dtype))
-               (reminder-size (%sub (car (node-reads range)) (car (graph-outputs reminder-graph))))
+               (reminder-size-tmp (%neg (car (graph-outputs reminder-graph))))
+               (reminder-size (%add (expr-out (car (node-reads range))) reminder-size-tmp))
                (reminder-size-expr (%expr (node->id1 reminder-size)))
                (range2 (make-node :Render :RANGE (list (gensym)) (list (node->id1 reminder-size-expr) (second (node-reads range)))
                                   :idx idx2 :dtype dtype))
-               (body1 (ast-unroll-body graph (car local-bands) idx2 n-unroll)) ;; Unrolled body
-               (body2 (ast-unroll-reminder graph (car local-bands) idx2 n-unroll)) ;; Reminder body (idx2 is rewritten as idx2 + reminder_graph.out)
+               (body1 (ast-unroll-body graph (car local-bands) idx2 n-unroll))     ;; Unrolled body
+               (body2 (ast-unroll-reminder graph (car local-bands) idx1 (car (graph-outputs reminder-graph)))) ;; Reminder body (idx2 is rewritten as idx2 + reminder_graph.out)
                (main-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range1) (node->id1 body1)) :mark :noopt))
                (reminder-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range2) (node->id1 body2)) :mark :noopt))
-               (prgn (%bind (car (node-writes (car global-bands)))
-                            (%progn
-                             main-band
-                             ))))
+               (prgn (%bind (car (node-writes (car global-bands))) (%progn main-band reminder-band))))
           (let ((nodes
                   (append
                    (graph-nodes reminder-graph)
-                   (list new-step new-step-expr reminder-expr reminder-size-expr
-                         body1 body2
+                   (list new-step new-step-expr reminder-size-tmp reminder-expr reminder-size-expr
+                         body1 body2 range
                          range1 reminder-size range2 main-band reminder-band prgn))))
             (insert-nodes graph (apply #'append (map 'list #'node-force-number-bypass nodes)))
             graph))))))
