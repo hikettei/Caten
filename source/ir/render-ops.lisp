@@ -550,6 +550,7 @@ for (int i=0; i<M; i+=32)
 (defun ast-upcast-body (graph body idx n)
   "Inserts SWIZZLE[N] to the body"
   (declare (type Graph graph) (type symbol idx) (type fixnum n))
+  
   )
 
 (defun ast-unroll-body (graph body idx n)
@@ -674,6 +675,7 @@ for (int i=0; i<M; i+=32)
 (defun ast-band-upcast (graph band local-sizes &key (reminder :idiv) (dtype :int64))
   "Similar to ast-band-unroll but this function upcasts the band (corresponding to swizzling/vectorizing in CPU/GPU, maximizing the innermost loop parallelism)"
   (declare (type Graph graph) (type node band) (type list local-sizes))
+  ;; Implementing this
   (ast-band-unroll graph band local-sizes :reminder reminder :dtype dtype :rewriter #'ast-upcast-body))
 
 (defun ast-band-parallelize ()) ;; Not an tile but uses the depth of band to mark for collapse(N), reuse tile
@@ -804,9 +806,10 @@ the reduction in only the cached region."
 ;; - [x] Softmax --> Implement Block Reduction
 ;; - [ ] Get optimal scheduling for Softmax on GPU manually
 ;; - [ ] Get optimal scheduling for Matmul on GPU manually
-;; - [ ] Finish Implementing Unroll
-;; - [ ] (Unroll) --> Unroll blockIdx.x
+;; - [x] Finish Implementing Unroll
+;; - [ ] (Unroll) --> Unroll blockIdx.x (First Priority before doing upcast)
 ;; - [ ] Implenment Swizzle/Upcast/Vectorize, Support tmp.x. (Add Ops for UNROLL(BIND, X)
+;;  - [ ] ReExprify
 ;; More Things:
 ;; - [x] Add: tensor-schedule-graph
 ;; - [ ] Add: ast-finalize-graph -> Propagate all :LOAD
