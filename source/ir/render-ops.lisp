@@ -610,7 +610,17 @@ for (int i=0; i<M; i+=32)
 (defun ast-unroll-reminder (graph reminder idx n)
   "Rewrites IDX"
   reminder)
-;; [TODO] Fixnumの直接加算を書き換えるようにする w/ %iconst or pattern match
+
+(defun node-force-number-bypass (node)
+  "Inserts %LOAD if the node is trying to load number directly"
+  (with-context-nodes
+      (_
+       (loop for r in (node-reads node)
+             for nth upfrom 0
+             if (integerp r) do (setf (nth nth (node-reads node)) (node->id1 (%iconst r)))
+             else if (floatp r) do (setf (nth nth (node-reads node)) (node->id1 (%fconst r)))))
+    (__ (emit node))))
+
 (defun ast-band-unroll (graph band local-sizes &key (reminder :idiv) (dtype :int64)  &aux (n-unroll (car local-sizes)))
   (assert (= 1 (length local-sizes)) () "ast-band-unroll: the length of local-sizes must be one.")
   (let ((range (id->value graph (car (node-reads band)))))
@@ -645,11 +655,14 @@ for (int i=0; i<M; i+=32)
                             (%progn
                              main-band
                              ))))
-          (insert-nodes graph (graph-nodes reminder-graph))
-          (insert-nodes graph (list new-step new-step-expr reminder-expr reminder-size-expr
-                                    body1 body2
-                                    range1 reminder-size range2 main-band reminder-band prgn))
-          graph)))))
+          (let ((nodes
+                  (append
+                   (graph-nodes reminder-graph)
+                   (list new-step new-step-expr reminder-expr reminder-size-expr
+                         body1 body2
+                         range1 reminder-size range2 main-band reminder-band prgn))))
+            (insert-nodes graph (apply #'append (map 'list #'node-force-number-bypass nodes)))
+            graph))))))
 
 (defun ast-band-packing (graph band local-sizes)
   ;; TODO: No need to ensure stride == 1
