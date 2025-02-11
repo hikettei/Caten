@@ -392,12 +392,12 @@ Constraints:
             (assert (every #'identity src-types)) (assert (every #'identity dst-types))
             (setf (getattr node :src-types) src-types (getattr node :dst-types) dst-types))
     graph))
-;; [TODO] How to explore :FOR or :PROGN?
+
 (defun ast-band-children (graph band &key (nodes nil) (seen nil))
   (labels ((explore (id seen-expr-p &aux (node (id->value graph id)))
              (when (or (null node) (find id seen)) (return-from explore))
              (push id seen)
-             (when (eql (node-class node) :Render)
+             (when (eql (node-type node) :EXPR)
                (if seen-expr-p (return-from explore) (setf seen-expr-p t)))
              (push node nodes)
              (mapc #'(lambda (x) (explore x seen-expr-p)) (node-reads node))))
@@ -563,8 +563,7 @@ for (int i=0; i<M; i+=32)
          (g (with-context (out (%mul step (%mul n-unroll (%idiv (%idiv size step) n-unroll)) :id id)))))
     (setf (graph-outputs g) (list id))
     g))
-;; [TODO] ast-band-children -> Bandの直下だけ探索する (seen by other bandsはむし)
-;; [TODO] どうやってBandのChildrenを検索する？
+
 (defun ast-unroll-body (graph body idx n)
   "Removes IDX from body by unrolling with N"
   (declare (type graph graph) (type symbol idx) (type fixnum n))
