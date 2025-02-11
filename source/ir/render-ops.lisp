@@ -394,18 +394,14 @@ Constraints:
     graph))
 ;; [TODO] How to explore :FOR or :PROGN?
 (defun ast-band-children (graph band &key (nodes nil) (seen nil))
-  (labels ((explore (id &aux (node (id->value graph id)))
+  (labels ((explore (id seen-expr-p &aux (node (id->value graph id)))
              (when (or (null node) (find id seen)) (return-from explore))
              (push id seen)
-             (when (eql (node-class node) :Render) (return-from explore))
+             (when (eql (node-class node) :Render)
+               (if seen-expr-p (return-from explore) (setf seen-expr-p t)))
              (push node nodes)
-             (mapc #'explore (node-reads node))))
-    (let ((body (id->value graph (second (node-reads band)))))
-      (ecase (node-type body)
-;;        (:PROGN
-;;          )
-        (:EXPR
-         (explore (car (node-reads body)))))))
+             (mapc #'(lambda (x) (explore x seen-expr-p)) (node-reads node))))
+    (explore (second (node-reads band)) nil))
   nodes)
 ;; ~~ Scheduling ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %ast-band-tile (graph band tile-sizes &key (sp "_p") (sc "_c") (cid (gensym "C")) &aux (bands) (globals) (locals))
@@ -567,7 +563,8 @@ for (int i=0; i<M; i+=32)
          (g (with-context (out (%mul step (%mul n-unroll (%idiv (%idiv size step) n-unroll)) :id id)))))
     (setf (graph-outputs g) (list id))
     g))
-;; [TODO] ast-band-children ---> Bandの直下だけ探索する (seen by other bandsはむし)
+;; [TODO] ast-band-children -> Bandの直下だけ探索する (seen by other bandsはむし)
+;; [TODO] どうやってBandのChildrenを検索する？
 (defun ast-unroll-body (graph body idx n)
   "Removes IDX from body by unrolling with N"
   (declare (type graph graph) (type symbol idx) (type fixnum n))
@@ -599,14 +596,17 @@ for (int i=0; i<M; i+=32)
                                    (unroll-id count id))))))
                  (with-context
                      (cnt (%iconst count))
-                     (_ (loop for node_ in nodes for node = (%cpy-node node_)
-                              do (setf (node-reads node) (map 'list #'(lambda (x) (getid x cnt)) (node-reads node))
-                                       (node-writes node) (map 'list #'(lambda (x) (getid x cnt)) (node-writes node)))
-                                 (emit node)))))))
-      (loop for i upfrom 0 below n
-            for unrolled = (unroll-with-count i)
-            do (insert-nodes graph (graph-nodes unrolled)))
-      body)))
+                   (_ (loop for node_ in nodes for node = (%cpy-node node_)
+                            do (setf (node-reads node) (map 'list #'(lambda (x) (getid x cnt)) (node-reads node))
+                                     (node-writes node) (map 'list #'(lambda (x) (getid x cnt)) (node-writes node)))
+                               (emit node)))))))
+      (apply
+       #'%progn
+       (loop for i upfrom 0 below n
+             for unrolled = (unroll-with-count i)
+             for end = (intern (format nil "~a_~a" out i))
+             do (insert-nodes graph (graph-nodes unrolled))
+             collect end)))))
 
 (defun ast-unroll-reminder (graph reminder idx n)
   "Rewrites IDX"
@@ -650,8 +650,7 @@ for (int i=0; i<M; i+=32)
           (insert-nodes graph (list new-step new-step-expr reminder-expr reminder-size-expr
                                     body1 body2
                                     range1 reminder-size range2 main-band reminder-band prgn))
-          graph
-          )))))
+          graph)))))
 
 (defun ast-band-packing (graph band local-sizes)
   ;; TODO: No need to ensure stride == 1
