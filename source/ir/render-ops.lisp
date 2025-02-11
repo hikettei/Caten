@@ -194,7 +194,7 @@ Constraints:
              (declare (type list parents results tmp))
              (loop for p in parents
                    if (render-p p) do (when tmp (push (reverse tmp) results)) (push p results) (setf tmp nil)
-                   else do (push p tmp))
+                     else do (push p tmp))
              (when tmp (push (reverse tmp) results))
              (reverse results))
            (explore (id &aux (node (id->value graph id)))
@@ -214,23 +214,6 @@ Constraints:
     (mapc #'explore (graph-outputs graph)))
   graph)
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun ast-verify-sequence (graph &aux (sorted (graph-nodes (->graph-with-tpsort graph))))
-  "The function `ast-verify` sorts the order of PROGN(S1, S2, ..., Sn) based on the order of topological sorted graph."
-  (declare (type FastGraph graph))
-  (flet ((helper (node)
-           ;; The younger the latter
-           (let* ((field (map 'list #'(lambda (x) (id->value graph x)) (node-reads node)))
-                  (field-positions (map 'list #'(lambda (x) (position (node-id x) sorted :key #'node-id)) field))
-                  (pairs (map 'list #'cons field field-positions)))
-             (assert (every #'identity field) () "ast-verify-sequence: There is an undefined progn field: ~a" field)
-             (setf (node-reads node) (map 'list (compose #'car #'node-writes #'car) (sort pairs #'< :key #'cdr))))))
-    (loop for node in (graph-nodes graph)
-          ;when (eql (node-type node) :PROGN)
-          ;  do (helper node)
-          )
-    ;; [TODO] No need to sort PROGN?
-    graph))
-
 (defun ast-maximize-band-depth (graph &aux (bands) (gid2band (make-hash-table)) (count 0))
   (funcall
    (Simplifier
@@ -313,7 +296,6 @@ Constraints:
                           ;; 1. purge reduction (this will remove an extra aref etc)
                           ;; 2. exprify again
                           #'(lambda (x) (verify-graph x) x)
-                          #'ast-verify-sequence
                           #'ast-maximize-band-depth
                           #'ast-infer-typed-node)))
   "Simplifies the AST"
@@ -324,7 +306,7 @@ Constraints:
 
 (defun simplify-ast (graph)
   (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow
-                                   #'ast-simplify-expr #'ast-verify-sequence #'ast-infer-typed-node)))
+                                   #'ast-simplify-expr #'ast-infer-typed-node)))
 ;; ~~ Type Map ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Typed (:constructor make-typed (dtype pointer-p)) (:conc-name typed-)) ;; -> AType
   (dtype dtype :type (or (member :void) dtype-t))
