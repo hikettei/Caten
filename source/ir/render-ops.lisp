@@ -134,6 +134,7 @@ Constraints:
     ((:IF (_ (:PROGN ())) :is-empty (guard x (null x))) -> ((node graph) (Empty! node)))
     ((:FOR ((:Range (_ _)) (:FOR ((:RANGE (_ _)) _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:IF (_ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
+    ((:FOR ((:RANGE ((EConst 0) _)) _)) -> ((node graph) (Empty! node)))
     ;; If the size==1 -> remove the range
     ;; [TODO] Make it working ...
     ;; TODO: (RANGE (4 4)) is also removable
@@ -835,3 +836,4 @@ the reduction in only the cached region."
 ;; - Move CStyleRenderer -> byoc/renderers/cstyle.lisp
 ;; - optimize pprint-graph!!
 ;; - codegenが動くようにする
+;; - [ ] There is a bug in type inference
