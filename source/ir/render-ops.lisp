@@ -547,7 +547,12 @@ for (int i=0; i<M; i+=32)
     (setf (graph-outputs g) (list id))
     g))
 
-(defun ast-unroll-body (graph body idx n &key (offset 0))
+(defun ast-upcast-body (graph body idx n)
+  "Inserts SWIZZLE[N] to the body"
+  (declare (type Graph graph) (type symbol idx) (type fixnum n))
+  )
+
+(defun ast-unroll-body (graph body idx n)
   "Removes IDX from body by unrolling with N"
   (declare (type graph graph) (type symbol idx) (type fixnum n))
   (let ((nodes (apply #'make-graph (ast-band-children graph body)))
@@ -584,7 +589,7 @@ for (int i=0; i<M; i+=32)
                                (emit node)))))))
       (apply
        #'%progn
-       (loop for i upfrom offset below (+ offset n)
+       (loop for i upfrom 0 below n
              for unrolled = (unroll-with-count i)
              for end = (intern (format nil "~a_~a" out i))
              do (insert-nodes graph (graph-nodes unrolled))
@@ -625,7 +630,7 @@ for (int i=0; i<M; i+=32)
              else if (floatp r) do (setf (nth nth (node-reads node)) (node->id1 (%fconst r)))))
       (__ (emit node))))
 
-(defun ast-band-unroll (graph band local-sizes &key (reminder :idiv) (dtype :int64)  &aux (n-unroll (car local-sizes)))
+(defun ast-band-unroll (graph band local-sizes &key (reminder :idiv) (dtype :int64) (rewriter #'ast-unroll-body) &aux (n-unroll (car local-sizes)))
   (assert (= 1 (length local-sizes)) () "ast-band-unroll: the length of local-sizes must be one.")
   (let ((range (id->value graph (car (node-reads band)))))
     (assert (and range (eql (node-type range) :RANGE)))
@@ -652,7 +657,7 @@ for (int i=0; i<M; i+=32)
                (reminder-size-expr (%expr (node->id1 reminder-size)))
                (range2 (make-node :Render :RANGE (list (gensym)) (list (node->id1 reminder-size-expr) (second (node-reads range)))
                                   :idx idx2 :dtype dtype))
-               (body1 (ast-unroll-body graph (car local-bands) idx2 n-unroll))     ;; Unrolled body
+               (body1 (funcall rewriter graph (car local-bands) idx2 n-unroll)) ;; Unrolled body
                (body2 (ast-unroll-reminder graph (car local-bands) idx1 (car (graph-outputs reminder-graph)))) ;; Reminder body (idx2 is rewritten as idx2 + reminder_graph.out)
                (main-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range1) (node->id1 body1)) :mark :noopt))
                (reminder-band (make-node :Render :FOR (list (gensym)) (list (node->id1 range2) (node->id1 body2)) :mark :noopt))
@@ -666,9 +671,10 @@ for (int i=0; i<M; i+=32)
             (insert-nodes graph (apply #'append (map 'list #'node-force-number-bypass nodes)))
             graph))))))
 
-(defun ast-band-packing (graph band local-sizes)
-  ;; TODO: No need to ensure stride == 1
-  )
+(defun ast-band-upcast (graph band local-sizes &key (reminder :idiv) (dtype :int64))
+  "Similar to ast-band-unroll but this function upcasts the band (corresponding to swizzling/vectorizing in CPU/GPU, maximizing the innermost loop parallelism)"
+  (declare (type Graph graph) (type node band) (type list local-sizes))
+  (ast-band-unroll graph band local-sizes :reminder reminder :dtype dtype :rewriter #'ast-upcast-body))
 
 (defun ast-band-parallelize ()) ;; Not an tile but uses the depth of band to mark for collapse(N), reuse tile
 
@@ -819,3 +825,4 @@ the reduction in only the cached region."
 ;; - optimize pprint-graph!!
 ;; - codegenが動くようにする
 ;; - [ ] There is a bug in type inference
+;; - GLOBAL+UNROLl/UPCAST?

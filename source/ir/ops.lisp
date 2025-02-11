@@ -400,6 +400,17 @@ X <- Aref(Array, Index)
 "
          :slots nil)
 
+(defnode (:JIT :SWIZZLE) (RenderOps TypedNode)
+         "
+SWIZZLE(A) is corresponding with:
+
+```
+X <- A.[x|y|z|...]
+```
+Unlike `aref`, a position of the access is fixed.
+"
+         :slots ((index :type fixnum)))
+
 (defnode (:JIT :SETF) (TypedNode) ;; TODO: Rename SETF -> STORE?
          "
 ```
