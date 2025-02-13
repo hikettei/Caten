@@ -1,20 +1,18 @@
 (defpackage :caten/byoc/clang
   (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
         :caten/codegen/backend :caten/codegen/renderer :caten/air
-        :caten/codegen/expr :caten/codegen/helpers :caten/codegen/shape-inference)
+        :caten/ir/expr :caten/codegen/helpers :caten/codegen/type-relay)
   (:import-from
-   :caten/codegen/config
+   :caten/codegen/search
    #:define-auto-scheduler)
-  (:import-from :caten/byoc/lisp #:LispBuffer))
+  (:import-from :caten/byoc/lisp #:LispBuffer)
+  (:export #:ClangBuffer #:ClangRuntime #:load-foreign-function))
 
 (in-package :caten/byoc/clang)
 
 (defclass ClangBuffer (LispBuffer) nil)
 (defclass ClangRuntime (GraphRuntime) nil)
-(define-auto-scheduler (Clang-Auto-Scheduler (&key (n-global-loop (ctx:getenv :OMP))))
-                       ;; Use outermost loop parallelism for maximize memory locality (better softmax/layernorm scheduling)
-                       :n-global-loop n-global-loop ;; OMP=1 -> The outermost loop is GLOBAL, otherwise everything is a local loop
-                       :tile-sizes `(2 4 8 16 32))
+(define-auto-scheduler Clang-Auto-Scheduler :use-parallel 1)
 (define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer Clang-Auto-Scheduler t)
 
 (defvar *indent*)
@@ -62,7 +60,7 @@
        (format stream "~a~afor (int ~(~a~)=~(~a~); ~(~a~); ~(~a~)+=~(~a~)) {~%"
                (indent)
                (if (eql (getattr bp :scope) :global)
-                   (format nil "#pragma omp parallel for~%~a" (indent))
+                   (format nil "#pragma omp parallel for collapse(~a)~%~a" (getattr bp :depth) (indent))
                    "")
                (getattr bp :idx)
                (render-expr 'CStyle-Renderer (getattr bp :upfrom))
@@ -84,7 +82,7 @@
        (let ((pre-iterations (getattr bp :iterations)))
          (labels ((print-aref (name b is &key iterations)
                     (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
-                        (format nil "~(~a~)[~(~a~)]" name
+                        (format nil "(*(~(~a~)+~(~a~)))" name
                                 (render-expr
                                  'CStyle-Renderer
                                  (apply
@@ -108,6 +106,10 @@
                     (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
                          (node-writes bp) (relay-writes (read-type-relay bp)) (relay-write-iters (read-type-relay bp))))
                    (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
+      (:BARRIER (error "thread barrier is not supported on clang"))
+      (:DEFINE-SHARED-MEMORY
+       (format stream "~a~a ~(~a~)[~(~a~)] __attribute__((aligned(64)));~%" (indent)
+               (->cdtype (getattr bp :dtype)) (car (node-writes bp)) (getattr bp :size)))
       (:DEFINE-GLOBAL))))
 
 (defun header ()
@@ -156,6 +158,23 @@ Compiled with this command: ~a"
 		 (dolist (c cmd) (princ c out) (princ " " out))))))
     (cffi:load-foreign-library sharedlib)))
 
+(defun disassemble-foreign-code (source &key (compiler "gcc") (lang "c") (compiler-flags))
+  (declare (type string source compiler))
+  (when (= 1 (ctx:getenv :OMP)) (push "-fopenmp" compiler-flags))
+  (let* ((cmd (append (list compiler "-x" lang) compiler-flags (list "-" "-S" "-o" "-")))
+	 (process-info (uiop:launch-program cmd :input :stream :error-output :stream :output :stream))
+	 (input (uiop:process-info-input process-info))
+	 (error-output (uiop:process-info-error-output process-info)))
+    (unwind-protect (princ source input) (close input))
+    (unless (zerop (uiop:wait-process process-info))
+      (error "Caten[Clang]: Failed to compile a shared library:~%~a~%
+
+Compiled with this command: ~a"
+	     (alexandria:read-stream-content-into-string error-output)
+	     (with-output-to-string (out)
+	       (dolist (c cmd) (princ c out) (princ " " out)))))
+    (alexandria:read-stream-content-into-string (uiop:process-info-output process-info))))
+
 (defmacro with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked (form)
   #+(and :darwin :x86-64) `(float-features:with-float-traps-masked (:invalid) ,form)
   #-(and :darwin :x86-64) `(progn ,form))
@@ -191,18 +210,19 @@ Compiled with this command: ~a"
        ;; causes an "arithmetic error FLOATING-POINT-INVALID-OPERATION".
        ;; This might be due to the (implicit and/or float/int) conversions
        ;; in the code generated for example, for threefry2x32.
-       (with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked
-	,(expand
-	  defglobals
-	  `((cffi:foreign-funcall
-             ,(format nil "~(~a~)" name)
-             ,@(loop for arg in defglobals
-		     for is-pointer = (getattr arg :pointer-p)
-		     if (not is-pointer)
-		       append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg)))
-		     else
-		       append `(:pointer ,(car (node-writes arg))))
-             :void)))))))
+       (caten/runtime/profile:with-real-time
+         (with-kludge-if-needed-for-darwin-x86-64-with-invalid-float-traps-masked
+	     ,(expand
+	       defglobals
+	       `((cffi:foreign-funcall
+                  ,(format nil "~(~a~)" name)
+                  ,@(loop for arg in defglobals
+		          for is-pointer = (getattr arg :pointer-p)
+		          if (not is-pointer)
+		            append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg)))
+		          else
+		            append `(:pointer ,(car (node-writes arg))))
+                  :void))))))))
 
 (defmethod %compile-kernel ((renderer CStyle-Renderer) items dir)
   (let ((code
@@ -214,7 +234,10 @@ Compiled with this command: ~a"
                           collect (getattr item :rendered-object))))))
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
+    ;; [Note] -ffast-math and CI fails?
     (load-foreign-function code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3") :dir dir)
+    (when (>= (ctx:getenv :DISASSEMBLE) 1)
+      (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))))
     (dolist (item items)
       (when (getattr item :rendered-object)
         (setf (getattr item :compiled-object)
