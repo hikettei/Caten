@@ -829,3 +829,4 @@ the reduction in only the cached region."
 ;; - codegenが動くようにする
 ;; - [ ] There is a bug in type inference
 ;; - GLOBAL+UNROLl/UPCAST?
+;; - [ ] BEAM Search --> CUDA Graph Capturingみたいな感じで，TQDMで進捗表示

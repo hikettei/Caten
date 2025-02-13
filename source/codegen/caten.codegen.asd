@@ -7,8 +7,8 @@
   :components
   ((:file "helpers")
    (:file "backend")
-   (:file "runner")
    (:file "type-relay")
+   (:file "runner")
    (:file "renderer")
    (:file "rewriting-rules")
    (:file "scheduler")

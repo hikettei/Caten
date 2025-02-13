@@ -105,7 +105,7 @@
         ;; メモ: Argsの表記はこう: Outputs Shapes Inputs
         
         ;; Schedule Graph -> VM Graph
-        (schedule-graph->runtime-graph schedule-graph)))))
+        (schedule-graph->runtime-graph schedule-graph base-graph)))))
 
 (defun jit (runtime &key (backend (ctx:getenv :BACKEND)))
   "

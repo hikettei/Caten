@@ -6,6 +6,8 @@
 
 (in-package :caten/codegen/runner)
 ;; ~~ Runner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; [TODO]
+;; - AbstractKernel, BYOC, Blueprint make-abstract-kernel周りのリファクタリングをする。
 (defclass AbstractKernel () ;; blueprint --_> Abstractkernelを持つ
   ((name :initarg :name :accessor kernel-name)
    (flops :initarg :flops :accessor kernel-flops)))

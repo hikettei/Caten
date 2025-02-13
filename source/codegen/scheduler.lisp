@@ -867,7 +867,18 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
         (setf (graph-outputs out) (graph-outputs graph))
         (->fast-graph out)))))
 
-(defun schedule-graph->runtime-graph (schedule-graph &aux (seen) (n2f (make-hash-table)))
+(defun recursively-explore-allocate (base-graph id &aux (seen))
+  "Finds the entry point of the ID by recursively exploring the graph."
+  (labels ((explore (id &aux (node (id->value base-graph id)))
+             (when (or (null node) (find id seen)) (return-from explore))
+             (push id seen)
+             (when (eql (node-type node) :Allocate)
+               (return-from recursively-explore-allocate (copy-node node)))
+             (explore (get-output-to node))))
+    (explore id)
+    (error "Couldn't find the allocate node for ~a" id)))
+
+(defun schedule-graph->runtime-graph (schedule-graph base-graph &aux (seen) (n2f (make-hash-table)))
   (declare (type Graph schedule-graph))
   (let ((caten/ir:*ctx* (make-graph)))
     (labels ((e (node)
@@ -883,9 +894,16 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                  (:kernel
                   ;; If cached ->
                   ;; If not cached ->
-                  ;; [TODO] Use VIEW
-                  (print node)
-                  ))
+                  (let* ((writes (map 'list #'(lambda (x) (recursively-explore-allocate base-graph x)) (node-writes node)))
+                         (write-ids (loop for a in (node-writes node) collect (intern (format nil "~a_tmp" a))))
+                         (writes (loop for w in write-ids
+                                       for a in writes
+                                       do (setf (node-writes a) (list w) (getattr a :_read_views) nil (getattr a :_type_relay) nil)
+                                       collect a)))
+                    (mapc #'e writes)
+                    (print writes)
+                    (print node)
+                    )))
                (mapc #'explore (node-reads node))))
       (mapc #'explore (graph-outputs schedule-graph)))
     (setf (graph-outputs caten/ir:*ctx*) (copy-list (graph-outputs schedule-graph)))
