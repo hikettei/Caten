@@ -96,12 +96,13 @@
                    (when (>= JIT_DEBUG 2)
                      (format t "Optimization Time: ~A(sec)" (float (/ (- end start) internal-time-units-per-second)))))))
            (graph-nodes schedule-graph)))
-        ;; Running Memory Planner -> TODO
+        ;; Running Memory Planner
+        ;; [TODO]
         ;; Purge unused allocations
         (mapc
          #'(lambda (x) (when (eql (getattr x :type) :kernel) (schedule-item-sync-realize x)))
          (graph-nodes schedule-graph))
-        ;; Rendering
+        ;; ScheduleGraph -> RuntimeGraph (schedule/memory planning is fixed)
         (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph)))
           (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Rendering with ~a" renderer))
           (mapc
