@@ -11,7 +11,7 @@
 ;; ~~ Runner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defnode (:JIT :JIT_KERNEL) ()
 	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
-         :slots ((kernel :type AbstractKernel) (dtypes :type list)))
+         :slots ((kernel :type AbstractKernel)))
 
 (defclass AbstractKernel ()
   ((name :initarg :name :accessor kernel-name)
@@ -37,7 +37,8 @@
 
 (defmethod realize-node ((node-id (eql :JIT_KERNEL)) runtime node args)
   (let ((info (getattr node :kernel))
-        (args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
+        ;;(args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes)))
+        )
     (let ((prg-time (invoke-kernel info runtime node args)))
       (declare (type float prg-time))
       (when (= (ctx:getenv :PROFILE) 1)

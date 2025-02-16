@@ -878,7 +878,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
     (explore id)
     (error "Couldn't find the allocate node for ~a" id)))
 
-(defun schedule-graph->runtime-graph (schedule-graph base-graph &aux (seen) (n2f (make-hash-table)))
+(defun schedule-graph->runtime-graph (schedule-graph base-graph &aux (seen))
   (declare (type Graph schedule-graph))
   (let ((caten/ir:*ctx* (make-graph)))
     (labels ((e (node)
@@ -892,19 +892,15 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                (ecase (getattr node :type)
                  ((:allocate :vmop :backward) (mapc #'e (getattr node :items)))
                  (:kernel
-                  ;; If cached ->
-                  ;; If not cached ->
                   (let* ((writes (map 'list #'(lambda (x) (recursively-explore-allocate base-graph x)) (node-writes node)))
-                         (write-ids (loop for a in (node-writes node) collect (intern (format nil "~a_tmp" a))))
+                         (write-ids (loop for a in (node-writes node) collect (intern (format nil "~a_out" a))))
                          (writes (loop for w in write-ids
                                        for a in writes
                                        do (setf (node-writes a) (list w) (getattr a :_read_views) nil (getattr a :_type_relay) nil)
                                        collect a)))
                     (mapc #'e writes)
-                    (print writes)
-                    (print node)
-                    )))
+                    (caten/ir:emit (make-node :JIT :JIT_KERNEL (node-writes node) (append write-ids (node-reads node)))))))
                (mapc #'explore (node-reads node))))
       (mapc #'explore (graph-outputs schedule-graph)))
     (setf (graph-outputs caten/ir:*ctx*) (copy-list (graph-outputs schedule-graph)))
-    caten/ir:*ctx*))
+    (->graph-with-tpsort (->fast-graph caten/ir:*ctx*))))
