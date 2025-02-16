@@ -43,6 +43,7 @@
       (unless (= 1 (ctx:getenv :NO_SCHEDULE_CACHE)) (minify-equivalent-schedule schedule-graph))
       (let ((total-kernels (count-if #'(lambda (x) (eql :kernel (getattr x :type))) (graph-nodes schedule-graph)))
             (JIT_DEBUG (ctx:getenv :JIT_DEBUG)))
+        (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Captured ~a kernel~a ..." total-kernels (if (= total-kernels 1) "" "s")))
         (when (>= JIT_DEBUG 2) (print-info "JIT Compilation Start") (print-info "Running lowerer ..."))
         ;; Running lowerer
         (with-progress (total-kernels :debug (if (>= JIT_DEBUG 2) 1 -1) :timeit nil)
@@ -101,7 +102,7 @@
          #'(lambda (x) (when (eql (getattr x :type) :kernel) (schedule-item-sync-realize x)))
          (graph-nodes schedule-graph))
         ;; Rendering
-
+        
         ;; メモ: Argsの表記はこう: Outputs Shapes Inputs
         
         ;; Schedule Graph -> VM Graph

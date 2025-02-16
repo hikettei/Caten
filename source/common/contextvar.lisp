@@ -124,7 +124,7 @@ Usage:
      0 :int #.(oneof "DEBUG" 0 `(-1 0))
      "Select either 0 or -1. Set -1 to supress the caten/common.logger.")
     (:JIT_DEBUG ;; [TODO] Reanem JIT_DEBUG -> DEBUG
-     0 :int
+     1 :int
      (lambda (x)
        (when (not (typep x '(integer 0 5))) (warn "JIT_DEBUG should be an integer from 0 to 5, got ~a, setting 0." x) (setf x 0))
        x)
