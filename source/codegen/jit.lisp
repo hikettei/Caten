@@ -105,9 +105,9 @@
         ;; ScheduleGraph -> RuntimeGraph (schedule/memory planning is fixed)
         (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph)))
           (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Rendering with ~a" renderer))
-          (mapc
-           #'(lambda (x) (when (eql (node-type x) :JIT_KERNEL) (caten/codegen/renderer:%render-kernel renderer x)))
-           (graph-nodes runtime-graph))
+;          (mapc
+;           #'(lambda (x) (when (eql (node-type x) :JIT_KERNEL) (caten/codegen/renderer:%render-kernel renderer x)))
+;           (graph-nodes runtime-graph))
           runtime-graph)))))
 
 (defun jit (runtime &key (backend (ctx:getenv :BACKEND)) (dir nil))

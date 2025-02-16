@@ -316,8 +316,8 @@ Constraints:
   (print-unreadable-object (typed stream :type nil)
     (format stream "TYPED ~(~a~)~a" (typed-dtype typed) (if (typed-pointer-p typed) "*" ""))))
 
-(defun ast-infer-typed-node (graph &aux (typemap (make-hash-table)) (waitlist (map 'list #'node-id (graph-nodes graph))))
-  (declare (type FastGraph graph) (optimize (speed 3)) (type list waitlist))
+(defun ast-infer-typed-node (graph &aux (_ (verify-graph graph)) (typemap (make-hash-table)) (waitlist (map 'list #'node-id (graph-nodes graph))))
+  (declare (type FastGraph graph) (optimize (speed 3)) (type list waitlist) (ignore _))
   (flet ((send (node typed)
            (declare (type Typed typed))
            (assert (find (node-id node) waitlist))
@@ -331,6 +331,7 @@ Constraints:
                      (assert (integerp typed))
                      (make-typed *default-int* nil)))
                (gethash typed typemap))))
+    ;; Note: must verify graph first to avoid the cycle dependencies.
     (loop for node in (graph-nodes graph) do
       (assert (subtypep (class-of (node-attr node)) 'TypedNode) () "The given node ~a is not defined as TypedNode." node)
       ;; Entry points of the graph.
@@ -372,6 +373,9 @@ Constraints:
           for dst-types = (map 'list #'getyped (node-writes node)) do
             (when (and (eql (node-type node) :BIND) (some #'null src-types))
               (setf src-types (list (getyped (getattr node :value)))))
+            (when (eql (node-type node) :FOR)
+              (print node)
+              (print (id->value graph (second (node-reads node)))))
             (assert (every #'identity src-types)) (assert (every #'identity dst-types))
             (setf (getattr node :src-types) src-types (getattr node :dst-types) dst-types))
     graph))
