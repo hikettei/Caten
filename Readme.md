@@ -4,6 +4,10 @@
 
 [![CI](https://github.com/hikettei/Caten/actions/workflows/tests_on_push.yml/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/tests_on_push.yml) [![Benchmarks](https://github.com/hikettei/Caten/actions/workflows/benchmark.yml/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/benchmark.yml) [![pages-build-deployment](https://github.com/hikettei/Caten/actions/workflows/pages/pages-build-deployment/badge.svg)](https://github.com/hikettei/Caten/actions/workflows/pages/pages-build-deployment) [![](https://dcbadge.limes.pink/api/server/tNawU7TN3s?style=flat)](https://discord.gg/tNawU7TN3s)
 
+### Overview
+
+<img alt="Concepts" src="./docs/assets/Caten_Overview_Style2.jpg" width="120%">
+
 `Caten = Compile+AbstracTENsor`
 
 Caten is an experimental deep learning compiler. Our goal is to create a solution that’s as simple as tinygrad yet as flexible as TVM—all while extending the possibilities of interactive programming into the realm of AI.
@@ -59,7 +63,7 @@ Give it a try in your REPL!
   (caten (!relu (!matmul (make-tensor `(a b)) (make-tensor `(b c))))))
 ```
 
-We’ve adopted a RISC-style architecture. Ultimately, everything in Caten boils down to [just 26 composable primitive ops](https://github.com/hikettei/Caten/blob/main/source/aasm/attrs.lisp).
+We’ve adopted a RISC-style architecture. Ultimately, everything in Caten boils down to [just 26 composable primitive ops](https://github.com/hikettei/Caten/blob/main/source/ir/ops.lisp).
 
 When you replace `tensor-graph` with `tensor-lowered-graph`, you’ll see exactly what we mean! And by using `->dot` instead of `pprint-graph`, you can visualize that graph right in your browser!
 
@@ -104,10 +108,8 @@ Though our focus is still on the inference, we will support training models. (St
 ## Getting Started
 
 1. Install [Roswell](https://github.com/roswell/roswell) and a suitable IDE. (If unsure, Emacs or [Lem](https://github.com/lem-project/lem) is recommended)
-2. Install [ISL (Integer Set Library)](https://libisl.sourceforge.io/) for the fast kernel generation.
-3. If not already installed, then install [libyaml](https://github.com/yaml/libyaml) for YAML parsing and emitting.
-4. Install [Qlot](https://github.com/fukamachi/qlot)
-5. Check out [getting-started.lisp](./docs/getting-started.lisp)
+2. Install [Qlot](https://github.com/fukamachi/qlot)
+3. Check out [getting-started.lisp](./docs/getting-started.lisp)
 
 ```sh
 $ git clone git@github.com:hikettei/Caten.git
@@ -190,7 +192,10 @@ Before contributing, please note that there is no linter here. Make an effort to
 - [ ] CUDA (BACKEND=CUDA)
 - [ ] LLVM (BACKEND=LLVM)
 - [ ] OpenCL (BACKEND=OPENCL)
-- [ ] Finish AutoScheduler (Polyhedral Compiler + BEAM Search)
+- [ ] X86 (BACKEND=X86)
+- [ ] PTX (BACKEND=PTX)
+- [ ] TensorCore (User extensible Vectorization) Support
+- [ ] Finish AutoScheduler (BEAM Search)
 
 ### Runtimes
 
