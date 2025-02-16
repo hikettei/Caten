@@ -25,7 +25,6 @@ One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure
           (rank :type fixnum) (reduce-dims :type list) ;; rank = the rank of kernel, reduce-dims = a list of dims reduced
           (read-types :type list) (write-types :type list) ;; read/write types
           (storage-id-src :type list) (storage-id-dst :type list) ;; read/write storage ids
-          (rendered-object :type string) (compiled-object :type list) ;; renderered/compiled object
           (namespace :type list))) ;; a list of variables used in the kernel which is used by memory-planner
 
 (defmethod print-node (node (id (eql :Schedule-Item)))

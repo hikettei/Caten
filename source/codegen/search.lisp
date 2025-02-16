@@ -106,12 +106,11 @@
                       (push (getattr (schedule-node-node node) :band) seen-bands)
                       (case (getattr (schedule-node-node node) :mark)
                         (:coincident
-                         (print "CDN")
                          ;(ast-band-tile (schedule-node-schedule node) (schedule-node-node node) `(4))
                          
                          )
                         (:reduction
-                         (print "RDC"))
+                         )
                         (:noopt)))
                     (explore-children node))
                    (:EXPR) ;; Filter

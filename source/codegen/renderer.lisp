@@ -20,6 +20,7 @@
    #:%render-node
    #:%render-const
    #:expr-index-components
+   
    #:%renderer-get-auto-scheduler
    #:render-index
    #:render-aref-index))
@@ -29,7 +30,7 @@
 (defgeneric get-default-renderer (id))
 (defgeneric %render-node (renderer node-dispatcher node) (:documentation ""))
 (defgeneric %render-const (renderer obj) (:documentation ""))
-(defgeneric %render-kernel (renderer schedule-item))
+(defgeneric %render-kernel (renderer jit-kernel))
 (defgeneric %compile-kernel (renderer schedule-items dir))
 
 (defclass Renderer ()

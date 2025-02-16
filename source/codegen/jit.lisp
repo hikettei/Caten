@@ -102,17 +102,21 @@
          #'(lambda (x) (when (eql (getattr x :type) :kernel) (schedule-item-sync-realize x)))
          (graph-nodes schedule-graph))
         ;; Rendering
-        
-        ;; メモ: Argsの表記はこう: Outputs Shapes Inputs
-        
-        ;; Schedule Graph -> VM Graph
-        (schedule-graph->runtime-graph schedule-graph base-graph)))))
+        (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph)))
+          (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Rendering with ~a" renderer))
+          (mapc
+           #'(lambda (x) (when (eql (node-type x) :JIT_KERNEL) (caten/codegen/renderer:%render-kernel renderer x)))
+           (graph-nodes runtime-graph))
+          runtime-graph)))))
 
-(defun jit (runtime &key (backend (ctx:getenv :BACKEND)))
+(defun jit (runtime &key (backend (ctx:getenv :BACKEND)) (dir nil))
   "
 ```
 (jit runtime &key (backend (ctx:getenv :BACKEND)))
 ```
 "
   (declare (type GraphRuntime runtime))
-  (codegen runtime :backend backend))
+  (let ((graph (codegen runtime :backend backend)))
+    (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Compiling ~a kernels ..." (count-if #'(lambda (x) (eql (node-type x) :JIT_KERNEL)) (graph-nodes graph))))
+    ;; [TODO] Use Runtime instead of renderer when doing %compile-kernel
+    (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Completed"))))
