@@ -837,7 +837,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
     (if (and pos (nthcdr (1+ pos) (graph-nodes graph)))
         (list (apply #'make-graph (subseq (graph-nodes graph) 0 (1+ pos))) (apply #'make-graph (subseq (graph-nodes graph) (1+ pos))))
         (list graph))))
-
+;; RuntimeGraph ==> ScheduleGraph Construction
 (defun graph-schedule (graph) ;; TOOD(hikettei): &key (allow-recompute-grads nil))
   "
 ```
@@ -877,7 +877,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
              (explore (get-output-to node))))
     (explore id)
     (error "Couldn't find the allocate node for ~a" id)))
-
+;; ScheduleGraph ==> RuntimeGraph(Jitted) Construction
 (defun schedule-graph->runtime-graph (schedule-graph base-graph &aux (seen))
   (declare (type Graph schedule-graph))
   (let ((caten/ir:*ctx* (make-graph)))
@@ -903,4 +903,5 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                (mapc #'explore (node-reads node))))
       (mapc #'explore (graph-outputs schedule-graph)))
     (setf (graph-outputs caten/ir:*ctx*) (copy-list (graph-outputs schedule-graph)))
+    ;; [TODO] All backward nodes should be scheduled after the PAUSE/BACKWARD node. how do we know that?
     (->graph-with-tpsort (->fast-graph caten/ir:*ctx*))))
