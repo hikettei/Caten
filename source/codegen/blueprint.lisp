@@ -1,19 +1,14 @@
 (defpackage :caten/codegen/blueprint
-  (:documentation "The package `caten/codegen/blueprint` is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
+  (:documentation "
+```
+(lower-schedule-item [Schedule-Item] ...) => [Blueprint]
+```
+The package `caten/codegen/blueprint` is responsible for lowering the schedule-item into a blueprint. A blueprint is an IR that represents a computation graph with explicit loop bounds.
 The `lower-schedule-item` method infers loop boundaries based on `Schedule-item` and performs lowering into a format that includes :FOR/:ENDFOR nodes.")
-  (:use :cl :caten/air :caten/codegen/expr :alexandria :caten/codegen/expr-cache :caten/codegen/shape-inference :caten/codegen/helpers :caten/runtime/runtime :caten/runtime/buffer)
-  (:import-from
-   :caten/codegen/renderer
-   #:render-expr
-   #:Default-Renderer)
-  (:import-from
-   :caten/codegen/exprify
-   #:blueprint-exprify
-   #:blueprint-scalarify
-   #:blueprint-set-iterations
-   #:blueprint-propagate-reduction
-   #:blueprint-realized-buffers)
+  (:use :cl :caten/air :caten/ir :caten/ir/expr :alexandria :caten/codegen/type-relay :caten/codegen/helpers :caten/runtime/runtime :caten/runtime/buffer)
+  (:import-from :caten/codegen/renderer #:render-expr #:Default-Renderer #:render-node)
   (:import-from :caten/codegen/rewriting-rules #:nodes-apply-static-gensym)
+  (:import-from :caten/codegen/realize #:bp-finalize-realize)
   (:export
    #:lower-schedule-item
    #:lower-cached-schedule-item
@@ -25,91 +20,18 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
    #:GFlops-Measurer-ops
    #:GFlops-Measurer-succeed-p
    #:compute-gflops
-   #:schedule-item-gflops))
+   #:schedule-item-gflops)
+  ;; Verifier
+  (:export #:verify-blueprint #:expr-gather-buffer-loads))
 
 (in-package :caten/codegen/blueprint)
-;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun %make-for (idx size)
-  "Represents for an iteration in the range of [0, size)"
-  (make-node :Render :FOR (list idx)  nil :idx idx :upfrom (expr-const 0 :int64) :below (expr-< (expr-const idx :int64) size) :by (expr-const 1 :int64)))
-
-(defun %make-endfor (idx)
-  "Represents the end of the iteration."
-  (make-node :Render :ENDFOR nil nil :idx idx))
-
-(defmethod print-blueprint (nodes stream &aux (gids))
-  (labels ((print-aref (name b is &key (iterations (make-index-space)))
-             (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
-                 (format nil "~a[~(~a~)]" name
-                         (render-expr
-                          'Default-Renderer
-                          (apply
-                           #'expr-add
-                           (map
-                            'list
-                            #'(lambda (view stride i)
-                                (if view
-                                    (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
-                                    (expr-mul stride i)))
-                            (iteration-space-views is)
-                            (iteration-space-strides is)
-                            iterations))))
-                 (format nil "~(~a~)" name)))
-           (make-index-space ()
-             (map 'list #'(lambda (x) (expr-const (intern (princ-to-string x)) :int64)) (reverse gids))))
-    (format
-     stream
-     "{~%~a}~%"
-     (with-output-to-string (out)
-       (flet ((indent (n) (with-output-to-string (o) (dotimes (i n) (princ " " o)))))
-         (loop with indent = 2
-	       for node in nodes
-	       if (eql (node-type node) :FOR)
-	         do (format out "~a~afor (int ~(~a~)=~(~a~);~(~a~);~(~a~)+=~(~a~)) {~%"
-                            (indent indent) (if (eql (getattr node :scope) :global) "parallel " "") (getattr node :idx)
-                            (render-expr 'Default-Renderer (getattr node :upfrom)) (render-expr 'Default-Renderer (getattr node :below))
-                            (getattr node :idx) (render-expr 'Default-Renderer (getattr node :by)))
-                    (push (getattr node :idx) gids)
-		    (incf indent 2)
-	       else if (eql (node-type node) :ENDFOR)
-	              do (decf indent 2) (format out "~a} // ~(~a~)~%" (indent indent) (getattr node :idx)) (setf gids (remove (getattr node :idx) gids))
-               else if (eql (node-type node) :IF)
-                      do (incf indent 2) (format out "~a if (~(~a~)) {~%" (indent indent) (render-expr 'Default-Renderer (getattr node :condition)))
-               else if (eql (node-type node) :ENDIF)
-                      do (decf indent 2) (format out "~a } // endif~%" (indent indent))
-               else if (eql (node-type node) :EXPR) do
-                 (let ((pre-iterations (getattr node :Iterations)))
-                   (format out "~a~a = ~a;~a~a~%"
-                           (indent indent)
-                           (render-list
-                            (map 'list #'(lambda (x y z) (print-aref x y z :iterations (or pre-iterations (make-index-space))))
-                                 (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
-                           (render-expr 'Default-Renderer (getattr node :EXPR) :index-space (or pre-iterations (make-index-space)))
-                           (if (getattr node :reduction :allow-undefined t)
-                               " // :reduction=t"
-                               "")
-                           (if (typep (getattr node :meta :allow-undefined t) 'ExprMeta)
-                               (format nil " // ~a" (exprmeta-comment (getattr node :meta)))
-                               "")))
-               else
-	         do (format out "~a~a = ~(~a~)(~a);~a~%"
-                            (indent indent)
-                            (render-list (map 'list #'print-aref (node-writes node) (relay-writes (read-type-relay node)) (relay-write-iters (read-type-relay node))))
-                            (node-type node)
-                            (render-list (map 'list #'print-aref (node-reads node) (relay-reads (read-type-relay node)) (relay-read-iters (read-type-relay node))))
-                            (if (getattr node :reduction :allow-undefined t)
-                                " // :reduction=t"
-                                ""))))))))
-
-(defun node-reduced-axes (node)
-  (let ((is (car (relay-write-iters (read-type-relay node)))))
-    (when is
-      (loop for s in (iteration-space-strides is)
-            if (expr-equal-to s 0)
-              collect t
-            else
-              collect nil))))
-;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Temporary Ops ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defnode (:Tmp :TmpRange) () "" :slots ((size :type Expr) (type :type keyword) (idx)))
+(defnode (:Tmp :TmpEndRange) () "" :slots ((idx)))
+(defun %make-coincident-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :coincident :idx idx))
+(defun %make-reduction-range (idx size) (make-node :Tmp :TmpRange (list idx) nil :size size :type :reduction :idx idx))
+(defun %make-endrange (idx) (make-node :Tmp :TmpEndRange nil nil :idx idx))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defmethod get-grouped-dims ((graph Graph) (base-graph Graph))
   "Infers the loop boundaries of the graph by finding the common iteration space."
   (let* ((kernel-rank
@@ -217,19 +139,6 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
         (setf (relay-read-iters (read-type-relay n)) (map 'list #'fixup-dims (node-reads n) (relay-reads (read-type-relay n)))
               (relay-write-iters (read-type-relay n)) (map 'list #'fixup-dims (node-writes n) (relay-writes (read-type-relay n))))))))
 
-(defmethod graph-swizzle-space ((graph Graph) (order list))
-  "Permutes all buffers in the graph by the order."
-  (flet ((swizzle (id space)
-           (when space
-             (assert (length (iteration-space-procedure space)) () "graph-swizzle-loop-order: Cannot swizzle the space ~a ~a with ~a" id space order)
-             (setf (iteration-space-shape space) (permute-list order (iteration-space-shape space))
-                   (iteration-space-strides space) (permute-list order (iteration-space-strides space))
-                   (iteration-space-views space) (permute-list order (iteration-space-views space))
-                   (iteration-space-procedure space) (permute-list order (iteration-space-procedure space))))))
-    (dolist (n (graph-nodes graph))
-      (mapc #'swizzle (node-reads n) (relay-read-iters (read-type-relay n)))
-      (mapc #'swizzle (node-writes n) (relay-write-iters (read-type-relay n))))))
-
 (defmethod node-depend-idx-list ((node Node) gid
                                  &aux
                                    (type (read-type-relay node))
@@ -250,6 +159,15 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
           for stride in strides
           if (not (every #'no-dep-p size stride))
             collect g)))
+
+(defun node-reduced-axes (node)
+  (let ((is (car (relay-write-iters (read-type-relay node)))))
+    (when is
+      (loop for s in (iteration-space-strides is)
+            if (expr-equal-to s 0)
+              collect t
+            else
+              collect nil))))
 
 (defun node-reduced-gids (node gids &aux (axes (node-reduced-axes node)))
   (when (null axes) (setf axes (make-list (length gids))))
@@ -283,7 +201,20 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
               else
                 collect p)
       ,@(nreverse stashed))))
-;; ~~~ Lowerer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+(defmethod graph-swizzle-space ((graph Graph) (order list))
+  "Permutes all buffers in the graph by the order."
+  (flet ((swizzle (id space)
+           (when space
+             (assert (length (iteration-space-procedure space)) () "graph-swizzle-loop-order: Cannot swizzle the space ~a ~a with ~a" id space order)
+             (setf (iteration-space-shape space) (permute-list order (iteration-space-shape space))
+                   (iteration-space-strides space) (permute-list order (iteration-space-strides space))
+                   (iteration-space-views space) (permute-list order (iteration-space-views space))
+                   (iteration-space-procedure space) (permute-list order (iteration-space-procedure space))))))
+    (dolist (n (graph-nodes graph))
+      (mapc #'swizzle (node-reads n) (relay-read-iters (read-type-relay n)))
+      (mapc #'swizzle (node-writes n) (relay-write-iters (read-type-relay n))))))
+
 (defstruct ctx
   "an intermidate object used to debug `recursive-lower-into-bp`"
   graph order blueprint seen gids loop-size-list band2node schedule-graph)
@@ -292,19 +223,16 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
 
 (defmethod initial-bp ((ctx ctx))
   (with-slots ((gids gids) (group-size loop-size-list)) ctx
-    `(,@(map 'list #'%make-for gids group-size) ,@(reverse (map 'list #'%make-endfor gids)))))
+    `(,@(map 'list #'%make-coincident-range gids group-size) ,@(reverse (map 'list #'%make-endrange gids)))))
 
 (defmethod reduce-bp ((ctx ctx) (something node) gids key)
   (let* ((sizes (loop with size = (iteration-space-shape (car (relay-write-iters (read-type-relay something))))
                       for g in gids
                       for p = (position g (ctx-gids ctx))
                       collect (nth p size)))
-         (loops (map 'list #'%make-for gids sizes)))
-    (dolist (l loops)
-      (setf (gethash (node-id l) (ctx-band2node ctx)) key))
-    `(,@loops
-      ,something
-      ,@(reverse (map 'list #'%make-endfor gids)))))
+         (loops (map 'list #'%make-reduction-range gids sizes)))
+    (dolist (l loops) (setf (gethash (node-id l) (ctx-band2node ctx)) key))
+    `(,@loops ,something ,@(reverse (map 'list #'%make-endrange gids)))))
 
 (defun recursive-scalar-p (ctx id)
   (declare (type ctx ctx))
@@ -330,6 +258,29 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                     append (node-reduced-gids user (ctx-gids ctx)))))
      (and (null node-depend-axes) (null node-reduce-axes) (null user-depend-axes)
           (every #'(lambda (x) (recursive-scalar-p ctx x)) (node-reads node))))))
+
+(defun gid-n (gid &aux (gid-str (princ-to-string gid)))
+  (assert (equalp (subseq gid-str 0 4) "_gid"))
+  (parse-integer (subseq gid-str 4)))
+
+(defun ctx-padding-loop (ctx)
+  "Inserts padding loops to keep the rank of loops same. Polyhedral Compiler should responsible for transforming this, so, caten/codegen should keep the ir untouched."
+  (let* ((appeared
+           (loop for bp in (ctx-blueprint ctx)
+                 if (eql (node-type bp) :TMPRange)
+                   collect bp))
+         (threshold (and appeared (apply #'min (map 'list #'(lambda (x) (gid-n (getattr x :idx))) appeared))))
+         (padding-loops
+           (loop for gid in (ctx-gids ctx)
+                 for size in (ctx-loop-size-list ctx)
+                 if (and threshold (expr-equal-to size 1)
+                         (null (find gid appeared :key #'(lambda (x) (getattr x :idx))))
+                         (< (gid-n gid) threshold)) ;; only the outermost loops are subject.
+                   collect (cons (%make-coincident-range gid size) (%make-endrange gid)))))
+    (when (null appeared) (return-from ctx-padding-loop (ctx-blueprint ctx)))
+    `(,@(map 'list #'car padding-loops)
+      ,@(ctx-blueprint ctx)
+      ,@(reverse (map 'list #'cdr padding-loops)))))
 
 (defun try-insert-node (ctx node &aux (changed-p nil))
   "First this function tries to search all possible insertable position for the node, and then insert the node in the most suitable position. (values new_bp successed_p) is returned."
@@ -370,7 +321,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
       (loop for bp in blueprint
             for nth upfrom 0
             for high-priority-p = nil
-            if (eql (node-type bp) :FOR) do
+            if (eql (node-type bp) :TMPRange) do
               (let ((cache (gethash (node-id bp) (ctx-band2node ctx))))
                 (when (and node-reduce-axes cache)
                   ;; Relucant to create a new reduce loop
@@ -381,7 +332,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                       (push (getattr bp :idx) serialized-reduce-idx))))
                 (push (getattr bp :idx) idx-satisfied))
             else
-              if (eql (node-type bp) :ENDFOR)
+              if (eql (node-type bp) :TMPEndRange)
                 do (setf idx-satisfied (remove (getattr bp :idx) idx-satisfied)
                          serialized-reduce-idx (remove (getattr bp :idx) serialized-reduce-idx))
             else
@@ -413,7 +364,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
           (when (= nrank 0)
             ;; If only used in this blueprint
             (let ((users (id->users (ctx-schedule-graph ctx) (car (node-writes node)))))
-              (if (some #'(lambda (x) (getattr x :jitable)) users) ;; If the scalar is used in another jitable kernel?
+              (if (some #'(lambda (x) (eql :kernel (getattr x :type))) users) ;; If the scalar is used in another jitable kernel?
                   (let* ((dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
                          (buffer (make-buffer `(1) `(0) dtype `((0 1 1 t)) :device 'RelayBuffer))
                          (space (buffer-merge-dims (ctx-schedule-graph ctx) buffer)))
@@ -446,94 +397,168 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
     (when (null node) (return-from recursive-lower-into-bp))
     (when (find id seen) (return-from recursive-lower-into-bp))
     (push id seen)
-    (multiple-value-bind (new-bp changed-p)
-        (try-insert-node ctx node)
+    (multiple-value-bind (new-bp changed-p) (try-insert-node ctx node)
       (when (null changed-p) ;; if failed -> add the outermost loops and retry. (todo: which is not preferable though...)
         (setf (ctx-blueprint ctx) (append (initial-bp ctx) (ctx-blueprint ctx)))
         (multiple-value-bind (new-bp1 changed-p1)
             (try-insert-node ctx node)
           (setf new-bp new-bp1 changed-p changed-p1)))
-      (assert changed-p () "recursive-lower-into-bp: Cannot insert the node ~a into a single kernel.
+      (assert changed-p () "recursive-lower-into-bp: Cannot lower the node ~a within a single kernel.
 Depends=~a Reduce=~a Users=~a
 ```
 ~a
-```" node (node-depend-idx-list node (ctx-gids ctx)) (node-reduced-gids node (ctx-gids ctx))
-     (map 'list #'node-id (id->users (ctx-graph ctx) (car (node-writes node)))) (ctx-blueprint ctx))
-
-     (setf blueprint new-bp)
-     (mapc
-      #'(lambda (x)
-          (when (and (null (find x seen)) (id->value (ctx-graph ctx) x))
-            (recursive-lower-into-bp ctx x)))
-      (node-reads node))
+```"
+              node (node-depend-idx-list node (ctx-gids ctx)) (node-reduced-gids node (ctx-gids ctx))
+              (map 'list #'node-id (id->users (ctx-graph ctx) (car (node-writes node)))) (ctx-blueprint ctx))
+      (setf blueprint new-bp)
+      (mapc
+       #'(lambda (x)
+           (when (and (null (find x seen)) (id->value (ctx-graph ctx) x))
+             (recursive-lower-into-bp ctx x)))
+       (node-reads node))
       nil)))
 
-(defun simplify-pointer-and-constant (blueprints)
-  (let ((constants))
-    (loop for bp in blueprints
-          if (and (not (eql (node-class bp) :Render)) (getattr bp :declare-type)) do
-            (push (car (node-writes bp)) constants))
-    (loop for bp in blueprints
-          if (not (eql (node-class bp) :Render)) do
-            (loop for read in (node-reads bp)
-                  for type in (relay-reads (read-type-relay bp))
-                  for is in (relay-read-iters (read-type-relay bp))
-                  for nth upfrom 0
-                  if (and type is (find read constants)) do
-                    ;; The load to :declare-type is a scalar.
-                    (setf (nth nth (relay-reads (read-type-relay bp)))
-                          (let ((buffer (caten/runtime:copy-buffer type)))
-                            (setf (buffer-nrank buffer) -1)
-                            buffer))))
-    blueprints))
+(defun make-index-components (node gids)
+  (assert (eql (node-type node) :INDEX-COMPONENTS))
+  (flet ((maybe-expr-const (x) (if (numberp x) (expr-const x :int64) x)))
+    (labels ((from-expr (shapes components)
+               (reduce
+                #'expr-add
+                (map
+                 'list
+                 #'(lambda (size stride gid)
+                     (if (expr-equal-to size 1)
+                         (expr-const 0 :int64)
+                         (expr-mul (maybe-expr-const stride) (maybe-expr-const gid))))
+                 shapes
+                 components
+                 gids)))
+             (merge-stride (proc list)
+               (loop for p in proc
+                     collect
+                     (let ((strides (map 'list #'(lambda (x) (nth x list)) p)))
+                       (if (find 0 strides :test #'eql) (expr-const 0 :int64) (maybe-expr-const (car (last strides))))))))
+      (let* ((is (car (relay-write-iters (read-type-relay node))))
+             (proc (iteration-space-procedure is))
+             (components (merge-stride proc (cdr (node-reads node)))))
+        (let ((e (from-expr (iteration-space-shape is) components)))
+          (setf (node-writes (expr-out e)) (node-writes node)
+                (graph-outputs (expr-graph e)) (node-writes node))
+        e)))))
 
-(defun gid-n (gid &aux (gid-str (princ-to-string gid)))
-  (assert (equalp (subseq gid-str 0 4) "_gid"))
-  (parse-integer (subseq gid-str 4)))
-
-(defun ctx-padding-loop (ctx)
-  "Inserts padding loops to keep the rank of loops same. Polyhedral Compiler should responsible for transforming this, so, caten/codegen should keep the ir untouched."
-  (let* ((appeared
-           (loop for bp in (ctx-blueprint ctx)
-                 if (eql (node-type bp) :FOR)
-                   collect bp))
-         (threshold (and appeared (apply #'min (map 'list #'(lambda (x) (gid-n (getattr x :idx))) appeared))))
-         (padding-loops
-           (loop for gid in (ctx-gids ctx)
-                 for size in (ctx-loop-size-list ctx)
-                 if (and (expr-equal-to size 1)
-                         (null (find gid appeared :key #'(lambda (x) (getattr x :idx))))
-                         threshold
-                         (< (gid-n gid) threshold)) ;; only the outermost loops are subject.
-                   collect (cons (%make-for gid size) (%make-endfor gid)))))
-    (when (null appeared) (return-from ctx-padding-loop (ctx-blueprint ctx)))
-    `(,@(map 'list #'car padding-loops)
-      ,@(ctx-blueprint ctx)
-      ,@(reverse (map 'list #'cdr padding-loops)))))
-
-(defun lower-schedule-item (node base-graph scheduled-graph) ;; Entry point for lowerer is here :)
+(defun astify-blueprint (schedule-item bp rank &aux (caten/ir/expr::*expr-no-simplify-mode* t) (gid-seen (make-hash-table)))
+  (declare (type list bp))
+  (with-blueprint ()
+    (loop for n in (node-reads schedule-item)
+          for nt in (getattr schedule-item :read-types)
+          do (%global n (buffer-dtype nt) (> (buffer-nrank nt) 0)))
+    (loop for w in (node-writes schedule-item)
+          for wt in (getattr schedule-item :write-types)
+          do (%global w (buffer-dtype wt) (> (buffer-nrank wt) 0)))
+    (labels ((sendexpr (expr)
+               (dolist (n (graph-nodes (expr-graph expr))) (emit n))
+               (expr-out expr))
+             (is-setf-p (id &aux (val (id->value *ctx* id)))
+               (when (and val (eql (node-type val) :SETF))
+                 (car (node-reads val))))
+             (padding-gids (gids)
+               (append
+                gids
+                (loop repeat (- rank (length gids)) collect 0)))
+             (ensure-unique-gid (gid)
+               (if (null (gethash gid gid-seen))
+                   (prog1 gid (setf (gethash gid gid-seen) 1))
+                   (prog1 (intern (format nil "~a_~a" gid (gethash gid gid-seen))) (incf (gethash gid gid-seen)))))
+             (lower-item (node gids)
+               (let ((node (copy-node node))
+                     (gids (padding-gids gids)))
+                 (assert (= (length (node-writes node)) 1) () "Cannot lower the node ~a with multiple writes." node)
+                 ;; Lowering %aref if needed.
+                 (loop for buffer in (relay-reads (read-type-relay node))
+                       for ri in (relay-read-iters (read-type-relay node))
+                       for name in (node-reads node)
+                       for nth upfrom 0
+                       if (is-setf-p name) do
+                         (let* ((load (emit (make-node :JIT :BIND (list (gensym "BIND")) (list name) :value (is-setf-p name)))))
+                           (setf (nth nth (node-reads node)) (car (node-writes load))))
+                       else if (and buffer (> (buffer-nrank buffer) 0)) do
+                         (let ((aref (emit (%aref name (sendexpr (reduce #'expr-add (iteration-space-expr-aref ri buffer gids)))))))
+                           (setf (nth nth (node-reads node)) (car (node-writes aref)))))
+                 ;; Insert %setf if the node is reduction.
+                 (when (getattr node :reduction :allow-undefined t)
+                   (assert (not (find (car (node-writes node)) (node-writes schedule-item))) () "The reduction node ~a cannot be an output of the schedule-item." node)
+                   (let* ((type (read-type-relay node))
+                          (aref (if (> (buffer-nrank (car (relay-reads type))) 0)
+                                    (emit
+                                     (%aref
+                                      (car (node-reads node))
+                                      (sendexpr (reduce #'expr-add (iteration-space-expr-aref (car (relay-read-iters type)) (car (relay-reads type)) gids)))))
+                                    (car (node-reads node))))
+                          (id (car (node-writes node))))
+                     (setf (getattr node :_type_relay) nil)
+                     (setf (node-writes node) (list (gensym "TMP")))
+                     (return-from lower-item (emit (%setf aref (emit node) :out id)))))
+                 ;; Also insert %setf if the node is an output of the schedule-item.
+                 (when (or
+                        (find (car (node-writes node)) (node-writes schedule-item))
+                        (> (buffer-nrank (car (relay-writes (read-type-relay node)))) 0))
+                   (when (null (find (car (node-writes node)) (node-writes schedule-item)))
+                     ;; Insert a %global as a temporary buffer
+                     (%global (car (node-writes node)) (buffer-dtype (car (relay-writes (read-type-relay node)))) t))
+                   (assert (null (getattr node :reduction :allow-undefined t)) () "The node ~a cannot be a reduction node." node)
+                   (let* ((type (read-type-relay node))
+                          (aref (if (> (buffer-nrank (car (relay-writes type))) 0)
+                                    (emit
+                                     (%aref
+                                      (car (node-writes node))
+                                      (sendexpr (reduce #'expr-add (iteration-space-expr-aref (car (relay-write-iters type)) (car (relay-writes type)) gids)))))
+                                    ;; [TODO] (%aref x 0) ?
+                                    (car (node-writes node)))))
+                     (setf (getattr node :_type_relay) nil)
+                     (setf (node-writes node) (list (gensym "T")))
+                     ;; Note: %setf aref is the end of node.
+                     (return-from lower-item (emit (%setf aref (emit node))))))
+                 ;; Otherwise emit the node directly.
+                 ;; [TODO] Set declare-type?
+                 (setf (getattr node :_type_relay) nil)
+                 (emit node)))
+             (explore (rest-items gids)
+               (declare (type list rest-items))
+               (when (null rest-items) (return-from explore))
+               (case (node-type (car rest-items))
+                 (:TMPRange
+                  (let ((endrange (position-if #'(lambda (x) (and (eql (node-type x) :TmpEndRange) (equal (getattr x :idx) (getattr (car rest-items) :idx)))) rest-items))
+                        (gid (ensure-unique-gid (getattr (car rest-items) :idx))))
+                    (assert endrange () "Inserting TMPRange w/o corresponding TmpEndRange is invaild. Malformed lowering result?")
+                    (%progn
+                     (%range
+                      gid (sendexpr (getattr (car rest-items) :size))
+                      (%progn (explore (subseq rest-items 1 endrange) (append gids (list gid))))
+                      :mark (getattr (car rest-items) :type))
+                     (explore (subseq rest-items (1+ endrange)) gids))))
+                 (:TMPEndRange (error "TMPEndRange should not occur here, malformed lowering result?"))
+                 (:INDEX-COMPONENTS
+                  (%progn (sendexpr (make-index-components (car rest-items) gids)) (explore (cdr rest-items) gids)))
+                 (otherwise
+                  (%progn (lower-item (car rest-items) gids) (explore (cdr rest-items) gids))))))
+      (explore bp nil))))
+;; Entry point for the lowerer is here :)  
+(defun lower-schedule-item (schedule-item base-graph schedule-graph)
   "
 ```
-(lower-schedule-item node base-graph scheduled-graph)
+(lower-schedule-item schedule-item)
 ```
-
-Lowers the Schedule-Item into blueprint.
-
-- node is a schedule-item to lower which belongs to scheduled-graph.
-
-- base-graph is the graph you passed to the graph-schedule.
-
-- scheduled-graph is the scheduled graph obtained by graph-schedule.
+Takes one node of type `Schedule-Item` and returns the blueprint.
 "
-  (declare (type node node) (type graph base-graph scheduled-graph))
-  (assert (eql (node-type node) :Schedule-Item) () "node is not an Schedule-Item, getting ~a" node)
-  ;; won't lower the allocation, they are the vm instruction.
-  (when (null (getattr node :jitable)) (return-from lower-schedule-item))
-  (let* ((graph (apply #'make-graph (getattr node :items)))
-         (_ (setf (graph-outputs graph) (node-writes node)))
+  (declare (type node schedule-item))
+  (assert (eql (node-type schedule-item) :Schedule-Item) () "lower-schedule-item expects a Schedule-Item, got ~a" schedule-item)
+  ;; Only kernel are lowered
+  (unless (eql :kernel (getattr schedule-item :type)) (return-from lower-schedule-item))
+  (let* ((graph (apply #'make-graph (getattr schedule-item :items)))
+         (_ (setf (graph-outputs graph) (node-writes schedule-item)))
          (iterspace (get-grouped-dims graph base-graph))
-         (__ (fixup-graph-iteration-space graph iterspace base-graph)) ; Use the common iteration space in the group
-         (order (initial-loop-permutation graph (length (car iterspace)))) ;; permute reduce axes deeper
+         (__ (fixup-graph-iteration-space graph iterspace base-graph))
+         (order (initial-loop-permutation graph (length (car iterspace))))
          (gids (permute-list order (map 'list #'gid (range 0 (length (car iterspace))))))
          (group-size (permute-list order (car iterspace))))
     (declare (ignore _ __))
@@ -541,147 +566,78 @@ Lowers the Schedule-Item into blueprint.
     ;; gids       = (gid0, gid1, gid2, ...)
     ;; group-size = (10, 20, 30, ...)
     ;; order      = (0 1 2 ...) (the order of gids, and group-size)
-    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil :band2node (make-hash-table)
-                         :schedule-graph scheduled-graph)))
-      ;; Initially the blueprint starts with plain loops
+    (let ((ctx (make-ctx :graph graph :order order :gids gids :loop-size-list group-size :blueprint nil :band2node (make-hash-table) :schedule-graph schedule-graph)))
       (setf (ctx-blueprint ctx) (initial-bp ctx))
       #+nil(trace caten/codegen/blueprint::recursive-lower-into-bp)
       #+nil(untrace caten/codegen/blueprint::recursive-lower-into-bp)
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
-      ;; Peforming the OpFusion to the lowered blueprint.
-      (setf (ctx-blueprint ctx) (simplify-blueprint (ctx-blueprint ctx)) ; remove empty loop
-            (ctx-blueprint ctx) (simplify-pointer-and-constant (ctx-blueprint ctx)) ; early scalarify
-            (ctx-blueprint ctx) (blueprint-scalarify (ctx-blueprint ctx) node base-graph) ; rewrite local buffers as a scalar
-            (ctx-blueprint ctx) (blueprint-exprify (ctx-blueprint ctx) node) ; rewrite jitable nodes -> expr
-            (ctx-blueprint ctx) (ctx-padding-loop ctx)) ;; keep the rank of loops same
-      (multiple-value-bind (new-bp id-as-dag-map) (blueprint-propagate-reduction (ctx-blueprint ctx)) ;; A = B + C * D => B += C * D
-        ;; id-as-dag-map: subsequent kernels will recognise the key as value
-        (setf (ctx-blueprint ctx) new-bp)
-        ;; Synchronize the realized buffers
-        (multiple-value-bind (writes reads constants) (blueprint-realized-buffers (ctx-blueprint ctx) node)
-          (let ((before-assigned-map) (cycle))
-            (loop for w in writes
-                  if (and (gethash (car w) id-as-dag-map)) do
-                    (if (find (car w) (node-writes node)) (push w cycle) (push (car w) before-assigned-map)))
-            (setf (getattr node :read-types) (map 'list #'cdr reads)
-                  (getattr node :write-types) (append (map 'list #'cdr cycle) (map 'list #'cdr writes))
-                  (getattr node :storage-id-src) (map 'list #'car reads)
-                  (getattr node :storage-id-dst) (append (map 'list #'car cycle) (map 'list #'car writes))
-                  (getattr node :dynamic-shapes) constants
-                  (node-reads node) (append before-assigned-map (map 'list #'car reads))
-                  ;; If A is rewritten as B by the propagate-reduction, other items still recognise A as A.
-                  (node-writes node) (append (map 'list #'car cycle) (map 'list #'(lambda (x) (or (gethash (car x) id-as-dag-map) (car x))) writes))))))
-      (blueprint-set-iterations (ctx-blueprint ctx)) ;; Finalize the iteration space
-      (setf (getattr node :blueprint) (ctx-blueprint ctx)
-            (getattr node :blueprint-base) (copy-list (ctx-blueprint ctx))))))
-;; ~~~ Schedule Cache ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defmethod find-cache-base-schedule-item ((node Node) (schedule-graph Graph))
-  (let ((node (find (getattr node :cache-name) (graph-nodes schedule-graph) :key #'(lambda (x) (getattr x :name)))))
-    (assert node () "find-cache-base-schedule-item: No cache item for ~a" node)
-    node))
+      (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
+            (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph)
+            (getattr schedule-item :blueprint) (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx))))))) 
 
-(defun compare-and-make-namespace-map (cache-node tgt-node)
-  (let ((namespace-cache (getattr cache-node :namespace))
-        (namespace-tgt-node (getattr tgt-node :namespace))
-        (result (make-hash-table)))
-    (assert (= (length namespace-cache) (length namespace-tgt-node)) () "compare-and-make-namespace-map: two schedules should have the same-sized namespace. Make sure that they are really equivalent schedule?~%~a~%~a" cache-node tgt-node)
-    (loop for id-old in namespace-cache
-          for id-tgt in namespace-tgt-node
-          if (or (numberp id-old) (numberp id-tgt))
-            do (assert (eql id-old id-tgt)
-                       ()
-                       "compare-and-make-namespace-map: Found an distinct point in the namespace ~a vs ~a~%NameSpace:~%~a~%~a~%Schedule-Items:~%~a~%~a"
-                       id-old id-tgt namespace-cache namespace-tgt-node cache-node tgt-node)
-               (let ((v (gethash id-tgt result))) (assert (or (null v) (eql v id-old))))
-               (setf (gethash id-tgt result) id-old)
-          else
-            do (assert (and (symbolp id-tgt) (symbolp id-old)))
-               (let ((v (gethash id-tgt result))) (assert (or (null v) (eql v id-old))))
-               (setf (gethash id-tgt result) id-old))
-    result))
-
-(defmethod lower-cached-schedule-item ((node Node) (schedule-graph Graph))
-  "Lowers the (optimized) blueprint from cached schedule."
-  (assert (getattr node :cache-name))
-  (assert (getattr node :jitable))
-  (let* ((base-item (find-cache-base-schedule-item node schedule-graph))
-         (namemap (compare-and-make-namespace-map node base-item)))
-    (assert (getattr base-item :blueprint) () "The base-item is not lowered!")
-    ;; Copying the following nodes from the base-item. But node/reads are mapped from namemap
-    ;; :items (to ensure the equivalence of two kernels?)
-    ;; :blueprint (and :EXPR inside) (memory-planner will use this)
-    ;; :dynamic-shapes
-    ;; :storage-id-src / :read-types
-    ;; :storage-id-dst / :write-types
-    (labels ((map-from (x &key (allow-nil t))
-               (let ((val (gethash x namemap)))
-                 (if val
-                     val
-                     (if allow-nil
-                         x
-                         (error "map-from: the id ~a is not found." x)))))
-             (update-buffer (buffer)
-               (when buffer
-                 (let ((buffer (copy-buffer buffer)))
-                   (setf (buffer-shape buffer) (map 'list #'map-from (buffer-shape buffer))
-                         (buffer-stride buffer) (map 'list #'map-from (buffer-stride buffer))
-                         (buffer-views buffer)
-                         (loop for v in (buffer-views buffer)
-                               collect
-                               (map 'list #'map-from v))
-                         (buffer-orig-buffer-shape buffer) (map 'list #'map-from (buffer-orig-buffer-shape buffer)))
-                   buffer))))
-      ;; what attrs does the mp use?
-      (setf (node-reads node) (map 'list #'map-from (node-reads base-item))
-            (node-writes node) (map 'list #'map-from (node-writes base-item))
-            (getattr node :storage-id-src) (map 'list #'map-from (getattr base-item :storage-id-src))
-            (getattr node :storage-id-dst) (map 'list #'map-from (getattr base-item :storage-id-dst))
-            (getattr node :read-types) (map 'list #'update-buffer (getattr base-item :read-types))
-            (getattr node :write-types) (map 'list #'update-buffer (getattr base-item :write-types))
-            (getattr node :dynamic-shapes) (getattr base-item :dynamic-shapes))
-      ;; creates a copy of blueprint, expr is also refreshed. Memory Planner will use this.
-      (flet ((make-copy-of-bp (bp)
-               (loop for bp-base in bp
-                     for bp = (copy-node bp-base)
-                     if (eql (node-class bp) :Render)
-                       do (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
-                                (node-writes bp) (map 'list #'map-from (node-writes bp)))
-                          (assert (not (eql (node-type bp) :AREF)))
-                       and
-                         collect bp
-                     else
-                       if (eql (node-type bp) :EXPR)
-                         collect
-                         (let ((expr-out-node (copy-node (expr-out (getattr bp :EXPR)))))
-                           (when (eql (node-type expr-out-node) :Aref)
-                             (setf (getattr expr-out-node :storage-id) (map-from (getattr expr-out-node :storage-id))))
-                           (setf (node-reads bp) (map 'list #'map-from (node-reads bp))
-                                 (node-writes bp) (map 'list #'map-from (node-writes bp))
-                                 (node-reads expr-out-node) (map 'list #'map-from (node-reads expr-out-node))
-                                 (node-writes expr-out-node) (map 'list #'map-from (node-writes expr-out-node))
-                                 (getattr bp :EXPR)
-                                 (make-expr
-                                  :graph
-                                  (apply
-                                   #'make-graph
-                                   (loop for expr-node-base in (graph-nodes (expr-graph (getattr bp :EXPR)))
-                                         for expr-node = (copy-node expr-node-base)
-                                         do (setf (node-reads expr-node) (map 'list #'map-from (node-reads expr-node))
-                                                  (node-writes expr-node) (map 'list #'map-from (node-writes expr-node)))
-                                            (when (getattr expr-node :_type_relay :allow-undefined t)
-                                              (setf
-                                               (relay-reads (read-type-relay expr-node)) (map 'list #'update-buffer (relay-reads (read-type-relay expr-node)))
-                                               (relay-writes (read-type-relay expr-node)) (map 'list #'update-buffer (relay-writes (read-type-relay expr-node)))))
-                                            (when (eql (node-type expr-node) :Aref)
-                                              (setf (getattr expr-node :storage-id) (map-from (getattr expr-node :storage-id))))
-                                         collect expr-node))
-                                  :out expr-out-node))
-                           bp)
-                     else
-                       do (error "lower-cached-schedule-item: Don't know how to transform the node ~a from the cached blueprint.~%Try NO_SCHEDULE_CACHE=1" bp))))
-        (setf (getattr node :blueprint) (make-copy-of-bp (getattr base-item :blueprint))
-              (getattr node :blueprint-base) (make-copy-of-bp (getattr base-item :blueprint-base)))))))
-;;; ~~~~ GFlops Measurements ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defmethod print-blueprint (graph stream &aux (indent 0) (seen))
+  ;; (caten/air:->dot graph :pathname "/tmp/graph.dot")
+  (princ
+   (with-output-to-string (out)
+     (labels ((indent () (make-string indent :initial-element #\space))
+              (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
+              (r (s &aux (val (id->value graph s)))
+                (when (and val (null (find (node-id val) seen)))
+                  (f val) (push (node-id val) seen))
+                s)
+              (e (id)
+                (let ((renderer (make-instance 'Default-Renderer :graph graph)))
+                  (render-node renderer id)))
+              (f (node)
+                (case (node-type node)
+                  (:PROGN
+                    (fmt "{")
+                    (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
+                    (fmt "}"))
+                  (:EXPR
+                   (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
+                       (fmt "~a; // EXPR(STORE)" (e (car (node-reads node))))
+                       (fmt "~(~a~) = ~a; // expr" (car (node-writes node)) (e (car (node-reads node))))))
+                  (:DEFINE-GLOBAL); (fmt "defglobal ~a;" (car (node-writes node))))
+                  (:RANGE (fmt "~(~a~) = ~(~a~); // RANGE" (car (node-writes node)) (getattr node :idx)))
+                  (:FOR
+                   (multiple-value-bind (range body) (apply #'values (node-reads node))
+                     (setf range (id->value graph range))
+                     (assert (and range (eql (node-type range) :RANGE)) () "The first argument of :FOR should be :RANGE, getting ~a" range)
+                     (multiple-value-bind (bind size step) (values (getattr range :idx) (first (node-reads range)) (second (node-reads range)))
+                       (when (symbolp size)
+                         (let ((val (id->value graph size)))
+                           (assert (and val (eql (node-type val) :EXPR)) () "Range: The size must be specified as EXPR or fixnum, getting ~a" val)
+                           (setf size (car (node-reads val)))))
+                       (when (symbolp step)
+                         (let ((val (id->value graph step)))
+                           (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
+                           (setf step (car (node-reads val)))))
+                       (fmt "@~(~a~) for (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a~a" (getattr node :mark)
+                            bind bind (e size) bind (e step)
+                            (if (getattr node :is-empty) "/* empty */" "")
+                            (if (getattr node :band) (format nil " [~a]" (getattr node :band)) "")))
+                     (unless (eql (node-type (id->value graph body)) :PROGN) (incf indent 2))
+                     (r body)
+                     (unless (eql (node-type (id->value graph body)) :PROGN) (decf indent 2))))
+                  (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
+                  (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
+                  (:Aref
+                   (multiple-value-bind (name idx) (apply #'values (node-reads node))
+                     (r name) (r idx)
+                     (fmt "~(~a~) = ~(~a~)[~(~a~)];" (car (node-writes node)) name idx)))
+                  (:IF
+                   (multiple-value-bind (cond body) (apply #'values (node-reads node))
+                     (setf cond (id->value graph cond))
+                     (assert (and cond (eql (node-type cond) :EXPR)) () "IF: the conditon must be EXPR.")
+                     (fmt "if (~(~a~)) {" (e (car (node-reads cond))))
+                     (incf indent 2) (r body) (decf indent)
+                     (fmt "}")))
+                  (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))
+       (f (id->value graph (car (graph-outputs graph))))))
+   stream))
+;; ^ Simplify how to describe write relay
+;;; ~~~~ GFlops Measurements (Not Tested) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct GFlops-Measurer
   "A helper object to compute GFlops"
   (ops (error "flops must occur") :type (or null Expr))
@@ -722,7 +678,7 @@ Lowers the Schedule-Item into blueprint.
   (let ((ops (reduce #'expr-add total-flops)))
     (setf (expr-graph ops) (->graph-with-tpsort (->fast-graph (expr-graph ops))))
     (make-gflops-measurer :ops ops :succeed-p t)))
-;; ~~ Utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+;; ~~ Utils(Removable?) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun blueprint-gather-grids (blueprint &key (max-dimension 3) (dtype :int64))
   (let ((grids
           (loop for bp in blueprint
@@ -735,3 +691,14 @@ Lowers the Schedule-Item into blueprint.
     (dolist (g grids)
       (setf (nth (exprgrid-rank g) out) g))
     out))
+
+;(defun expr-gather-buffer-loads (expr-node)
+;  (declare (type node expr-node))
+;  (assert (eql (node-type expr-node) :EXPR))
+;  (let ((renderer (make-instance
+;                   'caten/codegen/renderer:default-renderer
+;                   :graph (expr-graph (getattr expr-node :EXPR)) :index-space (getattr expr-node :iterations))))
+;    (caten/codegen/renderer:render-node renderer (car (node-writes (expr-out (getattr expr-node :EXPR)))))
+;    (loop for node in (caten/codegen/renderer:renderer-rendered-nodes renderer)
+;          if (and (eql (node-type node) :Aref) (> (buffer-nrank (getattr node :buffer)) 0))
+;            collect node)))

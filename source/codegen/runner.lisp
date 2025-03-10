@@ -1,8 +1,27 @@
 (defpackage :caten/codegen/runner
-  (:documentation "Provides the jit-compiled kernel runner and benchmarking tools.")
-  (:use :cl :caten/codegen/jit :caten/codegen/helpers :caten/air :caten/runtime :caten/codegen/blueprint))
+  (:use :cl :caten/runtime :caten/air :caten/codegen/backend :caten/codegen/type-relay :caten/codegen/rewriting-rules
+        :caten/codegen/scheduler :caten/common.logger :caten/codegen/blueprint)
+  (:import-from :caten/codegen/search #:get-optimized-ast #:search-optimized-ast)
+  (:import-from :caten/codegen/helpers #:coerce-dtyped-buffer)
+  (:export
+   #:AbstractKernel #:invoke-kernel #:profile-report
+   #:kernel-name #:kernel-device #:kernel-schedule-item #:kernel-flops #:kernel-output-buffers))
 
 (in-package :caten/codegen/runner)
+;; ~~ Runner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defnode (:JIT :JIT_KERNEL) ()
+	 "The node :JIT_KERNEL is an instruction that calls a jit-compiled kernel from the VM."
+         :slots ((kernel :type AbstractKernel)))
+
+(defclass AbstractKernel ()
+  ((name :initarg :name :accessor kernel-name)
+   (device :initarg :device :accessor kernel-device)
+   (schedule-item :initarg :schedule-item :accessor kernel-schedule-item)
+   (flops :initarg :flops :accessor kernel-flops)
+   (output-buffers :initarg :output-buffers :accessor kernel-output-buffers)))
+
+(defgeneric invoke-kernel (kernel runtime node args)
+  (:documentation "Invokes the kernel, returning the elapsed time."))
 
 (defun profile-report (runtime info elapsed-time args node)
   (let* ((flops (compiled-kernel-flops info))
@@ -13,20 +32,17 @@
             (with-output-to-string (out)
               (loop for x in args
                     if (buffer-p x) do (format out "~a " (buffer-shape x))))
-            (compiled-kernel-device info)
-            (compiled-kernel-name info)
+            (kernel-device info)
+            (kernel-name info)
             (if gflops (format nil " (~,6fGFLOP/s)" gflops) ""))))
 
-(defmethod runtime-invoke-jit-kernel ((runtime GraphRuntime) kernel-info node args)
-  (apply (compiled-kernel-caller kernel-info) args))
-
 (defmethod realize-node ((node-id (eql :JIT_KERNEL)) runtime node args)
-  (let ((info (getattr node :kernel-info))
-        (args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
-    (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
-    ;; [TODO] Create a common way to profile the kernel execution time for async and sync kernels.
-    (let ((prg-time (caten/runtime/profile:with-real-time (runtime-invoke-jit-kernel runtime info node args))))
+  (let ((info (getattr node :kernel))
+        ;;(args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes)))
+        )
+    (let ((prg-time (invoke-kernel info runtime node args)))
+      (declare (type float prg-time))
       (when (= (ctx:getenv :PROFILE) 1)
         (incf caten/runtime/profile::*jit-time* prg-time)
         (profile-report runtime info prg-time args node)))
-    (apply #'values (map 'list #'(lambda (x) (nth x args)) (compiled-kernel-out-positions info)))))
+    (apply #'values (map 'list #'(lambda (x) (nth x args)) (kernel-output-buffers info)))))

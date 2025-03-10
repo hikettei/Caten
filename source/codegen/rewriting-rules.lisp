@@ -1,47 +1,7 @@
 (defpackage :caten/codegen/rewriting-rules
-  (:use :cl :caten/runtime)
-  (:import-from
-   :caten/codegen/renderer
-   #:make-define-global)
-  (:import-from
-   :caten/air
-   #:Graph
-   #:Node
-   #:id->value
-   #:id->users
-   #:getattr
-   #:getattrs
-   #:make-graph
-   #:node-writes
-   #:node-reads
-   #:node-type
-   #:make-node
-   #:get-output-to
-   #:graph-nodes
-   #:graph-outputs
-   #:Attr
-   #:defsimplifier
-   #:->fast-graph
-   #:->graph)
-  (:import-from
-   :caten/codegen/shape-inference
-   #:reveal-buffer
-   #:make-inferred-type
-   #:read-type-relay
-   #:relay-reads
-   #:relay-writes
-   #:relay-read-iters
-   #:relay-write-iters
-   #:buffer-orig-buffer-shape)
-  (:import-from
-   :caten/codegen/helpers
-   #:nodes-depends-on
-   #:ensure-string-as-compilable)
-  (:export
-   #:schedule-item-write-define-global
-   #:apply-rewriting-rules
-   #:nodes-apply-static-gensym
-   #:apply-static-gensym))
+  (:use :cl :caten/runtime :caten/air :caten/codegen/type-relay)
+  (:import-from :caten/codegen/helpers #:nodes-depends-on #:ensure-string-as-compilable)
+  (:export #:apply-rewriting-rules #:nodes-apply-static-gensym #:apply-static-gensym))
 
 (in-package :caten/codegen/rewriting-rules)
 
@@ -80,8 +40,7 @@
               for view in views
               for node = (id->value (runtime-graph runtime) id) do
                 (when (null node) (warn "The output ~a is not found in the graph." id))
-                (when (> (length view) 1) (warn "(No simplifier?) Detected multiple views in a single buffer: ~a~%Using the first one ~a~%" views (car view)))
-                (when node (setf (getattr node :_output_type) (car view)))))
+                (when (> (length view) 1) (warn "(No simplifier?) Detected multiple views in a single buffer: ~a~%Using the first one ~a~%" views (car view)))))
       (macrolet ((renew (accessor)
 		   `(let ((new-table (make-hash-table)))
 		      (maphash
@@ -203,29 +162,3 @@
     (apply-static-gensym runtime id2view))
   (setf (runtime-graph runtime) (->graph (runtime-graph runtime)))
   runtime)
-
-(defmethod schedule-item-write-define-global ((schedule-item Node))
-  "Inserts DEFINE_GLOBAL to the top of graph"
-  (declare (type node schedule-item))
-  (assert (eql (node-type schedule-item) :Schedule-Item))
-  (assert (= (length (getattr schedule-item :storage-id-src)) (length (getattr schedule-item :read-types))))
-  (assert (= (length (getattr schedule-item :storage-id-dst)) (length (getattr schedule-item :write-types))))
-  (setf (getattr schedule-item :blueprint)
-        (append
-         ;; writes
-         (loop for write in (getattr schedule-item :storage-id-dst)
-               for wt in (getattr schedule-item :write-types)
-               for nth upfrom 0
-               collect
-               (progn
-                 (setf (nth nth (getattr schedule-item :write-types)) wt)
-                 (make-define-global write (buffer-dtype wt) t :output (buffer-nrank wt))))
-         ;; dynamic shapes
-         (loop for item in (getattr schedule-item :dynamic-shapes)
-               collect
-               (make-define-global (car item) (cdr item) nil :shape 0))
-         (loop for read in (getattr schedule-item :storage-id-src)
-               for rt in (getattr schedule-item :read-types)
-               collect
-               (make-define-global read (buffer-dtype rt) (> (buffer-nrank rt) 0) :input (buffer-nrank rt)))
-         (getattr schedule-item :blueprint))))

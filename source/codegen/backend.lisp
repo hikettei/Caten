@@ -9,10 +9,11 @@
    #:get-backend-jit-p
    #:jit-mode-p
    #:get-buffer-type
-   #:get-runtime-type))
+   #:get-runtime-type
+   #:get-backend-configs))
 
 (in-package :caten/codegen/backend)
-
+;; [TODO] Rename backend -> abstraction?
 (defgeneric get-backend-buffer (backend))
 (defgeneric get-backend-runtime (backend))
 (defgeneric get-backend-auto-scheduler (backend))
@@ -44,3 +45,7 @@ Registers a new backend.
 (defun get-runtime-type (&key (backend (ctx:getenv :BACKEND)))
   "Returns the runtime type for the current device."
   (get-backend-runtime backend))
+
+(defun get-backend-configs (backend &key (opts (list #'get-backend-buffer #'get-backend-runtime #'get-backend-renderer #'get-backend-auto-scheduler #'get-backend-jit-p)))
+  (flet ((f (x) (funcall x backend)))
+    (map 'list #'f opts)))

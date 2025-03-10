@@ -1,15 +1,16 @@
 (defpackage :caten/codegen/renderer
-  (:use :cl :caten/codegen/shape-inference :caten/runtime/buffer)
+  (:use :cl :caten/codegen/type-relay :caten/runtime/buffer)
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
-  (:import-from #:caten/codegen/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p #:expr-from-graph)
+  (:import-from #:caten/ir/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p #:expr-from-graph)
   (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code #:->cdtype #:float-type-of)
   (:export
    #:get-default-renderer
-   #:%render-kernel
-   #:%compile-kernel
+   #:%render-kernel #:%compile-kernel
+   ;; Renderers
    #:Renderer
    #:Default-Renderer
    #:CStyle-Renderer
+   ;; Utils
    #:renderer-graph
    #:renderer-index-space
    #:make-renderer
@@ -19,8 +20,7 @@
    #:%render-node
    #:%render-const
    #:expr-index-components
-   #:make-aref
-   #:make-define-global
+   
    #:%renderer-get-auto-scheduler
    #:render-index
    #:render-aref-index))
@@ -30,78 +30,8 @@
 (defgeneric get-default-renderer (id))
 (defgeneric %render-node (renderer node-dispatcher node) (:documentation ""))
 (defgeneric %render-const (renderer obj) (:documentation ""))
-(defgeneric %render-kernel (renderer schedule-item))
+(defgeneric %render-kernel (renderer jit-kernel))
 (defgeneric %compile-kernel (renderer schedule-items dir))
-
-(defnode (:Render :FOR) ()
-         "
-```
-for(int idx=upfrom, below, by)
-```
-
-- scope[keyword] If `:global`, the loop is parallelizable. One of :global, :local.
-"
-         :slots ((idx :type symbol)
-                 (upfrom :type Expr)
-                 (below :type Expr)
-                 (by :type Expr)
-                 (scope :initform :local :type (member :global :local))))
-
-(defnode (:Render :ENDFOR) ()
-         "
-```
-} // idx
-```"
-         :slots ((idx :type symbol)))
-
-(defnode (:Render :IF) ()
-         "
-```
-if(condition)
-```"
-         :slots ((condition :type Expr)))
-
-(defnode (:Render :ENDIF) ()
-         "
-```
-} // endif
-```
-")
-
-(defnode (:Render :Aref) ()
-         ":AREF corresponds to the following code:
-```
-ID[*space]
-```
-
-- storage-id[symbol] An index to the reference pointer optimized by the memory-planner.
-- buffer[AbstractBuffer] The buffer to be accessed.
-- space[Iteration-Space] The iteration space `:AREF` belongs to.
-"
-         :slots ((storage-id :type symbol)
-                 (buffer :type caten/runtime:AbstractBuffer)
-                 (space :type Iteration-Space)))
-
-(defnode (:Render :DEFINE-GLOBAL) ()
-         "
-The node :DEFINE-GLOBAL declares a global variable in the kernel. (it corresponds to the argument of the kernel.)
-"
-         :slots ((dtype :type keyword)
-                 (pointer-p :type boolean)
-                 (type :type (member :input :output :shape))
-                 (nrank :type integer)))
-
-(defun make-define-global (id dtype pointer-p type nrank)
-  (declare (type symbol id)
-           (type keyword dtype)
-           (type boolean pointer-p))
-  (make-node :Render :DEFINE-GLOBAL (list id) nil :dtype dtype :pointer-p pointer-p :type type :nrank nrank))
-
-(defun make-aref (idx storage-id buffer space)
-  (declare (type symbol storage-id)
-           (type caten/runtime:AbstractBuffer buffer)
-           (type Iteration-Space space))
-  (make-node :Render :Aref (list idx) nil :buffer buffer :space space :storage-id storage-id))
 
 (defclass Renderer ()
   ((graph :initarg :graph :accessor renderer-graph)
@@ -230,6 +160,9 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
   (%render-const renderer (getattr node :value)))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :RANGE)) node)
+  (%render-const renderer (getattr node :idx)))
+
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :SPACE)) node)
   (let ((lv (ecase (getattr node :level) (:block "blockIdx") (:thread "threadIdx")))
         (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))
@@ -281,10 +214,19 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
   (def :< "<"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
-  (render-aref renderer node))
+  (let ((p (id->value (renderer-graph renderer) (car (node-reads node)))))
+    (if (and p (eql (node-type p) :BIND))
+        (format nil "~(~a~)[~(~a~)]" (getattr p :value) (render-node renderer (second (node-reads node))))
+        (format nil "~(~a~)[~(~a~)]" (car (node-reads node)) (render-node renderer (second (node-reads node)))))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :BIND)) node)
+  (format nil "~a" (%render-const renderer (getattr node :value))))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :SETF)) node)
+  (format nil "~a = ~a" (render-node renderer (car (node-reads node))) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :STORE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
@@ -303,7 +245,11 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
           (render-node renderer (second (node-reads node)))
           (render-node renderer (third (node-reads node)))))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :EXPR)) node)
+  (%render-const renderer (car (node-writes node))))
+
 (defmethod %render-node ((renderer Default-Renderer) id node)
+  (warn "Renderer: Unknown node type: ~a" (node-type node))
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))
 
 (defmethod print-object ((expr expr) stream)

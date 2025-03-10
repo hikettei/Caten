@@ -14,9 +14,7 @@
    #:float-type-of
    #:coerce-dtyped-buffer
    #:nodes-create-namespace
-   #:%isl-safe-pmapc
-   #:->cffi-dtype
-   #:schedule-item-args))
+   #:->cffi-dtype))
 
 (in-package :caten/codegen/helpers)
 
@@ -131,19 +129,6 @@ Otherwise -> they are passed as a buffer."
         append (node-writes node)
         append (node-reads node)))
 
-(defun %isl-safe-pmapc (n-cores f list)
-  (flet ((op (obj)
-           (caten/isl:with-isl-context
-             (mapc f obj))))
-    (assert (>= (length list) n-cores) () "%isl-safe-pmapc: Insufficient number of list.")
-    (let* ((elements-per-core (floor (length list) n-cores))
-           (reminder (mod (length list) n-cores)))
-      (assert (= (length list) (+ (* elements-per-core n-cores) reminder)))
-      (let ((tasks (loop for i upfrom 0 below n-cores
-                         for lastp = (= (1+ i) n-cores)
-                         collect (subseq list (* i elements-per-core) (+ (* (1+ i) elements-per-core) (if lastp reminder 0))))))
-        (lparallel:pmapc #'op tasks)))))
-
 (defun ->cffi-dtype (dtype)
   (ecase dtype
     (:bool :bool)
@@ -157,9 +142,3 @@ Otherwise -> they are passed as a buffer."
     (:uint16 :uint16)
     (:uint8 :uint8)
     (:int8 :int8)))
-
-(defmethod schedule-item-args ((node Node))
-  (assert (eql (node-type node) :Schedule-Item) () "Node is not a schedule-item!")
-  (loop for item in (getattr node :blueprint)
-        if (eql (node-type item) :DEFINE-GLOBAL)
-          collect item))
