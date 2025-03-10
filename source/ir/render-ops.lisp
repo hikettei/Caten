@@ -182,11 +182,12 @@ Constraints:
   exprs)
 
 (defun exprify-ast (graph &aux (seen nil))
-  (declare (type FastGraph graph) (optimize (speed 3)) (type list seen))
   "Groups multiple strongly connected ops into a single Expr. Expr and Expr are also mergeable."
+  (declare (type FastGraph graph) (optimize (speed 3)) (type list seen))
   ;; Find sink points
   (labels ((render-p (node) (eql (node-class node) :Render))
-           (sort-progn-body (parents &aux (dg (ast-descendants-graph graph parents :only-surface t)) (m (ast-make-sink-map dg)))
+           ;; Note: Should I set :only-surface=T to optimize GeLU?
+           (sort-progn-body (parents &aux (dg (ast-descendants-graph graph parents :only-surface nil)) (m (ast-make-sink-map dg)))
              ;; The descendant of parents is asseted not to have RenderOps.
              (assert (null (some #'render-p (graph-nodes dg))))
              (ast-exprify-tensor-graph graph dg m))
@@ -373,9 +374,6 @@ Constraints:
           for dst-types = (map 'list #'getyped (node-writes node)) do
             (when (and (eql (node-type node) :BIND) (some #'null src-types))
               (setf src-types (list (getyped (getattr node :value)))))
-            (when (eql (node-type node) :FOR)
-              (print node)
-              (print (id->value graph (second (node-reads node)))))
             (assert (every #'identity src-types)) (assert (every #'identity dst-types))
             (setf (getattr node :src-types) src-types (getattr node :dst-types) dst-types))
     graph))
