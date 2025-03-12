@@ -13,7 +13,8 @@
 (defclass ClangBuffer (LispBuffer) nil)
 (defclass ClangRuntime (GraphRuntime) nil)
 (defclass ClangKernel (AbstractKernel)
-  ((program :accessor clang-program :type string)))
+  ((program :accessor clang-program :type string)
+   (caller :accessor clang-caller :type function)))
 (define-auto-scheduler Clang-Auto-Scheduler :use-parallel 1)
 (define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer ClangKernel Clang-Auto-Scheduler t)
 
@@ -38,7 +39,7 @@
           (print
           (with-output-to-string (out)
             (format out "void ~(~a~)(~a);~%" (kernel-name kernel) args)
-            (format out "void ~(~a~)(~a);~%~a" (kernel-name kernel) args (render-bp bp)))))))
+            (format out "void ~(~a~)(~a)~%~a" (kernel-name kernel) args (render-bp bp)))))))
 ;; OpenMP requires the brackets to be removed in the for loop.
 (defun trim-brackets (str)
   (let ((len (length str)))
@@ -83,7 +84,7 @@
                         (let ((val (id->value graph step)))
                           (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
                           (setf step (car (node-reads val)))))
-                      (fmt "~afor (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) "
+                      (fmt "~afor (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a)"
                            (if (> (getattr node :parallel) 0)
                                (format nil "#pragma omp parallel for collapse(~a)~%~a" (getattr node :parallel) (indent))
                                "")
@@ -173,20 +174,13 @@ Compiled with this command: ~a"
 (defun make-foreign-function-caller (name defglobals &aux (tmps))
   (labels ((expand (rest-forms body)
              (if rest-forms
-		 (if (= 0 (getattr (car rest-forms) :nrank))
-		     (if (not (getattr (car rest-forms) :pointer-p))
-			 (expand (cdr rest-forms) body)
-			 (let ((node (car rest-forms))
-			       (tmp (gensym)))
-			   (push (cons tmp node) tmps)
-			   `(let ((,tmp ,(car (node-writes (car rest-forms)))))
-			      (with-foreign-object (,(car (node-writes (car rest-forms))) ,(->cffi-dtype (getattr (car rest-forms) :dtype)))
-				(setf (mem-ref ,(car (node-writes (car rest-forms))) ,(->cffi-dtype (getattr (car rest-forms) :dtype)))
-                                      (buffer-value ,tmp))
-				,(expand (cdr rest-forms) body)))))
-		     `(with-pointer-to-vector-data
+                 (if (getattr (car rest-forms) :pointer-p)
+                     ;; Vector
+                     `(with-pointer-to-vector-data
 			  (,(car (node-writes (car rest-forms))) (buffer-value ,(car (node-writes (car rest-forms)))))
-			,(expand (cdr rest-forms) body)))
+			,(expand (cdr rest-forms) body))
+                     ;; Scalar
+                     (expand (cdr rest-forms) body))
 		 `(progn
 		    ,@body
 		    ,@(loop for (buffer . node) in tmps
@@ -221,8 +215,7 @@ Compiled with this command: ~a"
                  (append
                   (list (header))
                   (loop for item in items
-                        if (getattr item :rendered-object)
-                          collect (getattr item :rendered-object))))))
+                        collect (clang-program (getattr item :kernel)))))))
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
     ;; [Note] -ffast-math and CI fails?
@@ -230,11 +223,9 @@ Compiled with this command: ~a"
     (when (>= (ctx:getenv :DISASSEMBLE) 1)
       (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))))
     (dolist (item items)
-      (when (getattr item :rendered-object)
-        (setf (getattr item :compiled-object)
+      (when (getattr item :kernel)
+        (setf (clang-caller (getattr item :kernel))
               (make-foreign-function-caller
-               (getattr item :name)
-               (loop for bp in (getattr item :blueprint)
-                     if (eql :DEFINE-GLOBAL (node-type bp))
-                       collect bp)))))
+               (kernel-name (getattr item :kernel))
+               (kernel-args (getattr item :kernel))))))
     nil))

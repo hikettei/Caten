@@ -108,6 +108,10 @@
           (mapc
            #'(lambda (x) (when (eql (node-type x) :JIT_KERNEL) (caten/codegen/renderer:%render-kernel renderer x)))
            (graph-nodes runtime-graph))
+          (caten/codegen/renderer:%compile-kernel
+           renderer
+           (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :JIT_KERNEL) collect node)
+           nil)
           runtime-graph)))))
 
 (defun jit (runtime &key (backend (ctx:getenv :BACKEND)) (dir nil))

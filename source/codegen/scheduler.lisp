@@ -913,7 +913,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                     (mapc #'e writes)
                     (caten/ir:emit (make-node :JIT :JIT_KERNEL (node-writes node) (append write-ids (node-reads node))
                                               :kernel
-                                              (make-instance kernel :name nil :args args :schedule-item node :flops nil))))))
+                                              (make-instance kernel :name (getattr node :name) :args args :schedule-item node :flops nil))))))
                (mapc #'explore (node-reads node))))
       (mapc #'explore (graph-outputs schedule-graph)))
     (setf (graph-outputs caten/ir:*ctx*) (copy-list (graph-outputs schedule-graph)))
