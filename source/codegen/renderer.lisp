@@ -316,7 +316,7 @@
   (def :SQRT "sqrt"))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :RECIP)) node)
-  (let ((dtype (caten/runtime:buffer-dtype (car (relay-writes (read-type-relay node))))))
+  (let ((dtype (caten/ir:typed-dtype (car (getattr node :src-types)))))
     (if (caten/common.dtype:dtype/floatp dtype)
         (format nil "1.0/(~a)" (render-node renderer (nth 0 (node-reads node))))
         (format nil "1/(~a)" (render-node renderer (nth 0 (node-reads node)))))))
