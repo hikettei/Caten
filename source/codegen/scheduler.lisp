@@ -877,7 +877,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
     (explore id)
     (error "Couldn't find the allocate node for ~a" id)))
 ;; ScheduleGraph ==> RuntimeGraph(Jitted) Construction
-(defun schedule-graph->runtime-graph (schedule-graph base-graph &aux (seen))
+(defun schedule-graph->runtime-graph (schedule-graph base-graph kernel &aux (seen))
   (declare (type Graph schedule-graph))
   (let ((caten/ir:*ctx* (make-graph)))
     (labels ((e (node)
@@ -896,9 +896,24 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                          (writes (loop for w in write-ids
                                        for a in writes
                                        do (setf (node-writes a) (list w) (getattr a :_read_views) nil (getattr a :_type_relay) nil)
-                                       collect a)))
+                                       collect a))
+                         (args (loop for b in (graph-nodes (getattr node :blueprint))
+                                     if (eql (node-type b) :DEFINE-GLOBAL)
+                                       collect b))
+                         (args (loop for id in (append (node-writes node) (node-reads node))
+                                     for arg = (find id args :key (alexandria:compose #'car #'node-writes))
+                                     for is-read-p = (find id (node-reads node))
+                                     collect
+                                     (let ((node (or arg (error "The argument ~a is not found in the blueprint as a DEFINE-GLOBAL node." id))))
+                                       (setf (getattr node :mode) (if is-read-p :read :write))
+                                       node))))
+                    (assert (= (length args) (length (append write-ids (node-reads node))))
+                            ()
+                            "The number of :DEFINE-GLOBAL nodes should be equal to the number of reads and writes. ~a vs ~a" args (append write-ids (node-reads node)))
                     (mapc #'e writes)
-                    (caten/ir:emit (make-node :JIT :JIT_KERNEL (node-writes node) (append write-ids (node-reads node)))))))
+                    (caten/ir:emit (make-node :JIT :JIT_KERNEL (node-writes node) (append write-ids (node-reads node))
+                                              :kernel
+                                              (make-instance kernel :name nil :args args :schedule-item node :flops nil))))))
                (mapc #'explore (node-reads node))))
       (mapc #'explore (graph-outputs schedule-graph)))
     (setf (graph-outputs caten/ir:*ctx*) (copy-list (graph-outputs schedule-graph)))

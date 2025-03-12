@@ -801,6 +801,7 @@ the reduction in only the cached region."
 ;; - [ ] TileBands, Remove MAX if unnecessary.
 ;; - [ ] GID Count is GLOBAL
 ;; - [x] Softmax, Reduce is lowered as _GID2_1, _GID2_2, ...
+;; - [ ] Clean up renderer.lisp, AREF and INDEX-COMPONENTS should be much simplified. :AREF, :BIND, :SETF :EXPR should be simplified.
 ;; Optimizer Things:
 ;; - [ ] BEAM Search
 ;; - [ ] Matmul ---> Block Warp Reduction is effective for both GPU and CPU.

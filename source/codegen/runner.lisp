@@ -5,7 +5,7 @@
   (:import-from :caten/codegen/helpers #:coerce-dtyped-buffer)
   (:export
    #:AbstractKernel #:invoke-kernel #:profile-report
-   #:kernel-name #:kernel-device #:kernel-schedule-item #:kernel-flops #:kernel-output-buffers))
+   #:kernel-name #:kernel-args #:kernel-schedule-item #:kernel-flops #:kernel-output-buffers))
 
 (in-package :caten/codegen/runner)
 ;; ~~ Runner ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -15,7 +15,7 @@
 
 (defclass AbstractKernel ()
   ((name :initarg :name :accessor kernel-name)
-   (device :initarg :device :accessor kernel-device)
+   (args :initarg :args :accessor kernel-args) ;; a list of :DEFINE-GLOBAL but sorted by the order
    (schedule-item :initarg :schedule-item :accessor kernel-schedule-item)
    (flops :initarg :flops :accessor kernel-flops)
    (output-buffers :initarg :output-buffers :accessor kernel-output-buffers)))

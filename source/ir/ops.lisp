@@ -340,9 +340,12 @@ Mark should be one of the following based on the nature of the loop.
 ```
 
 Also, once the ASTGraph is constructed the compiler will try to maximize the band depth. Users can access this information via the `band` attribute. Nodes marked as the same `band` has the same band id.
+
+If the `parallel` attribute is set to a positive integer, the compiler will try to parallelize the loop with the specified number of band depth.
 "
          :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)
-                 (band :initform nil)))
+                 (band :initform nil)
+                 (parallel :initform 0 :type (integer 0))))
 
 (defnode (:Render :IF) (RenderOps TypedNode)
          "
@@ -390,7 +393,7 @@ X <- ()
 ```
 Declares a buffer.
 "
-         :slots ((dtype) (pointer-p :type boolean)))
+         :slots ((dtype) (pointer-p :type boolean) (mode :type (member :io :read :write) :initform :io)))
 ;;; JITOps
 (defnode (:JIT :Aref) (RenderOps TypedNode) ;; TODO: Rename Aref -> LOAD?
          "

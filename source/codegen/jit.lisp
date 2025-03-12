@@ -28,7 +28,7 @@
 "
   (declare (type GraphRuntime runtime))
   ;; Get configurations for the backend
-  (multiple-value-bind (buffer-type runtime-type renderer-type auto-scheduler is-jit) (apply #'values (get-backend-configs backend))
+  (multiple-value-bind (buffer-type runtime-type renderer-type kernel auto-scheduler is-jit) (apply #'values (get-backend-configs backend))
     (when (null is-jit) (setf (runtime-buffer-type runtime) buffer-type) (return-from codegen runtime))
     (when (= 2 (ctx:getenv :DOT)) (->dot (runtime-graph runtime) :title "Base Graph"))
     ;; Running shape inference
@@ -103,11 +103,11 @@
          #'(lambda (x) (when (eql (getattr x :type) :kernel) (schedule-item-sync-realize x)))
          (graph-nodes schedule-graph))
         ;; ScheduleGraph -> RuntimeGraph (schedule/memory planning is fixed)
-        (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph)))
+        (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph kernel)))
           (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Rendering with ~a" renderer))
-;          (mapc
-;           #'(lambda (x) (when (eql (node-type x) :JIT_KERNEL) (caten/codegen/renderer:%render-kernel renderer x)))
-;           (graph-nodes runtime-graph))
+          (mapc
+           #'(lambda (x) (when (eql (node-type x) :JIT_KERNEL) (caten/codegen/renderer:%render-kernel renderer x)))
+           (graph-nodes runtime-graph))
           runtime-graph)))))
 
 (defun jit (runtime &key (backend (ctx:getenv :BACKEND)) (dir nil))
@@ -120,4 +120,5 @@
   (let ((graph (codegen runtime :backend backend)))
     (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Compiling ~a kernels ..." (count-if #'(lambda (x) (eql (node-type x) :JIT_KERNEL)) (graph-nodes graph))))
     ;; [TODO] Use Runtime instead of renderer when doing %compile-kernel
-    (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Completed"))))
+    (when (>= 1 (ctx:getenv :JIT_DEBUG)) (print-info "Completed"))
+    graph))

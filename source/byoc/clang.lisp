@@ -1,6 +1,6 @@
 (defpackage :caten/byoc/clang
   (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
-        :caten/codegen/backend :caten/codegen/renderer :caten/air
+        :caten/codegen/backend :caten/codegen/renderer :caten/air :caten/codegen/runner
         :caten/ir/expr :caten/codegen/helpers :caten/codegen/type-relay)
   (:import-from
    :caten/codegen/search
@@ -12,40 +12,34 @@
 
 (defclass ClangBuffer (LispBuffer) nil)
 (defclass ClangRuntime (GraphRuntime) nil)
+(defclass ClangKernel (AbstractKernel)
+  ((program :accessor clang-program :type string)))
 (define-auto-scheduler Clang-Auto-Scheduler :use-parallel 1)
-(define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer Clang-Auto-Scheduler t)
+(define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer ClangKernel Clang-Auto-Scheduler t)
 
-(defvar *indent*)
 (defmethod %render-kernel ((renderer CStyle-Renderer) si)
-  (let ((args (loop for item in (getattr si :blueprint)
-                    if (eql (node-type item) :DEFINE-GLOBAL)
-                      collect item)))
-    (with-output-to-string (out)
-      (let ((args
-              (apply
-               #'concatenate
-               'string
-               (butlast
-                (loop for arg in args
-                      append (list
+  (let* ((kernel (getattr si :kernel))
+         (bp (getattr (kernel-schedule-item kernel) :blueprint))
+         (args (apply #'concatenate 'string
+                      (butlast
+                       (loop for arg in (kernel-args kernel)
+                             append
+                             (list
                               (format nil "~a~a~a~a ~(~a~)"
-                                      (ecase (getattr arg :type)
-                                        (:input "const ")
-                                        (:output "")
-                                        (:shape "const "))
+                                      (case (getattr arg :mode) (:read "const ") (otherwise ""))
                                       (->cdtype (getattr arg :dtype))
                                       (if (getattr arg :pointer-p) "*" "")
-                                      (if (and (eql :input (getattr arg :type)) (getattr arg :pointer-p))
+                                      (if (and (eql :read (getattr arg :mode)) (getattr arg :pointer-p))
                                           " restrict"
                                           "")
                                       (car (node-writes arg)))
                               ", "))))))
-        (format out "void ~(~a~)(~a);~%" (getattr si :name) args)
-        (format out "void ~(~a~)(~a) {~%" (getattr si :name) args)
-        (let ((*indent* 2))
-          (dolist (bp (getattr si :blueprint))
-            (render-bp out bp)))
-        (format out "}~%")))))
+    (setf (clang-program kernel)
+          (print
+          (with-output-to-string (out)
+            (format out "void ~(~a~)(~a);~%" (kernel-name kernel) args)
+            (format out "void ~(~a~)(~a);~%~a" (kernel-name kernel) args (render-bp bp))
+            (format out "}~%")))))
 ;; OpenMP requires the brackets to be removed in the for loop.
 (defun trim-brackets (str)
   (let ((len (length str)))
@@ -53,64 +47,69 @@
         (subseq str 1 (1- len))
         str)))
 
-(defun render-bp (stream bp)
-  (flet ((indent () (make-string *indent* :initial-element #\space)))
-    (ecase (node-type bp)
-      (:FOR
-       (format stream "~a~afor (int ~(~a~)=~(~a~); ~(~a~); ~(~a~)+=~(~a~)) {~%"
-               (indent)
-               (if (eql (getattr bp :scope) :global)
-                   (format nil "#pragma omp parallel for collapse(~a)~%~a" (getattr bp :depth) (indent))
-                   "")
-               (getattr bp :idx)
-               (render-expr 'CStyle-Renderer (getattr bp :upfrom))
-               (trim-brackets (render-expr 'CStyle-Renderer (getattr bp :below)))
-               (getattr bp :idx)
-               (render-expr 'CStyle-Renderer (getattr bp :by)))
-       (incf *indent* 2))
-      (:ENDFOR
-       (decf *indent* 2)
-       (format stream "~a}~%" (indent)))
-      (:IF
-       (format stream "~aif(~a){~%" (indent) (render-expr 'CStyle-Renderer (getattr bp :condition)))
-       (incf *indent* 2))
-      (:ENDIF
-       (decf *indent* 2)
-       (format stream "~a}~%" (indent)))
-      (:EXPR
-       ;; [TODO] Use render-index for simplicity
-       (let ((pre-iterations (getattr bp :iterations)))
-         (labels ((print-aref (name b is &key iterations)
-                    (if (and is (not (= -1 (buffer-nrank b))) (> (length (iteration-space-shape is)) 0) (> (length iterations) 0))
-                        (format nil "(*(~(~a~)+~(~a~)))" name
-                                (render-expr
-                                 'CStyle-Renderer
-                                 (apply
-                                  #'expr-add
-                                  (map
-                                   'list
-                                   #'(lambda (view stride i)
-                                       (if view
-                                           (expr-mul stride (expr-add (expr-const (car view) :int64) (expr-mul (expr-const (third view) :int64) i)))
-                                           (expr-mul stride i)))
-                                   (iteration-space-views is)
-                                   (iteration-space-strides is)
-                                   iterations))))
-                        (format nil "~(~a~)" name))))
-           (format stream "~a~a~a = ~a;~%"
-                   (indent)
-                   (if (car (getattr bp :declare-type))
-                       (format nil "~a " (->cdtype (buffer-dtype (car (relay-writes (read-type-relay bp))))))
-                       "")
-                   (render-list
-                    (map 'list #'(lambda (x y z) (print-aref x y z :iterations pre-iterations))
-                         (node-writes bp) (relay-writes (read-type-relay bp)) (relay-write-iters (read-type-relay bp))))
-                   (render-expr 'CStyle-Renderer (getattr bp :EXPR) :index-space pre-iterations)))))
-      (:BARRIER (error "thread barrier is not supported on clang"))
-      (:DEFINE-SHARED-MEMORY
-       (format stream "~a~a ~(~a~)[~(~a~)] __attribute__((aligned(64)));~%" (indent)
-               (->cdtype (getattr bp :dtype)) (car (node-writes bp)) (getattr bp :size)))
-      (:DEFINE-GLOBAL))))
+(defun render-bp (graph &aux (indent 0) (seen))
+  (with-output-to-string (out)
+    (labels ((indent () (make-string indent :initial-element #\space))
+             (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
+             (r (s &aux (val (id->value graph s)))
+               (when (and val (null (find (node-id val) seen)))
+                 (f val) (push (node-id val) seen))
+               s)
+             (e (id)
+               (let ((renderer (make-instance 'CStyle-Renderer :graph graph)))
+                 (render-node renderer id)))
+             (f (node)
+               (case (node-type node)
+                 (:PROGN
+                   (fmt "{")
+                   (incf indent 2) (mapc #'r (node-reads node)) (decf indent 2)
+                   (fmt "}"))
+                 (:EXPR
+                  (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
+                      (fmt "~a;" (e (car (node-reads node))))
+                      (fmt "~(~a~) = ~a;" (car (node-writes node)) (e (car (node-reads node))))))
+                 (:DEFINE-GLOBAL)
+                 (:RANGE (fmt "~(~a~) = ~(~a~); // RANGE" (car (node-writes node)) (getattr node :idx)))
+                 (:FOR
+                  (multiple-value-bind (range body) (apply #'values (node-reads node))
+                    (setf range (id->value graph range))
+                    (assert (and range (eql (node-type range) :RANGE)) () "The first argument of :FOR should be :RANGE, getting ~a" range)
+                    (multiple-value-bind (bind size step) (values (getattr range :idx) (first (node-reads range)) (second (node-reads range)))
+                      (when (symbolp size)
+                        (let ((val (id->value graph size)))
+                          (assert (and val (eql (node-type val) :EXPR)) () "Range: The size must be specified as EXPR or fixnum, getting ~a" val)
+                          (setf size (car (node-reads val)))))
+                      (when (symbolp step)
+                        (let ((val (id->value graph step)))
+                          (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
+                          (setf step (car (node-reads val)))))
+                      (fmt "~afor (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a~a"
+                           (if (> (getattr node :parallel) 0)
+                               (format nil "#pragma omp parallel for collapse(~a)~%~a" (getattr node :parallel) (indent))
+                               "")
+                           bind bind (trim-brackets (e size)) bind (trim-brackets (e step))
+                           (if (getattr node :is-empty) "/* empty */" "")
+                           (if (getattr node :band) (format nil " [~a]" (getattr node :band)) "")))
+                    (unless (eql (node-type (id->value graph body)) :PROGN) (incf indent 2))
+                    (r body)
+                    (unless (eql (node-type (id->value graph body)) :PROGN) (decf indent 2))))
+                 (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
+                 (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
+                 (:Aref
+                  (multiple-value-bind (name idx) (apply #'values (node-reads node))
+                    (r name) (r idx)
+                    (fmt "~(~a~) = ~(~a~)[~(~a~)];" (car (node-writes node)) name idx)))
+                 (:IF
+                  (multiple-value-bind (cond body) (apply #'values (node-reads node))
+                    (setf cond (id->value graph cond))
+                    (assert (and cond (eql (node-type cond) :EXPR)) () "IF: the conditon must be EXPR.")
+                    (fmt "if (~(~a~)) {" (e (car (node-reads cond))))
+                    (incf indent 2) (r body) (decf indent)
+                    (fmt "}")))
+                 (:BARRIER (error "thread barrier is not supported on clang"))
+                 (:DEFINE-SHARED-MEMORY (error "shared memory is not supported on clang"))
+                 (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))
+      (f (id->value graph (car (graph-outputs graph)))))))
 
 (defun header ()
   (format nil "~%#include <math.h>

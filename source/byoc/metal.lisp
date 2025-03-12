@@ -1,7 +1,7 @@
 (defpackage :caten/byoc/metal
   (:use
    :cl :caten/air :caten/ir/expr :caten/codegen/renderer :caten/codegen/type-relay
-   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint
+   :caten/runtime/buffer :caten/codegen/helpers :caten/codegen/blueprint :caten/codegen/runner
    :caten/runtime/runtime :caten/common.dtype :caten/codegen/backend :cffi :flexi-streams :float-features)
   (:import-from
    :caten/codegen/search
@@ -167,8 +167,9 @@
       (c "}"))))
 ;; ~~~ Renderers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Metal-Renderer (CStyle-Renderer) ((device :accessor metal-renderer-device)))
+(defclass MetalKernel (AbstractKernel) nil)
 (define-auto-scheduler Metal-Auto-Scheduler :use-tile-gpu 3 :shared-max 32768)
-(define-backend :metal MetalBuffer MetalRuntime Metal-Renderer Metal-Auto-Scheduler t)
+(define-backend :metal MetalBuffer MetalRuntime Metal-Renderer MetalKernel Metal-Auto-Scheduler t)
 
 (defun dtype->mtype (dtype)
   (ecase dtype

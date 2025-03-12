@@ -1,7 +1,7 @@
 (defpackage :caten/byoc/native
   (:documentation "BACKEND=NATIVE to use Lisp JIT")
   (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
-   :caten/codegen/backend :caten/codegen/renderer :caten/air
+   :caten/codegen/backend :caten/codegen/renderer :caten/air :caten/codegen/runner
    :caten/ir/expr :caten/codegen/helpers :caten/codegen/type-relay)
   (:import-from
    :caten/codegen/search
@@ -16,7 +16,8 @@
 ;;   - [ ] Add proper type declarations in %render-node, from given read-type-relay.
 (define-auto-scheduler Native-Auto-Scheduler :use-parallel 1)
 (defclass NativeRuntime (GraphRuntime) nil)
-(define-backend :native LispBuffer NativeRuntime LispStyle-Renderer Native-Auto-Scheduler t)
+(defclass NativeKernel (AbstractKernel) nil)
+(define-backend :native LispBuffer NativeRuntime LispStyle-Renderer NativeKernel Native-Auto-Scheduler t)
 (defclass LispStyle-Renderer (Renderer) nil)
 
 (defun global-type-spec (node)
