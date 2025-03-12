@@ -139,10 +139,13 @@ Constraints:
     ((:FOR ((:RANGE ((EConst 1) (EConst 1)) :idx idx :dtype dtype) body))
      ->
      ((node graph)
-      (let ((range (id->value graph (car (node-reads node)))))
-        (append
-         (with-context-nodes (out (%bind (car (node-writes range)) (%iconst 0 :dtype dtype))))
-         (list (id->value graph body))))))
+      (let* ((range (id->value graph (car (node-reads node))))
+             (tmp (gensym))
+             (=0 (with-context-nodes (out (%bind tmp (%iconst 0 :dtype dtype)))))
+             (expr (%bind (car (node-writes range)) (%expr tmp)))
+             (body (id->value graph body)))
+        (insert-nodes graph (append =0 (list expr)))
+        (%progn expr body))))
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
 ;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -851,6 +854,7 @@ the reduction in only the cached region."
 
 ;; - Goal of this PR
 ;; - [ ] Simplify the entire code!
+;; - [ ] Keep EXPR independant of RANGE Simplification Rule!
 ;; - [ ] More backends
 ;; - [ ] Automatic Kernel Searching for both fixed and symbolic kernel
 ;; - [ ] Better Scheduling Algorithm (Advanced Fusion)
