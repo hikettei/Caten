@@ -634,7 +634,8 @@ for (int i=0; i<M; i+=32)
   "Removes IDX from body by unrolling with N"
   (declare (type graph graph) (type symbol idx) (type fixnum n))
   (let ((nodes (apply #'make-graph (ast-band-children graph body)))
-        (out (second (node-reads body))))
+        (out (second (node-reads body)))
+        (args (loop for node in (graph-nodes graph) if (eql (node-type node) :DEFINE-GLOBAL) collect (car (node-writes node)))))
     (setf (graph-outputs nodes) (list out)
           nodes (graph-nodes (->graph-with-tpsort (->fast-graph nodes)))
           nodes (loop for node in nodes unless (eql (node-type node) :RANGE) collect node))
@@ -647,7 +648,8 @@ for (int i=0; i<M; i+=32)
              (unroll-id (cnt id &aux (val (id->value graph id)))
                (declare (type fixnum cnt) (type symbol id))
                (if val
-                   (if (find id nodes :key #'node-writes :test #'find)
+                   ;; note: variables defined by :DEFINE-GLOBAL is not unrolled
+                   (if (and (find id nodes :key #'node-writes :test #'find) (null (find id args)))
                        (intern (format nil "~a_~a" id cnt))
                        id)
                    id))
@@ -881,6 +883,7 @@ the reduction in only the cached region."
 ;; - [ ] BEAM Search
 ;; - [ ] Matmul ---> Block Warp Reduction is effective for both GPU and CPU.
 ;;   - [ ] https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh (Prefetch, effective for CPU and GPU)
+;;   - [ ] Microkernel Rewriting?
 ;; - [x] Softmax --> Implement Block Reduction
 ;; - [ ] Get optimal scheduling for Softmax on GPU manually
 ;; - [ ] Get optimal scheduling for Matmul on GPU manually
@@ -920,7 +923,7 @@ the reduction in only the cached region."
 ;;  - [ ] NATIVE
 ;;  - [ ] METAL
 ;;  - [ ] X86
-
+;;  - [ ] Feat: Random Annotation
 ;; - Goal of this PR
 ;; - [ ] BugFix: (!argmax `(1 1 1))
 ;; - [ ] Simplify the entire code!
