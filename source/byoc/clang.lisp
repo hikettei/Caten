@@ -38,8 +38,7 @@
           (print
           (with-output-to-string (out)
             (format out "void ~(~a~)(~a);~%" (kernel-name kernel) args)
-            (format out "void ~(~a~)(~a);~%~a" (kernel-name kernel) args (render-bp bp))
-            (format out "}~%")))))
+            (format out "void ~(~a~)(~a);~%~a" (kernel-name kernel) args (render-bp bp)))))))
 ;; OpenMP requires the brackets to be removed in the for loop.
 (defun trim-brackets (str)
   (let ((len (length str)))
@@ -67,8 +66,11 @@
                  (:EXPR
                   (if (eql :SETF (node-type (id->value graph (car (node-reads node)))))
                       (fmt "~a;" (e (car (node-reads node))))
-                      (fmt "~(~a~) = ~a;" (car (node-writes node)) (e (car (node-reads node))))))
+                      (let ((type (car (getattr node :dst-types))))
+                        (assert type () "The node ~a must be shape inferred." node)
+                        (fmt "~a ~(~a~) = ~a;" (->cdtype (caten/ir:typed-dtype type)) (car (node-writes node)) (e (car (node-reads node)))))))
                  (:DEFINE-GLOBAL)
+                 ;; [TODO] Remove :RANGE from RenderOp
                  (:RANGE (fmt "~(~a~) = ~(~a~); // RANGE" (car (node-writes node)) (getattr node :idx)))
                  (:FOR
                   (multiple-value-bind (range body) (apply #'values (node-reads node))
@@ -93,12 +95,6 @@
                     (unless (eql (node-type (id->value graph body)) :PROGN) (incf indent 2))
                     (r body)
                     (unless (eql (node-type (id->value graph body)) :PROGN) (decf indent 2))))
-                 (:ALLOCATE (fmt "~(~a~) ~(~a~);" (getattr node :dtype) (car (node-writes node))))
-                 (:LOAD (r (car (node-reads node))) (fmt "~(~a~) = ~(~a~);" (car (node-writes node)) (getattr node :value)))
-                 (:Aref
-                  (multiple-value-bind (name idx) (apply #'values (node-reads node))
-                    (r name) (r idx)
-                    (fmt "~(~a~) = ~(~a~)[~(~a~)];" (car (node-writes node)) name idx)))
                  (:IF
                   (multiple-value-bind (cond body) (apply #'values (node-reads node))
                     (setf cond (id->value graph cond))
@@ -108,7 +104,7 @@
                     (fmt "}")))
                  (:BARRIER (error "thread barrier is not supported on clang"))
                  (:DEFINE-SHARED-MEMORY (error "shared memory is not supported on clang"))
-                 (otherwise (mapc #'r (node-reads node)) (fmt "~(~a~) = ~(~a~)(~(~a~));" (car (node-writes node)) (node-type node) (render-list (node-reads node)))))))
+                 (otherwise (error "The node ~a is not a supported renderop by clang" node)))))
       (f (id->value graph (car (graph-outputs graph)))))))
 
 (defun header ()
