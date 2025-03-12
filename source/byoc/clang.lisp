@@ -36,10 +36,9 @@
                                       (car (node-writes arg)))
                               ", "))))))
     (setf (clang-program kernel)
-          (print
           (with-output-to-string (out)
             (format out "void ~(~a~)(~a);~%" (kernel-name kernel) args)
-            (format out "void ~(~a~)(~a)~%~a" (kernel-name kernel) args (render-bp bp)))))))
+            (format out "void ~(~a~)(~a)~%~a" (kernel-name kernel) args (render-bp bp))))))
 ;; OpenMP requires the brackets to be removed in the for loop.
 (defun trim-brackets (str)
   (let ((len (length str)))
@@ -70,7 +69,7 @@
                       (let ((type (car (getattr node :dst-types))))
                         (assert type () "The node ~a must be shape inferred." node)
                         (fmt "~a ~(~a~) = ~a;" (->cdtype (caten/ir:typed-dtype type)) (car (node-writes node)) (e (car (node-reads node)))))))
-                 (:DEFINE-GLOBAL) (:RANGE)
+                 (:DEFINE-GLOBAL) (:RANGE) (:ALLOCATE) ;; [TODO] Add a simplifier which removes :DEFINE-GLOBAL, RANGE, ALLOCATE from :PROGN.reads
                  (:FOR
                   (multiple-value-bind (range body) (apply #'values (node-reads node))
                     (setf range (id->value graph range))
@@ -215,6 +214,7 @@ Compiled with this command: ~a"
                   (list (header))
                   (loop for item in items
                         collect (clang-program (getattr item :kernel)))))))
+    (print code)
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
     ;; [Note] -ffast-math and CI fails?

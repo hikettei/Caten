@@ -922,6 +922,7 @@ the reduction in only the cached region."
 ;;  - [ ] X86
 
 ;; - Goal of this PR
+;; - [ ] BugFix: (!argmax `(1 1 1))
 ;; - [ ] Simplify the entire code!
 ;; - [ ] Keep EXPR independant of RANGE Simplification Rule!
 ;; - [ ] More backends
