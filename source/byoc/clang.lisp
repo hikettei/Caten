@@ -69,9 +69,7 @@
                       (let ((type (car (getattr node :dst-types))))
                         (assert type () "The node ~a must be shape inferred." node)
                         (fmt "~a ~(~a~) = ~a;" (->cdtype (caten/ir:typed-dtype type)) (car (node-writes node)) (e (car (node-reads node)))))))
-                 (:DEFINE-GLOBAL)
-                 ;; [TODO] Remove :RANGE from RenderOp
-                 (:RANGE (fmt "~(~a~) = ~(~a~); // RANGE" (car (node-writes node)) (getattr node :idx)))
+                 (:DEFINE-GLOBAL) (:RANGE)
                  (:FOR
                   (multiple-value-bind (range body) (apply #'values (node-reads node))
                     (setf range (id->value graph range))

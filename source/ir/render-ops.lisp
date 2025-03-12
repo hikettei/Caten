@@ -833,5 +833,6 @@ the reduction in only the cached region."
 ;; - [ ] There is a bug in type inference
 ;; - GLOBAL+UNROLl/UPCAST?
 ;; - [ ] BEAM Search --> CUDA Graph Capturingみたいな感じで，TQDMで進捗表示
-;; - [ ] deftype
+;; - [x] deftype
+;; - [ ] Remove :RANGE from Embedding (smth related to exprify)
 ;; - [ ] Fix Renderer: X86, NATIVE, Metal

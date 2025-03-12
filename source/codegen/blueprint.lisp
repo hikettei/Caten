@@ -599,7 +599,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
                        (fmt "~a; // EXPR(STORE)" (e (car (node-reads node))))
                        (fmt "~(~a~) = ~a; // expr" (car (node-writes node)) (e (car (node-reads node))))))
                   (:DEFINE-GLOBAL); (fmt "defglobal ~a;" (car (node-writes node))))
-                  (:RANGE (fmt "~(~a~) = ~(~a~); // RANGE" (car (node-writes node)) (getattr node :idx)))
+                  (:RANGE)
                   (:FOR
                    (multiple-value-bind (range body) (apply #'values (node-reads node))
                      (setf range (id->value graph range))
@@ -678,27 +678,3 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
   (let ((ops (reduce #'expr-add total-flops)))
     (setf (expr-graph ops) (->graph-with-tpsort (->fast-graph (expr-graph ops))))
     (make-gflops-measurer :ops ops :succeed-p t)))
-;; ~~ Utils(Removable?) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defun blueprint-gather-grids (blueprint &key (max-dimension 3) (dtype :int64))
-  (let ((grids
-          (loop for bp in blueprint
-                if (and (eql (node-type bp) :EXPR) (typep (getattr bp :meta :allow-undefined t) 'ExprGrid))
-                  collect (getattr bp :meta :allow-undefined t)))
-        (out
-          (loop for i upfrom 0 below max-dimension
-                collect (make-instance 'ExprGrid :rank i :global-size (expr-const 1 dtype) :local-size (expr-const 1 dtype)))))
-    (assert (<= (length grids) max-dimension) () "blueprint-gather-grids: the number of grids is over the limit.~%~a" blueprint)
-    (dolist (g grids)
-      (setf (nth (exprgrid-rank g) out) g))
-    out))
-
-;(defun expr-gather-buffer-loads (expr-node)
-;  (declare (type node expr-node))
-;  (assert (eql (node-type expr-node) :EXPR))
-;  (let ((renderer (make-instance
-;                   'caten/codegen/renderer:default-renderer
-;                   :graph (expr-graph (getattr expr-node :EXPR)) :index-space (getattr expr-node :iterations))))
-;    (caten/codegen/renderer:render-node renderer (car (node-writes (expr-out (getattr expr-node :EXPR)))))
-;    (loop for node in (caten/codegen/renderer:renderer-rendered-nodes renderer)
-;          if (and (eql (node-type node) :Aref) (> (buffer-nrank (getattr node :buffer)) 0))
-;            collect node)))
