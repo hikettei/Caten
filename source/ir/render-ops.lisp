@@ -797,7 +797,7 @@ the reduction in only the cached region."
 ;; Simplifier Things:
 ;; - [ ] Remove :GLOBAL :LOCAL IF Guard which is rebundant
 ;; - [ ] :LOAD is always an const define-global
-;; - [ ] RANGE(1) ==> Remove
+;; - [ ] RANGE(1) ==> Remove !!! (ConvND!!!)
 ;; - [ ] TileBands, Remove MAX if unnecessary.
 ;; - [ ] GID Count is GLOBAL
 ;; - [x] Softmax, Reduce is lowered as _GID2_1, _GID2_2, ...
@@ -812,7 +812,7 @@ the reduction in only the cached region."
 ;; - [x] Finish Implementing Unroll
 ;; - [ ] (Unroll) --> Unroll blockIdx.x (First Priority before doing upcast)
 ;; - [ ] Implenment Swizzle/Upcast/Vectorize, Support tmp.x. (Add Ops for UNROLL(BIND, X)
-;;  - [ ] ReExprify
+;;  - [x] ReExprify
 ;; More Things:
 ;; - [x] Add: tensor-schedule-graph
 ;; - [ ] Add: ast-finalize-graph -> Propagate all :LOAD
@@ -834,5 +834,19 @@ the reduction in only the cached region."
 ;; - GLOBAL+UNROLl/UPCAST?
 ;; - [ ] BEAM Search --> CUDA Graph Capturingみたいな感じで，TQDMで進捗表示
 ;; - [x] deftype
-;; - [ ] Remove :RANGE from Embedding (smth related to exprify)
-;; - [ ] Fix Renderer: X86, NATIVE, Metal
+;; - [x] Remove :RANGE from Embedding (smth related to exprify)
+;; - [ ] 今何してる？
+;;   - [ ] まず全てのコードを下通り動かす
+;;   - [ ] Renderer
+;;   - [ ] Memory Planner
+;;   - [ ] 次に最適化周りのテスト
+;; - [ ] Fix for renderer:
+;;  - [ ] NATIVE
+;;  - [ ] METAL
+;;  - [ ] X86
+
+;; - Goal of this PR
+;; - [ ] Simplify the entire code!
+;; - [ ] More backends
+;; - [ ] Automatic Kernel Searching for both fixed and symbolic kernel
+;; - [ ] Better Scheduling Algorithm (Advanced Fusion)
