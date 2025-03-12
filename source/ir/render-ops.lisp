@@ -162,7 +162,7 @@ Constraints:
                       (let ((load (with-context-nodes (out (%bind (car (node-writes node)) (%iconst 0 :dtype dtype))))))
                         (insert-nodes graph load)))
               (insert-nodes graph (append =0 (list expr)))
-              (%progn expr body)))))))
+              body))))))
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
 
@@ -176,8 +176,7 @@ Constraints:
   "Simplifies the load of constants"
   (declare (type FastGraph graph))
   (labels ((apply-rule (node)
-            ; (print graph)
-            ; (print node)
+             
              )
            (explore (x &aux (node (id->value graph x)))
              (when (or (null node) (find x seen)) (return-from explore))
