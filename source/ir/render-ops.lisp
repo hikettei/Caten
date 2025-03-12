@@ -197,16 +197,24 @@ Constraints:
   graph)
 
 (defun ast-purge-unused-expr (graph)
-  (declare (type FastGraph graph))
+  (declare (type FastGraph graph) (optimize (speed 3)))
   (loop for node in (graph-nodes graph)
         if (eql (node-type node) :PROGN) do
           (let ((users (map 'list #'(lambda (x) (id->value graph x)) (node-reads node)))
                 (unused-expr))
             (loop for user in users
-                  if (eql (node-type user) :EXPR) do
-                    (print user))
-
-            ))
+                  for r = (id->value graph (car (node-reads user)))
+                  if (and (eql (node-type user) :EXPR) r (not (eql (node-type r) :SETF))) do
+                    (let ((deps (id->users graph (car (node-writes user)))))
+                      (declare (type list deps unused-expr))
+                      (when (= (length deps) 1)
+                        (assert (eql (node-type (car deps)) :PROGN))
+                        (push (car (node-writes user)) unused-expr))))
+            (when unused-expr
+              (assert (every #'symbolp unused-expr))
+              (setf (node-reads node)
+                    (loop for r in (node-reads node)
+                          unless (find (the symbol r) unused-expr) collect r)))))
   graph)
 ;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-descendants-graph (graph outputs &key (only-surface nil) (seen) (result) (stop-at (make-hash-table)))
