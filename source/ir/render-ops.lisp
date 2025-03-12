@@ -157,10 +157,36 @@ Constraints:
                    (=0 (with-context-nodes (out (%bind tmp (%iconst 0 :dtype dtype)))))
                    (expr (%bind (car (node-writes range)) (%expr tmp)))
                    (body (id->value graph body)))
+              (loop for node in (graph-nodes graph)
+                    if (and (eql (node-type node) :RANGE) (eql (getattr node :idx) idx)) do
+                      (let ((load (with-context-nodes (out (%bind (car (node-writes node)) (%iconst 0 :dtype dtype))))))
+                        (insert-nodes graph load)))
               (insert-nodes graph (append =0 (list expr)))
               (%progn expr body)))))))
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
+
+(defun ast-get-expr-schedule (graph expr)
+  "Returns the list of :RANGE nodes that are used in the EXPR tree. This is the equivalent to the schedule of the EXPR."
+  (declare (type FastGraph graph) (type node expr))
+  ;; [TODO] S(i, j, ...)
+  )
+
+(defun ast-simplify-constant (graph &aux (seen))
+  "Simplifies the load of constants"
+  (declare (type FastGraph graph))
+  (labels ((apply-rule (node)
+            ; (print graph)
+            ; (print node)
+             )
+           (explore (x &aux (node (id->value graph x)))
+             (when (or (null node) (find x seen)) (return-from explore))
+             (push x seen)
+             (if (eql (node-type node) :EXPR) ;; Expr is a trigger for this rewriting rule
+                 (apply-rule node)
+                 (mapc #'explore (node-reads node)))))
+    (mapc #'explore (graph-outputs graph)))
+  graph)
 ;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-descendants-graph (graph outputs &key (only-surface nil) (seen) (result) (stop-at (make-hash-table)))
   (declare (type FastGraph graph) (type list outputs))
@@ -317,7 +343,8 @@ Constraints:
                           ;; 2. exprify again
                           #'(lambda (x) (verify-graph x) x)
                           #'ast-maximize-band-depth
-                          #'ast-infer-typed-node)))
+                          #'ast-infer-typed-node
+                          #'ast-simplify-constant)))
   "Simplifies the AST"
   (declare (type FastGraph graph))
   (let ((g (funcall (apply #'compose (reverse opts)) graph)))
@@ -325,8 +352,7 @@ Constraints:
     g))
 
 (defun simplify-ast (graph)
-  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow
-                                   #'ast-simplify-expr #'ast-infer-typed-node)))
+  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-infer-typed-node #'ast-simplify-constant)))
 ;; ~~ Type Map ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Typed (:constructor make-typed (dtype pointer-p)) (:conc-name typed-)) ;; -> AType
   (dtype dtype :type (or (member :void) dtype-t))
