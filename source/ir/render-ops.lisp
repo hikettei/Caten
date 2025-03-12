@@ -135,11 +135,14 @@ Constraints:
     ((:FOR ((:Range (_ _)) (:FOR ((:RANGE (_ _)) _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ((:IF (_ (:IF (_ _) :is-empty (guard x (identity x)))) :is-empty (guard y (null y))) -> ((node graph) (Empty! node)))
     ((:FOR ((:RANGE ((EConst 0) _)) _)) -> ((node graph) (Empty! node)))
-    ;; If the size==1 -> remove the range
-    ;; [TODO] Make it working ...
     ;; TODO: (RANGE (4 4)) is also removable
-    ;;((:RANGE ((EConst 1) (EConst 1)) :idx idx :dtype dtype) -> ((node graph) (with-context-nodes (out (%bind (car (node-writes node)) (%iconst 0 :dtype dtype))))))
-    ;;((:FOR ((EConst 0) body)) -> body)
+    ((:FOR ((:RANGE ((EConst 1) (EConst 1)) :idx idx :dtype dtype) body))
+     ->
+     ((node graph)
+      (let ((range (id->value graph (car (node-reads node)))))
+        (append
+         (with-context-nodes (out (%bind (car (node-writes range)) (%iconst 0 :dtype dtype))))
+         (list (id->value graph body))))))
     ;; TODO: Fuse :FOR+:PROGN to maximize the band depth
     )
 ;; ~~ Exprify (OpFusion) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -837,6 +840,7 @@ the reduction in only the cached region."
 ;; - [x] Remove :RANGE from Embedding (smth related to exprify)
 ;; - [ ] 今何してる？
 ;;   - [ ] まず全てのコードを下通り動かす
+;;   - [ ] ConvND 1 Folding-> Fold Constant Loads or fix _gid0 PROGN
 ;;   - [ ] Renderer
 ;;   - [ ] Memory Planner
 ;;   - [ ] 次に最適化周りのテスト
