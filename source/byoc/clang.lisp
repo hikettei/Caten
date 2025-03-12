@@ -83,13 +83,11 @@
                         (let ((val (id->value graph step)))
                           (assert (and val (eql (node-type val) :EXPR)) () "Range: The step must be specified as EXPR or fixnum, getting ~a" val)
                           (setf step (car (node-reads val)))))
-                      (fmt "~afor (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) ~a~a"
+                      (fmt "~afor (int ~(~a~)=0; ~(~a~)<~(~a~); ~(~a~)+=~a) "
                            (if (> (getattr node :parallel) 0)
                                (format nil "#pragma omp parallel for collapse(~a)~%~a" (getattr node :parallel) (indent))
                                "")
-                           bind bind (trim-brackets (e size)) bind (trim-brackets (e step))
-                           (if (getattr node :is-empty) "/* empty */" "")
-                           (if (getattr node :band) (format nil " [~a]" (getattr node :band)) "")))
+                           bind bind (trim-brackets (e size)) bind (trim-brackets (e step))))
                     (unless (eql (node-type (id->value graph body)) :PROGN) (incf indent 2))
                     (r body)
                     (unless (eql (node-type (id->value graph body)) :PROGN) (decf indent 2))))
