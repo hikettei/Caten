@@ -202,11 +202,10 @@ Compiled with this command: ~a"
 	       `((cffi:foreign-funcall
                   ,(format nil "~(~a~)" name)
                   ,@(loop for arg in defglobals
-		          for is-pointer = (getattr arg :pointer-p)
-		          if (not is-pointer)
-		            append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg)))
-		          else
-		            append `(:pointer ,(car (node-writes arg))))
+                          if (getattr arg :pointer-p)
+                            append `(:pointer ,(car (node-writes arg)))
+                          else
+                            append `(,(->cffi-dtype (getattr arg :dtype)) ,(car (node-writes arg))))
                   :void))))))))
 
 (defmethod %compile-kernel ((renderer CStyle-Renderer) items dir)
