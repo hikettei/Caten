@@ -856,7 +856,7 @@ for (int i=0; i<M; i+=32)
                           (insert-nodes graph (list n))))))
       (verify-graph graph)
       graph)))
-;; TODO: Matmul is this:
+;; TODO: Matmul will be compatible w/ OpenBLAS with this optimization ...
 ;; - Old Auto Schedulerと同じ方針でOK
 ;; - oneDNN Graph Compiler
 ;; https://github.com/siboehm/SGEMM_CUDA/blob/master/src/kernels/10_kernel_warptiling.cuh#L50
@@ -874,7 +874,7 @@ the reduction in only the cached region."
 ;; Simplifier Things:
 ;; - [ ] Remove :GLOBAL :LOCAL IF Guard which is rebundant
 ;; - [ ] :LOAD is always an const define-global
-;; - [ ] RANGE(1) ==> Remove !!! (ConvND!!!)
+;; - [ ] RANGE(1) ==> Remove !!! (ConvND!!!) (OK)
 ;; - [ ] TileBands, Remove MAX if unnecessary.
 ;; - [ ] GID Count is GLOBAL
 ;; - [x] Softmax, Reduce is lowered as _GID2_1, _GID2_2, ...
@@ -931,3 +931,4 @@ the reduction in only the cached region."
 ;; - [ ] More backends
 ;; - [ ] Automatic Kernel Searching for both fixed and symbolic kernel
 ;; - [ ] Better Scheduling Algorithm (Advanced Fusion)
+;; - [ ] BEAM Cache

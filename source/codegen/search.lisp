@@ -106,10 +106,11 @@
                       (push (getattr (schedule-node-node node) :band) seen-bands)
                       (case (getattr (schedule-node-node node) :mark)
                         (:coincident
-                         ;(ast-band-tile (schedule-node-schedule node) (schedule-node-node node) `(4))
+                         (ast-band-tile (schedule-node-schedule node) (schedule-node-node node) `(4))
                          
                          )
                         (:reduction
+                         (ast-band-unroll (schedule-node-schedule node) (schedule-node-node node) `(4))
                          )
                         (:noopt)))
                     (explore-children node))
@@ -121,6 +122,10 @@
 
 (defmethod search-optimized-ast ((auto-scheduler Auto-Scheduler) (ast Graph))
   (with-slots ((use-tile-gpu use-tile-gpu) (global-max global-max) (local-max local-max) (shared-max shared-max) (use-parallel use-parallel)) (slot-value auto-scheduler 'strategy)
+    ;; (Memo) 再コンパイルが一番遅い
+    ;; 1. O(LogN)個のカーネルを生成
+    ;; 2. 一回で全てCompile
+    ;; 3. 最適解を選択 (No recursive)
     
     ast))
 ;; how to detect the data reuse?
