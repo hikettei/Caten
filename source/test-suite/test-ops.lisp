@@ -34,6 +34,34 @@
   (unary-dtype-test sin-test !sin sin :max 121255)
   (unary-dtype-test cos-test !cos cos :ulp 1e-3 :max 121255)
   (unary-dtype-test tan-test !tan tan :ulp 1e-1 :max 20 :fuzz nil)
+  (deftest tan-negative-around-zero-test
+    (dolist (dtype '(:float32 :float64))
+      (let ((metal-fp64-p (and (eql dtype :float64)
+                               (find (ctx:getenv :BACKEND) '(:METAL)))))
+        (if metal-fp64-p
+            (skip "FP64 Math is not supported on Metal")
+            (let ((model (caten (!tan (make-tensor `(1) :initial-element 'a
+                                                    :dtype dtype)))))
+              (dolist (x '(-0.5 -0.25 -0.1 -0.05 -0.01 0.0 0.01 0.05 0.1 0.25 0.5))
+                (let* ((answer (aref (elements (forward model `(a . ,x))) 0))
+                       (expected (tan x)))
+                  (assert (<= (abs (- expected answer)) 1e-1)
+                          ()
+                          "tan near zero failed: x=~a dtype=~a" x dtype)))))))
+  (deftest tan-large-magnitude-test
+    (dolist (dtype '(:float32 :float64))
+      (let ((metal-fp64-p (and (eql dtype :float64)
+                               (find (ctx:getenv :BACKEND) '(:METAL)))))
+        (if metal-fp64-p
+            (skip "FP64 Math is not supported on Metal")
+            (let ((model (caten (!tan (make-tensor `(1) :initial-element 'a
+                                                    :dtype dtype)))))
+              (dolist (x '(-100 -50 -25 25 50 100))
+                (let* ((answer (aref (elements (forward model `(a . ,x))) 0))
+                       (expected (tan x)))
+                  (assert (<= (abs (- expected answer)) 1e-1)
+                          ()
+                          "tan large magnitude failed: x=~a dtype=~a" x dtype)))))))
   ;; Hyperbolic
   (unary-dtype-test sinh-test !sinh sinh :ulp 1e-1 :max 10)
   (unary-dtype-test cosh-test !cosh cosh :ulp 1e-1 :max 10)
