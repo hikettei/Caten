@@ -1,0 +1,575 @@
+
+<!DOCTYPE html lang="en">
+
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="x-ua-compatible" content="ie=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+
+  
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+  <link rel="stylesheet" href="../../css/bootstrap.min.css">
+  
+
+  
+    <meta http-equiv="content-language" content="en">
+  
+  
+
+  
+  <title>Model | Caten Documentation</title>
+  
+
+  
+
+  <link rel="stylesheet" href="../../css/bootstrap-icons.min.css">
+  <link rel="stylesheet" href="../../css/default.min.css">
+  <link rel="stylesheet" href="../../css/vs.min.css">
+  <link rel="stylesheet" href="../../css/theme.css">
+  
+  
+  
+  <script async>var base_url = '../..';</script>
+  <script src="../../js/jquery-3.6.1.slim.min.js"></script>
+  <script src="../../js/bootstrap.bundle.min.js"></script>
+  <script async src="../../js/highlight.min.js"></script>
+
+  
+  
+</head>
+<body>
+  
+  
+    
+    <header>
+      <nav class="navbar navbar-expand-sm navbar-toggleable-sm  border-bottom box-shadow mb-3 ">
+        <div class="container">
+            <a class="navbar-brand text-body" asp-area="" href="/">
+              
+              
+                Caten Documentation
+              
+            </a>
+            <div class="print-hide">
+            <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="d-none d-md-flex input-group mb-3">
+                
+                    <input class="form-control" type="search" id="searchbox" accesskey="/" placeholder="Search in here" aria-label="Search" aria-describedby="search-btn"/>
+                    <button class="btn btn-outline-secondary" type="button" id="search-btn" onclick="search(false);">
+                        <i class="bi bi-search"></i>
+                    </button>
+                    
+                </div>
+            </div>
+            </div>
+        </div>
+    </nav>
+    <nav class="navbar border-bottom box-shadow mb-3 d-md-none print-hide">
+      <div class="container">
+          <div class="navbar-collapse d-flex">
+            <p>
+              <div class="d-flex input-group mb-3">
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_nav(this);" type="button" data-bs-toggle="collapse" data-bs-target="#nav" title="Show Navigation"><i class="bi bi-book"></i></button>
+                
+                
+                <input class="form-control" type="search" id="searchbox_mobile" accesskey="/" placeholder="Search in here" aria-label="Search">
+                <button class="btn btn-outline-secondary" type="button" onclick="search(true);"><i class="bi bi-search"></i></button>
+                
+                
+                
+                <button class="btn btn-outline-secondary" onclick="toggle_toc(this);" type="button" data-bs-toggle="collapse" data-bs-target="#tol"><i class="bi bi-list-ul"></i></button>
+                
+                
+            </div>
+            </p>
+          </div>
+      </div>
+    </nav>
+  </header>
+    
+  
+  
+  
+  <div class="container">
+    <main role="main" class="pb-3">
+      <div class="row">
+        
+        
+    
+    <div class="col-12 col-md-2 print-hide">
+      <div class="collapse d-md-block text-nowrap" id="nav"  style="overflow-x:scroll;">
+        <ul class="list-group list-group-flush">
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../..">Home</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../quickstart/">Quickstart</a></li>
+        
+        
+        
+        <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../../development/">Development</a></li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >API Reference</a>
+          <ul class="collapse list-group list-group-flush show ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.air/">caten/air</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.aasm/">caten/aasm</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.codegen/">caten/codegen</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-body" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/api</a>
+              <ul class="collapse list-group list-group-flush show">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.tensor/">Tensor</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.differentiable_ops/">Func</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.module/">Module</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-body" href="./">Model</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.initializers/">Initializers</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.shapetracker/">ShapeTracker</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.facet/">Facet API</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.api.state-dict/">StateDict</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+            <li class="list-group-item"><a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >caten/nn</a>
+              <ul class="collapse list-group list-group-flush ">
+                
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.activations/">Activation</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.convolutions/">Convolution</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.criterion/">Criterion</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.embeddings/">Embedding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.linears/">Linear</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.normalizations/">Normalization</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.padding/">Padding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.pooling/">Pooling</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.encoding/">Encoding</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.nn.optimizers/">Optimizers</a></li>
+            
+        
+        
+              </ul>
+            </li>
+        
+            
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >Ready to use packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps/">Overview</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.apps.gpt2/">caten/apps.gpt2</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+        
+        <li class="list-group-item">
+          <a class="nav_cop  text-muted" aria-expanded="false" data-bs-toggle="collapse" role="button" >External Packages</a>
+          <ul class="collapse list-group list-group-flush  ">
+            
+
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.gguf/">caten/gguf</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.onnx/">caten/oonx</a></li>
+            
+        
+        
+            <li class="list-group-item"><a class="text-decoration-none  text-muted" href="../caten.external.llm/">caten/llm</a></li>
+            
+        
+        
+          </ul>
+        </li>
+        
+        
+      </ul>
+      </div>
+    </div>
+    
+       
+
+
+
+<div class="col-12 col-md-2 order-md-3 print-hide">
+  <div class="collapse d-md-block text-nowrap" id="tol" style="overflow-x:scroll;">
+    <span>In this article</span>
+    <hr />
+    <ul class="list-group list-group-flush">
+      
+      <li class="list-group-item"><a class="text-decoration-none text-muted" href="#models">Models</a>
+        
+        <ul class="list-group list-group-flush">
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#macro-defcall" >[macro] defcall</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#example" >Example</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#macro-defsequence" >[macro] defsequence</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#example_1" >Example</a>
+    
+    </li>
+
+          
+          
+    <li class="list-group-item"><a class="text-decoration-none text-muted" href="#function-asnode" >[function] asnode</a>
+    
+    </li>
+
+          
+        </ul>
+        
+      </li>
+      
+    </ul>
+  </div>
+</div>
+
+
+<div class="col-12 col-md-8 print-main">
+  
+  <h1>Model</h1>
+  
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item active" aria-current="page">Caten Documentation</li>
+      
+      
+      
+      
+      
+      
+      
+      
+      <li class="breadcrumb-item active" aria-current="page">API Reference</li>
+      
+      
+        
+
+        
+
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">caten/api</li>
+        
+        
+        
+        
+
+        
+
+        
+
+        
+
+        
+        <li class="breadcrumb-item active" aria-current="page">Model</li>
+        
+        
+        
+
+        
+
+        
+
+        
+
+        
+
+        
+        
+
+        
+
+      
+      
+      
+      
+      
+      
+      
+    </ol>
+  </nav>
+  
+  
+  <div class="container ml-0">
+    <div class="row">
+      
+      <div class="col-2 px-0" style="text-wrap: nowrap;">
+        
+        <a class="btn text-primary print-hide" href="../caten.api.module/"
+          title="Module"><i class="bi bi-chevron-left"></i></a>
+        
+        
+        <a class="btn text-primary print-hide" href="../caten.api.initializers/" title="Initializers"><i
+            class="bi bi-chevron-right"></i></a>
+        
+      </div>
+      <div class="col px-0" style="text-align: right;">
+        
+        
+        <small><span class='git-page-authors git-authors'></span></small>
+        <span>|</span>
+        
+        
+        
+        
+        
+      </div>
+      <div class="col-1 col-sm-2 px-0" style="text-align: right;text-wrap: nowrap;">
+        <button class="btn print-block d-none d-lg-inline" title="Print this article"
+          onclick="window.print();"><i class="bi bi-printer"></i></button>
+        <button class="btn print-visible d-none" onclick="print_normal();"
+          title="Open NewTab"><i class="bi bi-arrow-up-right-square"></i></button>
+        
+        
+        <a class="btn disabled print-hide d-none d-sm-inline"><i class="bi bi-pencil"></i></a>
+        
+        
+        <span class="dropdown print-hide">
+          <button class="btn btn" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown"
+            aria-expanded="false"><i class="bi bi-list"></i></button>
+          <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
+            <li>
+              <h6 class="dropdown-header">Share via</h6>
+            </li>
+            <li><button class="btn dropdown-item"
+                onclick="share_to_twitter('Model | Caten Documentation','');"><i
+                  class="bi bi-twitter-x"></i>&nbsp;X.com</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_facebook();"><i
+                  class="bi bi-facebook"></i>&nbsp;Facebook</button></li>
+            <li><button class="btn dropdown-item" onclick="share_to_line();"><i
+                  class="bi bi-line"></i>&nbsp;LINE</button></li>
+            <li>
+              <hr class="dropdown-divider">
+            </li>
+            <li><button class="btn dropdown-item" onclick="window.print();"><i class="bi bi-printer"></i>&nbsp;Print</button></li>
+            <li><button class="btn dropdown-item" id="page-url-copy-btn"><i class="bi bi-clipboard"></i>&nbsp;Copy Url to clipboard</button></li>
+            <li>
+              
+              
+              <a class="btn dropdown-item disabled"><i class="bi bi-pencil"></i>&nbsp;Edit this article</a>
+              
+              
+            </li>
+            <li><button class="btn dropdown-item" onclick="print_view();"><i
+                  class="bi bi-file-earmark-text"></i>&nbsp;View in EmbedMode</button></li>
+          </ul>
+        </span>
+      </div>
+    </div>
+  </div>
+  
+  <hr />
+  
+  
+  <h1 id="models">Models</h1>
+<p>TODO </p>
+<h3 id="macro-defcall">[macro] defcall</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>(defcall (model-bind model) (&amp;rest inputs) body0
+</code></pre></div>
+<p>A macro to write <code>defmethod call</code> in a more concise way.</p>
+<h3 id="example">Example</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="p">(</span><span class="nv">defcall</span><span class="w"> </span><span class="p">(</span><span class="nv">model</span><span class="w"> </span><span class="nv">Transformer</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">Tokens[Batch</span><span class="w"> </span><span class="nv">Seq-Len]</span><span class="w"> </span><span class="nv">Start-Pos[]</span><span class="p">)</span>
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="p">(</span><span class="nb">with-slots</span><span class="w"> </span><span class="p">((</span><span class="nv">wte</span><span class="w"> </span><span class="nv">wte</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">wpe</span><span class="w"> </span><span class="nv">wpe</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">h</span><span class="w"> </span><span class="nv">h</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">ln-f</span><span class="w"> </span><span class="nv">ln-f</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nv">lm-head</span><span class="w"> </span><span class="nv">lm-head</span><span class="p">))</span><span class="w"> </span><span class="nv">model</span>
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="p">(</span><span class="k">let*</span><span class="w"> </span><span class="p">((</span><span class="nv">token-emb</span><span class="w"> </span><span class="p">(</span><span class="nv">forward</span><span class="w"> </span><span class="nv">wte</span><span class="w"> </span><span class="nv">tokens</span><span class="p">))</span>
+<a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">       </span><span class="p">(</span><span class="nv">pos-emb</span><span class="w">   </span><span class="p">(</span><span class="nv">forward</span><span class="w"> </span><span class="nv">wpe</span><span class="w"> </span><span class="p">(</span><span class="nv">!cast</span><span class="w"> </span><span class="p">(</span><span class="nv">!add</span><span class="w"> </span><span class="nv">start-pos</span><span class="w"> </span><span class="p">(</span><span class="nv">!index-components</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">1</span><span class="w"> </span><span class="o">,</span><span class="nv">seq-len</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">dtype-of</span><span class="w"> </span><span class="nv">tokens</span><span class="p">))))</span>
+<a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">       </span><span class="p">(</span><span class="nv">hi</span><span class="w"> </span><span class="p">(</span><span class="nv">!add</span><span class="w"> </span><span class="nv">token-emb</span><span class="w"> </span><span class="nv">pos-emb</span><span class="p">))</span>
+<a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">       </span><span class="p">(</span><span class="nv">mask</span><span class="w"> </span><span class="p">(</span><span class="nv">!triu</span><span class="w"> </span><span class="p">(</span><span class="nv">!full</span><span class="w"> </span><span class="o">`</span><span class="p">(</span><span class="mi">1</span><span class="w"> </span><span class="mi">1</span><span class="w"> </span><span class="o">,</span><span class="nv">seq-len</span><span class="w"> </span><span class="o">,</span><span class="p">(</span><span class="nv">!+</span><span class="w"> </span><span class="nv">start-pos</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="nv">seq-len</span><span class="p">)))</span><span class="w"> </span><span class="p">(</span><span class="nv">-inf</span><span class="p">))</span><span class="w"> </span><span class="ss">:diagonal</span><span class="w"> </span><span class="p">(</span><span class="nv">!+</span><span class="w"> </span><span class="p">(</span><span class="nv">iconst</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"> </span><span class="nv">start-pos</span><span class="p">)))</span>
+<a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">       </span><span class="p">(</span><span class="nv">_</span><span class="w"> </span><span class="p">(</span><span class="nb">dolist</span><span class="w"> </span><span class="p">(</span><span class="nv">hn</span><span class="w"> </span><span class="nv">h</span><span class="p">)</span><span class="w"> </span><span class="p">(</span><span class="nb">setf</span><span class="w"> </span><span class="nv">hi</span><span class="w"> </span><span class="p">(</span><span class="nv">forward</span><span class="w"> </span><span class="nv">hn</span><span class="w"> </span><span class="nv">hi</span><span class="w"> </span><span class="nv">mask</span><span class="w"> </span><span class="nv">start-pos</span><span class="p">))))</span>
+<a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">       </span><span class="p">(</span><span class="nv">logits</span><span class="w"> </span><span class="p">(</span><span class="nv">forward</span><span class="w"> </span><span class="nv">lm-head</span><span class="w"> </span><span class="p">(</span><span class="nv">forward</span><span class="w"> </span><span class="nv">ln-f</span><span class="w"> </span><span class="nv">hi</span><span class="p">))))</span>
+<a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">      </span><span class="p">(</span><span class="k">declare</span><span class="w"> </span><span class="p">(</span><span class="k">ignore</span><span class="w"> </span><span class="nv">_</span><span class="p">))</span>
+<a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">      </span><span class="c1">;; (!argmax (!view logits t -1 t))</span>
+<a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">      </span><span class="p">(</span><span class="nv">!argmax</span><span class="w"> </span><span class="nv">logits</span><span class="p">))))</span>
+</code></pre></div>
+<h3 id="macro-defsequence">[macro] defsequence</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="p">(</span><span class="nv">defsequence</span><span class="w"> </span><span class="p">(</span><span class="nv">name</span><span class="w"> </span><span class="p">(</span><span class="k">&amp;rest</span><span class="w"> </span><span class="nv">args</span><span class="p">)</span><span class="w"> </span><span class="k">&amp;optional</span><span class="w"> </span><span class="nv">docstring</span><span class="w"> </span><span class="k">&amp;rest</span><span class="w"> </span><span class="nv">nodes</span><span class="p">))</span>
+</code></pre></div>
+<p>Defines a model which the definition is given as a sequence of nodes. Note that models defined by this macro only accept one input.</p>
+<h3 id="example_1">Example</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="p">(</span><span class="nv">defsequence</span><span class="w"> </span><span class="nv">MLP</span><span class="w"> </span><span class="p">(</span><span class="nv">in-features</span><span class="w"> </span><span class="nv">hidden-dim</span><span class="w"> </span><span class="nv">out-features</span><span class="w"> </span><span class="k">&amp;key</span><span class="w"> </span><span class="p">(</span><span class="nv">activation</span><span class="w"> </span><span class="nf">#&#39;</span><span class="nv">!relu</span><span class="p">))</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">         </span><span class="p">(</span><span class="nv">Linear</span><span class="w"> </span><span class="nv">in-features</span><span class="w"> </span><span class="nv">hidden-dim</span><span class="p">)</span>
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">         </span><span class="p">(</span><span class="nv">asnode</span><span class="w"> </span><span class="nv">activation</span><span class="p">)</span>
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">         </span><span class="p">(</span><span class="nv">Linear</span><span class="w"> </span><span class="nv">hidden-dim</span><span class="w"> </span><span class="nv">hidden-dim</span><span class="p">)</span>
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">         </span><span class="p">(</span><span class="nv">asnode</span><span class="w"> </span><span class="nv">activation</span><span class="p">)</span>
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">         </span><span class="p">(</span><span class="nv">Linear</span><span class="w"> </span><span class="nv">hidden-dim</span><span class="w"> </span><span class="nv">out-features</span><span class="p">))</span>
+</code></pre></div>
+<h3 id="function-asnode">[function] asnode</h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>(asnode function &amp;rest rest-args)
+</code></pre></div>
+<p>Wraps the function as a callable node by <code>(forward ...)</code>. function is a function which takes one argument and returns one value.</p>
+<p>rest-args is a place to pass additional arguments like: <code>(asnode #'!leaky-relu :neg-slope 1e-2)</code></p>
+  
+
+  
+      </div>
+      </div>
+      <script src="../../js/theme.js"></script>
+      
+      
+      
+    <script async src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+      
+    <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+      
+    <script async src="../../search/main.js"></script>
+      
+      
+    </main>
+  </div>
+  
+  
+  
+  
+  
+  <footer class="border-top footer text-muted .position-absolute.bottom-0.start-50.translate-middle-x" style="padding-top:15px;">
+    <div class="container">
+      <div class="row">
+        <div class="col-md">
+          
+        </div>
+        
+      </div>
+    </div>
+  </footer>
+  
+  
+
+<div class="modal fade" id="searchModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1" aria-labelledby="searchModal" aria-hidden="true">
+  <div class="modal-dialog modal-lg print-hide">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="searchModalLabel">Search</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="input-group mb-3">
+          <input id="mkdocs-search-query" type="text" class="form-control" aria-label="Search" aria-describedby="inputGroup-sizing-default">
+        </div>
+        <div id="mkdocs-search-results">
+          Enter a keyword to search.
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

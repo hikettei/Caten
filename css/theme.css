@@ -1,0 +1,183 @@
+
+.highlight {
+    padding-top: 10px;
+    margin-bottom: 10px;
+}
+
+p code{
+    padding : 5px;
+}
+
+.highlighttable .copybtn , .highlighttable .filename , .highlight .copybtn , .highlight .filename,.highlighttable tr , .highlight pre{
+    padding-left: 10px;
+    padding-right: 10px;
+}
+.highlighttable tr , .highlight pre{
+    padding-top:10px;
+    padding-bottom: 10px;
+}
+
+
+img{
+    width : 100%;
+}
+
+.img-structure{
+    width: auto;
+}
+
+details > details,
+details > div {
+  padding-left: 16px;
+}
+
+blockquote{
+    position:relative;
+    border-left:3px solid #c0c0c0;
+    padding-left:10px;
+}
+blockquote:before{
+    font-family:bootstrap-icons;
+    content:'\F6B0';
+    color:rgb(139, 139, 139);
+}
+blockquote p{
+    position:relative;
+}
+blockquote cite{
+    display: block;
+    font-size:0.8rem;
+    color:#F8C8B2;
+    text-align:right;
+}
+
+a[target="_blank"]:not(.btn)
+{
+    text-decoration:underline;
+}
+
+.accordion{
+    position : relative;
+    padding: 0.5rem 0;
+    margin-bottom : 0.5rem;
+}
+
+svg{
+    width: 100%;
+}
+
+/*
+.accordion-button:before{
+    font-family:bootstrap-icons;
+    padding-right: 0.25em;
+    font-size: 15px;
+}
+.note .accordion-button:before{
+    content: '\F272';
+}
+*/
+mark{
+    font-weight: bold;
+}
+.note .accordion-item
+{
+    --bs-accordion-active-color: var(--bs-primary-text-emphasis);
+    --bs-accordion-active-bg : var(--bs-primary-bg-subtle);
+    --bs-accordion-btn-focus-box-shadow : 0 0 0 0;
+}
+
+.abstract,.question .accordion-item
+{
+    --bs-accordion-active-bg : var(--bs-secondary-bg-subtle);
+    --bs-accordion-active-color: var(--bs-secondary-text-emphasis);
+    --bs-accordion-btn-focus-box-shadow : 0 0 0 0;
+}
+
+.info .accordion-item
+{
+    --bs-accordion-active-bg : var(--bs-info-bg-subtle);
+    --bs-accordion-active-color: var(--bs-info-text-emphasis);
+    --bs-accordion-btn-focus-box-shadow : 0 0 0 0;
+}
+.success .accordion-item
+{
+    --bs-accordion-active-bg : var(--bs-success-bg-subtle);
+    --bs-accordion-active-color: var(--bs-success-text-emphasis);
+    --bs-accordion-btn-focus-box-shadow : 0 0 0 0;
+}
+.warning,.tip,.bug .accordion-item
+{
+    --bs-accordion-active-bg : var(--bs-warning-bg-subtle);
+    --bs-accordion-active-color: var(--bs-warning-text-emphasis);
+    --bs-accordion-btn-focus-box-shadow : 0 0 0 0;
+}
+.failure,.danger .accordion-item
+{
+    --bs-accordion-active-bg : var(--bs-danger-bg-subtle);
+    --bs-accordion-active-color: var(--bs-danger-text-emphasis);
+    --bs-accordion-btn-focus-box-shadow : 0 0 0 0;
+}
+.example .accordion-item
+{
+    --bs-accordion-active-bg : var(--bs-dark-bg-subtle);
+    --bs-accordion-active-color: var(--bs-dark-text-emphasis);
+    --bs-accordion-btn-focus-box-shadow : 0 0 0 0;
+}
+.quote .accordion-item
+{
+    --bs-accordion-active-bg : var(--bs-light-bg-subtle);
+    --bs-accordion-active-color: var(--bs-light-text-emphasis);
+    --bs-accordion-btn-focus-box-shadow : 0 0 0 0;
+}
+
+@media print{
+    .print-visible{
+        display: none;
+    }
+    .print-hide{
+        display: none;
+    }
+    .print-block{
+        display: none;
+    }
+    .print-main{
+        width: 100%;
+    }
+}
+
+a{
+    text-decoration: none;
+}
+
+
+@media (prefers-color-scheme: dark) {
+    a{
+        color:385898;
+    }
+    .highlighttable , .highlight{
+        background: #404040;
+    }
+    code , .highlighttable tr , .highlight pre{
+        color : #e1e1e1;
+        background : #2f2f2f !important;
+    }
+    .highlight{
+        border: solid 0.5px #404040;
+    }
+  }
+  
+  @media (prefers-color-scheme: light) {
+    a{
+        color:0066CC;
+    }
+    .highlighttable , .highlight{
+        background: #e6e6e6;
+    }
+    code , .highlighttable tr , .highlight pre{
+        color : #171717;
+        background : #f2f2f2 !important;
+    }
+    .highlight{
+        border: solid 0.5px #e6e6e6;
+    }
+  }
