@@ -91,6 +91,11 @@ The node :DEFINE-GLOBAL declares a global variable in the kernel. (it correspond
                  (type :type (member :input :output :shape))
                  (nrank :type integer)))
 
+(defnode (:Render :BARRIER) () "Inserts syncthreads(); in CUDA.")
+
+(defnode (:Render :DEFINE-SHARED-MEMORY) () "Declares a shared memory in the kenrel."
+         :slots ((dtype :type keyword) (size :type integer)))
+
 (defun make-define-global (id dtype pointer-p type nrank)
   (declare (type symbol id)
            (type keyword dtype)
