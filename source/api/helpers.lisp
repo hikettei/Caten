@@ -39,7 +39,7 @@
   (declare (type Tensor tensor))
   (when (tensor-cache-canonicalize tensor)
     (return-from try-fold-constant (tensor-cache-canonicalize tensor)))
-  (let ((graph (fold-constant (->fast-graph (%tensor->aasm tensor)))))
+  (let ((graph (fold-constant (->fast-graph (%tensor->ir tensor)))))
     (when (= (length (graph-nodes graph)) 2)
       (%obtain-fold-constant-result graph)
       (when (and (= (length (graph-nodes graph)) 1)

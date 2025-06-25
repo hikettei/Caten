@@ -376,9 +376,9 @@ B <- C // :reduction=t
           for offset = (first v)
           for by = (third v) do
             (when (and offset (symbolp offset) (not (find offset written)))
-              (push (cons offset caten/aasm:*default-int*) consts))
+              (push (cons offset caten/ir:*default-int*) consts))
             (when (and by (symbolp by) (not (find by written)))
-              (push (cons by caten/aasm:*default-int*) consts))
+              (push (cons by caten/ir:*default-int*) consts))
             (multiple-value-bind (rs cs) (expr-realized-buffers s :written written)
               (assert (null rs))
               (loop for c in cs

@@ -1,4 +1,4 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 
 ;; == Tensor =====================================================================================
 ;; Tensor is an air graph defined as:

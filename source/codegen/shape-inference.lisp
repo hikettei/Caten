@@ -245,7 +245,7 @@ If the shape inference is successfully done and properly deployed to the target 
 	(when (null allow-overwrite)
 	  (assert (null (getattr n :_type_relay :allow-undefined t)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
 	(when (null (getattr n :_type_relay :allow-undefined t))
-          (when (subtypep (class-of (caten/air:node-attr n)) 'caten/aasm:JITAble)
+          (when (subtypep (class-of (caten/air:node-attr n)) 'caten/ir:JITAble)
 	    (setf (getattr n :_type_relay) type)))))))
 ;; ~~ Loop Collase ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun mergeable-view-p (g view shape &aux (shape (if (typep shape 'Expr) shape (expr-const (reveal-buffer shape) :int64))))

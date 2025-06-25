@@ -3,7 +3,7 @@
 (deftest shrink+reshape-contiguous
   (testing "Reshape(Slice(...)) should create a copy"
     (ok
-     (let ((caten/aasm:*default-order* :row)
+     (let ((caten/ir:*default-order* :row)
            (a (ax+b `(2 2 8) 1 0)))
        (let ((b (!view a t t `(0 4)))
              (c (!view a t t `(4 8))))

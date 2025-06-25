@@ -38,7 +38,7 @@
   (flet ((test (list from1 to1 by1 broadcast1)
 	   (with-slots ((from caten::from) (to caten::to) (by caten::by) (broadcast caten::broadcast))
 	       (caten::parse-view-subscript 100 list)
-	     (flet ((r (x) (caten/runtime:buffer-value (caten/runtime:realize-graph (caten::%tensor->aasm x) :buffer-type 'caten/byoc/lisp:LispBuffer))))
+	     (flet ((r (x) (caten/runtime:buffer-value (caten/runtime:realize-graph (caten::%tensor->ir x) :buffer-type 'caten/byoc/lisp:LispBuffer))))
 	       (ok (and (equal (r from) from1) (equal (r to) to1) (equal (r by) by1) (equal broadcast broadcast1)))))))
     ;; A[0]
     (test 0 0 1 1 nil) (test 3 3 4 1 nil)
@@ -51,7 +51,7 @@
 
 (deftest test-auto-cast
   (flet ((test (dtype il)
-	   (caten/runtime:realize-graph (caten::%tensor->aasm (!add (make-tensor `(3 3) :dtype dtype) (make-tensor `(3 3) :dtype dtype :initial-element il))) :buffer-type 'caten/byoc/lisp:LispBuffer)))
+	   (caten/runtime:realize-graph (caten::%tensor->ir (!add (make-tensor `(3 3) :dtype dtype) (make-tensor `(3 3) :dtype dtype :initial-element il))) :buffer-type 'caten/byoc/lisp:LispBuffer)))
     (testing "fconst(1) should be valid, iconst(1.0) should be invaild"
       (test :float16 1)
       (ok (test :float32 1))
@@ -96,7 +96,7 @@
 (defun runtime-check-schedule (runtime count &aux (graph (runtime-graph runtime)))
   (declare (type GraphRuntime runtime)
 	   (type fixnum count))
-  (let ((sched (optimize-aasm graph)))
+  (let ((sched (optimize-ir graph)))
     ;; Only checked on VM Mode
     (when (caten/codegen/backend:jit-mode-p)
       (assert
@@ -458,7 +458,7 @@
 
 (deftest test-wrapped-with
   (testing "Intentionally causes the overflow and check counts are reset (requires to optimize/get work %threefy2x32)"
-    (let ((caten/aasm::*wrap-around-mode* t))
+    (let ((caten/ir::*wrap-around-mode* t))
       (loop for dtype in `(:uint64 :uint32 :uint16 :uint8 :int64 :int32 :int16 :int8)
 	    for ans   in `(1 1 1 1 -9223372036854775807 -2147483647 -32767 -127) do
 	(let* ((max (make-tensor `(3 3) :initial-element (dtype/max dtype) :dtype dtype))

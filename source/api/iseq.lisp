@@ -1,6 +1,6 @@
 (in-package :caten/api)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-;; iseq.lisp: Func Level Graph ===> AASM Graph Lowerer.
+;; iseq.lisp: Func Level Graph ===> IR Graph Lowerer.
 ;; 1. (Sort)     Topologically sorting the tensor graph, getting iseq (a list of tensors)
 ;; 2. (Func)     Translate from Tensor into caten/air:node, by using the `lower` method.
 ;; 3. (Optimize) Simplifying the graph with a mixture of :Func and :Module, enabling an ir-level optimization.
@@ -397,7 +397,7 @@ The iseq obtained by lowering the Module must match the output destination speci
   graph)
 
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-(defparameter *external-simplifiers* `(optimize-aasm) "A list of external simplifiers. (defined by defsimplifier)")
+(defparameter *external-simplifiers* `(optimize-ir) "A list of external simplifiers. (defined by defsimplifier)")
 (defparameter *no-grad* nil)
 (defun %compile-toplevel (tensors &key (rewriters nil) (no-grad *no-grad*) (external-simplifiers *external-simplifiers*) (name :main))
   (declare (type list tensors))
@@ -552,8 +552,8 @@ Compiles the given tensors, returning an evaluated tensors.
   (declare (type list tensors))
   (forward (caten tensors)))
 
-(defun %tensor->aasm (&rest tensors)
-  (let* ((sess (make-compiler-session :name :tensor->aasm))
+(defun %tensor->ir (&rest tensors)
+  (let* ((sess (make-compiler-session :name :tensor->ir))
          (graph (%lower-iseq sess (apply #'%tpsort-tensors sess tensors))))
     (setf (graph-outputs graph) (map 'list #'(lambda (x) (car (node-writes (session/read sess (tensor-id x))))) tensors))
     graph))

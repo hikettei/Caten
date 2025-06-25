@@ -1,4 +1,4 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 ;; View is eliminated when lowering
 ;; i.e.: view is used to generate aref index list
 (defun infer-tensor-info (graph id)

@@ -5,7 +5,7 @@
   (ql:quickload :caten))
 
 (defpackage :end-to-end
-  (:use :cl :caten/air :caten/aasm :caten/api :caten/runtime :caten/codegen/expr-cache)
+  (:use :cl :caten/air :caten/ir :caten/api :caten/runtime :caten/codegen/expr-cache)
   ;; Import some low-level APIs
   (:import-from
    :caten/codegen/scheduler

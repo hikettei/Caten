@@ -1,5 +1,5 @@
 (in-package :cl-user)
-(defpackage :caten/aasm
+(defpackage :caten/ir
   (:use :cl :trivia :caten/air :alexandria :caten/common.documentation)
   (:import-from
    :caten/common.dtype
@@ -81,5 +81,5 @@
   (:export
    #:%where)
   ;; from optimizers.lisp
-  (:export #:optimize-aasm #:minimize-duplicated-symbolic-path)
+  (:export #:optimize-ir #:minimize-duplicated-symbolic-path)
   )

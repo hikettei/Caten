@@ -116,7 +116,7 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 
 (TODO: Documentation)
 
-(See also: `./source/aasm/constant-folding.lisp`)
+(See also: `./source/ir/constant-folding.lisp`)
 "
   (with-gensyms (simplifier-bind apply-bind1 apply-bind2 count-bind fast-graph-p seen changed-p counter n-nodes)
     (let ((node-top '*node-top*) (graph '*graph-bind*))
