@@ -3,10 +3,10 @@
 ;; - TODO: Testing transfer, open-buffer, etc.
 (defun =~ (x y) (< (abs (- x y)) 1e-6))
 (defun %seval (evaluated-to graph &key (test #'=))
-  (ok (funcall test evaluated-to (buffer-value (realize-graph (optimize-aasm graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))))
+  (ok (funcall test evaluated-to (buffer-value (realize-graph (optimize-ir graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))))
 
 (defun %eval (evaluated-to graph &key (test #'=))
-  (ok (every test evaluated-to (buffer-value (realize-graph (optimize-aasm graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))))
+  (ok (every test evaluated-to (buffer-value (realize-graph (optimize-ir graph) :buffer-type 'caten/byoc/lisp:LispBuffer)))))
 
 ;; Note: keep in mind that other backends may use this test
 ;; dtype tests should be moved to outside of source
@@ -224,7 +224,7 @@
 
 (defun make-squared-gemm (x y n)
   "a @ b.T"
-  (optimize-aasm
+  (optimize-ir
    (with-context
      (a  (%make-tensor `(,n ,n) :id 'X))
      (b  (%make-tensor `(,n ,n) :id 'Y))

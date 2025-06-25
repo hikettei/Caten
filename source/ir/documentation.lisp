@@ -1,7 +1,7 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 
-(define-page ("caten/aasm" "packages/caten.aasm.md")
-  (title "caten/aasm")
+(define-page ("caten/ir" "packages/caten.ir.md")
+  (title "caten/ir")
   (body (node-build-documentation-by-class "UnaryOps" :UnaryOps))
   (body (node-build-documentation-by-class "BinaryOps" :BinaryOps))
   (body (node-build-documentation-by-class "TernaryOps" :TernaryOps))

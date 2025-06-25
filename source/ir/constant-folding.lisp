@@ -1,4 +1,4 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 
 (defpattern number (x) `(guard ,x (numberp ,x)))
 (defpattern boolean (x) `(guard ,x (typep ,x 'boolean)))

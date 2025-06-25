@@ -2,7 +2,7 @@
 
 (defpackage :caten/test-suite
   (:use :cl :rove :trivia
-   :caten :caten/nn :caten/air :caten/aasm
+   :caten :caten/nn :caten/air :caten/ir
    :caten/runtime :caten/common.dtype :alexandria
    :caten/codegen :caten/llm :py4cl
    :caten/codegen/scheduler :caten/codegen/expr :caten/codegen/jit))

@@ -1,4 +1,4 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 
 (defparameter *replaceable-ops* `(:ADD :NEG :MUL :RECIP :IDIV) "A graph consisted of these operations are subject to this rewriting rule.")
 

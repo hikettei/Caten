@@ -5,7 +5,7 @@
   (ql:quickload :caten))
 
 (defpackage :getting-started
-  (:use :cl :caten/air :caten/aasm :caten/api :caten/runtime))
+  (:use :cl :caten/air :caten/ir :caten/api :caten/runtime))
 
 (in-package :getting-started)
 
@@ -69,7 +69,7 @@
 ;;; Any function starting with `%` represents low level operations for the air node creation.
 ;;; By wrapping such graph constructions with the with-context macro, Caten automatically organizes them into an executable graph.
 ;;; - caten/runtime:realize-graph to run the graph in GraphRuntime
-;;; - caten/aasm:->dot to open the graph in your browser
+;;; - caten/ir:->dot to open the graph in your browser
 
 ;; Example:
 ;; The graph defines a low level graph that performs addition, two constants are defined and added together
@@ -86,7 +86,7 @@
 
 ;;; - Nodes can be defined using defnode.
 ;;; - Pattern Matcher can be defined using `defsimplifier`
-;;; - `caten/aasm` provides a set of instruction used in GraphRuntime
+;;; - `caten/ir` provides a set of instruction used in GraphRuntime
 
 
 ;;; ~~~[A Bridge between AIR and API]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -127,7 +127,7 @@
 
 ;;; ~~~~[caten/codegen]~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpackage :codegen-example
-  (:use :cl :caten/air :caten/aasm :caten/api :caten/runtime :caten/codegen/expr-cache)
+  (:use :cl :caten/air :caten/ir :caten/api :caten/runtime :caten/codegen/expr-cache)
   ;; Import some low-level APIs
   (:import-from
    :caten/codegen/scheduler
@@ -169,7 +169,7 @@
 
 (defun try-codegen! (graph outputs)
   "Utility for visualizing the process of compiling the `graph`."
-  (optimize-aasm graph)
+  (optimize-ir graph)
   (let ((vm (make-runtime graph :fw-outputs outputs)))
     (fresh-line)
     (saying 1 "Compiling the following initial computation graph:" graph)
@@ -202,7 +202,7 @@
            (y (%make-tensor `(3 3) :dtype :float32 :from 'y))
            (c (%add x y :id 'z))))
        ;; Simplifying the input graph
-       (_ (optimize-aasm graph))
+       (_ (optimize-ir graph))
        ;; Wrap the graph as an instance of GraphRuntime to manage allocations
        (vm (make-runtime graph :fw-outputs (list 'z))))
   (declare (ignore _))
@@ -244,7 +244,7 @@
 ;; Example 2. Lowering two squared matrix multiplying into the C kernel.
 (defun %make-squared-gemm (N out)
   "a @ b.T"
-  (optimize-aasm
+  (optimize-ir
    (with-context
      (a  (%make-tensor `(,n ,n)))
      (b  (%make-tensor `(,n ,n)))

@@ -405,8 +405,8 @@ for i in range(3):
 
 (defmethod %make-view-from-tracker ((tracker Tracker) write-to base)
   (flet ((->compile (obj)
-           (let ((g (%tensor->aasm (if (tensor-p obj) obj (iconst obj)))))
-             (optimize-aasm g)
+           (let ((g (%tensor->ir (if (tensor-p obj) obj (iconst obj)))))
+             (optimize-ir g)
              g))
          (->id (graph) (car (last (graph-nodes graph)))))
     (let* ((shape (map 'list #'->compile (tr-shape tracker)))
@@ -434,8 +434,8 @@ for i in range(3):
              (graph-nodes g))
             (graph-outputs g) (list write-to)
             (graph-seen g) (node-writes base))
-      (optimize-aasm g :heavy-opt-threshold 0) ;; simplify the symbolic path by setting heavy-opt-threshold=0
+      (optimize-ir g :heavy-opt-threshold 0) ;; simplify the symbolic path by setting heavy-opt-threshold=0
       (assert (find write-to (graph-nodes g) :key #'node-writes :test #'find)
               ()
-              "%make-view-from-tracker: optimized-aasm purged ~a from the view graph. invalid simplifier?~%~a" write-to g)
+              "%make-view-from-tracker: optimized-ir purged ~a from the view graph. invalid simplifier?~%~a" write-to g)
       g)))

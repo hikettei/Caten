@@ -7,7 +7,7 @@
   (title "caten/codegen")
   (subtitle "Hackable Kernel Generator")
   (body "
-The `caten/codegen` is a system designed to JIT-compile AASM Graphs into other languages, such as C or Metal, to achieve faster computation.
+The `caten/codegen` is a system designed to JIT-compile IR Graphs into other languages, such as C or Metal, to achieve faster computation.
 
 This package has the following two objectives:
 
@@ -37,7 +37,7 @@ The following code snippet demonstrates how to enable JIT on repl:
   ;; ...
 )
 ```
-After setting the contextvar, you can run the function `caten` to JIT-compile the AASM Graphs, e.g.:
+After setting the contextvar, you can run the function `caten` to JIT-compile the IR Graphs, e.g.:
 ```
 (caten (!rand `(3 3)))
 ```")
@@ -74,7 +74,7 @@ Additionally, the following sections provide documentation and explanations for 
   (body (caten/air:node-build-documentation-by-class "Schedule-Item" :GRAPH))
   (doc/function "graph-schedule" #'caten/codegen/scheduler:graph-schedule)
   (subtitle "Example (Scheduler + Shape Inference + Rewriting Rules)")
-  (body "This code snippet demonstrates how to create a schedule-graph from AASM Graph. AASM Graph is obtained by running caten with JIT=0.")
+  (body "This code snippet demonstrates how to create a schedule-graph from IR Graph. IR Graph is obtained by running caten with JIT=0.")
   (example-repl "(ctx:with-contextvar (:BACKEND \"LISP\") (pprint-graph (runtime-graph (caten (!relu (!matmul (make-tensor `(3 3)) (make-tensor `(3 3))))))))")
   (example-code "
 (let* ((graph (ctx:with-contextvar (:BACKEND \"LISP\") (runtime-graph (caten (!relu (!matmul (make-tensor `(3 3)) (make-tensor `(3 3))))))))

@@ -27,7 +27,7 @@ Caten (Compile+AbstracTENsor) is an experimental deep learning compiler written 
 
 1. **API Layer** (`/source/apis/`) - High-level tensor operations with lazy evaluation
 2. **AIR Layer** (`/source/air/`) - Abstract Internal Representation for graph operations
-3. **AASM Layer** (`/source/aasm/`) - Abstract Assembly with 26 primitive operations
+3. **IR Layer** (`/source/ir/`) - Internal Representation with 26 primitive operations
 4. **Codegen Layer** (`/source/codegen/`) - Converts AIR graphs to executable kernels
 5. **Runtime Layer** (`/source/runtime/`) - Manages execution and memory
 6. **Backend Layer** (`/source/byoc/`) - Multiple backend implementations (LISP, CLANG, METAL)
@@ -99,7 +99,7 @@ make docs
 ### Graph Compilation
 1. Operations build an AIR graph
 2. Graph is optimized and scheduled
-3. AASM code is generated
+3. IR code is generated
 4. Backend compiles to native code
 5. Executor runs the compiled kernel
 
@@ -113,7 +113,7 @@ make docs
 ### Adding a New Operation
 1. Define the operation in `/source/apis/`
 2. Add corresponding AIR node in `/source/air/`
-3. Implement AASM lowering in `/source/aasm/`
+3. Implement IR lowering in `/source/ir/`
 4. Add tests in `/source/test-suite/`
 
 ### Adding a New Backend

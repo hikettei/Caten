@@ -2,7 +2,7 @@
   (:documentation "Provides various polyhedral transformation for the code transformation")
   (:shadow #:set #:space)
   (:shadowing-import-from :cl :map)
-  (:use :cl :caten/aasm :caten/air :caten/codegen/polyhedral :cl-ppcre :caten/isl)
+  (:use :cl :caten/ir :caten/air :caten/codegen/polyhedral :cl-ppcre :caten/isl)
   (:export #:get-zeros-on-union-set #:check-legality-parallel #:check-legality)
   ;; Directive
   (:export

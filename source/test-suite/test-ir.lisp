@@ -4,7 +4,7 @@
   (declare (type graph graph)
 	   (type fixnum count))
   (setf (graph-outputs graph) outputs)
-  (let ((sched (optimize-aasm (->fast-graph graph))))
+  (let ((sched (optimize-ir (->fast-graph graph))))
     (ok (<= (length (graph-nodes sched)) count) (format nil "check-schedule: should satisfy (kernel_count=~a) <= ~a." (length (graph-nodes sched)) count))))
 
 (deftest constant-folding

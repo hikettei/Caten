@@ -327,7 +327,7 @@
              (x1 (%view x `(10 10) `(0 0) `(10 10) `(1 1) `(nil nil) `(1 10) :permute `(1 0))) ;; %sin should use this view
              (z  (%add x1 y :id 'out)))))
     (setf (graph-outputs g) (list 'out))
-    (optimize-aasm g)
+    (optimize-ir g)
     ;;(->dot g)
     (multiple-value-bind (schedule runtime) (schedule-from-graph g)
       (caten/codegen/expr-cache:with-expr-cache ()

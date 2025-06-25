@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/expr
-  (:documentation "`Expr` is a syntax sugar for the ops in `caten/aasm`")
-  (:use :cl :caten/air :caten/aasm)
+  (:documentation "`Expr` is a syntax sugar for the ops in `caten/ir`")
+  (:use :cl :caten/air :caten/ir)
   (:import-from
    :caten/codegen/helpers
    :nodes-write-to)
@@ -164,7 +164,7 @@ Only supports the scalar computation because it is intended to identify the same
 
 (defmethod simplify-expr ((expr Expr))
   ;; [TODO] Use FastGraph
-  (optimize-aasm (expr-graph expr))
+  (optimize-ir (expr-graph expr))
   (uiop:symbol-call :caten/codegen/shape-inference :expr-infer-type expr)
   expr)
 

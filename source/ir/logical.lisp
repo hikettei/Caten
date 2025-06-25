@@ -1,4 +1,4 @@
-(in-package :caten/aasm)
+(in-package :caten/ir)
 
 (defun %where (condition x y &key (id (gensym "WID")))
   "id = where(condition, x{true-then}, y{false-then})"

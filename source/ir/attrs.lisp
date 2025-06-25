@@ -1,5 +1,5 @@
-(in-package :caten/aasm)
-;; = [Summary of ops in caten/aasm] ===================================
+(in-package :caten/ir)
+;; = [Summary of ops in caten/ir] ===================================
 ;; UnaryOps   | {NEG, RECIP, SIN, EXP2, LOG2, SQRT, NOT}       | 7 Ops
 ;; BinaryOps  | {ADD, MUL, IDIV, AND, OR, XOR, MOVE, MAX, GCD} | 9 Ops
 ;; TernaryOps | {!=, <, WHERE, WMMA}                           | 4 Ops

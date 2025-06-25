@@ -7,7 +7,7 @@ Tests that are not related to the core functionality of Caten or are time-consum
   :serial t
   :components ((:file "package")
 	       (:file "helpers")
-               (:file "test-aasm")
+               (:file "test-ir")
                (:file "test-air")
                (:file "test-apis")
                (:file "test-runtime")

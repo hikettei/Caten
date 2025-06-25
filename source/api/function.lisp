@@ -9,7 +9,7 @@
 [Func] -> <Lower> -> [FastGraph] -> <Simplifier> -> [Completed]
 ```
 
-`Func` (as the base class) is syntactic sugar for generating lowered instructions defined in the `caten/aasm` package.
+`Func` (as the base class) is syntactic sugar for generating lowered instructions defined in the `caten/ir` package.
 
 To properly lower the respective `Func`, you need to implement the following three methods:
 
