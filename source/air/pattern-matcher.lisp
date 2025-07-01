@@ -1,9 +1,18 @@
 (in-package :caten/air)
 ;; [Reimplement PatternMa] Workload
 ;; = Add: ./test-suite/test-pattern-matcher.lisp
+;; = Support: ~ notation in args
 ;; ~~~ Reimplementation ~~~~~~~~~~
+(defstruct GraphRewrite)
+(defstruct (Pattern-Matcher
+            (:constructor %make-pattern-matcher (patterns pdict)))
+  (patterns patterns :type list)
+  (pdict pdict :type hash-table))
+(defstruct Pattern
+  (match-upat)
+  (accept-upat))
+;; PatternAST
 (defstruct UForm (form))
-
 (defstruct UPat
   (ops nil :type list)
   (module-bind nil :type symbol)
@@ -11,25 +20,54 @@
   (src nil :type list) ;; a list of UPat or UForm
   (attrs nil :type list))
 
-(defstruct Compiled-UPat ())
+(defun make-pattern-matcher (patterns)
+  (declare (type list patterns))
+  (let ((pdict (make-hash-table)))
+    (dolist (p patterns)
+      (assert (upat-p p))
+      (dolist (op (upat-ops p))
+        (setf (gethash op pdict) (append (gethash op pdict) (list p)))))
+    (%make-pattern-matcher patterns pdict)))
 
-(defmethod upat-compile ((upat UPat))
+(defgeneric upat-expand-as-match-form (upat))
+(defgeneric upat-expand-as-accept-form (upat))
+
+(defmethod upat-expand-as-match-form ((upat UPat))
+  `(Node
+    :class ,(upat-module-bind upat)
+    :type
+    (<> ,(upat-op-bind upat) (or ,@(loop for op in (upat-ops upat) collect `(eql ,op))))
+    :reads (list ,@(map 'list #'upat-expand-as-match-form (upat-src upat)))
+    :attr nil))
+
+(defmethod upat-expand-as-match-form ((upat UForm)) (uform-form upat))
+
+(defmethod upat-expand-as-accept-form ((upat UPat))
+  `(make-node
+    :class
+    :type
+    :writes
+    :reads
+    :attrs))
+
+(defmethod upat-expand-as-accept-form ((upat UForm)) (uform-form upat))
+
+(defmethod upat-compile ((upat1 UPat) (upat2 UPat))
+  (with-gensyms (node-bind)
+    `(lambda (,node-bind)
+       (declare (type Node ,node-bind))
+       (match ,node-bind
+         (,(upat-expand upat1) ,(upat-expand upat2))))))
+
+(defun upat-match (upat node)
+  (declare (type upat upat) (type node node))
+  
   )
-
-(defmethod upat-compile ((upat Compiled-Upat))
-  (error "The give upat ~a is already compiled." upat))
-
-(defmethod upat-match-p ((upat UPat) node graph)
-
-  )
-
-(defmethod upat-match-p ((upat Compiled-UPat) node graph)
-
-  )
-
+;; UPat Creation
 (defun recursively-convert-upat (expression &key (module->ops (debug/attrs-by-module)) (allow-not-upat-p nil))
   ;; FindAttr is doable at the moment expanding upat
   (macrolet ((lazy-assert (form is fmt &rest args &aux (id (gensym)))
+               (declare (ignore is))
                `(let ((,id ,form))
                   (if allow-not-upat-p
                       (return-from recursively-convert-upat nil)
@@ -69,11 +107,35 @@
        (lazy-assert nil "Not a valid upat: ~a" expression)))))
 
 (progn
-  (print (upat (((x) :ADD :SUB) (a b))))
+  (let ((upat
+          (UPat (((op) :ADD :SUB)
+                 ((:ADD (x (:NEG (m)))) b)))))
+    (print upat)
+    (print (upat-expand upat)))
   nil)
+
+(defun pm-rewrite-graph (pattern-matcher graph)
+
+  )
+
+(defmacro PatternMatcher (&rest forms)
+  `(make-pattern-matcher
+    (list
+     ;; todo: allow doing like t -> ((node graph) )
+     (loop for form in forms
+           for nth upfrom 0
+           collect
+           (match form
+             ((list match (symbol-eq '->) accept)
+              
+              )
+             (otherwise
+              (error "Error accepting in ~ath pattern" nth)))))))
+
+(defmacro define-pattern-matcher ())
 ;; Rename <UPAT>?
 ;; If recursive, they should be start w/ <UPAT>?
-(defmacro upat (expression)
+(defmacro UPat (expression)
   "
 ```
 (UPat Expression)
@@ -93,12 +155,7 @@ Notation:
 
 src/dst could be a list or variable.
 "
-  (let ((upat (recursively-convert-upat expression)))
-    (print upat)
-    nil
-    ))
-
-
+  `(recursively-convert-upat ',expression))
 ;; ~~ utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern symbol-eq (to-what)
   `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
