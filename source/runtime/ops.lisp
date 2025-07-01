@@ -14,4 +14,8 @@
 
   )
 
+;; [TODO] Caten V2 TensorParallel
+(defun %shard ())
+(defun %gather())
+
 
