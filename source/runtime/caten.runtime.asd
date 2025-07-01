@@ -7,4 +7,5 @@
   :components ((:file "buffer")
                (:file "profile")
                (:file "runtime")
+               (:file "ops")
                (:file "package")))
