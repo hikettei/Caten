@@ -39,47 +39,55 @@ UnaryOps applies an operaton to the first given read value and overwrites the re
 out <- f(x)
 ```"))
 
+(defun make-type-relay (n) #'(lambda (id->type node) (list (gethash (nth n (node-reads node)) id->type))))
+
 (defnode (:UnaryOps :NEG) (UnaryOps JITAble)
 	 "The node :NEG flips the sign of the first read tensor, writing the result to the first write.
 ```
 out = (-x);
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:UnaryOps :RECIP) (UnaryOps JITAble)
 	 "The node :RECIP computes the reciprocal of the first read tensor, writing the result to the first write.
 ```
 out = (1/x);
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:UnaryOps :SIN) (UnaryOps JITAble)
 	 "The node :SIN computes sine of the first read tensor, writing the result to the first write.
 ```
 out = sin(x);
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:UnaryOps :EXP2) (UnaryOps JITAble)
 	 "The node :EXP2 computes `exp2` of the first read tensor, writing the result to the first write.
 ```
 out = exp2(x);
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:UnaryOps :LOG2) (UnaryOps JITAble)
 	 "The node :LOG2 computes `log2` of the first read tensor, writing the result to the first write.
 ```
 out = log2(x);
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:UnaryOps :SQRT) (UnaryOps JITAble)
 	 "The node :SQRT computes square-root of the first read tensor, writing the result to the first write.
 ```
 out = sqrt(x);
 ```
-")
+"
+         :type-relay #'unary-type-relay)
 
 (defnode (:UnaryOps :NOT) (UnaryOps JITAble)
 	 "The node :NOT computes the logical-not of the given tensor if the input is a boolean, otherwise (integer) computes a bitwise-not.
@@ -88,11 +96,17 @@ out = sqrt(x);
 out = not(x) (if boolean)
 out = lognot(x) (if integer)
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:UnaryOps :CAST) (UnaryOps JITAble)
 	 "The node :CAST casts the first read tensor into `:dtype`, writing the result into the first write."
-	 :slots ((dtype :type dtype-t)))
+	 :slots ((dtype :type dtype-t))
+         :type-relay #'(lambda (id->type node &aux (out (funcall (make-type-relay 0) id->type node)))
+                         (assert out)
+                         (setf out (copy-typed out)
+                               (typed-dtype out) (getattr node :dtype))
+                         (list out)))
 
 (defclass BinaryOps ()
   ((reduction :initarg :reduction :initform nil :type boolean)
@@ -113,47 +127,54 @@ x <- f(x, y)
 	 "The node :ADD adds the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
-```")
+```"
+         :type-relay (make-type-relay 0))
 
 (defnode (:BinaryOps :MUL) (BinaryOps JITAble)
 	 "The node :MUL multiplies the two tensors in `read` and writes the result to the first `write`.
 ```
 out <- x + y
-```")
+```"
+         :type-relay (make-type-relay 0))
 
 (defnode (:BinaryOps :MOD) (BinaryOps JITAble)
 	 "The node :MOD finds the reminder of the first tensor in `read` divided by the second tensor in `read`.
 ```
 out <- x % y
-```")
+```"
+         :type-relay (make-type-relay 0))
 
 (defnode (:BinaryOps :IDIV) (BinaryOps JITAble)
 	 "The node :IDIV divides the first tensor in `read` by the second tensor in `read`, writing the result to the first `write`.
 Unlike other BinaryOps, :IDIV assumes two tensors to be an integer typed tensor.
 ```
 out <- x / y
-```")
+```"
+         :type-relay (make-type-relay 0))
 
 (defnode (:BinaryOps :AND) (BinaryOps JITAble)
 	 "The node :AND computes the bit-wise and of two tensors in `read` if they are integer, otherwise (boolean) computes the logical-and.
 ```
 out <- x && y (if boolean)
 out <- x & y (if integer)
-```")
+```"
+         :type-relay (make-type-relay 0))
 
 (defnode (:BinaryOps :OR) (BinaryOps JITAble)
 	 "The node :OR computes the bit-wise or of two tensors in `read` if they are integer, otherwise (boolean) computes the logical-or.
 ```
 out <- x || y (if boolean)
 out <- x | y (if integer)
-```")
+```"
+         :type-relay (make-type-relay 0))
 
 (defnode (:BinaryOps :XOR) (BinaryOps JITAble)
 	 "The node :XOR computes the bit-wise xor of two tensors in `read` if they are integer, otherwise (boolean) computes the logical-xor.
 ```
 out <- x ^ y (if boolean)
 out <- x ^ y (if integer)
-```")
+```"
+         :type-relay (make-type-relay 0))
 
 (defnode (:BinaryOps :MOVE) (BinaryOps JITAble)
 	 "Moves the second read into the first read, setting the result to first write.
@@ -161,13 +182,15 @@ out <- x ^ y (if integer)
 out <- move(x, y)
 where move(x, y) is x = y
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:BinaryOps :MAX) (BinaryOps JITAble)
 	 "Computes the maximum value of two tensors in read, writing the result to the first write.
 ```
 out <- max(x, y)
-```")
+```"
+         :type-relay (make-type-relay 0))
 
 (defnode (:BinaryOps :GCD) (BinaryOps)
 	 "Computes the greatest common divisor of two integer tensors in read, writing the result to the first write.
@@ -177,7 +200,8 @@ out <- max(x, y)
 ```
 out <- gcd(x, y)
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defclass TernaryOps ()
   nil
@@ -194,7 +218,8 @@ out <- f(x, y, z)
 x = y != z;
 out = x;
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:TernaryOps :<) (TernaryOps JITAble)
 	 "Compares the second and third tensors in read with `<`, writing the result to the first write. The first read tensor is an placeholder for the first write tensor and is always boolean.
@@ -202,7 +227,8 @@ out = x;
 x = y < z;
 out = x;
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:TernaryOps :WHERE) (TernaryOps JITAble)
 	 "If the result of the first read (boolean) is true, the second read is selected, and if false, the third read is selected and written to the first write. When optimizing in-place, note that the value of the second read is used as a placeholder since choosing the first read would result in a data type mismatch with write.
@@ -211,7 +237,8 @@ in_dtype = dtype_of(y);
 out[in_dtype] = x[boolean] ? y[in_dtype] : z[in_dtype];
 ```
 "
-	 :placeholder 1)
+	 :placeholder 1
+         :type-relay (make-type-relay 1))
 
 (defnode (:TernaryOps :WMMA) (TernaryOps JITAble)
 	 "The node :WMMA is generated during optimization (simplifiers.lisp) by AJIT and represents a fused computation of :ADD and :MUL. WMMA is not generated during VM execution.
@@ -222,7 +249,8 @@ WMMA(c, a, b) is the equivalent to:
 c += a * b      (if reduction = t)
 out = c + a * b (if reduction = nil)
 ```"
-	 :slots ((reduction)))
+	 :slots ((reduction))
+         :type-relay (make-type-relay 0))
 
 (defclass BufferOps ()
   nil
@@ -244,7 +272,10 @@ out = allocate(*shape, *stride)
 	 :slots ((nrank :type (unsigned-byte 32))
 		 (dtype :type dtype-t)
 		 (from :initform nil)
-                 (pool :initform nil :type (or null Buffer))))
+                 (pool :initform nil :type (or null Buffer)))
+         :type-relay #'(lambda (id->type node)
+                         (declare (ignore id->type))
+                         (list (make-typed (getattr node :dtype) (subseq (node-reads node) 0 (getattr node :nrank))))))
 
 (defnode (:Buffer :LOAD) (BufferOps JITAble)
 	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
@@ -255,12 +286,14 @@ out = x;
 
 - value[symbol or number] initial value.
 "
-	 :slots ((value)))
+	 :slots ((value))
+         :type-relay (make-type-relay 0))
 
 (defnode (:Buffer :STORE) (BufferOps BinaryOps JITAble)
 	 "Just like a :MOVE, moves the second tensor in read into the first tensor in read, writing the result to the first write.
 (Note: :STORE can be removed in the future refactoring)
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:Buffer :VIEW) (BufferOps JITAble)
 	 "Creates a view object of the tensor in a first read.
@@ -278,7 +311,14 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
 	 :slots ((nrank :type (unsigned-byte 32))
 		 (broadcast :type list)
 		 (permute :type list :initform nil)
-                 (tr :initform nil)))
+                 (tr :initform nil))
+         :type-relay #'(lambda (id->type node)
+                         (list
+                          (make-typed
+                           (typed-dtype
+                            (or (gethash (car (node-reads node)) id->type)
+                                (error "The first argument of VIEW is not defined.")))
+                           (subseq (node-reads node) 1 (1+ (getattr node :nrank)))))))
 
 (defclass Indexing () nil)
 (defnode (:Indexing :Index-Components) (Indexing JITAble)
@@ -293,7 +333,8 @@ for i=0..N
   for j=0..M
     out[i, j] = stride[0] * i + j;
 ```
-")
+"
+         :type-relay (make-type-relay 0))
 
 (defnode (:JIT :EXPR) (JITAble)
 	 "The node :EXPR is a data structure used by the JIT compiler, representing a node that fuses multiple composable nodes.

@@ -31,6 +31,7 @@
 (defgeneric %attr-initargs (attr-id))
 (defgeneric %get-output-to (attr &rest reads))
 (defgeneric verify-args (attr writes reads))
+(defgeneric %node-get-type-relay (node))
 
 (defun find-attr (attr-key)
   (declare (type keyword attr-key))
@@ -48,7 +49,7 @@
       (dolist (superclass direct-superclasses)
 	(format out "`~a`, " superclass)))))
 
-(defmacro defnode ((class type) (&rest direct-superclasses) description &key (placeholder 0) (verify 'identity) (slots))
+(defmacro defnode ((class type) (&rest direct-superclasses) description &key (type-relay nil) (placeholder 0) (verify 'identity) (slots))
   "
 Defines a new node.
 
@@ -81,6 +82,7 @@ Defines a new node.
 		for slot-new = (rewrite-slot slot)
 		collect slot-new)
 	 (:documentation ,(apply #'build-documentation type description placeholder direct-superclasses)))
+       (defmethod %node-get-type-relay ((node (eql ,type))) ,type-relay)
        (defmethod %attr-initargs ((attr-id (eql ,type)))
 	 "Returns a list of possible :attrs argument keywords."
 	 (list
