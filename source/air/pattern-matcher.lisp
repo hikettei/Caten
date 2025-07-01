@@ -29,39 +29,51 @@
 
 (defun recursively-convert-upat (expression &key (module->ops (debug/attrs-by-module)) (allow-not-upat-p nil))
   ;; FindAttr is doable at the moment expanding upat
-  (match expression
-    ((list trigger srcs attrs)
-     (multiple-value-bind (ops module-bind op-bind)
-         (match trigger
-           ((type keyword) (values nil nil (list trigger)))
-           ((list* (list module-bind op-bind) _)
-            (assert (every #'keywordp (cdr trigger))
-                    ()
-                    "The expression ~a should be a list of keywords." trigger)
-            (values
-             module-bind op-bind
-             (loop for e in (cdr trigger)
-                   for attrs = (gethash e module->ops)
-                   do (assert attrs () "The module ~a is not defined." e)
-                   append (map 'list #'car attrs))))
-           ((list* (list op-bind) _)
-            (assert (every #'keywordp (cdr trigger)) () "The expression ~a should be a list of keywords." (car expression))
-            (values nil op-bind trigger))
-           (otherwise
-            (error "The expression ~a should be a list of keywords." (car expression))))
-       (make-UPat
-        :ops ops
-        :module-bind (or module-bind '_)
-        :op-bind (or op-bind '_)
-        :src (loop for src in srcs
-                   for maybe-pat = (recursively-convert-upat src :module->ops module->ops :allow-not-upat-p t)
-                   collect (or maybe-pat (make-uform :form src)))
-        :attrs nil)))
-    (otherwise
-     (unless allow-not-upat-p
-       (error "Not a valid upat: ~a" expression)))))
+  (macrolet ((lazy-assert (form is fmt &rest args &aux (id (gensym)))
+               `(let ((,id ,form))
+                  (if allow-not-upat-p
+                      (return-from recursively-convert-upat nil)
+                      (assert ,id () ,fmt ,@args)))))
+    (match expression
+      ((list* trigger srcs) ;; MEMO: start w/ upat?
+       (multiple-value-bind (ops module-bind op-bind) ;; Parse Trigger
+           (match trigger
+             ((type keyword)
+              (values (list trigger) nil nil))
+             ((list* (list module-bind op-bind) _)
+              (lazy-assert (every #'keywordp (cdr trigger))
+                           ()
+                           "The expression ~a should be a list of keywords." trigger)
+              (values
+               (loop for e in (cdr trigger)
+                     for attrs = (gethash e module->ops)
+                     do (assert attrs () "The module ~a is not defined." e)
+                     append (map 'list #'car attrs))
+               module-bind op-bind))
+             ((list* (list op-bind) _)
+              (lazy-assert (every #'keywordp (cdr trigger)) () "The expression ~a should be a list of keywords." (car expression))
+              (values (cdr trigger) nil op-bind))
+             (otherwise
+              ;; [TODO] Improve this case!
+              (lazy-assert nil "The expression ~a should be a list of keywords." (car expression))))
+         (make-UPat
+          :ops ops
+          :module-bind (or module-bind '_)
+          :op-bind (or op-bind '_)
+          :src (loop for src in (car srcs)
+                     for maybe-pat = (recursively-convert-upat src :module->ops module->ops :allow-not-upat-p t)
+                     collect (or maybe-pat (make-uform :form src)))
+          ;; [TODO] Parse attributes
+          :attrs nil)))
+      (otherwise
+       (lazy-assert nil "Not a valid upat: ~a" expression)))))
 
-(defmacro upat (expression lambda)
+(progn
+  (print (upat (((x) :ADD :SUB) (a b))))
+  nil)
+;; Rename <UPAT>?
+;; If recursive, they should be start w/ <UPAT>?
+(defmacro upat (expression)
   "
 ```
 (UPat Expression)
@@ -82,7 +94,8 @@ Notation:
 src/dst could be a list or variable.
 "
   (let ((upat (recursively-convert-upat expression)))
-
+    (print upat)
+    nil
     ))
 
 
