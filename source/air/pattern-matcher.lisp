@@ -1,5 +1,90 @@
-
 (in-package :caten/air)
+;; [Reimplement PatternMa] Workload
+;; = Add: ./test-suite/test-pattern-matcher.lisp
+;; ~~~ Reimplementation ~~~~~~~~~~
+(defstruct UForm (form))
+
+(defstruct UPat
+  (ops nil :type list)
+  (module-bind nil :type symbol)
+  (op-bind nil :type symbol)
+  (src nil :type list) ;; a list of UPat or UForm
+  (attrs nil :type list))
+
+(defstruct Compiled-UPat ())
+
+(defmethod upat-compile ((upat UPat))
+  )
+
+(defmethod upat-compile ((upat Compiled-Upat))
+  (error "The give upat ~a is already compiled." upat))
+
+(defmethod upat-match-p ((upat UPat) node graph)
+
+  )
+
+(defmethod upat-match-p ((upat Compiled-UPat) node graph)
+
+  )
+
+(defun recursively-convert-upat (expression &key (module->ops (debug/attrs-by-module)) (allow-not-upat-p nil))
+  ;; FindAttr is doable at the moment expanding upat
+  (match expression
+    ((list trigger srcs attrs)
+     (multiple-value-bind (ops module-bind op-bind)
+         (match trigger
+           ((type keyword) (values nil nil (list trigger)))
+           ((list* (list module-bind op-bind) _)
+            (assert (every #'keywordp (cdr trigger))
+                    ()
+                    "The expression ~a should be a list of keywords." trigger)
+            (values
+             module-bind op-bind
+             (loop for e in (cdr trigger)
+                   for attrs = (gethash e module->ops)
+                   do (assert attrs () "The module ~a is not defined." e)
+                   append (map 'list #'car attrs))))
+           ((list* (list op-bind) _)
+            (assert (every #'keywordp (cdr trigger)) () "The expression ~a should be a list of keywords." (car expression))
+            (values nil op-bind trigger))
+           (otherwise
+            (error "The expression ~a should be a list of keywords." (car expression))))
+       (make-UPat
+        :ops ops
+        :module-bind (or module-bind '_)
+        :op-bind (or op-bind '_)
+        :src (loop for src in srcs
+                   for maybe-pat = (recursively-convert-upat src :module->ops module->ops :allow-not-upat-p t)
+                   collect (or maybe-pat (make-uform :form src)))
+        :attrs nil)))
+    (otherwise
+     (unless allow-not-upat-p
+       (error "Not a valid upat: ~a" expression)))))
+
+(defmacro upat (expression lambda)
+  "
+```
+(UPat Expression)
+```
+
+A convenient macro for constructing.
+
+Notation:
+```
+(<Trigger> (src) :attribute (match) ...)
+```
+
+<Trigger> could be one of:
+- A opname (e.g.: `:ADD`)`
+- A list of opnames `(e.g.: `((<OP_BIND>) :ADD :SUB))`
+- A module name (e.g.: `((<MOD_BIND> <OP_BIND>) :Module :GRAPH/MODULE ...)`)
+
+src/dst could be a list or variable.
+"
+  (let ((upat (recursively-convert-upat expression)))
+
+    ))
+
 
 ;; ~~ utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern symbol-eq (to-what)
