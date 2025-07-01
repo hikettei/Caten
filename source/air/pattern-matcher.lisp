@@ -1,6 +1,214 @@
-
 (in-package :caten/air)
+;; [Reimplement PatternMa] Workload
+;; = Add: ./test-suite/test-pattern-matcher.lisp
+;; = Support: ~ notation in args
+;; ~~~ Reimplementation ~~~~~~~~~~
+;; PatternAST
+(defstruct UForm (form))
+(defstruct UPat
+  (ops nil :type list)
+  (module-bind nil :type symbol)
+  (op-bind nil :type symbol)
+  (src nil :type list) ;; a list of UPat or UForm
+  (attrs nil :type list))
 
+(defmethod make-load-form ((upat UPat) &optional env)
+  (declare (ignore env))
+  `(make-upat :ops (list ,@(upat-ops upat))
+              :module-bind ',(upat-module-bind upat)
+              :op-bind ',(upat-op-bind upat)
+              :src (list ,@(upat-src upat))
+              :attrs nil)) ;; TODO!
+
+(defmethod make-load-form ((uform UForm) &optional env)
+  (declare (ignore env))
+  `(make-uform :form ',(uform-form uform)))
+;; Rewriters
+(defstruct (Pattern-Matcher
+            (:constructor %make-pattern-matcher (patterns pdict)))
+  (patterns patterns :type list)
+  (pdict pdict :type hash-table))
+(defstruct (Compiled-Pattern
+            (:constructor make-compiled-pattern (match-upat accept-upat fxn)))
+  (match-upat match-upat :type UPat)
+  (accept-upat accept-upat :type UPat)
+  (fxn fxn :type function))
+
+(defstruct (Graph-Rewrite
+            (:constructor make-graph-rewrite (pm)))
+  (pm pm :type Pattern-Matcher)
+  (replace (make-hash-table) :type hash-table))
+   
+(defun make-pattern-matcher (patterns)
+  (declare (type list patterns))
+  (let ((pdict (make-hash-table)))
+    (dolist (p patterns)
+      (assert (compiled-pattern-p p)) ;; here
+      (let ((ptn (compiled-pattern-match-upat p)))
+        (dolist (op (upat-ops ptn))
+          (setf (gethash op pdict) (append (gethash op pdict) (list ptn))))))
+    (%make-pattern-matcher patterns pdict)))
+
+(defgeneric upat-expand-as-match-form (upat))
+(defgeneric upat-expand-as-accept-form (upat))
+
+(defmethod upat-expand-as-match-form ((upat UPat))
+  `(Node
+    :class ,(upat-module-bind upat)
+    :type
+    (<> ,(upat-op-bind upat) (or ,@(loop for op in (upat-ops upat) collect `(eql ,op))))
+    :reads (list ,@(map 'list #'upat-expand-as-match-form (upat-src upat)))
+    :attr nil))
+
+(defmethod upat-expand-as-match-form ((upat UForm)) (uform-form upat))
+
+(defmethod upat-expand-as-accept-form ((upat UPat))
+  (assert (= 1 (length (upat-ops upat))))
+  ;; [TODO] Node-Writesがないのでどうにかする
+  `(make-node
+    ,(attribute->instance (car (upat-ops upat)))
+    ,(car (upat-ops upat))
+    nil
+    (list ,@(map 'list #'upat-expand-as-accept-form (upat-src upat)))
+    ;; TODO [Attrs]
+    ))
+
+(defmethod upat-expand-as-accept-form ((upat UForm)) (uform-form upat))
+
+(defun upat-make-fxn-from-upat (upat1 upat2)
+  (with-gensyms (node-bind)
+    `(lambda (,node-bind)
+       (declare (type Node ,node-bind))
+       (match ,node-bind
+         (,(upat-expand-as-match-form upat1) ,(upat-expand-as-accept-form upat2))))))
+;; UPat Creation
+(defun make-upat-from-form (expression &key (module->ops (debug/attrs-by-module)) (allow-not-upat-p nil))
+  ;; FindAttr is doable at the moment expanding upat
+  (macrolet ((lazy-assert (form is fmt &rest args &aux (id (gensym)))
+               (declare (ignore is))
+               `(let ((,id ,form))
+                  (if allow-not-upat-p
+                      (return-from make-upat-from-form nil)
+                      (assert ,id () ,fmt ,@args)))))
+    (match expression
+      ((list* trigger srcs) ;; MEMO: start w/ upat?
+       (multiple-value-bind (ops module-bind op-bind) ;; Parse Trigger
+           (match trigger
+             ((type keyword)
+              (values (list trigger) nil nil))
+             ((list* (list module-bind op-bind) _)
+              (lazy-assert (every #'keywordp (cdr trigger))
+                           ()
+                           "The expression ~a should be a list of keywords." trigger)
+              (values
+               (loop for e in (cdr trigger)
+                     for attrs = (gethash e module->ops)
+                     do (assert attrs () "The module ~a is not defined." e)
+                     append (map 'list #'car attrs))
+               module-bind op-bind))
+             ((list* (list op-bind) _)
+              (lazy-assert (every #'keywordp (cdr trigger)) () "The expression ~a should be a list of keywords." (car expression))
+              (values (cdr trigger) nil op-bind))
+             (otherwise
+              ;; [TODO] Improve this case!
+              (lazy-assert nil "The expression ~a should be a list of keywords." (car expression))))
+         (make-UPat
+          :ops ops
+          :module-bind (or module-bind '_)
+          :op-bind (or op-bind '_)
+          :src (loop for src in (car srcs)
+                     for maybe-pat = (make-upat-from-form src :module->ops module->ops :allow-not-upat-p t)
+                     collect (or maybe-pat (make-uform :form src)))
+          ;; [TODO] Parse attributes
+          :attrs nil)))
+      (otherwise
+       (lazy-assert nil "Not a valid upat: ~a" expression)))))
+
+(defmacro Pattern (A -> B)
+  (assert (string= "->" (symbol-name ->)) () "Pattern: A -> B")
+  (let ((a1 (make-upat-from-form A))
+        (b1 (make-upat-from-form B)))
+    `(make-compiled-pattern
+      ,a1 ,b1 ,(print (upat-make-fxn-from-upat a1 b1)))))
+
+(progn
+  (let ((upat
+          (UPat (((op) :ADD :SUB)
+                 ((:ADD (x (:NEG (m)))) b)))))
+    (print upat)
+    (print (upat-expand upat)))
+  nil)
+
+(defun pm-rewrite-node (pm node graph)
+  (declare (type Pattern-Matcher pm) (type node node) (type graph graph)
+           (optimize (speed 3)))
+  (loop for pat in (gethash (node-type node) (pattern-matcher-pdict pm))
+        for ret = (pattern-match pat node graph)
+        if ret do (return-from pm-rewrite-node ret)))
+
+(defun graph-rewrite (graph pm)
+  (loop for out in (graph-outputs graph) do
+    (%graph-rewrite graph pm :root (id->value graph out))))
+
+(defun %graph-rewrite (graph pm &key root (max-stage 200000))
+  (declare (type Graph graph) (type Pattern-Matcher pm) (type node root)
+           (type fixnum max-stage)
+           (optimize (speed 3)))
+  (let ((ctx (make-graph-rewrite pm)) (stacks) (count 0))
+    (declare (type fixnum count) (type list stacks))
+    (macrolet ((append-queue (node replacement)
+                 `(progn (push (list ,node count ,replacement) stacks) (incf count)))
+               (pop-queue ()
+                 `(progn (decf count) (pop stacks))))
+      (append-queue root root)
+      (loop until (= count 0)
+            for q = (pop-queue)
+            for n of-type node = (nth 0 q) for stage of-type fixnum = (nth 1 q) for new-n of-type node = (nth 2 q) do
+              (when (>= stage max-stage) (error "infinite loop in %graph-rewrite"))
+              (when (null (gethash (node-id n) (graph-rewrite-replace ctx)))
+                (case stage
+                  (0
+                   )
+                  (1
+                   )
+                  (otherwise
+                   )))))))
+
+(defmacro PatternMatcher (&rest forms)
+  `(make-pattern-matcher
+    (list
+     ;; todo: allow doing like t -> ((node graph) )
+     ,@(loop for form in forms collect `(Pattern ,@form)))))
+
+(print
+ (PatternMatcher
+  ((:ADD (a b)) -> (:MUL (A B)))
+  ))
+
+(defmacro define-pattern-matcher ())
+;; Rename <UPAT>?
+;; If recursive, they should be start w/ <UPAT>?
+(defmacro UPat (expression)
+  "
+```
+(UPat Expression)
+```
+
+A convenient macro for constructing.
+
+Notation:
+```
+(<Trigger> (src) :attribute (match) ...)
+```
+
+<Trigger> could be one of:
+- A opname (e.g.: `:ADD`)`
+- A list of opnames `(e.g.: `((<OP_BIND>) :ADD :SUB))`
+- A module name (e.g.: `((<MOD_BIND> <OP_BIND>) :Module :GRAPH/MODULE ...)`)
+
+src/dst could be a list or variable.
+"
+  `(make-upat-from-form ',expression))
 ;; ~~ utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern symbol-eq (to-what)
   `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
