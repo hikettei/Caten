@@ -3,14 +3,6 @@
 ;; = Add: ./test-suite/test-pattern-matcher.lisp
 ;; = Support: ~ notation in args
 ;; ~~~ Reimplementation ~~~~~~~~~~
-(defstruct GraphRewrite)
-(defstruct (Pattern-Matcher
-            (:constructor %make-pattern-matcher (patterns pdict)))
-  (patterns patterns :type list)
-  (pdict pdict :type hash-table))
-(defstruct Pattern
-  (match-upat)
-  (accept-upat))
 ;; PatternAST
 (defstruct UForm (form))
 (defstruct UPat
@@ -20,13 +12,41 @@
   (src nil :type list) ;; a list of UPat or UForm
   (attrs nil :type list))
 
+(defmethod make-load-form ((upat UPat) &optional env)
+  (declare (ignore env))
+  `(make-upat :ops (list ,@(upat-ops upat))
+              :module-bind ',(upat-module-bind upat)
+              :op-bind ',(upat-op-bind upat)
+              :src (list ,@(upat-src upat))
+              :attrs nil)) ;; TODO!
+
+(defmethod make-load-form ((uform UForm) &optional env)
+  (declare (ignore env))
+  `(make-uform :form ',(uform-form uform)))
+;; Rewriters
+(defstruct (Pattern-Matcher
+            (:constructor %make-pattern-matcher (patterns pdict)))
+  (patterns patterns :type list)
+  (pdict pdict :type hash-table))
+(defstruct (Compiled-Pattern
+            (:constructor make-compiled-pattern (match-upat accept-upat fxn)))
+  (match-upat match-upat :type UPat)
+  (accept-upat accept-upat :type UPat)
+  (fxn fxn :type function))
+
+(defstruct (Graph-Rewrite
+            (:constructor make-graph-rewrite (pm)))
+  (pm pm :type Pattern-Matcher)
+  (replace (make-hash-table) :type hash-table))
+   
 (defun make-pattern-matcher (patterns)
   (declare (type list patterns))
   (let ((pdict (make-hash-table)))
     (dolist (p patterns)
-      (assert (upat-p p))
-      (dolist (op (upat-ops p))
-        (setf (gethash op pdict) (append (gethash op pdict) (list p)))))
+      (assert (compiled-pattern-p p)) ;; here
+      (let ((ptn (compiled-pattern-match-upat p)))
+        (dolist (op (upat-ops ptn))
+          (setf (gethash op pdict) (append (gethash op pdict) (list ptn))))))
     (%make-pattern-matcher patterns pdict)))
 
 (defgeneric upat-expand-as-match-form (upat))
@@ -43,34 +63,32 @@
 (defmethod upat-expand-as-match-form ((upat UForm)) (uform-form upat))
 
 (defmethod upat-expand-as-accept-form ((upat UPat))
+  (assert (= 1 (length (upat-ops upat))))
+  ;; [TODO] Node-Writesがないのでどうにかする
   `(make-node
-    :class
-    :type
-    :writes
-    :reads
-    :attrs))
+    ,(attribute->instance (car (upat-ops upat)))
+    ,(car (upat-ops upat))
+    nil
+    (list ,@(map 'list #'upat-expand-as-accept-form (upat-src upat)))
+    ;; TODO [Attrs]
+    ))
 
 (defmethod upat-expand-as-accept-form ((upat UForm)) (uform-form upat))
 
-(defmethod upat-compile ((upat1 UPat) (upat2 UPat))
+(defun upat-make-fxn-from-upat (upat1 upat2)
   (with-gensyms (node-bind)
     `(lambda (,node-bind)
        (declare (type Node ,node-bind))
        (match ,node-bind
-         (,(upat-expand upat1) ,(upat-expand upat2))))))
-
-(defun upat-match (upat node)
-  (declare (type upat upat) (type node node))
-  
-  )
+         (,(upat-expand-as-match-form upat1) ,(upat-expand-as-accept-form upat2))))))
 ;; UPat Creation
-(defun recursively-convert-upat (expression &key (module->ops (debug/attrs-by-module)) (allow-not-upat-p nil))
+(defun make-upat-from-form (expression &key (module->ops (debug/attrs-by-module)) (allow-not-upat-p nil))
   ;; FindAttr is doable at the moment expanding upat
   (macrolet ((lazy-assert (form is fmt &rest args &aux (id (gensym)))
                (declare (ignore is))
                `(let ((,id ,form))
                   (if allow-not-upat-p
-                      (return-from recursively-convert-upat nil)
+                      (return-from make-upat-from-form nil)
                       (assert ,id () ,fmt ,@args)))))
     (match expression
       ((list* trigger srcs) ;; MEMO: start w/ upat?
@@ -99,12 +117,19 @@
           :module-bind (or module-bind '_)
           :op-bind (or op-bind '_)
           :src (loop for src in (car srcs)
-                     for maybe-pat = (recursively-convert-upat src :module->ops module->ops :allow-not-upat-p t)
+                     for maybe-pat = (make-upat-from-form src :module->ops module->ops :allow-not-upat-p t)
                      collect (or maybe-pat (make-uform :form src)))
           ;; [TODO] Parse attributes
           :attrs nil)))
       (otherwise
        (lazy-assert nil "Not a valid upat: ~a" expression)))))
+
+(defmacro Pattern (A -> B)
+  (assert (string= "->" (symbol-name ->)) () "Pattern: A -> B")
+  (let ((a1 (make-upat-from-form A))
+        (b1 (make-upat-from-form B)))
+    `(make-compiled-pattern
+      ,a1 ,b1 ,(print (upat-make-fxn-from-upat a1 b1)))))
 
 (progn
   (let ((upat
@@ -114,23 +139,51 @@
     (print (upat-expand upat)))
   nil)
 
-(defun pm-rewrite-graph (pattern-matcher graph)
+(defun pm-rewrite-node (pm node graph)
+  (declare (type Pattern-Matcher pm) (type node node) (type graph graph)
+           (optimize (speed 3)))
+  (loop for pat in (gethash (node-type node) (pattern-matcher-pdict pm))
+        for ret = (pattern-match pat node graph)
+        if ret do (return-from pm-rewrite-node ret)))
 
-  )
+(defun graph-rewrite (graph pm)
+  (loop for out in (graph-outputs graph) do
+    (%graph-rewrite graph pm :root (id->value graph out))))
+
+(defun %graph-rewrite (graph pm &key root (max-stage 200000))
+  (declare (type Graph graph) (type Pattern-Matcher pm) (type node root)
+           (type fixnum max-stage)
+           (optimize (speed 3)))
+  (let ((ctx (make-graph-rewrite pm)) (stacks) (count 0))
+    (declare (type fixnum count) (type list stacks))
+    (macrolet ((append-queue (node replacement)
+                 `(progn (push (list ,node count ,replacement) stacks) (incf count)))
+               (pop-queue ()
+                 `(progn (decf count) (pop stacks))))
+      (append-queue root root)
+      (loop until (= count 0)
+            for q = (pop-queue)
+            for n of-type node = (nth 0 q) for stage of-type fixnum = (nth 1 q) for new-n of-type node = (nth 2 q) do
+              (when (>= stage max-stage) (error "infinite loop in %graph-rewrite"))
+              (when (null (gethash (node-id n) (graph-rewrite-replace ctx)))
+                (case stage
+                  (0
+                   )
+                  (1
+                   )
+                  (otherwise
+                   )))))))
 
 (defmacro PatternMatcher (&rest forms)
   `(make-pattern-matcher
     (list
      ;; todo: allow doing like t -> ((node graph) )
-     (loop for form in forms
-           for nth upfrom 0
-           collect
-           (match form
-             ((list match (symbol-eq '->) accept)
-              
-              )
-             (otherwise
-              (error "Error accepting in ~ath pattern" nth)))))))
+     ,@(loop for form in forms collect `(Pattern ,@form)))))
+
+(print
+ (PatternMatcher
+  ((:ADD (a b)) -> (:MUL (A B)))
+  ))
 
 (defmacro define-pattern-matcher ())
 ;; Rename <UPAT>?
@@ -155,7 +208,7 @@ Notation:
 
 src/dst could be a list or variable.
 "
-  `(recursively-convert-upat ',expression))
+  `(make-upat-from-form ',expression))
 ;; ~~ utils ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defpattern symbol-eq (to-what)
   `(and (type symbol) (satisfies (lambda (x) (equalp (symbol-name x) ,to-what)))))
