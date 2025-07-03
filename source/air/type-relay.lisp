@@ -2,11 +2,31 @@
 
 ;; Difficult Point:
 ;; How to prepresent (A B) Tensor for example?
-(defstruct (Typed
-            (:constructor make-typed (dtype shape)))
-  (dtype dtype :type keyword)
-  (shape shape :type list))
+(defclass TypeRelay () nil)
+;; The definition should be at aasm!
+(defclass TensorRelay (TypeRelay )
+  )
+(defclass ASTRelay (TypeRelay) nil) ;; 例えばForのBodyは常にEXPRみたいなことが言えるはず
 
+(defstruct (Typed
+            (:constructor make-typed (dtype shape stride views)))
+  (dtype dtype :type keyword)
+  (shape shape :type list)
+  (stride stride :type list)
+  (views views :type list)
+  (nrank (length shape) :type fixnum)
+  (inferred-permute nil :type list)
+  (orig-buffer-shape nil :type list)
+  (depend-idx-list nil :type list)) ;; should not be used!
+
+;; [TODO] Typedのような簡易的なものではなく，RelayBufferのような全ての地点のTrackingをするべき？
+;; 進め方:
+;; - 0から新しいTypedを作る (w/ shape, view etc)
+;; - [ ] codegen/shape-inferece.lispをもとに，attrsのTypeRelayを書き直す
+;;   - [ ] ASTもTypeRelayできるようにする。
+;;   - 
+;; - 既存のcodegen, Typed Basedで書き直す
+;; - (なぜならTypeInferenceはASTにも適用したいから)
 (defun graph-infer-type-relay (graph)
   (declare (type graph graph) (optimize (speed 3)))
   (let ((id->type-map (make-hash-table)) (nodes (tpsort-graph graph)))
@@ -22,6 +42,6 @@
                   for w in (node-writes node) do
                     (setf (gethash w id->type-map) ot)))
     (loop for node in nodes do
-      (print node)      
+      (print node)
       )
     id->type-map))
