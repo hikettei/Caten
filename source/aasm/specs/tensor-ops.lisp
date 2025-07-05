@@ -9,7 +9,7 @@
 ;; +)__________________________________________________________________
 ;;                                                             | 26 Ops
 (eval-when (:compile-toplevel :load-toplevel :execute)
-;; TypeInference
+;; ~~ TypeInference ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass TensorRelay (AType)
   ((shape :accessor tensor-relay-shape :initarg :shape :initform nil :type list)
    (stride :accessor tensor-relay-stride :initarg :stride :initform nil :type list)
@@ -17,16 +17,35 @@
    (views :accessor tensor-relay-views :initarg :views :initform nil :type list)
    (nrank :accessor tensor-relay-nrank :initarg :nrank :initform 0 :type fixnum)
    (value :accessor tensor-relay-value :initarg :value :initform nil)
-   (inferred-permute :accessor tensor-relay-inferred-permute :initform nil)
-   (orig-buffer-shape :accessor tensor-relay-orig-buffer-shape :initform nil)
+   (inferred-permute :accessor tensor-relay-inferred-permute :initarg :permute :initform nil)
+   (orig-buffer-shape :accessor tensor-relay-orig-buffer-shape :initarg :orig-shape :initform nil)
    (depend-idx-list :accessor tensor-relay-depend-idx-list :initform nil)))
 
-(defun make-tensor-relay (shape stride dtype views &key (value nil))
+(defun make-tensor-relay (shape stride dtype views &key (value nil) (permute nil) (orig-shape nil))
   (declare (type keyword dtype))
   (when (null views) (setf views (loop for s in shape collect nil)))
   (assert (= (length shape) (length stride) (length views)))
-  (make-instance 'TensorRelay :shape shape :stride stride :dtype dtype :views views :value value :nrank (length shape)))
+  (make-instance 'TensorRelay :shape shape :stride stride :dtype dtype :views views :value value :nrank (length shape) :permute permute :orig-shape orig-shape))
 
+(defun merge-with-initial-value (node-reads realized-args)
+  (assert (= (length node-reads) (length realized-args)))
+  (loop for nr in node-reads
+        for rr in realized-args
+        if (numberp nr) ;; i.e.: Constant
+          collect nr
+        else ;; i.e.: Symbolic
+        collect (if rr (or (tensor-relay-value rr) nr) nr)))
+
+(defun assert-verify-tensor-relay (id->type node &key (assert-scalar nil))
+  (mapc
+   #'(lambda (x nth &aux (type (gethash x id->type)))
+       (when type
+         (assert (typep type 'TensorRelay) () "TensorIR only accepts TensorRelay typed variables. In the ~ath var of node ~a" nth node)
+         (when assert-scalar
+           (assert (= 0 (tensor-relay-nrank type)) () "In the ~ath variable of node ~a.~%This should be a scalar." nth node))))
+   (node-reads node)
+   (range 0 (length (node-reads node)))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
    (_read_views :initform nil :initarg :_read_views) ;; [TODO] Removable
@@ -55,7 +74,15 @@ UnaryOps applies an operaton to the first given read value and overwrites the re
 out <- f(x)
 ```"))
 
-(defun make-type-relay (n) #'(lambda (id->type node) (list (gethash (nth n (node-reads node)) id->type))))
+(defun make-type-relay (n)
+  #'(lambda (id->type node &aux (type (gethash (nth n (node-reads node)) id->type)))
+      (assert type () "The variable ~a is not defined in the graph?" (nth n (node-reads node)))
+      (assert-verify-tensor-relay id->type node)
+      (list
+       (make-tensor-relay (copy-list (tensor-relay-shape type)) (copy-list (tensor-relay-stride type))
+                          (tensor-relay-dtype type) (copy-list (tensor-relay-views type))
+                          :value (when (eql (node-type node) :LOAD) (getattr node :value)) ;; Only :LOAD can create a value!
+                          :permute (copy-list (tensor-relay-inferred-permute type)) :orig-shape (copy-list (tensor-relay-orig-buffer-shape type))))))
 
 (defnode (:UnaryOps :NEG) (UnaryOps JITAble)
 	 "The node :NEG flips the sign of the first read tensor, writing the result to the first write.
@@ -119,10 +146,8 @@ out = lognot(x) (if integer)
 	 "The node :CAST casts the first read tensor into `:dtype`, writing the result into the first write."
 	 :slots ((dtype :type dtype-t))
          :type-relay #'(lambda (id->type node &aux (out (funcall (make-type-relay 0) id->type node)))
-                         (assert out)
-                         (setf out (copy-typed out)
-                               (typed-dtype out) (getattr node :dtype))
-                         (list out)))
+                         (setf (tensor-relay-dtype (car out)) (getattr node :dtype))
+                         out))
 
 (defclass BinaryOps ()
   ((reduction :initarg :reduction :initform nil :type boolean)
@@ -290,8 +315,11 @@ out = allocate(*shape, *stride)
 		 (from :initform nil)
                  (pool :initform nil :type (or null Buffer)))
          :type-relay #'(lambda (id->type node)
-                         (declare (ignore id->type))
-                         (list (make-typed (getattr node :dtype) (subseq (node-reads node) 0 (getattr node :nrank))))))
+                         (assert-verify-tensor-relay id->type node :assert-scalar t)
+                         (let ((args (merge-with-initial-value (node-reads node) (map 'list #'(lambda (x) (or (gethash x id->type) x)) (node-reads node))))
+                               (nrank (getattr node :nrank)))
+                           (assert (= (length (node-reads node)) (* 2 nrank)) () "Failed to verify :ALLOCATE. Invaild number of node-reads (~a)" node)
+                           (make-tensor-relay (subseq args 0 nrank) (subseq args nrank (* 2 nrank))  (getattr node :dtype) nil))))
 
 (defnode (:Buffer :LOAD) (BufferOps JITAble)
 	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
@@ -329,12 +357,22 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
 		 (permute :type list :initform nil)
                  (tr :initform nil))
          :type-relay #'(lambda (id->type node)
-                         (list
-                          (make-typed
-                           (typed-dtype
-                            (or (gethash (car (node-reads node)) id->type)
-                                (error "The first argument of VIEW is not defined.")))
-                           (subseq (node-reads node) 1 (1+ (getattr node :nrank)))))))
+                         (assert-verify-tensor-relay id->type node :assert-scalar t)
+                         (macrolet ((nsubseq (x y z) `(subseq ,x (1+ ,y) (1+ ,z))))
+                           (let* ((args (merge-with-initial-value (node-reads node) (map 'list #'(lambda (x) (or (gethash x id->type) x)) (node-reads node))))
+                                  (nrank (getattr node :nrank))
+                                  (shape (nsubseq args 0 nrank))
+                                  (upfrom (nsubseq args nrank (* 2 nrank)))
+                                  (below (nsubseq args (* 2 nrank) (* 3 nrank)))
+                                  (by (nsubseq args (* 3 nrank) (* 4 nrank)))
+                                  (stride (nsubseq args (* 4 nrank) (* 5 nrank)))
+                                  (bc (getattr node :broadcast))
+                                  (base (gethash (car (node-reads node)) id->type)))
+                             (assert base ())
+                             (assert (= (length (node-reads node)) (* 5 nrank)) () "Failed to verify :VIEW, Invaild number of node-reads (~a)" node)
+                             (list
+                              (make-tensor-relay shape stride (tensor-relay-dtype base) (loop for i upfrom 0 below (length shape) collect (list (nth i upfrom) (nth i below) (nth i by) (nth i bc)))
+                                                 :permute (getattr node :permute) :orig-shape (copy-list (or (tensor-relay-orig-buffer-shape base) (tensor-relay-shape base)))))))))
 
 (defclass Indexing () nil)
 (defnode (:Indexing :Index-Components) (Indexing JITAble)
