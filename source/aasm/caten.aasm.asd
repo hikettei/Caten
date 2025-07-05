@@ -7,7 +7,9 @@
   :components
   ((:file "package")
    (:file "helpers")
-   (:file "attrs")
+   (:file "specs/tensor-ops")
+   (:file "specs/render-ops")
+   (:file "specs/runtime-ops")
    (:file "ctx")
    (:file "tensor-ir")
    (:file "ops")

@@ -1,11 +1,13 @@
 (in-package :caten/air)
 
-;; Difficult Point:
+;; Difficult Point:aa
 ;; How to prepresent (A B) Tensor for example?
 (defclass TypeRelay () nil)
 ;; The definition should be at aasm!
-(defclass TensorRelay (TypeRelay )
+(defclass TensorRelay (TypeRelay)
+  nil
   )
+
 (defclass ASTRelay (TypeRelay) nil) ;; 例えばForのBodyは常にEXPRみたいなことが言えるはず
 
 (defstruct (Typed
