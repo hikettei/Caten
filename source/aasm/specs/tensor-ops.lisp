@@ -11,18 +11,32 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
 ;; TypeInference
 (defclass TensorRelay (AType)
-  nil)
-  
+  ((shape :accessor tensor-relay-shape :initarg :shape :initform nil :type list)
+   (stride :accessor tensor-relay-stride :initarg :stride :initform nil :type list)
+   (dtype :accessor tensor-relay-dtype :initarg :dtype :type keyword)
+   (views :accessor tensor-relay-views :initarg :views :initform nil :type list)
+   (nrank :accessor tensor-relay-nrank :initarg :nrank :initform 0 :type fixnum)
+   (value :accessor tensor-relay-value :initarg :value :initform nil)
+   (inferred-permute :accessor tensor-relay-inferred-permute :initform nil)
+   (orig-buffer-shape :accessor tensor-relay-orig-buffer-shape :initform nil)
+   (depend-idx-list :accessor tensor-relay-depend-idx-list :initform nil)))
+
+(defun make-tensor-relay (shape stride dtype views &key (value nil))
+  (declare (type keyword dtype))
+  (when (null views) (setf views (loop for s in shape collect nil)))
+  (assert (= (length shape) (length stride) (length views)))
+  (make-instance 'TensorRelay :shape shape :stride stride :dtype dtype :views views :value value :nrank (length shape)))
+
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
    (_read_views :initform nil :initarg :_read_views) ;; [TODO] Removable
    (_output_type :initform nil :initarg :_output_type) ;; [TODO] Removable
-   (declare-type :initarg :declare-type :initform nil)
-   (iterations :initarg :iterations :initform nil)
-   (_lowering_history :initform nil :initarg :_lowering_history)
+   (declare-type :initarg :declare-type :initform nil) ;; [TODO] Removable if we refactor codegen
+   (iterations :initarg :iterations :initform nil) ;; [TODO] Removable if we refactor codegen
+   (_lowering_history :initform nil :initarg :_lowering_history) ;; Responsible for determining the kernel_name
    ;; Metadata for Vectorize
-   (parent-node-id :initform nil :initarg :parent-node-id)
-   (unroll-history :initform nil :initarg :unroll-history))
+   (parent-node-id :initform nil :initarg :parent-node-id) ;; [TODO] Removable
+   (unroll-history :initform nil :initarg :unroll-history)) ;; [TODO] Removable
   (:documentation "This node is jitable.
 - declare-type[boolean] When this option is set to T, it is necessary to declare the types of the variables included in. e.g.:
 ```
