@@ -78,6 +78,8 @@ Before creating a node using `make-node`, the node must be defined using `defnod
   (out-nth 0 :type fixnum)
   (type-relay nil :type (or null Relay)))
 
+(defun read-type-relay (node) (or (node-type-relay node) (error "Run graph-infer-type-relay first for the node ~a." node)))
+
 (defun make-node (class type writes reads &rest attrs)
   "
 ```lisp
