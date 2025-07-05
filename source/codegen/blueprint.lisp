@@ -39,7 +39,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                  for type = (read-type-relay node)
                  maximize
                  (loop for r in (append (relay-reads type) (relay-writes type))
-                       when r maximize (length (buffer-shape r)))))
+                       when r maximize (length (tensor-relay-shape r)))))
          (pid2space (make-hash-table :test #'equal))
          (candidates nil))
     ;; Assuming all buffers in the graph have reshaped to `kernel-rank` by the scheduler.
@@ -51,8 +51,8 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
              (check (buffer &key (noopt t))
                (when buffer
                  (let ((space (if noopt
-                                  (buffer-iteration-space base-graph buffer)
-                                  (buffer-merge-dims base-graph buffer))))
+                                  (tensor-relay-iteration-space base-graph buffer)
+                                  (tensor-relay-merge-dims base-graph buffer))))
                    (when space
                      (loop for s in (iteration-space-shape space)
                            for p in (iteration-space-procedure space)
@@ -121,15 +121,15 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
                          (nth (car p) view)
                          nil)))
              (fixup-dims (id original-buffer)
-               (when (and original-buffer (> (length (buffer-shape original-buffer)) 0))
+               (when (and original-buffer (> (length (tensor-relay-shape original-buffer)) 0))
                  ;; Caten cannot inference where to insert one here.
-                 (assert (= (length (buffer-shape original-buffer)) (1+ kernel-rank))
+                 (assert (= (length (tensor-relay-shape original-buffer)) (1+ kernel-rank))
                          ()
                          "(id=~a) Cannot uprank ~a into the space ~a. A original buffer should be upranked by the scheduler in advance.~%~a" id original-buffer found-space graph)
                  (multiple-value-bind (new-shape new-stride new-view)
-                     (values (merge-list procedure (buffer-shape original-buffer))
-                             (merge-stride procedure (new-stride (buffer-stride original-buffer) (buffer-views original-buffer)))
-                             (merge-view procedure (buffer-views original-buffer)))
+                     (values (merge-list procedure (tensor-relay-shape original-buffer))
+                             (merge-stride procedure (new-stride (tensor-relay-stride original-buffer) (tensor-relay-views original-buffer)))
+                             (merge-view procedure (tensor-relay-views original-buffer)))
                    (make-iteration-space
                     :shape new-shape
                     :strides new-stride
@@ -354,7 +354,7 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
       (when (and
              (find -1 insertable-positions)
              (every #'(lambda (x) (recursive-scalar-p ctx x)) (node-reads node)))
-        (let ((nrank (buffer-nrank (car (relay-writes (read-type-relay node))))))
+        (let ((nrank (tensor-relay-nrank (car (relay-writes (read-type-relay node))))))
           (when (and (> nrank 0) (getattr node :reduction :allow-undefined t))
             ;; The node is located out of the loop, scalarize it.
             ;; This will mutate constant as a pointer, or pointer as a constant.
@@ -365,9 +365,9 @@ The `lower-schedule-item` method infers loop boundaries based on `Schedule-item`
             ;; If only used in this blueprint
             (let ((users (id->users (ctx-schedule-graph ctx) (car (node-writes node)))))
               (if (some #'(lambda (x) (eql :kernel (getattr x :type))) users) ;; If the scalar is used in another jitable kernel?
-                  (let* ((dtype (buffer-dtype (car (relay-writes (read-type-relay node)))))
-                         (buffer (make-buffer `(1) `(0) dtype `((0 1 1 t)) :device 'RelayBuffer))
-                         (space (buffer-merge-dims (ctx-schedule-graph ctx) buffer)))
+                  (let* ((dtype (tensor-relay-dtype (car (relay-writes (read-type-relay node)))))
+                         (buffer (make-tensor-relay `(1) `(0) dtype `((0 1 1 t))))
+                         (space (tensor-relay-merge-dims (ctx-schedule-graph ctx) buffer)))
                     (setf (car (relay-write-iters (read-type-relay node))) space
                           (car (relay-writes (read-type-relay node))) buffer))
                   ;; Otherwise, its constant
@@ -446,15 +446,15 @@ Depends=~a Reduce=~a Users=~a
                 (graph-outputs (expr-graph e)) (node-writes node))
         e)))))
 
-(defun astify-blueprint (schedule-item bp rank &aux (caten/ir/expr::*expr-no-simplify-mode* t) (gid-seen (make-hash-table)))
+(defun astify-blueprint (schedule-item bp rank &aux (caten/aasm/expr::*expr-no-simplify-mode* t) (gid-seen (make-hash-table)))
   (declare (type list bp))
   (with-blueprint ()
     (loop for n in (node-reads schedule-item)
           for nt in (getattr schedule-item :read-types)
-          do (%global n (buffer-dtype nt) (> (buffer-nrank nt) 0)))
+          do (%global n (tensor-relay-dtype nt) (> (tensor-relay-nrank nt) 0)))
     (loop for w in (node-writes schedule-item)
           for wt in (getattr schedule-item :write-types)
-          do (%global w (buffer-dtype wt) (> (buffer-nrank wt) 0)))
+          do (%global w (tensor-relay-dtype wt) (> (tensor-relay-nrank wt) 0)))
     (labels ((sendexpr (expr)
                (dolist (n (graph-nodes (expr-graph expr))) (emit n))
                (expr-out expr))
@@ -481,14 +481,14 @@ Depends=~a Reduce=~a Users=~a
                        if (is-setf-p name) do
                          (let* ((load (emit (make-node :JIT :BIND (list (gensym "BIND")) (list name) :value (is-setf-p name)))))
                            (setf (nth nth (node-reads node)) (car (node-writes load))))
-                       else if (and buffer (> (buffer-nrank buffer) 0)) do
+                       else if (and buffer (> (tensor-relay-nrank buffer) 0)) do
                          (let ((aref (emit (%aref name (sendexpr (reduce #'expr-add (iteration-space-expr-aref ri buffer gids)))))))
                            (setf (nth nth (node-reads node)) (car (node-writes aref)))))
                  ;; Insert %setf if the node is reduction.
                  (when (getattr node :reduction :allow-undefined t)
                    (assert (not (find (car (node-writes node)) (node-writes schedule-item))) () "The reduction node ~a cannot be an output of the schedule-item." node)
                    (let* ((type (read-type-relay node))
-                          (aref (if (> (buffer-nrank (car (relay-reads type))) 0)
+                          (aref (if (> (tensor-relay-nrank (car (relay-reads type))) 0)
                                     (emit
                                      (%aref
                                       (car (node-reads node))
@@ -501,13 +501,13 @@ Depends=~a Reduce=~a Users=~a
                  ;; Also insert %setf if the node is an output of the schedule-item.
                  (when (or
                         (find (car (node-writes node)) (node-writes schedule-item))
-                        (> (buffer-nrank (car (relay-writes (read-type-relay node)))) 0))
+                        (> (tensor-relay-nrank (car (relay-writes (read-type-relay node)))) 0))
                    (when (null (find (car (node-writes node)) (node-writes schedule-item)))
                      ;; Insert a %global as a temporary buffer
-                     (%global (car (node-writes node)) (buffer-dtype (car (relay-writes (read-type-relay node)))) t))
+                     (%global (car (node-writes node)) (tensor-relay-dtype (car (relay-writes (read-type-relay node)))) t))
                    (assert (null (getattr node :reduction :allow-undefined t)) () "The node ~a cannot be a reduction node." node)
                    (let* ((type (read-type-relay node))
-                          (aref (if (> (buffer-nrank (car (relay-writes type))) 0)
+                          (aref (if (> (tensor-relay-nrank (car (relay-writes type))) 0)
                                     (emit
                                      (%aref
                                       (car (node-writes node))
@@ -648,8 +648,8 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
   (assert (gflops-measurer-ops gfm))
   (when (zerop elapsed) (return-from compute-gflops nil)) ;; Elapsed Time = 0.0
   (let* ((ops (apply #'expr-realize (gflops-measurer-ops gfm) params))
-         (_ (assert (numberp (buffer-value ops)) () "measure-gflpos: the result is not a number."))
-         (gflops (/ (buffer-value ops) (* elapsed 1e9))))
+         (_ (assert (numberp (tensor-relay-value ops)) () "measure-gflpos: the result is not a number."))
+         (gflops (/ (tensor-relay-value ops) (* elapsed 1e9))))
     (declare (ignore _))
     gflops))
 (defmethod schedule-item-flops (node &aux (total-flops))
