@@ -2,7 +2,8 @@
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
-(defclass ASTRelay (AType) nil) ;; 例えばForのBodyは常にEXPRみたいなことが言えるはず
+(defclass ASTRelay (AType)
+  nil)
 
 (defclass RenderOps ()
   ((is-empty :initform nil :initarg :is-empty))
@@ -81,12 +82,11 @@ ID <- BARRIER()
 ```
 " :slots nil)
 
-(defnode (:Render :EXPR) (RenderOps) ;; TODO: Rename EXPR -> ALU?
+(defnode (:Render :EXPR) (RenderOps)
          "
 ```
 ID <- EXPR(NODE)
 ```
-ALU
 "
          :slots nil)
 
