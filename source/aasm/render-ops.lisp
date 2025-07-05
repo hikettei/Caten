@@ -98,19 +98,19 @@ Constraints:
 (defun %gid (rank graph range local-size &key (dtype :int64) (id (gensym "G")))
   (let* ((loop-size
            (if (numberp (car (node-reads range)))
-               (caten/ir/expr:expr-const (car (node-reads range)) :float32)
+               (caten/aasm/expr:expr-const (car (node-reads range)) :float32)
                (let ((expr (id->value graph (car (node-reads range)))))
                  (assert (and expr (eql (node-type expr) :EXPR)) () "%gid: The parent for Range must be fixnum or EXPR.")
-                 (caten/ir/expr:make-expr
+                 (caten/aasm/expr:make-expr
                   :graph (ast-descendants-graph graph (map 'list #'(lambda (x) (id->value graph x)) (node-reads expr)))
                   :out (id->value graph (car (node-reads expr)))))))
-         (loop-size (caten/ir/expr:expr-cast loop-size :float32))
-         (local-size (caten/ir/expr:expr-const local-size :float32))
-         (size (caten/ir/expr:expr-ceiling (caten/ir/expr:expr-div loop-size local-size) dtype)))
+         (loop-size (caten/aasm/expr:expr-cast loop-size :float32))
+         (local-size (caten/aasm/expr:expr-const local-size :float32))
+         (size (caten/aasm/expr:expr-ceiling (caten/aasm/expr:expr-div loop-size local-size) dtype)))
     (emit (make-node :JIT :SPACE (list id) nil :level :block :rank rank :dtype dtype :size size))))
 
 (defun %lid (rank size &key (dtype :int64) (id (gensym "L")))
-  (emit (make-node :JIT :SPACE (list id) nil :level :thread :rank rank :dtype dtype :size (caten/ir/expr:expr-const size dtype))))
+  (emit (make-node :JIT :SPACE (list id) nil :level :thread :rank rank :dtype dtype :size (caten/aasm/expr:expr-const size dtype))))
 ;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun Empty! (node)
   (assert (typep (node-attr node) 'RenderOps))
