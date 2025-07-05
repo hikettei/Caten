@@ -19,14 +19,22 @@
    (value :accessor tensor-relay-value :initarg :value :initform nil)
    (inferred-permute :accessor tensor-relay-inferred-permute :initarg :permute :initform nil)
    (orig-buffer-shape :accessor tensor-relay-orig-buffer-shape :initarg :orig-shape :initform nil)
-   (depend-idx-list :accessor tensor-relay-depend-idx-list :initform nil)
+   (depend-idx-list :accessor tensor-relay-depend-idx-list :initarg :depend-idx-list :initform nil)
    (iterspace :accessor tensor-relay-iterspace)))
 
-(defun make-tensor-relay (shape stride dtype views &key (value nil) (permute nil) (orig-shape nil))
+(defun make-tensor-relay (shape stride dtype views &key (value nil) (permute nil) (orig-shape nil) (depend-idx-list nil))
   (declare (type keyword dtype))
   (when (null views) (setf views (loop for s in shape collect nil)))
   (assert (= (length shape) (length stride) (length views)))
-  (make-instance 'TensorRelay :shape shape :stride stride :dtype dtype :views views :value value :nrank (length shape) :permute permute :orig-shape orig-shape))
+  (make-instance 'TensorRelay :shape shape :stride stride :dtype dtype :views views :value value :nrank (length shape) :permute permute :orig-shape orig-shape :depend-idx-list depend-idx-list))
+
+(defun copy-tensor-relay (relay)
+  (declare (type TensorRelay relay))
+  (make-tensor-relay (copy-list (tensor-relay-shape relay)) (copy-list (tensor-relay-stride relay)) (tensor-relay-dtype relay)
+                     (copy-list (tensor-relay-views relay))
+                     :value (tensor-relay-value relay)
+                     :permute (copy-list (tensor-relay-inferred-permute relay))
+                     :depend-idx-list (copy-list (tensor-relay-depend-idx-list relay))))
 
 (defun merge-with-initial-value (node-reads realized-args)
   (assert (= (length node-reads) (length realized-args)))
@@ -48,7 +56,7 @@
    (nthcdr nthcdr (range 0 (length (node-reads node))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass JITAble ()
-  ((_type_relay :initarg :_type_relay)
+  ((_type_relay :initarg :_type_relay) ;; [TODO] removable
    (_read_views :initform nil :initarg :_read_views) ;; [TODO] Removable
    (_output_type :initform nil :initarg :_output_type) ;; [TODO] Removable
    (declare-type :initarg :declare-type :initform nil) ;; [TODO] Removable if we refactor codegen

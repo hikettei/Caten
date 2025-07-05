@@ -13,4 +13,4 @@
   (:export #:Attribute #:defnode #:debug/render-defined-nodes #:debug/attrs-by-module #:node-build-documentation-by-class #:verify-args #:dump-into-list)
   (:export #:->dot #:pprint-graph)
   ;; TypeRelay API
-  (:export #:AType #:Relay #:relay-reads #:relay-writes #:node-type-relay #:read-type-relay #:graph-infer-type-relay))
+  (:export #:AType #:Relay #:make-relay #:relay-reads #:relay-writes #:node-type-relay #:read-type-relay #:graph-infer-type-relay))

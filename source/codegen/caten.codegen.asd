@@ -13,7 +13,7 @@
    (:file "rewriting-rules")
    (:file "memory-planner")
    (:file "scheduler")
-   (:file "exprify")
+   (:file "realize")
    (:file "blueprint")
    (:file "auto-scheduler/polyhedral")
    (:file "auto-scheduler/polyhedral-ast")
