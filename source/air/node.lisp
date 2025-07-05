@@ -21,6 +21,7 @@
   buffers)
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct Relay
+  "Contains a list of AType class, which is a result of type inference."
   (reads nil :type list) (writes nil :type list))
 
 (declaim (inline %make-node-inlined))
