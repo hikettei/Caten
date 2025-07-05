@@ -3,11 +3,27 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defclass ASTRelay (AType)
-  nil)
+  ((class :initarg :class :type :keyword :reader astrelay-class)))
 
 (defclass RenderOps ()
   ((is-empty :initform nil :initarg :is-empty))
   (:documentation "RenderOps is a class that represents the operation of rendering the node to the target language."))
+
+(defun ast-type-map (out-form &rest args)
+  (assert (keywordp out-form) () "out-form should be a keyword and determined in a compilation time.")
+  (lambda (id->type node)
+    (loop for arg in args
+          for nth upfrom 0
+          for var = (gethash (nth nth (node-reads node)) id->type) do
+            (when (symbolp (nth nth (node-reads node)))
+              (assert var () "The ~ath argument in the node ~a is not defined." nth node)
+              (typecase arg
+                (list
+                 (assert (find (astrelay-class var) arg) () "The expected ast as ~ath argument is ~a, in~%~a" nth arg node))
+                (function
+                 (funcall arg var))
+                (otherwise (error "not implemented match case: ~a" arg)))))
+     (list (make-instance 'ASTRelay :class out-form))))
 ;;;; Control Flows
 (defnode (:Render :RANGE) (RenderOps)
          "
@@ -19,7 +35,8 @@ The node :RANGE will generate a variable named `idx` (with dtype which is an int
 
 The compiler will assume SIZE/STEP is always an integer, or a node typed :EXPR.
 "
-         :slots ((idx) (dtype)))
+         :slots ((idx) (dtype))
+         :type-relay (ast-type-map :RANGE '(:EXPR) '(:EXPR)))
 
 (defnode (:Render :FOR) (RenderOps)
          "
@@ -50,7 +67,8 @@ If the `parallel` attribute is set to a positive integer, the compiler will try 
 "
          :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)
                  (band :initform nil)
-                 (parallel :initform 0 :type (integer 0))))
+                 (parallel :initform 0 :type (integer 0)))
+         :type-relay (ast-type-map :FOR '(:RANGE) '(:PROGN :FOR :IF :EXPR :BARRIER)))
 
 (defnode (:Render :IF) (RenderOps)
          "
@@ -63,7 +81,8 @@ The node `IF` will execute `then` only when condition is evaluated to True.
 - The variable `CONDITION` is always an EXPR.
 - The variable `THEN` is always RenderOps.
 "
-         :slots nil)
+         :slots nil
+         :type-relay (ast-type-map :IF '(:EXPR) '(:PROGN :FOR :IF :EXPR :BARRIER)))
 
 (defnode (:Render :PROGN) (RenderOps)
          "
@@ -73,14 +92,16 @@ ID <- PROGN(S1, S2, ..., Sn)
 
 The node `:PROGN` will execute nodes from S1 to Sn in sequence. S1 ~ Sn is a node which is a type of RenderOps.
 "
-         :slots nil)
+         :slots nil
+         :type-relay (ast-type-map :PROGN))
 
 (defnode (:Render :BARRIER) (RenderOps)
          "
 ```
 ID <- BARRIER()
 ```
-" :slots nil)
+" :slots nil
+  :type-relay (ast-type-map :BARRIER))
 
 (defnode (:Render :EXPR) (RenderOps)
          "
@@ -88,7 +109,8 @@ ID <- BARRIER()
 ID <- EXPR(NODE)
 ```
 "
-         :slots nil)
+         :slots nil
+         :type-relay (ast-type-map :EXPR)) ;; [TODO] Verify!
 
 (defnode (:Render :DEFINE-GLOBAL) (RenderOps)
          "
@@ -97,7 +119,8 @@ X <- ()
 ```
 Declares a buffer.
 "
-         :slots ((dtype) (pointer-p :type boolean) (mode :type (member :io :read :write) :initform :io)))
+         :slots ((dtype) (pointer-p :type boolean) (mode :type (member :io :read :write) :initform :io))
+         :type-relay (ast-type-map :DEFINE-GLOBAL))
 ;;; JITOps
 (defnode (:JIT :Aref) (RenderOps) ;; TODO: Rename Aref -> LOAD?
          "
@@ -105,7 +128,8 @@ Declares a buffer.
 X <- Aref(Array, Index)
 ```
 "
-         :slots nil)
+         :slots nil
+         :type-relay (ast-type-map :Aref))
 
 (defnode (:JIT :SWIZZLE) (RenderOps)
          "
@@ -116,7 +140,8 @@ X <- A.[x|y|z|...]
 ```
 Unlike `aref`, a position of the access is fixed.
 "
-         :slots ((index :type fixnum)))
+         :slots ((index :type fixnum))
+         :type-relay (ast-type-map :SWIZZLE))
 
 (defnode (:JIT :SETF) () ;; TODO: Rename SETF -> STORE?
          "
@@ -124,14 +149,16 @@ Unlike `aref`, a position of the access is fixed.
 ID <- SETF(AREF(TARGET, IDX), EXPR(...)) 
 ```
 Writes the value of EXPR into the corresponding region of AREF.
-")
+"
+         :type-relay (ast-type-map :SETF))
 
 (defnode (:JIT :BIND) ()
          "
 ```
 ID <- BIND(X, value=value)
 ```"
-         :slots ((value)))
+         :slots ((value))
+         :type-relay (ast-type-map :BIND))
 
 (defnode (:JIT :SPACE) () ;; TODO: Rename SPACE -> GID?
          "
@@ -143,13 +170,12 @@ Corresponds to:
          :slots ((level :type (member :block :thread))
                  (rank  :type (integer 0 3))
                  (dtype :type keyword)
-                 (size)))
-
+                 (size))
+         :type-relay (ast-type-map :SPACE))
+         
 (defnode (:Render :DEFINE-SHARED-MEMORY) () "Declares a shared memory in the kenrel."
-         :slots ((dtype :type keyword) (size :type integer)))
+         :slots ((dtype :type keyword) (size :type integer))
+         :type-relay (ast-type-map :DEFINE-SHARED-MEMORY))
 
-(defnode (:Render :Function) () ;; [TODO] remove :function?
-         ""
-         :slots ((name :initform nil :type symbol)))
 ;; Note: More?
 )
