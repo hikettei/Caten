@@ -11,5 +11,6 @@
    (:file "specs/render-ops")
    (:file "specs/runtime-ops")
    (:file "tensor-ops")
+   (:file "render-ops")
    (:file "simplifiers")
    (:file "documentation")))
