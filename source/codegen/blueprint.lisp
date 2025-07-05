@@ -573,7 +573,8 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph)
-            (getattr schedule-item :blueprint) (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx))))))) 
+            (getattr schedule-item :blueprint) (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx))))
+      (simplify-ast (getattr schedule-item :blueprint)))))
 
 (defmethod print-blueprint (graph stream &aux (indent 0) (seen))
   ;; (caten/air:->dot graph :pathname "/tmp/graph.dot")

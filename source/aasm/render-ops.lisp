@@ -141,6 +141,8 @@ Constraints:
                                append (node-reads arg-new)
                              else if (null (empty-p arg-new))
                                     collect arg)))))))
+    ((:FOR (range (:PROGN (body))) :mark mark) -> (:FOR (range body) :mark mark))
+    ;; [TODO] Apply the same stuff on :IF above
     ((:IF ((:EXPR (cond1)) (:IF ((:EXPR (cond2)) body))))
      ->
      ((node graph)
