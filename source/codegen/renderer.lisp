@@ -1,14 +1,16 @@
 (defpackage :caten/codegen/renderer
-  (:use :cl :caten/codegen/iteration :caten/aasm :caten/runtime/buffer)
+  (:use :cl :caten/codegen/iteration :caten/aasm :caten/runtime/buffer :caten/air)
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
+  (:import-from #:caten/aasm/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p #:expr-from-graph)
   (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code #:->cdtype #:float-type-of)
   (:export
    #:get-default-renderer
-   #:%render-kernel
-   #:%compile-kernel
+   #:%render-kernel #:%compile-kernel
+   ;; Renderers
    #:Renderer
    #:Default-Renderer
    #:CStyle-Renderer
+   ;; Utils
    #:renderer-graph
    #:renderer-index-space
    #:make-renderer
@@ -18,8 +20,7 @@
    #:%render-node
    #:%render-const
    #:expr-index-components
-   #:make-aref
-   #:make-define-global
+   
    #:%renderer-get-auto-scheduler
    #:render-index
    #:render-aref-index))
@@ -29,7 +30,7 @@
 (defgeneric get-default-renderer (id))
 (defgeneric %render-node (renderer node-dispatcher node) (:documentation ""))
 (defgeneric %render-const (renderer obj) (:documentation ""))
-(defgeneric %render-kernel (renderer schedule-item))
+(defgeneric %render-kernel (renderer jit-kernel))
 (defgeneric %compile-kernel (renderer schedule-items dir))
 
 (defclass Renderer ()
@@ -159,6 +160,9 @@
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :LOAD)) node)
   (%render-const renderer (getattr node :value)))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :RANGE)) node)
+  (%render-const renderer (getattr node :idx)))
+
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :SPACE)) node)
   (let ((lv (ecase (getattr node :level) (:block "blockIdx") (:thread "threadIdx")))
         (dim (ecase (getattr node :rank) (0 "x") (1 "y") (2 "z"))))
@@ -210,10 +214,19 @@
   (def :< "<"))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :Aref)) node)
-  (render-aref renderer node))
+  (let ((p (id->value (renderer-graph renderer) (car (node-reads node)))))
+    (if (and p (eql (node-type p) :BIND))
+        (format nil "~(~a~)[~(~a~)]" (getattr p :value) (render-node renderer (second (node-reads node))))
+        (format nil "~(~a~)[~(~a~)]" (car (node-reads node)) (render-node renderer (second (node-reads node)))))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :MOVE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :BIND)) node)
+  (format nil "~a" (%render-const renderer (getattr node :value))))
+
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :SETF)) node)
+  (format nil "~a = ~a" (render-node renderer (car (node-reads node))) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer Default-Renderer) (id (eql :STORE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
@@ -232,7 +245,11 @@
           (render-node renderer (second (node-reads node)))
           (render-node renderer (third (node-reads node)))))
 
+(defmethod %render-node ((renderer Default-Renderer) (id (eql :EXPR)) node)
+  (%render-const renderer (car (node-writes node))))
+
 (defmethod %render-node ((renderer Default-Renderer) id node)
+  (warn "Renderer: Unknown node type: ~a" (node-type node))
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))
 
 (defmethod print-object ((expr expr) stream)
@@ -299,7 +316,7 @@
   (def :SQRT "sqrt"))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :RECIP)) node)
-  (let ((dtype (caten/runtime:buffer-dtype (car (relay-writes (read-type-relay node))))))
+  (let ((dtype (tensor-relay-dtype (car (relay-reads (read-type-relay node))))))
     (if (caten/common.dtype:dtype/floatp dtype)
         (format nil "1.0/(~a)" (render-node renderer (nth 0 (node-reads node))))
         (format nil "1/(~a)" (render-node renderer (nth 0 (node-reads node)))))))
@@ -314,7 +331,7 @@
   (def :< "<"))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :Aref)) node)
-  (render-aref renderer node))
+  (format nil "(*(~a+~a))" (render-node renderer (car (node-reads node))) (render-node renderer (second (node-reads node)))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) (id (eql :MOVE)) node)
   (format nil "~a" (render-node renderer (second (node-reads node)))))
@@ -335,6 +352,21 @@
           (render-node renderer (car (node-reads node)))
           (render-node renderer (second (node-reads node)))
           (render-node renderer (third (node-reads node)))))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :RANGE)) node)
+  (%render-const renderer (getattr node :idx)))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :SETF)) node)
+  (format nil "~a = ~a" (render-node renderer (car (node-reads node))) (render-node renderer (second (node-reads node)))))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :BIND)) node)
+  (format nil "~a" (%render-const renderer (getattr node :value))))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :EXPR)) node)
+  (%render-const renderer (car (node-writes node))))
+
+(defmethod %render-node ((renderer CStyle-Renderer) (id (eql :DEFINE-GLOBAL)) node)
+  (%render-const renderer (car (node-writes node))))
 
 (defmethod %render-node ((renderer CStyle-Renderer) id node)
   (format nil "~a~a" (node-type node) (map 'list #'(lambda (x) (render-node renderer x)) (node-reads node))))

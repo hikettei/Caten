@@ -1,5 +1,5 @@
 (defpackage #:caten/codegen/iteration
-  (:use :cl :caten/aasm :caten/air :caten/codegen/expr :caten/runtime/buffer :caten/runtime/runtime)
+  (:use :cl :caten/aasm :caten/air :caten/aasm/expr :caten/runtime/buffer :caten/runtime/runtime)
   (:import-from :caten/codegen/helpers :permute-list)
   (:import-from :caten/common.dtype #:dtype-t #:dtype->lisp)
   ;; Relay Helpers
@@ -21,7 +21,8 @@
    #:iteration-space-expr-aref
    #:tensor-relay-iteration-space
    #:ensure-iteration-space-length
-   #:node-writes-broadcasted-p))
+   #:node-writes-broadcasted-p
+   #:reveal-buffer))
 
 (in-package :caten/codegen/iteration)
 ;; [TODO] Update caten/viz

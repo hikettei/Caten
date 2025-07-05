@@ -9,20 +9,23 @@
    #:get-backend-jit-p
    #:jit-mode-p
    #:get-buffer-type
-   #:get-runtime-type))
+   #:get-runtime-type
+   #:get-backend-kernel
+   #:get-backend-configs))
 
 (in-package :caten/codegen/backend)
-
+;; [TODO] Rename backend -> abstraction?
 (defgeneric get-backend-buffer (backend))
 (defgeneric get-backend-runtime (backend))
 (defgeneric get-backend-auto-scheduler (backend))
 (defgeneric get-backend-renderer (backend))
+(defgeneric get-backend-kernel (backend))
 (defgeneric get-backend-jit-p (backend))
 
-(defmacro define-backend (name buffer-class runtime-class renderer-class auto-scheduler-class is-jit-p)
+(defmacro define-backend (name buffer-class runtime-class renderer-class kernel auto-scheduler-class is-jit-p)
   "
 ```
-(define-backend name buffer-class runtime-class renderer auto-scheduler-class is-jit-p)
+(define-backend name buffer-class runtime-class renderer kernel auto-scheduler-class is-jit-p)
 ```
 Registers a new backend.
 "
@@ -30,6 +33,7 @@ Registers a new backend.
      (defmethod get-backend-buffer ((backend (eql ,name))) ',buffer-class)
      (defmethod get-backend-runtime ((backend (eql ,name))) ',runtime-class)
      (defmethod get-backend-renderer ((backend (eql ,name))) ',renderer-class)
+     (defmethod get-backend-kernel ((backend (eql ,name))) ',kernel)
      (defmethod get-backend-auto-scheduler ((backend (eql ,name))) ',auto-scheduler-class)
      (defmethod get-backend-jit-p ((backend (eql ,name))) ,is-jit-p)))
 
@@ -44,3 +48,7 @@ Registers a new backend.
 (defun get-runtime-type (&key (backend (ctx:getenv :BACKEND)))
   "Returns the runtime type for the current device."
   (get-backend-runtime backend))
+
+(defun get-backend-configs (backend &key (opts (list #'get-backend-buffer #'get-backend-runtime #'get-backend-renderer #'get-backend-kernel #'get-backend-auto-scheduler #'get-backend-jit-p)))
+  (flet ((f (x) (funcall x backend)))
+    (map 'list #'f opts)))
