@@ -8,7 +8,7 @@
   ((:file "helpers")
    (:file "backend")
    (:file "expr")
-   (:file "shape-inference")
+   (:file "iteration")
    (:file "renderer")
    (:file "expr-cache")
    (:file "rewriting-rules")
