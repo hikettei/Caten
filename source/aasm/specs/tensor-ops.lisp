@@ -8,9 +8,11 @@
 ;; JIT        | {SPACE}                                        | 1 OP(s)
 ;; +)__________________________________________________________________
 ;;                                                             | 26 Ops
-
 (eval-when (:compile-toplevel :load-toplevel :execute)
-
+;; TypeInference
+(defclass TensorRelay (AType)
+  nil)
+  
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
    (_read_views :initform nil :initarg :_read_views) ;; [TODO] Removable

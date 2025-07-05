@@ -425,6 +425,7 @@ Applies the JIT compilation for the given Runtime. backend is a keyword defined 
   (caten/isl:with-isl-context ;; Note: Need this to ensure isl objected allocated here are not cached and not used by other compiling sessions.
     (when (= 2 (ctx:getenv :DOT)) (->dot (runtime-graph runtime) :title "Base Graph"))
     (run-type-infer runtime)
+    (print (caten/air::graph-infer-type-relay (runtime-graph runtime)))
     ;; 2. Applying JIT Specific Graph Rewriting Rules in advance (e.g.: Propagete Views)
     (apply-rewriting-rules runtime)
     ;; 3. Running the scheduler

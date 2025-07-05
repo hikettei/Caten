@@ -12,4 +12,5 @@
   (:export #:defsimplifier #:<Rule>)
   (:export #:Attribute #:defnode #:debug/render-defined-nodes #:debug/attrs-by-module #:node-build-documentation-by-class #:verify-args #:dump-into-list)
   (:export #:->dot #:pprint-graph)
-  (:export #:Typed #:make-typed #:typed-dtype #:typed-shape))
+  ;; TypeRelay
+  (:export #:node-type-relay #:AType #:Relay #:relay-reads #:relay-writes #:graph-infer-type-relay))
