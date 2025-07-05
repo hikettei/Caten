@@ -19,7 +19,8 @@
    (value :accessor tensor-relay-value :initarg :value :initform nil)
    (inferred-permute :accessor tensor-relay-inferred-permute :initarg :permute :initform nil)
    (orig-buffer-shape :accessor tensor-relay-orig-buffer-shape :initarg :orig-shape :initform nil)
-   (depend-idx-list :accessor tensor-relay-depend-idx-list :initform nil)))
+   (depend-idx-list :accessor tensor-relay-depend-idx-list :initform nil)
+   (iterspace :accessor tensor-relay-iterspace)))
 
 (defun make-tensor-relay (shape stride dtype views &key (value nil) (permute nil) (orig-shape nil))
   (declare (type keyword dtype))

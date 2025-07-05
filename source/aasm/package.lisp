@@ -85,7 +85,7 @@
   ;; TensorRelay
   (:export
    #:TensorRelay #:tensor-relay-shape #:tensor-relay-stride #:tensor-relay-dtype #:tensor-relay-views #:tensor-relay-nrank
-   #:tensor-relay-value #:tensor-relay-inferred-permute #:tensor-relay-orig-buffer-shape #:tensor-relay-depend-idx-list)
+   #:tensor-relay-value #:tensor-relay-inferred-permute #:tensor-relay-orig-buffer-shape #:tensor-relay-depend-idx-list #:tensor-relay-iterspace)
   ;; AST
   (:export #:with-blueprint #:get-caten-function #:simplify-ast)
   ;; ASTOps
