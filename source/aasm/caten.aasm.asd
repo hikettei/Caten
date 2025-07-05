@@ -11,6 +11,5 @@
    (:file "specs/render-ops")
    (:file "specs/runtime-ops")
    (:file "tensor-ops")
-   (:file "constant-folding")
-   (:file "optimizers")
+   (:file "simplifiers")
    (:file "documentation")))
