@@ -1,6 +1,6 @@
 (defpackage #:caten/codegen/shape-inference
   (:documentation "Perform the following inference given the graph by direcly running it in :relay-checker VM.")
-  (:use :cl :caten/codegen/expr :caten/runtime/buffer :caten/runtime/runtime)
+  (:use :cl :caten/aasm :caten/codegen/expr :caten/runtime/buffer :caten/runtime/runtime)
   (:import-from
    :caten/codegen/helpers
    :permute-list)
@@ -48,133 +48,12 @@
 
 (in-package :caten/codegen/shape-inference)
 
-(defstruct (Type-Reporter
-	    (:conc-name rp-)
-	    (:constructor make-type-reporter ()))
-  (id2buffer (make-hash-table :test #'eql))
-  (seen nil :type list))
-
-(defun map/type-of (type-reporter id)
-  ;; Return: Buffer or number
-  (declare (type type-reporter type-reporter)
-	   (type (or number symbol) id))
-  (if (numberp id)
-      id
-      (or (gethash id (rp-id2buffer type-reporter)) (error "map/type-of: ~a cannot be inferred from the graph" id))))
-
-(defclass RelayChecker (GraphRuntime) ((type-reporter :initarg :type-reporter :accessor runtime-type-reporter)))
-
-(defclass RelayBuffer (AbstractBuffer)
-  ((inferred-permute :accessor buffer-inferred-permute :initform nil)
-   (orig-buffer-shape :accessor buffer-orig-buffer-shape :initform nil)
-   (depend-idx-list :accessor buffer-depend-idx-list :initform nil))
-  (:documentation "A buffer just used to report the shape/type/strides ... of buffer during jit compilation"))
-
-(defmethod open-buffer ((runtime RelayChecker) buffer) buffer)
-(defmethod close-buffer ((runtime RelayChecker) buffer) buffer)
-
 (defun reveal-buffer (object)
   (if (buffer-p object)
       (if (null (buffer-shape object))
           (or (buffer-value object) object)
           object)
       object))
-
-(defun merge-with-initial-value (node-reads realized-args)
-  (assert (= (length node-reads) (length realized-args)))
-  (loop for nr in node-reads
-        for rr in realized-args
-        if (and (buffer-p rr) (buffer-value rr) (= 0 (buffer-nrank rr)))
-          collect (buffer-value rr)
-        else
-          collect nr))
-
-(defun propagate-inference (args)
-  ;; [TODO] The position of output should be :nth-out, not car.
-  (assert (buffer-p (car args)) () "propagate-inference: Failed to infer the node-write from ~a.~%Hint: Do not propagate constants without providing :_type_relay." args)
-  (let ((buff
-          (make-buffer (buffer-shape (car args)) (buffer-stride (car args)) (buffer-dtype (car args)) (buffer-views (car args)) :device 'RelayBuffer)))
-    (setf (buffer-inferred-permute buff) (buffer-inferred-permute (car args))
-	  (buffer-orig-buffer-shape buff) (buffer-orig-buffer-shape (car args)))
-    buff))
-
-(defparameter *special-nodes* `(:Allocate :View :Load :Where :AREF :SPACE))
-(defmethod realize-node :around (node-id (runtime RelayChecker) node args)
-  (when (getattr node :_type_relay :allow-undefined t)
-    (loop for n in (node-writes node)
-          for o in (relay-writes (read-type-relay node))
-          do (setf (gethash n (rp-id2buffer (runtime-type-reporter runtime))) o))
-    (return-from realize-node (apply #'values (relay-writes (read-type-relay node)))))
-  (let ((out (multiple-value-list (if (find node-id *special-nodes*) (call-next-method) (propagate-inference args)))))
-    (loop for n in (node-writes node)
-          for o in out
-          do (assert (buffer-p o) () "relay-checker: ~a should return a buffer" node)
-             (setf (gethash n (rp-id2buffer (runtime-type-reporter runtime))) o))
-    (apply #'values out)))
-
-(defmethod realize-node ((node-id (eql :Allocate)) (runtime RelayChecker) node args)
-  (multiple-value-bind (shape stride) (parse-allocate-node node (merge-with-initial-value (node-reads node) args))
-    (make-buffer shape stride (getattr node :dtype) nil :device 'RelayBuffer)))
-
-(defmethod realize-node ((node-id (eql :View)) (runtime RelayChecker) node args)
-  (multiple-value-bind (shape v1 v2 v3 stride bc) (parse-view-node node (merge-with-initial-value (node-reads node) args))
-    (let ((buffer (copy-buffer (car args))))
-      (setf (buffer-shape buffer) shape
-	    (buffer-stride buffer) stride
-	    (buffer-views buffer)
-	    (loop for i upfrom 0 below (length v1)
-		  collect (list (nth i v1) (nth i v2) (nth i v3) (nth i bc)))
-	    (buffer-nrank buffer) (length shape)
-	    (buffer-inferred-permute buffer) (getattr node :permute)
-	    (buffer-orig-buffer-shape buffer) (or (buffer-orig-buffer-shape (car args)) (buffer-shape (car args))))
-      buffer)))
-
-(defmethod realize-node ((node-id (eql :AREF)) (runtime RelayChecker) node args)
-  (make-buffer nil nil (buffer-dtype (getattr node :buffer)) nil :device 'RelayBuffer))
-
-(defmethod realize-node ((node-id (eql :SPACE)) (runtime RelayChecker) node args)
-  (make-buffer nil nil (getattr node :dtype) nil :device 'RelayBuffer))
-
-(defmethod realize-node ((node-id (eql :Load)) (runtime RelayChecker) node args)
-  (let* ((tgt (car args)) (val (getattr node :value)) (out (copy-buffer tgt)))
-    (when (or (numberp val) (symbolp val))
-      (setf (buffer-value out) val))
-    out))
-
-(defmethod realize-node ((node-id (eql :Where)) (runtime RelayChecker) node args) (copy-buffer (second args)))
-
-(declaim (ftype (function (GraphRuntime &key (:allow-overwrite boolean)) Type-Reporter) run-type-infer))
-(defun run-type-infer (runtime &key (allow-overwrite nil) &aux (graph (runtime-graph runtime)))
-  "
-```
-(run-type-infer runtime)
-```
-Runs the shape inference to the given GraphRuntime, returning `Type-Reporter`."
-  (ctx:with-contextvar (:PROFILE 0)
-    (let ((*supress-allocate-mode* t)
-          (type-reporter (make-type-reporter))
-          (runtime (make-runtime graph :runtime 'RelayChecker :buffer-type 'RelayBuffer)))
-      (setf (runtime-type-reporter runtime) type-reporter)
-      (runtime-forward runtime)
-      ;; Infer type for PAUSE/BACKWARD
-      (let ((pause/bw (nth (runtime-pc runtime) (graph-nodes graph))))
-        (when (and pause/bw (eql (node-type pause/bw) :PAUSE/BACKWARD))
-	  (loop for r in (node-reads pause/bw)
-	        for w in (node-writes pause/bw)
-	        do (setf (gethash w (rp-id2buffer type-reporter)) (runtime-getvar runtime r)))))
-      (runtime-backward runtime)
-      (deploy-type-infer-results graph type-reporter :allow-overwrite allow-overwrite)
-      type-reporter)))
-
-(defun expr-infer-type (expr)
-  "Running TypeRelay Inference for the expr graph."
-  (declare (type expr expr))
-  (assert (caten/air:graph-outputs (expr-graph expr)))
-  ;; Sort the graph by execution order
-  (setf (expr-graph expr) (caten/air:->fast-graph (expr-graph expr))
-        (expr-graph expr) (caten/air:->graph-with-tpsort (expr-graph expr)))
-  (run-type-infer (make-runtime (expr-graph expr) :fw-outputs (node-writes (expr-out expr)) :runtime 'RelayChecker) :allow-overwrite t)
-  expr)
 
 (defstruct (Inferred-Type
 	    (:conc-name relay-)
@@ -230,23 +109,6 @@ If the shape inference is successfully done and properly deployed to the target 
     (loop for r in (relay-reads type)
           if r
             do (format out "~a " (buffer-views r)))))
-
-(defun read-type-relay (node)
-  (declare (type node node))
-  (or (getattr node :_type_relay) (error "Failed to infer the type of ~a" node)))
-
-(defun deploy-type-infer-results (graph type-map &key (allow-overwrite nil))
-  "Writes the result of type-infer to :_type_relay"
-  (flet ((->type (id) (when (symbolp id) (map/type-of type-map id))))
-    (loop for n in (graph-nodes graph) do
-      (let ((type (make-inferred-type
-		   (map 'list #'->type (node-reads n))
-		   (map 'list #'->type (node-writes n)))))
-	(when (null allow-overwrite)
-	  (assert (null (getattr n :_type_relay :allow-undefined t)) () ":_type_relay should be a nil!~%%safely-purge-views-from-graph was previously applied?~%- do not override the attr :_type_relay."))
-	(when (null (getattr n :_type_relay :allow-undefined t))
-          (when (subtypep (class-of (caten/air:node-attr n)) 'caten/aasm:JITAble)
-	    (setf (getattr n :_type_relay) type)))))))
 ;; ~~ Loop Collase ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun mergeable-view-p (g view shape &aux (shape (if (typep shape 'Expr) shape (expr-const (reveal-buffer shape) :int64))))
   "Mergeable axis = view is not created."
