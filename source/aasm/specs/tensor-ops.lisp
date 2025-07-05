@@ -36,15 +36,15 @@
         else ;; i.e.: Symbolic
         collect (if rr (or (tensor-relay-value rr) nr) nr)))
 
-(defun assert-verify-tensor-relay (id->type node &key (assert-scalar nil))
+(defun assert-verify-tensor-relay (id->type node &key (assert-scalar nil) (nthcdr 0))
   (mapc
    #'(lambda (x nth &aux (type (gethash x id->type)))
        (when type
          (assert (typep type 'TensorRelay) () "TensorIR only accepts TensorRelay typed variables. In the ~ath var of node ~a" nth node)
          (when assert-scalar
            (assert (= 0 (tensor-relay-nrank type)) () "In the ~ath variable of node ~a.~%This should be a scalar." nth node))))
-   (node-reads node)
-   (range 0 (length (node-reads node)))))
+   (nthcdr nthcdr (node-reads node))
+   (nthcdr nthcdr (range 0 (length (node-reads node))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass JITAble ()
   ((_type_relay :initarg :_type_relay)
@@ -319,7 +319,7 @@ out = allocate(*shape, *stride)
                          (let ((args (merge-with-initial-value (node-reads node) (map 'list #'(lambda (x) (or (gethash x id->type) x)) (node-reads node))))
                                (nrank (getattr node :nrank)))
                            (assert (= (length (node-reads node)) (* 2 nrank)) () "Failed to verify :ALLOCATE. Invaild number of node-reads (~a)" node)
-                           (make-tensor-relay (subseq args 0 nrank) (subseq args nrank (* 2 nrank))  (getattr node :dtype) nil))))
+                           (list (make-tensor-relay (subseq args 0 nrank) (subseq args nrank (* 2 nrank))  (getattr node :dtype) nil)))))
 
 (defnode (:Buffer :LOAD) (BufferOps JITAble)
 	 "Fills the first tensor in `read` with `value`, writing the result into the first write. The first read can be either of tensor or scalar.
@@ -357,7 +357,7 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
 		 (permute :type list :initform nil)
                  (tr :initform nil))
          :type-relay #'(lambda (id->type node)
-                         (assert-verify-tensor-relay id->type node :assert-scalar t)
+                         (assert-verify-tensor-relay id->type node :assert-scalar t :nthcdr 1)
                          (macrolet ((nsubseq (x y z) `(subseq ,x (1+ ,y) (1+ ,z))))
                            (let* ((args (merge-with-initial-value (node-reads node) (map 'list #'(lambda (x) (or (gethash x id->type) x)) (node-reads node))))
                                   (nrank (getattr node :nrank))
@@ -369,7 +369,7 @@ View has an attribute `broadcast[list]`, this indicates the stride of thecorresp
                                   (bc (getattr node :broadcast))
                                   (base (gethash (car (node-reads node)) id->type)))
                              (assert base ())
-                             (assert (= (length (node-reads node)) (* 5 nrank)) () "Failed to verify :VIEW, Invaild number of node-reads (~a)" node)
+                             (assert (= (length (node-reads node)) (+ 1 (* 5 nrank))) () "Failed to verify :VIEW~%Invaild number of node-reads (~a)" node)
                              (list
                               (make-tensor-relay shape stride (tensor-relay-dtype base) (loop for i upfrom 0 below (length shape) collect (list (nth i upfrom) (nth i below) (nth i by) (nth i bc)))
                                                  :permute (getattr node :permute) :orig-shape (copy-list (or (tensor-relay-orig-buffer-shape base) (tensor-relay-shape base)))))))))
