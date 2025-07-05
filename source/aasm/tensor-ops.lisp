@@ -1,24 +1,12 @@
 (in-package :caten/aasm)
-;; == Tensor =====================================================================================
-;; Tensor is an air graph defined as:
-;;  Allocate: [tensor_name] <- (shape0 shape1 ... shape_n stride0 stride1 ... strideN)
-;;             where nrank = ... dtype = ...
-;;
-;; During training, nrank is fixed. but shape0/shape1 can be adjusted by connecting another graph
-;; which produces scalar outputs.
-;;
-;; Set nrank=0 to create a scalar
-;; Set nrank>=1 to create a tensor
-;; make-node must be wrapped with emit when producing outputs
-;; and with-context can recognise it
-;; ================================================================================================
+
 (defparameter *default-order* (ctx:getenv :DEFAULT_ORDER))
 (defparameter *default-float* (ctx:getenv :DEFAULT_FLOAT))
 (defparameter *default-int*   (ctx:getenv :DEFAULT_INT))
 (defparameter *default-uint*  (ctx:getenv :DEFAULT_UINT))
 
 (defun size-p (x) (or (integerp x) (node-p x)))
-(defun node->id1 (x) (if (integerp x) x (node->id x)))
+(defun node->id1 (x) (if (or (symbolp x) (integerp x)) x (node->id x)))
 
 (defun %alloc (nrank shape stride &key (dtype *default-float*) (id (gensym "TID")) (from nil))
   "Equivalent to `dtype i[shape];`
@@ -121,8 +109,8 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
 
 (macrolet ((def (fname opname)
 	     `(defun ,fname (x &key (id (gensym "UID")))
-		(declare (type node x))
-		(emit (make-node :UnaryOps ,opname (list id) (list (node->id x)))))))
+		(declare (type (or number symbol node) x))
+		(emit (make-node :UnaryOps ,opname (list id) (list (node->id1 x)))))))
   (def %neg   :NEG)
   (def %recip :RECIP)
   (def %sin   :SIN)
@@ -141,10 +129,10 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
 (macrolet ((def (fname opname &optional possibly-overflow)
 	     `(defun ,fname (x y &key (id (gensym "BID")) (reduction nil) (wrap-around ,(if possibly-overflow '*wrap-around-mode* nil)))
 		"If wrap-around=t -> (mod (op x y) (max_value_of (dtype x)))"
-		(declare (type node x y))
+		(declare (type (or number symbol node) x y))
 		(when (and (null ,possibly-overflow) wrap-around)
 		  (error "~a does not support the wrap-around option." ',fname))
-		(emit (make-node :BinaryOps ,opname (list id) (list (node->id x) (node->id y)) :reduction reduction :wrap-around wrap-around)))))
+		(emit (make-node :BinaryOps ,opname (list id) (list (node->id1 x) (node->id1 y)) :reduction reduction :wrap-around wrap-around)))))
   (def %add :ADD t)
   (def %mul :MUL t)
   (def %idiv :IDIV nil)
@@ -155,19 +143,21 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
   (def %max :MAX)
   (def %gcd :GCD)
   (def %mod :MOD))
+
+(defun %min (x y &key (id (gensym "BID")) (reduction nil)) (%neg (%max (%neg x) (%neg y) :reduction reduction) :id id))
 (defun %sub (x y &key (reduction nil) (id (gensym "BID"))) (%add x (%neg y) :reduction reduction :id id))
 (defun %div (x y &key (reduction nil) (id (gensym "BID"))) (%mul x (%recip y) :reduction reduction :id id))
 
 ;; CompareOps: map <- [map{bool}, x, y]
 (macrolet ((def (fname opname)
 	     `(defun ,fname (shape order x y &key (id (gensym "BID")) (out nil))
-		(declare (type node x y))
+		(declare (type (or number symbol node) x y))
 		(let ((out (or
 			    out
 			    (if shape
 				(%make-tensor shape :dtype :bool :order order)
 				(%salloc :dtype :bool)))))
-		  (emit (make-node :TernaryOps ,opname (list id) (list (node->id out) (node->id x) (node->id y))))))))
+		  (emit (make-node :TernaryOps ,opname (list id) (list (node->id1 out) (node->id1 x) (node->id1 y))))))))
   (def %!= :!=)
   (def %< :<))
 
@@ -175,7 +165,12 @@ Typed: <Allocate OUT_ID <- (,@shape ,@stride) where from=from dtype=dtype nrank=
 (defun %<= (shape order x y &key out (id (gensym "BID"))) (%or (%< shape order x y :out out) (%= shape order x y :out out) :id id))
 (defun %>  (shape order x y &key out (id (gensym "BID"))) (%not (%<= shape order x y :out out) :id id))
 (defun %>= (shape order x y &key out (id (gensym "BID"))) (%or (%> shape order x y :out out) (%= shape order x y :out out) :id id))
-;; TODO(hikettei): infer-tensor-info should be removed! (TypeRelay can do this)
+
+(defun %where (condition x y &key (id (gensym "WID")))
+  "id = where(condition, x{true-then}, y{false-then})"
+  (declare (type node condition x y))
+  (emit (make-node :TernaryOps :WHERE (list id) (list (node->id condition) (node->id x) (node->id y)))))
+
 (defun infer-tensor-info (graph id)
   "Return: [nrank, shape, stride, dtype, (view_from, view_to, view_by, broadcast)]"
   (declare (type graph graph) (type symbol id) (optimize (speed 3)))
@@ -328,14 +323,3 @@ broadcast=~a"
 		(if (getattr node :permute)
 		    (format nil ", permute=~a" (getattr node :permute))
 		    ""))))))
-
-(defun %where (condition x y &key (id (gensym "WID")))
-  "id = where(condition, x{true-then}, y{false-then})"
-  (declare (type node condition x y))
-  (emit (make-node :TernaryOps :WHERE (list id) (list (node->id condition) (node->id x) (node->id y)))))
-
-;; [TODO] simplify-logical-ops
-;; e.g.: (not (not x)) -> x
-;;(defsimplifier
-;;    (simplify-logical :speed 3)
-;;    ((:Not ((:Not (x)))) -> ((node graph) (id->value graph x))))

@@ -3,7 +3,12 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
 
 (defclass ASTRelay (AType)
-  ((class :initarg :class :type :keyword :reader astrelay-class)))
+  ((class :initarg :class :type :keyword :reader astrelay-class)
+   (ast :initarg :ast :accessor astrelay-ast :initform nil)))
+
+(defmethod print-object ((obj ASTRelay) stream)
+  (print-unreadable-object (obj stream :type t)
+    (format stream ":class ~a" (astrelay-class obj))))
 
 (defclass RenderOps ()
   ((is-empty :initform nil :initarg :is-empty))
@@ -19,11 +24,14 @@
               (assert var () "The ~ath argument in the node ~a is not defined." nth node)
               (typecase arg
                 (list
-                 (assert (find (astrelay-class var) arg) () "The expected ast as ~ath argument is ~a, in~%~a" nth arg node))
+                 (assert
+                  (or (when (typep var 'ASTRelay) (find (astrelay-class var) arg))
+                      (when (find :EXPR arg) (typep var 'TensorRelay)))
+                  () "The expected ast as ~ath argument is ~a, in ~a.~%Getting ~a" nth arg node var))
                 (function
                  (funcall arg var))
                 (otherwise (error "not implemented match case: ~a" arg)))))
-     (list (make-instance 'ASTRelay :class out-form))))
+     (list (make-instance 'ASTRelay :class out-form :ast node))))
 ;;;; Control Flows
 (defnode (:Render :RANGE) (RenderOps)
          "
@@ -36,7 +44,9 @@ The node :RANGE will generate a variable named `idx` (with dtype which is an int
 The compiler will assume SIZE/STEP is always an integer, or a node typed :EXPR.
 "
          :slots ((idx) (dtype))
-         :type-relay (ast-type-map :RANGE '(:EXPR) '(:EXPR)))
+         :type-relay #'(lambda (id->type node)
+                         (funcall (ast-type-map :RANGE '(:EXPR) '(:EXPR)) id->type node)
+                         (list (make-tensor-relay nil nil :int64 nil :value (getattr node :idx)))))
 
 (defnode (:Render :FOR) (RenderOps)
          "
@@ -68,7 +78,7 @@ If the `parallel` attribute is set to a positive integer, the compiler will try 
          :slots ((mark :type (member :coincident :reduction :noopt) :initform :noopt)
                  (band :initform nil)
                  (parallel :initform 0 :type (integer 0)))
-         :type-relay (ast-type-map :FOR '(:RANGE) '(:PROGN :FOR :IF :EXPR :BARRIER)))
+         :type-relay (ast-type-map :FOR '(:EXPR) '(:PROGN :FOR :IF :EXPR :BARRIER)))
 
 (defnode (:Render :IF) (RenderOps)
          "
@@ -110,7 +120,9 @@ ID <- EXPR(NODE)
 ```
 "
          :slots nil
-         :type-relay (ast-type-map :EXPR)) ;; [TODO] Verify!
+         :type-relay
+         #'(lambda (id->type node)
+             (list (copy-tensor-relay (gethash (car (node-reads node)) id->type)))))
 
 (defnode (:Render :DEFINE-GLOBAL) (RenderOps)
          "
@@ -120,7 +132,12 @@ X <- ()
 Declares a buffer.
 "
          :slots ((dtype) (pointer-p :type boolean) (mode :type (member :io :read :write) :initform :io))
-         :type-relay (ast-type-map :DEFINE-GLOBAL))
+         :type-relay #'(lambda (id->type node)
+                         (if (getattr node :pointer-p)
+                             (funcall (ast-type-map :DEFINE-GLOBAL) id->type node)
+                             (list (make-tensor-relay nil nil (getattr node :dtype) nil)))))
+                         
+
 ;;; JITOps
 (defnode (:JIT :Aref) (RenderOps) ;; TODO: Rename Aref -> LOAD?
          "
@@ -129,7 +146,16 @@ X <- Aref(Array, Index)
 ```
 "
          :slots nil
-         :type-relay (ast-type-map :Aref))
+         :type-relay #'(lambda (id->type node)
+                         (let ((arg (gethash (car (node-reads node)) id->type)))
+                           (assert arg () "First argument for :Aref should be a Tensor.")
+                           (cond
+                             ((and (typep arg 'ASTRelay) (eql (astrelay-class arg) :DEFINE-GLOBAL)) ;; Load buffer from DRAM
+                              (list (make-tensor-relay nil nil (getattr (astrelay-ast arg) :dtype) nil)))
+                             ((typep arg 'TensorRelay)
+                              (list (make-tensor-relay nil nil (tensor-relay-dtype arg) nil)))
+                             (T
+                              (error "The first argument for :Aref should be either of :DEFINE-GLOBAL or TensorRelay"))))))
 
 (defnode (:JIT :SWIZZLE) (RenderOps)
          "
@@ -150,7 +176,7 @@ ID <- SETF(AREF(TARGET, IDX), EXPR(...))
 ```
 Writes the value of EXPR into the corresponding region of AREF.
 "
-         :type-relay (ast-type-map :SETF))
+         :type-relay (make-type-relay 0))
 
 (defnode (:JIT :BIND) ()
          "
@@ -158,7 +184,7 @@ Writes the value of EXPR into the corresponding region of AREF.
 ID <- BIND(X, value=value)
 ```"
          :slots ((value))
-         :type-relay (ast-type-map :BIND))
+         :type-relay (make-type-relay 0))
 
 (defnode (:JIT :SPACE) () ;; TODO: Rename SPACE -> GID?
          "

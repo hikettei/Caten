@@ -20,7 +20,7 @@
    (inferred-permute :accessor tensor-relay-inferred-permute :initarg :permute :initform nil)
    (orig-buffer-shape :accessor tensor-relay-orig-buffer-shape :initarg :orig-shape :initform nil)
    (depend-idx-list :accessor tensor-relay-depend-idx-list :initarg :depend-idx-list :initform nil)
-   (iterspace :accessor tensor-relay-iterspace)))
+   (iterspace :accessor tensor-relay-iterspace :initform nil)))
 
 (defun make-tensor-relay (shape stride dtype views &key (value nil) (permute nil) (orig-shape nil) (depend-idx-list nil))
   (declare (type keyword dtype))
@@ -49,7 +49,7 @@
   (mapc
    #'(lambda (x nth &aux (type (gethash x id->type)))
        (when type
-         (assert (typep type 'TensorRelay) () "TensorIR only accepts TensorRelay typed variables. In the ~ath var of node ~a" nth node)
+         (assert (typep type 'TensorRelay) () "TensorIR only accepts TensorRelay typed variables.~%In the ~ath var of node ~a. ~% Got ~a~%" nth node type)
          (when assert-scalar
            (assert (= 0 (tensor-relay-nrank type)) () "In the ~ath variable of node ~a.~%This should be a scalar." nth node))))
    (nthcdr nthcdr (node-reads node))

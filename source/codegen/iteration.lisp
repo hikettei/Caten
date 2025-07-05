@@ -109,7 +109,7 @@ gids corresponds for the loop idx in the kernel.
           if v
             collect (expr-mul s (expr-add (expr-const (car v) :int64) (expr-mul (expr-const (third v) :int64) (expr-const i :int64))))
           else
-            collect (expr-mul i s))))
+            collect (expr-mul (if (numberp i) (expr-const i :int64) i) s))))
 
 (defmethod iteration-space-sync-broadcast ((is Iteration-Space))
   (setf (iteration-space-views is)

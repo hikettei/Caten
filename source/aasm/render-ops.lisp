@@ -325,7 +325,7 @@ Constraints:
   (labels ((Purge (node)
              (unless (find (car (node-writes node)) seen2)
                (push (car (node-writes node)) seen2)
-               (let ((typed (car (read-type-relay node))))
+               (let ((typed (car (relay-reads (read-type-relay node)))))
                  (assert typed () "ast-simplify-expr: Cannot deduce the first src of ~a" node)
                  (list (%bind (car (node-reads node)) (%empty (tensor-relay-dtype typed))) node))))
            (simplify-expr (expr &aux (expr-graph (ast-expr-graph graph expr)))
@@ -350,7 +350,7 @@ Constraints:
     (funcall
      (compose
       (Simplifier () ((:EXPR (id)) -> ((node graph) (unless (find id seen1) (push id seen1) (simplify-expr node)))))
-      #'graph-infer-type-relay)
+      #'(lambda (x) (graph-infer-type-relay x) x))
      graph)))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun %simplify-ast (graph
@@ -367,7 +367,7 @@ Constraints:
                           #'(lambda (x) (verify-graph x) x)
                           #'ast-simplify-constant
                           #'ast-purge-unused-expr
-                          #'graph-infer-type-relay)))
+                          #'(lambda (x) (graph-infer-type-relay x) x))))
   "Simplifies the AST"
   (declare (type FastGraph graph))
   (let ((g (funcall (apply #'compose (reverse opts)) graph)))
@@ -375,4 +375,4 @@ Constraints:
     g))
 
 (defun simplify-ast (graph)
-  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-simplify-constant #'ast-purge-unused-expr #'graph-infer-type-relay)))
+  (%simplify-ast graph :opts (list #'fold-constant #'fuse-duplicated-store #'simplify-control-flow #'ast-simplify-expr #'ast-simplify-constant #'ast-purge-unused-expr #'(lambda (x) (graph-infer-type-relay x) x))))

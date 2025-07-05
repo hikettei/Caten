@@ -170,7 +170,7 @@ Only supports the scalar computation because it is intended to identify the same
   ;; Note(hikkei) set heavy-opt-threshold to 0 to always enable full symbolic simplification.
   (unless *expr-no-simplify-mode*
     (optimize-aasm (expr-graph expr));; :heavy-opt-threshold 0)
-    (uiop:symbol-call :caten/codegen/type-relay :expr-infer-type expr))
+    (graph-infer-type-relay (expr-graph expr)))
   expr)
 
 (defun %connect-expr (grh args out)

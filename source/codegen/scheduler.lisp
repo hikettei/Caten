@@ -114,7 +114,7 @@ One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure
 
 (defmethod graph-shape-inferred-p ((graph Graph))
   (dolist (n (graph-nodes graph))
-    (when (and (jitable-p n) (null (getattr n :_type_relay :allow-undefined t))) (return-from graph-shape-inferred-p nil)))
+    (when (and (jitable-p n) (null (node-type-relay n))) (return-from graph-shape-inferred-p nil)))
   t)
 
 (defmethod node-reduce-axes ((node Node))
