@@ -448,7 +448,7 @@ Depends=~a Reduce=~a Users=~a
 
 (defun astify-blueprint (schedule-item bp rank &aux (caten/aasm/expr::*expr-no-simplify-mode* t) (gid-seen (make-hash-table)))
   (declare (type list bp))
-  (with-blueprint ()
+  (with-blueprint (:noopt t)
     (loop for n in (node-reads schedule-item)
           for nt in (getattr schedule-item :read-types)
           do (%global n (tensor-relay-dtype nt) (> (tensor-relay-nrank nt) 0)))
@@ -574,7 +574,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph)
             (getattr schedule-item :blueprint) (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx))))
-      (simplify-ast (getattr schedule-item :blueprint)))))
+      (caten/aasm::%simplify-ast (getattr schedule-item :blueprint)))))
 
 (defmethod print-blueprint (graph stream &aux (indent 0) (seen))
   ;; (caten/air:->dot graph :pathname "/tmp/graph.dot")
