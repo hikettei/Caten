@@ -7,7 +7,6 @@
   :components
   ((:file "helpers")
    (:file "backend")
-   (:file "expr")
    (:file "iteration")
    (:file "renderer")
    (:file "expr-cache")
