@@ -18,9 +18,10 @@ t=2 | [:EXPR ...]
 (in-package :caten/codegen/memory-planner)
 ;; ~~~ Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Timestamp
-            (:constructor make-timestamp (time type node)))
+            (:constructor make-timestamp (time type node bp)))
   (type type :type (and keyword (member :BLOCK_START :BLOCK_END :ALLOCATE :STMT_VM :STMT_EXPR)))
   (node node :type (or null Node))
+  (bp bp :type (or null Graph))
   (time time :type fixnum))
 
 (defmethod print-object ((ts timestamp) stream)
@@ -35,7 +36,7 @@ t=2 | [:EXPR ...]
        (loop for ts in timestamps do
          (case (timestamp-type ts)
            (:BLOCK_START (fresh-line out) (indent) (princ "{" out) (incf indent 2))
-           (:BLOCK_END   (fresh-line out) (indent) (princ "}" out) (decf indent 2))
+           (:BLOCK_END   (fresh-line out) (decf indent 2) (indent) (princ "}" out))
            (:ALLOCATE    (fresh-line out) (indent) (format out "allocate[~a];" (node-reads (car (getattr (timestamp-node ts) :items)))))
            (:STMT_VM     (fresh-line out) (indent) (format out "stmt_vm();"))
            (:STMT_EXPR   (fresh-line out) (indent) (format out "stmt_expr();"))))))))
@@ -54,7 +55,7 @@ t=2 | [:EXPR ...]
                    ,@(apply #'append (map 'list #'r (node-reads node)))
                    ,(funcall writer :BLOCK_END nil)))
                (:EXPR
-                `(,(funcall writer :STMT_EXPR node)))
+                `(,(funcall writer :STMT_EXPR node graph)))
                ((:FOR :IF)
                 `(,(funcall writer :BLOCK_START nil)
                   ,@(r (second (node-reads node)))
@@ -67,9 +68,9 @@ t=2 | [:EXPR ...]
 
 (defun schedule-graph->timestamp (schedule-graph &aux (count 0))
   (declare (type FastGraph schedule-graph))
-  (labels ((node->ts (type node)
+  (labels ((node->ts (type node &optional bp)
              (prog1
-                 (make-timestamp count type node)
+                 (make-timestamp count type node bp)
                (incf count))))
     ;; [TODO] TimeStamp should not be a 1D array, GPUs can execute multiple kernels in the same time.
     (loop for item in (tpsort-graph schedule-graph)
@@ -80,6 +81,57 @@ t=2 | [:EXPR ...]
             (:allocate (list (node->ts :ALLOCATE item)))
             (otherwise (list (node->ts :STMT_VM item)))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct MemoryScope
+  (level 0 :type fixnum)
+  (vars (make-hash-table) :type hash-table))
+
+(defun apply-memory-planner (timestamps)
+  (declare (type list timestamps))
+  (let ((scopes) (garbages))
+    (labels ((enter-new-scope ()
+               (push (make-memoryscope :level (length scopes)) scopes))
+             (exit-current-scope () (push (pop scopes) garbages))
+             (get-current-scope () (or (car scopes) (error "Mismatch :BLOCK count")))
+             (allocate-on-current-scope (id relay)
+               (let ((vars (memoryscope-vars (get-current-scope))))
+                 (assert (null (gethash id vars)) () "apply-memory-planner: Assignment is expected to be static.")
+                 ;; [TODO] find-variable should return nil
+                 (setf (gethash id vars) relay)))
+             (find-variable (id)
+               (loop for scope in scopes ;; finding from deeper -> shallower
+                     for vars = (memoryscope-vars scope)
+                     if (gethash id vars) do (return-from find-variable (gethash id vars)))
+               (error "find-variable: The id ~a is not defined." id)))
+      (enter-new-scope)
+      (pprint-timestamp timestamps)
+      (loop for ts in timestamps do
+        (ecase (timestamp-type ts)
+          (:ALLOCATE
+           (let* ((node (car (getattr (timestamp-node ts) :items)))
+                  (rel (car (relay-writes (read-type-relay node)))))
+             (assert (eql (node-type node) :Allocate))
+             (allocate-on-current-scope (car (node-writes node)) rel)))
+          (:BLOCK_START (enter-new-scope))
+          (:BLOCK_END (exit-current-scope))
+          (:STMT_VM) ;; Cannot track the flow of allocations?...
+          (:STMT_EXPR
+           ;; STMT_EXPR: out[...] = f(x[...]), outの書き込む先に何か代用できるALLOCは存在するかを考える
+           (assert (timestamp-bp ts))
+           (let* ((expr (timestamp-node ts))
+                  (bp-graph (timestamp-bp ts))
+                  (expr-store (id->value bp-graph (car (node-reads expr)))))
+             (assert (eql (node-type expr) :EXPR))
+             ;; SETF(ID, EXPR), IDを書き換えるだけで，Allocationは消滅する。
+             ;; Priorities
+             ;; 1. softmax, last reference?
+             ;; 2. Find from garbage
+             (when (eql (node-type expr-store) :SETF) ;; If the toplevel of expr is :SETF, go ahead:
+               ;; BINDがあるからSETF ID書き換えるだけでAllocationはPurged, right?
+               (print expr))))))
+      (exit-current-scope)
+      (assert (= 0 (length scopes)))
+      )))
+  
 (defstruct (MemoryBlock
 	    (:constructor make-memoryblock (id type create release &key (lock nil))))
   "Ab abstraction for a memory allocation and release pipeline.
@@ -209,141 +261,6 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
               (getattr item :write-types) (map 'list #'cdr writes)
               (getattr item :return-positions) (map 'list #'(lambda (x) (position (funcall newid x) (getattr item :storage-id-dst))) base-writes)))
       (caten/codegen/rewriting-rules:schedule-item-write-define-global item))))
-
-(defun apply-memory-planner (schedule-graph symbolics base-graph)
-  (declare (type graph schedule-graph))
-  (let* ((nodes
-           (loop for node in (graph-nodes schedule-graph)
-                 if (getattr node :jitable)
-                   append (getattr node :blueprint-base)
-                 else
-                   collect node))
-         (realized-ids
-           (remove-duplicates
-            (loop for node in (graph-nodes schedule-graph)
-                  append (append (node-writes node) (node-reads node) (getattr node :storage-id-dst) (getattr node :storage-id-src)))))
-         (exprs (apply #'make-graph (loop for n in nodes if (eql (node-type n) :EXPR) collect n)))
-         (total-time (length nodes))
-         (trace-table (make-hash-table))
-	 (id2type (make-hash-table))
-	 (lock-table (make-hash-table))
-         (outputs ;; a list of buffers that do no changed by the memory-planner
-             (append ;; If the output were read by other kernels, it should be optimized by the global memory-planner.
-              (graph-outputs schedule-graph)
-              symbolics))
-         (id->depend-loops (make-hash-table))
-         (black-list-table (make-hash-table)))
-    (loop with stacks = nil
-          for node in nodes
-          if (eql (node-type node) :FOR) do
-            (push node stacks)
-          else if (eql (node-type node) :ENDFOR) do
-            (setf stacks (remove (getattr node :idx) stacks :key #'(lambda (x) (getattr x :idx))))
-          else
-            do (setf (gethash (node-id node) id->depend-loops) stacks))
-    (dolist (node (graph-nodes schedule-graph))
-      (loop for w in (node-writes node)
-            for ws in (getattr node :storage-id-dst)
-            if (not (eql w ws))
-              do (push ws symbolics))) ;; already reserved -> do not change
-    (dolist (s symbolics) (setf (gethash s lock-table) t))
-    ;; Creating a timestamp table for each node and variable.
-    (loop for node in nodes
-	  for nth upfrom 0
-          if (eql (node-type node) :EXPR) do
-            ;; Some hacks to keep the dependency of reduce ops
-            ;; for ...
-            ;;  for ...
-            ;;   for ...
-            ;;    x = a * b + c
-            ;;  out = x
-            ;; Here, out should not be mutated as x, a, b, and c.
-            ;; Enumerate such pairs and record then to the black-list-table.
-            (loop with node-loops = (gethash (node-id node) id->depend-loops)
-                  for read in (node-reads node)
-                  for val = (loop for e in (graph-nodes exprs) if (find read (node-writes e)) collect e) do
-                    (loop for r in val
-                          for parent-loops = (gethash (node-id r) id->depend-loops)
-                          if (and r (not (eql (node-id r) (node-id node)))
-                                  (getattr r :reduction :allow-undefined t)
-                                  ;; reduction after elementwise will never a solution
-                                  (intersection node-loops parent-loops :key #'node-id) ;; intersects
-                                  (not (= (length node-loops) (length parent-loops)))) ;; but partially
-                            do (dolist (read-id (node-reads r))
-                                 (dolist (write-id (node-writes node))
-                                   ;; Explicit the mutation from W to R is invaild.
-                                   (push read-id (gethash write-id black-list-table))))))
-          if (eql (node-type node) :Schedule-Item) ; Optimization for non-jitable instructions (like: foreign kernel calls, allocation, pause/backward)
-            do (assert (= (length (getattr node :storage-id-src)) (length (getattr node :read-types))))
-               (assert (= (length (getattr node :storage-id-dst)) (length (getattr node :write-types))))
-               ;; Lock the allocation (its the minimum requirement for running the graph)
-               (when (getattr node :allocate-p)
-                 (setf (gethash (car (node-writes node)) lock-table) t))
-               (loop for val in (getattr node :storage-id-src)
-                     for typ in (getattr node :read-types)
-                     for time = `(,nth ,@(gethash val trace-table))
-                     if (id-is-input-p val base-graph) do (push val outputs)
-                       if (symbolp val)
-                         do (setf (gethash val id2type) typ (gethash val trace-table) time))
-               (loop for val in (getattr node :storage-id-dst)
-                     for typ in (getattr node :write-types)
-                     for time = `(,nth ,@(gethash val trace-table))
-                     if (id-is-input-p val base-graph) do (push val outputs)
-                       if (and (symbolp val) (null (gethash val trace-table)))
-                         do (setf (gethash val id2type) typ) (gethash val trace-table) (list nth))
-          if (and
-              (not (eql (node-type node) :Schedule-Item)) ; For jitable and lowered instructions
-              (not (eql (node-class node) :Render)))
-            do (loop for val in (node-reads node)
-		     for typ in (relay-reads (read-type-relay node))
-		     for time = `(,nth ,@(gethash val trace-table))
-                     if (id-is-input-p val base-graph) do (push val outputs)
-                       if (and (symbolp val) (find val realized-ids))
-                         do (setf (gethash val id2type) typ (gethash val trace-table) time))
-	       (loop for val in (node-writes node)
-		     for typ in (relay-writes (read-type-relay node))
-                     if (id-is-input-p val base-graph) do (push val outputs)
-		       if (and (symbolp val) (null (gethash val trace-table)) (find val realized-ids))
-                         ;; ID2Type    -> the variable name and its type
-                         ;; TraceTable -> the variable name and timestamps of the variable (when it's used)
-                         ;; LockTable  -> Set T to lock (never become in-place)
-		         do (setf (gethash val id2type) typ (gethash val trace-table) (list nth))))
-    (let* ((memory-blocks
-	     (loop for key in (alexandria:hash-table-keys trace-table)
-	           for typ = (gethash key id2type)
-		   collect
-                   ;; [Note] A memory block lives in the range of [min{t}, max{t})
-                   ;; Plus, If the same task (e.g.: T0(x) -> T1(x) -> T0(x+1)) is scheduled, the memory block lives from 0 to 2.
-		   (make-memoryblock
-		    key typ
-		    (apply #'min (gethash key trace-table))
-                    ;; Set the longest time for the output variables (not to destruct it, and users can see the result)
-		    (if (find key outputs)
-			total-time
-		        (apply #'max (gethash key trace-table)))
-		    :lock (gethash key lock-table))))
-           ;; Minimize the peak memory usage
-	   (solved (greedy-solve-dsa memory-blocks total-time black-list-table))
-           ;; Retrive the solution. A hash table of OLD_MEMORY_ID -> NEW_MEMORY_ID
-           (alias-map (make-hash-table)))
-      (loop for mb in solved
-            do (setf (gethash (memoryblock-id mb) alias-map) (or (memoryblock-answer mb) (memoryblock-id mb))))
-      ;; Note(hikettei): is this recursively applied? especially for schedule cached and big graph.
-      ;; As of this writing(2024/11/10), i am unsure if this is correct. Should be tested by GPT2 in the next pr.
-      (labels ((newid (id &key (seen))
-                 (if (gethash id alias-map)
-                     (if (or (eql (gethash id alias-map) id) (find (gethash id alias-map) seen))
-                         id
-                         (newid (gethash id alias-map) :seen (append seen (list id))))
-                     id)))
-        (when (>= (ctx:getenv :JIT_DEBUG) 4)
-          (format t "[DEBUG] MemoryPlanner: minimized alias-map~%")
-          (maphash
-           #'(lambda (k v)
-               (format t "   | newid(~a) = ~a, alias-map[~a] = ~a~%" k (newid k) k v))
-           alias-map))
-        (dolist (node (graph-nodes schedule-graph))
-          (rewrite-bp-with-newid node #'newid))))))
 
 (defun tensor-relay-sizeof (buffer)
   "Computes the size of the buffer in bits."
