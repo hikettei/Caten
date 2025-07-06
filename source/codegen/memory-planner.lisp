@@ -345,56 +345,34 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
         (dolist (node (graph-nodes schedule-graph))
           (rewrite-bp-with-newid node #'newid))))))
 
-(defun buffer-sizeof (buffer)
+(defun tensor-relay-sizeof (buffer)
   "Computes the size of the buffer in bits."
-  (assert (every #'numberp (buffer-shape buffer)))
-  (* (apply #'* (buffer-shape buffer)) (caten/common.dtype:dtype/size-of (buffer-dtype buffer))))
+  (assert (every #'numberp (tensor-relay-shape buffer)))
+  (* (apply #'* (tensor-relay-shape buffer)) (caten/common.dtype:dtype/size-of (tensor-relay-dtype buffer))))
 
-(defmethod evaluate ((schedule-graph Graph) static-p)
-  (let ((seen)
-        (tensor-counter 0)
-        (total-size 0))
-    (dolist (item (graph-nodes schedule-graph))
-      (when (getattr item :allocate-p)
-        (let ((alloc (car (getattr item :items))))
-          (if alloc
-              (when (null (find (car (node-writes item)) seen))
-                (push (car (node-writes item)) seen)
-                (incf tensor-counter)
-                (when static-p
-                  (incf total-size (buffer-sizeof (car (relay-writes (read-type-relay alloc)))))))
-              (warn "evaluate: ~a is not allocation right?" item))))
-      (when (getattr item :jitable)
-        (loop for w in (getattr item :storage-id-dst)
-              for wt in (getattr item :write-types)
-              if (null (find w seen)) do
-                (push w seen)
-                (incf tensor-counter)
-                (when static-p
-                  (incf total-size (buffer-sizeof wt))))))
-    ;; (values counter total_size[GB])
-    (values tensor-counter (float (/ total-size 8e+9)))))
-
-(defun evaluate (timestamps)
+(defun evaluate (timestamps &aux (fixed-region 0) (n-tensors 0))
   (declare (type list timestamps))
-  )
+  (loop for ts in timestamps
+        if (eql (timestamp-type ts) :ALLOCATE) do
+          (let ((buf (car (relay-writes (read-type-relay (car (getattr (timestamp-node ts) :items)))))))
+            (when (every #'numberp (tensor-relay-shape buf))
+              (incf fixed-region (tensor-relay-sizeof buf)))
+            (incf n-tensors)))
+  ;; (values counter total_size[GB])
+  ;; [TODO] Improve the case of dynamic graph
+  (values n-tensors (float (/ fixed-region 8e+9))))
 
 (defun run-memory-planner (schedule-graph symbolics base-graph)
   (declare (type Graph schedule-graph base-graph))
-  (print schedule-graph)
-  (pprint-timestamp (schedule-graph->timestamp schedule-graph))
-  
-  )
-
-  (let ((static-graph-p (null symbolics)))
+  (let ((timestamps (schedule-graph->timestamp schedule-graph)))
     (multiple-value-bind (before-count before-size)
-        (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate schedule-graph static-graph-p))
-      (apply-memory-planner schedule-graph symbolics base-graph)
+        (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate timestamps))
+      (apply-memory-planner timestamps)
       (multiple-value-bind (after-count after-size)
-          (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate schedule-graph static-graph-p))
+          (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate timestamps))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
           (let ((compressing-rate
-                  (if (and static-graph-p (> before-size 0))
+                  (if (> before-size 0)
                       (format nil "~2,3f%" (/ (* 100 (- before-size after-size)) before-size))
                       (format nil "<Not Available in dynamic graph>"))))
             (caten/common.logger:print-info " | number of allocations: ~a -> ~a" before-count after-count)
