@@ -283,7 +283,7 @@ Constraints:
            (sort-progn-body (parents &aux (dg (ast-descendants-graph graph parents :only-surface nil)) (m (ast-make-sink-map dg)))
              ;; The descendant of parents is asseted not to have RenderOps.
              (assert (null (some #'render-p (graph-nodes dg))))
-             (print (ast-exprify-tensor-graph graph dg m)))
+             (ast-exprify-tensor-graph graph dg m))
            (split-parent (parents &aux (results) (tmp))
              (declare (type list parents results tmp))
              (loop for p in parents
@@ -291,24 +291,23 @@ Constraints:
                      else do (push p tmp))
              (when tmp (push (reverse tmp) results))
              (reverse results))
+           (exprify-from-list (ids)
+             (loop with parents = (split-parent (map 'list #'(lambda (x) (id->value graph x)) ids))
+                   for p in parents
+                   if (listp p) append (let ((p (sort-progn-body p))) (insert-nodes graph p) p)
+                     else collect p))
            (explore (id &aux (node (id->value graph id)))
              (when (or (null node) (find (the symbol id) seen)) (return-from explore))
              (push id seen)
              ;; A Expr is only mergeable with descendants w/ current PROGN.
-             (when (eql (node-type node) :PROGN)
-               (let* ((new-progn
-                        (loop with parents = (split-parent (map 'list #'(lambda (x) (id->value graph x)) (node-reads node)))
-                              for p in parents
-                              if (listp p) append (let ((p (sort-progn-body p))) (insert-nodes graph p) p)
-                                else collect p))
-                      (new-progn (apply #'%progn new-progn)))
-                 (setf (node-writes new-progn) (node-writes node))
-                 (insert-nodes graph (list new-progn))))
+             (case (node-type node)
+               (:PROGN
+                 (let ((new-progn (apply #'%progn (exprify-from-list (node-reads node)))))
+                   (setf (node-writes new-progn) (node-writes node))
+                   (insert-nodes graph (list new-progn)))))
              (mapc #'explore (node-reads (id->value graph id)))))
     (mapc #'explore (graph-outputs graph)))
   ;; [TODO]ここでPrognのChildがEXPRじゃないとError
-  (pprint-graph graph)
-  (print graph)
   graph)
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &aux (seen nil) (nodes))
