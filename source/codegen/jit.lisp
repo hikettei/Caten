@@ -24,6 +24,8 @@
 ```
 (codegen runtime &key (backend (ctx:getenv :BACKEND)))
 ```
+
+Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
 "
   (declare (type GraphRuntime runtime))
   ;; Get configurations for the backend
@@ -64,7 +66,7 @@
                        (pprint-graph (getattr x :blueprint))
                        (print-blueprint (getattr x :blueprint) t))
                      (when (>= JIT_DEBUG 2)
-                       (format t "Compilation Time : ~A(sec)" (float (/ (- end start) internal-time-units-per-second))))))))
+                       (format t "Lowering Time : ~A(sec)" (float (/ (- end start) internal-time-units-per-second))))))))
            (graph-nodes schedule-graph)))
         (when get-schedule-p (return-from codegen schedule-graph))
         ;; Running AutoScheduler
@@ -97,8 +99,7 @@
                      (format t "Optimization Time: ~A(sec)" (float (/ (- end start) internal-time-units-per-second)))))))
            (graph-nodes schedule-graph)))
         ;; Running Memory Planner
-        ;; [TODO]
-        ;; Purge unused allocations
+        ;; 今からやる
         (mapc
          #'(lambda (x) (when (eql (getattr x :type) :kernel) (schedule-item-sync-realize x)))
          (graph-nodes schedule-graph))

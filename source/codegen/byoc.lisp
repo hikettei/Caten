@@ -26,9 +26,6 @@
    #:get-backend-configs))
 
 (in-package :caten/codegen/byoc)
-;; [TODO] Renderer Render Node
-;; - Update BYOC
-;; - Clang/Metal/Lisp
 ;; ~~ Kernel ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass AbstractKernel ()
   ((name :initarg :name :accessor kernel-name)

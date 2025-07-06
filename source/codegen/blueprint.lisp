@@ -575,7 +575,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph)
             (getattr schedule-item :blueprint) (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx))))
       (caten/aasm::%simplify-ast (getattr schedule-item :blueprint)))))
-
+;; [TODO] Move to caten/aasm
 (defmethod print-blueprint (graph stream &aux (indent 0) (seen))
   ;; (caten/air:->dot graph :pathname "/tmp/graph.dot")
   (princ
