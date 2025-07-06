@@ -18,10 +18,11 @@ t=2 | [:EXPR ...]
 (in-package :caten/codegen/memory-planner)
 ;; ~~~ Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Timestamp
-            (:constructor make-timestamp (time type node bp)))
+            (:constructor make-timestamp (time type node bp schedule-item)))
   (type type :type (and keyword (member :BLOCK_START :BLOCK_END :ALLOCATE :STMT_VM :STMT_EXPR)))
   (node node :type (or null Node))
   (bp bp :type (or null Graph))
+  (schedule-item schedule-item :type (or null Node))
   (time time :type fixnum))
 
 (defmethod print-object ((ts timestamp) stream)
@@ -68,16 +69,19 @@ t=2 | [:EXPR ...]
 
 (defun schedule-graph->timestamp (schedule-graph &aux (count 0))
   (declare (type FastGraph schedule-graph))
-  (labels ((node->ts (type node &optional bp)
+  (labels ((node->ts (type node &optional bp si)
              (prog1
-                 (make-timestamp count type node bp)
+                 (make-timestamp count type node bp si)
                (incf count))))
     ;; [TODO] TimeStamp should not be a 1D array, GPUs can execute multiple kernels in the same time.
     (loop for item in (tpsort-graph schedule-graph)
           do (assert (eql (node-type item) :Schedule-Item))
           append
           (case (getattr item :type)
-            (:kernel (blueprint->timestamp (getattr item :blueprint) #'node->ts))
+            (:kernel
+             (let ((timestamps (blueprint->timestamp (getattr item :blueprint) #'node->ts)))
+               (mapc #'(lambda (x) (setf (timestamp-schedule-item x) item)) timestamps)
+               timestamps))
             (:allocate (list (node->ts :ALLOCATE item)))
             (otherwise (list (node->ts :STMT_VM item)))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -96,7 +100,7 @@ t=2 | [:EXPR ...]
     (explore id))
   results)
 
-(defun apply-memory-planner (timestamps)
+(defun apply-memory-planner (timestamps schedule-graph)
   "Simulates the flow of memory allocation and tries to minimize the peak memory usage by rewriting graph."
   (declare (type list timestamps))
   (let ((scopes) (garbages))
@@ -113,7 +117,39 @@ t=2 | [:EXPR ...]
                (loop for scope in scopes ;; finding from deeper -> shallower
                      for vars = (memoryscope-vars scope)
                      if (gethash id vars) do (return-from find-variable (gethash id vars)))
-               (error "find-variable: The id ~a is not defined." id)))
+               (error "find-variable: The id ~a is not defined." id))
+             (var-is-mutable-p (var schedule-item)
+               (let* ((is-readonly-p (null (find var (node-writes schedule-item))))
+                      (var-parent (id->value schedule-graph var))
+                      (is-just-allocated-p (and var-parent (eql (node-type var-parent) :schedule-item)
+                                                (eql :allocate (getattr var-parent :Type)))))
+                 ;; Note: 少なくともis-readonly-pは強制，つまり，BINDにしか読まれない
+                 ;; -> WAWを破壊する時の十分条件ではない？
+                 ;; schedule-itemで，直Rea
+                 ;; [TODO] Depthから考えて，Kernel内部にIn-PlaceMutation可能か判定する
+                 ;; [TODO] 外に伸びてなくても，InPlaceMutationできない場合がある，特にFuseされてると。
+                 ;; [TODO] TensorのShapeから判断する必要がある
+                 (and is-just-allocated-p is-readonly-p)))
+             (rewrite-bind (from to)
+               (loop for ts in timestamps
+                     if (eql (timestamp-type ts) :STMT_EXPR) do
+                       (funcall
+                        (Simplifier
+                            ()
+                            ((:BIND (x) :value (eql from)) -> (:BIND (x) :value to))
+                            ((:AREF ((eql from) y)) -> (:AREF (to y))))
+                        (timestamp-bp ts))))
+             (apply-in-place-mutation (aref candidates schedule-item)
+               (loop for r in candidates
+                     if (var-is-mutable-p (car (node-reads r)) schedule-item) do
+                       ;; Rewrite aref -> r
+                       (assert (eql :AREF (node-type aref)))
+                       (assert (eql :AREF (node-type r)))
+                       (rewrite-bind (car (node-reads aref)) (car (node-reads r)))
+                       ;; ↓がBINDである可能性は？
+                       (setf (car (node-reads aref)) (car (node-reads r)))
+                       (return-from apply-in-place-mutation t))
+               nil))
       (enter-new-scope)
       (pprint-timestamp timestamps)
       (loop for ts in timestamps do
@@ -129,11 +165,13 @@ t=2 | [:EXPR ...]
           (:STMT_EXPR
            ;; STMT_EXPR: out[...] = f(x[...]), Motivation: can we substitute out instead of allocating extra buffer?
            (assert (timestamp-bp ts))
-           (let* ((expr (timestamp-node ts))
+           (let* ((parent-schedule-item (timestamp-schedule-item ts))
+                  (expr (timestamp-node ts))
                   (bp-graph (timestamp-bp ts))
                   (expr-store (id->value bp-graph (car (node-reads expr))))
                   (expr-aref  (when expr-store (id->value bp-graph (car (node-reads expr-store))))))
              (assert (eql (node-type expr) :EXPR))
+             (assert parent-schedule-item)
              ;; Target EXPR: SETF(AREF(EXTRA_BUFFER, INDEXING), EXPR)
              ;;                             ^ If you rewrite this aref, the allocation is purged from graph.
              (when (and expr-aref expr-store
@@ -145,39 +183,21 @@ t=2 | [:EXPR ...]
                ;;   - アクセスの添字から考えればOK
                ;; 2. Find from garbage それ以外は，garbageから探す
                ;; BINDがあるからSETF ID書き換えるだけでAllocationはPurged, right?
+               ;; 1. In-Place Mutation (search from expr-reads which is the last reference in the graph)
+               ;; All you have to rewrite is :BIND value
                (let* ((expr-reads (expr-gather-aref (second (node-reads expr-store)) bp-graph)))
-                 (print expr)
-                 (print expr-reads)
-                 ))))))
+                 (or
+                  (apply-in-place-mutation expr-aref expr-reads parent-schedule-item)
+                  ;; Yet ANother Algorithm
+                  )))))))
       (exit-current-scope)
       (assert (= 0 (length scopes)))
+
+      (print "FINAL GRAPH")
+      (loop for s in (graph-nodes schedule-graph)
+            if (eql :kernel (getattr s :type)) do
+              (caten/codegen/blueprint:print-blueprint (getattr s :blueprint) t))
       )))
-  
-(defun buffer-orig-shape (buffer)
-  "Returns a shape of the buffer, which is not VIEWED."
-  (declare (type AbstractBuffer buffer))
-  (or
-   (buffer-orig-buffer-shape buffer) ;; non-viewed-size
-   (buffer-shape buffer)))
-
-(defun buffer-element-size (buffer)
-  (let ((shape (buffer-orig-shape buffer))
-        (count nil)
-        (symbols nil))
-    (loop for s in shape
-          if (symbolp s) do (push s symbols)
-          else do (push s count))
-    (cons (apply #'* count) symbols)))
-
-(defun buffer-size-eq (a b)
-  (let ((s1 (buffer-element-size a))
-        (s2 (buffer-element-size b)))
-    (and
-     (= (car s1) (car s2)) ;; fixed parts
-     (= (length (cdr s1)) (length (cdr s2))) ;; number of symbols
-     (let ((stack (cdr s1)))
-       (dolist (k (cdr s2)) (setf stack (remove k stack :test #'eql)))
-       (null stack)))))
 
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun id-is-input-p (id graph)
@@ -186,39 +206,6 @@ t=2 | [:EXPR ...]
       (when (getattr node :from)
         ;; Memory Planner is not allowed to destruct the input. (like: having a weight/parameter)
         t))))
-
-(defun rewrite-bp-with-newid (item newid)
-  "Rewrites the given schedule item with newid"
-  (dolist (bp (getattr item :blueprint))
-    (setf (node-writes bp) (map 'list newid (node-writes bp))
-          (node-reads bp) (map 'list newid (node-reads bp)))
-    (when (eql (node-type bp) :EXPR)
-      (dolist (item (graph-nodes (expr-graph (getattr bp :EXPR))))
-        (when (eql (node-type item) :AREF)
-          (setf (getattr item :storage-id) (funcall newid (getattr item :storage-id)))))))
-  ;; Remove Duplicated :DEFINE_GLOBAL
-  ;; NEEDS A UPDATE
-  (setf (getattr item :blueprint)
-        (loop for item in (getattr item :blueprint)
-              if (not (eql (node-type item) :DEFINE-GLOBAL))
-                collect item))
-  (let* ((reads (map 'list #'cons (getattr item :storage-id-src) (getattr item :read-types)))
-         (writes (map 'list #'cons (getattr item :storage-id-dst) (getattr item :write-types)))
-         (reads (remove-duplicates reads :key (compose newid #'car)))
-         (writes (remove-duplicates writes :key (compose newid #'car)))
-         (base-writes (getattr item :storage-id-dst))
-         (seen))
-    (flet ((only-unseen (items)
-             (loop for (id . type) in items
-                   if (null (find (funcall newid id) seen))
-                     do (push (funcall newid id) seen) and collect (cons id type))))
-      (multiple-value-bind (writes reads) (values (only-unseen writes) (only-unseen reads))
-        (setf (getattr item :storage-id-src) (map 'list (compose newid #'car) reads)
-              (getattr item :storage-id-dst) (map 'list (compose newid #'car) writes)
-              (getattr item :read-types) (map 'list #'cdr reads)
-              (getattr item :write-types) (map 'list #'cdr writes)
-              (getattr item :return-positions) (map 'list #'(lambda (x) (position (funcall newid x) (getattr item :storage-id-dst))) base-writes)))
-      (caten/codegen/rewriting-rules:schedule-item-write-define-global item))))
 
 (defun tensor-relay-sizeof (buffer)
   "Computes the size of the buffer in bits."
@@ -242,7 +229,7 @@ t=2 | [:EXPR ...]
   (let ((timestamps (schedule-graph->timestamp schedule-graph)))
     (multiple-value-bind (before-count before-size)
         (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate timestamps))
-      (apply-memory-planner timestamps)
+      (apply-memory-planner timestamps schedule-graph)
       (multiple-value-bind (after-count after-size)
           (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate timestamps))
         (when (>= (ctx:getenv :JIT_DEBUG) 2)
