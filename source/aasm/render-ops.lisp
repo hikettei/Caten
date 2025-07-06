@@ -141,8 +141,8 @@ Constraints:
                                append (node-reads arg-new)
                              else if (null (empty-p arg-new))
                                     collect arg)))))))
-    ((:FOR (range (:PROGN (body))) :mark mark) -> (:FOR (range body) :mark mark))
-    ;; [TODO] Apply the same stuff on :IF above
+    ;; [Note] This must be applied after exprify is applied. because progn is a trigger.
+;;    ((:FOR (range (:PROGN (body))) :mark mark) -> (:FOR (range body) :mark mark))
     ((:IF ((:EXPR (cond1)) (:IF ((:EXPR (cond2)) body))))
      ->
      ((node graph)
@@ -283,7 +283,7 @@ Constraints:
            (sort-progn-body (parents &aux (dg (ast-descendants-graph graph parents :only-surface nil)) (m (ast-make-sink-map dg)))
              ;; The descendant of parents is asseted not to have RenderOps.
              (assert (null (some #'render-p (graph-nodes dg))))
-             (ast-exprify-tensor-graph graph dg m))
+             (print (ast-exprify-tensor-graph graph dg m)))
            (split-parent (parents &aux (results) (tmp))
              (declare (type list parents results tmp))
              (loop for p in parents
@@ -306,6 +306,9 @@ Constraints:
                  (insert-nodes graph (list new-progn))))
              (mapc #'explore (node-reads (id->value graph id)))))
     (mapc #'explore (graph-outputs graph)))
+  ;; [TODO]ここでPrognのChildがEXPRじゃないとError
+  (pprint-graph graph)
+  (print graph)
   graph)
 ;; ~~~~ Rewriters(Verification) ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun ast-expr-graph (graph expr &aux (seen nil) (nodes))
@@ -366,7 +369,6 @@ Constraints:
                           #'ast-simplify-expr
                           ;; 1. purge reduction (this will remove an extra aref etc)
                           ;; 2. exprify again
-                          #'(lambda (x) (verify-graph x) x)
                           #'ast-simplify-constant
                           #'ast-purge-unused-expr
                           #'(lambda (x) (graph-infer-type-relay x) x))))
