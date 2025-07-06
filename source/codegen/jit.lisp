@@ -2,6 +2,7 @@
   (:use :cl :caten/runtime :caten/air :caten/codegen/iteration :caten/codegen/rewriting-rules :caten/codegen/byoc
         :caten/codegen/scheduler :caten/common.logger :caten/codegen/blueprint :caten/codegen/realize)
   (:import-from :caten/codegen/helpers #:coerce-dtyped-buffer)
+  (:import-from :caten/codegen/memory-planner #:run-memory-planner)
   (:export #:codegen #:jit))
 
 (in-package :caten/codegen/jit)
@@ -99,7 +100,9 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
                      (format t "Optimization Time: ~A(sec)" (float (/ (- end start) internal-time-units-per-second)))))))
            (graph-nodes schedule-graph)))
         ;; Running Memory Planner
-        ;; 今からやる
+        (when (= 0 (ctx:getenv :NO_MEMORY_PLANNER))
+          (run-memory-planner schedule-graph nil base-graph))
+        
         (mapc
          #'(lambda (x) (when (eql (getattr x :type) :kernel) (schedule-item-sync-realize x)))
          (graph-nodes schedule-graph))

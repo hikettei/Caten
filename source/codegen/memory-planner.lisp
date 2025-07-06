@@ -1,11 +1,88 @@
 (defpackage :caten/codegen/memory-planner
   (:documentation "`Memory Planner` is a data structure that abstracts the allocation and freeing of memory over time.
-It is responsible for optimizing memory allocation by overlapping allocation to minimize the maximum memory usage (heap_size) required for all the time `t`.")
-  (:use :cl :caten/air :caten/runtime/buffer :caten/codegen/shape-inference :caten/codegen/expr :alexandria)
+It is responsible for optimizing memory allocation by overlapping allocation to minimize the maximum memory usage (heap_size) required for all the time `t`.
+
+Implementation:
+
+1. Construct a timestamp from schedule-graph.
+
+t=0 | [:FOR ...]
+t=1 | [:PROGN ...]
+t=2 | [:EXPR ...]
+
+2. Map them into MemoryBlock
+")
+  (:use :cl :caten/air :caten/aasm :caten/aasm/expr :alexandria)
   (:export
    #:run-memory-planner))
 (in-package :caten/codegen/memory-planner)
 ;; ~~~ Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(defstruct (Timestamp
+            (:constructor make-timestamp (time type node)))
+  (type type :type (and keyword (member :BLOCK_START :BLOCK_END :STMT)))
+  (node node :type (or null Node))
+  (time time :type fixnum))
+
+(defmethod print-object ((ts timestamp) stream)
+  (print-unreadable-object (ts stream)
+    (format stream "[t=~a] : ~a" (timestamp-time ts) (timestamp-node ts))))
+
+(defun pprint-timestamp (timestamps &aux (indent 0))
+  (declare (type list timestamps))
+  (princ
+   (with-output-to-string (out)
+     (flet ((indent () (dotimes (i indent) (princ " " out))))
+       (loop for ts in timestamps do
+         (case (timestamp-type ts)
+           (:BLOCK_START (fresh-line out) (indent) (princ "{" out) (incf indent 2))
+           (:BLOCK_END   (fresh-line out) (indent) (princ "}" out) (decf indent 2))
+           (:STMT        (fresh-line out) (indent) (format out "~a" ts))))))))
+          
+(defmethod timestamp-get-reads ((ts timestamp) graph)
+  
+  )
+
+(defmethod timestamp-get-writes ((ts timestamp) graph)
+  )
+
+(defun blueprint->timestamp (graph writer &aux (seen))
+  "Extracts the scope of variables in the blueprint"
+  (declare (type function writer))
+  (labels ((r (s &aux (val (id->value graph s)))
+             (when (and val (null (find (node-id val) seen)))
+               (prog1
+                   (f val) (push (node-id val) seen))))
+           (f (node)
+             (case (node-type node)
+               (:PROGN
+                 `(,(funcall writer :BLOCK_START nil)
+                   ,@(apply #'append (map 'list #'r (node-reads node)))
+                   ,(funcall writer :BLOCK_END nil)))
+               (:EXPR
+                `(,(funcall writer :STMT node)))
+               ((:FOR :IF)
+                `(,(funcall writer :BLOCK_START nil)
+                  ,@(r (second (node-reads node)))
+                  ,(funcall writer :BLOCK_END nil)))
+               ((:DEFINE-GLOBAL :RANGE :ALLOCATE :LOAD :AREF) (error "They should not occur here???"))
+               (otherwise (error "Cannot construct a timestamp from blueprint, add a case for ~a" node)))))
+    `(,(funcall writer :BLOCK_START nil)
+      ,@(f (id->value graph (car (graph-outputs graph))))
+      ,(funcall writer :BLOCK_END nil))))
+
+(defun schedule-graph->timestamp (schedule-graph &aux (count 0))
+  (declare (type FastGraph schedule-graph))
+  (labels ((node->ts (type node)
+             (prog1
+                 (make-timestamp count type node)
+               (incf count))))
+    (loop for item in (tpsort-graph schedule-graph)
+          do (assert (eql (node-type item) :Schedule-Item))
+          append
+          (case (getattr item :type)
+            (:kernel (blueprint->timestamp (getattr item :blueprint) #'node->ts))
+            (otherwise (list (node->ts :STMT item)))))))
+;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (MemoryBlock
 	    (:constructor make-memoryblock (id type create release &key (lock nil))))
   "Ab abstraction for a memory allocation and release pipeline.
@@ -18,14 +95,14 @@ It is responsible for optimizing memory allocation by overlapping allocation to 
 MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
   (id id :type symbol)
   (answer nil :type symbol)
-  (type type :type AbstractBuffer)
+  (type type :type TensorRelay)
   (create create :type fixnum)
   (release release :type fixnum)
   (lifetime (- release create) :type (integer 0))
   (lock lock :type boolean))
 
 (defmethod print-object ((mb MemoryBlock) stream)
-  (format stream "MemoryBlock(~(~a~) -> ~(~a~)) : (~a, ~a, ~a, lock=~a)~%" (memoryblock-id mb) (memoryblock-answer mb) (buffer-shape (memoryblock-type mb)) (memoryblock-create mb) (memoryblock-release mb) (memoryblock-lock mb)))
+  (format stream "MemoryBlock(~(~a~) -> ~(~a~)) : (~a, ~a, ~a, lock=~a)~%" (memoryblock-id mb) (memoryblock-answer mb) (tensor-relay-shape (memoryblock-type mb)) (memoryblock-create mb) (memoryblock-release mb) (memoryblock-lock mb)))
 
 (defmethod allocate-p ((mb MemoryBlock) time) (= time (memoryblock-create mb)))
 (defmethod created-p ((mb MemoryBlock) time) (>= time (memoryblock-create mb)))
@@ -301,7 +378,17 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
     ;; (values counter total_size[GB])
     (values tensor-counter (float (/ total-size 8e+9)))))
 
-(defmethod run-memory-planner ((schedule-graph Graph) (symbolics list) (base-graph Graph))
+(defun evaluate (timestamps)
+  (declare (type list timestamps))
+  )
+
+(defun run-memory-planner (schedule-graph symbolics base-graph)
+  (declare (type Graph schedule-graph base-graph))
+  (print schedule-graph)
+  (pprint-timestamp (schedule-graph->timestamp schedule-graph))
+  
+  )
+
   (let ((static-graph-p (null symbolics)))
     (multiple-value-bind (before-count before-size)
         (when (>= (ctx:getenv :JIT_DEBUG) 2) (evaluate schedule-graph static-graph-p))

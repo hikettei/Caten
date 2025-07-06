@@ -11,7 +11,7 @@
    (:file "renderer")
    ;(:file "expr-cache")
    (:file "rewriting-rules")
-   ;(:file "memory-planner")
+   (:file "memory-planner")
    (:file "scheduler")
    (:file "realize")
    (:file "blueprint")
