@@ -314,4 +314,4 @@ Returns `:INF` if the number is negative infinity, `:-INF` if the number is nega
 Returns a temporary runtime object just used for allocation global buffer."
   (or (gethash (ctx:getenv :BACKEND) *global-runtime*)
       (setf (gethash (ctx:getenv :BACKEND) *global-runtime*)
-            (make-runtime (make-graph) :runtime (caten/codegen/backend:get-runtime-type) :buffer-type (caten/codegen/backend:get-buffer-type)))))
+            (make-runtime (make-graph) :runtime (caten/codegen/byoc:get-runtime-type) :buffer-type (caten/codegen/byoc:get-buffer-type)))))

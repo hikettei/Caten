@@ -1,6 +1,6 @@
 (defpackage :caten/codegen/jit
-  (:use :cl :caten/runtime :caten/air :caten/codegen/backend :caten/codegen/iteration :caten/codegen/rewriting-rules
-        :caten/codegen/scheduler :caten/common.logger :caten/codegen/blueprint :caten/codegen/realize :caten/codegen/search)
+  (:use :cl :caten/runtime :caten/air :caten/codegen/iteration :caten/codegen/rewriting-rules :caten/codegen/byoc
+        :caten/codegen/scheduler :caten/common.logger :caten/codegen/blueprint :caten/codegen/realize)
   (:import-from :caten/codegen/helpers #:coerce-dtyped-buffer)
   (:export #:codegen #:jit))
 
@@ -106,9 +106,9 @@
         (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph kernel)))
           (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Rendering with ~a" renderer))
           (mapc
-           #'(lambda (x) (when (eql (node-type x) :JIT_KERNEL) (caten/codegen/renderer:%render-kernel renderer x)))
+           #'(lambda (x) (when (eql (node-type x) :JIT_KERNEL) (caten/codegen/byoc:%render-kernel renderer x)))
            (graph-nodes runtime-graph))
-          (caten/codegen/renderer:%compile-kernel
+          (caten/codegen/byoc:%compile-kernel
            renderer
            (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :JIT_KERNEL) collect node)
            nil)

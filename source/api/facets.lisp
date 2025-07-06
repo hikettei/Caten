@@ -54,7 +54,7 @@ Users can extend this method if needed.
          (dtype (if (eql t (array-element-type obj))
                     (obj-dtype-of (aref storage 0))
                     (caten/common.dtype:lisp->dtype (array-element-type obj))))
-         (buffer (make-buffer (array-dimensions obj) (static-compute-strides *default-order* (array-dimensions obj)) dtype nil :device (caten/codegen/backend:get-buffer-type)))
+         (buffer (make-buffer (array-dimensions obj) (static-compute-strides *default-order* (array-dimensions obj)) dtype nil :device (caten/codegen/byoc:get-buffer-type)))
          ;; TODO: Transfer into device without initializing runtime
          (_ (open-buffer (get-global-runtime) buffer))
          (__ (transfer-from-array (get-global-runtime) buffer storage))

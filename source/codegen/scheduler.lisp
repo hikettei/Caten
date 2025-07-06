@@ -878,8 +878,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
   (declare (type Graph schedule-graph))
   (let ((caten/aasm:*ctx* (make-graph)))
     (labels ((e (node)
-               (setf (node-type-relay node) nil
-                     (getattr node :_read_views) nil)
+               (setf (node-type-relay node) nil (getattr node :_read_views) nil)
                (caten/aasm:emit node))
              (explore (id &aux (node (id->value schedule-graph id)))
                (when (or (null node) (find id seen)) (return-from explore))
@@ -908,7 +907,6 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                             ()
                             "The number of :DEFINE-GLOBAL nodes should be equal to the number of reads and writes. ~a vs ~a" args (append write-ids (node-reads node)))
                     (mapc #'e writes)
-                    ;; [TODO] Refactor render-ops.lisp comes first!
                     (caten/aasm:emit (make-node :RUNTIME :KERNEL (node-writes node) (append write-ids (node-reads node))
                                                 :kernel-info
                                                 (make-instance kernel :name (getattr node :name) :args args :schedule-item node :flops nil))))))
@@ -916,4 +914,4 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
       (mapc #'explore (graph-outputs schedule-graph)))
     (setf (graph-outputs caten/aasm:*ctx*) (copy-list (graph-outputs schedule-graph)))
     ;; [TODO] All backward nodes should be scheduled after the PAUSE/BACKWARD node. how do we know that?
-    (->graph-with-tpsort (->fast-graph caten/aasm:*ctx*))))
+    (->fast-graph caten/aasm:*ctx*)))

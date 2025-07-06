@@ -6,7 +6,7 @@
   :serial t
   :components
   ((:file "helpers")
-   (:file "backend")
+   (:file "byoc")
    (:file "iteration")
    (:file "renderer")
    ;(:file "expr-cache")
@@ -22,7 +22,6 @@
    ;(:file "auto-scheduler/ast-parser")
    ;(:file "auto-scheduler/scop")
    (:file "auto-scheduler/config")
-   (:file "search")
    ;(:file "auto-scheduler/auto-scheduler")
    (:file "jit")
    (:file "runner")

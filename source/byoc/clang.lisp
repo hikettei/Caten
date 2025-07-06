@@ -1,10 +1,7 @@
 (defpackage :caten/byoc/clang
   (:use :cl :cffi :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
-   :caten/codegen/backend :caten/codegen/renderer :caten/air :caten/codegen/runner
-   :caten/aasm :caten/aasm/expr :caten/codegen/helpers :caten/codegen/iteration)
-  (:import-from
-   :caten/codegen/search
-   #:define-auto-scheduler)
+        :caten/codegen/byoc :caten/codegen/renderer :caten/air :caten/codegen/runner
+        :caten/aasm :caten/aasm/expr :caten/codegen/helpers :caten/codegen/iteration)
   (:import-from :caten/byoc/lisp #:LispBuffer)
   (:export #:ClangBuffer #:ClangRuntime #:load-foreign-function))
 
@@ -18,9 +15,8 @@
 (define-auto-scheduler Clang-Auto-Scheduler :use-parallel 1)
 (define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer ClangKernel Clang-Auto-Scheduler t)
 
-(defmethod %render-kernel ((renderer CStyle-Renderer) si)
-  (let* ((kernel (getattr si :kernel))
-         (bp (getattr (kernel-schedule-item kernel) :blueprint))
+(defmethod %render-kernel ((renderer CStyle-Renderer) kernel)
+  (let* ((bp (getattr (kernel-schedule-item kernel) :blueprint))
          (args (apply #'concatenate 'string
                       (butlast
                        (loop for arg in (kernel-args kernel)
@@ -214,7 +210,6 @@ Compiled with this command: ~a"
                   (list (header))
                   (loop for item in items
                         collect (clang-program (getattr item :kernel)))))))
-    (print code)
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
     ;; [Note] -ffast-math and CI fails?

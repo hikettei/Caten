@@ -1,42 +1,24 @@
 (defpackage :caten/codegen/renderer
   (:use :cl :caten/codegen/iteration :caten/aasm :caten/runtime/buffer :caten/air)
+  (:import-from #:caten/codegen/byoc #:Renderer #:%render-node #:%render-const #:%render-kernel #:renderer-graph #:renderer-index-space)
   (:import-from #:caten/air #:node-type #:node-reads #:node-writes #:getattr #:id->value #:defnode #:make-node #:graph-nodes)
   (:import-from #:caten/aasm/expr #:Expr #:expr-graph #:expr-out #:expr-p #:expr-add #:expr-mul #:expr-const #:expr-scalar-equivalent-p #:expr-from-graph)
   (:import-from #:caten/codegen/helpers #:simplify-arithmetic-code #:->cdtype #:float-type-of)
   (:export
-   #:get-default-renderer
-   #:%render-kernel #:%compile-kernel
    ;; Renderers
-   #:Renderer
    #:Default-Renderer
    #:CStyle-Renderer
-   ;; Utils
-   #:renderer-graph
-   #:renderer-index-space
+
    #:make-renderer
    #:render-expr
    #:render-aref
    #:render-node
-   #:%render-node
-   #:%render-const
    #:expr-index-components
    
-   #:%renderer-get-auto-scheduler
    #:render-index
    #:render-aref-index))
 
 (in-package :caten/codegen/renderer)
-
-(defgeneric get-default-renderer (id))
-(defgeneric %render-node (renderer node-dispatcher node) (:documentation ""))
-(defgeneric %render-const (renderer obj) (:documentation ""))
-(defgeneric %render-kernel (renderer jit-kernel))
-(defgeneric %compile-kernel (renderer schedule-items dir))
-
-(defclass Renderer ()
-  ((graph :initarg :graph :accessor renderer-graph)
-   (index-space :initarg :index-space :type list :initform nil :accessor renderer-index-space))
-  (:documentation "TODO"))
 
 (defun make-renderer (renderer-name graph index-space &rest initargs)
   (assert (every #'expr-p index-space) () "index-space is a list of exprs!")
