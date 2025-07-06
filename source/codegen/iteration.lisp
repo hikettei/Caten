@@ -29,25 +29,25 @@
 ;; ~~ Iteration Space Syntax Sugar ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun relay-write-iters (relay)
   (declare (type Relay relay))
-  (map 'list #'tensor-relay-iterspace (relay-writes relay)))
+  (map 'list #'(lambda (x) (when x (tensor-relay-iterspace x))) (relay-writes relay)))
 
 (defun (setf relay-write-iters) (value relay)
   (declare (type Relay relay) (type list value))
   (assert (= (length value) (length (relay-writes relay))))
   (loop for w in (relay-writes relay)
         for v in value
-        do (setf (tensor-relay-iterspace w) v)))
+        do (when w (setf (tensor-relay-iterspace w) v))))
 
 (defun relay-read-iters (relay)
   (declare (type Relay relay))
-  (map 'list #'tensor-relay-iterspace (relay-reads relay)))
+  (map 'list #'(lambda (x) (when x (tensor-relay-iterspace x))) (relay-reads relay)))
 
 (defun (setf relay-read-iters) (value relay)
   (declare (type Relay relay) (type list value))
   (assert (= (length value) (length (relay-reads relay))))
   (loop for w in (relay-reads relay)
         for v in value
-        do (setf (tensor-relay-iterspace w) v)))
+        do (when w (setf (tensor-relay-iterspace w) v))))
 ;; ~~ Loop Collapse ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun reveal-buffer (object)
   (if (typep object 'TensorRelay)

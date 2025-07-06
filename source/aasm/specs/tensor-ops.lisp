@@ -20,13 +20,13 @@
    (inferred-permute :accessor tensor-relay-inferred-permute :initarg :permute :initform nil)
    (orig-buffer-shape :accessor tensor-relay-orig-buffer-shape :initarg :orig-shape :initform nil)
    (depend-idx-list :accessor tensor-relay-depend-idx-list :initarg :depend-idx-list :initform nil)
-   (iterspace :accessor tensor-relay-iterspace :initform nil)))
+   (iterspace :accessor tensor-relay-iterspace :initarg :iterspace :initform nil)))
 
-(defun make-tensor-relay (shape stride dtype views &key (value nil) (permute nil) (orig-shape nil) (depend-idx-list nil))
+(defun make-tensor-relay (shape stride dtype views &key (value nil) (permute nil) (orig-shape nil) (depend-idx-list nil) (iterspace nil))
   (declare (type keyword dtype))
   (when (null views) (setf views (loop for s in shape collect nil)))
   (assert (= (length shape) (length stride) (length views)))
-  (make-instance 'TensorRelay :shape shape :stride stride :dtype dtype :views views :value value :nrank (length shape) :permute permute :orig-shape orig-shape :depend-idx-list depend-idx-list))
+  (make-instance 'TensorRelay :shape shape :stride stride :dtype dtype :views views :value value :nrank (length shape) :permute permute :orig-shape orig-shape :depend-idx-list depend-idx-list :iterspace iterspace))
 
 (defun copy-tensor-relay (relay)
   (declare (type TensorRelay relay))
@@ -34,7 +34,8 @@
                      (copy-list (tensor-relay-views relay))
                      :value (tensor-relay-value relay)
                      :permute (copy-list (tensor-relay-inferred-permute relay))
-                     :depend-idx-list (copy-list (tensor-relay-depend-idx-list relay))))
+                     :depend-idx-list (copy-list (tensor-relay-depend-idx-list relay))
+                     :iterspace (tensor-relay-iterspace relay)))
 
 (defun merge-with-initial-value (node-reads realized-args)
   (assert (= (length node-reads) (length realized-args)))
