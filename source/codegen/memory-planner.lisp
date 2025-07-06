@@ -19,7 +19,7 @@ t=2 | [:EXPR ...]
 ;; ~~~ Implementation ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (Timestamp
             (:constructor make-timestamp (time type node)))
-  (type type :type (and keyword (member :BLOCK_START :BLOCK_END :STMT)))
+  (type type :type (and keyword (member :BLOCK_START :BLOCK_END :ALLOCATE :STMT_VM :STMT_EXPR)))
   (node node :type (or null Node))
   (time time :type fixnum))
 
@@ -36,14 +36,9 @@ t=2 | [:EXPR ...]
          (case (timestamp-type ts)
            (:BLOCK_START (fresh-line out) (indent) (princ "{" out) (incf indent 2))
            (:BLOCK_END   (fresh-line out) (indent) (princ "}" out) (decf indent 2))
-           (:STMT        (fresh-line out) (indent) (format out "~a" ts))))))))
-          
-(defmethod timestamp-get-reads ((ts timestamp) graph)
-  
-  )
-
-(defmethod timestamp-get-writes ((ts timestamp) graph)
-  )
+           (:ALLOCATE    (fresh-line out) (indent) (format out "allocate[~a];" (node-reads (car (getattr (timestamp-node ts) :items)))))
+           (:STMT_VM     (fresh-line out) (indent) (format out "stmt_vm();"))
+           (:STMT_EXPR   (fresh-line out) (indent) (format out "stmt_expr();"))))))))
 
 (defun blueprint->timestamp (graph writer &aux (seen))
   "Extracts the scope of variables in the blueprint"
@@ -59,7 +54,7 @@ t=2 | [:EXPR ...]
                    ,@(apply #'append (map 'list #'r (node-reads node)))
                    ,(funcall writer :BLOCK_END nil)))
                (:EXPR
-                `(,(funcall writer :STMT node)))
+                `(,(funcall writer :STMT_EXPR node)))
                ((:FOR :IF)
                 `(,(funcall writer :BLOCK_START nil)
                   ,@(r (second (node-reads node)))
@@ -76,12 +71,14 @@ t=2 | [:EXPR ...]
              (prog1
                  (make-timestamp count type node)
                (incf count))))
+    ;; [TODO] TimeStamp should not be a 1D array, GPUs can execute multiple kernels in the same time.
     (loop for item in (tpsort-graph schedule-graph)
           do (assert (eql (node-type item) :Schedule-Item))
           append
           (case (getattr item :type)
             (:kernel (blueprint->timestamp (getattr item :blueprint) #'node->ts))
-            (otherwise (list (node->ts :STMT item)))))))
+            (:allocate (list (node->ts :ALLOCATE item)))
+            (otherwise (list (node->ts :STMT_VM item)))))))
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defstruct (MemoryBlock
 	    (:constructor make-memoryblock (id type create release &key (lock nil))))
