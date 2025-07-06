@@ -85,7 +85,19 @@ t=2 | [:EXPR ...]
   (level 0 :type fixnum)
   (vars (make-hash-table) :type hash-table))
 
+(defun expr-gather-aref (id graph &aux seen results)
+  (labels ((explore (x &aux (node (id->value graph x)))
+             (when (or (null node) (find (node-id node) seen)) (return-from explore))
+             (push (node-id node) seen)
+             (when (eql (node-type node) :EXPR) (return-from explore)) ;; If hit on another expr, return
+             (when (eql (node-type node) :AREF)
+               (push node results))
+             (mapc #'explore (node-reads node))))
+    (explore id))
+  results)
+
 (defun apply-memory-planner (timestamps)
+  "Simulates the flow of memory allocation and tries to minimize the peak memory usage by rewriting graph."
   (declare (type list timestamps))
   (let ((scopes) (garbages))
     (labels ((enter-new-scope ()
@@ -113,52 +125,34 @@ t=2 | [:EXPR ...]
              (allocate-on-current-scope (car (node-writes node)) rel)))
           (:BLOCK_START (enter-new-scope))
           (:BLOCK_END (exit-current-scope))
-          (:STMT_VM) ;; Cannot track the flow of allocations?...
+          (:STMT_VM) ;; Aah, we cannot track the allocation of vmops...
           (:STMT_EXPR
-           ;; STMT_EXPR: out[...] = f(x[...]), outの書き込む先に何か代用できるALLOCは存在するかを考える
+           ;; STMT_EXPR: out[...] = f(x[...]), Motivation: can we substitute out instead of allocating extra buffer?
            (assert (timestamp-bp ts))
            (let* ((expr (timestamp-node ts))
                   (bp-graph (timestamp-bp ts))
-                  (expr-store (id->value bp-graph (car (node-reads expr)))))
+                  (expr-store (id->value bp-graph (car (node-reads expr))))
+                  (expr-aref  (when expr-store (id->value bp-graph (car (node-reads expr-store))))))
              (assert (eql (node-type expr) :EXPR))
-             ;; SETF(ID, EXPR), IDを書き換えるだけで，Allocationは消滅する。
-             ;; Priorities
-             ;; 1. softmax, last reference?
-             ;; 2. Find from garbage
-             (when (eql (node-type expr-store) :SETF) ;; If the toplevel of expr is :SETF, go ahead:
+             ;; Target EXPR: SETF(AREF(EXTRA_BUFFER, INDEXING), EXPR)
+             ;;                             ^ If you rewrite this aref, the allocation is purged from graph.
+             (when (and expr-aref expr-store
+                        (eql (node-type expr-aref) :AREF)
+                        (eql (node-type expr-store) :SETF)) ;; If the toplevel of expr is :SETF, go ahead:
+               ;; Reuse Priorities
+               ;; 1. In-Place Mutation
+               ;; 1. softmax, last reference? (In-place mutation) node-readsが最後のrefかを確認する
+               ;;   - アクセスの添字から考えればOK
+               ;; 2. Find from garbage それ以外は，garbageから探す
                ;; BINDがあるからSETF ID書き換えるだけでAllocationはPurged, right?
-               (print expr))))))
+               (let* ((expr-reads (expr-gather-aref (second (node-reads expr-store)) bp-graph)))
+                 (print expr)
+                 (print expr-reads)
+                 ))))))
       (exit-current-scope)
       (assert (= 0 (length scopes)))
       )))
   
-(defstruct (MemoryBlock
-	    (:constructor make-memoryblock (id type create release &key (lock nil))))
-  "Ab abstraction for a memory allocation and release pipeline.
-    |
- i  |  (create)  (release)
- d  |     |----------| 
-    |
--------------------------
-   t i m e
-MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
-  (id id :type symbol)
-  (answer nil :type symbol)
-  (type type :type TensorRelay)
-  (create create :type fixnum)
-  (release release :type fixnum)
-  (lifetime (- release create) :type (integer 0))
-  (lock lock :type boolean))
-
-(defmethod print-object ((mb MemoryBlock) stream)
-  (format stream "MemoryBlock(~(~a~) -> ~(~a~)) : (~a, ~a, ~a, lock=~a)~%" (memoryblock-id mb) (memoryblock-answer mb) (tensor-relay-shape (memoryblock-type mb)) (memoryblock-create mb) (memoryblock-release mb) (memoryblock-lock mb)))
-
-(defmethod allocate-p ((mb MemoryBlock) time) (= time (memoryblock-create mb)))
-(defmethod created-p ((mb MemoryBlock) time) (>= time (memoryblock-create mb)))
-(defmethod preserved-p ((mb MemoryBlock) time) (< time (memoryblock-release mb)))
-(defmethod release-p ((mb MemoryBlock) time) (= time (memoryblock-release mb)))
-(defmethod freed-p ((mb MemoryBlock) time) (and (created-p mb time) (>= time (memoryblock-release mb))))
-
 (defun buffer-orig-shape (buffer)
   "Returns a shape of the buffer, which is not VIEWED."
   (declare (type AbstractBuffer buffer))
@@ -184,43 +178,7 @@ MemoryBlock(id) is allocated when t=create, preserved until t become `release`."
      (let ((stack (cdr s1)))
        (dolist (k (cdr s2)) (setf stack (remove k stack :test #'eql)))
        (null stack)))))
-;; Paper: Best-Fit Heuristic https://arxiv.org/pdf/1804.10001
-(defun greedy-solve-dsa (I total-time black-lists)
-  "A greedy solver for minimizing `peak_mem`"
-  (declare (type list I))
-  (let ((locked))
-    (labels ((choose-from-fragments (mb time &aux (candidates nil))
-	       (loop for candidate in I
-		     if (and (null (find (memoryblock-id candidate) locked))
-			     (freed-p candidate time)
-                             (null (find (memoryblock-id candidate) (gethash (memoryblock-id mb) black-lists)))
-                             (not (= -1 (buffer-nrank (memoryblock-type mb))))
-                             (not (= -1 (buffer-nrank (memoryblock-type candidate))))
-			     (buffer-shape (memoryblock-type mb)) ;; <=> assure the memory-block is a tensor
-                             (buffer-size-eq (memoryblock-type candidate) (memoryblock-type mb))
-			     (equal (buffer-dtype (memoryblock-type candidate)) (buffer-dtype (memoryblock-type mb)))
-                             ;; [TODO] If offsets were created but size are equivalent; they are not cached right?
-			     (equal (buffer-views (memoryblock-type candidate)) (buffer-views (memoryblock-type mb))))
-		       do (push candidate candidates))
-	       (flet ((use (x)
-			(push (memoryblock-id x) locked)
-			(return-from choose-from-fragments x)))
-		 (when candidates (use (car (sort candidates #'> :key #'memoryblock-lifetime))))))
-	     (apply-creation (time)
-	       (loop for mb in I
-		     if (allocate-p mb time) do
-		       (let ((buffer (and (null (memoryblock-lock mb)) (choose-from-fragments mb time))))
-			 (if buffer
-			     (setf (memoryblock-answer mb) (memoryblock-id buffer))
-			     (setf (memoryblock-answer mb) (memoryblock-id mb))))))
-	     (apply-release (time)
-	       (loop for mb in I
-		     if (and (release-p mb time) (memoryblock-answer mb)) do
-		       (setf locked (remove (memoryblock-answer mb) locked)))))
-      (dotimes (time total-time)
-	(apply-release time)
-	(apply-creation time))
-      I)))
+
 ;; ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun id-is-input-p (id graph)
   (let ((node (id->value graph id)))
