@@ -504,6 +504,13 @@ Depends=~a Reduce=~a Users=~a
                         (> (tensor-relay-nrank (car (relay-writes (read-type-relay node)))) 0))
                    (when (null (find (car (node-writes node)) (node-writes schedule-item)))
                      ;; Insert a %global as a temporary buffer
+                     ;; Here, (car (node-writes node)) should not exist in the schedule graph, so we have to insert allocation.
+                     (let ((id (car (node-writes node)))
+                           (rel (car (relay-writes (read-type-relay node)))))
+                       (assert (and id rel))
+                       (when (null (find id (node-reads schedule-item)))
+                         (push id (node-reads schedule-item))
+                         (push rel (getattr schedule-item :read-types))))
                      (%global (car (node-writes node)) (tensor-relay-dtype (car (relay-writes (read-type-relay node)))) t))
                    (assert (null (getattr node :reduction :allow-undefined t)) () "The node ~a cannot be a reduction node." node)
                    (let* ((type (read-type-relay node))
