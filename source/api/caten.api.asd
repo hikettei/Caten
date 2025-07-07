@@ -3,7 +3,7 @@
   :author      "hikettei <ichndm@gmail.com>"
   :depends-on
   ("rove" "trivia" "cl-ppcre" "float-features"
-   "caten.common" "caten.air" "caten.aasm" "caten.runtime" "caten.codegen" "caten.byoc")
+   "caten.common" "caten.air" "caten.ir" "caten.runtime" "caten.codegen" "caten.byoc")
   :serial t
   :components ((:file "package")
 	       (:file "attrs")

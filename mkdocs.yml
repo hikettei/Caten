@@ -48,7 +48,7 @@ nav:
   - Development: development.md
   - API Reference:
     - caten/air: packages/caten.air.md
-    - caten/aasm: packages/caten.aasm.md
+    - caten/ir: packages/caten.ir.md
     - caten/codegen: packages/caten.codegen.md
     - caten/api:
       - Overview: packages/caten.api.md

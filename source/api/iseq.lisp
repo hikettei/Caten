@@ -474,7 +474,7 @@ An entry point for compiling the given tensors, returning GraphRuntime.
 "
   (when (tensor-p tensors)
     (setf tensors (list tensors)))
-  (caten/codegen:jit
+  (caten/codegen/jit:jit
    (%compile-toplevel tensors :rewriters rewriters :external-simplifiers simplifiers)
    :backend backend))
 

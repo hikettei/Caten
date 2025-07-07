@@ -99,8 +99,85 @@
 (defpattern <Rule> (&rest form) (find/replace-rules form '*graph-bind* t))
 ;; Simplifier Computation Order:
 ;; - FastGraph: O(n) where n = the depth of rewriting patterns
+(defmacro simplifier ((&key (speed 0)) &rest rules)
+  (with-gensyms (simplifier-bind apply-bind1 apply-bind2 count-bind fast-graph-p seen changed-p counter n-nodes name)
+    (let ((node-top '*node-top*) (graph '*graph-bind*))
+      `(flet ((,name (,graph &key (no-verify nil) (return-changed-p nil) (debug-opt nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil) (,changed-p nil) (,counter 0) (,n-nodes (length (the list (graph-nodes ,graph)))))
+                (declare (type graph ,graph)
+		         (type boolean no-verify return-changed-p ,fast-graph-p ,changed-p)
+		         (type list ,seen)
+                         (type fixnum ,counter)
+		         (optimize (speed ,speed)))
+                (unless ,fast-graph-p (when (null (graph-nodes ,graph)) (return-from ,name)))
+                (unless no-verify (verify-graph ,graph))
+                (labels ((,simplifier-bind (,node-top ,count-bind
+				            &aux
+				              (*matched-bind* nil)
+				              (fixed-writes-to
+				               (when ,node-top
+					         (loop for o in (graph-outputs ,graph)
+					               if (find (the symbol o) (the list (node-writes ,node-top)) :test #'eql)
+						         collect o))))
+		           (declare (type list *matched-bind*))
+                           ;; (when fixed-writes-to (return-from ,simplifier-bind))
+		           (when (null ,node-top) (return-from ,simplifier-bind))
+	                   (incf ,counter)
+		           (multiple-value-bind (replace-rule matched)
+		               (match ,node-top
+			         ,@(map 'list #'(lambda (x) (parse-rule x node-top graph)) rules)
+			         (_ nil))
+		             (when (and replace-rule matched)
+		               (when (node-p replace-rule) (setf replace-rule (list replace-rule)))
+		               ;; reject the replace-rule only when:
+		               ;; - the original node writes the output to (graph-outputs graph)
+		               ;; - the replaced node breaks this rule
+		               (when fixed-writes-to ;; when the node is connected to graph-outputs
+                                 (dolist (w fixed-writes-to)
+                                   (when (null (find w replace-rule :key #'node-writes :test #'find))
+                                     (return-from ,simplifier-bind))))
+		               (if ,fast-graph-p
+			           (insert-nodes ,graph replace-rule)
+			           (setf (graph-nodes ,graph)
+				         (nconc
+				          (subseq (graph-nodes ,graph) 0 ,count-bind)
+				          replace-rule
+				          (subseq (graph-nodes ,graph) (1+ ,count-bind)))))
+		               (when (not ,fast-graph-p)
+			         ;; this may not be required but reduce the number of nodes as many as possible
+			         (dolist (r matched)
+			           ;; the top node of matched patten is always replaced.
+			           (when (and (not (eql r (node-id ,node-top))) (id->node ,graph r))
+			             ;; Subsequent nodes are removed if they are not used.
+			             (let ((writes (node-writes (id->node ,graph r))))
+			               (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
+				         (remnode ,graph r))))))
+		               t)))
+		         (,apply-bind1 (graph &aux (changed-p nil))
+		           (dotimes (nth (length (the list (graph-nodes graph))))
+		             (when (,simplifier-bind (nth nth (the list (graph-nodes graph))) nth)
+		               (setf changed-p t)))
+		           changed-p)
+		         (,apply-bind2 (id)
+		           (let ((node (gethash id (%graph-nodes-table ,graph))))
+		             (when node
+		               (when (null (find (the symbol id) (the list ,seen) :test #'eq))
+			         (push id ,seen)
+			         (when (,simplifier-bind node -1)
+                                   (some #'identity (map 'list #',apply-bind2 (node-reads node)))
+                                   (return-from ,apply-bind2 t))
+                                 (some #'identity (map 'list #',apply-bind2 (node-reads node))))))))
+	          (if ,fast-graph-p
+	              (loop while (and (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph)))
+                                       (progn (setf ,seen nil) (setf ,changed-p t))))
+	              (loop while (and (,apply-bind1 ,graph) (setf ,changed-p t))))
+                  (when debug-opt (format t "~a: ~a calls for ~a nodes (~a%)~%" ',name ,counter ,n-nodes (float (* 100.0 (/ ,counter ,n-nodes)))))
+	          (unless no-verify (verify-graph ,graph))
+	          (when return-changed-p (return-from ,name ,changed-p))
+	          ,graph)))
+         #',name))))
+
 (defmacro defsimplifier ((name &key (speed 3)) &rest rules)
-  "
+    "
 ```
 (defsimplifier (name &key (speed 3)) &rest rules)
 ```
@@ -118,77 +195,6 @@ The `graph` is a graph to simplify. The `no-verify` is a flag to skip the verifi
 
 (See also: `./source/aasm/constant-folding.lisp`)
 "
-  (with-gensyms (simplifier-bind apply-bind1 apply-bind2 count-bind fast-graph-p seen changed-p counter n-nodes)
-    (let ((node-top '*node-top*) (graph '*graph-bind*))
-      `(defun ,name (,graph &key (no-verify nil) (return-changed-p nil) (debug-opt nil) &aux (,fast-graph-p (typep ,graph 'FastGraph)) (,seen nil) (,changed-p nil) (,counter 0) (,n-nodes (length (the list (graph-nodes ,graph)))))
-         (declare (type graph ,graph)
-		  (type boolean no-verify return-changed-p ,fast-graph-p ,changed-p)
-		  (type list ,seen)
-                  (type fixnum ,counter)
-		  (optimize (speed ,speed)))
-         (unless ,fast-graph-p (when (null (graph-nodes ,graph)) (return-from ,name)))
-         (unless no-verify (verify-graph ,graph))
-         (labels ((,simplifier-bind (,node-top ,count-bind
-				     &aux
-				       (*matched-bind* nil)
-				       (fixed-writes-to
-				        (when ,node-top
-					  (loop for o in (graph-outputs ,graph)
-					        if (find (the symbol o) (the list (node-writes ,node-top)) :test #'eql)
-						  collect o))))
-		    (declare (type list *matched-bind*))
-                    ;; (when fixed-writes-to (return-from ,simplifier-bind))
-		    (when (null ,node-top) (return-from ,simplifier-bind))
-	            (incf ,counter)
-		    (multiple-value-bind (replace-rule matched)
-		        (match ,node-top
-			  ,@(map 'list #'(lambda (x) (parse-rule x node-top graph)) rules)
-			  (_ nil))
-		      (when (and replace-rule matched)
-		        (when (node-p replace-rule) (setf replace-rule (list replace-rule)))
-		        ;; reject the replace-rule only when:
-		        ;; - the original node writes the output to (graph-outputs graph)
-		        ;; - the replaced node breaks this rule
-		        (when fixed-writes-to ;; when the node is connected to graph-outputs
-                          (dolist (w fixed-writes-to)
-                            (when (null (find w replace-rule :key #'node-writes :test #'find))
-                              (return-from ,simplifier-bind))))
-		        (if ,fast-graph-p
-			    (insert-nodes ,graph replace-rule)
-			    (setf (graph-nodes ,graph)
-				  (nconc
-				   (subseq (graph-nodes ,graph) 0 ,count-bind)
-				   replace-rule
-				   (subseq (graph-nodes ,graph) (1+ ,count-bind)))))
-		        (when (not ,fast-graph-p)
-			  ;; this may not be required but reduce the number of nodes as many as possible
-			  (dolist (r matched)
-			    ;; the top node of matched patten is always replaced.
-			    (when (and (not (eql r (node-id ,node-top))) (id->node ,graph r))
-			      ;; Subsequent nodes are removed if they are not used.
-			      (let ((writes (node-writes (id->node ,graph r))))
-			        (when (every #'(lambda (w) (= (length (the list (id->users ,graph w))) 0)) writes)
-				  (remnode ,graph r))))))
-		        t)))
-		  (,apply-bind1 (graph &aux (changed-p nil))
-		    (dotimes (nth (length (the list (graph-nodes graph))))
-		      (when (,simplifier-bind (nth nth (the list (graph-nodes graph))) nth)
-		        (setf changed-p t)))
-		    changed-p)
-		  (,apply-bind2 (id)
-		    (let ((node (gethash id (%graph-nodes-table ,graph))))
-		      (when node
-		        (when (null (find (the symbol id) (the list ,seen) :test #'eq))
-			  (push id ,seen)
-			  (when (,simplifier-bind node -1)
-                            (some #'identity (map 'list #',apply-bind2 (node-reads node)))
-                            (return-from ,apply-bind2 t))
-                          (some #'identity (map 'list #',apply-bind2 (node-reads node))))))))
-	   (if ,fast-graph-p
-	       (loop while (and (some #'identity (map 'list #',apply-bind2 (graph-outputs ,graph)))
-                                (progn (setf ,seen nil) (setf ,changed-p t))))
-	       (loop while (and (,apply-bind1 ,graph) (setf ,changed-p t))))
-           (when debug-opt (format t "~a: ~a calls for ~a nodes (~a%)~%" ',name ,counter ,n-nodes (float (* 100.0 (/ ,counter ,n-nodes)))))
-	   (unless no-verify (verify-graph ,graph))
-	   (when return-changed-p (return-from ,name ,changed-p))
-	   ,graph)))))
+  `(defun ,name (graph &key (no-verify nil) (return-changed-p nil) (debug-opt nil))
+     (funcall (Simplifier (:speed ,speed) ,@rules) graph :no-verify no-verify :return-changed-p return-changed-p :debug-opt debug-opt)))
+     

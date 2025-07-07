@@ -1,7 +1,7 @@
 (defpackage :caten/byoc/lisp
   (:use :cl :caten/runtime/buffer :caten/common.dtype :caten/runtime/runtime
    :caten/codegen/backend :caten/codegen/renderer :caten/air
-   :caten/codegen/expr :caten/codegen/helpers :caten/codegen/shape-inference)
+   :caten/ir/expr :caten/codegen/helpers :caten/codegen/type-relay)
   (:export :LispBuffer))
 
 (in-package :caten/byoc/lisp)
@@ -21,4 +21,4 @@
 (defmethod transfer-into-array ((buffer LispBuffer)) (buffer-value buffer))
 (defmethod copy-buffer-value (runtime (buffer LispBuffer)) (copy-seq (buffer-value buffer)))
 (defmethod bref ((buffer LispBuffer) idx) (aref (buffer-value buffer) idx))
-(define-backend :lisp LispBuffer GraphRuntime nil nil nil)
+(define-backend :lisp LispBuffer GraphRuntime nil nil nil nil)
