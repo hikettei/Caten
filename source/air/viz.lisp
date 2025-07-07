@@ -211,6 +211,7 @@ The function `pprint-graph` prints the graph in a tree-like structure. `screen-w
                            (let ((node (car (getattr node :items))))
                              (assert node)
                              (princ-node node)))))
+                  (:DEFINE-GLOBAL (format nil ":DEFINE-GLOBAL (~(~a~)~a ~a)" (getattr node :dtype) (if (getattr node :pointer-p) "*" "") (car (node-writes node))))
                   (:Allocate
                    (format nil "Allocate[:~(~a~)] ~a" (getattr node :dtype) (subseq (node-reads node) 0 (getattr node :nrank))))
                   (:LOAD
