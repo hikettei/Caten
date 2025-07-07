@@ -123,6 +123,10 @@ t=2 | [:EXPR ...]
                       (var-parent (id->value schedule-graph var))
                       (is-just-allocated-p (and var-parent (eql (node-type var-parent) :schedule-item)
                                                 (eql :allocate (getattr var-parent :Type)))))
+                 ;; [TODO] Two condition is NEEDED
+                 ;; - Compare the tensor dtype, shape, are they enough?
+                 ;; - カーネル内でReadされてないか
+                 ;; - Accessingの関係
                  ;; Note: 少なくともis-readonly-pは強制，つまり，BINDにしか読まれない
                  ;; -> WAWを破壊する時の十分条件ではない？
                  ;; schedule-itemで，直Rea

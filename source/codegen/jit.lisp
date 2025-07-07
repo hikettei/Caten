@@ -101,22 +101,25 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
            (graph-nodes schedule-graph)))
         ;; Running Memory Planner
         (when (= 0 (ctx:getenv :NO_MEMORY_PLANNER))
-          (run-memory-planner schedule-graph nil base-graph))
-        
+          ;(run-memory-planner schedule-graph nil base-graph)
+          )
+        ;; Finalize the realize
         (mapc
          #'(lambda (x) (when (eql (getattr x :type) :kernel) (schedule-item-sync-realize x)))
          (graph-nodes schedule-graph))
+        (print schedule-graph)
         ;; ScheduleGraph -> RuntimeGraph (schedule/memory planning is fixed)
         (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph kernel)))
           (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Rendering with ~a" renderer))
-          (mapc
-           #'(lambda (x) (when (eql (node-type x) :JIT_KERNEL) (caten/codegen/byoc:%render-kernel renderer x)))
-           (graph-nodes runtime-graph))
-          (caten/codegen/byoc:%compile-kernel
-           renderer
-           (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :JIT_KERNEL) collect node)
-           nil)
-          runtime-graph)))))
+          ;;(mapc
+          ;; #'(lambda (x) (when (eql (node-type x) :KERNEL) (caten/codegen/byoc:%render-kernel renderer x)))
+          ;; (graph-nodes runtime-graph))
+          ;;(caten/codegen/byoc:%compile-kernel
+          ;; renderer
+          ;; (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :JIT_KERNEL) collect node)
+          ;; nil)
+          runtime-graph)
+        ))))
 
 (defun jit (runtime &key (backend (ctx:getenv :BACKEND)) (dir nil))
   "

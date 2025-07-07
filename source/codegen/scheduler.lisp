@@ -23,7 +23,7 @@ One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure
           (name :type symbol :initform nil) (cache-name :type symbol :initform nil) ;; NAME/CacheName, the name of the kernel, if cached, the name of the cache is assigned.
           (rank :type fixnum) (reduce-dims :type list) ;; rank = the rank of kernel, reduce-dims = a list of dims reduced
           (read-types :type list) (write-types :type list) ;; read/write types
-          (storage-id-src :type list) (storage-id-dst :type list) ;; read/write storage ids
+          (storage-id-src :type list) (storage-id-dst :type list) ;; read/write storage ids (unused?)
           (namespace :type list))) ;; a list of variables used in the kernel which is used by memory-planner
 
 (defmethod print-node (node (id (eql :Schedule-Item)))
@@ -322,7 +322,7 @@ One Schedule-Item corresponds to one kernel in GPU, `graph-schedule` must ensure
   (restart-cache (make-hash-table) :type hash-table)
   (restart-cache1 (make-hash-table) :type hash-table))
 
-(defmethod group->schedule-item ((group Group) (ctx Schedule-Context))
+(defmethod group->schedule-item ((group Group))
   (let ((reads (group-predecessor group))
         (writes (group-successor group))
         (allocate-p (find :Allocate (group-items group) :key #'node-type))
@@ -804,7 +804,7 @@ This function will put a copy of LOAD if some of nodes in group-items stop right
   (let* ((ctx (make-schedule-context graph))
          (groups (graph-breadth-first-schedule ctx))
          (groups (map 'list #'(lambda (x) (group-distribute-dynamic-shape-load x ctx)) groups))
-         (schedule-graph (apply #'make-graph (map 'list #'(lambda (x) (group->schedule-item x ctx)) groups))))
+         (schedule-graph (apply #'make-graph (map 'list #'group->schedule-item groups))))
     (setf (graph-outputs schedule-graph) (graph-outputs graph) schedule-graph (->fast-graph schedule-graph)) ; Convert the schedule graph into FastGraph
     (mapc #'verify-group groups)
     (apply-move-after-reduction schedule-graph) ;; :reduction T cannot be an output of schedule item.

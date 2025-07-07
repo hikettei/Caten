@@ -446,7 +446,7 @@ Depends=~a Reduce=~a Users=~a
                 (graph-outputs (expr-graph e)) (node-writes node))
         e)))))
 
-(defun astify-blueprint (schedule-item bp rank &aux (caten/aasm/expr::*expr-no-simplify-mode* t) (gid-seen (make-hash-table)))
+(defun astify-blueprint (schedule-item bp rank base-graph schedule-graph &aux (caten/aasm/expr::*expr-no-simplify-mode* t) (gid-seen (make-hash-table)))
   (declare (type list bp))
   (with-blueprint (:noopt t)
     (loop for n in (node-reads schedule-item)
@@ -465,6 +465,22 @@ Depends=~a Reduce=~a Users=~a
                (append
                 gids
                 (loop repeat (- rank (length gids)) collect 0)))
+             (rel->alloc (id rel)
+               (let* ((*ctx* (make-graph))
+                      (alloc (%alloc (tensor-relay-nrank rel) (tensor-relay-shape rel) (tensor-relay-stride rel) :dtype (tensor-relay-dtype rel))))
+                 (setf (node-writes alloc) (list id))
+                 ;; Gather related region from the allocation
+                 (let* ((alloc-graph (apply #'make-graph (loop for n in (graph-nodes base-graph)
+                                                               if (find id (node-writes n)) collect alloc
+                                                                 else collect n))))
+                   (setf (graph-outputs alloc-graph) (list id))
+                   ;; note(hikettei): I am not sure if this is correct
+                   (let ((runtime-graph (->graph (->fast-graph alloc-graph))))
+                     (graph-infer-type-relay runtime-graph)
+                     (loop with region = (apply #'append (map 'list #'node-writes (graph-nodes schedule-graph)))
+                           for item in (graph-nodes runtime-graph)
+                           if (null (intersection (node-writes item) region))
+                             do (insert-nodes schedule-graph (list (caten/codegen/scheduler::group->schedule-item (caten/codegen/scheduler:make-group :predecessor (node-reads item) :successor (node-writes item) :items (list item))))))))))
              (ensure-unique-gid (gid)
                (if (null (gethash gid gid-seen))
                    (prog1 gid (setf (gethash gid gid-seen) 1))
@@ -510,7 +526,8 @@ Depends=~a Reduce=~a Users=~a
                        (assert (and id rel))
                        (when (null (find id (node-reads schedule-item)))
                          (push id (node-reads schedule-item))
-                         (push rel (getattr schedule-item :read-types))))
+                         (push rel (getattr schedule-item :read-types))
+                         (rel->alloc id rel)))
                      (%global (car (node-writes node)) (tensor-relay-dtype (car (relay-writes (read-type-relay node)))) t))
                    (assert (null (getattr node :reduction :allow-undefined t)) () "The node ~a cannot be a reduction node." node)
                    (let* ((type (read-type-relay node))
@@ -580,7 +597,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
       (mapc #'(lambda (x) (recursive-lower-into-bp ctx x)) (graph-outputs graph))
       (setf (ctx-blueprint ctx) (ctx-padding-loop ctx)
             (ctx-blueprint ctx) (bp-finalize-realize (ctx-blueprint ctx) schedule-item base-graph)
-            (getattr schedule-item :blueprint) (caten/aasm::%simplify-ast (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx))))))))
+            (getattr schedule-item :blueprint) (caten/aasm::%simplify-ast (astify-blueprint schedule-item (ctx-blueprint ctx) (length (ctx-gids ctx)) base-graph schedule-graph))))))
 ;; [TODO] Move to caten/aasm
 (defmethod print-blueprint (graph stream &aux (indent 0) (seen))
   ;; (caten/air:->dot graph :pathname "/tmp/graph.dot")
