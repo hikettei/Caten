@@ -203,5 +203,9 @@ Corresponds to:
          :slots ((dtype :type keyword) (size :type integer))
          :type-relay (ast-type-map :DEFINE-SHARED-MEMORY))
 
+(defnode (:Render :FUNCTION) () "An entry point for the RenderGraph"
+         :slots ((name :type symbol))
+         :type-relay (ast-type-map :FUNCTION))
+
 ;; Note: More?
 )

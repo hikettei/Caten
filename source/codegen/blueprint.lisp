@@ -475,7 +475,8 @@ Depends=~a Reduce=~a Users=~a
                                                                  else collect n))))
                    (setf (graph-outputs alloc-graph) (list id))
                    ;; note(hikettei): I am not sure if this is correct
-                   (let ((runtime-graph (->graph (->fast-graph alloc-graph))))
+                   (let ((runtime-graph (->fast-graph alloc-graph)))
+                     (verify-graph runtime-graph)
                      (graph-infer-type-relay runtime-graph)
                      (loop with region = (apply #'append (map 'list #'node-writes (graph-nodes schedule-graph)))
                            for item in (graph-nodes runtime-graph)
@@ -603,6 +604,7 @@ Takes one node of type `Schedule-Item` and returns the blueprint.
   ;; (caten/air:->dot graph :pathname "/tmp/graph.dot")
   (princ
    (with-output-to-string (out)
+     (format out "kernel ")
      (labels ((indent () (make-string indent :initial-element #\space))
               (fmt (desig &rest args) (apply #'format out (format nil "~a~a~%" (indent) desig) args))
               (r (s &aux (val (id->value graph s)))

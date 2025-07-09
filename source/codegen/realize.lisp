@@ -84,5 +84,6 @@
                   collect (car (node-writes node)))))
     (flet ((included-p (name) (member name buffers)))
       (setf (node-reads item) (loop for name in (node-reads item) if (included-p name) collect name)
-            (node-writes item) (loop for name in (node-writes item) if (included-p name) collect name))
+            ;;(node-writes item) (loop for name in (node-writes item) if (included-p name) collect name)
+            )
       item)))

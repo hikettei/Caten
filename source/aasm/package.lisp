@@ -88,6 +88,6 @@
    #:tensor-relay-value #:tensor-relay-inferred-permute #:tensor-relay-orig-buffer-shape #:tensor-relay-depend-idx-list #:tensor-relay-iterspace
    #:copy-tensor-relay #:make-tensor-relay)
   ;; AST
-  (:export #:with-blueprint #:get-caten-function #:simplify-ast)
+  (:export #:with-blueprint #:simplify-ast)
   ;; ASTOps
-  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defsmem #:%defun))
+  (:export #:%range #:%dotimes #:%if #:%when #:%progn #:%global #:%barrier #:%bind #:%aref #:%function #:%expr #:%setf #:%defsmem #:%function))

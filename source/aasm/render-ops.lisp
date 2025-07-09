@@ -5,11 +5,6 @@
 ;;;; - ASTGraph Optimization (e.g.: Tile, Unroll, Microkernel, etc)
 (in-package :caten/aasm)
 
-(defparameter *function* (make-hash-table))
-
-(defun get-caten-function (name)
-  (copy-graph (or (gethash name *function*) (error "The function ~a is not defined." name))))
-
 (defmacro with-blueprint ((&key (noopt nil)) &body body)
   `(let* ((*ctx* (make-graph))
           (out (progn ,@body)))
@@ -36,7 +31,6 @@ Constraints:
     (emit (make-node :Render :FOR (list out) (map 'list #'node->id1 (list range body)) :mark mark))))
 
 (defmacro %dotimes ((bind size &key (mark :noopt) (id (gensym "RANGE")) (range)) &body body)
-  ""
   `(let ((,bind ',bind)) (%range ',bind ,size (%progn ,@body) :mark ,mark :out ',id :range ,range)))
 
 (defun %if (condition body &key (out (gensym "IF")))
@@ -77,22 +71,6 @@ Constraints:
   (declare (type (or symbol node) tgt value))
   (emit (make-node :JIT :SETF (list out) (map 'list #'node->id1 (list tgt value)))))
 
-(defmacro %defun (name (&rest args) &body body)
-  (flet ((verify-args (arg)
-           (assert (listp arg))
-           (multiple-value-bind (value dtype pointer-p) (apply #'values arg)
-             (assert (symbolp value))
-             (assert (typep dtype 'dtype-t))
-             (assert (typep pointer-p 'boolean))
-             (list value dtype pointer-p))))
-    `(setf (gethash ',name *function*)
-           (with-blueprint ()
-             (%progn
-              (let (,@(loop for arg in args
-                            for arg-list = (verify-args arg)
-                            collect `(,(car arg-list) (%global ',(car arg-list) ,@(cdr arg-list)))))
-                (%progn ,@body)))))))
-
 (defun %empty (dtype) (make-node :Buffer :Allocate (list (gensym)) nil :dtype dtype :nrank 0))
 
 (defun %gid (rank graph range local-size &key (dtype :int64) (id (gensym "G")))
@@ -111,6 +89,9 @@ Constraints:
 
 (defun %lid (rank size &key (dtype :int64) (id (gensym "L")))
   (emit (make-node :JIT :SPACE (list id) nil :level :thread :rank rank :dtype dtype :size (caten/aasm/expr:expr-const size dtype))))
+
+(defun %function (name body &key (id (gensym "OUT")))
+  (emit (make-node :Runtime :FUNCTION (list id) (list (node->id1 body)) :name name)))
 ;; ~~ ControlFlow Simplifiers ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defun Empty! (node)
   (assert (typep (node-attr node) 'RenderOps))
