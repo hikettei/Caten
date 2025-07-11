@@ -2,8 +2,7 @@
   (:use :cl)
   ;; AbstractKernel
   (:export
-   #:AbstractKernel #:kernel-name #:kernel-args #:kernel-schedule-item #:kernel-flops #:kernel-output-buffers
-   #:kernel-call
+   #:AbstractKernel #:kernel-name #:kernel-args #:kernel-flops #:kernel-output-buffers #:kernel-call #:kernel-blueprint
    #:*autotune-mode-p*)
   ;; Renderer
   (:export
@@ -31,7 +30,7 @@
 (defclass AbstractKernel ()
   ((name :initarg :name :accessor kernel-name)
    (args :initarg :args :accessor kernel-args) ;; a list of :DEFINE-GLOBAL but sorted by the order
-   (schedule-item :initarg :schedule-item :accessor kernel-schedule-item)
+   (blueprint :initarg :blueprint :accessor kernel-blueprint)
    (flops :initarg :flops :accessor kernel-flops)
    (output-buffers :initarg :output-buffers :accessor kernel-output-buffers)))
 

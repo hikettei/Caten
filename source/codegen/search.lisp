@@ -43,6 +43,16 @@
 ;;   - 2. Hand-writtern Kernelを記述するMacro, 構文を実装する
 ;; - 2. Thinking the minimal Softmax Transformation
 ;; - 3.
+(defun serach-optimzied-ast (kernel)
+
+  
+  )
+
+;; (defkernel xxx (...) (:policy `(d . 128))) <- specify OptimizationPolicy
+
+;; Policy:
+;; - GraphRewriteでRuntimeGraphが常にStaticであることを保証して，進めていく
+;; - いずれにせよグラフの形状がわからないと進められない。
 (defun realize-node-with-autotuning (runtime node args &aux (searched))
   (labels ((evaluate-kernel (kernel &key (n 10) &aux (total 0.0))
              (dotimes (i n)
@@ -51,6 +61,10 @@
            (register-kernel-as-candidate (kernel)
              (push (cons (evaluate-kernel kernel) kernel) searched)))
     (register-kernel-as-candidate (caten/air:getattr node :kernel-info))
+    (print "AUTOTUNING")
+    (caten/codegen/polyhedral:make-polyhedral-from-blueprint
+     (kernel-blueprint (caten/air:getattr node :kernel-info)))
+    (dotimes (i 100))
     (print searched)
     ;; [TODO] Apply BEAM Search
     (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))

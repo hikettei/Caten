@@ -1,13 +1,18 @@
 (defpackage :caten/codegen/polyhedral
   (:use :cl :caten/air :caten/aasm)
   (:export
-   ))
+   #:make-polyhedral-from-blueprint
+   #:get-blueprint-from-polyhedral))
+
 (in-package :caten/codegen/polyhedral)
 
-;; 実際の実行時間を計測する機構の作成が最優先に思えます
+(defun get-blueprint-from-polyhedral (polyhedral)
 
-(defun extract-scop-from-blueprint (blueprint)
-  (declare (type FastGraph blueprint))
+  )
+
+(defun make-polyhedral-from-blueprint (blueprint)
+  "Constructs Polyhedral IR from blueprint which is a static graph."
+  (declare (type Graph blueprint))
   ;; あ ~ Indexingをどうするかの解釈...
   ;; -> 普通に1Dのままで良さそうに見える？
   ;; Reductionのaccess repをどう解釈するか，という話もある

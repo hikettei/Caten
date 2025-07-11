@@ -910,7 +910,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                     (mapc #'e writes)
                     (caten/aasm:emit (make-node :RUNTIME :KERNEL (node-writes node) (append write-ids (node-reads node))
                                                 :kernel-info
-                                                (make-instance kernel :name (getattr node :name) :args args :schedule-item node :flops nil))))))
+                                                (make-instance kernel :name (getattr node :name) :args args :blueprint (getattr node :blueprint) :flops nil))))))
                (mapc #'explore (node-reads node))))
       (mapc #'explore (graph-outputs schedule-graph)))
     (setf (graph-outputs caten/aasm:*ctx*) (copy-list (graph-outputs schedule-graph)))

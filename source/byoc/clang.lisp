@@ -16,7 +16,7 @@
 (define-backend :clang ClangBuffer ClangRuntime CStyle-Renderer ClangKernel Clang-Auto-Scheduler t)
 
 (defmethod %render-kernel ((renderer CStyle-Renderer) kernel)
-  (let* ((bp (getattr (kernel-schedule-item kernel) :blueprint))
+  (let* ((bp (kernel-blueprint kernel))
          (args (apply #'concatenate 'string
                       (butlast
                        (loop for arg in (kernel-args kernel)
