@@ -3,7 +3,8 @@
   ;; AbstractKernel
   (:export
    #:AbstractKernel #:kernel-name #:kernel-args #:kernel-schedule-item #:kernel-flops #:kernel-output-buffers
-   #:kernel-call)
+   #:kernel-call
+   #:*autotune-mode-p*)
   ;; Renderer
   (:export
    #:Renderer #:renderer-graph #:renderer-index-space
@@ -37,7 +38,9 @@
 (defgeneric kernel-call (kernel runtime node args)
   (:documentation "Invokes the kernel, returning the elapsed time."))
 
+(defparameter *autotune-mode-p* nil)
 (defmethod caten/runtime:realize-node ((node-id (eql :KERNEL)) runtime node args)
+  (when *autotune-mode-p* (return-from caten/runtime:realize-node (uiop:symbol-call :caten/codegen/search :realize-node-with-autotuning runtime node args)))
   ;; [TODO] coerce-dtyped-buffer and force scalars to be a buffer? or if there's segv we have to add them.
   (let* ((kernel (caten/air:getattr node :kernel-info))
          (prg-time (kernel-call kernel runtime node args)))

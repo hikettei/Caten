@@ -1,7 +1,7 @@
 (defpackage :caten/codegen/search
   (:use :cl :caten/aasm :caten/air :caten/codegen/byoc)
   (:export
-   #:get-optimized-ast #:search-optimized-ast))
+   #:realize-node-with-autotuning))
 
 (in-package :caten/codegen/search)
 ;; Paper: https://arxiv.org/pdf/2410.03210
@@ -32,16 +32,6 @@
 ;; - :AREF Level
 ;;  - (ast-apply-cache的なsomethingが必要) VRAM -> DRAM -> SRAM
 ;;  -
-"
-for i=0..10
-  for j=0..10
-    float acc = 0.0
-    for k=0..10
-      acc += x[i, j] * y[j, k]
-    z[i, k] = acc
-=> SMEM =>
-
-"
 ;; The ft of Tensor Compiler is POLYHEDRAL Compiler.
 ;; - Believe Polyhedral Compiler, implement something like polyhedral compiler.
 ;; e.g.: Caten can create both of:
@@ -54,10 +44,8 @@ for i=0..10
 ;; - 2. Thinking the minimal Softmax Transformation
 ;; - 3. 
 
-(defun get-optimized-ast ()
-  
-  )
-
-(defun serach-optimized-ast (blueprint)
-
-  )
+(defun realize-node-with-autotuning (runtime node args)
+  (let* ((kernel (caten/air:getattr node :kernel-info))
+         (prg-time (caten/codegen/byoc:kernel-call kernel runtime node args)))
+    (print prg-time)
+    (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))

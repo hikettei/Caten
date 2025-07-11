@@ -140,5 +140,20 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
   ;; If runtime has an symbolic input, try them all
   ;; Optimize kernel by kernel
   ;; It is possuble to fuse KERNEL and KERNEL Pattern.
+  ;; [TODO]
+  ;; - Implement HashedGraph
+  ;; - 入力のSymbolicに応じて変動する。
+  (%autotune runtime))
+
+(defun %autotune (runtime)
+  "
+```
+(%autotune runtime)
+```
+Automatically optimizes the given runtime graph which is static.
+"
   
-  )
+  ;; [TODO] Schedule Cache as well as BEAM Cache!!
+  ;; Replacing realize-node(:KERNEL) -> realize-node-with-autotuning(:KERNEL)
+  (let ((caten/codegen/byoc:*autotune-mode-p* t))
+    (time (runtime-forward runtime))))

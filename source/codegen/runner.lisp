@@ -16,15 +16,3 @@
             (compiled-kernel-device info)
             (compiled-kernel-name info)
             (if gflops (format nil " (~,6fGFLOP/s)" gflops) ""))))
-
-(defmethod runtime-invoke-jit-kernel ((runtime GraphRuntime) kernel-info node args)
-  (apply (compiled-kernel-caller kernel-info) args))
-
-(defmethod realize-node ((node-id (eql :KERNEL)) runtime node args)
-  (let ((kernel (getattr node :kernel-info))
-        (args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
-    (let ((prg-time (caten/runtime/profile:with-real-time (runtime-invoke-jit-kernel runtime info node args))))
-      (when (= (ctx:getenv :PROFILE) 1)
-        (incf caten/runtime/profile::*jit-time* prg-time)
-        (profile-report runtime info prg-time args node)))
-    (apply #'values (map 'list #'(lambda (x) (nth x args)) (compiled-kernel-out-positions info)))))
