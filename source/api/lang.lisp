@@ -17,3 +17,7 @@
        (S: )
        ))
 #|
+;; TODO:
+;; https://github.com/ruricolist/infix-math
+;; TileLangLike
+;; FlashAttention Benchmark
