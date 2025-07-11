@@ -901,7 +901,8 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                                      for is-read-p = (find id (node-reads node))
                                      collect
                                      (let ((node (or arg (error "The argument ~a is not found in the blueprint as a DEFINE-GLOBAL node." id))))
-                                       (setf (getattr node :mode) (if is-read-p :read :write))
+                                       ;; [TODO] Assign :IO for Non-Memory-Planner Applied Softmax val_9
+                                       ;; (setf (getattr node :mode) (if is-read-p :read :write))
                                        node))))
                     (assert (= (length args) (length (append write-ids (node-reads node))))
                             ()

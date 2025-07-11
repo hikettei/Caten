@@ -48,9 +48,9 @@ Constraints:
   (assert (every #'(lambda (x) (or (symbolp x) (node-p x))) body) () "%progn: The body must be a list of symbols or nodes.")
   (emit (make-node :Render :PROGN (list out) (map 'list #'node->id1 (loop for b in body if b collect b)))))
 
-(defun %global (name dtype pointer-p)
+(defun %global (name dtype pointer-p &key (mode :io))
   (declare (type dtype-t dtype) (type boolean pointer-p) (type symbol name))
-  (emit (make-node :Render :DEFINE-GLOBAL (list name) nil :dtype dtype :pointer-p pointer-p)))
+  (emit (make-node :Render :DEFINE-GLOBAL (list name) nil :dtype dtype :pointer-p pointer-p :mode mode)))
 
 (defun %barrier (&key (out (gensym "BARRIER"))) (emit (make-node :Render :BARRIER (list out) nil)))
 

@@ -208,8 +208,7 @@ Compiled with this command: ~a"
           (apply #'concatenate 'string
                  (append
                   (list (header))
-                  (loop for item in items
-                        collect (clang-program (getattr item :kernel)))))))
+                  (map 'list #'clang-program items)))))
     (when (>= (ctx:getenv :JIT_DEBUG) 3)
       (format t "[Final Code]:~%~a~%" code))
     ;; [Note] -ffast-math and CI fails?
@@ -217,9 +216,8 @@ Compiled with this command: ~a"
     (when (>= (ctx:getenv :DISASSEMBLE) 1)
       (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))))
     (dolist (item items)
-      (when (getattr item :kernel)
-        (setf (clang-caller (getattr item :kernel))
-              (make-foreign-function-caller
-               (kernel-name (getattr item :kernel))
-               (kernel-args (getattr item :kernel))))))
+      (setf (clang-caller item)
+            (make-foreign-function-caller
+             (kernel-name item)
+             (kernel-args item))))
     nil))

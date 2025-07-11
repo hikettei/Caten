@@ -111,14 +111,13 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
         ;; ScheduleGraph -> RuntimeGraph (schedule/memory planning is fixed)
         (let ((runtime-graph (schedule-graph->runtime-graph schedule-graph base-graph kernel)))
           (when (= JIT_DEBUG 1) (print-info "(JIT_DEBUG=1) Rendering with ~a" renderer))
-          (print runtime-graph)
-          ;;(mapc
-          ;; #'(lambda (x) (when (eql (node-type x) :KERNEL) (caten/codegen/byoc:%render-kernel renderer x)))
-          ;; (graph-nodes runtime-graph))
-          ;;(caten/codegen/byoc:%compile-kernel
-          ;; renderer
-          ;; (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :JIT_KERNEL) collect node)
-          ;; nil)
+          (mapc
+           #'(lambda (x) (when (eql (node-type x) :KERNEL) (caten/codegen/byoc:%render-kernel renderer (getattr x :kernel-info))))
+           (graph-nodes runtime-graph))
+          (caten/codegen/byoc:%compile-kernel
+           renderer
+           (loop for node in (graph-nodes runtime-graph) if (eql (node-type node) :KERNEL) collect (getattr node :kernel-info))
+           nil)
            (make-runtime runtime-graph :fw-outputs (runtime-fw-outputs runtime) :bw-outputs (runtime-bw-outputs runtime) :runtime runtime-type :id2tensor (runtime-id2tensor runtime) :buffer-type buffer-type :params (runtime-params runtime) :renderer renderer))))))
 
 (defun jit (runtime &key (backend (ctx:getenv :BACKEND)) (dir nil))
