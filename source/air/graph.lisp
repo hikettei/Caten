@@ -37,7 +37,7 @@ FastGraph[seen=~a, outputs=~a] {
 	  (graph-seen graph)
 	  (graph-outputs graph)
 	  (with-output-to-string (out)
-	    (dolist (node (graph-nodes (->graph graph)))
+	    (dolist (node (graph-nodes (->graph-with-tpsort graph)))
 	      (format out "    ~a~%" node)))))
 
 (defun make-graph (&rest nodes)
