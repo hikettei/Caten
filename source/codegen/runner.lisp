@@ -21,10 +21,8 @@
   (apply (compiled-kernel-caller kernel-info) args))
 
 (defmethod realize-node ((node-id (eql :KERNEL)) runtime node args)
-  (let ((info (getattr node :kernel-info))
+  (let ((kernel (getattr node :kernel-info))
         (args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
-    (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
-    ;; [TODO] Create a common way to profile the kernel execution time for async and sync kernels.
     (let ((prg-time (caten/runtime/profile:with-real-time (runtime-invoke-jit-kernel runtime info node args))))
       (when (= (ctx:getenv :PROFILE) 1)
         (incf caten/runtime/profile::*jit-time* prg-time)

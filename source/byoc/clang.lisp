@@ -217,7 +217,12 @@ Compiled with this command: ~a"
       (format t "[DISASSEMBLE=1]:~%~a" (disassemble-foreign-code code :compiler (ctx:getenv :CC) :lang "c" :compiler-flags '("-O3"))))
     (dolist (item items)
       (setf (clang-caller item)
-            (make-foreign-function-caller
-             (kernel-name item)
-             (kernel-args item))))
+            (compile
+             nil
+             (make-foreign-function-caller
+              (kernel-name item)
+              (kernel-args item)))))
     nil))
+
+(defmethod kernel-call ((kernel ClangKernel) (runtime ClangRuntime) node args)
+  (apply (clang-caller kernel) args))

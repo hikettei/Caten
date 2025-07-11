@@ -37,10 +37,15 @@
 (defgeneric kernel-call (kernel runtime node args)
   (:documentation "Invokes the kernel, returning the elapsed time."))
 
-(defmethod get-performance (kernel)
-  ;; [TODO]
-  ;; - [ ] Parameter N
-  )
+(defmethod caten/runtime:realize-node ((node-id (eql :KERNEL)) runtime node args)
+  ;; [TODO] coerce-dtyped-buffer and force scalars to be a buffer? or if there's segv we have to add them.
+  (let* ((kernel (caten/air:getattr node :kernel-info))
+         (prg-time (kernel-call kernel runtime node args)))
+    (when (= (ctx:getenv :PROFILE) 1)
+      (incf caten/runtime/profile::*jit-time* prg-time)
+      ;; [TODO] Bring back profile-report
+      )
+    (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))
 ;; ~~ Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Renderer ()
   ((graph :initarg :graph :accessor renderer-graph)
