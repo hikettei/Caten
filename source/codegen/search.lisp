@@ -42,10 +42,17 @@
 ;; - 1. Introduce Ops.FUNCTION
 ;;   - 2. Hand-writtern Kernelを記述するMacro, 構文を実装する
 ;; - 2. Thinking the minimal Softmax Transformation
-;; - 3. 
-
-(defun realize-node-with-autotuning (runtime node args)
-  (let* ((kernel (caten/air:getattr node :kernel-info))
-         (prg-time (caten/codegen/byoc:kernel-call kernel runtime node args)))
-    (print prg-time)
+;; - 3.
+(defun realize-node-with-autotuning (runtime node args &aux (searched))
+  (labels ((evaluate-kernel (kernel &key (n 10) &aux (total 0.0))
+             (dotimes (i n)
+               (incf total (caten/codegen/byoc:kernel-call kernel runtime node args)))
+             total)
+           (register-kernel-as-candidate (kernel)
+             (push (cons (evaluate-kernel kernel) kernel) searched)))
+    (register-kernel-as-candidate (caten/air:getattr node :kernel-info))
+    (print searched)
+    ;; [TODO] Apply BEAM Search
+    (setf (caten/air:getattr node :kernel-info) (cdr (sort searched #'< :key #'car)))
+    ;; [TODO] Copy the initial results? to avoid overflow? or for sparse optimizations?
     (apply #'values (subseq args 0 (length (caten/air:node-writes node))))))
