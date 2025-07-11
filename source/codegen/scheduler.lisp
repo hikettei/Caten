@@ -888,7 +888,7 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
                  ((:allocate :vmop :backward) (mapc #'e (getattr node :items)))
                  (:kernel
                   (let* ((writes (map 'list #'(lambda (x) (recursively-explore-allocate base-graph x)) (node-writes node)))
-                         (write-ids (loop for a in (node-writes node) collect (intern (format nil "~a_out" a))))
+                         (write-ids (loop for a in (node-writes node) collect (intern (format nil "~a_dst" a))))
                          (writes (loop for w in write-ids
                                        for a in writes
                                        do (setf (node-writes a) (list w) (getattr a :_read_views) nil (getattr a :_type_relay) nil)
@@ -914,4 +914,5 @@ Creates a schedule-graph(FastGraph) from the given `graph`."
       (mapc #'explore (graph-outputs schedule-graph)))
     (setf (graph-outputs caten/aasm:*ctx*) (copy-list (graph-outputs schedule-graph)))
     ;; [TODO] All backward nodes should be scheduled after the PAUSE/BACKWARD node. how do we know that?
-    (->fast-graph caten/aasm:*ctx*)))
+    (verify-graph caten/aasm:*ctx*)
+    caten/aasm:*ctx*))

@@ -20,7 +20,7 @@
 (defmethod runtime-invoke-jit-kernel ((runtime GraphRuntime) kernel-info node args)
   (apply (compiled-kernel-caller kernel-info) args))
 
-(defmethod realize-node ((node-id (eql :JIT_KERNEL)) runtime node args)
+(defmethod realize-node ((node-id (eql :KERNEL)) runtime node args)
   (let ((info (getattr node :kernel-info))
         (args (map 'list #'coerce-dtyped-buffer args (getattr node :dtypes))))
     (assert (functionp (compiled-kernel-caller info)) () "Could not find the function caller for the node ~a" node)
