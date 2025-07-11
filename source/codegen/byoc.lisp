@@ -36,6 +36,11 @@
 
 (defgeneric kernel-call (kernel runtime node args)
   (:documentation "Invokes the kernel, returning the elapsed time."))
+
+(defmethod get-performance (kernel)
+  ;; [TODO]
+  ;; - [ ] Parameter N
+  )
 ;; ~~ Renderer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 (defclass Renderer ()
   ((graph :initarg :graph :accessor renderer-graph)

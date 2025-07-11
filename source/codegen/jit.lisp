@@ -101,7 +101,8 @@ Creates a JIT-compiled RuntimeGraph from the given runtime-graph.
            (graph-nodes schedule-graph)))
         ;; Running Memory Planner
         (when (= 0 (ctx:getenv :NO_MEMORY_PLANNER))
-          (run-memory-planner schedule-graph nil base-graph)
+          ;; [TODO] Bring Back Memory Planner!
+          ;;(run-memory-planner schedule-graph nil base-graph)
           )
         ;; Finalize the realize
         (mapc
